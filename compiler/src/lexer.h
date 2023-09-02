@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common.h"
+
 enum TokenType
 {
 	TOKEN_BITWISE_XOR = '^',
@@ -50,4 +52,30 @@ enum TokenType
 	TOKEN_EOF,              // end of file
 
 	TOKEN_ERROR,
+};
+
+struct Token
+{
+	TokenType type = TOKEN_ERROR;
+	u32 l0 = 0;
+	u32 c0 = 0;
+
+	union 
+	{
+		float float32_value;
+		double float64_value;
+		u64 integer_value;
+		StringView string_value;
+	};
+};
+
+struct Lexer
+{
+	String input;
+	u64 input_cursor = 0;
+	u32 current_line_number = 0;
+	u32 current_char_number = 0;
+
+	bool set_input_from_file(const char* file_path);
+	void tokenize();
 };
