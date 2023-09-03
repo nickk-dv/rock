@@ -17,31 +17,6 @@ bool Lexer::set_input_from_file(const char* file_path)
 	return true;
 }
 
-bool is_letter(u8 c)
-{
-	return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-}
-
-bool is_number(u8 c)
-{
-	return c >= 48 && c <= 57;
-}
-
-bool is_first_of_ident(u8 c)
-{
-	return is_letter(c) || (c == '_');
-}
-
-bool is_ident(u8 c)
-{
-	return is_letter(c) || (c == '_') || is_number(c);
-}
-
-bool is_first_of_string(u8 c)
-{
-	return c == '"';
-}
-
 bool is_whitespace(u8 c)
 {
 	return c == ' ' || c == '\t';
@@ -78,6 +53,8 @@ LineInfo Lexer::get_next_line()
 	u64 length = line.end_cursor - (line.start_cursor + line.leading_spaces);
 	line.is_empty = length == 0;
 
+	line.start_cursor += line.leading_spaces;
+
 	// Handle CRLF and LF line endings
 	if (i < count)
 	{
@@ -103,14 +80,57 @@ LineInfo Lexer::get_next_line()
 	return line;
 }
 
-u8 Lexer::peek_next_character()
+bool is_letter(u8 c)
 {
-	return input.data[input_cursor];
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
-void Lexer::eat_character()
+bool is_number(u8 c)
 {
-	input_cursor += 1;
+	return c >= '0' && c <= '9';
+}
+
+bool is_first_of_ident(u8 c)
+{
+	return is_letter(c) || (c == '_');
+}
+
+bool is_ident(u8 c)
+{
+	return is_letter(c) || (c == '_') || is_number(c);
+}
+
+#include <unordered_set>
+
+//@SYNC with single character tokens
+
+const std::unordered_set<u8> valid_symbol_lexeme_characters = 
+{
+	TOKEN_ASSIGN, TOKEN_SEMICOLON, TOKEN_DOT, TOKEN_COMA,
+	TOKEN_SCOPE_START, TOKEN_SCOPE_END, 
+	TOKEN_BRACKET_START, TOKEN_BRACKET_END,
+	TOKEN_PARENTHESIS_START, TOKEN_PARENTHESIS_END,
+	TOKEN_PLUS, TOKEN_MINUS, TOKEN_TIMES, TOKEN_DIV, TOKEN_MOD,
+	TOKEN_BITWISE_AND, TOKEN_BITWISE_OR, TOKEN_BITWISE_XOR, TOKEN_BITWISE_NOT,
+	TOKEN_LOGIC_NOT, TOKEN_LESS, TOKEN_GREATER,
+	':', //for :: support
+};
+
+LexemeType get_lexeme_type(u8 c)
+{
+	if (is_letter(c) || (c == '_')) 
+		return LEXEME_IDENT;
+
+	if (is_number(c)) 
+		return LEXEME_NUMBER;
+
+	if (c == '"') 
+		return LEXEME_STRING;
+
+	if (valid_symbol_lexeme_characters.find(c) != valid_symbol_lexeme_characters.end()) 
+		return LEXEME_SYMBOL;
+
+	return LEXEME_ERROR;
 }
 
 void Lexer::tokenize()
@@ -125,25 +145,70 @@ void Lexer::tokenize()
 	std::vector<Token> tokens;
 
 	LineInfo line = {};
+
 	while (line.is_valid)
 	{
 		line = get_next_line();
-		if (line.is_empty)
-			std::cout << "line empty" << "\n";
-		else std::cout << "line: " << line.start_cursor << "-" << line.end_cursor << " spaces:" << line.leading_spaces << "\n";
+		if (line.is_empty) continue;
+
+		std::cout << "line: " << line.start_cursor << "-" << line.end_cursor << " spaces:" << line.leading_spaces << "\n";
+		
+		for (u64 i = line.start_cursor; i < line.end_cursor; i++)
+		{
+			u8 c = input.data[i];
+			std::cout << "char: " << (char)c << "\n";
+
+			LexemeType type = get_lexeme_type(c);
+
+			switch (type)
+			{
+				case LEXEME_IDENT:
+				{
+					std::cout << "Lexeme first char of ident" << "\n";
+					break;
+				}
+				case LEXEME_NUMBER:
+				{
+					std::cout << "Lexeme first char of number" << "\n";
+					break;
+				}
+				case LEXEME_STRING:
+				{
+					std::cout << "Lexeme first char of string" << "\n";
+					break;
+				}
+				case LEXEME_SYMBOL:
+				{
+					std::cout << "Lexeme first char of symbol" << "\n";
+					break;
+				}
+				case LEXEME_ERROR:
+				{
+					std::cout << "Lexer error: invalid lexeme" << "\n";
+					break;
+				}
+			}
+
+			//create tokens
+
+			/*
+			
+			indentifier:     => can be also be a keyword
+				start:       letter or underscore
+				followed_by: letter or underscore or number
+				until:       whitespace
+			string:
+				start:       "
+				followed_by: any u8 character
+				until:       "
+			number:
+				supported notation: -1 1 -2.0 2.0 0xF0
+			special_char:
+				1 or 2 special_chars: = *= && ||
+
+			*/
+		}
+
+		std::cout << "\n";
 	}
-
-	input_cursor = 0;
-
-	for (size_t i = 0; i < input.count; i += 1)
-	{
-		u8 c = peek_next_character();
-		eat_character();
-
-		if (c == ' ') continue;
-
-		std::cout << "char: " << (char)c << " " << (int)c << "\n";
-	}
-
-	return;
 }

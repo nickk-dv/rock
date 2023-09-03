@@ -78,6 +78,16 @@ enum TokenType
 	TOKEN_ERROR,
 };
 
+enum LexemeType
+{
+	LEXEME_IDENT,
+	LEXEME_NUMBER,
+	LEXEME_STRING,
+	LEXEME_SYMBOL,
+	
+	LEXEME_ERROR,
+};
+
 struct Token
 {
 	TokenType type = TOKEN_ERROR;
@@ -109,10 +119,7 @@ struct Lexer
 	u32 current_line_number = 0;
 	u32 current_char_number = 0;
 
-	LineInfo get_next_line();
-	u8 peek_next_character();
-	void eat_character();
-
 	bool set_input_from_file(const char* file_path);
+	LineInfo get_next_line();
 	void tokenize();
 };
