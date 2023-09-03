@@ -93,12 +93,25 @@ struct Token
 	};
 };
 
+struct LineInfo
+{
+	u64 start_cursor = 0;
+	u64 end_cursor = 0;
+	u32 leading_spaces = 0;
+	bool is_valid = true;
+	bool is_empty = true;
+};
+
 struct Lexer
 {
 	String input;
 	u64 input_cursor = 0;
 	u32 current_line_number = 0;
 	u32 current_char_number = 0;
+
+	LineInfo get_next_line();
+	u8 peek_next_character();
+	void eat_character();
 
 	bool set_input_from_file(const char* file_path);
 	void tokenize();
