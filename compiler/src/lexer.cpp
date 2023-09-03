@@ -43,15 +43,18 @@ LineInfo Lexer::get_next_line()
 		i++;
 	}
 
+	bool any_character_found = false;
+
 	// Find the end of the current line
 	while (i < count && input.data[i] != '\n' && input.data[i] != '\r')
 	{
+		any_character_found = true;
 		line.end_cursor = i;
 		i++;
 	}
 
 	u64 length = line.end_cursor - (line.start_cursor + line.leading_spaces);
-	line.is_empty = length == 0;
+	line.is_empty = length == 0 || !any_character_found;
 
 	line.start_cursor += line.leading_spaces;
 
@@ -135,12 +138,34 @@ LexemeType get_lexeme_type(u8 c)
 
 void Lexer::tokenize()
 {
-	//token logic:
-	//1. identifier => check with keywords => emit correct token
-	//2. number (12 12.5 12,5 500.000.333, hex) 
-	///@TODO specify supported number notation convering negative and positive int / floats / doubles
-	//3. string ("str") starts and ends with ""
-	//4. special character sets (usually 1-2 characters) eg. (= & != *= += | ||) cannot be part of the indentifier
+	/*
+
+	indentifier:     => can be also be a keyword
+		start:       letter or underscore
+		followed_by: letter or underscore or number
+		until:       not (letter or underscore or number) or line_end
+		until_error: no error
+
+	string:
+		start:       "
+		followed_by: any u8 character
+		until:       "
+		until_error: no closing " before line_end
+
+		@TODO string literal escape sequences \\ \" \n \t \r etc,
+		might need to store string literals separately from file text memory
+
+	number:
+		supported notation: -1 1 -2.0 2.0 0xF0
+
+		@TODO specify
+
+	special_char:
+		1 or 2 special_chars: = *= && ||
+
+		@TODO specify
+
+	*/
 
 	std::vector<Token> tokens;
 
@@ -153,60 +178,90 @@ void Lexer::tokenize()
 
 		std::cout << "line: " << line.start_cursor << "-" << line.end_cursor << " spaces:" << line.leading_spaces << "\n";
 		
-		for (u64 i = line.start_cursor; i < line.end_cursor; i++)
+		for (u64 i = line.start_cursor; i <= line.end_cursor; )
 		{
 			u8 c = input.data[i];
-			std::cout << "char: " << (char)c << "\n";
+
+			if (is_whitespace(c))
+			{
+				i++;
+				continue;
+			}
 
 			LexemeType type = get_lexeme_type(c);
+			u64 lexeme_start = i;
+			std::cout << "lexeme start char: " << c << "\n";
+			u64 lexeme_end = i + 1;
 
 			switch (type)
 			{
 				case LEXEME_IDENT:
 				{
-					std::cout << "Lexeme first char of ident" << "\n";
+					std::cout << "LEXEME_IDENT" << "\n";
+
+					while (lexeme_end <= line.end_cursor)
+					{
+						u8 c = input.data[lexeme_end];
+
+						if (!is_ident(c))
+						{
+							break;
+						}
+
+						std::cout << c;
+						lexeme_end += 1;
+					}
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+
+					std::cout << "\n";
+					std::cout << "lexeme start-end: " << lexeme_start << " " << lexeme_end << "\n";
+					//no error can exist ident just ends when its no longer ident chars
 					break;
 				}
 				case LEXEME_NUMBER:
 				{
-					std::cout << "Lexeme first char of number" << "\n";
+					std::cout << "LEXEME_NUMBER" << "\n";
 					break;
 				}
 				case LEXEME_STRING:
 				{
-					std::cout << "Lexeme first char of string" << "\n";
+					std::cout << "LEXEME_STRING" << "\n";
+					bool error = true;
+
+					while (lexeme_end <= line.end_cursor)
+					{
+						u8 c = input.data[lexeme_end];
+						std::cout << c;
+						lexeme_end += 1;
+
+						if (c == '"')
+						{
+							error = false;
+							break;
+						}
+					}
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+
+					std::cout << "\n";
+					std::cout << "lexeme start-end: " << lexeme_start << " " << lexeme_end << "\n";
+					if (error) std::cout << "Error: LexemeString wasnt terminated.\n";
 					break;
 				}
 				case LEXEME_SYMBOL:
 				{
-					std::cout << "Lexeme first char of symbol" << "\n";
+					std::cout << "LEXEME_SYMBOL" << "\n";
 					break;
 				}
 				case LEXEME_ERROR:
 				{
-					std::cout << "Lexer error: invalid lexeme" << "\n";
+					std::cout << "Lexer: LEXEME_ERROR" << "\n";
 					break;
 				}
 			}
-
-			//create tokens
-
-			/*
-			
-			indentifier:     => can be also be a keyword
-				start:       letter or underscore
-				followed_by: letter or underscore or number
-				until:       whitespace
-			string:
-				start:       "
-				followed_by: any u8 character
-				until:       "
-			number:
-				supported notation: -1 1 -2.0 2.0 0xF0
-			special_char:
-				1 or 2 special_chars: = *= && ||
-
-			*/
 		}
 
 		std::cout << "\n";

@@ -1,4 +1,5 @@
- "string"  
-   name 
+   "hello"   mat_4x4 
+        
+"world"  
+"error string...
 
-1024 + 10 
