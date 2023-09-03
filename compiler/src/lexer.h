@@ -2,55 +2,79 @@
 
 #include "common.h"
 
+// !#$%&'()*+,-./:;<=>?@[\]^_`{|}~  all not numeric & letter characters
+// #$&':?@\_` unused characters
+
 enum TokenType
 {
-	TOKEN_BITWISE_XOR = '^',
-	TOKEN_BITWISE_NOT = '~',
-	TOKEN_BITWISE_AND = '&',
-	TOKEN_BITWISE_OR  = '|',
+	TOKEN_ASSIGN              = '=',
+	TOKEN_SEMICOLON           = ';',
+	TOKEN_DOT                 = '.',
+	TOKEN_COMA                = ',',
 
-	//ASCII types here 
-	//@TODO maybe add named tokens for used characters like .,{}[]...
+	TOKEN_SCOPE_START         = '{',
+	TOKEN_SCOPE_END           = '}',
+	TOKEN_BRACKET_START       = '[',
+	TOKEN_BRACKET_END         = ']',
+	TOKEN_PARENTHESIS_START   = '(',
+	TOKEN_PARENTHESIS_END     = ')',
 
-	TOKEN_IDENT = 256,      // name
-	TOKEN_NUMBER,           // 10
-	TOKEN_STRING,           // "string"
+	TOKEN_PLUS                = '+',
+	TOKEN_MINUS               = '-',
+	TOKEN_TIMES               = '*',
+	TOKEN_DIV                 = '/',
+	TOKEN_MOD                 = '%',
+	TOKEN_BITWISE_AND         = '&',
+	TOKEN_BITWISE_OR          = '|',
+	TOKEN_BITWISE_XOR         = '^',
+	TOKEN_BITWISE_NOT         = '~',
 
-	TOKEN_PLUS_EQUALS,      // +=
-	TOKEN_MINUS_EQUALS,     // -=
-	TOKEN_TIMES_EQUALS,     // *=
-	TOKEN_DIV_EQUALS,       // /=
+	TOKEN_LOGIC_NOT           = '!',
+	TOKEN_LESS                = '<',
+	TOKEN_GREATER             = '>',
 
-	TOKEN_IS_EQUAL,         // ==
-	TOKEN_NOT_EQUAL,        // !=
-	TOKEN_LOGIC_AND,        // &&
-	TOKEN_LOGIC_OR,         // ||
+	TOKEN_IDENT = 128,        // name
+	TOKEN_NUMBER,             // 10
+	TOKEN_STRING,             // "string"
 
-	TOKEN_LESS_EQUALS,      // <=
-	TOKEN_GREATER_EQUALS,   // >=
-	TOKEN_SHIFT_LEFT,       // <<
-	TOKEN_SHIFT_RIGHT,      // >>
+	TOKEN_PLUS_EQUALS,        // +=
+	TOKEN_MINUS_EQUALS,       // -=
+	TOKEN_TIMES_EQUALS,       // *=
+	TOKEN_DIV_EQUALS,         // /=
+	TOKEN_MOD_EQUALS,         // %=
+	TOKEN_BITWISE_AND_EQUALS, // &=
+	TOKEN_BITWISE_OR_EQUALS,  // |=
+	TOKEN_BITWISE_XOR_EQUALS, // ^=
 
-	TOKEN_DOUBLE_COLON,     // ::
+	TOKEN_IS_EQUAL,           // ==
+	TOKEN_NOT_EQUAL,          // !=
+	TOKEN_LOGIC_AND,          // &&
+	TOKEN_LOGIC_OR,           // ||
+	TOKEN_LESS_EQUALS,        // <=
+	TOKEN_GREATER_EQUALS,     // >=
 
-	TOKEN_KEYWORD_IF,       // if
-	TOKEN_KEYWORD_ELSE,     // else
-	TOKEN_KEYWORD_FOR,      // for
-	TOKEN_KEYWORD_WHILE,    // while
-	TOKEN_KEYWORD_SWITCH,   // switch
-	TOKEN_KEYWORD_CASE,     // case
-	TOKEN_KEYWORD_BREAK,    // break
-	TOKEN_KEYWORD_RETURN,   // return
-	TOKEN_KEYWORD_CONTINUE, // continue
+	TOKEN_SHIFT_LEFT,         // <<
+	TOKEN_SHIFT_RIGHT,        // >>
+	TOKEN_DOUBLE_COLON,       // ::
 
-	TOKEN_KEYWORD_TRUE,     // true
-	TOKEN_KEYWORD_FALSE,    // false
+	TOKEN_KEYWORD_IF,         // if
+	TOKEN_KEYWORD_ELSE,       // else
+	TOKEN_KEYWORD_FOR,        // for
+	TOKEN_KEYWORD_WHILE,      // while
+	TOKEN_KEYWORD_SWITCH,     // switch
+	TOKEN_KEYWORD_CASE,       // case
+	TOKEN_KEYWORD_BREAK,      // break
+	TOKEN_KEYWORD_RETURN,     // return
+	TOKEN_KEYWORD_CONTINUE,   // continue
 
-	TOKEN_KEYWORD_STRUCT,   // struct
-	TOKEN_KEYWORD_ENUM,     // enum
+	TOKEN_KEYWORD_TRUE,       // true
+	TOKEN_KEYWORD_FALSE,      // false
 
-	TOKEN_EOF,              // end of file
+	TOKEN_KEYWORD_STRUCT,     // struct
+	TOKEN_KEYWORD_ENUM,       // enum
 
+	TOKEN_EOF,                // end of file
+	
 	TOKEN_ERROR,
 };
 

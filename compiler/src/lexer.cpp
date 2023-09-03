@@ -14,6 +14,16 @@ bool Lexer::set_input_from_file(const char* file_path)
 	return true;
 }
 
+bool is_letter(u8 c)
+{
+	return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+}
+
+bool is_number(u8 c)
+{
+	return c >= 48 && c <= 57;
+}
+
 void Lexer::tokenize()
 {
 	
