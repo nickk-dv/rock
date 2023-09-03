@@ -2,9 +2,6 @@
 
 #include "common.h"
 
-// !#$%&'()*+,-./:;<=>?@[\]^_`{|}~  all not numeric & letter characters
-// #$&':?@\_` unused characters
-
 enum TokenType
 {
 	TOKEN_ASSIGN              = '=',
@@ -112,12 +109,13 @@ struct LineInfo
 	bool is_empty = true;
 };
 
+#include <vector>
+
 struct Lexer
 {
 	String input;
 	u64 input_cursor = 0;
-	u32 current_line_number = 0;
-	u32 current_char_number = 0;
+	std::vector<Token> tokens;
 
 	bool set_input_from_file(const char* file_path);
 	LineInfo get_next_line();
