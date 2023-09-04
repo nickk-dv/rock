@@ -92,7 +92,7 @@ TokenType get_single_symbol_token_type(u8 c)
 TokenType get_double_symbol_token_type(u8 c, u8 c2)
 {
 	u64 hash = (u64)c;
-	hash = (hash << 7) & (u64)c2;
+	hash = (hash << 7) | (u64)c2;
 	bool is_symbol = symbol_hash_to_token_type.find(hash) != symbol_hash_to_token_type.end();
 	return is_symbol ? symbol_hash_to_token_type.at(hash) : TOKEN_ERROR;
 }
@@ -303,8 +303,28 @@ void Lexer::tokenize()
 				case LEXEME_SYMBOL:
 				{
 					std::cout << "LEXEME_SYMBOL" << "\n";
-					i++;
+					
+					token.type = get_single_symbol_token_type(c);
 
+					if (lexeme_end <= line.end_cursor)
+					{
+						u8 c2 = input.data[lexeme_end];
+						std::cout << c2;
+						lexeme_end += 1;
+
+						TokenType double_symbol_token = get_double_symbol_token_type(c, c2);
+						if (double_symbol_token != TOKEN_ERROR)
+						{
+							token.type = double_symbol_token;
+						}
+					}
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+
+					std::cout << "\n";
+					std::cout << "lexeme start-end: " << lexeme_start << " " << lexeme_end << "\n";
+					//no error is possible
 					break;
 				}
 				case LEXEME_ERROR:
