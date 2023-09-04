@@ -209,15 +209,15 @@ void Lexer::tokenize()
 						lexeme_end += 1;
 					}
 
-					i = lexeme_end;
-					lexeme_end -= 1;
-
 					token.type = TOKEN_IDENT;
 					token.string_value.data = input.data + lexeme_start;
-					token.string_value.count = 1 + lexeme_end - lexeme_start;
+					token.string_value.count = lexeme_end - lexeme_start;
 
 					TokenType keyword = get_keyword_token_type(token.string_value);
 					if (keyword != TOKEN_ERROR) token.type = keyword;
+
+					i = lexeme_end;
+					lexeme_end -= 1;
 				} break;
 				case LEXEME_NUMBER:
 				{
@@ -228,14 +228,14 @@ void Lexer::tokenize()
 						lexeme_end += 1;
 					}
 
-					i = lexeme_end;
-					lexeme_end -= 1;
-
 					token.type = TOKEN_NUMBER;
 					//@Incompelete support double and float
 					//@Incomplete support hex integers
 					//@Incomplete report number lex errors
 					//@Incomplete store numeric value in token
+
+					i = lexeme_end;
+					lexeme_end -= 1;
 				} break;
 				case LEXEME_STRING:
 				{
@@ -248,14 +248,14 @@ void Lexer::tokenize()
 						if (c == '"') { terminated = true; break; }
 					}
 
+					token.type = TOKEN_STRING;
+					token.string_value.data = input.data + lexeme_start;
+					token.string_value.count = lexeme_end - lexeme_start;
+
+					if (!terminated) std::cout << "ERROR: Lexer: string literal was not terminated. line:" << current_line_number << "\n";
+					
 					i = lexeme_end;
 					lexeme_end -= 1;
-
-					token.type = TOKEN_STRING;
-					token.string_value.data = input.data + lexeme_start + 1; //@Hack skip first "
-					token.string_value.count = 1 + lexeme_end - lexeme_start - 1; //@Hack skip last "
-
-					if (!terminated) std::cout << "ERROR: Lexer: string literal was not terminated.\n";
 				} break;
 				case LEXEME_SYMBOL:
 				{
@@ -264,10 +264,13 @@ void Lexer::tokenize()
 					if (lexeme_end <= line.end_cursor)
 					{
 						u8 c = input.data[lexeme_end];
-						lexeme_end += 1;
 
 						TokenType symbol = get_double_symbol_token_type(fc, c);
-						if (symbol != TOKEN_ERROR) token.type = symbol;
+						if (symbol != TOKEN_ERROR) 
+						{
+							token.type = symbol;
+							lexeme_end += 1;
+						}
 					}
 
 					i = lexeme_end;
@@ -275,13 +278,22 @@ void Lexer::tokenize()
 				} break;
 				case LEXEME_ERROR:
 				{
-					std::cout << "ERROR: Lexer: character is invalid." << (int)fc << "\n";
-					//@Incomplete create centralized error reporting functionality
 					i++;
+					//@Incomplete create centralized error reporting functionality
+					std::cout << "ERROR: Lexer: character is invalid." << (int)fc << "\n";
 				} break;
 			}
 
-			std::cout << "Token:" << token.type << " line, char: " << token.l0 << " : " << token.c0 << "\n";
+			//@Debug printing token info
+			std::cout << "Token:" << token.type << " line: " << token.l0 << " col: " << token.c0 << " ";
+			if (token.type == TOKEN_STRING || token.type == TOKEN_IDENT)
+			{
+				for (u64 k = 0; k < token.string_value.count; k++)
+				std::cout << (char)token.string_value.data[k];
+			}
+			std::cout << "\n";
+
+			if (type != LEXEME_ERROR)
 			tokens.emplace_back(token);
 		}
 
