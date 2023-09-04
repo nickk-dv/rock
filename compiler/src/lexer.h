@@ -8,6 +8,7 @@ enum TokenType
 	TOKEN_SEMICOLON           = ';',
 	TOKEN_DOT                 = '.',
 	TOKEN_COMA                = ',',
+	TOKEN_COLON               = ':',
 
 	TOKEN_SCOPE_START         = '{',
 	TOKEN_SCOPE_END           = '}',

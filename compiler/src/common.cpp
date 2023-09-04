@@ -51,9 +51,7 @@ u64 string_hash_ascii_count_9(const StringView& str)
 	u64 hash = 0;
 
 	for (u32 i = 0; i < str.count; i++)
-	{
 		hash = (hash << 7) | ((u64)str.data[i] & 0x7F);
-	}
 
 	return hash;
 }
