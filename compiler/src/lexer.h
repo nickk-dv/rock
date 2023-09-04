@@ -2,6 +2,8 @@
 
 #include "common.h"
 
+#include <vector>
+
 enum TokenType
 {
 	TOKEN_ASSIGN              = '=',
@@ -97,8 +99,6 @@ struct LineInfo
 	bool is_valid = true;
 	bool is_empty = true;
 };
-
-#include <vector>
 
 struct Lexer
 {

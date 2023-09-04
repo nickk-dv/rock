@@ -21,7 +21,7 @@ bool os_file_read_all(const char* file_path, String* str)
 	if (!file) return false;
 
 	fseek(file, 0, SEEK_END);
-	long file_size = ftell(file);
+	size_t file_size = (size_t)ftell(file);
 	fseek(file, 0, SEEK_SET);
 
 	if (file_size <= 0)
@@ -30,8 +30,14 @@ bool os_file_read_all(const char* file_path, String* str)
 		return false;
 	}
 
-	file_size = (size_t)file_size;
 	void* buffer =  malloc(file_size);
+
+	if (buffer == NULL)
+	{
+		fclose(file);
+		return false;
+	}
+
 	size_t read_size = fread(buffer, 1, file_size, file);
 	fclose(file);
 
@@ -50,9 +56,7 @@ bool os_file_read_all(const char* file_path, String* str)
 u64 string_hash_ascii_count_9(const StringView& str)
 {
 	u64 hash = 0;
-
 	for (u32 i = 0; i < str.count; i++)
-		hash = (hash << 7) | ((u64)str.data[i] & 0x7F);
-
+		hash = (hash << 7) | (u64)str.data[i];
 	return hash;
 }

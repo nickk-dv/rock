@@ -9,7 +9,7 @@ struct String
 	~String();
 
 	u8* data;
-	size_t count;
+	u64 count;
 };
 
 struct StringView
@@ -17,7 +17,7 @@ struct StringView
 	StringView(const String& str);
 
 	u8* data;
-	size_t count;
+	u64 count;
 };
 
 bool os_file_read_all(const char* file_path, String* str);
@@ -27,9 +27,7 @@ u64 string_hash_ascii_count_9(const StringView& str);
 constexpr u64 string_hash_ascii_count_9(const char* str)
 {
 	u64 hash = 0;
-
 	for (u32 i = 0; i < 9 && str[i] != '\0'; i++)
-		hash = (hash << 7) | ((u64)((u8)str[i]) & 0x7F);
-
+		hash = (hash << 7) | (u64)((u8)str[i]);
 	return hash;
 }
