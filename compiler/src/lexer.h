@@ -74,16 +74,6 @@ enum TokenType
 	TOKEN_ERROR,
 };
 
-enum LexemeType
-{
-	LEXEME_IDENT,
-	LEXEME_NUMBER,
-	LEXEME_STRING,
-	LEXEME_SYMBOL,
-	
-	LEXEME_ERROR,
-};
-
 struct Token
 {
 	TokenType type = TOKEN_ERROR;

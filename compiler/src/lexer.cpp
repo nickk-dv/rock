@@ -107,6 +107,16 @@ bool is_first_of_number(u8 c) { return is_number(c); }
 bool is_first_of_string(u8 c) { return c == '"'; }
 bool is_first_of_symbol(u8 c) { return get_single_symbol_token_type(c) != TOKEN_ERROR; }
 
+enum LexemeType
+{
+	LEXEME_IDENT,
+	LEXEME_NUMBER,
+	LEXEME_STRING,
+	LEXEME_SYMBOL,
+
+	LEXEME_ERROR,
+};
+
 LexemeType get_lexeme_type(u8 c)
 {
 	if (is_first_of_ident(c))  return LEXEME_IDENT;
@@ -206,7 +216,7 @@ void Lexer::tokenize()
 
 			Token token = {};
 			token.l0 = current_line_number;
-			token.c0 = 1 + i - line.start_cursor - line.leading_spaces;
+			token.c0 = (u32)(1 + i - (line.start_cursor - line.leading_spaces));
 
 			switch (type)
 			{
@@ -336,7 +346,7 @@ void Lexer::tokenize()
 				}
 			}
 
-			std::cout << "Token:" << token.type << "\n";
+			std::cout << "Token:" << token.type << " line, char: " << token.l0 << " : " << token.c0 << "\n";
 
 			tokens.emplace_back(token);
 		}
@@ -348,3 +358,4 @@ void Lexer::tokenize()
 		std::cout << "\n";
 	}
 }
+//361 pre refactor

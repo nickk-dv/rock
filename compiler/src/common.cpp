@@ -16,7 +16,8 @@ StringView::StringView(const String& str)
 
 bool os_file_read_all(const char* file_path, String* str)
 {
-	FILE* file = fopen(file_path, "rb");
+	FILE* file;
+	fopen_s(&file, file_path, "rb");
 	if (!file) return false;
 
 	fseek(file, 0, SEEK_END);
