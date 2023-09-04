@@ -21,3 +21,5 @@ struct StringView
 };
 
 bool os_file_read_all(const char* file_path, String* str);
+
+u64 string_hash_ascii_count_9(const StringView& str);

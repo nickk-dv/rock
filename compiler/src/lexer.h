@@ -58,8 +58,6 @@ enum TokenType
 	TOKEN_KEYWORD_ELSE,       // else
 	TOKEN_KEYWORD_FOR,        // for
 	TOKEN_KEYWORD_WHILE,      // while
-	TOKEN_KEYWORD_SWITCH,     // switch
-	TOKEN_KEYWORD_CASE,       // case
 	TOKEN_KEYWORD_BREAK,      // break
 	TOKEN_KEYWORD_RETURN,     // return
 	TOKEN_KEYWORD_CONTINUE,   // continue

@@ -2,10 +2,12 @@
 
 #include "common.h"
 
-#include <unordered_set> //For symbol lexeme set
 #include <iostream> //@Debug for debug printing only
+#include <unordered_set>
+#include <unordered_map>
 
-const std::unordered_set<u8> symbol_lexeme_chars = //@Todo Sync with single character tokens
+//@Sync with single character tokens
+const std::unordered_set<u8> symbol_lexeme_chars = 
 {
 	TOKEN_ASSIGN, TOKEN_SEMICOLON, TOKEN_DOT, TOKEN_COMA,
 	TOKEN_SCOPE_START, TOKEN_SCOPE_END,
@@ -16,6 +18,30 @@ const std::unordered_set<u8> symbol_lexeme_chars = //@Todo Sync with single char
 	TOKEN_LOGIC_NOT, TOKEN_LESS, TOKEN_GREATER,
 	':', //For :: support
 };
+
+//@Sync with keyword tokens
+const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
+{
+	{ 13542,             TOKEN_KEYWORD_IF },
+	{ 213596645,         TOKEN_KEYWORD_ELSE },
+	{ 1685490,           TOKEN_KEYWORD_FOR },
+	{ 32163657317,       TOKEN_KEYWORD_WHILE },
+	{ 26547417323,       TOKEN_KEYWORD_BREAK },
+	{ 3944367356270,     TOKEN_KEYWORD_RETURN },
+	{ 56224039483194085, TOKEN_KEYWORD_CONTINUE },
+	{ 245152485,         TOKEN_KEYWORD_TRUE },
+	{ 27585624549,       TOKEN_KEYWORD_FALSE },
+	{ 3982749430260,     TOKEN_KEYWORD_STRUCT },
+	{ 213629677,         TOKEN_KEYWORD_ENUM },
+};
+
+TokenType get_keyword_token_type(const StringView& str)
+{
+	if (str.count > 9) return TOKEN_ERROR;
+	u64 hash = string_hash_ascii_count_9(str);
+	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
+	return is_keyword ? keyword_hash_to_token_type.at(hash) : TOKEN_ERROR;
+}
 
 bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 bool is_number(u8 c) { return c >= '0' && c <= '9'; }
@@ -154,6 +180,9 @@ void Lexer::tokenize()
 					token.string_value.data = input.data + lexeme_start;
 					token.string_value.count = 1 + lexeme_end - lexeme_start;
 
+					TokenType keyword = get_keyword_token_type(token.string_value);
+					if (keyword != TOKEN_ERROR) token.type = keyword;
+
 					std::cout << "\n";
 					std::cout << "lexeme start-end: " << lexeme_start << " " << lexeme_end << "\n";
 					//no error can exist ident just ends when its no longer ident chars
@@ -179,6 +208,8 @@ void Lexer::tokenize()
 
 					i = lexeme_end;
 					lexeme_end -= 1;
+
+					token.type = TOKEN_NUMBER;
 
 					std::cout << "\n";
 					std::cout << "lexeme start-end: " << lexeme_start << " " << lexeme_end << "\n";
@@ -219,16 +250,19 @@ void Lexer::tokenize()
 				{
 					std::cout << "LEXEME_SYMBOL" << "\n";
 					i++;
+
 					break;
 				}
 				case LEXEME_ERROR:
 				{
 					std::cout << "Lexer: character is invalid.\n";
 					i++;
-					token.type = TOKEN_ERROR;
+
 					break;
 				}
 			}
+
+			std::cout << "Token:" << token.type << "\n";
 
 			tokens.emplace_back(token);
 		}
