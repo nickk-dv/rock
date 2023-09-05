@@ -69,8 +69,12 @@ LexemeType Lexer::get_lexeme_type(u8 c)
 	return LEXEME_ERROR;
 }
 
+#include <time.h> //@Performance timing
+
 void Lexer::tokenize()
 {
+	clock_t start_clock = clock(); //@Performance timing
+
 	LineInfo line = {};
 	u32 current_line_number = 0;
 
@@ -180,25 +184,37 @@ void Lexer::tokenize()
 				{
 					i++;
 					//@Incomplete create centralized error reporting functionality
-					std::cout << "ERROR: Lexer: character is invalid." << (int)fc << "\n";
+					//std::cout << "ERROR: Lexer: character is invalid." << (int)fc << "\n";
 				} break;
 			}
 
 			//@Debug printing token info
-			std::cout << "Token:" << token.type << " line: " << token.l0 << " col: " << token.c0 << " ";
-			if (token.type == TOKEN_STRING || token.type == TOKEN_IDENT)
-			{
-				for (u64 k = 0; k < token.string_value.count; k++)
-				std::cout << (char)token.string_value.data[k];
-			}
-			std::cout << "\n";
+			//std::cout << "Token:" << token.type << " line: " << token.l0 << " col: " << token.c0 << " ";
+			//if (token.type == TOKEN_STRING || token.type == TOKEN_IDENT)
+			//{
+			//	for (u64 k = 0; k < token.string_value.count; k++)
+			//	std::cout << (char)token.string_value.data[k];
+			//}
+			//std::cout << "\n";
 
 			if (type != LEXEME_ERROR)
 			tokens.emplace_back(token);
 		}
-
-		Token token_eof = {};
-		token_eof.type = TOKEN_EOF;
-		tokens.emplace_back(token_eof);
 	}
+
+	Token token_eof = {};
+	token_eof.type = TOKEN_EOF;
+	tokens.emplace_back(token_eof);
+
+	clock_t time = clock() - start_clock; //@Performance
+	float time_ms = (float)time / CLOCKS_PER_SEC * 1000.0f;
+
+	//@Performance ~360-370ms | 7.211.540 tokens | 1m lines (initial timing only signed int numeric tokens)
+
+	printf("Lexing done.\n");
+	printf("Lexer: Time           (Ms): %f \n", time_ms);
+	printf("Lexer: LineCount:           %lu \n", current_line_number - 1);
+	printf("Lexer: TokenCount:          %llu \n", tokens.size());
+	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));
+	printf("Lexer: MemoryUsed     (Mb): %f \n", double(sizeof(Token) * tokens.capacity()) / (1024.0 * 1024.0));
 }
