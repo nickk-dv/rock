@@ -69,12 +69,12 @@ enum TokenType
 	TOKEN_KEYWORD_STRUCT,     // struct
 	TOKEN_KEYWORD_ENUM,       // enum
 
-	TOKEN_EOF,                // end of file
+	TOKEN_INPUT_END,          // input end
 
 	TOKEN_ERROR,
 };
 
-struct Token
+struct Token //@Performance 32bytes is too much on large 1m line + files
 {
 	TokenType type = TOKEN_ERROR;
 	u32 l0 = 0;

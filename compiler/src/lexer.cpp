@@ -69,6 +69,12 @@ LexemeType Lexer::get_lexeme_type(u8 c)
 	return LEXEME_ERROR;
 }
 
+void Lexer::report_error(LexerErrorType type)
+{	
+	LexerError error = { type, tokens.size() };
+	errors.emplace_back(error);
+}
+
 #include <time.h> //@Performance timing
 
 void Lexer::tokenize()
@@ -156,7 +162,8 @@ void Lexer::tokenize()
 					token.string_value.data = input.data + lexeme_start;
 					token.string_value.count = lexeme_end - lexeme_start;
 
-					if (!terminated) std::cout << "ERROR: Lexer: string literal was not terminated. line:" << current_line_number << "\n";
+					if (!terminated) report_error(LEXER_ERROR_STRING_NOT_TERMINATED);
+					//std::cout << "ERROR: Lexer: string literal was not terminated. line:" << current_line_number << "\n";
 					
 					i = lexeme_end;
 					lexeme_end -= 1;
@@ -183,8 +190,7 @@ void Lexer::tokenize()
 				case LEXEME_ERROR:
 				{
 					i++;
-					//@Incomplete create centralized error reporting functionality
-					//std::cout << "ERROR: Lexer: character is invalid." << (int)fc << "\n";
+					//report_error(LEXER_ERROR_ILLEGAL_CHARACTER); //@Debug ignoring this due to testing
 				} break;
 			}
 
@@ -197,14 +203,18 @@ void Lexer::tokenize()
 			//}
 			//std::cout << "\n";
 
-			if (type != LEXEME_ERROR)
+			//@Notice adding even error tokens in order to use them for lexical error report
+			if (token.type != TOKEN_ERROR)
 			tokens.emplace_back(token);
 		}
+
+		//@Notice can be over MAX_LEXER_ERRORS due to being line limited check
+		if (errors.size() >= MAX_LEXER_ERRORS) break;
 	}
 
-	Token token_eof = {};
-	token_eof.type = TOKEN_EOF;
-	tokens.emplace_back(token_eof);
+	Token token_end = {};
+	token_end.type = TOKEN_INPUT_END;
+	tokens.emplace_back(token_end);
 
 	clock_t time = clock() - start_clock; //@Performance
 	float time_ms = (float)time / CLOCKS_PER_SEC * 1000.0f;
@@ -215,6 +225,19 @@ void Lexer::tokenize()
 	printf("Lexer: Time           (Ms): %f \n", time_ms);
 	printf("Lexer: LineCount:           %lu \n", current_line_number - 1);
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());
-	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));
-	printf("Lexer: MemoryUsed     (Mb): %f \n", double(sizeof(Token) * tokens.capacity()) / (1024.0 * 1024.0));
+	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token)* tokens.size()) / (1024.0 * 1024.0));
+	printf("Lexer: MemoryUsed     (Mb): %f \n", double(sizeof(Token)* tokens.capacity()) / (1024.0 * 1024.0));
+
+	for (u32 i = 0; i < errors.size(); i++)
+	{
+		Token token = tokens[errors[i].token_id];
+		printf("Error %lu %lu ", token.l0, token.c0);
+		switch (errors[i].type)
+		{
+			case LEXER_ERROR_STRING_NOT_TERMINATED: printf("LEXER_ERROR_STRING_NOT_TERMINATED \n"); break;
+			case LEXER_ERROR_ILLEGAL_CHARACTER:     printf("LEXER_ERROR_ILLEGAL_CHARACTER \n"); break;
+		}
+	}
+
+	if (errors.size() > 0) printf("Lexer: ErrorCount %llu \n", errors.size());
 }
