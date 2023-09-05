@@ -49,4 +49,5 @@ struct Lexer
 	LexemeType get_lexeme_type(u8 c);
 	void report_error(LexerErrorType error);
 	void tokenize();
+	TokenType get_token_type(u64 token_id);
 };

@@ -68,6 +68,7 @@ enum TokenType
 
 	TOKEN_KEYWORD_STRUCT,     // struct
 	TOKEN_KEYWORD_ENUM,       // enum
+	TOKEN_KEYWORD_FN,         // fn
 
 	TOKEN_INPUT_END,          // input end
 

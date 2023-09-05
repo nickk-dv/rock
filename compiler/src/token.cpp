@@ -18,6 +18,7 @@ const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 
 	{ string_hash_ascii_count_9("struct"),   TOKEN_KEYWORD_STRUCT },
 	{ string_hash_ascii_count_9("enum"),     TOKEN_KEYWORD_ENUM},
+	{ string_hash_ascii_count_9("fn"),       TOKEN_KEYWORD_FN},
 };
 
 //@Sync with symbol tokens

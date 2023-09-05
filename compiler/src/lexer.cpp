@@ -241,3 +241,8 @@ void Lexer::tokenize()
 
 	if (errors.size() > 0) printf("Lexer: ErrorCount %llu \n", errors.size());
 }
+
+TokenType Lexer::get_token_type(u64 token_id)
+{
+	return tokens[token_id].type;
+}
