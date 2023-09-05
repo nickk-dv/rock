@@ -1,0 +1,40 @@
+/////////////////////
+Language constructs
+/////////////////////
+
+1. struct declarations
+
+struct Type
+{
+	name: Type,
+	name: Type,
+	name: Type,
+}
+
+2. enum declarations
+
+enum Enum
+{
+	Variant,
+	Variant,
+	Variant,
+	Variant,
+}
+
+3. variable declarations
+
+let name: Type = expression; 
+
+4. function declarations
+
+fn function(name: Type, name2: Type) -> Type
+{
+	let x: Type = expression;
+	let y: Enum = expression;
+	return x;
+}
+
+fn function(name: Type, name2: Type)
+{
+	name = name2 - 1;
+}
