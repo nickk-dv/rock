@@ -20,14 +20,30 @@ struct StringView
 	u64 count;
 };
 
-bool os_file_read_all(const char* file_path, String* str);
+struct Timer
+{
+	Timer();
 
-u64 string_hash_ascii_count_9(const StringView& str);
+	float Ms();
+	float Sec();
+	
+	long start_time;
+};
 
-constexpr u64 string_hash_ascii_count_9(const char* str)
+constexpr u64 string_hash_ascii_9(const StringView& str)
+{
+	u64 hash = 0;
+	for (u32 i = 0; i < str.count; i++)
+		hash = (hash << 7) | (u64)str.data[i];
+	return hash;
+}
+
+constexpr u64 hash_ascii_9(const char* str)
 {
 	u64 hash = 0;
 	for (u32 i = 0; i < 9 && str[i] != '\0'; i++)
 		hash = (hash << 7) | (u64)((u8)str[i]);
 	return hash;
 }
+
+bool os_file_read_all(const char* file_path, String* str);

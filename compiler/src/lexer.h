@@ -32,4 +32,5 @@ struct Lexer
 	LineInfo get_next_line();
 	LexemeType get_lexeme_type(u8 c);
 	void tokenize();
+	void print_debug_metrics();
 };

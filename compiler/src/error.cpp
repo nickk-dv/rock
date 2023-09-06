@@ -10,7 +10,7 @@ const char* lexerErrorMessages[] =
 
 const char* parserErrorMessages[] =
 {
-    "Test error."
+    "Test error.",
 };
 
 void error_report_token(Token token)

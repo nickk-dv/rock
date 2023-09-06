@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <time.h>
 
 String::~String()
 {
@@ -14,6 +15,22 @@ StringView::StringView(const String& str)
 	count = str.count;
 }
 
+Timer::Timer()
+{
+	start_time = clock();
+}
+
+float Timer::Ms()
+{
+	return Sec() * 1000.0f;
+}
+
+float Timer::Sec()
+{
+	long time = clock() - start_time;
+	return (float)time / CLOCKS_PER_SEC;
+}
+
 bool os_file_read_all(const char* file_path, String* str)
 {
 	FILE* file;
@@ -24,7 +41,7 @@ bool os_file_read_all(const char* file_path, String* str)
 	size_t file_size = (size_t)ftell(file);
 	fseek(file, 0, SEEK_SET);
 
-	if (file_size <= 0)
+	if (file_size == 0)
 	{
 		fclose(file);
 		return false;
@@ -46,17 +63,9 @@ bool os_file_read_all(const char* file_path, String* str)
 		free(buffer);
 		return false;
 	}
-
+	
 	str->data = (u8*)buffer;
 	str->count = file_size;
 
 	return true;
-}
-
-u64 string_hash_ascii_count_9(const StringView& str)
-{
-	u64 hash = 0;
-	for (u32 i = 0; i < str.count; i++)
-		hash = (hash << 7) | (u64)str.data[i];
-	return hash;
 }

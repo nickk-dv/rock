@@ -4,12 +4,8 @@
 #include "error.h"
 #include "token.h"
 
-#include <time.h> //@Performance timing
-
 void Parser::parse(const Lexer& lexer)
 {
-	clock_t start_clock = clock(); //@Performance timing
-
 	for (u64 i = 0; i < lexer.tokens.size(); )
 	{
 		const Token& token = lexer.tokens[i];
@@ -38,10 +34,4 @@ void Parser::parse(const Lexer& lexer)
 			}
 		}
 	}
-
-	clock_t time = clock() - start_clock; //@Performance
-	float time_ms = (float)time / CLOCKS_PER_SEC * 1000.0f;
-
-	printf("Parsing done.\n");
-	printf("Parser: Time           (Ms): %f \n", time_ms);
 }
