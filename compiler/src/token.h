@@ -93,3 +93,4 @@ struct Token //@Performance 32bytes is too much on large 1m line + files
 TokenType token_get_keyword_token_type(const StringView& str);
 TokenType token_get_1_symbol_token_type(u8 c);
 TokenType token_get_2_symbol_token_type(u8 c, u8 c2);
+void token_debug_print(const Token& token);

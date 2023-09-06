@@ -34,7 +34,7 @@ enum LexerErrorType
 struct LexerError
 {
 	LexerErrorType type;
-	u64 token_id;
+	Token token;
 };
 
 struct Lexer
@@ -47,7 +47,6 @@ struct Lexer
 	bool set_input_from_file(const char* file_path);
 	LineInfo get_next_line();
 	LexemeType get_lexeme_type(u8 c);
-	void report_error(LexerErrorType error);
+	void report_error(LexerErrorType error, Token token);
 	void tokenize();
-	TokenType get_token_type(u64 token_id);
 };

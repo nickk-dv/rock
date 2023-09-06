@@ -3,7 +3,6 @@
 #include "common.h"
 #include "token.h"
 
-#include <iostream> //@Debug for debug printing only
 #include <unordered_map>
 
 bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
@@ -69,10 +68,9 @@ LexemeType Lexer::get_lexeme_type(u8 c)
 	return LEXEME_ERROR;
 }
 
-void Lexer::report_error(LexerErrorType type)
+void Lexer::report_error(LexerErrorType type, Token token)
 {	
-	LexerError error = { type, tokens.size() };
-	errors.emplace_back(error);
+	errors.emplace_back(LexerError { type, token });
 }
 
 #include <time.h> //@Performance timing
@@ -162,8 +160,8 @@ void Lexer::tokenize()
 					token.string_value.data = input.data + lexeme_start;
 					token.string_value.count = lexeme_end - lexeme_start;
 
-					if (!terminated) report_error(LEXER_ERROR_STRING_NOT_TERMINATED);
-					//std::cout << "ERROR: Lexer: string literal was not terminated. line:" << current_line_number << "\n";
+					if (!terminated) 
+						report_error(LEXER_ERROR_STRING_NOT_TERMINATED, token);
 					
 					i = lexeme_end;
 					lexeme_end -= 1;
@@ -190,22 +188,12 @@ void Lexer::tokenize()
 				case LEXEME_ERROR:
 				{
 					i++;
-					//report_error(LEXER_ERROR_ILLEGAL_CHARACTER); //@Debug ignoring this due to testing
+					report_error(LEXER_ERROR_ILLEGAL_CHARACTER, token);
 				} break;
 			}
 
-			//@Debug printing token info
-			//std::cout << "Token:" << token.type << " line: " << token.l0 << " col: " << token.c0 << " ";
-			//if (token.type == TOKEN_STRING || token.type == TOKEN_IDENT)
-			//{
-			//	for (u64 k = 0; k < token.string_value.count; k++)
-			//	std::cout << (char)token.string_value.data[k];
-			//}
-			//std::cout << "\n";
-
-			//@Notice adding even error tokens in order to use them for lexical error report
 			if (token.type != TOKEN_ERROR)
-			tokens.emplace_back(token);
+				tokens.emplace_back(token);
 		}
 
 		//@Notice can be over MAX_LEXER_ERRORS due to being line limited check
@@ -219,18 +207,16 @@ void Lexer::tokenize()
 	clock_t time = clock() - start_clock; //@Performance
 	float time_ms = (float)time / CLOCKS_PER_SEC * 1000.0f;
 
-	//@Performance ~360-370ms | 7.211.540 tokens | 1m lines (initial timing only signed int numeric tokens)
-
 	printf("Lexing done.\n");
 	printf("Lexer: Time           (Ms): %f \n", time_ms);
-	printf("Lexer: LineCount:           %lu \n", current_line_number - 1);
+	printf("Lexer: LineCount:           %lu \n", current_line_number);
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());
 	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token)* tokens.size()) / (1024.0 * 1024.0));
-	printf("Lexer: MemoryUsed     (Mb): %f \n", double(sizeof(Token)* tokens.capacity()) / (1024.0 * 1024.0));
+	printf("Lexer: MemoryUsed     (Mb): %f \n\n", double(sizeof(Token)* tokens.capacity()) / (1024.0 * 1024.0));
 
 	for (u32 i = 0; i < errors.size(); i++)
 	{
-		Token token = tokens[errors[i].token_id];
+		Token token = errors[i].token;
 		printf("Error %lu %lu ", token.l0, token.c0);
 		switch (errors[i].type)
 		{
@@ -240,9 +226,4 @@ void Lexer::tokenize()
 	}
 
 	if (errors.size() > 0) printf("Lexer: ErrorCount %llu \n", errors.size());
-}
-
-TokenType Lexer::get_token_type(u64 token_id)
-{
-	return tokens[token_id].type;
 }

@@ -93,3 +93,19 @@ TokenType token_get_2_symbol_token_type(u8 c, u8 c2)
 	bool is_symbol = symbol_hash_to_token_type.find(hash) != symbol_hash_to_token_type.end();
 	return is_symbol ? symbol_hash_to_token_type.at(hash) : TOKEN_ERROR;
 }
+
+void token_debug_print(const Token& token)
+{
+	printf("Token: %i ", (int)token.type);
+	printf("line: %lu col: %lu ", token.l0, token.c0);
+	if (token.type == TOKEN_STRING || token.type == TOKEN_IDENT)
+	{
+		for (u64 k = 0; k < token.string_value.count; k++)
+		printf("%c", (char)token.string_value.data[k]);
+	}
+	else if (token.type <= TOKEN_IDENT)
+	{
+		printf("%c", (char)token.type);
+	}
+	printf("\n");
+}
