@@ -1,6 +1,8 @@
 #include "parser.h"
 
 #include "common.h"
+#include "error.h"
+#include "token.h"
 
 #include <time.h> //@Performance timing
 
@@ -31,7 +33,7 @@ void Parser::parse(const Lexer& lexer)
 			} break;
 			default:
 			{
-				token_debug_print(token);
+				error_report(PARSE_ERROR_TEST, token);
 				i++;
 			}
 		}

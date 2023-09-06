@@ -1,9 +1,8 @@
 #include "lexer.h"
 
 #include "common.h"
+#include "error.h"
 #include "token.h"
-
-#include <unordered_map>
 
 bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 bool is_number(u8 c) { return c >= '0' && c <= '9'; }
@@ -66,11 +65,6 @@ LexemeType Lexer::get_lexeme_type(u8 c)
 	if (is_first_of_string(c)) return LEXEME_STRING;
 	if (is_first_of_symbol(c)) return LEXEME_SYMBOL;
 	return LEXEME_ERROR;
-}
-
-void Lexer::report_error(LexerErrorType type, Token token)
-{	
-	errors.emplace_back(LexerError { type, token });
 }
 
 #include <time.h> //@Performance timing
@@ -161,7 +155,7 @@ void Lexer::tokenize()
 					token.string_value.count = lexeme_end - lexeme_start;
 
 					if (!terminated) 
-						report_error(LEXER_ERROR_STRING_NOT_TERMINATED, token);
+						error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
 					
 					i = lexeme_end;
 					lexeme_end -= 1;
@@ -188,16 +182,13 @@ void Lexer::tokenize()
 				case LEXEME_ERROR:
 				{
 					i++;
-					report_error(LEXER_ERROR_ILLEGAL_CHARACTER, token);
+					error_report(LEXER_ERROR_INVALID_CHARACTER, token);
 				} break;
 			}
 
 			if (token.type != TOKEN_ERROR)
 				tokens.emplace_back(token);
 		}
-
-		//@Notice can be over MAX_LEXER_ERRORS due to being line limited check
-		if (errors.size() >= MAX_LEXER_ERRORS) break;
 	}
 
 	Token token_end = {};
@@ -213,17 +204,4 @@ void Lexer::tokenize()
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());
 	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token)* tokens.size()) / (1024.0 * 1024.0));
 	printf("Lexer: MemoryUsed     (Mb): %f \n\n", double(sizeof(Token)* tokens.capacity()) / (1024.0 * 1024.0));
-
-	for (u32 i = 0; i < errors.size(); i++)
-	{
-		Token token = errors[i].token;
-		printf("Error %lu %lu ", token.l0, token.c0);
-		switch (errors[i].type)
-		{
-			case LEXER_ERROR_STRING_NOT_TERMINATED: printf("LEXER_ERROR_STRING_NOT_TERMINATED \n"); break;
-			case LEXER_ERROR_ILLEGAL_CHARACTER:     printf("LEXER_ERROR_ILLEGAL_CHARACTER \n"); break;
-		}
-	}
-
-	if (errors.size() > 0) printf("Lexer: ErrorCount %llu \n", errors.size());
 }

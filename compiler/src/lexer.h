@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common.h"
 #include "token.h"
 
 #include <vector>
@@ -23,30 +22,14 @@ enum LexemeType
 	LEXEME_ERROR
 };
 
-constexpr u32 MAX_LEXER_ERRORS = 100;
-
-enum LexerErrorType
-{
-	LEXER_ERROR_STRING_NOT_TERMINATED,
-	LEXER_ERROR_ILLEGAL_CHARACTER,
-};
-
-struct LexerError
-{
-	LexerErrorType type;
-	Token token;
-};
-
 struct Lexer
 {
 	String input;
 	u64 input_cursor = 0;
 	std::vector<Token> tokens;
-	std::vector<LexerError> errors;
 
 	bool set_input_from_file(const char* file_path);
 	LineInfo get_next_line();
 	LexemeType get_lexeme_type(u8 c);
-	void report_error(LexerErrorType error, Token token);
 	void tokenize();
 };

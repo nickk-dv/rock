@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vector>
-
 #include "lexer.h"
 
 struct Parser
