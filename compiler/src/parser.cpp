@@ -32,6 +32,7 @@ struct EnumInfo
 struct FunctionInfo
 {
 	Token name_ident;
+	size_t block_start_token_index;
 	std::optional<Token> return_type;
 	std::vector<ParameterInfo> parameters;
 };
@@ -114,6 +115,43 @@ void debug_print_definitions()
 }
 //@Notice: see above message
 
+enum BinaryOp
+{
+	BINARY_OP_ASSIGN,
+	BINARY_OP_PLUS,
+	BINARY_OP_MINUS,
+	BINARY_OP_TIMES,
+	BINARY_OP_DIV,
+	BINARY_OP_MOD,
+	BINARY_OP_BITWISE_AND,
+	BINARY_OP_BITWISE_OR,
+	BINARY_OP_BITWISE_XOR,
+	BINARY_OP_PLUS_EQUALS,
+	BINARY_OP_MINUS_EQUALS,
+	BINARY_OP_TIMES_EQUALS,
+	BINARY_OP_DIV_EQUALS,
+	BINARY_OP_MOD_EQUALS,
+	BINARY_OP_BITWISE_AND_EQUALS,
+	BINARY_OP_BITWISE_OR_EQUALS,
+	BINARY_OP_BITWISE_XOR_EQUALS,
+	BINARY_OP_BITSHIFT_LEFT,
+	BINARY_OP_BITSHIFT_RIGHT,
+	BINARY_OP_LESS,
+	BINARY_OP_GREATER,
+	BINARY_OP_LESS_EQUALS,
+	BINARY_OP_GREATER_EQUALS,
+	BINARY_OP_IS_EQUAL,
+	BINARY_OP_NOT_EQUAL,
+	BINARY_OP_LOGIC_AND,
+	BINARY_OP_LOGIC_OR
+};
+
+enum UnaryOp
+{
+	UNARY_OP_BITWISE_NOT,
+	UNARY_OP_LOGIC_NOT,
+};
+
 Parser::Parser(std::vector<Token> tokens) 
 	: m_tokens(std::move(tokens)), 
 	  m_arena(1024 * 1024 * 4) {}
@@ -129,7 +167,7 @@ void Parser::parse_struct()
 	info.type_ident = token_struct_type.value();
 
 	auto token_scope_start = peek(); // {
-	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
+	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
 		exit_error();
 	consume();
 
@@ -160,7 +198,7 @@ void Parser::parse_struct()
 	}
 
 	auto token_scope_end = peek(); // }
-	if (!token_scope_end || token_scope_end.value().type != TOKEN_SCOPE_END)
+	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
 		exit_error();
 	consume();
 
@@ -178,7 +216,7 @@ void Parser::parse_enum()
 	info.type_ident = token_enum_type.value();
 
 	auto token_scope_start = peek(); // {
-	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
+	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
 		exit_error();
 	consume();
 
@@ -198,7 +236,7 @@ void Parser::parse_enum()
 	}
 
 	auto token_scope_end = peek(); // }
-	if (!token_scope_end || token_scope_end.value().type != TOKEN_SCOPE_END)
+	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
 		exit_error();
 	consume();
 
@@ -264,8 +302,9 @@ void Parser::parse_fn()
 	}
 
 	auto token_scope_start = peek(); // {
-	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
+	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
 		exit_error();
+	info.block_start_token_index = m_index;
 	consume();
 
 	definitions_fn.emplace_back(info);
