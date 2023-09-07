@@ -13,6 +13,18 @@ const char* parserErrorMessages[] =
     "Test error.",
 };
 
+void error_report(LexerError error, Token token)
+{
+    printf(lexerErrorMessages[error]);
+	error_report_token(token);
+}
+
+void error_report(ParseError error, Token token)
+{
+    printf(parserErrorMessages[error]);
+	error_report_token(token);
+}
+
 void error_report_token(Token token)
 {
 	printf("Token: %i ", (int)token.type);
@@ -30,14 +42,15 @@ void error_report_token(Token token)
 	printf("\n");
 }
 
-void error_report(LexerError error, Token token)
+void error_report_token_ident(Token token)
 {
-    printf(lexerErrorMessages[error]);
-	error_report_token(token);
-}
-
-void error_report(ParseError error, Token token)
-{
-    printf(parserErrorMessages[error]);
-	error_report_token(token);
+	if (token.type == TOKEN_IDENT)
+	{
+		for (u64 k = 0; k < token.string_value.count; k++)
+			printf("%c", (char)token.string_value.data[k]);
+	}
+	else 
+	{
+		printf("TOKEN IS NOT AN IDENTIFIER!");
+	}
 }

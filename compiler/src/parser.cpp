@@ -4,6 +4,116 @@
 #include "error.h"
 #include "token.h"
 
+//@Notice: this is temporary prototype representation of types and function declarations
+//proper symbol table management will need to be compared to performance of this approach on bigger programs 
+struct ParameterInfo
+{
+	Token name_ident;
+	Token type_ident;
+};
+
+struct StructInfo
+{
+	Token type_ident;
+	std::vector<ParameterInfo> fields;
+};
+
+struct VariantInfo
+{
+	Token name_ident;
+};
+
+struct EnumInfo
+{
+	Token type_ident;
+	std::vector<VariantInfo> variants;
+};
+
+struct FunctionInfo
+{
+	Token name_ident;
+	std::optional<Token> return_type;
+	std::vector<ParameterInfo> parameters;
+};
+
+static std::vector<StructInfo> definitions_struct;
+static std::vector<EnumInfo> definitions_enum;
+static std::vector<FunctionInfo> definitions_fn;
+
+void debug_print_tab()
+{
+	printf("   ");
+}
+
+void debug_print_parameter(const ParameterInfo& parameter, bool tab = true, bool newline = true)
+{
+	if (tab) debug_print_tab();
+	error_report_token_ident(parameter.name_ident);
+	printf(": ");
+	error_report_token_ident(parameter.type_ident);
+	if (newline) printf(",\n");
+}
+
+void debug_print_variant(const VariantInfo& variant, bool tab = true)
+{
+	if (tab) debug_print_tab();
+	error_report_token_ident(variant.name_ident);
+	printf(",\n");
+}
+
+void debug_print_definitions()
+{
+	printf("[STRUCTS]\n\n");
+	for (const StructInfo& def : definitions_struct)
+	{
+		printf("struct ");
+		error_report_token_ident(def.type_ident);
+		printf("\n{\n");
+
+		for (const ParameterInfo& parameter : def.fields)
+			debug_print_parameter(parameter);
+		printf("}\n\n");
+	}
+
+	printf("[ENUMS]\n\n");
+	for (const EnumInfo& def : definitions_enum)
+	{
+		printf("enum ");
+		error_report_token_ident(def.type_ident);
+		printf("\n{\n");
+		
+		for (const VariantInfo& variant : def.variants)
+			debug_print_variant(variant);
+		printf("}\n\n");
+	}
+
+	printf("[FUNCTIONS]\n\n");
+	for (const FunctionInfo& def : definitions_fn)
+	{
+		printf("fn ");
+		error_report_token_ident(def.name_ident);
+
+		printf("(");
+		size_t size = def.parameters.size();
+		size_t counter = 0;
+		for (const ParameterInfo& parameter : def.parameters)
+		{
+			debug_print_parameter(parameter, false, false);
+			counter += 1;
+			if (counter != size) printf(", ");
+		}
+		printf(")");
+
+		if (def.return_type)
+		{
+			printf(" -> "); 
+			error_report_token_ident(def.return_type.value());
+		}
+		printf("\n\n");
+	}
+}
+//@Notice: see above message
+
 Parser::Parser(std::vector<Token> tokens) 
 	: m_tokens(std::move(tokens)), 
 	  m_arena(1024 * 1024 * 4) {}
@@ -14,6 +124,9 @@ void Parser::parse_struct()
 	if (!token_struct_type || token_struct_type.value().type != TOKEN_IDENT)
 		exit_error();
 	consume();
+
+	StructInfo info = {};
+	info.type_ident = token_struct_type.value();
 
 	auto token_scope_start = peek(); // {
 	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
@@ -27,6 +140,7 @@ void Parser::parse_struct()
 			break; // No more fields
 		else consume();
 
+
 		auto token_colon = peek(); // :
 		if (!token_colon || token_colon.value().type != TOKEN_COLON)
 			exit_error();
@@ -36,6 +150,8 @@ void Parser::parse_struct()
 		if (!token_field_type || token_field_type.value().type != TOKEN_IDENT)
 			exit_error();
 		consume();
+
+		info.fields.emplace_back(ParameterInfo { token_field.value(), token_field_type.value() });
 
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
@@ -47,6 +163,8 @@ void Parser::parse_struct()
 	if (!token_scope_end || token_scope_end.value().type != TOKEN_SCOPE_END)
 		exit_error();
 	consume();
+
+	definitions_struct.emplace_back(info);
 }
 
 void Parser::parse_enum()
@@ -55,6 +173,9 @@ void Parser::parse_enum()
 	if (!token_enum_type || token_enum_type.value().type != TOKEN_IDENT)
 		exit_error();
 	consume();
+
+	EnumInfo info = {};
+	info.type_ident = token_enum_type.value();
 
 	auto token_scope_start = peek(); // {
 	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
@@ -68,6 +189,8 @@ void Parser::parse_enum()
 			break; // No more variants
 		else consume();
 
+		info.variants.emplace_back(VariantInfo { token_variant.value() });
+
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
 			consume();
@@ -78,6 +201,8 @@ void Parser::parse_enum()
 	if (!token_scope_end || token_scope_end.value().type != TOKEN_SCOPE_END)
 		exit_error();
 	consume();
+
+	definitions_enum.emplace_back(info);
 }
 
 void Parser::parse_fn()
@@ -86,6 +211,9 @@ void Parser::parse_fn()
 	if (!token_name || token_name.value().type != TOKEN_IDENT)
 		exit_error();
 	consume();
+
+	FunctionInfo info = {};
+	info.name_ident = token_name.value();
 
 	auto token_paren_start = peek(); // (
 	if (!token_paren_start || token_paren_start.value().type != TOKEN_PARENTHESIS_START)
@@ -109,6 +237,8 @@ void Parser::parse_fn()
 			exit_error();
 		consume();
 
+		info.parameters.emplace_back(ParameterInfo { token_param.value(), token_param_type.value() });
+
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
 			consume();
@@ -129,12 +259,16 @@ void Parser::parse_fn()
 		if (!token_return_type || token_return_type.value().type != TOKEN_IDENT)
 			exit_error();
 		consume();
+
+		info.return_type = token_return_type.value();
 	}
 
 	auto token_scope_start = peek(); // {
 	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
 		exit_error();
 	consume();
+
+	definitions_fn.emplace_back(info);
 }
 
 void Parser::parse()
@@ -151,6 +285,9 @@ void Parser::parse()
 			case TOKEN_KEYWORD_FN: parse_fn(); break;
 		}
 	}
+
+	//@Debug printing
+	debug_print_definitions();
 }
 
 std::optional<Token> Parser::peek(u32 offset)
