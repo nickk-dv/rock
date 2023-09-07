@@ -25,7 +25,7 @@ void Parser::parse_struct()
 		auto token_field = peek(); // field
 		if (!token_field || token_field.value().type != TOKEN_IDENT)
 			break; // No more fields
-		consume();
+		else consume();
 
 		auto token_colon = peek(); // :
 		if (!token_colon || token_colon.value().type != TOKEN_COLON)
@@ -63,11 +63,10 @@ void Parser::parse_enum()
 
 	while (true)
 	{
-		// Variant:
 		auto token_variant = peek(); // variant
 		if (!token_variant || token_variant.value().type != TOKEN_IDENT)
 			break; // No more variants
-		consume();
+		else consume();
 
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
@@ -83,7 +82,59 @@ void Parser::parse_enum()
 
 void Parser::parse_fn()
 {
-	
+	auto token_name = peek(); // name
+	if (!token_name || token_name.value().type != TOKEN_IDENT)
+		exit_error();
+	consume();
+
+	auto token_paren_start = peek(); // (
+	if (!token_paren_start || token_paren_start.value().type != TOKEN_PARENTHESIS_START)
+		exit_error();
+	consume();
+
+	while (true)
+	{
+		auto token_param = peek(); // param
+		if (!token_param || token_param.value().type != TOKEN_IDENT)
+			break; // No more params
+		else consume();
+
+		auto token_colon = peek(); // :
+		if (!token_colon || token_colon.value().type != TOKEN_COLON)
+			exit_error();
+		consume();
+
+		auto token_param_type = peek(); // Type
+		if (!token_param_type || token_param_type.value().type != TOKEN_IDENT)
+			exit_error();
+		consume();
+
+		auto token_coma = peek(); // ,
+		if (token_coma && token_coma.value().type == TOKEN_COMA)
+			consume();
+		else break; // No more params
+	}
+
+	auto token_paren_end = peek(); // )
+	if (!token_paren_end || token_paren_end.value().type != TOKEN_PARENTHESIS_END)
+		exit_error();
+	consume();
+
+	auto token_arrow = peek(); // ->
+	if (token_arrow && token_arrow.value().type == TOKEN_ARROW)
+	{
+		consume();
+
+		auto token_return_type = peek(); // Type
+		if (!token_return_type || token_return_type.value().type != TOKEN_IDENT)
+			exit_error();
+		consume();
+	}
+
+	auto token_scope_start = peek(); // {
+	if (!token_scope_start || token_scope_start.value().type != TOKEN_SCOPE_START)
+		exit_error();
+	consume();
 }
 
 void Parser::parse()

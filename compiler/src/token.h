@@ -53,6 +53,7 @@ enum TokenType
 
 	TOKEN_SHIFT_LEFT,         // <<
 	TOKEN_SHIFT_RIGHT,        // >>
+	TOKEN_ARROW,              // ->
 	TOKEN_DOUBLE_COLON,       // ::
 
 	TOKEN_KEYWORD_IF,         // if

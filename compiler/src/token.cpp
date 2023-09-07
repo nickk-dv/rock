@@ -71,6 +71,7 @@ const std::unordered_map<u64, TokenType> symbol_hash_to_token_type =
 	{ hash_ascii_9("<<"), TOKEN_SHIFT_LEFT },
 	{ hash_ascii_9(">>"), TOKEN_SHIFT_RIGHT },
 	{ hash_ascii_9("::"), TOKEN_DOUBLE_COLON },
+	{ hash_ascii_9("->"), TOKEN_ARROW },
 };
 
 TokenType token_get_keyword_token_type(const StringView& str)
