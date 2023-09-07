@@ -31,6 +31,18 @@ float Timer::Sec()
 	return (float)time / CLOCKS_PER_SEC;
 }
 
+ArenaAllocator::ArenaAllocator(size_t size)
+{
+	m_size = size;
+	m_offset = 0;
+	m_buffer = malloc(size);
+}
+
+ArenaAllocator::~ArenaAllocator()
+{
+	free(m_buffer);
+}
+
 bool os_file_read_all(const char* file_path, String* str)
 {
 	FILE* file;

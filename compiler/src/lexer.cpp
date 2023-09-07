@@ -67,8 +67,10 @@ LexemeType Lexer::get_lexeme_type(u8 c)
 	return LEXEME_ERROR;
 }
 
-void Lexer::tokenize()
+std::vector<Token> Lexer::tokenize()
 {
+	std::vector<Token> tokens;
+
 	LineInfo line = {};
 	u32 current_line_number = 0;
 
@@ -189,9 +191,11 @@ void Lexer::tokenize()
 	Token token_end = {};
 	token_end.type = TOKEN_INPUT_END;
 	tokens.emplace_back(token_end);
+
+	return tokens;
 }
 
-void Lexer::print_debug_metrics()
+void Lexer::print_debug_metrics(const std::vector<Token>& tokens)
 {
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());
 	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));

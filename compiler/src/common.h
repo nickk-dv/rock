@@ -30,6 +30,29 @@ struct Timer
 	long start_time;
 };
 
+class ArenaAllocator
+{
+public:
+	ArenaAllocator(size_t size);
+	~ArenaAllocator();
+
+	inline ArenaAllocator(const ArenaAllocator& other) = delete;
+	inline ArenaAllocator operator=(const ArenaAllocator& other) = delete;
+
+	template <typename T>
+	T* alloc()
+	{
+		void* offset = m_offset;
+		m_offset += sizeof(T);
+		return (T*)offset;
+	}
+
+private:
+	size_t m_size;
+	size_t m_offset;
+	void* m_buffer;
+};
+
 constexpr u64 string_hash_ascii_9(const StringView& str)
 {
 	u64 hash = 0;

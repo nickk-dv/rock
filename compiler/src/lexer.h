@@ -24,13 +24,12 @@ enum LexemeType
 
 struct Lexer
 {
-	String input;
-	u64 input_cursor = 0;
-	std::vector<Token> tokens;
-
 	bool set_input_from_file(const char* file_path);
 	LineInfo get_next_line();
 	LexemeType get_lexeme_type(u8 c);
-	void tokenize();
-	void print_debug_metrics();
+	std::vector<Token> tokenize();
+	void print_debug_metrics(const std::vector<Token>& tokens);
+
+	String input;
+	u64 input_cursor = 0;
 };
