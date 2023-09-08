@@ -4,7 +4,6 @@
 
 #include <unordered_map>
 
-//@Performance experiment with unified hash map for keywords and symbols benchmark
 const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
 	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },

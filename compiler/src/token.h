@@ -74,7 +74,7 @@ enum TokenType
 	TOKEN_ERROR,
 };
 
-struct Token //@Performance look for more memory dense token representation
+struct Token
 {
 	TokenType type = TOKEN_ERROR;
 	u32 l0 = 0;
@@ -82,7 +82,6 @@ struct Token //@Performance look for more memory dense token representation
 
 	union
 	{
-		float float32_value;
 		double float64_value;
 		u64 integer_value;
 		StringView string_value;

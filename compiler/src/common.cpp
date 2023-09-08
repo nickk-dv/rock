@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 #include <cstdio>
-#include <chrono>
+#include <time.h>
 
 String::~String()
 {

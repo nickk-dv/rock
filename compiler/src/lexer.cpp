@@ -129,14 +129,20 @@ std::vector<Token> Lexer::tokenize()
 				} break;
 				case LEXEME_NUMBER:
 				{
+					u64 integer = fc - '0';
+
 					while (lexeme_end <= line.end_cursor)
 					{
 						u8 c = input.data[lexeme_end];
 						if (!is_number(c)) break;
 						lexeme_end += 1;
+
+						integer *= 10;
+						integer += c - '0';
 					}
 
 					token.type = TOKEN_NUMBER;
+					token.integer_value = integer;
 
 					i = lexeme_end;
 					lexeme_end -= 1;

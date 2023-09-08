@@ -8,7 +8,7 @@ int main()
 {
 	Lexer lexer = {};
 
-	if (!lexer.set_input_from_file("test_perf.txt")) 
+	if (!lexer.set_input_from_file("test.txt")) 
 		exit(EXIT_FAILURE);
 
 	typedef std::chrono::high_resolution_clock Clock;
@@ -19,10 +19,10 @@ int main()
 	std::cout << "ms: " << ns.count() / 1000000.0f << '\n';
 	lexer.print_debug_metrics(tokens);
 
-	//Timer parseTimer;
-	//Parser parser(std::move(tokens));
-	//parser.parse();
-	//printf("Parse time (ms): %f\n", parseTimer.Ms());
+	Timer parseTimer;
+	Parser parser(std::move(tokens));
+	parser.parse();
+	printf("Parse time (ms): %f\n", parseTimer.Ms());
 
 	return 0;
 }
