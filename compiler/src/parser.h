@@ -14,6 +14,7 @@ struct Parser
 	void parse_enum();
 	void parse_fn();
 	std::optional<Token> peek(u32 offset = 0);
+	void seek(size_t index);
 	void consume();
 	void exit_error();
 

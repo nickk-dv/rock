@@ -17,6 +17,7 @@ enum TokenType
 	TOKEN_KEYWORD_ELSE,       // else
 	TOKEN_KEYWORD_TRUE,       // true
 	TOKEN_KEYWORD_FALSE,      // false
+	TOKEN_KEYWORD_LET,        // let
 	TOKEN_KEYWORD_FOR,        // for
 	TOKEN_KEYWORD_WHILE,      // while
 	TOKEN_KEYWORD_BREAK,      // break

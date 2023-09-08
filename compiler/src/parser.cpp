@@ -152,6 +152,18 @@ enum UnaryOp
 	UNARY_OP_LOGIC_NOT,
 };
 
+struct NodeTerm
+{
+	Token number_literal;
+};
+
+struct NodeVariableDeclaration
+{
+	Token ident;
+	Token type;
+	NodeTerm term;
+};
+
 Parser::Parser(std::vector<Token> tokens) 
 	: m_tokens(std::move(tokens)), 
 	  m_arena(1024 * 1024 * 4) {}
@@ -327,12 +339,91 @@ void Parser::parse()
 
 	//@Debug printing
 	debug_print_definitions();
+	
+	for (const FunctionInfo& fn : definitions_fn)
+	{
+		seek(fn.block_start_token_index);
+		consume();
+
+		auto token_scope_end = peek(); // }
+		if (token_scope_end && token_scope_end.value().type == TOKEN_BLOCK_END)
+			continue;
+
+		//fn body:
+		auto token_statement_intro = peek();
+
+		if (token_statement_intro)
+		switch(token_statement_intro.value().type)
+		{
+			case TOKEN_KEYWORD_LET:
+			{
+				consume();
+
+				auto token_variable_ident = peek(); // ident
+				if (!token_variable_ident || token_variable_ident.value().type != TOKEN_IDENT)
+					exit_error();
+				consume();
+
+				auto token_colon = peek(); // :
+				if (!token_colon || token_colon.value().type != TOKEN_COLON)
+					exit_error();
+				consume();
+			
+				auto token_variable_type = peek(); // Type
+				if (!token_variable_type || token_variable_type.value().type != TOKEN_IDENT)
+					exit_error();
+				consume();
+
+				NodeVariableDeclaration declaration = {};
+				declaration.ident = token_variable_ident.value();
+				declaration.type = token_variable_type.value();
+			
+
+				auto token_semi_default_init = peek(); // ;
+				if (token_semi_default_init && token_semi_default_init.value().type == TOKEN_SEMICOLON)
+				{
+					//@Debug
+					error_report_token(declaration.ident);
+					printf("Debug parsed variable: with default init\n");
+
+					consume();
+					break;
+				}
+
+				auto token_assign = peek(); // =
+				if (!token_assign || token_assign.value().type != TOKEN_ASSIGN)
+					exit_error();
+				consume();
+
+				auto token_number = peek(); // number term @Notice using a number literal instead of expression chain
+				if (!token_number || token_number.value().type != TOKEN_NUMBER)
+					exit_error();
+				consume();
+
+				declaration.term.number_literal = token_number.value();
+
+				auto token_semi = peek(); // ;
+				if (!token_semi || token_semi.value().type != TOKEN_SEMICOLON)
+					exit_error();
+				consume();
+
+				//@Debug
+				error_report_token(declaration.ident);
+				printf("Debug parsed variable: with value %llu \n", declaration.term.number_literal.integer_value);
+			} break;
+		}
+	}
 }
 
 std::optional<Token> Parser::peek(u32 offset)
 {
 	if (m_index + offset >= m_tokens.size()) return {};
 	else return m_tokens[m_index + offset];
+}
+
+void Parser::seek(size_t index)
+{
+	m_index = index;
 }
 
 void Parser::consume()
