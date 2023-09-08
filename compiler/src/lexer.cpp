@@ -70,6 +70,8 @@ LexemeType Lexer::get_lexeme_type(u8 c)
 std::vector<Token> Lexer::tokenize()
 {
 	std::vector<Token> tokens;
+	//@Performance testing pre allocation of vector
+	tokens.reserve(770000);
 
 	LineInfo line = {};
 	u32 current_line_number = 0;
@@ -153,7 +155,7 @@ std::vector<Token> Lexer::tokenize()
 
 					if (!terminated)
 					{
-						error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
+						//error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
 						token.type = TOKEN_ERROR;
 					}
 				} break;
@@ -179,7 +181,7 @@ std::vector<Token> Lexer::tokenize()
 				case LEXEME_ERROR:
 				{
 					i++;
-					error_report(LEXER_ERROR_INVALID_CHARACTER, token);
+					//error_report(LEXER_ERROR_INVALID_CHARACTER, token); @Error handling disabled single char errors
 				} break;
 			}
 
@@ -197,7 +199,46 @@ std::vector<Token> Lexer::tokenize()
 
 void Lexer::print_debug_metrics(const std::vector<Token>& tokens)
 {
+	u64 ident_count = 0;
+	u64 number_count = 0;
+	u64 string_count = 0;
+	u64 keyword_count = 0;
+	u64 symbol_count = 0;
+
+	for (const Token& token : tokens)
+	{
+		if (token.type == TOKEN_IDENT) ident_count += 1;
+		else if (token.type == TOKEN_NUMBER) number_count += 1;
+		else if (token.type == TOKEN_STRING) string_count += 1;
+		else if (token.type >= TOKEN_KEYWORD_STRUCT && token.type <= TOKEN_KEYWORD_CONTINUE) keyword_count += 1;
+		else symbol_count += 1;
+	}
+
+	/*
+	//~47-49 ms 766k tokens 23/32 mb
+	Lexer time(ms) : 49.000000
+	Lexer : TokenCount :     766174
+	Lexer : TokenTypesSum :  766174
+
+	Lexer : [IdentCount] :   347752
+	Lexer : [NumberCount] :  2878
+	Lexer : [StringCount] :  5858
+	Lexer : [KeywordCount] : 19701
+	Lexer : [SymbolCount] :  389985
+
+	Lexer : MemoryRequired(Mb) : 23.381775
+	Lexer : MemoryUsed(Mb) : 32.039459
+
+	//~27-28 ms memory preallocation
+	*/
+
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());
+	printf("Lexer: TokenTypesSum:       %llu \n", ident_count + number_count + string_count + keyword_count + symbol_count);
+	printf("Lexer: [IdentCount]:        %llu \n", ident_count);
+	printf("Lexer: [NumberCount]:       %llu \n", number_count);
+	printf("Lexer: [StringCount]:       %llu \n", string_count);
+	printf("Lexer: [KeywordCount]:      %llu \n", keyword_count);
+	printf("Lexer: [SymbolCount]:       %llu \n", symbol_count);
 	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));
 	printf("Lexer: MemoryUsed     (Mb): %f \n\n", double(sizeof(Token) * tokens.capacity()) / (1024.0 * 1024.0));
 }
