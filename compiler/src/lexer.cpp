@@ -76,6 +76,12 @@ std::vector<Token> Lexer::tokenize()
 	LineInfo line = {};
 	u32 current_line_number = 0;
 
+	LexemeType lexeme_types[128] = {};
+	for (u8 i = 0; i < 128; i++)
+	{
+		lexeme_types[i] = get_lexeme_type(i);
+	}
+
 	while (line.is_valid)
 	{
 		line = get_next_line();
@@ -92,7 +98,7 @@ std::vector<Token> Lexer::tokenize()
 				continue;
 			}
 
-			LexemeType type = get_lexeme_type(fc);
+			LexemeType type = fc < 128 ? lexeme_types[fc] : LEXEME_ERROR; 
 			u64 lexeme_start = i;
 			u64 lexeme_end = i + 1;
 
@@ -215,7 +221,6 @@ void Lexer::print_debug_metrics(const std::vector<Token>& tokens)
 	}
 
 	/*
-	//~47-49 ms 766k tokens 23/32 mb
 	Lexer time(ms) : 49.000000
 	Lexer : TokenCount :     766174
 	Lexer : TokenTypesSum :  766174
@@ -230,6 +235,7 @@ void Lexer::print_debug_metrics(const std::vector<Token>& tokens)
 	Lexer : MemoryUsed(Mb) : 32.039459
 
 	//~27-28 ms memory preallocation
+	// 25.7 ms lexeme lookup, keyword.count > 8
 	*/
 
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());

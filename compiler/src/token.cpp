@@ -70,7 +70,7 @@ const std::unordered_map<u64, TokenType> symbol_hash_to_token_type =
 
 TokenType token_get_keyword_token_type(const StringView& str)
 {
-	if (str.count > 9) return TOKEN_ERROR;
+	if (str.count > 8) return TOKEN_ERROR;
 	u64 hash = string_hash_ascii_9(str);
 	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
 	return is_keyword ? keyword_hash_to_token_type.at(hash) : TOKEN_ERROR;
