@@ -164,6 +164,11 @@ struct NodeVariableDeclaration
 	NodeTerm term;
 };
 
+struct NodeReturn
+{
+	NodeTerm term;
+};
+
 Parser::Parser(std::vector<Token> tokens) 
 	: m_tokens(std::move(tokens)), 
 	  m_arena(1024 * 1024 * 4) {}
@@ -342,6 +347,10 @@ void Parser::parse()
 	
 	for (const FunctionInfo& fn : definitions_fn)
 	{
+		printf("function:");
+		error_report_token_ident(fn.name_ident);
+		printf("\n");
+
 		seek(fn.block_start_token_index);
 		consume();
 
@@ -349,69 +358,89 @@ void Parser::parse()
 		if (token_scope_end && token_scope_end.value().type == TOKEN_BLOCK_END)
 			continue;
 
-		//fn body:
-		auto token_statement_intro = peek();
-
-		if (token_statement_intro)
-		switch(token_statement_intro.value().type)
+		//@Notice this is temporary, assuming no nested blocks to parse all inner statements of the fn
+		while(peek().has_value() && peek().value().type != TOKEN_BLOCK_END)
 		{
-			case TOKEN_KEYWORD_LET:
+			auto token_statement_intro = peek();
+			consume();
+
+			if (token_statement_intro)
+			switch(token_statement_intro.value().type)
 			{
-				consume();
-
-				auto token_variable_ident = peek(); // ident
-				if (!token_variable_ident || token_variable_ident.value().type != TOKEN_IDENT)
-					exit_error();
-				consume();
-
-				auto token_colon = peek(); // :
-				if (!token_colon || token_colon.value().type != TOKEN_COLON)
-					exit_error();
-				consume();
-			
-				auto token_variable_type = peek(); // Type
-				if (!token_variable_type || token_variable_type.value().type != TOKEN_IDENT)
-					exit_error();
-				consume();
-
-				NodeVariableDeclaration declaration = {};
-				declaration.ident = token_variable_ident.value();
-				declaration.type = token_variable_type.value();
-			
-
-				auto token_semi_default_init = peek(); // ;
-				if (token_semi_default_init && token_semi_default_init.value().type == TOKEN_SEMICOLON)
+				case TOKEN_KEYWORD_LET:
 				{
+					auto token_variable_ident = peek(); // ident
+					if (!token_variable_ident || token_variable_ident.value().type != TOKEN_IDENT)
+						exit_error();
+					consume();
+
+					auto token_colon = peek(); // :
+					if (!token_colon || token_colon.value().type != TOKEN_COLON)
+						exit_error();
+					consume();
+			
+					auto token_variable_type = peek(); // Type
+					if (!token_variable_type || token_variable_type.value().type != TOKEN_IDENT)
+						exit_error();
+					consume();
+
+					NodeVariableDeclaration declaration = {};
+					declaration.ident = token_variable_ident.value();
+					declaration.type = token_variable_type.value();
+
+					auto token_semi_default_init = peek(); // ;
+					if (token_semi_default_init && token_semi_default_init.value().type == TOKEN_SEMICOLON)
+					{
+						//@Debug
+						error_report_token(declaration.ident);
+						printf("Debug parsed variable: with default init\n");
+
+						consume();
+						break;
+					}
+
+					auto token_assign = peek(); // =
+					if (!token_assign || token_assign.value().type != TOKEN_ASSIGN)
+						exit_error();
+					consume();
+
+					auto token_number = peek(); // number term @Notice using a number literal instead of expression chain
+					if (!token_number || token_number.value().type != TOKEN_NUMBER)
+						exit_error();
+					consume();
+
+					declaration.term.number_literal = token_number.value();
+
+					auto token_semi = peek(); // ;
+					if (!token_semi || token_semi.value().type != TOKEN_SEMICOLON)
+						exit_error();
+					consume();
+
 					//@Debug
 					error_report_token(declaration.ident);
-					printf("Debug parsed variable: with default init\n");
+					printf("Debug parsed variable: with value %llu \n", declaration.term.number_literal.integer_value);
+				} break;
+				case TOKEN_KEYWORD_RETURN:
+				{
+					printf("Debug parsed return \n");
 
+					auto token_number = peek(); // number term @Notice using a number literal instead of expression chain
+					if (!token_number || token_number.value().type != TOKEN_NUMBER)
+						exit_error();
 					consume();
-					break;
-				}
 
-				auto token_assign = peek(); // =
-				if (!token_assign || token_assign.value().type != TOKEN_ASSIGN)
-					exit_error();
-				consume();
+					NodeReturn fn_return = {};
+					fn_return.term.number_literal = token_number.value();
 
-				auto token_number = peek(); // number term @Notice using a number literal instead of expression chain
-				if (!token_number || token_number.value().type != TOKEN_NUMBER)
-					exit_error();
-				consume();
-
-				declaration.term.number_literal = token_number.value();
-
-				auto token_semi = peek(); // ;
-				if (!token_semi || token_semi.value().type != TOKEN_SEMICOLON)
-					exit_error();
-				consume();
-
-				//@Debug
-				error_report_token(declaration.ident);
-				printf("Debug parsed variable: with value %llu \n", declaration.term.number_literal.integer_value);
-			} break;
+					auto token_semi = peek(); // ;
+					if (!token_semi || token_semi.value().type != TOKEN_SEMICOLON)
+						exit_error();
+					consume();
+				} break;
+			}
 		}
+
+		printf("\n");
 	}
 }
 
@@ -433,6 +462,6 @@ void Parser::consume()
 
 void Parser::exit_error()
 {
-	error_report(PARSE_ERROR_TEST, {});
+	error_report(PARSE_ERROR_TEST, peek().value_or(Token {}));
 	exit(EXIT_FAILURE);
 }
