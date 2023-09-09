@@ -17,7 +17,6 @@ struct Parser
 
 	Ast_Block* parse_block();
 	Ast_Statement* parse_statement();
-
 	Ast_If* parse_if();
 	Ast_For* parse_for();
 	Ast_While* parse_while();
@@ -31,7 +30,6 @@ struct Parser
 	std::optional<Token> peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
 	void consume();
-	void exit_error();
 
 	const std::vector<Token> m_tokens;
 	size_t m_index = 0;

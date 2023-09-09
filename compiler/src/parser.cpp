@@ -4,43 +4,6 @@
 #include "error.h"
 #include "token.h"
 
-//@Notice: this is temporary prototype representation of types and function declarations
-//proper symbol table management will need to be compared to performance of this approach on bigger programs 
-struct ParameterInfo
-{
-	Token name_ident;
-	Token type_ident;
-};
-
-struct StructInfo
-{
-	Token type_ident;
-	std::vector<ParameterInfo> fields;
-};
-
-struct VariantInfo
-{
-	Token name_ident;
-};
-
-struct EnumInfo
-{
-	Token type_ident;
-	std::vector<VariantInfo> variants;
-};
-
-struct FunctionInfo
-{
-	Token name_ident;
-	size_t block_start_token_index;
-	std::optional<Token> return_type;
-	std::vector<ParameterInfo> parameters;
-};
-
-static std::vector<StructInfo> definitions_struct;
-static std::vector<EnumInfo> definitions_enum;
-static std::vector<FunctionInfo> definitions_fn;
-
 void debug_print_tab()
 {
 	printf("   ");
@@ -55,11 +18,11 @@ void debug_print_parameter(const IdentTypePair& parameter, bool tab = true, bool
 	if (newline) printf(",\n");
 }
 
-void debug_print_variant(const VariantInfo& variant, bool tab = true)
+void debug_print_enum_parameter(const IdentTypePair& parameter, bool tab = true, bool newline = true)
 {
 	if (tab) debug_print_tab();
-	error_report_token_ident(variant.name_ident);
-	printf(",\n");
+	error_report_token_ident(parameter.ident);
+	if (newline) printf(",\n");
 }
 
 void debug_print_definitions(const Ast& ast)
@@ -84,7 +47,7 @@ void debug_print_definitions(const Ast& ast)
 		printf("\n{\n");
 		
 		for (const auto& variant : def.variants)
-			debug_print_parameter(variant);
+			debug_print_enum_parameter(variant);
 		printf("}\n\n");
 	}
 
@@ -113,7 +76,6 @@ void debug_print_definitions(const Ast& ast)
 		printf("\n\n");
 	}
 }
-//@Notice: see above message
 
 enum BinaryOp
 {
@@ -491,106 +453,6 @@ Ast Parser::parse()
 	debug_print_definitions(ast);
 
 	return ast;
-
-	//@Debug printing
-	for (const FunctionInfo& fn : definitions_fn)
-	{
-		printf("function:");
-		error_report_token_ident(fn.name_ident);
-		printf("\n");
-
-		consume();
-
-		auto token_scope_end = peek(); // }
-		if (token_scope_end && token_scope_end.value().type == TOKEN_BLOCK_END)
-			continue;
-
-		//@Notice this is temporary, assuming no nested blocks to parse all inner statements of the fn
-		while(peek().has_value() && peek().value().type != TOKEN_BLOCK_END)
-		{
-			auto token_statement_intro = peek();
-			consume();
-
-			if (token_statement_intro)
-			switch(token_statement_intro.value().type)
-			{
-				case TOKEN_KEYWORD_LET:
-				{
-					auto token_variable_ident = peek(); // ident
-					if (!token_variable_ident || token_variable_ident.value().type != TOKEN_IDENT)
-						exit_error();
-					consume();
-
-					auto token_colon = peek(); // :
-					if (!token_colon || token_colon.value().type != TOKEN_COLON)
-						exit_error();
-					consume();
-			
-					auto token_variable_type = peek(); // Type
-					if (!token_variable_type || token_variable_type.value().type != TOKEN_IDENT)
-						exit_error();
-					consume();
-
-					NodeVariableDeclaration declaration = {};
-					declaration.ident = token_variable_ident.value();
-					declaration.type = token_variable_type.value();
-
-					auto token_semi_default_init = peek(); // ;
-					if (token_semi_default_init && token_semi_default_init.value().type == TOKEN_SEMICOLON)
-					{
-						//@Debug
-						error_report_token(declaration.ident);
-						printf("Debug parsed variable: with default init\n");
-
-						consume();
-						break;
-					}
-
-					auto token_assign = peek(); // =
-					if (!token_assign || token_assign.value().type != TOKEN_ASSIGN)
-						exit_error();
-					consume();
-
-					auto token_number = peek(); // number term @Notice using a number literal instead of expression chain
-					if (!token_number || token_number.value().type != TOKEN_NUMBER)
-						exit_error();
-					consume();
-
-					declaration.term.number_literal = token_number.value();
-
-					auto token_semi = peek(); // ;
-					if (!token_semi || token_semi.value().type != TOKEN_SEMICOLON)
-						exit_error();
-					consume();
-
-					//@Debug
-					error_report_token(declaration.ident);
-					printf("Debug parsed variable: with value %llu \n", declaration.term.number_literal.integer_value);
-				} break;
-				case TOKEN_KEYWORD_RETURN:
-				{
-					printf("Debug parsed return \n");
-
-					auto token_number = peek(); // number term @Notice using a number literal instead of expression chain
-					if (!token_number || token_number.value().type != TOKEN_NUMBER)
-						exit_error();
-					consume();
-
-					NodeReturn fn_return = {};
-					fn_return.term.number_literal = token_number.value();
-
-					auto token_semi = peek(); // ;
-					if (!token_semi || token_semi.value().type != TOKEN_SEMICOLON)
-						exit_error();
-					consume();
-				} break;
-			}
-		}
-
-		printf("\n");
-	}
-
-	return ast;
 }
 
 std::optional<Token> Parser::peek(u32 offset)
@@ -613,10 +475,4 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 void Parser::consume()
 {
 	m_index += 1;
-}
-
-void Parser::exit_error()
-{
-	error_report(PARSE_ERROR_TEST, peek().value_or(Token {}));
-	exit(EXIT_FAILURE);
 }
