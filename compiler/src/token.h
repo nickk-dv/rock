@@ -85,5 +85,3 @@ struct Token
 		StringView string_value;
 	};
 };
-
-TokenType token_get_keyword_token_type(const StringView& str);

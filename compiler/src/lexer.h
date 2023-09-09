@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.h"
 #include "token.h"
 
 #include <vector>
