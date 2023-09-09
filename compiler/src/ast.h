@@ -96,19 +96,28 @@ struct Ast_Statement
 	};
 };
 
-struct Ast_If
+struct Ast_Literal
 {
-	//@Incomplete
+	Token token;
 };
 
-struct Ast_For
+struct Ast_If //@Incomplete
 {
-	//@Incomplete
+	//Some conditional expr
+	Ast_Block* block;
+	std::optional<Ast_Block*> else_block;
 };
 
-struct Ast_While
+struct Ast_For //@Incomplete
 {
-	//@Incomplete
+	//3 expressions
+	Ast_Block* block;
+};
+
+struct Ast_While //@Incomplete
+{
+	//Some conditional expr
+	Ast_Block* block;
 };
 
 struct Ast_Break
@@ -116,17 +125,10 @@ struct Ast_Break
 	Token token;
 };
 
-//@ pre defined out of order
-struct Ast_Literal
-{
-	Token token;
-};
-
 struct Ast_Return
 {
 	Token token;
-	//@Incomplete
-	Ast_Literal int_lit;
+	Ast_Literal int_lit; //@Incomplete
 };
 
 struct Ast_Continue
@@ -134,7 +136,7 @@ struct Ast_Continue
 	Token token;
 };
 
-struct Ast_Procedure_Call
+struct Ast_Procedure_Cal
 {
 	//@Incomplete
 };
@@ -142,19 +144,15 @@ struct Ast_Procedure_Call
 struct Ast_Variable_Assignment
 {
 	Token ident;
-	//@Incomplete
-	Ast_Literal int_lit;
+	Ast_Literal int_lit; //@Incomplete
 };
 
 struct Ast_Variable_Declaration
 {
 	Token ident;
 	Token type;
-	//@Incomplete
-	Ast_Literal int_lit;
+	Ast_Literal int_lit; //@Incomplete
 };
-
-
 
 struct Ast_Unary_Expression
 {

@@ -22,73 +22,10 @@ const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("continue"), TOKEN_KEYWORD_CONTINUE },
 };
 
-const std::unordered_map<u64, TokenType> symbol_hash_to_token_type =
-{
-	{ hash_ascii_9("."), TOKEN_DOT },
-	{ hash_ascii_9(","), TOKEN_COMA },
-	{ hash_ascii_9(":"), TOKEN_COLON },
-	{ hash_ascii_9(";"), TOKEN_SEMICOLON },
-	{ hash_ascii_9("{"), TOKEN_BLOCK_START },
-	{ hash_ascii_9("}"), TOKEN_BLOCK_END },
-	{ hash_ascii_9("["), TOKEN_BRACKET_START },
-	{ hash_ascii_9("]"), TOKEN_BRACKET_END },
-	{ hash_ascii_9("("), TOKEN_PARENTHESIS_START },
-	{ hash_ascii_9(")"), TOKEN_PARENTHESIS_END },
-	{ hash_ascii_9("->"), TOKEN_ARROW },
-	{ hash_ascii_9("::"), TOKEN_DOUBLE_COLON },
-
-	{ hash_ascii_9("="), TOKEN_ASSIGN },
-	{ hash_ascii_9("+"), TOKEN_PLUS },
-	{ hash_ascii_9("-"), TOKEN_MINUS },
-	{ hash_ascii_9("*"), TOKEN_TIMES },
-	{ hash_ascii_9("/"), TOKEN_DIV },
-	{ hash_ascii_9("%"), TOKEN_MOD },
-	{ hash_ascii_9("&"), TOKEN_BITWISE_AND },
-	{ hash_ascii_9("|"), TOKEN_BITWISE_OR },
-	{ hash_ascii_9("^"), TOKEN_BITWISE_XOR },
-	{ hash_ascii_9("+="), TOKEN_PLUS_EQUALS },
-	{ hash_ascii_9("-="), TOKEN_MINUS_EQUALS },
-	{ hash_ascii_9("*="), TOKEN_TIMES_EQUALS },
-	{ hash_ascii_9("/="), TOKEN_DIV_EQUALS },
-	{ hash_ascii_9("%="), TOKEN_MOD_EQUALS },
-	{ hash_ascii_9("&="), TOKEN_BITWISE_AND_EQUALS },
-	{ hash_ascii_9("|="), TOKEN_BITWISE_OR_EQUALS },
-	{ hash_ascii_9("^="), TOKEN_BITWISE_XOR_EQUALS },
-	{ hash_ascii_9("<<"), TOKEN_BITSHIFT_LEFT },
-	{ hash_ascii_9(">>"), TOKEN_BITSHIFT_RIGHT },
-	{ hash_ascii_9("<"), TOKEN_LESS },
-	{ hash_ascii_9(">"), TOKEN_GREATER },
-	{ hash_ascii_9("<="), TOKEN_LESS_EQUALS },
-	{ hash_ascii_9(">="), TOKEN_GREATER_EQUALS },
-	{ hash_ascii_9("=="), TOKEN_IS_EQUAL },
-	{ hash_ascii_9("!="), TOKEN_NOT_EQUAL },
-	{ hash_ascii_9("&&"), TOKEN_LOGIC_AND },
-	{ hash_ascii_9("||"), TOKEN_LOGIC_OR },
-
-	{ hash_ascii_9("~"), TOKEN_BITWISE_NOT },
-	{ hash_ascii_9("!"), TOKEN_LOGIC_NOT },
-};
-
 TokenType token_get_keyword_token_type(const StringView& str)
 {
 	if (str.count > 8) return TOKEN_ERROR;
 	u64 hash = string_hash_ascii_9(str);
 	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
 	return is_keyword ? keyword_hash_to_token_type.at(hash) : TOKEN_ERROR;
-}
-
-TokenType token_get_1_symbol_token_type(u8 c)
-{
-	u64 hash = (u64)c;
-	bool is_symbol = symbol_hash_to_token_type.find(hash) != symbol_hash_to_token_type.end();
-	return is_symbol ? symbol_hash_to_token_type.at(hash) : TOKEN_ERROR;
-}
-
-TokenType token_get_2_symbol_token_type(u8 c, u8 c2)
-{
-	//@Hack for early rejection of a 2 letter symbol
-	if ((c2 >= 'A' && c2 <= 'Z') || (c2 >= 'a' && c2 <= 'z') || (c2 >= '0' && c2 <= '9')) return TOKEN_ERROR;
-	u64 hash = ((u64)c << 7) | (u64)c2;
-	bool is_symbol = symbol_hash_to_token_type.find(hash) != symbol_hash_to_token_type.end();
-	return is_symbol ? symbol_hash_to_token_type.at(hash) : TOKEN_ERROR;
 }

@@ -10,11 +10,6 @@ bool is_ident(u8 c)  { return is_letter(c) || (c == '_') || is_number(c); }
 bool is_whitespace(u8 c) { return c == ' ' || c == '\t'; }
 bool is_line_break(u8 c) { return c == '\r' || c == '\n'; }
 
-bool is_first_of_ident(u8 c)  { return is_letter(c) || (c == '_'); }
-bool is_first_of_number(u8 c) { return is_number(c); }
-bool is_first_of_string(u8 c) { return c == '"'; }
-bool is_first_of_symbol(u8 c) { return token_get_1_symbol_token_type(c) != TOKEN_ERROR; }
-
 bool Lexer::set_input_from_file(const char* file_path)
 {
 	input_cursor = 0;
@@ -58,29 +53,63 @@ LineInfo Lexer::get_next_line()
 	return line;
 }
 
-LexemeType Lexer::get_lexeme_type(u8 c)
-{
-	if (is_first_of_ident(c))  return LEXEME_IDENT;
-	if (is_first_of_number(c)) return LEXEME_NUMBER;
-	if (is_first_of_string(c)) return LEXEME_STRING;
-	if (is_first_of_symbol(c)) return LEXEME_SYMBOL;
-	return LEXEME_ERROR;
-}
-
 std::vector<Token> Lexer::tokenize()
 {
 	std::vector<Token> tokens;
 	//@Performance testing pre allocation of vector
 	tokens.reserve(770000);
 
-	LineInfo line = {};
-	u32 current_line_number = 0;
-
-	LexemeType lexeme_types[128] = {};
+	TokenType c_to_sym[128] = {};
 	for (u8 i = 0; i < 128; i++)
 	{
-		lexeme_types[i] = get_lexeme_type(i);
+		c_to_sym[i] = TOKEN_ERROR;
 	}
+
+	c_to_sym['.'] = TOKEN_DOT;
+	c_to_sym[','] = TOKEN_COMA;
+	c_to_sym[':'] = TOKEN_COLON;
+	c_to_sym[';'] = TOKEN_SEMICOLON;
+	c_to_sym['{'] = TOKEN_BLOCK_START;
+	c_to_sym['}'] = TOKEN_BLOCK_END;
+	c_to_sym['['] = TOKEN_BRACKET_START;
+	c_to_sym[']'] = TOKEN_BRACKET_END;
+	c_to_sym['('] = TOKEN_PAREN_START;
+	c_to_sym[')'] = TOKEN_PAREN_END;
+	c_to_sym['='] = TOKEN_ASSIGN;
+	c_to_sym['+'] = TOKEN_PLUS;
+	c_to_sym['-'] = TOKEN_MINUS;
+	c_to_sym['*'] = TOKEN_TIMES;
+	c_to_sym['/'] = TOKEN_DIV;
+	c_to_sym['%'] = TOKEN_MOD;
+	c_to_sym['&'] = TOKEN_BITWISE_AND;
+	c_to_sym['|'] = TOKEN_BITWISE_OR;
+	c_to_sym['^'] = TOKEN_BITWISE_XOR;
+	c_to_sym['<'] = TOKEN_LESS;
+	c_to_sym['>'] = TOKEN_GREATER;
+	c_to_sym['!'] = TOKEN_LOGIC_NOT;
+	c_to_sym['~'] = TOKEN_BITWISE_NOT;
+
+	enum LexemeType
+	{
+		LEXEME_IDENT,
+		LEXEME_NUMBER,
+		LEXEME_STRING,
+		LEXEME_SYMBOL,
+		LEXEME_ERROR
+	};
+
+	LexemeType lexeme_types[128] = {};
+	for (u8 c = 0; c < 128; c++)
+	{
+		if (is_letter(c) || (c == '_')) lexeme_types[c] = LEXEME_IDENT;
+		else if (c_to_sym[c] != TOKEN_ERROR) lexeme_types[c] = LEXEME_SYMBOL;
+		else if (is_number(c)) lexeme_types[c] = LEXEME_NUMBER;
+		else if (c == '"') lexeme_types[c] = LEXEME_STRING;
+		else lexeme_types[c] = LEXEME_ERROR;
+	}
+
+	LineInfo line = {};
+	u32 current_line_number = 0;
 
 	while (line.is_valid)
 	{
@@ -173,16 +202,23 @@ std::vector<Token> Lexer::tokenize()
 				} break;
 				case LEXEME_SYMBOL:
 				{
-					token.type = token_get_1_symbol_token_type(fc);
+					token.type = c_to_sym[fc];
 
 					if (lexeme_end <= line.end_cursor)
 					{
 						u8 c = input.data[lexeme_end];
 
-						TokenType symbol = token_get_2_symbol_token_type(fc, c);
-						if (symbol != TOKEN_ERROR) 
+						constexpr u32 equal_composable_symbol_token_offset = 12;
+						constexpr u32 double_composable_symbol_token_offset = 18;
+						
+						u32 sym2 = TOKEN_ERROR;
+						if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
+						else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))  sym2 = token.type + double_composable_symbol_token_offset;
+						else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
+
+						if (sym2 != TOKEN_ERROR)
 						{
-							token.type = symbol;
+							token.type = (TokenType)sym2;
 							lexeme_end += 1;
 						}
 					}
@@ -227,21 +263,22 @@ void Lexer::print_debug_metrics(const std::vector<Token>& tokens)
 	}
 
 	/*
-	Lexer time(ms) : 49.000000
-	Lexer : TokenCount :     766174
-	Lexer : TokenTypesSum :  766174
+	Lexer: TokenCount:          768829
+	Lexer: TokenTypesSum:       768829
+	Lexer: [IdentCount]:        338633
+	Lexer: [NumberCount]:       2878
+	Lexer: [StringCount]:       5858
+	Lexer: [KeywordCount]:      28820
+	Lexer: [SymbolCount]:       392640
+	Lexer: MemoryRequired (Mb): 23.462799
+	Lexer: MemoryUsed     (Mb): 23.498535
 
-	Lexer : [IdentCount] :   347752
-	Lexer : [NumberCount] :  2878
-	Lexer : [StringCount] :  5858
-	Lexer : [KeywordCount] : 19701
-	Lexer : [SymbolCount] :  389985
-
-	Lexer : MemoryRequired(Mb) : 23.381775
-	Lexer : MemoryUsed(Mb) : 32.039459
-
+	//~49-50 ms original timing
 	//~27-28 ms memory preallocation
 	// 25.7 ms lexeme lookup, keyword.count > 8
+	// 25.4 ms 2 symbol hack
+	// 22.3 ms 2 symbol relational token derive
+	// 21.5~22 ms -> removed
 	*/
 
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());

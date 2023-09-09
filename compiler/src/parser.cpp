@@ -210,7 +210,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 {
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) return {};
-	auto paren_start = try_consume(TOKEN_PARENTHESIS_START);
+	auto paren_start = try_consume(TOKEN_PAREN_START);
 	if (!paren_start) return {};
 
 	Ast_Procedure_Declaration proc_delc = {};
@@ -236,11 +236,11 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 		consume();
 	}
 
-	auto paren_end = try_consume(TOKEN_PARENTHESIS_END);
+	auto paren_end = try_consume(TOKEN_PAREN_END);
 	if (!paren_end) return {};
 
-	auto arrow = try_consume(TOKEN_ARROW);
-	if (arrow)
+	auto double_colon = try_consume(TOKEN_DOUBLE_COLON);
+	if (double_colon)
 	{
 		auto return_type = try_consume(TOKEN_IDENT);
 		if (!return_type) return {};
@@ -330,7 +330,7 @@ Ast_Statement* Parser::parse_statement()
 		{
 			auto next_token = peek(1);
 
-			if (next_token && next_token.value().type == TOKEN_PARENTHESIS_START)
+			if (next_token && next_token.value().type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::ProcedureCall;
 				statement->_proc_call = parse_proc_call(); //@Incomplete

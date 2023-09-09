@@ -33,12 +33,11 @@ enum TokenType
 	TOKEN_BLOCK_END,          // }
 	TOKEN_BRACKET_START,      // [
 	TOKEN_BRACKET_END,        // ]
-	TOKEN_PARENTHESIS_START,  // (
-	TOKEN_PARENTHESIS_END,    // )
-	TOKEN_ARROW,              // ->
+	TOKEN_PAREN_START,        // (
+	TOKEN_PAREN_END,          // )
 	TOKEN_DOUBLE_COLON,       // ::
-
-	//[Binary Operators]
+	
+	//[Operators]
 	TOKEN_ASSIGN,             // =
 	TOKEN_PLUS,               // +
 	TOKEN_MINUS,              // -
@@ -48,6 +47,10 @@ enum TokenType
 	TOKEN_BITWISE_AND,        // &
 	TOKEN_BITWISE_OR,         // |
 	TOKEN_BITWISE_XOR,        // ^
+	TOKEN_LESS,               // <
+	TOKEN_GREATER,            // >
+	TOKEN_LOGIC_NOT,          // !
+	TOKEN_IS_EQUALS,          // ==
 	TOKEN_PLUS_EQUALS,        // +=
 	TOKEN_MINUS_EQUALS,       // -=
 	TOKEN_TIMES_EQUALS,       // *=
@@ -56,20 +59,14 @@ enum TokenType
 	TOKEN_BITWISE_AND_EQUALS, // &=
 	TOKEN_BITWISE_OR_EQUALS,  // |=
 	TOKEN_BITWISE_XOR_EQUALS, // ^=
-	TOKEN_BITSHIFT_LEFT,      // <<
-	TOKEN_BITSHIFT_RIGHT,     // >>
-	TOKEN_LESS,               // <
-	TOKEN_GREATER,            // >
 	TOKEN_LESS_EQUALS,        // <=
 	TOKEN_GREATER_EQUALS,     // >=
-	TOKEN_IS_EQUAL,           // ==
-	TOKEN_NOT_EQUAL,          // !=
+	TOKEN_NOT_EQUALS,         // !=
 	TOKEN_LOGIC_AND,          // &&
 	TOKEN_LOGIC_OR,           // ||
-
-	//[Unary Operators]
 	TOKEN_BITWISE_NOT,        // ~
-	TOKEN_LOGIC_NOT,          // !
+	TOKEN_BITSHIFT_LEFT,      // <<
+	TOKEN_BITSHIFT_RIGHT,     // >>
 
 	TOKEN_INPUT_END,
 	TOKEN_ERROR,
@@ -90,5 +87,3 @@ struct Token
 };
 
 TokenType token_get_keyword_token_type(const StringView& str);
-TokenType token_get_1_symbol_token_type(u8 c);
-TokenType token_get_2_symbol_token_type(u8 c, u8 c2);

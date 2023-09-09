@@ -13,22 +13,12 @@ struct LineInfo
 	bool is_empty = true;
 };
 
-enum LexemeType
-{
-	LEXEME_IDENT,
-	LEXEME_NUMBER,
-	LEXEME_STRING,
-	LEXEME_SYMBOL,
-	LEXEME_ERROR
-};
-
 struct Lexer
 {
 	bool set_input_from_file(const char* file_path);
 	std::vector<Token> tokenize();
 
 	LineInfo get_next_line();
-	LexemeType get_lexeme_type(u8 c);
 	void print_debug_metrics(const std::vector<Token>& tokens);
 
 	String input;
