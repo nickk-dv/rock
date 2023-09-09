@@ -30,6 +30,7 @@ struct Timer
 	long start_time;
 };
 
+//@Incomplete no overflow protection
 class ArenaAllocator
 {
 public:
@@ -42,7 +43,7 @@ public:
 	template <typename T>
 	T* alloc()
 	{
-		void* offset = m_offset;
+		size_t offset = m_offset;
 		m_offset += sizeof(T);
 		return (T*)offset;
 	}

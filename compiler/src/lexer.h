@@ -25,9 +25,10 @@ enum LexemeType
 struct Lexer
 {
 	bool set_input_from_file(const char* file_path);
+	std::vector<Token> tokenize();
+
 	LineInfo get_next_line();
 	LexemeType get_lexeme_type(u8 c);
-	std::vector<Token> tokenize();
 	void print_debug_metrics(const std::vector<Token>& tokens);
 
 	String input;

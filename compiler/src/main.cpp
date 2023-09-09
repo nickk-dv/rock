@@ -21,7 +21,7 @@ int main()
 
 	Timer parseTimer;
 	Parser parser(std::move(tokens));
-	parser.parse();
+	Ast ast = parser.parse();
 	printf("Parse time (ms): %f\n", parseTimer.Ms());
 
 	return 0;

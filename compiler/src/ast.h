@@ -3,6 +3,7 @@
 #include "token.h"
 
 #include <vector>
+#include <optional>
 
 struct Ast;
 
@@ -11,7 +12,7 @@ struct Ast_Enum_Declaration;
 struct Ast_Procedure_Declaration;
 
 struct Ast_Block;
-struct Ast_Block_Statement;
+struct Ast_Statement;
 
 struct Ast_If;
 struct Ast_For;
@@ -31,38 +32,38 @@ struct Ast
 {
 	std::vector<Ast_Struct_Declaration> structs;
 	std::vector<Ast_Enum_Declaration> enums;
-	std::vector<Ast_Procedure_Declaration> functions;
+	std::vector<Ast_Procedure_Declaration> procedures;
 };
 
-struct NameTypePair
+struct IdentTypePair
 {
 	Token ident;
-	Token type_ident;
+	Token type;
 };
 
 struct Ast_Struct_Declaration
 {
-	Token type_ident;
-	std::vector<NameTypePair> struct_fields;
+	Token type;
+	std::vector<IdentTypePair> fields;
 };
 
 struct Ast_Enum_Declaration
 {
-	Token type_ident;
-	std::vector<NameTypePair> enum_variants;
+	Token type;
+	std::vector<IdentTypePair> variants;
 };
 
 struct Ast_Procedure_Declaration
 {
 	Token ident;
-	std::vector<NameTypePair> input_parameters;
-	std::optional<Token> return_type_ident;
+	std::vector<IdentTypePair> input_parameters;
+	std::optional<Token> return_type;
 	Ast_Block* block;
 };
 
 struct Ast_Block
 {
-	std::vector<Ast_Block_Statement> statements;
+	std::vector<Ast_Statement*> statements;
 };
 
 enum class BlockStatement
@@ -71,7 +72,7 @@ enum class BlockStatement
 	ProcedureCall, VariableAssignment, VariableDeclaration,
 };
 
-struct Ast_Block_Statement
+struct Ast_Statement
 {
 	BlockStatement tag;
 	union

@@ -171,22 +171,24 @@ struct NodeReturn
 
 Parser::Parser(std::vector<Token> tokens) 
 	: m_tokens(std::move(tokens)), 
-	  m_arena(1024 * 1024 * 4) {}
+	  m_arena(1024 * 1024 * 4) 
+{
+}
 
-void Parser::parse_struct()
+std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 {
 	auto token_struct_type = peek(); // Type
 	if (!token_struct_type || token_struct_type.value().type != TOKEN_IDENT)
-		exit_error();
+		return {};
 	consume();
-
-	StructInfo info = {};
-	info.type_ident = token_struct_type.value();
 
 	auto token_scope_start = peek(); // {
 	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
-		exit_error();
+		return {};
 	consume();
+
+	Ast_Struct_Declaration struct_decl = {};
+	struct_decl.type = token_struct_type.value();
 
 	while (true)
 	{
@@ -198,15 +200,15 @@ void Parser::parse_struct()
 
 		auto token_colon = peek(); // :
 		if (!token_colon || token_colon.value().type != TOKEN_COLON)
-			exit_error();
+			return {};
 		consume();
 
 		auto token_field_type = peek(); // Type
 		if (!token_field_type || token_field_type.value().type != TOKEN_IDENT)
-			exit_error();
+			return {};
 		consume();
 
-		info.fields.emplace_back(ParameterInfo { token_field.value(), token_field_type.value() });
+		struct_decl.fields.emplace_back(IdentTypePair { token_field.value(), token_field_type.value() });
 
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
@@ -216,26 +218,26 @@ void Parser::parse_struct()
 
 	auto token_scope_end = peek(); // }
 	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
-		exit_error();
+		return {};
 	consume();
 
-	definitions_struct.emplace_back(info);
+	return struct_decl;
 }
 
-void Parser::parse_enum()
+std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 {
 	auto token_enum_type = peek(); // Type
 	if (!token_enum_type || token_enum_type.value().type != TOKEN_IDENT)
-		exit_error();
+		return {};
 	consume();
-
-	EnumInfo info = {};
-	info.type_ident = token_enum_type.value();
 
 	auto token_scope_start = peek(); // {
 	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
-		exit_error();
+		return {};
 	consume();
+
+	Ast_Enum_Declaration enum_decl = {};
+	enum_decl.type = token_enum_type.value();
 
 	while (true)
 	{
@@ -244,7 +246,9 @@ void Parser::parse_enum()
 			break; // No more variants
 		else consume();
 
-		info.variants.emplace_back(VariantInfo { token_variant.value() });
+		//@Notice no type is specified for the enum variant
+		//might support typed numeric enums with literal values
+		enum_decl.variants.emplace_back(IdentTypePair { token_variant.value(), {} });
 
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
@@ -254,27 +258,27 @@ void Parser::parse_enum()
 
 	auto token_scope_end = peek(); // }
 	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
-		exit_error();
+		return {};
 	consume();
 
-	definitions_enum.emplace_back(info);
+	return enum_decl;
 }
 
-void Parser::parse_fn()
+std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 {
 	auto token_name = peek(); // name
 	if (!token_name || token_name.value().type != TOKEN_IDENT)
-		exit_error();
+		return {};
 	consume();
-
-	FunctionInfo info = {};
-	info.name_ident = token_name.value();
 
 	auto token_paren_start = peek(); // (
 	if (!token_paren_start || token_paren_start.value().type != TOKEN_PARENTHESIS_START)
-		exit_error();
+		return {};
 	consume();
 
+	Ast_Procedure_Declaration proc_delc = {};
+	proc_delc.ident = token_name.value();
+	
 	while (true)
 	{
 		auto token_param = peek(); // param
@@ -284,19 +288,19 @@ void Parser::parse_fn()
 
 		auto token_colon = peek(); // :
 		if (!token_colon || token_colon.value().type != TOKEN_COLON)
-			exit_error();
+			return {};
 		consume();
 
 		auto token_param_type = peek(); // Type
 		if (!token_param_type || token_param_type.value().type != TOKEN_IDENT)
-			exit_error();
+			return {};
 		consume();
 
-		info.parameters.emplace_back(ParameterInfo { token_param.value(), token_param_type.value() });
+		proc_delc.input_parameters.emplace_back(IdentTypePair{ token_param.value(), token_param_type.value() });
 
 		auto token_coma = peek(); // ,
 		if (token_coma && token_coma.value().type == TOKEN_COMA)
-			consume();
+			return {};
 		else break; // No more params
 	}
 
@@ -312,23 +316,56 @@ void Parser::parse_fn()
 
 		auto token_return_type = peek(); // Type
 		if (!token_return_type || token_return_type.value().type != TOKEN_IDENT)
-			exit_error();
+			return {};
 		consume();
 
-		info.return_type = token_return_type.value();
+		proc_delc.return_type = token_return_type.value();
 	}
 
 	auto token_scope_start = peek(); // {
 	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
-		exit_error();
-	info.block_start_token_index = m_index;
+		return {};
 	consume();
 
-	definitions_fn.emplace_back(info);
+	proc_delc.block = parse_block();
+	if (proc_delc.block == NULL) return {};
+
+	return proc_delc;
 }
 
-void Parser::parse()
+Ast_Block* Parser::parse_block()
 {
+	Ast_Block* block = m_arena.alloc<Ast_Block>();
+
+	Ast_Statement* statement = parse_statement();
+	while (statement != NULL)
+	{
+		block->statements.emplace_back(statement);
+		statement = parse_statement();
+	}
+
+	auto token_scope_end = peek(); // }
+	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
+		return NULL;
+	consume();
+
+	return block;
+}
+
+Ast_Statement* Parser::parse_statement()
+{
+	Ast_Statement* statement = m_arena.alloc<Ast_Statement>();
+
+	//@Incomplete always produces null statement
+	return NULL;
+
+	return statement;
+}
+
+Ast Parser::parse()
+{
+	Ast ast;
+
 	while (peek().has_value())
 	{
 		TokenType type = peek().value().type;
@@ -336,11 +373,31 @@ void Parser::parse()
 
 		switch (type)
 		{
-			case TOKEN_KEYWORD_STRUCT: parse_struct(); break;
-			case TOKEN_KEYWORD_ENUM: parse_enum(); break;
-			case TOKEN_KEYWORD_FN: parse_fn(); break;
+			case TOKEN_KEYWORD_STRUCT: 
+			{
+				auto struct_decl = parse_struct();
+				if (struct_decl.has_value())
+					ast.structs.emplace_back(struct_decl.value());
+				else return ast;
+			} break;
+			case TOKEN_KEYWORD_ENUM:
+			{
+				auto enum_decl = parse_enum();
+				if (enum_decl.has_value())
+					ast.enums.emplace_back(enum_decl.value());
+				else return ast;
+			} break;
+			case TOKEN_KEYWORD_FN:
+			{
+				auto proc_decl = parse_procedure();
+				if (proc_decl.has_value())
+					ast.procedures.emplace_back(proc_decl.value());
+				else return ast;
+			} break;
 		}
 	}
+
+	return ast;
 
 	//@Debug printing
 	debug_print_definitions();
@@ -442,6 +499,8 @@ void Parser::parse()
 
 		printf("\n");
 	}
+
+	return ast;
 }
 
 std::optional<Token> Parser::peek(u32 offset)

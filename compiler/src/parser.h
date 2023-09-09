@@ -1,19 +1,21 @@
 #pragma once
 
-#include "token.h"
 #include "ast.h"
+#include "token.h"
 
 #include <vector>
-#include <optional>
 
 struct Parser
 {
 	Parser(std::vector<Token> tokens);
 
-	void parse();
-	void parse_struct();
-	void parse_enum();
-	void parse_fn();
+	Ast parse();
+
+	std::optional<Ast_Struct_Declaration> parse_struct();
+	std::optional<Ast_Enum_Declaration> parse_enum();
+	std::optional<Ast_Procedure_Declaration> parse_procedure();
+	Ast_Block* parse_block();
+	Ast_Statement* parse_statement();
 	std::optional<Token> peek(u32 offset = 0);
 	void seek(size_t index);
 	void consume();
