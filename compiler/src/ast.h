@@ -1,8 +1,14 @@
 #pragma once
 
+#include "token.h"
+
 #include <vector>
 
 struct Ast;
+
+struct Ast_Struct_Declaration;
+struct Ast_Enum_Declaration;
+struct Ast_Procedure_Declaration;
 
 struct Ast_Block;
 struct Ast_Block_Statement;
@@ -21,9 +27,42 @@ struct Ast_Literal;
 struct Ast_Unary_Expression;
 struct Ast_Binary_Expression;
 
+struct Ast
+{
+	std::vector<Ast_Struct_Declaration> structs;
+	std::vector<Ast_Enum_Declaration> enums;
+	std::vector<Ast_Procedure_Declaration> functions;
+};
+
+struct NameTypePair
+{
+	Token ident;
+	Token type_ident;
+};
+
+struct Ast_Struct_Declaration
+{
+	Token type_ident;
+	std::vector<NameTypePair> struct_fields;
+};
+
+struct Ast_Enum_Declaration
+{
+	Token type_ident;
+	std::vector<NameTypePair> enum_variants;
+};
+
+struct Ast_Procedure_Declaration
+{
+	Token ident;
+	std::vector<NameTypePair> input_parameters;
+	std::optional<Token> return_type_ident;
+	Ast_Block* block;
+};
+
 struct Ast_Block
 {
-	std::vector<Ast_Block_Statement*> statements;
+	std::vector<Ast_Block_Statement> statements;
 };
 
 enum class BlockStatement
@@ -51,60 +90,60 @@ struct Ast_Block_Statement
 
 struct Ast_If
 {
-
+	//@Incomplete
 };
 
 struct Ast_For
 {
-
+	//@Incomplete
 };
 
 struct Ast_While
 {
-
+	//@Incomplete
 };
 
 struct Ast_Break
 {
-
+	Token token;
 };
 
 struct Ast_Return
 {
-
+	//@Incomplete
 };
 
 struct Ast_Continue
 {
-
+	Token token;
 };
 
 struct Ast_Procedure_Call
 {
-
+	//@Incomplete
 };
 
 struct Ast_Variable_Assignment
 {
-
+	//@Incomplete
 };
 
 struct Ast_Variable_Declaration
 {
-
+	//@Incomplete
 };
 
 struct Ast_Literal
 {
-
+	Token token;
 };
 
 struct Ast_Unary_Expression
 {
-
+	//@Incomplete
 };
 
 struct Ast_Binary_Expression
 {
-
+	//@Incomplete
 };
