@@ -43,9 +43,9 @@ public:
 	template <typename T>
 	T* alloc()
 	{
-		size_t offset = m_offset;
+		T* ptr = (T*)((u8*)m_buffer + m_offset);
 		m_offset += sizeof(T);
-		return (T*)offset;
+		return ptr;
 	}
 
 private:

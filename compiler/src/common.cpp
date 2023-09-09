@@ -1,8 +1,9 @@
 #include "common.h"
 
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 #include <time.h>
+#include <string.h>
 
 String::~String()
 {
@@ -36,6 +37,8 @@ ArenaAllocator::ArenaAllocator(size_t size)
 	m_size = size;
 	m_offset = 0;
 	m_buffer = malloc(size);
+	if (m_buffer != NULL)
+	memset(m_buffer, 0, size);
 }
 
 ArenaAllocator::~ArenaAllocator()

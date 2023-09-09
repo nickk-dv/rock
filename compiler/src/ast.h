@@ -74,7 +74,14 @@ enum class BlockStatement
 
 struct Ast_Statement
 {
-	BlockStatement tag;
+	enum class Tag
+	{
+		If, For, While, Break, Return, Continue,
+		ProcedureCall, VariableAssignment, VariableDeclaration,
+	};
+
+	Tag tag;
+
 	union
 	{
 		Ast_If* _if;
@@ -86,7 +93,7 @@ struct Ast_Statement
 		Ast_Procedure_Call* _proc_call;
 		Ast_Variable_Assignment* _var_assignment;
 		Ast_Variable_Declaration* _var_declaration;
-	} statement;
+	};
 };
 
 struct Ast_If

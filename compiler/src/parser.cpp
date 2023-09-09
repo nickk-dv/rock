@@ -46,12 +46,12 @@ void debug_print_tab()
 	printf("   ");
 }
 
-void debug_print_parameter(const ParameterInfo& parameter, bool tab = true, bool newline = true)
+void debug_print_parameter(const IdentTypePair& parameter, bool tab = true, bool newline = true)
 {
 	if (tab) debug_print_tab();
-	error_report_token_ident(parameter.name_ident);
+	error_report_token_ident(parameter.ident);
 	printf(": ");
-	error_report_token_ident(parameter.type_ident);
+	error_report_token_ident(parameter.type);
 	if (newline) printf(",\n");
 }
 
@@ -62,42 +62,42 @@ void debug_print_variant(const VariantInfo& variant, bool tab = true)
 	printf(",\n");
 }
 
-void debug_print_definitions()
+void debug_print_definitions(const Ast& ast)
 {
 	printf("[STRUCTS]\n\n");
-	for (const StructInfo& def : definitions_struct)
+	for (const auto& def : ast.structs)
 	{
 		printf("struct ");
-		error_report_token_ident(def.type_ident);
+		error_report_token_ident(def.type);
 		printf("\n{\n");
 
-		for (const ParameterInfo& parameter : def.fields)
+		for (const auto& parameter : def.fields)
 			debug_print_parameter(parameter);
 		printf("}\n\n");
 	}
 
 	printf("[ENUMS]\n\n");
-	for (const EnumInfo& def : definitions_enum)
+	for (const auto& def : ast.enums)
 	{
 		printf("enum ");
-		error_report_token_ident(def.type_ident);
+		error_report_token_ident(def.type);
 		printf("\n{\n");
 		
-		for (const VariantInfo& variant : def.variants)
-			debug_print_variant(variant);
+		for (const auto& variant : def.variants)
+			debug_print_parameter(variant);
 		printf("}\n\n");
 	}
 
 	printf("[FUNCTIONS]\n\n");
-	for (const FunctionInfo& def : definitions_fn)
+	for (const auto& def : ast.procedures)
 	{
 		printf("fn ");
-		error_report_token_ident(def.name_ident);
+		error_report_token_ident(def.ident);
 
 		printf("(");
-		size_t size = def.parameters.size();
+		size_t size = def.input_parameters.size();
 		size_t counter = 0;
-		for (const ParameterInfo& parameter : def.parameters)
+		for (const auto& parameter : def.input_parameters)
 		{
 			debug_print_parameter(parameter, false, false);
 			counter += 1;
@@ -177,164 +177,130 @@ Parser::Parser(std::vector<Token> tokens)
 
 std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 {
-	auto token_struct_type = peek(); // Type
-	if (!token_struct_type || token_struct_type.value().type != TOKEN_IDENT)
-		return {};
-	consume();
-
-	auto token_scope_start = peek(); // {
-	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
-		return {};
-	consume();
+	auto type = try_consume(TOKEN_IDENT); 
+	if (!type) return {};
+	auto scope_start = try_consume(TOKEN_BLOCK_START);
+	if (!scope_start) return {};
 
 	Ast_Struct_Declaration struct_decl = {};
-	struct_decl.type = token_struct_type.value();
+	struct_decl.type = type.value();
 
 	while (true)
 	{
-		auto token_field = peek(); // field
-		if (!token_field || token_field.value().type != TOKEN_IDENT)
-			break; // No more fields
-		else consume();
+		auto field = peek();
+		if (field && field.value().type == TOKEN_IDENT)
+			consume();
+		else break; // No more fields
 
+		auto colon = try_consume(TOKEN_COLON);
+		if (!colon) return {};
+		auto field_type = try_consume(TOKEN_IDENT);
+		if (!field_type) return {};
 
-		auto token_colon = peek(); // :
-		if (!token_colon || token_colon.value().type != TOKEN_COLON)
-			return {};
-		consume();
+		struct_decl.fields.emplace_back(IdentTypePair{ field.value(), field_type.value() });
 
-		auto token_field_type = peek(); // Type
-		if (!token_field_type || token_field_type.value().type != TOKEN_IDENT)
-			return {};
-		consume();
-
-		struct_decl.fields.emplace_back(IdentTypePair { token_field.value(), token_field_type.value() });
-
-		auto token_coma = peek(); // ,
-		if (token_coma && token_coma.value().type == TOKEN_COMA)
+		auto coma = peek();
+		if (coma && coma.value().type == TOKEN_COMA)
 			consume();
 		else break; // No more fields
 	}
 
-	auto token_scope_end = peek(); // }
-	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
-		return {};
-	consume();
+	auto scope_end = try_consume(TOKEN_BLOCK_END);
+	if (!scope_end) return {};
 
 	return struct_decl;
 }
 
 std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 {
-	auto token_enum_type = peek(); // Type
-	if (!token_enum_type || token_enum_type.value().type != TOKEN_IDENT)
-		return {};
-	consume();
-
-	auto token_scope_start = peek(); // {
-	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
-		return {};
-	consume();
+	auto type = try_consume(TOKEN_IDENT);
+	if (!type) return {};
+	auto scope_start = try_consume(TOKEN_BLOCK_START);
+	if (!scope_start) return {};
 
 	Ast_Enum_Declaration enum_decl = {};
-	enum_decl.type = token_enum_type.value();
+	enum_decl.type = type.value();
 
 	while (true)
 	{
-		auto token_variant = peek(); // variant
-		if (!token_variant || token_variant.value().type != TOKEN_IDENT)
+		auto variant = peek();
+		if (!variant || variant.value().type != TOKEN_IDENT)
 			break; // No more variants
-		else consume();
+		consume();
 
 		//@Notice no type is specified for the enum variant
 		//might support typed numeric enums with literal values
-		enum_decl.variants.emplace_back(IdentTypePair { token_variant.value(), {} });
+		enum_decl.variants.emplace_back(IdentTypePair { variant.value(), {} });
 
-		auto token_coma = peek(); // ,
-		if (token_coma && token_coma.value().type == TOKEN_COMA)
+		auto coma = peek();
+		if (coma && coma.value().type == TOKEN_COMA)
 			consume();
 		else break; // No more variants
 	}
 
-	auto token_scope_end = peek(); // }
-	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
-		return {};
-	consume();
+	auto scope_end = try_consume(TOKEN_BLOCK_END);
+	if (!scope_end) return {};
 
 	return enum_decl;
 }
 
 std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 {
-	auto token_name = peek(); // name
-	if (!token_name || token_name.value().type != TOKEN_IDENT)
-		return {};
-	consume();
-
-	auto token_paren_start = peek(); // (
-	if (!token_paren_start || token_paren_start.value().type != TOKEN_PARENTHESIS_START)
-		return {};
-	consume();
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) return {};
+	auto paren_start = try_consume(TOKEN_PARENTHESIS_START);
+	if (!paren_start) return {};
 
 	Ast_Procedure_Declaration proc_delc = {};
-	proc_delc.ident = token_name.value();
+	proc_delc.ident = ident.value();
 	
 	while (true)
 	{
-		auto token_param = peek(); // param
-		if (!token_param || token_param.value().type != TOKEN_IDENT)
+		auto param = peek();
+		if (!param || param.value().type != TOKEN_IDENT)
 			break; // No more params
-		else consume();
-
-		auto token_colon = peek(); // :
-		if (!token_colon || token_colon.value().type != TOKEN_COLON)
-			return {};
 		consume();
 
-		auto token_param_type = peek(); // Type
-		if (!token_param_type || token_param_type.value().type != TOKEN_IDENT)
-			return {};
+		auto colon = try_consume(TOKEN_COLON);
+		if (!colon) return {};
+		auto param_type = try_consume(TOKEN_IDENT);
+		if (!param_type) return {};
+
+		proc_delc.input_parameters.emplace_back(IdentTypePair{ param.value(), param_type.value() });
+
+		auto token_coma = peek();
+		if (!token_coma || token_coma.value().type != TOKEN_COMA)
+			break; // No more params
 		consume();
-
-		proc_delc.input_parameters.emplace_back(IdentTypePair{ token_param.value(), token_param_type.value() });
-
-		auto token_coma = peek(); // ,
-		if (token_coma && token_coma.value().type == TOKEN_COMA)
-			return {};
-		else break; // No more params
 	}
 
-	auto token_paren_end = peek(); // )
-	if (!token_paren_end || token_paren_end.value().type != TOKEN_PARENTHESIS_END)
-		exit_error();
-	consume();
+	auto paren_end = try_consume(TOKEN_PARENTHESIS_END);
+	if (!paren_end) return {};
 
-	auto token_arrow = peek(); // ->
-	if (token_arrow && token_arrow.value().type == TOKEN_ARROW)
+	auto arrow = try_consume(TOKEN_ARROW);
+	if (arrow)
 	{
-		consume();
+		auto return_type = try_consume(TOKEN_IDENT);
+		if (!return_type) return {};
 
-		auto token_return_type = peek(); // Type
-		if (!token_return_type || token_return_type.value().type != TOKEN_IDENT)
-			return {};
-		consume();
-
-		proc_delc.return_type = token_return_type.value();
+		proc_delc.return_type = return_type.value();
 	}
-
-	auto token_scope_start = peek(); // {
-	if (!token_scope_start || token_scope_start.value().type != TOKEN_BLOCK_START)
-		return {};
-	consume();
 
 	proc_delc.block = parse_block();
-	if (proc_delc.block == NULL) return {};
+	if (proc_delc.block == NULL)
+	{
+		printf("Func block is null\n"); //@Debug
+		return {};
+	}
 
 	return proc_delc;
 }
 
 Ast_Block* Parser::parse_block()
 {
+	auto scope_start = try_consume(TOKEN_BLOCK_START);
+	if (!scope_start) return NULL;
+
 	Ast_Block* block = m_arena.alloc<Ast_Block>();
 
 	Ast_Statement* statement = parse_statement();
@@ -344,10 +310,8 @@ Ast_Block* Parser::parse_block()
 		statement = parse_statement();
 	}
 
-	auto token_scope_end = peek(); // }
-	if (!token_scope_end || token_scope_end.value().type != TOKEN_BLOCK_END)
-		return NULL;
-	consume();
+	auto scope_end = try_consume(TOKEN_BLOCK_END);
+	if (!scope_end) return NULL;
 
 	return block;
 }
@@ -356,16 +320,143 @@ Ast_Statement* Parser::parse_statement()
 {
 	Ast_Statement* statement = m_arena.alloc<Ast_Statement>();
 
-	//@Incomplete always produces null statement
-	return NULL;
+	printf("First token of parse_statement \n");
+	error_report_token(peek().value());
 
+	auto token = peek();
+	if (!token) return NULL;
+
+	switch (token.value().type)
+	{
+		case TOKEN_KEYWORD_IF: //@Incomplete
+		{
+			statement->tag = Ast_Statement::Tag::If;
+			statement->_if = parse_if();
+			if (!statement->_if) return NULL;
+		} break;
+		case TOKEN_KEYWORD_FOR: //@Incomplete
+		{
+			statement->tag = Ast_Statement::Tag::For;
+			statement->_for = parse_for();
+			if (!statement->_for) return NULL;
+		} break;
+		case TOKEN_KEYWORD_WHILE: //@Incomplete
+		{
+			statement->tag = Ast_Statement::Tag::While;
+			statement->_while = parse_while();
+			if (!statement->_while) return NULL;
+		} break;
+		case TOKEN_KEYWORD_BREAK:
+		{
+			statement->tag = Ast_Statement::Tag::Break;
+			statement->_break = parse_break();
+			if (!statement->_break) return NULL;
+		} break;
+		case TOKEN_KEYWORD_RETURN: //@Incomplete
+		{
+			statement->tag = Ast_Statement::Tag::Return;
+			statement->_return = parse_return();
+			if (!statement->_return) return NULL;
+		} break;
+		case TOKEN_KEYWORD_CONTINUE:
+		{
+			statement->tag = Ast_Statement::Tag::Continue;
+			statement->_continue = parse_continue();
+			if (!statement->_continue) return NULL;
+		} break;
+		case TOKEN_IDENT: //@Incomplete
+		{
+			auto next_token = peek(1);
+
+			if (next_token && next_token.value().type == TOKEN_PARENTHESIS_START)
+			{
+				statement->tag = Ast_Statement::Tag::ProcedureCall;
+				statement->_proc_call = parse_proc_call(); //@Incomplete
+				if (!statement->_proc_call) return NULL;
+				break;
+			}
+
+			if (next_token && next_token.value().type == TOKEN_ASSIGN)
+			{
+				statement->tag = Ast_Statement::Tag::VariableAssignment;
+				statement->_var_assignment = parse_var_assignment(); //@Incomplete
+				if (!statement->_var_assignment) return NULL;
+				break;
+			}
+
+			return NULL;
+
+		} break;
+		case TOKEN_KEYWORD_LET: //@Incomplete
+		{
+			statement->tag = Ast_Statement::Tag::VariableDeclaration;
+			statement->_var_declaration = parse_var_declaration();
+			if (!statement->_var_declaration) return NULL;
+		} break;
+		default:
+		{
+			return NULL;
+		}
+	}
+	
 	return statement;
+}
+
+Ast_If* Parser::parse_if()
+{
+	return NULL;
+}
+
+Ast_For* Parser::parse_for()
+{
+	return NULL;
+}
+
+Ast_While* Parser::parse_while()
+{
+	return NULL;
+}
+
+Ast_Break* Parser::parse_break()
+{
+	Ast_Break* _break = m_arena.alloc<Ast_Break>();
+	_break->token = try_consume(TOKEN_KEYWORD_BREAK).value();
+	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
+	return _break;
+}
+
+Ast_Return* Parser::parse_return()
+{
+	return NULL;
+}
+
+Ast_Continue* Parser::parse_continue()
+{
+	Ast_Continue* _continue = m_arena.alloc<Ast_Continue>();
+	_continue->token = try_consume(TOKEN_KEYWORD_CONTINUE).value();
+	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
+	return _continue;
+}
+
+Ast_Procedure_Call* Parser::parse_proc_call()
+{
+	return NULL;
+}
+
+Ast_Variable_Assignment* Parser::parse_var_assignment()
+{
+	return NULL;
+}
+
+Ast_Variable_Declaration* Parser::parse_var_declaration()
+{
+	return NULL;
 }
 
 Ast Parser::parse()
 {
 	Ast ast;
-
+	
 	while (peek().has_value())
 	{
 		TokenType type = peek().value().type;
@@ -397,18 +488,17 @@ Ast Parser::parse()
 		}
 	}
 
+	debug_print_definitions(ast);
+
 	return ast;
 
 	//@Debug printing
-	debug_print_definitions();
-	
 	for (const FunctionInfo& fn : definitions_fn)
 	{
 		printf("function:");
 		error_report_token_ident(fn.name_ident);
 		printf("\n");
 
-		seek(fn.block_start_token_index);
 		consume();
 
 		auto token_scope_end = peek(); // }
@@ -509,9 +599,15 @@ std::optional<Token> Parser::peek(u32 offset)
 	else return m_tokens[m_index + offset];
 }
 
-void Parser::seek(size_t index)
+std::optional<Token> Parser::try_consume(TokenType token_type)
 {
-	m_index = index;
+	auto token = peek();
+	if (token && token.value().type == token_type)
+	{
+		consume();
+		return token;
+	}
+	return {};
 }
 
 void Parser::consume()
