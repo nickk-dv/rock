@@ -116,9 +116,17 @@ struct Ast_Break
 	Token token;
 };
 
+//@ pre defined out of order
+struct Ast_Literal
+{
+	Token token;
+};
+
 struct Ast_Return
 {
+	Token token;
 	//@Incomplete
+	Ast_Literal int_lit;
 };
 
 struct Ast_Continue
@@ -133,18 +141,20 @@ struct Ast_Procedure_Call
 
 struct Ast_Variable_Assignment
 {
+	Token ident;
 	//@Incomplete
+	Ast_Literal int_lit;
 };
 
 struct Ast_Variable_Declaration
 {
+	Token ident;
+	Token type;
 	//@Incomplete
+	Ast_Literal int_lit;
 };
 
-struct Ast_Literal
-{
-	Token token;
-};
+
 
 struct Ast_Unary_Expression
 {

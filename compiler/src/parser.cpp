@@ -389,7 +389,16 @@ Ast_Break* Parser::parse_break()
 
 Ast_Return* Parser::parse_return()
 {
-	return NULL;
+	Ast_Return* _return = m_arena.alloc<Ast_Return>();
+	_return->token = peek().value();
+	consume();
+
+	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
+	if (!int_lit) return NULL;
+	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
+
+	_return->int_lit.token = int_lit.value();
+	return _return;
 }
 
 Ast_Continue* Parser::parse_continue()
@@ -407,15 +416,50 @@ Ast_Procedure_Call* Parser::parse_proc_call()
 
 Ast_Variable_Assignment* Parser::parse_var_assignment()
 {
-	return NULL;
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) return NULL;
+	if (!try_consume(TOKEN_ASSIGN)) return NULL;
+
+	Ast_Variable_Assignment* _var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
+	_var_assignment->ident = ident.value();
+
+	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
+	if (!int_lit) return NULL;
+	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
+
+	_var_assignment->int_lit.token = int_lit.value();
+	return _var_assignment;
 }
 
 Ast_Variable_Declaration* Parser::parse_var_declaration()
 {
-	return NULL;
+	consume();
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) return NULL;
+	if (!try_consume(TOKEN_COLON)) return NULL;
+	auto type = try_consume(TOKEN_IDENT);
+	if (!type) return NULL;
+
+	Ast_Variable_Declaration* _var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
+	_var_declaration->ident = ident.value();
+	_var_declaration->type = type.value();
+
+	if (!try_consume(TOKEN_ASSIGN)) //default init
+	{
+		if (try_consume(TOKEN_SEMICOLON)) 
+			return _var_declaration;
+		return NULL;
+	}
+
+	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
+	if (!int_lit) return NULL;
+	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
+
+	_var_declaration->int_lit.token = int_lit.value();
+	return _var_declaration;
 }
 
-Ast Parser::parse()
+std::optional<Ast> Parser::parse()
 {
 	Ast ast;
 	
@@ -431,21 +475,21 @@ Ast Parser::parse()
 				auto struct_decl = parse_struct();
 				if (struct_decl.has_value())
 					ast.structs.emplace_back(struct_decl.value());
-				else return ast;
+				else return {};
 			} break;
 			case TOKEN_KEYWORD_ENUM:
 			{
 				auto enum_decl = parse_enum();
 				if (enum_decl.has_value())
 					ast.enums.emplace_back(enum_decl.value());
-				else return ast;
+				else return {};
 			} break;
 			case TOKEN_KEYWORD_FN:
 			{
 				auto proc_decl = parse_procedure();
 				if (proc_decl.has_value())
 					ast.procedures.emplace_back(proc_decl.value());
-				else return ast;
+				else return {};
 			} break;
 		}
 	}

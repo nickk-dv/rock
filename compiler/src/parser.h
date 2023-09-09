@@ -9,7 +9,7 @@ struct Parser
 {
 	Parser(std::vector<Token> tokens);
 
-	Ast parse();
+	std::optional<Ast> parse();
 
 	std::optional<Ast_Struct_Declaration> parse_struct();
 	std::optional<Ast_Enum_Declaration> parse_enum();
