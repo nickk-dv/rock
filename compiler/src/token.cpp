@@ -4,6 +4,7 @@
 
 #include <unordered_map>
 
+//@Performance find a way to not use maps an use logic or table lookups instead
 const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
 	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },
@@ -85,6 +86,8 @@ TokenType token_get_1_symbol_token_type(u8 c)
 
 TokenType token_get_2_symbol_token_type(u8 c, u8 c2)
 {
+	//@Hack for early rejection of a 2 letter symbol
+	if ((c2 >= 'A' && c2 <= 'Z') || (c2 >= 'a' && c2 <= 'z') || (c2 >= '0' && c2 <= '9')) return TOKEN_ERROR;
 	u64 hash = ((u64)c << 7) | (u64)c2;
 	bool is_symbol = symbol_hash_to_token_type.find(hash) != symbol_hash_to_token_type.end();
 	return is_symbol ? symbol_hash_to_token_type.at(hash) : TOKEN_ERROR;
