@@ -551,6 +551,8 @@ void Parser::debug_print_ast(Ast* ast)
 	printf("\n");
 	printf("[AST]\n\n");
 
+	u32 depth = 1;
+
 	for (const auto& proc : ast->procedures)
 	{
 		printf("ident:  ");
@@ -609,7 +611,7 @@ void Parser::debug_print_ast(Ast* ast)
 				{
 					printf("Return\n");
 					if (statement->_return->expr.has_value())
-					debug_print_expr(statement->_return->expr.value());
+					debug_print_expr(statement->_return->expr.value(), depth);
 				} break;
 				case Ast_Statement::Tag::Continue:
 				{
@@ -623,7 +625,7 @@ void Parser::debug_print_ast(Ast* ast)
 				{
 					printf("VariableAssignment:  ");
 					error_report_token_ident(statement->_var_assignment->ident.token, true);
-					debug_print_expr(statement->_var_assignment->expr);
+					debug_print_expr(statement->_var_assignment->expr, depth);
 				} break;
 				case Ast_Statement::Tag::VariableDeclaration:
 				{
@@ -632,7 +634,7 @@ void Parser::debug_print_ast(Ast* ast)
 					printf(", ");
 					error_report_token_ident(statement->_var_declaration->type.token, true);
 					if (statement->_var_declaration->expr.has_value())
-					debug_print_expr(statement->_var_declaration->expr.value());
+					debug_print_expr(statement->_var_declaration->expr.value(), depth);
 				} break;
 			}
 		}
@@ -640,7 +642,49 @@ void Parser::debug_print_ast(Ast* ast)
 	}
 }
 
-void Parser::debug_print_expr(Ast_Expression* expr)
+void Parser::debug_print_expr(Ast_Expression* expr, u32 depth)
 {
-	printf("    [Expr]\n");
+	for (u32 i = 0; i < depth; i++)
+	printf("    ");
+	printf("|___");
+	
+	switch (expr->tag)
+	{
+		case Ast_Expression::Tag::Term:
+		{
+			printf("Term_");
+			switch (expr->_term->tag)
+			{
+				case Ast_Term::Tag::Literal:
+				{
+					printf("Literal: %llu\n", expr->_term->_literal.token.integer_value);
+				} break;
+				case Ast_Term::Tag::Identifier:
+				{
+					printf("Identifier: ");
+					error_report_token_ident(expr->_term->_ident.token, true);
+				} break;
+				case Ast_Term::Tag::ProcedureCall:
+				{
+					printf("Procedure_Call\n");
+				} break;
+			}
+		} break;
+		case Ast_Expression::Tag::BinaryExpression:
+		{
+			printf("BinaryExpression\n");
+			debug_print_binary_expr(expr->_bin_expr, depth + 1);
+		} break;
+	}
+}
+
+void Parser::debug_print_binary_expr(Ast_Binary_Expression* expr, u32 depth)
+{
+	for (u32 i = 0; i < depth; i++)
+	printf("    ");
+	printf("|___");
+	printf("BinaryOp: %i\n", (int)expr->op);
+
+	debug_print_expr(expr->left, depth);
+	debug_print_expr(expr->left, depth);
 }

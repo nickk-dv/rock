@@ -32,7 +32,8 @@ struct Parser
 	std::optional<Token> try_consume(TokenType token_type);
 	void consume();
 	void debug_print_ast(Ast* ast);
-	void debug_print_expr(Ast_Expression* expr);
+	void debug_print_expr(Ast_Expression* expr, u32 depth);
+	void debug_print_binary_expr(Ast_Binary_Expression* expr, u32 depth);
 
 	const std::vector<Token> m_tokens;
 	size_t m_index = 0;
