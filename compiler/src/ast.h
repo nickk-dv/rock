@@ -5,6 +5,20 @@
 #include <vector>
 #include <optional>
 
+enum BinaryOp
+{
+	BINARY_OP_PLUS,
+	BINARY_OP_MINUS,
+	BINARY_OP_TIMES,
+	BINARY_OP_DIV,
+	BINARY_OP_MOD,
+
+	BINARY_OP_ERROR,
+};
+
+BinaryOp ast_binary_op_from_token(TokenType type);
+u32 ast_binary_op_precedence(BinaryOp op);
+
 struct Ast_Literal;
 struct Ast_Identifier;
 struct Ast_Term;
@@ -67,11 +81,7 @@ struct Ast_Expression
 	};
 };
 
-enum BinaryOp
-{
-	//@Incomplete find mapping from tokens
-};
-
+//@Incompelete think how unary - ! ~ might work and be parsed
 struct Ast_Binary_Expression
 {
 	BinaryOp op;

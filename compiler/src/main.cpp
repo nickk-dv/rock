@@ -20,7 +20,7 @@ int main()
 	std::cout << "Lexer ms: " << ns.count() / 1000000.0f << '\n';
 
 	lexer.print_debug_metrics(tokens);
-
+	
 	auto p0 = Clock::now();
 	Parser parser(std::move(tokens));
 	std::optional<Ast> ast = parser.parse();
