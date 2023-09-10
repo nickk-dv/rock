@@ -73,7 +73,7 @@ void debug_print_definitions(const Ast& ast)
 			printf(" :: "); 
 			error_report_token_ident(def.return_type.value().token);
 		}
-		printf("\n\n");
+		printf("\nstatements parsed: %llu\n\n", def.block->statements.size());
 	}
 }
 
@@ -91,7 +91,7 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 	if (!scope_start) return {};
 
 	Ast_Struct_Declaration struct_decl = {};
-	struct_decl.type.token = type.value();
+	struct_decl.type = Ast_Identifier { type.value() };
 
 	while (true)
 	{
@@ -127,7 +127,7 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 	if (!scope_start) return {};
 
 	Ast_Enum_Declaration enum_decl = {};
-	enum_decl.type.token = type.value();
+	enum_decl.type = Ast_Identifier { type.value() };
 
 	while (true)
 	{
@@ -160,7 +160,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	if (!paren_start) return {};
 
 	Ast_Procedure_Declaration proc_delc = {};
-	proc_delc.ident.token = ident.value();
+	proc_delc.ident = Ast_Identifier { ident.value() };
 	
 	while (true)
 	{
@@ -204,17 +204,89 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	return proc_delc;
 }
 
-Ast_Block* Parser::parse_block()
+Ast_Term* Parser::parse_term()
+{
+	auto token = peek();
+	if (!token) return NULL;
+
+	Ast_Term* term = m_arena.alloc<Ast_Term>();
+
+	switch (token.value().type)
+	{
+		case TOKEN_STRING:
+		{
+			term->tag = Ast_Term::Tag::Literal;
+			term->_literal = Ast_Literal { token.value() };
+			consume();
+		} break;
+		case TOKEN_NUMBER:
+		{
+			term->tag = Ast_Term::Tag::Literal;
+			term->_literal = Ast_Literal { token.value() };
+			consume();
+		} break;
+		case TOKEN_IDENT:
+		{
+			auto next_token = peek(1);
+
+			if (next_token && next_token.value().type == TOKEN_PAREN_START)
+			{
+				term->tag = Ast_Term::Tag::ProcedureCall;
+				term->_proc_call = parse_proc_call();
+				if (!term->_proc_call) return NULL;
+				break;
+			}
+
+			term->tag = Ast_Term::Tag::Identifier;
+			term->_ident = Ast_Identifier { token.value() };
+			consume();
+		} break;
+		default:
+		{
+			return NULL;
+		}
+	}
+
+	return term;
+}
+
+Ast_Expression* Parser::parse_expression() //@Incomplete
+{
+	Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
+
+	Ast_Term* term = parse_term();
+	if (term != NULL)
+	{
+		expr->tag = Ast_Expression::Tag::Term;
+		expr->_term = term;
+	}
+	else return NULL;
+
+	//@Incomplete Expression for now only can be a single Ast_Term
+	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
+
+	return expr;
+}
+
+Ast_Binary_Expression* Parser::parse_binary_expression() //@Incomplete
+{
+	Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
+
+	return bin_expr;
+}
+
+Ast_Block* Parser::parse_block() // { [statement], [statement]... }
 {
 	auto scope_start = try_consume(TOKEN_BLOCK_START);
 	if (!scope_start) return NULL;
 
 	Ast_Block* block = m_arena.alloc<Ast_Block>();
 
-	Ast_Statement* statement = parse_statement();
-	while (statement != NULL)
+	std::optional<Ast_Statement*> statement = parse_statement();
+	while (statement.has_value())
 	{
-		block->statements.emplace_back(statement);
+		if (statement.value() == NULL) return NULL;
+		block->statements.emplace_back(statement.value());
 		statement = parse_statement();
 	}
 
@@ -228,15 +300,16 @@ Ast_Block* Parser::parse_block()
 	return block;
 }
 
-Ast_Statement* Parser::parse_statement()
+std::optional<Ast_Statement*> Parser::parse_statement() //@Incomplete
 {
-	Ast_Statement* statement = m_arena.alloc<Ast_Statement>();
-
-	printf("First token of parse_statement \n");
-	error_report_token(peek().value());
+	// no value -> no stament introducers found
+	// value == NULL -> tried to parse but failed
+	// value != NULL -> parsed statement
 
 	auto token = peek();
-	if (!token) return NULL;
+	if (!token) return {};
+
+	Ast_Statement* statement = m_arena.alloc<Ast_Statement>();
 
 	switch (token.value().type)
 	{
@@ -244,37 +317,37 @@ Ast_Statement* Parser::parse_statement()
 		{
 			statement->tag = Ast_Statement::Tag::If;
 			statement->_if = parse_if();
-			if (!statement->_if) return NULL;
+			if (!statement->_if) return { nullptr };
 		} break;
 		case TOKEN_KEYWORD_FOR: //@Incomplete
 		{
 			statement->tag = Ast_Statement::Tag::For;
 			statement->_for = parse_for();
-			if (!statement->_for) return NULL;
+			if (!statement->_for) return { nullptr };
 		} break;
 		case TOKEN_KEYWORD_WHILE: //@Incomplete
 		{
 			statement->tag = Ast_Statement::Tag::While;
 			statement->_while = parse_while();
-			if (!statement->_while) return NULL;
+			if (!statement->_while) return { nullptr };
 		} break;
 		case TOKEN_KEYWORD_BREAK:
 		{
 			statement->tag = Ast_Statement::Tag::Break;
 			statement->_break = parse_break();
-			if (!statement->_break) return NULL;
+			if (!statement->_break) return { nullptr };
 		} break;
 		case TOKEN_KEYWORD_RETURN: //@Incomplete
 		{
 			statement->tag = Ast_Statement::Tag::Return;
 			statement->_return = parse_return();
-			if (!statement->_return) return NULL;
+			if (!statement->_return) return { nullptr };
 		} break;
 		case TOKEN_KEYWORD_CONTINUE:
 		{
 			statement->tag = Ast_Statement::Tag::Continue;
 			statement->_continue = parse_continue();
-			if (!statement->_continue) return NULL;
+			if (!statement->_continue) return { nullptr };
 		} break;
 		case TOKEN_IDENT: //@Incomplete
 		{
@@ -284,129 +357,128 @@ Ast_Statement* Parser::parse_statement()
 			{
 				statement->tag = Ast_Statement::Tag::ProcedureCall;
 				statement->_proc_call = parse_proc_call(); //@Incomplete
-				if (!statement->_proc_call) return NULL;
-				break;
+				if (!statement->_proc_call) return { nullptr };
 			}
-
-			if (next_token && next_token.value().type == TOKEN_ASSIGN)
+			else if (next_token && next_token.value().type == TOKEN_ASSIGN)
 			{
 				statement->tag = Ast_Statement::Tag::VariableAssignment;
-				statement->_var_assignment = parse_var_assignment(); //@Incomplete
-				if (!statement->_var_assignment) return NULL;
-				break;
+				statement->_var_assignment = parse_var_assignment();
+				if (!statement->_var_assignment) return { nullptr };
 			}
-
-			return NULL;
+			else return { nullptr };
 
 		} break;
 		case TOKEN_KEYWORD_LET: //@Incomplete
 		{
 			statement->tag = Ast_Statement::Tag::VariableDeclaration;
 			statement->_var_declaration = parse_var_declaration();
-			if (!statement->_var_declaration) return NULL;
+			if (!statement->_var_declaration) return { nullptr };
 		} break;
 		default:
 		{
-			return NULL;
+			return {};
 		}
 	}
 	
 	return statement;
 }
 
-Ast_If* Parser::parse_if()
+Ast_If* Parser::parse_if() //@Incomplete
 {
 	return NULL;
 }
 
-Ast_For* Parser::parse_for()
+Ast_For* Parser::parse_for() //@Incomplete
 {
 	return NULL;
 }
 
-Ast_While* Parser::parse_while()
+Ast_While* Parser::parse_while() //@Incomplete
 {
 	return NULL;
 }
 
-Ast_Break* Parser::parse_break()
+Ast_Break* Parser::parse_break() //break;
 {
 	Ast_Break* _break = m_arena.alloc<Ast_Break>();
-	_break->token = try_consume(TOKEN_KEYWORD_BREAK).value();
+	_break->token = peek().value();
+	consume();
+
 	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
 	return _break;
 }
 
-Ast_Return* Parser::parse_return()
+Ast_Return* Parser::parse_return() //return [expr]
 {
 	Ast_Return* _return = m_arena.alloc<Ast_Return>();
 	_return->token = peek().value();
 	consume();
 
-	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
-	if (!int_lit) return NULL;
-	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
-
-	_return->int_lit.token = int_lit.value();
+	Ast_Expression* expr = parse_expression();
+	if (!expr) return NULL;
+	_return->expr = expr;
 	return _return;
 }
 
-Ast_Continue* Parser::parse_continue()
+Ast_Continue* Parser::parse_continue() //continue;
 {
 	Ast_Continue* _continue = m_arena.alloc<Ast_Continue>();
-	_continue->token = try_consume(TOKEN_KEYWORD_CONTINUE).value();
+	_continue->token = peek().value();
+	consume();
+
 	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
 	return _continue;
 }
 
-Ast_Procedure_Call* Parser::parse_proc_call()
+Ast_Procedure_Call* Parser::parse_proc_call() //@Incomplete
 {
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) return NULL;
+
+	printf("Procedure call ident: (not parsing inner things of it yet) "); 
+	error_report_token_ident(ident.value());
+	printf("\n");
+
 	return NULL;
 }
 
-Ast_Variable_Assignment* Parser::parse_var_assignment()
+Ast_Variable_Assignment* Parser::parse_var_assignment() //ident = [expr]
 {
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) return NULL;
 	if (!try_consume(TOKEN_ASSIGN)) return NULL;
 
-	Ast_Variable_Assignment* _var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
-	_var_assignment->ident.token = ident.value();
+	Ast_Variable_Assignment* var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
+	var_assignment->ident = Ast_Identifier { ident.value() };
 
-	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
-	if (!int_lit) return NULL;
-	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
-
-	_var_assignment->int_lit.token = int_lit.value();
-	return _var_assignment;
+	Ast_Expression* expr = parse_expression();
+	if (!expr) return NULL;
+	var_assignment->expr = expr;
+	return var_assignment;
 }
 
-Ast_Variable_Declaration* Parser::parse_var_declaration()
+Ast_Variable_Declaration* Parser::parse_var_declaration() //let ident: type; | let ident: type = [expr]
 {
 	consume();
-	auto ident = try_consume(TOKEN_IDENT);
-	if (!ident) return NULL;
+	auto ident = try_consume(TOKEN_IDENT); if (!ident) return NULL;
 	if (!try_consume(TOKEN_COLON)) return NULL;
-	auto type = try_consume(TOKEN_IDENT);
-	if (!type) return NULL;
+	auto type = try_consume(TOKEN_IDENT); if (!type) return NULL;
 
-	Ast_Variable_Declaration* _var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
-	_var_declaration->ident.token = ident.value();
-	_var_declaration->type.token = type.value();
+	Ast_Variable_Declaration* var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
+	var_declaration->ident = Ast_Identifier { ident.value() };
+	var_declaration->type = Ast_Identifier { type.value() };
 
-	if (!try_consume(TOKEN_ASSIGN)) //default init
+	if (!try_consume(TOKEN_ASSIGN))
 	{
 		if (try_consume(TOKEN_SEMICOLON)) 
-			return _var_declaration;
+			return var_declaration;
 		return NULL;
 	}
 
-	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
-	if (!int_lit) return NULL;
-	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
-
-	_var_declaration->int_lit.token = int_lit.value();
-	return _var_declaration;
+	Ast_Expression* expr = parse_expression();
+	if (!expr) return NULL;
+	var_declaration->expr = expr;
+	return var_declaration;
 }
 
 std::optional<Ast> Parser::parse()

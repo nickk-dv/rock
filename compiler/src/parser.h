@@ -10,13 +10,14 @@ struct Parser
 	Parser(std::vector<Token> tokens);
 
 	std::optional<Ast> parse();
-
 	std::optional<Ast_Struct_Declaration> parse_struct();
 	std::optional<Ast_Enum_Declaration> parse_enum();
 	std::optional<Ast_Procedure_Declaration> parse_procedure();
-
+	Ast_Term* parse_term();
+	Ast_Expression* parse_expression();
+	Ast_Binary_Expression* parse_binary_expression();
 	Ast_Block* parse_block();
-	Ast_Statement* parse_statement();
+	std::optional<Ast_Statement*> parse_statement();
 	Ast_If* parse_if();
 	Ast_For* parse_for();
 	Ast_While* parse_while();

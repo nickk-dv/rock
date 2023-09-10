@@ -5,20 +5,19 @@
 #include <vector>
 #include <optional>
 
-struct Ast;
-
 struct Ast_Literal;
 struct Ast_Identifier;
+struct Ast_Term;
 struct Ast_Expression;
 struct Ast_Binary_Expression;
 
+struct Ast;
 struct Ast_Struct_Declaration;
 struct Ast_Enum_Declaration;
 struct Ast_Procedure_Declaration;
 
 struct Ast_Block;
 struct Ast_Statement;
-
 struct Ast_If;
 struct Ast_For;
 struct Ast_While;
@@ -28,13 +27,6 @@ struct Ast_Continue;
 struct Ast_Procedure_Call;
 struct Ast_Variable_Assignment;
 struct Ast_Variable_Declaration;
-
-struct Ast
-{
-	std::vector<Ast_Struct_Declaration> structs;
-	std::vector<Ast_Enum_Declaration> enums;
-	std::vector<Ast_Procedure_Declaration> procedures;
-};
 
 struct Ast_Literal
 {
@@ -51,14 +43,12 @@ struct Ast_Term
 	enum class Tag
 	{
 		Literal, Identifier, ProcedureCall,
-	};
-
-	Tag tag;
+	} tag;
 
 	union
 	{
-		Ast_Literal* _literal;
-		Ast_Identifier* _ident;
+		Ast_Literal _literal;
+		Ast_Identifier _ident;
 		Ast_Procedure_Call* _proc_call;
 	};
 };
@@ -68,9 +58,7 @@ struct Ast_Expression
 	enum class Tag
 	{
 		Term, BinaryExpression,
-	};
-
-	Tag tag;
+	} tag;
 
 	union
 	{
@@ -89,6 +77,13 @@ struct Ast_Binary_Expression
 	BinaryOp op;
 	Ast_Expression* left;
 	Ast_Expression* right;
+};
+
+struct Ast
+{
+	std::vector<Ast_Struct_Declaration> structs;
+	std::vector<Ast_Enum_Declaration> enums;
+	std::vector<Ast_Procedure_Declaration> procedures;
 };
 
 struct IdentTypePair
@@ -122,21 +117,13 @@ struct Ast_Block
 	std::vector<Ast_Statement*> statements;
 };
 
-enum class BlockStatement
-{
-	If, For, While, Break, Return, Continue,
-	ProcedureCall, VariableAssignment, VariableDeclaration,
-};
-
 struct Ast_Statement
 {
 	enum class Tag
 	{
 		If, For, While, Break, Return, Continue,
 		ProcedureCall, VariableAssignment, VariableDeclaration,
-	};
-
-	Tag tag;
+	} tag;
 
 	union
 	{
@@ -179,7 +166,7 @@ struct Ast_Break
 struct Ast_Return
 {
 	Token token;
-	Ast_Literal int_lit; //@Incomplete
+	Ast_Expression* expr;
 };
 
 struct Ast_Continue
@@ -195,12 +182,12 @@ struct Ast_Procedure_Call
 struct Ast_Variable_Assignment
 {
 	Ast_Identifier ident;
-	Ast_Literal int_lit; //@Incomplete
+	Ast_Expression* expr;
 };
 
 struct Ast_Variable_Declaration
 {
 	Ast_Identifier ident;
 	Ast_Identifier type;
-	Ast_Literal int_lit; //@Incomplete
+	Ast_Expression* expr;
 };
