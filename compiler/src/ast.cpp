@@ -15,7 +15,7 @@ static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
 {
 	{BINARY_OP_PLUS, 0},
 	{BINARY_OP_MINUS, 0},
-	{BINARY_OP_TIMES, 0},
+	{BINARY_OP_TIMES, 1},
 	{BINARY_OP_DIV, 1},
 	{BINARY_OP_MOD, 1},
 };

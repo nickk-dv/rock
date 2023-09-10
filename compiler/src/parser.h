@@ -16,7 +16,7 @@ struct Parser
 	std::optional<Ast_Procedure_Declaration> parse_procedure();
 	Ast_Term* parse_term();
 	Ast_Expression* parse_expression();
-	Ast_Binary_Expression* parse_binary_expression();
+	Ast_Expression* parse_sub_expression(u32 min_precedence = 0);
 	Ast_Block* parse_block();
 	std::optional<Ast_Statement*> parse_statement();
 	Ast_If* parse_if();

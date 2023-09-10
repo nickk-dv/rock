@@ -250,29 +250,55 @@ Ast_Term* Parser::parse_term()
 	return term;
 }
 
-Ast_Expression* Parser::parse_expression() //@Incomplete
+Ast_Expression* Parser::parse_expression()
 {
-	Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
-
-	Ast_Term* term = parse_term();
-	if (term != NULL)
-	{
-		expr->tag = Ast_Expression::Tag::Term;
-		expr->_term = term;
-	}
-	else return NULL;
-
-	//@Incomplete Expression for now only can be a single Ast_Term
+	Ast_Expression* expr = parse_sub_expression();
+	
+	if (!expr) return NULL;
 	if (!try_consume(TOKEN_SEMICOLON)) return NULL;
 
 	return expr;
 }
 
-Ast_Binary_Expression* Parser::parse_binary_expression() //@Incomplete
+Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete
 {
-	Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
+	Ast_Term* term_lhs = parse_term();
+	if (!term_lhs) return NULL;
 
-	return bin_expr;
+	Ast_Expression* expr_lhs = m_arena.alloc<Ast_Expression>();
+	expr_lhs->tag = Ast_Expression::Tag::Term;
+	expr_lhs->_term = term_lhs;
+
+	while (true)
+	{
+		auto token_op = peek();
+		if (!token_op) break;
+		BinaryOp op = ast_binary_op_from_token(token_op.value().type);
+		if (op == BINARY_OP_ERROR) break;
+		u32 prec = ast_binary_op_precedence(op);
+		if (prec < min_precedence) break;
+		consume();
+
+		u32 next_min_prec = prec + 1;
+		Ast_Expression* expr_rhs = parse_sub_expression(next_min_prec);
+		if (expr_rhs == NULL) return NULL;
+
+		//@Hacks
+		Ast_Expression* expr_lhs2 = m_arena.alloc<Ast_Expression>();
+		expr_lhs2->tag = expr_lhs->tag;
+		expr_lhs2->_term = expr_lhs->_term;
+		expr_lhs2->_bin_expr = expr_lhs->_bin_expr;
+
+		Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
+		bin_expr->op = op;
+		bin_expr->left = expr_lhs2; //Assembling the magic tree
+		bin_expr->right = expr_rhs;
+
+		expr_lhs->tag = Ast_Expression::Tag::BinaryExpression;
+		expr_lhs->_bin_expr = bin_expr;
+	}
+
+	return expr_lhs;
 }
 
 Ast_Block* Parser::parse_block() // { [statement], [statement]... }
@@ -516,6 +542,14 @@ std::optional<Ast> Parser::parse()
 					ast.procedures.emplace_back(proc_decl.value());
 				else return {};
 			} break;
+			default:
+			{
+				if (m_tokens[m_index - 1].type == TOKEN_INPUT_END) return ast;
+
+				printf("Expected fn enum struct declaration.\n");
+				error_report_token(m_tokens[m_index - 1]); //@Hack reporting on prev token, current one is consumed above
+				return {};
+			} break;
 		}
 	}
 
@@ -686,5 +720,5 @@ void Parser::debug_print_binary_expr(Ast_Binary_Expression* expr, u32 depth)
 	printf("BinaryOp: %i\n", (int)expr->op);
 
 	debug_print_expr(expr->left, depth);
-	debug_print_expr(expr->left, depth);
+	debug_print_expr(expr->right, depth);
 }
