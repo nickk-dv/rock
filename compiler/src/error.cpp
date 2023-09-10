@@ -42,7 +42,7 @@ void error_report_token(Token token)
 	printf("\n");
 }
 
-void error_report_token_ident(Token token)
+void error_report_token_ident(Token token, bool endl)
 {
 	if (token.type == TOKEN_IDENT)
 	{
@@ -53,4 +53,5 @@ void error_report_token_ident(Token token)
 	{
 		printf("TOKEN IS NOT AN IDENTIFIER!");
 	}
+	if (endl) printf("\n");
 }

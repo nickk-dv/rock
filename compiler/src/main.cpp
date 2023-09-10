@@ -29,7 +29,10 @@ int main()
 	std::cout << "Parser ms: " << pns.count() / 1000000.0f << '\n';
 
 	if (ast.has_value())
+	{
 		printf("Parse result: Success\n");
+		parser.debug_print_ast(&ast.value());
+	}
 	else printf("Parse result: FAILED\n");
 
 	return 0;

@@ -10,6 +10,7 @@ struct Parser
 	Parser(std::vector<Token> tokens);
 
 	std::optional<Ast> parse();
+
 	std::optional<Ast_Struct_Declaration> parse_struct();
 	std::optional<Ast_Enum_Declaration> parse_enum();
 	std::optional<Ast_Procedure_Declaration> parse_procedure();
@@ -27,10 +28,11 @@ struct Parser
 	Ast_Procedure_Call* parse_proc_call();
 	Ast_Variable_Assignment* parse_var_assignment();
 	Ast_Variable_Declaration* parse_var_declaration();
-
 	std::optional<Token> peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
 	void consume();
+	void debug_print_ast(Ast* ast);
+	void debug_print_expr(Ast_Expression* expr);
 
 	const std::vector<Token> m_tokens;
 	size_t m_index = 0;

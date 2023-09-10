@@ -18,4 +18,4 @@ enum ParseError
 void error_report(LexerError error, Token token);
 void error_report(ParseError error, Token token);
 void error_report_token(Token token);
-void error_report_token_ident(Token token);
+void error_report_token_ident(Token token, bool endl = false);

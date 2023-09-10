@@ -166,7 +166,7 @@ struct Ast_Break
 struct Ast_Return
 {
 	Token token;
-	Ast_Expression* expr;
+	std::optional<Ast_Expression*> expr;
 };
 
 struct Ast_Continue
@@ -189,5 +189,5 @@ struct Ast_Variable_Declaration
 {
 	Ast_Identifier ident;
 	Ast_Identifier type;
-	Ast_Expression* expr;
+	std::optional<Ast_Expression*> expr;
 };

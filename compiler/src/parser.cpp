@@ -414,6 +414,9 @@ Ast_Return* Parser::parse_return() //return [expr]
 	_return->token = peek().value();
 	consume();
 
+	if (try_consume(TOKEN_SEMICOLON)) //return;
+		return _return;
+
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;
 	_return->expr = expr;
@@ -541,4 +544,103 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 void Parser::consume()
 {
 	m_index += 1;
+}
+
+void Parser::debug_print_ast(Ast* ast)
+{
+	printf("\n");
+	printf("[AST]\n\n");
+
+	for (const auto& proc : ast->procedures)
+	{
+		printf("ident:  ");
+		error_report_token_ident(proc.ident.token, true);
+		printf("params: ");
+		if (proc.input_parameters.empty())
+		{
+			printf("--\n");
+		}
+		else
+		{
+			printf("(");
+			u32 count = 0;
+			for (const auto& param : proc.input_parameters)
+			{
+				if (count != 0)
+				printf(", ");
+				count += 1;
+				error_report_token_ident(param.ident.token);
+				printf(": ");
+				error_report_token_ident(param.type.token);
+			}
+			printf(")\n");
+		}
+
+		printf("return: ");
+		if (proc.return_type.has_value())
+		{
+			error_report_token_ident(proc.return_type.value().token, true);
+		}
+		else printf("--\n");
+
+		printf("Block\n");
+		for (Ast_Statement* statement : proc.block->statements)
+		{
+			printf("|___");
+			switch (statement->tag)
+			{
+				case Ast_Statement::Tag::If:
+				{
+					printf("If\n");
+				} break;
+				case Ast_Statement::Tag::For:
+				{
+					printf("For\n");
+				} break;
+				case Ast_Statement::Tag::While:
+				{
+					printf("While\n");
+				} break;
+				case Ast_Statement::Tag::Break:
+				{
+					printf("Break\n");
+				} break;
+				case Ast_Statement::Tag::Return:
+				{
+					printf("Return\n");
+					if (statement->_return->expr.has_value())
+					debug_print_expr(statement->_return->expr.value());
+				} break;
+				case Ast_Statement::Tag::Continue:
+				{
+					printf("Continue\n");
+				} break;
+				case Ast_Statement::Tag::ProcedureCall:
+				{
+					printf("ProcedureCall\n");
+				} break;
+				case Ast_Statement::Tag::VariableAssignment:
+				{
+					printf("VariableAssignment:  ");
+					error_report_token_ident(statement->_var_assignment->ident.token, true);
+					debug_print_expr(statement->_var_assignment->expr);
+				} break;
+				case Ast_Statement::Tag::VariableDeclaration:
+				{
+					printf("VariableDeclaration: ");
+					error_report_token_ident(statement->_var_declaration->ident.token);
+					printf(", ");
+					error_report_token_ident(statement->_var_declaration->type.token, true);
+					if (statement->_var_declaration->expr.has_value())
+					debug_print_expr(statement->_var_declaration->expr.value());
+				} break;
+			}
+		}
+		printf("\n");
+	}
+}
+
+void Parser::debug_print_expr(Ast_Expression* expr)
+{
+	printf("    [Expr]\n");
 }
