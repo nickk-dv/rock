@@ -12,16 +12,16 @@ void debug_print_tab()
 void debug_print_parameter(const IdentTypePair& parameter, bool tab = true, bool newline = true)
 {
 	if (tab) debug_print_tab();
-	error_report_token_ident(parameter.ident);
+	error_report_token_ident(parameter.ident.token);
 	printf(": ");
-	error_report_token_ident(parameter.type);
+	error_report_token_ident(parameter.type.token);
 	if (newline) printf(",\n");
 }
 
 void debug_print_enum_parameter(const IdentTypePair& parameter, bool tab = true, bool newline = true)
 {
 	if (tab) debug_print_tab();
-	error_report_token_ident(parameter.ident);
+	error_report_token_ident(parameter.ident.token);
 	if (newline) printf(",\n");
 }
 
@@ -31,7 +31,7 @@ void debug_print_definitions(const Ast& ast)
 	for (const auto& def : ast.structs)
 	{
 		printf("struct ");
-		error_report_token_ident(def.type);
+		error_report_token_ident(def.type.token);
 		printf("\n{\n");
 
 		for (const auto& parameter : def.fields)
@@ -43,7 +43,7 @@ void debug_print_definitions(const Ast& ast)
 	for (const auto& def : ast.enums)
 	{
 		printf("enum ");
-		error_report_token_ident(def.type);
+		error_report_token_ident(def.type.token);
 		printf("\n{\n");
 		
 		for (const auto& variant : def.variants)
@@ -55,7 +55,7 @@ void debug_print_definitions(const Ast& ast)
 	for (const auto& def : ast.procedures)
 	{
 		printf("fn ");
-		error_report_token_ident(def.ident);
+		error_report_token_ident(def.ident.token);
 
 		printf("(");
 		size_t size = def.input_parameters.size();
@@ -70,66 +70,12 @@ void debug_print_definitions(const Ast& ast)
 
 		if (def.return_type)
 		{
-			printf(" -> "); 
-			error_report_token_ident(def.return_type.value());
+			printf(" :: "); 
+			error_report_token_ident(def.return_type.value().token);
 		}
 		printf("\n\n");
 	}
 }
-
-enum BinaryOp
-{
-	BINARY_OP_ASSIGN,
-	BINARY_OP_PLUS,
-	BINARY_OP_MINUS,
-	BINARY_OP_TIMES,
-	BINARY_OP_DIV,
-	BINARY_OP_MOD,
-	BINARY_OP_BITWISE_AND,
-	BINARY_OP_BITWISE_OR,
-	BINARY_OP_BITWISE_XOR,
-	BINARY_OP_PLUS_EQUALS,
-	BINARY_OP_MINUS_EQUALS,
-	BINARY_OP_TIMES_EQUALS,
-	BINARY_OP_DIV_EQUALS,
-	BINARY_OP_MOD_EQUALS,
-	BINARY_OP_BITWISE_AND_EQUALS,
-	BINARY_OP_BITWISE_OR_EQUALS,
-	BINARY_OP_BITWISE_XOR_EQUALS,
-	BINARY_OP_BITSHIFT_LEFT,
-	BINARY_OP_BITSHIFT_RIGHT,
-	BINARY_OP_LESS,
-	BINARY_OP_GREATER,
-	BINARY_OP_LESS_EQUALS,
-	BINARY_OP_GREATER_EQUALS,
-	BINARY_OP_IS_EQUAL,
-	BINARY_OP_NOT_EQUAL,
-	BINARY_OP_LOGIC_AND,
-	BINARY_OP_LOGIC_OR
-};
-
-enum UnaryOp
-{
-	UNARY_OP_BITWISE_NOT,
-	UNARY_OP_LOGIC_NOT,
-};
-
-struct NodeTerm
-{
-	Token number_literal;
-};
-
-struct NodeVariableDeclaration
-{
-	Token ident;
-	Token type;
-	NodeTerm term;
-};
-
-struct NodeReturn
-{
-	NodeTerm term;
-};
 
 Parser::Parser(std::vector<Token> tokens) 
 	: m_tokens(std::move(tokens)), 
@@ -145,7 +91,7 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 	if (!scope_start) return {};
 
 	Ast_Struct_Declaration struct_decl = {};
-	struct_decl.type = type.value();
+	struct_decl.type.token = type.value();
 
 	while (true)
 	{
@@ -181,7 +127,7 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 	if (!scope_start) return {};
 
 	Ast_Enum_Declaration enum_decl = {};
-	enum_decl.type = type.value();
+	enum_decl.type.token = type.value();
 
 	while (true)
 	{
@@ -214,7 +160,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	if (!paren_start) return {};
 
 	Ast_Procedure_Declaration proc_delc = {};
-	proc_delc.ident = ident.value();
+	proc_delc.ident.token = ident.value();
 	
 	while (true)
 	{
@@ -245,7 +191,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 		auto return_type = try_consume(TOKEN_IDENT);
 		if (!return_type) return {};
 
-		proc_delc.return_type = return_type.value();
+		proc_delc.return_type = Ast_Identifier { return_type.value() };
 	}
 
 	proc_delc.block = parse_block();
@@ -273,7 +219,11 @@ Ast_Block* Parser::parse_block()
 	}
 
 	auto scope_end = try_consume(TOKEN_BLOCK_END);
-	if (!scope_end) return NULL;
+	if (!scope_end)
+	{
+		printf("Block missing: }\n");
+		return NULL;
+	}
 
 	return block;
 }
@@ -421,7 +371,7 @@ Ast_Variable_Assignment* Parser::parse_var_assignment()
 	if (!try_consume(TOKEN_ASSIGN)) return NULL;
 
 	Ast_Variable_Assignment* _var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
-	_var_assignment->ident = ident.value();
+	_var_assignment->ident.token = ident.value();
 
 	auto int_lit = try_consume(TOKEN_NUMBER); //@Incomplete only allowing int_literals
 	if (!int_lit) return NULL;
@@ -441,8 +391,8 @@ Ast_Variable_Declaration* Parser::parse_var_declaration()
 	if (!type) return NULL;
 
 	Ast_Variable_Declaration* _var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
-	_var_declaration->ident = ident.value();
-	_var_declaration->type = type.value();
+	_var_declaration->ident.token = ident.value();
+	_var_declaration->type.token = type.value();
 
 	if (!try_consume(TOKEN_ASSIGN)) //default init
 	{

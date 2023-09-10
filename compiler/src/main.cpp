@@ -8,7 +8,7 @@ int main()
 {
 	Lexer lexer = {};
 
-	if (!lexer.set_input_from_file("../../test_perf.txt")) 
+	if (!lexer.set_input_from_file("../../test.txt")) 
 		exit(EXIT_FAILURE);
 
 	typedef std::chrono::high_resolution_clock Clock;

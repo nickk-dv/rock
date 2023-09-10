@@ -7,6 +7,11 @@
 
 struct Ast;
 
+struct Ast_Literal;
+struct Ast_Identifier;
+struct Ast_Expression;
+struct Ast_Binary_Expression;
+
 struct Ast_Struct_Declaration;
 struct Ast_Enum_Declaration;
 struct Ast_Procedure_Declaration;
@@ -24,10 +29,6 @@ struct Ast_Procedure_Call;
 struct Ast_Variable_Assignment;
 struct Ast_Variable_Declaration;
 
-struct Ast_Literal;
-struct Ast_Unary_Expression;
-struct Ast_Binary_Expression;
-
 struct Ast
 {
 	std::vector<Ast_Struct_Declaration> structs;
@@ -35,29 +36,84 @@ struct Ast
 	std::vector<Ast_Procedure_Declaration> procedures;
 };
 
+struct Ast_Literal
+{
+	Token token;
+};
+
+struct Ast_Identifier
+{
+	Token token;
+};
+
+struct Ast_Term
+{
+	enum class Tag
+	{
+		Literal, Identifier, ProcedureCall,
+	};
+
+	Tag tag;
+
+	union
+	{
+		Ast_Literal* _literal;
+		Ast_Identifier* _ident;
+		Ast_Procedure_Call* _proc_call;
+	};
+};
+
+struct Ast_Expression
+{
+	enum class Tag
+	{
+		Term, BinaryExpression,
+	};
+
+	Tag tag;
+
+	union
+	{
+		Ast_Term* _term;
+		Ast_Binary_Expression* _bin_expr;
+	};
+};
+
+enum BinaryOp
+{
+	//@Incomplete find mapping from tokens
+};
+
+struct Ast_Binary_Expression
+{
+	BinaryOp op;
+	Ast_Expression* left;
+	Ast_Expression* right;
+};
+
 struct IdentTypePair
 {
-	Token ident;
-	Token type;
+	Ast_Identifier ident;
+	Ast_Identifier type;
 };
 
 struct Ast_Struct_Declaration
 {
-	Token type;
+	Ast_Identifier type;
 	std::vector<IdentTypePair> fields;
 };
 
 struct Ast_Enum_Declaration
 {
-	Token type;
+	Ast_Identifier type;
 	std::vector<IdentTypePair> variants;
 };
 
 struct Ast_Procedure_Declaration
 {
-	Token ident;
+	Ast_Identifier ident;
 	std::vector<IdentTypePair> input_parameters;
-	std::optional<Token> return_type;
+	std::optional<Ast_Identifier> return_type;
 	Ast_Block* block;
 };
 
@@ -96,11 +152,6 @@ struct Ast_Statement
 	};
 };
 
-struct Ast_Literal
-{
-	Token token;
-};
-
 struct Ast_If //@Incomplete
 {
 	//Some conditional expr
@@ -136,30 +187,20 @@ struct Ast_Continue
 	Token token;
 };
 
-struct Ast_Procedure_Cal
+struct Ast_Procedure_Call
 {
 	//@Incomplete
 };
 
 struct Ast_Variable_Assignment
 {
-	Token ident;
+	Ast_Identifier ident;
 	Ast_Literal int_lit; //@Incomplete
 };
 
 struct Ast_Variable_Declaration
 {
-	Token ident;
-	Token type;
+	Ast_Identifier ident;
+	Ast_Identifier type;
 	Ast_Literal int_lit; //@Incomplete
-};
-
-struct Ast_Unary_Expression
-{
-	//@Incomplete
-};
-
-struct Ast_Binary_Expression
-{
-	//@Incomplete
 };
