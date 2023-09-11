@@ -1,8 +1,28 @@
-#include "semantic.h"
 
-#include <unordered_map>
+enum class PrimitiveType
+{
+	i8,
+	u8,
+	i16,
+	u16,
+	i32,
+	u32,
+	i64,
+	u64,
+	f32,
+	f64,
+	Bool,
+	NotPrimitive,
+};
 
-const std::unordered_map<u64, PrimitiveType> ident_hash_to_primitive_type =
+PrimitiveType get_primitive_type_of_ident(const StringView& str);
+
+struct SemanticAnalyzer
+{
+
+};
+
+static const std::unordered_map<u64, PrimitiveType> ident_hash_to_primitive_type =
 {
 	{ hash_ascii_9("i8"),   PrimitiveType::i8 },
 	{ hash_ascii_9("u8"),   PrimitiveType::u8 },

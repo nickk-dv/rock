@@ -1,14 +1,20 @@
-#include "lexer.h"
-#include "parser.h"
-
+#include <unordered_map>
 #include <iostream>
+#include <optional>
 #include <chrono>
+
+#include "common.cpp"
+#include "tokenizer.cpp"
+#include "error.cpp"
+#include "ast.cpp"
+#include "parser.cpp"
+#include "semantic.cpp"
 
 int main()
 {
-	Lexer lexer = {};
+	Tokenizer lexer = {};
 
-	if (!lexer.set_input_from_file("../../test.txt")) 
+	if (!lexer.set_input_from_file("../../test_perf.txt")) 
 		exit(EXIT_FAILURE);
 
 	typedef std::chrono::high_resolution_clock Clock;
@@ -27,7 +33,7 @@ int main()
 	auto p1 = Clock::now();
 	std::chrono::nanoseconds pns = std::chrono::duration_cast<std::chrono::nanoseconds>(p1 - p0);
 	std::cout << "Parser ms: " << pns.count() / 1000000.0f << '\n';
-
+	
 	if (ast.has_value())
 	{
 		printf("Parse result: Success\n");

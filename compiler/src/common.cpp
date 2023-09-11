@@ -1,49 +1,84 @@
-#include "common.h"
-
 #include <cstdio>
 #include <cstdlib>
 #include <time.h>
 #include <string.h>
 
-String::~String()
+typedef unsigned char u8;
+typedef unsigned int u32;
+typedef unsigned long long u64;
+
+struct String
 {
-	free(data);
+	~String()
+	{
+		free(data);
+	}
+
+	u8* data;
+	size_t count;
+};
+
+struct StringView
+{
+	StringView(const String& str)
+	{
+		data = str.data;
+		count = str.count;
+	}
+
+	u8* data;
+	size_t count;
+};
+
+//@Incomplete no overflow protection
+class ArenaAllocator
+{
+public:
+	ArenaAllocator(size_t size)
+	{
+		m_size = size;
+		m_offset = 0;
+		m_buffer = malloc(size);
+		if (m_buffer != NULL)
+		memset(m_buffer, 0, size);
+	}
+
+	~ArenaAllocator()
+	{
+		free(m_buffer);
+	}
+
+	inline ArenaAllocator(const ArenaAllocator& other) = delete;
+	inline ArenaAllocator operator=(const ArenaAllocator& other) = delete;
+
+	template <typename T>
+	T* alloc()
+	{
+		T* ptr = (T*)((u8*)m_buffer + m_offset);
+		m_offset += sizeof(T);
+		return ptr;
+	}
+
+private:
+	size_t m_size;
+	size_t m_offset;
+	void* m_buffer;
+};
+
+constexpr u64 string_hash_ascii_9(const StringView& str)
+{
+	u64 hash = 0;
+	for (u32 i = 0; i < str.count; i++)
+		hash = (hash << 7) | (u64)str.data[i];
+	return hash;
 }
 
-StringView::StringView(const String& str)
+constexpr u64 hash_ascii_9(const char* str)
 {
-	data = str.data;
-	count = str.count;
-}
-
-Timer::Timer()
-{
-	start_time = clock();
-}
-
-float Timer::Ms()
-{
-	return Sec() * 1000.0f;
-}
-
-float Timer::Sec()
-{
-	long time = clock() - start_time;
-	return (float)time / CLOCKS_PER_SEC;
-}
-
-ArenaAllocator::ArenaAllocator(size_t size)
-{
-	m_size = size;
-	m_offset = 0;
-	m_buffer = malloc(size);
-	if (m_buffer != NULL)
-	memset(m_buffer, 0, size);
-}
-
-ArenaAllocator::~ArenaAllocator()
-{
-	free(m_buffer);
+	u64 hash = 0;
+	for (u32 i = 0; i < 9 && str[i] != '\0'; i++)
+		hash = (hash << 7) | (u64)((u8)str[i]);
+	return hash;
 }
 
 bool os_file_read_all(const char* file_path, String* str)
