@@ -260,7 +260,7 @@ Ast_Expression* Parser::parse_expression()
 	return expr;
 }
 
-Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete
+Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete think about handling parens ()
 {
 	Ast_Term* term_lhs = parse_term();
 	if (!term_lhs) return NULL;
