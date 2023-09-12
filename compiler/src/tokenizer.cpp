@@ -110,7 +110,6 @@ struct Tokenizer
 	u64 input_cursor = 0;
 };
 
-
 bool Tokenizer::set_input_from_file(const char* file_path)
 {
 	input_cursor = 0;
@@ -201,100 +200,100 @@ std::vector<Token> Tokenizer::tokenize()
 
 			switch (type)
 			{
-			case LEXEME_IDENT:
-			{
-				while (lexeme_end <= line.end_cursor)
+				case LEXEME_IDENT:
 				{
-					u8 c = input.data[lexeme_end];
-					if (!is_ident(c)) break;
-					lexeme_end += 1;
-				}
-
-				token.type = TOKEN_IDENT;
-				token.string_value.data = input.data + lexeme_start;
-				token.string_value.count = lexeme_end - lexeme_start;
-
-				TokenType keyword = get_keyword_token_type(token.string_value);
-				if (keyword != TOKEN_ERROR) token.type = keyword;
-
-				i = lexeme_end;
-				lexeme_end -= 1;
-			} break;
-			case LEXEME_NUMBER:
-			{
-				u64 integer = fc - '0';
-
-				while (lexeme_end <= line.end_cursor)
-				{
-					u8 c = input.data[lexeme_end];
-					if (!is_number(c)) break;
-					lexeme_end += 1;
-
-					integer *= 10;
-					integer += c - '0';
-				}
-
-				token.type = TOKEN_NUMBER;
-				token.integer_value = integer;
-
-				i = lexeme_end;
-				lexeme_end -= 1;
-			} break;
-			case LEXEME_STRING:
-			{
-				bool terminated = false;
-
-				while (lexeme_end <= line.end_cursor)
-				{
-					u8 c = input.data[lexeme_end];
-					lexeme_end += 1;
-					if (c == '"') { terminated = true; break; }
-				}
-
-				token.type = TOKEN_STRING;
-				token.string_value.data = input.data + lexeme_start;
-				token.string_value.count = lexeme_end - lexeme_start;
-
-				i = lexeme_end;
-				lexeme_end -= 1;
-
-				if (!terminated)
-				{
-					//error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
-					token.type = TOKEN_ERROR;
-				}
-			} break;
-			case LEXEME_SYMBOL:
-			{
-				token.type = c_to_sym[fc];
-
-				if (lexeme_end <= line.end_cursor)
-				{
-					u8 c = input.data[lexeme_end];
-
-					constexpr u32 equal_composable_symbol_token_offset = 12;
-					constexpr u32 double_composable_symbol_token_offset = 18;
-
-					u32 sym2 = TOKEN_ERROR;
-					if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
-					else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))  sym2 = token.type + double_composable_symbol_token_offset;
-					else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
-
-					if (sym2 != TOKEN_ERROR)
+					while (lexeme_end <= line.end_cursor)
 					{
-						token.type = (TokenType)sym2;
+						u8 c = input.data[lexeme_end];
+						if (!is_ident(c)) break;
 						lexeme_end += 1;
 					}
-				}
 
-				i = lexeme_end;
-				lexeme_end -= 1;
-			} break;
-			case LEXEME_ERROR:
-			{
-				i++;
-				//error_report(LEXER_ERROR_INVALID_CHARACTER, token); @Error handling disabled single char errors
-			} break;
+					token.type = TOKEN_IDENT;
+					token.string_value.data = input.data + lexeme_start;
+					token.string_value.count = lexeme_end - lexeme_start;
+
+					TokenType keyword = get_keyword_token_type(token.string_value);
+					if (keyword != TOKEN_ERROR) token.type = keyword;
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+				} break;
+				case LEXEME_NUMBER:
+				{
+					u64 integer = fc - '0';
+
+					while (lexeme_end <= line.end_cursor)
+					{
+						u8 c = input.data[lexeme_end];
+						if (!is_number(c)) break;
+						lexeme_end += 1;
+
+						integer *= 10;
+						integer += c - '0';
+					}
+
+					token.type = TOKEN_NUMBER;
+					token.integer_value = integer;
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+				} break;
+				case LEXEME_STRING:
+				{
+					bool terminated = false;
+
+					while (lexeme_end <= line.end_cursor)
+					{
+						u8 c = input.data[lexeme_end];
+						lexeme_end += 1;
+						if (c == '"') { terminated = true; break; }
+					}
+
+					token.type = TOKEN_STRING;
+					token.string_value.data = input.data + lexeme_start;
+					token.string_value.count = lexeme_end - lexeme_start;
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+
+					if (!terminated)
+					{
+						//error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
+						token.type = TOKEN_ERROR;
+					}
+				} break;
+				case LEXEME_SYMBOL:
+				{
+					token.type = c_to_sym[fc];
+
+					if (lexeme_end <= line.end_cursor)
+					{
+						u8 c = input.data[lexeme_end];
+
+						constexpr u32 equal_composable_symbol_token_offset = 12;
+						constexpr u32 double_composable_symbol_token_offset = 18;
+
+						u32 sym2 = TOKEN_ERROR;
+						if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
+						else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))  sym2 = token.type + double_composable_symbol_token_offset;
+						else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
+
+						if (sym2 != TOKEN_ERROR)
+						{
+							token.type = (TokenType)sym2;
+							lexeme_end += 1;
+						}
+					}
+
+					i = lexeme_end;
+					lexeme_end -= 1;
+				} break;
+				case LEXEME_ERROR:
+				{
+					i++;
+					//error_report(LEXER_ERROR_INVALID_CHARACTER, token); @Error handling disabled single char errors
+				} break;
 			}
 
 			if (token.type != TOKEN_ERROR)
@@ -329,11 +328,20 @@ LineInfo Tokenizer::get_next_line()
 	}
 
 	line.end_cursor = i;
+	bool comment_started = false;
 
 	while (i < count && !is_line_break(input.data[i]))
 	{
-		line.end_cursor = i;
-		line.is_empty = false;
+		if (!comment_started)
+		{
+			comment_started = input.data[i] == '/' && ((i + 1) < count) && input.data[i + 1] == '/';
+			if (!comment_started)
+			{
+				line.end_cursor = i;
+				line.is_empty = false;
+			}
+		}
+
 		i++;
 	}
 
@@ -406,6 +414,18 @@ void Tokenizer::print_debug_metrics(const std::vector<Token>& tokens)
 	// 25.4 ms 2 symbol hack
 	// 22.3 ms 2 symbol relational token derive
 	// 21.5~22 ms -> removed
+
+	Lexer: TokenCount:          553694
+	Lexer: TokenTypesSum:       553694
+	Lexer: [IdentCount]:        202846
+	Lexer: [NumberCount]:       2051
+	Lexer: [StringCount]:       5427
+	Lexer: [KeywordCount]:      24483
+	Lexer: [SymbolCount]:       318887
+	Lexer: MemoryRequired (Mb): 16.897400
+	Lexer: MemoryUsed     (Mb): 23.498535
+
+	//17ms comment support
 	*/
 
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());
