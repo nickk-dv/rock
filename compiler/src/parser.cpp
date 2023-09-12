@@ -72,8 +72,6 @@ void debug_print_definitions(const Ast& ast)
 	}
 }
 
-#include <vector>
-
 struct Parser
 {
 	Parser(std::vector<Token> tokens);
@@ -420,8 +418,9 @@ std::optional<Ast_Statement*> Parser::parse_statement() //@Incomplete
 			else if (next_token.value().type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::ProcedureCall;
-				statement->_proc_call = parse_proc_call(); //@Incomplete
+				statement->_proc_call = parse_proc_call();
 				if (!statement->_proc_call) return { nullptr };
+				if (!try_consume(TOKEN_SEMICOLON)) return { nullptr }; //@Hack the proc_call statament requires ';' at the end
 			}
 			else return { nullptr };
 		} break;
@@ -479,16 +478,27 @@ Ast_Continue* Parser::parse_continue() //continue;
 	return _continue;
 }
 
-Ast_Procedure_Call* Parser::parse_proc_call() //@Incomplete
+Ast_Procedure_Call* Parser::parse_proc_call()
 {
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) return NULL;
+	if (!try_consume(TOKEN_PAREN_START)) return NULL;
 
-	printf("Procedure call ident: (not parsing inner things of it yet) "); 
-	error_report_token_ident(ident.value());
-	printf("\n");
+	Ast_Procedure_Call* proc_call = m_arena.alloc<Ast_Procedure_Call>();
+	proc_call->ident = Ast_Identifier { ident.value() };
 
-	return NULL;
+	while (true)
+	{
+		Ast_Expression* param_expr = parse_sub_expression();
+		if (!param_expr) break;
+		proc_call->input_expressions.emplace_back(param_expr);
+
+		if (try_consume(TOKEN_COMA)) continue;
+		else break; // No more params
+	}
+
+	if (!try_consume(TOKEN_PAREN_END)) return NULL;
+	return proc_call;
 }
 
 Ast_Variable_Assignment* Parser::parse_var_assignment() //ident = [expr]

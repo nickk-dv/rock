@@ -29,8 +29,6 @@ enum BinaryOp
 
 	BINARY_OP_LOGIC_OR,
 
-	//all *= with higher prec
-
 	BINARY_OP_ERROR,
 };
 
@@ -165,15 +163,17 @@ struct Ast_Statement
 	};
 };
 
-struct Ast_If //@Incomplete
+struct Ast_If
 {
+	//@Incomplete
 	//Some conditional expr
 	Ast_Block* block;
 	std::optional<Ast_Block*> else_block;
 };
 
-struct Ast_For //@Incomplete
+struct Ast_For
 {
+	//@Incomplete
 	//3 expressions
 	Ast_Block* block;
 };
@@ -196,7 +196,8 @@ struct Ast_Continue
 
 struct Ast_Procedure_Call
 {
-	//@Incomplete
+	Ast_Identifier ident;
+	std::vector<Ast_Expression*> input_expressions;
 };
 
 struct Ast_Variable_Assignment
@@ -241,7 +242,6 @@ static const std::unordered_map<TokenType, BinaryOp> token_to_binary_op =
 
 //@Article about improving clarity of op prec: 
 //https://www.foonathan.net/2017/07/operator-precedence/
-
 static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
 {
 	{BINARY_OP_LOGIC_AND, 0},
