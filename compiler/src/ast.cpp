@@ -190,8 +190,10 @@ struct Ast_Else
 
 struct Ast_For
 {
-	//@Incomplete
-	//3 expressions
+	Token token;
+	std::optional<Ast_Variable_Declaration*> var_declaration;
+	std::optional<Ast_Expression*> condition_expr;
+	std::optional<Ast_Expression*> post_expr;
 	Ast_Block* block;
 };
 

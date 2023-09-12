@@ -487,9 +487,56 @@ Ast_Else* Parser::parse_else()
 	return _else;
 }
 
-Ast_For* Parser::parse_for() //@Incomplete
+Ast_For* Parser::parse_for()
 {
-	return NULL;
+	Ast_For* _for = m_arena.alloc<Ast_For>();
+	_for->token = peek().value();
+	consume();
+
+	// 0 expressions = infinite loop
+	// 1 var declaration; 1 conditional expr; 1 post expr;
+	// 1 conditional expr; 1 post expr;
+	// 1 conditional expr;
+	
+	auto curr = peek();
+	auto next = peek(1);
+
+	//infinite loop
+	if (curr && curr.value().type == TOKEN_BLOCK_START)
+	{
+		Ast_Block* block = parse_block();
+		if (!block) return NULL;
+		_for->block = block;
+
+		return _for;
+	}
+
+	//var declaration detection
+	if (curr && curr.value().type == TOKEN_IDENT && next && next.value().type == TOKEN_COLON)
+	{
+		Ast_Variable_Declaration* var_declaration = parse_var_declaration();
+		if (!var_declaration) return NULL;
+		_for->var_declaration = var_declaration;
+	}
+
+	//conditional expr must exist
+	Ast_Expression* condition_expr = parse_sub_expression();
+	if (!condition_expr) return NULL;
+	_for->condition_expr = condition_expr;
+
+	//post expr might exist
+	if (try_consume(TOKEN_SEMICOLON))
+	{
+		Ast_Expression* post_expr = parse_sub_expression();
+		if (!post_expr) return NULL;
+		_for->post_expr = post_expr;
+	}
+
+	Ast_Block* block = parse_block();
+	if (!block) return NULL;
+	_for->block = block;
+
+	return _for;
 }
 
 Ast_Break* Parser::parse_break() //break;
