@@ -14,9 +14,7 @@ enum TokenType
 	TOKEN_KEYWORD_ELSE,       // else
 	TOKEN_KEYWORD_TRUE,       // true
 	TOKEN_KEYWORD_FALSE,      // false
-	TOKEN_KEYWORD_LET,        // let
 	TOKEN_KEYWORD_FOR,        // for
-	TOKEN_KEYWORD_WHILE,      // while
 	TOKEN_KEYWORD_BREAK,      // break
 	TOKEN_KEYWORD_RETURN,     // return
 	TOKEN_KEYWORD_CONTINUE,   // continue
@@ -364,9 +362,7 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("else"),     TOKEN_KEYWORD_ELSE },
 	{ hash_ascii_9("true"),     TOKEN_KEYWORD_TRUE },
 	{ hash_ascii_9("false"),    TOKEN_KEYWORD_FALSE },
-	{ hash_ascii_9("let"),      TOKEN_KEYWORD_LET },
 	{ hash_ascii_9("for"),      TOKEN_KEYWORD_FOR },
-	{ hash_ascii_9("while"),    TOKEN_KEYWORD_WHILE },
 	{ hash_ascii_9("break"),    TOKEN_KEYWORD_BREAK },
 	{ hash_ascii_9("return"),   TOKEN_KEYWORD_RETURN },
 	{ hash_ascii_9("continue"), TOKEN_KEYWORD_CONTINUE },

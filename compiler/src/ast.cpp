@@ -52,7 +52,6 @@ struct Ast_Block;
 struct Ast_Statement;
 struct Ast_If;
 struct Ast_For;
-struct Ast_While;
 struct Ast_Break;
 struct Ast_Return;
 struct Ast_Continue;
@@ -157,7 +156,6 @@ struct Ast_Statement
 	{
 		Ast_If* _if;
 		Ast_For* _for;
-		Ast_While* _while;
 		Ast_Break* _break;
 		Ast_Return* _return;
 		Ast_Continue* _continue;
@@ -177,12 +175,6 @@ struct Ast_If //@Incomplete
 struct Ast_For //@Incomplete
 {
 	//3 expressions
-	Ast_Block* block;
-};
-
-struct Ast_While //@Incomplete
-{
-	//Some conditional expr
 	Ast_Block* block;
 };
 

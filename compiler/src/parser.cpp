@@ -90,7 +90,6 @@ struct Parser
 	std::optional<Ast_Statement*> parse_statement();
 	Ast_If* parse_if();
 	Ast_For* parse_for();
-	Ast_While* parse_while();
 	Ast_Break* parse_break();
 	Ast_Return* parse_return();
 	Ast_Continue* parse_continue();
@@ -383,12 +382,6 @@ std::optional<Ast_Statement*> Parser::parse_statement() //@Incomplete
 			statement->_for = parse_for();
 			if (!statement->_for) return { nullptr };
 		} break;
-		case TOKEN_KEYWORD_WHILE: //@Incomplete
-		{
-			statement->tag = Ast_Statement::Tag::While;
-			statement->_while = parse_while();
-			if (!statement->_while) return { nullptr };
-		} break;
 		case TOKEN_KEYWORD_BREAK:
 		{
 			statement->tag = Ast_Statement::Tag::Break;
@@ -410,27 +403,27 @@ std::optional<Ast_Statement*> Parser::parse_statement() //@Incomplete
 		case TOKEN_IDENT: //@Incomplete
 		{
 			auto next_token = peek(1);
+			if (!next_token) return { nullptr };
 
-			if (next_token && next_token.value().type == TOKEN_PAREN_START)
+			if (next_token.value().type == TOKEN_COLON)
 			{
-				statement->tag = Ast_Statement::Tag::ProcedureCall;
-				statement->_proc_call = parse_proc_call(); //@Incomplete
-				if (!statement->_proc_call) return { nullptr };
+				statement->tag = Ast_Statement::Tag::VariableDeclaration;
+				statement->_var_declaration = parse_var_declaration();
+				if (!statement->_var_declaration) return { nullptr };
 			}
-			else if (next_token && next_token.value().type == TOKEN_ASSIGN)
+			else if (next_token.value().type == TOKEN_ASSIGN)
 			{
 				statement->tag = Ast_Statement::Tag::VariableAssignment;
 				statement->_var_assignment = parse_var_assignment();
 				if (!statement->_var_assignment) return { nullptr };
 			}
+			else if (next_token.value().type == TOKEN_PAREN_START)
+			{
+				statement->tag = Ast_Statement::Tag::ProcedureCall;
+				statement->_proc_call = parse_proc_call(); //@Incomplete
+				if (!statement->_proc_call) return { nullptr };
+			}
 			else return { nullptr };
-
-		} break;
-		case TOKEN_KEYWORD_LET: //@Incomplete
-		{
-			statement->tag = Ast_Statement::Tag::VariableDeclaration;
-			statement->_var_declaration = parse_var_declaration();
-			if (!statement->_var_declaration) return { nullptr };
 		} break;
 		default:
 		{
@@ -447,11 +440,6 @@ Ast_If* Parser::parse_if() //@Incomplete
 }
 
 Ast_For* Parser::parse_for() //@Incomplete
-{
-	return NULL;
-}
-
-Ast_While* Parser::parse_while() //@Incomplete
 {
 	return NULL;
 }
@@ -518,20 +506,20 @@ Ast_Variable_Assignment* Parser::parse_var_assignment() //ident = [expr]
 	return var_assignment;
 }
 
-Ast_Variable_Declaration* Parser::parse_var_declaration() //let ident: type; | let ident: type = [expr]
+Ast_Variable_Declaration* Parser::parse_var_declaration()
 {
-	consume();
 	auto ident = try_consume(TOKEN_IDENT); if (!ident) return NULL;
 	if (!try_consume(TOKEN_COLON)) return NULL;
-	auto type = try_consume(TOKEN_IDENT); if (!type) return NULL;
 
 	Ast_Variable_Declaration* var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
 	var_declaration->ident = Ast_Identifier { ident.value() };
-	var_declaration->type = Ast_Identifier { type.value() };
 
-	if (!try_consume(TOKEN_ASSIGN))
+	auto type = try_consume(TOKEN_IDENT); //explicit type
+	if (type) var_declaration->type = Ast_Identifier { type.value() };
+
+	if (!try_consume(TOKEN_ASSIGN)) //default init
 	{
-		if (try_consume(TOKEN_SEMICOLON)) 
+		if (type && try_consume(TOKEN_SEMICOLON)) //default init must have a type and ';'
 			return var_declaration;
 		return NULL;
 	}
