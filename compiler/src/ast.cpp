@@ -49,6 +49,7 @@ struct Ast_Procedure_Declaration;
 struct Ast_Block;
 struct Ast_Statement;
 struct Ast_If;
+struct Ast_Else;
 struct Ast_For;
 struct Ast_Break;
 struct Ast_Return;
@@ -165,10 +166,26 @@ struct Ast_Statement
 
 struct Ast_If
 {
-	//@Incomplete
-	//Some conditional expr
+	Token token;
+	Ast_Expression* expr;
 	Ast_Block* block;
-	std::optional<Ast_Block*> else_block;
+	std::optional<Ast_Else*> _else;
+};
+
+struct Ast_Else
+{
+	Token token;
+
+	enum class Tag
+	{
+		If, Block,
+	} tag;
+
+	union
+	{
+		Ast_If* _if;
+		Ast_Block* _block;
+	};
 };
 
 struct Ast_For

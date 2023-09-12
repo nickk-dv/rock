@@ -87,6 +87,7 @@ struct Parser
 	Ast_Block* parse_block();
 	std::optional<Ast_Statement*> parse_statement();
 	Ast_If* parse_if();
+	Ast_Else* parse_else();
 	Ast_For* parse_for();
 	Ast_Break* parse_break();
 	Ast_Return* parse_return();
@@ -433,9 +434,57 @@ std::optional<Ast_Statement*> Parser::parse_statement() //@Incomplete
 	return statement;
 }
 
-Ast_If* Parser::parse_if() //@Incomplete
+Ast_If* Parser::parse_if() //if [expr] { }
 {
-	return NULL;
+	Ast_If* _if = m_arena.alloc<Ast_If>();
+	_if->token = peek().value();
+	consume();
+
+	Ast_Expression* expr = parse_sub_expression();
+	if (!expr) return NULL;
+	_if->expr = expr;
+
+	Ast_Block* block = parse_block();
+	if (!block) return NULL;
+	_if->block = block;
+
+	auto else_token = peek();
+	if (else_token && else_token.value().type == TOKEN_KEYWORD_ELSE)
+	{
+		Ast_Else* _else = parse_else();
+		if (!_else) return NULL;
+		_if->_else = _else;
+	}
+
+	return _if;
+}
+
+Ast_Else* Parser::parse_else()
+{
+	Ast_Else* _else = m_arena.alloc<Ast_Else>();
+	_else->token = peek().value();
+	consume();
+
+	auto next = peek();
+	if (!next) return NULL;
+
+	if (next.value().type == TOKEN_KEYWORD_IF)
+	{
+		Ast_If* _if = parse_if();
+		if (!_if) return NULL;
+		_else->tag = Ast_Else::Tag::If;
+		_else->_if = _if;
+	}
+	else if (next.value().type == TOKEN_BLOCK_START)
+	{
+		Ast_Block* block = parse_block();
+		if (!block) return NULL;
+		_else->tag = Ast_Else::Tag::Block;
+		_else->_block = block;
+	}
+	else return NULL;
+
+	return _else;
 }
 
 Ast_For* Parser::parse_for() //@Incomplete
