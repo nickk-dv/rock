@@ -5,6 +5,7 @@ enum TokenType
 	TOKEN_IDENT,              // name
 	TOKEN_NUMBER,             // 10
 	TOKEN_STRING,             // "string"
+	TOKEN_BOOL_LITERAL,       // true false
 
 	//[Keywords]
 	TOKEN_KEYWORD_STRUCT,     // struct
@@ -75,6 +76,7 @@ struct Token
 
 	union
 	{
+		bool bool_value;
 		double float64_value;
 		u64 integer_value;
 		StringView string_value;

@@ -1,40 +1,4 @@
 
-enum BinaryOp
-{
-	BINARY_OP_PLUS,
-	BINARY_OP_MINUS,
-
-	BINARY_OP_TIMES,
-	BINARY_OP_DIV,
-	BINARY_OP_MOD,
-
-	BINARY_OP_BITSHIFT_LEFT,
-	BINARY_OP_BITSHIFT_RIGHT,
-
-	BINARY_OP_LESS,
-	BINARY_OP_GREATER,
-	BINARY_OP_LESS_EQUALS,
-	BINARY_OP_GREATER_EQUALS,
-
-	BINARY_OP_IS_EQUALS,
-	BINARY_OP_NOT_EQUALS,
-
-	BINARY_OP_BITWISE_AND,
-
-	BINARY_OP_BITWISE_XOR,
-
-	BINARY_OP_BITWISE_OR,
-
-	BINARY_OP_LOGIC_AND,
-
-	BINARY_OP_LOGIC_OR,
-
-	BINARY_OP_ERROR,
-};
-
-BinaryOp ast_binary_op_from_token(TokenType type);
-u32 ast_binary_op_precedence(BinaryOp op);
-
 struct Ast_Literal;
 struct Ast_Identifier;
 struct Ast_Term;
@@ -96,6 +60,8 @@ struct Ast_Expression
 		Ast_Binary_Expression* _bin_expr;
 	};
 };
+
+enum BinaryOp;
 
 //@Incompelete think how unary - ! ~ might work and be parsed
 struct Ast_Binary_Expression
@@ -232,6 +198,39 @@ struct Ast_Variable_Declaration
 	std::optional<Ast_Expression*> expr;
 };
 
+enum BinaryOp
+{
+	BINARY_OP_PLUS,
+	BINARY_OP_MINUS,
+
+	BINARY_OP_TIMES,
+	BINARY_OP_DIV,
+	BINARY_OP_MOD,
+
+	BINARY_OP_BITSHIFT_LEFT,
+	BINARY_OP_BITSHIFT_RIGHT,
+
+	BINARY_OP_LESS,
+	BINARY_OP_GREATER,
+	BINARY_OP_LESS_EQUALS,
+	BINARY_OP_GREATER_EQUALS,
+
+	BINARY_OP_IS_EQUALS,
+	BINARY_OP_NOT_EQUALS,
+
+	BINARY_OP_BITWISE_AND,
+
+	BINARY_OP_BITWISE_XOR,
+
+	BINARY_OP_BITWISE_OR,
+
+	BINARY_OP_LOGIC_AND,
+
+	BINARY_OP_LOGIC_OR,
+
+	BINARY_OP_ERROR,
+};
+
 static const std::unordered_map<TokenType, BinaryOp> token_to_binary_op =
 {
 	{TOKEN_LOGIC_AND, BINARY_OP_LOGIC_AND},
@@ -259,8 +258,6 @@ static const std::unordered_map<TokenType, BinaryOp> token_to_binary_op =
 	{TOKEN_BITSHIFT_RIGHT, BINARY_OP_BITSHIFT_RIGHT},
 };
 
-//@Article about improving clarity of op prec: 
-//https://www.foonathan.net/2017/07/operator-precedence/
 static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
 {
 	{BINARY_OP_LOGIC_AND, 0},

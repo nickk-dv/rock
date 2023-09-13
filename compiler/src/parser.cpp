@@ -255,6 +255,22 @@ Ast_Term* Parser::parse_term()
 			term->_literal = Ast_Literal { token.value() };
 			consume();
 		} break;
+		case TOKEN_KEYWORD_TRUE:
+		{
+			term->tag = Ast_Term::Tag::Literal;
+			token.value().type = TOKEN_BOOL_LITERAL; //@Hack maybe do this at lexing stage?
+			token.value().bool_value = true;
+			term->_literal = Ast_Literal{ token.value() };
+			consume();
+		} break;
+		case TOKEN_KEYWORD_FALSE:
+		{
+			term->tag = Ast_Term::Tag::Literal;
+			token.value().type = TOKEN_BOOL_LITERAL; //@Hack maybe do this at lexing stage?
+			token.value().bool_value = false;
+			term->_literal = Ast_Literal{ token.value() };
+			consume();
+		} break;
 		case TOKEN_IDENT:
 		{
 			auto next_token = peek(1);
