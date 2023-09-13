@@ -5,6 +5,7 @@ bool check_ast(Ast* ast);
 bool check_enum(const Ast_Enum_Declaration& decl, Ast* ast);
 bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast);
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast);
+bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast);
 
 bool check_compare_ident(const StringView& str, const StringView& str2);
 bool check_is_ident_type_unique(const StringView& str, Ast* ast);
@@ -14,14 +15,19 @@ PrimitiveType check_get_primitive_type_of_ident(const StringView& str);
 
 bool check_ast(Ast* ast)
 {
+	bool declarations_valid = true;
 	for (const auto& decl : ast->structs)
-	if (!check_struct(decl, ast)) return false;
-
+	if (!check_struct(decl, ast)) declarations_valid = false;
 	for (const auto& decl : ast->enums)
-	if (!check_enum(decl, ast)) return false;
-
+	if (!check_enum(decl, ast)) declarations_valid = false;
 	for (const auto& decl : ast->procedures)
-	if (!check_procedure(decl, ast)) return false;
+	if (!check_procedure(decl, ast)) declarations_valid = false;
+	if (!declarations_valid) return false;
+
+	bool procedure_blocks_valid = true;
+	for (const auto& decl : ast->procedures)
+	if (!check_procedure_block(decl, ast)) procedure_blocks_valid = false;
+	if (!procedure_blocks_valid) return false;
 
 	return true;
 }
@@ -134,6 +140,14 @@ bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast)
 
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast)
 {
+	//Procedure name is primitive type
+	if (check_is_ident_a_primitive_type(decl.ident.token.string_value))
+	{
+		printf("Function cannot use identifier of a primitive type.\n");
+		return false;
+	}
+
+	//Procedure name is taken
 	for (const auto& proc_decl : ast->procedures)
 	{
 		if (check_compare_ident(decl.ident.token.string_value, proc_decl.ident.token.string_value)
@@ -184,6 +198,11 @@ bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast)
 	return true;
 }
 
+bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast)
+{
+	return true;
+}
+
 bool check_compare_ident(const StringView& str, const StringView& str2)
 {
 	if (str.count != str2.count) return false;
@@ -197,18 +216,14 @@ bool check_is_ident_type_unique(const StringView& str, Ast* ast)
 	for (const auto& struct_decl : ast->structs)
 	{
 		if (check_compare_ident(str, struct_decl.type.token.string_value)
-			&& str.data != struct_decl.type.token.string_value.data)
-		{
+			&& str.data != struct_decl.type.token.string_value.data) 
 			return false;
-		}
 	}
 	for (const auto& enum_decl : ast->enums)
 	{
 		if (check_compare_ident(str, enum_decl.type.token.string_value)
 			&& str.data != enum_decl.type.token.string_value.data)
-		{
 			return false;
-		}
 	}
 	return true;
 }
