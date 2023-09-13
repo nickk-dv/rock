@@ -8,7 +8,7 @@
 #include "error.cpp"
 #include "ast.cpp"
 #include "parser.cpp"
-#include "semantic.cpp"
+#include "checker.cpp"
 
 int main()
 {
@@ -36,8 +36,13 @@ int main()
 	
 	if (ast.has_value())
 	{
-		printf("Parse result: Success\n");
 		parser.debug_print_ast(&ast.value());
+
+		printf("Parse result: Success\n\n");
+
+		bool correct = check_ast(&ast.value());
+		if (correct) printf("Check result: Success\n");
+		else printf("Check result: FAILED\n");
 	}
 	else printf("Parse result: FAILED\n");
 

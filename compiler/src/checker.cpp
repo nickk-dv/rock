@@ -1,4 +1,52 @@
 
+bool check_ast(Ast* ast);
+bool check_enum(const Ast_Enum_Declaration& decl);
+bool check_struct(const Ast_Struct_Declaration& decl);
+bool check_procedure(const Ast_Procedure_Declaration& decl);
+enum class PrimitiveType;
+PrimitiveType get_primitive_type_of_ident(const StringView& str);
+
+bool check_ast(Ast* ast)
+{
+	for (const auto& decl : ast->enums)
+	if (!check_enum(decl)) return false;
+
+	for (const auto& decl : ast->structs)
+	if (!check_struct(decl)) return false;
+
+	for (const auto& decl : ast->procedures)
+	if (!check_procedure(decl)) return false;
+
+	return true;
+}
+
+bool check_enum(const Ast_Enum_Declaration& decl)
+{
+	if (decl.variants.empty())
+	{
+		printf("Enum must have at least 1 variant."); 
+		return false; 
+	}
+
+	return true;
+}
+
+bool check_struct(const Ast_Struct_Declaration& decl)
+{
+	if (decl.fields.empty())
+	{
+		printf("Struct must have at least 1 field."); 
+		return false;
+	}
+
+	return true;
+}
+
+bool check_procedure(const Ast_Procedure_Declaration& decl)
+{
+	return true;
+}
+
 enum class PrimitiveType
 {
 	i8,
@@ -13,13 +61,6 @@ enum class PrimitiveType
 	f64,
 	Bool,
 	NotPrimitive,
-};
-
-PrimitiveType get_primitive_type_of_ident(const StringView& str);
-
-struct SemanticAnalyzer
-{
-
 };
 
 static const std::unordered_map<u64, PrimitiveType> ident_hash_to_primitive_type =
