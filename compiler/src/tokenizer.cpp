@@ -396,23 +396,6 @@ void Tokenizer::print_debug_metrics(const std::vector<Token>& tokens)
 	}
 
 	/*
-	Lexer: TokenCount:          768829
-	Lexer: TokenTypesSum:       768829
-	Lexer: [IdentCount]:        338633
-	Lexer: [NumberCount]:       2878
-	Lexer: [StringCount]:       5858
-	Lexer: [KeywordCount]:      28820
-	Lexer: [SymbolCount]:       392640
-	Lexer: MemoryRequired (Mb): 23.462799
-	Lexer: MemoryUsed     (Mb): 23.498535
-
-	//~49-50 ms original timing
-	//~27-28 ms memory preallocation
-	// 25.7 ms lexeme lookup, keyword.count > 8
-	// 25.4 ms 2 symbol hack
-	// 22.3 ms 2 symbol relational token derive
-	// 21.5~22 ms -> removed
-
 	Lexer: TokenCount:          553694
 	Lexer: TokenTypesSum:       553694
 	Lexer: [IdentCount]:        202846
@@ -423,7 +406,8 @@ void Tokenizer::print_debug_metrics(const std::vector<Token>& tokens)
 	Lexer: MemoryRequired (Mb): 16.897400
 	Lexer: MemoryUsed     (Mb): 23.498535
 
-	//17ms comment support
+	17ms comment support
+
 	*/
 
 	printf("Lexer: TokenCount:          %llu \n", tokens.size());

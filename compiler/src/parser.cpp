@@ -1,77 +1,4 @@
 
-void debug_print_tab()
-{
-	printf("   ");
-}
-
-void debug_print_parameter(const IdentTypePair& parameter, bool tab = true, bool newline = true)
-{
-	if (tab) debug_print_tab();
-	error_report_token_ident(parameter.ident.token);
-	printf(": ");
-	error_report_token_ident(parameter.type.token);
-	if (newline) printf(",\n");
-}
-
-void debug_print_enum_parameter(const IdentTypePair& parameter, bool tab = true, bool newline = true)
-{
-	if (tab) debug_print_tab();
-	error_report_token_ident(parameter.ident.token);
-	if (newline) printf(",\n");
-}
-
-void debug_print_definitions(const Ast& ast)
-{
-	printf("[STRUCTS]\n\n");
-	for (const auto& def : ast.structs)
-	{
-		printf("struct ");
-		error_report_token_ident(def.type.token);
-		printf("\n{\n");
-
-		for (const auto& parameter : def.fields)
-			debug_print_parameter(parameter);
-		printf("}\n\n");
-	}
-
-	printf("[ENUMS]\n\n");
-	for (const auto& def : ast.enums)
-	{
-		printf("enum ");
-		error_report_token_ident(def.type.token);
-		printf("\n{\n");
-		
-		for (const auto& variant : def.variants)
-			debug_print_enum_parameter(variant);
-		printf("}\n\n");
-	}
-
-	printf("[FUNCTIONS]\n\n");
-	for (const auto& def : ast.procedures)
-	{
-		printf("fn ");
-		error_report_token_ident(def.ident.token);
-
-		printf("(");
-		size_t size = def.input_parameters.size();
-		size_t counter = 0;
-		for (const auto& parameter : def.input_parameters)
-		{
-			debug_print_parameter(parameter, false, false);
-			counter += 1;
-			if (counter != size) printf(", ");
-		}
-		printf(")");
-
-		if (def.return_type)
-		{
-			printf(" :: "); 
-			error_report_token_ident(def.return_type.value().token);
-		}
-		printf("\nstatements parsed: %llu\n\n", def.block->statements.size());
-	}
-}
-
 struct Parser
 {
 	Parser(std::vector<Token> tokens);
@@ -225,11 +152,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	}
 
 	proc_delc.block = parse_block();
-	if (proc_delc.block == NULL)
-	{
-		printf("Func block is null\n"); //@Debug
-		return {};
-	}
+	if (proc_delc.block == NULL) return {};
 
 	return proc_delc;
 }
@@ -347,7 +270,7 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete t
 	return expr_lhs;
 }
 
-Ast_Block* Parser::parse_block() // { [statement], [statement]... }
+Ast_Block* Parser::parse_block()
 {
 	auto scope_start = try_consume(TOKEN_BLOCK_START);
 	if (!scope_start) return NULL;
@@ -450,7 +373,7 @@ std::optional<Ast_Statement*> Parser::parse_statement() //@Incomplete
 	return statement;
 }
 
-Ast_If* Parser::parse_if() //if [expr] { }
+Ast_If* Parser::parse_if()
 {
 	Ast_If* _if = m_arena.alloc<Ast_If>();
 	_if->token = peek().value();
@@ -555,7 +478,7 @@ Ast_For* Parser::parse_for()
 	return _for;
 }
 
-Ast_Break* Parser::parse_break() //break;
+Ast_Break* Parser::parse_break()
 {
 	Ast_Break* _break = m_arena.alloc<Ast_Break>();
 	_break->token = peek().value();
@@ -565,13 +488,13 @@ Ast_Break* Parser::parse_break() //break;
 	return _break;
 }
 
-Ast_Return* Parser::parse_return() //return [expr]
+Ast_Return* Parser::parse_return()
 {
 	Ast_Return* _return = m_arena.alloc<Ast_Return>();
 	_return->token = peek().value();
 	consume();
 
-	if (try_consume(TOKEN_SEMICOLON)) //return;
+	if (try_consume(TOKEN_SEMICOLON))
 		return _return;
 
 	Ast_Expression* expr = parse_expression();
@@ -580,7 +503,7 @@ Ast_Return* Parser::parse_return() //return [expr]
 	return _return;
 }
 
-Ast_Continue* Parser::parse_continue() //continue;
+Ast_Continue* Parser::parse_continue()
 {
 	Ast_Continue* _continue = m_arena.alloc<Ast_Continue>();
 	_continue->token = peek().value();
@@ -613,7 +536,7 @@ Ast_Procedure_Call* Parser::parse_proc_call()
 	return proc_call;
 }
 
-Ast_Variable_Assignment* Parser::parse_var_assignment() //ident = [expr]
+Ast_Variable_Assignment* Parser::parse_var_assignment()
 {
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) return NULL;
@@ -688,14 +611,12 @@ std::optional<Ast> Parser::parse()
 			{
 				if (m_tokens[m_index - 1].type == TOKEN_INPUT_END) return ast;
 
-				printf("Expected fn enum struct declaration.\n");
+				printf("Expected fn, enum or struct declaration.\n");
 				error_report_token(m_tokens[m_index - 1]); //@Hack reporting on prev token, current one is consumed above
 				return {};
 			} break;
 		}
 	}
-
-	debug_print_definitions(ast);
 
 	return ast;
 }
