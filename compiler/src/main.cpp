@@ -7,6 +7,7 @@
 #include "tokenizer.cpp"
 #include "error.cpp"
 #include "ast.cpp"
+#include "debug_printer.cpp"
 #include "parser.cpp"
 #include "checker.cpp"
 
@@ -30,17 +31,17 @@ int main()
 	std::cout << "Lexer ms: " << ns.count() / 1000000.0f << '\n';
 
 	lexer.print_debug_metrics(tokens);
-	
+	Parser parser(std::move(tokens)); //@Performance allocation not measured in parser time
+
 	auto p0 = Clock::now();
-	Parser parser(std::move(tokens));
 	std::optional<Ast> ast = parser.parse();
 	auto p1 = Clock::now();
 	std::chrono::nanoseconds pns = std::chrono::duration_cast<std::chrono::nanoseconds>(p1 - p0);
-	std::cout << "Parser ms: " << pns.count() / 1000000.0f << '\n';
+	std::cout << "Parser ms: " << pns.count() / 1000000.0f << "\n\n";
 	
 	if (ast.has_value())
 	{
-		parser.debug_print_ast(&ast.value());
+		//debug_print_ast(&ast.value());
 
 		printf("Parse result: Success\n\n");
 

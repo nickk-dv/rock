@@ -12,7 +12,7 @@ struct Parser
 	Ast_Expression* parse_expression();
 	Ast_Expression* parse_sub_expression(u32 min_precedence = 0);
 	Ast_Block* parse_block();
-	std::optional<Ast_Statement*> parse_statement();
+	Ast_Statement* parse_statement();
 	Ast_If* parse_if();
 	Ast_Else* parse_else();
 	Ast_For* parse_for();
@@ -24,10 +24,8 @@ struct Parser
 	Ast_Variable_Declaration* parse_var_declaration();
 	std::optional<Token> peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
+	Token consume_get();
 	void consume();
-	void debug_print_ast(Ast* ast);
-	void debug_print_expr(Ast_Expression* expr, u32 depth);
-	void debug_print_binary_expr(Ast_Binary_Expression* expr, u32 depth);
 
 	const std::vector<Token> m_tokens;
 	size_t m_index = 0;
@@ -166,7 +164,10 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 Ast_Term* Parser::parse_term()
 {
 	Ast_Term* term = m_arena.alloc<Ast_Term>();
-	Token token = peek().value();
+
+	auto peek_token = peek();
+	if (!peek_token) { printf("No token found at the start of a term.\n"); return NULL; }
+	Token token = peek_token.value();
 
 	switch (token.type)
 	{
@@ -216,10 +217,9 @@ Ast_Term* Parser::parse_term()
 		} break;
 		default:
 		{
-			//@Bug failing to parse a term of proc call when it has no arguments
+			printf("Expected a valid expression term.\n");
 			error_report_token(token);
-			printf("Failed to parse expression term.\n");
-			return {}; //
+			return NULL;
 		}
 	}
 
@@ -276,31 +276,26 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete t
 
 Ast_Block* Parser::parse_block()
 {
-	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected code block that starts with '{'.\n"); return NULL; }
-	
 	Ast_Block* block = m_arena.alloc<Ast_Block>();
-	std::optional<Ast_Statement*> statement = parse_statement();
 
-	while (statement.has_value())
+	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected code block that starts with '{'.\n"); return NULL; }
+	while (true)
 	{
-		if (statement.value() == NULL) return NULL;
-		block->statements.emplace_back(statement.value());
-		statement = parse_statement();
+		if (try_consume(TOKEN_BLOCK_END)) return block;
+
+		Ast_Statement* statement = parse_statement();
+		if (!statement) return NULL;
+		block->statements.emplace_back(statement);
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Expected code block to end with '}'.\n"); return NULL; }
-	
+
 	return block;
 }
 
-std::optional<Ast_Statement*> Parser::parse_statement()
+Ast_Statement* Parser::parse_statement()
 {
-	//@Hack '}' check prevents wasted allocation when its the last statement
-	// maybe restructure block / statement interactions
-	// no value -> no stament introducers found
-	// value == NULL -> tried to parse but failed
-	// value != NULL -> parsed statement
 	auto token = peek();
-	if (!token || token.value().type == TOKEN_BLOCK_END) return {};
+	if (!token) { printf("No token found at the start of a statement.\n"); return NULL; }
 
 	Ast_Statement* statement = m_arena.alloc<Ast_Statement>();
 
@@ -310,59 +305,59 @@ std::optional<Ast_Statement*> Parser::parse_statement()
 		{
 			statement->tag = Ast_Statement::Tag::If;
 			statement->_if = parse_if();
-			if (!statement->_if) return { nullptr };
+			if (!statement->_if) return NULL;
 		} break;
 		case TOKEN_KEYWORD_FOR:
 		{
 			statement->tag = Ast_Statement::Tag::For;
 			statement->_for = parse_for();
-			if (!statement->_for) return { nullptr };
+			if (!statement->_for) return NULL;
 		} break;
 		case TOKEN_KEYWORD_BREAK:
 		{
 			statement->tag = Ast_Statement::Tag::Break;
 			statement->_break = parse_break();
-			if (!statement->_break) return { nullptr };
+			if (!statement->_break) return NULL;
 		} break;
 		case TOKEN_KEYWORD_RETURN:
 		{
 			statement->tag = Ast_Statement::Tag::Return;
 			statement->_return = parse_return();
-			if (!statement->_return) return { nullptr };
+			if (!statement->_return) return NULL;
 		} break;
 		case TOKEN_KEYWORD_CONTINUE:
 		{
 			statement->tag = Ast_Statement::Tag::Continue;
 			statement->_continue = parse_continue();
-			if (!statement->_continue) return { nullptr };
+			if (!statement->_continue) return NULL;
 		} break;
 		case TOKEN_IDENT:
 		{
 			auto next = peek(1);
-			if (!next) { printf("Expected identifier to be followed by a valid statement ':' '=' '('.\n"); return { nullptr }; }
+			if (!next) { printf("Expected identifier to be followed by a valid statement ':' '=' '('.\n"); return NULL; }
 
 			if (next.value().type == TOKEN_COLON)
 			{
 				statement->tag = Ast_Statement::Tag::VariableDeclaration;
 				statement->_var_declaration = parse_var_declaration();
-				if (!statement->_var_declaration) return { nullptr };
+				if (!statement->_var_declaration) return NULL;
 			}
 			else if (next.value().type == TOKEN_ASSIGN)
 			{
 				statement->tag = Ast_Statement::Tag::VariableAssignment;
 				statement->_var_assignment = parse_var_assignment();
-				if (!statement->_var_assignment) return { nullptr };
+				if (!statement->_var_assignment) return NULL;
 			}
 			else if (next.value().type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::ProcedureCall;
 				statement->_proc_call = parse_proc_call();
-				if (!statement->_proc_call) return { nullptr };
-				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return { nullptr }; } //@Hack the proc_call statament requires ';' at the end
+				if (!statement->_proc_call) return NULL;
+				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; } //@Hack the proc_call statament requires ';' at the end
 			}
-			else { printf("Expected identifier to be followed by a valid statement: ':' '=' '('.\n"); return { nullptr }; }
+			else { printf("Expected identifier to be followed by a valid statement: ':' '=' '('.\n"); return NULL; }
 		} break;
-		default: { printf("Invalid token at the start of a statement.\n"); return { nullptr }; }
+		default: { printf("Invalid token at the start of a statement.\n"); return NULL; }
 	}
 	
 	return statement;
@@ -371,8 +366,7 @@ std::optional<Ast_Statement*> Parser::parse_statement()
 Ast_If* Parser::parse_if()
 {
 	Ast_If* _if = m_arena.alloc<Ast_If>();
-	_if->token = peek().value();
-	consume();
+	_if->token = consume_get();
 
 	Ast_Expression* expr = parse_sub_expression();
 	if (!expr) return NULL;
@@ -396,8 +390,7 @@ Ast_If* Parser::parse_if()
 Ast_Else* Parser::parse_else()
 {
 	Ast_Else* _else = m_arena.alloc<Ast_Else>();
-	_else->token = peek().value();
-	consume();
+	_else->token = consume_get();
 
 	auto next = peek();
 	if (!next) { printf("Expected 'else' to be followed by 'if' or a code block '{ ... }'.\n"); return NULL; }
@@ -424,8 +417,7 @@ Ast_Else* Parser::parse_else()
 Ast_For* Parser::parse_for()
 {
 	Ast_For* _for = m_arena.alloc<Ast_For>();
-	_for->token = peek().value();
-	consume();
+	_for->token = consume_get();
 
 	//@Design
 	// 0 expressions = infinite loop
@@ -478,8 +470,7 @@ Ast_For* Parser::parse_for()
 Ast_Break* Parser::parse_break()
 {
 	Ast_Break* _break = m_arena.alloc<Ast_Break>();
-	_break->token = peek().value();
-	consume();
+	_break->token = consume_get();
 
 	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after break statement.\n"); return NULL; }
 	return _break;
@@ -488,11 +479,9 @@ Ast_Break* Parser::parse_break()
 Ast_Return* Parser::parse_return()
 {
 	Ast_Return* _return = m_arena.alloc<Ast_Return>();
-	_return->token = peek().value();
-	consume();
+	_return->token = consume_get();
 
-	if (try_consume(TOKEN_SEMICOLON))
-		return _return;
+	if (try_consume(TOKEN_SEMICOLON)) return _return;
 
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;
@@ -503,8 +492,7 @@ Ast_Return* Parser::parse_return()
 Ast_Continue* Parser::parse_continue()
 {
 	Ast_Continue* _continue = m_arena.alloc<Ast_Continue>();
-	_continue->token = peek().value();
-	consume();
+	_continue->token = consume_get();
 
 	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after continue statement.\n"); return NULL; }
 	return _continue;
@@ -512,17 +500,16 @@ Ast_Continue* Parser::parse_continue()
 
 Ast_Procedure_Call* Parser::parse_proc_call()
 {
-	auto ident = try_consume(TOKEN_IDENT); //checked before, cannot error
-	if (!ident) return NULL;
-	if (!try_consume(TOKEN_PAREN_START)) return NULL;
-
 	Ast_Procedure_Call* proc_call = m_arena.alloc<Ast_Procedure_Call>();
-	proc_call->ident = Ast_Identifier { ident.value() };
+	proc_call->ident = Ast_Identifier { consume_get() };
+	consume();
 
 	while (true)
 	{
+		if (try_consume(TOKEN_PAREN_END)) return proc_call;
+
 		Ast_Expression* param_expr = parse_sub_expression();
-		if (!param_expr) break;
+		if (!param_expr) return NULL;
 		proc_call->input_expressions.emplace_back(param_expr);
 
 		if (!try_consume(TOKEN_COMA)) break;
@@ -534,12 +521,9 @@ Ast_Procedure_Call* Parser::parse_proc_call()
 
 Ast_Variable_Assignment* Parser::parse_var_assignment()
 {
-	auto ident = try_consume(TOKEN_IDENT); //checked before, cannot error
-	if (!ident) return NULL;
-	if (!try_consume(TOKEN_ASSIGN)) return NULL;
-
 	Ast_Variable_Assignment* var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
-	var_assignment->ident = Ast_Identifier { ident.value() };
+	var_assignment->ident = Ast_Identifier { consume_get() };
+	consume();
 
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;
@@ -549,12 +533,9 @@ Ast_Variable_Assignment* Parser::parse_var_assignment()
 
 Ast_Variable_Declaration* Parser::parse_var_declaration()
 {
-	auto ident = try_consume(TOKEN_IDENT); //checked before, cannot error
-	if (!ident) return NULL;
-	if (!try_consume(TOKEN_COLON)) return NULL;
-
 	Ast_Variable_Declaration* var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
-	var_declaration->ident = Ast_Identifier { ident.value() };
+	var_declaration->ident = Ast_Identifier { consume_get() };
+	consume();
 
 	auto type = try_consume(TOKEN_IDENT); //explicit type
 	if (type) var_declaration->type = Ast_Identifier { type.value() };
@@ -565,7 +546,7 @@ Ast_Variable_Declaration* Parser::parse_var_declaration()
 		if (type && has_semicolon) //default init must have a type and ';'
 			return var_declaration;
 
-		if (!type && has_semicolon) printf("No type before ;.\n");
+		if (!type && has_semicolon) printf("No type before ;.\n"); //@Bad errors
 		else if (type && !has_semicolon) printf("No ; after type.\n");
 		else if (!type && !has_semicolon) printf("No type or ; specified.\n");
 
@@ -595,150 +576,13 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 	return {};
 }
 
+Token Parser::consume_get()
+{
+	m_index += 1;
+	return m_tokens[m_index - 1];
+}
+
 void Parser::consume()
 {
 	m_index += 1;
-}
-
-void Parser::debug_print_ast(Ast* ast)
-{
-	printf("\n");
-	printf("[AST]\n\n");
-
-	u32 depth = 1;
-
-	for (const auto& proc : ast->procedures)
-	{
-		printf("ident:  ");
-		error_report_token_ident(proc.ident.token, true);
-		printf("params: ");
-		if (proc.input_parameters.empty())
-		{
-			printf("--\n");
-		}
-		else
-		{
-			printf("(");
-			u32 count = 0;
-			for (const auto& param : proc.input_parameters)
-			{
-				if (count != 0)
-				printf(", ");
-				count += 1;
-				error_report_token_ident(param.ident.token);
-				printf(": ");
-				error_report_token_ident(param.type.token);
-			}
-			printf(")\n");
-		}
-
-		printf("return: ");
-		if (proc.return_type.has_value())
-		{
-			error_report_token_ident(proc.return_type.value().token, true);
-		}
-		else printf("--\n");
-
-		printf("Block\n");
-		for (Ast_Statement* statement : proc.block->statements)
-		{
-			printf("|___");
-			switch (statement->tag)
-			{
-				case Ast_Statement::Tag::If:
-				{
-					printf("If\n");
-				} break;
-				case Ast_Statement::Tag::For:
-				{
-					printf("For\n");
-				} break;
-				case Ast_Statement::Tag::While:
-				{
-					printf("While\n");
-				} break;
-				case Ast_Statement::Tag::Break:
-				{
-					printf("Break\n");
-				} break;
-				case Ast_Statement::Tag::Return:
-				{
-					printf("Return\n");
-					if (statement->_return->expr.has_value())
-					debug_print_expr(statement->_return->expr.value(), depth);
-				} break;
-				case Ast_Statement::Tag::Continue:
-				{
-					printf("Continue\n");
-				} break;
-				case Ast_Statement::Tag::ProcedureCall:
-				{
-					printf("ProcedureCall\n");
-				} break;
-				case Ast_Statement::Tag::VariableAssignment:
-				{
-					printf("VariableAssignment:  ");
-					error_report_token_ident(statement->_var_assignment->ident.token, true);
-					debug_print_expr(statement->_var_assignment->expr, depth);
-				} break;
-				case Ast_Statement::Tag::VariableDeclaration:
-				{
-					printf("VariableDeclaration: ");
-					error_report_token_ident(statement->_var_declaration->ident.token);
-					printf(", ");
-					error_report_token_ident(statement->_var_declaration->type.token, true);
-					if (statement->_var_declaration->expr.has_value())
-					debug_print_expr(statement->_var_declaration->expr.value(), depth);
-				} break;
-			}
-		}
-		printf("\n");
-	}
-}
-
-void Parser::debug_print_expr(Ast_Expression* expr, u32 depth)
-{
-	for (u32 i = 0; i < depth; i++)
-	printf("    ");
-	printf("|___");
-	
-	switch (expr->tag)
-	{
-		case Ast_Expression::Tag::Term:
-		{
-			printf("Term_");
-			switch (expr->_term->tag)
-			{
-				case Ast_Term::Tag::Literal:
-				{
-					printf("Literal: %llu\n", expr->_term->_literal.token.integer_value);
-				} break;
-				case Ast_Term::Tag::Identifier:
-				{
-					printf("Identifier: ");
-					error_report_token_ident(expr->_term->_ident.token, true);
-				} break;
-				case Ast_Term::Tag::ProcedureCall:
-				{
-					printf("Procedure_Call\n");
-				} break;
-			}
-		} break;
-		case Ast_Expression::Tag::BinaryExpression:
-		{
-			printf("BinaryExpression\n");
-			debug_print_binary_expr(expr->_bin_expr, depth + 1);
-		} break;
-	}
-}
-
-void Parser::debug_print_binary_expr(Ast_Binary_Expression* expr, u32 depth)
-{
-	for (u32 i = 0; i < depth; i++)
-	printf("    ");
-	printf("|___");
-	printf("BinaryOp: %i\n", (int)expr->op);
-
-	debug_print_expr(expr->left, depth);
-	debug_print_expr(expr->right, depth);
 }

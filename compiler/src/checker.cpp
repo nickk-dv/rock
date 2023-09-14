@@ -6,7 +6,6 @@ bool check_enum(const Ast_Enum_Declaration& decl, Ast* ast);
 bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast);
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast);
 bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast);
-
 bool check_compare_ident(const StringView& str, const StringView& str2);
 bool check_is_ident_type_unique(const StringView& str, Ast* ast);
 bool check_is_ident_type_in_scope(const StringView& str, Ast* ast);
