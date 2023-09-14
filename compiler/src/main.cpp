@@ -14,8 +14,12 @@ int main()
 {
 	Tokenizer lexer = {};
 
-	if (!lexer.set_input_from_file("../../test.txt")) 
+	const char* file_path = "../../test.txt";
+	if (!lexer.set_input_from_file(file_path))
+	{
+		printf("Failed to open a file.\n");
 		exit(EXIT_FAILURE);
+	}
 
 	typedef std::chrono::high_resolution_clock Clock;
 
