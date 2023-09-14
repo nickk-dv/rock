@@ -43,9 +43,9 @@ Parser::Parser(std::vector<Token> tokens)
 std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 {
 	auto type = try_consume(TOKEN_IDENT); 
-	if (!type) return {};
+	if (!type) { printf("Expected an identifier.\n"); return {}; }
 	auto scope_start = try_consume(TOKEN_BLOCK_START);
-	if (!scope_start) return {};
+	if (!scope_start) { printf("Expected opening '{'.\n"); return {}; }
 
 	Ast_Struct_Declaration struct_decl = {};
 	struct_decl.type = Ast_Identifier { type.value() };
@@ -58,9 +58,9 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 		else break; // No more fields
 
 		auto colon = try_consume(TOKEN_COLON);
-		if (!colon) return {};
+		if (!colon) { printf("Expected ':' with type identifier.\n"); return {}; }
 		auto field_type = try_consume(TOKEN_IDENT);
-		if (!field_type) return {};
+		if (!field_type) { printf("Expected type idenifier.\n"); return {}; }
 
 		struct_decl.fields.emplace_back(IdentTypePair{ field.value(), field_type.value() });
 
@@ -71,7 +71,7 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 	}
 
 	auto scope_end = try_consume(TOKEN_BLOCK_END);
-	if (!scope_end) return {};
+	if (!scope_end) { printf("Expected closing '}'.\n"); return {}; }
 
 	return struct_decl;
 }
@@ -79,9 +79,9 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 {
 	auto type = try_consume(TOKEN_IDENT);
-	if (!type) return {};
+	if (!type) { printf("Expected an identifier.\n"); return {}; }
 	auto scope_start = try_consume(TOKEN_BLOCK_START);
-	if (!scope_start) return {};
+	if (!scope_start) { printf("Expected opening '{'.\n"); return {}; }
 
 	Ast_Enum_Declaration enum_decl = {};
 	enum_decl.type = Ast_Identifier { type.value() };
@@ -104,7 +104,7 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 	}
 
 	auto scope_end = try_consume(TOKEN_BLOCK_END);
-	if (!scope_end) return {};
+	if (!scope_end) { printf("Expected closing '}'.\n"); return {}; }
 
 	return enum_decl;
 }
@@ -112,9 +112,9 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 {
 	auto ident = try_consume(TOKEN_IDENT);
-	if (!ident) return {};
+	if (!ident) { printf("Expected an identifier.\n"); return {}; }
 	auto paren_start = try_consume(TOKEN_PAREN_START);
-	if (!paren_start) return {};
+	if (!paren_start) { printf("Expected opening '('.\n"); return {}; }
 
 	Ast_Procedure_Declaration proc_delc = {};
 	proc_delc.ident = Ast_Identifier { ident.value() };
@@ -127,9 +127,9 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 		consume();
 
 		auto colon = try_consume(TOKEN_COLON);
-		if (!colon) return {};
+		if (!colon) { printf("Expected ':' with type identifier.\n"); return {}; }
 		auto param_type = try_consume(TOKEN_IDENT);
-		if (!param_type) return {};
+		if (!param_type) { printf("Expected type idenifier.\n"); return {}; }
 
 		proc_delc.input_parameters.emplace_back(IdentTypePair{ param.value(), param_type.value() });
 
@@ -140,13 +140,13 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	}
 
 	auto paren_end = try_consume(TOKEN_PAREN_END);
-	if (!paren_end) return {};
+	if (!paren_end) { printf("Expected closing ')'.\n"); return {}; }
 
 	auto double_colon = try_consume(TOKEN_DOUBLE_COLON);
 	if (double_colon)
 	{
 		auto return_type = try_consume(TOKEN_IDENT);
-		if (!return_type) return {};
+		if (!return_type) { printf("Expected return type identifier.\n"); return {}; }
 
 		proc_delc.return_type = Ast_Identifier { return_type.value() };
 	}
@@ -553,7 +553,8 @@ Ast_Variable_Assignment* Parser::parse_var_assignment()
 
 Ast_Variable_Declaration* Parser::parse_var_declaration()
 {
-	auto ident = try_consume(TOKEN_IDENT); if (!ident) return NULL;
+	auto ident = try_consume(TOKEN_IDENT); 
+	if (!ident) return NULL;
 	if (!try_consume(TOKEN_COLON)) return NULL;
 
 	Ast_Variable_Declaration* var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
