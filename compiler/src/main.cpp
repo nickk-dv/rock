@@ -41,7 +41,7 @@ int main()
 	
 	if (ast.has_value())
 	{
-		//debug_print_ast(&ast.value());
+		debug_print_ast(&ast.value());
 
 		printf("Parse result: Success\n\n");
 

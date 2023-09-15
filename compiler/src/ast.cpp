@@ -194,7 +194,7 @@ struct Ast_Variable_Assignment
 struct Ast_Variable_Declaration
 {
 	Ast_Identifier ident;
-	Ast_Identifier type;
+	std::optional<Ast_Identifier> type;
 	std::optional<Ast_Expression*> expr;
 };
 

@@ -6,6 +6,8 @@ bool check_enum(const Ast_Enum_Declaration& decl, Ast* ast);
 bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast);
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast);
 bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast);
+bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, Ast* ast);
+
 bool check_compare_ident(const StringView& str, const StringView& str2);
 bool check_is_ident_type_unique(const StringView& str, Ast* ast);
 bool check_is_ident_type_in_scope(const StringView& str, Ast* ast);
@@ -199,6 +201,90 @@ bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast)
 
 bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast)
 {
+	std::vector<IdentTypePair> vars_in_scope;
+
+	for (const auto& param : decl.input_parameters)
+		vars_in_scope.emplace_back(param);
+
+	printf("Variable inputs of proc: "); error_report_token_ident(decl.ident.token, true);
+	for (const auto& ident : vars_in_scope)
+	error_report_token_ident(ident.ident.token, true);
+
+	bool block_check = check_block(vars_in_scope, decl.block, ast);
+	return block_check;
+}
+
+bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, Ast* ast)
+{
+	for (Ast_Statement* stmt : block->statements)
+	{
+		switch (stmt->tag)
+		{
+			case Ast_Statement::Tag::VariableAssignment:
+			{
+				Ast_Variable_Assignment* var_assign = stmt->_var_assignment;
+				Ast_Identifier var_type = {};
+				
+				//variable must be in scope for an assigment
+				bool var_already_in_scope = false;
+				for (const auto& var : vars_in_scope)
+				{
+					if (check_compare_ident(var.ident.token.string_value, var_assign->ident.token.string_value))
+					{
+						var_already_in_scope = true;
+						var_type = var.type;
+						break;
+					}
+				}
+				if (!var_already_in_scope)
+				{
+					printf("Error: assignment to a variable which is not in scope: ");
+					error_report_token_ident(var_assign->ident.token, true);
+					return false;
+				}
+
+				//validation of expr:
+				//terms are in scope
+				//binary operators are applicable
+				//return type of expression and validity
+				
+				//validate the expr
+				//expr type must match the var_type
+			} break;
+			case Ast_Statement::Tag::VariableDeclaration:
+			{
+				Ast_Variable_Declaration* var_decl = stmt->_var_declaration;
+
+				//variable must not be in scope
+				bool var_already_in_scope = false;
+				for (const auto& var : vars_in_scope)
+				{
+					if (check_compare_ident(var.ident.token.string_value, var_decl->ident.token.string_value))
+					{
+						var_already_in_scope = true;
+						break;
+					}
+				}
+				if (var_already_in_scope)
+				{
+					printf("Error: variable is already defined in scope: "); 
+					error_report_token_ident(var_decl->ident.token, true);
+					return false;
+				}
+				
+				//validate expr
+				//expr type must match the var_type if its specified
+				//otherwise expr type is put on the declared variable
+				//declared variable added to a current scope
+				vars_in_scope.emplace_back( IdentTypePair { var_decl->ident, {} });
+			} break;
+			default:
+			{
+				break;
+			}
+		}
+	}
+
 	return true;
 }
 
