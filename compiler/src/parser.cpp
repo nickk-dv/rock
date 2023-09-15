@@ -69,7 +69,7 @@ std::optional<Ast> Parser::parse()
 			{
 				if (m_tokens[m_index - 1].type == TOKEN_INPUT_END) return ast;
 				printf("Expected fn, enum or struct declaration.\n");
-				error_report_token(m_tokens[m_index - 1]); //@Hack reporting on prev token, current one is consumed above
+				debug_print_token(m_tokens[m_index - 1], true); //@Hack reporting on prev token, current one is consumed above
 				return {};
 			} break;
 		}
@@ -96,7 +96,7 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 		if (!field_type) { printf("Expected type idenifier.\n"); return {}; }
 
 		decl.fields.emplace_back(IdentTypePair { field.value(), field_type.value() });
-		if (!try_consume(TOKEN_COMA)) break;
+		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Struct Expected closing '}'.\n"); return {}; }
 
@@ -118,7 +118,7 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 		if (!variant) break;
 
 		decl.variants.emplace_back(IdentTypePair { variant.value(), {} }); //@Notice type is empty token, might support typed enums
-		if (!try_consume(TOKEN_COMA)) break;
+		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Enum Expected closing '}'.\n"); return {}; }
 
@@ -143,7 +143,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 		if (!param_type) { printf("Expected type idenifier.\n"); return {}; }
 
 		decl.input_parameters.emplace_back(IdentTypePair { param.value(), param_type.value() });
-		if (!try_consume(TOKEN_COMA)) break;
+		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')'.\n"); return {}; }
 
@@ -218,7 +218,7 @@ Ast_Term* Parser::parse_term()
 		default:
 		{
 			printf("Expected a valid expression term.\n");
-			error_report_token(token);
+			debug_print_token(token, true);
 			return NULL;
 		}
 	}
@@ -512,7 +512,7 @@ Ast_Procedure_Call* Parser::parse_proc_call()
 		if (!param_expr) return NULL;
 		proc_call->input_expressions.emplace_back(param_expr);
 
-		if (!try_consume(TOKEN_COMA)) break;
+		if (!try_consume(TOKEN_COMMA)) break;
 	}
 
 	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')' after procedure call statement.\n"); return NULL; }

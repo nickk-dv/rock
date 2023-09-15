@@ -206,9 +206,10 @@ bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast)
 	for (const auto& param : decl.input_parameters)
 		vars_in_scope.emplace_back(param);
 
-	printf("Variable inputs of proc: "); error_report_token_ident(decl.ident.token, true);
+	printf("Variable inputs of proc: "); 
+	debug_print_token(decl.ident.token, true);
 	for (const auto& ident : vars_in_scope)
-	error_report_token_ident(ident.ident.token, true);
+		debug_print_token(ident.ident.token, true);
 
 	bool block_check = check_block(vars_in_scope, decl.block, ast);
 	return block_check;
@@ -239,7 +240,7 @@ bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, As
 				if (!var_already_in_scope)
 				{
 					printf("Error: assignment to a variable which is not in scope: ");
-					error_report_token_ident(var_assign->ident.token, true);
+					debug_print_token(var_assign->ident.token, true);
 					return false;
 				}
 
@@ -268,7 +269,7 @@ bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, As
 				if (var_already_in_scope)
 				{
 					printf("Error: variable is already defined in scope: "); 
-					error_report_token_ident(var_decl->ident.token, true);
+					debug_print_token(var_decl->ident.token, true);
 					return false;
 				}
 				

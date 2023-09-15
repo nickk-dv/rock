@@ -22,7 +22,7 @@ enum TokenType
 
 	//[Punctuation]
 	TOKEN_DOT,                // .
-	TOKEN_COMA,               // ,
+	TOKEN_COMMA,              // ,
 	TOKEN_COLON,              // :
 	TOKEN_SEMICOLON,          // ;
 	TOKEN_BLOCK_START,        // {
@@ -129,7 +129,7 @@ std::vector<Token> Tokenizer::tokenize()
 	}
 
 	c_to_sym['.'] = TOKEN_DOT;
-	c_to_sym[','] = TOKEN_COMA;
+	c_to_sym[','] = TOKEN_COMMA;
 	c_to_sym[':'] = TOKEN_COLON;
 	c_to_sym[';'] = TOKEN_SEMICOLON;
 	c_to_sym['{'] = TOKEN_BLOCK_START;
