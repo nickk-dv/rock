@@ -1,4 +1,8 @@
 
+enum UnaryOp;
+enum BinaryOp;
+enum AssignOp;
+
 struct Ast_Literal;
 struct Ast_Identifier;
 struct Ast_Identifier_Chain;
@@ -70,15 +74,11 @@ struct Ast_Expression
 	};
 };
 
-enum UnaryOp;
-
 struct Ast_Unary_Expression
 {
 	UnaryOp op;
 	Ast_Expression* right;
 };
-
-enum BinaryOp;
 
 struct Ast_Binary_Expression
 {
@@ -149,7 +149,7 @@ struct Ast_Statement
 struct Ast_If
 {
 	Token token;
-	Ast_Expression* expr;
+	Ast_Expression* condition_expr;
 	Ast_Block* block;
 	std::optional<Ast_Else*> _else;
 };
@@ -204,6 +204,7 @@ struct Ast_Procedure_Call
 struct Ast_Variable_Assignment
 {
 	Ast_Access_Chain* access_chain;
+	AssignOp op;
 	Ast_Expression* expr;
 };
 
@@ -216,9 +217,9 @@ struct Ast_Variable_Declaration
 
 enum UnaryOp
 {
-	UNARY_OP_MINUS,
-	UNARY_OP_LOGIC_NOT,
-	UNARY_OP_BITWISE_NOT,
+	UNARY_OP_MINUS,       // -
+	UNARY_OP_LOGIC_NOT,   // !
+	UNARY_OP_BITWISE_NOT, // ~
 
 	UNARY_OP_ERROR,
 };
@@ -239,6 +240,16 @@ UnaryOp ast_unary_op_from_token(TokenType type)
 
 enum BinaryOp
 {
+	BINARY_OP_LOGIC_AND,
+	BINARY_OP_LOGIC_OR,
+
+	BINARY_OP_LESS,
+	BINARY_OP_GREATER,
+	BINARY_OP_LESS_EQUALS,
+	BINARY_OP_GREATER_EQUALS,
+	BINARY_OP_IS_EQUALS,
+	BINARY_OP_NOT_EQUALS,
+
 	BINARY_OP_PLUS,
 	BINARY_OP_MINUS,
 
@@ -246,26 +257,12 @@ enum BinaryOp
 	BINARY_OP_DIV,
 	BINARY_OP_MOD,
 
-	BINARY_OP_BITSHIFT_LEFT,
-	BINARY_OP_BITSHIFT_RIGHT,
-
-	BINARY_OP_LESS,
-	BINARY_OP_GREATER,
-	BINARY_OP_LESS_EQUALS,
-	BINARY_OP_GREATER_EQUALS,
-
-	BINARY_OP_IS_EQUALS,
-	BINARY_OP_NOT_EQUALS,
-
 	BINARY_OP_BITWISE_AND,
-
+	BINARY_OP_BITWISE_OR,
 	BINARY_OP_BITWISE_XOR,
 
-	BINARY_OP_BITWISE_OR,
-
-	BINARY_OP_LOGIC_AND,
-
-	BINARY_OP_LOGIC_OR,
+	BINARY_OP_BITSHIFT_LEFT,
+	BINARY_OP_BITSHIFT_RIGHT,
 
 	BINARY_OP_ERROR,
 };
@@ -290,8 +287,8 @@ static const std::unordered_map<TokenType, BinaryOp> token_to_binary_op =
 	{TOKEN_MOD, BINARY_OP_MOD},
 
 	{TOKEN_BITWISE_AND, BINARY_OP_BITWISE_AND},
-	{TOKEN_BITWISE_XOR, BINARY_OP_BITWISE_XOR},
 	{TOKEN_BITWISE_OR, BINARY_OP_BITWISE_OR},
+	{TOKEN_BITWISE_XOR, BINARY_OP_BITWISE_XOR},
 
 	{TOKEN_BITSHIFT_LEFT, BINARY_OP_BITSHIFT_LEFT},
 	{TOKEN_BITSHIFT_RIGHT, BINARY_OP_BITSHIFT_RIGHT},
@@ -317,8 +314,8 @@ static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
 	{BINARY_OP_MOD, 3},
 
 	{BINARY_OP_BITWISE_AND, 4},
-	{BINARY_OP_BITWISE_XOR, 4},
 	{BINARY_OP_BITWISE_OR, 4},
+	{BINARY_OP_BITWISE_XOR, 4},
 
 	{BINARY_OP_BITSHIFT_LEFT, 5},
 	{BINARY_OP_BITSHIFT_RIGHT, 5},
@@ -334,4 +331,43 @@ BinaryOp ast_binary_op_from_token(TokenType type)
 u32 ast_binary_op_precedence(BinaryOp op)
 {
 	return binary_op_precedence.at(op);
+}
+
+enum AssignOp
+{
+	ASSIGN_OP_NONE,           // =
+	ASSIGN_OP_PLUS,           // +=
+	ASSIGN_OP_MINUS,          // -=
+	ASSIGN_OP_TIMES,          // *=
+	ASSIGN_OP_DIV,            // =/
+	ASSIGN_OP_MOD,            // =%
+	ASSIGN_OP_BITWISE_AND,    // &=
+	ASSIGN_OP_BITWISE_OR,	  // |=
+	ASSIGN_OP_BITWISE_XOR,	  // ^=
+	ASSIGN_OP_BITSHIFT_LEFT,  // <<=
+	ASSIGN_OP_BITSHIFT_RIGHT, // >>=
+
+	ASSIGN_OP_ERROR,
+};
+
+static const std::unordered_map<TokenType, AssignOp> token_to_assign_op =
+{
+	{TOKEN_ASSIGN, ASSIGN_OP_NONE},
+	{TOKEN_PLUS_EQUALS, ASSIGN_OP_PLUS},
+	{TOKEN_MINUS_EQUALS, ASSIGN_OP_MINUS},
+	{TOKEN_TIMES_EQUALS, ASSIGN_OP_TIMES},
+	{TOKEN_DIV_EQUALS, ASSIGN_OP_DIV},
+	{TOKEN_MOD_EQUALS, ASSIGN_OP_MOD},
+	{TOKEN_BITWISE_AND_EQUALS, ASSIGN_OP_BITWISE_AND},
+	{TOKEN_BITWISE_OR_EQUALS, ASSIGN_OP_BITWISE_OR},
+	{TOKEN_BITWISE_XOR_EQUALS, ASSIGN_OP_BITWISE_XOR},
+	{TOKEN_BITSHIFT_LEFT_EQUALS, ASSIGN_OP_BITSHIFT_LEFT},
+	{TOKEN_BITSHIFT_RIGHT_EQUALS, ASSIGN_OP_BITSHIFT_RIGHT},
+};
+
+AssignOp ast_assign_op_from_token(TokenType type)
+{
+	if (token_to_assign_op.find(type) != token_to_assign_op.end())
+		return token_to_assign_op.at(type);
+	return ASSIGN_OP_ERROR;
 }

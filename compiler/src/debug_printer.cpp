@@ -4,6 +4,7 @@ void debug_print_token(Token token, bool endl, bool location = false);
 
 void debug_print_unary_op(UnaryOp op);
 void debug_print_binary_op(BinaryOp op);
+void debug_print_assign_op(AssignOp op);
 void debug_print_branch(u32& depth);
 void debug_print_spacing(u32 depth);
 void debug_print_access_chain(Ast_Access_Chain* access_chain);
@@ -203,6 +204,27 @@ void debug_print_binary_op(BinaryOp op)
 	printf("\n");
 }
 
+void debug_print_assign_op(AssignOp op)
+{
+	printf("AssignOp: ");
+	switch (op)
+	{
+		case ASSIGN_OP_NONE: printf("="); break;
+		case ASSIGN_OP_PLUS: printf("+="); break;
+		case ASSIGN_OP_MINUS: printf("-="); break;
+		case ASSIGN_OP_TIMES: printf("*="); break;
+		case ASSIGN_OP_DIV: printf("/="); break;
+		case ASSIGN_OP_MOD: printf("%%="); break;
+		case ASSIGN_OP_BITWISE_AND: printf("&="); break;
+		case ASSIGN_OP_BITWISE_OR: printf("|="); break;
+		case ASSIGN_OP_BITWISE_XOR: printf("^="); break;
+		case ASSIGN_OP_BITSHIFT_LEFT: printf("<<="); break;
+		case ASSIGN_OP_BITSHIFT_RIGHT: printf(">>="); break;
+		default: printf("[UNKNOWN ASSIGN OP]"); break;
+	}
+	printf("\n");
+}
+
 void debug_print_branch(u32& depth)
 {
 	if (depth > 0)
@@ -322,7 +344,7 @@ void debug_print_if(Ast_If* _if, u32 depth)
 
 	debug_print_spacing(depth);
 	printf("If_Conditional_Expr:\n");
-	debug_print_expr(_if->expr, depth);
+	debug_print_expr(_if->condition_expr, depth);
 
 	debug_print_block(_if->block, depth);
 	if (_if->_else.has_value())
@@ -429,6 +451,8 @@ void debug_print_var_assign(Ast_Variable_Assignment* _var_assign, u32 depth)
 	printf("Var_Assignment: ");
 
 	debug_print_access_chain(_var_assign->access_chain);
+	debug_print_spacing(depth);
+	debug_print_assign_op(_var_assign->op);
 	debug_print_expr(_var_assign->expr, depth);
 }
 

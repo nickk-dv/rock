@@ -484,7 +484,7 @@ Ast_If* Parser::parse_if()
 
 	Ast_Expression* expr = parse_sub_expression();
 	if (!expr) return NULL;
-	_if->expr = expr;
+	_if->condition_expr = expr;
 
 	Ast_Block* block = parse_block();
 	if (!block) return NULL;
@@ -641,11 +641,12 @@ Ast_Variable_Assignment* Parser::parse_var_assignment()
 	if (!access_chain) return NULL;
 	var_assignment->access_chain = access_chain;
 
-	if (!try_consume(TOKEN_ASSIGN))
-	{
-		printf("Expected '=' in a variable assignment statement.\n");
-		return NULL;
-	}
+	auto token = peek();
+	if (!token) { printf("Expected assigment operator.\n"); return NULL; }
+	AssignOp op = ast_assign_op_from_token(token.value().type);
+	if (op == ASSIGN_OP_ERROR) { printf("Expected assigment operator.\n"); return NULL; }
+	consume();
+	var_assignment->op = op;
 
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;
