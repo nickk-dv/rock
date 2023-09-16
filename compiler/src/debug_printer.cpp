@@ -6,6 +6,7 @@ void debug_print_unary_op(UnaryOp op);
 void debug_print_binary_op(BinaryOp op);
 void debug_print_branch(u32& depth);
 void debug_print_spacing(u32 depth);
+void debug_print_access_chain(Ast_Access_Chain* access_chain);
 void debug_print_term(Ast_Term* term, u32 depth);
 void debug_print_expr(Ast_Expression* expr, u32 depth);
 void debug_print_unary_expr(Ast_Unary_Expression* unary_expr, u32 depth);
@@ -218,12 +219,24 @@ void debug_print_spacing(u32 depth)
 		printf("     ");
 }
 
+void debug_print_access_chain(Ast_Access_Chain* access_chain)
+{
+	while (access_chain != NULL)
+	{
+		debug_print_token(access_chain->ident.token, false);
+		access_chain = access_chain->next;
+		if (access_chain != NULL)
+		printf(".");
+	}
+	printf("\n");
+}
+
 void debug_print_term(Ast_Term* term, u32 depth)
 {
-	if (term->tag == Ast_Term::Tag::Identifier)
+	if (term->tag == Ast_Term::Tag::AccessChain)
 	{
 		debug_print_branch(depth);
-		printf("Term_Ident: ");
+		printf("Term_Access_Chain: ");
 	}
 	else if (term->tag == Ast_Term::Tag::Literal)
 	{
@@ -234,7 +247,7 @@ void debug_print_term(Ast_Term* term, u32 depth)
 	switch (term->tag)
 	{
 		case Ast_Term::Tag::Literal: debug_print_token(term->_literal.token, true); break;
-		case Ast_Term::Tag::Identifier: debug_print_token(term->_ident.token, true); break;
+		case Ast_Term::Tag::AccessChain: debug_print_access_chain(term->_access_chain); break;
 		case Ast_Term::Tag::ProcedureCall: debug_print_proc_call(term->_proc_call, depth); break;
 		default: break;
 	}
@@ -414,8 +427,8 @@ void debug_print_var_assign(Ast_Variable_Assignment* _var_assign, u32 depth)
 {
 	debug_print_branch(depth);
 	printf("Var_Assignment: ");
-	debug_print_token(_var_assign->ident.token, true);
 
+	debug_print_access_chain(_var_assign->access_chain);
 	debug_print_expr(_var_assign->expr, depth);
 }
 

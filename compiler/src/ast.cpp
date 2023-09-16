@@ -1,6 +1,7 @@
 
 struct Ast_Literal;
 struct Ast_Identifier;
+struct Ast_Identifier_Chain;
 struct Ast_Term;
 struct Ast_Expression;
 struct Ast_Unary_Expression;
@@ -33,17 +34,23 @@ struct Ast_Identifier
 	Token token;
 };
 
+struct Ast_Access_Chain
+{
+	Ast_Identifier ident;
+	Ast_Access_Chain* next;
+};
+
 struct Ast_Term
 {
 	enum class Tag
 	{
-		Literal, Identifier, ProcedureCall,
+		Literal, AccessChain, ProcedureCall,
 	} tag;
 
 	union
 	{
 		Ast_Literal _literal;
-		Ast_Identifier _ident;
+		Ast_Access_Chain* _access_chain;
 		Ast_Procedure_Call* _proc_call;
 	};
 };
@@ -196,7 +203,7 @@ struct Ast_Procedure_Call
 
 struct Ast_Variable_Assignment
 {
-	Ast_Identifier ident;
+	Ast_Access_Chain* access_chain;
 	Ast_Expression* expr;
 };
 

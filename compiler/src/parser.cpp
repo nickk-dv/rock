@@ -8,6 +8,7 @@ struct Parser
 	std::optional<Ast_Struct_Declaration> parse_struct();
 	std::optional<Ast_Enum_Declaration> parse_enum();
 	std::optional<Ast_Procedure_Declaration> parse_procedure();
+	Ast_Access_Chain* parse_access_chain();
 	Ast_Term* parse_term();
 	Ast_Expression* parse_expression();
 	Ast_Expression* parse_primary_expression();
@@ -162,6 +163,26 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	return decl;
 }
 
+Ast_Access_Chain* Parser::parse_access_chain()
+{
+	Ast_Access_Chain* access_chain = m_arena.alloc<Ast_Access_Chain>();
+	access_chain->ident = Ast_Identifier { consume_get() };
+	Ast_Access_Chain* current = access_chain;
+
+	while (true)
+	{
+		if (!try_consume(TOKEN_DOT)) break;
+		auto ident = try_consume(TOKEN_IDENT);
+		if (!ident) { printf("Expected an identifier after '.' in the access chain.\n"); return NULL; }
+		
+		current->next = m_arena.alloc<Ast_Access_Chain>();
+		current->next->ident = Ast_Identifier { ident.value() };
+		current = current->next;
+	}
+
+	return access_chain;
+}
+
 Ast_Term* Parser::parse_term()
 {
 	Ast_Term* term = m_arena.alloc<Ast_Term>();
@@ -212,9 +233,10 @@ Ast_Term* Parser::parse_term()
 				break;
 			}
 
-			term->tag = Ast_Term::Tag::Identifier;
-			term->_ident = Ast_Identifier { token };
-			consume();
+			Ast_Access_Chain* access_chain = parse_access_chain();
+			if (!access_chain) return NULL;
+			term->tag = Ast_Term::Tag::AccessChain;
+			term->_access_chain = access_chain;
 		} break;
 		default:
 		{
@@ -427,7 +449,7 @@ Ast_Statement* Parser::parse_statement()
 		case TOKEN_IDENT:
 		{
 			auto next = peek(1);
-			if (!next) { printf("Expected identifier to be followed by a valid statement ':' '=' '('.\n"); return NULL; }
+			if (!next) { printf("Expected identifier to be followed by a valid statement ':' '.' '('.\n"); return NULL; }
 
 			if (next.value().type == TOKEN_COLON)
 			{
@@ -435,20 +457,19 @@ Ast_Statement* Parser::parse_statement()
 				statement->_var_declaration = parse_var_declaration();
 				if (!statement->_var_declaration) return NULL;
 			}
-			else if (next.value().type == TOKEN_ASSIGN)
-			{
-				statement->tag = Ast_Statement::Tag::VariableAssignment;
-				statement->_var_assignment = parse_var_assignment();
-				if (!statement->_var_assignment) return NULL;
-			}
 			else if (next.value().type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::ProcedureCall;
 				statement->_proc_call = parse_proc_call();
 				if (!statement->_proc_call) return NULL;
-				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; } //@Hack the proc_call statament requires ';' at the end
+				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; }
 			}
-			else { printf("Expected identifier to be followed by a valid statement: ':' '=' '('.\n"); return NULL; }
+			else
+			{
+				statement->tag = Ast_Statement::Tag::VariableAssignment;
+				statement->_var_assignment = parse_var_assignment();
+				if (!statement->_var_assignment) return NULL;
+			}
 		} break;
 		default: { printf("Invalid token at the start of a statement.\n"); return NULL; }
 	}
@@ -615,8 +636,16 @@ Ast_Procedure_Call* Parser::parse_proc_call()
 Ast_Variable_Assignment* Parser::parse_var_assignment()
 {
 	Ast_Variable_Assignment* var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
-	var_assignment->ident = Ast_Identifier { consume_get() };
-	consume();
+	
+	Ast_Access_Chain* access_chain = parse_access_chain();
+	if (!access_chain) return NULL;
+	var_assignment->access_chain = access_chain;
+
+	if (!try_consume(TOKEN_ASSIGN))
+	{
+		printf("Expected '=' in a variable assignment statement.\n");
+		return NULL;
+	}
 
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;

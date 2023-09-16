@@ -230,7 +230,7 @@ bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, As
 				bool var_already_in_scope = false;
 				for (const auto& var : vars_in_scope)
 				{
-					if (check_compare_ident(var.ident.token.string_value, var_assign->ident.token.string_value))
+					if (check_compare_ident(var.ident.token.string_value, var_assign->access_chain->ident.token.string_value)) //@Incomplete check entire chain
 					{
 						var_already_in_scope = true;
 						var_type = var.type;
@@ -240,7 +240,7 @@ bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, As
 				if (!var_already_in_scope)
 				{
 					printf("Error: assignment to a variable which is not in scope: ");
-					debug_print_token(var_assign->ident.token, true);
+					debug_print_token(var_assign->access_chain->ident.token, true); //@Incomplete check entire chain
 					return false;
 				}
 
