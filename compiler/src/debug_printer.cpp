@@ -2,11 +2,13 @@
 void debug_print_ast(Ast* ast);
 void debug_print_token(Token token, bool endl, bool location = false);
 
+void debug_print_unary_op(UnaryOp op);
 void debug_print_binary_op(BinaryOp op);
 void debug_print_branch(u32& depth);
 void debug_print_spacing(u32 depth);
 void debug_print_term(Ast_Term* term, u32 depth);
 void debug_print_expr(Ast_Expression* expr, u32 depth);
+void debug_print_unary_expr(Ast_Unary_Expression* unary_expr, u32 depth);
 void debug_print_binary_expr(Ast_Binary_Expression* bin_expr, u32 depth);
 void debug_print_block(Ast_Block* block, u32 depth);
 void debug_print_statement(Ast_Statement* statement, u32 depth);
@@ -159,6 +161,19 @@ void debug_print_token(Token token, bool endl, bool location)
 	if (endl) printf("\n");
 }
 
+void debug_print_unary_op(UnaryOp op)
+{
+	printf("UnaryOp: ");
+	switch (op)
+	{
+		case UNARY_OP_MINUS: printf("-"); break;
+		case UNARY_OP_LOGIC_NOT: printf("!"); break;
+		case UNARY_OP_BITWISE_NOT: printf("~"); break;
+		default: printf("[UNKNOWN UNARY OP]"); break;
+	}
+	printf("\n");
+}
+
 void debug_print_binary_op(BinaryOp op)
 {
 	printf ("BinaryOp: ");
@@ -230,9 +245,20 @@ void debug_print_expr(Ast_Expression* expr, u32 depth)
 	switch (expr->tag)
 	{
 		case Ast_Expression::Tag::Term: debug_print_term(expr->_term, depth); break;
+		case Ast_Expression::Tag::UnaryExpression: debug_print_unary_expr(expr->_unary_expr, depth); break;
 		case Ast_Expression::Tag::BinaryExpression: debug_print_binary_expr(expr->_bin_expr, depth); break;
 		default: break;
 	}
+}
+
+void debug_print_unary_expr(Ast_Unary_Expression* unary_expr, u32 depth)
+{
+	debug_print_branch(depth);
+	printf("Unary_Expr\n");
+
+	debug_print_spacing(depth);
+	debug_print_unary_op(unary_expr->op);
+	debug_print_expr(unary_expr->right, depth);
 }
 
 void debug_print_binary_expr(Ast_Binary_Expression* bin_expr, u32 depth)

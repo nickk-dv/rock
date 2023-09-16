@@ -3,6 +3,7 @@ struct Ast_Literal;
 struct Ast_Identifier;
 struct Ast_Term;
 struct Ast_Expression;
+struct Ast_Unary_Expression;
 struct Ast_Binary_Expression;
 
 struct Ast;
@@ -51,19 +52,27 @@ struct Ast_Expression
 {
 	enum class Tag
 	{
-		Term, BinaryExpression,
+		Term, UnaryExpression, BinaryExpression,
 	} tag;
 
 	union
 	{
 		Ast_Term* _term;
+		Ast_Unary_Expression* _unary_expr;
 		Ast_Binary_Expression* _bin_expr;
 	};
 };
 
+enum UnaryOp;
+
+struct Ast_Unary_Expression
+{
+	UnaryOp op;
+	Ast_Expression* right;
+};
+
 enum BinaryOp;
 
-//@Incompelete think how unary - ! ~ might work and be parsed
 struct Ast_Binary_Expression
 {
 	BinaryOp op;
@@ -197,6 +206,29 @@ struct Ast_Variable_Declaration
 	std::optional<Ast_Identifier> type;
 	std::optional<Ast_Expression*> expr;
 };
+
+enum UnaryOp
+{
+	UNARY_OP_MINUS,
+	UNARY_OP_LOGIC_NOT,
+	UNARY_OP_BITWISE_NOT,
+
+	UNARY_OP_ERROR,
+};
+
+static const std::unordered_map<TokenType, UnaryOp> token_to_unary_op =
+{
+	{TOKEN_MINUS, UNARY_OP_MINUS},
+	{TOKEN_LOGIC_NOT, UNARY_OP_LOGIC_NOT},
+	{TOKEN_BITWISE_NOT, UNARY_OP_BITWISE_NOT},
+};
+
+UnaryOp ast_unary_op_from_token(TokenType type)
+{
+	if (token_to_unary_op.find(type) != token_to_unary_op.end())
+		return token_to_unary_op.at(type);
+	return UNARY_OP_ERROR;
+}
 
 enum BinaryOp
 {

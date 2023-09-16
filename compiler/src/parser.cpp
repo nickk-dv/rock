@@ -10,6 +10,7 @@ struct Parser
 	std::optional<Ast_Procedure_Declaration> parse_procedure();
 	Ast_Term* parse_term();
 	Ast_Expression* parse_expression();
+	Ast_Expression* parse_primary_expression();
 	Ast_Expression* parse_sub_expression(u32 min_precedence = 0);
 	Ast_Block* parse_block();
 	Ast_Statement* parse_statement();
@@ -226,6 +227,7 @@ Ast_Term* Parser::parse_term()
 	return term;
 }
 
+/* @Old version no Parens no Unary
 Ast_Expression* Parser::parse_expression()
 {
 	Ast_Expression* expr = parse_sub_expression();
@@ -234,7 +236,7 @@ Ast_Expression* Parser::parse_expression()
 	return expr;
 }
 
-Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete think about handling parens ( )
+Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
 {
 	Ast_Term* term_lhs = parse_term();
 	if (!term_lhs) return NULL;
@@ -272,6 +274,97 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence) //@Incomplete t
 	}
 
 	return expr_lhs;
+}
+*/
+
+Ast_Expression* Parser::parse_expression()
+{
+	Ast_Expression* expr = parse_sub_expression();
+	if (!expr) return NULL;
+	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after expression.\n"); return NULL; }
+	return expr;
+}
+
+Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
+{
+	Ast_Expression* expr_lhs = parse_primary_expression();
+	if (!expr_lhs) return NULL;
+
+	while (true)
+	{
+		auto token_op = peek();
+		if (!token_op) break;
+		BinaryOp op = ast_binary_op_from_token(token_op.value().type);
+		if (op == BINARY_OP_ERROR) break;
+		u32 prec = ast_binary_op_precedence(op);
+		if (prec < min_precedence) break;
+		consume();
+
+		u32 next_min_prec = prec + 1;
+		Ast_Expression* expr_rhs = parse_sub_expression(next_min_prec);
+		if (expr_rhs == NULL) return NULL;
+
+		Ast_Expression* expr_lhs2 = m_arena.alloc<Ast_Expression>(); //@Hacks
+		expr_lhs2->tag = expr_lhs->tag;
+		expr_lhs2->_term = expr_lhs->_term;
+		expr_lhs2->_bin_expr = expr_lhs->_bin_expr;
+
+		Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
+		bin_expr->op = op;
+		bin_expr->left = expr_lhs2; //Assembling the magic tree
+		bin_expr->right = expr_rhs;
+
+		expr_lhs->tag = Ast_Expression::Tag::BinaryExpression;
+		expr_lhs->_bin_expr = bin_expr;
+	}
+
+	return expr_lhs;
+}
+
+Ast_Expression* Parser::parse_primary_expression()
+{
+	if (try_consume(TOKEN_PAREN_START))
+	{
+		Ast_Expression* expr = parse_sub_expression();
+
+		if (!try_consume(TOKEN_PAREN_END))
+		{
+			printf("Expected closing ')' after '('.\n");
+			return NULL;
+		}
+
+		return expr;
+	}
+
+	auto next = peek();
+	if (next)
+	{
+		UnaryOp op = ast_unary_op_from_token(next.value().type);
+		if (op != UNARY_OP_ERROR)
+		{
+			consume();
+			Ast_Expression* right_expr = parse_primary_expression();
+			if (!right_expr) return NULL;
+
+			Ast_Unary_Expression* unary_expr = m_arena.alloc<Ast_Unary_Expression>();
+			unary_expr->op = op;
+			unary_expr->right = right_expr;
+
+			Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
+			expr->tag = Ast_Expression::Tag::UnaryExpression;
+			expr->_unary_expr = unary_expr;
+			return expr;
+		}
+	}
+
+	Ast_Term* term = parse_term();
+	if (!term) return NULL;
+
+	Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
+	expr->tag = Ast_Expression::Tag::Term;
+	expr->_term = term;
+
+	return expr;
 }
 
 Ast_Block* Parser::parse_block()
