@@ -4,12 +4,16 @@ project "compiler"
 	cppdialect "C++17"
 	staticruntime "off"
 	
-	files { "src/**.cpp", "src/**.h" }
+	files { "src/main.cpp", "src/**.h" }
 	
 	includedirs
 	{
 		"src",
+		"llvm"
 	}
+	
+	libdirs { "llvm" }
+	links { "LLVM-C" }
 	
 	targetdir ("../bin/" .. outputdir .. "/%{prj.name}")
 	objdir ("../bin-int/" .. outputdir .. "/%{prj.name}")

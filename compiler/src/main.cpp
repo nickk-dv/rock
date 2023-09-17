@@ -9,6 +9,7 @@
 #include "debug_printer.cpp"
 #include "parser.cpp"
 #include "checker.cpp"
+#include "llvm_convert.cpp"
 
 int main()
 {
@@ -45,7 +46,11 @@ int main()
 		printf("Parse result: Success\n\n");
 
 		bool correct = check_ast(&ast.value());
-		if (correct) printf("Check result: Success\n");
+		if (correct) 
+		{
+			printf("Check result: Success\n");
+			llvm_convert_build(&ast.value());
+		}
 		else printf("Check result: FAILED\n");
 	}
 	else printf("Parse result: FAILED\n");
