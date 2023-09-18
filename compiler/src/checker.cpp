@@ -7,12 +7,27 @@ bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast);
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast);
 bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast);
 bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, Ast* ast);
-
 bool check_compare_ident(const StringView& str, const StringView& str2);
 bool check_is_ident_type_unique(const StringView& str, Ast* ast);
 bool check_is_ident_type_in_scope(const StringView& str, Ast* ast);
 bool check_is_ident_a_primitive_type(const StringView& str);
 PrimitiveType check_get_primitive_type_of_ident(const StringView& str);
+
+enum class PrimitiveType
+{
+	i8,
+	u8,
+	i16,
+	u16,
+	i32,
+	u32,
+	i64,
+	u64,
+	f32,
+	f64,
+	Bool,
+	NotPrimitive,
+};
 
 bool check_ast(Ast* ast)
 {
@@ -344,21 +359,10 @@ bool check_is_ident_type_in_scope(const StringView& str, Ast* ast)
 	return type_in_scope;
 }
 
-enum class PrimitiveType
+bool check_is_ident_a_primitive_type(const StringView& str)
 {
-	i8,
-	u8,
-	i16,
-	u16,
-	i32,
-	u32,
-	i64,
-	u64,
-	f32,
-	f64,
-	Bool,
-	NotPrimitive,
-};
+	return check_get_primitive_type_of_ident(str) != PrimitiveType::NotPrimitive;
+}
 
 static const std::unordered_map<u64, PrimitiveType> ident_hash_to_primitive_type =
 {
@@ -374,11 +378,6 @@ static const std::unordered_map<u64, PrimitiveType> ident_hash_to_primitive_type
 	{ hash_ascii_9("f64"),  PrimitiveType::f64 },
 	{ hash_ascii_9("bool"), PrimitiveType::Bool },
 };
-
-bool check_is_ident_a_primitive_type(const StringView& str)
-{
-	return check_get_primitive_type_of_ident(str) != PrimitiveType::NotPrimitive;
-}
 
 PrimitiveType check_get_primitive_type_of_ident(const StringView& str)
 {

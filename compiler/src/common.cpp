@@ -5,6 +5,14 @@
 typedef unsigned char u8;
 typedef unsigned int u32;
 typedef unsigned long long u64;
+struct String;
+struct StringView;
+struct Timer;
+class ArenaAllocator;
+
+constexpr u64 string_hash_ascii_9(const StringView& str);
+constexpr u64 hash_ascii_9(const char* str);
+bool os_file_read_all(const char* file_path, String* str);
 
 struct String
 {
@@ -58,7 +66,7 @@ public:
 	{
 		m_size = size;
 		m_offset = 0;
-		m_buffer = malloc(size);
+		m_buffer = (u8*)malloc(size);
 		if (m_buffer != NULL)
 		memset(m_buffer, 0, size);
 	}
@@ -74,7 +82,7 @@ public:
 	template <typename T>
 	T* alloc()
 	{
-		T* ptr = (T*)((u8*)m_buffer + m_offset);
+		T* ptr = (T*)(m_buffer + m_offset);
 		m_offset += sizeof(T);
 		return ptr;
 	}
@@ -82,7 +90,7 @@ public:
 private:
 	size_t m_size;
 	size_t m_offset;
-	void* m_buffer;
+	u8* m_buffer;
 };
 
 constexpr u64 string_hash_ascii_9(const StringView& str)

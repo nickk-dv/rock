@@ -3,7 +3,7 @@ struct Parser
 {
 	Parser(std::vector<Token> tokens);
 
-	std::optional<Ast> parse();
+	Ast* parse();
 
 	std::optional<Ast_Struct_Declaration> parse_struct();
 	std::optional<Ast_Enum_Declaration> parse_enum();
@@ -38,9 +38,9 @@ Parser::Parser(std::vector<Token> tokens)
 	: m_tokens(std::move(tokens)), 
 	  m_arena(1024 * 1024 * 4) {}
 
-std::optional<Ast> Parser::parse()
+Ast* Parser::parse()
 {
-	Ast ast;
+	Ast* ast = m_arena.alloc<Ast>();
 
 	while (peek().has_value())
 	{
@@ -52,27 +52,27 @@ std::optional<Ast> Parser::parse()
 			case TOKEN_KEYWORD_STRUCT:
 			{
 				auto struct_decl = parse_struct();
-				if (!struct_decl) return {};
-				ast.structs.emplace_back(struct_decl.value());
+				if (!struct_decl) return NULL;
+				ast->structs.emplace_back(struct_decl.value());
 			} break;
 			case TOKEN_KEYWORD_ENUM:
 			{
 				auto enum_decl = parse_enum();
-				if (!enum_decl) return {};
-				ast.enums.emplace_back(enum_decl.value());
+				if (!enum_decl) return NULL;
+				ast->enums.emplace_back(enum_decl.value());
 			} break;
 			case TOKEN_KEYWORD_FN:
 			{
 				auto proc_decl = parse_procedure();
-				if (!proc_decl) return {};
-				ast.procedures.emplace_back(proc_decl.value());
+				if (!proc_decl) return NULL;
+				ast->procedures.emplace_back(proc_decl.value());
 			} break;
 			default:
 			{
 				if (m_tokens[m_index - 1].type == TOKEN_INPUT_END) return ast;
 				printf("Expected fn, enum or struct declaration.\n");
 				debug_print_token(m_tokens[m_index - 1], true); //@Hack reporting on prev token, current one is consumed above
-				return {};
+				return NULL;
 			} break;
 		}
 	}

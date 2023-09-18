@@ -1,6 +1,8 @@
 #include "llvm-c/Core.h"
 #include "llvm-c/TargetMachine.h"
 
+void llvm_convert_build(Ast* ast);
+
 void llvm_convert_build(Ast* ast)
 {
 	LLVMContextRef context = LLVMContextCreate();

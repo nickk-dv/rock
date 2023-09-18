@@ -1,7 +1,6 @@
 #include <unordered_map>
-#include <iostream>
 #include <optional>
-#include <chrono>
+#include <vector>
 
 #include "common.cpp"
 #include "tokenizer.cpp"
@@ -35,21 +34,21 @@ int main()
 	timer.end("Parser init");
 
 	timer.start();
-	std::optional<Ast> ast = parser.parse();
+	Ast* ast = parser.parse();
 	timer.end("Parser");
 
-	if (!ast.has_value()) return 1;
-	//debug_print_ast(&ast.value());
+	if (ast == NULL) return 1;
+	//debug_print_ast(ast);
 	printf("Parse result: Success\n\n");
 
 	timer.start();
-	bool check = check_ast(&ast.value());
+	bool check = check_ast(ast);
 	if (!check) return 1;
 	timer.end("Check");
 	printf("Check result: Success\n");
 
 	timer.start();
-	llvm_convert_build(&ast.value());
+	llvm_convert_build(ast);
 	timer.end("LLVM IR build");
 
 	return 0;
