@@ -238,7 +238,7 @@ bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, As
 		{
 			case Ast_Statement::Tag::VariableAssignment:
 			{
-				Ast_Variable_Assignment* var_assign = stmt->_var_assignment;
+				Ast_Variable_Assignment* var_assign = stmt->as_var_assignment;
 				Ast_Identifier var_type = {};
 				
 				//variable must be in scope for an assigment
@@ -269,7 +269,7 @@ bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, As
 			} break;
 			case Ast_Statement::Tag::VariableDeclaration:
 			{
-				Ast_Variable_Declaration* var_decl = stmt->_var_declaration;
+				Ast_Variable_Declaration* var_decl = stmt->as_var_declaration;
 
 				//variable must not be in scope
 				bool var_already_in_scope = false;

@@ -23,6 +23,7 @@ void debug_print_continue(Ast_Continue* _continue, u32 depth);
 void debug_print_proc_call(Ast_Procedure_Call* _proc_call, u32 depth);
 void debug_print_var_assign(Ast_Variable_Assignment* _var_assign, u32 depth);
 void debug_print_var_decl(Ast_Variable_Declaration* _var_decl, u32 depth);
+void debug_print_tokenizer_info(const std::vector<Token>& tokens);
 
 void debug_print_ast(Ast* ast)
 {
@@ -268,9 +269,9 @@ void debug_print_term(Ast_Term* term, u32 depth)
 
 	switch (term->tag)
 	{
-		case Ast_Term::Tag::Literal: debug_print_token(term->_literal.token, true); break;
-		case Ast_Term::Tag::AccessChain: debug_print_access_chain(term->_access_chain); break;
-		case Ast_Term::Tag::ProcedureCall: debug_print_proc_call(term->_proc_call, depth); break;
+		case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
+		case Ast_Term::Tag::AccessChain: debug_print_access_chain(term->as_access_chain); break;
+		case Ast_Term::Tag::ProcedureCall: debug_print_proc_call(term->as_proc_call, depth); break;
 		default: break;
 	}
 }
@@ -279,9 +280,9 @@ void debug_print_expr(Ast_Expression* expr, u32 depth)
 {
 	switch (expr->tag)
 	{
-		case Ast_Expression::Tag::Term: debug_print_term(expr->_term, depth); break;
-		case Ast_Expression::Tag::UnaryExpression: debug_print_unary_expr(expr->_unary_expr, depth); break;
-		case Ast_Expression::Tag::BinaryExpression: debug_print_binary_expr(expr->_bin_expr, depth); break;
+		case Ast_Expression::Tag::Term: debug_print_term(expr->as_term, depth); break;
+		case Ast_Expression::Tag::UnaryExpression: debug_print_unary_expr(expr->as_unary_expr, depth); break;
+		case Ast_Expression::Tag::BinaryExpression: debug_print_binary_expr(expr->as_binary_expr, depth); break;
 		default: break;
 	}
 }
@@ -325,14 +326,14 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 {
 	switch (statement->tag)
 	{
-		case Ast_Statement::Tag::If: debug_print_if(statement->_if, depth); break;
-		case Ast_Statement::Tag::For: debug_print_for(statement->_for, depth); break;
-		case Ast_Statement::Tag::Break: debug_print_break(statement->_break, depth); break;
-		case Ast_Statement::Tag::Return: debug_print_return(statement->_return, depth); break;
-		case Ast_Statement::Tag::Continue: debug_print_continue(statement->_continue, depth); break;
-		case Ast_Statement::Tag::ProcedureCall: debug_print_proc_call(statement->_proc_call, depth); break;
-		case Ast_Statement::Tag::VariableAssignment: debug_print_var_assign(statement->_var_assignment, depth); break;
-		case Ast_Statement::Tag::VariableDeclaration: debug_print_var_decl(statement->_var_declaration, depth); break;
+		case Ast_Statement::Tag::If: debug_print_if(statement->as_if, depth); break;
+		case Ast_Statement::Tag::For: debug_print_for(statement->as_for, depth); break;
+		case Ast_Statement::Tag::Break: debug_print_break(statement->as_break, depth); break;
+		case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
+		case Ast_Statement::Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
+		case Ast_Statement::Tag::ProcedureCall: debug_print_proc_call(statement->as_proc_call, depth); break;
+		case Ast_Statement::Tag::VariableAssignment: debug_print_var_assign(statement->as_var_assignment, depth); break;
+		case Ast_Statement::Tag::VariableDeclaration: debug_print_var_decl(statement->as_var_declaration, depth); break;
 		default: break;
 	}
 }
@@ -358,8 +359,8 @@ void debug_print_else(Ast_Else* _else, u32 depth)
 
 	switch (_else->tag)
 	{
-		case Ast_Else::Tag::If: debug_print_if(_else->_if, depth); break;
-		case Ast_Else::Tag::Block: debug_print_block(_else->_block, depth); break;
+		case Ast_Else::Tag::If: debug_print_if(_else->as_if, depth); break;
+		case Ast_Else::Tag::Block: debug_print_block(_else->as_block, depth); break;
 		default: break;
 	}
 }
@@ -474,4 +475,31 @@ void debug_print_var_decl(Ast_Variable_Declaration* _var_decl, u32 depth)
 		debug_print_expr(_var_decl->expr.value(), depth);
 	}
 	else printf("---\n");
+}
+
+void debug_print_tokenizer_info(const std::vector<Token>& tokens)
+{
+	u64 ident_count = 0;
+	u64 number_count = 0;
+	u64 string_count = 0;
+	u64 keyword_count = 0;
+	u64 symbol_count = 0;
+
+	for (const Token& token : tokens)
+	{
+		if (token.type == TOKEN_IDENT) ident_count += 1;
+		else if (token.type == TOKEN_NUMBER) number_count += 1;
+		else if (token.type == TOKEN_STRING) string_count += 1;
+		else if (token.type >= TOKEN_KEYWORD_STRUCT && token.type <= TOKEN_KEYWORD_CONTINUE) keyword_count += 1;
+		else symbol_count += 1;
+	}
+
+	printf("\nTokenCount:      %llu \n", tokens.size());
+	printf("[IdentCount]:    %llu \n", ident_count);
+	printf("[NumberCount]:   %llu \n", number_count);
+	printf("[StringCount]:   %llu \n", string_count);
+	printf("[KeywordCount]:  %llu \n", keyword_count);
+	printf("[SymbolCount]:   %llu \n", symbol_count);
+	printf("MemoryUsed (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));
+	printf("MemoryCap  (Mb): %f \n\n", double(sizeof(Token) * tokens.capacity()) / (1024.0 * 1024.0));
 }

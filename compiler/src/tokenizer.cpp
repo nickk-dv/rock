@@ -101,7 +101,6 @@ struct Tokenizer
 
 	LineInfo get_next_line();
 	TokenType get_keyword_token_type(const StringView& str);
-	void print_debug_metrics(const std::vector<Token>& tokens);
 	bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 	bool is_number(u8 c) { return c >= '0' && c <= '9'; }
 	bool is_ident(u8 c) { return is_letter(c) || (c == '_') || is_number(c); }
@@ -275,10 +274,19 @@ std::vector<Token> Tokenizer::tokenize()
 
 						constexpr u32 equal_composable_symbol_token_offset = 12;
 						constexpr u32 double_composable_symbol_token_offset = 18;
+						constexpr u32 bitshift_to_bitshift_equals_offset = 2;
 
 						u32 sym2 = TOKEN_ERROR;
 						if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
-						else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))  sym2 = token.type + double_composable_symbol_token_offset;
+						else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))
+						{
+							sym2 = token.type + double_composable_symbol_token_offset;
+							if (lexeme_end + 1 <= line.end_cursor && input.data[lexeme_end + 1] == '=')
+							{
+								sym2 += bitshift_to_bitshift_equals_offset;
+								lexeme_end += 1;
+							}
+						}
 						else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
 
 						if (sym2 != TOKEN_ERROR)
@@ -378,47 +386,4 @@ TokenType Tokenizer::get_keyword_token_type(const StringView& str)
 	u64 hash = string_hash_ascii_9(str);
 	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
 	return is_keyword ? keyword_hash_to_token_type.at(hash) : TOKEN_ERROR;
-}
-
-void Tokenizer::print_debug_metrics(const std::vector<Token>& tokens)
-{
-	u64 ident_count = 0;
-	u64 number_count = 0;
-	u64 string_count = 0;
-	u64 keyword_count = 0;
-	u64 symbol_count = 0;
-
-	for (const Token& token : tokens)
-	{
-		if (token.type == TOKEN_IDENT) ident_count += 1;
-		else if (token.type == TOKEN_NUMBER) number_count += 1;
-		else if (token.type == TOKEN_STRING) string_count += 1;
-		else if (token.type >= TOKEN_KEYWORD_STRUCT && token.type <= TOKEN_KEYWORD_CONTINUE) keyword_count += 1;
-		else symbol_count += 1;
-	}
-
-	/*
-	Lexer: TokenCount:          553694
-	Lexer: TokenTypesSum:       553694
-	Lexer: [IdentCount]:        202846
-	Lexer: [NumberCount]:       2051
-	Lexer: [StringCount]:       5427
-	Lexer: [KeywordCount]:      24483
-	Lexer: [SymbolCount]:       318887
-	Lexer: MemoryRequired (Mb): 16.897400
-	Lexer: MemoryUsed     (Mb): 23.498535
-
-	17ms comment support
-
-	*/
-
-	printf("Lexer: TokenCount:          %llu \n", tokens.size());
-	printf("Lexer: TokenTypesSum:       %llu \n", ident_count + number_count + string_count + keyword_count + symbol_count);
-	printf("Lexer: [IdentCount]:        %llu \n", ident_count);
-	printf("Lexer: [NumberCount]:       %llu \n", number_count);
-	printf("Lexer: [StringCount]:       %llu \n", string_count);
-	printf("Lexer: [KeywordCount]:      %llu \n", keyword_count);
-	printf("Lexer: [SymbolCount]:       %llu \n", symbol_count);
-	printf("Lexer: MemoryRequired (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));
-	printf("Lexer: MemoryUsed     (Mb): %f \n\n", double(sizeof(Token) * tokens.capacity()) / (1024.0 * 1024.0));
 }

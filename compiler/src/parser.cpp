@@ -196,13 +196,13 @@ Ast_Term* Parser::parse_term()
 		case TOKEN_STRING:
 		{
 			term->tag = Ast_Term::Tag::Literal;
-			term->_literal = Ast_Literal { token };
+			term->as_literal = Ast_Literal { token };
 			consume();
 		} break;
 		case TOKEN_NUMBER:
 		{
 			term->tag = Ast_Term::Tag::Literal;
-			term->_literal = Ast_Literal { token };
+			term->as_literal = Ast_Literal { token };
 			consume();
 		} break;
 		case TOKEN_KEYWORD_TRUE:
@@ -210,7 +210,7 @@ Ast_Term* Parser::parse_term()
 			token.type = TOKEN_BOOL_LITERAL;
 			token.bool_value = true;
 			term->tag = Ast_Term::Tag::Literal;
-			term->_literal = Ast_Literal { token };
+			term->as_literal = Ast_Literal { token };
 			consume();
 		} break;
 		case TOKEN_KEYWORD_FALSE:
@@ -218,7 +218,7 @@ Ast_Term* Parser::parse_term()
 			token.type = TOKEN_BOOL_LITERAL;
 			token.bool_value = false;
 			term->tag = Ast_Term::Tag::Literal;
-			term->_literal = Ast_Literal { token };
+			term->as_literal = Ast_Literal { token };
 			consume();
 		} break;
 		case TOKEN_IDENT:
@@ -229,14 +229,14 @@ Ast_Term* Parser::parse_term()
 				Ast_Procedure_Call* proc_call = parse_proc_call();
 				if (!proc_call) return NULL;
 				term->tag = Ast_Term::Tag::ProcedureCall;
-				term->_proc_call = proc_call;
+				term->as_proc_call = proc_call;
 				break;
 			}
 
 			Ast_Access_Chain* access_chain = parse_access_chain();
 			if (!access_chain) return NULL;
 			term->tag = Ast_Term::Tag::AccessChain;
-			term->_access_chain = access_chain;
+			term->as_access_chain = access_chain;
 		} break;
 		default:
 		{
@@ -328,8 +328,8 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
 
 		Ast_Expression* expr_lhs2 = m_arena.alloc<Ast_Expression>(); //@Hacks
 		expr_lhs2->tag = expr_lhs->tag;
-		expr_lhs2->_term = expr_lhs->_term;
-		expr_lhs2->_bin_expr = expr_lhs->_bin_expr;
+		expr_lhs2->as_term = expr_lhs->as_term;
+		expr_lhs2->as_binary_expr = expr_lhs->as_binary_expr;
 
 		Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
 		bin_expr->op = op;
@@ -337,7 +337,7 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
 		bin_expr->right = expr_rhs;
 
 		expr_lhs->tag = Ast_Expression::Tag::BinaryExpression;
-		expr_lhs->_bin_expr = bin_expr;
+		expr_lhs->as_binary_expr = bin_expr;
 	}
 
 	return expr_lhs;
@@ -374,7 +374,7 @@ Ast_Expression* Parser::parse_primary_expression()
 
 			Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
 			expr->tag = Ast_Expression::Tag::UnaryExpression;
-			expr->_unary_expr = unary_expr;
+			expr->as_unary_expr = unary_expr;
 			return expr;
 		}
 	}
@@ -384,7 +384,7 @@ Ast_Expression* Parser::parse_primary_expression()
 
 	Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
 	expr->tag = Ast_Expression::Tag::Term;
-	expr->_term = term;
+	expr->as_term = term;
 
 	return expr;
 }
@@ -419,32 +419,32 @@ Ast_Statement* Parser::parse_statement()
 		case TOKEN_KEYWORD_IF:
 		{
 			statement->tag = Ast_Statement::Tag::If;
-			statement->_if = parse_if();
-			if (!statement->_if) return NULL;
+			statement->as_if = parse_if();
+			if (!statement->as_if) return NULL;
 		} break;
 		case TOKEN_KEYWORD_FOR:
 		{
 			statement->tag = Ast_Statement::Tag::For;
-			statement->_for = parse_for();
-			if (!statement->_for) return NULL;
+			statement->as_for = parse_for();
+			if (!statement->as_for) return NULL;
 		} break;
 		case TOKEN_KEYWORD_BREAK:
 		{
 			statement->tag = Ast_Statement::Tag::Break;
-			statement->_break = parse_break();
-			if (!statement->_break) return NULL;
+			statement->as_break = parse_break();
+			if (!statement->as_break) return NULL;
 		} break;
 		case TOKEN_KEYWORD_RETURN:
 		{
 			statement->tag = Ast_Statement::Tag::Return;
-			statement->_return = parse_return();
-			if (!statement->_return) return NULL;
+			statement->as_return = parse_return();
+			if (!statement->as_return) return NULL;
 		} break;
 		case TOKEN_KEYWORD_CONTINUE:
 		{
 			statement->tag = Ast_Statement::Tag::Continue;
-			statement->_continue = parse_continue();
-			if (!statement->_continue) return NULL;
+			statement->as_continue = parse_continue();
+			if (!statement->as_continue) return NULL;
 		} break;
 		case TOKEN_IDENT:
 		{
@@ -454,21 +454,21 @@ Ast_Statement* Parser::parse_statement()
 			if (next.value().type == TOKEN_COLON)
 			{
 				statement->tag = Ast_Statement::Tag::VariableDeclaration;
-				statement->_var_declaration = parse_var_declaration();
-				if (!statement->_var_declaration) return NULL;
+				statement->as_var_declaration = parse_var_declaration();
+				if (!statement->as_var_declaration) return NULL;
 			}
 			else if (next.value().type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::ProcedureCall;
-				statement->_proc_call = parse_proc_call();
-				if (!statement->_proc_call) return NULL;
+				statement->as_proc_call = parse_proc_call();
+				if (!statement->as_proc_call) return NULL;
 				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; }
 			}
 			else
 			{
 				statement->tag = Ast_Statement::Tag::VariableAssignment;
-				statement->_var_assignment = parse_var_assignment();
-				if (!statement->_var_assignment) return NULL;
+				statement->as_var_assignment = parse_var_assignment();
+				if (!statement->as_var_assignment) return NULL;
 			}
 		} break;
 		default: { printf("Invalid token at the start of a statement.\n"); return NULL; }
@@ -514,14 +514,14 @@ Ast_Else* Parser::parse_else()
 		Ast_If* _if = parse_if();
 		if (!_if) return NULL;
 		_else->tag = Ast_Else::Tag::If;
-		_else->_if = _if;
+		_else->as_if = _if;
 	}
 	else if (next.value().type == TOKEN_BLOCK_START)
 	{
 		Ast_Block* block = parse_block();
 		if (!block) return NULL;
 		_else->tag = Ast_Else::Tag::Block;
-		_else->_block = block;
+		_else->as_block = block;
 	}
 	else { printf("Expected 'else' to be followed by 'if' or a code block '{ ... }'.\n"); return NULL; }
 

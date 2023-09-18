@@ -27,7 +27,8 @@ int main()
 	timer.start();
 	std::vector<Token> tokens = lexer.tokenize();
 	timer.end("Lexer");
-	lexer.print_debug_metrics(tokens);
+
+	debug_print_tokenizer_info(tokens);
 
 	timer.start();
 	Parser parser(std::move(tokens));
@@ -38,7 +39,7 @@ int main()
 	timer.end("Parser");
 
 	if (ast == NULL) return 1;
-	//debug_print_ast(ast);
+	debug_print_ast(ast);
 	printf("Parse result: Success\n\n");
 
 	timer.start();

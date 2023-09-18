@@ -58,9 +58,9 @@ struct Ast_Term
 
 	union
 	{
-		Ast_Literal _literal;
-		Ast_Access_Chain* _access_chain;
-		Ast_Procedure_Call* _proc_call;
+		Ast_Literal as_literal;
+		Ast_Access_Chain* as_access_chain;
+		Ast_Procedure_Call* as_proc_call;
 	};
 };
 
@@ -73,9 +73,9 @@ struct Ast_Expression
 
 	union
 	{
-		Ast_Term* _term;
-		Ast_Unary_Expression* _unary_expr;
-		Ast_Binary_Expression* _bin_expr;
+		Ast_Term* as_term;
+		Ast_Unary_Expression* as_unary_expr;
+		Ast_Binary_Expression* as_binary_expr;
 	};
 };
 
@@ -140,14 +140,14 @@ struct Ast_Statement
 
 	union
 	{
-		Ast_If* _if;
-		Ast_For* _for;
-		Ast_Break* _break;
-		Ast_Return* _return;
-		Ast_Continue* _continue;
-		Ast_Procedure_Call* _proc_call;
-		Ast_Variable_Assignment* _var_assignment;
-		Ast_Variable_Declaration* _var_declaration;
+		Ast_If* as_if;
+		Ast_For* as_for;
+		Ast_Break* as_break;
+		Ast_Return* as_return;
+		Ast_Continue* as_continue;
+		Ast_Procedure_Call* as_proc_call;
+		Ast_Variable_Assignment* as_var_assignment;
+		Ast_Variable_Declaration* as_var_declaration;
 	};
 };
 
@@ -170,8 +170,8 @@ struct Ast_Else
 
 	union
 	{
-		Ast_If* _if;
-		Ast_Block* _block;
+		Ast_If* as_if;
+		Ast_Block* as_block;
 	};
 };
 
