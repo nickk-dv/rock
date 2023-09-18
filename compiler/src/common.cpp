@@ -1,7 +1,6 @@
-#include <cstdio>
-#include <cstdlib>
-#include <time.h>
-#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <chrono>
 
 typedef unsigned char u8;
 typedef unsigned int u32;
@@ -30,8 +29,29 @@ struct StringView
 	size_t count;
 };
 
-//@Incomplete no overflow protection
-class ArenaAllocator
+struct Timer
+{
+	typedef std::chrono::high_resolution_clock Clock;
+	typedef std::chrono::steady_clock::time_point TimePoint;
+	typedef std::chrono::nanoseconds Ns;
+
+	void start()
+	{
+		t0 = Clock::now();
+	}
+	
+	void end(const char* message)
+	{
+		TimePoint t1 = Clock::now();
+		Ns ns = std::chrono::duration_cast<Ns>(t1 - t0);
+		const float ns_to_ms = 1000000.0f;
+		printf("%s ms: %f\n", message, ns.count() / ns_to_ms);
+	}
+
+	TimePoint t0;
+};
+
+class ArenaAllocator //@Incomplete no overflow protection
 {
 public:
 	ArenaAllocator(size_t size)

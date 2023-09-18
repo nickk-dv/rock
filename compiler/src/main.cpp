@@ -15,45 +15,42 @@ int main()
 {
 	Tokenizer lexer = {};
 
+	Timer timer;
+	timer.start();
 	const char* file_path = "../../test.txt";
 	if (!lexer.set_input_from_file(file_path))
 	{
 		printf("Failed to open a file.\n");
-		exit(EXIT_FAILURE);
+		return 1;
 	}
+	timer.end("Lexer init");
 
-	typedef std::chrono::high_resolution_clock Clock;
-
-	auto t0 = Clock::now();
+	timer.start();
 	std::vector<Token> tokens = lexer.tokenize();
-	auto t1 = Clock::now();
-	std::chrono::nanoseconds ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
-	std::cout << "Lexer ms: " << ns.count() / 1000000.0f << "\n";
-
+	timer.end("Lexer");
 	lexer.print_debug_metrics(tokens);
-	Parser parser(std::move(tokens)); //@Performance allocation not measured in parser time
 
-	auto p0 = Clock::now();
+	timer.start();
+	Parser parser(std::move(tokens));
+	timer.end("Parser init");
+
+	timer.start();
 	std::optional<Ast> ast = parser.parse();
-	auto p1 = Clock::now();
-	std::chrono::nanoseconds pns = std::chrono::duration_cast<std::chrono::nanoseconds>(p1 - p0);
-	std::cout << "Parser ms: " << pns.count() / 1000000.0f << "\n";
-	
-	if (ast.has_value())
-	{
-		debug_print_ast(&ast.value());
+	timer.end("Parser");
 
-		printf("Parse result: Success\n\n");
+	if (!ast.has_value()) return 1;
+	//debug_print_ast(&ast.value());
+	printf("Parse result: Success\n\n");
 
-		bool correct = check_ast(&ast.value());
-		if (correct) 
-		{
-			printf("Check result: Success\n");
-			llvm_convert_build(&ast.value());
-		}
-		else printf("Check result: FAILED\n");
-	}
-	else printf("Parse result: FAILED\n");
+	timer.start();
+	bool check = check_ast(&ast.value());
+	if (!check) return 1;
+	timer.end("Check");
+	printf("Check result: Success\n");
+
+	timer.start();
+	llvm_convert_build(&ast.value());
+	timer.end("LLVM IR build");
 
 	return 0;
 }
