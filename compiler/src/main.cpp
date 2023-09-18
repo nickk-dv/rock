@@ -8,7 +8,7 @@
 #include "debug_printer.cpp"
 #include "parser.cpp"
 #include "checker.cpp"
-#include "llvm_convert.cpp"
+#include "llvm_backend.cpp"
 
 int main()
 {
@@ -49,7 +49,7 @@ int main()
 	printf("Check result: Success\n");
 
 	timer.start();
-	llvm_convert_build(ast);
+	llvm_build(ast);
 	timer.end("LLVM IR build");
 
 	return 0;

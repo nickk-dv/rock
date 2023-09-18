@@ -1,12 +1,38 @@
 #include "llvm-c/Core.h"
 #include "llvm-c/TargetMachine.h"
 
-void llvm_convert_build(Ast* ast);
+void llvm_build(Ast* ast);
+LLVMModuleRef llvm_build_ir(Ast* ast);
+LLVMModuleRef llvm_build_ir_example(Ast* ast);
+void llvm_build_binaries(LLVMModuleRef mod);
+void llvm_debug_print_module(LLVMModuleRef mod);
 
-void llvm_convert_build(Ast* ast)
+void llvm_build(Ast* ast)
+{
+	LLVMModuleRef mod = llvm_build_ir(ast);
+	llvm_build_binaries(mod);
+}
+
+LLVMModuleRef llvm_build_ir(Ast* ast)
 {
 	LLVMContextRef context = LLVMContextCreate();
-	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("main_module", context);
+	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
+	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
+
+	LLVMTypeRef main_func_type = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
+	LLVMValueRef main_func = LLVMAddFunction(mod, "main", main_func_type);
+	LLVMBasicBlockRef main_block = LLVMAppendBasicBlockInContext(context, main_func, "block");
+	LLVMPositionBuilderAtEnd(builder, main_block);
+	LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
+
+	LLVMDisposeBuilder(builder);
+	return mod;
+}
+
+LLVMModuleRef llvm_build_ir_example(Ast* ast)
+{
+	LLVMContextRef context = LLVMContextCreate();
+	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
 	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
 	
 	// Create and add function prototype for sum
@@ -29,48 +55,55 @@ void llvm_convert_build(Ast* ast)
 	LLVMValueRef sum_result = LLVMBuildCall2(builder, sum_proc_type, sum_proc, args, 2, "sum_result");
 	LLVMBuildRet(builder, sum_result);
 
-	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
-	char* message = LLVMPrintModuleToString(mod);
-	printf("Module: %s", message);
-	LLVMDisposeMessage(message);
+	LLVMDisposeBuilder(builder);
+	return mod;
+}
 
+void llvm_build_binaries(LLVMModuleRef mod)
+{
+	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
+	//even during IR building for dev period
+	//@Performance: any benefits of doing only init for one platform?
+	//LLVMInitializeX86TargetInfo() ...
 	LLVMInitializeAllTargetInfos();
 	LLVMInitializeAllTargets();
 	LLVMInitializeAllTargetMCs();
 	LLVMInitializeAllAsmParsers();
 	LLVMInitializeAllAsmPrinters();
-	//@Performance: any benefits of doing only init for one platform?
-	//LLVMInitializeX86TargetInfo();
-	//LLVMInitializeX86Target();
-	//LLVMInitializeX86TargetMC();
 
-	char* errors = 0;
 	LLVMTargetRef target;
-	LLVMGetTargetFromTriple(LLVMGetDefaultTargetTriple(), &target, &errors);
-	char* triple = LLVMGetDefaultTargetTriple();
+	char* error = 0;
 	char* cpu = LLVMGetHostCPUName();
 	char* cpu_features = LLVMGetHostCPUFeatures();
+	char* triple = LLVMGetDefaultTargetTriple();
+	LLVMGetTargetFromTriple(triple, &target, &error);
+	LLVMSetTarget(mod, triple);
 
 	LLVMTargetMachineRef machine = LLVMCreateTargetMachine
 	(target, triple, cpu, cpu_features, LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
 	
-	LLVMSetTarget(mod, LLVMGetDefaultTargetTriple());
 	LLVMTargetDataRef datalayout = LLVMCreateTargetDataLayout(machine);
 	char* datalayout_str = LLVMCopyStringRepOfTargetData(datalayout);
-	printf("datalayout: %s\n", datalayout_str);
 	LLVMSetDataLayout(mod, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
+	llvm_debug_print_module(mod);
 
-	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &errors);
-	printf("error: %s\n", errors);
-	LLVMDisposeMessage(errors);
-
-	LLVMDisposeMessage(triple);
-	LLVMDisposeMessage(cpu);
-	LLVMDisposeMessage(cpu_features);
-	LLVMDisposeMessage(errors);
+	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &error);
+	if (error != NULL) printf("error: %s\n", error);
 	
-	LLVMDisposeBuilder(builder);
+	LLVMContextRef context = LLVMGetModuleContext(mod);
 	LLVMDisposeModule(mod);
 	LLVMContextDispose(context);
+
+	LLVMDisposeMessage(error);
+	LLVMDisposeMessage(cpu);
+	LLVMDisposeMessage(cpu_features);
+	LLVMDisposeMessage(triple);
+}
+
+void llvm_debug_print_module(LLVMModuleRef mod)
+{
+	char* message = LLVMPrintModuleToString(mod);
+	printf("Module: %s", message);
+	LLVMDisposeMessage(message);
 }
