@@ -180,7 +180,7 @@ struct Ast_For
 	Token token;
 	std::optional<Ast_Variable_Declaration*> var_declaration;
 	std::optional<Ast_Expression*> condition_expr;
-	std::optional<Ast_Expression*> post_expr;
+	std::optional<Ast_Variable_Assignment*> var_assignment;
 	Ast_Block* block;
 };
 

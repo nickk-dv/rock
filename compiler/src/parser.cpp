@@ -249,56 +249,6 @@ Ast_Term* Parser::parse_term()
 	return term;
 }
 
-/* @Old version no Parens no Unary
-Ast_Expression* Parser::parse_expression()
-{
-	Ast_Expression* expr = parse_sub_expression();
-	if (!expr) return NULL;
-	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after expression.\n"); return NULL; }
-	return expr;
-}
-
-Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
-{
-	Ast_Term* term_lhs = parse_term();
-	if (!term_lhs) return NULL;
-
-	Ast_Expression* expr_lhs = m_arena.alloc<Ast_Expression>();
-	expr_lhs->tag = Ast_Expression::Tag::Term;
-	expr_lhs->_term = term_lhs;
-
-	while (true)
-	{
-		auto token_op = peek();
-		if (!token_op) break;
-		BinaryOp op = ast_binary_op_from_token(token_op.value().type);
-		if (op == BINARY_OP_ERROR) break;
-		u32 prec = ast_binary_op_precedence(op);
-		if (prec < min_precedence) break;
-		consume();
-
-		u32 next_min_prec = prec + 1;
-		Ast_Expression* expr_rhs = parse_sub_expression(next_min_prec);
-		if (expr_rhs == NULL) return NULL;
-
-		Ast_Expression* expr_lhs2 = m_arena.alloc<Ast_Expression>(); //@Hacks
-		expr_lhs2->tag = expr_lhs->tag;
-		expr_lhs2->_term = expr_lhs->_term;
-		expr_lhs2->_bin_expr = expr_lhs->_bin_expr;
-
-		Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
-		bin_expr->op = op;
-		bin_expr->left = expr_lhs2; //Assembling the magic tree
-		bin_expr->right = expr_rhs;
-
-		expr_lhs->tag = Ast_Expression::Tag::BinaryExpression;
-		expr_lhs->_bin_expr = bin_expr;
-	}
-
-	return expr_lhs;
-}
-*/
-
 Ast_Expression* Parser::parse_expression()
 {
 	Ast_Expression* expr = parse_sub_expression();
@@ -326,14 +276,14 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
 		Ast_Expression* expr_rhs = parse_sub_expression(next_min_prec);
 		if (expr_rhs == NULL) return NULL;
 
-		Ast_Expression* expr_lhs2 = m_arena.alloc<Ast_Expression>(); //@Hacks
-		expr_lhs2->tag = expr_lhs->tag;
-		expr_lhs2->as_term = expr_lhs->as_term;
-		expr_lhs2->as_binary_expr = expr_lhs->as_binary_expr;
+		Ast_Expression* expr_lhs_copy = m_arena.alloc<Ast_Expression>();
+		expr_lhs_copy->tag = expr_lhs->tag;
+		expr_lhs_copy->as_term = expr_lhs->as_term;
+		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
 
 		Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
 		bin_expr->op = op;
-		bin_expr->left = expr_lhs2; //Assembling the magic tree
+		bin_expr->left = expr_lhs_copy;
 		bin_expr->right = expr_rhs;
 
 		expr_lhs->tag = Ast_Expression::Tag::BinaryExpression;
@@ -532,12 +482,6 @@ Ast_For* Parser::parse_for()
 {
 	Ast_For* _for = m_arena.alloc<Ast_For>();
 	_for->token = consume_get();
-
-	//@Design
-	// 0 expressions = infinite loop
-	// 1 var declaration; 1 conditional expr; 1 post expr;
-	// 1 conditional expr; 1 post expr;
-	// 1 conditional expr;
 	
 	auto curr = peek();
 	auto next = peek(1);
@@ -552,7 +496,7 @@ Ast_For* Parser::parse_for()
 		return _for;
 	}
 
-	//var declaration detection
+	//optional var declaration
 	if (curr && curr.value().type == TOKEN_IDENT && next && next.value().type == TOKEN_COLON)
 	{
 		Ast_Variable_Declaration* var_declaration = parse_var_declaration();
@@ -560,18 +504,17 @@ Ast_For* Parser::parse_for()
 		_for->var_declaration = var_declaration;
 	}
 
-	//conditional expr must exist
+	//conditional expr
 	Ast_Expression* condition_expr = parse_sub_expression();
-	if (!condition_expr) { printf("Expected a valid conditional expression in a for loop.\n"); return NULL; }
+	if (!condition_expr) { printf("Expected a conditional expression.\n"); return NULL; }
 	_for->condition_expr = condition_expr;
 
-	//post expr might exist
+	//optional post expr
 	if (try_consume(TOKEN_SEMICOLON))
 	{
-		//@Issue post expr can be a Ident or Literal Term which doesnt do anything?
-		Ast_Expression* post_expr = parse_sub_expression();
-		if (!post_expr) return NULL;
-		_for->post_expr = post_expr;
+		Ast_Variable_Assignment* var_assignment = parse_var_assignment();
+		if (!var_assignment) return NULL;
+		_for->var_assignment = var_assignment;
 	}
 
 	Ast_Block* block = parse_block();
@@ -660,19 +603,16 @@ Ast_Variable_Declaration* Parser::parse_var_declaration()
 	var_declaration->ident = Ast_Identifier { consume_get() };
 	consume();
 
-	auto type = try_consume(TOKEN_IDENT); //explicit type
+	auto type = try_consume(TOKEN_IDENT);
 	if (type) var_declaration->type = Ast_Identifier { type.value() };
 
 	if (!try_consume(TOKEN_ASSIGN)) //default init
 	{
 		bool has_semicolon = try_consume(TOKEN_SEMICOLON).has_value();
-		if (type && has_semicolon) //default init must have a type and ';'
-			return var_declaration;
-
-		if (!type && has_semicolon) printf("No type before ;.\n"); //@Bad errors
-		else if (type && !has_semicolon) printf("No ; after type.\n");
-		else if (!type && !has_semicolon) printf("No type or ; specified.\n");
-
+		if (type && has_semicolon) return var_declaration;
+		if (!type && has_semicolon) printf("Expected specified type for default initialized variable.\n");
+		else if (type && !has_semicolon) printf("Expected ';'.\n");
+		else if (!type && !has_semicolon) printf("Expected specified type and ';' for default initialized variable.\n");
 		return NULL;
 	}
 

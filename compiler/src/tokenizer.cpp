@@ -63,8 +63,8 @@ enum TokenType
 	TOKEN_BITWISE_NOT,        // ~
 	TOKEN_BITSHIFT_LEFT,      // <<
 	TOKEN_BITSHIFT_RIGHT,     // >>
-	TOKEN_BITSHIFT_LEFT_EQUALS,  // <<= //@Incomplete not tokenized yet
-	TOKEN_BITSHIFT_RIGHT_EQUALS, // >>= //@Incomplete not tokenized yet
+	TOKEN_BITSHIFT_LEFT_EQUALS,  // <<=
+	TOKEN_BITSHIFT_RIGHT_EQUALS, // >>=
 
 	TOKEN_INPUT_END,
 	TOKEN_ERROR,

@@ -389,11 +389,11 @@ void debug_print_for(Ast_For* _for, u32 depth)
 	else printf("---\n");
 
 	debug_print_spacing(depth);
-	printf("For_Post_Expr: ");
-	if (_for->post_expr.has_value())
+	printf("For_Var_Assignment: ");
+	if (_for->var_assignment.has_value())
 	{
 		printf("\n");
-		debug_print_expr(_for->post_expr.value(), depth);
+		debug_print_var_assign(_for->var_assignment.value(), depth);
 	}
 	else printf("---\n");
 
