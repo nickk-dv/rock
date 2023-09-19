@@ -1,5 +1,6 @@
 
 enum class PrimitiveType;
+struct Block_Checker;
 
 bool check_is_ident_a_primitive_type(const StringView& str);
 PrimitiveType check_get_primitive_type_of_ident(const StringView& str);
@@ -11,7 +12,17 @@ bool check_enum(const Ast_Enum_Declaration& decl, Ast* ast);
 bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast);
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast);
 bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast);
-bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, Ast* ast);
+
+bool check_block(Ast_Block* block, Ast* ast, Block_Checker* bc, bool is_entry, bool is_inside_loop);
+bool check_if(Ast_If* _if, Ast* ast, Block_Checker* bc);
+bool check_else(Ast_Else* _else, Ast* ast, Block_Checker* bc);
+bool check_for(Ast_For* _for, Ast* ast, Block_Checker* bc);
+bool check_break(Ast_Break* _break, Ast* ast, Block_Checker* bc);
+bool check_return(Ast_Return* _return, Ast* ast, Block_Checker* bc);
+bool check_continue(Ast_Continue* _continue, Ast* ast, Block_Checker* bc);
+bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc);
+bool check_var_assign(Ast_Variable_Assignment* var_assign, Ast* ast, Block_Checker* bc);
+bool check_var_declare(Ast_Variable_Declaration* var_declare, Ast* ast, Block_Checker* bc);
 
 enum class PrimitiveType
 {
@@ -84,7 +95,6 @@ bool check_ast(Ast* ast)
 	for (const auto& decl : ast->procedures)
 	if (!check_procedure(decl, ast)) declarations_valid = false;
 	if (!declarations_valid) return false;
-	return true;
 
 	bool procedure_blocks_valid = true;
 	for (const auto& decl : ast->procedures)
@@ -175,93 +185,233 @@ bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast)
 	return true;
 }
 
-//@Rework in progress ->
-bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast)
+struct Block_Info
 {
-	std::vector<IdentTypePair> vars_in_scope;
+	Ast_Block* block;
+	u32 var_count;
+	bool is_inside_loop;
+};
 
-	for (const auto& param : decl.input_parameters)
-		vars_in_scope.emplace_back(param);
+struct Block_Checker
+{
+	void block_enter(Ast_Block* block, bool is_inside_loop);
+	void block_exit();
+	void var_add(const IdentTypePair& ident_type);
+	void var_add(const Ast_Identifier& ident, const Ast_Identifier& type);
+	bool is_var_declared(const Ast_Identifier& ident);
+	bool is_inside_a_loop();
+	
+	std::vector<Block_Info> block_stack; 
+	std::vector<IdentTypePair> var_stack; //@Perf this is basic linear search symbol table for the proc block
+};
 
-	printf("Variable inputs of proc: "); 
-	debug_print_token(decl.ident.token, true);
-	for (const auto& ident : vars_in_scope)
-		debug_print_token(ident.ident.token, true);
-
-	bool block_check = check_block(vars_in_scope, decl.block, ast);
-	return block_check;
+void Block_Checker::block_enter(Ast_Block* block, bool is_inside_loop)
+{
+	if (block_stack.size() > 0 && is_inside_a_loop()) is_inside_loop = true;
+	block_stack.emplace_back( Block_Info { block, 0, is_inside_loop });
 }
 
-bool check_block(std::vector<IdentTypePair>& vars_in_scope, Ast_Block* block, Ast* ast)
+void Block_Checker::block_exit()
 {
+	Block_Info block = block_stack[block_stack.size() - 1]; //@Perf copying this its small for now
+	for (u32 i = 0; i < block.var_count; i++)
+		var_stack.pop_back();
+	block_stack.pop_back();
+}
+
+void Block_Checker::var_add(const IdentTypePair& ident_type)
+{
+	var_stack.emplace_back(ident_type);
+	block_stack[block_stack.size() - 1].var_count += 1;
+}
+
+void Block_Checker::var_add(const Ast_Identifier& ident, const Ast_Identifier& type)
+{
+	var_stack.emplace_back(IdentTypePair { ident, type });
+	block_stack[block_stack.size() - 1].var_count += 1;
+}
+
+bool Block_Checker::is_var_declared(const Ast_Identifier& ident) //@Perf linear search for now
+{
+	for (const auto& var : var_stack)
+	if (var.ident.token.string_value == ident.token.string_value) return true;
+	return false;
+}
+
+bool Block_Checker::is_inside_a_loop()
+{
+	return block_stack[block_stack.size() - 1].is_inside_loop;
+}
+
+bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast)
+{	
+	Block_Checker bc = {};
+	bc.block_enter(decl.block, false);
+	for (const auto& param : decl.input_parameters)
+	bc.var_add(param);
+
+	bool result = check_block(decl.block, ast, &bc, true, false);
+	return result;
+}
+
+bool check_block(Ast_Block* block, Ast* ast, Block_Checker* bc, bool is_entry, bool is_inside_loop)
+{
+	if (!is_entry) 
+	bc->block_enter(block, is_inside_loop);
+
 	for (Ast_Statement* stmt : block->statements)
 	{
 		switch (stmt->tag)
 		{
-			case Ast_Statement::Tag::VariableAssignment:
-			{
-				Ast_Variable_Assignment* var_assign = stmt->as_var_assignment;
-				Ast_Identifier var_type = {};
-				
-				//variable must be in scope for an assigment
-				bool var_already_in_scope = false;
-				for (const auto& var : vars_in_scope)
-				{
-					if (check_compare_ident(var.ident.token.string_value, var_assign->access_chain->ident.token.string_value)) //@Incomplete check entire chain
-					{
-						var_already_in_scope = true;
-						var_type = var.type;
-						break;
-					}
-				}
-				if (!var_already_in_scope)
-				{
-					printf("Error: assignment to a variable which is not in scope: ");
-					debug_print_token(var_assign->access_chain->ident.token, true); //@Incomplete check entire chain
-					return false;
-				}
-
-				//validation of expr:
-				//terms are in scope
-				//binary operators are applicable
-				//return type of expression and validity
-				
-				//validate the expr
-				//expr type must match the var_type
-			} break;
-			case Ast_Statement::Tag::VariableDeclaration:
-			{
-				Ast_Variable_Declaration* var_decl = stmt->as_var_declaration;
-
-				//variable must not be in scope
-				bool var_already_in_scope = false;
-				for (const auto& var : vars_in_scope)
-				{
-					if (check_compare_ident(var.ident.token.string_value, var_decl->ident.token.string_value))
-					{
-						var_already_in_scope = true;
-						break;
-					}
-				}
-				if (var_already_in_scope)
-				{
-					printf("Error: variable is already defined in scope: "); 
-					debug_print_token(var_decl->ident.token, true);
-					return false;
-				}
-				
-				//validate expr
-				//expr type must match the var_type if its specified
-				//otherwise expr type is put on the declared variable
-				//declared variable added to a current scope
-				vars_in_scope.emplace_back( IdentTypePair { var_decl->ident, {} });
-			} break;
-			default:
-			{
-				break;
-			}
+			case Ast_Statement::Tag::If: { if (!check_if(stmt->as_if, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::For: { if (!check_for(stmt->as_for, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::Break: { if (!check_break(stmt->as_break, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::Return: { if (!check_return(stmt->as_return, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::Continue: { if (!check_continue(stmt->as_continue, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::ProcedureCall: { if (!check_proc_call(stmt->as_proc_call, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::VariableAssignment: { if (!check_var_assign(stmt->as_var_assignment, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::VariableDeclaration: { if (!check_var_declare(stmt->as_var_declaration, ast, bc)) return false; } break;
+			default: break;
 		}
 	}
 
+	bc->block_exit();
+	return true;
+}
+
+bool check_if(Ast_If* _if, Ast* ast, Block_Checker* bc)
+{
+	/*
+	condition_expr is bool
+	condition_expr valid
+	block valid
+	else is valid or doesnt exist
+	*/
+
+	if (!check_block(_if->block, ast, bc, false, false)) return false;
+	if (_if->_else.has_value() && !check_else(_if->_else.value(), ast, bc)) return false;
+	
+	return true;
+}
+
+bool check_else(Ast_Else* _else, Ast* ast, Block_Checker* bc)
+{
+	switch (_else->tag)
+	{
+		case Ast_Else::Tag::If: { if (!check_if(_else->as_if, ast, bc)) return false; } break;
+		case Ast_Else::Tag::Block: { if (!check_block(_else->as_block, ast, bc, false, false)) return false; } break;
+		default: break;
+	}
+	return true;
+}
+
+bool check_for(Ast_For* _for, Ast* ast, Block_Checker* bc)
+{
+	/*
+	not sure about syntax & semantics yet
+	*/
+
+	if (!check_block(_for->block, ast, bc, false, true)) return false;
+	return true;
+}
+
+bool check_break(Ast_Break* _break, Ast* ast, Block_Checker* bc)
+{
+	/*
+	only called inside for loop
+	*/
+
+	if (!bc->is_inside_a_loop())
+	{
+		printf("Invalid 'break' outside a for loop.\n");
+		debug_print_token(_break->token, true, true);
+		return false;
+	}
+	return true;
+}
+
+bool check_return(Ast_Return* _return, Ast* ast, Block_Checker* bc)
+{
+	/*
+	expr matches parent proc return type or lack of type
+	*/
+
+	return true;
+}
+
+bool check_continue(Ast_Continue* _continue, Ast* ast, Block_Checker* bc)
+{
+	/*
+	only called inside for loop
+	*/
+
+	if (!bc->is_inside_a_loop())
+	{
+		printf("Invalid 'continue' outside a for loop.\n");
+		debug_print_token(_continue->token, true, true);
+		return false;
+	}
+	return true;
+}
+
+bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc)
+{
+	/*
+	proc name in scope
+	all input expr are valid
+	all input expr match types
+	*/
+
+	if (!check_is_proc_in_scope(proc_call->ident.token.string_value))
+	{
+		printf("Calling unknown procedure.\n"); 
+		debug_print_token(proc_call->ident.token, true, true); 
+		return false;
+	}
+	return true;
+}
+
+bool check_var_assign(Ast_Variable_Assignment* var_assign, Ast* ast, Block_Checker* bc)
+{
+	/*
+	access chain first ident must be in scope
+	access chain must be valid + get type of last chain ident
+	AssignOp is supported by lhs-rhs
+	expr valid
+	expr evaluates to same type
+	*/
+
+	if (!bc->is_var_declared(var_assign->access_chain->ident))
+	{
+		printf("Trying to assign to undeclared variable.\n");
+		debug_print_token(var_assign->access_chain->ident.token, true, true);
+		return false;
+	}
+	return true;
+}
+
+bool check_var_declare(Ast_Variable_Declaration* var_declare, Ast* ast, Block_Checker* bc)
+{
+	/*
+	ident must not be in scope
+	[has expr & has type]
+	expr valid
+	expr evaluates to same type
+	[has expr]
+	expr valid
+	infer var type
+	[result]
+	existing or inferred type must be in scope
+	add ident & type to scope
+	*/
+
+	if (bc->is_var_declared(var_declare->ident)) 
+	{ 
+		printf("Trying to shadow already existing variable.\n");
+		debug_print_token(var_declare->ident.token, true, true);
+		return false; 
+	}
+
+	bc->var_add(var_declare->ident, Ast_Identifier{}); //@Incomplete discarding type for now
 	return true;
 }

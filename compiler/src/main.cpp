@@ -47,11 +47,11 @@ int main()
 	bool check = check_ast(ast);
 	timer.end("Check");
 	if (!check) return 1;
-	printf("Check result: Success\n");
+	printf("Check result: Success\n\n");
 
-	timer.start();
-	llvm_build(ast);
-	timer.end("LLVM IR build");
+	//timer.start();
+	//llvm_build(ast);
+	//timer.end("LLVM IR build");
 
 	return 0;
 }

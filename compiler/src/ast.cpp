@@ -134,7 +134,7 @@ struct Ast_Statement
 {
 	enum class Tag
 	{
-		If, For, While, Break, Return, Continue,
+		If, For, Break, Return, Continue,
 		ProcedureCall, VariableAssignment, VariableDeclaration,
 	} tag;
 
@@ -145,9 +145,9 @@ struct Ast_Statement
 		Ast_Break* as_break;
 		Ast_Return* as_return;
 		Ast_Continue* as_continue;
-		Ast_Procedure_Call* as_proc_call;
-		Ast_Variable_Assignment* as_var_assignment;
-		Ast_Variable_Declaration* as_var_declaration;
+		Ast_Procedure_Call* as_proc_call; //@Rename everything to proc_call
+		Ast_Variable_Assignment* as_var_assignment; //@Rename everything to var_assign
+		Ast_Variable_Declaration* as_var_declaration; //@Rename everything to var_declare
 	};
 };
 
