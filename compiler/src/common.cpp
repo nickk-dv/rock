@@ -29,6 +29,12 @@ struct String
 
 struct StringView
 {
+	StringView()
+	{
+		data = NULL;
+		count = 0;
+	}
+
 	StringView(const String& str)
 	{
 		data = str.data;

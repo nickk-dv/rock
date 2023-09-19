@@ -1,5 +1,9 @@
 
+//@Notice need better type system Apis
+//@Notice need possibly multiple passes for typing and other validation checks
+
 enum class PrimitiveType;
+struct Expr_Type_Info;
 struct Block_Checker;
 
 bool check_is_ident_a_primitive_type(const StringView& str);
@@ -12,7 +16,7 @@ bool check_enum(const Ast_Enum_Declaration& decl, Ast* ast);
 bool check_struct(const Ast_Struct_Declaration& decl, Ast* ast);
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast);
 bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast);
-
+//@Later Ast* is not used, due to having tables for types & proc names accesible
 bool check_block(Ast_Block* block, Ast* ast, Block_Checker* bc, bool is_entry, bool is_inside_loop);
 bool check_if(Ast_If* _if, Ast* ast, Block_Checker* bc);
 bool check_else(Ast_Else* _else, Ast* ast, Block_Checker* bc);
@@ -23,6 +27,24 @@ bool check_continue(Ast_Continue* _continue, Ast* ast, Block_Checker* bc);
 bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc);
 bool check_var_assign(Ast_Variable_Assignment* var_assign, Ast* ast, Block_Checker* bc);
 bool check_var_declare(Ast_Variable_Declaration* var_declare, Ast* ast, Block_Checker* bc);
+Expr_Type_Info check_access_chain(Ast_Access_Chain* access_chain, Ast* ast, Block_Checker* bc);
+Expr_Type_Info check_expr(Ast_Expression* expr, Ast* ast, Block_Checker* bc);
+
+struct Expr_Type_Info
+{
+	void set_primitive_type(PrimitiveType type);
+
+	bool is_valid;
+	bool is_primitive;
+	StringView type_ident;
+	PrimitiveType primitive_type;
+};
+
+void Expr_Type_Info::set_primitive_type(PrimitiveType type)
+{
+	primitive_type = type;
+	is_primitive = true;
+}
 
 enum class PrimitiveType
 {
@@ -37,6 +59,7 @@ enum class PrimitiveType
 	f32,
 	f64,
 	Bool,
+	string, //@Design strings as primitive types is a good idea probably
 	NotPrimitive,
 };
 
@@ -68,20 +91,27 @@ PrimitiveType check_get_primitive_type_of_ident(const StringView& str)
 	return is_primitive_type ? ident_hash_to_primitive_type.at(hash) : PrimitiveType::NotPrimitive;
 }
 
-enum Type_Tag
-{
-	TYPE_TAG_STRUCT,
-	TYPE_TAG_ENUM,
-	TYPE_TAG_PROCEDURE,
-};
-
 struct Type_Info
 {
-	Type_Tag tag;
+	enum class Tag
+	{
+		Struct, Enum,
+	} tag;
+	
+	union
+	{
+		Ast_Struct_Declaration* struct_decl;
+		Ast_Enum_Declaration* enum_decl;
+	};
+};
+
+struct Proc_Info
+{
+	Ast_Procedure_Declaration* proc_decl;
 };
 
 static std::unordered_map<StringView, Type_Info, StringViewHasher> type_table;
-static std::unordered_map<StringView, Type_Info, StringViewHasher> proc_table;
+static std::unordered_map<StringView, Proc_Info, StringViewHasher> proc_table;
 
 bool check_ast(Ast* ast)
 {
@@ -107,23 +137,27 @@ bool check_ast(Ast* ast)
 //Populates type and proc tables + checks for redifinition and bans usage of primitive type names
 bool check_populate_types_and_procedures(Ast* ast)
 {
-	for (const auto& decl : ast->structs)
+	for (auto& decl : ast->structs)
 	{
 		if (check_is_type_in_scope(decl.type.token.string_value)) { printf("Struct type redifinition.\n"); return false; }
 		if (check_is_ident_a_primitive_type(decl.type.token.string_value)) { printf("Struct typename can not be a primitive type.\n"); return false; }
-		type_table.emplace(decl.type.token.string_value, Type_Info{ TYPE_TAG_STRUCT });
+		Type_Info type_info = { Type_Info::Tag::Struct };
+		type_info.struct_decl = &decl;
+		type_table.emplace(decl.type.token.string_value, type_info);
 	}
-	for (const auto& decl : ast->enums)
+	for (auto& decl : ast->enums)
 	{
 		if (check_is_type_in_scope(decl.type.token.string_value)) { printf("Enum type redifinition.\n"); return false; }
 		if (check_is_ident_a_primitive_type(decl.type.token.string_value)) { printf("Enum typename can not be a primitive type.\n"); return false; }
-		type_table.emplace(decl.type.token.string_value, Type_Info{ TYPE_TAG_ENUM });
+		Type_Info type_info = { Type_Info::Tag::Enum };
+		type_info.enum_decl = &decl;
+		type_table.emplace(decl.type.token.string_value, type_info);
 	}
-	for (const auto& decl : ast->procedures)
+	for (auto& decl : ast->procedures)
 	{
 		if (check_is_proc_in_scope(decl.ident.token.string_value)) { printf("Procedure identifier redifinition"); return false; }
 		if (check_is_ident_a_primitive_type(decl.ident.token.string_value)) { printf("Procedure name can not be a primitive type.\n"); return false; }
-		proc_table.emplace(decl.ident.token.string_value, Type_Info{ TYPE_TAG_PROCEDURE });
+		proc_table.emplace(decl.ident.token.string_value, Proc_Info { &decl });
 	}
 	return true;
 }
@@ -368,6 +402,7 @@ bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc)
 		debug_print_token(proc_call->ident.token, true, true); 
 		return false;
 	}
+
 	return true;
 }
 
@@ -414,4 +449,88 @@ bool check_var_declare(Ast_Variable_Declaration* var_declare, Ast* ast, Block_Ch
 
 	bc->var_add(var_declare->ident, Ast_Identifier{}); //@Incomplete discarding type for now
 	return true;
+}
+
+Expr_Type_Info check_access_chain(Ast_Access_Chain* access_chain, Ast* ast, Block_Checker* bc) //@Hack very dumb Expr_Type_Info return type
+{
+	Expr_Type_Info info = {};
+	info.is_valid = true;
+
+	//also need to keep track of current Type until the end of the chain
+	
+	while (true)
+	{
+		if (!bc->is_var_declared(access_chain->ident)) //only for the first one its a local variable, later its recursive struct field
+		{
+			printf("Trying to access undeclared variable.\n");
+			debug_print_token(access_chain->ident.token, true, true);
+			info.is_valid = false;
+			return info;
+		}
+
+		access_chain = access_chain->next;
+		if (access_chain == NULL) break;
+	}
+
+	return info;
+}
+
+Expr_Type_Info check_expr(Ast_Expression* expr, Ast* ast, Block_Checker* bc)
+{
+	Expr_Type_Info info = {};
+	info.is_valid = true;
+
+	switch (expr->tag)
+	{
+		case Ast_Expression::Tag::Term:
+		{
+			Ast_Term* term = expr->as_term;
+			
+			switch (term->tag)
+			{
+				case Ast_Term::Tag::Literal:
+				{
+					Ast_Literal lit = term->as_literal;
+					//@Incomplete no literal or numeric flags on tokens + floats arent parsed, defaulting to i32
+					if (lit.token.type == TOKEN_NUMBER) info.set_primitive_type(PrimitiveType::i32);
+					else if (lit.token.type == TOKEN_STRING) info.set_primitive_type(PrimitiveType::string); //@Incomplete strings are not first class supported yet
+					else if (lit.token.type == TOKEN_BOOL_LITERAL) info.set_primitive_type(PrimitiveType::Bool);
+				} break;
+				case Ast_Term::Tag::AccessChain:
+				{
+					info = check_access_chain(term->as_access_chain, ast, bc);
+				} break;
+				case Ast_Term::Tag::ProcedureCall:
+				{
+					//validate proc_call
+					//get return type, must exist
+					//void return is invalid as part of expr
+				} break;
+				default: break;
+			}
+			//populate info
+		} break;
+		case Ast_Expression::Tag::UnaryExpression:
+		{
+			Ast_Unary_Expression* unary_expr = expr->as_unary_expr;
+			Expr_Type_Info rhs = check_expr(unary_expr->right, ast, bc);
+			UnaryOp op = unary_expr->op;
+			//bubble up if any errored
+			//check op applicability
+			//populate info
+		} break;
+		case Ast_Expression::Tag::BinaryExpression:
+		{
+			Ast_Binary_Expression* bin_expr = expr->as_binary_expr;
+			Expr_Type_Info lhs = check_expr(bin_expr->left, ast, bc);
+			Expr_Type_Info rhs = check_expr(bin_expr->left, ast, bc);
+			BinaryOp op = bin_expr->op;
+			//bubble up if any errored
+			//check op applicability
+			//populate info
+		} break;
+		default: break;
+	}
+
+	return info;
 }
