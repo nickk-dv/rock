@@ -9,10 +9,12 @@ struct String;
 struct StringView;
 struct Timer;
 class ArenaAllocator;
+struct StringViewHasher;
 
 constexpr u64 string_hash_ascii_9(const StringView& str);
 constexpr u64 hash_ascii_9(const char* str);
 bool os_file_read_all(const char* file_path, String* str);
+u64 hash_fnv1a(const StringView& str);
 
 struct String
 {
@@ -31,6 +33,14 @@ struct StringView
 	{
 		data = str.data;
 		count = str.count;
+	}
+
+	bool operator == (const StringView& other) const
+	{
+		if (count != other.count) return false;
+		for (u64 i = 0; i < count; i++)
+		if (data[i] != other.data[i]) return false;
+		return true;
 	}
 
 	u8* data;
@@ -132,7 +142,7 @@ bool os_file_read_all(const char* file_path, String* str)
 		fclose(file);
 		return false;
 	}
-
+	
 	size_t read_size = fread(buffer, 1, file_size, file);
 	fclose(file);
 
@@ -144,6 +154,30 @@ bool os_file_read_all(const char* file_path, String* str)
 	
 	str->data = (u8*)buffer;
 	str->count = file_size;
-
+	
 	return true;
 }
+
+struct StringViewHasher
+{
+	size_t operator()(const StringView& str) const
+	{
+		return hash_fnv1a(str);
+	}
+};
+
+u64 hash_fnv1a(const StringView& str)
+{
+	#define FNV_PRIME 0x00000100000001B3UL
+	#define FNV_OFFSET 0xcbf29ce484222325UL
+
+	u64 hash = FNV_OFFSET;
+	for (u32 i = 0; i < str.count; i++)
+	{
+		hash ^= str.data[i];
+		hash *= FNV_PRIME;
+	}
+	return hash;
+}
+
+//lookup Type from StringView

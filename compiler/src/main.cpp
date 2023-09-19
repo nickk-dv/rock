@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <unordered_set>
 #include <optional>
 #include <vector>
 
@@ -44,8 +45,8 @@ int main()
 
 	timer.start();
 	bool check = check_ast(ast);
-	if (!check) return 1;
 	timer.end("Check");
+	if (!check) return 1;
 	printf("Check result: Success\n");
 
 	timer.start();

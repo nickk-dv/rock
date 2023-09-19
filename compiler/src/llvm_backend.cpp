@@ -19,11 +19,22 @@ LLVMModuleRef llvm_build_ir(Ast* ast)
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
 	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
 
-	LLVMTypeRef main_func_type = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
-	LLVMValueRef main_func = LLVMAddFunction(mod, "main", main_func_type);
-	LLVMBasicBlockRef main_block = LLVMAppendBasicBlockInContext(context, main_func, "block");
-	LLVMPositionBuilderAtEnd(builder, main_block);
-	LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
+	for (const Ast_Procedure_Declaration& decl : ast->procedures)
+	{
+		LLVMTypeRef proc_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
+		Token t = decl.ident.token; //@Hack inserting null terminator to source data (should never override other string or identifier)
+		t.string_value.data[t.string_value.count] = 0;
+		LLVMValueRef proc = LLVMAddFunction(mod, (char*)t.string_value.data, proc_type);
+		LLVMBasicBlockRef proc_block = LLVMAppendBasicBlockInContext(context, proc, "block");
+		LLVMPositionBuilderAtEnd(builder, proc_block);
+		LLVMBuildRet(builder, NULL);
+	}
+
+	//LLVMTypeRef main_func_type = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
+	//LLVMValueRef main_func = LLVMAddFunction(mod, "main", main_func_type);
+	//LLVMBasicBlockRef main_block = LLVMAppendBasicBlockInContext(context, main_func, "block");
+	//LLVMPositionBuilderAtEnd(builder, main_block);
+	//LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
 
 	LLVMDisposeBuilder(builder);
 	return mod;
