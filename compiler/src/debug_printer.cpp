@@ -78,7 +78,7 @@ void debug_print_ast(Ast* ast)
 
 void debug_print_token(Token token, bool endl, bool location)
 {
-	if (location) printf("l: %lu c: %lu", token.l0, token.c0);
+	if (location) printf("l: %lu c: %lu token: ", token.l0, token.c0);
 
 	if (token.type == TOKEN_IDENT || token.type == TOKEN_STRING)
 	{

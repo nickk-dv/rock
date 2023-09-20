@@ -9,7 +9,7 @@
 #include "debug_printer.cpp"
 #include "parser.cpp"
 #include "typer.cpp"
-//#include "checker.cpp"
+#include "checker.cpp"
 #include "llvm_backend.cpp"
 
 int main()
@@ -45,9 +45,14 @@ int main()
 	printf("Parse result: Success\n\n");
 
 	timer.start();
-	//bool check = check_ast(ast);
+	Checker checker = {};
+	bool check = checker.check_ast(ast);
 	timer.end("Check");
-	//if (!check) return 1;
+	if (!check)
+	{
+		printf("Check result: Failed\n");
+		return 1;
+	}
 	printf("Check result: Success\n\n");
 
 	//timer.start();
