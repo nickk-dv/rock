@@ -8,6 +8,7 @@
 #include "ast.cpp"
 #include "debug_printer.cpp"
 #include "parser.cpp"
+#include "typer.cpp"
 #include "checker.cpp"
 #include "llvm_backend.cpp"
 

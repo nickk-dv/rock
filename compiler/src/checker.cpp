@@ -24,9 +24,9 @@ bool check_for(Ast_For* _for, Ast* ast, Block_Checker* bc);
 bool check_break(Ast_Break* _break, Ast* ast, Block_Checker* bc);
 bool check_return(Ast_Return* _return, Ast* ast, Block_Checker* bc);
 bool check_continue(Ast_Continue* _continue, Ast* ast, Block_Checker* bc);
-bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc);
-bool check_var_assign(Ast_Variable_Assignment* var_assign, Ast* ast, Block_Checker* bc);
-bool check_var_declare(Ast_Variable_Declaration* var_declare, Ast* ast, Block_Checker* bc);
+bool check_proc_call(Ast_Proc_Call* proc_call, Ast* ast, Block_Checker* bc);
+bool check_var_assign(Ast_Var_Assign* var_assign, Ast* ast, Block_Checker* bc);
+bool check_var_declare(Ast_Var_Declare* var_declare, Ast* ast, Block_Checker* bc);
 Expr_Type_Info check_access_chain(Ast_Access_Chain* access_chain, Ast* ast, Block_Checker* bc);
 Expr_Type_Info check_expr(Ast_Expression* expr, Ast* ast, Block_Checker* bc);
 
@@ -208,7 +208,7 @@ bool check_enum(const Ast_Enum_Declaration& decl, Ast* ast)
 bool check_procedure(const Ast_Procedure_Declaration& decl, Ast* ast)
 {
 	std::unordered_set<StringView, StringViewHasher> names; //@Perf re-use 1 set with clear() in between checks
-	for (const auto& param : decl.input_parameters)
+	for (const auto& param : decl.input_params)
 	{
 		if (names.find(param.ident.token.string_value) != names.end()) { printf("Procedure parameter name redifinition.\n"); return false; }
 		if (check_is_ident_a_primitive_type(param.ident.token.string_value)) { printf("Procedure parameter name can not be a primitive type.\n"); return false; }
@@ -281,7 +281,7 @@ bool check_procedure_block(const Ast_Procedure_Declaration& decl, Ast* ast)
 {	
 	Block_Checker bc = {};
 	bc.block_enter(decl.block, false);
-	for (const auto& param : decl.input_parameters)
+	for (const auto& param : decl.input_params)
 	bc.var_add(param);
 
 	bool result = check_block(decl.block, ast, &bc, true, false);
@@ -302,9 +302,9 @@ bool check_block(Ast_Block* block, Ast* ast, Block_Checker* bc, bool is_entry, b
 			case Ast_Statement::Tag::Break: { if (!check_break(stmt->as_break, ast, bc)) return false; } break;
 			case Ast_Statement::Tag::Return: { if (!check_return(stmt->as_return, ast, bc)) return false; } break;
 			case Ast_Statement::Tag::Continue: { if (!check_continue(stmt->as_continue, ast, bc)) return false; } break;
-			case Ast_Statement::Tag::ProcedureCall: { if (!check_proc_call(stmt->as_proc_call, ast, bc)) return false; } break;
-			case Ast_Statement::Tag::VariableAssignment: { if (!check_var_assign(stmt->as_var_assignment, ast, bc)) return false; } break;
-			case Ast_Statement::Tag::VariableDeclaration: { if (!check_var_declare(stmt->as_var_declaration, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::Proc_Call: { if (!check_proc_call(stmt->as_proc_call, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::Var_Assign: { if (!check_var_assign(stmt->as_var_assign, ast, bc)) return false; } break;
+			case Ast_Statement::Tag::Var_Declare: { if (!check_var_declare(stmt->as_var_declare, ast, bc)) return false; } break;
 			default: break;
 		}
 	}
@@ -388,7 +388,7 @@ bool check_continue(Ast_Continue* _continue, Ast* ast, Block_Checker* bc)
 	return true;
 }
 
-bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc)
+bool check_proc_call(Ast_Proc_Call* proc_call, Ast* ast, Block_Checker* bc)
 {
 	/*
 	proc name in scope
@@ -406,7 +406,7 @@ bool check_proc_call(Ast_Procedure_Call* proc_call, Ast* ast, Block_Checker* bc)
 	return true;
 }
 
-bool check_var_assign(Ast_Variable_Assignment* var_assign, Ast* ast, Block_Checker* bc)
+bool check_var_assign(Ast_Var_Assign* var_assign, Ast* ast, Block_Checker* bc)
 {
 	/*
 	access chain first ident must be in scope
@@ -425,7 +425,7 @@ bool check_var_assign(Ast_Variable_Assignment* var_assign, Ast* ast, Block_Check
 	return true;
 }
 
-bool check_var_declare(Ast_Variable_Declaration* var_declare, Ast* ast, Block_Checker* bc)
+bool check_var_declare(Ast_Var_Declare* var_declare, Ast* ast, Block_Checker* bc)
 {
 	/*
 	ident must not be in scope
@@ -496,11 +496,11 @@ Expr_Type_Info check_expr(Ast_Expression* expr, Ast* ast, Block_Checker* bc)
 					else if (lit.token.type == TOKEN_STRING) info.set_primitive_type(PrimitiveType::string); //@Incomplete strings are not first class supported yet
 					else if (lit.token.type == TOKEN_BOOL_LITERAL) info.set_primitive_type(PrimitiveType::Bool);
 				} break;
-				case Ast_Term::Tag::AccessChain:
+				case Ast_Term::Tag::Access_Chain:
 				{
 					info = check_access_chain(term->as_access_chain, ast, bc);
 				} break;
-				case Ast_Term::Tag::ProcedureCall:
+				case Ast_Term::Tag::Proc_Call:
 				{
 					//validate proc_call
 					//get return type, must exist

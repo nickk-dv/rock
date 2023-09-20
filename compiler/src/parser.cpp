@@ -21,9 +21,9 @@ struct Parser
 	Ast_Break* parse_break();
 	Ast_Return* parse_return();
 	Ast_Continue* parse_continue();
-	Ast_Procedure_Call* parse_proc_call();
-	Ast_Variable_Assignment* parse_var_assignment();
-	Ast_Variable_Declaration* parse_var_declaration();
+	Ast_Proc_Call* parse_proc_call();
+	Ast_Var_Assign* parse_var_assign();
+	Ast_Var_Declare* parse_var_declare();
 	std::optional<Token> peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
 	Token consume_get();
@@ -144,7 +144,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 		auto param_type = try_consume(TOKEN_IDENT);
 		if (!param_type) { printf("Expected type idenifier.\n"); return {}; }
 
-		decl.input_parameters.emplace_back(IdentTypePair { param.value(), param_type.value() });
+		decl.input_params.emplace_back(IdentTypePair { param.value(), param_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')'.\n"); return {}; }
@@ -226,16 +226,16 @@ Ast_Term* Parser::parse_term()
 			auto next = peek(1);
 			if (next && next.value().type == TOKEN_PAREN_START)
 			{
-				Ast_Procedure_Call* proc_call = parse_proc_call();
+				Ast_Proc_Call* proc_call = parse_proc_call();
 				if (!proc_call) return NULL;
-				term->tag = Ast_Term::Tag::ProcedureCall;
+				term->tag = Ast_Term::Tag::Proc_Call;
 				term->as_proc_call = proc_call;
 				break;
 			}
 
 			Ast_Access_Chain* access_chain = parse_access_chain();
 			if (!access_chain) return NULL;
-			term->tag = Ast_Term::Tag::AccessChain;
+			term->tag = Ast_Term::Tag::Access_Chain;
 			term->as_access_chain = access_chain;
 		} break;
 		default:
@@ -403,22 +403,22 @@ Ast_Statement* Parser::parse_statement()
 
 			if (next.value().type == TOKEN_COLON)
 			{
-				statement->tag = Ast_Statement::Tag::VariableDeclaration;
-				statement->as_var_declaration = parse_var_declaration();
-				if (!statement->as_var_declaration) return NULL;
+				statement->tag = Ast_Statement::Tag::Var_Declare;
+				statement->as_var_declare = parse_var_declare();
+				if (!statement->as_var_declare) return NULL;
 			}
 			else if (next.value().type == TOKEN_PAREN_START)
 			{
-				statement->tag = Ast_Statement::Tag::ProcedureCall;
+				statement->tag = Ast_Statement::Tag::Proc_Call;
 				statement->as_proc_call = parse_proc_call();
 				if (!statement->as_proc_call) return NULL;
 				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; }
 			}
 			else
 			{
-				statement->tag = Ast_Statement::Tag::VariableAssignment;
-				statement->as_var_assignment = parse_var_assignment();
-				if (!statement->as_var_assignment) return NULL;
+				statement->tag = Ast_Statement::Tag::Var_Assign;
+				statement->as_var_assign = parse_var_assign();
+				if (!statement->as_var_assign) return NULL;
 			}
 		} break;
 		default: { printf("Invalid token at the start of a statement.\n"); return NULL; }
@@ -499,9 +499,9 @@ Ast_For* Parser::parse_for()
 	//optional var declaration
 	if (curr && curr.value().type == TOKEN_IDENT && next && next.value().type == TOKEN_COLON)
 	{
-		Ast_Variable_Declaration* var_declaration = parse_var_declaration();
+		Ast_Var_Declare* var_declaration = parse_var_declare();
 		if (!var_declaration) return NULL;
-		_for->var_declaration = var_declaration;
+		_for->var_declare = var_declaration;
 	}
 
 	//conditional expr
@@ -512,9 +512,9 @@ Ast_For* Parser::parse_for()
 	//optional post expr
 	if (try_consume(TOKEN_SEMICOLON))
 	{
-		Ast_Variable_Assignment* var_assignment = parse_var_assignment();
+		Ast_Var_Assign* var_assignment = parse_var_assign();
 		if (!var_assignment) return NULL;
-		_for->var_assignment = var_assignment;
+		_for->var_assign = var_assignment;
 	}
 
 	Ast_Block* block = parse_block();
@@ -555,9 +555,9 @@ Ast_Continue* Parser::parse_continue()
 	return _continue;
 }
 
-Ast_Procedure_Call* Parser::parse_proc_call()
+Ast_Proc_Call* Parser::parse_proc_call()
 {
-	Ast_Procedure_Call* proc_call = m_arena.alloc<Ast_Procedure_Call>();
+	Ast_Proc_Call* proc_call = m_arena.alloc<Ast_Proc_Call>();
 	proc_call->ident = Ast_Identifier { consume_get() };
 	consume();
 
@@ -576,40 +576,41 @@ Ast_Procedure_Call* Parser::parse_proc_call()
 	return proc_call;
 }
 
-Ast_Variable_Assignment* Parser::parse_var_assignment()
+Ast_Var_Assign* Parser::parse_var_assign()
 {
-	Ast_Variable_Assignment* var_assignment = m_arena.alloc<Ast_Variable_Assignment>();
+	Ast_Var_Assign* var_assign = m_arena.alloc<Ast_Var_Assign>();
 	
 	Ast_Access_Chain* access_chain = parse_access_chain();
 	if (!access_chain) return NULL;
-	var_assignment->access_chain = access_chain;
+	var_assign->access_chain = access_chain;
 
 	auto token = peek();
 	if (!token) { printf("Expected assigment operator.\n"); return NULL; }
 	AssignOp op = ast_assign_op_from_token(token.value().type);
 	if (op == ASSIGN_OP_ERROR) { printf("Expected assigment operator.\n"); return NULL; }
 	consume();
-	var_assignment->op = op;
+	var_assign->op = op;
 
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;
-	var_assignment->expr = expr;
-	return var_assignment;
+	var_assign->expr = expr;
+	return var_assign;
 }
 
-Ast_Variable_Declaration* Parser::parse_var_declaration()
+Ast_Var_Declare* Parser::parse_var_declare()
 {
-	Ast_Variable_Declaration* var_declaration = m_arena.alloc<Ast_Variable_Declaration>();
-	var_declaration->ident = Ast_Identifier { consume_get() };
+	Ast_Var_Declare* var_declare = m_arena.alloc<Ast_Var_Declare>();
+	var_declare->ident = Ast_Identifier { consume_get() };
 	consume();
 
 	auto type = try_consume(TOKEN_IDENT);
-	if (type) var_declaration->type = Ast_Identifier { type.value() };
+	if (type) var_declare->type = Ast_Identifier { type.value() };
 
-	if (!try_consume(TOKEN_ASSIGN)) //default init
+	bool default_init = !try_consume(TOKEN_ASSIGN);
+	if (default_init)
 	{
 		bool has_semicolon = try_consume(TOKEN_SEMICOLON).has_value();
-		if (type && has_semicolon) return var_declaration;
+		if (type && has_semicolon) return var_declare;
 		if (!type && has_semicolon) printf("Expected specified type for default initialized variable.\n");
 		else if (type && !has_semicolon) printf("Expected ';'.\n");
 		else if (!type && !has_semicolon) printf("Expected specified type and ';' for default initialized variable.\n");
@@ -618,8 +619,8 @@ Ast_Variable_Declaration* Parser::parse_var_declaration()
 
 	Ast_Expression* expr = parse_expression();
 	if (!expr) return NULL;
-	var_declaration->expr = expr;
-	return var_declaration;
+	var_declare->expr = expr;
+	return var_declare;
 }
 
 std::optional<Token> Parser::peek(u32 offset)

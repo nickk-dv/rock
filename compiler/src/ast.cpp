@@ -20,9 +20,9 @@ struct Ast_For;
 struct Ast_Break;
 struct Ast_Return;
 struct Ast_Continue;
-struct Ast_Procedure_Call;
-struct Ast_Variable_Assignment;
-struct Ast_Variable_Declaration;
+struct Ast_Proc_Call;
+struct Ast_Var_Assign;
+struct Ast_Var_Declare;
 
 enum UnaryOp;
 enum BinaryOp;
@@ -53,14 +53,14 @@ struct Ast_Term
 {
 	enum class Tag
 	{
-		Literal, AccessChain, ProcedureCall,
+		Literal, Access_Chain, Proc_Call,
 	} tag;
 
 	union
 	{
 		Ast_Literal as_literal;
 		Ast_Access_Chain* as_access_chain;
-		Ast_Procedure_Call* as_proc_call;
+		Ast_Proc_Call* as_proc_call;
 	};
 };
 
@@ -120,7 +120,7 @@ struct Ast_Enum_Declaration
 struct Ast_Procedure_Declaration
 {
 	Ast_Identifier ident;
-	std::vector<IdentTypePair> input_parameters;
+	std::vector<IdentTypePair> input_params;
 	std::optional<Ast_Identifier> return_type;
 	Ast_Block* block;
 };
@@ -135,7 +135,7 @@ struct Ast_Statement
 	enum class Tag
 	{
 		If, For, Break, Return, Continue,
-		ProcedureCall, VariableAssignment, VariableDeclaration,
+		Proc_Call, Var_Assign, Var_Declare,
 	} tag;
 
 	union
@@ -145,9 +145,9 @@ struct Ast_Statement
 		Ast_Break* as_break;
 		Ast_Return* as_return;
 		Ast_Continue* as_continue;
-		Ast_Procedure_Call* as_proc_call; //@Rename everything to proc_call
-		Ast_Variable_Assignment* as_var_assignment; //@Rename everything to var_assign
-		Ast_Variable_Declaration* as_var_declaration; //@Rename everything to var_declare
+		Ast_Proc_Call* as_proc_call;
+		Ast_Var_Assign* as_var_assign;
+		Ast_Var_Declare* as_var_declare;
 	};
 };
 
@@ -178,9 +178,9 @@ struct Ast_Else
 struct Ast_For
 {
 	Token token;
-	std::optional<Ast_Variable_Declaration*> var_declaration;
+	std::optional<Ast_Var_Declare*> var_declare;
 	std::optional<Ast_Expression*> condition_expr;
-	std::optional<Ast_Variable_Assignment*> var_assignment;
+	std::optional<Ast_Var_Assign*> var_assign;
 	Ast_Block* block;
 };
 
@@ -200,20 +200,20 @@ struct Ast_Continue
 	Token token;
 };
 
-struct Ast_Procedure_Call
+struct Ast_Proc_Call
 {
 	Ast_Identifier ident;
 	std::vector<Ast_Expression*> input_expressions;
 };
 
-struct Ast_Variable_Assignment
+struct Ast_Var_Assign
 {
 	Ast_Access_Chain* access_chain;
 	AssignOp op;
 	Ast_Expression* expr;
 };
 
-struct Ast_Variable_Declaration
+struct Ast_Var_Declare
 {
 	Ast_Identifier ident;
 	std::optional<Ast_Identifier> type;

@@ -20,9 +20,9 @@ void debug_print_for(Ast_For* _for, u32 depth);
 void debug_print_break(Ast_Break* _break, u32 depth);
 void debug_print_return(Ast_Return* _return, u32 depth);
 void debug_print_continue(Ast_Continue* _continue, u32 depth);
-void debug_print_proc_call(Ast_Procedure_Call* _proc_call, u32 depth);
-void debug_print_var_assign(Ast_Variable_Assignment* _var_assign, u32 depth);
-void debug_print_var_decl(Ast_Variable_Declaration* _var_decl, u32 depth);
+void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth);
+void debug_print_var_assign(Ast_Var_Assign* var_assign, u32 depth);
+void debug_print_var_declare(Ast_Var_Declare* var_declare, u32 depth);
 void debug_print_tokenizer_info(const std::vector<Token>& tokens);
 
 void debug_print_ast(Ast* ast)
@@ -54,10 +54,10 @@ void debug_print_ast(Ast* ast)
 		debug_print_token(decl.ident.token, true);
 
 		printf("Params: ");
-		if (!decl.input_parameters.empty())
+		if (!decl.input_params.empty())
 		{
 			printf("\n");
-			for (const IdentTypePair& param : decl.input_parameters)
+			for (const IdentTypePair& param : decl.input_params)
 			{
 				debug_print_token(param.ident.token, false);
 				printf(": "); debug_print_token(param.type.token, true);
@@ -256,7 +256,7 @@ void debug_print_access_chain(Ast_Access_Chain* access_chain)
 
 void debug_print_term(Ast_Term* term, u32 depth)
 {
-	if (term->tag == Ast_Term::Tag::AccessChain)
+	if (term->tag == Ast_Term::Tag::Access_Chain)
 	{
 		debug_print_branch(depth);
 		printf("Term_Access_Chain: ");
@@ -270,8 +270,8 @@ void debug_print_term(Ast_Term* term, u32 depth)
 	switch (term->tag)
 	{
 		case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
-		case Ast_Term::Tag::AccessChain: debug_print_access_chain(term->as_access_chain); break;
-		case Ast_Term::Tag::ProcedureCall: debug_print_proc_call(term->as_proc_call, depth); break;
+		case Ast_Term::Tag::Access_Chain: debug_print_access_chain(term->as_access_chain); break;
+		case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 		default: break;
 	}
 }
@@ -331,9 +331,9 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 		case Ast_Statement::Tag::Break: debug_print_break(statement->as_break, depth); break;
 		case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
 		case Ast_Statement::Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
-		case Ast_Statement::Tag::ProcedureCall: debug_print_proc_call(statement->as_proc_call, depth); break;
-		case Ast_Statement::Tag::VariableAssignment: debug_print_var_assign(statement->as_var_assignment, depth); break;
-		case Ast_Statement::Tag::VariableDeclaration: debug_print_var_decl(statement->as_var_declaration, depth); break;
+		case Ast_Statement::Tag::Proc_Call: debug_print_proc_call(statement->as_proc_call, depth); break;
+		case Ast_Statement::Tag::Var_Assign: debug_print_var_assign(statement->as_var_assign, depth); break;
+		case Ast_Statement::Tag::Var_Declare: debug_print_var_declare(statement->as_var_declare, depth); break;
 		default: break;
 	}
 }
@@ -372,10 +372,10 @@ void debug_print_for(Ast_For* _for, u32 depth)
 
 	debug_print_spacing(depth);
 	printf("For_Var_Declaration: ");
-	if (_for->var_declaration.has_value())
+	if (_for->var_declare.has_value())
 	{
 		printf("\n");
-		debug_print_var_decl(_for->var_declaration.value(), depth);
+		debug_print_var_declare(_for->var_declare.value(), depth);
 	}
 	else printf("---\n");
 
@@ -389,11 +389,11 @@ void debug_print_for(Ast_For* _for, u32 depth)
 	else printf("---\n");
 
 	debug_print_spacing(depth);
-	printf("For_Var_Assignment: ");
-	if (_for->var_assignment.has_value())
+	printf("For_Var_Assign: ");
+	if (_for->var_assign.has_value())
 	{
 		printf("\n");
-		debug_print_var_assign(_for->var_assignment.value(), depth);
+		debug_print_var_assign(_for->var_assign.value(), depth);
 	}
 	else printf("---\n");
 
@@ -429,50 +429,50 @@ void debug_print_continue(Ast_Continue* _continue, u32 depth)
 	(void)_continue;
 }
 
-void debug_print_proc_call(Ast_Procedure_Call* _proc_call, u32 depth)
+void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 {
 	debug_print_branch(depth);
-	printf("Procedure_Call: ");
-	debug_print_token(_proc_call->ident.token, true);
+	printf("Proc_Call: ");
+	debug_print_token(proc_call->ident.token, true);
 
 	debug_print_spacing(depth);
 	printf("Input_Exprs: ");
-	if (!_proc_call->input_expressions.empty())
+	if (!proc_call->input_expressions.empty())
 	{
 		printf("\n");
-		for (Ast_Expression* expr : _proc_call->input_expressions)
+		for (Ast_Expression* expr : proc_call->input_expressions)
 		debug_print_expr(expr, depth);
 	}
 	else printf("---\n");
 }
 
-void debug_print_var_assign(Ast_Variable_Assignment* _var_assign, u32 depth)
+void debug_print_var_assign(Ast_Var_Assign* var_assign, u32 depth)
 {
 	debug_print_branch(depth);
-	printf("Var_Assignment: ");
+	printf("Var_Assign: ");
 
-	debug_print_access_chain(_var_assign->access_chain);
+	debug_print_access_chain(var_assign->access_chain);
 	debug_print_spacing(depth);
-	debug_print_assign_op(_var_assign->op);
-	debug_print_expr(_var_assign->expr, depth);
+	debug_print_assign_op(var_assign->op);
+	debug_print_expr(var_assign->expr, depth);
 }
 
-void debug_print_var_decl(Ast_Variable_Declaration* _var_decl, u32 depth)
+void debug_print_var_declare(Ast_Var_Declare* var_declare, u32 depth)
 {
 	debug_print_branch(depth);
-	printf("Var_Declaration: ");
-	debug_print_token(_var_decl->ident.token, false);
+	printf("Var_Declare: ");
+	debug_print_token(var_declare->ident.token, false);
 	printf(": ");
-	if (_var_decl->type.has_value())
-		debug_print_token(_var_decl->type.value().token, true);
+	if (var_declare->type.has_value())
+		debug_print_token(var_declare->type.value().token, true);
 	else printf("[?]\n");
 
 	debug_print_spacing(depth);
-	printf("Var_Declaration_Expr: ");
-	if (_var_decl->expr.has_value())
+	printf("Var_Declare_Expr: ");
+	if (var_declare->expr.has_value())
 	{
 		printf("\n");
-		debug_print_expr(_var_decl->expr.value(), depth);
+		debug_print_expr(var_declare->expr.value(), depth);
 	}
 	else printf("---\n");
 }
