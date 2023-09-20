@@ -20,6 +20,20 @@ enum TokenType
 	TOKEN_KEYWORD_RETURN,     // return
 	TOKEN_KEYWORD_CONTINUE,   // continue
 
+	//[Types]
+	TOKEN_TYPE_I8,            // i8
+	TOKEN_TYPE_U8,            // u8
+	TOKEN_TYPE_I16,           // i16
+	TOKEN_TYPE_U16,           // u16
+	TOKEN_TYPE_I32,           // i32
+	TOKEN_TYPE_U32,           // u32
+	TOKEN_TYPE_I64,           // i64
+	TOKEN_TYPE_U64,           // u64
+	TOKEN_TYPE_F32,           // f32
+	TOKEN_TYPE_F64,           // f64
+	TOKEN_TYPE_BOOL,          // bool
+	TOKEN_TYPE_STRING,        // string
+
 	//[Punctuation]
 	TOKEN_DOT,                // .
 	TOKEN_COMMA,              // ,
@@ -368,8 +382,8 @@ LineInfo Tokenizer::get_next_line()
 static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
 	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },
-	{ hash_ascii_9("enum"),     TOKEN_KEYWORD_ENUM},
-	{ hash_ascii_9("fn"),       TOKEN_KEYWORD_FN},
+	{ hash_ascii_9("enum"),     TOKEN_KEYWORD_ENUM },
+	{ hash_ascii_9("fn"),       TOKEN_KEYWORD_FN },
 	{ hash_ascii_9("if"),       TOKEN_KEYWORD_IF },
 	{ hash_ascii_9("else"),     TOKEN_KEYWORD_ELSE },
 	{ hash_ascii_9("true"),     TOKEN_KEYWORD_TRUE },
@@ -378,6 +392,19 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("break"),    TOKEN_KEYWORD_BREAK },
 	{ hash_ascii_9("return"),   TOKEN_KEYWORD_RETURN },
 	{ hash_ascii_9("continue"), TOKEN_KEYWORD_CONTINUE },
+
+	{ hash_ascii_9("i8"),       TOKEN_TYPE_I8 },
+	{ hash_ascii_9("u8"),       TOKEN_TYPE_U8 },
+	{ hash_ascii_9("i16"),      TOKEN_TYPE_I16 },
+	{ hash_ascii_9("u16"),      TOKEN_TYPE_U16 },
+	{ hash_ascii_9("i32"),      TOKEN_TYPE_I32 },
+	{ hash_ascii_9("u32"),      TOKEN_TYPE_U32 },
+	{ hash_ascii_9("i64"),      TOKEN_TYPE_I64 },
+	{ hash_ascii_9("u64"),      TOKEN_TYPE_U64 },
+	{ hash_ascii_9("f32"),      TOKEN_TYPE_F32 },
+	{ hash_ascii_9("f64"),      TOKEN_TYPE_F64 },
+	{ hash_ascii_9("bool"),     TOKEN_TYPE_BOOL },
+	{ hash_ascii_9("string"),   TOKEN_TYPE_STRING },
 };
 
 TokenType Tokenizer::get_keyword_token_type(const StringView& str)

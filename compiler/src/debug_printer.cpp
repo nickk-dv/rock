@@ -112,6 +112,19 @@ void debug_print_token(Token token, bool endl, bool location)
 			case TOKEN_KEYWORD_RETURN: printf("return"); break;
 			case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
 
+			case TOKEN_TYPE_I8: printf("i8"); break;
+			case TOKEN_TYPE_U8: printf("u8"); break;
+			case TOKEN_TYPE_I16: printf("i16"); break;
+			case TOKEN_TYPE_U16: printf("u16"); break;
+			case TOKEN_TYPE_I32: printf("i32"); break;
+			case TOKEN_TYPE_U32: printf("u32"); break;
+			case TOKEN_TYPE_I64: printf("i64"); break;
+			case TOKEN_TYPE_U64: printf("u64"); break;
+			case TOKEN_TYPE_F32: printf("f32"); break;
+			case TOKEN_TYPE_F64: printf("f64"); break;
+			case TOKEN_TYPE_BOOL: printf("bool"); break;
+			case TOKEN_TYPE_STRING: printf("string"); break;
+
 			case TOKEN_DOT: printf("."); break;
 			case TOKEN_COMMA: printf(","); break;
 			case TOKEN_COLON: printf(":"); break;

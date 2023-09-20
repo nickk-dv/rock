@@ -26,6 +26,7 @@ struct Parser
 	Ast_Var_Declare* parse_var_declare();
 	std::optional<Token> peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
+	std::optional<Ast_Identifier> try_consume_type_ident();
 	Token consume_get();
 	void consume();
 
@@ -94,10 +95,10 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 		auto field = try_consume(TOKEN_IDENT);
 		if (!field) break;
 		if (!try_consume(TOKEN_COLON)) { printf("Expected ':' with type identifier.\n"); return {}; }
-		auto field_type = try_consume(TOKEN_IDENT);
+		auto field_type = try_consume_type_ident();
 		if (!field_type) { printf("Expected type idenifier.\n"); return {}; }
 
-		decl.fields.emplace_back(IdentTypePair { field.value(), field_type.value() });
+		decl.fields.emplace_back(IdentTypePair { Ast_Identifier { field.value() }, field_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Struct Expected closing '}'.\n"); return {}; }
@@ -119,7 +120,7 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 		auto variant = try_consume(TOKEN_IDENT);
 		if (!variant) break;
 
-		decl.variants.emplace_back(IdentTypePair { variant.value(), {} }); //@Notice type is empty token, might support typed enums
+		decl.variants.emplace_back(IdentTypePair { Ast_Identifier { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Enum Expected closing '}'.\n"); return {}; }
@@ -151,9 +152,9 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
-		auto return_type = try_consume(TOKEN_IDENT);
+		auto return_type = try_consume_type_ident();
 		if (!return_type) { printf("Expected return type identifier.\n"); return {}; }
-		decl.return_type = Ast_Identifier { return_type.value() };
+		decl.return_type = return_type.value();
 	}
 
 	Ast_Block* block = parse_block();
@@ -603,8 +604,8 @@ Ast_Var_Declare* Parser::parse_var_declare()
 	var_declare->ident = Ast_Identifier { consume_get() };
 	consume();
 
-	auto type = try_consume(TOKEN_IDENT);
-	if (type) var_declare->type = Ast_Identifier { type.value() };
+	auto type = try_consume_type_ident();
+	if (type) var_declare->type = type.value();
 
 	bool default_init = !try_consume(TOKEN_ASSIGN);
 	if (default_init)
@@ -636,6 +637,17 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 	{
 		consume();
 		return token;
+	}
+	return {};
+}
+
+std::optional<Ast_Identifier> Parser::try_consume_type_ident()
+{
+	auto token = peek();
+	if (token && (token.value().type == TOKEN_IDENT || (token.value().type >= TOKEN_TYPE_I8 && token.value().type <= TOKEN_TYPE_STRING)))
+	{
+		consume();
+		return Ast_Identifier { token.value() };
 	}
 	return {};
 }
