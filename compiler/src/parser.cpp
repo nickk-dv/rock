@@ -35,7 +35,7 @@ struct Parser
 	ArenaAllocator m_arena;
 };
 
-Parser::Parser(std::vector<Token> tokens) 
+Parser::Parser(std::vector<Token> tokens) //@Perf dont like this move business
 	: m_tokens(std::move(tokens)), 
 	  m_arena(1024 * 1024 * 4) {}
 

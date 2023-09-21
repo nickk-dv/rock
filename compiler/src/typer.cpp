@@ -27,6 +27,11 @@ struct Type_Info
 		Ast_Enum_Declaration* as_enum_decl;
 		Primitive_Type as_primitive_type;
 	};
+
+	bool is_user_defined() { return tag != TYPE_TAG_PRIMITIVE; }
+	bool is_uint() { return (as_primitive_type <= TYPE_U64) && (as_primitive_type % 2 == 1); }
+	bool is_float() { return as_primitive_type == TYPE_F32 || as_primitive_type == TYPE_F64; }
+	bool is_bool() { return as_primitive_type == TYPE_BOOL; }
 };
 
 struct Typer
@@ -36,7 +41,10 @@ struct Typer
 	void add_enum_type(Ast_Enum_Declaration* enum_decl);
 	bool is_type_in_scope(Ast_Identifier* type_ident);
 	Type_Info get_type_info(Ast_Identifier* type_ident);
+	Type_Info get_primitive_type_info(Primitive_Type type);
 	bool is_type_equals_type(Type_Info* t, Type_Info* t_other);
+
+	void debug_print_type_info(Type_Info* t);
 
 	std::unordered_map<StringView, Type_Info, StringViewHasher> type_table;
 	Type_Info primitive_type_table[12];
@@ -117,7 +125,33 @@ Type_Info Typer::get_type_info(Ast_Identifier* type_ident)
 	return type_table.at(type_ident->token.string_value);
 }
 
+Type_Info Typer::get_primitive_type_info(Primitive_Type type)
+{
+	return primitive_type_table[type];
+}
+
 bool Typer::is_type_equals_type(Type_Info* t, Type_Info* t_other) //@Should work, all we need is to compare the memory of the union
 {
 	return (t->tag == t_other->tag) && (t->as_struct_decl == t_other->as_struct_decl);
+}
+
+void Typer::debug_print_type_info(Type_Info* t)
+{
+	switch (t->tag)
+	{
+		case TYPE_TAG_STRUCT:
+		{
+			debug_print_token(t->as_struct_decl->type.token, true, false);
+		} break;
+		case TYPE_TAG_ENUM:
+		{
+			debug_print_token(t->as_enum_decl->type.token, true, false);
+		} break;
+		case TYPE_TAG_PRIMITIVE:
+		{
+			Token token = {};
+			token.type = TokenType(t->as_primitive_type + TOKEN_TYPE_I8);
+			debug_print_token(token, true, false);
+		} break;
+	}
 }

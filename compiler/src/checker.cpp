@@ -6,7 +6,8 @@ struct Checker
 {
 	bool check_ast(Ast* ast);
 	bool check_types_and_proc_definitions(Ast* ast);
-	bool check_is_proc_in_scope(Ast_Identifier* proc_ident);
+	bool is_proc_in_scope(Ast_Identifier* proc_ident);
+	Ast_Procedure_Declaration* get_proc_declaration(Ast_Identifier* proc_ident);
 	bool check_enum(Ast_Enum_Declaration* decl);
 	bool check_struct(Ast_Struct_Declaration* decl);
 	bool check_procedure(Ast_Procedure_Declaration* decl);
@@ -19,7 +20,7 @@ struct Checker
 	bool check_break(Ast_Break* _break, Block_Checker* bc);
 	bool check_return(Ast_Return* _return, Block_Checker* bc);
 	bool check_continue(Ast_Continue* _continue, Block_Checker* bc);
-	bool check_proc_call(Ast_Proc_Call* proc_call, Block_Checker* bc);
+	std::optional<Type_Info> check_proc_call(Ast_Proc_Call* proc_call, Block_Checker* bc, bool& is_valid);
 	bool check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc);
 	bool check_var_declare(Ast_Var_Declare* var_declare, Block_Checker* bc);
 	std::optional<Type_Info> check_access_chain(Ast_Access_Chain* access_chain, Block_Checker* bc);
@@ -84,15 +85,20 @@ bool Checker::check_types_and_proc_definitions(Ast* ast)
 	}
 	for (auto& decl : ast->procedures)
 	{
-		if (check_is_proc_in_scope(&decl.ident)) { printf("Procedure redifinition"); return false; }
+		if (is_proc_in_scope(&decl.ident)) { printf("Procedure redifinition"); return false; }
 		proc_table.emplace(decl.ident.token.string_value, &decl);
 	}
 	return true;
 }
 
-bool Checker::check_is_proc_in_scope(Ast_Identifier* proc_ident)
+bool Checker::is_proc_in_scope(Ast_Identifier* proc_ident)
 {
 	return proc_table.find(proc_ident->token.string_value) != proc_table.end();
+}
+
+Ast_Procedure_Declaration* Checker::get_proc_declaration(Ast_Identifier* proc_ident)
+{
+	return proc_table.at(proc_ident->token.string_value);
 }
 
 bool Checker::check_struct(Ast_Struct_Declaration* decl) //@Incomplete allow for multple errors
@@ -206,7 +212,12 @@ bool Checker::check_block(Ast_Block* block, Block_Checker* bc, bool is_entry, bo
 			case Ast_Statement::Tag::Break: { if (!check_break(stmt->as_break, bc)) return false; } break;
 			case Ast_Statement::Tag::Return: { if (!check_return(stmt->as_return, bc)) return false; } break;
 			case Ast_Statement::Tag::Continue: { if (!check_continue(stmt->as_continue, bc)) return false; } break;
-			case Ast_Statement::Tag::Proc_Call: { if (!check_proc_call(stmt->as_proc_call, bc)) return false; } break;
+			case Ast_Statement::Tag::Proc_Call: 
+			{
+				bool is_valid = false;
+				check_proc_call(stmt->as_proc_call, bc, is_valid);
+				if (!is_valid) return false;
+			} break;
 			case Ast_Statement::Tag::Var_Assign: { if (!check_var_assign(stmt->as_var_assign, bc)) return false; } break;
 			case Ast_Statement::Tag::Var_Declare: { if (!check_var_declare(stmt->as_var_declare, bc)) return false; } break;
 			default: break;
@@ -225,6 +236,16 @@ bool Checker::check_if(Ast_If* _if, Block_Checker* bc)
 	block valid
 	else is valid or doesnt exist
 	*/
+
+	std::optional<Type_Info> expr_type = check_expr(_if->condition_expr, bc);
+	if (!expr_type) return false;
+	if (!expr_type.value().is_bool())
+	{
+		printf("Expected conditional expression to evaluate to 'bool' type.\n");
+		debug_print_token(_if->token, true, true);
+		printf("Expr type: "); typer.debug_print_type_info(&expr_type.value());
+		return false;
+	}
 
 	if (!check_block(_if->block, bc, false, false)) return false;
 	if (_if->_else.has_value() && !check_else(_if->_else.value(), bc)) return false;
@@ -255,10 +276,6 @@ bool Checker::check_for(Ast_For* _for, Block_Checker* bc)
 
 bool Checker::check_break(Ast_Break* _break, Block_Checker* bc)
 {
-	/*
-	only called inside for loop
-	*/
-
 	if (!bc->is_inside_a_loop())
 	{
 		printf("Invalid 'break' outside a for loop.\n");
@@ -274,15 +291,25 @@ bool Checker::check_return(Ast_Return* _return, Block_Checker* bc)
 	expr matches parent proc return type or lack of type
 	*/
 
+	//@Idea put Proc_Declaration* on Ast_Return, which will set during first checker pass
+
+	if (_return->expr.has_value())
+	{
+		std::optional<Type_Info> expr_type = check_expr(_return->expr.value(), bc);
+		if (!expr_type) return false;
+
+		//@Check proc decl return type matches
+	}
+	else
+	{
+		//@Check proc decl also has no return type
+	}
+
 	return true;
 }
 
 bool Checker::check_continue(Ast_Continue* _continue, Block_Checker* bc)
 {
-	/*
-	only called inside for loop
-	*/
-
 	if (!bc->is_inside_a_loop())
 	{
 		printf("Invalid 'continue' outside a for loop.\n");
@@ -292,35 +319,125 @@ bool Checker::check_continue(Ast_Continue* _continue, Block_Checker* bc)
 	return true;
 }
 
-bool Checker::check_proc_call(Ast_Proc_Call* proc_call, Block_Checker* bc)
+std::optional<Type_Info> Checker::check_proc_call(Ast_Proc_Call* proc_call, Block_Checker* bc, bool& is_valid)
 {
 	/*
 	proc name in scope
+	param count and decl param count match
+	all param types in scope
 	all input expr are valid
-	all input expr match types
+	all input expr match param types
+	return type in scope
 	*/
-
-	if (!check_is_proc_in_scope(&proc_call->ident))
+	
+	if (!is_proc_in_scope(&proc_call->ident))
 	{
-		printf("Calling unknown procedure.\n"); 
+		printf("Calling unknown procedure.\n");
+		printf("Procedure: ");
 		debug_print_token(proc_call->ident.token, true, true); 
-		return false;
+		is_valid = false;
+		return {};
 	}
 
-	return true;
+	Ast_Procedure_Declaration* proc_decl = get_proc_declaration(&proc_call->ident);
+
+	u64 decl_param_count = proc_decl->input_params.size();
+	u64 call_param_count = proc_call->input_expressions.size();
+	if (decl_param_count != call_param_count)
+	{
+		printf("Calling procedure with incorrect number of params. Expected: %llu Calling with: %llu.\n", decl_param_count, call_param_count);
+		printf("Procedure: ");
+		debug_print_token(proc_call->ident.token, true, true);
+		is_valid = false; 
+		return {};
+	}
+	
+	u64 counter = 0;
+	for (auto& param : proc_decl->input_params)
+	{
+		if (!typer.is_type_in_scope(&param.type)) //@Redundant function decls should already have verified types, no need to check this
+		{
+			printf("Calling procedure with param type out of scope.\n");
+			printf("Procedure: ");
+			debug_print_token(proc_call->ident.token, true, true);
+			printf("Type out of scope: ");
+			debug_print_token(param.type.token, true, true);
+			is_valid = false;
+			return {};
+		}
+
+		std::optional<Type_Info> param_expr_type = check_expr(proc_call->input_expressions[counter], bc);
+		if (!param_expr_type) return {};
+		counter += 1;
+
+		Type_Info param_type = typer.get_type_info(&param.type);
+		if (!typer.is_type_equals_type(&param_expr_type.value(), &param_type))
+		{
+			printf("Type mismatch between param type and input expression.\n"); //@Print out type infos to indicate which ones
+			printf("Procedure: ");
+			debug_print_token(proc_call->ident.token, true, true);
+			printf("Expected input type: ");
+			typer.debug_print_type_info(&param_type);
+			printf("Expression type: ");
+			typer.debug_print_type_info(&param_expr_type.value());
+			is_valid = false;
+			return {};
+		}
+	}
+
+	if (!proc_decl->return_type.has_value())
+	{
+		is_valid = true;
+		return {};
+	}
+
+	if (!typer.is_type_in_scope(&proc_decl->return_type.value()))
+	{
+		printf("Calling procedure with return type out of scope.\n");
+		printf("Procedure: ");
+		debug_print_token(proc_call->ident.token, true, true);
+		printf("Return type: ");
+		debug_print_token(proc_decl->return_type.value().token, true, true);
+		is_valid = false;
+		return {};
+	}
+
+	is_valid = true;
+	return typer.get_type_info(&proc_decl->return_type.value());
 }
 
 bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 {
 	/*
 	access chain must be valid
-	AssignOp is supported by lhs-rhs
 	expr valid
-	expr evaluates to same type
+	AssignOp = : expr evaluates to same type
+	AssignOp other: supported by lhs-rhs
 	*/
 
 	auto chain_type = check_access_chain(var_assign->access_chain, bc);
 	if (!chain_type) return false;
+	std::optional<Type_Info> expr_type = check_expr(var_assign->expr, bc);
+	if (!expr_type) return false;
+
+	if (var_assign->op == ASSIGN_OP_NONE)
+	{
+		if (!typer.is_type_equals_type(&chain_type.value(), &expr_type.value()))
+		{
+			printf("Var assignment type mismatch.\n");
+			debug_print_token(var_assign->access_chain->ident.token, true, true); //@Hack just for location, redundant first ident print
+			debug_print_access_chain(var_assign->access_chain); //@Only printing first token of the chain
+			printf("Var  Type: "); typer.debug_print_type_info(&chain_type.value());
+			printf("Expr Type: "); typer.debug_print_type_info(&expr_type.value());
+			return false;
+		}
+	}
+	else
+	{
+		//@Incomplete assign op evaluation (similar to binary ops)
+		printf("AssignOps are not supported yet.\n");
+		return false;
+	}
 
 	return true;
 }
@@ -337,18 +454,59 @@ bool Checker::check_var_declare(Ast_Var_Declare* var_declare, Block_Checker* bc)
 	infer var type
 	[result]
 	existing or inferred type must be in scope
-	add ident & type to scope
+	add ident & type to var_stack
 	*/
 
 	if (bc->is_var_declared(var_declare->ident)) 
 	{ 
-		printf("Trying to shadow already existing variable.\n");
+		printf("Can not shadow already declared variable.\n");
 		debug_print_token(var_declare->ident.token, true, true);
 		return false; 
 	}
 
-	Ast_Identifier default_type = { Token { TOKEN_TYPE_I64 }}; //@Default type not evaluating expr yet for inference
-	bc->var_add(var_declare->ident, var_declare->type.value_or(default_type)); //@Incomplete discarding type for now
+	Ast_Identifier type_ident = {};
+	
+	if (var_declare->type.has_value()) //has type, might have expr
+	{
+		type_ident = var_declare->type.value();
+
+		if (!typer.is_type_in_scope(&type_ident))
+		{
+			printf("Type is not in scope.\n");
+			debug_print_token(type_ident.token, true, true);
+			return false;
+		}
+
+		if (var_declare->expr.has_value()) //check that expr matches type
+		{
+			std::optional<Type_Info> expr_type = check_expr(var_declare->expr.value(), bc);
+			if (!expr_type) return false;
+
+			Type_Info var_type = typer.get_type_info(&type_ident);
+			if (!typer.is_type_equals_type(&expr_type.value(), &var_type))
+			{
+				printf("Var declaration type mismatch.\n");
+				typer.debug_print_type_info(&var_type);
+				typer.debug_print_type_info(&expr_type.value());
+				return false;
+			}
+		}
+	}
+	else //no type, infer from expr
+	{
+		std::optional<Type_Info> expr_type = check_expr(var_declare->expr.value(), bc);
+		if (!expr_type) return false;
+
+		//@Problem no inference possible due to needing AstIdentifier to push var on var_stack
+		//cannot go from expr Type_Info to Ast_Identifier
+		//will test current setup with all types declared
+
+		printf("Type inference is NOT YET SUPPORTED.\n"); //@Incomplete @Check
+		debug_print_token(var_declare->ident.token, true, true);
+		return false;
+	}
+
+	bc->var_add(var_declare->ident, type_ident);
 	
 	return true;
 }
@@ -400,7 +558,7 @@ std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_ch
 		}
 		else if (type_info.tag == TYPE_TAG_ENUM)
 		{
-			printf("Accessing fields of an Enum is NOT YET SUPPORTED.\n");
+			printf("Accessing fields of an Enum is NOT YET SUPPORTED.\n"); //@Incomplete
 			debug_print_token(access_chain->ident.token, true, true);
 			return {};
 		}
@@ -417,7 +575,7 @@ std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_ch
 
 std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker* bc)
 {
-	Type_Info info = {};
+	Type_Info expr_type = {};
 
 	switch (expr->tag)
 	{
@@ -429,23 +587,45 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker
 				case Ast_Term::Tag::Literal:
 				{
 					Ast_Literal lit = term->as_literal;
-					//@determine how to get type of literal token
-					//maybe mark the Ast_Literal token type with basic type tokens
-					//while also keeping literal values (for easier further codegen)
+
+					if (lit.token.type == TOKEN_NUMBER)
+					{
+						//@Incomplete only supporting integer token literals, defaulting to i32
+						expr_type = typer.get_primitive_type_info(TYPE_I32);
+					}
+					else if (lit.token.type == TOKEN_STRING)
+					{
+						//@Incomplete not supporting string literals yet
+						expr_type = typer.get_primitive_type_info(TYPE_STRING);
+					}
+					else if (lit.token.type == TOKEN_BOOL_LITERAL)
+					{
+						expr_type = typer.get_primitive_type_info(TYPE_BOOL);
+					}
 				} break;
 				case Ast_Term::Tag::Access_Chain:
 				{
 					auto chain_type = check_access_chain(term->as_access_chain, bc);
 					if (!chain_type) return {};
-					info = chain_type.value();
+
+					expr_type = chain_type.value();
+
 				} break;
 				case Ast_Term::Tag::Proc_Call:
 				{
-					//validate proc_call
-					//get return type it must exist
-					//set type
+					bool is_valid = false;
+					auto return_type = check_proc_call(term->as_proc_call, bc, is_valid);
+					if (!is_valid) return {};
+					
+					if (!return_type)
+					{
+						printf("Called procedure as part of the expression must have a return type.\n");
+						return {};
+					}
+
+					expr_type = return_type.value();
+
 				} break;
-				default: break;
 			}
 		} break;
 		case Ast_Expression::Tag::UnaryExpression:
@@ -453,10 +633,30 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker
 			Ast_Unary_Expression* unary_expr = expr->as_unary_expr;
 			auto rhs_type = check_expr(unary_expr->right, bc);
 			if (!rhs_type) return {};
+			Type_Info type = rhs_type.value();
 			UnaryOp op = unary_expr->op;
 
-			//check op applicability
-			//set type
+			switch (op)
+			{
+				case UNARY_OP_MINUS:
+				{
+					if (type.is_user_defined()) { printf("Can not apply unary op '-' to user defined type.\n"); return {}; }
+					if (type.is_uint()) { printf("Can not apply unary op '-' to unsigned int type.\n"); return {}; }
+				} break;
+				case UNARY_OP_LOGIC_NOT:
+				{
+					if (type.is_user_defined()) { printf("Can not apply unary op '!' to user defined type.\n"); return {}; }
+					if (!type.is_bool()) { printf("Unary op '!' can only be applied to [bool] expressions.\n"); return {}; }
+				} break;
+				case UNARY_OP_BITWISE_NOT:
+				{
+					if (type.is_user_defined()) { printf("Can not apply unary op '~' to user defined type.\n"); return {}; }
+					if (!type.is_uint()) { printf("Unary op '!' can only be applied to [unsigned int] expressions.\n"); return {}; }
+				} break;
+			}
+
+			expr_type = type;
+
 		} break;
 		case Ast_Expression::Tag::BinaryExpression:
 		{
@@ -467,11 +667,19 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker
 			if (!rhs_type) return {};
 			BinaryOp op = bin_expr->op;
 
-			//check op applicability
-			//set type
+			Type_Info type_l = lhs_type.value();
+			Type_Info type_r = rhs_type.value();
+			
+			if (type_l.is_user_defined() || type_r.is_user_defined()) { printf("Can not apply binary op to 1 or 2 user defined types.\n"); return {}; }
+			if (!typer.is_type_equals_type(&type_l, &type_r)) { printf("Binary expr type missmatch.\n"); return {}; }
+
+			//@Incomplete binary op specific restrictions
+			//return bool if comparison op
+
+			expr_type = type_l;
+
 		} break;
-		default: break;
 	}
 
-	return info;
+	return expr_type;
 }
