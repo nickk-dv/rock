@@ -158,6 +158,47 @@ private:
 	u8* m_buffer;
 };
 
+struct Arena
+{
+	Arena(size_t block_size) { init(block_size); }
+	~Arena() { drop(); }
+
+	template<typename T>
+	T* alloc()
+	{
+		if (m_offset + sizeof(T) > m_block_size) alloc_block();
+		T* ptr = (T*)(m_data + m_offset);
+		m_offset += sizeof(T);
+		return ptr;
+	}
+	
+private:
+	void init(size_t block_size)
+	{
+		m_block_size = block_size;
+		alloc_block();
+	}
+
+	void drop()
+	{
+		for (u8* block : m_data_blocks) free(block);
+	}
+
+	void alloc_block()
+	{
+		m_offset = 0;
+		m_data = (u8*)malloc(m_block_size);
+		if (m_data != NULL)
+		memset(m_data, 0, m_block_size);
+		m_data_blocks.emplace_back(m_data);
+	}
+
+	u8* m_data = NULL;
+	size_t m_offset = 0;
+	size_t m_block_size = 0;
+	std::vector<u8*> m_data_blocks;
+};
+
 constexpr u64 string_hash_ascii_9(const StringView& str)
 {
 	u64 hash = 0;

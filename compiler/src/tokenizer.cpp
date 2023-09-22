@@ -112,7 +112,6 @@ struct Tokenizer
 	bool is_ident(u8 c) { return is_letter(c) || (c == '_') || is_number(c); }
 	bool is_whitespace(u8 c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 
-
 	String input;
 	u64 input_cursor = 0;
 	u32 line_id = 1;

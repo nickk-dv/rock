@@ -30,21 +30,18 @@ struct Parser
 	Token consume_get();
 	void consume();
 
-	ArenaAllocator m_arena;
+	Arena m_arena;
 	Tokenizer tokenizer;
 };
 
 Parser::Parser()
-	  : m_arena(1024 * 1024 * 4) { }
+	  : m_arena(1024 * 1024) { }
 
 Ast* Parser::parse()
 {
 	tokenizer.tokenize_buffer();
 
 	Ast* ast = m_arena.alloc<Ast>();
-	ast->enums = {};
-	ast->structs = {};
-	ast->procedures = {};
 
 	while (true)
 	{
@@ -348,7 +345,6 @@ Ast_Expression* Parser::parse_primary_expression()
 Ast_Block* Parser::parse_block()
 {
 	Ast_Block* block = m_arena.alloc<Ast_Block>();
-	block->statements = {};
 
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected code block that starts with '{'.\n"); return NULL; }
 	while (true)
@@ -562,7 +558,6 @@ Ast_Proc_Call* Parser::parse_proc_call()
 {
 	Ast_Proc_Call* proc_call = m_arena.alloc<Ast_Proc_Call>();
 	proc_call->ident = Ast_Identifier { consume_get() };
-	proc_call->input_expressions = {};
 	consume();
 
 	while (true)
