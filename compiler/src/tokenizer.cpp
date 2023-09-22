@@ -105,6 +105,7 @@ struct Tokenizer
 	void tokenize_buffer();
 
 	void skip_whitespace();
+	void skip_whitespace_comments();
 	TokenType get_keyword_token_type(const StringView& str);
 	bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 	bool is_number(u8 c) { return c >= '0' && c <= '9'; }
@@ -173,6 +174,28 @@ void Tokenizer::skip_whitespace()
 	}
 }
 
+void Tokenizer::skip_whitespace_comments()
+{
+	while (input_cursor < input.count) 
+	{
+		u8 c = input.data[input_cursor];
+		if (is_whitespace(c)) 
+		{
+			if (c == '\n') 
+			{
+				line_id += 1;
+				line_start_cursor = input_cursor;
+			}
+			input_cursor += 1;
+		}
+		else if (c == '/' && input_cursor + 1 < input.count && input.data[input_cursor + 1] == '/') 
+		{
+			while (input_cursor < input.count && input.data[input_cursor] != '\n') input_cursor += 1;
+		}
+		else break;
+	}
+}
+
 void Tokenizer::tokenize_buffer()
 {
 	TokenType c_to_sym[128] = {};
@@ -233,7 +256,7 @@ void Tokenizer::tokenize_buffer()
 
 	for (u32 k = copy_offset; k < TOKENIZER_BUFFER_SIZE; k++)
 	{
-		skip_whitespace();
+		skip_whitespace_comments();
 
 		if (input_cursor >= input.count)
 		{

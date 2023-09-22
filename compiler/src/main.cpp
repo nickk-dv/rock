@@ -14,7 +14,7 @@
 
 int main()
 {
-	const char* file_path = "../../test.txt";
+	const char* file_path = "../../test_tp.txt";
 
 	Timer timer;
 	timer.start();
