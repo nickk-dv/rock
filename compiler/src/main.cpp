@@ -14,46 +14,45 @@
 
 int main()
 {
-	Tokenizer lexer = {};
+	const char* file_path = "../../test.txt";
 
 	Timer timer;
 	timer.start();
-	const char* file_path = "../../test.txt";
-	if (!lexer.set_input_from_file(file_path))
+	Parser parser = {};
+	if (!parser.tokenizer.set_input_from_file(file_path))
 	{
 		printf("Failed to open a file.\n");
 		return 1;
 	}
-	timer.end("Lexer init");
-
-	timer.start();
-	std::vector<Token> tokens = lexer.tokenize();
-	timer.end("Lexer");
-
-	debug_print_tokenizer_info(tokens);
-
-	timer.start();
-	Parser parser(std::move(tokens));
-	timer.end("Parser init");
+	timer.end("Tokenizer & Parser init");
 
 	timer.start();
 	Ast* ast = parser.parse();
-	timer.end("Parser");
+	timer.end("Parse Ast");
 
-	if (ast == NULL) return 1;
-	debug_print_ast(ast);
-	printf("Parse result: Success\n\n");
-
-	timer.start();
-	Checker checker = {};
-	bool check = checker.check_ast(ast);
-	timer.end("Check");
-	if (!check)
+	if (ast == NULL)
 	{
-		printf("Check result: Failed\n");
+		printf("Parse result: Failed to parse Ast.\n");
 		return 1;
 	}
-	printf("Check result: Success\n\n");
+	//debug_print_ast(ast);
+	printf("Parse result: Success\n\n");
+
+	//Vector pre alloc lex + parse
+	//0.75ms
+	//0.8ms
+
+	//
+	//timer.start();
+	//Checker checker = {};
+	//bool check = checker.check_ast(ast);
+	//timer.end("Check");
+	//if (!check)
+	//{
+	//	printf("Check result: Failed\n");
+	//	return 1;
+	//}
+	//printf("Check result: Success\n\n");
 
 	//timer.start();
 	//llvm_build(ast);

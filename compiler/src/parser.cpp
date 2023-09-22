@@ -1,7 +1,7 @@
 
 struct Parser
 {
-	Parser(std::vector<Token> tokens);
+	Parser();
 
 	Ast* parse();
 
@@ -30,18 +30,21 @@ struct Parser
 	Token consume_get();
 	void consume();
 
-	const std::vector<Token> m_tokens;
-	size_t m_index = 0;
 	ArenaAllocator m_arena;
+	Tokenizer tokenizer;
 };
 
-Parser::Parser(std::vector<Token> tokens) //@Perf dont like this move business
-	: m_tokens(std::move(tokens)), 
-	  m_arena(1024 * 1024 * 4) {}
+Parser::Parser()
+	  : m_arena(1024 * 1024 * 64) {}
 
 Ast* Parser::parse()
 {
+	tokenizer.tokenize_buffer();
+
 	Ast* ast = m_arena.alloc<Ast>();
+	ast->enums = {};
+	ast->structs = {};
+	ast->procedures = {};
 
 	while (peek().has_value())
 	{
@@ -53,26 +56,38 @@ Ast* Parser::parse()
 			case TOKEN_KEYWORD_STRUCT:
 			{
 				auto struct_decl = parse_struct();
-				if (!struct_decl) return NULL;
+				if (!struct_decl) 
+				{
+					debug_print_token(peek().value(), true, true);
+					return NULL;
+				}
 				ast->structs.emplace_back(struct_decl.value());
 			} break;
 			case TOKEN_KEYWORD_ENUM:
 			{
 				auto enum_decl = parse_enum();
-				if (!enum_decl) return NULL;
+				if (!enum_decl) 
+				{
+					debug_print_token(peek().value(), true, true);
+					return NULL;
+				}
 				ast->enums.emplace_back(enum_decl.value());
 			} break;
 			case TOKEN_KEYWORD_FN:
 			{
 				auto proc_decl = parse_procedure();
-				if (!proc_decl) return NULL;
+				if (!proc_decl)
+				{
+					debug_print_token(peek().value(), true, true);
+					return NULL;
+				}
 				ast->procedures.emplace_back(proc_decl.value());
 			} break;
 			default:
 			{
-				if (m_tokens[m_index - 1].type == TOKEN_EOF) return ast;
-				printf("Expected fn, enum or struct declaration.\n");
-				debug_print_token(m_tokens[m_index - 1], true); //@Hack reporting on prev token, current one is consumed above
+				if (token.type == TOKEN_EOF) return ast;
+				printf("Expected fn, enum or struct declaration. Got other token.\n");
+				debug_print_token(token, true, true);
 				return NULL;
 			} break;
 		}
@@ -96,7 +111,10 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 		if (!field) break;
 		if (!try_consume(TOKEN_COLON)) { printf("Expected ':' with type identifier.\n"); return {}; }
 		auto field_type = try_consume_type_ident();
-		if (!field_type) { printf("Expected type idenifier.\n"); return {}; }
+		if (!field_type) 
+		{ 
+			printf("Expected type idenifier.\n"); return {};
+		}
 
 		decl.fields.emplace_back(IdentTypePair { Ast_Identifier { field.value() }, field_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -142,8 +160,11 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 		auto param = try_consume(TOKEN_IDENT);
 		if (!param) break;
 		if (!try_consume(TOKEN_COLON)) { printf("Expected ':' with type identifier.\n"); return {}; }
-		auto param_type = try_consume(TOKEN_IDENT);
-		if (!param_type) { printf("Expected type idenifier.\n"); return {}; }
+		auto param_type = try_consume_type_ident();
+		if (!param_type) 
+		{
+			printf("Expected type idenifier.\n"); return {}; 
+		}
 
 		decl.input_params.emplace_back(IdentTypePair { param.value(), param_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -343,6 +364,7 @@ Ast_Expression* Parser::parse_primary_expression()
 Ast_Block* Parser::parse_block()
 {
 	Ast_Block* block = m_arena.alloc<Ast_Block>();
+	block->statements = {};
 
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected code block that starts with '{'.\n"); return NULL; }
 	while (true)
@@ -560,6 +582,7 @@ Ast_Proc_Call* Parser::parse_proc_call()
 {
 	Ast_Proc_Call* proc_call = m_arena.alloc<Ast_Proc_Call>();
 	proc_call->ident = Ast_Identifier { consume_get() };
+	proc_call->input_expressions = {};
 	consume();
 
 	while (true)
@@ -588,7 +611,7 @@ Ast_Var_Assign* Parser::parse_var_assign()
 	auto token = peek();
 	if (!token) { printf("Expected assigment operator.\n"); return NULL; }
 	AssignOp op = ast_assign_op_from_token(token.value().type);
-	if (op == ASSIGN_OP_ERROR) { printf("Expected assigment operator.\n"); return NULL; }
+	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
 	consume();
 	var_assign->op = op;
 
@@ -626,16 +649,15 @@ Ast_Var_Declare* Parser::parse_var_declare()
 
 std::optional<Token> Parser::peek(u32 offset)
 {
-	if (m_index + offset >= m_tokens.size()) return {};
-	else return m_tokens[m_index + offset];
+	return tokenizer.peek(offset);
 }
 
 std::optional<Token> Parser::try_consume(TokenType token_type)
 {
-	auto token = peek();
+	auto token = tokenizer.peek();
 	if (token && token.value().type == token_type)
 	{
-		consume();
+		tokenizer.consume();
 		return token;
 	}
 	return {};
@@ -643,10 +665,10 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 
 std::optional<Ast_Identifier> Parser::try_consume_type_ident()
 {
-	auto token = peek();
+	auto token = tokenizer.peek();
 	if (token && (token.value().type == TOKEN_IDENT || (token.value().type >= TOKEN_TYPE_I8 && token.value().type <= TOKEN_TYPE_STRING)))
 	{
-		consume();
+		tokenizer.consume();
 		return Ast_Identifier { token.value() };
 	}
 	return {};
@@ -654,11 +676,10 @@ std::optional<Ast_Identifier> Parser::try_consume_type_ident()
 
 Token Parser::consume_get()
 {
-	m_index += 1;
-	return m_tokens[m_index - 1];
+	return tokenizer.consume_get();
 }
 
 void Parser::consume()
 {
-	m_index += 1;
+	tokenizer.consume();
 }

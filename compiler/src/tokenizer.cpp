@@ -81,6 +81,8 @@ enum TokenType
 
 struct Token
 {
+	Token() {};
+
 	TokenType type = TOKEN_ERROR;
 	u32 l0 = 0;
 	u32 c0 = 0;
@@ -94,31 +96,166 @@ struct Token
 	};
 };
 
-struct LineInfo
-{
-	u64 start_cursor = 0;
-	u64 end_cursor = 0;
-	u32 leading_spaces = 0;
-	bool is_valid = true;
-	bool is_empty = true;
-};
+void debug_print_token_t(Token token, bool endl, bool location);
 
 struct Tokenizer
 {
 	bool set_input_from_file(const char* file_path);
-	std::vector<Token> tokenize();
 
-	LineInfo get_next_line();
 	TokenType get_keyword_token_type(const StringView& str);
 	bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 	bool is_number(u8 c) { return c >= '0' && c <= '9'; }
 	bool is_ident(u8 c) { return is_letter(c) || (c == '_') || is_number(c); }
-	bool is_whitespace(u8 c) { return c == ' ' || c == '\t'; }
-	bool is_line_break(u8 c) { return c == '\r' || c == '\n'; }
+	bool is_whitespace(u8 c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 
 	String input;
 	u64 input_cursor = 0;
+
+	void skip_whitespace();
+	void tokenize_buffer();
+
+	u32 peek_index = 0;
+
+	u32 line_id = 1;
+	static const u64 TOKEN_BUFFER_SIZE = 8;
+	static const u64 TOKEN_LOOKAHEAD = 2;
+	Token tokens[TOKEN_BUFFER_SIZE];
+
+	std::optional<Token> peek(u32 offset = 0) //@Always exists by design not optional
+	{
+		return tokens[peek_index + offset];
+	}
+
+	std::optional<Token> try_consume(TokenType token_type)
+	{
+		auto token = peek();
+		if (token && token.value().type == token_type)
+		{
+			consume();
+			return token;
+		}
+		return {};
+	}
+
+	Token consume_get()
+	{
+		Token token = tokens[peek_index];
+		consume();
+		return token;
+	}
+
+	void consume()
+	{
+		printf("consumed: "); debug_print_token_t(tokens[peek_index], true, false);
+		peek_index += 1;
+		if (peek_index >= (TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD)) //correct
+		{
+			peek_index = 0;
+			tokenize_buffer();
+		}
+	}
 };
+
+void debug_print_token_t(Token token, bool endl, bool location)
+{
+	if (location) printf("l: %lu c: %lu Token: ", token.l0, token.c0);
+
+	if (token.type == TOKEN_IDENT || token.type == TOKEN_STRING)
+	{
+		for (u64 i = 0; i < token.string_value.count; i++)
+			printf("%c", token.string_value.data[i]);
+	}
+	else if (token.type == TOKEN_NUMBER)
+	{
+		printf("%llu", token.integer_value);
+		//@Incomplete need to lex f32 f64 and store numeric flags
+	}
+	else if (token.type == TOKEN_BOOL_LITERAL)
+	{
+		if (token.bool_value)
+			printf("true");
+		else printf("false");
+	}
+	else
+	{
+		switch (token.type)
+		{
+		case TOKEN_KEYWORD_STRUCT: printf("struct"); break;
+		case TOKEN_KEYWORD_ENUM: printf("enum"); break;
+		case TOKEN_KEYWORD_FN: printf("fn"); break;
+		case TOKEN_KEYWORD_IF: printf("if"); break;
+		case TOKEN_KEYWORD_ELSE: printf("else"); break;
+		case TOKEN_KEYWORD_TRUE: printf("true"); break;
+		case TOKEN_KEYWORD_FALSE: printf("false"); break;
+		case TOKEN_KEYWORD_FOR: printf("for"); break;
+		case TOKEN_KEYWORD_BREAK: printf("break"); break;
+		case TOKEN_KEYWORD_RETURN: printf("return"); break;
+		case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
+
+		case TOKEN_TYPE_I8: printf("i8"); break;
+		case TOKEN_TYPE_U8: printf("u8"); break;
+		case TOKEN_TYPE_I16: printf("i16"); break;
+		case TOKEN_TYPE_U16: printf("u16"); break;
+		case TOKEN_TYPE_I32: printf("i32"); break;
+		case TOKEN_TYPE_U32: printf("u32"); break;
+		case TOKEN_TYPE_I64: printf("i64"); break;
+		case TOKEN_TYPE_U64: printf("u64"); break;
+		case TOKEN_TYPE_F32: printf("f32"); break;
+		case TOKEN_TYPE_F64: printf("f64"); break;
+		case TOKEN_TYPE_BOOL: printf("bool"); break;
+		case TOKEN_TYPE_STRING: printf("string"); break;
+
+		case TOKEN_DOT: printf("."); break;
+		case TOKEN_COMMA: printf(","); break;
+		case TOKEN_COLON: printf(":"); break;
+		case TOKEN_SEMICOLON: printf(";"); break;
+		case TOKEN_BLOCK_START: printf("{"); break;
+		case TOKEN_BLOCK_END: printf("}"); break;
+		case TOKEN_BRACKET_START: printf("["); break;
+		case TOKEN_BRACKET_END: printf("]"); break;
+		case TOKEN_PAREN_START: printf("("); break;
+		case TOKEN_PAREN_END: printf(")"); break;
+		case TOKEN_DOUBLE_COLON: printf("::"); break;
+
+		case TOKEN_ASSIGN: printf("="); break;
+		case TOKEN_PLUS: printf("+"); break;
+		case TOKEN_MINUS: printf("-"); break;
+		case TOKEN_TIMES: printf("*"); break;
+		case TOKEN_DIV: printf("/"); break;
+		case TOKEN_MOD: printf("%%"); break;
+		case TOKEN_BITWISE_AND: printf("&"); break;
+		case TOKEN_BITWISE_OR: printf("|"); break;
+		case TOKEN_BITWISE_XOR: printf("^"); break;
+		case TOKEN_LESS: printf("<"); break;
+		case TOKEN_GREATER: printf(">"); break;
+		case TOKEN_LOGIC_NOT: printf("!"); break;
+		case TOKEN_IS_EQUALS: printf("=="); break;
+		case TOKEN_PLUS_EQUALS: printf("+="); break;
+		case TOKEN_MINUS_EQUALS: printf("-="); break;
+		case TOKEN_TIMES_EQUALS: printf("*="); break;
+		case TOKEN_DIV_EQUALS: printf("/="); break;
+		case TOKEN_MOD_EQUALS: printf("%%="); break;
+		case TOKEN_BITWISE_AND_EQUALS: printf("&="); break;
+		case TOKEN_BITWISE_OR_EQUALS: printf("|="); break;
+		case TOKEN_BITWISE_XOR_EQUALS: printf("^="); break;
+		case TOKEN_LESS_EQUALS: printf("<="); break;
+		case TOKEN_GREATER_EQUALS: printf(">="); break;
+		case TOKEN_NOT_EQUALS: printf("!="); break;
+		case TOKEN_LOGIC_AND: printf("&&"); break;
+		case TOKEN_LOGIC_OR: printf("||"); break;
+		case TOKEN_BITWISE_NOT: printf("~"); break;
+		case TOKEN_BITSHIFT_LEFT: printf("<<"); break;
+		case TOKEN_BITSHIFT_RIGHT: printf(">>"); break;
+
+		case TOKEN_ERROR: printf("ERROR"); break;
+		case TOKEN_EOF: printf("EOF"); break;
+
+		default: printf("[UNKNOWN TOKEN]"); break;
+		}
+	}
+	printf(" ");
+	if (endl) printf("\n");
+}
 
 bool Tokenizer::set_input_from_file(const char* file_path)
 {
@@ -126,12 +263,19 @@ bool Tokenizer::set_input_from_file(const char* file_path)
 	return os_file_read_all(file_path, &input);
 }
 
-std::vector<Token> Tokenizer::tokenize()
+void Tokenizer::skip_whitespace()
 {
-	std::vector<Token> tokens;
-	//@Performance testing pre allocation of vector
-	tokens.reserve(770000);
+	while (input_cursor < input.count)
+	{
+		u8 c = input.data[input_cursor];
+		if (!is_whitespace(c)) break;
+		if (c == '\n') line_id += 1;
+		input_cursor += 1;
+	}
+}
 
+void Tokenizer::tokenize_buffer()
+{
 	TokenType c_to_sym[128] = {};
 	for (u8 i = 0; i < 128; i++)
 	{
@@ -181,196 +325,155 @@ std::vector<Token> Tokenizer::tokenize()
 		else lexeme_types[c] = LEXEME_ERROR;
 	}
 
-	LineInfo line = {};
-	u32 current_line_number = 0;
+	u32 copy_offset = input_cursor == 0 ? 0 : TOKEN_LOOKAHEAD;
 
-	while (line.is_valid)
+	if (copy_offset != 0)
+	printf("\n [COPY LAST PASS] \n");
+	for (u32 k = 0; k < copy_offset; k++)
 	{
-		line = get_next_line();
-		current_line_number += 1;
-		if (line.is_empty) continue;
+		tokens[k] = tokens[TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD + k];
+		debug_print_token_t(tokens[k], true, false);
+		printf("doing copy from: %lu to %lu \n", (TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD + k), k);
+	}
 
-		for (u64 i = line.start_cursor; i <= line.end_cursor; )
+	for (u32 k = copy_offset; k < TOKEN_BUFFER_SIZE; k++)
+	{
+		skip_whitespace();
+
+		if (input_cursor >= input.count)
 		{
-			u8 fc = input.data[i];
-
-			if (is_whitespace(fc))
+			for (u32 i = k; i < TOKEN_BUFFER_SIZE; i++)
 			{
-				i++;
-				continue;
+				tokens[i].type = TOKEN_EOF;
 			}
+			break;
+		}
 
-			LexemeType type = fc < 128 ? lexeme_types[fc] : LEXEME_ERROR;
-			u64 lexeme_start = i;
-			u64 lexeme_end = i + 1;
+		//not imporant, tokeninzing the next token
+		u8 fc = input.data[input_cursor];
+		LexemeType type = fc < 128 ? lexeme_types[fc] : LEXEME_ERROR;
+		u64 lexeme_start = input_cursor;
+		u64 lexeme_end = input_cursor + 1;
 
-			Token token = {};
-			token.l0 = current_line_number;
-			token.c0 = (u32)(1 + i - (line.start_cursor - line.leading_spaces));
+		Token token = {};
+		token.l0 = line_id;
+		token.c0 = 1; //@Ignore it for now //(u32)(1 + input_cursor - (line.start_cursor - line.leading_spaces));
 
-			switch (type)
+		switch (type)
+		{
+			case LEXEME_IDENT:
 			{
-				case LEXEME_IDENT:
+				while (lexeme_end < input.count)
 				{
-					while (lexeme_end <= line.end_cursor)
-					{
-						u8 c = input.data[lexeme_end];
-						if (!is_ident(c)) break;
-						lexeme_end += 1;
-					}
+					u8 c = input.data[lexeme_end];
+					if (!is_ident(c)) break;
+					lexeme_end += 1;
+				}
 
-					token.type = TOKEN_IDENT;
-					token.string_value.data = input.data + lexeme_start;
-					token.string_value.count = lexeme_end - lexeme_start;
+				token.type = TOKEN_IDENT;
+				token.string_value.data = input.data + lexeme_start;
+				token.string_value.count = lexeme_end - lexeme_start;
 
-					TokenType keyword = get_keyword_token_type(token.string_value);
-					if (keyword != TOKEN_ERROR) token.type = keyword;
+				TokenType keyword = get_keyword_token_type(token.string_value);
+				if (keyword != TOKEN_ERROR) token.type = keyword;
 
-					i = lexeme_end;
-					lexeme_end -= 1;
-				} break;
-				case LEXEME_NUMBER:
+				input_cursor = lexeme_end;
+				lexeme_end -= 1;
+			} break;
+			case LEXEME_NUMBER:
+			{
+				u64 integer = fc - '0';
+
+				while (lexeme_end < input.count)
 				{
-					u64 integer = fc - '0';
+					u8 c = input.data[lexeme_end];
+					if (!is_number(c)) break;
+					lexeme_end += 1;
 
-					while (lexeme_end <= line.end_cursor)
-					{
-						u8 c = input.data[lexeme_end];
-						if (!is_number(c)) break;
-						lexeme_end += 1;
+					integer *= 10;
+					integer += c - '0';
+				}
 
-						integer *= 10;
-						integer += c - '0';
-					}
+				token.type = TOKEN_NUMBER;
+				token.integer_value = integer;
 
-					token.type = TOKEN_NUMBER;
-					token.integer_value = integer;
+				input_cursor = lexeme_end;
+				lexeme_end -= 1;
+			} break;
+			case LEXEME_STRING:
+			{
+				bool terminated = false;
 
-					i = lexeme_end;
-					lexeme_end -= 1;
-				} break;
-				case LEXEME_STRING:
+				while (lexeme_end < input.count)
 				{
-					bool terminated = false;
+					u8 c = input.data[lexeme_end];
+					lexeme_end += 1;
+					if (c == '"') { terminated = true; break; }
+				}
 
-					while (lexeme_end <= line.end_cursor)
-					{
-						u8 c = input.data[lexeme_end];
-						lexeme_end += 1;
-						if (c == '"') { terminated = true; break; }
-					}
+				token.type = TOKEN_STRING;
+				token.string_value.data = input.data + lexeme_start;
+				token.string_value.count = lexeme_end - lexeme_start;
 
-					token.type = TOKEN_STRING;
-					token.string_value.data = input.data + lexeme_start;
-					token.string_value.count = lexeme_end - lexeme_start;
+				input_cursor = lexeme_end;
+				lexeme_end -= 1;
 
-					i = lexeme_end;
-					lexeme_end -= 1;
-
-					if (!terminated)
-					{
-						//error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
-						token.type = TOKEN_ERROR;
-					}
-				} break;
-				case LEXEME_SYMBOL:
+				if (!terminated)
 				{
-					token.type = c_to_sym[fc];
+					//error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
+					token.type = TOKEN_ERROR;
+				}
+			} break;
+			case LEXEME_SYMBOL:
+			{
+				token.type = c_to_sym[fc];
 
-					if (lexeme_end <= line.end_cursor)
+				if (lexeme_end <= input.count)
+				{
+					u8 c = input.data[lexeme_end];
+
+					constexpr u32 equal_composable_symbol_token_offset = 12;
+					constexpr u32 double_composable_symbol_token_offset = 18;
+					constexpr u32 bitshift_to_bitshift_equals_offset = 2;
+
+					u32 sym2 = TOKEN_ERROR;
+					if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
+					else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))
 					{
-						u8 c = input.data[lexeme_end];
-
-						constexpr u32 equal_composable_symbol_token_offset = 12;
-						constexpr u32 double_composable_symbol_token_offset = 18;
-						constexpr u32 bitshift_to_bitshift_equals_offset = 2;
-
-						u32 sym2 = TOKEN_ERROR;
-						if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
-						else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))
+						sym2 = token.type + double_composable_symbol_token_offset;
+						if (lexeme_end + 1 <= input.count && input.data[lexeme_end + 1] == '=')
 						{
-							sym2 = token.type + double_composable_symbol_token_offset;
-							if (lexeme_end + 1 <= line.end_cursor && input.data[lexeme_end + 1] == '=')
-							{
-								sym2 += bitshift_to_bitshift_equals_offset;
-								lexeme_end += 1;
-							}
-						}
-						else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
-
-						if (sym2 != TOKEN_ERROR)
-						{
-							token.type = (TokenType)sym2;
+							sym2 += bitshift_to_bitshift_equals_offset;
 							lexeme_end += 1;
 						}
 					}
+					else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
 
-					i = lexeme_end;
-					lexeme_end -= 1;
-				} break;
-				case LEXEME_ERROR:
-				{
-					i++;
-					//error_report(LEXER_ERROR_INVALID_CHARACTER, token); @Error handling disabled single char errors
-				} break;
-			}
+					if (sym2 != TOKEN_ERROR)
+					{
+						token.type = (TokenType)sym2;
+						lexeme_end += 1;
+					}
+				}
 
-			if (token.type != TOKEN_ERROR)
-				tokens.emplace_back(token);
-		}
-	}
-
-	Token token_end = {};
-	token_end.type = TOKEN_EOF;
-	tokens.emplace_back(token_end);
-
-	return tokens;
-}
-
-LineInfo Tokenizer::get_next_line()
-{
-	u64 count = input.count;
-	u64 i = input_cursor;
-
-	LineInfo line = { i, i, 0 };
-
-	if (i >= count)
-	{
-		line.is_valid = false;
-		return line;
-	}
-
-	while (i < count && is_whitespace(input.data[i]))
-	{
-		line.leading_spaces += 1;
-		i++;
-	}
-
-	line.end_cursor = i;
-	bool comment_started = false;
-
-	while (i < count && !is_line_break(input.data[i]))
-	{
-		if (!comment_started)
-		{
-			comment_started = input.data[i] == '/' && ((i + 1) < count) && input.data[i + 1] == '/';
-			if (!comment_started)
+				input_cursor = lexeme_end;
+				lexeme_end -= 1;
+			} break;
+			case LEXEME_ERROR:
 			{
-				line.end_cursor = i;
-				line.is_empty = false;
-			}
+				input_cursor += 1;
+				//error_report(LEXER_ERROR_INVALID_CHARACTER, token); @Error handling disabled single char errors
+			} break;
 		}
 
-		i++;
+		tokens[k] = token;
 	}
 
-	if (i < count && input.data[i] == '\r') i++;
-	if (i < count && input.data[i] == '\n') i++;
-	input_cursor = i;
-
-	line.start_cursor += line.leading_spaces;
-
-	return line;
+	printf("\n [TOKENIZATION PASS] \n");
+	for (int i = 0; i < TOKEN_BUFFER_SIZE; i++)
+	{
+		printf("token buffer state: "); debug_print_token_t(tokens[i], true, false);
+	}
 }
 
 //@Performance find a way to not use maps an use logic or table lookups instead
