@@ -96,40 +96,40 @@ struct Token
 	};
 };
 
-void debug_print_token_t(Token token, bool endl, bool location);
-
+//@Todo comment support
+// skip '//' until end of line
+// skip '/* */' until all nested openings are closed
 struct Tokenizer
 {
 	bool set_input_from_file(const char* file_path);
+	void tokenize_buffer();
 
+	void skip_whitespace();
 	TokenType get_keyword_token_type(const StringView& str);
 	bool is_letter(u8 c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 	bool is_number(u8 c) { return c >= '0' && c <= '9'; }
 	bool is_ident(u8 c) { return is_letter(c) || (c == '_') || is_number(c); }
 	bool is_whitespace(u8 c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 
+
 	String input;
 	u64 input_cursor = 0;
-
-	void skip_whitespace();
-	void tokenize_buffer();
-
-	u32 peek_index = 0;
-
 	u32 line_id = 1;
-	static const u64 TOKEN_BUFFER_SIZE = 8;
-	static const u64 TOKEN_LOOKAHEAD = 2;
-	Token tokens[TOKEN_BUFFER_SIZE];
+	u64 line_start_cursor = 0;
+	u32 peek_index = 0;
+	static const u64 TOKENIZER_BUFFER_SIZE = 256;
+	static const u64 TOKENIZER_LOOKAHEAD = 1;
+	Token tokens[TOKENIZER_BUFFER_SIZE];
 
-	std::optional<Token> peek(u32 offset = 0) //@Always exists by design not optional
+	Token peek(u32 offset = 0)
 	{
 		return tokens[peek_index + offset];
 	}
 
 	std::optional<Token> try_consume(TokenType token_type)
 	{
-		auto token = peek();
-		if (token && token.value().type == token_type)
+		Token token = peek();
+		if (token.type == token_type)
 		{
 			consume();
 			return token;
@@ -139,123 +139,18 @@ struct Tokenizer
 
 	Token consume_get()
 	{
-		Token token = tokens[peek_index];
+		Token token = peek();
 		consume();
 		return token;
 	}
 
 	void consume()
 	{
-		printf("consumed: "); debug_print_token_t(tokens[peek_index], true, false);
 		peek_index += 1;
-		if (peek_index >= (TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD)) //correct
-		{
-			peek_index = 0;
-			tokenize_buffer();
-		}
+		if (peek_index >= (TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD))
+		{ peek_index = 0; tokenize_buffer(); }
 	}
 };
-
-void debug_print_token_t(Token token, bool endl, bool location)
-{
-	if (location) printf("l: %lu c: %lu Token: ", token.l0, token.c0);
-
-	if (token.type == TOKEN_IDENT || token.type == TOKEN_STRING)
-	{
-		for (u64 i = 0; i < token.string_value.count; i++)
-			printf("%c", token.string_value.data[i]);
-	}
-	else if (token.type == TOKEN_NUMBER)
-	{
-		printf("%llu", token.integer_value);
-		//@Incomplete need to lex f32 f64 and store numeric flags
-	}
-	else if (token.type == TOKEN_BOOL_LITERAL)
-	{
-		if (token.bool_value)
-			printf("true");
-		else printf("false");
-	}
-	else
-	{
-		switch (token.type)
-		{
-		case TOKEN_KEYWORD_STRUCT: printf("struct"); break;
-		case TOKEN_KEYWORD_ENUM: printf("enum"); break;
-		case TOKEN_KEYWORD_FN: printf("fn"); break;
-		case TOKEN_KEYWORD_IF: printf("if"); break;
-		case TOKEN_KEYWORD_ELSE: printf("else"); break;
-		case TOKEN_KEYWORD_TRUE: printf("true"); break;
-		case TOKEN_KEYWORD_FALSE: printf("false"); break;
-		case TOKEN_KEYWORD_FOR: printf("for"); break;
-		case TOKEN_KEYWORD_BREAK: printf("break"); break;
-		case TOKEN_KEYWORD_RETURN: printf("return"); break;
-		case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
-
-		case TOKEN_TYPE_I8: printf("i8"); break;
-		case TOKEN_TYPE_U8: printf("u8"); break;
-		case TOKEN_TYPE_I16: printf("i16"); break;
-		case TOKEN_TYPE_U16: printf("u16"); break;
-		case TOKEN_TYPE_I32: printf("i32"); break;
-		case TOKEN_TYPE_U32: printf("u32"); break;
-		case TOKEN_TYPE_I64: printf("i64"); break;
-		case TOKEN_TYPE_U64: printf("u64"); break;
-		case TOKEN_TYPE_F32: printf("f32"); break;
-		case TOKEN_TYPE_F64: printf("f64"); break;
-		case TOKEN_TYPE_BOOL: printf("bool"); break;
-		case TOKEN_TYPE_STRING: printf("string"); break;
-
-		case TOKEN_DOT: printf("."); break;
-		case TOKEN_COMMA: printf(","); break;
-		case TOKEN_COLON: printf(":"); break;
-		case TOKEN_SEMICOLON: printf(";"); break;
-		case TOKEN_BLOCK_START: printf("{"); break;
-		case TOKEN_BLOCK_END: printf("}"); break;
-		case TOKEN_BRACKET_START: printf("["); break;
-		case TOKEN_BRACKET_END: printf("]"); break;
-		case TOKEN_PAREN_START: printf("("); break;
-		case TOKEN_PAREN_END: printf(")"); break;
-		case TOKEN_DOUBLE_COLON: printf("::"); break;
-
-		case TOKEN_ASSIGN: printf("="); break;
-		case TOKEN_PLUS: printf("+"); break;
-		case TOKEN_MINUS: printf("-"); break;
-		case TOKEN_TIMES: printf("*"); break;
-		case TOKEN_DIV: printf("/"); break;
-		case TOKEN_MOD: printf("%%"); break;
-		case TOKEN_BITWISE_AND: printf("&"); break;
-		case TOKEN_BITWISE_OR: printf("|"); break;
-		case TOKEN_BITWISE_XOR: printf("^"); break;
-		case TOKEN_LESS: printf("<"); break;
-		case TOKEN_GREATER: printf(">"); break;
-		case TOKEN_LOGIC_NOT: printf("!"); break;
-		case TOKEN_IS_EQUALS: printf("=="); break;
-		case TOKEN_PLUS_EQUALS: printf("+="); break;
-		case TOKEN_MINUS_EQUALS: printf("-="); break;
-		case TOKEN_TIMES_EQUALS: printf("*="); break;
-		case TOKEN_DIV_EQUALS: printf("/="); break;
-		case TOKEN_MOD_EQUALS: printf("%%="); break;
-		case TOKEN_BITWISE_AND_EQUALS: printf("&="); break;
-		case TOKEN_BITWISE_OR_EQUALS: printf("|="); break;
-		case TOKEN_BITWISE_XOR_EQUALS: printf("^="); break;
-		case TOKEN_LESS_EQUALS: printf("<="); break;
-		case TOKEN_GREATER_EQUALS: printf(">="); break;
-		case TOKEN_NOT_EQUALS: printf("!="); break;
-		case TOKEN_LOGIC_AND: printf("&&"); break;
-		case TOKEN_LOGIC_OR: printf("||"); break;
-		case TOKEN_BITWISE_NOT: printf("~"); break;
-		case TOKEN_BITSHIFT_LEFT: printf("<<"); break;
-		case TOKEN_BITSHIFT_RIGHT: printf(">>"); break;
-
-		case TOKEN_ERROR: printf("ERROR"); break;
-		case TOKEN_EOF: printf("EOF"); break;
-
-		default: printf("[UNKNOWN TOKEN]"); break;
-		}
-	}
-	printf(" ");
-	if (endl) printf("\n");
-}
 
 bool Tokenizer::set_input_from_file(const char* file_path)
 {
@@ -269,7 +164,11 @@ void Tokenizer::skip_whitespace()
 	{
 		u8 c = input.data[input_cursor];
 		if (!is_whitespace(c)) break;
-		if (c == '\n') line_id += 1;
+		if (c == '\n') 
+		{
+			line_id += 1;
+			line_start_cursor = input_cursor;
+		}
 		input_cursor += 1;
 	}
 }
@@ -325,31 +224,26 @@ void Tokenizer::tokenize_buffer()
 		else lexeme_types[c] = LEXEME_ERROR;
 	}
 
-	u32 copy_offset = input_cursor == 0 ? 0 : TOKEN_LOOKAHEAD;
+	u32 copy_offset = input_cursor == 0 ? 0 : TOKENIZER_LOOKAHEAD;
 
-	if (copy_offset != 0)
-	printf("\n [COPY LAST PASS] \n");
 	for (u32 k = 0; k < copy_offset; k++)
 	{
-		tokens[k] = tokens[TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD + k];
-		debug_print_token_t(tokens[k], true, false);
-		printf("doing copy from: %lu to %lu \n", (TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD + k), k);
+		tokens[k] = tokens[TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD + k];
 	}
 
-	for (u32 k = copy_offset; k < TOKEN_BUFFER_SIZE; k++)
+	for (u32 k = copy_offset; k < TOKENIZER_BUFFER_SIZE; k++)
 	{
 		skip_whitespace();
 
 		if (input_cursor >= input.count)
 		{
-			for (u32 i = k; i < TOKEN_BUFFER_SIZE; i++)
+			for (u32 i = k; i < TOKENIZER_BUFFER_SIZE; i++)
 			{
 				tokens[i].type = TOKEN_EOF;
 			}
 			break;
 		}
 
-		//not imporant, tokeninzing the next token
 		u8 fc = input.data[input_cursor];
 		LexemeType type = fc < 128 ? lexeme_types[fc] : LEXEME_ERROR;
 		u64 lexeme_start = input_cursor;
@@ -357,7 +251,7 @@ void Tokenizer::tokenize_buffer()
 
 		Token token = {};
 		token.l0 = line_id;
-		token.c0 = 1; //@Ignore it for now //(u32)(1 + input_cursor - (line.start_cursor - line.leading_spaces));
+		token.c0 = u32(input_cursor - line_start_cursor);
 
 		switch (type)
 		{
@@ -409,6 +303,7 @@ void Tokenizer::tokenize_buffer()
 					u8 c = input.data[lexeme_end];
 					lexeme_end += 1;
 					if (c == '"') { terminated = true; break; }
+					else if (c == '\n') break;
 				}
 
 				token.type = TOKEN_STRING;
@@ -420,7 +315,6 @@ void Tokenizer::tokenize_buffer()
 
 				if (!terminated)
 				{
-					//error_report(LEXER_ERROR_STRING_NOT_TERMINATED, token);
 					token.type = TOKEN_ERROR;
 				}
 			} break;
@@ -462,21 +356,13 @@ void Tokenizer::tokenize_buffer()
 			case LEXEME_ERROR:
 			{
 				input_cursor += 1;
-				//error_report(LEXER_ERROR_INVALID_CHARACTER, token); @Error handling disabled single char errors
 			} break;
 		}
 
 		tokens[k] = token;
 	}
-
-	printf("\n [TOKENIZATION PASS] \n");
-	for (int i = 0; i < TOKEN_BUFFER_SIZE; i++)
-	{
-		printf("token buffer state: "); debug_print_token_t(tokens[i], true, false);
-	}
 }
 
-//@Performance find a way to not use maps an use logic or table lookups instead
 static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
 	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },

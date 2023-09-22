@@ -24,7 +24,7 @@ struct Parser
 	Ast_Proc_Call* parse_proc_call();
 	Ast_Var_Assign* parse_var_assign();
 	Ast_Var_Declare* parse_var_declare();
-	std::optional<Token> peek(u32 offset = 0);
+	Token peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
 	std::optional<Ast_Identifier> try_consume_type_ident();
 	Token consume_get();
@@ -35,7 +35,7 @@ struct Parser
 };
 
 Parser::Parser()
-	  : m_arena(1024 * 1024 * 64) {}
+	  : m_arena(1024 * 1024 * 4) { }
 
 Ast* Parser::parse()
 {
@@ -46,9 +46,9 @@ Ast* Parser::parse()
 	ast->structs = {};
 	ast->procedures = {};
 
-	while (peek().has_value())
+	while (true)
 	{
-		Token token = peek().value();
+		Token token = peek();
 		consume();
 
 		switch (token.type)
@@ -56,36 +56,27 @@ Ast* Parser::parse()
 			case TOKEN_KEYWORD_STRUCT:
 			{
 				auto struct_decl = parse_struct();
-				if (!struct_decl) 
-				{
-					debug_print_token(peek().value(), true, true);
-					return NULL;
-				}
+				if (!struct_decl) return NULL;
 				ast->structs.emplace_back(struct_decl.value());
 			} break;
 			case TOKEN_KEYWORD_ENUM:
 			{
 				auto enum_decl = parse_enum();
-				if (!enum_decl) 
-				{
-					debug_print_token(peek().value(), true, true);
-					return NULL;
-				}
+				if (!enum_decl) return NULL;
 				ast->enums.emplace_back(enum_decl.value());
 			} break;
 			case TOKEN_KEYWORD_FN:
 			{
 				auto proc_decl = parse_procedure();
-				if (!proc_decl)
-				{
-					debug_print_token(peek().value(), true, true);
-					return NULL;
-				}
+				if (!proc_decl) return NULL;
 				ast->procedures.emplace_back(proc_decl.value());
+			} break;
+			case TOKEN_EOF:
+			{
+				return ast;
 			} break;
 			default:
 			{
-				if (token.type == TOKEN_EOF) return ast;
 				printf("Expected fn, enum or struct declaration. Got other token.\n");
 				debug_print_token(token, true, true);
 				return NULL;
@@ -208,10 +199,7 @@ Ast_Access_Chain* Parser::parse_access_chain()
 Ast_Term* Parser::parse_term()
 {
 	Ast_Term* term = m_arena.alloc<Ast_Term>();
-
-	auto peek_token = peek();
-	if (!peek_token) { printf("No token found at the start of a term.\n"); return NULL; }
-	Token token = peek_token.value();
+	Token token = peek();
 
 	switch (token.type)
 	{
@@ -245,8 +233,8 @@ Ast_Term* Parser::parse_term()
 		} break;
 		case TOKEN_IDENT:
 		{
-			auto next = peek(1);
-			if (next && next.value().type == TOKEN_PAREN_START)
+			Token next = peek(1);
+			if (next.type == TOKEN_PAREN_START)
 			{
 				Ast_Proc_Call* proc_call = parse_proc_call();
 				if (!proc_call) return NULL;
@@ -286,9 +274,8 @@ Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
 
 	while (true)
 	{
-		auto token_op = peek();
-		if (!token_op) break;
-		BinaryOp op = ast_binary_op_from_token(token_op.value().type);
+		Token token_op = peek();
+		BinaryOp op = ast_binary_op_from_token(token_op.type);
 		if (op == BINARY_OP_ERROR) break;
 		u32 prec = ast_binary_op_precedence(op);
 		if (prec < min_precedence) break;
@@ -330,25 +317,22 @@ Ast_Expression* Parser::parse_primary_expression()
 		return expr;
 	}
 
-	auto next = peek();
-	if (next)
+	Token token = peek();
+	UnaryOp op = ast_unary_op_from_token(token.type);
+	if (op != UNARY_OP_ERROR)
 	{
-		UnaryOp op = ast_unary_op_from_token(next.value().type);
-		if (op != UNARY_OP_ERROR)
-		{
-			consume();
-			Ast_Expression* right_expr = parse_primary_expression();
-			if (!right_expr) return NULL;
+		consume();
+		Ast_Expression* right_expr = parse_primary_expression();
+		if (!right_expr) return NULL;
 
-			Ast_Unary_Expression* unary_expr = m_arena.alloc<Ast_Unary_Expression>();
-			unary_expr->op = op;
-			unary_expr->right = right_expr;
+		Ast_Unary_Expression* unary_expr = m_arena.alloc<Ast_Unary_Expression>();
+		unary_expr->op = op;
+		unary_expr->right = right_expr;
 
-			Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
-			expr->tag = Ast_Expression::Tag::UnaryExpression;
-			expr->as_unary_expr = unary_expr;
-			return expr;
-		}
+		Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
+		expr->tag = Ast_Expression::Tag::UnaryExpression;
+		expr->as_unary_expr = unary_expr;
+		return expr;
 	}
 
 	Ast_Term* term = parse_term();
@@ -382,12 +366,10 @@ Ast_Block* Parser::parse_block()
 
 Ast_Statement* Parser::parse_statement()
 {
-	auto token = peek();
-	if (!token) { printf("No token found at the start of a statement.\n"); return NULL; }
-
 	Ast_Statement* statement = m_arena.alloc<Ast_Statement>();
+	Token token = peek();
 
-	switch (token.value().type)
+	switch (token.type)
 	{
 		case TOKEN_KEYWORD_IF:
 		{
@@ -421,16 +403,15 @@ Ast_Statement* Parser::parse_statement()
 		} break;
 		case TOKEN_IDENT:
 		{
-			auto next = peek(1);
-			if (!next) { printf("Expected identifier to be followed by a valid statement ':' '.' '('.\n"); return NULL; }
+			Token next = peek(1);
 
-			if (next.value().type == TOKEN_COLON)
+			if (next.type == TOKEN_COLON)
 			{
 				statement->tag = Ast_Statement::Tag::Var_Declare;
 				statement->as_var_declare = parse_var_declare();
 				if (!statement->as_var_declare) return NULL;
 			}
-			else if (next.value().type == TOKEN_PAREN_START)
+			else if (next.type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::Proc_Call;
 				statement->as_proc_call = parse_proc_call();
@@ -463,8 +444,8 @@ Ast_If* Parser::parse_if()
 	if (!block) return NULL;
 	_if->block = block;
 
-	auto next = peek();
-	if (next && next.value().type == TOKEN_KEYWORD_ELSE)
+	Token next = peek();
+	if (next.type == TOKEN_KEYWORD_ELSE)
 	{
 		Ast_Else* _else = parse_else();
 		if (!_else) return NULL;
@@ -479,17 +460,16 @@ Ast_Else* Parser::parse_else()
 	Ast_Else* _else = m_arena.alloc<Ast_Else>();
 	_else->token = consume_get();
 
-	auto next = peek();
-	if (!next) { printf("Expected 'else' to be followed by 'if' or a code block '{ ... }'.\n"); return NULL; }
+	Token next = peek();
 
-	if (next.value().type == TOKEN_KEYWORD_IF)
+	if (next.type == TOKEN_KEYWORD_IF)
 	{
 		Ast_If* _if = parse_if();
 		if (!_if) return NULL;
 		_else->tag = Ast_Else::Tag::If;
 		_else->as_if = _if;
 	}
-	else if (next.value().type == TOKEN_BLOCK_START)
+	else if (next.type == TOKEN_BLOCK_START)
 	{
 		Ast_Block* block = parse_block();
 		if (!block) return NULL;
@@ -506,11 +486,11 @@ Ast_For* Parser::parse_for()
 	Ast_For* _for = m_arena.alloc<Ast_For>();
 	_for->token = consume_get();
 	
-	auto curr = peek();
-	auto next = peek(1);
+	Token curr = peek();
+	Token next = peek(1);
 
 	//infinite loop
-	if (curr && curr.value().type == TOKEN_BLOCK_START)
+	if (curr.type == TOKEN_BLOCK_START)
 	{
 		Ast_Block* block = parse_block();
 		if (!block) return NULL;
@@ -520,7 +500,7 @@ Ast_For* Parser::parse_for()
 	}
 
 	//optional var declaration
-	if (curr && curr.value().type == TOKEN_IDENT && next && next.value().type == TOKEN_COLON)
+	if (curr.type == TOKEN_IDENT && next.type == TOKEN_COLON)
 	{
 		Ast_Var_Declare* var_declaration = parse_var_declare();
 		if (!var_declaration) return NULL;
@@ -608,9 +588,8 @@ Ast_Var_Assign* Parser::parse_var_assign()
 	if (!access_chain) return NULL;
 	var_assign->access_chain = access_chain;
 
-	auto token = peek();
-	if (!token) { printf("Expected assigment operator.\n"); return NULL; }
-	AssignOp op = ast_assign_op_from_token(token.value().type);
+	Token token = peek();
+	AssignOp op = ast_assign_op_from_token(token.type);
 	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
 	consume();
 	var_assign->op = op;
@@ -647,29 +626,23 @@ Ast_Var_Declare* Parser::parse_var_declare()
 	return var_declare;
 }
 
-std::optional<Token> Parser::peek(u32 offset)
+Token Parser::peek(u32 offset)
 {
 	return tokenizer.peek(offset);
 }
 
 std::optional<Token> Parser::try_consume(TokenType token_type)
 {
-	auto token = tokenizer.peek();
-	if (token && token.value().type == token_type)
-	{
-		tokenizer.consume();
-		return token;
-	}
-	return {};
+	return tokenizer.try_consume(token_type);
 }
 
 std::optional<Ast_Identifier> Parser::try_consume_type_ident()
 {
 	auto token = tokenizer.peek();
-	if (token && (token.value().type == TOKEN_IDENT || (token.value().type >= TOKEN_TYPE_I8 && token.value().type <= TOKEN_TYPE_STRING)))
+	if (token.type == TOKEN_IDENT || (token.type >= TOKEN_TYPE_I8 && token.type <= TOKEN_TYPE_STRING))
 	{
 		tokenizer.consume();
-		return Ast_Identifier { token.value() };
+		return Ast_Identifier { token };
 	}
 	return {};
 }

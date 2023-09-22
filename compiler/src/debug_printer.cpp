@@ -489,30 +489,3 @@ void debug_print_var_declare(Ast_Var_Declare* var_declare, u32 depth)
 	}
 	else printf("---\n");
 }
-
-void debug_print_tokenizer_info(const std::vector<Token>& tokens)
-{
-	u64 ident_count = 0;
-	u64 number_count = 0;
-	u64 string_count = 0;
-	u64 keyword_count = 0;
-	u64 symbol_count = 0;
-
-	for (const Token& token : tokens)
-	{
-		if (token.type == TOKEN_IDENT) ident_count += 1;
-		else if (token.type == TOKEN_NUMBER) number_count += 1;
-		else if (token.type == TOKEN_STRING) string_count += 1;
-		else if (token.type >= TOKEN_KEYWORD_STRUCT && token.type <= TOKEN_KEYWORD_CONTINUE) keyword_count += 1;
-		else symbol_count += 1;
-	}
-
-	printf("\nTokenCount:      %llu \n", tokens.size());
-	printf("[IdentCount]:    %llu \n", ident_count);
-	printf("[NumberCount]:   %llu \n", number_count);
-	printf("[StringCount]:   %llu \n", string_count);
-	printf("[KeywordCount]:  %llu \n", keyword_count);
-	printf("[SymbolCount]:   %llu \n", symbol_count);
-	printf("MemoryUsed (Mb): %f \n", double(sizeof(Token) * tokens.size()) / (1024.0 * 1024.0));
-	printf("MemoryCap  (Mb): %f \n\n", double(sizeof(Token) * tokens.capacity()) / (1024.0 * 1024.0));
-}
