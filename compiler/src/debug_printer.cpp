@@ -167,8 +167,8 @@ void debug_print_token(Token token, bool endl, bool location)
 			case TOKEN_BITSHIFT_LEFT: printf("<<"); break;
 			case TOKEN_BITSHIFT_RIGHT: printf(">>"); break;
 
-			case TOKEN_INPUT_END: printf("Input end"); break;
 			case TOKEN_ERROR: printf("Token Error"); break;
+			case TOKEN_EOF: printf("End of file"); break;
 
 			default: printf("[UNKNOWN TOKEN]"); break;
 		}

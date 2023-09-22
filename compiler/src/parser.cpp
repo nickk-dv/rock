@@ -70,7 +70,7 @@ Ast* Parser::parse()
 			} break;
 			default:
 			{
-				if (m_tokens[m_index - 1].type == TOKEN_INPUT_END) return ast;
+				if (m_tokens[m_index - 1].type == TOKEN_EOF) return ast;
 				printf("Expected fn, enum or struct declaration.\n");
 				debug_print_token(m_tokens[m_index - 1], true); //@Hack reporting on prev token, current one is consumed above
 				return NULL;

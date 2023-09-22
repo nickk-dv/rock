@@ -61,3 +61,13 @@ int main()
 
 	return 0;
 }
+
+//@Incomplete basic CLI. Build this up when there are multiple options required
+int main_cli(int argc, char **argv)
+{
+	for (int i = 1; i < argc; i++) 
+	{
+		printf("Arg: %s\n", argv[i]);
+	}
+	return 0;
+}

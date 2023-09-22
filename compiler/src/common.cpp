@@ -53,6 +53,55 @@ struct StringView
 	size_t count;
 };
 
+//@Incomplete, will not use this yet, finish before using
+template <typename T>
+struct ArrayDyn
+{
+	~ArrayDyn()
+	{
+		free(data);
+	}
+
+	T at(u64 i)
+	{
+		return data[i];
+	}
+
+	void push(T val)
+	{
+		try_grow();
+		data[size] = val;
+		size += 1;
+	}
+
+	void push(T* val)
+	{
+		try_grow();
+		data[size] = *val;
+		size += 1;
+	}
+
+	void try_grow()
+	{
+		if (size >= capacity)
+		{
+			if (capacity == 0) capacity = 4;
+			capacity *= 2;
+			T* data_new = (T*)malloc(capacity * sizeof(T));
+			if (data != NULL)
+			{
+				memcpy(data_new, data, size * sizeof(T));
+				free(data);
+			}
+			data = data_new;
+		}
+	}
+	
+	T* data = NULL;
+	u64 size = 0;
+	u64 capacity = 0;
+};
+
 struct Timer
 {
 	typedef std::chrono::high_resolution_clock Clock;
