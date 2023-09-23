@@ -32,16 +32,20 @@ enum TokenType
 	TOKEN_TYPE_STRING,           // string
 
 	TOKEN_DOT,                   // .
+	TOKEN_QUOTE,                 // '
 	TOKEN_COMMA,                 // ,
 	TOKEN_COLON,                 // :
 	TOKEN_SEMICOLON,             // ;
+	TOKEN_DOUBLE_COLON,          // ::
 	TOKEN_BLOCK_START,           // {
 	TOKEN_BLOCK_END,             // }
 	TOKEN_BRACKET_START,         // [
 	TOKEN_BRACKET_END,           // ]
 	TOKEN_PAREN_START,           // (
 	TOKEN_PAREN_END,             // )
-	TOKEN_DOUBLE_COLON,          // ::
+	TOKEN_AT,                    // @
+	TOKEN_HASH,                  // #
+	TOKEN_QUESTION,              // ?
 
 	TOKEN_ASSIGN,                // =
 	TOKEN_PLUS,                  // +
@@ -121,6 +125,17 @@ struct Tokenizer
 	static const u64 TOKENIZER_LOOKAHEAD = 1;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
 
+	std::optional<u8> peek_c(u32 offset = 0)
+	{
+		if (input_cursor + offset < input.count) return input.data[input_cursor + offset];
+		return {};
+	}
+
+	void consume_c()
+	{
+		input_cursor += 1;
+	}
+
 	Token peek(u32 offset = 0)
 	{
 		return tokens[peek_index + offset];
@@ -148,7 +163,9 @@ struct Tokenizer
 	{
 		peek_index += 1;
 		if (peek_index >= (TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD))
-		{ peek_index = 0; tokenize_buffer(); }
+		{
+			peek_index = 0; tokenize_buffer();
+		}
 	}
 };
 
@@ -160,36 +177,38 @@ bool Tokenizer::set_input_from_file(const char* file_path)
 
 void Tokenizer::skip_whitespace()
 {
-	while (input_cursor < input.count)
+	while (peek_c().has_value())
 	{
-		u8 c = input.data[input_cursor];
+		u8 c = peek_c().value();
 		if (!is_whitespace(c)) break;
-		if (c == '\n') 
+		if (c == '\n')
 		{
 			line_id += 1;
 			line_start_cursor = input_cursor;
 		}
-		input_cursor += 1;
+		consume_c();
 	}
 }
 
 void Tokenizer::skip_whitespace_comments()
 {
-	while (input_cursor < input.count) 
+	while (peek_c().has_value())
 	{
-		u8 c = input.data[input_cursor];
-		if (is_whitespace(c)) 
+		u8 c = peek_c().value();
+		if (is_whitespace(c))
 		{
-			if (c == '\n') 
+			if (c == '\n')
 			{
 				line_id += 1;
 				line_start_cursor = input_cursor;
 			}
-			input_cursor += 1;
+			consume_c();
 		}
-		else if (c == '/' && input_cursor + 1 < input.count && input.data[input_cursor + 1] == '/') 
+		else if (c == '/' && peek_c(1).has_value() && peek_c(1).value() == '/')
 		{
-			while (input_cursor < input.count && input.data[input_cursor] != '\n') input_cursor += 1;
+			consume_c();
+			consume_c();
+			while (peek_c().has_value() && peek_c().value() != '\n') consume_c();
 		}
 		else break;
 	}
@@ -257,19 +276,19 @@ void Tokenizer::tokenize_buffer()
 	{
 		skip_whitespace_comments();
 
-		if (input_cursor >= input.count)
+		if (!peek_c().has_value())
 		{
 			for (u32 i = k; i < TOKENIZER_BUFFER_SIZE; i++)
 			{
 				tokens[i].type = TOKEN_EOF;
 			}
-			break;
+			return;
 		}
 
-		u8 fc = input.data[input_cursor];
+		u8 fc = peek_c().value();
 		LexemeType type = fc < 128 ? lexeme_types[fc] : LEXEME_ERROR;
 		u64 lexeme_start = input_cursor;
-		u64 lexeme_end = input_cursor + 1;
+		consume_c();
 
 		Token token = {};
 		token.l0 = line_id;
@@ -279,61 +298,49 @@ void Tokenizer::tokenize_buffer()
 		{
 			case LEXEME_IDENT:
 			{
-				while (lexeme_end < input.count)
+				while (peek_c().has_value())
 				{
-					u8 c = input.data[lexeme_end];
-					if (!is_ident(c)) break;
-					lexeme_end += 1;
+					if (!is_ident(peek_c().value())) break;
+					consume_c();
 				}
 
 				token.type = TOKEN_IDENT;
 				token.string_value.data = input.data + lexeme_start;
-				token.string_value.count = lexeme_end - lexeme_start;
+				token.string_value.count = input_cursor - lexeme_start;
 
 				TokenType keyword = get_keyword_token_type(token.string_value);
 				if (keyword != TOKEN_ERROR) token.type = keyword;
-
-				input_cursor = lexeme_end;
-				lexeme_end -= 1;
 			} break;
 			case LEXEME_NUMBER:
 			{
 				u64 integer = fc - '0';
 
-				while (lexeme_end < input.count)
+				while (peek_c().has_value())
 				{
-					u8 c = input.data[lexeme_end];
+					u8 c = peek_c().value();
 					if (!is_number(c)) break;
-					lexeme_end += 1;
-
+					consume_c();
 					integer *= 10;
 					integer += c - '0';
 				}
 
 				token.type = TOKEN_NUMBER;
 				token.integer_value = integer;
-
-				input_cursor = lexeme_end;
-				lexeme_end -= 1;
 			} break;
 			case LEXEME_STRING:
 			{
 				bool terminated = false;
-
-				while (lexeme_end < input.count)
+				while (peek_c().has_value())
 				{
-					u8 c = input.data[lexeme_end];
-					lexeme_end += 1;
+					u8 c = peek_c().value();
+					consume_c();
 					if (c == '"') { terminated = true; break; }
 					else if (c == '\n') break;
 				}
 
 				token.type = TOKEN_STRING;
 				token.string_value.data = input.data + lexeme_start;
-				token.string_value.count = lexeme_end - lexeme_start;
-
-				input_cursor = lexeme_end;
-				lexeme_end -= 1;
+				token.string_value.count = input_cursor - lexeme_start;
 
 				if (!terminated)
 				{
@@ -344,9 +351,9 @@ void Tokenizer::tokenize_buffer()
 			{
 				token.type = c_to_sym[fc];
 
-				if (lexeme_end <= input.count)
+				if (peek_c().has_value())
 				{
-					u8 c = input.data[lexeme_end];
+					u8 c = peek_c().value();
 
 					constexpr u32 equal_composable_symbol_token_offset = 12;
 					constexpr u32 double_composable_symbol_token_offset = 18;
@@ -357,10 +364,10 @@ void Tokenizer::tokenize_buffer()
 					else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))
 					{
 						sym2 = token.type + double_composable_symbol_token_offset;
-						if (lexeme_end + 1 <= input.count && input.data[lexeme_end + 1] == '=')
+						if (peek_c(1).has_value() && peek_c(1).value() == '=')
 						{
 							sym2 += bitshift_to_bitshift_equals_offset;
-							lexeme_end += 1;
+							consume_c();
 						}
 					}
 					else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
@@ -368,17 +375,11 @@ void Tokenizer::tokenize_buffer()
 					if (sym2 != TOKEN_ERROR)
 					{
 						token.type = (TokenType)sym2;
-						lexeme_end += 1;
+						consume_c();
 					}
 				}
-
-				input_cursor = lexeme_end;
-				lexeme_end -= 1;
 			} break;
-			case LEXEME_ERROR:
-			{
-				input_cursor += 1;
-			} break;
+			default: break;
 		}
 
 		tokens[k] = token;
@@ -413,9 +414,10 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("string"),   TOKEN_TYPE_STRING },
 };
 
+//@Perf test the different keyword methods on bigger files like switching on char in a tree like search
 TokenType Tokenizer::get_keyword_token_type(const StringView& str)
 {
-	if (str.count > 8) return TOKEN_ERROR;
+	if (str.count > 8 || str.count < 2) return TOKEN_ERROR;
 	u64 hash = string_hash_ascii_9(str);
 	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
 	return is_keyword ? keyword_hash_to_token_type.at(hash) : TOKEN_ERROR;

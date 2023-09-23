@@ -86,16 +86,20 @@ void debug_print_token(Token token, bool endl, bool location)
 			case TOKEN_TYPE_STRING: printf("string"); break;
 
 			case TOKEN_DOT: printf("."); break;
+			case TOKEN_QUOTE: printf("'"); break;
 			case TOKEN_COMMA: printf(","); break;
 			case TOKEN_COLON: printf(":"); break;
 			case TOKEN_SEMICOLON: printf(";"); break;
+			case TOKEN_DOUBLE_COLON: printf("::"); break;
 			case TOKEN_BLOCK_START: printf("{"); break;
 			case TOKEN_BLOCK_END: printf("}"); break;
 			case TOKEN_BRACKET_START: printf("["); break;
 			case TOKEN_BRACKET_END: printf("]"); break;
 			case TOKEN_PAREN_START: printf("("); break;
 			case TOKEN_PAREN_END: printf(")"); break;
-			case TOKEN_DOUBLE_COLON: printf("::"); break;
+			case TOKEN_AT: printf("@"); break;
+			case TOKEN_HASH: printf("#"); break;
+			case TOKEN_QUESTION: printf("?"); break;
 
 			case TOKEN_ASSIGN: printf("="); break;
 			case TOKEN_PLUS: printf("+"); break;
