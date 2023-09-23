@@ -12,14 +12,12 @@
 #include "checker.cpp"
 #include "llvm_backend.cpp"
 
-int main()
+int check(char* filepath)
 {
-	const char* file_path = "../../test_tp.txt";
-
 	Timer timer;
 	timer.start();
 	Parser parser = {};
-	if (!parser.tokenizer.set_input_from_file(file_path))
+	if (!parser.tokenizer.set_input_from_file(filepath))
 	{
 		printf("Failed to open a file.\n");
 		return 1;
@@ -38,10 +36,6 @@ int main()
 	//debug_print_ast(ast);
 	printf("Parse result: Success\n\n");
 
-	//Vector pre alloc lex + parse
-	//0.75ms
-	//0.8ms
-	
 	timer.start();
 	Checker checker = {};
 	bool check = checker.check_ast(ast);
@@ -60,12 +54,41 @@ int main()
 	return 0;
 }
 
-//@Incomplete basic CLI. Build this up when there are multiple options required
-int main_cli(int argc, char **argv)
+#define CLI_ON 0
+
+#if CLI_ON == 0
+int main(int argc, char** argv)
+{
+	check("../../test_tp.txt");
+}
+#else
+int main(int argc, char** argv) //@Hack hardcoded for now, will add better argumnet processing layer when needed.
 {
 	for (int i = 1; i < argc; i++) 
 	{
-		printf("Arg: %s\n", argv[i]);
+		char* arg = argv[i];
+
+		if (strcmp("help", arg) == 0)
+		{
+			printf("Commands:\ncheck [filepath]\n");
+			return 0;
+		}
+		else if (strcmp("check", arg) == 0)
+		{
+			if (i + 1 < argc)
+			{
+				char* filepath = argv[i + 1];
+				return check(filepath);
+			}
+			else printf("Expected [filepath].\n");
+			return 0;
+		}
+		else
+		{
+			printf("Unknown command. Use 'help' for list of commands.\n");
+			return 0;
+		}
 	}
 	return 0;
 }
+#endif
