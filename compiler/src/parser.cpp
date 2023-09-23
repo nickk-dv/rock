@@ -621,20 +621,26 @@ Ast_Var_Assign* Parser::parse_var_assign()
 
 Token Parser::peek(u32 offset)
 {
-	return tokenizer.peek(offset);
+	return tokenizer.tokens[tokenizer.peek_index + offset];
 }
 
 std::optional<Token> Parser::try_consume(TokenType token_type)
 {
-	return tokenizer.try_consume(token_type);
+	Token token = peek();
+	if (token.type == token_type)
+	{
+		consume();
+		return token;
+	}
+	return {};
 }
 
 std::optional<Ast_Ident> Parser::try_consume_type_ident()
 {
-	auto token = tokenizer.peek();
+	Token token = peek();
 	if (token.type == TOKEN_IDENT || (token.type >= TOKEN_TYPE_I8 && token.type <= TOKEN_TYPE_STRING))
 	{
-		tokenizer.consume();
+		consume();
 		return Ast_Ident { token };
 	}
 	return {};
@@ -642,10 +648,17 @@ std::optional<Ast_Ident> Parser::try_consume_type_ident()
 
 Token Parser::consume_get()
 {
-	return tokenizer.consume_get();
+	Token token = peek();
+	consume();
+	return token;
 }
 
 void Parser::consume()
 {
-	tokenizer.consume();
+	tokenizer.peek_index += 1;
+	if (tokenizer.peek_index >= (tokenizer.TOKENIZER_BUFFER_SIZE - tokenizer.TOKENIZER_LOOKAHEAD))
+	{
+		tokenizer.peek_index = 0; 
+		tokenizer.tokenize_buffer();
+	}
 }
