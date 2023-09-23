@@ -23,8 +23,8 @@ struct Type_Info
 	
 	union
 	{
-		Ast_Struct_Declaration* as_struct_decl;
-		Ast_Enum_Declaration* as_enum_decl;
+		Ast_Struct_Decl* as_struct_decl;
+		Ast_Enum_Decl* as_enum_decl;
 		Primitive_Type as_primitive_type;
 	};
 
@@ -37,10 +37,10 @@ struct Type_Info
 struct Typer
 {
 	void init_primitive_types();
-	void add_struct_type(Ast_Struct_Declaration* struct_decl);
-	void add_enum_type(Ast_Enum_Declaration* enum_decl);
-	bool is_type_in_scope(Ast_Identifier* type_ident);
-	Type_Info get_type_info(Ast_Identifier* type_ident);
+	void add_struct_type(Ast_Struct_Decl* struct_decl);
+	void add_enum_type(Ast_Enum_Decl* enum_decl);
+	bool is_type_in_scope(Ast_Ident* type_ident);
+	Type_Info get_type_info(Ast_Ident* type_ident);
 	Type_Info get_primitive_type_info(Primitive_Type type);
 	bool is_type_equals_type(Type_Info* t, Type_Info* t_other);
 
@@ -91,7 +91,7 @@ void Typer::init_primitive_types()
 	primitive_type_table[TYPE_STRING] = info;
 }
 
-void Typer::add_struct_type(Ast_Struct_Declaration* struct_decl)
+void Typer::add_struct_type(Ast_Struct_Decl* struct_decl)
 {
 	Type_Info info = { TYPE_TAG_STRUCT };
 	info.runtime_size = 0; //@Not doing sizing yet
@@ -100,7 +100,7 @@ void Typer::add_struct_type(Ast_Struct_Declaration* struct_decl)
 	type_table.emplace(struct_decl->type.token.string_value, info);
 }
 
-void Typer::add_enum_type(Ast_Enum_Declaration* enum_decl)
+void Typer::add_enum_type(Ast_Enum_Decl* enum_decl)
 {
 	Type_Info info = { TYPE_TAG_ENUM };
 	info.runtime_size = 0; //@Not doing sizing yet
@@ -109,7 +109,7 @@ void Typer::add_enum_type(Ast_Enum_Declaration* enum_decl)
 	type_table.emplace(enum_decl->type.token.string_value, info);
 }
 
-bool Typer::is_type_in_scope(Ast_Identifier* type_ident)
+bool Typer::is_type_in_scope(Ast_Ident* type_ident)
 {
 	TokenType token_type = type_ident->token.type;
 	if (token_type >= TOKEN_TYPE_I8 && token_type <= TOKEN_TYPE_STRING) 
@@ -117,7 +117,7 @@ bool Typer::is_type_in_scope(Ast_Identifier* type_ident)
 	return type_table.find(type_ident->token.string_value) != type_table.end();
 }
 
-Type_Info Typer::get_type_info(Ast_Identifier* type_ident)
+Type_Info Typer::get_type_info(Ast_Ident* type_ident)
 {
 	TokenType token_type = type_ident->token.type;
 	if (token_type >= TOKEN_TYPE_I8 && token_type <= TOKEN_TYPE_STRING)

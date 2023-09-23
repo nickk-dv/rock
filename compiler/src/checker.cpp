@@ -5,14 +5,14 @@ struct Block_Checker;
 struct Checker
 {
 	bool check_ast(Ast* ast);
-	bool check_types_and_proc_definitions(Ast* ast);
-	bool is_proc_in_scope(Ast_Identifier* proc_ident);
-	Ast_Procedure_Declaration* get_proc_declaration(Ast_Identifier* proc_ident);
-	bool check_enum(Ast_Enum_Declaration* decl);
-	bool check_struct(Ast_Struct_Declaration* decl);
-	bool check_procedure(Ast_Procedure_Declaration* decl);
-	bool check_procedure_block(Ast_Procedure_Declaration* decl);
 
+	bool check_types_and_proc_definitions(Ast* ast);
+	bool is_proc_in_scope(Ast_Ident* proc_ident);
+	Ast_Proc_Decl* get_proc_decl(Ast_Ident* proc_ident);
+	bool check_struct_decl(Ast_Struct_Decl* struct_decl);
+	bool check_enum_decl(Ast_Enum_Decl* enum_decl);
+	bool check_proc_decl(Ast_Proc_Decl* proc_decl);
+	bool check_proc_block(Ast_Proc_Decl* proc_decl);
 	bool check_block(Ast_Block* block, Block_Checker* bc, bool is_entry, bool is_inside_loop);
 	bool check_if(Ast_If* _if, Block_Checker* bc);
 	bool check_else(Ast_Else* _else, Block_Checker* bc);
@@ -21,12 +21,12 @@ struct Checker
 	bool check_return(Ast_Return* _return, Block_Checker* bc);
 	bool check_continue(Ast_Continue* _continue, Block_Checker* bc);
 	std::optional<Type_Info> check_proc_call(Ast_Proc_Call* proc_call, Block_Checker* bc, bool& is_valid);
+	bool check_var_decl(Ast_Var_Decl* var_decl, Block_Checker* bc);
 	bool check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc);
-	bool check_var_declare(Ast_Var_Declare* var_declare, Block_Checker* bc);
-	std::optional<Type_Info> check_access_chain(Ast_Access_Chain* access_chain, Block_Checker* bc);
-	std::optional<Type_Info> check_expr(Ast_Expression* expr, Block_Checker* bc);
+	std::optional<Type_Info> check_ident_chain(Ast_Ident_Chain* ident_chain, Block_Checker* bc);
+	std::optional<Type_Info> check_expr(Ast_Expr* expr, Block_Checker* bc);
 
-	std::unordered_map<StringView, Ast_Procedure_Declaration*, StringViewHasher> proc_table;
+	std::unordered_map<StringView, Ast_Proc_Decl*, StringViewHasher> proc_table;
 	Typer typer;
 };
 
@@ -41,14 +41,14 @@ struct Block_Checker
 {
 	void block_enter(Ast_Block* block, bool is_inside_loop);
 	void block_exit();
-	void var_add(const IdentTypePair& ident_type);
-	void var_add(const Ast_Identifier& ident, const Ast_Identifier& type);
-	bool is_var_declared(const Ast_Identifier& ident);
+	void var_add(const Ast_Ident_Type_Pair& ident_type);
+	void var_add(const Ast_Ident& ident, const Ast_Ident& type);
+	bool is_var_declared(const Ast_Ident& ident);
 	bool is_inside_a_loop();
-	Ast_Identifier var_get_type(const Ast_Identifier& ident);
+	Ast_Ident var_get_type(const Ast_Ident& ident);
 
 	std::vector<Block_Info> block_stack;
-	std::vector<IdentTypePair> var_stack; //@Perf this is basic linear search symbol table for the proc block
+	std::vector<Ast_Ident_Type_Pair> var_stack; //@Perf this is basic linear search symbol table for the proc block
 };
 
 bool Checker::check_ast(Ast* ast)
@@ -58,14 +58,14 @@ bool Checker::check_ast(Ast* ast)
 	if (!check_types_and_proc_definitions(ast)) return false;
 	
 	bool declarations_valid = true;
-	for (auto& decl : ast->structs) if (!check_struct(&decl)) declarations_valid = false;
-	for (auto& decl : ast->enums) if (!check_enum(&decl)) declarations_valid = false;
-	for (auto& decl : ast->procedures) if (!check_procedure(&decl)) declarations_valid = false;
+	for (auto& decl : ast->structs) if (!check_struct_decl(&decl)) declarations_valid = false;
+	for (auto& decl : ast->enums) if (!check_enum_decl(&decl)) declarations_valid = false;
+	for (auto& decl : ast->procs) if (!check_proc_decl(&decl)) declarations_valid = false;
 	if (!declarations_valid) return false;
 
 	bool procedure_blocks_valid = true;
-	for (auto& decl : ast->procedures)
-	if (!check_procedure_block(&decl)) procedure_blocks_valid = false;
+	for (auto& decl : ast->procs)
+	if (!check_proc_block(&decl)) procedure_blocks_valid = false;
 	if (!procedure_blocks_valid) return false;
 
 	return true;
@@ -83,7 +83,7 @@ bool Checker::check_types_and_proc_definitions(Ast* ast)
 		if (typer.is_type_in_scope(&decl.type)) { printf("Enum type redifinition.\n"); return false; }
 		typer.add_enum_type(&decl);
 	}
-	for (auto& decl : ast->procedures)
+	for (auto& decl : ast->procs)
 	{
 		if (is_proc_in_scope(&decl.ident)) { printf("Procedure redifinition"); return false; }
 		proc_table.emplace(decl.ident.token.string_value, &decl);
@@ -91,22 +91,22 @@ bool Checker::check_types_and_proc_definitions(Ast* ast)
 	return true;
 }
 
-bool Checker::is_proc_in_scope(Ast_Identifier* proc_ident)
+bool Checker::is_proc_in_scope(Ast_Ident* proc_ident)
 {
 	return proc_table.find(proc_ident->token.string_value) != proc_table.end();
 }
 
-Ast_Procedure_Declaration* Checker::get_proc_declaration(Ast_Identifier* proc_ident)
+Ast_Proc_Decl* Checker::get_proc_decl(Ast_Ident* proc_ident)
 {
 	return proc_table.at(proc_ident->token.string_value);
 }
 
-bool Checker::check_struct(Ast_Struct_Declaration* decl) //@Incomplete allow for multple errors
+bool Checker::check_struct_decl(Ast_Struct_Decl* struct_decl) //@Incomplete allow for multple errors
 {
-	if (decl->fields.empty()) { printf("Struct must have at least 1 field.\n"); return false; }
+	if (struct_decl->fields.empty()) { printf("Struct must have at least 1 field.\n"); return false; }
 
 	std::unordered_set<StringView, StringViewHasher> names; //@Perf
-	for (auto& field : decl->fields)
+	for (auto& field : struct_decl->fields)
 	{
 		if (names.find(field.ident.token.string_value) != names.end()) { printf("Field name redifinition.\n"); return false; }
 		if (!typer.is_type_in_scope(&field.type)) { printf("Field type is not in scope.\n"); return false; }
@@ -115,12 +115,12 @@ bool Checker::check_struct(Ast_Struct_Declaration* decl) //@Incomplete allow for
 	return true;
 }
 
-bool Checker::check_enum(Ast_Enum_Declaration* decl) //@Incomplete allow for multple errors
+bool Checker::check_enum_decl(Ast_Enum_Decl* enum_decl) //@Incomplete allow for multple errors
 {
-	if (decl->variants.empty()) { printf("Enum must have at least 1 variant.\n"); return false; }
+	if (enum_decl->variants.empty()) { printf("Enum must have at least 1 variant.\n"); return false; }
 
 	std::unordered_set<StringView, StringViewHasher> names; //@Perf
-	for (const auto& field : decl->variants)
+	for (const auto& field : enum_decl->variants)
 	{
 		if (names.find(field.ident.token.string_value) != names.end()) { printf("Variant name redifinition.\n"); return false; }
 		names.emplace(field.ident.token.string_value);
@@ -128,27 +128,28 @@ bool Checker::check_enum(Ast_Enum_Declaration* decl) //@Incomplete allow for mul
 	return true;
 }
 
-bool Checker::check_procedure(Ast_Procedure_Declaration* decl)
+bool Checker::check_proc_decl(Ast_Proc_Decl* proc_decl)
 {
 	std::unordered_set<StringView, StringViewHasher> names; //@Perf
-	for (auto& param : decl->input_params)
+	for (auto& param : proc_decl->input_params)
 	{
 		if (names.find(param.ident.token.string_value) != names.end()) { printf("Procedure parameter name redifinition.\n"); return false; }
 		if (!typer.is_type_in_scope(&param.type)) { printf("Procedure parameter type is not in scope.\n"); return false; }
 		names.emplace(param.ident.token.string_value);
 	}
-	if (decl->return_type.has_value() && !typer.is_type_in_scope(&decl->return_type.value())) { printf("Procedure return type is not in scope.\n"); return false; }
+	if (proc_decl->return_type.has_value() && !typer.is_type_in_scope(&proc_decl->return_type.value())) 
+	{ printf("Procedure return type is not in scope.\n"); return false; }
 	return true;
 }
 
-bool Checker::check_procedure_block(Ast_Procedure_Declaration* decl)
+bool Checker::check_proc_block(Ast_Proc_Decl* proc_decl)
 {
 	Block_Checker bc = {};
-	bc.block_enter(decl->block, false);
-	for (const auto& param : decl->input_params)
+	bc.block_enter(proc_decl->block, false);
+	for (const auto& param : proc_decl->input_params)
 	bc.var_add(param);
 
-	bool result = check_block(decl->block, &bc, true, false);
+	bool result = check_block(proc_decl->block, &bc, true, false);
 	return result;
 }
 
@@ -166,19 +167,19 @@ void Block_Checker::block_exit()
 	block_stack.pop_back();
 }
 
-void Block_Checker::var_add(const IdentTypePair& ident_type)
+void Block_Checker::var_add(const Ast_Ident_Type_Pair& ident_type)
 {
 	var_stack.emplace_back(ident_type);
 	block_stack[block_stack.size() - 1].var_count += 1;
 }
 
-void Block_Checker::var_add(const Ast_Identifier& ident, const Ast_Identifier& type)
+void Block_Checker::var_add(const Ast_Ident& ident, const Ast_Ident& type)
 {
-	var_stack.emplace_back(IdentTypePair { ident, type });
+	var_stack.emplace_back(Ast_Ident_Type_Pair{ ident, type });
 	block_stack[block_stack.size() - 1].var_count += 1;
 }
 
-bool Block_Checker::is_var_declared(const Ast_Identifier& ident) //@Perf linear search for now
+bool Block_Checker::is_var_declared(const Ast_Ident& ident) //@Perf linear search for now
 {
 	for (const auto& var : var_stack)
 	if (var.ident.token.string_value == ident.token.string_value) return true;
@@ -190,7 +191,7 @@ bool Block_Checker::is_inside_a_loop()
 	return block_stack[block_stack.size() - 1].is_inside_loop;
 }
 
-Ast_Identifier Block_Checker::var_get_type(const Ast_Identifier & ident)
+Ast_Ident Block_Checker::var_get_type(const Ast_Ident& ident)
 {
 	for (const auto& var : var_stack)
 	if (var.ident.token.string_value == ident.token.string_value) return var.type;
@@ -218,8 +219,8 @@ bool Checker::check_block(Ast_Block* block, Block_Checker* bc, bool is_entry, bo
 				check_proc_call(stmt->as_proc_call, bc, is_valid);
 				if (!is_valid) return false;
 			} break;
+			case Ast_Statement::Tag::Var_Decl: { if (!check_var_decl(stmt->as_var_decl, bc)) return false; } break;
 			case Ast_Statement::Tag::Var_Assign: { if (!check_var_assign(stmt->as_var_assign, bc)) return false; } break;
-			case Ast_Statement::Tag::Var_Declare: { if (!check_var_declare(stmt->as_var_declare, bc)) return false; } break;
 			default: break;
 		}
 	}
@@ -339,10 +340,10 @@ std::optional<Type_Info> Checker::check_proc_call(Ast_Proc_Call* proc_call, Bloc
 		return {};
 	}
 
-	Ast_Procedure_Declaration* proc_decl = get_proc_declaration(&proc_call->ident);
+	Ast_Proc_Decl* proc_decl = get_proc_decl(&proc_call->ident);
 
 	u64 decl_param_count = proc_decl->input_params.size();
-	u64 call_param_count = proc_call->input_expressions.size();
+	u64 call_param_count = proc_call->input_exprs.size();
 	if (decl_param_count != call_param_count)
 	{
 		printf("Calling procedure with incorrect number of params. Expected: %llu Calling with: %llu.\n", decl_param_count, call_param_count);
@@ -366,7 +367,7 @@ std::optional<Type_Info> Checker::check_proc_call(Ast_Proc_Call* proc_call, Bloc
 			return {};
 		}
 
-		std::optional<Type_Info> param_expr_type = check_expr(proc_call->input_expressions[counter], bc);
+		std::optional<Type_Info> param_expr_type = check_expr(proc_call->input_exprs[counter], bc);
 		if (!param_expr_type) return {};
 		counter += 1;
 
@@ -406,6 +407,75 @@ std::optional<Type_Info> Checker::check_proc_call(Ast_Proc_Call* proc_call, Bloc
 	return typer.get_type_info(&proc_decl->return_type.value());
 }
 
+bool Checker::check_var_decl(Ast_Var_Decl* var_decl, Block_Checker* bc)
+{
+	/*
+	ident must not be in scope
+	[has expr & has type]
+	expr valid
+	expr evaluates to same type
+	[has expr]
+	expr valid
+	infer var type
+	[result]
+	existing or inferred type must be in scope
+	add ident & type to var_stack
+	*/
+
+	if (bc->is_var_declared(var_decl->ident)) 
+	{ 
+		printf("Can not shadow already declared variable.\n");
+		debug_print_token(var_decl->ident.token, true, true);
+		return false; 
+	}
+
+	Ast_Ident type_ident = {};
+	
+	if (var_decl->type.has_value()) //has type, might have expr
+	{
+		type_ident = var_decl->type.value();
+
+		if (!typer.is_type_in_scope(&type_ident))
+		{
+			printf("Type is not in scope.\n");
+			debug_print_token(type_ident.token, true, true);
+			return false;
+		}
+
+		if (var_decl->expr.has_value()) //check that expr matches type
+		{
+			std::optional<Type_Info> expr_type = check_expr(var_decl->expr.value(), bc);
+			if (!expr_type) return false;
+
+			Type_Info var_type = typer.get_type_info(&type_ident);
+			if (!typer.is_type_equals_type(&expr_type.value(), &var_type))
+			{
+				printf("Var declaration type mismatch.\n");
+				typer.debug_print_type_info(&var_type);
+				typer.debug_print_type_info(&expr_type.value());
+				return false;
+			}
+		}
+	}
+	else //no type, infer from expr
+	{
+		std::optional<Type_Info> expr_type = check_expr(var_decl->expr.value(), bc);
+		if (!expr_type) return false;
+
+		//@Problem no inference possible due to needing Ast_Ident to push var on var_stack
+		//cannot go from expr Type_Info to Ast_Ident
+		//will test current setup with all types declared
+
+		printf("Type inference is NOT YET SUPPORTED.\n"); //@Incomplete @Check
+		debug_print_token(var_decl->ident.token, true, true);
+		return false;
+	}
+
+	bc->var_add(var_decl->ident, type_ident);
+	
+	return true;
+}
+
 bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 {
 	/*
@@ -415,7 +485,7 @@ bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 	AssignOp other: supported by lhs-rhs
 	*/
 
-	auto chain_type = check_access_chain(var_assign->access_chain, bc);
+	auto chain_type = check_ident_chain(var_assign->ident_chain, bc);
 	if (!chain_type) return false;
 	std::optional<Type_Info> expr_type = check_expr(var_assign->expr, bc);
 	if (!expr_type) return false;
@@ -425,8 +495,8 @@ bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 		if (!typer.is_type_equals_type(&chain_type.value(), &expr_type.value()))
 		{
 			printf("Var assignment type mismatch.\n");
-			debug_print_token(var_assign->access_chain->ident.token, true, true); //@Hack just for location, redundant first ident print
-			debug_print_access_chain(var_assign->access_chain); //@Only printing first token of the chain
+			debug_print_token(var_assign->ident_chain->ident.token, true, true); //@Hack just for location, redundant first ident print
+			debug_print_ident_chain(var_assign->ident_chain); //@Only printing first token of the chain
 			printf("Var  Type: "); typer.debug_print_type_info(&chain_type.value());
 			printf("Expr Type: "); typer.debug_print_type_info(&expr_type.value());
 			return false;
@@ -442,76 +512,7 @@ bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 	return true;
 }
 
-bool Checker::check_var_declare(Ast_Var_Declare* var_declare, Block_Checker* bc)
-{
-	/*
-	ident must not be in scope
-	[has expr & has type]
-	expr valid
-	expr evaluates to same type
-	[has expr]
-	expr valid
-	infer var type
-	[result]
-	existing or inferred type must be in scope
-	add ident & type to var_stack
-	*/
-
-	if (bc->is_var_declared(var_declare->ident)) 
-	{ 
-		printf("Can not shadow already declared variable.\n");
-		debug_print_token(var_declare->ident.token, true, true);
-		return false; 
-	}
-
-	Ast_Identifier type_ident = {};
-	
-	if (var_declare->type.has_value()) //has type, might have expr
-	{
-		type_ident = var_declare->type.value();
-
-		if (!typer.is_type_in_scope(&type_ident))
-		{
-			printf("Type is not in scope.\n");
-			debug_print_token(type_ident.token, true, true);
-			return false;
-		}
-
-		if (var_declare->expr.has_value()) //check that expr matches type
-		{
-			std::optional<Type_Info> expr_type = check_expr(var_declare->expr.value(), bc);
-			if (!expr_type) return false;
-
-			Type_Info var_type = typer.get_type_info(&type_ident);
-			if (!typer.is_type_equals_type(&expr_type.value(), &var_type))
-			{
-				printf("Var declaration type mismatch.\n");
-				typer.debug_print_type_info(&var_type);
-				typer.debug_print_type_info(&expr_type.value());
-				return false;
-			}
-		}
-	}
-	else //no type, infer from expr
-	{
-		std::optional<Type_Info> expr_type = check_expr(var_declare->expr.value(), bc);
-		if (!expr_type) return false;
-
-		//@Problem no inference possible due to needing AstIdentifier to push var on var_stack
-		//cannot go from expr Type_Info to Ast_Identifier
-		//will test current setup with all types declared
-
-		printf("Type inference is NOT YET SUPPORTED.\n"); //@Incomplete @Check
-		debug_print_token(var_declare->ident.token, true, true);
-		return false;
-	}
-
-	bc->var_add(var_declare->ident, type_ident);
-	
-	return true;
-}
-
-std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_chain, Block_Checker* bc)
+std::optional<Type_Info> Checker::check_ident_chain(Ast_Ident_Chain* ident_chain, Block_Checker* bc)
 {
 	/*
 	first ident is declared variable
@@ -519,20 +520,20 @@ std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_ch
 	return the last type
 	*/
 
-	if (!bc->is_var_declared(access_chain->ident))
+	if (!bc->is_var_declared(ident_chain->ident))
 	{
 		printf("Trying to access undeclared variable.\n");
-		debug_print_token(access_chain->ident.token, true, true);
+		debug_print_token(ident_chain->ident.token, true, true);
 		return {};
 	}
 
-	Ast_Identifier type = bc->var_get_type(access_chain->ident);
+	Ast_Ident type = bc->var_get_type(ident_chain->ident);
 	Type_Info type_info = typer.get_type_info(&type);
 
 	while (true)
 	{
-		access_chain = access_chain->next;
-		if (access_chain == NULL) break;
+		ident_chain = ident_chain->next;
+		if (ident_chain == NULL) break;
 
 		if (type_info.tag == TYPE_TAG_STRUCT) //@Perf switch?
 		{
@@ -540,7 +541,7 @@ std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_ch
 
 			for (const auto& field : type_info.as_struct_decl->fields)
 			{
-				if (field.ident.token.string_value == access_chain->ident.token.string_value)
+				if (field.ident.token.string_value == ident_chain->ident.token.string_value)
 				{
 					found_field = true;
 					type = field.type;
@@ -552,20 +553,20 @@ std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_ch
 			if (!found_field)
 			{
 				printf("Trying to access struct field which doesnt exist.\n");
-				debug_print_token(access_chain->ident.token, true, true);
+				debug_print_token(ident_chain->ident.token, true, true);
 				return {};
 			}
 		}
 		else if (type_info.tag == TYPE_TAG_ENUM)
 		{
 			printf("Accessing fields of an Enum is NOT YET SUPPORTED.\n"); //@Incomplete
-			debug_print_token(access_chain->ident.token, true, true);
+			debug_print_token(ident_chain->ident.token, true, true);
 			return {};
 		}
 		else if (type_info.tag == TYPE_TAG_PRIMITIVE) //@Assuming that primitive types dont have any accesible fields within it
 		{
 			printf("Trying to access a field of a primitive type.\n");
-			debug_print_token(access_chain->ident.token, true, true);
+			debug_print_token(ident_chain->ident.token, true, true);
 			return {};
 		}
 	}
@@ -573,13 +574,13 @@ std::optional<Type_Info> Checker::check_access_chain(Ast_Access_Chain* access_ch
 	return type_info;
 }
 
-std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker* bc)
+std::optional<Type_Info> Checker::check_expr(Ast_Expr* expr, Block_Checker* bc)
 {
 	Type_Info expr_type = {};
 
 	switch (expr->tag)
 	{
-		case Ast_Expression::Tag::Term:
+		case Ast_Expr::Tag::Term:
 		{
 			Ast_Term* term = expr->as_term;
 			switch (term->tag)
@@ -603,9 +604,9 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker
 						expr_type = typer.get_primitive_type_info(TYPE_BOOL);
 					}
 				} break;
-				case Ast_Term::Tag::Access_Chain:
+				case Ast_Term::Tag::Ident_Chain:
 				{
-					auto chain_type = check_access_chain(term->as_access_chain, bc);
+					auto chain_type = check_ident_chain(term->as_ident_chain, bc);
 					if (!chain_type) return {};
 
 					expr_type = chain_type.value();
@@ -628,9 +629,9 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker
 				} break;
 			}
 		} break;
-		case Ast_Expression::Tag::UnaryExpression:
+		case Ast_Expr::Tag::Unary_Expr:
 		{
-			Ast_Unary_Expression* unary_expr = expr->as_unary_expr;
+			Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
 			auto rhs_type = check_expr(unary_expr->right, bc);
 			if (!rhs_type) return {};
 			Type_Info type = rhs_type.value();
@@ -658,9 +659,9 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expression* expr, Block_Checker
 			expr_type = type;
 
 		} break;
-		case Ast_Expression::Tag::BinaryExpression:
+		case Ast_Expr::Tag::Binary_Expr:
 		{
-			Ast_Binary_Expression* bin_expr = expr->as_binary_expr;
+			Ast_Binary_Expr* bin_expr = expr->as_binary_expr;
 			auto lhs_type = check_expr(bin_expr->left, bc);
 			if (!lhs_type) return {};
 			auto rhs_type = check_expr(bin_expr->left, bc);

@@ -5,14 +5,14 @@ struct Parser
 
 	Ast* parse();
 
-	std::optional<Ast_Struct_Declaration> parse_struct();
-	std::optional<Ast_Enum_Declaration> parse_enum();
-	std::optional<Ast_Procedure_Declaration> parse_procedure();
-	Ast_Access_Chain* parse_access_chain();
+	std::optional<Ast_Struct_Decl> parse_struct_decl(); //Maybe linked lists with pointers are better for this
+	std::optional<Ast_Enum_Decl> parse_enum_decl();
+	std::optional<Ast_Proc_Decl> parse_proc_decl();
+	Ast_Ident_Chain* parse_ident_chain();
 	Ast_Term* parse_term();
-	Ast_Expression* parse_expression();
-	Ast_Expression* parse_primary_expression();
-	Ast_Expression* parse_sub_expression(u32 min_precedence = 0);
+	Ast_Expr* parse_expr();
+	Ast_Expr* parse_sub_expr(u32 min_prec = 0);
+	Ast_Expr* parse_primary_expr();
 	Ast_Block* parse_block();
 	Ast_Statement* parse_statement();
 	Ast_If* parse_if();
@@ -22,11 +22,11 @@ struct Parser
 	Ast_Return* parse_return();
 	Ast_Continue* parse_continue();
 	Ast_Proc_Call* parse_proc_call();
+	Ast_Var_Decl* parse_var_decl();
 	Ast_Var_Assign* parse_var_assign();
-	Ast_Var_Declare* parse_var_declare();
 	Token peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
-	std::optional<Ast_Identifier> try_consume_type_ident();
+	std::optional<Ast_Ident> try_consume_type_ident();
 	Token consume_get();
 	void consume();
 
@@ -34,14 +34,12 @@ struct Parser
 	Tokenizer tokenizer;
 };
 
-Parser::Parser()
-	  : m_arena(1024 * 1024) { }
+Parser::Parser(): m_arena(1024 * 1024) { } //@Dont like this
 
 Ast* Parser::parse()
 {
-	tokenizer.tokenize_buffer();
-
 	Ast* ast = m_arena.alloc<Ast>();
+	tokenizer.tokenize_buffer();
 
 	while (true)
 	{
@@ -52,21 +50,21 @@ Ast* Parser::parse()
 		{
 			case TOKEN_KEYWORD_STRUCT:
 			{
-				auto struct_decl = parse_struct();
+				auto struct_decl = parse_struct_decl();
 				if (!struct_decl) return NULL;
 				ast->structs.emplace_back(struct_decl.value());
 			} break;
 			case TOKEN_KEYWORD_ENUM:
 			{
-				auto enum_decl = parse_enum();
+				auto enum_decl = parse_enum_decl();
 				if (!enum_decl) return NULL;
 				ast->enums.emplace_back(enum_decl.value());
 			} break;
 			case TOKEN_KEYWORD_FN:
 			{
-				auto proc_decl = parse_procedure();
+				auto proc_decl = parse_proc_decl();
 				if (!proc_decl) return NULL;
-				ast->procedures.emplace_back(proc_decl.value());
+				ast->procs.emplace_back(proc_decl.value());
 			} break;
 			case TOKEN_EOF:
 			{
@@ -84,13 +82,13 @@ Ast* Parser::parse()
 	return ast;
 }
 
-std::optional<Ast_Struct_Declaration> Parser::parse_struct()
+std::optional<Ast_Struct_Decl> Parser::parse_struct_decl()
 {
 	auto type = try_consume(TOKEN_IDENT); 
 	if (!type) { printf("Expected an identifier.\n"); return {}; }
 
-	Ast_Struct_Declaration decl = {};
-	decl.type = Ast_Identifier { type.value() };
+	Ast_Struct_Decl decl = {};
+	decl.type = Ast_Ident { type.value() };
 	
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
 	while (true)
@@ -104,7 +102,7 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 			printf("Expected type idenifier.\n"); return {};
 		}
 
-		decl.fields.emplace_back(IdentTypePair { Ast_Identifier { field.value() }, field_type.value() });
+		decl.fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, field_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Struct Expected closing '}'.\n"); return {}; }
@@ -112,13 +110,13 @@ std::optional<Ast_Struct_Declaration> Parser::parse_struct()
 	return decl;
 }
 
-std::optional<Ast_Enum_Declaration> Parser::parse_enum()
+std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 {
 	auto type = try_consume(TOKEN_IDENT); 
 	if (!type) { printf("Expected an identifier.\n"); return {}; }
 
-	Ast_Enum_Declaration decl = {};
-	decl.type = Ast_Identifier { type.value() };
+	Ast_Enum_Decl decl = {};
+	decl.type = Ast_Ident { type.value() };
 
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
 	while (true)
@@ -126,7 +124,7 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 		auto variant = try_consume(TOKEN_IDENT);
 		if (!variant) break;
 
-		decl.variants.emplace_back(IdentTypePair { Ast_Identifier { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
+		decl.variants.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Enum Expected closing '}'.\n"); return {}; }
@@ -134,13 +132,13 @@ std::optional<Ast_Enum_Declaration> Parser::parse_enum()
 	return decl;
 }
 
-std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
+std::optional<Ast_Proc_Decl> Parser::parse_proc_decl()
 {
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) { printf("Expected an identifier.\n"); return {}; }
 
-	Ast_Procedure_Declaration decl = {};
-	decl.ident = Ast_Identifier { ident.value() };
+	Ast_Proc_Decl decl = {};
+	decl.ident = Ast_Ident { ident.value() };
 	
 	if (!try_consume(TOKEN_PAREN_START)) { printf("Expected opening '('.\n"); return {}; }
 	while (true)
@@ -154,7 +152,7 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 			printf("Expected type idenifier.\n"); return {}; 
 		}
 
-		decl.input_params.emplace_back(IdentTypePair { param.value(), param_type.value() });
+		decl.input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), param_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')'.\n"); return {}; }
@@ -173,24 +171,24 @@ std::optional<Ast_Procedure_Declaration> Parser::parse_procedure()
 	return decl;
 }
 
-Ast_Access_Chain* Parser::parse_access_chain()
+Ast_Ident_Chain* Parser::parse_ident_chain()
 {
-	Ast_Access_Chain* access_chain = m_arena.alloc<Ast_Access_Chain>();
-	access_chain->ident = Ast_Identifier { consume_get() };
-	Ast_Access_Chain* current = access_chain;
+	Ast_Ident_Chain* ident_chain = m_arena.alloc<Ast_Ident_Chain>();
+	ident_chain->ident = Ast_Ident{ consume_get() };
+	Ast_Ident_Chain* current = ident_chain;
 
 	while (true)
 	{
 		if (!try_consume(TOKEN_DOT)) break;
 		auto ident = try_consume(TOKEN_IDENT);
-		if (!ident) { printf("Expected an identifier after '.' in the access chain.\n"); return NULL; }
+		if (!ident) { printf("Expected an identifier after '.' in the ident chain.\n"); return NULL; }
 		
-		current->next = m_arena.alloc<Ast_Access_Chain>();
-		current->next->ident = Ast_Identifier { ident.value() };
+		current->next = m_arena.alloc<Ast_Ident_Chain>();
+		current->next->ident = Ast_Ident { ident.value() };
 		current = current->next;
 	}
 
-	return access_chain;
+	return ident_chain;
 }
 
 Ast_Term* Parser::parse_term()
@@ -240,10 +238,10 @@ Ast_Term* Parser::parse_term()
 				break;
 			}
 
-			Ast_Access_Chain* access_chain = parse_access_chain();
-			if (!access_chain) return NULL;
-			term->tag = Ast_Term::Tag::Access_Chain;
-			term->as_access_chain = access_chain;
+			Ast_Ident_Chain* ident_chain = parse_ident_chain();
+			if (!ident_chain) return NULL;
+			term->tag = Ast_Term::Tag::Ident_Chain;
+			term->as_ident_chain = ident_chain;
 		} break;
 		default:
 		{
@@ -256,54 +254,54 @@ Ast_Term* Parser::parse_term()
 	return term;
 }
 
-Ast_Expression* Parser::parse_expression()
+Ast_Expr* Parser::parse_expr()
 {
-	Ast_Expression* expr = parse_sub_expression();
+	Ast_Expr* expr = parse_sub_expr();
 	if (!expr) return NULL;
 	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after expression.\n"); return NULL; }
 	return expr;
 }
 
-Ast_Expression* Parser::parse_sub_expression(u32 min_precedence)
+Ast_Expr* Parser::parse_sub_expr(u32 min_prec)
 {
-	Ast_Expression* expr_lhs = parse_primary_expression();
+	Ast_Expr* expr_lhs = parse_primary_expr();
 	if (!expr_lhs) return NULL;
 
 	while (true)
 	{
 		Token token_op = peek();
-		BinaryOp op = ast_binary_op_from_token(token_op.type);
+		BinaryOp op = ast_get_binary_op_from_token(token_op.type);
 		if (op == BINARY_OP_ERROR) break;
-		u32 prec = ast_binary_op_precedence(op);
-		if (prec < min_precedence) break;
+		u32 prec = ast_get_binary_op_precedence(op);
+		if (prec < min_prec) break;
 		consume();
 
 		u32 next_min_prec = prec + 1;
-		Ast_Expression* expr_rhs = parse_sub_expression(next_min_prec);
+		Ast_Expr* expr_rhs = parse_sub_expr(next_min_prec);
 		if (expr_rhs == NULL) return NULL;
 
-		Ast_Expression* expr_lhs_copy = m_arena.alloc<Ast_Expression>();
+		Ast_Expr* expr_lhs_copy = m_arena.alloc<Ast_Expr>();
 		expr_lhs_copy->tag = expr_lhs->tag;
 		expr_lhs_copy->as_term = expr_lhs->as_term;
 		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
 
-		Ast_Binary_Expression* bin_expr = m_arena.alloc<Ast_Binary_Expression>();
+		Ast_Binary_Expr* bin_expr = m_arena.alloc<Ast_Binary_Expr>();
 		bin_expr->op = op;
 		bin_expr->left = expr_lhs_copy;
 		bin_expr->right = expr_rhs;
 
-		expr_lhs->tag = Ast_Expression::Tag::BinaryExpression;
+		expr_lhs->tag = Ast_Expr::Tag::Binary_Expr;
 		expr_lhs->as_binary_expr = bin_expr;
 	}
 
 	return expr_lhs;
 }
 
-Ast_Expression* Parser::parse_primary_expression()
+Ast_Expr* Parser::parse_primary_expr()
 {
 	if (try_consume(TOKEN_PAREN_START))
 	{
-		Ast_Expression* expr = parse_sub_expression();
+		Ast_Expr* expr = parse_sub_expr();
 
 		if (!try_consume(TOKEN_PAREN_END))
 		{
@@ -315,19 +313,19 @@ Ast_Expression* Parser::parse_primary_expression()
 	}
 
 	Token token = peek();
-	UnaryOp op = ast_unary_op_from_token(token.type);
+	UnaryOp op = ast_get_unary_op_from_token(token.type);
 	if (op != UNARY_OP_ERROR)
 	{
 		consume();
-		Ast_Expression* right_expr = parse_primary_expression();
+		Ast_Expr* right_expr = parse_primary_expr();
 		if (!right_expr) return NULL;
 
-		Ast_Unary_Expression* unary_expr = m_arena.alloc<Ast_Unary_Expression>();
+		Ast_Unary_Expr* unary_expr = m_arena.alloc<Ast_Unary_Expr>();
 		unary_expr->op = op;
 		unary_expr->right = right_expr;
 
-		Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
-		expr->tag = Ast_Expression::Tag::UnaryExpression;
+		Ast_Expr* expr = m_arena.alloc<Ast_Expr>();
+		expr->tag = Ast_Expr::Tag::Unary_Expr;
 		expr->as_unary_expr = unary_expr;
 		return expr;
 	}
@@ -335,8 +333,8 @@ Ast_Expression* Parser::parse_primary_expression()
 	Ast_Term* term = parse_term();
 	if (!term) return NULL;
 
-	Ast_Expression* expr = m_arena.alloc<Ast_Expression>();
-	expr->tag = Ast_Expression::Tag::Term;
+	Ast_Expr* expr = m_arena.alloc<Ast_Expr>();
+	expr->tag = Ast_Expr::Tag::Term;
 	expr->as_term = term;
 
 	return expr;
@@ -401,18 +399,18 @@ Ast_Statement* Parser::parse_statement()
 		{
 			Token next = peek(1);
 
-			if (next.type == TOKEN_COLON)
-			{
-				statement->tag = Ast_Statement::Tag::Var_Declare;
-				statement->as_var_declare = parse_var_declare();
-				if (!statement->as_var_declare) return NULL;
-			}
-			else if (next.type == TOKEN_PAREN_START)
+			if (next.type == TOKEN_PAREN_START)
 			{
 				statement->tag = Ast_Statement::Tag::Proc_Call;
 				statement->as_proc_call = parse_proc_call();
 				if (!statement->as_proc_call) return NULL;
 				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; }
+			}
+			else if (next.type == TOKEN_COLON)
+			{
+				statement->tag = Ast_Statement::Tag::Var_Decl;
+				statement->as_var_decl = parse_var_decl();
+				if (!statement->as_var_decl) return NULL;
 			}
 			else
 			{
@@ -432,7 +430,7 @@ Ast_If* Parser::parse_if()
 	Ast_If* _if = m_arena.alloc<Ast_If>();
 	_if->token = consume_get();
 
-	Ast_Expression* expr = parse_sub_expression();
+	Ast_Expr* expr = parse_sub_expr();
 	if (!expr) return NULL;
 	_if->condition_expr = expr;
 
@@ -498,13 +496,13 @@ Ast_For* Parser::parse_for()
 	//optional var declaration
 	if (curr.type == TOKEN_IDENT && next.type == TOKEN_COLON)
 	{
-		Ast_Var_Declare* var_declaration = parse_var_declare();
-		if (!var_declaration) return NULL;
-		_for->var_declare = var_declaration;
+		Ast_Var_Decl* var_decl = parse_var_decl();
+		if (!var_decl) return NULL;
+		_for->var_decl = var_decl;
 	}
 
 	//conditional expr
-	Ast_Expression* condition_expr = parse_sub_expression();
+	Ast_Expr* condition_expr = parse_sub_expr();
 	if (!condition_expr) { printf("Expected a conditional expression.\n"); return NULL; }
 	_for->condition_expr = condition_expr;
 
@@ -539,7 +537,7 @@ Ast_Return* Parser::parse_return()
 
 	if (try_consume(TOKEN_SEMICOLON)) return _return;
 
-	Ast_Expression* expr = parse_expression();
+	Ast_Expr* expr = parse_expr();
 	if (!expr) return NULL;
 	_return->expr = expr;
 	return _return;
@@ -557,16 +555,16 @@ Ast_Continue* Parser::parse_continue()
 Ast_Proc_Call* Parser::parse_proc_call()
 {
 	Ast_Proc_Call* proc_call = m_arena.alloc<Ast_Proc_Call>();
-	proc_call->ident = Ast_Identifier { consume_get() };
+	proc_call->ident = Ast_Ident { consume_get() };
 	consume();
 
 	while (true)
 	{
 		if (try_consume(TOKEN_PAREN_END)) return proc_call;
 
-		Ast_Expression* param_expr = parse_sub_expression();
+		Ast_Expr* param_expr = parse_sub_expr();
 		if (!param_expr) return NULL;
-		proc_call->input_expressions.emplace_back(param_expr);
+		proc_call->input_exprs.emplace_back(param_expr);
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -575,50 +573,50 @@ Ast_Proc_Call* Parser::parse_proc_call()
 	return proc_call;
 }
 
-Ast_Var_Assign* Parser::parse_var_assign()
+Ast_Var_Decl* Parser::parse_var_decl()
 {
-	Ast_Var_Assign* var_assign = m_arena.alloc<Ast_Var_Assign>();
-	
-	Ast_Access_Chain* access_chain = parse_access_chain();
-	if (!access_chain) return NULL;
-	var_assign->access_chain = access_chain;
-
-	Token token = peek();
-	AssignOp op = ast_assign_op_from_token(token.type);
-	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
-	consume();
-	var_assign->op = op;
-
-	Ast_Expression* expr = parse_expression();
-	if (!expr) return NULL;
-	var_assign->expr = expr;
-	return var_assign;
-}
-
-Ast_Var_Declare* Parser::parse_var_declare()
-{
-	Ast_Var_Declare* var_declare = m_arena.alloc<Ast_Var_Declare>();
-	var_declare->ident = Ast_Identifier { consume_get() };
+	Ast_Var_Decl* var_decl = m_arena.alloc<Ast_Var_Decl>();
+	var_decl->ident = Ast_Ident { consume_get() };
 	consume();
 
 	auto type = try_consume_type_ident();
-	if (type) var_declare->type = type.value();
+	if (type) var_decl->type = type.value();
 
 	bool default_init = !try_consume(TOKEN_ASSIGN);
 	if (default_init)
 	{
 		bool has_semicolon = try_consume(TOKEN_SEMICOLON).has_value();
-		if (type && has_semicolon) return var_declare;
+		if (type && has_semicolon) return var_decl;
 		if (!type && has_semicolon) printf("Expected specified type for default initialized variable.\n");
 		else if (type && !has_semicolon) printf("Expected ';'.\n");
 		else if (!type && !has_semicolon) printf("Expected specified type and ';' for default initialized variable.\n");
 		return NULL;
 	}
 
-	Ast_Expression* expr = parse_expression();
+	Ast_Expr* expr = parse_expr();
 	if (!expr) return NULL;
-	var_declare->expr = expr;
-	return var_declare;
+	var_decl->expr = expr;
+	return var_decl;
+}
+
+Ast_Var_Assign* Parser::parse_var_assign()
+{
+	Ast_Var_Assign* var_assign = m_arena.alloc<Ast_Var_Assign>();
+	
+	Ast_Ident_Chain* ident_chain = parse_ident_chain();
+	if (!ident_chain) return NULL;
+	var_assign->ident_chain = ident_chain;
+
+	Token token = peek();
+	AssignOp op = ast_get_assign_op_from_token(token.type);
+	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
+	consume();
+	var_assign->op = op;
+
+	Ast_Expr* expr = parse_expr();
+	if (!expr) return NULL;
+	var_assign->expr = expr;
+	return var_assign;
 }
 
 Token Parser::peek(u32 offset)
@@ -631,13 +629,13 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 	return tokenizer.try_consume(token_type);
 }
 
-std::optional<Ast_Identifier> Parser::try_consume_type_ident()
+std::optional<Ast_Ident> Parser::try_consume_type_ident()
 {
 	auto token = tokenizer.peek();
 	if (token.type == TOKEN_IDENT || (token.type >= TOKEN_TYPE_I8 && token.type <= TOKEN_TYPE_STRING))
 	{
 		tokenizer.consume();
-		return Ast_Identifier { token };
+		return Ast_Ident { token };
 	}
 	return {};
 }

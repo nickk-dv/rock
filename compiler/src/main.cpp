@@ -41,18 +41,17 @@ int main()
 	//Vector pre alloc lex + parse
 	//0.75ms
 	//0.8ms
-
-	//
-	//timer.start();
-	//Checker checker = {};
-	//bool check = checker.check_ast(ast);
-	//timer.end("Check");
-	//if (!check)
-	//{
-	//	printf("Check result: Failed\n");
-	//	return 1;
-	//}
-	//printf("Check result: Success\n\n");
+	
+	timer.start();
+	Checker checker = {};
+	bool check = checker.check_ast(ast);
+	timer.end("Check");
+	if (!check)
+	{
+		printf("Check result: Failed\n");
+		return 1;
+	}
+	printf("Check result: Success\n\n");
 
 	//timer.start();
 	//llvm_build(ast);

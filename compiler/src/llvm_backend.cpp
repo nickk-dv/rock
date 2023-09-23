@@ -19,10 +19,10 @@ LLVMModuleRef llvm_build_ir(Ast* ast)
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
 	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
 
-	for (const Ast_Procedure_Declaration& decl : ast->procedures)
+	for (const Ast_Proc_Decl& proc_decl : ast->procs)
 	{
 		LLVMTypeRef proc_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
-		Token t = decl.ident.token; //@Hack inserting null terminator to source data (should never override other string or identifier)
+		Token t = proc_decl.ident.token; //@Hack inserting null terminator to source data (should never override other string or identifier)
 		t.string_value.data[t.string_value.count] = 0;
 		LLVMValueRef proc = LLVMAddFunction(mod, (char*)t.string_value.data, proc_type);
 		LLVMBasicBlockRef proc_block = LLVMAppendBasicBlockInContext(context, proc, "block");

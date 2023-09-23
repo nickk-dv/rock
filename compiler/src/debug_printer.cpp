@@ -7,11 +7,14 @@ void debug_print_binary_op(BinaryOp op);
 void debug_print_assign_op(AssignOp op);
 void debug_print_branch(u32& depth);
 void debug_print_spacing(u32 depth);
-void debug_print_access_chain(Ast_Access_Chain* access_chain);
+void debug_print_struct_decl(Ast_Struct_Decl* struct_decl);
+void debug_print_enum_decl(Ast_Enum_Decl* proc_decl);
+void debug_print_proc_decl(Ast_Proc_Decl* proc_decl);
+void debug_print_ident_chain(Ast_Ident_Chain* ident_chain);
 void debug_print_term(Ast_Term* term, u32 depth);
-void debug_print_expr(Ast_Expression* expr, u32 depth);
-void debug_print_unary_expr(Ast_Unary_Expression* unary_expr, u32 depth);
-void debug_print_binary_expr(Ast_Binary_Expression* bin_expr, u32 depth);
+void debug_print_expr(Ast_Expr* expr, u32 depth);
+void debug_print_unary_expr(Ast_Unary_Expr* unary_expr, u32 depth);
+void debug_print_binary_expr(Ast_Binary_Expr* binary_expr, u32 depth);
 void debug_print_block(Ast_Block* block, u32 depth);
 void debug_print_statement(Ast_Statement* statement, u32 depth);
 void debug_print_if(Ast_If* _if, u32 depth);
@@ -21,59 +24,16 @@ void debug_print_break(Ast_Break* _break, u32 depth);
 void debug_print_return(Ast_Return* _return, u32 depth);
 void debug_print_continue(Ast_Continue* _continue, u32 depth);
 void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth);
+void debug_print_var_decl(Ast_Var_Decl* var_decl, u32 depth);
 void debug_print_var_assign(Ast_Var_Assign* var_assign, u32 depth);
-void debug_print_var_declare(Ast_Var_Declare* var_declare, u32 depth);
-void debug_print_tokenizer_info(const std::vector<Token>& tokens);
 
 void debug_print_ast(Ast* ast)
 {
 	printf("\n[AST]\n");
 
-	for (const Ast_Struct_Declaration& decl : ast->structs)
-	{
-		printf("\n[Struct] "); debug_print_token(decl.type.token, true);
-		for (const IdentTypePair& field : decl.fields)
-		{
-			debug_print_token(field.ident.token, false);
-			printf(": "); debug_print_token(field.type.token, true);
-		}
-	}
-
-	for (const Ast_Enum_Declaration& decl : ast->enums)
-	{
-		printf("\n[Enum] "); debug_print_token(decl.type.token, true);
-		for (const IdentTypePair& field : decl.variants)
-		{
-			debug_print_token(field.ident.token, true);
-		}
-	}
-
-	for (const Ast_Procedure_Declaration& decl : ast->procedures)
-	{
-		printf("\n[Procedure] ");
-		debug_print_token(decl.ident.token, true);
-
-		printf("Params: ");
-		if (!decl.input_params.empty())
-		{
-			printf("\n");
-			for (const IdentTypePair& param : decl.input_params)
-			{
-				debug_print_token(param.ident.token, false);
-				printf(": "); debug_print_token(param.type.token, true);
-			}
-		}
-		else printf("---\n");
-
-		printf("Return: ");
-		if (decl.return_type.has_value())
-		{
-			debug_print_token(decl.return_type.value().token, true);
-		}
-		else printf("---\n");
-
-		debug_print_block(decl.block, 0);
-	}
+	for (Ast_Struct_Decl& struct_decl : ast->structs) debug_print_struct_decl(&struct_decl);
+	for (Ast_Enum_Decl& enum_decl : ast->enums) debug_print_enum_decl(&enum_decl);
+	for (Ast_Proc_Decl& proc_decl : ast->procs) debug_print_proc_decl(&proc_decl);
 }
 
 void debug_print_token(Token token, bool endl, bool location)
@@ -251,17 +211,67 @@ void debug_print_branch(u32& depth)
 
 void debug_print_spacing(u32 depth)
 {
-	for (u32 i = 0; i < depth; i++)
+	for (u32 i = 0; i < depth; i++) 
 		printf("     ");
 }
 
-void debug_print_access_chain(Ast_Access_Chain* access_chain)
+void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 {
-	while (access_chain != NULL)
+	printf("\nStruct_Decl: "); 
+	debug_print_token(struct_decl->type.token, true);
+
+	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
-		debug_print_token(access_chain->ident.token, false);
-		access_chain = access_chain->next;
-		if (access_chain != NULL)
+		debug_print_token(field.ident.token, false);
+		printf(": "); debug_print_token(field.type.token, true);
+	}
+}
+
+void debug_print_enum_decl(Ast_Enum_Decl* proc_decl)
+{
+	printf("\nEnum_Decl: "); 
+	debug_print_token(proc_decl->type.token, true);
+
+	for (const Ast_Ident_Type_Pair& field : proc_decl->variants)
+	{
+		debug_print_token(field.ident.token, true);
+	}
+}
+
+void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
+{
+	printf("\nProc_Decl: ");
+	debug_print_token(proc_decl->ident.token, true);
+
+	printf("Params: ");
+	if (!proc_decl->input_params.empty())
+	{
+		printf("\n");
+		for (const Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		{
+			debug_print_token(param.ident.token, false);
+			printf(": "); debug_print_token(param.type.token, true);
+		}
+	}
+	else printf("---\n");
+
+	printf("Return: ");
+	if (proc_decl->return_type.has_value())
+	{
+		debug_print_token(proc_decl->return_type.value().token, true);
+	}
+	else printf("---\n");
+
+	debug_print_block(proc_decl->block, 0);
+}
+
+void debug_print_ident_chain(Ast_Ident_Chain* ident_chain)
+{
+	while (ident_chain != NULL)
+	{
+		debug_print_token(ident_chain->ident.token, false);
+		ident_chain = ident_chain->next;
+		if (ident_chain != NULL)
 		printf(".");
 	}
 	printf("\n");
@@ -269,38 +279,38 @@ void debug_print_access_chain(Ast_Access_Chain* access_chain)
 
 void debug_print_term(Ast_Term* term, u32 depth)
 {
-	if (term->tag == Ast_Term::Tag::Access_Chain)
+	if (term->tag == Ast_Term::Tag::Ident_Chain)
 	{
 		debug_print_branch(depth);
-		printf("Term_Access_Chain: ");
+		printf("Term_Ident_Chain: ");
 	}
 	else if (term->tag == Ast_Term::Tag::Literal)
 	{
 		debug_print_branch(depth);
-		printf("Term_Liter: ");
+		printf("Term_Literal: ");
 	}
 
 	switch (term->tag)
 	{
 		case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
-		case Ast_Term::Tag::Access_Chain: debug_print_access_chain(term->as_access_chain); break;
+		case Ast_Term::Tag::Ident_Chain: debug_print_ident_chain(term->as_ident_chain); break;
 		case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 		default: break;
 	}
 }
 
-void debug_print_expr(Ast_Expression* expr, u32 depth)
+void debug_print_expr(Ast_Expr* expr, u32 depth)
 {
 	switch (expr->tag)
 	{
-		case Ast_Expression::Tag::Term: debug_print_term(expr->as_term, depth); break;
-		case Ast_Expression::Tag::UnaryExpression: debug_print_unary_expr(expr->as_unary_expr, depth); break;
-		case Ast_Expression::Tag::BinaryExpression: debug_print_binary_expr(expr->as_binary_expr, depth); break;
+		case Ast_Expr::Tag::Term: debug_print_term(expr->as_term, depth); break;
+		case Ast_Expr::Tag::Unary_Expr: debug_print_unary_expr(expr->as_unary_expr, depth); break;
+		case Ast_Expr::Tag::Binary_Expr: debug_print_binary_expr(expr->as_binary_expr, depth); break;
 		default: break;
 	}
 }
 
-void debug_print_unary_expr(Ast_Unary_Expression* unary_expr, u32 depth)
+void debug_print_unary_expr(Ast_Unary_Expr* unary_expr, u32 depth)
 {
 	debug_print_branch(depth);
 	printf("Unary_Expr\n");
@@ -310,15 +320,15 @@ void debug_print_unary_expr(Ast_Unary_Expression* unary_expr, u32 depth)
 	debug_print_expr(unary_expr->right, depth);
 }
 
-void debug_print_binary_expr(Ast_Binary_Expression* bin_expr, u32 depth)
+void debug_print_binary_expr(Ast_Binary_Expr* binary_expr, u32 depth)
 {
 	debug_print_branch(depth);
-	printf("Bin_Expr\n");
+	printf("Binary_Expr\n");
 
 	debug_print_spacing(depth);
-	debug_print_binary_op(bin_expr->op);
-	debug_print_expr(bin_expr->left, depth);
-	debug_print_expr(bin_expr->right, depth);
+	debug_print_binary_op(binary_expr->op);
+	debug_print_expr(binary_expr->left, depth);
+	debug_print_expr(binary_expr->right, depth);
 }
 
 void debug_print_block(Ast_Block* block, u32 depth)
@@ -345,8 +355,8 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 		case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
 		case Ast_Statement::Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
 		case Ast_Statement::Tag::Proc_Call: debug_print_proc_call(statement->as_proc_call, depth); break;
+		case Ast_Statement::Tag::Var_Decl: debug_print_var_decl(statement->as_var_decl, depth); break;
 		case Ast_Statement::Tag::Var_Assign: debug_print_var_assign(statement->as_var_assign, depth); break;
-		case Ast_Statement::Tag::Var_Declare: debug_print_var_declare(statement->as_var_declare, depth); break;
 		default: break;
 	}
 }
@@ -384,11 +394,11 @@ void debug_print_for(Ast_For* _for, u32 depth)
 	printf("For\n");
 
 	debug_print_spacing(depth);
-	printf("For_Var_Declaration: ");
-	if (_for->var_declare.has_value())
+	printf("For_Var_Decl: ");
+	if (_for->var_decl.has_value())
 	{
 		printf("\n");
-		debug_print_var_declare(_for->var_declare.value(), depth);
+		debug_print_var_decl(_for->var_decl.value(), depth);
 	}
 	else printf("---\n");
 
@@ -450,11 +460,31 @@ void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 
 	debug_print_spacing(depth);
 	printf("Input_Exprs: ");
-	if (!proc_call->input_expressions.empty())
+	if (!proc_call->input_exprs.empty())
 	{
 		printf("\n");
-		for (Ast_Expression* expr : proc_call->input_expressions)
+		for (Ast_Expr* expr : proc_call->input_exprs)
 		debug_print_expr(expr, depth);
+	}
+	else printf("---\n");
+}
+
+void debug_print_var_decl(Ast_Var_Decl* var_decl, u32 depth)
+{
+	debug_print_branch(depth);
+	printf("Var_Decl: ");
+	debug_print_token(var_decl->ident.token, false);
+	printf(": ");
+	if (var_decl->type.has_value())
+		debug_print_token(var_decl->type.value().token, true);
+	else printf("[?]\n");
+
+	debug_print_spacing(depth);
+	printf("Var_Decl_Expr: ");
+	if (var_decl->expr.has_value())
+	{
+		printf("\n");
+		debug_print_expr(var_decl->expr.value(), depth);
 	}
 	else printf("---\n");
 }
@@ -464,28 +494,8 @@ void debug_print_var_assign(Ast_Var_Assign* var_assign, u32 depth)
 	debug_print_branch(depth);
 	printf("Var_Assign: ");
 
-	debug_print_access_chain(var_assign->access_chain);
+	debug_print_ident_chain(var_assign->ident_chain);
 	debug_print_spacing(depth);
 	debug_print_assign_op(var_assign->op);
 	debug_print_expr(var_assign->expr, depth);
-}
-
-void debug_print_var_declare(Ast_Var_Declare* var_declare, u32 depth)
-{
-	debug_print_branch(depth);
-	printf("Var_Declare: ");
-	debug_print_token(var_declare->ident.token, false);
-	printf(": ");
-	if (var_declare->type.has_value())
-		debug_print_token(var_declare->type.value().token, true);
-	else printf("[?]\n");
-
-	debug_print_spacing(depth);
-	printf("Var_Declare_Expr: ");
-	if (var_declare->expr.has_value())
-	{
-		printf("\n");
-		debug_print_expr(var_declare->expr.value(), depth);
-	}
-	else printf("---\n");
 }

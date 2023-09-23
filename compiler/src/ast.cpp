@@ -1,16 +1,17 @@
 
-struct Ast_Literal;
-struct Ast_Identifier;
-struct Ast_Access_Chain;
-struct Ast_Term;
-struct Ast_Expression;
-struct Ast_Unary_Expression;
-struct Ast_Binary_Expression;
-
 struct Ast;
-struct Ast_Struct_Declaration;
-struct Ast_Enum_Declaration;
-struct Ast_Procedure_Declaration;
+struct Ast_Struct_Decl;
+struct Ast_Enum_Decl;
+struct Ast_Proc_Decl;
+
+struct Ast_Ident { Token token; };
+struct Ast_Literal { Token token; };
+struct Ast_Ident_Chain;
+struct Ast_Ident_Type_Pair;
+struct Ast_Term;
+struct Ast_Expr;
+struct Ast_Unary_Expr;
+struct Ast_Binary_Expr;
 
 struct Ast_Block;
 struct Ast_Statement;
@@ -21,108 +22,98 @@ struct Ast_Break;
 struct Ast_Return;
 struct Ast_Continue;
 struct Ast_Proc_Call;
+struct Ast_Var_Decl;
 struct Ast_Var_Assign;
-struct Ast_Var_Declare;
 
 enum UnaryOp;
 enum BinaryOp;
 enum AssignOp;
 
-UnaryOp ast_unary_op_from_token(TokenType type);
-BinaryOp ast_binary_op_from_token(TokenType type);
-u32 ast_binary_op_precedence(BinaryOp op);
-AssignOp ast_assign_op_from_token(TokenType type);
+UnaryOp ast_get_unary_op_from_token(TokenType type);
+BinaryOp ast_get_binary_op_from_token(TokenType type);
+u32 ast_get_binary_op_precedence(BinaryOp op);
+AssignOp ast_get_assign_op_from_token(TokenType type);
 
-struct Ast_Literal
+struct Ast
 {
-	Token token;
+	std::vector<Ast_Struct_Decl> structs;
+	std::vector<Ast_Enum_Decl> enums;
+	std::vector<Ast_Proc_Decl> procs;
 };
 
-struct Ast_Identifier
+struct Ast_Struct_Decl
 {
-	Token token;
+	Ast_Ident type;
+	std::vector<Ast_Ident_Type_Pair> fields;
 };
 
-struct Ast_Access_Chain
+struct Ast_Enum_Decl
 {
-	Ast_Identifier ident;
-	Ast_Access_Chain* next;
+	Ast_Ident type;
+	std::vector<Ast_Ident_Type_Pair> variants;
+};
+
+struct Ast_Proc_Decl
+{
+	Ast_Ident ident;
+	std::vector<Ast_Ident_Type_Pair> input_params;
+	std::optional<Ast_Ident> return_type;
+	Ast_Block* block;
+};
+
+struct Ast_Ident_Chain
+{
+	Ast_Ident ident;
+	Ast_Ident_Chain* next;
+};
+
+struct Ast_Ident_Type_Pair
+{
+	Ast_Ident ident;
+	Ast_Ident type;
 };
 
 struct Ast_Term
 {
 	enum class Tag
 	{
-		Literal, Access_Chain, Proc_Call,
+		Literal, Ident_Chain, Proc_Call,
 	} tag;
 
 	union
 	{
 		Ast_Literal as_literal;
-		Ast_Access_Chain* as_access_chain;
+		Ast_Ident_Chain* as_ident_chain;
 		Ast_Proc_Call* as_proc_call;
 	};
 };
 
-struct Ast_Expression
+struct Ast_Expr
 {
 	enum class Tag
 	{
-		Term, UnaryExpression, BinaryExpression,
+		Term, Unary_Expr, Binary_Expr,
 	} tag;
 
 	union
 	{
 		Ast_Term* as_term;
-		Ast_Unary_Expression* as_unary_expr;
-		Ast_Binary_Expression* as_binary_expr;
+		Ast_Unary_Expr* as_unary_expr;
+		Ast_Binary_Expr* as_binary_expr;
 	};
 };
 
-struct Ast_Unary_Expression
+struct Ast_Unary_Expr
 {
 	UnaryOp op;
-	Ast_Expression* right;
+	Ast_Expr* right;
 };
 
-struct Ast_Binary_Expression
+struct Ast_Binary_Expr
 {
 	BinaryOp op;
-	Ast_Expression* left;
-	Ast_Expression* right;
-};
-
-struct Ast
-{
-	std::vector<Ast_Struct_Declaration> structs;
-	std::vector<Ast_Enum_Declaration> enums;
-	std::vector<Ast_Procedure_Declaration> procedures;
-};
-
-struct IdentTypePair
-{
-	Ast_Identifier ident;
-	Ast_Identifier type;
-};
-
-struct Ast_Struct_Declaration
-{
-	Ast_Identifier type;
-	std::vector<IdentTypePair> fields;
-};
-
-struct Ast_Enum_Declaration
-{
-	Ast_Identifier type;
-	std::vector<IdentTypePair> variants;
-};
-
-struct Ast_Procedure_Declaration
-{
-	Ast_Identifier ident;
-	std::vector<IdentTypePair> input_params;
-	std::optional<Ast_Identifier> return_type;
-	Ast_Block* block;
+	Ast_Expr* left;
+	Ast_Expr* right;
 };
 
 struct Ast_Block
@@ -135,7 +126,7 @@ struct Ast_Statement
 	enum class Tag
 	{
 		If, For, Break, Return, Continue,
-		Proc_Call, Var_Assign, Var_Declare,
+		Proc_Call, Var_Decl, Var_Assign,
 	} tag;
 
 	union
@@ -146,15 +137,15 @@ struct Ast_Statement
 		Ast_Return* as_return;
 		Ast_Continue* as_continue;
 		Ast_Proc_Call* as_proc_call;
+		Ast_Var_Decl* as_var_decl;
 		Ast_Var_Assign* as_var_assign;
-		Ast_Var_Declare* as_var_declare;
 	};
 };
 
 struct Ast_If
 {
 	Token token;
-	Ast_Expression* condition_expr;
+	Ast_Expr* condition_expr;
 	Ast_Block* block;
 	std::optional<Ast_Else*> _else;
 };
@@ -178,8 +169,8 @@ struct Ast_Else
 struct Ast_For
 {
 	Token token;
-	std::optional<Ast_Var_Declare*> var_declare;
-	std::optional<Ast_Expression*> condition_expr;
+	std::optional<Ast_Var_Decl*> var_decl;
+	std::optional<Ast_Expr*> condition_expr;
 	std::optional<Ast_Var_Assign*> var_assign;
 	Ast_Block* block;
 };
@@ -192,7 +183,7 @@ struct Ast_Break
 struct Ast_Return
 {
 	Token token;
-	std::optional<Ast_Expression*> expr;
+	std::optional<Ast_Expr*> expr;
 };
 
 struct Ast_Continue
@@ -202,30 +193,29 @@ struct Ast_Continue
 
 struct Ast_Proc_Call
 {
-	Ast_Identifier ident;
-	std::vector<Ast_Expression*> input_expressions;
+	Ast_Ident ident;
+	std::vector<Ast_Expr*> input_exprs;
+};
+
+struct Ast_Var_Decl
+{
+	Ast_Ident ident;
+	std::optional<Ast_Ident> type;
+	std::optional<Ast_Expr*> expr;
 };
 
 struct Ast_Var_Assign
 {
-	Ast_Access_Chain* access_chain;
+	Ast_Ident_Chain* ident_chain;
 	AssignOp op;
-	Ast_Expression* expr;
-};
-
-struct Ast_Var_Declare
-{
-	Ast_Identifier ident;
-	std::optional<Ast_Identifier> type;
-	std::optional<Ast_Expression*> expr;
+	Ast_Expr* expr;
 };
 
 enum UnaryOp
 {
-	UNARY_OP_MINUS,       // -
-	UNARY_OP_LOGIC_NOT,   // !
-	UNARY_OP_BITWISE_NOT, // ~
-
+	UNARY_OP_MINUS,           // -
+	UNARY_OP_LOGIC_NOT,       // !
+	UNARY_OP_BITWISE_NOT,     // ~
 	UNARY_OP_ERROR,
 };
 
@@ -233,28 +223,22 @@ enum BinaryOp
 {
 	BINARY_OP_LOGIC_AND,      // &&
 	BINARY_OP_LOGIC_OR,       // ||
-
 	BINARY_OP_LESS,           // <
 	BINARY_OP_GREATER,        // >
 	BINARY_OP_LESS_EQUALS,    // <=
 	BINARY_OP_GREATER_EQUALS, // >=
 	BINARY_OP_IS_EQUALS,      // ==
 	BINARY_OP_NOT_EQUALS,     // !=
-
 	BINARY_OP_PLUS,           // +
 	BINARY_OP_MINUS,          // -
-
 	BINARY_OP_TIMES,          // *
 	BINARY_OP_DIV,            // /
 	BINARY_OP_MOD,            // %
-
 	BINARY_OP_BITWISE_AND,    // &
 	BINARY_OP_BITWISE_OR,     // |
 	BINARY_OP_BITWISE_XOR,    // ^
-
 	BINARY_OP_BITSHIFT_LEFT,  // <<
 	BINARY_OP_BITSHIFT_RIGHT, // >>
-
 	BINARY_OP_ERROR,
 };
 
@@ -271,7 +255,6 @@ enum AssignOp
 	ASSIGN_OP_BITWISE_XOR,	  // ^=
 	ASSIGN_OP_BITSHIFT_LEFT,  // <<=
 	ASSIGN_OP_BITSHIFT_RIGHT, // >>=
-
 	ASSIGN_OP_ERROR,
 };
 
@@ -282,78 +265,49 @@ static const std::unordered_map<TokenType, UnaryOp> token_to_unary_op =
 	{TOKEN_BITWISE_NOT, UNARY_OP_BITWISE_NOT},
 };
 
-UnaryOp ast_unary_op_from_token(TokenType type)
-{
-	if (token_to_unary_op.find(type) != token_to_unary_op.end())
-		return token_to_unary_op.at(type);
-	return UNARY_OP_ERROR;
-}
-
 static const std::unordered_map<TokenType, BinaryOp> token_to_binary_op =
 {
 	{TOKEN_LOGIC_AND, BINARY_OP_LOGIC_AND},
 	{TOKEN_LOGIC_OR, BINARY_OP_LOGIC_OR},
-
 	{TOKEN_LESS, BINARY_OP_LESS},
 	{TOKEN_GREATER, BINARY_OP_GREATER},
 	{TOKEN_LESS_EQUALS, BINARY_OP_LESS_EQUALS},
 	{TOKEN_GREATER_EQUALS, BINARY_OP_GREATER_EQUALS},
 	{TOKEN_IS_EQUALS, BINARY_OP_IS_EQUALS},
 	{TOKEN_NOT_EQUALS, BINARY_OP_NOT_EQUALS},
-
 	{TOKEN_PLUS, BINARY_OP_PLUS},
 	{TOKEN_MINUS, BINARY_OP_MINUS},
-
 	{TOKEN_TIMES, BINARY_OP_TIMES},
 	{TOKEN_DIV, BINARY_OP_DIV},
 	{TOKEN_MOD, BINARY_OP_MOD},
-
 	{TOKEN_BITWISE_AND, BINARY_OP_BITWISE_AND},
 	{TOKEN_BITWISE_OR, BINARY_OP_BITWISE_OR},
 	{TOKEN_BITWISE_XOR, BINARY_OP_BITWISE_XOR},
-
 	{TOKEN_BITSHIFT_LEFT, BINARY_OP_BITSHIFT_LEFT},
 	{TOKEN_BITSHIFT_RIGHT, BINARY_OP_BITSHIFT_RIGHT},
 };
-
-BinaryOp ast_binary_op_from_token(TokenType type)
-{
-	if (token_to_binary_op.find(type) != token_to_binary_op.end())
-		return token_to_binary_op.at(type);
-	return BINARY_OP_ERROR;
-}
 
 static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
 {
 	{BINARY_OP_LOGIC_AND, 0},
 	{BINARY_OP_LOGIC_OR, 0},
-
 	{BINARY_OP_LESS, 1},
 	{BINARY_OP_GREATER, 1},
 	{BINARY_OP_LESS_EQUALS, 1},
 	{BINARY_OP_GREATER_EQUALS, 1},
 	{BINARY_OP_IS_EQUALS, 1},
 	{BINARY_OP_NOT_EQUALS, 1},
-
 	{BINARY_OP_PLUS, 2},
 	{BINARY_OP_MINUS, 2},
-
 	{BINARY_OP_TIMES, 3},
 	{BINARY_OP_DIV, 3},
 	{BINARY_OP_MOD, 3},
-
 	{BINARY_OP_BITWISE_AND, 4},
 	{BINARY_OP_BITWISE_OR, 4},
 	{BINARY_OP_BITWISE_XOR, 4},
-
 	{BINARY_OP_BITSHIFT_LEFT, 5},
 	{BINARY_OP_BITSHIFT_RIGHT, 5},
 };
-
-u32 ast_binary_op_precedence(BinaryOp op)
-{
-	return binary_op_precedence.at(op);
-}
 
 static const std::unordered_map<TokenType, AssignOp> token_to_assign_op =
 {
@@ -370,7 +324,26 @@ static const std::unordered_map<TokenType, AssignOp> token_to_assign_op =
 	{TOKEN_BITSHIFT_RIGHT_EQUALS, ASSIGN_OP_BITSHIFT_RIGHT},
 };
 
-AssignOp ast_assign_op_from_token(TokenType type)
+BinaryOp ast_get_binary_op_from_token(TokenType type)
+{
+	if (token_to_binary_op.find(type) != token_to_binary_op.end())
+		return token_to_binary_op.at(type);
+	return BINARY_OP_ERROR;
+}
+
+UnaryOp ast_get_unary_op_from_token(TokenType type)
+{
+	if (token_to_unary_op.find(type) != token_to_unary_op.end())
+		return token_to_unary_op.at(type);
+	return UNARY_OP_ERROR;
+}
+
+u32 ast_get_binary_op_precedence(BinaryOp op)
+{
+	return binary_op_precedence.at(op);
+}
+
+AssignOp ast_get_assign_op_from_token(TokenType type)
 {
 	if (token_to_assign_op.find(type) != token_to_assign_op.end())
 		return token_to_assign_op.at(type);
