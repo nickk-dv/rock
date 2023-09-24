@@ -8,7 +8,6 @@ enum TokenType
 
 	TOKEN_KEYWORD_STRUCT,        // struct
 	TOKEN_KEYWORD_ENUM,          // enum
-	TOKEN_KEYWORD_FN,            // fn
 	TOKEN_KEYWORD_IF,            // if
 	TOKEN_KEYWORD_ELSE,          // else
 	TOKEN_KEYWORD_TRUE,          // true
@@ -121,7 +120,7 @@ struct Tokenizer
 	u32 line_id = 1;
 	u32 peek_index = 0;
 	static const u64 TOKENIZER_BUFFER_SIZE = 256;
-	static const u64 TOKENIZER_LOOKAHEAD = 1;
+	static const u64 TOKENIZER_LOOKAHEAD = 2;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
 };
 
@@ -209,7 +208,7 @@ void Tokenizer::tokenize_buffer()
 
 		Token token = {};
 		token.l0 = line_id;
-		token.c0 = u32(input_cursor - line_start_cursor);
+		token.c0 = u32(input_cursor - line_start_cursor) - 1;
 
 		switch (type)
 		{
@@ -358,7 +357,6 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
 	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },
 	{ hash_ascii_9("enum"),     TOKEN_KEYWORD_ENUM },
-	{ hash_ascii_9("fn"),       TOKEN_KEYWORD_FN },
 	{ hash_ascii_9("if"),       TOKEN_KEYWORD_IF },
 	{ hash_ascii_9("else"),     TOKEN_KEYWORD_ELSE },
 	{ hash_ascii_9("true"),     TOKEN_KEYWORD_TRUE },

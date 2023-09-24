@@ -47,27 +47,47 @@ Ast* Parser::parse()
 	while (true)
 	{
 		Token token = peek();
-		consume();
 
 		switch (token.type)
 		{
-			case TOKEN_KEYWORD_STRUCT:
+			case TOKEN_IDENT:
 			{
-				auto struct_decl = parse_struct_decl();
-				if (!struct_decl) return NULL;
-				ast->structs.emplace_back(struct_decl.value());
-			} break;
-			case TOKEN_KEYWORD_ENUM:
-			{
-				auto enum_decl = parse_enum_decl();
-				if (!enum_decl) return NULL;
-				ast->enums.emplace_back(enum_decl.value());
-			} break;
-			case TOKEN_KEYWORD_FN:
-			{
-				auto proc_decl = parse_proc_decl();
-				if (!proc_decl) return NULL;
-				ast->procs.emplace_back(proc_decl.value());
+				if (peek(1).type == TOKEN_DOUBLE_COLON)
+				{
+					switch (peek(2).type)
+					{
+						case TOKEN_KEYWORD_STRUCT:
+						{
+							auto struct_decl = parse_struct_decl();
+							if (!struct_decl) return NULL;
+							ast->structs.emplace_back(struct_decl.value());
+						} break;
+						case TOKEN_KEYWORD_ENUM:
+						{
+							auto enum_decl = parse_enum_decl();
+							if (!enum_decl) return NULL;
+							ast->enums.emplace_back(enum_decl.value());
+						} break;
+						case TOKEN_PAREN_START:
+						{
+							auto proc_decl = parse_proc_decl();
+							if (!proc_decl) return NULL;
+							ast->procs.emplace_back(proc_decl.value());
+						} break;
+						default:
+						{
+							printf("Expected global declaration to be followed by 'struct', 'enum', or procedure argument list '( ... )'.\n");
+							debug_print_token(peek(2), true, true);
+							return NULL;
+						}
+					}
+				}
+				else
+				{
+					printf("Expected global identifier to be followed by '::'.\n");
+					debug_print_token(peek(1), true, true);
+					return NULL;
+				}
 			} break;
 			case TOKEN_EOF:
 			{
@@ -75,7 +95,7 @@ Ast* Parser::parse()
 			} break;
 			default:
 			{
-				printf("Expected fn, enum or struct declaration. Got other token.\n");
+				printf("Expected global declation that starts with identifier.\n");
 				debug_print_token(token, true, true);
 				return NULL;
 			} break;
@@ -87,11 +107,12 @@ Ast* Parser::parse()
 
 std::optional<Ast_Struct_Decl> Parser::parse_struct_decl()
 {
-	auto type = try_consume(TOKEN_IDENT); 
-	if (!type) { printf("Expected an identifier.\n"); return {}; }
+	Token type = consume_get();
+	consume();
+	consume();
 
 	Ast_Struct_Decl decl = {};
-	decl.type = Ast_Ident { type.value() };
+	decl.type = Ast_Ident { type };
 	
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
 	while (true)
@@ -115,11 +136,12 @@ std::optional<Ast_Struct_Decl> Parser::parse_struct_decl()
 
 std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 {
-	auto type = try_consume(TOKEN_IDENT); 
-	if (!type) { printf("Expected an identifier.\n"); return {}; }
+	Token type = consume_get();
+	consume();
+	consume();
 
 	Ast_Enum_Decl decl = {};
-	decl.type = Ast_Ident { type.value() };
+	decl.type = Ast_Ident { type };
 
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
 	while (true)
@@ -137,11 +159,11 @@ std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 
 std::optional<Ast_Proc_Decl> Parser::parse_proc_decl()
 {
-	auto ident = try_consume(TOKEN_IDENT);
-	if (!ident) { printf("Expected an identifier.\n"); return {}; }
+	Token ident = consume_get();
+	consume();
 
 	Ast_Proc_Decl decl = {};
-	decl.ident = Ast_Ident { ident.value() };
+	decl.ident = Ast_Ident { ident };
 	
 	if (!try_consume(TOKEN_PAREN_START)) { printf("Expected opening '('.\n"); return {}; }
 	while (true)

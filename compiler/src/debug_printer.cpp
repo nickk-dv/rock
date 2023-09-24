@@ -62,7 +62,6 @@ void debug_print_token(Token token, bool endl, bool location)
 		{
 			case TOKEN_KEYWORD_STRUCT: printf("struct"); break;
 			case TOKEN_KEYWORD_ENUM: printf("enum"); break;
-			case TOKEN_KEYWORD_FN: printf("fn"); break;
 			case TOKEN_KEYWORD_IF: printf("if"); break;
 			case TOKEN_KEYWORD_ELSE: printf("else"); break;
 			case TOKEN_KEYWORD_TRUE: printf("true"); break;
