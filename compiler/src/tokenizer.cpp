@@ -85,6 +85,8 @@ enum TokenType
 
 struct Token
 {
+	Token() {};
+
 	TokenType type = TOKEN_ERROR;
 	u32 l0 = 0;
 	u32 c0 = 0;
@@ -123,61 +125,10 @@ struct Tokenizer
 	Token tokens[TOKENIZER_BUFFER_SIZE];
 };
 
-bool Tokenizer::set_input_from_file(const char* file_path)
+bool Tokenizer::set_input_from_file(const char* filepath)
 {
 	input_cursor = 0;
-	return os_file_read_all(file_path, &input);
-}
-
-void Tokenizer::skip_whitespace()
-{
-	while (peek().has_value())
-	{
-		u8 c = peek().value();
-		if (!is_whitespace(c)) break;
-		if (c == '\n')
-		{
-			line_id += 1;
-			line_start_cursor = input_cursor;
-		}
-		consume();
-	}
-}
-
-void Tokenizer::skip_whitespace_comments()
-{
-	while (peek().has_value())
-	{
-		u8 c = peek().value();
-		if (is_whitespace(c))
-		{
-			if (c == '\n')
-			{
-				line_id += 1;
-				line_start_cursor = input_cursor;
-			}
-			consume();
-		}
-		else if (c == '/' && peek(1).has_value() && peek(1).value() == '/')
-		{
-			consume();
-			consume();
-			while (peek().has_value() && peek().value() != '\n') consume();
-		}
-		else break;
-	}
-}
-
-std::optional<u8> Tokenizer::peek(u32 offset)
-{
-	if (input_cursor + offset < input.count) 
-		return input.data[input_cursor + offset];
-	return {};
-}
-
-void Tokenizer::consume()
-{
-	input_cursor += 1;
+	return os_file_read_all(filepath, &input);
 }
 
 void Tokenizer::tokenize_buffer()
@@ -350,6 +301,57 @@ void Tokenizer::tokenize_buffer()
 
 		tokens[k] = token;
 	}
+}
+
+void Tokenizer::skip_whitespace()
+{
+	while (peek().has_value())
+	{
+		u8 c = peek().value();
+		if (!is_whitespace(c)) break;
+		if (c == '\n')
+		{
+			line_id += 1;
+			line_start_cursor = input_cursor;
+		}
+		consume();
+	}
+}
+
+void Tokenizer::skip_whitespace_comments()
+{
+	while (peek().has_value())
+	{
+		u8 c = peek().value();
+		if (is_whitespace(c))
+		{
+			if (c == '\n')
+			{
+				line_id += 1;
+				line_start_cursor = input_cursor;
+			}
+			consume();
+		}
+		else if (c == '/' && peek(1).has_value() && peek(1).value() == '/')
+		{
+			consume();
+			consume();
+			while (peek().has_value() && peek().value() != '\n') consume();
+		}
+		else break;
+	}
+}
+
+std::optional<u8> Tokenizer::peek(u32 offset)
+{
+	if (input_cursor + offset < input.count)
+		return input.data[input_cursor + offset];
+	return {};
+}
+
+void Tokenizer::consume()
+{
+	input_cursor += 1;
 }
 
 static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =

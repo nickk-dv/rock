@@ -17,7 +17,7 @@ int check(char* filepath)
 	Timer timer;
 	timer.start();
 	Parser parser = {};
-	if (!parser.tokenizer.set_input_from_file(filepath))
+	if (!parser.init(filepath))
 	{
 		printf("Failed to open a file.\n");
 		return 1;

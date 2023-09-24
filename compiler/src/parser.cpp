@@ -1,8 +1,7 @@
 
 struct Parser
 {
-	Parser();
-
+	bool init(const char* file_path);
 	Ast* parse();
 
 	std::optional<Ast_Struct_Decl> parse_struct_decl(); //Maybe linked lists with pointers are better for this
@@ -34,7 +33,11 @@ struct Parser
 	Tokenizer tokenizer;
 };
 
-Parser::Parser(): m_arena(1024 * 1024) { } //@Dont like this
+bool Parser::init(const char* file_path)
+{
+	m_arena.init(1024 * 1024);
+	return tokenizer.set_input_from_file(file_path);
+}
 
 Ast* Parser::parse()
 {

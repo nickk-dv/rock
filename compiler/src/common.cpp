@@ -8,7 +8,7 @@ typedef unsigned long long u64;
 struct String;
 struct StringView;
 struct Timer;
-class ArenaAllocator;
+struct Arena;
 struct StringViewHasher;
 
 constexpr u64 string_hash_ascii_9(const StringView& str);
@@ -29,12 +29,6 @@ struct String
 
 struct StringView
 {
-	StringView()
-	{
-		data = NULL;
-		count = 0;
-	}
-
 	StringView(const String& str)
 	{
 		data = str.data;
@@ -49,57 +43,8 @@ struct StringView
 		return true;
 	}
 
-	u8* data;
-	size_t count;
-};
-
-//@Incomplete, will not use this yet, finish before using
-template <typename T>
-struct ArrayDyn
-{
-	~ArrayDyn()
-	{
-		free(data);
-	}
-
-	T at(u64 i)
-	{
-		return data[i];
-	}
-
-	void push(T val)
-	{
-		try_grow();
-		data[size] = val;
-		size += 1;
-	}
-
-	void push(T* val)
-	{
-		try_grow();
-		data[size] = *val;
-		size += 1;
-	}
-
-	void try_grow()
-	{
-		if (size >= capacity)
-		{
-			if (capacity == 0) capacity = 4;
-			capacity *= 2;
-			T* data_new = (T*)malloc(capacity * sizeof(T));
-			if (data != NULL)
-			{
-				memcpy(data_new, data, size * sizeof(T));
-				free(data);
-			}
-			data = data_new;
-		}
-	}
-	
-	T* data = NULL;
-	u64 size = 0;
-	u64 capacity = 0;
+	u8* data = NULL;
+	size_t count = 0;
 };
 
 struct Timer
@@ -124,43 +69,9 @@ struct Timer
 	TimePoint t0;
 };
 
-class ArenaAllocator //@Incomplete no overflow protection
-{
-public:
-	ArenaAllocator(size_t size)
-	{
-		m_size = size;
-		m_offset = 0;
-		m_buffer = (u8*)malloc(size);
-		if (m_buffer != NULL)
-		memset(m_buffer, 0, size);
-	}
-
-	~ArenaAllocator()
-	{
-		free(m_buffer);
-	}
-
-	inline ArenaAllocator(const ArenaAllocator& other) = delete;
-	inline ArenaAllocator operator=(const ArenaAllocator& other) = delete;
-
-	template <typename T>
-	T* alloc()
-	{
-		T* ptr = (T*)(m_buffer + m_offset);
-		m_offset += sizeof(T);
-		return ptr;
-	}
-
-private:
-	size_t m_size;
-	size_t m_offset;
-	u8* m_buffer;
-};
-
 struct Arena
 {
-	Arena(size_t block_size) { init(block_size); }
+	Arena() {};
 	~Arena() { drop(); }
 
 	template<typename T>
@@ -172,7 +83,6 @@ struct Arena
 		return ptr;
 	}
 	
-private:
 	void init(size_t block_size)
 	{
 		m_block_size = block_size;
@@ -197,6 +107,14 @@ private:
 	size_t m_offset = 0;
 	size_t m_block_size = 0;
 	std::vector<u8*> m_data_blocks;
+};
+
+struct StringViewHasher
+{
+	size_t operator()(const StringView& str) const
+	{
+		return hash_fnv1a(str);
+	}
 };
 
 constexpr u64 string_hash_ascii_9(const StringView& str)
@@ -253,14 +171,6 @@ bool os_file_read_all(const char* file_path, String* str)
 	
 	return true;
 }
-
-struct StringViewHasher
-{
-	size_t operator()(const StringView& str) const
-	{
-		return hash_fnv1a(str);
-	}
-};
 
 u64 hash_fnv1a(const StringView& str)
 {
