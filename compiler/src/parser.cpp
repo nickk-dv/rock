@@ -295,9 +295,9 @@ Ast_Expr* Parser::parse_sub_expr(u32 min_prec)
 	while (true)
 	{
 		Token token_op = peek();
-		BinaryOp op = ast_get_binary_op_from_token(token_op.type);
+		BinaryOp op = tokenizer.token_to_binary_op(token_op.type);
 		if (op == BINARY_OP_ERROR) break;
-		u32 prec = ast_get_binary_op_precedence(op);
+		u32 prec = tokenizer.get_binary_op_precedence(op);
 		if (prec < min_prec) break;
 		consume();
 
@@ -338,7 +338,7 @@ Ast_Expr* Parser::parse_primary_expr()
 	}
 
 	Token token = peek();
-	UnaryOp op = ast_get_unary_op_from_token(token.type);
+	UnaryOp op = tokenizer.token_to_unary_op(token.type);
 	if (op != UNARY_OP_ERROR)
 	{
 		consume();
@@ -633,7 +633,7 @@ Ast_Var_Assign* Parser::parse_var_assign()
 	var_assign->ident_chain = ident_chain;
 
 	Token token = peek();
-	AssignOp op = ast_get_assign_op_from_token(token.type);
+	AssignOp op = tokenizer.token_to_assign_op(token.type);
 	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
 	consume();
 	var_assign->op = op;

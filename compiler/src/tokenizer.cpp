@@ -82,6 +82,101 @@ enum TokenType
 	TOKEN_EOF,
 };
 
+enum UnaryOp
+{
+	UNARY_OP_MINUS,           // -
+	UNARY_OP_LOGIC_NOT,       // !
+	UNARY_OP_BITWISE_NOT,     // ~
+	UNARY_OP_ERROR,
+};
+
+enum BinaryOp
+{
+	BINARY_OP_LOGIC_AND,      // &&
+	BINARY_OP_LOGIC_OR,       // ||
+	BINARY_OP_LESS,           // <
+	BINARY_OP_GREATER,        // >
+	BINARY_OP_LESS_EQUALS,    // <=
+	BINARY_OP_GREATER_EQUALS, // >=
+	BINARY_OP_IS_EQUALS,      // ==
+	BINARY_OP_NOT_EQUALS,     // !=
+	BINARY_OP_PLUS,           // +
+	BINARY_OP_MINUS,          // -
+	BINARY_OP_TIMES,          // *
+	BINARY_OP_DIV,            // /
+	BINARY_OP_MOD,            // %
+	BINARY_OP_BITWISE_AND,    // &
+	BINARY_OP_BITWISE_OR,     // |
+	BINARY_OP_BITWISE_XOR,    // ^
+	BINARY_OP_BITSHIFT_LEFT,  // <<
+	BINARY_OP_BITSHIFT_RIGHT, // >>
+	BINARY_OP_ERROR,
+};
+
+enum AssignOp
+{
+	ASSIGN_OP_NONE,           // =
+	ASSIGN_OP_PLUS,           // +=
+	ASSIGN_OP_MINUS,          // -=
+	ASSIGN_OP_TIMES,          // *=
+	ASSIGN_OP_DIV,            // /=
+	ASSIGN_OP_MOD,            // %=
+	ASSIGN_OP_BITWISE_AND,    // &=
+	ASSIGN_OP_BITWISE_OR,	  // |=
+	ASSIGN_OP_BITWISE_XOR,	  // ^=
+	ASSIGN_OP_BITSHIFT_LEFT,  // <<=
+	ASSIGN_OP_BITSHIFT_RIGHT, // >>=
+	ASSIGN_OP_ERROR,
+};
+
+static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
+{
+	{ BINARY_OP_LOGIC_AND, 0},
+	{ BINARY_OP_LOGIC_OR, 0},
+	{ BINARY_OP_LESS, 1},
+	{ BINARY_OP_GREATER, 1},
+	{ BINARY_OP_LESS_EQUALS, 1},
+	{ BINARY_OP_GREATER_EQUALS, 1},
+	{ BINARY_OP_IS_EQUALS, 1},
+	{ BINARY_OP_NOT_EQUALS, 1},
+	{ BINARY_OP_PLUS, 2},
+	{ BINARY_OP_MINUS, 2},
+	{ BINARY_OP_TIMES, 3},
+	{ BINARY_OP_DIV, 3},
+	{ BINARY_OP_MOD, 3},
+	{ BINARY_OP_BITWISE_AND, 4},
+	{ BINARY_OP_BITWISE_OR, 4},
+	{ BINARY_OP_BITWISE_XOR, 4},
+	{ BINARY_OP_BITSHIFT_LEFT, 5},
+	{ BINARY_OP_BITSHIFT_RIGHT, 5},
+};
+
+static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
+{
+	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },
+	{ hash_ascii_9("enum"),     TOKEN_KEYWORD_ENUM },
+	{ hash_ascii_9("if"),       TOKEN_KEYWORD_IF },
+	{ hash_ascii_9("else"),     TOKEN_KEYWORD_ELSE },
+	{ hash_ascii_9("true"),     TOKEN_KEYWORD_TRUE },
+	{ hash_ascii_9("false"),    TOKEN_KEYWORD_FALSE },
+	{ hash_ascii_9("for"),      TOKEN_KEYWORD_FOR },
+	{ hash_ascii_9("break"),    TOKEN_KEYWORD_BREAK },
+	{ hash_ascii_9("return"),   TOKEN_KEYWORD_RETURN },
+	{ hash_ascii_9("continue"), TOKEN_KEYWORD_CONTINUE },
+	{ hash_ascii_9("i8"),       TOKEN_TYPE_I8 },
+	{ hash_ascii_9("u8"),       TOKEN_TYPE_U8 },
+	{ hash_ascii_9("i16"),      TOKEN_TYPE_I16 },
+	{ hash_ascii_9("u16"),      TOKEN_TYPE_U16 },
+	{ hash_ascii_9("i32"),      TOKEN_TYPE_I32 },
+	{ hash_ascii_9("u32"),      TOKEN_TYPE_U32 },
+	{ hash_ascii_9("i64"),      TOKEN_TYPE_I64 },
+	{ hash_ascii_9("u64"),      TOKEN_TYPE_U64 },
+	{ hash_ascii_9("f32"),      TOKEN_TYPE_F32 },
+	{ hash_ascii_9("f64"),      TOKEN_TYPE_F64 },
+	{ hash_ascii_9("bool"),     TOKEN_TYPE_BOOL },
+	{ hash_ascii_9("string"),   TOKEN_TYPE_STRING },
+};
+
 struct Token
 {
 	Token() {};
@@ -99,6 +194,15 @@ struct Token
 	};
 };
 
+enum LexemeType
+{
+	LEXEME_IDENT,
+	LEXEME_NUMBER,
+	LEXEME_STRING,
+	LEXEME_SYMBOL,
+	LEXEME_ERROR
+};
+
 struct Tokenizer
 {
 	bool set_input_from_file(const char* file_path);
@@ -113,12 +217,21 @@ struct Tokenizer
 	bool is_number(u8 c) { return c >= '0' && c <= '9'; }
 	bool is_ident(u8 c) { return is_letter(c) || (c == '_') || is_number(c); }
 	bool is_whitespace(u8 c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+	UnaryOp token_to_unary_op(TokenType type) { return tok_to_unop[type]; }
+	BinaryOp token_to_binary_op(TokenType type) { return tok_to_binop[type]; }
+	AssignOp token_to_assign_op(TokenType type) { return tok_to_asgnop[type]; }
+	u32 get_binary_op_precedence(BinaryOp op) { return binary_op_precedence.at(op); }
 
 	String input;
 	u64 input_cursor = 0;
 	u64 line_start_cursor = 0;
 	u32 line_id = 1;
 	u32 peek_index = 0;
+	TokenType c_to_sym[128];
+	LexemeType lexeme_types[128];
+	UnaryOp tok_to_unop[TOKEN_EOF + 1];
+	BinaryOp tok_to_binop[TOKEN_EOF + 1];
+	AssignOp tok_to_asgnop[TOKEN_EOF + 1];
 	static const u64 TOKENIZER_BUFFER_SIZE = 256;
 	static const u64 TOKENIZER_LOOKAHEAD = 2;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
@@ -126,13 +239,6 @@ struct Tokenizer
 
 bool Tokenizer::set_input_from_file(const char* filepath)
 {
-	input_cursor = 0;
-	return os_file_read_all(filepath, &input);
-}
-
-void Tokenizer::tokenize_buffer()
-{
-	TokenType c_to_sym[128] = {};
 	for (u8 i = 0; i < 128; i++)
 	{
 		c_to_sym[i] = TOKEN_ERROR;
@@ -162,16 +268,6 @@ void Tokenizer::tokenize_buffer()
 	c_to_sym['!'] = TOKEN_LOGIC_NOT;
 	c_to_sym['~'] = TOKEN_BITWISE_NOT;
 
-	enum LexemeType
-	{
-		LEXEME_IDENT,
-		LEXEME_NUMBER,
-		LEXEME_STRING,
-		LEXEME_SYMBOL,
-		LEXEME_ERROR
-	};
-
-	LexemeType lexeme_types[128] = {};
 	for (u8 c = 0; c < 128; c++)
 	{
 		if (is_letter(c) || (c == '_')) lexeme_types[c] = LEXEME_IDENT;
@@ -181,14 +277,62 @@ void Tokenizer::tokenize_buffer()
 		else lexeme_types[c] = LEXEME_ERROR;
 	}
 
-	u32 copy_offset = input_cursor == 0 ? 0 : TOKENIZER_LOOKAHEAD;
+	for (u32 i = 0; i < TOKEN_EOF + 1; i++)
+	{
+		tok_to_unop[i] = UNARY_OP_ERROR;
+		tok_to_binop[i] = BINARY_OP_ERROR;
+		tok_to_asgnop[i] = ASSIGN_OP_ERROR;
+	}
 
-	for (u32 k = 0; k < copy_offset; k++)
+	tok_to_unop[TOKEN_MINUS] = UNARY_OP_MINUS;
+	tok_to_unop[TOKEN_LOGIC_NOT] = UNARY_OP_LOGIC_NOT;
+	tok_to_unop[TOKEN_BITWISE_NOT] = UNARY_OP_BITWISE_NOT;
+
+	tok_to_binop[TOKEN_PLUS] = BINARY_OP_PLUS;
+	tok_to_binop[TOKEN_MINUS] = BINARY_OP_MINUS;
+	tok_to_binop[TOKEN_TIMES] = BINARY_OP_TIMES;
+	tok_to_binop[TOKEN_DIV] = BINARY_OP_DIV;
+	tok_to_binop[TOKEN_MOD] = BINARY_OP_MOD;
+	tok_to_binop[TOKEN_BITWISE_AND] = BINARY_OP_BITWISE_AND;
+	tok_to_binop[TOKEN_BITWISE_OR] = BINARY_OP_BITWISE_OR;
+	tok_to_binop[TOKEN_BITWISE_XOR] = BINARY_OP_BITWISE_XOR;
+	tok_to_binop[TOKEN_LESS] = BINARY_OP_LESS;
+	tok_to_binop[TOKEN_GREATER] = BINARY_OP_GREATER;
+	tok_to_binop[TOKEN_IS_EQUALS] = BINARY_OP_IS_EQUALS;
+	tok_to_binop[TOKEN_LESS_EQUALS] = BINARY_OP_LESS_EQUALS;
+	tok_to_binop[TOKEN_GREATER_EQUALS] = BINARY_OP_GREATER_EQUALS;
+	tok_to_binop[TOKEN_NOT_EQUALS] = BINARY_OP_NOT_EQUALS;
+	tok_to_binop[TOKEN_LOGIC_AND] = BINARY_OP_LOGIC_AND;
+	tok_to_binop[TOKEN_LOGIC_OR] = BINARY_OP_LOGIC_OR;
+	tok_to_binop[TOKEN_BITSHIFT_LEFT] = BINARY_OP_BITSHIFT_LEFT;
+	tok_to_binop[TOKEN_BITSHIFT_RIGHT] = BINARY_OP_BITSHIFT_RIGHT;
+
+	tok_to_asgnop[TOKEN_ASSIGN] = ASSIGN_OP_NONE;
+	tok_to_asgnop[TOKEN_PLUS] = ASSIGN_OP_PLUS;
+	tok_to_asgnop[TOKEN_MINUS] = ASSIGN_OP_MINUS;
+	tok_to_asgnop[TOKEN_TIMES] = ASSIGN_OP_TIMES;
+	tok_to_asgnop[TOKEN_DIV] = ASSIGN_OP_DIV;
+	tok_to_asgnop[TOKEN_MOD] = ASSIGN_OP_MOD;
+	tok_to_asgnop[TOKEN_BITWISE_AND] = ASSIGN_OP_BITWISE_AND;
+	tok_to_asgnop[TOKEN_BITWISE_OR] = ASSIGN_OP_BITWISE_OR;
+	tok_to_asgnop[TOKEN_BITWISE_XOR] = ASSIGN_OP_BITWISE_XOR;
+	tok_to_asgnop[TOKEN_BITSHIFT_LEFT] = ASSIGN_OP_BITSHIFT_LEFT;
+	tok_to_asgnop[TOKEN_BITSHIFT_RIGHT] = ASSIGN_OP_BITSHIFT_RIGHT;
+
+	input_cursor = 0;
+	return os_file_read_all(filepath, &input);
+}
+
+void Tokenizer::tokenize_buffer()
+{
+	u32 copy_count = input_cursor == 0 ? 0 : TOKENIZER_LOOKAHEAD;
+
+	for (u32 k = 0; k < copy_count; k++)
 	{
 		tokens[k] = tokens[TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD + k];
 	}
 
-	for (u32 k = copy_offset; k < TOKENIZER_BUFFER_SIZE; k++)
+	for (u32 k = copy_count; k < TOKENIZER_BUFFER_SIZE; k++)
 	{
 		skip_whitespace_comments();
 
@@ -352,33 +496,6 @@ void Tokenizer::consume()
 {
 	input_cursor += 1;
 }
-
-static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
-{
-	{ hash_ascii_9("struct"),   TOKEN_KEYWORD_STRUCT },
-	{ hash_ascii_9("enum"),     TOKEN_KEYWORD_ENUM },
-	{ hash_ascii_9("if"),       TOKEN_KEYWORD_IF },
-	{ hash_ascii_9("else"),     TOKEN_KEYWORD_ELSE },
-	{ hash_ascii_9("true"),     TOKEN_KEYWORD_TRUE },
-	{ hash_ascii_9("false"),    TOKEN_KEYWORD_FALSE },
-	{ hash_ascii_9("for"),      TOKEN_KEYWORD_FOR },
-	{ hash_ascii_9("break"),    TOKEN_KEYWORD_BREAK },
-	{ hash_ascii_9("return"),   TOKEN_KEYWORD_RETURN },
-	{ hash_ascii_9("continue"), TOKEN_KEYWORD_CONTINUE },
-
-	{ hash_ascii_9("i8"),       TOKEN_TYPE_I8 },
-	{ hash_ascii_9("u8"),       TOKEN_TYPE_U8 },
-	{ hash_ascii_9("i16"),      TOKEN_TYPE_I16 },
-	{ hash_ascii_9("u16"),      TOKEN_TYPE_U16 },
-	{ hash_ascii_9("i32"),      TOKEN_TYPE_I32 },
-	{ hash_ascii_9("u32"),      TOKEN_TYPE_U32 },
-	{ hash_ascii_9("i64"),      TOKEN_TYPE_I64 },
-	{ hash_ascii_9("u64"),      TOKEN_TYPE_U64 },
-	{ hash_ascii_9("f32"),      TOKEN_TYPE_F32 },
-	{ hash_ascii_9("f64"),      TOKEN_TYPE_F64 },
-	{ hash_ascii_9("bool"),     TOKEN_TYPE_BOOL },
-	{ hash_ascii_9("string"),   TOKEN_TYPE_STRING },
-};
 
 //@Perf test the different keyword methods on bigger files like switching on char in a tree like search
 TokenType Tokenizer::get_keyword_token_type(const StringView& str)
