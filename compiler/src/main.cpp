@@ -36,20 +36,20 @@ int check(char* filepath)
 	//debug_print_ast(ast);
 	printf("Parse result: Success\n\n");
 
-	timer.start();
-	Checker checker = {};
-	bool check = checker.check_ast(ast);
-	timer.end("Check");
-	if (!check)
-	{
-		printf("Check result: Failed\n");
-		return 1;
-	}
-	printf("Check result: Success\n\n");
-
 	//timer.start();
-	//llvm_build(ast);
-	//timer.end("LLVM IR build");
+	//Checker checker = {};
+	//bool check = checker.check_ast(ast);
+	//timer.end("Check");
+	//if (!check)
+	//{
+	//	printf("Check result: Failed\n");
+	//	return 1;
+	//}
+	//printf("Check result: Success\n\n");
+
+	timer.start();
+	llvm_build(ast);
+	timer.end("LLVM IR build");
 
 	return 0;
 }
@@ -59,7 +59,7 @@ int check(char* filepath)
 #if CLI_ON == 0
 int main(int argc, char** argv)
 {
-	check("../../test_tp.txt");
+	check("../../test.txt");
 }
 #else
 int main(int argc, char** argv) //@Hack hardcoded for now, will add better argumnet processing layer when needed.

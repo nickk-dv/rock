@@ -142,6 +142,7 @@ std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 
 	Ast_Enum_Decl decl = {};
 	decl.type = Ast_Ident { type };
+	int constant = 0;
 
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
 	while (true)
@@ -149,7 +150,20 @@ std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 		auto variant = try_consume(TOKEN_IDENT);
 		if (!variant) break;
 
+		if (try_consume(TOKEN_ASSIGN))
+		{
+			Token int_lit = peek();
+			if (int_lit.type != TOKEN_NUMBER) //@Notice only i32 numbers allowed, dont have any number flags yet
+			{
+				printf("Expected constant integer literal.\n"); return {};
+			}
+			consume();
+			constant = int_lit.integer_value; //@Notice negative not supported by token integer_value
+		}
+
 		decl.variants.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
+		decl.constants.emplace_back(constant);
+		constant += 1;
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Enum Expected closing '}'.\n"); return {}; }

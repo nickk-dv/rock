@@ -19,6 +19,32 @@ LLVMModuleRef llvm_build_ir(Ast* ast)
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
 	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
 
+	for (const Ast_Struct_Decl& struct_decl : ast->structs)
+	{
+		//@Hack temporary member types
+		LLVMTypeRef members[] = { LLVMInt32TypeInContext(context), LLVMDoubleTypeInContext(context) };
+		
+		Token t = struct_decl.type.token;
+		t.string_value.data[t.string_value.count] = 0;
+		LLVMTypeRef struct_type = LLVMStructCreateNamed(context, (char*)t.string_value.data);
+		LLVMStructSetBody(struct_type, members, 2, 0);
+
+		//@Hack adding global var to see the struct declaration in the ir
+		LLVMValueRef globalVar = LLVMAddGlobal(mod, struct_type, "global_to_see_struct");
+	}
+
+	for (const Ast_Enum_Decl& enum_decl : ast->enums)
+	{
+		for (u32 i = 0; i < enum_decl.variants.size(); i++)
+		{
+			Token t = enum_decl.variants[i].ident.token;
+			t.string_value.data[t.string_value.count] = 0;
+			LLVMValueRef enum_constant = LLVMAddGlobal(mod, LLVMInt32TypeInContext(context), (char*)t.string_value.data);
+			LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32TypeInContext(context), enum_decl.constants[i], 0));
+			LLVMSetGlobalConstant(enum_constant, 1);
+		}
+	}
+
 	for (const Ast_Proc_Decl& proc_decl : ast->procs)
 	{
 		LLVMTypeRef proc_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
@@ -114,6 +140,7 @@ void llvm_build_binaries(LLVMModuleRef mod)
 
 void llvm_debug_print_module(LLVMModuleRef mod)
 {
+	LLVMPrintModuleToFile(mod, "output.ll", NULL);
 	char* message = LLVMPrintModuleToString(mod);
 	printf("Module: %s", message);
 	LLVMDisposeMessage(message);

@@ -41,7 +41,8 @@ struct Ast_Struct_Decl
 struct Ast_Enum_Decl
 {
 	Ast_Ident type;
-	std::vector<Ast_Ident_Type_Pair> variants;
+	std::vector<Ast_Ident_Type_Pair> variants; //@Temp using Ast_Ident_Type_Pair
+	std::vector<int> constants;
 };
 
 struct Ast_Proc_Decl
