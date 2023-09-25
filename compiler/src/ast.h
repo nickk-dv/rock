@@ -1,3 +1,8 @@
+#ifndef AST_H
+#define AST_H
+
+#include "common.h"
+#include "token.h"
 
 struct Ast;
 struct Ast_Struct_Decl;
@@ -202,3 +207,5 @@ struct Ast_Var_Assign
 	AssignOp op;
 	Ast_Expr* expr;
 };
+
+#endif

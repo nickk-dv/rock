@@ -1,15 +1,8 @@
-#include <unordered_map>
-#include <optional>
-#include <vector>
-
-#include "common.cpp"
-#include "tokenizer.cpp"
-#include "ast.cpp"
-#include "debug_printer.cpp"
-#include "parser.cpp"
-#include "typer.cpp"
-#include "checker.cpp"
-#include "llvm_backend.cpp"
+#include "common.h"
+#include "parser.h"
+#include "checker.h"
+#include "llvm_backend.h"
+#include "debug_printer.h"
 
 int check(char* filepath)
 {
@@ -46,9 +39,9 @@ int check(char* filepath)
 	}
 	printf("Check result: Success\n\n");
 
-	//timer.start();
-	//llvm_build(ast);
-	//timer.end("LLVM IR build");
+	timer.start();
+	llvm_build(ast);
+	timer.end("LLVM IR build");
 
 	return 0;
 }

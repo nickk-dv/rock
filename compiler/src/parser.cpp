@@ -1,37 +1,6 @@
+#include "parser.h"
 
-struct Parser
-{
-	bool init(const char* file_path);
-	Ast* parse();
-
-	std::optional<Ast_Struct_Decl> parse_struct_decl(); //Maybe linked lists with pointers are better for this
-	std::optional<Ast_Enum_Decl> parse_enum_decl();
-	std::optional<Ast_Proc_Decl> parse_proc_decl();
-	Ast_Ident_Chain* parse_ident_chain();
-	Ast_Term* parse_term();
-	Ast_Expr* parse_expr();
-	Ast_Expr* parse_sub_expr(u32 min_prec = 0);
-	Ast_Expr* parse_primary_expr();
-	Ast_Block* parse_block();
-	Ast_Statement* parse_statement();
-	Ast_If* parse_if();
-	Ast_Else* parse_else();
-	Ast_For* parse_for();
-	Ast_Break* parse_break();
-	Ast_Return* parse_return();
-	Ast_Continue* parse_continue();
-	Ast_Proc_Call* parse_proc_call();
-	Ast_Var_Decl* parse_var_decl();
-	Ast_Var_Assign* parse_var_assign();
-	Token peek(u32 offset = 0);
-	std::optional<Token> try_consume(TokenType token_type);
-	std::optional<Ast_Ident> try_consume_type_ident();
-	Token consume_get();
-	void consume();
-
-	Arena m_arena;
-	Tokenizer tokenizer;
-};
+#include "debug_printer.h"
 
 bool Parser::init(const char* file_path)
 {
@@ -309,9 +278,9 @@ Ast_Expr* Parser::parse_sub_expr(u32 min_prec)
 	while (true)
 	{
 		Token token_op = peek();
-		BinaryOp op = tokenizer.token_to_binary_op(token_op.type);
+		BinaryOp op = token_to_binary_op(token_op.type);
 		if (op == BINARY_OP_ERROR) break;
-		u32 prec = binary_op_get_prec(op);
+		u32 prec = token_binary_op_prec(op);
 		if (prec < min_prec) break;
 		consume();
 
@@ -352,7 +321,7 @@ Ast_Expr* Parser::parse_primary_expr()
 	}
 
 	Token token = peek();
-	UnaryOp op = tokenizer.token_to_unary_op(token.type);
+	UnaryOp op = token_to_unary_op(token.type);
 	if (op != UNARY_OP_ERROR)
 	{
 		consume();
@@ -647,7 +616,7 @@ Ast_Var_Assign* Parser::parse_var_assign()
 	var_assign->ident_chain = ident_chain;
 
 	Token token = peek();
-	AssignOp op = tokenizer.token_to_assign_op(token.type);
+	AssignOp op = token_to_assign_op(token.type);
 	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
 	consume();
 	var_assign->op = op;

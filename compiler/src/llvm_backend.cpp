@@ -1,11 +1,6 @@
-#include "llvm-c/Core.h"
-#include "llvm-c/TargetMachine.h"
+#include "llvm_backend.h"
 
-void llvm_build(Ast* ast);
-LLVMModuleRef llvm_build_ir(Ast* ast);
-LLVMModuleRef llvm_build_ir_example(Ast* ast);
-void llvm_build_binaries(LLVMModuleRef mod);
-void llvm_debug_print_module(LLVMModuleRef mod);
+#include "llvm-c/TargetMachine.h"
 
 void llvm_build(Ast* ast)
 {
