@@ -235,6 +235,7 @@ struct Tokenizer
 	static const u64 TOKENIZER_BUFFER_SIZE = 256;
 	static const u64 TOKENIZER_LOOKAHEAD = 2;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
+	StringStorage string_storage;
 };
 
 bool Tokenizer::set_input_from_file(const char* filepath)
@@ -320,6 +321,7 @@ bool Tokenizer::set_input_from_file(const char* filepath)
 	tok_to_asgnop[TOKEN_BITSHIFT_RIGHT] = ASSIGN_OP_BITSHIFT_RIGHT;
 
 	input_cursor = 0;
+	string_storage.init();
 	return os_file_read_all(filepath, &input);
 }
 
@@ -390,22 +392,23 @@ void Tokenizer::tokenize_buffer()
 			case LEXEME_STRING:
 			{
 				bool terminated = false;
+				string_storage.start_str();
+
 				while (peek().has_value())
 				{
 					u8 c = peek().value();
 					consume();
 					if (c == '"') { terminated = true; break; }
 					else if (c == '\n') break;
+					else
+					{
+						string_storage.put_char(c);
+					}
 				}
 
 				token.type = TOKEN_STRING;
-				token.string_value.data = input.data + lexeme_start;
-				token.string_value.count = input_cursor - lexeme_start;
-
-				if (!terminated)
-				{
-					token.type = TOKEN_ERROR;
-				}
+				token.string_value.data = (u8*)string_storage.end_str();
+				if (!terminated) token.type = TOKEN_ERROR;
 			} break;
 			case LEXEME_SYMBOL:
 			{

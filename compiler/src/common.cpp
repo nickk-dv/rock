@@ -172,6 +172,24 @@ bool os_file_read_all(const char* file_path, String* str)
 	return true;
 }
 
+struct Atom
+{
+	u32 hash;
+	char* name;
+};
+
+bool atom_match(Atom* a, Atom* b)
+{
+	if (a == b) return true;
+	if (a->hash != b->hash) return false;
+	return strcmp(a->name, b->name) == 0;
+}
+
+bool match_string_view(StringView a, StringView b)
+{
+	return a == b;
+}
+
 u64 hash_fnv1a(const StringView& str)
 {
 	#define FNV_PRIME 0x00000100000001B3UL
@@ -186,4 +204,176 @@ u64 hash_fnv1a(const StringView& str)
 	return hash;
 }
 
-//lookup Type from StringView
+u32 hash_fnv1a_32(u32 count, u8* str)
+{
+	#define FNV_PRIME_32 0x01000193UL
+	#define FNV_OFFSET_32 0x811c9dc5UL
+
+	u32 hash = FNV_OFFSET_32;
+	for (u32 i = 0; i < count; i++)
+	{
+		hash ^= str[i];
+		hash *= FNV_PRIME_32;
+	}
+	return hash;
+}
+
+struct StringStorage
+{
+	void init() { buffer = (char*)malloc(1024 * 16); }
+	void destroy() { free(buffer); }
+	~StringStorage() { destroy(); }
+
+	void start_str() { 
+		str_start = cursor; 
+	}
+
+	char* end_str() {
+		put_char('\0');
+		return buffer + str_start;
+	}
+
+	void put_char(char c) {
+		buffer[cursor] = c;
+		cursor += 1;
+	}
+
+	char* buffer;
+	u64 cursor = 0;
+	u64 str_start = 0;
+};
+
+template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
+struct HashTable {
+
+	struct Slot {
+		KeyType key;
+		ValueType value;
+		HashType hash;
+	};
+
+	void init(u32 size) { alloc_table(size); }
+	void destroy() { free(array); }
+	~HashTable() { destroy(); }
+
+	void alloc_table(u32 size) {
+		table_size = size;
+		slots_filled = 0;
+		resize_threshold = table_size - table_size / 4;
+		array = (Slot*)malloc(sizeof(Slot) * table_size);
+		if (array != NULL) memset(array, 0, sizeof(Slot) * table_size);
+	}
+
+	void add(KeyType key, ValueType value, HashType hash) {
+		u32 slot = hash % table_size;
+
+		while (array[slot].hash != 0 && !match_proc(key, array[slot].key)) {
+			slot = (slot + 1) % table_size;
+		}
+
+		if (array[slot].hash == 0) {
+			array[slot] = Slot { key, value, hash };
+			slots_filled += 1;
+			if (slots_filled == resize_threshold) grow();
+		}
+	}
+
+	bool contains(KeyType key, HashType hash) {
+		u32 slot = hash % table_size;
+		while (array[i].hash != 0) {
+			if (match_proc(key, array[slot].key)) 
+				return true;
+			slot = (slot + 1) % table_size;
+		}
+		return false;
+	}
+
+	std::optional<ValueType> find(KeyType key, HashType hash) {
+		u32 slot = hash % table_size;
+		while (array[slot].hash != 0) {
+			if (match_proc(key, array[slot].key)) 
+				return array[slot].value;
+			slot = (slot + 1) % table_size;
+		}
+		return {};
+	}
+
+	void grow() {
+		u32 table_size_old = table_size;
+		Slot* array_old = array;
+		alloc_table(table_size * 2);
+
+		for (u32 i = 0; i < table_size_old; i++) {
+			Slot slot = array_old[i];
+			if (slot.hash != 0) add(slot.key, slot.value, slot.hash);
+		}
+		free(array_old);
+	}
+
+	Slot* array;
+	u32 table_size;
+	u32 slots_filled;
+	u32 resize_threshold;
+};
+
+template<typename KeyType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
+struct HashSet {
+
+	struct Slot {
+		KeyType key;
+		HashType hash;
+	};
+
+	void init(u32 size) { alloc_table(size); }
+	void destroy() { free(array); }
+	~HashSet() { destroy(); }
+
+	void alloc_table(u32 size) {
+		table_size = size;
+		slots_filled = 0;
+		resize_threshold = table_size - table_size / 4;
+		array = (Slot*)malloc(sizeof(Slot) * table_size);
+		if (array != NULL) memset(array, 0, sizeof(Slot) * table_size);
+	}
+
+	void add(KeyType key, HashType hash) {
+		u32 slot = hash % table_size;
+
+		while (array[slot].hash != 0 && !match_proc(key, array[slot].key)) {
+			slot = (slot + 1) % table_size;
+		}
+
+		if (array[slot].hash == 0) {
+			array[slot] = Slot { key, hash };
+			slots_filled += 1;
+			if (slots_filled == resize_threshold) grow();
+		}
+	}
+
+	bool contains(KeyType key, HashType hash) {
+		u32 slot = hash % table_size;
+		while (array[i].hash != 0) {
+			if (match_proc(key, array[slot].key))
+				return true;
+			slot = (slot + 1) % table_size;
+		}
+		return false;
+	}
+
+	void grow() {
+		u32 table_size_old = table_size;
+		Slot* array_old = array;
+		alloc_table(table_size * 2);
+
+		for (u32 i = 0; i < table_size_old; i++) {
+			Slot slot = array_old[i];
+			if (slot.hash != 0) add(slot.key, slot.value, slot.hash);
+		}
+		free(array_old);
+	}
+
+	Slot* array;
+	u32 table_size;
+	u32 slots_filled;
+	u32 resize_threshold;
+};

@@ -47,9 +47,9 @@ int check(char* filepath)
 	//}
 	//printf("Check result: Success\n\n");
 
-	timer.start();
-	llvm_build(ast);
-	timer.end("LLVM IR build");
+	//timer.start();
+	//llvm_build(ast);
+	//timer.end("LLVM IR build");
 
 	return 0;
 }
@@ -59,7 +59,7 @@ int check(char* filepath)
 #if CLI_ON == 0
 int main(int argc, char** argv)
 {
-	check("../../test.txt");
+	check("../../test_tp.txt");
 }
 #else
 int main(int argc, char** argv) //@Hack hardcoded for now, will add better argumnet processing layer when needed.
