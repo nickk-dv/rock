@@ -1,5 +1,4 @@
 #include <unordered_map>
-#include <unordered_set>
 #include <optional>
 #include <vector>
 
@@ -36,16 +35,16 @@ int check(char* filepath)
 	//debug_print_ast(ast);
 	printf("Parse result: Success\n\n");
 
-	//timer.start();
-	//Checker checker = {};
-	//bool check = checker.check_ast(ast);
-	//timer.end("Check");
-	//if (!check)
-	//{
-	//	printf("Check result: Failed\n");
-	//	return 1;
-	//}
-	//printf("Check result: Success\n\n");
+	timer.start();
+	Checker checker = {};
+	bool check = checker.check_ast(ast);
+	timer.end("Check");
+	if (!check)
+	{
+		printf("Check result: Failed\n");
+		return 1;
+	}
+	printf("Check result: Success\n\n");
 
 	//timer.start();
 	//llvm_build(ast);

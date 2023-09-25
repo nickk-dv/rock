@@ -46,12 +46,13 @@ struct Typer
 
 	void debug_print_type_info(Type_Info* t);
 
-	std::unordered_map<StringView, Type_Info, StringViewHasher> type_table;
+	HashTable<StringView, Type_Info, u32, match_string_view> type_table;
 	Type_Info primitive_type_table[12];
 };
 
 void Typer::init_primitive_types()
 {
+	type_table.init(4);
 	Type_Info info = { TYPE_TAG_PRIMITIVE };
 	info.runtime_size = 1;
 	info.as_primitive_type = TYPE_I8;
@@ -97,7 +98,7 @@ void Typer::add_struct_type(Ast_Struct_Decl* struct_decl)
 	info.runtime_size = 0; //@Not doing sizing yet
 	info.as_struct_decl = struct_decl;
 
-	type_table.emplace(struct_decl->type.token.string_value, info);
+	type_table.add(struct_decl->type.token.string_value, info, hash_fnv1a_32(struct_decl->type.token.string_value));
 }
 
 void Typer::add_enum_type(Ast_Enum_Decl* enum_decl)
@@ -106,7 +107,7 @@ void Typer::add_enum_type(Ast_Enum_Decl* enum_decl)
 	info.runtime_size = 0; //@Not doing sizing yet
 	info.as_enum_decl = enum_decl;
 
-	type_table.emplace(enum_decl->type.token.string_value, info);
+	type_table.add(enum_decl->type.token.string_value, info, hash_fnv1a_32(enum_decl->type.token.string_value));
 }
 
 bool Typer::is_type_in_scope(Ast_Ident* type_ident)
@@ -114,7 +115,7 @@ bool Typer::is_type_in_scope(Ast_Ident* type_ident)
 	TokenType token_type = type_ident->token.type;
 	if (token_type >= TOKEN_TYPE_I8 && token_type <= TOKEN_TYPE_STRING) 
 	return true;
-	return type_table.find(type_ident->token.string_value) != type_table.end();
+	return type_table.find(type_ident->token.string_value, hash_fnv1a_32(type_ident->token.string_value)).has_value();
 }
 
 Type_Info Typer::get_type_info(Ast_Ident* type_ident)
@@ -122,7 +123,7 @@ Type_Info Typer::get_type_info(Ast_Ident* type_ident)
 	TokenType token_type = type_ident->token.type;
 	if (token_type >= TOKEN_TYPE_I8 && token_type <= TOKEN_TYPE_STRING)
 	return primitive_type_table[token_type - TOKEN_TYPE_I8];
-	return type_table.at(type_ident->token.string_value);
+	return type_table.find(type_ident->token.string_value, hash_fnv1a_32(type_ident->token.string_value)).value();
 }
 
 Type_Info Typer::get_primitive_type_info(Primitive_Type type)

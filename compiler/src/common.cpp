@@ -192,27 +192,27 @@ bool match_string_view(StringView a, StringView b)
 
 u64 hash_fnv1a(const StringView& str)
 {
-	#define FNV_PRIME 0x00000100000001B3UL
-	#define FNV_OFFSET 0xcbf29ce484222325UL
+	#define FNV_PRIME_64 0x00000100000001B3UL
+	#define FNV_OFFSET_64 0xcbf29ce484222325UL
 
-	u64 hash = FNV_OFFSET;
+	u64 hash = FNV_OFFSET_64;
 	for (u32 i = 0; i < str.count; i++)
 	{
 		hash ^= str.data[i];
-		hash *= FNV_PRIME;
+		hash *= FNV_PRIME_64;
 	}
 	return hash;
 }
 
-u32 hash_fnv1a_32(u32 count, u8* str)
+u32 hash_fnv1a_32(const StringView& str)
 {
 	#define FNV_PRIME_32 0x01000193UL
 	#define FNV_OFFSET_32 0x811c9dc5UL
 
 	u32 hash = FNV_OFFSET_32;
-	for (u32 i = 0; i < count; i++)
+	for (u32 i = 0; i < str.count; i++)
 	{
-		hash ^= str[i];
+		hash ^= str.data[i];
 		hash *= FNV_PRIME_32;
 	}
 	return hash;
@@ -280,7 +280,7 @@ struct HashTable {
 
 	bool contains(KeyType key, HashType hash) {
 		u32 slot = hash % table_size;
-		while (array[i].hash != 0) {
+		while (array[slot].hash != 0) {
 			if (match_proc(key, array[slot].key)) 
 				return true;
 			slot = (slot + 1) % table_size;
@@ -352,7 +352,7 @@ struct HashSet {
 
 	bool contains(KeyType key, HashType hash) {
 		u32 slot = hash % table_size;
-		while (array[i].hash != 0) {
+		while (array[slot].hash != 0) {
 			if (match_proc(key, array[slot].key))
 				return true;
 			slot = (slot + 1) % table_size;
@@ -367,7 +367,7 @@ struct HashSet {
 
 		for (u32 i = 0; i < table_size_old; i++) {
 			Slot slot = array_old[i];
-			if (slot.hash != 0) add(slot.key, slot.value, slot.hash);
+			if (slot.hash != 0) add(slot.key, slot.hash);
 		}
 		free(array_old);
 	}

@@ -129,27 +129,37 @@ enum AssignOp
 	ASSIGN_OP_ERROR,
 };
 
-static const std::unordered_map<BinaryOp, u32> binary_op_precedence =
+u32 binary_op_get_prec(BinaryOp op) 
 {
-	{ BINARY_OP_LOGIC_AND, 0},
-	{ BINARY_OP_LOGIC_OR, 0},
-	{ BINARY_OP_LESS, 1},
-	{ BINARY_OP_GREATER, 1},
-	{ BINARY_OP_LESS_EQUALS, 1},
-	{ BINARY_OP_GREATER_EQUALS, 1},
-	{ BINARY_OP_IS_EQUALS, 1},
-	{ BINARY_OP_NOT_EQUALS, 1},
-	{ BINARY_OP_PLUS, 2},
-	{ BINARY_OP_MINUS, 2},
-	{ BINARY_OP_TIMES, 3},
-	{ BINARY_OP_DIV, 3},
-	{ BINARY_OP_MOD, 3},
-	{ BINARY_OP_BITWISE_AND, 4},
-	{ BINARY_OP_BITWISE_OR, 4},
-	{ BINARY_OP_BITWISE_XOR, 4},
-	{ BINARY_OP_BITSHIFT_LEFT, 5},
-	{ BINARY_OP_BITSHIFT_RIGHT, 5},
-};
+	switch (op) 
+	{
+		case BINARY_OP_LOGIC_AND:
+		case BINARY_OP_LOGIC_OR:
+			return 0;
+		case BINARY_OP_LESS:
+		case BINARY_OP_GREATER:
+		case BINARY_OP_LESS_EQUALS:
+		case BINARY_OP_GREATER_EQUALS:
+		case BINARY_OP_IS_EQUALS:
+		case BINARY_OP_NOT_EQUALS:
+			return 1;
+		case BINARY_OP_PLUS:
+		case BINARY_OP_MINUS:
+			return 2;
+		case BINARY_OP_TIMES:
+		case BINARY_OP_DIV:
+		case BINARY_OP_MOD:
+			return 3;
+		case BINARY_OP_BITWISE_AND:
+		case BINARY_OP_BITWISE_OR:
+		case BINARY_OP_BITWISE_XOR:
+			return 4;
+		case BINARY_OP_BITSHIFT_LEFT:
+		case BINARY_OP_BITSHIFT_RIGHT:
+			return 5;
+		default: return 0;
+	}
+}
 
 static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
@@ -220,7 +230,6 @@ struct Tokenizer
 	UnaryOp token_to_unary_op(TokenType type) { return tok_to_unop[type]; }
 	BinaryOp token_to_binary_op(TokenType type) { return tok_to_binop[type]; }
 	AssignOp token_to_assign_op(TokenType type) { return tok_to_asgnop[type]; }
-	u32 get_binary_op_precedence(BinaryOp op) { return binary_op_precedence.at(op); }
 
 	String input;
 	u64 input_cursor = 0;

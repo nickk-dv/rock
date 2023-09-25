@@ -26,7 +26,7 @@ struct Checker
 	std::optional<Type_Info> check_ident_chain(Ast_Ident_Chain* ident_chain, Block_Checker* bc);
 	std::optional<Type_Info> check_expr(Ast_Expr* expr, Block_Checker* bc);
 
-	std::unordered_map<StringView, Ast_Proc_Decl*, StringViewHasher> proc_table;
+	HashTable<StringView, Ast_Proc_Decl*, u32, match_string_view> proc_table;
 	Typer typer;
 };
 
@@ -53,6 +53,7 @@ struct Block_Checker
 
 bool Checker::check_ast(Ast* ast)
 {
+	proc_table.init(64);
 	typer.init_primitive_types();
 
 	if (!check_types_and_proc_definitions(ast)) return false;
@@ -86,31 +87,32 @@ bool Checker::check_types_and_proc_definitions(Ast* ast)
 	for (auto& decl : ast->procs)
 	{
 		if (is_proc_in_scope(&decl.ident)) { printf("Procedure redifinition"); return false; }
-		proc_table.emplace(decl.ident.token.string_value, &decl);
+		proc_table.add(decl.ident.token.string_value, &decl, hash_fnv1a_32(decl.ident.token.string_value));
 	}
 	return true;
 }
 
 bool Checker::is_proc_in_scope(Ast_Ident* proc_ident)
 {
-	return proc_table.find(proc_ident->token.string_value) != proc_table.end();
+	return proc_table.contains(proc_ident->token.string_value, hash_fnv1a_32(proc_ident->token.string_value));
 }
 
 Ast_Proc_Decl* Checker::get_proc_decl(Ast_Ident* proc_ident)
 {
-	return proc_table.at(proc_ident->token.string_value);
+	return proc_table.find(proc_ident->token.string_value, hash_fnv1a_32(proc_ident->token.string_value)).value();
 }
 
 bool Checker::check_struct_decl(Ast_Struct_Decl* struct_decl) //@Incomplete allow for multple errors
 {
 	if (struct_decl->fields.empty()) { printf("Struct must have at least 1 field.\n"); return false; }
 
-	std::unordered_set<StringView, StringViewHasher> names; //@Perf
+	HashSet<StringView, u32, match_string_view> names; //@Perf later try to re-use it by adding reset option
+	names.init(16);
 	for (auto& field : struct_decl->fields)
 	{
-		if (names.find(field.ident.token.string_value) != names.end()) { printf("Field name redifinition.\n"); return false; }
+		if (names.contains(field.ident.token.string_value, hash_fnv1a_32(field.ident.token.string_value))) { printf("Field name redifinition.\n"); return false; }
 		if (!typer.is_type_in_scope(&field.type)) { printf("Field type is not in scope.\n"); return false; }
-		names.emplace(field.ident.token.string_value);
+		names.add(field.ident.token.string_value, hash_fnv1a_32(field.ident.token.string_value));
 	}
 	return true;
 }
@@ -119,23 +121,25 @@ bool Checker::check_enum_decl(Ast_Enum_Decl* enum_decl) //@Incomplete allow for 
 {
 	if (enum_decl->variants.empty()) { printf("Enum must have at least 1 variant.\n"); return false; }
 
-	std::unordered_set<StringView, StringViewHasher> names; //@Perf
+	HashSet<StringView, u32, match_string_view> names; //@Perf later try to re-use it by adding reset option
+	names.init(16);
 	for (const auto& field : enum_decl->variants)
 	{
-		if (names.find(field.ident.token.string_value) != names.end()) { printf("Variant name redifinition.\n"); return false; }
-		names.emplace(field.ident.token.string_value);
+		if (names.contains(field.ident.token.string_value, hash_fnv1a_32(field.ident.token.string_value))) { printf("Variant name redifinition.\n"); return false; }
+		names.add(field.ident.token.string_value, hash_fnv1a_32(field.ident.token.string_value));
 	}
 	return true;
 }
 
 bool Checker::check_proc_decl(Ast_Proc_Decl* proc_decl)
 {
-	std::unordered_set<StringView, StringViewHasher> names; //@Perf
+	HashSet<StringView, u32, match_string_view> names; //@Perf later try to re-use it by adding reset option
+	names.init(16);
 	for (auto& param : proc_decl->input_params)
 	{
-		if (names.find(param.ident.token.string_value) != names.end()) { printf("Procedure parameter name redifinition.\n"); return false; }
+		if (names.contains(param.ident.token.string_value, hash_fnv1a_32(param.ident.token.string_value))) { printf("Procedure parameter name redifinition.\n"); return false; }
 		if (!typer.is_type_in_scope(&param.type)) { printf("Procedure parameter type is not in scope.\n"); return false; }
-		names.emplace(param.ident.token.string_value);
+		names.add(param.ident.token.string_value, hash_fnv1a_32(param.ident.token.string_value));
 	}
 	if (proc_decl->return_type.has_value() && !typer.is_type_in_scope(&proc_decl->return_type.value())) 
 	{ printf("Procedure return type is not in scope.\n"); return false; }

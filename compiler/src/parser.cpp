@@ -311,7 +311,7 @@ Ast_Expr* Parser::parse_sub_expr(u32 min_prec)
 		Token token_op = peek();
 		BinaryOp op = tokenizer.token_to_binary_op(token_op.type);
 		if (op == BINARY_OP_ERROR) break;
-		u32 prec = tokenizer.get_binary_op_precedence(op);
+		u32 prec = binary_op_get_prec(op);
 		if (prec < min_prec) break;
 		consume();
 
