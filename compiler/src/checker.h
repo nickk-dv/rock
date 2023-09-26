@@ -35,7 +35,7 @@ private:
 	std::optional<Type_Info> check_ident_chain(Ast_Ident_Chain* ident_chain, Block_Checker* bc);
 	std::optional<Type_Info> check_expr(Ast_Expr* expr, Block_Checker* bc);
 
-	HashTable<StringView, Ast_Proc_Decl*, u32, match_string_view> proc_table;
+	HashMap<StringView, Ast_Proc_Decl*, u32, match_string_view> proc_table;
 	Typer typer;
 };
 

@@ -12,9 +12,9 @@ public:
 	Ast* parse();
 
 private:
-	std::optional<Ast_Struct_Decl> parse_struct_decl(); //Maybe linked lists with pointers are better for this
-	std::optional<Ast_Enum_Decl> parse_enum_decl();
-	std::optional<Ast_Proc_Decl> parse_proc_decl();
+	Ast_Struct_Decl* parse_struct_decl();
+	Ast_Enum_Decl* parse_enum_decl();
+	Ast_Proc_Decl* parse_proc_decl();
 	Ast_Ident_Chain* parse_ident_chain();
 	Ast_Term* parse_term();
 	Ast_Expr* parse_expr();

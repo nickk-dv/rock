@@ -13,10 +13,9 @@ Ast* Parser::parse()
 	Ast* ast = m_arena.alloc<Ast>();
 	tokenizer.tokenize_buffer();
 
-	while (true)
+	while (true) 
 	{
 		Token token = peek();
-
 		switch (token.type)
 		{
 			case TOKEN_IDENT:
@@ -27,21 +26,21 @@ Ast* Parser::parse()
 					{
 						case TOKEN_KEYWORD_STRUCT:
 						{
-							auto struct_decl = parse_struct_decl();
-							if (!struct_decl) return NULL;
-							ast->structs.emplace_back(struct_decl.value());
+							Ast_Struct_Decl* struct_decl = parse_struct_decl();
+							if (struct_decl == NULL) return NULL;
+							ast->structs.emplace_back(struct_decl);
 						} break;
 						case TOKEN_KEYWORD_ENUM:
 						{
-							auto enum_decl = parse_enum_decl();
-							if (!enum_decl) return NULL;
-							ast->enums.emplace_back(enum_decl.value());
+							Ast_Enum_Decl* enum_decl = parse_enum_decl();
+							if (enum_decl == NULL) return NULL;
+							ast->enums.emplace_back(enum_decl);
 						} break;
 						case TOKEN_PAREN_START:
 						{
-							auto proc_decl = parse_proc_decl();
-							if (!proc_decl) return NULL;
-							ast->procs.emplace_back(proc_decl.value());
+							Ast_Proc_Decl* proc_decl = parse_proc_decl();
+							if (proc_decl == NULL) return NULL;
+							ast->procs.emplace_back(proc_decl);
 						} break;
 						default:
 						{
@@ -61,27 +60,27 @@ Ast* Parser::parse()
 			case TOKEN_EOF:
 			{
 				return ast;
-			} break;
+			}
 			default:
 			{
 				printf("Expected global declation that starts with identifier.\n");
 				debug_print_token(token, true, true);
 				return NULL;
-			} break;
+			}
 		}
 	}
 
 	return ast;
 }
 
-std::optional<Ast_Struct_Decl> Parser::parse_struct_decl()
+Ast_Struct_Decl* Parser::parse_struct_decl()
 {
 	Token type = consume_get();
 	consume();
 	consume();
 
-	Ast_Struct_Decl decl = {};
-	decl.type = Ast_Ident { type };
+	Ast_Struct_Decl* decl = m_arena.alloc<Ast_Struct_Decl>();
+	decl->type = Ast_Ident { type };
 	
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
 	while (true)
@@ -95,7 +94,7 @@ std::optional<Ast_Struct_Decl> Parser::parse_struct_decl()
 			printf("Expected type idenifier.\n"); return {};
 		}
 
-		decl.fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, field_type.value() });
+		decl->fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, field_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { printf("Struct Expected closing '}'.\n"); return {}; }
@@ -103,14 +102,14 @@ std::optional<Ast_Struct_Decl> Parser::parse_struct_decl()
 	return decl;
 }
 
-std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
+Ast_Enum_Decl* Parser::parse_enum_decl()
 {
 	Token type = consume_get();
 	consume();
 	consume();
 
-	Ast_Enum_Decl decl = {};
-	decl.type = Ast_Ident { type };
+	Ast_Enum_Decl* decl = m_arena.alloc<Ast_Enum_Decl>();
+	decl->type = Ast_Ident { type };
 	int constant = 0;
 
 	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
@@ -130,8 +129,8 @@ std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 			constant = int_lit.integer_value; //@Notice negative not supported by token integer_value
 		}
 
-		decl.variants.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
-		decl.constants.emplace_back(constant);
+		decl->variants.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
+		decl->constants.emplace_back(constant);
 		constant += 1;
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -140,13 +139,13 @@ std::optional<Ast_Enum_Decl> Parser::parse_enum_decl()
 	return decl;
 }
 
-std::optional<Ast_Proc_Decl> Parser::parse_proc_decl()
+Ast_Proc_Decl* Parser::parse_proc_decl()
 {
 	Token ident = consume_get();
 	consume();
 
-	Ast_Proc_Decl decl = {};
-	decl.ident = Ast_Ident { ident };
+	Ast_Proc_Decl* decl = m_arena.alloc<Ast_Proc_Decl>();
+	decl->ident = Ast_Ident { ident };
 	
 	if (!try_consume(TOKEN_PAREN_START)) { printf("Expected opening '('.\n"); return {}; }
 	while (true)
@@ -160,7 +159,7 @@ std::optional<Ast_Proc_Decl> Parser::parse_proc_decl()
 			printf("Expected type idenifier.\n"); return {}; 
 		}
 
-		decl.input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), param_type.value() });
+		decl->input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), param_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')'.\n"); return {}; }
@@ -169,12 +168,12 @@ std::optional<Ast_Proc_Decl> Parser::parse_proc_decl()
 	{
 		auto return_type = try_consume_type_ident();
 		if (!return_type) { printf("Expected return type identifier.\n"); return {}; }
-		decl.return_type = return_type.value();
+		decl->return_type = return_type.value();
 	}
 
 	Ast_Block* block = parse_block();
 	if (block == NULL) return {};
-	decl.block = block;
+	decl->block = block;
 
 	return decl;
 }

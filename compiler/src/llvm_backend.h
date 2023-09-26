@@ -5,6 +5,7 @@
 #include "llvm-c/Core.h"
 
 void llvm_build(Ast* ast);
+
 LLVMModuleRef llvm_build_ir(Ast* ast);
 LLVMModuleRef llvm_build_ir_example(Ast* ast);
 void llvm_build_binaries(LLVMModuleRef mod);

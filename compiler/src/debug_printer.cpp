@@ -4,9 +4,9 @@ void debug_print_ast(Ast* ast)
 {
 	printf("\n[AST]\n");
 
-	for (Ast_Struct_Decl& struct_decl : ast->structs) debug_print_struct_decl(&struct_decl);
-	for (Ast_Enum_Decl& enum_decl : ast->enums) debug_print_enum_decl(&enum_decl);
-	for (Ast_Proc_Decl& proc_decl : ast->procs) debug_print_proc_decl(&proc_decl);
+	for (Ast_Struct_Decl* struct_decl : ast->structs) debug_print_struct_decl(struct_decl);
+	for (Ast_Enum_Decl* enum_decl : ast->enums) debug_print_enum_decl(enum_decl);
+	for (Ast_Proc_Decl* proc_decl : ast->procs) debug_print_proc_decl(proc_decl);
 }
 
 void debug_print_token(Token token, bool endl, bool location)

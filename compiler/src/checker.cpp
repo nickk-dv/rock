@@ -10,14 +10,14 @@ bool Checker::check_ast(Ast* ast)
 	if (!check_types_and_proc_definitions(ast)) return false;
 	
 	bool declarations_valid = true;
-	for (auto& decl : ast->structs) if (!check_struct_decl(&decl)) declarations_valid = false;
-	for (auto& decl : ast->enums) if (!check_enum_decl(&decl)) declarations_valid = false;
-	for (auto& decl : ast->procs) if (!check_proc_decl(&decl)) declarations_valid = false;
+	for (Ast_Struct_Decl* decl : ast->structs) if (!check_struct_decl(decl)) declarations_valid = false;
+	for (Ast_Enum_Decl* decl : ast->enums) if (!check_enum_decl(decl)) declarations_valid = false;
+	for (Ast_Proc_Decl* decl : ast->procs) if (!check_proc_decl(decl)) declarations_valid = false;
 	if (!declarations_valid) return false;
 
 	bool procedure_blocks_valid = true;
-	for (auto& decl : ast->procs)
-	if (!check_proc_block(&decl)) procedure_blocks_valid = false;
+	for (Ast_Proc_Decl* decl : ast->procs)
+	if (!check_proc_block(decl)) procedure_blocks_valid = false;
 	if (!procedure_blocks_valid) return false;
 
 	return true;
@@ -25,20 +25,20 @@ bool Checker::check_ast(Ast* ast)
 
 bool Checker::check_types_and_proc_definitions(Ast* ast)
 {
-	for (auto& decl : ast->structs)
+	for (Ast_Struct_Decl* decl : ast->structs)
 	{
-		if (typer.is_type_in_scope(&decl.type)) { printf("Struct type redifinition.\n"); return false; }
-		typer.add_struct_type(&decl);
+		if (typer.is_type_in_scope(&decl->type)) { printf("Struct type redifinition.\n"); return false; }
+		typer.add_struct_type(decl);
 	}
-	for (auto& decl : ast->enums)
+	for (Ast_Enum_Decl* decl : ast->enums)
 	{
-		if (typer.is_type_in_scope(&decl.type)) { printf("Enum type redifinition.\n"); return false; }
-		typer.add_enum_type(&decl);
+		if (typer.is_type_in_scope(&decl->type)) { printf("Enum type redifinition.\n"); return false; }
+		typer.add_enum_type(decl);
 	}
-	for (auto& decl : ast->procs)
+	for (Ast_Proc_Decl* decl : ast->procs)
 	{
-		if (is_proc_in_scope(&decl.ident)) { printf("Procedure redifinition"); return false; }
-		proc_table.add(decl.ident.token.string_value, &decl, hash_fnv1a_32(decl.ident.token.string_value));
+		if (is_proc_in_scope(&decl->ident)) { printf("Procedure redifinition"); return false; }
+		proc_table.add(decl->ident.token.string_value, decl, hash_fnv1a_32(decl->ident.token.string_value));
 	}
 	return true;
 }
@@ -57,8 +57,7 @@ bool Checker::check_struct_decl(Ast_Struct_Decl* struct_decl) //@Incomplete allo
 {
 	if (struct_decl->fields.empty()) { printf("Struct must have at least 1 field.\n"); return false; }
 
-	HashSet<StringView, u32, match_string_view> names; //@Perf later try to re-use it by adding reset option
-	names.init(16);
+	HashSet<StringView, u32, match_string_view> names(16); //@Perf later try to re-use it by adding reset option
 	for (auto& field : struct_decl->fields)
 	{
 		if (names.contains(field.ident.token.string_value, hash_fnv1a_32(field.ident.token.string_value))) { printf("Field name redifinition.\n"); return false; }
@@ -72,8 +71,7 @@ bool Checker::check_enum_decl(Ast_Enum_Decl* enum_decl) //@Incomplete allow for 
 {
 	if (enum_decl->variants.empty()) { printf("Enum must have at least 1 variant.\n"); return false; }
 
-	HashSet<StringView, u32, match_string_view> names; //@Perf later try to re-use it by adding reset option
-	names.init(16);
+	HashSet<StringView, u32, match_string_view> names(16); //@Perf later try to re-use it by adding reset option
 	for (const auto& field : enum_decl->variants)
 	{
 		if (names.contains(field.ident.token.string_value, hash_fnv1a_32(field.ident.token.string_value))) { printf("Variant name redifinition.\n"); return false; }
@@ -84,8 +82,7 @@ bool Checker::check_enum_decl(Ast_Enum_Decl* enum_decl) //@Incomplete allow for 
 
 bool Checker::check_proc_decl(Ast_Proc_Decl* proc_decl)
 {
-	HashSet<StringView, u32, match_string_view> names; //@Perf later try to re-use it by adding reset option
-	names.init(16);
+	HashSet<StringView, u32, match_string_view> names(16); //@Perf later try to re-use it by adding reset option
 	for (auto& param : proc_decl->input_params)
 	{
 		if (names.contains(param.ident.token.string_value, hash_fnv1a_32(param.ident.token.string_value))) { printf("Procedure parameter name redifinition.\n"); return false; }

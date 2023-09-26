@@ -32,9 +32,9 @@ struct Ast_Var_Assign;
 
 struct Ast
 {
-	std::vector<Ast_Struct_Decl> structs;
-	std::vector<Ast_Enum_Decl> enums;
-	std::vector<Ast_Proc_Decl> procs;
+	std::vector<Ast_Struct_Decl*> structs;
+	std::vector<Ast_Enum_Decl*> enums;
+	std::vector<Ast_Proc_Decl*> procs;
 };
 
 struct Ast_Struct_Decl

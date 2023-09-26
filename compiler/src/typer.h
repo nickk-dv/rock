@@ -57,7 +57,7 @@ public:
 	void debug_print_type_info(Type_Info* t);
 
 private:
-	HashTable<StringView, Type_Info, u32, match_string_view> type_table;
+	HashMap<StringView, Type_Info, u32, match_string_view> type_table;
 	Type_Info primitive_type_table[12];
 };
 

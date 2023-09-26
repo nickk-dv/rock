@@ -14,8 +14,8 @@ typedef unsigned long long u64;
 struct String;
 struct StringView;
 struct Timer;
-struct Arena;
 struct StringStorage;
+struct Arena;
 
 u32 hash_fnv1a_32(const StringView& str);
 u64 hash_fnv1a_64(const StringView& str);
@@ -103,51 +103,12 @@ struct Timer
 	TimePoint t0;
 };
 
-struct Arena
-{
-	Arena() {};
-	~Arena() { drop(); }
-
-	template<typename T>
-	T* alloc() 
-	{
-		if (m_offset + sizeof(T) > m_block_size) alloc_block();
-		T* ptr = (T*)(m_data + m_offset);
-		m_offset += sizeof(T);
-		return ptr;
-	}
-
-	void init(size_t block_size) 
-	{
-		m_block_size = block_size;
-		alloc_block();
-	}
-
-	void drop() 
-	{
-		for (u8* block : m_data_blocks) free(block);
-	}
-
-	void alloc_block() 
-	{
-		m_offset = 0;
-		m_data = (u8*)malloc(m_block_size);
-		if (m_data != NULL)
-			memset(m_data, 0, m_block_size);
-		m_data_blocks.emplace_back(m_data);
-	}
-
-	u8* m_data = NULL;
-	size_t m_offset = 0;
-	size_t m_block_size = 0;
-	std::vector<u8*> m_data_blocks;
-};
-
 struct StringStorage
 {
+	~StringStorage() { destroy(); }
+
 	void init() { buffer = (char*)malloc(1024 * 16); }
 	void destroy() { free(buffer); }
-	~StringStorage() { destroy(); }
 
 	void start_str() {
 		str_start = cursor;
@@ -163,23 +124,55 @@ struct StringStorage
 		cursor += 1;
 	}
 
+private:
 	char* buffer;
 	u64 cursor = 0;
 	u64 str_start = 0;
 };
 
+struct Arena
+{
+	Arena() {};
+	Arena(size_t block_size) { init(block_size); };
+	~Arena() { destroy(); }
+
+public:
+	void init(size_t block_size) { m_block_size = block_size; alloc_block(); }
+	void destroy() { for (u8* block : m_data_blocks) free(block); }
+
+	template<typename T>
+	T* alloc() {
+		if (m_offset + sizeof(T) > m_block_size) alloc_block();
+		T* ptr = (T*)(m_data + m_offset);
+		m_offset += sizeof(T);
+		return ptr;
+	}
+
+private:
+	void alloc_block() {
+		m_offset = 0;
+		m_data = (u8*)malloc(m_block_size);
+		if (m_data != NULL)
+			memset(m_data, 0, m_block_size);
+		m_data_blocks.emplace_back(m_data);
+	}
+
+	u8* m_data = NULL;
+	size_t m_offset = 0;
+	size_t m_block_size = 0;
+	std::vector<u8*> m_data_blocks;
+};
+
 template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
-struct HashTable {
+struct HashMap 
+{
+	HashMap() {};
+	HashMap(u32 size) { init(size); }
+	~HashMap() { destroy(); }
 
-	struct Slot {
-		KeyType key;
-		ValueType value;
-		HashType hash;
-	};
-
+public:
 	void init(u32 size) { alloc_table(size); }
 	void destroy() { free(array); }
-	~HashTable() { destroy(); }
 
 	void alloc_table(u32 size) {
 		table_size = size;
@@ -223,6 +216,7 @@ struct HashTable {
 		return {};
 	}
 
+private:
 	void grow() {
 		u32 table_size_old = table_size;
 		Slot* array_old = array;
@@ -235,23 +229,29 @@ struct HashTable {
 		free(array_old);
 	}
 
-	Slot* array;
-	u32 table_size;
-	u32 slots_filled;
-	u32 resize_threshold;
-};
-
-template<typename KeyType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
-struct HashSet {
-
-	struct Slot {
+	struct Slot
+	{
 		KeyType key;
+		ValueType value;
 		HashType hash;
 	};
 
+	Slot* array = NULL;
+	u32 table_size = 0;
+	u32 slots_filled = 0;
+	u32 resize_threshold = 0;
+};
+
+template<typename KeyType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
+struct HashSet 
+{
+	HashSet() {};
+	HashSet(u32 size) { init(size); }
+	~HashSet() { destroy(); }
+
+public:
 	void init(u32 size) { alloc_table(size); }
 	void destroy() { free(array); }
-	~HashSet() { destroy(); }
 
 	void alloc_table(u32 size) {
 		table_size = size;
@@ -285,6 +285,7 @@ struct HashSet {
 		return false;
 	}
 
+private:
 	void grow() {
 		u32 table_size_old = table_size;
 		Slot* array_old = array;
@@ -297,10 +298,16 @@ struct HashSet {
 		free(array_old);
 	}
 
-	Slot* array;
-	u32 table_size;
-	u32 slots_filled;
-	u32 resize_threshold;
+	struct Slot 
+	{
+		KeyType key;
+		HashType hash;
+	};
+
+	Slot* array = NULL;
+	u32 table_size = 0;
+	u32 slots_filled = 0;
+	u32 resize_threshold = 0;
 };
 
 #endif
