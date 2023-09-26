@@ -11,6 +11,8 @@ struct Ast_Proc_Decl;
 
 struct Ast_Ident { Token token; };
 struct Ast_Literal { Token token; };
+struct Ast_Type;
+struct Ast_Array;
 struct Ast_Ident_Chain;
 struct Ast_Ident_Type_Pair;
 struct Ast_Term;
@@ -46,7 +48,7 @@ struct Ast_Struct_Decl
 struct Ast_Enum_Decl
 {
 	Ast_Ident type;
-	std::vector<Ast_Ident_Type_Pair> variants; //@Temp using Ast_Ident_Type_Pair
+	std::vector<Ast_Ident> variants;
 	std::vector<int> constants;
 };
 
@@ -54,8 +56,31 @@ struct Ast_Proc_Decl
 {
 	Ast_Ident ident;
 	std::vector<Ast_Ident_Type_Pair> input_params;
-	std::optional<Ast_Ident> return_type;
+	std::optional<Ast_Type*> return_type;
 	Ast_Block* block;
+};
+
+struct Ast_Type
+{
+	enum class Tag
+	{
+		Basic, Custom, Pointer, Array
+	} tag;
+
+	union
+	{
+		BasicType as_basic;
+		Ast_Ident as_custom; //@Perf making this into pointer will reduce it from 40 to 16 bytes
+		Ast_Type* as_pointer;
+		Ast_Array* as_array;
+	};
+};
+
+struct Ast_Array
+{
+	Ast_Type* element_type;
+	bool is_dynamic;
+	u64 fixed_size;
 };
 
 struct Ast_Ident_Chain
@@ -67,7 +92,7 @@ struct Ast_Ident_Chain
 struct Ast_Ident_Type_Pair
 {
 	Ast_Ident ident;
-	Ast_Ident type;
+	Ast_Type* type;
 };
 
 struct Ast_Term
@@ -197,7 +222,7 @@ struct Ast_Proc_Call
 struct Ast_Var_Decl
 {
 	Ast_Ident ident;
-	std::optional<Ast_Ident> type;
+	std::optional<Ast_Type*> type;
 	std::optional<Ast_Expr*> expr;
 };
 

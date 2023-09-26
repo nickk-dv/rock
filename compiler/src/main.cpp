@@ -1,6 +1,6 @@
 #include "common.h"
 #include "parser.h"
-#include "checker.h"
+//#include "checker.h"
 #include "llvm_backend.h"
 #include "debug_printer.h"
 
@@ -27,7 +27,7 @@ int check(char* filepath)
 	}
 	//debug_print_ast(ast);
 	printf("Parse result: Success\n\n");
-
+	/*
 	timer.start();
 	Checker checker = {};
 	bool check = checker.check_ast(ast);
@@ -42,7 +42,7 @@ int check(char* filepath)
 	timer.start();
 	llvm_build(ast);
 	timer.end("LLVM IR build");
-
+	*/
 	return 0;
 }
 

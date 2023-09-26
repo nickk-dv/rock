@@ -175,6 +175,26 @@ void debug_print_assign_op(AssignOp op)
 	printf("\n");
 }
 
+void debug_print_basic_type(BasicType type)
+{
+	switch (type)
+	{
+		case BASIC_TYPE_I8: printf("i8"); break;
+		case BASIC_TYPE_U8: printf("u8"); break;
+		case BASIC_TYPE_I16: printf("i16"); break;
+		case BASIC_TYPE_U16: printf("u16"); break;
+		case BASIC_TYPE_I32: printf("i32"); break;
+		case BASIC_TYPE_U32: printf("u32"); break;
+		case BASIC_TYPE_I64: printf("i64"); break;
+		case BASIC_TYPE_U64: printf("u64"); break;
+		case BASIC_TYPE_F32: printf("f32"); break;
+		case BASIC_TYPE_F64: printf("f64"); break;
+		case BASIC_TYPE_BOOL: printf("bool"); break;
+		case BASIC_TYPE_STRING: printf("string"); break;
+		default: printf("[UNKNOWN BASIC TYPE]"); break;
+	}
+}
+
 void debug_print_branch(u32& depth)
 {
 	if (depth > 0)
@@ -199,18 +219,20 @@ void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
 		debug_print_token(field.ident.token, false);
-		printf(": "); debug_print_token(field.type.token, true);
+		printf(": "); 
+		debug_print_type(field.type);
+		printf("\n");
 	}
 }
 
-void debug_print_enum_decl(Ast_Enum_Decl* proc_decl)
+void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	printf("\nEnum_Decl: "); 
-	debug_print_token(proc_decl->type.token, true);
+	debug_print_token(enum_decl->type.token, true);
 
-	for (const Ast_Ident_Type_Pair& field : proc_decl->variants)
+	for (const Ast_Ident& variant : enum_decl->variants)
 	{
-		debug_print_token(field.ident.token, true);
+		debug_print_token(variant.token, true);
 	}
 }
 
@@ -226,7 +248,9 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 		for (const Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
 			debug_print_token(param.ident.token, false);
-			printf(": "); debug_print_token(param.type.token, true);
+			printf(": ");
+			debug_print_type(param.type);
+			printf("\n");
 		}
 	}
 	else printf("---\n");
@@ -234,11 +258,39 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 	printf("Return: ");
 	if (proc_decl->return_type.has_value())
 	{
-		debug_print_token(proc_decl->return_type.value().token, true);
+		debug_print_type(proc_decl->return_type.value());
+		printf("\n");
 	}
 	else printf("---\n");
 
 	debug_print_block(proc_decl->block, 0);
+}
+
+void debug_print_type(Ast_Type* type)
+{
+	switch (type->tag)
+	{
+		case Ast_Type::Tag::Basic:
+		{
+			debug_print_basic_type(type->as_basic);
+		} break;
+		case Ast_Type::Tag::Custom:
+		{
+			debug_print_token(type->as_custom.token, false);
+		} break;
+		case Ast_Type::Tag::Pointer:
+		{
+			printf("*");
+			debug_print_type(type->as_pointer);
+		} break;
+		case Ast_Type::Tag::Array:
+		{
+			Ast_Array* array = type->as_array;
+			if (array->is_dynamic) printf("[..]");
+			else printf("[%llu]", array->fixed_size);
+			debug_print_type(array->element_type);
+		} break;
+	}
 }
 
 void debug_print_ident_chain(Ast_Ident_Chain* ident_chain)
@@ -452,7 +504,10 @@ void debug_print_var_decl(Ast_Var_Decl* var_decl, u32 depth)
 	debug_print_token(var_decl->ident.token, false);
 	printf(": ");
 	if (var_decl->type.has_value())
-		debug_print_token(var_decl->type.value().token, true);
+	{
+		debug_print_type(var_decl->type.value());
+		printf("\n");
+	}
 	else printf("[?]\n");
 
 	debug_print_spacing(depth);

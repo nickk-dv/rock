@@ -75,10 +75,11 @@ Ast_Struct_Decl* Parser::parse_struct_decl()
 		auto field = try_consume(TOKEN_IDENT);
 		if (!field) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return {}; }
-		auto field_type = try_consume_type_ident();
-		if (!field_type) { error("Expected type identifier"); return {}; }
 
-		decl->fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, field_type.value() });
+		Ast_Type* type = parse_type();
+		if (!type) return NULL;
+		decl->fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, type });
+
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after struct declaration"); return {}; }
@@ -110,7 +111,7 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 			constant = int_lit.integer_value; //@Notice negative not supported by token integer_value
 		}
 
-		decl->variants.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { variant.value() }, {} }); //@Notice type is empty token, might support typed enums
+		decl->variants.emplace_back(Ast_Ident { variant.value() }); //@Notice type is empty token, might support typed enums
 		decl->constants.emplace_back(constant);
 		constant += 1;
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -132,26 +133,99 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 		auto param = try_consume(TOKEN_IDENT);
 		if (!param) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return {}; }
-		auto param_type = try_consume_type_ident();
-		if (!param_type) { error("Expected type identifier"); return {}; }
 
-		decl->input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), param_type.value() });
+		Ast_Type* type = parse_type();
+		if (!type) return NULL;
+		decl->input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), type });
+
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')'"); return {}; }
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
-		auto return_type = try_consume_type_ident();
-		if (!return_type) { error("Expected return type identifier"); return {}; }
-		decl->return_type = return_type.value();
+		Ast_Type* type = parse_type();
+		if (!type) return NULL;
+		decl->return_type = type;
 	}
 
 	Ast_Block* block = parse_block();
-	if (block == NULL) return {};
+	if (!block) return {};
 	decl->block = block;
 
 	return decl;
+}
+
+Ast_Type* Parser::parse_type()
+{
+	Ast_Type* type = m_arena.alloc<Ast_Type>();
+	Token token = peek();
+
+	BasicType basic_type = token_to_basic_type(token.type);
+	if (basic_type != BASIC_TYPE_ERROR)
+	{
+		consume();
+		type->tag = Ast_Type::Tag::Basic;
+		type->as_basic = basic_type;
+		return type;
+	}
+
+	switch (token.type)
+	{
+		case TOKEN_IDENT:
+		{
+			type->tag = Ast_Type::Tag::Custom;
+			type->as_custom = Ast_Ident { consume_get() };
+		} break;
+		case TOKEN_TIMES:
+		{
+			consume();
+			Ast_Type* pointer_type = parse_type();
+			if (!pointer_type) return NULL;
+			type->tag = Ast_Type::Tag::Pointer;
+			type->as_pointer = pointer_type;
+		} break;
+		case TOKEN_BRACKET_START:
+		{
+			Ast_Array* array = parse_array();
+			if (!array) return NULL;
+			type->tag = Ast_Type::Tag::Array;
+			type->as_array = array;
+		} break;
+		default:
+		{
+			error("Expected basic type, type identifier, pointer or array");
+			return NULL;
+		}
+	}
+
+	return type;
+}
+
+Ast_Array* Parser::parse_array()
+{
+	Ast_Array* array = m_arena.alloc<Ast_Array>();
+	consume();
+
+	Token token = peek();
+	if (token.type == TOKEN_NUMBER)
+	{
+		consume();
+		array->fixed_size = token.integer_value; //@Hack assuming that number token is Int
+	}
+	else if (try_consume(TOKEN_DOT)) //@Hack define '..' token
+	{
+		if (try_consume(TOKEN_DOT)) { array->is_dynamic = true; }
+		else { error("Expected '..'"); return NULL; }
+	}
+	else { error("Expected '..' or integer size specifier"); return NULL; }
+	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
+
+	Ast_Type* type = parse_type();
+	if (!type) return NULL;
+	array->element_type = type;
+
+	return array;
 }
 
 Ast_Ident_Chain* Parser::parse_ident_chain()
@@ -556,18 +630,16 @@ Ast_Var_Decl* Parser::parse_var_decl()
 	var_decl->ident = Ast_Ident { consume_get() };
 	consume();
 
-	auto type = try_consume_type_ident();
-	if (type) var_decl->type = type.value();
+	bool infer_type = try_consume(TOKEN_ASSIGN).has_value();
 
-	bool default_init = !try_consume(TOKEN_ASSIGN);
-	if (default_init)
+	if (!infer_type)
 	{
-		bool has_semicolon = try_consume(TOKEN_SEMICOLON).has_value();
-		if (type && has_semicolon) return var_decl;
+		Ast_Type* type = parse_type();
+		if (!type) return NULL;
+		var_decl->type = type;
 
-		if (!type) error("Expected specified type for default initialized variable");
-		else if (!has_semicolon) error("Expected ';' after variable declaration");
-		return NULL;
+		if (try_consume(TOKEN_SEMICOLON)) return var_decl;
+		if (!try_consume(TOKEN_ASSIGN)) { error("Expected '=' or ';' in a variable declaration"); return NULL; }
 	}
 
 	Ast_Expr* expr = parse_expr();
@@ -608,17 +680,6 @@ std::optional<Token> Parser::try_consume(TokenType token_type)
 	{
 		consume();
 		return token;
-	}
-	return {};
-}
-
-std::optional<Ast_Ident> Parser::try_consume_type_ident()
-{
-	Token token = peek();
-	if (token.type == TOKEN_IDENT || (token.type >= TOKEN_TYPE_I8 && token.type <= TOKEN_TYPE_STRING))
-	{
-		consume();
-		return Ast_Ident { token };
 	}
 	return {};
 }

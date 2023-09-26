@@ -15,6 +15,8 @@ private:
 	Ast_Struct_Decl* parse_struct_decl();
 	Ast_Enum_Decl* parse_enum_decl();
 	Ast_Proc_Decl* parse_proc_decl();
+	Ast_Type* parse_type();
+	Ast_Array* parse_array();
 	Ast_Ident_Chain* parse_ident_chain();
 	Ast_Term* parse_term();
 	Ast_Expr* parse_expr();
@@ -33,7 +35,6 @@ private:
 	Ast_Var_Assign* parse_var_assign();
 	Token peek(u32 offset = 0);
 	std::optional<Token> try_consume(TokenType token_type);
-	std::optional<Ast_Ident> try_consume_type_ident();
 	Token consume_get();
 	void consume();
 	void error(const char* message, u32 peek_offset = 0);

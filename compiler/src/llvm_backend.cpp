@@ -32,7 +32,7 @@ LLVMModuleRef llvm_build_ir(Ast* ast)
 	{
 		for (u32 i = 0; i < enum_decl->variants.size(); i++)
 		{
-			Token t = enum_decl->variants[i].ident.token;
+			Token t = enum_decl->variants[i].token;
 			t.string_value.data[t.string_value.count] = 0;
 			LLVMValueRef enum_constant = LLVMAddGlobal(mod, LLVMInt32TypeInContext(context), (char*)t.string_value.data);
 			LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32TypeInContext(context), enum_decl->constants[i], 0));

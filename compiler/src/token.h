@@ -7,11 +7,13 @@ enum TokenType;
 enum UnaryOp;
 enum BinaryOp;
 enum AssignOp;
+enum BasicType;
 struct Token;
 
 UnaryOp token_to_unary_op(TokenType type);
 BinaryOp token_to_binary_op(TokenType type);
 AssignOp token_to_assign_op(TokenType type);
+BasicType token_to_basic_type(TokenType type);
 u32 token_binary_op_prec(BinaryOp binary_op);
 TokenType token_str_to_keyword(StringView str);
 
@@ -143,6 +145,23 @@ enum AssignOp
 	ASSIGN_OP_BITSHIFT_LEFT,  // <<=
 	ASSIGN_OP_BITSHIFT_RIGHT, // >>=
 	ASSIGN_OP_ERROR,
+};
+
+enum BasicType
+{
+	BASIC_TYPE_I8, 
+	BASIC_TYPE_U8,
+	BASIC_TYPE_I16, 
+	BASIC_TYPE_U16,
+	BASIC_TYPE_I32, 
+	BASIC_TYPE_U32,
+	BASIC_TYPE_I64, 
+	BASIC_TYPE_U64,
+	BASIC_TYPE_F32, 
+	BASIC_TYPE_F64,
+	BASIC_TYPE_BOOL, 
+	BASIC_TYPE_STRING,
+	BASIC_TYPE_ERROR,
 };
 
 struct Token

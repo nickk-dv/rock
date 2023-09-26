@@ -56,6 +56,13 @@ AssignOp token_to_assign_op(TokenType type)
 	}
 }
 
+BasicType token_to_basic_type(TokenType type)
+{
+	if (type < TOKEN_TYPE_I8 || type > TOKEN_TYPE_STRING)
+		return BASIC_TYPE_ERROR;
+	return BasicType(type - TOKEN_TYPE_I8);
+}
+
 u32 token_binary_op_prec(BinaryOp binary_op)
 {
 	switch (binary_op)
