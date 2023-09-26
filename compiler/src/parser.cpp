@@ -27,46 +27,36 @@ Ast* Parser::parse()
 						case TOKEN_KEYWORD_STRUCT:
 						{
 							Ast_Struct_Decl* struct_decl = parse_struct_decl();
-							if (struct_decl == NULL) return NULL;
+							if (!struct_decl) return NULL;
 							ast->structs.emplace_back(struct_decl);
 						} break;
 						case TOKEN_KEYWORD_ENUM:
 						{
 							Ast_Enum_Decl* enum_decl = parse_enum_decl();
-							if (enum_decl == NULL) return NULL;
+							if (!enum_decl) return NULL;
 							ast->enums.emplace_back(enum_decl);
 						} break;
 						case TOKEN_PAREN_START:
 						{
 							Ast_Proc_Decl* proc_decl = parse_proc_decl();
-							if (proc_decl == NULL) return NULL;
+							if (!proc_decl) return NULL;
 							ast->procs.emplace_back(proc_decl);
 						} break;
 						default:
 						{
-							printf("Expected global declaration to be followed by 'struct', 'enum', or procedure argument list '( ... )'.\n");
-							debug_print_token(peek(2), true, true);
+							error("Expected struct, enum or procedure declaration", 2);
 							return NULL;
 						}
 					}
 				}
 				else
 				{
-					printf("Expected global identifier to be followed by '::'.\n");
-					debug_print_token(peek(1), true, true);
+					error("Expected '::'", 1);
 					return NULL;
 				}
 			} break;
-			case TOKEN_EOF:
-			{
-				return ast;
-			}
-			default:
-			{
-				printf("Expected global declation that starts with identifier.\n");
-				debug_print_token(token, true, true);
-				return NULL;
-			}
+			case TOKEN_EOF: { return ast; }
+			default: { error("Expected global declaration identifier"); return NULL; }
 		}
 	}
 
@@ -75,44 +65,35 @@ Ast* Parser::parse()
 
 Ast_Struct_Decl* Parser::parse_struct_decl()
 {
-	Token type = consume_get();
-	consume();
-	consume();
-
 	Ast_Struct_Decl* decl = m_arena.alloc<Ast_Struct_Decl>();
-	decl->type = Ast_Ident { type };
+	decl->type = Ast_Ident { consume_get() };
+	consume(); consume();
 	
-	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return {}; }
 	while (true)
 	{
 		auto field = try_consume(TOKEN_IDENT);
 		if (!field) break;
-		if (!try_consume(TOKEN_COLON)) { printf("Expected ':' with type identifier.\n"); return {}; }
+		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return {}; }
 		auto field_type = try_consume_type_ident();
-		if (!field_type) 
-		{ 
-			printf("Expected type idenifier.\n"); return {};
-		}
+		if (!field_type) { error("Expected type identifier"); return {}; }
 
 		decl->fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, field_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-	if (!try_consume(TOKEN_BLOCK_END)) { printf("Struct Expected closing '}'.\n"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after struct declaration"); return {}; }
 
 	return decl;
 }
 
 Ast_Enum_Decl* Parser::parse_enum_decl()
 {
-	Token type = consume_get();
-	consume();
-	consume();
-
 	Ast_Enum_Decl* decl = m_arena.alloc<Ast_Enum_Decl>();
-	decl->type = Ast_Ident { type };
+	decl->type = Ast_Ident { consume_get() };
+	consume(); consume();
 	int constant = 0;
 
-	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected opening '{'.\n"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return {}; }
 	while (true)
 	{
 		auto variant = try_consume(TOKEN_IDENT);
@@ -123,7 +104,7 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 			Token int_lit = peek();
 			if (int_lit.type != TOKEN_NUMBER) //@Notice only i32 numbers allowed, dont have any number flags yet
 			{
-				printf("Expected constant integer literal.\n"); return {};
+				error("Expected constant integer literal.\n"); return {};
 			}
 			consume();
 			constant = int_lit.integer_value; //@Notice negative not supported by token integer_value
@@ -134,40 +115,35 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 		constant += 1;
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-	if (!try_consume(TOKEN_BLOCK_END)) { printf("Enum Expected closing '}'.\n"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after enum declaration"); return {}; }
 
 	return decl;
 }
 
 Ast_Proc_Decl* Parser::parse_proc_decl()
 {
-	Token ident = consume_get();
-	consume();
-
 	Ast_Proc_Decl* decl = m_arena.alloc<Ast_Proc_Decl>();
-	decl->ident = Ast_Ident { ident };
+	decl->ident = Ast_Ident { consume_get() };
+	consume();
 	
-	if (!try_consume(TOKEN_PAREN_START)) { printf("Expected opening '('.\n"); return {}; }
+	if (!try_consume(TOKEN_PAREN_START)) { error("Expected '('"); return {}; }
 	while (true)
 	{
 		auto param = try_consume(TOKEN_IDENT);
 		if (!param) break;
-		if (!try_consume(TOKEN_COLON)) { printf("Expected ':' with type identifier.\n"); return {}; }
+		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return {}; }
 		auto param_type = try_consume_type_ident();
-		if (!param_type) 
-		{
-			printf("Expected type idenifier.\n"); return {}; 
-		}
+		if (!param_type) { error("Expected type identifier"); return {}; }
 
 		decl->input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), param_type.value() });
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')'.\n"); return {}; }
+	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')'"); return {}; }
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
 		auto return_type = try_consume_type_ident();
-		if (!return_type) { printf("Expected return type identifier.\n"); return {}; }
+		if (!return_type) { error("Expected return type identifier"); return {}; }
 		decl->return_type = return_type.value();
 	}
 
@@ -188,7 +164,7 @@ Ast_Ident_Chain* Parser::parse_ident_chain()
 	{
 		if (!try_consume(TOKEN_DOT)) break;
 		auto ident = try_consume(TOKEN_IDENT);
-		if (!ident) { printf("Expected an identifier after '.' in the ident chain.\n"); return NULL; }
+		if (!ident) { error("Expected identifier"); return NULL; }
 		
 		current->next = m_arena.alloc<Ast_Ident_Chain>();
 		current->next->ident = Ast_Ident { ident.value() };
@@ -252,8 +228,7 @@ Ast_Term* Parser::parse_term()
 		} break;
 		default:
 		{
-			printf("Expected a valid expression term.\n");
-			debug_print_token(token, true);
+			error("Expected a valid expression term");
 			return NULL;
 		}
 	}
@@ -265,7 +240,7 @@ Ast_Expr* Parser::parse_expr()
 {
 	Ast_Expr* expr = parse_sub_expr();
 	if (!expr) return NULL;
-	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after expression.\n"); return NULL; }
+	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after expression"); return NULL; }
 	return expr;
 }
 
@@ -312,7 +287,7 @@ Ast_Expr* Parser::parse_primary_expr()
 
 		if (!try_consume(TOKEN_PAREN_END))
 		{
-			printf("Expected closing ')' after '('.\n");
+			error("Expected ')'");
 			return NULL;
 		}
 
@@ -351,7 +326,7 @@ Ast_Block* Parser::parse_block()
 {
 	Ast_Block* block = m_arena.alloc<Ast_Block>();
 
-	if (!try_consume(TOKEN_BLOCK_START)) { printf("Expected code block that starts with '{'.\n"); return NULL; }
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' before code block"); return NULL; }
 	while (true)
 	{
 		if (try_consume(TOKEN_BLOCK_END)) return block;
@@ -360,9 +335,6 @@ Ast_Block* Parser::parse_block()
 		if (!statement) return NULL;
 		block->statements.emplace_back(statement);
 	}
-	if (!try_consume(TOKEN_BLOCK_END)) { printf("Expected code block to end with '}'.\n"); return NULL; }
-
-	return block;
 }
 
 Ast_Statement* Parser::parse_statement()
@@ -411,7 +383,7 @@ Ast_Statement* Parser::parse_statement()
 				statement->tag = Ast_Statement::Tag::Proc_Call;
 				statement->as_proc_call = parse_proc_call();
 				if (!statement->as_proc_call) return NULL;
-				if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected procedure call statement to be followed by ';'.\n"); return NULL; }
+				if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after procedure call"); return NULL; }
 			}
 			else if (next.type == TOKEN_COLON)
 			{
@@ -426,7 +398,7 @@ Ast_Statement* Parser::parse_statement()
 				if (!statement->as_var_assign) return NULL;
 			}
 		} break;
-		default: { printf("Invalid token at the start of a statement.\n"); return NULL; }
+		default: { error("Expected valid statement or '}' after code block"); return NULL; }
 	}
 	
 	return statement;
@@ -460,7 +432,6 @@ Ast_Else* Parser::parse_else()
 {
 	Ast_Else* _else = m_arena.alloc<Ast_Else>();
 	_else->token = consume_get();
-
 	Token next = peek();
 
 	if (next.type == TOKEN_KEYWORD_IF)
@@ -477,7 +448,7 @@ Ast_Else* Parser::parse_else()
 		_else->tag = Ast_Else::Tag::Block;
 		_else->as_block = block;
 	}
-	else { printf("Expected 'else' to be followed by 'if' or a code block '{ ... }'.\n"); return NULL; }
+	else { error("Expected 'if' or code block '{ ... }'"); return NULL; }
 
 	return _else;
 }
@@ -486,7 +457,6 @@ Ast_For* Parser::parse_for()
 {
 	Ast_For* _for = m_arena.alloc<Ast_For>();
 	_for->token = consume_get();
-	
 	Token curr = peek();
 	Token next = peek(1);
 
@@ -510,7 +480,7 @@ Ast_For* Parser::parse_for()
 
 	//conditional expr
 	Ast_Expr* condition_expr = parse_sub_expr();
-	if (!condition_expr) { printf("Expected a conditional expression.\n"); return NULL; }
+	if (!condition_expr) { error("Expected conditional expression"); return NULL; }
 	_for->condition_expr = condition_expr;
 
 	//optional post expr
@@ -533,7 +503,7 @@ Ast_Break* Parser::parse_break()
 	Ast_Break* _break = m_arena.alloc<Ast_Break>();
 	_break->token = consume_get();
 
-	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after break statement.\n"); return NULL; }
+	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after 'break'"); return NULL; }
 	return _break;
 }
 
@@ -555,7 +525,7 @@ Ast_Continue* Parser::parse_continue()
 	Ast_Continue* _continue = m_arena.alloc<Ast_Continue>();
 	_continue->token = consume_get();
 
-	if (!try_consume(TOKEN_SEMICOLON)) { printf("Expected ';' after continue statement.\n"); return NULL; }
+	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after 'continue'"); return NULL; }
 	return _continue;
 }
 
@@ -576,8 +546,8 @@ Ast_Proc_Call* Parser::parse_proc_call()
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 
-	if (!try_consume(TOKEN_PAREN_END)) { printf("Expected closing ')' after procedure call statement.\n"); return NULL; }
-	return proc_call;
+	error("Parse error in parse_proc_call");
+	return NULL;
 }
 
 Ast_Var_Decl* Parser::parse_var_decl()
@@ -594,9 +564,9 @@ Ast_Var_Decl* Parser::parse_var_decl()
 	{
 		bool has_semicolon = try_consume(TOKEN_SEMICOLON).has_value();
 		if (type && has_semicolon) return var_decl;
-		if (!type && has_semicolon) printf("Expected specified type for default initialized variable.\n");
-		else if (type && !has_semicolon) printf("Expected ';'.\n");
-		else if (!type && !has_semicolon) printf("Expected specified type and ';' for default initialized variable.\n");
+
+		if (!type) error("Expected specified type for default initialized variable");
+		else if (!has_semicolon) error("Expected ';' after variable declaration");
 		return NULL;
 	}
 
@@ -616,9 +586,9 @@ Ast_Var_Assign* Parser::parse_var_assign()
 
 	Token token = peek();
 	AssignOp op = token_to_assign_op(token.type);
-	if (op == ASSIGN_OP_ERROR)  { printf("Expected assigment operator.\n"); return NULL; }
-	consume();
+	if (op == ASSIGN_OP_ERROR) { error("Expected assignment operator"); return NULL; }
 	var_assign->op = op;
+	consume();
 
 	Ast_Expr* expr = parse_expr();
 	if (!expr) return NULL;
@@ -668,4 +638,10 @@ void Parser::consume()
 		tokenizer.peek_index = 0; 
 		tokenizer.tokenize_buffer();
 	}
+}
+
+void Parser::error(const char* message, u32 peek_offset)
+{
+	printf("%s.\n", message);
+	debug_print_token(peek(peek_offset), true, true);
 }

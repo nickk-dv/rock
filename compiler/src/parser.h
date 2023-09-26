@@ -36,6 +36,7 @@ private:
 	std::optional<Ast_Ident> try_consume_type_ident();
 	Token consume_get();
 	void consume();
+	void error(const char* message, u32 peek_offset = 0);
 
 	Arena m_arena;
 	Tokenizer tokenizer;
