@@ -38,11 +38,12 @@ int check(char* filepath)
 		return 1;
 	}
 	printf("Check result: Success\n\n");
+	*/
 
 	timer.start();
-	llvm_build(ast);
+	Backend_LLVM backend = {};
+	backend.backend_build(ast);
 	timer.end("LLVM IR build");
-	*/
 	return 0;
 }
 
@@ -51,7 +52,7 @@ int check(char* filepath)
 #if CLI_ON == 0
 int main(int argc, char** argv)
 {
-	check("../../test_tp.txt");
+	check("../../test_ir.txt");
 }
 #else
 int main(int argc, char** argv) //@Hack hardcoded for now, will add better argumnet processing layer when needed.

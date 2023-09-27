@@ -2,66 +2,161 @@
 
 #include "llvm-c/TargetMachine.h"
 
-void llvm_build(Ast* ast)
+void Backend_LLVM::backend_build(Ast* ast)
 {
-	LLVMModuleRef mod = llvm_build_ir(ast);
-	llvm_build_binaries(mod);
+	context = LLVMContextCreate();
+	module = LLVMModuleCreateWithNameInContext("module", context);
+	builder = LLVMCreateBuilderInContext(context);
+	backend_build_ir(ast);
+	backend_build_binaries();
 }
 
-LLVMModuleRef llvm_build_ir(Ast* ast)
+void Backend_LLVM::backend_build_ir(Ast* ast)
 {
-	LLVMContextRef context = LLVMContextCreate();
-	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
-	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
+	for (Ast_Enum_Decl* enum_decl : ast->enums) { backend_build_enum_decl(enum_decl); }
+	for (Ast_Struct_Decl* struct_decl : ast->structs) { backend_build_struct_decl(struct_decl); }
+	proc_decl_map.init(32);
+	for (Ast_Proc_Decl* proc_decl : ast->procs) { backend_build_proc_decl(proc_decl); }
+	for (Ast_Proc_Decl* proc_decl : ast->procs) { backend_build_proc_body(proc_decl); }
+	LLVMDisposeBuilder(builder);
+}
 
-	for (Ast_Struct_Decl* struct_decl : ast->structs)
+void Backend_LLVM::backend_build_enum_decl(Ast_Enum_Decl* enum_decl)
+{
+	for (u32 i = 0; i < enum_decl->variants.size(); i++)
 	{
-		//@Hack temporary member types
-		LLVMTypeRef members[] = { LLVMInt32TypeInContext(context), LLVMDoubleTypeInContext(context) };
-		
-		Token t = struct_decl->type.token;
-		t.string_value.data[t.string_value.count] = 0;
-		LLVMTypeRef struct_type = LLVMStructCreateNamed(context, (char*)t.string_value.data);
-		LLVMStructSetBody(struct_type, members, 2, 0);
-
-		//@Hack adding global var to see the struct declaration in the ir
-		LLVMValueRef globalVar = LLVMAddGlobal(mod, struct_type, "global_to_see_struct");
+		LLVMValueRef enum_constant = LLVMAddGlobal(module, LLVMInt32TypeInContext(context), get_c_string(enum_decl->variants[i].token));
+		LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32TypeInContext(context), enum_decl->constants[i], 0));
+		LLVMSetGlobalConstant(enum_constant, 1);
 	}
+}
 
-	for (Ast_Enum_Decl* enum_decl : ast->enums)
+void Backend_LLVM::backend_build_struct_decl(Ast_Struct_Decl* struct_decl)
+{
+	//@Hack temporary member types
+	LLVMTypeRef members[] = { basic_type_convert(BASIC_TYPE_F32), basic_type_convert(BASIC_TYPE_F64) };
+	
+	LLVMTypeRef struct_type = LLVMStructCreateNamed(context, get_c_string(struct_decl->type.token));
+	LLVMStructSetBody(struct_type, members, 2, 0);
+
+	//@Hack adding global var to see the struct declaration in the ir
+	LLVMValueRef globalVar = LLVMAddGlobal(module, struct_type, "global_to_see_struct");
+}
+
+// @Usefull functions:
+// LLVMTypeRef LLVMTypeOf(LLVMValueRef Val);
+// LLVMGetAllocatedType - get type of value on a stack
+
+void Backend_LLVM::backend_build_proc_decl(Ast_Proc_Decl* proc_decl)
+{
+	LLVMTypeRef proc_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
+	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident.token), proc_type);
+	Proc_Meta meta = { proc_type, proc_val };
+	proc_decl_map.add(proc_decl->ident.token.string_value, meta, hash_fnv1a_32(proc_decl->ident.token.string_value));
+}
+
+void Backend_LLVM::backend_build_proc_body(Ast_Proc_Decl* proc_decl)
+{
+	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
+	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
+	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
+	LLVMPositionBuilderAtEnd(builder, entry_block);
+	
+	Ast_Block* block = proc_decl->block;
+	for (Ast_Statement* statement : block->statements)
 	{
-		for (u32 i = 0; i < enum_decl->variants.size(); i++)
+		switch (statement->tag)
 		{
-			Token t = enum_decl->variants[i].token;
-			t.string_value.data[t.string_value.count] = 0;
-			LLVMValueRef enum_constant = LLVMAddGlobal(mod, LLVMInt32TypeInContext(context), (char*)t.string_value.data);
-			LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32TypeInContext(context), enum_decl->constants[i], 0));
-			LLVMSetGlobalConstant(enum_constant, 1);
+			case Ast_Statement::Tag::If:
+			{
+
+			} break;
+			case Ast_Statement::Tag::For:
+			{
+
+			} break;
+			case Ast_Statement::Tag::Break:
+			{
+
+			} break;
+			case Ast_Statement::Tag::Return:
+			{
+				Ast_Return* _return = statement->as_return;
+				if (_return->expr.has_value()) error_exit("return with expr is not supported");
+				LLVMBuildRet(builder, NULL); //ret void
+			} break;
+			case Ast_Statement::Tag::Continue:
+			{
+
+			} break;
+			case Ast_Statement::Tag::Proc_Call:
+			{
+				Ast_Proc_Call* proc_call = statement->as_proc_call;
+				if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
+
+				auto proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
+				if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
+				//@Notice usage of return values must be enforced on checking stage, statement proc call should return nothing
+				LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "ret_val");
+			} break;
+			case Ast_Statement::Tag::Var_Decl:
+			{
+				Ast_Var_Decl* var_decl = statement->as_var_decl;
+				if (var_decl->expr.has_value()) error_exit("var decl is only supported with default init");
+				if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
+				
+				Ast_Type* type = var_decl->type.value();
+				if (type->tag != Ast_Type::Tag::Basic) error_exit("var decl is only supported with basic types");
+
+				LLVMTypeRef var_type = basic_type_convert(type->as_basic);
+				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type, get_c_string(var_decl->ident.token));
+				LLVMBuildStore(builder, LLVMConstNull(var_type), var_ptr); //LLVMMemset might be better for 0-ing structs or arrays
+			} break;
+			case Ast_Statement::Tag::Var_Assign:
+			{
+				Ast_Var_Assign* var_assign = statement->as_var_assign;
+			} break;
+			default: break;
 		}
 	}
-
-	for (Ast_Proc_Decl* proc_decl : ast->procs)
-	{
-		LLVMTypeRef proc_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
-		Token t = proc_decl->ident.token; //@Hack inserting null terminator to source data (should never override other string or identifier)
-		t.string_value.data[t.string_value.count] = 0;
-		LLVMValueRef proc = LLVMAddFunction(mod, (char*)t.string_value.data, proc_type);
-		LLVMBasicBlockRef proc_block = LLVMAppendBasicBlockInContext(context, proc, "block");
-		LLVMPositionBuilderAtEnd(builder, proc_block);
-		LLVMBuildRet(builder, NULL);
-	}
-
-	//LLVMTypeRef main_func_type = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
-	//LLVMValueRef main_func = LLVMAddFunction(mod, "main", main_func_type);
-	//LLVMBasicBlockRef main_block = LLVMAppendBasicBlockInContext(context, main_func, "block");
-	//LLVMPositionBuilderAtEnd(builder, main_block);
-	//LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
-
-	LLVMDisposeBuilder(builder);
-	return mod;
+	
+	LLVMBuildRet(builder, NULL); //entry block needs to have ret void
 }
 
-LLVMModuleRef llvm_build_ir_example(Ast* ast)
+LLVMTypeRef Backend_LLVM::basic_type_convert(BasicType basic_type) //@Uints shouild use different bitwith?
+{
+	switch (basic_type)
+	{
+		case BASIC_TYPE_I8: return LLVMInt8Type();
+		case BASIC_TYPE_U8: return LLVMInt8Type();
+		case BASIC_TYPE_I16: return LLVMInt16Type();
+		case BASIC_TYPE_U16: return LLVMInt16Type();
+		case BASIC_TYPE_I32: return LLVMInt32Type();
+		case BASIC_TYPE_U32: return LLVMInt32Type();
+		case BASIC_TYPE_I64: return LLVMInt64Type();
+		case BASIC_TYPE_U64: return LLVMInt64Type();
+		case BASIC_TYPE_F32: return LLVMFloatType();
+		case BASIC_TYPE_F64: return LLVMDoubleType();
+		case BASIC_TYPE_BOOL: return LLVMInt1Type();
+		//@Undefined for now, might use a struct: case BASIC_TYPE_STRING:
+		default: error_exit("basic type not found (basic_type_convert)"); break;
+	}
+	return LLVMVoidType();
+}
+
+char* Backend_LLVM::get_c_string(Token& token) //@Unsafe hack to get c string from string view of source file string, need to do smth better
+{
+	token.string_value.data[token.string_value.count] = 0;
+	return (char*)token.string_value.data;
+}
+
+void Backend_LLVM::error_exit(const char* message)
+{
+	printf("backend error: %s.\n", message);
+	exit(EXIT_FAILURE);
+}
+
+void Backend_LLVM::backend_build_ir_example(Ast* ast)
 {
 	LLVMContextRef context = LLVMContextCreate();
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
@@ -88,10 +183,9 @@ LLVMModuleRef llvm_build_ir_example(Ast* ast)
 	LLVMBuildRet(builder, sum_result);
 
 	LLVMDisposeBuilder(builder);
-	return mod;
 }
 
-void llvm_build_binaries(LLVMModuleRef mod)
+void Backend_LLVM::backend_build_binaries()
 {
 	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
 	//even during IR building for dev period
@@ -109,22 +203,21 @@ void llvm_build_binaries(LLVMModuleRef mod)
 	char* cpu_features = LLVMGetHostCPUFeatures();
 	char* triple = LLVMGetDefaultTargetTriple();
 	LLVMGetTargetFromTriple(triple, &target, &error);
-	LLVMSetTarget(mod, triple);
+	LLVMSetTarget(module, triple);
 
 	LLVMTargetMachineRef machine = LLVMCreateTargetMachine
 	(target, triple, cpu, cpu_features, LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
 	
 	LLVMTargetDataRef datalayout = LLVMCreateTargetDataLayout(machine);
 	char* datalayout_str = LLVMCopyStringRepOfTargetData(datalayout);
-	LLVMSetDataLayout(mod, datalayout_str);
+	LLVMSetDataLayout(module, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
-	llvm_debug_print_module(mod);
+	backend_debug_print_module();
 
-	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &error);
+	LLVMTargetMachineEmitToFile(machine, module, "result.o", LLVMObjectFile, &error);
 	if (error != NULL) printf("error: %s\n", error);
 	
-	LLVMContextRef context = LLVMGetModuleContext(mod);
-	LLVMDisposeModule(mod);
+	LLVMDisposeModule(module);
 	LLVMContextDispose(context);
 
 	LLVMDisposeMessage(error);
@@ -133,10 +226,10 @@ void llvm_build_binaries(LLVMModuleRef mod)
 	LLVMDisposeMessage(triple);
 }
 
-void llvm_debug_print_module(LLVMModuleRef mod)
+void Backend_LLVM::backend_debug_print_module()
 {
-	LLVMPrintModuleToFile(mod, "output.ll", NULL);
-	char* message = LLVMPrintModuleToString(mod);
+	LLVMPrintModuleToFile(module, "output.ll", NULL);
+	char* message = LLVMPrintModuleToString(module);
 	printf("Module: %s", message);
 	LLVMDisposeMessage(message);
 }

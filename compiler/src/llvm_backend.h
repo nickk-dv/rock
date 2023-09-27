@@ -4,11 +4,37 @@
 #include "ast.h"
 #include "llvm-c/Core.h"
 
-void llvm_build(Ast* ast);
+struct Backend_LLVM
+{
+public:
+	void backend_build(Ast* ast);
 
-LLVMModuleRef llvm_build_ir(Ast* ast);
-LLVMModuleRef llvm_build_ir_example(Ast* ast);
-void llvm_build_binaries(LLVMModuleRef mod);
-void llvm_debug_print_module(LLVMModuleRef mod);
+private:
+	void backend_build_ir(Ast* ast);
+	void backend_build_enum_decl(Ast_Enum_Decl* enum_decl);
+	void backend_build_struct_decl(Ast_Struct_Decl* struct_decl);
+	void backend_build_proc_decl(Ast_Proc_Decl* proc_decl);
+	void backend_build_proc_body(Ast_Proc_Decl* proc_decl);
+
+	LLVMTypeRef basic_type_convert(BasicType basic_type);
+	char* get_c_string(Token& token);
+	void error_exit(const char* message);
+
+	void backend_build_ir_example(Ast* ast);
+	void backend_build_binaries();
+	void backend_debug_print_module();
+
+	LLVMContextRef context;
+	LLVMModuleRef module;
+	LLVMBuilderRef builder;
+
+	struct Proc_Meta
+	{
+		LLVMTypeRef proc_type;
+		LLVMValueRef proc_val;
+	};
+
+	HashMap<StringView, Proc_Meta, u32, match_string_view> proc_decl_map;
+};
 
 #endif
