@@ -17,12 +17,13 @@ BasicType token_to_basic_type(TokenType type);
 u32 token_binary_op_prec(BinaryOp binary_op);
 TokenType token_str_to_keyword(StringView str);
 
-enum TokenType //@Issue maybe TOKEN_LITERAL + Literal flag is better that separate string and number tokens bool_literal can be solved by this also
+enum TokenType
 {
 	TOKEN_IDENT,                 // name
-	TOKEN_NUMBER,                // 10
-	TOKEN_STRING,                // "string"
 	TOKEN_BOOL_LITERAL,          // true false
+	TOKEN_FLOAT_LITERAL,         // 10.5
+	TOKEN_INTEGER_LITERAL,       // 10
+	TOKEN_STRING_LITERAL,        // "string"
 
 	TOKEN_KEYWORD_STRUCT,        // struct
 	TOKEN_KEYWORD_ENUM,          // enum
@@ -104,6 +105,7 @@ enum UnaryOp
 {
 	UNARY_OP_MINUS,           // -
 	UNARY_OP_LOGIC_NOT,       // !
+	UNARY_OP_ADRESS_OF,       // &
 	UNARY_OP_BITWISE_NOT,     // ~
 	UNARY_OP_ERROR,
 };
@@ -177,6 +179,7 @@ struct Token
 		bool bool_value;
 		double float64_value;
 		u64 integer_value;
+		char* string_literal_value; //@Not sure about nessesary implementation yet
 		StringView string_value;
 	};
 };

@@ -246,7 +246,7 @@ struct Ast_Proc_Call
 {
 	Ast_Ident ident;
 	std::vector<Ast_Expr*> input_exprs;
-	std::optional<Ast_Access*> access; //@Proc call in expr and as statement behave differently
+	std::optional<Ast_Access*> access;
 };
 
 struct Ast_Var_Decl

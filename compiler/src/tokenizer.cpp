@@ -92,6 +92,11 @@ void Tokenizer::tokenize_buffer()
 
 				TokenType keyword = token_str_to_keyword(token.string_value);
 				if (keyword != TOKEN_ERROR) token.type = keyword;
+
+				if (keyword == TOKEN_KEYWORD_TRUE) 
+				{ token.type = TOKEN_BOOL_LITERAL; token.bool_value = true; }
+				else if (keyword == TOKEN_KEYWORD_FALSE)
+				{ token.type = TOKEN_BOOL_LITERAL; token.bool_value = false; }
 			} break;
 			case LEXEME_NUMBER:
 			{
@@ -106,7 +111,7 @@ void Tokenizer::tokenize_buffer()
 					integer += c - '0';
 				}
 
-				token.type = TOKEN_NUMBER;
+				token.type = TOKEN_INTEGER_LITERAL;
 				token.integer_value = integer;
 			} break;
 			case LEXEME_STRING:
@@ -126,7 +131,7 @@ void Tokenizer::tokenize_buffer()
 					}
 				}
 
-				token.type = TOKEN_STRING;
+				token.type = TOKEN_STRING_LITERAL;
 				token.string_value.data = (u8*)string_storage.end_str();
 				if (!terminated) token.type = TOKEN_ERROR;
 			} break;

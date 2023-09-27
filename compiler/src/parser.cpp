@@ -103,7 +103,7 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 		if (try_consume(TOKEN_ASSIGN))
 		{
 			Token int_lit = peek();
-			if (int_lit.type != TOKEN_NUMBER) //@Notice only i32 numbers allowed, dont have any number flags yet
+			if (int_lit.type != TOKEN_INTEGER_LITERAL) //@Notice only i32 numbers allowed
 			{
 				error("Expected constant integer literal.\n"); return {};
 			}
@@ -111,7 +111,7 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 			constant = int_lit.integer_value; //@Notice negative not supported by token integer_value
 		}
 
-		decl->variants.emplace_back(Ast_Ident { variant.value() }); //@Notice type is empty token, might support typed enums
+		decl->variants.emplace_back(Ast_Ident { variant.value() });
 		decl->constants.emplace_back(constant);
 		constant += 1;
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -208,10 +208,10 @@ Ast_Array_Type* Parser::parse_array_type()
 	consume();
 
 	Token token = peek();
-	if (token.type == TOKEN_NUMBER)
+	if (token.type == TOKEN_INTEGER_LITERAL)
 	{
 		consume();
-		array->fixed_size = token.integer_value; //@Hack assuming that number token is Int
+		array->fixed_size = token.integer_value;
 	}
 	else if (try_consume(TOKEN_DOT)) //@Hack define '..' token
 	{
@@ -321,30 +321,11 @@ Ast_Term* Parser::parse_term()
 
 	switch (token.type)
 	{
-		case TOKEN_STRING:
+		case TOKEN_BOOL_LITERAL:
+		case TOKEN_FLOAT_LITERAL:
+		case TOKEN_INTEGER_LITERAL:
+		case TOKEN_STRING_LITERAL:
 		{
-			term->tag = Ast_Term::Tag::Literal;
-			term->as_literal = Ast_Literal { token };
-			consume();
-		} break;
-		case TOKEN_NUMBER:
-		{
-			term->tag = Ast_Term::Tag::Literal;
-			term->as_literal = Ast_Literal { token };
-			consume();
-		} break;
-		case TOKEN_KEYWORD_TRUE:
-		{
-			token.type = TOKEN_BOOL_LITERAL;
-			token.bool_value = true;
-			term->tag = Ast_Term::Tag::Literal;
-			term->as_literal = Ast_Literal { token };
-			consume();
-		} break;
-		case TOKEN_KEYWORD_FALSE:
-		{
-			token.type = TOKEN_BOOL_LITERAL;
-			token.bool_value = false;
 			term->tag = Ast_Term::Tag::Literal;
 			term->as_literal = Ast_Literal { token };
 			consume();

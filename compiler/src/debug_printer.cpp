@@ -11,23 +11,30 @@ void debug_print_ast(Ast* ast)
 
 void debug_print_token(Token token, bool endl, bool location)
 {
-	if (location) printf("l: %lu c: %lu token: ", token.l0, token.c0);
+	if (location) printf("%lu:%lu ", token.l0, token.c0);
 
-	if (token.type == TOKEN_IDENT || token.type == TOKEN_STRING)
+	if (token.type == TOKEN_IDENT)
 	{
 		for (u64 i = 0; i < token.string_value.count; i++)
 			printf("%c", token.string_value.data[i]);
-	}
-	else if (token.type == TOKEN_NUMBER)
-	{
-		printf("%llu", token.integer_value);
-		//@Incomplete need to lex f32 f64 and store numeric flags
 	}
 	else if (token.type == TOKEN_BOOL_LITERAL)
 	{
 		if (token.bool_value)
 			printf("true");
 		else printf("false");
+	}
+	else if (token.type == TOKEN_FLOAT_LITERAL)
+	{
+		printf("%f", token.float64_value);
+	}
+	else if (token.type == TOKEN_INTEGER_LITERAL)
+	{
+		printf("%llu", token.integer_value);
+	}
+	else if (token.type == TOKEN_STRING_LITERAL)
+	{
+		printf("String literals not implemented"); //@Temp
 	}
 	else
 	{
@@ -120,6 +127,7 @@ void debug_print_unary_op(UnaryOp op)
 	{
 		case UNARY_OP_MINUS: printf("-"); break;
 		case UNARY_OP_LOGIC_NOT: printf("!"); break;
+		case UNARY_OP_ADRESS_OF: printf("&"); break;
 		case UNARY_OP_BITWISE_NOT: printf("~"); break;
 		default: printf("[UNKNOWN UNARY OP]"); break;
 	}
