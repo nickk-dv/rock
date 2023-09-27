@@ -12,8 +12,11 @@ struct Ast_Proc_Decl;
 struct Ast_Ident { Token token; };
 struct Ast_Literal { Token token; };
 struct Ast_Type;
-struct Ast_Array;
-struct Ast_Ident_Chain;
+struct Ast_Array_Type;
+struct Ast_Var;
+struct Ast_Access;
+struct Ast_Var_Access;
+struct Ast_Array_Access;
 struct Ast_Ident_Type_Pair;
 struct Ast_Term;
 struct Ast_Expr;
@@ -72,21 +75,47 @@ struct Ast_Type
 		BasicType as_basic;
 		Ast_Ident as_custom; //@Perf making this into pointer will reduce it from 40 to 16 bytes
 		Ast_Type* as_pointer;
-		Ast_Array* as_array;
+		Ast_Array_Type* as_array;
 	};
 };
 
-struct Ast_Array
+struct Ast_Array_Type
 {
 	Ast_Type* element_type;
 	bool is_dynamic;
 	u64 fixed_size;
 };
 
-struct Ast_Ident_Chain
+struct Ast_Var
 {
 	Ast_Ident ident;
-	Ast_Ident_Chain* next;
+	std::optional<Ast_Access*> access;
+};
+
+struct Ast_Access
+{
+	enum class Tag
+	{
+		Var, Array 
+	} tag;
+
+	union
+	{
+		Ast_Var_Access* as_var;
+		Ast_Array_Access* as_array;
+	};
+};
+
+struct Ast_Var_Access
+{
+	Ast_Ident ident;
+	std::optional<Ast_Access*> next;
+};
+
+struct Ast_Array_Access
+{
+	Ast_Expr* index_expr;
+	std::optional<Ast_Access*> next;
 };
 
 struct Ast_Ident_Type_Pair
@@ -99,13 +128,13 @@ struct Ast_Term
 {
 	enum class Tag
 	{
-		Literal, Ident_Chain, Proc_Call,
+		Var, Literal, Proc_Call,
 	} tag;
 
 	union
 	{
+		Ast_Var* as_var;
 		Ast_Literal as_literal;
-		Ast_Ident_Chain* as_ident_chain;
 		Ast_Proc_Call* as_proc_call;
 	};
 };
@@ -217,6 +246,7 @@ struct Ast_Proc_Call
 {
 	Ast_Ident ident;
 	std::vector<Ast_Expr*> input_exprs;
+	std::optional<Ast_Access*> access; //@Proc call in expr and as statement behave differently
 };
 
 struct Ast_Var_Decl
@@ -228,7 +258,7 @@ struct Ast_Var_Decl
 
 struct Ast_Var_Assign
 {
-	Ast_Ident_Chain* ident_chain;
+	Ast_Var* var;
 	AssignOp op;
 	Ast_Expr* expr;
 };

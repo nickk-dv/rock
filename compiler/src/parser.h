@@ -16,8 +16,11 @@ private:
 	Ast_Enum_Decl* parse_enum_decl();
 	Ast_Proc_Decl* parse_proc_decl();
 	Ast_Type* parse_type();
-	Ast_Array* parse_array();
-	Ast_Ident_Chain* parse_ident_chain();
+	Ast_Array_Type* parse_array_type();
+	Ast_Var* parse_var();
+	Ast_Access* parse_access();
+	Ast_Var_Access* parse_var_access();
+	Ast_Array_Access* parse_array_access();
 	Ast_Term* parse_term();
 	Ast_Expr* parse_expr();
 	Ast_Expr* parse_sub_expr(u32 min_prec = 0);

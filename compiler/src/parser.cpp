@@ -187,7 +187,7 @@ Ast_Type* Parser::parse_type()
 		} break;
 		case TOKEN_BRACKET_START:
 		{
-			Ast_Array* array = parse_array();
+			Ast_Array_Type* array = parse_array_type();
 			if (!array) return NULL;
 			type->tag = Ast_Type::Tag::Array;
 			type->as_array = array;
@@ -202,9 +202,9 @@ Ast_Type* Parser::parse_type()
 	return type;
 }
 
-Ast_Array* Parser::parse_array()
+Ast_Array_Type* Parser::parse_array_type()
 {
-	Ast_Array* array = m_arena.alloc<Ast_Array>();
+	Ast_Array_Type* array = m_arena.alloc<Ast_Array_Type>();
 	consume();
 
 	Token token = peek();
@@ -228,24 +228,90 @@ Ast_Array* Parser::parse_array()
 	return array;
 }
 
-Ast_Ident_Chain* Parser::parse_ident_chain()
+Ast_Var* Parser::parse_var()
 {
-	Ast_Ident_Chain* ident_chain = m_arena.alloc<Ast_Ident_Chain>();
-	ident_chain->ident = Ast_Ident{ consume_get() };
-	Ast_Ident_Chain* current = ident_chain;
+	Ast_Var* var = m_arena.alloc<Ast_Var>();
+	var->ident = Ast_Ident { consume_get() };
 
-	while (true)
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
 	{
-		if (!try_consume(TOKEN_DOT)) break;
-		auto ident = try_consume(TOKEN_IDENT);
-		if (!ident) { error("Expected identifier"); return NULL; }
-		
-		current->next = m_arena.alloc<Ast_Ident_Chain>();
-		current->next->ident = Ast_Ident { ident.value() };
-		current = current->next;
+		Ast_Access* access = parse_access();
+		if (!access) return NULL;
+		var->access = access;
 	}
 
-	return ident_chain;
+	return var;
+}
+
+Ast_Access* Parser::parse_access()
+{
+	Ast_Access* access = m_arena.alloc<Ast_Access>();
+	Token token = peek();
+	
+	if (token.type == TOKEN_DOT)
+	{
+		consume();
+		Ast_Var_Access* var_access = parse_var_access();
+		if (!var_access) return NULL;
+		access->tag = Ast_Access::Tag::Var;
+		access->as_var = var_access;
+	}
+	else if (token.type == TOKEN_BRACKET_START)
+	{
+		consume();
+		Ast_Array_Access* array_access = parse_array_access();
+		if (!array_access) return NULL;
+		access->tag = Ast_Access::Tag::Array;
+		access->as_array = array_access;
+	}
+	else
+	{
+		error("Fatal parse error in parse_access");
+		return NULL;
+	}
+
+	return access;
+}
+
+Ast_Var_Access* Parser::parse_var_access()
+{
+	Ast_Var_Access* var_access = m_arena.alloc<Ast_Var_Access>();
+
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) { error("Expected field identifier"); return NULL; }
+	var_access->ident = Ast_Ident { ident.value() };
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access();
+		if (!access) return NULL;
+		var_access->next = access;
+	}
+
+	return var_access;
+}
+
+Ast_Array_Access* Parser::parse_array_access()
+{
+	Ast_Array_Access* array_access = m_arena.alloc<Ast_Array_Access>();
+
+	Ast_Expr* expr = parse_sub_expr();
+	if (!expr) return NULL;
+	array_access->index_expr = expr;
+
+	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access();
+		if (!access) return NULL;
+		array_access->next = access;
+	}
+
+	return array_access;
 }
 
 Ast_Term* Parser::parse_term()
@@ -292,13 +358,14 @@ Ast_Term* Parser::parse_term()
 				if (!proc_call) return NULL;
 				term->tag = Ast_Term::Tag::Proc_Call;
 				term->as_proc_call = proc_call;
-				break;
 			}
-
-			Ast_Ident_Chain* ident_chain = parse_ident_chain();
-			if (!ident_chain) return NULL;
-			term->tag = Ast_Term::Tag::Ident_Chain;
-			term->as_ident_chain = ident_chain;
+			else
+			{
+				Ast_Var* var = parse_var();
+				if (!var) return NULL;
+				term->tag = Ast_Term::Tag::Var;
+				term->as_var = var;
+			}
 		} break;
 		default:
 		{
@@ -620,8 +687,17 @@ Ast_Proc_Call* Parser::parse_proc_call()
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
 
-	error("Parse error in parse_proc_call");
-	return NULL;
+	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')' after procedure call"); return NULL; }
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access();
+		if (!access) return NULL;
+		proc_call->access = access;
+	}
+
+	return proc_call;
 }
 
 Ast_Var_Decl* Parser::parse_var_decl()
@@ -651,10 +727,10 @@ Ast_Var_Decl* Parser::parse_var_decl()
 Ast_Var_Assign* Parser::parse_var_assign()
 {
 	Ast_Var_Assign* var_assign = m_arena.alloc<Ast_Var_Assign>();
-	
-	Ast_Ident_Chain* ident_chain = parse_ident_chain();
-	if (!ident_chain) return NULL;
-	var_assign->ident_chain = ident_chain;
+
+	Ast_Var* var = parse_var();
+	if (!var) return NULL;
+	var_assign->var = var;
 
 	Token token = peek();
 	AssignOp op = token_to_assign_op(token.type);

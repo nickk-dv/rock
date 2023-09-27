@@ -17,7 +17,7 @@ BasicType token_to_basic_type(TokenType type);
 u32 token_binary_op_prec(BinaryOp binary_op);
 TokenType token_str_to_keyword(StringView str);
 
-enum TokenType
+enum TokenType //@Issue maybe TOKEN_LITERAL + Literal flag is better that separate string and number tokens bool_literal can be solved by this also
 {
 	TOKEN_IDENT,                 // name
 	TOKEN_NUMBER,                // 10

@@ -285,32 +285,53 @@ void debug_print_type(Ast_Type* type)
 		} break;
 		case Ast_Type::Tag::Array:
 		{
-			Ast_Array* array = type->as_array;
-			if (array->is_dynamic) printf("[..]");
-			else printf("[%llu]", array->fixed_size);
-			debug_print_type(array->element_type);
+			debug_print_array_type(type->as_array);
 		} break;
 	}
 }
 
-void debug_print_ident_chain(Ast_Ident_Chain* ident_chain)
+void debug_print_array_type(Ast_Array_Type* array_type)
 {
-	while (ident_chain != NULL)
-	{
-		debug_print_token(ident_chain->ident.token, false);
-		ident_chain = ident_chain->next;
-		if (ident_chain != NULL)
-		printf(".");
-	}
+	if (array_type->is_dynamic) printf("[..]");
+	else printf("[%llu]", array_type->fixed_size);
+	debug_print_type(array_type->element_type);
+}
+
+void debug_print_var(Ast_Var* var)
+{
+	debug_print_token(var->ident.token, false);
+	if (var->access) debug_print_access(var->access.value());
 	printf("\n");
+}
+
+void debug_print_access(Ast_Access* access)
+{
+	if (access->tag == Ast_Access::Tag::Var)
+	{
+		printf(".");
+		debug_print_var_access(access->as_var);
+	}
+	else debug_print_array_access(access->as_array);
+}
+
+void debug_print_var_access(Ast_Var_Access* var_access)
+{
+	debug_print_token(var_access->ident.token, false, false);
+	if (var_access->next) debug_print_access(var_access->next.value());
+}
+
+void debug_print_array_access(Ast_Array_Access* array_access)
+{
+	printf("[expr]");
+	if (array_access->next) debug_print_access(array_access->next.value());
 }
 
 void debug_print_term(Ast_Term* term, u32 depth)
 {
-	if (term->tag == Ast_Term::Tag::Ident_Chain)
+	if (term->tag == Ast_Term::Tag::Var)
 	{
 		debug_print_branch(depth);
-		printf("Term_Ident_Chain: ");
+		printf("Term_Var: ");
 	}
 	else if (term->tag == Ast_Term::Tag::Literal)
 	{
@@ -320,8 +341,8 @@ void debug_print_term(Ast_Term* term, u32 depth)
 
 	switch (term->tag)
 	{
+		case Ast_Term::Tag::Var: debug_print_var(term->as_var); break;
 		case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
-		case Ast_Term::Tag::Ident_Chain: debug_print_ident_chain(term->as_ident_chain); break;
 		case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 		default: break;
 	}
@@ -487,6 +508,15 @@ void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 	debug_print_token(proc_call->ident.token, true);
 
 	debug_print_spacing(depth);
+	printf("Access: ");
+	if (proc_call->access)
+	{
+		debug_print_access(proc_call->access.value());
+		printf("\n");
+	}
+	else printf("---\n");
+
+	debug_print_spacing(depth);
 	printf("Input_Exprs: ");
 	if (!proc_call->input_exprs.empty())
 	{
@@ -523,9 +553,11 @@ void debug_print_var_decl(Ast_Var_Decl* var_decl, u32 depth)
 void debug_print_var_assign(Ast_Var_Assign* var_assign, u32 depth)
 {
 	debug_print_branch(depth);
-	printf("Var_Assign: ");
+	printf("Var_Assign\n");
 
-	debug_print_ident_chain(var_assign->ident_chain);
+	debug_print_spacing(depth);
+	printf("Var: ");
+	debug_print_var(var_assign->var);
 	debug_print_spacing(depth);
 	debug_print_assign_op(var_assign->op);
 	debug_print_expr(var_assign->expr, depth);
