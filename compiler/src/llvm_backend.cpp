@@ -14,6 +14,7 @@ void Backend_LLVM::backend_build(Ast* ast)
 void Backend_LLVM::build_ir(Ast* ast)
 {
 	for (Ast_Enum_Decl* enum_decl : ast->enums) { build_enum_decl(enum_decl); }
+	struct_decl_map.init(32);
 	for (Ast_Struct_Decl* struct_decl : ast->structs) { build_struct_decl(struct_decl); }
 	proc_decl_map.init(32);
 	for (Ast_Proc_Decl* proc_decl : ast->procs) { build_proc_decl(proc_decl); }
@@ -33,14 +34,43 @@ void Backend_LLVM::build_enum_decl(Ast_Enum_Decl* enum_decl)
 
 void Backend_LLVM::build_struct_decl(Ast_Struct_Decl* struct_decl)
 {
-	//@Hack temporary member types
-	LLVMTypeRef members[] = { basic_type_convert(BASIC_TYPE_F32), basic_type_convert(BASIC_TYPE_F64) };
-	
 	LLVMTypeRef struct_type = LLVMStructCreateNamed(context, get_c_string(struct_decl->type.token));
-	LLVMStructSetBody(struct_type, members, 2, 0);
+	std::vector<LLVMTypeRef> members; //@Perf decide on better member storage
+
+	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
+	{
+		Ast_Type* type = field.type;
+		LLVMTypeRef type_ref = NULL;
+
+		switch (type->tag)
+		{
+			case Ast_Type::Tag::Basic:
+			{
+				type_ref = basic_type_convert(type->as_basic);
+			} break;
+			case Ast_Type::Tag::Custom:
+			{
+				error_exit("struct field custom types not supported");
+			} break;
+			case Ast_Type::Tag::Pointer:
+			{
+				error_exit("struct field pointer types not supported");
+			} break;
+			case Ast_Type::Tag::Array:
+			{
+				error_exit("struct field arrays not supported");
+			} break;
+		}
+
+		members.emplace_back(type_ref);
+	}
+
+	LLVMStructSetBody(struct_type, members.data(), (u32)members.size(), 0);
+	Struct_Meta meta = { struct_type };
+	struct_decl_map.add(struct_decl->type.token.string_value, meta, hash_fnv1a_32(struct_decl->type.token.string_value));
 
 	//@Hack adding global var to see the struct declaration in the ir
-	LLVMValueRef globalVar = LLVMAddGlobal(module, struct_type, "global_to_see_struct");
+	LLVMValueRef globalVar = LLVMAddGlobal(module, struct_type, "_global_struct_check");
 }
 
 // @Usefull functions:
@@ -53,8 +83,27 @@ void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 	if (proc_decl->return_type.has_value())
 	{
 		Ast_Type* type = proc_decl->return_type.value();
-		if (type->tag != Ast_Type::Tag::Basic) error_exit("procedure declaration return type is only supported with basic types");
-		ret_type = basic_type_convert(type->as_basic);
+		switch (type->tag)
+		{
+			case Ast_Type::Tag::Basic:
+			{
+				ret_type = basic_type_convert(type->as_basic);
+			} break;
+			case Ast_Type::Tag::Custom:
+			{
+				auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
+				if (!struct_meta) error_exit("proc decl return custom type not found");
+				ret_type = struct_meta.value().struct_type;
+			} break;
+			case Ast_Type::Tag::Pointer:
+			{
+				error_exit("proc decl return pointer types not supported");
+			} break;
+			case Ast_Type::Tag::Array:
+			{
+				error_exit("proc decl return arrays not supported");
+			} break;
+		}
 	}
 	if (!proc_decl->input_params.empty()) error_exit("procedure declaration with input params isnt supported");
 
@@ -71,6 +120,10 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
 	LLVMPositionBuilderAtEnd(builder, entry_block);
 	
+	Backend_Block_Scope bc = {};
+	bc.add_block();
+	//Add proc param vars
+
 	Ast_Block* block = proc_decl->block;
 	for (Ast_Statement* statement : block->statements)
 	{
@@ -92,7 +145,7 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 			{
 				Ast_Return* _return = statement->as_return;
 				if (_return->expr.has_value()) 
-					LLVMBuildRet(builder, build_expr_value(_return->expr.value()));
+					LLVMBuildRet(builder, build_expr_value(_return->expr.value(), &bc));
 				else LLVMBuildRet(builder, NULL);
 			} break;
 			case Ast_Statement::Tag::Continue:
@@ -104,41 +157,80 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 				Ast_Proc_Call* proc_call = statement->as_proc_call;
 				if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
 
-				auto proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
+				std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
 				if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
 				//@Notice usage of return values must be enforced on checking stage, statement proc call should return nothing
-				LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_ret_val");
+				LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_val");
 			} break;
 			case Ast_Statement::Tag::Var_Decl:
 			{
 				Ast_Var_Decl* var_decl = statement->as_var_decl;
 				if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
-				Ast_Type* type = var_decl->type.value();
-				if (type->tag != Ast_Type::Tag::Basic) error_exit("var decl is only supported with basic types");
 				
-				// Alloca + Store
-				LLVMTypeRef var_type = basic_type_convert(type->as_basic);
-				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type, get_c_string(var_decl->ident.token));
+				Ast_Type* type = var_decl->type.value();
+				LLVMTypeRef type_ref = NULL;
+
+				switch (type->tag) 
+				{
+					case Ast_Type::Tag::Basic:
+					{
+						type_ref = basic_type_convert(type->as_basic);
+					} break;
+					case Ast_Type::Tag::Custom:
+					{
+						auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
+						if (!struct_meta) error_exit("var decl custom type not found");
+						type_ref = struct_meta.value().struct_type;
+					} break;
+					case Ast_Type::Tag::Pointer:
+					{
+						error_exit("var decl pointer types not supported");
+					} break;
+					case Ast_Type::Tag::Array:
+					{
+						error_exit("var decl arrays not supported");
+					} break;
+				}
+
+				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, type_ref, get_c_string(var_decl->ident.token));
 				if (var_decl->expr.has_value())
-					LLVMBuildStore(builder, build_expr_value(var_decl->expr.value()), var_ptr);
-				else LLVMBuildStore(builder, LLVMConstNull(var_type), var_ptr); //LLVMMemset might be better for 0-ing structs or arrays
+				{
+					LLVMValueRef value = build_expr_value(var_decl->expr.value(), &bc);
+					if (type_ref != LLVMTypeOf(value)) error_exit("type mismatch in variable declaration");
+					LLVMBuildStore(builder, value, var_ptr);
+				}
+				else LLVMBuildStore(builder, LLVMConstNull(type_ref), var_ptr);
+				
+				bc.add_var(Var_Meta { var_decl->ident.token.string_value, type_ref, var_ptr });
 			} break;
 			case Ast_Statement::Tag::Var_Assign:
 			{
 				Ast_Var_Assign* var_assign = statement->as_var_assign;
-				//@Need stack of currently accesible variables
-				error_exit("var assign statement not supported");
+				if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign on = op is supported");
+
+				Ast_Var* var = var_assign->var;
+				if (var->access.has_value()) error_exit("var assign access trails not supported");
+				auto var_meta = bc.find_var(var->ident.token.string_value);
+				if (!var_meta) error_exit("var assign variable wasnt found in block scope");
+				
+				LLVMValueRef assigned_value = var_meta.value().var_value;
+				LLVMTypeRef assigned_type = var_meta.value().var_type;
+				LLVMValueRef value = build_expr_value(var_assign->expr, &bc);
+				if (assigned_type != LLVMTypeOf(value)) error_exit("type mismatch in variable declaration");
+				LLVMBuildStore(builder, value, assigned_value);
 			} break;
 			default: break;
 		}
 	}
+
+	bc.pop_block(); //exiting proc scope
 	
 	//@For non void return values return statement is expected to exist during checking stage
 	if (!proc_decl->return_type.has_value()) 
 		LLVMBuildRet(builder, NULL);
 }
 
-LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr)
+LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc)
 {
 	LLVMValueRef value_ref = NULL;
 
@@ -152,7 +244,14 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr)
 			{
 				case Ast_Term::Tag::Var:
 				{
-					error_exit("var term not supported");
+					Ast_Var* var = term->as_var;
+					if (var->access.has_value()) error_exit("var term access trails not supported");
+					auto var_meta = bc->find_var(var->ident.token.string_value);
+					if (!var_meta) error_exit("var term variable wasnt found in block scope");
+
+					//@Not sure about needing a load when returning struct
+					//Load is needed for basic types during expressions
+					value_ref = LLVMBuildLoad2(builder, var_meta.value().var_type, var_meta.value().var_value, "load_val");
 				} break;
 				case Ast_Term::Tag::Literal:
 				{
@@ -187,7 +286,7 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr)
 		{
 			Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
 			UnaryOp op = unary_expr->op;
-			LLVMValueRef rhs = build_expr_value(unary_expr->right);
+			LLVMValueRef rhs = build_expr_value(unary_expr->right, bc);
 
 			LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
 			LLVMTypeKind rhs_kind = LLVMGetTypeKind(rhs_type);
@@ -227,8 +326,8 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr)
 		{
 			Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
 			BinaryOp op = binary_expr->op;
-			LLVMValueRef lhs = build_expr_value(binary_expr->left);
-			LLVMValueRef rhs = build_expr_value(binary_expr->right);
+			LLVMValueRef lhs = build_expr_value(binary_expr->left, bc);
+			LLVMValueRef rhs = build_expr_value(binary_expr->right, bc);
 
 			LLVMTypeRef lhs_type = LLVMTypeOf(lhs);
 			LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
@@ -489,4 +588,30 @@ void Backend_LLVM::debug_print_module()
 	char* message = LLVMPrintModuleToString(module);
 	printf("Module: %s", message);
 	LLVMDisposeMessage(message);
+}
+
+void Backend_Block_Scope::add_block()
+{
+	block_stack.emplace_back(Backend_Block_Info { 0 });
+}
+
+void Backend_Block_Scope::pop_block()
+{
+	Backend_Block_Info info = block_stack[block_stack.size() - 1];
+	for (u32 i = 0; i < info.var_count; i++)
+		var_stack.pop_back();
+	block_stack.pop_back();
+}
+
+void Backend_Block_Scope::add_var(const Var_Meta& var)
+{
+	block_stack[block_stack.size() - 1].var_count += 1;
+	var_stack.emplace_back(var);
+}
+
+std::optional<Var_Meta> Backend_Block_Scope::find_var(StringView str)
+{
+	for (const Var_Meta& var : var_stack)
+	if (var.str == str) return var;
+	return {};
 }
