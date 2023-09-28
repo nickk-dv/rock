@@ -7,21 +7,21 @@ void Backend_LLVM::backend_build(Ast* ast)
 	context = LLVMContextCreate();
 	module = LLVMModuleCreateWithNameInContext("module", context);
 	builder = LLVMCreateBuilderInContext(context);
-	backend_build_ir(ast);
-	backend_build_binaries();
+	build_ir(ast);
+	build_binaries();
 }
 
-void Backend_LLVM::backend_build_ir(Ast* ast)
+void Backend_LLVM::build_ir(Ast* ast)
 {
-	for (Ast_Enum_Decl* enum_decl : ast->enums) { backend_build_enum_decl(enum_decl); }
-	for (Ast_Struct_Decl* struct_decl : ast->structs) { backend_build_struct_decl(struct_decl); }
+	for (Ast_Enum_Decl* enum_decl : ast->enums) { build_enum_decl(enum_decl); }
+	for (Ast_Struct_Decl* struct_decl : ast->structs) { build_struct_decl(struct_decl); }
 	proc_decl_map.init(32);
-	for (Ast_Proc_Decl* proc_decl : ast->procs) { backend_build_proc_decl(proc_decl); }
-	for (Ast_Proc_Decl* proc_decl : ast->procs) { backend_build_proc_body(proc_decl); }
+	for (Ast_Proc_Decl* proc_decl : ast->procs) { build_proc_decl(proc_decl); }
+	for (Ast_Proc_Decl* proc_decl : ast->procs) { build_proc_body(proc_decl); }
 	LLVMDisposeBuilder(builder);
 }
 
-void Backend_LLVM::backend_build_enum_decl(Ast_Enum_Decl* enum_decl)
+void Backend_LLVM::build_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	for (u32 i = 0; i < enum_decl->variants.size(); i++)
 	{
@@ -31,7 +31,7 @@ void Backend_LLVM::backend_build_enum_decl(Ast_Enum_Decl* enum_decl)
 	}
 }
 
-void Backend_LLVM::backend_build_struct_decl(Ast_Struct_Decl* struct_decl)
+void Backend_LLVM::build_struct_decl(Ast_Struct_Decl* struct_decl)
 {
 	//@Hack temporary member types
 	LLVMTypeRef members[] = { basic_type_convert(BASIC_TYPE_F32), basic_type_convert(BASIC_TYPE_F64) };
@@ -47,15 +47,24 @@ void Backend_LLVM::backend_build_struct_decl(Ast_Struct_Decl* struct_decl)
 // LLVMTypeRef LLVMTypeOf(LLVMValueRef Val);
 // LLVMGetAllocatedType - get type of value on a stack
 
-void Backend_LLVM::backend_build_proc_decl(Ast_Proc_Decl* proc_decl)
+void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 {
-	LLVMTypeRef proc_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
+	LLVMTypeRef ret_type = LLVMVoidType();
+	if (proc_decl->return_type.has_value())
+	{
+		Ast_Type* type = proc_decl->return_type.value();
+		if (type->tag != Ast_Type::Tag::Basic) error_exit("procedure declaration return type is only supported with basic types");
+		ret_type = basic_type_convert(type->as_basic);
+	}
+	if (!proc_decl->input_params.empty()) error_exit("procedure declaration with input params isnt supported");
+
+	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, NULL, 0, 0); //@Temp Discarding input args
 	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident.token), proc_type);
 	Proc_Meta meta = { proc_type, proc_val };
 	proc_decl_map.add(proc_decl->ident.token.string_value, meta, hash_fnv1a_32(proc_decl->ident.token.string_value));
 }
 
-void Backend_LLVM::backend_build_proc_body(Ast_Proc_Decl* proc_decl)
+void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 {
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
@@ -69,25 +78,26 @@ void Backend_LLVM::backend_build_proc_body(Ast_Proc_Decl* proc_decl)
 		{
 			case Ast_Statement::Tag::If:
 			{
-
+				error_exit("if statement not supported");
 			} break;
 			case Ast_Statement::Tag::For:
 			{
-
+				error_exit("for statement not supported");
 			} break;
 			case Ast_Statement::Tag::Break:
 			{
-
+				error_exit("break statement not supported");
 			} break;
 			case Ast_Statement::Tag::Return:
 			{
 				Ast_Return* _return = statement->as_return;
-				if (_return->expr.has_value()) error_exit("return with expr is not supported");
-				LLVMBuildRet(builder, NULL); //ret void
+				if (_return->expr.has_value()) 
+					LLVMBuildRet(builder, build_expr_value(_return->expr.value()));
+				else LLVMBuildRet(builder, NULL);
 			} break;
 			case Ast_Statement::Tag::Continue:
 			{
-
+				error_exit("continue statement not supported");
 			} break;
 			case Ast_Statement::Tag::Proc_Call:
 			{
@@ -97,30 +107,257 @@ void Backend_LLVM::backend_build_proc_body(Ast_Proc_Decl* proc_decl)
 				auto proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
 				if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
 				//@Notice usage of return values must be enforced on checking stage, statement proc call should return nothing
-				LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "ret_val");
+				LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_ret_val");
 			} break;
 			case Ast_Statement::Tag::Var_Decl:
 			{
 				Ast_Var_Decl* var_decl = statement->as_var_decl;
-				if (var_decl->expr.has_value()) error_exit("var decl is only supported with default init");
 				if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
-				
 				Ast_Type* type = var_decl->type.value();
 				if (type->tag != Ast_Type::Tag::Basic) error_exit("var decl is only supported with basic types");
-
+				
+				// Alloca + Store
 				LLVMTypeRef var_type = basic_type_convert(type->as_basic);
 				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type, get_c_string(var_decl->ident.token));
-				LLVMBuildStore(builder, LLVMConstNull(var_type), var_ptr); //LLVMMemset might be better for 0-ing structs or arrays
+				if (var_decl->expr.has_value())
+					LLVMBuildStore(builder, build_expr_value(var_decl->expr.value()), var_ptr);
+				else LLVMBuildStore(builder, LLVMConstNull(var_type), var_ptr); //LLVMMemset might be better for 0-ing structs or arrays
 			} break;
 			case Ast_Statement::Tag::Var_Assign:
 			{
 				Ast_Var_Assign* var_assign = statement->as_var_assign;
+				//@Need stack of currently accesible variables
+				error_exit("var assign statement not supported");
 			} break;
 			default: break;
 		}
 	}
 	
-	LLVMBuildRet(builder, NULL); //entry block needs to have ret void
+	//@For non void return values return statement is expected to exist during checking stage
+	if (!proc_decl->return_type.has_value()) 
+		LLVMBuildRet(builder, NULL);
+}
+
+LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr)
+{
+	LLVMValueRef value_ref = NULL;
+
+	switch (expr->tag)
+	{
+		case Ast_Expr::Tag::Term:
+		{
+			Ast_Term* term = expr->as_term;
+			
+			switch (term->tag)
+			{
+				case Ast_Term::Tag::Var:
+				{
+					error_exit("var term not supported");
+				} break;
+				case Ast_Term::Tag::Literal:
+				{
+					Token token = term->as_literal.token;
+					if (token.type == TOKEN_BOOL_LITERAL)
+					{
+						value_ref = LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
+					}
+					else if (token.type == TOKEN_FLOAT_LITERAL) //@Choose Double or float? defaulting to double
+					{
+						value_ref = LLVMConstReal(LLVMDoubleType(), token.float64_value);
+					}
+					else if (token.type == TOKEN_INTEGER_LITERAL) //@Todo sign extend?
+					{
+						value_ref = LLVMConstInt(LLVMInt32Type(), token.integer_value, 0); 
+					}
+					else error_exit("unsupported literal type");
+				} break;
+				case Ast_Term::Tag::Proc_Call:
+				{
+					Ast_Proc_Call* proc_call = term->as_proc_call;
+					if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
+					if (proc_call->access.has_value()) error_exit("access trail from function return values is not supported");
+					auto proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
+					if (!proc_meta) error_exit("failed to find proc declaration while trying to call it");
+
+					value_ref = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_ret_val");
+				} break;
+			}
+		} break;
+		case Ast_Expr::Tag::Unary_Expr:
+		{
+			Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
+			UnaryOp op = unary_expr->op;
+			LLVMValueRef rhs = build_expr_value(unary_expr->right);
+
+			LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
+			LLVMTypeKind rhs_kind = LLVMGetTypeKind(rhs_type);
+
+			if (!kind_is_ifd(rhs_kind)) error_exit("unary_expr rhs kind != ifd");
+			bool fd_kind = kind_is_fd(rhs_kind);
+			bool int_kind = kind_is_i(rhs_kind);
+			bool bool_kind = type_is_bool(rhs_kind, rhs_type);
+			if (!fd_kind && !int_kind && !bool_kind) error_exit("unary_expr rhs allowed types are: [fd] [iX] [i1(bool)]");
+
+			switch (op)
+			{
+				case UNARY_OP_MINUS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFNeg(builder, rhs, "utmp");
+					else if (int_kind) value_ref = LLVMBuildNeg(builder, rhs, "utmp'"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+					else error_exit("unary_expr - expected fd or i");
+				} break;
+				case UNARY_OP_LOGIC_NOT:
+				{
+					if (bool_kind) value_ref = LLVMBuildNot(builder, rhs, "utmp");
+					else error_exit("unary_expr ! expected bool");
+				} break;
+				case UNARY_OP_ADRESS_OF:
+				{
+					error_exit("unary_expr & not supported");
+				} break;
+				case UNARY_OP_BITWISE_NOT:
+				{
+					if (int_kind) value_ref = LLVMBuildNot(builder, rhs, "utmp"); //@Design only allow uint
+					else error_exit("unary_expr ~ expected i");
+				} break;
+				default: error_exit("unary_expr unknown unary op"); break;
+			}
+		} break;
+		case Ast_Expr::Tag::Binary_Expr:
+		{
+			Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
+			BinaryOp op = binary_expr->op;
+			LLVMValueRef lhs = build_expr_value(binary_expr->left);
+			LLVMValueRef rhs = build_expr_value(binary_expr->right);
+
+			LLVMTypeRef lhs_type = LLVMTypeOf(lhs);
+			LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
+			LLVMTypeKind lhs_kind = LLVMGetTypeKind(lhs_type);
+			LLVMTypeKind rhs_kind = LLVMGetTypeKind(rhs_type);
+
+			if (!kind_is_ifd(lhs_kind)) error_exit("bin_expr lhs kind != ifd");
+			if (!kind_is_ifd(rhs_kind)) error_exit("bin_expr rhs kind != ifd");
+			bool fd_kind = (kind_is_fd(lhs_kind) && kind_is_fd(rhs_kind));
+			bool int_kind = (kind_is_i(lhs_kind) && kind_is_i(rhs_kind));
+			bool bool_kind = (type_is_bool(lhs_kind, lhs_type) && type_is_bool(rhs_kind, rhs_type));
+			if (!fd_kind && !int_kind && !bool_kind) error_exit("bin_expr lhs rhs dont match, allowed types are: [fd : fd] [iX : iX] [i1(bool) : i1(bool)]");
+			
+			//@Might use LLVMBuildBinOp() unitility with op code
+			switch (op)
+			{
+				// LogicOps [&& ||]
+				case BINARY_OP_LOGIC_AND:
+				{
+					if (!bool_kind) error_exit("bin_expr && expected bool");
+					value_ref = LLVMBuildAnd(builder, lhs, rhs, "btmp");
+				} break;
+				case BINARY_OP_LOGIC_OR:
+				{
+					if (!bool_kind) error_exit("bin_expr || expected bool");
+					value_ref = LLVMBuildOr(builder, lhs, rhs, "btmp");
+				} break;
+				// CmpOps [< > <= >= == !=]
+				case BINARY_OP_LESS: //@RealPredicates using ordered (no nans) variants
+				{
+					if (fd_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOLT, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSLT, lhs, rhs, "btmp"); //@Determine S / U predicates
+					else error_exit("bin_expr < expected fd or i got bool");
+				} break;
+				case BINARY_OP_GREATER:
+				{
+					if (fd_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOGT, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSGT, lhs, rhs, "btmp"); //@Determine S / U predicates
+					else error_exit("bin_expr > expected fd or i got bool");
+				} break;
+				case BINARY_OP_LESS_EQUALS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOLE, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSLE, lhs, rhs, "btmp"); //@Determine S / U predicates
+					else error_exit("bin_expr <= expected fd or i got bool");
+				} break;
+				case BINARY_OP_GREATER_EQUALS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOGE, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSGE, lhs, rhs, "btmp"); //@Determine S / U predicates
+					else error_exit("bin_expr >= expected fd or i got bool");
+				} break;
+				case BINARY_OP_IS_EQUALS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOEQ, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntEQ, lhs, rhs, "btmp"); //@Determine S / U predicates
+					else error_exit("bin_expr == expected fd or i got bool");
+				} break;
+				case BINARY_OP_NOT_EQUALS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealONE, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntNE, lhs, rhs, "btmp"); //@Determine S / U predicates
+					else error_exit("bin_expr != expected fd or i got bool");
+				} break;
+				// MathOps [+ - * / %]
+				case BINARY_OP_PLUS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFAdd(builder, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildAdd(builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+					else error_exit("bin_expr + expected fd or i got bool");
+				} break;
+				case BINARY_OP_MINUS:
+				{
+					if (fd_kind) value_ref = LLVMBuildFSub(builder, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildSub(builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+					else error_exit("bin_expr + expected fd or i got bool");
+				} break;
+				case BINARY_OP_TIMES:
+				{
+					if (fd_kind) value_ref = LLVMBuildFMul(builder, lhs, rhs, "btmp");
+					else if (int_kind) value_ref = LLVMBuildMul(builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+					else error_exit("bin_expr * expected fd or i got bool");
+				} break;
+				case BINARY_OP_DIV:
+				{
+					if (fd_kind) value_ref = LLVMBuildFDiv(builder, lhs, rhs, "btmp");
+					//@ SU variants: LLVMBuildSDiv, LLVMBuildExactSDiv, LLVMBuildUDiv, LLVMBuildExactUDiv
+					else if (int_kind) value_ref = LLVMBuildSDiv(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr / expected fd or i got bool");
+				} break;
+				case BINARY_OP_MOD: //@Design floating modulo is possible but isnt too usefull
+				{
+					//@ SU rem variants: LLVMBuildSRem, LLVMBuildURem (using SRem always now)
+					if (int_kind) value_ref = LLVMBuildSRem(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr % expected i");
+				} break;
+				// BitwiseOps [& | ^ << >>]
+				case BINARY_OP_BITWISE_AND: // @Design only allow those for uints ideally
+				{
+					if (int_kind) value_ref = LLVMBuildAnd(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr & expected i");
+				} break;
+				case BINARY_OP_BITWISE_OR:
+				{
+					if (int_kind) value_ref = LLVMBuildOr(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr | expected i");
+				} break;
+				case BINARY_OP_BITWISE_XOR:
+				{
+					if (int_kind) value_ref = LLVMBuildXor(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr ^ expected i");
+				} break;
+				case BINARY_OP_BITSHIFT_LEFT:
+				{
+					if (int_kind) value_ref = LLVMBuildShl(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr << expected i");
+				} break;
+				case BINARY_OP_BITSHIFT_RIGHT: //@LLVMBuildAShr used for maintaining the sign?
+				{
+					if (int_kind) value_ref = LLVMBuildLShr(builder, lhs, rhs, "btmp");
+					else error_exit("bin_expr >> expected i");
+				} break;
+				default: error_exit("bin_expr unknown binary op"); break;
+			}
+		} break;
+	}
+
+	if (value_ref == NULL) error_exit("bin_expr value_ref is null on return");
+	return value_ref;
 }
 
 LLVMTypeRef Backend_LLVM::basic_type_convert(BasicType basic_type) //@Uints shouild use different bitwith?
@@ -144,6 +381,26 @@ LLVMTypeRef Backend_LLVM::basic_type_convert(BasicType basic_type) //@Uints shou
 	return LLVMVoidType();
 }
 
+bool Backend_LLVM::kind_is_ifd(LLVMTypeKind type_kind)
+{
+	return type_kind == LLVMIntegerTypeKind || type_kind == LLVMFloatTypeKind || type_kind == LLVMDoubleTypeKind;
+}
+
+bool Backend_LLVM::kind_is_fd(LLVMTypeKind type_kind)
+{
+	return type_kind == LLVMFloatTypeKind || type_kind == LLVMDoubleTypeKind;
+}
+
+bool Backend_LLVM::kind_is_i(LLVMTypeKind type_kind)
+{
+	return type_kind == LLVMIntegerTypeKind;
+}
+
+bool Backend_LLVM::type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref)
+{
+	return type_kind == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type_ref) == 1;
+}
+
 char* Backend_LLVM::get_c_string(Token& token) //@Unsafe hack to get c string from string view of source file string, need to do smth better
 {
 	token.string_value.data[token.string_value.count] = 0;
@@ -156,7 +413,7 @@ void Backend_LLVM::error_exit(const char* message)
 	exit(EXIT_FAILURE);
 }
 
-void Backend_LLVM::backend_build_ir_example(Ast* ast)
+void Backend_LLVM::build_ir_example(Ast* ast)
 {
 	LLVMContextRef context = LLVMContextCreate();
 	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
@@ -185,7 +442,7 @@ void Backend_LLVM::backend_build_ir_example(Ast* ast)
 	LLVMDisposeBuilder(builder);
 }
 
-void Backend_LLVM::backend_build_binaries()
+void Backend_LLVM::build_binaries()
 {
 	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
 	//even during IR building for dev period
@@ -212,7 +469,7 @@ void Backend_LLVM::backend_build_binaries()
 	char* datalayout_str = LLVMCopyStringRepOfTargetData(datalayout);
 	LLVMSetDataLayout(module, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
-	backend_debug_print_module();
+	debug_print_module();
 
 	LLVMTargetMachineEmitToFile(machine, module, "result.o", LLVMObjectFile, &error);
 	if (error != NULL) printf("error: %s\n", error);
@@ -226,7 +483,7 @@ void Backend_LLVM::backend_build_binaries()
 	LLVMDisposeMessage(triple);
 }
 
-void Backend_LLVM::backend_debug_print_module()
+void Backend_LLVM::debug_print_module()
 {
 	LLVMPrintModuleToFile(module, "output.ll", NULL);
 	char* message = LLVMPrintModuleToString(module);
