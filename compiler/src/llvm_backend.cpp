@@ -69,85 +69,133 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
-	LLVMPositionBuilderAtEnd(builder, entry_block);
 	
+	//@Todo add proc input params to scope
 	Backend_Block_Scope bc = {};
-	bc.add_block();
-	//Add proc param vars
-
-	Ast_Block* block = proc_decl->block;
-	for (Ast_Statement* statement : block->statements)
-	{
-		switch (statement->tag)
-		{
-			case Ast_Statement::Tag::If:
-			{
-				error_exit("if statement not supported");
-			} break;
-			case Ast_Statement::Tag::For:
-			{
-				error_exit("for statement not supported");
-			} break;
-			case Ast_Statement::Tag::Break:
-			{
-				error_exit("break statement not supported");
-			} break;
-			case Ast_Statement::Tag::Return:
-			{
-				Ast_Return* _return = statement->as_return;
-				if (_return->expr.has_value()) 
-					LLVMBuildRet(builder, build_expr_value(_return->expr.value(), &bc));
-				else LLVMBuildRet(builder, NULL);
-			} break;
-			case Ast_Statement::Tag::Continue:
-			{
-				error_exit("continue statement not supported");
-			} break;
-			case Ast_Statement::Tag::Proc_Call:
-			{
-				Ast_Proc_Call* proc_call = statement->as_proc_call;
-				if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
-				std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
-				if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
-				//@Notice usage of return values must be enforced on checking stage, statement proc call should return nothing
-				LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_val");
-			} break;
-			case Ast_Statement::Tag::Var_Decl:
-			{
-				Ast_Var_Decl* var_decl = statement->as_var_decl;
-				if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
-				Type_Meta type = get_type_meta(var_decl->type.value());
-				
-				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, type.type, get_c_string(var_decl->ident.token));
-				if (var_decl->expr.has_value())
-				{
-					LLVMValueRef value = build_expr_value(var_decl->expr.value(), &bc);
-					if (type.type != LLVMTypeOf(value)) error_exit("type mismatch in variable declaration");
-					LLVMBuildStore(builder, value, var_ptr);
-				}
-				else LLVMBuildStore(builder, LLVMConstNull(type.type), var_ptr);
-
-				bc.add_var(Var_Meta { type.is_struct, type.struct_decl, var_decl->ident.token.string_value, type.type, var_ptr });
-			} break;
-			case Ast_Statement::Tag::Var_Assign:
-			{
-				Ast_Var_Assign* var_assign = statement->as_var_assign;
-				if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign: only = op is supported");
-				
-				Ast_Var* var = var_assign->var;
-				Var_Access_Meta var_access = get_var_access_meta(var, &bc);
-				LLVMValueRef expr_value = build_expr_value(var_assign->expr, &bc);
-				LLVMBuildStore(builder, expr_value, var_access.ptr);
-			} break;
-			default: break;
-		}
-	}
-
-	bc.pop_block(); //exiting proc scope
+	build_block(proc_decl->block, entry_block, proc_meta.value().proc_val, &bc);
 	
 	//@For non void return values return statement is expected to exist during checking stage
-	if (!proc_decl->return_type.has_value()) 
-		LLVMBuildRet(builder, NULL);
+	if (!proc_decl->return_type.has_value()) LLVMBuildRet(builder, NULL);
+}
+
+//@Todo investigate order of nested if else blocks, try to reach the logical order
+//@Also numbering of if_block / else_blocks is weidly not sequential
+// nested after_blocks are inserted in the end resulting in the non sequential ir output
+void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
+{
+	bc->add_block();
+	LLVMPositionBuilderAtEnd(builder, basic_block);
+
+	for (Ast_Statement* statement : block->statements)
+	{
+	switch (statement->tag) 
+	{
+		case Ast_Statement::Tag::If:
+		{
+			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "after_block");
+			build_if(statement->as_if, basic_block, after_block, proc_value, bc);
+			LLVMPositionBuilderAtEnd(builder, after_block);
+			basic_block = after_block;
+		} break;
+		case Ast_Statement::Tag::For: //@Todo
+		{
+			Ast_For* _for = statement->as_for;
+			error_exit("for statement not supported");
+		} break;
+		case Ast_Statement::Tag::Break: //@Todo
+		{
+			error_exit("break statement not supported");
+		} break;
+		case Ast_Statement::Tag::Return:
+		{
+			Ast_Return* _return = statement->as_return;
+			if (_return->expr.has_value())
+				LLVMBuildRet(builder, build_expr_value(_return->expr.value(), bc));
+			else LLVMBuildRet(builder, NULL);
+		} break;
+		case Ast_Statement::Tag::Continue: //@Todo
+		{
+			error_exit("continue statement not supported");
+		} break;
+		case Ast_Statement::Tag::Proc_Call:
+		{
+			Ast_Proc_Call* proc_call = statement->as_proc_call;
+			if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
+			std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
+			if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
+			//@Notice discarding return value is not allowed, checker stage should only allow void return type when proc_call is a statement
+			LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_val");
+		} break;
+		case Ast_Statement::Tag::Var_Decl:
+		{
+			Ast_Var_Decl* var_decl = statement->as_var_decl;
+			if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
+			Type_Meta var_type = get_type_meta(var_decl->type.value());
+
+			LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type.type, get_c_string(var_decl->ident.token));
+			if (var_decl->expr.has_value())
+			{
+				LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
+				if (var_type.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable declaration");
+				LLVMBuildStore(builder, expr_value, var_ptr);
+			}
+			else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
+
+			bc->add_var(Var_Meta{ var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
+		} break;
+		case Ast_Statement::Tag::Var_Assign:
+		{
+			Ast_Var_Assign* var_assign = statement->as_var_assign;
+			if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign: only = op is supported");
+
+			Ast_Var* var = var_assign->var;
+			Var_Access_Meta var_access = get_var_access_meta(var, bc);
+
+			LLVMValueRef expr_value = build_expr_value(var_assign->expr, bc);
+			if (var_access.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable assign");
+			LLVMBuildStore(builder, expr_value, var_access.ptr);
+		} break;
+		default: break;
+	}
+	}
+
+	bc->pop_block();
+}
+
+void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
+{
+	LLVMValueRef cond_value = build_expr_value(_if->condition_expr, bc);
+	if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
+
+	if (_if->_else.has_value())
+	{
+		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "if_block");
+		LLVMBasicBlockRef else_block = LLVMInsertBasicBlockInContext(context, after_block, "else_block");
+		LLVMBuildCondBr(builder, cond_value, then_block, else_block);
+
+		build_block(_if->block, then_block, proc_value, bc);
+		LLVMBuildBr(builder, after_block);
+
+		Ast_Else* _else = _if->_else.value();
+		if (_else->tag == Ast_Else::Tag::If)
+		{
+			LLVMPositionBuilderAtEnd(builder, else_block);
+			build_if(_else->as_if, basic_block, after_block, proc_value, bc);
+		}
+		else
+		{
+			build_block(_else->as_block, else_block, proc_value, bc);
+			LLVMBuildBr(builder, after_block);
+		}
+	}
+	else
+	{
+		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "if_block");
+		LLVMBuildCondBr(builder, cond_value, then_block, after_block);
+
+		build_block(_if->block, then_block, proc_value, bc);
+		LLVMBuildBr(builder, after_block);
+	}
 }
 
 LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc)
@@ -190,7 +238,7 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 					Ast_Proc_Call* proc_call = term->as_proc_call;
 					if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
 					if (proc_call->access.has_value()) error_exit("access trail from function return values is not supported");
-					auto proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
+					std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
 					if (!proc_meta) error_exit("failed to find proc declaration while trying to call it");
 
 					value_ref = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_ret_val");
