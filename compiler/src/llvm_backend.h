@@ -6,6 +6,8 @@
 
 struct Var_Meta
 {
+	bool is_struct;
+	Ast_Struct_Decl* struct_decl;
 	StringView str;
 	LLVMTypeRef var_type;
 	LLVMValueRef var_value;
@@ -49,6 +51,7 @@ private:
 	bool kind_is_fd(LLVMTypeKind type_kind);
 	bool kind_is_i(LLVMTypeKind type_kind);
 	bool type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref);
+	std::optional<u32> find_struct_field_id(Ast_Struct_Decl* struct_decl, StringView field_str);
 	char* get_c_string(Token& token);
 	void error_exit(const char* message);
 
@@ -68,6 +71,7 @@ private:
 
 	struct Struct_Meta
 	{
+		Ast_Struct_Decl* struct_decl;
 		LLVMTypeRef struct_type;
 	};
 
