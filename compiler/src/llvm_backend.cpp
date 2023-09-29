@@ -4,7 +4,7 @@
 
 void Backend_LLVM::backend_build(Ast* ast)
 {
-	context = LLVMContextCreate();
+	context = LLVMContextCreate(); //@Research why is context needed?
 	module = LLVMModuleCreateWithNameInContext("module", context);
 	builder = LLVMCreateBuilderInContext(context);
 	build_ir(ast);
@@ -26,45 +26,22 @@ void Backend_LLVM::build_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	for (u32 i = 0; i < enum_decl->variants.size(); i++)
 	{
-		LLVMValueRef enum_constant = LLVMAddGlobal(module, LLVMInt32TypeInContext(context), get_c_string(enum_decl->variants[i].token));
-		LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32TypeInContext(context), enum_decl->constants[i], 0));
+		LLVMValueRef enum_constant = LLVMAddGlobal(module, LLVMInt32Type(), get_c_string(enum_decl->variants[i].token));
+		LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32Type(), enum_decl->constants[i], 0));
 		LLVMSetGlobalConstant(enum_constant, 1);
 	}
 }
 
 void Backend_LLVM::build_struct_decl(Ast_Struct_Decl* struct_decl)
 {
-	LLVMTypeRef struct_type = LLVMStructCreateNamed(context, get_c_string(struct_decl->type.token));
 	std::vector<LLVMTypeRef> members; //@Perf decide on better member storage
-
 	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
-		Ast_Type* type = field.type;
-		LLVMTypeRef type_ref = NULL;
-
-		switch (type->tag)
-		{
-			case Ast_Type::Tag::Basic:
-			{
-				type_ref = basic_type_convert(type->as_basic);
-			} break;
-			case Ast_Type::Tag::Custom:
-			{
-				error_exit("struct field custom types not supported");
-			} break;
-			case Ast_Type::Tag::Pointer:
-			{
-				error_exit("struct field pointer types not supported");
-			} break;
-			case Ast_Type::Tag::Array:
-			{
-				error_exit("struct field arrays not supported");
-			} break;
-		}
-
+		LLVMTypeRef type_ref = get_type_meta(field.type).type;
 		members.emplace_back(type_ref);
 	}
 
+	LLVMTypeRef struct_type = LLVMStructCreateNamed(context, get_c_string(struct_decl->type.token));
 	LLVMStructSetBody(struct_type, members.data(), (u32)members.size(), 0);
 	Struct_Meta meta = { struct_decl, struct_type };
 	struct_decl_map.add(struct_decl->type.token.string_value, meta, hash_fnv1a_32(struct_decl->type.token.string_value));
@@ -73,39 +50,13 @@ void Backend_LLVM::build_struct_decl(Ast_Struct_Decl* struct_decl)
 	LLVMValueRef globalVar = LLVMAddGlobal(module, struct_type, "_global_struct_check");
 }
 
-// @Usefull functions:
-// LLVMTypeRef LLVMTypeOf(LLVMValueRef Val);
-// LLVMGetAllocatedType - get type of value on a stack
-
 void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 {
-	LLVMTypeRef ret_type = LLVMVoidType();
-	if (proc_decl->return_type.has_value())
-	{
-		Ast_Type* type = proc_decl->return_type.value();
-		switch (type->tag)
-		{
-			case Ast_Type::Tag::Basic:
-			{
-				ret_type = basic_type_convert(type->as_basic);
-			} break;
-			case Ast_Type::Tag::Custom:
-			{
-				auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
-				if (!struct_meta) error_exit("proc decl return custom type not found");
-				ret_type = struct_meta.value().struct_type;
-			} break;
-			case Ast_Type::Tag::Pointer:
-			{
-				error_exit("proc decl return pointer types not supported");
-			} break;
-			case Ast_Type::Tag::Array:
-			{
-				error_exit("proc decl return arrays not supported");
-			} break;
-		}
-	}
 	if (!proc_decl->input_params.empty()) error_exit("procedure declaration with input params isnt supported");
+
+	LLVMTypeRef ret_type = LLVMVoidType();
+	if (proc_decl->return_type.has_value()) 
+	ret_type = get_type_meta(proc_decl->return_type.value()).type;
 	
 	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, NULL, 0, 0); //@Temp Discarding input args
 	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident.token), proc_type);
@@ -156,7 +107,6 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 			{
 				Ast_Proc_Call* proc_call = statement->as_proc_call;
 				if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
-
 				std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
 				if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
 				//@Notice usage of return values must be enforced on checking stage, statement proc call should return nothing
@@ -166,80 +116,28 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 			{
 				Ast_Var_Decl* var_decl = statement->as_var_decl;
 				if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
+				Type_Meta type = get_type_meta(var_decl->type.value());
 				
-				Ast_Type* type = var_decl->type.value();
-				LLVMTypeRef type_ref = NULL;
-				Ast_Struct_Decl* struct_decl = NULL;
-
-				switch (type->tag) 
-				{
-					case Ast_Type::Tag::Basic:
-					{
-						type_ref = basic_type_convert(type->as_basic);
-					} break;
-					case Ast_Type::Tag::Custom:
-					{
-						auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
-						if (!struct_meta) error_exit("var decl custom type not found");
-						type_ref = struct_meta.value().struct_type;
-						struct_decl = struct_meta.value().struct_decl;
-					} break;
-					case Ast_Type::Tag::Pointer:
-					{
-						error_exit("var decl pointer types not supported");
-					} break;
-					case Ast_Type::Tag::Array:
-					{
-						error_exit("var decl arrays not supported");
-					} break;
-				}
-
-				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, type_ref, get_c_string(var_decl->ident.token));
+				LLVMValueRef var_ptr = LLVMBuildAlloca(builder, type.type, get_c_string(var_decl->ident.token));
 				if (var_decl->expr.has_value())
 				{
 					LLVMValueRef value = build_expr_value(var_decl->expr.value(), &bc);
-					if (type_ref != LLVMTypeOf(value)) error_exit("type mismatch in variable declaration");
+					if (type.type != LLVMTypeOf(value)) error_exit("type mismatch in variable declaration");
 					LLVMBuildStore(builder, value, var_ptr);
 				}
-				else LLVMBuildStore(builder, LLVMConstNull(type_ref), var_ptr);
-				
-				//@Assuming that Custom means struct type
-				bc.add_var(Var_Meta { type->tag == Ast_Type::Tag::Custom, struct_decl, var_decl->ident.token.string_value, type_ref, var_ptr });
+				else LLVMBuildStore(builder, LLVMConstNull(type.type), var_ptr);
+
+				bc.add_var(Var_Meta { type.is_struct, type.struct_decl, var_decl->ident.token.string_value, type.type, var_ptr });
 			} break;
 			case Ast_Statement::Tag::Var_Assign:
 			{
 				Ast_Var_Assign* var_assign = statement->as_var_assign;
 				if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign: only = op is supported");
-				LLVMValueRef expr_value = build_expr_value(var_assign->expr, &bc);
 				
 				Ast_Var* var = var_assign->var;
-				auto var_meta = bc.find_var(var->ident.token.string_value);
-				if (!var_meta) error_exit("var assign: variable wasnt found in block scope");
-
-				if (var->access.has_value())
-				{
-					if (LLVMGetTypeKind(var_meta.value().var_type) != LLVMStructTypeKind) //@Utilities move to helper function
-						error_exit("var assign: attempting to access on the non struct type");
-					if (var_meta.value().is_struct == false) error_exit("var assign: expected var to be a struct during access");
-
-					Ast_Access* access = var->access.value();
-					if (access->tag == Ast_Access::Tag::Array) error_exit("var assign: array access isnt supported");
-
-					auto field_id = find_struct_field_id(var_meta.value().struct_decl, access->as_var->ident.token.string_value);
-					if (!field_id) error_exit("var assign: failed to find a struct field using identifier");
-
-					LLVMValueRef gep_ptr = LLVMBuildStructGEP2(builder, var_meta.value().var_type, var_meta.value().var_value, field_id.value(), "gep_ptr");
-					//@Determine which field type is being accessed by series of geps
-					//if (accessed_type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable assignment with access chain");
-					LLVMBuildStore(builder, expr_value, gep_ptr);
-				}
-				else
-				{
-					LLVMValueRef var_ptr = var_meta.value().var_value;
-					LLVMTypeRef var_type = var_meta.value().var_type;
-					if (var_type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable assignment");
-					LLVMBuildStore(builder, expr_value, var_ptr);
-				}
+				Var_Access_Meta var_access = get_var_access_meta(var, &bc);
+				LLVMValueRef expr_value = build_expr_value(var_assign->expr, &bc);
+				LLVMBuildStore(builder, expr_value, var_access.ptr);
 			} break;
 			default: break;
 		}
@@ -267,33 +165,8 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 				case Ast_Term::Tag::Var:
 				{
 					Ast_Var* var = term->as_var;
-					auto var_meta = bc->find_var(var->ident.token.string_value);
-					if (!var_meta) error_exit("var term: variable wasnt found in block scope");
-
-					if (var->access.has_value())
-					{
-						if (LLVMGetTypeKind(var_meta.value().var_type) != LLVMStructTypeKind) //@Utilities move to helper function
-							error_exit("var term: attempting to access on the non struct type");
-						if(var_meta.value().is_struct == false) error_exit("var term: expected var to be a struct during access");
-						
-						Ast_Access* access = var->access.value();
-						if (access->tag == Ast_Access::Tag::Array) error_exit("var term: array access isnt supported");
-
-						auto field_id = find_struct_field_id(var_meta.value().struct_decl, access->as_var->ident.token.string_value);
-						if (!field_id) error_exit("var term: failed to find a struct field using identifier");
-						LLVMValueRef gep_ptr = LLVMBuildStructGEP2(builder, var_meta.value().var_type, var_meta.value().var_value, field_id.value(), "gep_ptr");
-						
-						//@Hack assuming always i32 type of the field
-						//@Determine which field type is being accessed by series of geps
-						value_ref = LLVMBuildLoad2(builder, LLVMInt32Type(), gep_ptr, "load_val");
-					}
-					else
-					{
-						//@Not sure about needing a load when returning struct / almost 100% sure
-						//Load is needed for basic types during expressions
-						value_ref = LLVMBuildLoad2(builder, var_meta.value().var_type, var_meta.value().var_value, "load_val");
-					}
-
+					Var_Access_Meta var_access = get_var_access_meta(var, bc);
+					value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
 				} break;
 				case Ast_Term::Tag::Literal:
 				{
@@ -460,7 +333,7 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 					else if (int_kind) value_ref = LLVMBuildSDiv(builder, lhs, rhs, "btmp");
 					else error_exit("bin_expr / expected fd or i got bool");
 				} break;
-				case BINARY_OP_MOD: //@Design floating modulo is possible but isnt too usefull
+				case BINARY_OP_MOD: //@Design float modulo is possible but isnt too usefull
 				{
 					//@ SU rem variants: LLVMBuildSRem, LLVMBuildURem (using SRem always now)
 					if (int_kind) value_ref = LLVMBuildSRem(builder, lhs, rhs, "btmp");
@@ -497,29 +370,84 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 		} break;
 	}
 
-	if (value_ref == NULL) error_exit("bin_expr value_ref is null on return");
+	if (value_ref == NULL) error_exit("build_expr_value: value_ref is null on return");
 	return value_ref;
 }
 
-LLVMTypeRef Backend_LLVM::basic_type_convert(BasicType basic_type) //@Uints shouild use different bitwith?
+Type_Meta Backend_LLVM::get_type_meta(Ast_Type* type)
 {
-	switch (basic_type)
+	LLVMTypeRef type_ref = NULL;
+	Ast_Struct_Decl* struct_decl = NULL;
+
+	switch (type->tag)
 	{
-		case BASIC_TYPE_I8: return LLVMInt8Type();
-		case BASIC_TYPE_U8: return LLVMInt8Type();
-		case BASIC_TYPE_I16: return LLVMInt16Type();
-		case BASIC_TYPE_U16: return LLVMInt16Type();
-		case BASIC_TYPE_I32: return LLVMInt32Type();
-		case BASIC_TYPE_U32: return LLVMInt32Type();
-		case BASIC_TYPE_I64: return LLVMInt64Type();
-		case BASIC_TYPE_U64: return LLVMInt64Type();
-		case BASIC_TYPE_F32: return LLVMFloatType();
-		case BASIC_TYPE_F64: return LLVMDoubleType();
-		case BASIC_TYPE_BOOL: return LLVMInt1Type();
-		//@Undefined for now, might use a struct: case BASIC_TYPE_STRING:
-		default: error_exit("basic type not found (basic_type_convert)"); break;
+		case Ast_Type::Tag::Basic:
+		{
+			switch (type->as_basic)
+			{
+				case BASIC_TYPE_I8: type_ref = LLVMInt8Type(); break;
+				case BASIC_TYPE_U8: type_ref = LLVMInt8Type(); break;
+				case BASIC_TYPE_I16: type_ref = LLVMInt16Type(); break;
+				case BASIC_TYPE_U16: type_ref = LLVMInt16Type(); break;
+				case BASIC_TYPE_I32: type_ref = LLVMInt32Type(); break;
+				case BASIC_TYPE_U32: type_ref = LLVMInt32Type(); break;
+				case BASIC_TYPE_I64: type_ref = LLVMInt64Type(); break;
+				case BASIC_TYPE_U64: type_ref = LLVMInt64Type(); break;
+				case BASIC_TYPE_F32: type_ref = LLVMFloatType(); break;
+				case BASIC_TYPE_F64: type_ref = LLVMDoubleType(); break;
+				case BASIC_TYPE_BOOL: type_ref = LLVMInt1Type(); break;
+				//@Undefined for now, might use a struct: case BASIC_TYPE_STRING:
+				default: error_exit("get_type_meta: basic type not found"); break;
+			}
+		} break;
+		case Ast_Type::Tag::Custom: //@Notice for now custom type is assumed to be a struct
+		{
+			auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
+			if (!struct_meta) error_exit("get_type_meta: custom type not found");
+			type_ref = struct_meta.value().struct_type;
+			struct_decl = struct_meta.value().struct_decl;
+		} break;
+		case Ast_Type::Tag::Pointer:
+		{
+			error_exit("get_type_meta: pointer types not supported");
+		} break;
+		case Ast_Type::Tag::Array:
+		{
+			error_exit("get_type_meta: arrays not supported");
+		} break;
 	}
-	return LLVMVoidType();
+
+	bool is_struct = type->tag == Ast_Type::Tag::Custom;
+	return Type_Meta { is_struct, struct_decl, type_ref };
+}
+
+Field_Meta Backend_LLVM::get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str)
+{
+	u32 count = 0;
+	for (const auto& field : struct_decl->fields)
+	{
+		if (field.ident.token.string_value == field_str) 
+		return Field_Meta { count, get_type_meta(field.type).type };
+		count += 1;
+	}
+	error_exit("get_field_meta: failed to find the field");
+	return Field_Meta {};
+}
+
+Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Scope* bc)
+{
+	auto var_meta = bc->find_var(var->ident.token.string_value);
+	if (!var_meta) error_exit("get_var_access_meta: failed to find var in scope");
+	if (!var->access.has_value()) return Var_Access_Meta{ var_meta.value().var_value, var_meta.value().var_type };
+
+	if (LLVMGetTypeKind(var_meta.value().var_type) != LLVMStructTypeKind) error_exit("get_var_access_meta: attempting to access on the non struct type");
+	if (var_meta.value().is_struct == false) error_exit("get_var_access_meta: expected var to be a struct during access");
+	Ast_Access* access = var->access.value();
+	if (access->tag == Ast_Access::Tag::Array) error_exit("get_var_access_meta: array access isnt supported");
+
+	Field_Meta field = get_field_meta(var_meta.value().struct_decl, access->as_var->ident.token.string_value);
+	LLVMValueRef gep_ptr = LLVMBuildStructGEP2(builder, var_meta.value().var_type, var_meta.value().var_value, field.id, "gep_ptr");
+	return Var_Access_Meta { gep_ptr, field.type };
 }
 
 bool Backend_LLVM::kind_is_ifd(LLVMTypeKind type_kind)
@@ -540,17 +468,6 @@ bool Backend_LLVM::kind_is_i(LLVMTypeKind type_kind)
 bool Backend_LLVM::type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref)
 {
 	return type_kind == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type_ref) == 1;
-}
-
-std::optional<u32> Backend_LLVM::find_struct_field_id(Ast_Struct_Decl* struct_decl, StringView field_str)
-{
-	u32 count = 0;
-	for (const auto& field : struct_decl->fields)
-	{
-		if (field.ident.token.string_value == field_str) return count;
-		count += 1;
-	}
-	return {};
 }
 
 char* Backend_LLVM::get_c_string(Token& token) //@Unsafe hack to get c string from string view of source file string, need to do smth better

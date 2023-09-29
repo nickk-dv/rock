@@ -4,6 +4,37 @@
 #include "ast.h"
 #include "llvm-c/Core.h"
 
+struct Type_Meta
+{
+	bool is_struct;
+	Ast_Struct_Decl* struct_decl;
+	LLVMTypeRef type;
+};
+
+struct Field_Meta
+{
+	u32 id;
+	LLVMTypeRef type;
+};
+
+struct Var_Access_Meta
+{
+	LLVMValueRef ptr;
+	LLVMTypeRef type;
+};
+
+struct Proc_Meta
+{
+	LLVMTypeRef proc_type;
+	LLVMValueRef proc_val;
+};
+
+struct Struct_Meta
+{
+	Ast_Struct_Decl* struct_decl;
+	LLVMTypeRef struct_type;
+};
+
 struct Var_Meta
 {
 	bool is_struct;
@@ -46,12 +77,13 @@ private:
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
 	LLVMValueRef build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc);
 
-	LLVMTypeRef basic_type_convert(BasicType basic_type);
+	Type_Meta get_type_meta(Ast_Type* type);
+	Field_Meta get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str);
+	Var_Access_Meta get_var_access_meta(Ast_Var* var, Backend_Block_Scope* bc);
 	bool kind_is_ifd(LLVMTypeKind type_kind);
 	bool kind_is_fd(LLVMTypeKind type_kind);
 	bool kind_is_i(LLVMTypeKind type_kind);
 	bool type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref);
-	std::optional<u32> find_struct_field_id(Ast_Struct_Decl* struct_decl, StringView field_str);
 	char* get_c_string(Token& token);
 	void error_exit(const char* message);
 
@@ -62,18 +94,6 @@ private:
 	LLVMContextRef context;
 	LLVMModuleRef module;
 	LLVMBuilderRef builder;
-
-	struct Proc_Meta
-	{
-		LLVMTypeRef proc_type;
-		LLVMValueRef proc_val;
-	};
-
-	struct Struct_Meta
-	{
-		Ast_Struct_Decl* struct_decl;
-		LLVMTypeRef struct_type;
-	};
 
 	HashMap<StringView, Proc_Meta, u32, match_string_view> proc_decl_map;
 	HashMap<StringView, Struct_Meta, u32, match_string_view> struct_decl_map;
