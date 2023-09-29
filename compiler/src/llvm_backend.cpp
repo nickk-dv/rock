@@ -97,12 +97,42 @@ void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 			LLVMPositionBuilderAtEnd(builder, after_block);
 			basic_block = after_block;
 		} break;
-		case Ast_Statement::Tag::For: //@Todo
+		case Ast_Statement::Tag::For: //@Todo nested loops dont work due to multiple br not being allowed. evaluate correct control flow in those cases
 		{
 			Ast_For* _for = statement->as_for;
-			error_exit("for statement not supported");
+			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "for_after_block");
+
+			if (!_for->condition_expr && !_for->var_decl && !_for->var_assign) // while (true) variant
+			{
+				LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body_block");
+				LLVMBuildBr(builder, body_block);
+
+				build_block(_for->block, body_block, proc_value, bc);
+
+				LLVMPositionBuilderAtEnd(builder, body_block);
+				LLVMBuildBr(builder, body_block);
+			}
+			else if (_for->condition_expr && !_for->var_decl && !_for->var_assign) //while (expr) variant
+			{
+				LLVMBasicBlockRef cond_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_cond_block");
+				LLVMBuildBr(builder, cond_block);
+				LLVMPositionBuilderAtEnd(builder, cond_block);
+				LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
+				if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("for: expected i1(bool) expression value");
+				LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body_block");
+				LLVMBuildCondBr(builder, cond_value, body_block, after_block);
+
+				build_block(_for->block, body_block, proc_value, bc);
+
+				LLVMPositionBuilderAtEnd(builder, body_block);
+				LLVMBuildBr(builder, cond_block);
+			}
+			else error_exit("this variant of the for statement not supported");
+
+			LLVMPositionBuilderAtEnd(builder, after_block);
+			basic_block = after_block;
 		} break;
-		case Ast_Statement::Tag::Break: //@Todo
+		case Ast_Statement::Tag::Break:
 		{
 			error_exit("break statement not supported");
 		} break;
@@ -122,7 +152,7 @@ void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 			Ast_Proc_Call* proc_call = statement->as_proc_call;
 			if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
 			std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
-			if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); return; }
+			if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); }
 			//@Notice discarding return value is not allowed, checker stage should only allow void return type when proc_call is a statement
 			LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_val");
 		} break;
