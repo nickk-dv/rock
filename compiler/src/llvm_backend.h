@@ -77,6 +77,9 @@ private:
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
 	bool build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
 	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
+	void build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
+	void build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* bc);
+	void build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc);
 	LLVMValueRef build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc);
 
 	Type_Meta get_type_meta(Ast_Type* type);

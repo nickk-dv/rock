@@ -100,8 +100,10 @@ bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 		} break;
 		case Ast_Statement::Tag::For:
 		{
-			Ast_For* _for = statement->as_for;
-			error_exit("for statement not supported");
+			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "loop_exit");
+			build_for(statement->as_for, basic_block, after_block, proc_value, bc);
+			LLVMPositionBuilderAtEnd(builder, after_block);
+			basic_block = after_block;
 		} break;
 		case Ast_Statement::Tag::Break:
 		{
@@ -132,32 +134,11 @@ bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 		} break;
 		case Ast_Statement::Tag::Var_Decl:
 		{
-			Ast_Var_Decl* var_decl = statement->as_var_decl;
-			if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
-			Type_Meta var_type = get_type_meta(var_decl->type.value());
-
-			LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type.type, get_c_string(var_decl->ident.token));
-			if (var_decl->expr.has_value())
-			{
-				LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
-				if (var_type.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable declaration");
-				LLVMBuildStore(builder, expr_value, var_ptr);
-			}
-			else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
-
-			bc->add_var(Var_Meta{ var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
+			build_var_decl(statement->as_var_decl, bc);
 		} break;
 		case Ast_Statement::Tag::Var_Assign:
 		{
-			Ast_Var_Assign* var_assign = statement->as_var_assign;
-			if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign: only = op is supported");
-
-			Ast_Var* var = var_assign->var;
-			Var_Access_Meta var_access = get_var_access_meta(var, bc);
-
-			LLVMValueRef expr_value = build_expr_value(var_assign->expr, bc);
-			if (var_access.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable assign");
-			LLVMBuildStore(builder, expr_value, var_access.ptr);
+			build_var_assign(statement->as_var_assign, bc);
 		} break;
 		default: break;
 	}
@@ -201,6 +182,57 @@ void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasi
 		bool terminated = build_block(_if->block, then_block, proc_value, bc);
 		if (!terminated) LLVMBuildBr(builder, after_block);
 	}
+}
+
+void Backend_LLVM::build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
+{	
+	//enter conditional block
+	LLVMBasicBlockRef cond_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_cond");
+	LLVMBuildBr(builder, cond_block);
+	LLVMPositionBuilderAtEnd(builder, cond_block);
+
+	//conditional branch
+	LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body");
+	if (_for->condition_expr)
+	{
+		LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
+		if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
+		LLVMBuildCondBr(builder, cond_value, body_block, after_block);
+	}
+	else LLVMBuildBr(builder, body_block);
+
+	//loop back to condition
+	bool terminated = build_block(_for->block, body_block, proc_value, bc);
+	if (!terminated) LLVMBuildBr(builder, cond_block);
+}
+
+void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* bc)
+{
+	if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
+	Type_Meta var_type = get_type_meta(var_decl->type.value());
+
+	LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type.type, get_c_string(var_decl->ident.token));
+	if (var_decl->expr.has_value())
+	{
+		LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
+		if (var_type.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable declaration");
+		LLVMBuildStore(builder, expr_value, var_ptr);
+	}
+	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
+
+	bc->add_var(Var_Meta{ var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
+}
+
+void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc)
+{
+	if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign: only = op is supported");
+
+	Ast_Var* var = var_assign->var;
+	Var_Access_Meta var_access = get_var_access_meta(var, bc);
+
+	LLVMValueRef expr_value = build_expr_value(var_assign->expr, bc);
+	if (var_access.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable assign");
+	LLVMBuildStore(builder, expr_value, var_access.ptr);
 }
 
 LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc)
