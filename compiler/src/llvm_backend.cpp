@@ -186,6 +186,9 @@ void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasi
 
 void Backend_LLVM::build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
 {	
+	/*
+	[No Var_Decl + Var_Assign variant]
+
 	//enter conditional block
 	LLVMBasicBlockRef cond_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_cond");
 	LLVMBuildBr(builder, cond_block);
@@ -204,6 +207,34 @@ void Backend_LLVM::build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMB
 	//loop back to condition
 	bool terminated = build_block(_for->block, body_block, proc_value, bc);
 	if (!terminated) LLVMBuildBr(builder, cond_block);
+	*/
+
+	//declare variable
+	if (_for->var_decl) build_var_decl(_for->var_decl.value(), bc);
+
+	//enter conditional block
+	LLVMBasicBlockRef cond_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_cond");
+	LLVMBuildBr(builder, cond_block);
+	LLVMPositionBuilderAtEnd(builder, cond_block);
+
+	//conditional branch
+	LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body");
+	if (_for->condition_expr)
+	{
+		LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
+		if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
+		LLVMBuildCondBr(builder, cond_value, body_block, after_block);
+	}
+	else LLVMBuildBr(builder, body_block);
+
+	bool terminated = build_block(_for->block, body_block, proc_value, bc);
+	if (!terminated)
+	{
+		//assign variable
+		//loop back to condition
+		if (_for->var_assign) build_var_assign(_for->var_assign.value(), bc);
+		LLVMBuildBr(builder, cond_block);
+	}
 }
 
 void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* bc)
