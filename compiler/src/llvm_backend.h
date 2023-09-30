@@ -75,7 +75,7 @@ private:
 	void build_struct_decl(Ast_Struct_Decl* struct_decl);
 	void build_proc_decl(Ast_Proc_Decl* proc_decl);
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
-	void build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
+	bool build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
 	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
 	LLVMValueRef build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc);
 

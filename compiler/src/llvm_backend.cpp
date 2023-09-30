@@ -1,6 +1,7 @@
 #include "llvm_backend.h"
 
 #include "llvm-c/TargetMachine.h"
+#include "llvm-c/Analysis.h"
 
 void Backend_LLVM::backend_build(Ast* ast)
 {
@@ -81,7 +82,7 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 //@Todo investigate order of nested if else blocks, try to reach the logical order
 //@Also numbering of if_block / else_blocks is weidly not sequential
 // nested after_blocks are inserted in the end resulting in the non sequential ir output
-void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
+bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
 {
 	bc->add_block();
 	LLVMPositionBuilderAtEnd(builder, basic_block);
@@ -92,45 +93,15 @@ void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 	{
 		case Ast_Statement::Tag::If:
 		{
-			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "after_block");
+			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "cont");
 			build_if(statement->as_if, basic_block, after_block, proc_value, bc);
 			LLVMPositionBuilderAtEnd(builder, after_block);
 			basic_block = after_block;
 		} break;
-		case Ast_Statement::Tag::For: //@Todo nested loops dont work due to multiple br not being allowed. evaluate correct control flow in those cases
+		case Ast_Statement::Tag::For:
 		{
 			Ast_For* _for = statement->as_for;
-			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "for_after_block");
-
-			if (!_for->condition_expr && !_for->var_decl && !_for->var_assign) // while (true) variant
-			{
-				LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body_block");
-				LLVMBuildBr(builder, body_block);
-
-				build_block(_for->block, body_block, proc_value, bc);
-
-				LLVMPositionBuilderAtEnd(builder, body_block);
-				LLVMBuildBr(builder, body_block);
-			}
-			else if (_for->condition_expr && !_for->var_decl && !_for->var_assign) //while (expr) variant
-			{
-				LLVMBasicBlockRef cond_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_cond_block");
-				LLVMBuildBr(builder, cond_block);
-				LLVMPositionBuilderAtEnd(builder, cond_block);
-				LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
-				if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("for: expected i1(bool) expression value");
-				LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body_block");
-				LLVMBuildCondBr(builder, cond_value, body_block, after_block);
-
-				build_block(_for->block, body_block, proc_value, bc);
-
-				LLVMPositionBuilderAtEnd(builder, body_block);
-				LLVMBuildBr(builder, cond_block);
-			}
-			else error_exit("this variant of the for statement not supported");
-
-			LLVMPositionBuilderAtEnd(builder, after_block);
-			basic_block = after_block;
+			error_exit("for statement not supported");
 		} break;
 		case Ast_Statement::Tag::Break:
 		{
@@ -142,6 +113,9 @@ void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 			if (_return->expr.has_value())
 				LLVMBuildRet(builder, build_expr_value(_return->expr.value(), bc));
 			else LLVMBuildRet(builder, NULL);
+
+			bc->pop_block();
+			return true;
 		} break;
 		case Ast_Statement::Tag::Continue: //@Todo
 		{
@@ -190,6 +164,7 @@ void Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 	}
 
 	bc->pop_block();
+	return false;
 }
 
 void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
@@ -199,12 +174,12 @@ void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasi
 
 	if (_if->_else.has_value())
 	{
-		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "if_block");
-		LLVMBasicBlockRef else_block = LLVMInsertBasicBlockInContext(context, after_block, "else_block");
+		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "then");
+		LLVMBasicBlockRef else_block = LLVMInsertBasicBlockInContext(context, after_block, "else");
 		LLVMBuildCondBr(builder, cond_value, then_block, else_block);
 
-		build_block(_if->block, then_block, proc_value, bc);
-		LLVMBuildBr(builder, after_block);
+		bool terminated = build_block(_if->block, then_block, proc_value, bc);
+		if (!terminated) LLVMBuildBr(builder, after_block);
 
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else::Tag::If)
@@ -214,17 +189,17 @@ void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasi
 		}
 		else
 		{
-			build_block(_else->as_block, else_block, proc_value, bc);
-			LLVMBuildBr(builder, after_block);
+			bool terminated = build_block(_else->as_block, else_block, proc_value, bc);
+			if (!terminated) LLVMBuildBr(builder, after_block);
 		}
 	}
 	else
 	{
-		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "if_block");
+		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "then");
 		LLVMBuildCondBr(builder, cond_value, then_block, after_block);
 
-		build_block(_if->block, then_block, proc_value, bc);
-		LLVMBuildBr(builder, after_block);
+		bool terminated = build_block(_if->block, then_block, proc_value, bc);
+		if (!terminated) LLVMBuildBr(builder, after_block);
 	}
 }
 
@@ -636,6 +611,8 @@ void Backend_LLVM::debug_print_module()
 	char* message = LLVMPrintModuleToString(module);
 	printf("Module: %s", message);
 	LLVMDisposeMessage(message);
+	//@ 0 == success
+	LLVMBool verify = LLVMVerifyModule(module, LLVMPrintMessageAction, NULL);
 }
 
 void Backend_Block_Scope::add_block()
