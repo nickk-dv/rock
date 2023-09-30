@@ -19,6 +19,7 @@ struct Field_Meta
 
 struct Var_Access_Meta
 {
+	bool is_pointer_value;
 	LLVMValueRef ptr;
 	LLVMTypeRef type;
 };
@@ -37,6 +38,7 @@ struct Struct_Meta
 
 struct Var_Meta
 {
+	bool is_input_param;
 	bool is_struct;
 	Ast_Struct_Decl* struct_decl;
 	StringView str;
@@ -90,7 +92,7 @@ private:
 	void build_struct_decl(Ast_Struct_Decl* struct_decl);
 	void build_proc_decl(Ast_Proc_Decl* proc_decl);
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
-	Terminator_Type build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {});
+	Terminator_Type build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {}, bool entry = false);
 	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {});
 	void build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
 	void build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* bc);

@@ -14,6 +14,37 @@ void Backend_LLVM::backend_build(Ast* ast)
 
 void Backend_LLVM::build_ir(Ast* ast)
 {
+	//@ Example of calling printf from libc
+	/*
+	LLVMTypeRef printfArgTypes[] = { LLVMPointerType(LLVMInt8Type(), 0) };
+	LLVMTypeRef printfType = LLVMFunctionType(LLVMInt32Type(), printfArgTypes, 1, 0);
+	LLVMValueRef printfFunc = LLVMAddFunction(module, "printf", printfType);
+	LLVMSetFunctionCallConv(printfFunc, LLVMCCallConv);
+
+	// Create the main function
+	LLVMTypeRef mainType = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
+	LLVMValueRef mainFunc = LLVMAddFunction(module, "main", mainType);
+	LLVMBasicBlockRef entryBlock = LLVMAppendBasicBlock(mainFunc, "entry");
+	LLVMBuilderRef builder = LLVMCreateBuilder();
+	LLVMPositionBuilderAtEnd(builder, entryBlock);
+
+	// Create a global string variable
+	const char* helloString = "Hello, World!\n";
+	LLVMValueRef helloGlobalInit = LLVMConstStringInContext(context, helloString, strlen(helloString), 1);
+	LLVMValueRef helloGlobal = LLVMAddGlobal(module, LLVMTypeOf(helloGlobalInit), "helloString");
+	LLVMSetInitializer(helloGlobal, helloGlobalInit);
+	LLVMSetLinkage(helloGlobal, LLVMInternalLinkage);
+
+	// Call printf with the hello string
+	LLVMValueRef formatString = LLVMBuildBitCast(builder, helloGlobal, LLVMPointerType(LLVMInt8Type(), 0), "formatString");
+	LLVMValueRef printfArgs[] = { formatString };
+	LLVMBuildCall2(builder, printfType, printfFunc, printfArgs, 1, "printf_call");
+	LLVMBuildRet(builder, LLVMConstInt(LLVMInt32Type(), 0, 0));
+
+	// Clean up and return
+	return;
+	*/
+
 	for (Ast_Enum_Decl* enum_decl : ast->enums) { build_enum_decl(enum_decl); }
 	struct_decl_map.init(32);
 	for (Ast_Struct_Decl* struct_decl : ast->structs) { build_struct_decl(struct_decl); }
@@ -53,13 +84,16 @@ void Backend_LLVM::build_struct_decl(Ast_Struct_Decl* struct_decl)
 
 void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 {
-	if (!proc_decl->input_params.empty()) error_exit("procedure declaration with input params isnt supported");
+	std::vector<LLVMTypeRef> param_types = {};
+	param_types.reserve(proc_decl->input_params.size());
+	for (u32 i = 0; i < proc_decl->input_params.size(); i += 1)
+	param_types.emplace_back(get_type_meta(proc_decl->input_params[i].type).type);
 
 	LLVMTypeRef ret_type = LLVMVoidType();
 	if (proc_decl->return_type.has_value()) 
 	ret_type = get_type_meta(proc_decl->return_type.value()).type;
 	
-	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, NULL, 0, 0); //@Temp Discarding input args
+	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, param_types.data(), param_types.size(), 0); //@Temp Discarding input args
 	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident.token), proc_type);
 	Proc_Meta meta = { proc_type, proc_val };
 	proc_decl_map.add(proc_decl->ident.token.string_value, meta, hash_fnv1a_32(proc_decl->ident.token.string_value));
@@ -71,8 +105,16 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
 	
-	//@Todo add proc input params to scope
 	Backend_Block_Scope bc = {};
+	bc.add_block();
+	u32 count = 0;
+	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+	{
+		Type_Meta var_type = get_type_meta(param.type);
+		LLVMValueRef param_value = LLVMGetParam(proc_meta.value().proc_val, count);
+		bc.add_var(Var_Meta { true, var_type.is_struct, var_type.struct_decl, param.ident.token.string_value, var_type.type, param_value });
+		count += 1;
+	}
 	build_block(proc_decl->block, entry_block, proc_meta.value().proc_val, &bc);
 	
 	//@For non void return values return statement is expected to exist during checking stage
@@ -82,9 +124,9 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 //@Todo investigate order of nested if else blocks, try to reach the logical order
 //@Also numbering of if_block / else_blocks is weidly not sequential
 // nested after_blocks are inserted in the end resulting in the non sequential ir output
-Terminator_Type Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta)
+Terminator_Type Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta, bool entry)
 {
-	bc->add_block();
+	if (!entry) bc->add_block();
 	LLVMPositionBuilderAtEnd(builder, basic_block);
 
 	for (Ast_Statement* statement : block->statements)
@@ -121,7 +163,7 @@ Terminator_Type Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef ba
 			bc->pop_block();
 			return Terminator_Type::Return;
 		} break;
-		case Ast_Statement::Tag::Continue: //@Todo
+		case Ast_Statement::Tag::Continue:
 		{
 			if (!loop_meta) error_exit("continue statement: no loop meta data provided");
 
@@ -137,11 +179,16 @@ Terminator_Type Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef ba
 		case Ast_Statement::Tag::Proc_Call:
 		{
 			Ast_Proc_Call* proc_call = statement->as_proc_call;
-			if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
 			std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
 			if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); }
-			//@Notice discarding return value is not allowed, checker stage should only allow void return type when proc_call is a statement
-			LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_val");
+
+			std::vector<LLVMValueRef> input_values = {};
+			input_values.reserve(proc_call->input_exprs.size());
+			for (u32 i = 0; i < proc_call->input_exprs.size(); i += 1)
+			input_values.emplace_back(build_expr_value(proc_call->input_exprs[i], bc));
+
+			//@Design always descarding return type of call statement, proc shouild be checked for it
+			LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, input_values.data(), input_values.size(), "call_val");
 		} break;
 		case Ast_Statement::Tag::Var_Decl:
 		{
@@ -239,7 +286,7 @@ void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* b
 	}
 	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
 
-	bc->add_var(Var_Meta{ var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
+	bc->add_var(Var_Meta { false, var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
 }
 
 void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc)
@@ -270,7 +317,9 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 				{
 					Ast_Var* var = term->as_var;
 					Var_Access_Meta var_access = get_var_access_meta(var, bc);
-					value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
+					if (var_access.is_pointer_value)
+						value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
+					else value_ref = var_access.ptr; //@Confusing name, since var can be a direct value when its a proc. param
 				} break;
 				case Ast_Term::Tag::Literal:
 				{
@@ -292,12 +341,16 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 				case Ast_Term::Tag::Proc_Call:
 				{
 					Ast_Proc_Call* proc_call = term->as_proc_call;
-					if (!proc_call->input_exprs.empty()) error_exit("proc call with input exprs is not supported");
 					if (proc_call->access.has_value()) error_exit("access trail from function return values is not supported");
 					std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
 					if (!proc_meta) error_exit("failed to find proc declaration while trying to call it");
 
-					value_ref = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, NULL, 0, "call_ret_val");
+					std::vector<LLVMValueRef> input_values = {};
+					input_values.reserve(proc_call->input_exprs.size());
+					for (u32 i = 0; i < proc_call->input_exprs.size(); i += 1)
+					input_values.emplace_back(build_expr_value(proc_call->input_exprs[i], bc));
+
+					value_ref = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, input_values.data(), input_values.size(), "call_ret_val");
 				} break;
 			}
 		} break;
@@ -538,11 +591,12 @@ Field_Meta Backend_LLVM::get_field_meta(Ast_Struct_Decl* struct_decl, StringView
 	return Field_Meta {};
 }
 
+// @Doing GEP on input param structs values, doesnt work since its not a pointer.
 Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Scope* bc)
 {
 	auto var_meta = bc->find_var(var->ident.token.string_value);
 	if (!var_meta) error_exit("get_var_access_meta: failed to find var in scope");
-	if (!var->access.has_value()) return Var_Access_Meta{ var_meta.value().var_value, var_meta.value().var_type };
+	if (!var->access.has_value()) return Var_Access_Meta { !var_meta.value().is_input_param, var_meta.value().var_value, var_meta.value().var_type };
 
 	if (LLVMGetTypeKind(var_meta.value().var_type) != LLVMStructTypeKind) error_exit("get_var_access_meta: attempting to access on the non struct type");
 	if (var_meta.value().is_struct == false) error_exit("get_var_access_meta: expected var to be a struct during access");
@@ -551,7 +605,7 @@ Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Sc
 
 	Field_Meta field = get_field_meta(var_meta.value().struct_decl, access->as_var->ident.token.string_value);
 	LLVMValueRef gep_ptr = LLVMBuildStructGEP2(builder, var_meta.value().var_type, var_meta.value().var_value, field.id, "gep_ptr");
-	return Var_Access_Meta { gep_ptr, field.type };
+	return Var_Access_Meta { true, gep_ptr, field.type };
 }
 
 bool Backend_LLVM::kind_is_ifd(LLVMTypeKind type_kind)
@@ -629,7 +683,6 @@ void Backend_LLVM::build_binaries()
 
 void Backend_LLVM::debug_print_module()
 {
-	return;
 	LLVMPrintModuleToFile(module, "output.ll", NULL);
 	char* message = LLVMPrintModuleToString(module);
 	printf("Module: %s", message);
