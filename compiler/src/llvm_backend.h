@@ -49,6 +49,21 @@ struct Backend_Block_Info
 	u32 var_count;
 };
 
+struct Loop_Meta
+{
+	LLVMBasicBlockRef break_target;
+	LLVMBasicBlockRef continue_target;
+	std::optional<Ast_Var_Assign*> continue_action;
+};
+
+enum class Terminator_Type
+{
+	None,
+	Return,
+	Break,
+	Continue,
+};
+
 //@Maybe finding by str might not work correctly
 //due to ssa rules in more complex structures
 //@Uniqueness of var names in scope should be checked by checker, which is disabled
@@ -75,8 +90,8 @@ private:
 	void build_struct_decl(Ast_Struct_Decl* struct_decl);
 	void build_proc_decl(Ast_Proc_Decl* proc_decl);
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
-	bool build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
-	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
+	Terminator_Type build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {});
+	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {});
 	void build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
 	void build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* bc);
 	void build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc);

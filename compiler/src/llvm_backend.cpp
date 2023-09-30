@@ -82,7 +82,7 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 //@Todo investigate order of nested if else blocks, try to reach the logical order
 //@Also numbering of if_block / else_blocks is weidly not sequential
 // nested after_blocks are inserted in the end resulting in the non sequential ir output
-bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
+Terminator_Type Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta)
 {
 	bc->add_block();
 	LLVMPositionBuilderAtEnd(builder, basic_block);
@@ -94,7 +94,7 @@ bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 		case Ast_Statement::Tag::If:
 		{
 			LLVMBasicBlockRef after_block = LLVMAppendBasicBlockInContext(context, proc_value, "cont");
-			build_if(statement->as_if, basic_block, after_block, proc_value, bc);
+			build_if(statement->as_if, basic_block, after_block, proc_value, bc, loop_meta);
 			LLVMPositionBuilderAtEnd(builder, after_block);
 			basic_block = after_block;
 		} break;
@@ -107,7 +107,10 @@ bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 		} break;
 		case Ast_Statement::Tag::Break:
 		{
-			error_exit("break statement not supported");
+			if (!loop_meta) error_exit("break statement: no loop meta data provided");
+			LLVMBuildBr(builder, loop_meta.value().break_target);
+			bc->pop_block();
+			return Terminator_Type::Break;
 		} break;
 		case Ast_Statement::Tag::Return:
 		{
@@ -115,13 +118,21 @@ bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 			if (_return->expr.has_value())
 				LLVMBuildRet(builder, build_expr_value(_return->expr.value(), bc));
 			else LLVMBuildRet(builder, NULL);
-
 			bc->pop_block();
-			return true;
+			return Terminator_Type::Return;
 		} break;
 		case Ast_Statement::Tag::Continue: //@Todo
 		{
-			error_exit("continue statement not supported");
+			if (!loop_meta) error_exit("continue statement: no loop meta data provided");
+
+			//assign variable
+			//loop back to condition
+			if (loop_meta.value().continue_action)
+			build_var_assign(loop_meta.value().continue_action.value(), bc);
+			LLVMBuildBr(builder, loop_meta.value().continue_target);
+
+			bc->pop_block();
+			return Terminator_Type::Continue;
 		} break;
 		case Ast_Statement::Tag::Proc_Call:
 		{
@@ -145,10 +156,10 @@ bool Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, 
 	}
 
 	bc->pop_block();
-	return false;
+	return Terminator_Type::None;
 }
 
-void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
+void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc, std::optional<Loop_Meta> loop_meta)
 {
 	LLVMValueRef cond_value = build_expr_value(_if->condition_expr, bc);
 	if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
@@ -159,19 +170,19 @@ void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasi
 		LLVMBasicBlockRef else_block = LLVMInsertBasicBlockInContext(context, after_block, "else");
 		LLVMBuildCondBr(builder, cond_value, then_block, else_block);
 
-		bool terminated = build_block(_if->block, then_block, proc_value, bc);
-		if (!terminated) LLVMBuildBr(builder, after_block);
+		Terminator_Type terminator = build_block(_if->block, then_block, proc_value, bc, loop_meta);
+		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, after_block);
 
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else::Tag::If)
 		{
 			LLVMPositionBuilderAtEnd(builder, else_block);
-			build_if(_else->as_if, basic_block, after_block, proc_value, bc);
+			build_if(_else->as_if, basic_block, after_block, proc_value, bc, loop_meta);
 		}
 		else
 		{
-			bool terminated = build_block(_else->as_block, else_block, proc_value, bc);
-			if (!terminated) LLVMBuildBr(builder, after_block);
+			Terminator_Type terminator = build_block(_else->as_block, else_block, proc_value, bc, loop_meta);
+			if (terminator == Terminator_Type::None) LLVMBuildBr(builder, after_block);
 		}
 	}
 	else
@@ -179,36 +190,13 @@ void Backend_LLVM::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasi
 		LLVMBasicBlockRef then_block = LLVMInsertBasicBlockInContext(context, after_block, "then");
 		LLVMBuildCondBr(builder, cond_value, then_block, after_block);
 
-		bool terminated = build_block(_if->block, then_block, proc_value, bc);
-		if (!terminated) LLVMBuildBr(builder, after_block);
+		Terminator_Type terminator = build_block(_if->block, then_block, proc_value, bc, loop_meta);
+		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, after_block);
 	}
 }
 
 void Backend_LLVM::build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc)
 {	
-	/*
-	[No Var_Decl + Var_Assign variant]
-
-	//enter conditional block
-	LLVMBasicBlockRef cond_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_cond");
-	LLVMBuildBr(builder, cond_block);
-	LLVMPositionBuilderAtEnd(builder, cond_block);
-
-	//conditional branch
-	LLVMBasicBlockRef body_block = LLVMInsertBasicBlockInContext(context, after_block, "loop_body");
-	if (_for->condition_expr)
-	{
-		LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
-		if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
-		LLVMBuildCondBr(builder, cond_value, body_block, after_block);
-	}
-	else LLVMBuildBr(builder, body_block);
-
-	//loop back to condition
-	bool terminated = build_block(_for->block, body_block, proc_value, bc);
-	if (!terminated) LLVMBuildBr(builder, cond_block);
-	*/
-
 	//declare variable
 	if (_for->var_decl) build_var_decl(_for->var_decl.value(), bc);
 
@@ -227,12 +215,12 @@ void Backend_LLVM::build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMB
 	}
 	else LLVMBuildBr(builder, body_block);
 
-	bool terminated = build_block(_for->block, body_block, proc_value, bc);
-	if (!terminated)
+	Terminator_Type terminator = build_block(_for->block, body_block, proc_value, bc, Loop_Meta { after_block, cond_block, _for->var_assign });
+	if (terminator == Terminator_Type::None)
 	{
 		//assign variable
-		//loop back to condition
 		if (_for->var_assign) build_var_assign(_for->var_assign.value(), bc);
+		//loop back to condition
 		LLVMBuildBr(builder, cond_block);
 	}
 }
@@ -598,35 +586,6 @@ void Backend_LLVM::error_exit(const char* message)
 	exit(EXIT_FAILURE);
 }
 
-void Backend_LLVM::build_ir_example(Ast* ast)
-{
-	LLVMContextRef context = LLVMContextCreate();
-	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("module", context);
-	LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
-	
-	// Create and add function prototype for sum
-	LLVMTypeRef param_types[] = { LLVMInt32Type(), LLVMInt32Type() };
-	LLVMTypeRef sum_proc_type = LLVMFunctionType(LLVMInt32Type(), param_types, 2, 0);
-	LLVMValueRef sum_proc = LLVMAddFunction(mod, "sum", sum_proc_type);
-	LLVMBasicBlockRef block = LLVMAppendBasicBlockInContext(context, sum_proc, "block");
-	LLVMPositionBuilderAtEnd(builder, block);
-	LLVMValueRef sum_value = LLVMBuildAdd(builder, LLVMGetParam(sum_proc, 0), LLVMGetParam(sum_proc, 1), "sum_value");
-	LLVMBuildRet(builder, sum_value);
-
-	// Create and add function prototype for main
-	LLVMTypeRef main_ret_type = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
-	LLVMValueRef main_func = LLVMAddFunction(mod, "main", main_ret_type);
-	LLVMBasicBlockRef main_block = LLVMAppendBasicBlockInContext(context, main_func, "main_block");
-	LLVMPositionBuilderAtEnd(builder, main_block);
-
-	// Call the sum function with arguments
-	LLVMValueRef args[] = { LLVMConstInt(LLVMInt32Type(), 39, 0), LLVMConstInt(LLVMInt32Type(), 30, 0) };
-	LLVMValueRef sum_result = LLVMBuildCall2(builder, sum_proc_type, sum_proc, args, 2, "sum_result");
-	LLVMBuildRet(builder, sum_result);
-
-	LLVMDisposeBuilder(builder);
-}
-
 void Backend_LLVM::build_binaries()
 {
 	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
@@ -670,6 +629,7 @@ void Backend_LLVM::build_binaries()
 
 void Backend_LLVM::debug_print_module()
 {
+	return;
 	LLVMPrintModuleToFile(module, "output.ll", NULL);
 	char* message = LLVMPrintModuleToString(module);
 	printf("Module: %s", message);
