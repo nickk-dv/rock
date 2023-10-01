@@ -100,6 +100,10 @@ void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 
 void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 {
+	//@Hack manually detecting external procedures
+	if (strcmp((char*)proc_decl->ident.token.string_value.data, "free") == 0) return;
+	if (strcmp((char*)proc_decl->ident.token.string_value.data, "malloc") == 0) return;
+
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
@@ -114,7 +118,7 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 		LLVMValueRef param_value = LLVMGetParam(proc_meta.value().proc_val, count);
 		LLVMValueRef copy_ptr = LLVMBuildAlloca(builder, var_type.type, "copy_ptr");
 		LLVMBuildStore(builder, param_value, copy_ptr);
-		bc.add_var(Var_Meta { var_type.is_struct, var_type.struct_decl, param.ident.token.string_value, var_type.type, copy_ptr });
+		bc.add_var(Var_Meta { param.ident.token.string_value, copy_ptr, var_type });
 		count += 1;
 	}
 	build_block(proc_decl->block, entry_block, proc_meta.value().proc_val, &bc);
@@ -287,13 +291,15 @@ void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* b
 		{
 			debug_print_llvm_type("Expected", var_type.type);
 			debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
-			error_exit("type mismatch in variable declaration");
+			//error_exit("type mismatch in variable declaration");
 		}
+		//@Notice using 0 init here, because int upcasts arent implemented
+		LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
 		LLVMBuildStore(builder, expr_value, var_ptr);
 	}
 	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
 
-	bc->add_var(Var_Meta { var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
+	bc->add_var(Var_Meta { var_decl->ident.token.string_value, var_ptr, var_type });
 }
 
 void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc)
@@ -544,7 +550,6 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 Type_Meta Backend_LLVM::get_type_meta(Ast_Type* type)
 {
 	LLVMTypeRef type_ref = NULL;
-	Ast_Struct_Decl* struct_decl = NULL;
 
 	switch (type->tag)
 	{
@@ -571,21 +576,22 @@ Type_Meta Backend_LLVM::get_type_meta(Ast_Type* type)
 		{
 			auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
 			if (!struct_meta) error_exit("get_type_meta: custom type not found");
-			type_ref = struct_meta.value().struct_type;
-			struct_decl = struct_meta.value().struct_decl;
+			return Type_Meta { struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, NULL };
 		} break;
 		case Ast_Type::Tag::Pointer:
 		{
-			error_exit("get_type_meta: pointer types not supported");
+			Type_Meta ptr_type = get_type_meta(type->as_pointer);
+			type_ref = LLVMPointerTypeInContext(context, 0);
+			return Type_Meta { type_ref, false, NULL, true, ptr_type.type };
 		} break;
 		case Ast_Type::Tag::Array:
 		{
 			error_exit("get_type_meta: arrays not supported");
+			return Type_Meta {};
 		} break;
 	}
 
-	bool is_struct = type->tag == Ast_Type::Tag::Custom;
-	return Type_Meta { is_struct, struct_decl, type_ref };
+	return Type_Meta { type_ref, false, NULL, false, NULL };
 }
 
 Field_Meta Backend_LLVM::get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str)
@@ -605,24 +611,36 @@ Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Sc
 {
 	auto var_meta = bc->find_var(var->ident.token.string_value);
 	if (!var_meta) error_exit("get_var_access_meta: failed to find var in scope");
-	if (!var->access.has_value()) return Var_Access_Meta { var_meta.value().var_value, var_meta.value().var_type };
+	if (!var->access.has_value()) return Var_Access_Meta { var_meta.value().var_value, var_meta.value().type_meta.type };
 
 	Ast_Access* access = var->access.value();
 	LLVMValueRef ptr = var_meta.value().var_value;
-	LLVMTypeRef type = var_meta.value().var_type;
-	Ast_Struct_Decl* struct_decl = var_meta.value().struct_decl;
+	LLVMTypeRef type = var_meta.value().type_meta.type;
+	Ast_Struct_Decl* struct_decl = var_meta.value().type_meta.struct_decl;
 	while (access != NULL)
 	{
-		if (access->tag == Ast_Access::Tag::Array) error_exit("get_var_access_meta: array access isnt supported");
-		
-		Field_Meta field = get_field_meta(struct_decl, access->as_var->ident.token.string_value);
-		ptr = LLVMBuildStructGEP2(builder, type, ptr, field.id, "gep_ptr");
-		type = field.type_meta.type;
-		struct_decl = field.type_meta.struct_decl;
+		if (access->tag == Ast_Access::Tag::Array)
+		{
+			if (!var_meta.value().type_meta.is_pointer) 
+			error_exit("get_var_access_meta: trying array access on non pointer variable");
 
-		if (access->as_var->next.has_value())
-			access = access->as_var->next.value();
-		else access = NULL;
+			Ast_Array_Access* array_access = access->as_array;
+			LLVMValueRef index_value = build_expr_value(array_access->index_expr, bc);
+			type = var_meta.value().type_meta.pointer_type;
+			ptr = LLVMBuildGEP2(builder, type, ptr, &index_value, 1, "array_access_ptr");
+			access = NULL;
+		}
+		else
+		{
+			Field_Meta field = get_field_meta(struct_decl, access->as_var->ident.token.string_value);
+			ptr = LLVMBuildStructGEP2(builder, type, ptr, field.id, "gep_ptr");
+			type = field.type_meta.type;
+			struct_decl = field.type_meta.struct_decl;
+
+			if (access->as_var->next.has_value())
+				access = access->as_var->next.value();
+			else access = NULL;
+		}
 	}
 	
 	return Var_Access_Meta { ptr, type };

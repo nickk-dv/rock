@@ -6,9 +6,11 @@
 
 struct Type_Meta
 {
+	LLVMTypeRef type;
 	bool is_struct;
 	Ast_Struct_Decl* struct_decl;
-	LLVMTypeRef type;
+	bool is_pointer;
+	LLVMTypeRef pointer_type;
 };
 
 struct Field_Meta
@@ -37,11 +39,9 @@ struct Struct_Meta
 
 struct Var_Meta
 {
-	bool is_struct;
-	Ast_Struct_Decl* struct_decl;
 	StringView str;
-	LLVMTypeRef var_type;
 	LLVMValueRef var_value;
+	Type_Meta type_meta;
 };
 
 struct Backend_Block_Info
