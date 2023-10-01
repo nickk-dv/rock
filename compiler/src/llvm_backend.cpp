@@ -8,6 +8,7 @@ void Backend_LLVM::backend_build(Ast* ast)
 	context = LLVMContextCreate(); //@Research why is context needed?
 	module = LLVMModuleCreateWithNameInContext("module", context);
 	builder = LLVMCreateBuilderInContext(context);
+	LLVMContextSetOpaquePointers(context, 1);
 	build_ir(ast);
 	build_binaries();
 }
@@ -77,9 +78,6 @@ void Backend_LLVM::build_struct_decl(Ast_Struct_Decl* struct_decl)
 	LLVMStructSetBody(struct_type, members.data(), (u32)members.size(), 0);
 	Struct_Meta meta = { struct_decl, struct_type };
 	struct_decl_map.add(struct_decl->type.token.string_value, meta, hash_fnv1a_32(struct_decl->type.token.string_value));
-
-	//@Hack adding global var to see the struct declaration in the ir
-	LLVMValueRef globalVar = LLVMAddGlobal(module, struct_type, "_global_struct_check");
 }
 
 void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
@@ -95,6 +93,7 @@ void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 	
 	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, param_types.data(), param_types.size(), 0); //@Temp Discarding input args
 	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident.token), proc_type);
+	
 	Proc_Meta meta = { proc_type, proc_val };
 	proc_decl_map.add(proc_decl->ident.token.string_value, meta, hash_fnv1a_32(proc_decl->ident.token.string_value));
 }
@@ -284,7 +283,12 @@ void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* b
 	if (var_decl->expr.has_value())
 	{
 		LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
-		if (var_type.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable declaration");
+		if (var_type.type != LLVMTypeOf(expr_value))
+		{
+			debug_print_llvm_type("Expected", var_type.type);
+			debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
+			error_exit("type mismatch in variable declaration");
+		}
 		LLVMBuildStore(builder, expr_value, var_ptr);
 	}
 	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
@@ -300,7 +304,12 @@ void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Sc
 	Var_Access_Meta var_access = get_var_access_meta(var, bc);
 
 	LLVMValueRef expr_value = build_expr_value(var_assign->expr, bc);
-	if (var_access.type != LLVMTypeOf(expr_value)) error_exit("type mismatch in variable assign");
+	if (var_access.type != LLVMTypeOf(expr_value))
+	{
+		debug_print_llvm_type("Expected", var_access.type);
+		debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
+		error_exit("type mismatch in variable assignment");
+	}
 	LLVMBuildStore(builder, expr_value, var_access.ptr);
 }
 
@@ -584,29 +593,39 @@ Field_Meta Backend_LLVM::get_field_meta(Ast_Struct_Decl* struct_decl, StringView
 	u32 count = 0;
 	for (const auto& field : struct_decl->fields)
 	{
-		if (field.ident.token.string_value == field_str) 
-		return Field_Meta { count, get_type_meta(field.type).type };
+		if (field.ident.token.string_value == field_str)
+		return Field_Meta { count, get_type_meta(field.type) };
 		count += 1;
 	}
 	error_exit("get_field_meta: failed to find the field");
 	return Field_Meta {};
 }
 
-// @Doing GEP on input param structs values, doesnt work since its not a pointer.
 Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Scope* bc)
 {
 	auto var_meta = bc->find_var(var->ident.token.string_value);
 	if (!var_meta) error_exit("get_var_access_meta: failed to find var in scope");
 	if (!var->access.has_value()) return Var_Access_Meta { var_meta.value().var_value, var_meta.value().var_type };
 
-	if (LLVMGetTypeKind(var_meta.value().var_type) != LLVMStructTypeKind) error_exit("get_var_access_meta: attempting to access on the non struct type");
-	if (var_meta.value().is_struct == false) error_exit("get_var_access_meta: expected var to be a struct during access");
 	Ast_Access* access = var->access.value();
-	if (access->tag == Ast_Access::Tag::Array) error_exit("get_var_access_meta: array access isnt supported");
+	LLVMValueRef ptr = var_meta.value().var_value;
+	LLVMTypeRef type = var_meta.value().var_type;
+	Ast_Struct_Decl* struct_decl = var_meta.value().struct_decl;
+	while (access != NULL)
+	{
+		if (access->tag == Ast_Access::Tag::Array) error_exit("get_var_access_meta: array access isnt supported");
+		
+		Field_Meta field = get_field_meta(struct_decl, access->as_var->ident.token.string_value);
+		ptr = LLVMBuildStructGEP2(builder, type, ptr, field.id, "gep_ptr");
+		type = field.type_meta.type;
+		struct_decl = field.type_meta.struct_decl;
 
-	Field_Meta field = get_field_meta(var_meta.value().struct_decl, access->as_var->ident.token.string_value);
-	LLVMValueRef gep_ptr = LLVMBuildStructGEP2(builder, var_meta.value().var_type, var_meta.value().var_value, field.id, "gep_ptr");
-	return Var_Access_Meta { gep_ptr, field.type };
+		if (access->as_var->next.has_value())
+			access = access->as_var->next.value();
+		else access = NULL;
+	}
+	
+	return Var_Access_Meta { ptr, type };
 }
 
 bool Backend_LLVM::kind_is_ifd(LLVMTypeKind type_kind)
@@ -639,6 +658,13 @@ void Backend_LLVM::error_exit(const char* message)
 {
 	printf("backend error: %s.\n", message);
 	exit(EXIT_FAILURE);
+}
+
+void Backend_LLVM::debug_print_llvm_type(const char* message, LLVMTypeRef type)
+{
+	char* msg = LLVMPrintTypeToString(type);
+	printf("%s %s\n", message, msg);
+	LLVMDisposeMessage(msg);
 }
 
 void Backend_LLVM::build_binaries()

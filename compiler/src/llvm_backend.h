@@ -14,7 +14,7 @@ struct Type_Meta
 struct Field_Meta
 {
 	u32 id;
-	LLVMTypeRef type;
+	Type_Meta type_meta;
 };
 
 struct Var_Access_Meta
@@ -106,8 +106,8 @@ private:
 	bool type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref);
 	char* get_c_string(Token& token);
 	void error_exit(const char* message);
+	void debug_print_llvm_type(const char* message, LLVMTypeRef type);
 
-	void build_ir_example(Ast* ast);
 	void build_binaries();
 	void debug_print_module();
 
