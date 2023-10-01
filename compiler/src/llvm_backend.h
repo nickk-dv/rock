@@ -19,7 +19,6 @@ struct Field_Meta
 
 struct Var_Access_Meta
 {
-	bool is_pointer_value;
 	LLVMValueRef ptr;
 	LLVMTypeRef type;
 };
@@ -38,7 +37,6 @@ struct Struct_Meta
 
 struct Var_Meta
 {
-	bool is_input_param;
 	bool is_struct;
 	Ast_Struct_Decl* struct_decl;
 	StringView str;

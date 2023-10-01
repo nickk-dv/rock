@@ -104,7 +104,8 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
-	
+	LLVMPositionBuilderAtEnd(builder, entry_block);
+
 	Backend_Block_Scope bc = {};
 	bc.add_block();
 	u32 count = 0;
@@ -112,7 +113,9 @@ void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 	{
 		Type_Meta var_type = get_type_meta(param.type);
 		LLVMValueRef param_value = LLVMGetParam(proc_meta.value().proc_val, count);
-		bc.add_var(Var_Meta { true, var_type.is_struct, var_type.struct_decl, param.ident.token.string_value, var_type.type, param_value });
+		LLVMValueRef copy_ptr = LLVMBuildAlloca(builder, var_type.type, "copy_ptr");
+		LLVMBuildStore(builder, param_value, copy_ptr);
+		bc.add_var(Var_Meta { var_type.is_struct, var_type.struct_decl, param.ident.token.string_value, var_type.type, copy_ptr });
 		count += 1;
 	}
 	build_block(proc_decl->block, entry_block, proc_meta.value().proc_val, &bc);
@@ -188,7 +191,7 @@ Terminator_Type Backend_LLVM::build_block(Ast_Block* block, LLVMBasicBlockRef ba
 			input_values.emplace_back(build_expr_value(proc_call->input_exprs[i], bc));
 
 			//@Design always descarding return type of call statement, proc shouild be checked for it
-			LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, input_values.data(), input_values.size(), "call_val");
+			LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, input_values.data(), input_values.size(), "");
 		} break;
 		case Ast_Statement::Tag::Var_Decl:
 		{
@@ -286,7 +289,7 @@ void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* b
 	}
 	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
 
-	bc->add_var(Var_Meta { false, var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
+	bc->add_var(Var_Meta { var_type.is_struct, var_type.struct_decl, var_decl->ident.token.string_value, var_type.type, var_ptr });
 }
 
 void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc)
@@ -317,9 +320,7 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 				{
 					Ast_Var* var = term->as_var;
 					Var_Access_Meta var_access = get_var_access_meta(var, bc);
-					if (var_access.is_pointer_value)
-						value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
-					else value_ref = var_access.ptr; //@Confusing name, since var can be a direct value when its a proc. param
+					value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
 				} break;
 				case Ast_Term::Tag::Literal:
 				{
@@ -596,7 +597,7 @@ Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Sc
 {
 	auto var_meta = bc->find_var(var->ident.token.string_value);
 	if (!var_meta) error_exit("get_var_access_meta: failed to find var in scope");
-	if (!var->access.has_value()) return Var_Access_Meta { !var_meta.value().is_input_param, var_meta.value().var_value, var_meta.value().var_type };
+	if (!var->access.has_value()) return Var_Access_Meta { var_meta.value().var_value, var_meta.value().var_type };
 
 	if (LLVMGetTypeKind(var_meta.value().var_type) != LLVMStructTypeKind) error_exit("get_var_access_meta: attempting to access on the non struct type");
 	if (var_meta.value().is_struct == false) error_exit("get_var_access_meta: expected var to be a struct during access");
@@ -605,7 +606,7 @@ Var_Access_Meta Backend_LLVM::get_var_access_meta(Ast_Var* var, Backend_Block_Sc
 
 	Field_Meta field = get_field_meta(var_meta.value().struct_decl, access->as_var->ident.token.string_value);
 	LLVMValueRef gep_ptr = LLVMBuildStructGEP2(builder, var_meta.value().var_type, var_meta.value().var_value, field.id, "gep_ptr");
-	return Var_Access_Meta { true, gep_ptr, field.type };
+	return Var_Access_Meta { gep_ptr, field.type };
 }
 
 bool Backend_LLVM::kind_is_ifd(LLVMTypeKind type_kind)
