@@ -17,6 +17,9 @@ bool Tokenizer::set_input_from_file(const char* filepath)
 	c_to_sym[']'] = TOKEN_BRACKET_END;
 	c_to_sym['('] = TOKEN_PAREN_START;
 	c_to_sym[')'] = TOKEN_PAREN_END;
+	c_to_sym['@'] = TOKEN_AT;
+	c_to_sym['#'] = TOKEN_HASH;
+	c_to_sym['?'] = TOKEN_QUESTION;
 	c_to_sym['='] = TOKEN_ASSIGN;
 	c_to_sym['+'] = TOKEN_PLUS;
 	c_to_sym['-'] = TOKEN_MINUS;
@@ -100,19 +103,57 @@ void Tokenizer::tokenize_buffer()
 			} break;
 			case LEXEME_NUMBER:
 			{
-				u64 integer = fc - '0';
-
-				while (peek().has_value())
+				u32 offset = 0;
+				bool is_float = false;
+				while (peek(offset).has_value())
 				{
-					u8 c = peek().value();
-					if (!is_number(c)) break;
-					consume();
-					integer *= 10;
-					integer += c - '0';
+					u8 c = peek(offset).value();
+					if (!is_float && c == '.')
+					{
+						is_float = true;
+					}
+					else if (!is_number(c)) break;
+					offset += 1;
 				}
 
-				token.type = TOKEN_INTEGER_LITERAL;
-				token.integer_value = integer;
+				if (is_float)
+				{
+					u64 expected_len = offset + 1;
+					u8 last_c = input.data[input_cursor + expected_len];
+					input.data[input_cursor + expected_len] = '\0';
+					char* start = (char*)input.data + (input_cursor - 1);
+					char* end = start + 1;
+					double f64 = strtod(start, &end); //@Later replace this with custom to avoid \0 hacks and ensure valid number grammar
+					input.data[input_cursor + expected_len] = last_c;
+
+					for (u32 i = 0; i < offset; i += 1)
+					{
+						consume();
+					}
+
+					if (end != start)
+					{
+						token.type = TOKEN_FLOAT_LITERAL;
+						token.float64_value = f64;
+						printf("float: %f\n", f64);
+					}
+				}
+				else
+				{
+					u64 integer = fc - '0';
+
+					while (peek().has_value())
+					{
+						u8 c = peek().value();
+						if (!is_number(c)) break;
+						consume();
+						integer *= 10;
+						integer += c - '0';
+					}
+
+					token.type = TOKEN_INTEGER_LITERAL;
+					token.integer_value = integer;
+				}
 			} break;
 			case LEXEME_STRING:
 			{

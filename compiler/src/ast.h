@@ -61,6 +61,7 @@ struct Ast_Proc_Decl
 	std::vector<Ast_Ident_Type_Pair> input_params;
 	std::optional<Ast_Type*> return_type;
 	Ast_Block* block;
+	bool external;
 };
 
 struct Ast_Type

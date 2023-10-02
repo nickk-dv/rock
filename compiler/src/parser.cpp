@@ -149,9 +149,16 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 		decl->return_type = type;
 	}
 
-	Ast_Block* block = parse_block();
-	if (!block) return {};
-	decl->block = block;
+	if (try_consume(TOKEN_AT))
+	{
+		decl->external = true;
+	}
+	else
+	{
+		Ast_Block* block = parse_block();
+		if (!block) return {};
+		decl->block = block;
+	}
 
 	return decl;
 }

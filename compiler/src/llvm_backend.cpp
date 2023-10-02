@@ -100,10 +100,7 @@ void Backend_LLVM::build_proc_decl(Ast_Proc_Decl* proc_decl)
 
 void Backend_LLVM::build_proc_body(Ast_Proc_Decl* proc_decl)
 {
-	//@Hack manually detecting external procedures
-	if (strcmp((char*)proc_decl->ident.token.string_value.data, "free") == 0) return;
-	if (strcmp((char*)proc_decl->ident.token.string_value.data, "malloc") == 0) return;
-
+	if (proc_decl->external) return;
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlockInContext(context, proc_meta->proc_val, "entry");
