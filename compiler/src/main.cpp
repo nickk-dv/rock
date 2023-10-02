@@ -1,8 +1,9 @@
 #include "common.h"
 #include "parser.h"
 //#include "checker.h"
-#include "llvm_backend.h"
 #include "debug_printer.h"
+#include "llvm_ir_builder.h"
+#include "llvm_backend.h"
 
 int check(char* filepath)
 {
@@ -41,9 +42,15 @@ int check(char* filepath)
 	*/
 
 	timer.start();
-	Backend_LLVM backend = {};
-	backend.backend_build(ast);
-	timer.end("LLVM IR build");
+	LLVM_IR_Builder ir_builder = {};
+	LLVMModuleRef mod = ir_builder.build_module(ast);
+	timer.end("LLVM_IR_Builder: build_module");
+
+	timer.start();
+	LLVM_Backend backend = {};
+	backend.build_binaries(mod);
+	timer.end("LLVM_Backend: build_binaries");
+
 	return 0;
 }
 
