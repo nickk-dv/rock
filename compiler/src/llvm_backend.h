@@ -95,6 +95,8 @@ private:
 	void build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Backend_Block_Scope* bc);
 	void build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* bc);
 	void build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Scope* bc);
+	void build_binary_cast(LLVMValueRef& value_lhs, LLVMValueRef& value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs);
+	LLVMValueRef build_value_cast(LLVMValueRef value, LLVMTypeRef target_type);
 	LLVMValueRef build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc);
 
 	Type_Meta get_type_meta(Ast_Type* type);
@@ -104,6 +106,9 @@ private:
 	bool kind_is_fd(LLVMTypeKind type_kind);
 	bool kind_is_i(LLVMTypeKind type_kind);
 	bool type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref);
+	bool type_is_f32_f64(LLVMTypeRef type);
+	bool type_is_f32(LLVMTypeRef type);
+	bool type_is_f64(LLVMTypeRef type);
 	char* get_c_string(Token& token);
 	void error_exit(const char* message);
 	void debug_print_llvm_type(const char* message, LLVMTypeRef type);

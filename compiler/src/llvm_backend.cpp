@@ -284,6 +284,8 @@ void Backend_LLVM::build_var_decl(Ast_Var_Decl* var_decl, Backend_Block_Scope* b
 	if (var_decl->expr.has_value())
 	{
 		LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
+		expr_value = build_value_cast(expr_value, var_type.type);
+
 		if (var_type.type != LLVMTypeOf(expr_value))
 		{
 			debug_print_llvm_type("Expected", var_type.type);
@@ -307,6 +309,8 @@ void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Sc
 	Var_Access_Meta var_access = get_var_access_meta(var, bc);
 
 	LLVMValueRef expr_value = build_expr_value(var_assign->expr, bc);
+	expr_value = build_value_cast(expr_value, var_access.type);
+
 	if (var_access.type != LLVMTypeOf(expr_value))
 	{
 		debug_print_llvm_type("Expected", var_access.type);
@@ -314,6 +318,29 @@ void Backend_LLVM::build_var_assign(Ast_Var_Assign* var_assign, Backend_Block_Sc
 		error_exit("type mismatch in variable assignment");
 	}
 	LLVMBuildStore(builder, expr_value, var_access.ptr);
+}
+
+void Backend_LLVM::build_binary_cast(LLVMValueRef& value_lhs, LLVMValueRef& value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs)
+{
+	if (type_lhs == type_rhs) return;
+
+	if (type_is_f32_f64(type_lhs) && type_is_f32_f64(type_rhs))
+	{
+		if (type_is_f32(type_lhs))
+			value_lhs = LLVMBuildFPExt(builder, value_lhs, type_rhs, "fpcast_val");
+		else value_rhs = LLVMBuildFPExt(builder, value_rhs, type_lhs, "fpcast_val");
+	}
+}
+
+LLVMValueRef Backend_LLVM::build_value_cast(LLVMValueRef value, LLVMTypeRef target_type)
+{
+	LLVMTypeRef value_type = LLVMTypeOf(value);
+	if (value_type == target_type) return value;
+
+	if (type_is_f32_f64(value_type) && type_is_f32_f64(target_type))
+	return LLVMBuildFPCast(builder, value, target_type, "fpcast_val");
+
+	return value;
 }
 
 LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope* bc)
@@ -426,6 +453,9 @@ LLVMValueRef Backend_LLVM::build_expr_value(Ast_Expr* expr, Backend_Block_Scope*
 			bool bool_kind = (type_is_bool(lhs_kind, lhs_type) && type_is_bool(rhs_kind, rhs_type));
 			if (!fd_kind && !int_kind && !bool_kind) error_exit("bin_expr lhs rhs dont match, allowed types are: [fd : fd] [iX : iX] [i1(bool) : i1(bool)]");
 			
+			//@Incomplete for now this performs float-double upcast if nesessary
+			build_binary_cast(lhs, rhs, lhs_type, rhs_type);
+
 			//@Might use LLVMBuildBinOp() unitility with op code
 			switch (op)
 			{
@@ -661,6 +691,24 @@ bool Backend_LLVM::kind_is_i(LLVMTypeKind type_kind)
 bool Backend_LLVM::type_is_bool(LLVMTypeKind type_kind, LLVMTypeRef type_ref)
 {
 	return type_kind == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type_ref) == 1;
+}
+
+bool Backend_LLVM::type_is_f32_f64(LLVMTypeRef type)
+{
+	LLVMTypeKind kind = LLVMGetTypeKind(type);
+	return kind == LLVMFloatTypeKind || kind == LLVMDoubleTypeKind;
+}
+
+bool Backend_LLVM::type_is_f32(LLVMTypeRef type)
+{
+	LLVMTypeKind kind = LLVMGetTypeKind(type);
+	return kind == LLVMFloatTypeKind;
+}
+
+bool Backend_LLVM::type_is_f64(LLVMTypeRef type)
+{
+	LLVMTypeKind kind = LLVMGetTypeKind(type);
+	return kind == LLVMDoubleTypeKind;
 }
 
 char* Backend_LLVM::get_c_string(Token& token) //@Unsafe hack to get c string from string view of source file string, need to do smth better
