@@ -135,7 +135,6 @@ void Tokenizer::tokenize_buffer()
 					{
 						token.type = TOKEN_FLOAT_LITERAL;
 						token.float64_value = f64;
-						printf("float: %f\n", f64);
 					}
 				}
 				else
