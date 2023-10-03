@@ -47,6 +47,7 @@ struct String
 
 struct StringView
 {
+	StringView() {};
 	StringView(const String& str)
 	{
 		data = str.data;

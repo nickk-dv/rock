@@ -42,7 +42,7 @@ struct Type_Meta
 	bool is_struct;
 	Ast_Struct_Decl* struct_decl;
 	bool is_pointer;
-	LLVMTypeRef pointer_type;
+	Ast_Type* pointer_ast_type;
 };
 
 struct Struct_Meta
@@ -80,7 +80,7 @@ struct Var_Block_Scope
 	void add_block();
 	void pop_block();
 	void add_var(const Var_Meta& var);
-	std::optional<Var_Meta> find_var(StringView str);
+	Var_Meta find_var(StringView str);
 
 	std::vector<Var_Meta> var_stack;
 	std::vector<Var_Block_Info> block_stack;

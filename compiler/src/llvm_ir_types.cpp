@@ -19,9 +19,12 @@ void Var_Block_Scope::add_var(const Var_Meta& var)
 	var_stack.emplace_back(var);
 }
 
-std::optional<Var_Meta> Var_Block_Scope::find_var(StringView str)
+Var_Meta Var_Block_Scope::find_var(StringView str)
 {
 	for (const Var_Meta& var : var_stack)
 		if (var.str == str) return var;
-	return {};
+	// @Hack exiting here, this shouldnt happen in checked code
+	printf("get_var_access_meta: failed to find var in scope");
+	exit(EXIT_FAILURE);
+	return Var_Meta{};
 }

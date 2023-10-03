@@ -28,6 +28,7 @@ void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 	}
 }
 
+//@Todo struct recursive dependencies, currently exiting when inner type not found
 void LLVM_IR_Builder::build_struct_decl(Ast_Struct_Decl* struct_decl)
 {
 	std::vector<LLVMTypeRef> members; //@Perf deside on better member storage
@@ -555,9 +556,8 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	} break;
 	case Ast_Type::Tag::Pointer:
 	{
-		Type_Meta ptr_type = get_type_meta(type->as_pointer);
 		type_ref = LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
-		return Type_Meta{ type_ref, false, NULL, true, ptr_type.type };
+		return Type_Meta{ type_ref, false, NULL, true, type->as_pointer };
 	} break;
 	case Ast_Type::Tag::Array:
 	{
@@ -582,43 +582,43 @@ Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringV
 	return Field_Meta{};
 }
 
+//@Later '.' access syntax should also work on pointers to struct types, not just struct variables
 Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc)
 {
-	auto var_meta = bc->find_var(var->ident.token.string_value);
-	if (!var_meta) error_exit("get_var_access_meta: failed to find var in scope");
-	if (!var->access.has_value()) return Var_Access_Meta{ var_meta.value().var_value, var_meta.value().type_meta.type };
+	Var_Meta var_meta = bc->find_var(var->ident.token.string_value);
+	LLVMValueRef ptr = var_meta.var_value;
+	Type_Meta type_meta = var_meta.type_meta;
 
-	Ast_Access* access = var->access.value();
-	LLVMValueRef ptr = var_meta.value().var_value;
-	LLVMTypeRef type = var_meta.value().type_meta.type;
-	Ast_Struct_Decl* struct_decl = var_meta.value().type_meta.struct_decl;
+	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
 	while (access != NULL)
 	{
 		if (access->tag == Ast_Access::Tag::Array)
 		{
-			if (!var_meta.value().type_meta.is_pointer)
-				error_exit("get_var_access_meta: trying array access on non pointer variable");
-
+			if (!type_meta.is_pointer) error_exit("get_var_access_meta: trying array access on non pointer variable");
+			
 			Ast_Array_Access* array_access = access->as_array;
+			
 			LLVMValueRef index_value = build_expr_value(array_access->index_expr, bc);
-			type = var_meta.value().type_meta.pointer_type;
-			ptr = LLVMBuildGEP2(builder, type, ptr, &index_value, 1, "array_access_ptr");
-			access = NULL;
+			type_meta = get_type_meta(type_meta.pointer_ast_type);
+			ptr = LLVMBuildGEP2(builder, type_meta.type, ptr, &index_value, 1, "array_access_ptr");
+
+			access = array_access->next.has_value() ? array_access->next.value() : NULL;
 		}
 		else
 		{
-			Field_Meta field = get_field_meta(struct_decl, access->as_var->ident.token.string_value);
-			ptr = LLVMBuildStructGEP2(builder, type, ptr, field.id, "gep_ptr");
-			type = field.type_meta.type;
-			struct_decl = field.type_meta.struct_decl;
+			if (!type_meta.is_struct) error_exit("get_var_access_meta: trying var access on non struct variable");
+			
+			Ast_Var_Access* var_access = access->as_var;
+			
+			Field_Meta field = get_field_meta(type_meta.struct_decl, var_access->ident.token.string_value);
+			ptr = LLVMBuildStructGEP2(builder, type_meta.type, ptr, field.id, "struct_access_ptr");
+			type_meta = field.type_meta;
 
-			if (access->as_var->next.has_value())
-				access = access->as_var->next.value();
-			else access = NULL;
+			access = var_access->next.has_value() ? var_access->next.value() : NULL;
 		}
 	}
 
-	return Var_Access_Meta{ ptr, type };
+	return Var_Access_Meta{ ptr, type_meta.type };
 }
 
 bool LLVM_IR_Builder::type_is_int(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1; }
