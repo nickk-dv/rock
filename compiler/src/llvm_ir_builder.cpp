@@ -248,10 +248,8 @@ void LLVM_IR_Builder::build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc
 		{
 			debug_print_llvm_type("Expected", var_type.type);
 			debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
-			//error_exit("type mismatch in variable declaration");
+			error_exit("type mismatch in variable declaration");
 		}
-		//@Hack using 0 init here, because int upcasts arent implemented yet
-		LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
 		LLVMBuildStore(builder, expr_value, var_ptr);
 	}
 	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
@@ -278,7 +276,7 @@ void LLVM_IR_Builder::build_var_assign(Ast_Var_Assign* var_assign, Var_Block_Sco
 	LLVMBuildStore(builder, expr_value, var_access.ptr);
 }
 
-LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* bc)
+LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* bc, bool adress_op)
 {
 	LLVMValueRef value_ref = NULL;
 
@@ -290,33 +288,25 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 
 		switch (term->tag)
 		{
-			case Ast_Term::Tag::Var:
-			{
-				Ast_Var* var = term->as_var;
-				Var_Access_Meta var_access = get_var_access_meta(var, bc);
-				value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
-			} break;
-			case Ast_Term::Tag::Literal:
-			{
-				Token token = term->as_literal.token;
-				if (token.type == TOKEN_BOOL_LITERAL)
-				{
-					value_ref = LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
-				}
-				else if (token.type == TOKEN_FLOAT_LITERAL) //@Choose Double or float? defaulting to double
-				{
-					value_ref = LLVMConstReal(LLVMDoubleType(), token.float64_value);
-				}
-				else if (token.type == TOKEN_INTEGER_LITERAL) //@Todo sign extend?
-				{
-					value_ref = LLVMConstInt(LLVMInt32Type(), token.integer_value, 0);
-				}
-				else error_exit("unsupported literal type");
-			} break;
-			case Ast_Term::Tag::Proc_Call:
-			{
-				value_ref = build_proc_call(term->as_proc_call, bc, false);
-			} break;
+		case Ast_Term::Tag::Var:
+		{
+			Ast_Var* var = term->as_var;
+			Var_Access_Meta var_access = get_var_access_meta(var, bc);
+			if (adress_op) value_ref = var_access.ptr;
+			else value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
+		} break;
+		case Ast_Term::Tag::Literal:
+		{
+			Token token = term->as_literal.token;
+			if (token.type == TOKEN_BOOL_LITERAL) value_ref = LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
+			else if (token.type == TOKEN_FLOAT_LITERAL) value_ref = LLVMConstReal(LLVMDoubleType(), token.float64_value);
+			else if (token.type == TOKEN_INTEGER_LITERAL) value_ref = LLVMConstInt(LLVMInt32Type(), token.integer_value, 0); //@Todo sign extend?
+			else error_exit("unary_expr: unknown literal type");
+		} break;
+		case Ast_Term::Tag::Proc_Call:
+		{
+			value_ref = build_proc_call(term->as_proc_call, bc, false);
+		} break;
 		}
 	} break;
 	case Ast_Expr::Tag::Unary_Expr:
@@ -324,13 +314,14 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
 		UnaryOp op = unary_expr->op;
 
-		LLVMValueRef rhs = build_expr_value(unary_expr->right, bc);
+		LLVMValueRef rhs = build_expr_value(unary_expr->right, bc, op == UNARY_OP_ADRESS_OF);
 		LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
 		bool int_kind = type_is_int(rhs_type);
 		bool bool_kind = type_is_bool(rhs_type);
 		bool float_kind = type_is_float(rhs_type);
-		if (!int_kind && !bool_kind && !float_kind)
-			error_exit("unary_expr: expected float int or bool type");
+		bool pointer_kind = type_is_pointer(rhs_type);
+		if (!int_kind && !bool_kind && !float_kind && !pointer_kind)
+			error_exit("unary_expr: expected float int bool or pointer type");
 
 		switch (op)
 		{
@@ -347,7 +338,8 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 		} break;
 		case UNARY_OP_ADRESS_OF:
 		{
-			error_exit("unary_expr & not supported");
+			if (pointer_kind) value_ref = rhs;
+			else error_exit("unary_expr & expected pointer value");
 		} break;
 		case UNARY_OP_BITWISE_NOT:
 		{
@@ -500,6 +492,12 @@ LLVMValueRef LLVM_IR_Builder::build_value_cast(LLVMValueRef value, LLVMTypeRef t
 	if (type_is_float(value_type) && type_is_float(target_type))
 		return LLVMBuildFPCast(builder, value, target_type, "fpcast_val");
 
+	if (type_is_int(value_type) && type_is_int(target_type))
+	{
+		if (type_int_bit_witdh(value_type) < type_int_bit_witdh(target_type))
+		return LLVMBuildSExt(builder, value, target_type, "icast_val"); // @Possible issue SExt might not work as expected with uints, might also work since we upcast
+	}
+
 	return value;
 }
 
@@ -512,6 +510,15 @@ void LLVM_IR_Builder::build_binary_value_cast(LLVMValueRef& value_lhs, LLVMValue
 		if (type_is_f32(type_lhs))
 			value_lhs = LLVMBuildFPExt(builder, value_lhs, type_rhs, "fpcast_val");
 		else value_rhs = LLVMBuildFPExt(builder, value_rhs, type_lhs, "fpcast_val");
+		return;
+	}
+
+	if (type_is_int(type_lhs) && type_is_int(type_rhs))
+	{
+		if (type_int_bit_witdh(type_lhs) < type_int_bit_witdh(type_rhs))
+			value_lhs = LLVMBuildSExt(builder, value_lhs, type_rhs, "icast_val");
+		else value_rhs = LLVMBuildSExt(builder, value_rhs, type_lhs, "icast_val");
+		return;
 	}
 }
 
@@ -619,6 +626,8 @@ bool LLVM_IR_Builder::type_is_bool(LLVMTypeRef type) { return LLVMGetTypeKind(ty
 bool LLVM_IR_Builder::type_is_float(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMFloatTypeKind || LLVMGetTypeKind(type) == LLVMDoubleTypeKind; }
 bool LLVM_IR_Builder::type_is_f32(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMFloatTypeKind; }
 bool LLVM_IR_Builder::type_is_f64(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMDoubleTypeKind; }
+bool LLVM_IR_Builder::type_is_pointer(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMPointerTypeKind; }
+u32 LLVM_IR_Builder::type_int_bit_witdh(LLVMTypeRef type) { return LLVMGetIntTypeWidth(type); }
 
 char* LLVM_IR_Builder::get_c_string(Token& token) //@Unsafe hack to get c string from string view of source file string, need to do smth better
 {

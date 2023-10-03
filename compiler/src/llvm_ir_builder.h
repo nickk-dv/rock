@@ -22,7 +22,7 @@ private:
 	LLVMValueRef build_proc_call(Ast_Proc_Call* _for, Var_Block_Scope* bc, bool is_statement);
 	void build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc);
 	void build_var_assign(Ast_Var_Assign* var_assign, Var_Block_Scope* bc);
-	LLVMValueRef build_expr_value(Ast_Expr* expr, Var_Block_Scope* bc);
+	LLVMValueRef build_expr_value(Ast_Expr* expr, Var_Block_Scope* bc, bool adress_op = false);
 	LLVMValueRef build_value_cast(LLVMValueRef value, LLVMTypeRef target_type);
 	void build_binary_value_cast(LLVMValueRef& value_lhs, LLVMValueRef& value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs);
 
@@ -34,6 +34,8 @@ private:
 	bool type_is_float(LLVMTypeRef type);
 	bool type_is_f32(LLVMTypeRef type);
 	bool type_is_f64(LLVMTypeRef type);
+	bool type_is_pointer(LLVMTypeRef type);
+	u32 type_int_bit_witdh(LLVMTypeRef type);
 	char* get_c_string(Token& token);
 	void error_exit(const char* message);
 	void debug_print_llvm_type(const char* message, LLVMTypeRef type);

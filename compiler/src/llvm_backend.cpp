@@ -32,7 +32,7 @@ void LLVM_Backend::build_binaries(LLVMModuleRef mod)
 	char* datalayout_str = LLVMCopyStringRepOfTargetData(datalayout);
 	LLVMSetDataLayout(mod, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
-	//debug_print_module(mod);
+	debug_print_module(mod);
 
 	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &error);
 	if (error != NULL) printf("error: %s\n", error);
