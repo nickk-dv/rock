@@ -1,6 +1,7 @@
 #include "llvm_ir_builder.h"
 
 #include "llvm-c/Core.h"
+#include "debug_printer.h"
 
 LLVMModuleRef LLVM_IR_Builder::build_module(Ast* ast)
 {
@@ -575,11 +576,20 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	{
 		type_ref = get_basic_type(type->as_basic);
 	} break;
-	case Ast_Type::Tag::Custom: //@Notice for now custom type is assumed to be a struct
+	case Ast_Type::Tag::Custom:
 	{
 		auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
-		if (!struct_meta) error_exit("get_type_meta: custom type not found");
-		return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, NULL };
+		if (struct_meta)
+		{
+			return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, NULL };
+		}
+		
+		auto enum_meta = enum_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
+		if (enum_meta)
+		{
+			return Type_Meta{ enum_meta.value().variant_type, false, NULL, false, NULL };
+		}
+		error_exit("get_type_meta: custom type not found");
 	} break;
 	case Ast_Type::Tag::Pointer:
 	{
@@ -596,6 +606,9 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	return Type_Meta{ type_ref, false, NULL, false, NULL };
 }
 
+//@Notice enums are threated like values of their basic type,
+//its possible to set enum variable or field to the value outside its variant pool
+//this shouild be checked for in checker, ir sholdnt care about this semantics
 LLVMValueRef LLVM_IR_Builder::get_enum_value(Ast_Enum* _enum) //@Perf copying the vector of llvm values
 {
 	auto enum_meta = enum_decl_map.find(_enum->type.token.string_value, hash_fnv1a_32(_enum->type.token.string_value));
@@ -628,7 +641,6 @@ Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringV
 	return Field_Meta{};
 }
 
-//@Later '.' access syntax should also work on pointers to struct types, not just struct variables
 Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc)
 {
 	Var_Meta var_meta = bc->find_var(var->ident.token.string_value);
@@ -652,10 +664,20 @@ Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Sco
 		}
 		else
 		{
-			if (!type_meta.is_struct) error_exit("get_var_access_meta: trying var access on non struct variable");
-			
+			if (type_meta.is_pointer)
+			{
+				ptr = LLVMBuildLoad2(builder, type_meta.type, ptr, "ptr_load");
+				type_meta = get_type_meta(type_meta.pointer_ast_type);
+			}
+
+			if (!type_meta.is_struct) 
+			{
+				debug_print_token(access->as_var->ident.token, true, true);
+				debug_print_llvm_type("Type: ", type_meta.type);
+				error_exit("get_var_access_meta: trying var access on non struct variable");
+			}
+
 			Ast_Var_Access* var_access = access->as_var;
-			
 			Field_Meta field = get_field_meta(type_meta.struct_decl, var_access->ident.token.string_value);
 			ptr = LLVMBuildStructGEP2(builder, type_meta.type, ptr, field.id, "struct_access_ptr");
 			type_meta = field.type_meta;
@@ -664,7 +686,7 @@ Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Sco
 		}
 	}
 
-	return Var_Access_Meta{ ptr, type_meta.type };
+	return Var_Access_Meta { ptr, type_meta.type };
 }
 
 bool LLVM_IR_Builder::type_is_int(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1; }

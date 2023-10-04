@@ -112,7 +112,7 @@ struct Ast_Access
 {
 	enum class Tag
 	{
-		Var, Enum, Array 
+		Var, Array 
 	} tag;
 
 	union
