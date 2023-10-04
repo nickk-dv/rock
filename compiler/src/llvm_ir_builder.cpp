@@ -7,6 +7,7 @@ LLVMModuleRef LLVM_IR_Builder::build_module(Ast* ast)
 	module = LLVMModuleCreateWithName("module");
 	builder = LLVMCreateBuilder();
 
+	enum_decl_map.init(32);
 	struct_decl_map.init(32);
 	proc_decl_map.init(32);
 	for (Ast_Enum_Decl* enum_decl : ast->enums) { build_enum_decl(enum_decl); }
@@ -28,6 +29,7 @@ void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 	bool bool_kind = type_is_bool(type);
 	bool float_kind = type_is_float(type);
 
+	Enum_Meta meta = { enum_decl, type, {} };
 	for (Ast_Ident_Literal_Pair& variant: enum_decl->variants)
 	{
 		LLVMValueRef enum_constant = LLVMAddGlobal(module, type, get_c_string(variant.ident.token));
@@ -36,7 +38,9 @@ void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 		else if (bool_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, (int)variant.literal.token.bool_value, 0));
 		else if (float_kind) LLVMSetInitializer(enum_constant, LLVMConstReal(type, sign * variant.literal.token.float64_value));
 		LLVMSetGlobalConstant(enum_constant, 1);
+		meta.variants.emplace_back(enum_constant);
 	}
+	enum_decl_map.add(enum_decl->type.token.string_value, meta, hash_fnv1a_32(enum_decl->type.token.string_value));
 }
 
 //@Todo struct recursive dependencies, currently exiting when inner type not found
@@ -306,6 +310,11 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 			Var_Access_Meta var_access = get_var_access_meta(var, bc);
 			if (adress_op) value_ref = var_access.ptr;
 			else value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
+		} break;
+		case Ast_Term::Tag::Enum:
+		{
+			Ast_Enum* _enum = term->as_enum;
+			value_ref = get_enum_value(_enum);
 		} break;
 		case Ast_Term::Tag::Literal:
 		{
@@ -585,6 +594,25 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	}
 
 	return Type_Meta{ type_ref, false, NULL, false, NULL };
+}
+
+LLVMValueRef LLVM_IR_Builder::get_enum_value(Ast_Enum* _enum) //@Perf copying the vector of llvm values
+{
+	auto enum_meta = enum_decl_map.find(_enum->type.token.string_value, hash_fnv1a_32(_enum->type.token.string_value));
+	if (!enum_meta) error_exit("get_enum_variant: failed to find enum type");
+	
+	u32 count = 0;
+	for (const Ast_Ident_Literal_Pair& variant: enum_meta.value().enum_decl->variants)
+	{
+		if (variant.ident.token.string_value == _enum->variant.token.string_value)
+		{
+			LLVMValueRef ptr = enum_meta.value().variants[count];
+			return LLVMBuildLoad2(builder, enum_meta.value().variant_type, ptr, "enum_val");
+		}
+		count += 1;
+	}
+	error_exit("get_enum_variant: failed to find enum variant");
+	return NULL;
 }
 
 Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str)

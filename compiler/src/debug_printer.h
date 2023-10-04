@@ -21,6 +21,7 @@ void debug_print_var(Ast_Var* var);
 void debug_print_access(Ast_Access* access);
 void debug_print_var_access(Ast_Var_Access* var_access);
 void debug_print_array_access(Ast_Array_Access* array_access);
+void debug_print_enum(Ast_Enum* _enum);
 void debug_print_term(Ast_Term* term, u32 depth);
 void debug_print_expr(Ast_Expr* expr, u32 depth);
 void debug_print_unary_expr(Ast_Unary_Expr* unary_expr, u32 depth);

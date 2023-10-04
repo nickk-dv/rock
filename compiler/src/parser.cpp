@@ -323,6 +323,21 @@ Ast_Array_Access* Parser::parse_array_access()
 	return array_access;
 }
 
+Ast_Enum* Parser::parse_enum()
+{
+	Ast_Enum* _enum = m_arena.alloc<Ast_Enum>();
+
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) { error("Expected enum type identifier"); return NULL; }
+	_enum->type = Ast_Ident{ ident.value() };
+	consume();
+	auto variant = try_consume(TOKEN_IDENT);
+	if (!variant) { error("Expected enum variant identifier"); return NULL; }
+	_enum->variant = Ast_Ident{ variant.value() };
+
+	return _enum;
+}
+
 Ast_Term* Parser::parse_term()
 {
 	Ast_Term* term = m_arena.alloc<Ast_Term>();
@@ -348,6 +363,13 @@ Ast_Term* Parser::parse_term()
 				if (!proc_call) return NULL;
 				term->tag = Ast_Term::Tag::Proc_Call;
 				term->as_proc_call = proc_call;
+			}
+			else if (next.type == TOKEN_DOUBLE_COLON)
+			{
+				Ast_Enum* _enum = parse_enum();
+				if (!_enum) return NULL;
+				term->tag = Ast_Term::Tag::Enum;
+				term->as_enum = _enum;
 			}
 			else
 			{

@@ -28,6 +28,7 @@ private:
 
 	LLVMTypeRef get_basic_type(BasicType type);
 	Type_Meta get_type_meta(Ast_Type* type);
+	LLVMValueRef get_enum_value(Ast_Enum* _enum);
 	Field_Meta get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str);
 	Var_Access_Meta get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc);
 	bool type_is_int(LLVMTypeRef type);
@@ -43,6 +44,7 @@ private:
 
 	LLVMModuleRef module;
 	LLVMBuilderRef builder;
+	HashMap<StringView, Enum_Meta, u32, match_string_view> enum_decl_map;
 	HashMap<StringView, Proc_Meta, u32, match_string_view> proc_decl_map;
 	HashMap<StringView, Struct_Meta, u32, match_string_view> struct_decl_map;
 };

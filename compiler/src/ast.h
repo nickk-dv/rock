@@ -19,6 +19,7 @@ struct Ast_Var;
 struct Ast_Access;
 struct Ast_Var_Access;
 struct Ast_Array_Access;
+struct Ast_Enum;
 struct Ast_Term;
 struct Ast_Expr;
 struct Ast_Unary_Expr;
@@ -111,7 +112,7 @@ struct Ast_Access
 {
 	enum class Tag
 	{
-		Var, Array 
+		Var, Enum, Array 
 	} tag;
 
 	union
@@ -133,16 +134,23 @@ struct Ast_Array_Access
 	std::optional<Ast_Access*> next;
 };
 
+struct Ast_Enum
+{
+	Ast_Ident type;
+	Ast_Ident variant;
+};
+
 struct Ast_Term
 {
 	enum class Tag
 	{
-		Var, Literal, Proc_Call,
+		Var, Enum, Literal, Proc_Call,
 	} tag;
 
 	union
 	{
 		Ast_Var* as_var;
+		Ast_Enum* as_enum;
 		Ast_Literal as_literal;
 		Ast_Proc_Call* as_proc_call;
 	};

@@ -10,6 +10,7 @@ struct Loop_Meta;
 struct Type_Meta;
 struct Struct_Meta;
 struct Field_Meta;
+struct Enum_Meta;
 struct Var_Meta;
 struct Var_Access_Meta;
 struct Var_Block_Info;
@@ -55,6 +56,13 @@ struct Field_Meta
 {
 	u32 id;
 	Type_Meta type_meta;
+};
+
+struct Enum_Meta
+{
+	Ast_Enum_Decl* enum_decl;
+	LLVMTypeRef variant_type;
+	std::vector<LLVMValueRef> variants;
 };
 
 struct Var_Meta

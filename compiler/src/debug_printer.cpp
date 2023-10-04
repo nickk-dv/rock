@@ -341,12 +341,24 @@ void debug_print_array_access(Ast_Array_Access* array_access)
 	if (array_access->next) debug_print_access(array_access->next.value());
 }
 
+void debug_print_enum(Ast_Enum* _enum)
+{
+	debug_print_token(_enum->type.token, false);
+	printf("::");
+	debug_print_token(_enum->variant.token, true);
+}
+
 void debug_print_term(Ast_Term* term, u32 depth)
 {
 	if (term->tag == Ast_Term::Tag::Var)
 	{
 		debug_print_branch(depth);
 		printf("Term_Var: ");
+	}
+	else if (term->tag == Ast_Term::Tag::Enum)
+	{
+		debug_print_branch(depth);
+		printf("Term_Enum: ");
 	}
 	else if (term->tag == Ast_Term::Tag::Literal)
 	{
@@ -357,6 +369,7 @@ void debug_print_term(Ast_Term* term, u32 depth)
 	switch (term->tag)
 	{
 		case Ast_Term::Tag::Var: debug_print_var(term->as_var); break;
+		case Ast_Term::Tag::Enum: debug_print_enum(term->as_enum); break;
 		case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
 		case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 		default: break;
