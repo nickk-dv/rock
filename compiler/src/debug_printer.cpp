@@ -236,11 +236,18 @@ void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	printf("\nEnum_Decl: "); 
-	debug_print_token(enum_decl->type.token, true);
+	debug_print_token(enum_decl->type.token, false);
+	printf (": ");
+	if (enum_decl->basic_type.has_value())
+		debug_print_basic_type(enum_decl->basic_type.value());
+	else debug_print_basic_type(BASIC_TYPE_I32);
+	printf("\n");
 
-	for (const Ast_Ident& variant : enum_decl->variants)
+	for (const Ast_Ident_Literal_Pair& variant : enum_decl->variants)
 	{
-		debug_print_token(variant.token, true);
+		debug_print_token(variant.ident.token, false);
+		printf(": ");
+		debug_print_token(variant.literal.token, true);
 	}
 }
 

@@ -11,13 +11,14 @@ struct Ast_Proc_Decl;
 
 struct Ast_Ident { Token token; };
 struct Ast_Literal { Token token; };
+struct Ast_Ident_Type_Pair;
+struct Ast_Ident_Literal_Pair;
 struct Ast_Type;
 struct Ast_Array_Type;
 struct Ast_Var;
 struct Ast_Access;
 struct Ast_Var_Access;
 struct Ast_Array_Access;
-struct Ast_Ident_Type_Pair;
 struct Ast_Term;
 struct Ast_Expr;
 struct Ast_Unary_Expr;
@@ -51,8 +52,8 @@ struct Ast_Struct_Decl
 struct Ast_Enum_Decl
 {
 	Ast_Ident type;
-	std::vector<Ast_Ident> variants;
-	std::vector<int> constants;
+	std::optional<BasicType> basic_type;
+	std::vector<Ast_Ident_Literal_Pair> variants;
 };
 
 struct Ast_Proc_Decl
@@ -62,6 +63,19 @@ struct Ast_Proc_Decl
 	std::optional<Ast_Type*> return_type;
 	Ast_Block* block;
 	bool external;
+};
+
+struct Ast_Ident_Type_Pair
+{
+	Ast_Ident ident;
+	Ast_Type* type;
+};
+
+struct Ast_Ident_Literal_Pair
+{
+	Ast_Ident ident;
+	Ast_Literal literal;
+	bool is_negative;
 };
 
 struct Ast_Type
@@ -117,12 +131,6 @@ struct Ast_Array_Access
 {
 	Ast_Expr* index_expr;
 	std::optional<Ast_Access*> next;
-};
-
-struct Ast_Ident_Type_Pair
-{
-	Ast_Ident ident;
-	Ast_Type* type;
 };
 
 struct Ast_Term

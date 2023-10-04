@@ -130,3 +130,8 @@ TokenType token_str_to_keyword(StringView str)
 	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
 	return is_keyword ? keyword_hash_to_token_type.at(hash) : TOKEN_ERROR;
 }
+
+bool token_is_literal(TokenType type)
+{
+	return type >= TOKEN_BOOL_LITERAL && type <= TOKEN_STRING_LITERAL;
+}

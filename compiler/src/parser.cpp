@@ -69,12 +69,12 @@ Ast_Struct_Decl* Parser::parse_struct_decl()
 	decl->type = Ast_Ident { consume_get() };
 	consume(); consume();
 	
-	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
 	while (true)
 	{
 		auto field = try_consume(TOKEN_IDENT);
 		if (!field) break;
-		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return {}; }
+		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
 		Ast_Type* type = parse_type();
 		if (!type) return NULL;
@@ -82,11 +82,12 @@ Ast_Struct_Decl* Parser::parse_struct_decl()
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after struct declaration"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after struct declaration"); return NULL; }
 
 	return decl;
 }
 
+//@Notice allowing basic string type and string literals as enum variants, might only allow numeric values not even bools
 Ast_Enum_Decl* Parser::parse_enum_decl()
 {
 	Ast_Enum_Decl* decl = m_arena.alloc<Ast_Enum_Decl>();
@@ -94,29 +95,30 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 	consume(); consume();
 	int constant = 0;
 
-	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return {}; }
+	if (try_consume(TOKEN_DOUBLE_COLON))
+	{
+		BasicType basic_type = token_to_basic_type(peek().type);
+		if (basic_type == BASIC_TYPE_ERROR) { error("Expected basic type in enum declaration"); return NULL; }
+		consume();
+		decl->basic_type = basic_type;
+	}
+
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
 	while (true)
 	{
-		auto variant = try_consume(TOKEN_IDENT);
-		if (!variant) break;
+		auto ident = try_consume(TOKEN_IDENT);
+		if (!ident) break;
 
-		if (try_consume(TOKEN_ASSIGN))
-		{
-			Token int_lit = peek();
-			if (int_lit.type != TOKEN_INTEGER_LITERAL) //@Notice only i32 numbers allowed
-			{
-				error("Expected constant integer literal.\n"); return {};
-			}
-			consume();
-			constant = int_lit.integer_value; //@Notice negative not supported by token integer_value
-		}
-
-		decl->variants.emplace_back(Ast_Ident { variant.value() });
-		decl->constants.emplace_back(constant);
-		constant += 1;
+		if (!try_consume(TOKEN_ASSIGN)) { error("Expected '=' followed by value of enum variant"); return NULL; }
+		bool is_negative = try_consume(TOKEN_MINUS).has_value();
+		Token token = peek();
+		if (!token_is_literal(token.type)) { error("Expected literal value: number, bool, string"); return NULL; }
+		consume();
+		decl->variants.emplace_back(Ast_Ident_Literal_Pair { Ast_Ident { ident.value() }, Ast_Literal { token }, is_negative });
+		
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after enum declaration"); return {}; }
+	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after enum declaration"); return NULL; }
 
 	return decl;
 }
@@ -127,12 +129,12 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 	decl->ident = Ast_Ident { consume_get() };
 	consume();
 	
-	if (!try_consume(TOKEN_PAREN_START)) { error("Expected '('"); return {}; }
+	if (!try_consume(TOKEN_PAREN_START)) { error("Expected '('"); return NULL; }
 	while (true)
 	{
 		auto param = try_consume(TOKEN_IDENT);
 		if (!param) break;
-		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return {}; }
+		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
 		Ast_Type* type = parse_type();
 		if (!type) return NULL;
@@ -140,7 +142,7 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')'"); return {}; }
+	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')'"); return NULL; }
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{

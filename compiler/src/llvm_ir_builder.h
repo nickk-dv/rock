@@ -26,6 +26,7 @@ private:
 	LLVMValueRef build_value_cast(LLVMValueRef value, LLVMTypeRef target_type);
 	void build_binary_value_cast(LLVMValueRef& value_lhs, LLVMValueRef& value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs);
 
+	LLVMTypeRef get_basic_type(BasicType type);
 	Type_Meta get_type_meta(Ast_Type* type);
 	Field_Meta get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str);
 	Var_Access_Meta get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc);

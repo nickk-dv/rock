@@ -20,10 +20,21 @@ LLVMModuleRef LLVM_IR_Builder::build_module(Ast* ast)
 
 void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 {
-	for (u32 i = 0; i < enum_decl->variants.size(); i++)
+	LLVMTypeRef type = LLVMInt32Type();
+	if (enum_decl->basic_type.has_value()) 
+	type = get_basic_type(enum_decl->basic_type.value());
+
+	bool int_kind = type_is_int(type);
+	bool bool_kind = type_is_bool(type);
+	bool float_kind = type_is_float(type);
+
+	for (Ast_Ident_Literal_Pair& variant: enum_decl->variants)
 	{
-		LLVMValueRef enum_constant = LLVMAddGlobal(module, LLVMInt32Type(), get_c_string(enum_decl->variants[i].token));
-		LLVMSetInitializer(enum_constant, LLVMConstInt(LLVMInt32Type(), enum_decl->constants[i], 0));
+		LLVMValueRef enum_constant = LLVMAddGlobal(module, type, get_c_string(variant.ident.token));
+		int sign = variant.is_negative ? -1 : 1; //@Issue with negative value limits, need robust range checking and ir validation of generated values
+		if (int_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, sign * variant.literal.token.integer_value, 0)); //@Todo sign extend?
+		else if (bool_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, (int)variant.literal.token.bool_value, 0));
+		else if (float_kind) LLVMSetInitializer(enum_constant, LLVMConstReal(type, sign * variant.literal.token.float64_value));
 		LLVMSetGlobalConstant(enum_constant, 1);
 	}
 }
@@ -523,6 +534,28 @@ void LLVM_IR_Builder::build_binary_value_cast(LLVMValueRef& value_lhs, LLVMValue
 	}
 }
 
+LLVMTypeRef LLVM_IR_Builder::get_basic_type(BasicType type)
+{
+	switch (type)
+	{
+		case BASIC_TYPE_I8: return LLVMInt8Type();
+		case BASIC_TYPE_U8: return LLVMInt8Type();
+		case BASIC_TYPE_I16: return LLVMInt16Type();
+		case BASIC_TYPE_U16: return LLVMInt16Type();
+		case BASIC_TYPE_I32: return LLVMInt32Type();
+		case BASIC_TYPE_U32: return LLVMInt32Type();
+		case BASIC_TYPE_I64: return LLVMInt64Type();
+		case BASIC_TYPE_U64: return LLVMInt64Type();
+		case BASIC_TYPE_F32: return LLVMFloatType();
+		case BASIC_TYPE_F64: return LLVMDoubleType();
+		case BASIC_TYPE_BOOL: return LLVMInt1Type();
+		//case BASIC_TYPE_STRING: @Undefined for now, might use a struct for a string
+		default: error_exit("get_basic_type: basic type not found"); break;
+	}
+
+	return NULL;
+}
+
 Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 {
 	LLVMTypeRef type_ref = NULL;
@@ -531,22 +564,7 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	{
 	case Ast_Type::Tag::Basic:
 	{
-		switch (type->as_basic) 
-		{
-			case BASIC_TYPE_I8: type_ref = LLVMInt8Type(); break;
-			case BASIC_TYPE_U8: type_ref = LLVMInt8Type(); break;
-			case BASIC_TYPE_I16: type_ref = LLVMInt16Type(); break;
-			case BASIC_TYPE_U16: type_ref = LLVMInt16Type(); break;
-			case BASIC_TYPE_I32: type_ref = LLVMInt32Type(); break;
-			case BASIC_TYPE_U32: type_ref = LLVMInt32Type(); break;
-			case BASIC_TYPE_I64: type_ref = LLVMInt64Type(); break;
-			case BASIC_TYPE_U64: type_ref = LLVMInt64Type(); break;
-			case BASIC_TYPE_F32: type_ref = LLVMFloatType(); break;
-			case BASIC_TYPE_F64: type_ref = LLVMDoubleType(); break;
-			case BASIC_TYPE_BOOL: type_ref = LLVMInt1Type(); break;
-			//@Undefined for now, might use a struct: case BASIC_TYPE_STRING:
-			default: error_exit("get_type_meta: basic type not found"); break;
-		}
+		type_ref = get_basic_type(type->as_basic);
 	} break;
 	case Ast_Type::Tag::Custom: //@Notice for now custom type is assumed to be a struct
 	{
