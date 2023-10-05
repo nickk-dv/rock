@@ -132,6 +132,9 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 			} break;
 			case Ast_Statement::Tag::Break:
 			{
+				Terminator_Type terminator = build_defer(block, basic_block, proc_value, bc, loop_meta);
+				if (terminator != Terminator_Type::None) { bc->pop_block(); return terminator; }
+
 				if (!loop_meta) error_exit("break statement: no loop meta data provided");
 				LLVMBuildBr(builder, loop_meta.value().break_target);
 				bc->pop_block();
@@ -139,6 +142,9 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 			} break;
 			case Ast_Statement::Tag::Return:
 			{
+				Terminator_Type terminator = build_defer(block, basic_block, proc_value, bc, loop_meta);
+				if (terminator != Terminator_Type::None) { bc->pop_block(); return terminator; }
+
 				Ast_Return* _return = statement->as_return;
 				if (_return->expr.has_value())
 					LLVMBuildRet(builder, build_expr_value(_return->expr.value(), bc));
@@ -148,10 +154,12 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 			} break;
 			case Ast_Statement::Tag::Continue:
 			{
-				if (!loop_meta) error_exit("continue statement: no loop meta data provided");
+				Terminator_Type terminator = build_defer(block, basic_block, proc_value, bc, loop_meta);
+				if (terminator != Terminator_Type::None) { bc->pop_block(); return terminator; }
 
 				//assign variable
 				//loop back to condition
+				if (!loop_meta) error_exit("continue statement: no loop meta data provided");
 				if (loop_meta.value().continue_action)
 					build_var_assign(loop_meta.value().continue_action.value(), bc);
 				LLVMBuildBr(builder, loop_meta.value().continue_target);
@@ -166,8 +174,26 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 		}
 	}
 
+	Terminator_Type terminator = build_defer(block, basic_block, proc_value, bc, loop_meta);
 	bc->pop_block();
-	return Terminator_Type::None;
+	return terminator;
+}
+
+Terminator_Type LLVM_IR_Builder::build_defer(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, std::optional<Loop_Meta> loop_meta)
+{
+	Terminator_Type terminator = Terminator_Type::None;
+	
+	for (Ast_Statement* statement : block->statements)
+	{
+		if (statement->tag == Ast_Statement::Tag::Defer)
+		{
+			Ast_Defer* defer = statement->as_defer;
+			terminator = build_block(defer->block, basic_block, proc_value, bc, loop_meta);
+			if (terminator != Terminator_Type::None) break;
+		}
+	}
+
+	return terminator;
 }
 
 void LLVM_IR_Builder::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc, std::optional<Loop_Meta> loop_meta)
