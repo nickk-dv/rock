@@ -80,7 +80,7 @@ void LLVM_IR_Builder::build_proc_decl(Ast_Proc_Decl* proc_decl)
 
 void LLVM_IR_Builder::build_proc_body(Ast_Proc_Decl* proc_decl)
 {
-	if (proc_decl->external) return;
+	if (proc_decl->is_external) return;
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(proc_meta->proc_val, "entry");

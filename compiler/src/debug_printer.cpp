@@ -34,7 +34,7 @@ void debug_print_token(Token token, bool endl, bool location)
 	}
 	else if (token.type == TOKEN_STRING_LITERAL)
 	{
-		printf("String literals not implemented"); //@Temp
+		printf("String literals not implemented"); //@Incomplete
 	}
 	else
 	{
@@ -47,6 +47,7 @@ void debug_print_token(Token token, bool endl, bool location)
 			case TOKEN_KEYWORD_TRUE: printf("true"); break;
 			case TOKEN_KEYWORD_FALSE: printf("false"); break;
 			case TOKEN_KEYWORD_FOR: printf("for"); break;
+			case TOKEN_KEYWORD_DEFER: printf("defer"); break;
 			case TOKEN_KEYWORD_BREAK: printf("break"); break;
 			case TOKEN_KEYWORD_RETURN: printf("return"); break;
 			case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
@@ -65,10 +66,11 @@ void debug_print_token(Token token, bool endl, bool location)
 			case TOKEN_TYPE_STRING: printf("string"); break;
 
 			case TOKEN_DOT: printf("."); break;
+			case TOKEN_COLON: printf(":"); break;
 			case TOKEN_QUOTE: printf("'"); break;
 			case TOKEN_COMMA: printf(","); break;
-			case TOKEN_COLON: printf(":"); break;
 			case TOKEN_SEMICOLON: printf(";"); break;
+			case TOKEN_DOUBLE_DOT: printf(".."); break;
 			case TOKEN_DOUBLE_COLON: printf("::"); break;
 			case TOKEN_BLOCK_START: printf("{"); break;
 			case TOKEN_BLOCK_END: printf("}"); break;
@@ -278,6 +280,8 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 	}
 	else printf("---\n");
 
+	if (proc_decl->is_external)
+		printf("External\n");
 	debug_print_block(proc_decl->block, 0);
 }
 
@@ -285,23 +289,10 @@ void debug_print_type(Ast_Type* type)
 {
 	switch (type->tag)
 	{
-		case Ast_Type::Tag::Basic:
-		{
-			debug_print_basic_type(type->as_basic);
-		} break;
-		case Ast_Type::Tag::Custom:
-		{
-			debug_print_token(type->as_custom.token, false);
-		} break;
-		case Ast_Type::Tag::Pointer:
-		{
-			printf("*");
-			debug_print_type(type->as_pointer);
-		} break;
-		case Ast_Type::Tag::Array:
-		{
-			debug_print_array_type(type->as_array);
-		} break;
+		case Ast_Type::Tag::Basic: debug_print_basic_type(type->as_basic); break;
+		case Ast_Type::Tag::Custom: debug_print_token(type->as_custom.token, false); break;
+		case Ast_Type::Tag::Pointer: { printf("*"); debug_print_type(type->as_pointer); } break;
+		case Ast_Type::Tag::Array: debug_print_array_type(type->as_array); break;
 	}
 }
 
@@ -372,7 +363,6 @@ void debug_print_term(Ast_Term* term, u32 depth)
 		case Ast_Term::Tag::Enum: debug_print_enum(term->as_enum); break;
 		case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
 		case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
-		default: break;
 	}
 }
 
@@ -383,7 +373,6 @@ void debug_print_expr(Ast_Expr* expr, u32 depth)
 		case Ast_Expr::Tag::Term: debug_print_term(expr->as_term, depth); break;
 		case Ast_Expr::Tag::Unary_Expr: debug_print_unary_expr(expr->as_unary_expr, depth); break;
 		case Ast_Expr::Tag::Binary_Expr: debug_print_binary_expr(expr->as_binary_expr, depth); break;
-		default: break;
 	}
 }
 
@@ -435,7 +424,6 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 		case Ast_Statement::Tag::Proc_Call: debug_print_proc_call(statement->as_proc_call, depth); break;
 		case Ast_Statement::Tag::Var_Decl: debug_print_var_decl(statement->as_var_decl, depth); break;
 		case Ast_Statement::Tag::Var_Assign: debug_print_var_assign(statement->as_var_assign, depth); break;
-		default: break;
 	}
 }
 
@@ -462,7 +450,6 @@ void debug_print_else(Ast_Else* _else, u32 depth)
 	{
 		case Ast_Else::Tag::If: debug_print_if(_else->as_if, depth); break;
 		case Ast_Else::Tag::Block: debug_print_block(_else->as_block, depth); break;
-		default: break;
 	}
 }
 

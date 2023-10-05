@@ -55,8 +55,15 @@ Ast* Parser::parse()
 					return NULL;
 				}
 			} break;
-			case TOKEN_EOF: { return ast; }
-			default: { error("Expected global declaration identifier"); return NULL; }
+			case TOKEN_EOF: 
+			{ 
+				return ast; 
+			}
+			default: 
+			{ 
+				error("Expected global declaration identifier"); 
+				return NULL; 
+			}
 		}
 	}
 
@@ -87,7 +94,6 @@ Ast_Struct_Decl* Parser::parse_struct_decl()
 	return decl;
 }
 
-//@Notice allowing basic string type and string literals as enum variants, might only allow numeric values not even bools
 Ast_Enum_Decl* Parser::parse_enum_decl()
 {
 	Ast_Enum_Decl* decl = m_arena.alloc<Ast_Enum_Decl>();
@@ -153,7 +159,7 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 
 	if (try_consume(TOKEN_AT))
 	{
-		decl->external = true;
+		decl->is_external = true;
 	}
 	else
 	{
@@ -222,10 +228,9 @@ Ast_Array_Type* Parser::parse_array_type()
 		consume();
 		array->fixed_size = token.integer_value;
 	}
-	else if (try_consume(TOKEN_DOT)) //@Hack define '..' token
+	else if (try_consume(TOKEN_DOUBLE_DOT))
 	{
-		if (try_consume(TOKEN_DOT)) { array->is_dynamic = true; }
-		else { error("Expected '..'"); return NULL; }
+		array->is_dynamic = true;
 	}
 	else { error("Expected '..' or integer size specifier"); return NULL; }
 	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
@@ -556,9 +561,12 @@ Ast_Statement* Parser::parse_statement()
 				statement->as_var_assign = parse_var_assign();
 				if (!statement->as_var_assign) return NULL;
 			}
-			//@Todo error message about identifier not being part of a valid statement
 		} break;
-		default: { error("Expected valid statement or '}' after code block"); return NULL; }
+		default: 
+		{ 
+			error("Expected valid statement or '}' after code block"); 
+			return NULL; 
+		}
 	}
 	
 	return statement;
@@ -620,7 +628,6 @@ Ast_For* Parser::parse_for()
 	Token curr = peek();
 	Token next = peek(1);
 
-	//infinite loop
 	if (curr.type == TOKEN_BLOCK_START)
 	{
 		Ast_Block* block = parse_block();
@@ -630,7 +637,6 @@ Ast_For* Parser::parse_for()
 		return _for;
 	}
 
-	//optional var declaration
 	if (curr.type == TOKEN_IDENT && next.type == TOKEN_COLON)
 	{
 		Ast_Var_Decl* var_decl = parse_var_decl();
@@ -638,12 +644,10 @@ Ast_For* Parser::parse_for()
 		_for->var_decl = var_decl;
 	}
 
-	//conditional expr
 	Ast_Expr* condition_expr = parse_sub_expr();
 	if (!condition_expr) { error("Expected conditional expression"); return NULL; }
 	_for->condition_expr = condition_expr;
 
-	//optional post expr
 	if (try_consume(TOKEN_SEMICOLON))
 	{
 		Ast_Var_Assign* var_assignment = parse_var_assign();
@@ -780,15 +784,14 @@ Token Parser::peek(u32 offset)
 	return tokenizer.tokens[tokenizer.peek_index + offset];
 }
 
-std::optional<Token> Parser::try_consume(TokenType token_type)
+void Parser::consume()
 {
-	Token token = peek();
-	if (token.type == token_type)
+	tokenizer.peek_index += 1;
+	if (tokenizer.peek_index >= (tokenizer.TOKENIZER_BUFFER_SIZE - tokenizer.TOKENIZER_LOOKAHEAD))
 	{
-		consume();
-		return token;
+		tokenizer.peek_index = 0; 
+		tokenizer.tokenize_buffer();
 	}
-	return {};
 }
 
 Token Parser::consume_get()
@@ -798,14 +801,15 @@ Token Parser::consume_get()
 	return token;
 }
 
-void Parser::consume()
+std::optional<Token> Parser::try_consume(TokenType token_type)
 {
-	tokenizer.peek_index += 1;
-	if (tokenizer.peek_index >= (tokenizer.TOKENIZER_BUFFER_SIZE - tokenizer.TOKENIZER_LOOKAHEAD))
+	Token token = peek();
+	if (token.type == token_type)
 	{
-		tokenizer.peek_index = 0; 
-		tokenizer.tokenize_buffer();
+		consume();
+		return token;
 	}
+	return {};
 }
 
 void Parser::error(const char* message, u32 peek_offset)

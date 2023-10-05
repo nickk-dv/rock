@@ -198,7 +198,11 @@ void Tokenizer::tokenize_buffer()
 							consume();
 						}
 					}
-					else if (c == ':' && fc == ':') sym2 = TOKEN_DOUBLE_COLON;
+					else if (c == fc)
+					{
+						if (c == ':') sym2 = TOKEN_DOUBLE_COLON;
+						else if (c == '.') sym2 = TOKEN_DOUBLE_DOT;
+					}
 
 					if (sym2 != TOKEN_ERROR)
 					{

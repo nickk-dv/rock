@@ -52,10 +52,11 @@ enum TokenType
 	TOKEN_TYPE_STRING,           // string
 
 	TOKEN_DOT,                   // .
+	TOKEN_COLON,                 // :
 	TOKEN_QUOTE,                 // '
 	TOKEN_COMMA,                 // ,
-	TOKEN_COLON,                 // :
 	TOKEN_SEMICOLON,             // ;
+	TOKEN_DOUBLE_DOT,            // ..
 	TOKEN_DOUBLE_COLON,          // ::
 	TOKEN_BLOCK_START,           // {
 	TOKEN_BLOCK_END,             // }

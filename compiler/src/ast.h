@@ -5,12 +5,12 @@
 #include "token.h"
 
 struct Ast;
+struct Ast_Ident;
+struct Ast_Literal;
 struct Ast_Struct_Decl;
 struct Ast_Enum_Decl;
 struct Ast_Proc_Decl;
 
-struct Ast_Ident { Token token; };
-struct Ast_Literal { Token token; };
 struct Ast_Ident_Type_Pair;
 struct Ast_Ident_Literal_Pair;
 struct Ast_Type;
@@ -45,6 +45,16 @@ struct Ast
 	std::vector<Ast_Proc_Decl*> procs;
 };
 
+struct Ast_Ident 
+{ 
+	Token token; 
+};
+
+struct Ast_Literal 
+{ 
+	Token token; 
+};
+
 struct Ast_Struct_Decl
 {
 	Ast_Ident type;
@@ -64,7 +74,7 @@ struct Ast_Proc_Decl
 	std::vector<Ast_Ident_Type_Pair> input_params;
 	std::optional<Ast_Type*> return_type;
 	Ast_Block* block;
-	bool external;
+	bool is_external;
 };
 
 struct Ast_Ident_Type_Pair
@@ -90,7 +100,7 @@ struct Ast_Type
 	union
 	{
 		BasicType as_basic;
-		Ast_Ident as_custom; //@Perf making this into pointer will reduce it from 40 to 16 bytes
+		Ast_Ident as_custom;
 		Ast_Type* as_pointer;
 		Ast_Array_Type* as_array;
 	};

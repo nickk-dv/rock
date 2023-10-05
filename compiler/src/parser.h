@@ -39,9 +39,9 @@ private:
 	Ast_Var_Decl* parse_var_decl();
 	Ast_Var_Assign* parse_var_assign();
 	Token peek(u32 offset = 0);
-	std::optional<Token> try_consume(TokenType token_type);
-	Token consume_get();
 	void consume();
+	Token consume_get();
+	std::optional<Token> try_consume(TokenType token_type);
 	void error(const char* message, u32 peek_offset = 0);
 
 	Arena m_arena;
