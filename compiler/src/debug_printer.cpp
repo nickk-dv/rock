@@ -428,6 +428,7 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 	{
 		case Ast_Statement::Tag::If: debug_print_if(statement->as_if, depth); break;
 		case Ast_Statement::Tag::For: debug_print_for(statement->as_for, depth); break;
+		case Ast_Statement::Tag::Defer: debug_print_defer(statement->as_defer, depth); break;
 		case Ast_Statement::Tag::Break: debug_print_break(statement->as_break, depth); break;
 		case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
 		case Ast_Statement::Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
@@ -500,6 +501,16 @@ void debug_print_for(Ast_For* _for, u32 depth)
 	debug_print_spacing(depth);
 	printf("For_Block:\n");
 	debug_print_block(_for->block, depth);
+}
+
+void debug_print_defer(Ast_Defer* defer, u32 depth)
+{
+	debug_print_branch(depth);
+	printf("Defer\n");
+
+	debug_print_spacing(depth);
+	printf("Defer_Block:\n");
+	debug_print_block(defer->block, depth);
 }
 
 void debug_print_break(Ast_Break* _break, u32 depth)

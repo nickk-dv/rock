@@ -33,6 +33,7 @@ enum TokenType
 	TOKEN_KEYWORD_TRUE,          // true
 	TOKEN_KEYWORD_FALSE,         // false
 	TOKEN_KEYWORD_FOR,           // for
+	TOKEN_KEYWORD_DEFER,         // defer
 	TOKEN_KEYWORD_BREAK,         // break
 	TOKEN_KEYWORD_RETURN,        // return
 	TOKEN_KEYWORD_CONTINUE,      // continue

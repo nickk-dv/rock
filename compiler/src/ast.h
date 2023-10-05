@@ -30,6 +30,7 @@ struct Ast_Statement;
 struct Ast_If;
 struct Ast_Else;
 struct Ast_For;
+struct Ast_Defer;
 struct Ast_Break;
 struct Ast_Return;
 struct Ast_Continue;
@@ -193,14 +194,15 @@ struct Ast_Statement
 {
 	enum class Tag
 	{
-		If, For, Break, Return, Continue,
-		Proc_Call, Var_Decl, Var_Assign,
+		If, For, Defer, Break, Return, 
+		Continue, Proc_Call, Var_Decl, Var_Assign,
 	} tag;
 
 	union
 	{
 		Ast_If* as_if;
 		Ast_For* as_for;
+		Ast_Defer* as_defer;
 		Ast_Break* as_break;
 		Ast_Return* as_return;
 		Ast_Continue* as_continue;
@@ -240,6 +242,12 @@ struct Ast_For
 	std::optional<Ast_Var_Decl*> var_decl;
 	std::optional<Ast_Expr*> condition_expr;
 	std::optional<Ast_Var_Assign*> var_assign;
+	Ast_Block* block;
+};
+
+struct Ast_Defer
+{
+	Token token;
 	Ast_Block* block;
 };
 

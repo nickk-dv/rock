@@ -31,6 +31,7 @@ void debug_print_statement(Ast_Statement* statement, u32 depth);
 void debug_print_if(Ast_If* _if, u32 depth);
 void debug_print_else(Ast_Else* _else, u32 depth);
 void debug_print_for(Ast_For* _for, u32 depth);
+void debug_print_defer(Ast_Defer* defer, u32 depth);
 void debug_print_break(Ast_Break* _break, u32 depth);
 void debug_print_return(Ast_Return* _return, u32 depth);
 void debug_print_continue(Ast_Continue* _continue, u32 depth);

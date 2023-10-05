@@ -509,6 +509,12 @@ Ast_Statement* Parser::parse_statement()
 			statement->as_for = parse_for();
 			if (!statement->as_for) return NULL;
 		} break;
+		case TOKEN_KEYWORD_DEFER:
+		{
+			statement->tag = Ast_Statement::Tag::Defer;
+			statement->as_defer = parse_defer();
+			if (!statement->as_defer) return NULL;
+		} break;
 		case TOKEN_KEYWORD_BREAK:
 		{
 			statement->tag = Ast_Statement::Tag::Break;
@@ -550,6 +556,7 @@ Ast_Statement* Parser::parse_statement()
 				statement->as_var_assign = parse_var_assign();
 				if (!statement->as_var_assign) return NULL;
 			}
+			//@Todo error message about identifier not being part of a valid statement
 		} break;
 		default: { error("Expected valid statement or '}' after code block"); return NULL; }
 	}
@@ -649,6 +656,18 @@ Ast_For* Parser::parse_for()
 	_for->block = block;
 
 	return _for;
+}
+
+Ast_Defer* Parser::parse_defer()
+{
+	Ast_Defer* defer = m_arena.alloc<Ast_Defer>();
+	defer->token = consume_get();
+
+	Ast_Block* block = parse_block();
+	if (!block) return NULL;
+	defer->block = block;
+
+	return defer;
 }
 
 Ast_Break* Parser::parse_break()

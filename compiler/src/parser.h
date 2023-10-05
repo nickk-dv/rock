@@ -31,6 +31,7 @@ private:
 	Ast_If* parse_if();
 	Ast_Else* parse_else();
 	Ast_For* parse_for();
+	Ast_Defer* parse_defer();
 	Ast_Break* parse_break();
 	Ast_Return* parse_return();
 	Ast_Continue* parse_continue();
