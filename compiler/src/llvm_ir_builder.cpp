@@ -83,52 +83,45 @@ void LLVM_IR_Builder::build_proc_body(Ast_Proc_Decl* proc_decl)
 	if (proc_decl->is_external) return;
 	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
-	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(proc_meta->proc_val, "entry");
-	LLVMPositionBuilderAtEnd(builder, entry_block);
+	
+	proc_value = proc_meta.value().proc_val;
+	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(proc_value, "entry");
+	set_curr_block(entry_block);
 
-	Var_Block_Scope bc = {};
+	Var_Block_Scope bc = {}; //@Perf allocating new memory for each function
 	bc.add_block();
+
 	u32 count = 0;
 	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 	{
 		Type_Meta var_type = get_type_meta(param.type);
-		LLVMValueRef param_value = LLVMGetParam(proc_meta.value().proc_val, count);
+		LLVMValueRef param_value = LLVMGetParam(proc_value, count);
 		LLVMValueRef copy_ptr = LLVMBuildAlloca(builder, var_type.type, "copy_ptr");
 		LLVMBuildStore(builder, param_value, copy_ptr);
 		bc.add_var(Var_Meta{ param.ident.token.string_value, copy_ptr, var_type });
 		count += 1;
 	}
-	build_block(proc_decl->block, entry_block, proc_meta.value().proc_val, &bc, false);
 
-	//@For non void return values return statement is expected to exist during checking stage
-	if (!proc_decl->return_type.has_value()) LLVMBuildRet(builder, NULL);
+	Terminator_Type terminator = build_block(proc_decl->block, &bc, false);
+	if (terminator == Terminator_Type::None && !proc_decl->return_type.has_value()) LLVMBuildRet(builder, NULL);
 }
 
-//@Todo investigate order of nested if else blocks, try to reach the logical order
-//@Also numbering of if_block / else_blocks is weidly not sequential
-// nested after_blocks are inserted in the end resulting in the non sequential ir output
-Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta, bool entry)
+Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta, bool entry)
 {
 	if (!entry) bc->add_block();
-	LLVMPositionBuilderAtEnd(builder, basic_block);
 
 	for (Ast_Statement* statement : block->statements)
 	{
 		switch (statement->tag)
 		{
-			case Ast_Statement::Tag::If:
+			case Ast_Statement::Tag::If: 
 			{
-				LLVMBasicBlockRef after_block = LLVMAppendBasicBlock(proc_value, "cont");
-				build_if(statement->as_if, basic_block, after_block, proc_value, bc, defer, loop_meta);
-				LLVMPositionBuilderAtEnd(builder, after_block);
-				basic_block = after_block;
+				LLVMBasicBlockRef cont_block = LLVMAppendBasicBlock(proc_value, "cont");
+				build_if(statement->as_if, cont_block, bc, defer, loop_meta);
 			} break;
-			case Ast_Statement::Tag::For:
+			case Ast_Statement::Tag::For: 
 			{
-				LLVMBasicBlockRef after_block = LLVMAppendBasicBlock(proc_value, "loop_exit");
-				build_for(statement->as_for, basic_block, after_block, proc_value, bc, defer);
-				LLVMPositionBuilderAtEnd(builder, after_block);
-				basic_block = after_block;
+				build_for(statement->as_for, bc, defer); 
 			} break;
 			case Ast_Statement::Tag::Defer:
 			{
@@ -137,8 +130,8 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 			} break;
 			case Ast_Statement::Tag::Break:
 			{
-				if (defer) error_exit("defer block cannot contain 'break'");
-				build_defer(block, basic_block, proc_value, bc, false);
+				if (!loop_meta.has_value() && defer) error_exit("defer block cannot contain 'break'");
+				build_defer(block, bc, false);
 
 				if (!loop_meta) error_exit("break statement: no loop meta data provided");
 				LLVMBuildBr(builder, loop_meta.value().break_target);
@@ -149,7 +142,7 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 			case Ast_Statement::Tag::Return:
 			{
 				if (defer) error_exit("defer block cannot contain 'return'");
-				build_defer(block, basic_block, proc_value, bc, true);
+				build_defer(block, bc, true);
 
 				Ast_Return* _return = statement->as_return;
 				if (_return->expr.has_value())
@@ -161,8 +154,8 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 			} break;
 			case Ast_Statement::Tag::Continue:
 			{
-				if (defer) error_exit("defer block cannot contain 'continue'");
-				build_defer(block, basic_block, proc_value, bc, false);
+				if (!loop_meta.has_value() && defer) error_exit("defer block cannot contain 'continue'");
+				build_defer(block, bc, false);
 				
 				if (!loop_meta) error_exit("continue statement: no loop meta data provided");
 				if (loop_meta.value().continue_action)
@@ -179,97 +172,100 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, LLVMBasicBlockRef
 		}
 	}
 
-	build_defer(block, basic_block, proc_value, bc, false);
+	build_defer(block, bc, false);
 	bc->pop_block();
 	return Terminator_Type::None;
 }
 
-void LLVM_IR_Builder::build_defer(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool all_defers)
+void LLVM_IR_Builder::build_defer(Ast_Block* block, Var_Block_Scope* bc, bool all_defers)
 {
 	if (all_defers)
 	{
 		for (auto it = bc->defer_stack.rbegin(); it != bc->defer_stack.rend(); ++it)
 		{
 			Ast_Defer* defer = *it;
-			build_block(defer->block, basic_block, proc_value, bc, true);
+			build_block(defer->block, bc, true);
 		}
 	}
 	else
 	{
 		u32 defer_count = bc->get_curr_defer_count();
-		auto begin = block->statements.rbegin();
+		auto begin = bc->defer_stack.rbegin();
 		auto end = std::next(begin, defer_count);
 		for (auto it = begin; it != end; ++it)
 		{
-			Ast_Statement* statement = *it;
-			if (statement->tag == Ast_Statement::Tag::Defer)
-			{
-				Ast_Defer* defer = statement->as_defer;
-				build_block(defer->block, basic_block, proc_value, bc, true);
-			}
+			Ast_Defer* defer = *it;
+			build_block(defer->block, bc, true);
 		}
 	}
 }
 
-void LLVM_IR_Builder::build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta)
+void LLVM_IR_Builder::build_if(Ast_If* _if, LLVMBasicBlockRef cont_block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta)
 {
 	LLVMValueRef cond_value = build_expr_value(_if->condition_expr, bc);
 	if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
 
 	if (_if->_else.has_value())
 	{
-		LLVMBasicBlockRef then_block = LLVMInsertBasicBlock(after_block, "then");
-		LLVMBasicBlockRef else_block = LLVMInsertBasicBlock(after_block, "else");
+		LLVMBasicBlockRef then_block = LLVMAppendBasicBlock(proc_value, "then");
+		LLVMBasicBlockRef else_block = LLVMAppendBasicBlock(proc_value, "else");
 		LLVMBuildCondBr(builder, cond_value, then_block, else_block);
+		set_curr_block(then_block);
 
-		Terminator_Type terminator = build_block(_if->block, then_block, proc_value, bc, defer, loop_meta);
-		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, after_block);
+		Terminator_Type terminator = build_block(_if->block, bc, defer, loop_meta);
+		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
+		set_curr_block(else_block);
 
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else::Tag::If)
 		{
-			LLVMPositionBuilderAtEnd(builder, else_block);
-			build_if(_else->as_if, basic_block, after_block, proc_value, bc, defer, loop_meta);
+			build_if(_else->as_if, cont_block, bc, defer, loop_meta);
 		}
 		else
 		{
-			Terminator_Type terminator = build_block(_else->as_block, else_block, proc_value, bc, defer, loop_meta);
-			if (terminator == Terminator_Type::None) LLVMBuildBr(builder, after_block);
+			Terminator_Type terminator = build_block(_else->as_block, bc, defer, loop_meta);
+			if (terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
+			set_curr_block(cont_block);
 		}
 	}
 	else
 	{
-		LLVMBasicBlockRef then_block = LLVMInsertBasicBlock(after_block, "then");
-		LLVMBuildCondBr(builder, cond_value, then_block, after_block);
+		LLVMBasicBlockRef then_block = LLVMAppendBasicBlock(proc_value, "then");
+		LLVMBuildCondBr(builder, cond_value, then_block, cont_block);
+		set_curr_block(then_block);
 
-		Terminator_Type terminator = build_block(_if->block, then_block, proc_value, bc, defer, loop_meta);
-		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, after_block);
+		Terminator_Type terminator = build_block(_if->block, bc, defer, loop_meta);
+		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
+		set_curr_block(cont_block);
 	}
 }
 
-void LLVM_IR_Builder::build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool defer)
+void LLVM_IR_Builder::build_for(Ast_For* _for, Var_Block_Scope* bc, bool defer)
 {
 	if (_for->var_decl) build_var_decl(_for->var_decl.value(), bc);
-
-	LLVMBasicBlockRef cond_block = LLVMInsertBasicBlock(after_block, "loop_cond");
+	
+	LLVMBasicBlockRef cond_block = LLVMAppendBasicBlock(proc_value, "loop_cond");
 	LLVMBuildBr(builder, cond_block);
-	LLVMPositionBuilderAtEnd(builder, cond_block);
-
-	LLVMBasicBlockRef body_block = LLVMInsertBasicBlock(after_block, "loop_body");
+	set_curr_block(cond_block);
+	
+	LLVMBasicBlockRef body_block = LLVMAppendBasicBlock(proc_value, "loop_body");
+	LLVMBasicBlockRef exit_block = LLVMAppendBasicBlock(proc_value, "loop_exit");
 	if (_for->condition_expr)
 	{
 		LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
 		if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
-		LLVMBuildCondBr(builder, cond_value, body_block, after_block);
+		LLVMBuildCondBr(builder, cond_value, body_block, exit_block);
 	}
 	else LLVMBuildBr(builder, body_block);
+	set_curr_block(body_block);
 
-	Terminator_Type terminator = build_block(_for->block, body_block, proc_value, bc, defer, Loop_Meta { after_block, cond_block, _for->var_assign });
+	Terminator_Type terminator = build_block(_for->block, bc, defer, Loop_Meta { exit_block, cond_block, _for->var_assign });
 	if (terminator == Terminator_Type::None)
 	{
 		if (_for->var_assign) build_var_assign(_for->var_assign.value(), bc);
 		LLVMBuildBr(builder, cond_block);
 	}
+	set_curr_block(exit_block);
 }
 
 LLVMValueRef LLVM_IR_Builder::build_proc_call(Ast_Proc_Call* proc_call, Var_Block_Scope* bc, bool is_statement)
@@ -750,4 +746,9 @@ void LLVM_IR_Builder::debug_print_llvm_type(const char* message, LLVMTypeRef typ
 	char* msg = LLVMPrintTypeToString(type);
 	printf("%s %s\n", message, msg);
 	LLVMDisposeMessage(msg);
+}
+
+void LLVM_IR_Builder::set_curr_block(LLVMBasicBlockRef block)
+{
+	LLVMPositionBuilderAtEnd(builder, block);
 }
