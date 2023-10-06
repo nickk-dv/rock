@@ -12,6 +12,8 @@ public:
 	Ast* parse();
 
 private:
+	Ast_Import_Decl* parse_import_decl();
+	Ast_Use_Decl* parse_use_decl();
 	Ast_Struct_Decl* parse_struct_decl();
 	Ast_Enum_Decl* parse_enum_decl();
 	Ast_Proc_Decl* parse_proc_decl();

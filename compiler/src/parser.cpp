@@ -24,6 +24,18 @@ Ast* Parser::parse()
 				{
 					switch (peek(2).type)
 					{
+						case TOKEN_KEYWORD_IMPORT:
+						{
+							Ast_Import_Decl* import_decl = parse_import_decl();
+							if (!import_decl) return NULL;
+							ast->imports.emplace_back(import_decl);
+						} break;
+						case TOKEN_KEYWORD_USE:
+						{
+							Ast_Use_Decl* use_decl = parse_use_decl();
+							if (!use_decl) return NULL;
+							ast->uses.emplace_back(use_decl);
+						} break;
 						case TOKEN_KEYWORD_STRUCT:
 						{
 							Ast_Struct_Decl* struct_decl = parse_struct_decl();
@@ -70,6 +82,37 @@ Ast* Parser::parse()
 	return ast;
 }
 
+Ast_Import_Decl* Parser::parse_import_decl()
+{
+	Ast_Import_Decl* decl = m_arena.alloc<Ast_Import_Decl>();
+	decl->alias = Ast_Ident { consume_get() };
+	consume(); consume();
+
+	auto token = try_consume(TOKEN_STRING_LITERAL);
+	if (!token) { error("Expected path string literal in 'import' declaration"); return NULL; }
+	decl->file_path = Ast_Literal { token.value() };
+
+	return decl;
+}
+
+Ast_Use_Decl* Parser::parse_use_decl()
+{
+	Ast_Use_Decl* decl = m_arena.alloc<Ast_Use_Decl>();
+	decl->alias = Ast_Ident { consume_get() };
+	consume(); consume();
+
+	while (true)
+	{
+		auto token = try_consume(TOKEN_IDENT);
+		if (!token) { error("Expected identifier in 'use' declaration"); return NULL; }
+		decl->symbol_path.emplace_back(Ast_Ident { token.value() });
+
+		if (!try_consume(TOKEN_DOT)) break;
+	}
+
+	return decl;
+}
+
 Ast_Struct_Decl* Parser::parse_struct_decl()
 {
 	Ast_Struct_Decl* decl = m_arena.alloc<Ast_Struct_Decl>();
@@ -99,7 +142,6 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 	Ast_Enum_Decl* decl = m_arena.alloc<Ast_Enum_Decl>();
 	decl->type = Ast_Ident { consume_get() };
 	consume(); consume();
-	int constant = 0;
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
@@ -133,9 +175,8 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 {
 	Ast_Proc_Decl* decl = m_arena.alloc<Ast_Proc_Decl>();
 	decl->ident = Ast_Ident { consume_get() };
-	consume();
+	consume(); consume();
 	
-	if (!try_consume(TOKEN_PAREN_START)) { error("Expected '('"); return NULL; }
 	while (true)
 	{
 		auto param = try_consume(TOKEN_IDENT);

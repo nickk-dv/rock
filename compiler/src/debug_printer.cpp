@@ -51,6 +51,8 @@ void debug_print_token(Token token, bool endl, bool location)
 			case TOKEN_KEYWORD_BREAK: printf("break"); break;
 			case TOKEN_KEYWORD_RETURN: printf("return"); break;
 			case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
+			case TOKEN_KEYWORD_IMPORT: printf("import"); break;
+			case TOKEN_KEYWORD_USE: printf("use"); break;
 
 			case TOKEN_TYPE_I8: printf("i8"); break;
 			case TOKEN_TYPE_U8: printf("u8"); break;
@@ -219,6 +221,29 @@ void debug_print_spacing(u32 depth)
 {
 	for (u32 i = 0; i < depth; i++) 
 		printf("     ");
+}
+
+void debug_print_import_decl(Ast_Import_Decl* import_decl)
+{
+	printf("\nImport_Decl: ");
+	debug_print_token(import_decl->alias.token, true);
+	printf(":: import ");
+	//@Incomplete string literals arent tokenized correctly, cant print the path
+	printf("\n");
+}
+
+void debug_print_use_decl(Ast_Use_Decl* use_decl)
+{
+	printf("\nUse_Decl: ");
+	debug_print_token(use_decl->alias.token, false);
+	printf(":: use ");
+
+	for (const Ast_Ident& ident : use_decl->symbol_path)
+	{
+		debug_print_token(ident.token, false);
+		printf(".");
+	}
+	printf("\n");
 }
 
 void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)

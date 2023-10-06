@@ -7,6 +7,8 @@
 struct Ast;
 struct Ast_Ident;
 struct Ast_Literal;
+struct Ast_Import_Decl;
+struct Ast_Use_Decl;
 struct Ast_Struct_Decl;
 struct Ast_Enum_Decl;
 struct Ast_Proc_Decl;
@@ -40,6 +42,8 @@ struct Ast_Var_Assign;
 
 struct Ast
 {
+	std::vector<Ast_Import_Decl*> imports;
+	std::vector<Ast_Use_Decl*> uses;
 	std::vector<Ast_Struct_Decl*> structs;
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
@@ -53,6 +57,18 @@ struct Ast_Ident
 struct Ast_Literal 
 { 
 	Token token; 
+};
+
+struct Ast_Import_Decl
+{
+	Ast_Ident alias;
+	Ast_Literal file_path;
+};
+
+struct Ast_Use_Decl
+{
+	Ast_Ident alias;
+	std::vector<Ast_Ident> symbol_path;
 };
 
 struct Ast_Struct_Decl

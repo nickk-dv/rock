@@ -12,6 +12,8 @@ void debug_print_assign_op(AssignOp op);
 void debug_print_basic_type(BasicType type);
 void debug_print_branch(u32& depth);
 void debug_print_spacing(u32 depth);
+void debug_print_import_decl(Ast_Import_Decl* import_decl);
+void debug_print_use_decl(Ast_Use_Decl* use_decl);
 void debug_print_struct_decl(Ast_Struct_Decl* struct_decl);
 void debug_print_enum_decl(Ast_Enum_Decl* enum_decl);
 void debug_print_proc_decl(Ast_Proc_Decl* proc_decl);

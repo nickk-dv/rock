@@ -37,6 +37,8 @@ enum TokenType
 	TOKEN_KEYWORD_BREAK,         // break
 	TOKEN_KEYWORD_RETURN,        // return
 	TOKEN_KEYWORD_CONTINUE,      // continue
+	TOKEN_KEYWORD_IMPORT,        // import
+	TOKEN_KEYWORD_USE,           // use
 
 	TOKEN_TYPE_I8,               // i8
 	TOKEN_TYPE_U8,               // u8
