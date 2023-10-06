@@ -514,6 +514,12 @@ Ast_Statement* Parser::parse_statement()
 			statement->as_for = parse_for();
 			if (!statement->as_for) return NULL;
 		} break;
+		case TOKEN_BLOCK_START:
+		{
+			statement->tag = Ast_Statement::Tag::Block;
+			statement->as_block = parse_block();
+			if (!statement->as_block) return NULL;
+		} break;
 		case TOKEN_KEYWORD_DEFER:
 		{
 			statement->tag = Ast_Statement::Tag::Defer;

@@ -123,6 +123,18 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* 
 			{
 				build_for(statement->as_for, bc, defer); 
 			} break;
+			case Ast_Statement::Tag::Block:
+			{
+				Terminator_Type terminator = build_block(statement->as_block, bc, defer, loop_meta);
+				if (terminator != Terminator_Type::None)
+				{
+					if (terminator == Terminator_Type::Return)
+						build_defer(block, bc, true);
+					else build_defer(block, bc, false);
+					bc->pop_block();
+					return terminator;
+				}
+			} break;
 			case Ast_Statement::Tag::Defer:
 			{
 				if (defer) error_exit("defer block cannot contain nested 'defer'");

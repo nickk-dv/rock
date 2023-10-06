@@ -204,7 +204,7 @@ struct Ast_Statement
 {
 	enum class Tag
 	{
-		If, For, Defer, Break, Return, 
+		If, For, Block, Defer, Break, Return,
 		Continue, Proc_Call, Var_Decl, Var_Assign,
 	} tag;
 
@@ -212,6 +212,7 @@ struct Ast_Statement
 	{
 		Ast_If* as_if;
 		Ast_For* as_for;
+		Ast_Block* as_block;
 		Ast_Defer* as_defer;
 		Ast_Break* as_break;
 		Ast_Return* as_return;

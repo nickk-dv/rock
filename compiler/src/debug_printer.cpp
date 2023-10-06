@@ -417,6 +417,7 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 	{
 		case Ast_Statement::Tag::If: debug_print_if(statement->as_if, depth); break;
 		case Ast_Statement::Tag::For: debug_print_for(statement->as_for, depth); break;
+		case Ast_Statement::Tag::Block: debug_print_block(statement->as_block, depth); break;
 		case Ast_Statement::Tag::Defer: debug_print_defer(statement->as_defer, depth); break;
 		case Ast_Statement::Tag::Break: debug_print_break(statement->as_break, depth); break;
 		case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
