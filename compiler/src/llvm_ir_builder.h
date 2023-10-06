@@ -16,10 +16,10 @@ private:
 	void build_proc_decl(Ast_Proc_Decl* proc_decl);
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
 
-	Terminator_Type build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {}, bool entry = false);
-	Terminator_Type build_defer(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {});
-	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc, std::optional<Loop_Meta> loop_meta = {});
-	void build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc);
+	Terminator_Type build_block(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta = {}, bool entry = false);
+	void build_defer(Ast_Block* block, LLVMBasicBlockRef basic_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool all_defers);
+	void build_if(Ast_If* _if, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta = {});
+	void build_for(Ast_For* _for, LLVMBasicBlockRef basic_block, LLVMBasicBlockRef after_block, LLVMValueRef proc_value, Var_Block_Scope* bc, bool defer);
 	LLVMValueRef build_proc_call(Ast_Proc_Call* _for, Var_Block_Scope* bc, bool is_statement);
 	void build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc);
 	void build_var_assign(Ast_Var_Assign* var_assign, Var_Block_Scope* bc);

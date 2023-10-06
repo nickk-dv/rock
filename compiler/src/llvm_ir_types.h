@@ -81,6 +81,7 @@ struct Var_Access_Meta
 struct Var_Block_Info
 {
 	u32 var_count;
+	u32 defer_count;
 };
 
 struct Var_Block_Scope
@@ -89,8 +90,11 @@ struct Var_Block_Scope
 	void pop_block();
 	void add_var(const Var_Meta& var);
 	Var_Meta find_var(StringView str);
+	void add_defer(Ast_Defer* defer);
+	u32 get_curr_defer_count();
 
 	std::vector<Var_Meta> var_stack;
+	std::vector<Ast_Defer*> defer_stack;
 	std::vector<Var_Block_Info> block_stack;
 };
 
