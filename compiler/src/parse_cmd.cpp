@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "llvm_ir_builder.h"
 #include "llvm_backend.h"
+#include "debug_printer.h"
 
 int parse_cmd(int argc, char** argv)
 {
@@ -63,6 +64,8 @@ int cmd_build(char* filepath)
 	}
 	timer.end("Parse Ast      ");
 
+	debug_print_ast(ast);
+	
 	timer.start();
 	LLVM_IR_Builder ir_builder = {};
 	LLVMModuleRef mod = ir_builder.build_module(ast);

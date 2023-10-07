@@ -4,6 +4,8 @@ void debug_print_ast(Ast* ast)
 {
 	printf("\n[AST]\n");
 
+	for (Ast_Import_Decl* import_decl : ast->imports) debug_print_import_decl(import_decl);
+	for (Ast_Use_Decl* use_decl : ast->uses) debug_print_use_decl(use_decl);
 	for (Ast_Struct_Decl* struct_decl : ast->structs) debug_print_struct_decl(struct_decl);
 	for (Ast_Enum_Decl* enum_decl : ast->enums) debug_print_enum_decl(enum_decl);
 	for (Ast_Proc_Decl* proc_decl : ast->procs) debug_print_proc_decl(proc_decl);
@@ -34,7 +36,7 @@ void debug_print_token(Token token, bool endl, bool location)
 	}
 	else if (token.type == TOKEN_STRING_LITERAL)
 	{
-		printf("String literals not implemented"); //@Incomplete
+		printf("%s", token.string_literal_value);
 	}
 	else
 	{
@@ -226,9 +228,10 @@ void debug_print_spacing(u32 depth)
 void debug_print_import_decl(Ast_Import_Decl* import_decl)
 {
 	printf("\nImport_Decl: ");
-	debug_print_token(import_decl->alias.token, true);
-	printf(":: import ");
-	//@Incomplete string literals arent tokenized correctly, cant print the path
+	debug_print_token(import_decl->alias.token, false);
+	printf(" :: import ");
+
+	printf("\"%s\"", import_decl->file_path.token.string_literal_value);
 	printf("\n");
 }
 

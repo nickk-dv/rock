@@ -172,7 +172,7 @@ void Tokenizer::tokenize_buffer()
 				}
 
 				token.type = TOKEN_STRING_LITERAL;
-				token.string_value.data = (u8*)string_storage.end_str();
+				token.string_literal_value = string_storage.end_str();
 				if (!terminated) token.type = TOKEN_ERROR;
 			} break;
 			case LEXEME_SYMBOL:
