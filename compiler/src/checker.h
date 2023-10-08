@@ -2,9 +2,14 @@
 #define CHECKER_H
 
 #include "common.h"
-#include "typer.h"
+//#include "typer.h"
 #include "ast.h"
 
+bool check_ast(Ast* ast);
+bool check_declarations(Ast* ast);
+void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
+
+/*
 struct Checker;
 struct Block_Info;
 struct Block_Checker;
@@ -59,5 +64,5 @@ struct Block_Checker
 	std::vector<Block_Info> block_stack;
 	std::vector<Ast_Ident_Type_Pair> var_stack; //@Perf this is basic linear search symbol table for the proc block
 };
-
+*/
 #endif

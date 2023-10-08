@@ -126,6 +126,16 @@ void debug_print_token(Token token, bool endl, bool location)
 	if (endl) printf("\n");
 }
 
+void debug_print_ident(Ast_Ident ident, bool endl, bool location)
+{
+	if (location) printf("%lu:%lu ", ident.l0, ident.c0);
+	
+	for (u64 i = 0; i < ident.str.count; i++)
+		printf("%c", ident.str.data[i]);
+	
+	if (endl) printf("\n");
+}
+
 void debug_print_unary_op(UnaryOp op)
 {
 	printf("UnaryOp: ");
@@ -228,7 +238,7 @@ void debug_print_spacing(u32 depth)
 void debug_print_import_decl(Ast_Import_Decl* import_decl)
 {
 	printf("\nImport_Decl: ");
-	debug_print_token(import_decl->alias.token, false);
+	debug_print_ident(import_decl->alias, false, false);
 	printf(" :: import ");
 
 	printf("\"%s\"", import_decl->file_path.token.string_literal_value);
@@ -238,12 +248,12 @@ void debug_print_import_decl(Ast_Import_Decl* import_decl)
 void debug_print_use_decl(Ast_Use_Decl* use_decl)
 {
 	printf("\nUse_Decl: ");
-	debug_print_token(use_decl->alias.token, false);
+	debug_print_ident(use_decl->alias, false, false);
 	printf(":: use ");
 
 	for (const Ast_Ident& ident : use_decl->symbol_path)
 	{
-		debug_print_token(ident.token, false);
+		debug_print_ident(ident, false, false);
 		printf(".");
 	}
 	printf("\n");
@@ -252,11 +262,11 @@ void debug_print_use_decl(Ast_Use_Decl* use_decl)
 void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 {
 	printf("\nStruct_Decl: "); 
-	debug_print_token(struct_decl->type.token, true);
+	debug_print_ident(struct_decl->type, true, false);
 
 	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
-		debug_print_token(field.ident.token, false);
+		debug_print_ident(field.ident, false, false);
 		printf(": "); 
 		debug_print_type(field.type);
 		printf("\n");
@@ -266,7 +276,7 @@ void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	printf("\nEnum_Decl: "); 
-	debug_print_token(enum_decl->type.token, false);
+	debug_print_ident(enum_decl->type, false, false);
 	printf (": ");
 	if (enum_decl->basic_type.has_value())
 		debug_print_basic_type(enum_decl->basic_type.value());
@@ -275,7 +285,7 @@ void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 
 	for (const Ast_Ident_Literal_Pair& variant : enum_decl->variants)
 	{
-		debug_print_token(variant.ident.token, false);
+		debug_print_ident(variant.ident, false, false);
 		printf(": ");
 		debug_print_token(variant.literal.token, true);
 	}
@@ -284,7 +294,7 @@ void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 {
 	printf("\nProc_Decl: ");
-	debug_print_token(proc_decl->ident.token, true);
+	debug_print_ident(proc_decl->ident, true, false);
 
 	printf("Params: ");
 	if (!proc_decl->input_params.empty())
@@ -292,7 +302,7 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 		printf("\n");
 		for (const Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
-			debug_print_token(param.ident.token, false);
+			debug_print_ident(param.ident, false, false);
 			printf(": ");
 			debug_print_type(param.type);
 			printf("\n");
@@ -318,7 +328,7 @@ void debug_print_type(Ast_Type* type)
 	switch (type->tag)
 	{
 		case Ast_Type::Tag::Basic: debug_print_basic_type(type->as_basic); break;
-		case Ast_Type::Tag::Custom: debug_print_token(type->as_custom.token, false); break;
+		case Ast_Type::Tag::Custom: debug_print_ident(type->as_custom, false, false); break;
 		case Ast_Type::Tag::Pointer: { printf("*"); debug_print_type(type->as_pointer); } break;
 		case Ast_Type::Tag::Array: debug_print_array_type(type->as_array); break;
 	}
@@ -333,7 +343,7 @@ void debug_print_array_type(Ast_Array_Type* array_type)
 
 void debug_print_var(Ast_Var* var)
 {
-	debug_print_token(var->ident.token, false);
+	debug_print_ident(var->ident, false, false);
 	if (var->access) debug_print_access(var->access.value());
 	printf("\n");
 }
@@ -350,7 +360,7 @@ void debug_print_access(Ast_Access* access)
 
 void debug_print_var_access(Ast_Var_Access* var_access)
 {
-	debug_print_token(var_access->ident.token, false, false);
+	debug_print_ident(var_access->ident, false, false);
 	if (var_access->next) debug_print_access(var_access->next.value());
 }
 
@@ -362,9 +372,9 @@ void debug_print_array_access(Ast_Array_Access* array_access)
 
 void debug_print_enum(Ast_Enum* _enum)
 {
-	debug_print_token(_enum->type.token, false);
+	debug_print_ident(_enum->type, false, false);
 	printf("::");
-	debug_print_token(_enum->variant.token, true);
+	debug_print_ident(_enum->variant, true, false);
 }
 
 void debug_print_term(Ast_Term* term, u32 depth)
@@ -560,7 +570,7 @@ void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 {
 	debug_print_branch(depth);
 	printf("Proc_Call: ");
-	debug_print_token(proc_call->ident.token, true);
+	debug_print_ident(proc_call->ident, true, false);
 
 	debug_print_spacing(depth);
 	printf("Access: ");
@@ -586,7 +596,7 @@ void debug_print_var_decl(Ast_Var_Decl* var_decl, u32 depth)
 {
 	debug_print_branch(depth);
 	printf("Var_Decl: ");
-	debug_print_token(var_decl->ident.token, false);
+	debug_print_ident(var_decl->ident, false, false);
 	printf(": ");
 	if (var_decl->type.has_value())
 	{

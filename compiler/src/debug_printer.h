@@ -5,6 +5,7 @@
 
 void debug_print_ast(Ast* ast);
 void debug_print_token(Token token, bool endl, bool location = false);
+void debug_print_ident(Ast_Ident ident, bool endl = true, bool location = true);
 
 void debug_print_unary_op(UnaryOp op);
 void debug_print_binary_op(BinaryOp op);

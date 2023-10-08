@@ -40,6 +40,10 @@ struct Ast_Proc_Call;
 struct Ast_Var_Decl;
 struct Ast_Var_Assign;
 
+Ast_Ident token_to_ident(Token& token);
+u32 hash_ident(Ast_Ident& ident);
+bool match_ident(Ast_Ident& a, Ast_Ident& b);
+
 struct Ast
 {
 	std::vector<Ast_Import_Decl*> imports;
@@ -50,13 +54,15 @@ struct Ast
 };
 
 struct Ast_Ident 
-{ 
-	Token token; 
+{
+	u32 l0 = 0;
+	u32 c0 = 0;
+	StringView str;
 };
 
 struct Ast_Literal 
-{ 
-	Token token; 
+{
+	Token token;
 };
 
 struct Ast_Import_Decl

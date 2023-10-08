@@ -39,7 +39,7 @@ private:
 	bool type_is_f64(LLVMTypeRef type);
 	bool type_is_pointer(LLVMTypeRef type);
 	u32 type_int_bit_witdh(LLVMTypeRef type);
-	char* get_c_string(Token& token);
+	char* get_c_string(Ast_Ident& ident);
 	void error_exit(const char* message);
 	void debug_print_llvm_type(const char* message, LLVMTypeRef type);
 	void set_curr_block(LLVMBasicBlockRef block);

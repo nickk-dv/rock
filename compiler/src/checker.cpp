@@ -2,6 +2,71 @@
 
 #include "debug_printer.h"
 
+bool check_ast(Ast* ast)
+{
+	bool result = check_declarations(ast);
+	return result;
+}
+
+// Verifies uniqueness of declaration symbols
+bool check_declarations(Ast* ast)
+{
+	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
+
+	for (Ast_Import_Decl* decl : ast->imports)
+	{
+		Ast_Ident ident = decl->alias;
+		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		if (!key) symbol_table.add(ident, hash_ident(ident));
+		else error_pair("Import already declared", "Import", ident, "Symbol", key.value());
+	}
+
+	for (Ast_Use_Decl* decl : ast->uses)
+	{
+		Ast_Ident ident = decl->alias;
+		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		if (!key) symbol_table.add(ident, hash_ident(ident));
+		else error_pair("Use already declared", "Use", ident, "Symbol", key.value());
+	}
+
+	for (Ast_Struct_Decl* decl : ast->structs)
+	{
+		Ast_Ident ident = decl->type;
+		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		if (!key) symbol_table.add(ident, hash_ident(ident));
+		else error_pair("Struct already declared", "Struct", ident, "Symbol", key.value());
+	}
+
+	for (Ast_Enum_Decl* decl : ast->enums)
+	{
+		Ast_Ident ident = decl->type;
+		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		if (!key) symbol_table.add(ident, hash_ident(ident));
+		else error_pair("Enum already declared", "Enum", ident, "Symbol", key.value());
+	}
+
+	for (Ast_Proc_Decl* decl : ast->procs)
+	{
+		Ast_Ident ident = decl->ident;
+		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		if (!key) symbol_table.add(ident, hash_ident(ident));
+		else error_pair("Procedure already declared", "Procedure", ident, "Symbol", key.value());
+	}
+
+	return true;
+}
+
+//@Todo allign labels
+void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)
+{
+	printf("%s:\n", message);
+	printf("%s:", labelA);
+	debug_print_ident(identA, true, true);
+	printf("%s:", labelB);
+	debug_print_ident(identB, true, true);
+}
+
+/*
 bool Checker::check_ast(Ast* ast)
 {
 	proc_table.init(64);
@@ -183,12 +248,10 @@ bool Checker::check_block(Ast_Block* block, Block_Checker* bc, bool is_entry, bo
 
 bool Checker::check_if(Ast_If* _if, Block_Checker* bc)
 {
-	/*
 	condition_expr is bool
 	condition_expr valid
 	block valid
 	else is valid or doesnt exist
-	*/
 
 	std::optional<Type_Info> expr_type = check_expr(_if->condition_expr, bc);
 	if (!expr_type) return false;
@@ -219,9 +282,7 @@ bool Checker::check_else(Ast_Else* _else, Block_Checker* bc)
 
 bool Checker::check_for(Ast_For* _for, Block_Checker* bc)
 {
-	/*
 	not sure about syntax & semantics yet
-	*/
 
 	if (!check_block(_for->block, bc, false, true)) return false;
 	return true;
@@ -240,9 +301,7 @@ bool Checker::check_break(Ast_Break* _break, Block_Checker* bc)
 
 bool Checker::check_return(Ast_Return* _return, Block_Checker* bc)
 {
-	/*
 	expr matches parent proc return type or lack of type
-	*/
 
 	//@Idea put Proc_Declaration* on Ast_Return, which will set during first checker pass
 
@@ -274,14 +333,12 @@ bool Checker::check_continue(Ast_Continue* _continue, Block_Checker* bc)
 
 std::optional<Type_Info> Checker::check_proc_call(Ast_Proc_Call* proc_call, Block_Checker* bc, bool& is_valid)
 {
-	/*
 	proc name in scope
 	param count and decl param count match
 	all param types in scope
 	all input expr are valid
 	all input expr match param types
 	return type in scope
-	*/
 	
 	if (!is_proc_in_scope(&proc_call->ident))
 	{
@@ -361,7 +418,6 @@ std::optional<Type_Info> Checker::check_proc_call(Ast_Proc_Call* proc_call, Bloc
 
 bool Checker::check_var_decl(Ast_Var_Decl* var_decl, Block_Checker* bc)
 {
-	/*
 	ident must not be in scope
 	[has expr & has type]
 	expr valid
@@ -372,7 +428,6 @@ bool Checker::check_var_decl(Ast_Var_Decl* var_decl, Block_Checker* bc)
 	[result]
 	existing or inferred type must be in scope
 	add ident & type to var_stack
-	*/
 
 	if (bc->is_var_declared(var_decl->ident)) 
 	{ 
@@ -430,12 +485,10 @@ bool Checker::check_var_decl(Ast_Var_Decl* var_decl, Block_Checker* bc)
 
 bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 {
-	/*
 	access chain must be valid
 	expr valid
 	AssignOp = : expr evaluates to same type
 	AssignOp other: supported by lhs-rhs
-	*/
 
 	auto chain_type = check_ident_chain(var_assign->ident_chain, bc);
 	if (!chain_type) return false;
@@ -466,11 +519,9 @@ bool Checker::check_var_assign(Ast_Var_Assign* var_assign, Block_Checker* bc)
 
 std::optional<Type_Info> Checker::check_ident_chain(Ast_Ident_Chain* ident_chain, Block_Checker* bc)
 {
-	/*
 	first ident is declared variable
 	further idents exist within the type
 	return the last type
-	*/
 
 	if (!bc->is_var_declared(ident_chain->ident))
 	{
@@ -636,3 +687,4 @@ std::optional<Type_Info> Checker::check_expr(Ast_Expr* expr, Block_Checker* bc)
 
 	return expr_type;
 }
+*/

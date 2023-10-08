@@ -243,7 +243,7 @@ private:
 	u32 resize_threshold = 0;
 };
 
-template<typename KeyType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
+template<typename KeyType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
 struct HashSet 
 {
 	HashSet() {};
@@ -284,6 +284,16 @@ public:
 			slot = (slot + 1) % table_size;
 		}
 		return false;
+	}
+
+	std::optional<KeyType> find_key(KeyType key, HashType hash) {
+		u32 slot = hash % table_size;
+		while (array[slot].hash != 0) {
+			if (match_proc(key, array[slot].key))
+				return array[slot].key;
+			slot = (slot + 1) % table_size;
+		}
+		return {};
 	}
 
 private:

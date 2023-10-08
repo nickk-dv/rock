@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "parser.h"
+#include "checker.h"
 #include "llvm_ir_builder.h"
 #include "llvm_backend.h"
 #include "debug_printer.h"
@@ -63,6 +64,15 @@ int cmd_build(char* filepath)
 		return 1;
 	}
 	timer.end("Parse Ast      ");
+
+	timer.start();
+	bool res = check_ast(ast);
+	if (!res)
+	{
+		printf("Ast check failed.\n");
+		return 1;
+	}
+	timer.end("Check Ast      ");
 
 	debug_print_ast(ast);
 	

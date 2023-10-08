@@ -85,7 +85,7 @@ Ast* Parser::parse()
 Ast_Import_Decl* Parser::parse_import_decl()
 {
 	Ast_Import_Decl* decl = m_arena.alloc<Ast_Import_Decl>();
-	decl->alias = Ast_Ident { consume_get() };
+	decl->alias = token_to_ident(consume_get());
 	consume(); consume();
 
 	auto token = try_consume(TOKEN_STRING_LITERAL);
@@ -98,14 +98,14 @@ Ast_Import_Decl* Parser::parse_import_decl()
 Ast_Use_Decl* Parser::parse_use_decl()
 {
 	Ast_Use_Decl* decl = m_arena.alloc<Ast_Use_Decl>();
-	decl->alias = Ast_Ident { consume_get() };
+	decl->alias = token_to_ident(consume_get());
 	consume(); consume();
 
 	while (true)
 	{
 		auto token = try_consume(TOKEN_IDENT);
 		if (!token) { error("Expected identifier in 'use' declaration"); return NULL; }
-		decl->symbol_path.emplace_back(Ast_Ident { token.value() });
+		decl->symbol_path.emplace_back(token_to_ident(token.value()));
 
 		if (!try_consume(TOKEN_DOT)) break;
 	}
@@ -116,7 +116,7 @@ Ast_Use_Decl* Parser::parse_use_decl()
 Ast_Struct_Decl* Parser::parse_struct_decl()
 {
 	Ast_Struct_Decl* decl = m_arena.alloc<Ast_Struct_Decl>();
-	decl->type = Ast_Ident { consume_get() };
+	decl->type = token_to_ident(consume_get());
 	consume(); consume();
 	
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
@@ -128,7 +128,7 @@ Ast_Struct_Decl* Parser::parse_struct_decl()
 
 		Ast_Type* type = parse_type();
 		if (!type) return NULL;
-		decl->fields.emplace_back(Ast_Ident_Type_Pair { Ast_Ident { field.value() }, type });
+		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type });
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -140,7 +140,7 @@ Ast_Struct_Decl* Parser::parse_struct_decl()
 Ast_Enum_Decl* Parser::parse_enum_decl()
 {
 	Ast_Enum_Decl* decl = m_arena.alloc<Ast_Enum_Decl>();
-	decl->type = Ast_Ident { consume_get() };
+	decl->type = token_to_ident(consume_get());
 	consume(); consume();
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
@@ -162,7 +162,7 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 		Token token = peek();
 		if (!token_is_literal(token.type)) { error("Expected literal value: number, bool, string"); return NULL; }
 		consume();
-		decl->variants.emplace_back(Ast_Ident_Literal_Pair { Ast_Ident { ident.value() }, Ast_Literal { token }, is_negative });
+		decl->variants.emplace_back(Ast_Ident_Literal_Pair { token_to_ident(ident.value()), Ast_Literal { token }, is_negative });
 		
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -174,7 +174,7 @@ Ast_Enum_Decl* Parser::parse_enum_decl()
 Ast_Proc_Decl* Parser::parse_proc_decl()
 {
 	Ast_Proc_Decl* decl = m_arena.alloc<Ast_Proc_Decl>();
-	decl->ident = Ast_Ident { consume_get() };
+	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 	
 	while (true)
@@ -185,7 +185,7 @@ Ast_Proc_Decl* Parser::parse_proc_decl()
 
 		Ast_Type* type = parse_type();
 		if (!type) return NULL;
-		decl->input_params.emplace_back(Ast_Ident_Type_Pair{ param.value(), type });
+		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(param.value()), type });
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -231,7 +231,7 @@ Ast_Type* Parser::parse_type()
 		case TOKEN_IDENT:
 		{
 			type->tag = Ast_Type::Tag::Custom;
-			type->as_custom = Ast_Ident { consume_get() };
+			type->as_custom = token_to_ident(consume_get());
 		} break;
 		case TOKEN_TIMES:
 		{
@@ -286,7 +286,7 @@ Ast_Array_Type* Parser::parse_array_type()
 Ast_Var* Parser::parse_var()
 {
 	Ast_Var* var = m_arena.alloc<Ast_Var>();
-	var->ident = Ast_Ident { consume_get() };
+	var->ident = token_to_ident(consume_get());
 
 	Token token = peek();
 	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
@@ -335,7 +335,7 @@ Ast_Var_Access* Parser::parse_var_access()
 
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) { error("Expected field identifier"); return NULL; }
-	var_access->ident = Ast_Ident { ident.value() };
+	var_access->ident = token_to_ident(ident.value());
 
 	Token token = peek();
 	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
@@ -375,11 +375,11 @@ Ast_Enum* Parser::parse_enum()
 
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) { error("Expected enum type identifier"); return NULL; }
-	_enum->type = Ast_Ident{ ident.value() };
+	_enum->type = token_to_ident(ident.value());
 	consume();
 	auto variant = try_consume(TOKEN_IDENT);
 	if (!variant) { error("Expected enum variant identifier"); return NULL; }
-	_enum->variant = Ast_Ident{ variant.value() };
+	_enum->variant = token_to_ident(variant.value());
 
 	return _enum;
 }
@@ -755,7 +755,7 @@ Ast_Continue* Parser::parse_continue()
 Ast_Proc_Call* Parser::parse_proc_call()
 {
 	Ast_Proc_Call* proc_call = m_arena.alloc<Ast_Proc_Call>();
-	proc_call->ident = Ast_Ident { consume_get() };
+	proc_call->ident = token_to_ident(consume_get());
 	consume();
 
 	while (true)
@@ -785,7 +785,7 @@ Ast_Proc_Call* Parser::parse_proc_call()
 Ast_Var_Decl* Parser::parse_var_decl()
 {
 	Ast_Var_Decl* var_decl = m_arena.alloc<Ast_Var_Decl>();
-	var_decl->ident = Ast_Ident { consume_get() };
+	var_decl->ident = token_to_ident(consume_get());
 	consume();
 
 	bool infer_type = try_consume(TOKEN_ASSIGN).has_value();

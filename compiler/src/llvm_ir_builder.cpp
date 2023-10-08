@@ -33,7 +33,7 @@ void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 	Enum_Meta meta = { enum_decl, type, {} };
 	for (Ast_Ident_Literal_Pair& variant: enum_decl->variants)
 	{
-		LLVMValueRef enum_constant = LLVMAddGlobal(module, type, get_c_string(variant.ident.token));
+		LLVMValueRef enum_constant = LLVMAddGlobal(module, type, get_c_string(variant.ident));
 		int sign = variant.is_negative ? -1 : 1; //@Issue with negative value limits, need robust range checking and ir validation of generated values
 		if (int_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, sign * variant.literal.token.integer_value, 0)); //@Todo sign extend?
 		else if (bool_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, (int)variant.literal.token.bool_value, 0));
@@ -41,7 +41,7 @@ void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 		LLVMSetGlobalConstant(enum_constant, 1);
 		meta.variants.emplace_back(enum_constant);
 	}
-	enum_decl_map.add(enum_decl->type.token.string_value, meta, hash_fnv1a_32(enum_decl->type.token.string_value));
+	enum_decl_map.add(enum_decl->type.str, meta, hash_fnv1a_32(enum_decl->type.str));
 }
 
 //@Todo struct recursive dependencies, currently exiting when inner type not found
@@ -54,10 +54,10 @@ void LLVM_IR_Builder::build_struct_decl(Ast_Struct_Decl* struct_decl)
 		members.emplace_back(type_ref);
 	}
 
-	LLVMTypeRef struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), get_c_string(struct_decl->type.token));
+	LLVMTypeRef struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), get_c_string(struct_decl->type));
 	LLVMStructSetBody(struct_type, members.data(), (u32)members.size(), 0);
 	Struct_Meta meta = { struct_decl, struct_type };
-	struct_decl_map.add(struct_decl->type.token.string_value, meta, hash_fnv1a_32(struct_decl->type.token.string_value));
+	struct_decl_map.add(struct_decl->type.str, meta, hash_fnv1a_32(struct_decl->type.str));
 }
 
 void LLVM_IR_Builder::build_proc_decl(Ast_Proc_Decl* proc_decl)
@@ -72,16 +72,16 @@ void LLVM_IR_Builder::build_proc_decl(Ast_Proc_Decl* proc_decl)
 	ret_type = get_type_meta(proc_decl->return_type.value()).type;
 
 	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, param_types.data(), (u32)param_types.size(), 0); //@Temp Discarding input args
-	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident.token), proc_type);
+	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident), proc_type);
 
 	Proc_Meta meta = { proc_type, proc_val };
-	proc_decl_map.add(proc_decl->ident.token.string_value, meta, hash_fnv1a_32(proc_decl->ident.token.string_value));
+	proc_decl_map.add(proc_decl->ident.str, meta, hash_fnv1a_32(proc_decl->ident.str));
 }
 
 void LLVM_IR_Builder::build_proc_body(Ast_Proc_Decl* proc_decl)
 {
 	if (proc_decl->is_external) return;
-	auto proc_meta = proc_decl_map.find(proc_decl->ident.token.string_value, hash_fnv1a_32(proc_decl->ident.token.string_value));
+	auto proc_meta = proc_decl_map.find(proc_decl->ident.str, hash_fnv1a_32(proc_decl->ident.str));
 	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
 	
 	proc_value = proc_meta.value().proc_val;
@@ -98,7 +98,7 @@ void LLVM_IR_Builder::build_proc_body(Ast_Proc_Decl* proc_decl)
 		LLVMValueRef param_value = LLVMGetParam(proc_value, count);
 		LLVMValueRef copy_ptr = LLVMBuildAlloca(builder, var_type.type, "copy_ptr");
 		LLVMBuildStore(builder, param_value, copy_ptr);
-		bc.add_var(Var_Meta{ param.ident.token.string_value, copy_ptr, var_type });
+		bc.add_var(Var_Meta{ param.ident.str, copy_ptr, var_type });
 		count += 1;
 	}
 
@@ -282,7 +282,7 @@ void LLVM_IR_Builder::build_for(Ast_For* _for, Var_Block_Scope* bc, bool defer)
 
 LLVMValueRef LLVM_IR_Builder::build_proc_call(Ast_Proc_Call* proc_call, Var_Block_Scope* bc, bool is_statement)
 {
-	std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.token.string_value, hash_fnv1a_32(proc_call->ident.token.string_value));
+	std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.str, hash_fnv1a_32(proc_call->ident.str));
 	if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); }
 
 	std::vector<LLVMValueRef> input_values = {};
@@ -299,7 +299,7 @@ void LLVM_IR_Builder::build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc
 	if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
 	Type_Meta var_type = get_type_meta(var_decl->type.value());
 
-	LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type.type, get_c_string(var_decl->ident.token));
+	LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type.type, get_c_string(var_decl->ident));
 	if (var_decl->expr.has_value())
 	{
 		LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
@@ -315,7 +315,7 @@ void LLVM_IR_Builder::build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc
 	}
 	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
 
-	bc->add_var(Var_Meta{ var_decl->ident.token.string_value, var_ptr, var_type });
+	bc->add_var(Var_Meta{ var_decl->ident.str, var_ptr, var_type });
 }
 
 void LLVM_IR_Builder::build_var_assign(Ast_Var_Assign* var_assign, Var_Block_Scope* bc)
@@ -622,13 +622,13 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	} break;
 	case Ast_Type::Tag::Custom:
 	{
-		auto struct_meta = struct_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
+		auto struct_meta = struct_decl_map.find(type->as_custom.str, hash_fnv1a_32(type->as_custom.str));
 		if (struct_meta)
 		{
 			return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, NULL };
 		}
 		
-		auto enum_meta = enum_decl_map.find(type->as_custom.token.string_value, hash_fnv1a_32(type->as_custom.token.string_value));
+		auto enum_meta = enum_decl_map.find(type->as_custom.str, hash_fnv1a_32(type->as_custom.str));
 		if (enum_meta)
 		{
 			return Type_Meta{ enum_meta.value().variant_type, false, NULL, false, NULL };
@@ -655,13 +655,13 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 //this shouild be checked for in checker, ir sholdnt care about this semantics
 LLVMValueRef LLVM_IR_Builder::get_enum_value(Ast_Enum* _enum) //@Perf copying the vector of llvm values
 {
-	auto enum_meta = enum_decl_map.find(_enum->type.token.string_value, hash_fnv1a_32(_enum->type.token.string_value));
+	auto enum_meta = enum_decl_map.find(_enum->type.str, hash_fnv1a_32(_enum->type.str));
 	if (!enum_meta) error_exit("get_enum_variant: failed to find enum type");
 	
 	u32 count = 0;
 	for (const Ast_Ident_Literal_Pair& variant: enum_meta.value().enum_decl->variants)
 	{
-		if (variant.ident.token.string_value == _enum->variant.token.string_value)
+		if (variant.ident.str == _enum->variant.str)
 		{
 			LLVMValueRef ptr = enum_meta.value().variants[count];
 			return LLVMBuildLoad2(builder, enum_meta.value().variant_type, ptr, "enum_val");
@@ -677,7 +677,7 @@ Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringV
 	u32 count = 0;
 	for (const auto& field : struct_decl->fields)
 	{
-		if (field.ident.token.string_value == field_str)
+		if (field.ident.str == field_str)
 			return Field_Meta{ count, get_type_meta(field.type) };
 		count += 1;
 	}
@@ -687,7 +687,7 @@ Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringV
 
 Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc)
 {
-	Var_Meta var_meta = bc->find_var(var->ident.token.string_value);
+	Var_Meta var_meta = bc->find_var(var->ident.str);
 	LLVMValueRef ptr = var_meta.var_value;
 	Type_Meta type_meta = var_meta.type_meta;
 
@@ -716,13 +716,13 @@ Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Sco
 
 			if (!type_meta.is_struct) 
 			{
-				debug_print_token(access->as_var->ident.token, true, true);
+				debug_print_ident(access->as_var->ident);
 				debug_print_llvm_type("Type: ", type_meta.type);
 				error_exit("get_var_access_meta: trying var access on non struct variable");
 			}
 
 			Ast_Var_Access* var_access = access->as_var;
-			Field_Meta field = get_field_meta(type_meta.struct_decl, var_access->ident.token.string_value);
+			Field_Meta field = get_field_meta(type_meta.struct_decl, var_access->ident.str);
 			ptr = LLVMBuildStructGEP2(builder, type_meta.type, ptr, field.id, "struct_access_ptr");
 			type_meta = field.type_meta;
 
@@ -741,10 +741,10 @@ bool LLVM_IR_Builder::type_is_f64(LLVMTypeRef type) { return LLVMGetTypeKind(typ
 bool LLVM_IR_Builder::type_is_pointer(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMPointerTypeKind; }
 u32 LLVM_IR_Builder::type_int_bit_witdh(LLVMTypeRef type) { return LLVMGetIntTypeWidth(type); }
 
-char* LLVM_IR_Builder::get_c_string(Token& token) //@Unsafe hack to get c string from string view of source file string, need to do smth better
+char* LLVM_IR_Builder::get_c_string(Ast_Ident& ident) //@Unsafe hack to get c string from string view of source file string, need to do smth better
 {
-	token.string_value.data[token.string_value.count] = 0;
-	return (char*)token.string_value.data;
+	ident.str.data[ident.str.count] = '\0';
+	return (char*)ident.str.data;
 }
 
 void LLVM_IR_Builder::error_exit(const char* message)
