@@ -44,10 +44,57 @@ bool arg_match(char* arg, const char* match)
 	return strcmp(arg, match) == 0;
 }
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 int cmd_build(char* filepath)
 {
 	Timer timer;
 	timer.start();
+
+	if (!fs::exists(filepath)) 
+	{
+		printf("Filepath is not found: %s\n", filepath);
+		return 1;
+	}
+	if (!fs::is_directory(filepath)) 
+	{
+		printf("Filepath is not a directory: %s\n", filepath);
+		return 1;
+	}
+	
+	fs::path root = fs::path(filepath);
+
+	Arena parser_arena(128 * 1024);
+	std::vector<Parser*> parsers = {};
+
+	for (const auto& entry : fs::recursive_directory_iterator(root))
+	{
+		if (fs::is_regular_file(entry.path()) && entry.path().extension() == ".txt")
+		{
+			fs::path relative = entry.path().lexically_relative(root);
+			printf("file: %s\n", relative.u8string().c_str());
+			std::string file = entry.path().string();
+
+			Parser parser = {};
+			if (!parser.init(file.c_str()))
+			{
+				printf("Failed to open a file, or file empty: %s\n", file.c_str());
+				continue;
+			}
+
+			Ast* ast = parser.parse();
+			if (ast == NULL)
+			{
+				printf("Failed to parse Ast: %s\n", file.c_str());
+				continue;
+			}
+
+			debug_print_ast(ast);
+		}
+	}
+	return 0;
+
 	Parser parser = {};
 	if (!parser.init(filepath))
 	{

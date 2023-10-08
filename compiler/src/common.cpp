@@ -67,7 +67,7 @@ bool os_file_read_all(const char* file_path, String* str)
 	return true;
 }
 
-bool match_string_view(StringView a, StringView b)
+bool match_string_view(StringView& a, StringView& b)
 {
 	return a == b;
 }

@@ -315,9 +315,8 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 	}
 	else printf("---\n");
 
-	if (proc_decl->is_external)
-		printf("External\n");
-	debug_print_block(proc_decl->block, 0);
+	if (proc_decl->is_external) printf("External\n");
+	else debug_print_block(proc_decl->block, 0);
 }
 
 void debug_print_type(Ast_Type* type)

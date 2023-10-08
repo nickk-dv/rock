@@ -20,7 +20,7 @@ struct Arena;
 u32 hash_fnv1a_32(const StringView& str);
 u64 hash_fnv1a_64(const StringView& str);
 bool os_file_read_all(const char* file_path, String* str);
-bool match_string_view(StringView a, StringView b);
+bool match_string_view(StringView& a, StringView& b);
 constexpr u64 hash_str_ascii_9(const StringView& str);
 constexpr u64 hash_ascii_9(const char* str);
 
@@ -164,7 +164,7 @@ private:
 	std::vector<u8*> m_data_blocks;
 };
 
-template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType a, KeyType b)>
+template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
 struct HashMap 
 {
 	HashMap() {};

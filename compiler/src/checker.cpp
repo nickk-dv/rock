@@ -13,12 +13,16 @@ bool check_declarations(Ast* ast)
 	bool passed = true;
 	
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
+	ast->import_table.init(64);
+	ast->struct_table.init(64);
+	ast->enum_table.init(64);
+	ast->proc_table.init(64);
 
 	for (Ast_Import_Decl* decl : ast->imports)
 	{
 		Ast_Ident ident = decl->alias;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) symbol_table.add(ident, hash_ident(ident));
+		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->import_table.add(ident, decl, hash_ident(ident)); }
 		else { error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); passed = false; }
 	}
 
@@ -34,7 +38,7 @@ bool check_declarations(Ast* ast)
 	{
 		Ast_Ident ident = decl->type;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) symbol_table.add(ident, hash_ident(ident));
+		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->struct_table.add(ident, decl, hash_ident(ident)); }
 		else { error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); passed = false; }
 	}
 
@@ -42,7 +46,7 @@ bool check_declarations(Ast* ast)
 	{
 		Ast_Ident ident = decl->type;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) symbol_table.add(ident, hash_ident(ident));
+		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->enum_table.add(ident, decl, hash_ident(ident)); }
 		else { error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); passed = false; }
 	}
 
@@ -50,9 +54,29 @@ bool check_declarations(Ast* ast)
 	{
 		Ast_Ident ident = decl->ident;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) symbol_table.add(ident, hash_ident(ident));
+		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->proc_table.add(ident, decl, hash_ident(ident)); }
 		else { error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); passed = false; }
 	}
+
+	//@Validation
+	//check import path, get Ast* of this file, store it
+	//1.path exits
+
+	for (Ast_Use_Decl* decl : ast->uses)
+	{
+		Ast_Ident import = decl->import;
+		if (!ast->import_table.contains(import, hash_ident(import)))
+		{
+			error("Use import isnt imported", decl->alias); //@Improve error
+			passed = false;
+		}
+	}
+
+	//We can wait for all modules to proccess and store their symbols
+	
+	//@Validation
+	//find procedure / enum / struct of each use declaration, store it in ast under alias
+	//1. declaration exists
 
 	return passed;
 }
@@ -65,6 +89,13 @@ void error_pair(const char* message, const char* labelA, Ast_Ident identA, const
 	debug_print_ident(identA, true, true);
 	printf("%s: ", labelB);
 	debug_print_ident(identB, true, true);
+	printf("\n");
+}
+
+void error(const char* message, Ast_Ident ident)
+{
+	printf("%s:\n", message);
+	debug_print_ident(ident, true, true);
 	printf("\n");
 }
 

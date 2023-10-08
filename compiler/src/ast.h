@@ -52,6 +52,11 @@ struct Ast
 	std::vector<Ast_Struct_Decl*> structs;
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
+	//check stage
+	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
+	HashMap<Ast_Ident, Ast_Struct_Decl*, u32, match_ident> struct_table;
+	HashMap<Ast_Ident, Ast_Enum_Decl*, u32, match_ident> enum_table;
+	HashMap<Ast_Ident, Ast_Proc_Decl*, u32, match_ident> proc_table;
 };
 
 struct Ast_Ident 
@@ -70,6 +75,8 @@ struct Ast_Import_Decl
 {
 	Ast_Ident alias;
 	Ast_Literal file_path;
+	//check stage
+	Ast* import_ast;
 };
 
 struct Ast_Use_Decl

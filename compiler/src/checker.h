@@ -8,7 +8,7 @@
 bool check_ast(Ast* ast);
 bool check_declarations(Ast* ast);
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
-
+void error(const char* message, Ast_Ident ident);
 /*
 struct Checker;
 struct Block_Info;
