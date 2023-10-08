@@ -2,13 +2,7 @@
 
 #include "debug_printer.h"
 
-bool check_ast(Ast* ast)
-{
-	if (!check_declarations(ast)) return false;
-	return true;
-}
-
-bool check_declarations(Ast* ast)
+bool check_declarations(Ast* ast, Module_Map& modules)
 {
 	bool passed = true;
 	
@@ -58,27 +52,59 @@ bool check_declarations(Ast* ast)
 		else { error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); passed = false; }
 	}
 
-	//@Validation
-	//check import path, get Ast* of this file, store it
-	//1.path exits
+	for (Ast_Import_Decl* decl : ast->imports)
+	{
+		if (modules.find(decl->file_path.token.string_literal_value) != modules.end())
+		{
+			Ast* import_ast = modules.at(decl->file_path.token.string_literal_value);
+			decl->import_ast = import_ast;
+		}
+		else
+		{
+			error("Import path not found", decl->alias); //@Improve error
+			passed = false;
+		}
+	}
 
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident import = decl->import;
 		if (!ast->import_table.contains(import, hash_ident(import)))
 		{
-			error("Use import isnt imported", decl->alias); //@Improve error
+			error("Use file isnt imported", decl->import); //@Improve error
 			passed = false;
 		}
 	}
-
-	//We can wait for all modules to proccess and store their symbols
 	
-	//@Validation
-	//find procedure / enum / struct of each use declaration, store it in ast under alias
-	//1. declaration exists
-
+	//@Rule todo: cant import same thing under multiple names
+	//@Rule todo: cant import same type or procedure under multiple names
+	
 	return passed;
+}
+
+bool check_ast(Ast* ast)
+{
+	bool passed = true;
+	
+	for (Ast_Use_Decl* decl : ast->uses)
+	{	
+		Ast_Ident alias = decl->alias;
+		Ast_Ident import = decl->import;
+		Ast_Ident symbol = decl->symbol;
+		Ast* import_ast = ast->import_table.find(import, hash_ident(import)).value()->import_ast;
+		
+		auto struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
+		if (struct_decl) { ast->struct_table.add(alias, struct_decl.value(), hash_ident(alias)); continue; }
+		auto enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
+		if (enum_decl) { ast->enum_table.add(alias, enum_decl.value(), hash_ident(alias)); continue; }
+		auto proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
+		if (proc_decl) { ast->proc_table.add(alias, proc_decl.value(), hash_ident(alias)); continue; }
+
+		error("Use symbol isnt found in imported namespace", symbol); //@Improve error
+		passed = false;
+	}
+
+	return true;
 }
 
 //@Todo allign labels

@@ -109,7 +109,7 @@ Ast_Use_Decl* Parser::parse_use_decl()
 	
 	auto symbol = try_consume(TOKEN_IDENT);
 	if (!symbol) { error("Expected symbol identifier"); return NULL; }
-	decl->symbol = token_to_ident(import.value());
+	decl->symbol = token_to_ident(symbol.value());
 
 	if (try_consume(TOKEN_DOT)) { error("Expected use declaration like this: 'alias :: use import.symbol'.\nDeep namespace access is not allowed, import necessary namespace instead"); return NULL; }
 	return decl;

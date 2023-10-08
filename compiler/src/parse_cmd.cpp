@@ -46,12 +46,10 @@ bool arg_match(char* arg, const char* match)
 
 #include <filesystem>
 namespace fs = std::filesystem;
+#include <unordered_map>
 
 int cmd_build(char* filepath)
 {
-	Timer timer;
-	timer.start();
-
 	if (!fs::exists(filepath)) 
 	{
 		printf("Filepath is not found: %s\n", filepath);
@@ -63,38 +61,65 @@ int cmd_build(char* filepath)
 		return 1;
 	}
 	
-	fs::path root = fs::path(filepath);
-
 	Arena parser_arena(128 * 1024);
 	std::vector<Parser*> parsers = {};
+	std::unordered_map<std::string, Ast*> modules;
+	bool parse_error = false;
 
+	Timer timer;
+	timer.start();
+	fs::path root = fs::path(filepath);
 	for (const auto& entry : fs::recursive_directory_iterator(root))
 	{
 		if (fs::is_regular_file(entry.path()) && entry.path().extension() == ".txt")
 		{
-			fs::path relative = entry.path().lexically_relative(root);
-			printf("file: %s\n", relative.u8string().c_str());
 			std::string file = entry.path().string();
-
-			Parser parser = {};
-			if (!parser.init(file.c_str()))
+			
+			Parser* parser = parser_arena.alloc<Parser>();
+			parsers.emplace_back(parser);
+			if (!parser->init(file.c_str()))
 			{
 				printf("Failed to open a file, or file empty: %s\n", file.c_str());
+				parse_error = true;
 				continue;
 			}
-
-			Ast* ast = parser.parse();
+			
+			Ast* ast = parser->parse();
 			if (ast == NULL)
 			{
 				printf("Failed to parse Ast: %s\n", file.c_str());
+				parse_error = true;
 				continue;
 			}
 
-			debug_print_ast(ast);
+			std::string trim = entry.path().lexically_relative(root).replace_extension("").string();
+			modules.emplace(trim, ast);
 		}
 	}
+	if (parse_error) return 1;
+	timer.end("Parse init & Parse Ast");
+
+	bool check = true;
+
+	timer.start();
+	for (const auto& [module, ast] : modules)
+	{
+		if(!check_declarations(ast, modules)) check = false;
+	}
+	if (!check) return 1;
+
+	for (const auto& [module, ast] : modules)
+	{
+		if (!check_ast(ast)) check = false;
+	}
+	if (!check) return 1;
+	timer.end("Check Ast");
+
 	return 0;
 
+	/*
+	Timer timer;
+	timer.start();
 	Parser parser = {};
 	if (!parser.init(filepath))
 	{
@@ -134,4 +159,5 @@ int cmd_build(char* filepath)
 	timer.end("LLVM Backend   ");
 
 	return 0;
+	*/
 }
