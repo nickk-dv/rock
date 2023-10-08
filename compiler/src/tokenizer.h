@@ -24,7 +24,7 @@ public:
 
 	u32 peek_index = 0;
 	static const u64 TOKENIZER_BUFFER_SIZE = 256;
-	static const u64 TOKENIZER_LOOKAHEAD = 2;
+	static const u64 TOKENIZER_LOOKAHEAD = 3;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
 
 private:

@@ -4,13 +4,14 @@
 
 bool check_ast(Ast* ast)
 {
-	bool result = check_declarations(ast);
-	return result;
+	if (!check_declarations(ast)) return false;
+	return true;
 }
 
-// Verifies uniqueness of declaration symbols
 bool check_declarations(Ast* ast)
 {
+	bool passed = true;
+	
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 
 	for (Ast_Import_Decl* decl : ast->imports)
@@ -18,7 +19,7 @@ bool check_declarations(Ast* ast)
 		Ast_Ident ident = decl->alias;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else error_pair("Import already declared", "Import", ident, "Symbol", key.value());
+		else { error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); passed = false; }
 	}
 
 	for (Ast_Use_Decl* decl : ast->uses)
@@ -26,7 +27,7 @@ bool check_declarations(Ast* ast)
 		Ast_Ident ident = decl->alias;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else error_pair("Use already declared", "Use", ident, "Symbol", key.value());
+		else { error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); passed = false; }
 	}
 
 	for (Ast_Struct_Decl* decl : ast->structs)
@@ -34,7 +35,7 @@ bool check_declarations(Ast* ast)
 		Ast_Ident ident = decl->type;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else error_pair("Struct already declared", "Struct", ident, "Symbol", key.value());
+		else { error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); passed = false; }
 	}
 
 	for (Ast_Enum_Decl* decl : ast->enums)
@@ -42,7 +43,7 @@ bool check_declarations(Ast* ast)
 		Ast_Ident ident = decl->type;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else error_pair("Enum already declared", "Enum", ident, "Symbol", key.value());
+		else { error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); passed = false; }
 	}
 
 	for (Ast_Proc_Decl* decl : ast->procs)
@@ -50,20 +51,21 @@ bool check_declarations(Ast* ast)
 		Ast_Ident ident = decl->ident;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else error_pair("Procedure already declared", "Procedure", ident, "Symbol", key.value());
+		else { error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); passed = false; }
 	}
 
-	return true;
+	return passed;
 }
 
 //@Todo allign labels
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)
 {
 	printf("%s:\n", message);
-	printf("%s:", labelA);
+	printf("%s: ", labelA);
 	debug_print_ident(identA, true, true);
-	printf("%s:", labelB);
+	printf("%s: ", labelB);
 	debug_print_ident(identB, true, true);
+	printf("\n");
 }
 
 /*

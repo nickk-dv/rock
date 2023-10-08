@@ -251,12 +251,9 @@ void debug_print_use_decl(Ast_Use_Decl* use_decl)
 	debug_print_ident(use_decl->alias, false, false);
 	printf(":: use ");
 
-	for (const Ast_Ident& ident : use_decl->symbol_path)
-	{
-		debug_print_ident(ident, false, false);
-		printf(".");
-	}
-	printf("\n");
+	debug_print_ident(use_decl->import, false, false);
+	printf(".");
+	debug_print_ident(use_decl->symbol, true, false);
 }
 
 void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
@@ -328,9 +325,9 @@ void debug_print_type(Ast_Type* type)
 	switch (type->tag)
 	{
 		case Ast_Type::Tag::Basic: debug_print_basic_type(type->as_basic); break;
-		case Ast_Type::Tag::Custom: debug_print_ident(type->as_custom, false, false); break;
 		case Ast_Type::Tag::Pointer: { printf("*"); debug_print_type(type->as_pointer); } break;
 		case Ast_Type::Tag::Array: debug_print_array_type(type->as_array); break;
+		case Ast_Type::Tag::Custom: debug_print_custom_type(type->as_custom); break;
 	}
 }
 
@@ -339,6 +336,16 @@ void debug_print_array_type(Ast_Array_Type* array_type)
 	if (array_type->is_dynamic) printf("[..]");
 	else printf("[%llu]", array_type->fixed_size);
 	debug_print_type(array_type->element_type);
+}
+
+void debug_print_custom_type(Ast_Custom_Type* custom_type)
+{
+	if (custom_type->import)
+	{
+		debug_print_ident(custom_type->import.value(), false, false);
+		printf(".");
+	}
+	debug_print_ident(custom_type->type, false, false);
 }
 
 void debug_print_var(Ast_Var* var)
@@ -372,6 +379,11 @@ void debug_print_array_access(Ast_Array_Access* array_access)
 
 void debug_print_enum(Ast_Enum* _enum)
 {
+	if (_enum->import)
+	{
+		debug_print_ident(_enum->import.value(), false, false);
+		printf(".");
+	}
 	debug_print_ident(_enum->type, false, false);
 	printf("::");
 	debug_print_ident(_enum->variant, true, false);
@@ -570,6 +582,11 @@ void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 {
 	debug_print_branch(depth);
 	printf("Proc_Call: ");
+	if (proc_call->import)
+	{
+		debug_print_ident(proc_call->import.value(), false, false);
+		printf(".");
+	}
 	debug_print_ident(proc_call->ident, true, false);
 
 	debug_print_spacing(depth);

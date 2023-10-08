@@ -56,7 +56,7 @@ Ast* Parser::parse()
 						} break;
 						default:
 						{
-							error("Expected struct, enum or procedure declaration", 2);
+							error("Expected import, use, struct, enum or procedure declaration", 2);
 							return NULL;
 						}
 					}
@@ -101,15 +101,17 @@ Ast_Use_Decl* Parser::parse_use_decl()
 	decl->alias = token_to_ident(consume_get());
 	consume(); consume();
 
-	while (true)
-	{
-		auto token = try_consume(TOKEN_IDENT);
-		if (!token) { error("Expected identifier in 'use' declaration"); return NULL; }
-		decl->symbol_path.emplace_back(token_to_ident(token.value()));
+	auto import = try_consume(TOKEN_IDENT);
+	if (!import) { error("Expected imported namespace identifier"); return NULL; }
+	decl->import = token_to_ident(import.value());
 
-		if (!try_consume(TOKEN_DOT)) break;
-	}
+	if (!try_consume(TOKEN_DOT)) { error("Expected '.' followed by symbol"); return NULL; }
+	
+	auto symbol = try_consume(TOKEN_IDENT);
+	if (!symbol) { error("Expected symbol identifier"); return NULL; }
+	decl->symbol = token_to_ident(import.value());
 
+	if (try_consume(TOKEN_DOT)) { error("Expected use declaration like this: 'alias :: use import.symbol'.\nDeep namespace access is not allowed, import necessary namespace instead"); return NULL; }
 	return decl;
 }
 
@@ -230,8 +232,10 @@ Ast_Type* Parser::parse_type()
 	{
 		case TOKEN_IDENT:
 		{
+			Ast_Custom_Type* custom = parse_custom_type();
+			if (!custom) return NULL;
 			type->tag = Ast_Type::Tag::Custom;
-			type->as_custom = token_to_ident(consume_get());
+			type->as_custom = custom;
 		} break;
 		case TOKEN_TIMES:
 		{
@@ -281,6 +285,23 @@ Ast_Array_Type* Parser::parse_array_type()
 	array->element_type = type;
 
 	return array;
+}
+
+Ast_Custom_Type* Parser::parse_custom_type()
+{
+	Ast_Custom_Type* custom = m_arena.alloc<Ast_Custom_Type>();
+
+	Ast_Ident ident = token_to_ident(consume_get());
+	if (try_consume(TOKEN_DOT))
+	{
+		custom->import = ident;
+		auto type = try_consume(TOKEN_IDENT);
+		if (!type) { error("Expected type identifier"); return NULL; }
+		custom->type = token_to_ident(type.value());
+	}
+	else custom->type = ident;
+	
+	return custom;
 }
 
 Ast_Var* Parser::parse_var()
@@ -369,10 +390,11 @@ Ast_Array_Access* Parser::parse_array_access()
 	return array_access;
 }
 
-Ast_Enum* Parser::parse_enum()
+Ast_Enum* Parser::parse_enum(bool import)
 {
 	Ast_Enum* _enum = m_arena.alloc<Ast_Enum>();
-
+	if (import) { _enum->import = token_to_ident(consume_get()); consume(); }
+	
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) { error("Expected enum type identifier"); return NULL; }
 	_enum->type = token_to_ident(ident.value());
@@ -403,16 +425,22 @@ Ast_Term* Parser::parse_term()
 		case TOKEN_IDENT:
 		{
 			Token next = peek(1);
-			if (next.type == TOKEN_PAREN_START)
+			Token next_2 = peek(2);
+			Token next_3 = peek(3);
+			bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
+			bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
+			bool import_enum = import_prefix && next_3.type == TOKEN_DOUBLE_COLON;
+
+			if (next.type == TOKEN_PAREN_START || import_proc_call)
 			{
-				Ast_Proc_Call* proc_call = parse_proc_call();
+				Ast_Proc_Call* proc_call = parse_proc_call(import_proc_call);
 				if (!proc_call) return NULL;
 				term->tag = Ast_Term::Tag::Proc_Call;
 				term->as_proc_call = proc_call;
 			}
-			else if (next.type == TOKEN_DOUBLE_COLON)
+			else if (next.type == TOKEN_DOUBLE_COLON || import_enum)
 			{
-				Ast_Enum* _enum = parse_enum();
+				Ast_Enum* _enum = parse_enum(import_enum);
 				if (!_enum) return NULL;
 				term->tag = Ast_Term::Tag::Enum;
 				term->as_enum = _enum;
@@ -588,11 +616,15 @@ Ast_Statement* Parser::parse_statement()
 		case TOKEN_IDENT:
 		{
 			Token next = peek(1);
-
-			if (next.type == TOKEN_PAREN_START)
+			Token next_2 = peek(2);
+			Token next_3 = peek(3);
+			bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
+			bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
+			
+			if (next.type == TOKEN_PAREN_START || import_proc_call)
 			{
 				statement->tag = Ast_Statement::Tag::Proc_Call;
-				statement->as_proc_call = parse_proc_call();
+				statement->as_proc_call = parse_proc_call(import_proc_call);
 				if (!statement->as_proc_call) return NULL;
 				if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after procedure call"); return NULL; }
 			}
@@ -752,9 +784,11 @@ Ast_Continue* Parser::parse_continue()
 	return _continue;
 }
 
-Ast_Proc_Call* Parser::parse_proc_call()
+Ast_Proc_Call* Parser::parse_proc_call(bool import)
 {
 	Ast_Proc_Call* proc_call = m_arena.alloc<Ast_Proc_Call>();
+
+	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
 	proc_call->ident = token_to_ident(consume_get());
 	consume();
 

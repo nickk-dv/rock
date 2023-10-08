@@ -280,6 +280,7 @@ void LLVM_IR_Builder::build_for(Ast_For* _for, Var_Block_Scope* bc, bool defer)
 	set_curr_block(exit_block);
 }
 
+//@Notice ignoring import access
 LLVMValueRef LLVM_IR_Builder::build_proc_call(Ast_Proc_Call* proc_call, Var_Block_Scope* bc, bool is_statement)
 {
 	std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.str, hash_fnv1a_32(proc_call->ident.str));
@@ -356,7 +357,7 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 			if (adress_op) value_ref = var_access.ptr;
 			else value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
 		} break;
-		case Ast_Term::Tag::Enum:
+		case Ast_Term::Tag::Enum: //@Notice ignoring import access
 		{
 			Ast_Enum* _enum = term->as_enum;
 			value_ref = get_enum_value(_enum);
@@ -620,15 +621,15 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	{
 		type_ref = get_basic_type(type->as_basic);
 	} break;
-	case Ast_Type::Tag::Custom:
+	case Ast_Type::Tag::Custom: //@Notice ignoring import access
 	{
-		auto struct_meta = struct_decl_map.find(type->as_custom.str, hash_fnv1a_32(type->as_custom.str));
+		auto struct_meta = struct_decl_map.find(type->as_custom->type.str, hash_fnv1a_32(type->as_custom->type.str));
 		if (struct_meta)
 		{
 			return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, NULL };
 		}
 		
-		auto enum_meta = enum_decl_map.find(type->as_custom.str, hash_fnv1a_32(type->as_custom.str));
+		auto enum_meta = enum_decl_map.find(type->as_custom->type.str, hash_fnv1a_32(type->as_custom->type.str));
 		if (enum_meta)
 		{
 			return Type_Meta{ enum_meta.value().variant_type, false, NULL, false, NULL };

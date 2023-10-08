@@ -17,6 +17,7 @@ struct Ast_Ident_Type_Pair;
 struct Ast_Ident_Literal_Pair;
 struct Ast_Type;
 struct Ast_Array_Type;
+struct Ast_Custom_Type;
 struct Ast_Var;
 struct Ast_Access;
 struct Ast_Var_Access;
@@ -74,7 +75,8 @@ struct Ast_Import_Decl
 struct Ast_Use_Decl
 {
 	Ast_Ident alias;
-	std::vector<Ast_Ident> symbol_path;
+	Ast_Ident import;
+	Ast_Ident symbol;
 };
 
 struct Ast_Struct_Decl
@@ -116,15 +118,15 @@ struct Ast_Type
 {
 	enum class Tag
 	{
-		Basic, Custom, Pointer, Array
+		Basic, Pointer, Array, Custom
 	} tag;
 
 	union
 	{
 		BasicType as_basic;
-		Ast_Ident as_custom;
 		Ast_Type* as_pointer;
 		Ast_Array_Type* as_array;
+		Ast_Custom_Type* as_custom;
 	};
 };
 
@@ -133,6 +135,12 @@ struct Ast_Array_Type
 	Ast_Type* element_type;
 	bool is_dynamic;
 	u64 fixed_size;
+};
+
+struct Ast_Custom_Type
+{
+	std::optional<Ast_Ident> import;
+	Ast_Ident type;
 };
 
 struct Ast_Var
@@ -169,6 +177,7 @@ struct Ast_Array_Access
 
 struct Ast_Enum
 {
+	std::optional<Ast_Ident> import;
 	Ast_Ident type;
 	Ast_Ident variant;
 };
@@ -302,6 +311,7 @@ struct Ast_Continue
 
 struct Ast_Proc_Call
 {
+	std::optional<Ast_Ident> import;
 	Ast_Ident ident;
 	std::vector<Ast_Expr*> input_exprs;
 	std::optional<Ast_Access*> access;
