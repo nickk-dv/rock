@@ -33,12 +33,12 @@ void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
 	Enum_Meta meta = { enum_decl, type, {} };
 	for (Ast_Ident_Literal_Pair& variant: enum_decl->variants)
 	{
-		LLVMValueRef enum_constant = LLVMAddGlobal(module, type, get_c_string(variant.ident));
+		LLVMValueRef enum_constant;
 		int sign = variant.is_negative ? -1 : 1; //@Issue with negative value limits, need robust range checking and ir validation of generated values
-		if (int_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, sign * variant.literal.token.integer_value, 0)); //@Todo sign extend?
-		else if (bool_kind) LLVMSetInitializer(enum_constant, LLVMConstInt(type, (int)variant.literal.token.bool_value, 0));
-		else if (float_kind) LLVMSetInitializer(enum_constant, LLVMConstReal(type, sign * variant.literal.token.float64_value));
-		LLVMSetGlobalConstant(enum_constant, 1);
+		if (int_kind) enum_constant = LLVMConstInt(type, sign * variant.literal.token.integer_value, 0); //@Todo sign extend?
+		else if (bool_kind) enum_constant = LLVMConstInt(type, (int)variant.literal.token.bool_value, 0);
+		else if (float_kind) enum_constant = LLVMConstReal(type, sign * variant.literal.token.float64_value);
+		else { error_exit("Enum has unsupported basic type, likely a string which is not valid"); }
 		meta.variants.emplace_back(enum_constant);
 	}
 	enum_decl_map.add(enum_decl->type.str, meta, hash_fnv1a_32(enum_decl->type.str));
