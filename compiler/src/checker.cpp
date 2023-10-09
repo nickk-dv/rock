@@ -20,6 +20,7 @@ bool check_declarations(Ast* ast, Module_Map& modules)
 		else { error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); passed = false; }
 	}
 
+	/*
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident ident = decl->alias;
@@ -27,6 +28,7 @@ bool check_declarations(Ast* ast, Module_Map& modules)
 		if (!key) symbol_table.add(ident, hash_ident(ident));
 		else { error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); passed = false; }
 	}
+	*/
 
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
@@ -61,21 +63,24 @@ bool check_declarations(Ast* ast, Module_Map& modules)
 		}
 		else
 		{
-			error("Import path not found", decl->alias); //@Improve error
+			error("Import path not found", decl->alias);
 			passed = false;
 		}
 	}
 
+	/*
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident import = decl->import;
 		if (!ast->import_table.contains(import, hash_ident(import)))
 		{
-			error("Use file isnt imported", decl->import); //@Improve error
+			error("Use file isnt imported", decl->import);
 			passed = false;
 		}
 	}
-	
+	*/
+
+	//@Low priority
 	//@Rule todo: cant import same thing under multiple names
 	//@Rule todo: cant import same type or procedure under multiple names
 	
@@ -86,6 +91,8 @@ bool check_ast(Ast* ast)
 {
 	bool passed = true;
 	
+	/*
+	// Find and add use symbols to current scope
 	for (Ast_Use_Decl* decl : ast->uses)
 	{	
 		Ast_Ident alias = decl->alias;
@@ -103,11 +110,13 @@ bool check_ast(Ast* ast)
 		error("Use symbol isnt found in imported namespace", symbol); //@Improve error
 		passed = false;
 	}
+	*/
+
+
 
 	return true;
 }
 
-//@Todo allign labels
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)
 {
 	printf("%s:\n", message);

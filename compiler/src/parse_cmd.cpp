@@ -18,6 +18,16 @@ int parse_cmd(int argc, char** argv)
 			printf("Commands:\nbuild [filepath]\n");
 			return 0;
 		}
+		else if (arg_match(arg, "buildfile"))
+		{
+			if (i + 1 < argc)
+			{
+				char* filepath = argv[i + 1];
+				return cmd_build_file(filepath);
+			}
+			else printf("Expected [filepath].\n");
+			return 0;
+		}
 		else if (arg_match(arg, "build"))
 		{
 			if (i + 1 < argc)
@@ -42,6 +52,42 @@ int parse_cmd(int argc, char** argv)
 bool arg_match(char* arg, const char* match)
 {
 	return strcmp(arg, match) == 0;
+}
+
+int cmd_build_file(char* filepath)
+{
+	Timer timer;
+	timer.start();
+	Parser parser = {};
+	if (!parser.init(filepath))
+	{
+		printf("Failed to open a file.\n");
+		return 1;
+	}
+	timer.end("Parser init    ");
+
+	timer.start();
+	Ast* ast = parser.parse();
+	if (ast == NULL)
+	{
+		printf("Failed to parse Ast.\n");
+		return 1;
+	}
+	timer.end("Parse Ast      ");
+	
+	debug_print_ast(ast);
+	
+	timer.start();
+	LLVM_IR_Builder ir_builder = {};
+	LLVMModuleRef mod = ir_builder.build_module(ast);
+	timer.end("LLVM IR Builder");
+
+	timer.start();
+	LLVM_Backend backend = {};
+	backend.build_binaries(mod);
+	timer.end("LLVM Backend   ");
+
+	return 0;
 }
 
 #include <filesystem>
@@ -116,48 +162,4 @@ int cmd_build(char* filepath)
 	timer.end("Check Ast");
 
 	return 0;
-
-	/*
-	Timer timer;
-	timer.start();
-	Parser parser = {};
-	if (!parser.init(filepath))
-	{
-		printf("Failed to open a file.\n");
-		return 1;
-	}
-	timer.end("Parser init    ");
-
-	timer.start();
-	Ast* ast = parser.parse();
-	if (ast == NULL)
-	{
-		printf("Failed to parse Ast.\n");
-		return 1;
-	}
-	timer.end("Parse Ast      ");
-
-	timer.start();
-	bool res = check_ast(ast);
-	if (!res)
-	{
-		printf("Ast check failed.\n");
-		return 1;
-	}
-	timer.end("Check Ast      ");
-
-	debug_print_ast(ast);
-	
-	timer.start();
-	LLVM_IR_Builder ir_builder = {};
-	LLVMModuleRef mod = ir_builder.build_module(ast);
-	timer.end("LLVM IR Builder");
-
-	timer.start();
-	LLVM_Backend backend = {};
-	backend.build_binaries(mod);
-	timer.end("LLVM Backend   ");
-
-	return 0;
-	*/
 }
