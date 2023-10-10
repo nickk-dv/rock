@@ -7,10 +7,15 @@
 
 typedef std::unordered_map<std::string, Ast*> Module_Map;
 
-bool check_declarations(Ast* ast, Module_Map& modules);
-bool check_ast(Ast* ast);
-void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
-void error(const char* message, Ast_Ident ident);
+bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules);
+bool check_ast(Ast* ast, Ast_Program* program);
+
+static Ast* try_import(Ast* ast, std::optional<Ast_Ident> import);
+static void check_block(Ast* ast, Ast_Block* block);
+static void check_proc_call(Ast* ast, Ast_Proc_Call* proc_call);
+static void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
+static void error(const char* message, Ast_Ident ident);
+
 /*
 struct Checker;
 struct Block_Info;

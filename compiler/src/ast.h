@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "token.h"
+#include "llvm-c/Types.h"
 
 struct Ast;
 struct Ast_Ident;
@@ -45,6 +46,24 @@ Ast_Ident token_to_ident(Token& token);
 u32 hash_ident(Ast_Ident& ident);
 bool match_ident(Ast_Ident& a, Ast_Ident& b);
 
+struct Ast_Proc_Meta
+{
+	Ast_Proc_Decl* proc_decl;
+	LLVMTypeRef proc_type;
+	LLVMValueRef proc_value;
+};
+
+struct Ast_Program
+{
+	std::vector<Ast_Proc_Meta> procedures;
+};
+
+struct Ast_Proc_Decl_Meta
+{
+	u64 proc_id;
+	Ast_Proc_Decl* proc_decl;
+};
+
 struct Ast
 {
 	std::vector<Ast_Import_Decl*> imports;
@@ -53,10 +72,11 @@ struct Ast
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
 	//check stage
+	u64 proc_id_start;
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
 	HashMap<Ast_Ident, Ast_Struct_Decl*, u32, match_ident> struct_table;
 	HashMap<Ast_Ident, Ast_Enum_Decl*, u32, match_ident> enum_table;
-	HashMap<Ast_Ident, Ast_Proc_Decl*, u32, match_ident> proc_table;
+	HashMap<Ast_Ident, Ast_Proc_Decl_Meta, u32, match_ident> proc_table;
 };
 
 struct Ast_Ident 
@@ -322,6 +342,8 @@ struct Ast_Proc_Call
 	Ast_Ident ident;
 	std::vector<Ast_Expr*> input_exprs;
 	std::optional<Ast_Access*> access;
+	//check stage
+	u64 proc_id;
 };
 
 struct Ast_Var_Decl

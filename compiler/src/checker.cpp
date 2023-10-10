@@ -2,7 +2,7 @@
 
 #include "debug_printer.h"
 
-bool check_declarations(Ast* ast, Module_Map& modules)
+bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 {
 	bool passed = true;
 	
@@ -46,12 +46,24 @@ bool check_declarations(Ast* ast, Module_Map& modules)
 		else { error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); passed = false; }
 	}
 
+	u64 proc_count = 0;
 	for (Ast_Proc_Decl* decl : ast->procs)
 	{
 		Ast_Ident ident = decl->ident;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->proc_table.add(ident, decl, hash_ident(ident)); }
+		if (!key) 
+		{ 
+			Ast_Proc_Meta proc_meta = {};
+			proc_meta.proc_decl = decl;
+			program->procedures.emplace_back(proc_meta);
+			
+			symbol_table.add(ident, hash_ident(ident));
+			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { ast->proc_id_start + proc_count, decl }, hash_ident(ident));
+			printf("added proc with id: %llu - ", ast->proc_id_start + proc_count);
+			debug_print_ident(ident, true, false);
+		}
 		else { error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); passed = false; }
+		proc_count += 1;
 	}
 
 	for (Ast_Import_Decl* decl : ast->imports)
@@ -87,7 +99,7 @@ bool check_declarations(Ast* ast, Module_Map& modules)
 	return passed;
 }
 
-bool check_ast(Ast* ast)
+bool check_ast(Ast* ast, Ast_Program* program)
 {
 	bool passed = true;
 	
@@ -112,9 +124,64 @@ bool check_ast(Ast* ast)
 	}
 	*/
 
-
+	for (Ast_Proc_Decl* proc_decl : ast->procs)
+	{
+		if (!proc_decl->is_external) 
+		check_block(ast, proc_decl->block);
+	}
 
 	return true;
+}
+
+Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
+{
+	if (!import) return ast;
+
+	Ast_Ident import_ident = import.value();
+	auto import_decl = ast->import_table.find(import_ident, hash_ident(import_ident));
+	if (!import_decl)
+	{
+		error("Import module not found", import_ident);
+		return NULL;
+	}
+	return import_decl.value()->import_ast;
+}
+
+static void check_block(Ast* ast, Ast_Block* block)
+{
+	for (Ast_Statement* statement: block->statements)
+	{
+		switch (statement->tag)
+		{
+			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, statement->as_proc_call); break;
+			default: break;
+		}
+	}
+}
+
+static void check_proc_call(Ast* ast, Ast_Proc_Call* proc_call)
+{
+	Ast* ast_source = try_import(ast, proc_call->import);
+	if (ast_source == NULL) return;
+	
+	Ast_Ident ident = proc_call->ident;
+	Ast_Proc_Decl* proc_decl = NULL;
+
+	auto proc_meta = ast_source->proc_table.find(ident, hash_ident(ident));
+	if (!proc_meta)
+	{
+		error("Calling undeclared procedure", ident);
+		return;
+	}
+	else
+	{
+		proc_call->proc_id = proc_meta.value().proc_id;
+		proc_decl = proc_meta.value().proc_decl;
+	}
+
+	//@Check input exprs
+	//@Check statement cant discard return type
+	//return the return type
 }
 
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)

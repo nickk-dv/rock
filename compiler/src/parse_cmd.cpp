@@ -150,17 +150,22 @@ int cmd_build(char* filepath)
 	timer.end("Parse init & Parse Ast");
 
 	bool check = true;
+	u64 proc_id_start = 0;
+	Ast_Program program = {};
 
 	timer.start();
 	for (const auto& [module, ast] : modules)
 	{
-		if(!check_declarations(ast, modules)) check = false;
+		ast->proc_id_start = proc_id_start;
+		printf("file: %s\n", module.c_str());
+		if(!check_declarations(ast, &program, modules)) check = false;
+		proc_id_start += ast->procs.size();
 	}
 	if (!check) return 1;
 
 	for (const auto& [module, ast] : modules)
 	{
-		if (!check_ast(ast)) check = false;
+		if (!check_ast(ast, &program)) check = false;
 	}
 	if (!check) return 1;
 	timer.end("Check Ast");
