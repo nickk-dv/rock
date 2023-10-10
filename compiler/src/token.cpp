@@ -125,7 +125,6 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("string"),   TOKEN_TYPE_STRING },
 };
 
-//@Perf test the different keyword methods on bigger files like switching on char in a tree like search
 TokenType token_str_to_keyword(StringView str)
 {
 	if (str.count > 8 || str.count < 2) return TOKEN_ERROR;

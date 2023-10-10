@@ -664,8 +664,7 @@ LLVMValueRef LLVM_IR_Builder::get_enum_value(Ast_Enum* _enum) //@Perf copying th
 	{
 		if (variant.ident.str == _enum->variant.str)
 		{
-			LLVMValueRef ptr = enum_meta.value().variants[count];
-			return LLVMBuildLoad2(builder, enum_meta.value().variant_type, ptr, "enum_val");
+			return enum_meta.value().variants[count];
 		}
 		count += 1;
 	}

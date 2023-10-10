@@ -13,12 +13,12 @@ int parse_cmd(int argc, char** argv)
 	{
 		char* arg = argv[i];
 
-		if (arg_match(arg, "help"))
+		if (match_arg(arg, "help"))
 		{
 			printf("Commands:\nbuild [filepath]\n");
 			return 0;
 		}
-		else if (arg_match(arg, "buildfile"))
+		else if (match_arg(arg, "buildfile"))
 		{
 			if (i + 1 < argc)
 			{
@@ -28,7 +28,7 @@ int parse_cmd(int argc, char** argv)
 			else printf("Expected [filepath].\n");
 			return 0;
 		}
-		else if (arg_match(arg, "build"))
+		else if (match_arg(arg, "build"))
 		{
 			if (i + 1 < argc)
 			{
@@ -49,25 +49,27 @@ int parse_cmd(int argc, char** argv)
 	return 0;
 }
 
-bool arg_match(char* arg, const char* match)
+bool match_arg(char* arg, const char* match)
 {
 	return strcmp(arg, match) == 0;
 }
 
 int cmd_build_file(char* filepath)
 {
+	tokenizer_init();
+
 	Timer timer;
 	timer.start();
 	Parser parser = {};
-	if (!parser.init(filepath))
+	if (!parser_init(&parser, filepath))
 	{
 		printf("Failed to open a file.\n");
 		return 1;
 	}
 	timer.end("Parser init    ");
-
+	
 	timer.start();
-	Ast* ast = parser.parse();
+	Ast* ast = parser_parse(&parser);
 	if (ast == NULL)
 	{
 		printf("Failed to parse Ast.\n");
@@ -96,6 +98,8 @@ namespace fs = std::filesystem;
 
 int cmd_build(char* filepath)
 {
+	tokenizer_init();
+
 	if (!fs::exists(filepath)) 
 	{
 		printf("Filepath is not found: %s\n", filepath);
@@ -123,14 +127,14 @@ int cmd_build(char* filepath)
 			
 			Parser* parser = parser_arena.alloc<Parser>();
 			parsers.emplace_back(parser);
-			if (!parser->init(file.c_str()))
+			if (!parser_init(parser, file.c_str()))
 			{
 				printf("Failed to open a file, or file empty: %s\n", file.c_str());
 				parse_error = true;
 				continue;
 			}
 			
-			Ast* ast = parser->parse();
+			Ast* ast = parser_parse(parser);
 			if (ast == NULL)
 			{
 				printf("Failed to parse Ast: %s\n", file.c_str());
