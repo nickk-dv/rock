@@ -20,7 +20,6 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		else { error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); passed = false; }
 	}
 
-	/*
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident ident = decl->alias;
@@ -28,7 +27,6 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		if (!key) symbol_table.add(ident, hash_ident(ident));
 		else { error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); passed = false; }
 	}
-	*/
 
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
@@ -80,18 +78,6 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		}
 	}
 
-	/*
-	for (Ast_Use_Decl* decl : ast->uses)
-	{
-		Ast_Ident import = decl->import;
-		if (!ast->import_table.contains(import, hash_ident(import)))
-		{
-			error("Use file isnt imported", decl->import);
-			passed = false;
-		}
-	}
-	*/
-
 	//@Low priority
 	//@Rule todo: cant import same thing under multiple names
 	//@Rule todo: cant import same type or procedure under multiple names
@@ -103,15 +89,18 @@ bool check_ast(Ast* ast, Ast_Program* program)
 {
 	bool passed = true;
 	
-	/*
 	// Find and add use symbols to current scope
 	for (Ast_Use_Decl* decl : ast->uses)
-	{	
+	{
+		Ast* import_ast = try_import(ast, { decl->import });
+		if (import_ast == NULL)
+		{
+			passed = false;
+			continue;
+		}
+
 		Ast_Ident alias = decl->alias;
-		Ast_Ident import = decl->import;
 		Ast_Ident symbol = decl->symbol;
-		Ast* import_ast = ast->import_table.find(import, hash_ident(import)).value()->import_ast;
-		
 		auto struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
 		if (struct_decl) { ast->struct_table.add(alias, struct_decl.value(), hash_ident(alias)); continue; }
 		auto enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
@@ -122,15 +111,112 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		error("Use symbol isnt found in imported namespace", symbol); //@Improve error
 		passed = false;
 	}
-	*/
 
+	//@Notice not setting passed flag in checks
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
 	{
-		if (!proc_decl->is_external) 
-		check_block(ast, proc_decl->block);
+		if (!proc_decl->is_external)
+		{
+			Terminator terminator = check_block_cfg(proc_decl->block, false, false, true);
+			if (proc_decl->return_type.has_value() && terminator != Terminator::Return)
+			error("Not all control flow paths return value", proc_decl->ident);
+
+			check_block(ast, proc_decl->block);
+		}
 	}
 
 	return true;
+}
+
+Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry)
+{
+	Terminator terminator = Terminator::None;
+
+	for (Ast_Statement* statement : block->statements)
+	{
+		if (terminator != Terminator::None)
+		{
+			printf("Unreachable statement:\n");
+			debug_print_statement(statement, 0);
+			printf("\n");
+			statement->unreachable = true;
+			break;
+		}
+
+		switch (statement->tag)
+		{
+			case Ast_Statement::Tag::If:
+			{
+				check_if_cfg(statement->as_if, is_loop, is_defer);
+			} break;
+			case Ast_Statement::Tag::For: 
+			{
+				check_block_cfg(statement->as_for->block, true, is_defer);
+			} break;
+			case Ast_Statement::Tag::Block: 
+			{
+				terminator = check_block_cfg(statement->as_block, is_loop, is_defer);
+			} break;
+			case Ast_Statement::Tag::Defer:
+			{
+				if (is_defer)
+				{
+					printf("Nested defer blocks are not allowed:\n");
+					debug_print_token(statement->as_defer->token, true, true);
+				}
+				else check_block_cfg(statement->as_defer->block, false, true);
+			} break;
+			case Ast_Statement::Tag::Break:
+			{
+				if (!is_loop)
+				{
+					if (is_defer) 
+						printf("Break statement inside defer block is not allowed:\n");
+					else printf("Break statement outside a loop:\n");
+					debug_print_token(statement->as_break->token, true, true);
+				}
+				else terminator = Terminator::Break;
+			} break;
+			case Ast_Statement::Tag::Return:
+			{
+				if (is_defer)
+				{
+					printf("Defer block cant contain 'return' statements:\n");
+					debug_print_token(statement->as_defer->token, true, true);
+				}
+				else terminator = Terminator::Return;
+			} break;
+			case Ast_Statement::Tag::Continue:
+			{
+				if (!is_loop)
+				{
+					if (is_defer)
+						printf("Continue statement inside defer block is not allowed:\n");
+					else printf("Continue statement outside a loop:\n");
+					debug_print_token(statement->as_continue->token, true, true);
+				}
+				else terminator = Terminator::Continue;
+			} break;
+			case Ast_Statement::Tag::Proc_Call: break;
+			case Ast_Statement::Tag::Var_Decl: break;
+			case Ast_Statement::Tag::Var_Assign: break;
+			default: break;
+		}
+	}
+
+	return terminator;
+}
+
+void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer)
+{
+	check_block_cfg(_if->block, is_loop, is_defer);
+	
+	if (_if->_else)
+	{
+		Ast_Else* _else = _if->_else.value();
+		if (_else->tag == Ast_Else::Tag::If) check_if_cfg(_else->as_if, is_loop, is_defer);
+		else check_block_cfg(_else->as_block, is_loop, is_defer);
+	}
 }
 
 Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
@@ -153,7 +239,16 @@ static void check_block(Ast* ast, Ast_Block* block)
 	{
 		switch (statement->tag)
 		{
+			case Ast_Statement::Tag::If: break;
+			case Ast_Statement::Tag::For: break;
+			case Ast_Statement::Tag::Block: break;
+			case Ast_Statement::Tag::Defer: break;
+			case Ast_Statement::Tag::Break: break;
+			case Ast_Statement::Tag::Return: break;
+			case Ast_Statement::Tag::Continue: break;
 			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, statement->as_proc_call); break;
+			case Ast_Statement::Tag::Var_Decl: break;
+			case Ast_Statement::Tag::Var_Assign: break;
 			default: break;
 		}
 	}
@@ -161,13 +256,13 @@ static void check_block(Ast* ast, Ast_Block* block)
 
 static void check_proc_call(Ast* ast, Ast_Proc_Call* proc_call)
 {
-	Ast* ast_source = try_import(ast, proc_call->import);
-	if (ast_source == NULL) return;
+	Ast* ast_target = try_import(ast, proc_call->import);
+	if (ast_target == NULL) return;
 	
 	Ast_Ident ident = proc_call->ident;
 	Ast_Proc_Decl* proc_decl = NULL;
 
-	auto proc_meta = ast_source->proc_table.find(ident, hash_ident(ident));
+	auto proc_meta = ast_target->proc_table.find(ident, hash_ident(ident));
 	if (!proc_meta)
 	{
 		error("Calling undeclared procedure", ident);

@@ -279,6 +279,9 @@ struct Ast_Statement
 		Ast_Var_Decl* as_var_decl;
 		Ast_Var_Assign* as_var_assign;
 	};
+
+	//check stage
+	bool unreachable;
 };
 
 struct Ast_If

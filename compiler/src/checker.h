@@ -7,9 +7,19 @@
 
 typedef std::unordered_map<std::string, Ast*> Module_Map;
 
+enum class Terminator
+{
+	None,
+	Break,
+	Return,
+	Continue,
+};
+
 bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules);
 bool check_ast(Ast* ast, Ast_Program* program);
 
+static Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry = false);
+static void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer);
 static Ast* try_import(Ast* ast, std::optional<Ast_Ident> import);
 static void check_block(Ast* ast, Ast_Block* block);
 static void check_proc_call(Ast* ast, Ast_Proc_Call* proc_call);
