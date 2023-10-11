@@ -151,15 +151,28 @@ int cmd_build(char* filepath)
 
 	bool check = true;
 	u64 proc_id_start = 0;
+	u64 struct_id_start = 0;
 	Ast_Program program = {};
 
 	timer.start();
 	for (const auto& [module, ast] : modules)
 	{
 		ast->proc_id_start = proc_id_start;
+		ast->struct_id_start = struct_id_start;
 		printf("file: %s\n", module.c_str());
 		if(!check_declarations(ast, &program, modules)) check = false;
 		proc_id_start += ast->procs.size();
+		struct_id_start += ast->structs.size();
+	}
+	for (u64 i = 0; i < program.procedures.size(); i += 1)
+	{
+		printf("proc:   %llu - ", i);
+		debug_print_ident(program.procedures[i].proc_decl->ident, true, false);
+	}
+	for (u64 i = 0; i < program.structs.size(); i += 1)
+	{
+		printf("struct: %llu - ", i);
+		debug_print_ident(program.structs[i].struct_decl->type, true, false);
 	}
 	if (!check) return 1;
 

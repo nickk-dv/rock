@@ -28,12 +28,22 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		else { error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); passed = false; }
 	}
 
+	u64 struct_count = 0;
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
 		Ast_Ident ident = decl->type;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->struct_table.add(ident, decl, hash_ident(ident)); }
+		if (!key) 
+		{
+			symbol_table.add(ident, hash_ident(ident)); 
+			ast->struct_table.add(ident, Ast_Struct_Decl_Meta { ast->struct_id_start + struct_count, decl }, hash_ident(ident));
+			
+			Ast_Struct_Meta struct_meta = {};
+			struct_meta.struct_decl = decl;
+			program->structs.emplace_back(struct_meta);
+		}
 		else { error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); passed = false; }
+		struct_count += 1;
 	}
 
 	for (Ast_Enum_Decl* decl : ast->enums)
@@ -51,14 +61,12 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{ 
+			symbol_table.add(ident, hash_ident(ident));
+			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { ast->proc_id_start + proc_count, decl }, hash_ident(ident));
+			
 			Ast_Proc_Meta proc_meta = {};
 			proc_meta.proc_decl = decl;
 			program->procedures.emplace_back(proc_meta);
-			
-			symbol_table.add(ident, hash_ident(ident));
-			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { ast->proc_id_start + proc_count, decl }, hash_ident(ident));
-			printf("added proc with id: %llu - ", ast->proc_id_start + proc_count);
-			debug_print_ident(ident, true, false);
 		}
 		else { error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); passed = false; }
 		proc_count += 1;
@@ -112,20 +120,39 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		passed = false;
 	}
 
+	
 	//@Notice not setting passed flag in checks
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
 	{
-		if (!proc_decl->is_external)
-		{
-			Terminator terminator = check_block_cfg(proc_decl->block, false, false, true);
-			if (proc_decl->return_type.has_value() && terminator != Terminator::Return)
-			error("Not all control flow paths return value", proc_decl->ident);
+		if (proc_decl->is_external) continue;
 
-			check_block(ast, proc_decl->block);
-		}
+		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
+		Terminator terminator = check_block_cfg(proc_decl->block, false, false, true);
+		if (proc_decl->return_type.has_value() && terminator != Terminator::Return)
+		error("Not all control flow paths return value", proc_decl->ident);
+		
+		//@Notice need to add input variables to block stack
+		Block_Stack bc = {};
+		//block_stack_reset(&bc);
+		printf("check block call \n");
+		check_block(ast, &bc, proc_decl->block);
 	}
 
 	return true;
+}
+
+Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
+{
+	if (!import) return ast;
+
+	Ast_Ident import_ident = import.value();
+	auto import_decl = ast->import_table.find(import_ident, hash_ident(import_ident));
+	if (!import_decl)
+	{
+		error("Import module not found", import_ident);
+		return NULL;
+	}
+	return import_decl.value()->import_ast;
 }
 
 Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry)
@@ -219,42 +246,52 @@ void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer)
 	}
 }
 
-Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
+static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block)
 {
-	if (!import) return ast;
+	block_stack_add_block(bc);
 
-	Ast_Ident import_ident = import.value();
-	auto import_decl = ast->import_table.find(import_ident, hash_ident(import_ident));
-	if (!import_decl)
-	{
-		error("Import module not found", import_ident);
-		return NULL;
-	}
-	return import_decl.value()->import_ast;
-}
-
-static void check_block(Ast* ast, Ast_Block* block)
-{
 	for (Ast_Statement* statement: block->statements)
 	{
 		switch (statement->tag)
 		{
-			case Ast_Statement::Tag::If: break;
-			case Ast_Statement::Tag::For: break;
-			case Ast_Statement::Tag::Block: break;
-			case Ast_Statement::Tag::Defer: break;
+			case Ast_Statement::Tag::If: check_if(ast, bc, statement->as_if); break;
+			case Ast_Statement::Tag::For: check_for(ast, bc, statement->as_for); break;
+			case Ast_Statement::Tag::Block: check_block(ast, bc, statement->as_block); break;
+			case Ast_Statement::Tag::Defer: check_block(ast, bc, statement->as_defer->block); break;
 			case Ast_Statement::Tag::Break: break;
 			case Ast_Statement::Tag::Return: break;
 			case Ast_Statement::Tag::Continue: break;
-			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, statement->as_proc_call); break;
-			case Ast_Statement::Tag::Var_Decl: break;
-			case Ast_Statement::Tag::Var_Assign: break;
+			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, bc, statement->as_proc_call); break;
+			case Ast_Statement::Tag::Var_Decl: check_var_decl(ast, bc, statement->as_var_decl); break;
+			case Ast_Statement::Tag::Var_Assign: check_var_assign(ast, bc, statement->as_var_assign); break;
 			default: break;
 		}
 	}
+
+	block_stack_remove_block(bc);
 }
 
-static void check_proc_call(Ast* ast, Ast_Proc_Call* proc_call)
+void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if)
+{
+	check_block(ast, bc, _if->block);
+
+	if (_if->_else)
+	{
+		Ast_Else* _else = _if->_else.value();
+		if (_else->tag == Ast_Else::Tag::If) check_if(ast, bc, _else->as_if);
+		else check_block(ast, bc, _else->as_block);
+	}
+}
+
+void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
+{
+	//@Check handle var decl
+	//@Check handle var assign
+	//@Notice var should be declared inside the for block scope to not leak in outside scope
+	check_block(ast, bc, _for->block);
+}
+
+static void check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call)
 {
 	Ast* ast_target = try_import(ast, proc_call->import);
 	if (ast_target == NULL) return;
@@ -277,6 +314,75 @@ static void check_proc_call(Ast* ast, Ast_Proc_Call* proc_call)
 	//@Check input exprs
 	//@Check statement cant discard return type
 	//return the return type
+}
+
+void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
+{
+	Ast_Ident var_ident = var_decl->ident;
+	if (block_stack_contains_var(bc, var_ident))
+	{
+		error("Variable already in scope in variable declaration", var_ident);
+		return;
+	}
+	block_stack_add_var(bc, var_ident);
+
+	//@Check type
+	//@Check expr
+}
+
+void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
+{
+	Ast_Ident var_ident = var_assign->var->ident;
+	if (!block_stack_contains_var(bc, var_ident))
+	{
+		error("Variable not in scope in variable assignment", var_ident);
+		return;
+	}
+	
+	//@Check var access
+	//@Check type
+	//@Check expr
+	//@Check assign op
+}
+
+void block_stack_reset(Block_Stack* bc)
+{
+	bc->block_count = 0;
+	bc->var_count_stack.clear();
+	bc->var_stack.clear();
+}
+
+void block_stack_add_block(Block_Stack* bc)
+{
+	bc->block_count += 1;
+	bc->var_count_stack.emplace_back(0);
+}
+
+void block_stack_remove_block(Block_Stack* bc)
+{
+	u32 var_count = bc->var_count_stack[bc->block_count - 1];
+	for (u32 i = 0; i < var_count; i += 1)
+	{
+		bc->var_stack.pop_back();
+	}
+	bc->var_count_stack.pop_back();
+	bc->block_count -= 1;
+}
+
+void block_stack_add_var(Block_Stack* bc, Ast_Ident ident)
+{
+	bc->var_count_stack[bc->block_count - 1] += 1;
+	bc->var_stack.emplace_back(ident);
+}
+
+bool block_stack_contains_var(Block_Stack* bc, Ast_Ident ident)
+{
+	for (Ast_Ident& var_ident : bc->var_stack)
+	{
+		if (match_ident(var_ident, ident))
+			return true;
+	}
+	return false;
 }
 
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)

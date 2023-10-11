@@ -53,15 +53,28 @@ struct Ast_Proc_Meta
 	LLVMValueRef proc_value;
 };
 
+struct Ast_Struct_Meta
+{
+	Ast_Struct_Decl* struct_decl;
+	LLVMTypeRef struct_type;
+};
+
 struct Ast_Program
 {
 	std::vector<Ast_Proc_Meta> procedures;
+	std::vector<Ast_Struct_Meta> structs;
 };
 
 struct Ast_Proc_Decl_Meta
 {
 	u64 proc_id;
 	Ast_Proc_Decl* proc_decl;
+};
+
+struct Ast_Struct_Decl_Meta
+{
+	u64 proc_id;
+	Ast_Struct_Decl* struct_decl;
 };
 
 struct Ast
@@ -73,8 +86,9 @@ struct Ast
 	std::vector<Ast_Proc_Decl*> procs;
 	//check stage
 	u64 proc_id_start;
+	u64 struct_id_start;
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
-	HashMap<Ast_Ident, Ast_Struct_Decl*, u32, match_ident> struct_table;
+	HashMap<Ast_Ident, Ast_Struct_Decl_Meta, u32, match_ident> struct_table;
 	HashMap<Ast_Ident, Ast_Enum_Decl*, u32, match_ident> enum_table;
 	HashMap<Ast_Ident, Ast_Proc_Decl_Meta, u32, match_ident> proc_table;
 };
