@@ -31,7 +31,7 @@ static std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_
 static std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr);
 static Type_Kind type_info_kind(Type_Info type);
 static bool match_type_info(Type_Info type_a, Type_Info type_b);
-static bool match_type(Ast_Type* type_a, Ast_Type* type_b);
+static bool match_type(Ast_Type type_a, Ast_Type type_b);
 static void block_stack_reset(Block_Stack* bc);
 static void block_stack_add_block(Block_Stack* bc);
 static void block_stack_remove_block(Block_Stack* bc);
@@ -64,7 +64,7 @@ struct Type_Info
 {
 	bool is_basic;
 	BasicType basic_type;
-	Ast_Type* type;
+	Ast_Type type;
 };
 
 struct Block_Stack

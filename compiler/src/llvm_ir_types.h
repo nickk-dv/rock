@@ -43,7 +43,7 @@ struct Type_Meta
 	bool is_struct;
 	Ast_Struct_Decl* struct_decl;
 	bool is_pointer;
-	Ast_Type* pointer_ast_type;
+	Ast_Type pointer_ast_type;
 };
 
 struct Struct_Meta

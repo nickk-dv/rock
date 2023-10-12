@@ -611,35 +611,35 @@ LLVMTypeRef LLVM_IR_Builder::get_basic_type(BasicType type)
 	return NULL;
 }
 
-Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
+Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type type)
 {
 	LLVMTypeRef type_ref = NULL;
 
-	switch (type->tag)
+	switch (type.tag)
 	{
 	case Ast_Type::Tag::Basic:
 	{
-		type_ref = get_basic_type(type->as_basic);
+		type_ref = get_basic_type(type.as_basic);
 	} break;
 	case Ast_Type::Tag::Custom: //@Notice ignoring import access
 	{
-		auto struct_meta = struct_decl_map.find(type->as_custom->type.str, hash_fnv1a_32(type->as_custom->type.str));
+		auto struct_meta = struct_decl_map.find(type.as_custom->type.str, hash_fnv1a_32(type.as_custom->type.str));
 		if (struct_meta)
 		{
-			return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, NULL };
+			return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, {} };
 		}
 		
-		auto enum_meta = enum_decl_map.find(type->as_custom->type.str, hash_fnv1a_32(type->as_custom->type.str));
+		auto enum_meta = enum_decl_map.find(type.as_custom->type.str, hash_fnv1a_32(type.as_custom->type.str));
 		if (enum_meta)
 		{
-			return Type_Meta{ enum_meta.value().variant_type, false, NULL, false, NULL };
+			return Type_Meta{ enum_meta.value().variant_type, false, NULL, false, {} };
 		}
 		error_exit("get_type_meta: custom type not found");
 	} break;
 	case Ast_Type::Tag::Pointer:
 	{
 		type_ref = LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
-		return Type_Meta{ type_ref, false, NULL, true, type->as_pointer };
+		return Type_Meta{ type_ref, false, NULL, true, *type.as_pointer };
 	} break;
 	case Ast_Type::Tag::Array:
 	{
@@ -648,7 +648,7 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type* type)
 	} break;
 	}
 
-	return Type_Meta{ type_ref, false, NULL, false, NULL };
+	return Type_Meta{ type_ref, false, NULL, false, {} };
 }
 
 //@Notice enums are threated like values of their basic type,

@@ -136,8 +136,8 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 		if (!field) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
-		Ast_Type* type = parse_type(parser);
-		if (!type) return NULL;
+		Ast_Type type = parse_type(parser);
+		if (type.as_pointer == NULL) return NULL;
 		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type });
 
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -193,8 +193,8 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 		if (!param) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
-		Ast_Type* type = parse_type(parser);
-		if (!type) return NULL;
+		Ast_Type type = parse_type(parser);
+		if (type.as_pointer == NULL) return NULL;
 		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(param.value()), type });
 
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -203,8 +203,8 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
-		Ast_Type* type = parse_type(parser);
-		if (!type) return NULL;
+		Ast_Type type = parse_type(parser);
+		if (type.as_pointer == NULL) return NULL;
 		decl->return_type = type;
 	}
 
@@ -222,7 +222,55 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 	return decl;
 }
 
-Ast_Type* parse_type(Parser* parser)
+Ast_Type parse_type(Parser* parser)
+{
+	Ast_Type type = {};
+	Token token = peek();
+
+	BasicType basic_type = token_to_basic_type(token.type);
+	if (basic_type != BASIC_TYPE_ERROR)
+	{
+		consume();
+		type.tag = Ast_Type::Tag::Basic;
+		type.as_basic = basic_type;
+		return type;
+	}
+
+	switch (token.type)
+	{
+	case TOKEN_IDENT:
+	{
+		Ast_Custom_Type* custom = parse_custom_type(parser);
+		if (!custom) return {};
+		type.tag = Ast_Type::Tag::Custom;
+		type.as_custom = custom;
+	} break;
+	case TOKEN_TIMES:
+	{
+		consume();
+		Ast_Type* pointer_type = parse_type_ptr(parser);
+		if (!pointer_type) return {};
+		type.tag = Ast_Type::Tag::Pointer;
+		type.as_pointer = pointer_type;
+	} break;
+	case TOKEN_BRACKET_START:
+	{
+		Ast_Array_Type* array = parse_array_type(parser);
+		if (!array) return {};
+		type.tag = Ast_Type::Tag::Array;
+		type.as_array = array;
+	} break;
+	default:
+	{
+		error("Expected basic type, type identifier, pointer or array");
+		return {};
+	}
+	}
+
+	return type;
+}
+
+Ast_Type* parse_type_ptr(Parser* parser)
 {
 	Ast_Type* type = parser->arena.alloc<Ast_Type>();
 	Token token = peek();
@@ -248,7 +296,7 @@ Ast_Type* parse_type(Parser* parser)
 		case TOKEN_TIMES:
 		{
 			consume();
-			Ast_Type* pointer_type = parse_type(parser);
+			Ast_Type* pointer_type = parse_type_ptr(parser);
 			if (!pointer_type) return NULL;
 			type->tag = Ast_Type::Tag::Pointer;
 			type->as_pointer = pointer_type;
@@ -288,8 +336,8 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 	else { error("Expected '..' or integer size specifier"); return NULL; }
 	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
 
-	Ast_Type* type = parse_type(parser);
-	if (!type) return NULL;
+	Ast_Type type = parse_type(parser);
+	if (type.as_pointer == NULL) return NULL;
 	array->element_type = type;
 
 	return array;
@@ -834,8 +882,8 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 
 	if (!infer_type)
 	{
-		Ast_Type* type = parse_type(parser);
-		if (!type) return NULL;
+		Ast_Type type = parse_type(parser);
+		if (type.as_pointer == NULL) return NULL;
 		var_decl->type = type;
 
 		if (try_consume(TOKEN_SEMICOLON)) return var_decl;

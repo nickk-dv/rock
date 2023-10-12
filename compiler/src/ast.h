@@ -133,28 +133,6 @@ struct Ast_Enum_Decl
 	std::vector<Ast_Ident_Literal_Pair> variants;
 };
 
-struct Ast_Proc_Decl
-{
-	Ast_Ident ident;
-	std::vector<Ast_Ident_Type_Pair> input_params;
-	std::optional<Ast_Type*> return_type;
-	Ast_Block* block;
-	bool is_external;
-};
-
-struct Ast_Ident_Type_Pair
-{
-	Ast_Ident ident;
-	Ast_Type* type;
-};
-
-struct Ast_Ident_Literal_Pair
-{
-	Ast_Ident ident;
-	Ast_Literal literal;
-	bool is_negative;
-};
-
 struct Ast_Type
 {
 	enum class Tag
@@ -171,9 +149,31 @@ struct Ast_Type
 	};
 };
 
+struct Ast_Proc_Decl
+{
+	Ast_Ident ident;
+	std::vector<Ast_Ident_Type_Pair> input_params;
+	std::optional<Ast_Type> return_type;
+	Ast_Block* block;
+	bool is_external;
+};
+
+struct Ast_Ident_Type_Pair
+{
+	Ast_Ident ident;
+	Ast_Type type;
+};
+
+struct Ast_Ident_Literal_Pair
+{
+	Ast_Ident ident;
+	Ast_Literal literal;
+	bool is_negative;
+};
+
 struct Ast_Array_Type
 {
-	Ast_Type* element_type;
+	Ast_Type element_type;
 	bool is_dynamic;
 	u64 fixed_size;
 };
@@ -356,7 +356,7 @@ struct Ast_Continue
 struct Ast_Var_Decl
 {
 	Ast_Ident ident;
-	std::optional<Ast_Type*> type;
+	std::optional<Ast_Type> type;
 	std::optional<Ast_Expr*> expr;
 };
 

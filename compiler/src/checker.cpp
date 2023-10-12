@@ -330,12 +330,32 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 	if (block_stack_contains_var(bc, ident))
 	{
 		error("Variable already in scope in variable declaration", ident);
-		return;
 	}
-	block_stack_add_var(bc, ident);
+	else block_stack_add_var(bc, ident);
+	
+	if (var_decl->expr)
+	{
+		auto type = check_expr(ast, bc, var_decl->expr.value());
+		if (!type)
+		{
+			error("Error type in variable declaration", var_decl->ident);
+			return;
+		}
 
-	//@Check type
-	//@Check expr
+		if (var_decl->type)
+		{
+			//check type validity
+			//compare types
+		}
+		else
+		{
+			//infer type
+		}
+	}
+	else
+	{
+		//check type validity
+	}
 }
 
 void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
@@ -394,9 +414,9 @@ std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal li
 
 	switch (literal.token.type)
 	{
-		case TOKEN_BOOL_LITERAL: return Type_Info { true, BASIC_TYPE_BOOL, NULL };
-		case TOKEN_FLOAT_LITERAL: return Type_Info { true, BASIC_TYPE_F64, NULL };
-		case TOKEN_INTEGER_LITERAL: return Type_Info { true, BASIC_TYPE_I32, NULL };
+		case TOKEN_BOOL_LITERAL: return Type_Info { true, BASIC_TYPE_BOOL, {} };
+		case TOKEN_FLOAT_LITERAL: return Type_Info { true, BASIC_TYPE_F64, {} };
+		case TOKEN_INTEGER_LITERAL: return Type_Info { true, BASIC_TYPE_I32, {} };
 		default:
 		{
 			printf("Unknown or unsupported literal value:\n");
@@ -510,7 +530,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_LOGIC_AND:
 	case BINARY_OP_LOGIC_OR:
 	{
-		if (lhs_kind == Type_Kind::Bool) return Type_Info{ true, BASIC_TYPE_BOOL, NULL };
+		if (lhs_kind == Type_Kind::Bool) return Type_Info{ true, BASIC_TYPE_BOOL, {} };
 		printf("Exprected bool operands in binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
@@ -524,7 +544,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_IS_EQUALS:
 	case BINARY_OP_NOT_EQUALS:
 	{
-		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return Type_Info{ true, BASIC_TYPE_BOOL, NULL };
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return Type_Info{ true, BASIC_TYPE_BOOL, {} };
 		printf("Exprected float or int in comparison binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
@@ -592,7 +612,7 @@ Type_Kind type_info_kind(Type_Info type)
 		}
 	}
 
-	switch (type.type->tag)
+	switch (type.type.tag)
 	{
 		case Ast_Type::Tag::Pointer: return Type_Kind::Pointer;
 		case Ast_Type::Tag::Array: return Type_Kind::Array;
@@ -612,32 +632,32 @@ bool match_type_info(Type_Info type_a, Type_Info type_b)
 	return match_type(type_a.type, type_b.type);
 }
 
-bool match_type(Ast_Type* type_a, Ast_Type* type_b)
+bool match_type(Ast_Type type_a, Ast_Type type_b)
 {
-	if (type_a->tag != type_b->tag) return false;
+	if (type_a.tag != type_b.tag) return false;
 
-	switch (type_a->tag)
+	switch (type_a.tag)
 	{
 		case Ast_Type::Tag::Basic:
 		{
-			return type_a->as_basic == type_b->as_basic;
+			return type_a.as_basic == type_b.as_basic;
 		} break;
 		case Ast_Type::Tag::Pointer:
 		{
-			return match_type(type_a->as_pointer, type_b->as_pointer);
+			return match_type(*type_a.as_pointer, *type_b.as_pointer);
 		} break;
 		case Ast_Type::Tag::Array:
 		{
-			Ast_Array_Type* array_a = type_a->as_array;
-			Ast_Array_Type* array_b = type_b->as_array;
+			Ast_Array_Type* array_a = type_a.as_array;
+			Ast_Array_Type* array_b = type_b.as_array;
 			if (array_a->is_dynamic != array_b->is_dynamic) return false;
 			if (array_a->fixed_size != array_b->fixed_size) return false;
 			return match_type(array_a->element_type, array_b->element_type);
 		} break;
 		case Ast_Type::Tag::Custom:
 		{
-			Ast_Custom_Type* custom_a = type_a->as_custom;
-			Ast_Custom_Type* custom_b = type_b->as_custom;
+			Ast_Custom_Type* custom_a = type_a.as_custom;
+			Ast_Custom_Type* custom_b = type_b.as_custom;
 			bool import_a = custom_a->import.has_value();
 			bool import_b = custom_b->import.has_value();
 			if (import_a != import_b) return false;

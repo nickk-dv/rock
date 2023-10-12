@@ -18,7 +18,7 @@ void debug_print_use_decl(Ast_Use_Decl* use_decl);
 void debug_print_struct_decl(Ast_Struct_Decl* struct_decl);
 void debug_print_enum_decl(Ast_Enum_Decl* enum_decl);
 void debug_print_proc_decl(Ast_Proc_Decl* proc_decl);
-void debug_print_type(Ast_Type* type);
+void debug_print_type(Ast_Type type);
 void debug_print_array_type(Ast_Array_Type* array_type);
 void debug_print_custom_type(Ast_Custom_Type* custom_type);
 void debug_print_var(Ast_Var* var);

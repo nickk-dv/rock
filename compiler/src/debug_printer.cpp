@@ -319,14 +319,14 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 	else debug_print_block(proc_decl->block, 0);
 }
 
-void debug_print_type(Ast_Type* type)
+void debug_print_type(Ast_Type type)
 {
-	switch (type->tag)
+	switch (type.tag)
 	{
-		case Ast_Type::Tag::Basic: debug_print_basic_type(type->as_basic); break;
-		case Ast_Type::Tag::Pointer: { printf("*"); debug_print_type(type->as_pointer); } break;
-		case Ast_Type::Tag::Array: debug_print_array_type(type->as_array); break;
-		case Ast_Type::Tag::Custom: debug_print_custom_type(type->as_custom); break;
+		case Ast_Type::Tag::Basic: debug_print_basic_type(type.as_basic); break;
+		case Ast_Type::Tag::Pointer: { printf("*"); debug_print_type(*type.as_pointer); } break;
+		case Ast_Type::Tag::Array: debug_print_array_type(type.as_array); break;
+		case Ast_Type::Tag::Custom: debug_print_custom_type(type.as_custom); break;
 	}
 }
 
