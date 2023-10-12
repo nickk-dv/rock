@@ -136,11 +136,17 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		block_stack_add_block(&bc);
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
+			//@Check validate type even if already contains
+			Type_Info type_info = Type_Info { true, param.type };
+			
 			if (block_stack_contains_var(&bc, param.ident))
 			{
 				error("Input parameter with same name is already exists", param.ident);
 			}
-			else block_stack_add_var(&bc, param.ident);
+			else 
+			{
+				block_stack_add_var(&bc, param.ident, type_info);
+			}
 		}
 		check_block(ast, &bc, proc_decl->block, false);
 	}
@@ -285,7 +291,7 @@ void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if)
 {
 	//@Check expr, must be bool
 	auto type = check_expr(ast, bc, _if->condition_expr);
-	if (!type.has_value() || type_info_kind(type.value()) == Type_Kind::Bool)
+	if (!type.has_value() || type_info_kind(type.value()) != Type_Kind::Bool)
 	{
 		printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
 		debug_print_token(_if->token, true, true);
@@ -313,7 +319,7 @@ void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
 	if (_for->condition_expr)
 	{
 		auto type = check_expr(ast, bc, _for->condition_expr.value());
-		if (!type.has_value() || type_info_kind(type.value()) == Type_Kind::Bool)
+		if (!type.has_value() || type_info_kind(type.value()) != Type_Kind::Bool)
 		{
 			printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
 			debug_print_token(_for->token, true, true);
@@ -327,50 +333,77 @@ void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
 void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 {
 	Ast_Ident ident = var_decl->ident;
+	bool is_valid_decl = true;
+
 	if (block_stack_contains_var(bc, ident))
 	{
 		error("Variable already in scope in variable declaration", ident);
+		is_valid_decl = false;
 	}
-	else block_stack_add_var(bc, ident);
-	
-	if (var_decl->expr)
-	{
-		auto type = check_expr(ast, bc, var_decl->expr.value());
-		if (!type)
-		{
-			error("Error type in variable declaration", var_decl->ident);
-			return;
-		}
 
-		if (var_decl->type)
+	if (var_decl->type)
+	{
+		Ast_Type type = var_decl->type.value();
+		//@Check type signature
+		
+		if (var_decl->expr)
 		{
-			//check type validity
-			//compare types
+			auto expr_type = check_expr(ast, bc, var_decl->expr.value());
+			if (expr_type && !match_type(type, expr_type.value().type))
+			{
+				error("Type mismatch in variable declaration [not printing types yet]", var_decl->ident);
+				debug_print_var_decl(var_decl, 0);
+				printf("\n");
+			}
 		}
-		else
+		
+		//@Error handling
+		// even when expr type is broken or types dont match
+		// variable is added to the stack to be type checked in later exprs
+		if (is_valid_decl)
 		{
-			//infer type
+			Type_Info type_info = Type_Info { true, type };
+			block_stack_add_var(bc, ident, type_info);
 		}
 	}
 	else
 	{
-		//check type validity
+		auto expr_type = check_expr(ast, bc, var_decl->expr.value());
+		if (!expr_type) return;
+
+		var_decl->type = expr_type.value().type;
+
+		//@Error handling
+		// not adding variable to the stack in case of error in inferred type
+		// this might raise undeclared variable errors on later uses
+		// it might be fixed by something like flagging system for broken variables
+		if (is_valid_decl)
+		{
+			Type_Info type_info = Type_Info { true, expr_type.value().type };
+			block_stack_add_var(bc, ident, type_info);
+		}
 	}
 }
 
 void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
 {
-	Ast_Ident ident = var_assign->var->ident;
-	if (!block_stack_contains_var(bc, ident))
+	auto var_type = check_var(ast, bc, var_assign->var);
+	auto expr_type = check_expr(ast, bc, var_assign->expr);
+	
+	if (var_assign->op != ASSIGN_OP_NONE)
 	{
-		error("Variable not in scope in variable assignment", ident);
+		printf("Check var assign: only '=' assign op is supported\n");
+		debug_print_var_assign(var_assign, 0);
+		printf("\n");
 		return;
 	}
-	
-	//@Check var access
-	//@Check type
-	//@Check expr
-	//@Check assign op
+
+	if (var_type && expr_type && !match_type_info(var_type.value(), expr_type.value()))
+	{
+		printf("Check var assign: type missmatch in variable assignment\n");
+		debug_print_var_assign(var_assign, 0);
+		printf("\n");
+	}
 }
 
 std::optional<Type_Info> check_expr(Ast* ast, Block_Stack* bc, Ast_Expr* expr)
@@ -398,11 +431,29 @@ std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term)
 
 std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
 {
-	return {};
+	if (var->access)
+	{
+		printf("Check var: access chain not supported\n");
+		debug_print_var(var);
+		printf("\n");
+		return {};
+	}
+
+	auto type = block_stack_find_var_type(bc, var->ident);
+	if (!type)
+	{
+		error("Check var: var is not found or has not valid type\n", var->ident);
+		return {};
+	}
+	
+	return type;
 }
 
 std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum)
 {
+	printf("Check enum: enum terms not supported: ");
+	debug_print_enum(_enum);
+	printf("\n");
 	return {};
 }
 
@@ -419,7 +470,7 @@ std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal li
 		case TOKEN_INTEGER_LITERAL: return type_info_from_basic(BASIC_TYPE_I32);
 		default:
 		{
-			printf("Unknown or unsupported literal value:\n");
+			printf("Check literal: unknown or unsupported literal:\n");
 			debug_print_token(literal.token, true, true);
 			printf("\n");
 			return {};
@@ -447,12 +498,46 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 		proc_decl = proc_meta.value().proc_decl;
 	}
 
-	//@Check input exprs
-	//@Check statement cant discard return type
-	//@Check access
-	//return the return type
+	// check param count
+	u32 param_count = proc_decl == NULL ? 0 : (u32)proc_decl->input_params.size();
+	u32 input_count = (u32)proc_call->input_exprs.size();
+	if (proc_decl != NULL && param_count != input_count)
+	{
+		printf("Check proc call: unexpected number of input arguments:\n");
+		debug_print_ident(ident, true, true);
+		printf("Expected: %lu Input count: %lu \n\n", param_count, input_count);
+	}
 
-	return {};
+	// check expr and types 
+	for (u32 i = 0; i < input_count; i += 1)
+	{
+		auto expr_type = check_expr(ast, bc, proc_call->input_exprs[i]);
+		if (expr_type && i < param_count)
+		{
+			if (!match_type(proc_decl->input_params[i].type, expr_type.value().type))
+			{
+				error("Check proc call: type mismatch between input expr and expected param type", ident);
+			}
+		}
+	}
+
+	if (proc_call->access)
+	{
+		printf("Check proc call: access chains with proc call isnt supported\n");
+		debug_print_proc_call(proc_call, 0);
+		printf("\n");
+	}
+
+	if (proc_decl != NULL)
+	{
+		if (proc_decl->return_type)
+		{
+			//@Check type signature
+			return Type_Info { false, proc_decl->return_type.value() };
+		}
+		else return {}; //@Notice void type is threated like error type, might change this
+	}
+	else return {};
 }
 
 std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr)
@@ -480,10 +565,17 @@ std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_E
 	} break;
 	case UNARY_OP_ADRESS_OF:
 	{
-		//need to know that its a variable
-		//of some type and return pointer
-		printf("Address of unary op '&' is not supported\n\n");
-		return {};
+		if (!rhs.is_var_owned)
+		{
+			printf("Cannot take adress of temporary value, use '&' with variables\n");
+			debug_print_unary_expr(unary_expr, 0);
+			printf("\n");
+			return {};
+		}
+
+		rhs.type.pointer_level += 1;
+		Type_Info ptr_type = Type_Info { false, rhs.type };
+		return ptr_type;
 	} break;
 	case UNARY_OP_BITWISE_NOT:
 	{
@@ -619,7 +711,6 @@ Type_Kind type_info_kind(Type_Info type_info)
 	//@Notice cant tell if type is enum or struct
 	//might need to determine this and store changes into the ast
 	case Ast_Type::Tag::Custom: return Type_Kind::Struct;
-	default: return Type_Kind::Struct;
 	}
 }
 
@@ -646,7 +737,7 @@ bool match_type(Ast_Type type_a, Ast_Type type_b)
 		case Ast_Type::Tag::Basic:
 		{
 			return type_a.as_basic == type_b.as_basic;
-		} break;
+		}
 		case Ast_Type::Tag::Array:
 		{
 			Ast_Array_Type* array_a = type_a.as_array;
@@ -654,18 +745,22 @@ bool match_type(Ast_Type type_a, Ast_Type type_b)
 			if (array_a->is_dynamic != array_b->is_dynamic) return false;
 			if (array_a->fixed_size != array_b->fixed_size) return false;
 			return match_type(array_a->element_type, array_b->element_type);
-		} break;
+		}
 		case Ast_Type::Tag::Custom:
 		{
 			Ast_Custom_Type* custom_a = type_a.as_custom;
 			Ast_Custom_Type* custom_b = type_b.as_custom;
+
+			//@Notice custom type can be accessed using its use alias
+			// as well as import.ident so this comparison isnt valid
 			bool import_a = custom_a->import.has_value();
 			bool import_b = custom_b->import.has_value();
 			if (import_a != import_b) return false;
 			if (import_a && !match_ident(custom_a->import.value(), custom_b->import.value())) return false; 
 			return match_ident(custom_a->type, custom_b->type);
-		} break;
+		}
 	}
+	return false;
 }
 
 void block_stack_reset(Block_Stack* bc)
@@ -692,20 +787,30 @@ void block_stack_remove_block(Block_Stack* bc)
 	bc->block_count -= 1;
 }
 
-void block_stack_add_var(Block_Stack* bc, Ast_Ident ident)
+void block_stack_add_var(Block_Stack* bc, Ast_Ident ident, Type_Info type_info)
 {
 	bc->var_count_stack[bc->block_count - 1] += 1;
-	bc->var_stack.emplace_back(ident);
+	bc->var_stack.emplace_back(Var_Info { ident, type_info });
 }
 
 bool block_stack_contains_var(Block_Stack* bc, Ast_Ident ident)
 {
-	for (Ast_Ident& var_ident : bc->var_stack)
+	for (Var_Info& var : bc->var_stack)
 	{
-		if (match_ident(var_ident, ident))
+		if (match_ident(var.ident, ident))
 			return true;
 	}
 	return false;
+}
+
+std::optional<Type_Info> block_stack_find_var_type(Block_Stack* bc, Ast_Ident ident)
+{
+	for (Var_Info& var : bc->var_stack)
+	{
+		if (match_ident(var.ident, ident))
+			return var.type_info;
+	}
+	return {};
 }
 
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)

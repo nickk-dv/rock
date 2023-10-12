@@ -8,6 +8,7 @@ typedef std::unordered_map<std::string, Ast*> Module_Map;
 enum class Terminator;
 enum class Type_Kind;
 struct Type_Info;
+struct Var_Info;
 struct Block_Stack;
 
 bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules);
@@ -36,8 +37,9 @@ static bool match_type(Ast_Type type_a, Ast_Type type_b);
 static void block_stack_reset(Block_Stack* bc);
 static void block_stack_add_block(Block_Stack* bc);
 static void block_stack_remove_block(Block_Stack* bc);
-static void block_stack_add_var(Block_Stack* bc, Ast_Ident ident);
+static void block_stack_add_var(Block_Stack* bc, Ast_Ident ident, Type_Info type_info);
 static bool block_stack_contains_var(Block_Stack* bc, Ast_Ident ident);
+static std::optional<Type_Info> block_stack_find_var_type(Block_Stack* bc, Ast_Ident ident);
 static void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
 static void error(const char* message, Ast_Ident ident);
 
@@ -63,15 +65,21 @@ enum class Type_Kind
 
 struct Type_Info
 {
-	bool is_var_owned;
+	bool is_var_owned; //@Issue accidental propagation of this might be weird, only need for '&' adress op
 	Ast_Type type;
+};
+
+struct Var_Info
+{
+	Ast_Ident ident;
+	Type_Info type_info;
 };
 
 struct Block_Stack
 {
 	u32 block_count = 0;
 	std::vector<u32> var_count_stack;
-	std::vector<Ast_Ident> var_stack;
+	std::vector<Var_Info> var_stack;
 };
 
 #endif
