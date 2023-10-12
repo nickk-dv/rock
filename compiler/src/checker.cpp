@@ -442,10 +442,37 @@ std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_E
 
 	UnaryOp op = unary_expr->op;
 	Type_Info rhs = rhs_result.value();
+	Type_Kind rhs_kind = type_info_kind(rhs);
 
-	//@Check op semantics
-
-	return {};
+	switch (op)
+	{
+	case UNARY_OP_MINUS:
+	{
+		if (rhs_kind == Type_Kind::Float || rhs_kind == Type_Kind::Integer) return rhs;
+		printf("Cannot apply unary op '-' to non float / integer type\n\n");
+		return {};
+	} break;
+	case UNARY_OP_LOGIC_NOT:
+	{
+		if (rhs_kind == Type_Kind::Bool) return rhs;
+		printf("Cannot apply unary op '!' to non bool type\n\n");
+		return {};
+	} break;
+	case UNARY_OP_ADRESS_OF:
+	{
+		//need to know that its a variable
+		//of some type and return pointer
+		printf("Address of unary op '&' is not supported\n\n");
+		return {};
+	} break;
+	case UNARY_OP_BITWISE_NOT:
+	{
+		if (rhs_kind == Type_Kind::Integer) return rhs;
+		printf("Cannot apply unary op '~' to non integer type\n\n");
+		return {};
+	} break;
+	default: return {};
+	}
 }
 
 std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr)
@@ -458,10 +485,122 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	BinaryOp op = binary_expr->op;
 	Type_Info lhs = lhs_result.value();
 	Type_Info rhs = rhs_result.value();
-	
-	//@Check op semantics
+	Type_Kind lhs_kind = type_info_kind(lhs);
+	Type_Kind rhs_kind = type_info_kind(rhs);
 
-	return {};
+	if (lhs_kind != rhs_kind)
+	{
+		printf("Type mismatch in binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	}
+
+	if (lhs_kind != Type_Kind::Bool && lhs_kind != Type_Kind::Float && lhs_kind != Type_Kind::Integer)
+	{
+		printf("Exprected bool float or integer type in binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	}
+
+	switch (op)
+	{
+	// LogicOps [&& ||]
+	case BINARY_OP_LOGIC_AND:
+	case BINARY_OP_LOGIC_OR:
+	{
+		if (lhs_kind == Type_Kind::Bool) return Type_Info{ true, BASIC_TYPE_BOOL, NULL };
+		printf("Exprected bool operands in binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	} break;
+	// CmpOps [< > <= >= == !=]
+	case BINARY_OP_LESS:
+	case BINARY_OP_GREATER:
+	case BINARY_OP_LESS_EQUALS:
+	case BINARY_OP_GREATER_EQUALS:
+	case BINARY_OP_IS_EQUALS:
+	case BINARY_OP_NOT_EQUALS:
+	{
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return Type_Info{ true, BASIC_TYPE_BOOL, NULL };
+		printf("Exprected float or int in comparison binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	} break;
+	// MathOps [+ - * / ]
+	case BINARY_OP_PLUS:
+	case BINARY_OP_MINUS:
+	case BINARY_OP_TIMES:
+	case BINARY_OP_DIV:
+	{
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return lhs;
+		printf("Exprected float or int in math binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	} break;
+	case BINARY_OP_MOD:
+	{
+		if (lhs_kind == Type_Kind::Integer) return lhs;
+		printf("Exprected int in '%%' binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	} break;
+	// BitwiseOps [& | ^ << >>]
+	case BINARY_OP_BITWISE_AND:
+	case BINARY_OP_BITWISE_OR:
+	case BINARY_OP_BITWISE_XOR:
+	case BINARY_OP_BITSHIFT_LEFT:
+	case BINARY_OP_BITSHIFT_RIGHT:
+	{
+		if (lhs_kind == Type_Kind::Integer) return lhs;
+		printf("Exprected int in bitwise binary expression\n");
+		debug_print_binary_expr(binary_expr, 0);
+		printf("\n");
+		return {};
+	} break;
+	default: return {};
+	}
+}
+
+Type_Kind type_info_kind(Type_Info type)
+{
+	if (type.is_basic)
+	{
+		switch (type.basic_type)
+		{
+			case BASIC_TYPE_I8:
+			case BASIC_TYPE_U8:
+			case BASIC_TYPE_I16:
+			case BASIC_TYPE_U16:
+			case BASIC_TYPE_I32:
+			case BASIC_TYPE_U32:
+			case BASIC_TYPE_I64:
+			case BASIC_TYPE_U64:
+				return Type_Kind::Integer;
+			case BASIC_TYPE_F32:
+			case BASIC_TYPE_F64:
+				return Type_Kind::Float;
+			case BASIC_TYPE_BOOL:
+				return Type_Kind::Bool;
+			case BASIC_TYPE_STRING:
+				return Type_Kind::String;
+		}
+	}
+
+	switch (type.type->tag)
+	{
+		case Ast_Type::Tag::Pointer: return Type_Kind::Pointer;
+		case Ast_Type::Tag::Array: return Type_Kind::Array;
+		//@Notice cant tell if type is enum or struct
+		//might need to determine this and store changes into the ast
+		case Ast_Type::Tag::Custom: return Type_Kind::Struct;
+		default: return Type_Kind::Struct;
+	}
 }
 
 bool match_type_info(Type_Info type_a, Type_Info type_b)
