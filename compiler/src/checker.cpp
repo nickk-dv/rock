@@ -197,6 +197,7 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool i
 				{
 					printf("Nested defer blocks are not allowed:\n");
 					debug_print_token(statement->as_defer->token, true, true);
+					printf("\n");
 				}
 				else check_block_cfg(statement->as_defer->block, false, true);
 			} break;
@@ -208,6 +209,7 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool i
 						printf("Break statement inside defer block is not allowed:\n");
 					else printf("Break statement outside a loop:\n");
 					debug_print_token(statement->as_break->token, true, true);
+					printf("\n");
 				}
 				else terminator = Terminator::Break;
 			} break;
@@ -217,6 +219,7 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool i
 				{
 					printf("Defer block cant contain 'return' statements:\n");
 					debug_print_token(statement->as_defer->token, true, true);
+					printf("\n");
 				}
 				else terminator = Terminator::Return;
 			} break;
@@ -228,13 +231,13 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool i
 						printf("Continue statement inside defer block is not allowed:\n");
 					else printf("Continue statement outside a loop:\n");
 					debug_print_token(statement->as_continue->token, true, true);
+					printf("\n");
 				}
 				else terminator = Terminator::Continue;
 			} break;
 			case Ast_Statement::Tag::Proc_Call: break;
 			case Ast_Statement::Tag::Var_Decl: break;
 			case Ast_Statement::Tag::Var_Assign: break;
-			default: break;
 		}
 	}
 
@@ -248,7 +251,8 @@ void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer)
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else::Tag::If) check_if_cfg(_else->as_if, is_loop, is_defer);
+		if (_else->tag == Ast_Else::Tag::If)
+			check_if_cfg(_else->as_if, is_loop, is_defer);
 		else check_block_cfg(_else->as_block, is_loop, is_defer);
 	}
 }
@@ -271,7 +275,6 @@ static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_bl
 			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, bc, statement->as_proc_call); break;
 			case Ast_Statement::Tag::Var_Decl: check_var_decl(ast, bc, statement->as_var_decl); break;
 			case Ast_Statement::Tag::Var_Assign: check_var_assign(ast, bc, statement->as_var_assign); break;
-			default: break;
 		}
 	}
 
@@ -280,12 +283,22 @@ static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_bl
 
 void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if)
 {
+	//@Check expr, must be bool
+	auto type = check_expr(ast, bc, _if->condition_expr);
+	if (!type.has_value() || (!type.value().is_basic || type.value().basic_type != BASIC_TYPE_BOOL))
+	{
+		printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
+		debug_print_token(_if->token, true, true);
+		printf("\n");
+	}
+
 	check_block(ast, bc, _if->block);
 
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else::Tag::If) check_if(ast, bc, _else->as_if);
+		if (_else->tag == Ast_Else::Tag::If)
+			check_if(ast, bc, _else->as_if);
 		else check_block(ast, bc, _else->as_block);
 	}
 }
@@ -295,32 +308,20 @@ void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
 	block_stack_add_block(bc);
 	if (_for->var_decl) check_var_decl(ast, bc, _for->var_decl.value());
 	if (_for->var_assign) check_var_assign(ast, bc, _for->var_assign.value());
+
+	//@Check expr, must be bool
+	if (_for->condition_expr)
+	{
+		auto type = check_expr(ast, bc, _for->condition_expr.value());
+		if (!type.has_value() || (!type.value().is_basic || type.value().basic_type != BASIC_TYPE_BOOL))
+		{
+			printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
+			debug_print_token(_for->token, true, true);
+			printf("\n");
+		}
+	}
+
 	check_block(ast, bc, _for->block, false);
-}
-
-static void check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call)
-{
-	Ast* ast_target = try_import(ast, proc_call->import);
-	if (ast_target == NULL) return;
-	
-	Ast_Ident ident = proc_call->ident;
-	Ast_Proc_Decl* proc_decl = NULL;
-
-	auto proc_meta = ast_target->proc_table.find(ident, hash_ident(ident));
-	if (!proc_meta)
-	{
-		error("Calling undeclared procedure", ident);
-		return;
-	}
-	else
-	{
-		proc_call->proc_id = proc_meta.value().proc_id;
-		proc_decl = proc_meta.value().proc_decl;
-	}
-
-	//@Check input exprs
-	//@Check statement cant discard return type
-	//return the return type
 }
 
 void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
@@ -350,6 +351,161 @@ void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
 	//@Check type
 	//@Check expr
 	//@Check assign op
+}
+
+std::optional<Type_Info> check_expr(Ast* ast, Block_Stack* bc, Ast_Expr* expr)
+{
+	switch (expr->tag)
+	{
+		case Ast_Expr::Tag::Term: return check_term(ast, bc, expr->as_term);
+		case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(ast, bc, expr->as_unary_expr);
+		case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(ast, bc, expr->as_binary_expr);
+		default: return {};
+	}
+}
+
+std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term)
+{
+	switch (term->tag)
+	{
+		case Ast_Term::Tag::Var: return check_var(ast, bc, term->as_var);
+		case Ast_Term::Tag::Enum: return check_enum(ast, bc, term->as_enum);
+		case Ast_Term::Tag::Literal: return check_literal(ast, bc, term->as_literal);
+		case Ast_Term::Tag::Proc_Call: return check_proc_call(ast, bc, term->as_proc_call);
+		default: return {};
+	}
+}
+
+std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
+{
+	return {};
+}
+
+std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum)
+{
+	return {};
+}
+
+std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal literal)
+{
+	//@Todo
+	//handle string literals
+	//handle integer limits and int type which is returned
+
+	switch (literal.token.type)
+	{
+		case TOKEN_BOOL_LITERAL: return Type_Info { true, BASIC_TYPE_BOOL, NULL };
+		case TOKEN_FLOAT_LITERAL: return Type_Info { true, BASIC_TYPE_F64, NULL };
+		case TOKEN_INTEGER_LITERAL: return Type_Info { true, BASIC_TYPE_I32, NULL };
+		default:
+		{
+			printf("Unknown or unsupported literal value:\n");
+			debug_print_token(literal.token, true, true);
+			printf("\n");
+			return {};
+		}
+	}
+}
+
+std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call)
+{
+	Ast* ast_target = try_import(ast, proc_call->import);
+	if (ast_target == NULL) return {};
+
+	Ast_Ident ident = proc_call->ident;
+	Ast_Proc_Decl* proc_decl = NULL;
+
+	auto proc_meta = ast_target->proc_table.find(ident, hash_ident(ident));
+	if (!proc_meta)
+	{
+		error("Calling undeclared procedure", ident);
+		return {};
+	}
+	else
+	{
+		proc_call->proc_id = proc_meta.value().proc_id;
+		proc_decl = proc_meta.value().proc_decl;
+	}
+
+	//@Check input exprs
+	//@Check statement cant discard return type
+	//@Check access
+	//return the return type
+
+	return {};
+}
+
+std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr)
+{
+	auto rhs_result = check_expr(ast, bc, unary_expr->right);
+	if (!rhs_result) return {};
+
+	UnaryOp op = unary_expr->op;
+	Type_Info rhs = rhs_result.value();
+
+	//@Check op semantics
+
+	return {};
+}
+
+std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr)
+{
+	auto lhs_result = check_expr(ast, bc, binary_expr->left);
+	auto rhs_result = check_expr(ast, bc, binary_expr->right);
+	if (!lhs_result) return {};
+	if (!rhs_result) return {};
+
+	BinaryOp op = binary_expr->op;
+	Type_Info lhs = lhs_result.value();
+	Type_Info rhs = rhs_result.value();
+	
+	//@Check op semantics
+
+	return {};
+}
+
+bool match_type_info(Type_Info type_a, Type_Info type_b)
+{
+	bool basic_a = type_a.is_basic;
+	bool basic_b = type_b.is_basic;
+	if (basic_a != basic_b) return false;
+	if (basic_a && type_a.basic_type != type_b.basic_type) return false;
+	return match_type(type_a.type, type_b.type);
+}
+
+bool match_type(Ast_Type* type_a, Ast_Type* type_b)
+{
+	if (type_a->tag != type_b->tag) return false;
+
+	switch (type_a->tag)
+	{
+		case Ast_Type::Tag::Basic:
+		{
+			return type_a->as_basic == type_b->as_basic;
+		} break;
+		case Ast_Type::Tag::Pointer:
+		{
+			return match_type(type_a->as_pointer, type_b->as_pointer);
+		} break;
+		case Ast_Type::Tag::Array:
+		{
+			Ast_Array_Type* array_a = type_a->as_array;
+			Ast_Array_Type* array_b = type_b->as_array;
+			if (array_a->is_dynamic != array_b->is_dynamic) return false;
+			if (array_a->fixed_size != array_b->fixed_size) return false;
+			return match_type(array_a->element_type, array_b->element_type);
+		} break;
+		case Ast_Type::Tag::Custom:
+		{
+			Ast_Custom_Type* custom_a = type_a->as_custom;
+			Ast_Custom_Type* custom_b = type_b->as_custom;
+			bool import_a = custom_a->import.has_value();
+			bool import_b = custom_b->import.has_value();
+			if (import_a != import_b) return false;
+			if (import_a && !match_ident(custom_a->import.value(), custom_b->import.value())) return false; 
+			return match_ident(custom_a->type, custom_b->type);
+		} break;
+	}
 }
 
 void block_stack_reset(Block_Stack* bc)

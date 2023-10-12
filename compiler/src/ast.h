@@ -227,7 +227,7 @@ struct Ast_Term
 {
 	enum class Tag
 	{
-		Var, Enum, Literal, Proc_Call,
+		Var, Enum, Literal, Proc_Call
 	} tag;
 
 	union
@@ -243,7 +243,7 @@ struct Ast_Expr
 {
 	enum class Tag
 	{
-		Term, Unary_Expr, Binary_Expr,
+		Term, Unary_Expr, Binary_Expr
 	} tag;
 
 	union
@@ -277,7 +277,7 @@ struct Ast_Statement
 	enum class Tag
 	{
 		If, For, Block, Defer, Break, Return,
-		Continue, Proc_Call, Var_Decl, Var_Assign,
+		Continue, Var_Decl, Var_Assign, Proc_Call
 	} tag;
 
 	union
@@ -289,9 +289,9 @@ struct Ast_Statement
 		Ast_Break* as_break;
 		Ast_Return* as_return;
 		Ast_Continue* as_continue;
-		Ast_Proc_Call* as_proc_call;
 		Ast_Var_Decl* as_var_decl;
 		Ast_Var_Assign* as_var_assign;
+		Ast_Proc_Call* as_proc_call;
 	};
 
 	//check stage
@@ -312,7 +312,7 @@ struct Ast_Else
 
 	enum class Tag
 	{
-		If, Block,
+		If, Block
 	} tag;
 
 	union
@@ -353,16 +353,6 @@ struct Ast_Continue
 	Token token;
 };
 
-struct Ast_Proc_Call
-{
-	std::optional<Ast_Ident> import;
-	Ast_Ident ident;
-	std::vector<Ast_Expr*> input_exprs;
-	std::optional<Ast_Access*> access;
-	//check stage
-	u64 proc_id;
-};
-
 struct Ast_Var_Decl
 {
 	Ast_Ident ident;
@@ -375,6 +365,16 @@ struct Ast_Var_Assign
 	Ast_Var* var;
 	AssignOp op;
 	Ast_Expr* expr;
+};
+
+struct Ast_Proc_Call
+{
+	std::optional<Ast_Ident> import;
+	Ast_Ident ident;
+	std::vector<Ast_Expr*> input_exprs;
+	std::optional<Ast_Access*> access;
+	//check stage
+	u64 proc_id;
 };
 
 #endif
