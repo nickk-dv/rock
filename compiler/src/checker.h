@@ -29,8 +29,9 @@ static std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Lit
 static std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call);
 static std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr);
 static std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr);
-static Type_Kind type_info_kind(Type_Info type);
-static bool match_type_info(Type_Info type_a, Type_Info type_b);
+static Type_Kind type_info_kind(Type_Info type_info);
+static Type_Info type_info_from_basic(BasicType basic_type);
+static bool match_type_info(Type_Info type_info_a, Type_Info type_info_b);
 static bool match_type(Ast_Type type_a, Ast_Type type_b);
 static void block_stack_reset(Block_Stack* bc);
 static void block_stack_add_block(Block_Stack* bc);
@@ -62,8 +63,7 @@ enum class Type_Kind
 
 struct Type_Info
 {
-	bool is_basic;
-	BasicType basic_type;
+	bool is_var_owned;
 	Ast_Type type;
 };
 

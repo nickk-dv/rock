@@ -26,64 +26,64 @@ Ast* parser_parse(Parser* parser)
 		Token token = peek();
 		switch (token.type)
 		{
-			case TOKEN_IDENT:
+		case TOKEN_IDENT:
+		{
+			if (peek_next(1).type == TOKEN_DOUBLE_COLON)
 			{
-				if (peek_next(1).type == TOKEN_DOUBLE_COLON)
+				switch (peek_next(2).type)
 				{
-					switch (peek_next(2).type)
-					{
-						case TOKEN_KEYWORD_IMPORT:
-						{
-							Ast_Import_Decl* import_decl = parse_import_decl(parser);
-							if (!import_decl) return NULL;
-							ast->imports.emplace_back(import_decl);
-						} break;
-						case TOKEN_KEYWORD_USE:
-						{
-							Ast_Use_Decl* use_decl = parse_use_decl(parser);
-							if (!use_decl) return NULL;
-							ast->uses.emplace_back(use_decl);
-						} break;
-						case TOKEN_KEYWORD_STRUCT:
-						{
-							Ast_Struct_Decl* struct_decl = parse_struct_decl(parser);
-							if (!struct_decl) return NULL;
-							ast->structs.emplace_back(struct_decl);
-						} break;
-						case TOKEN_KEYWORD_ENUM:
-						{
-							Ast_Enum_Decl* enum_decl = parse_enum_decl(parser);
-							if (!enum_decl) return NULL;
-							ast->enums.emplace_back(enum_decl);
-						} break;
-						case TOKEN_PAREN_START:
-						{
-							Ast_Proc_Decl* proc_decl = parse_proc_decl(parser);
-							if (!proc_decl) return NULL;
-							ast->procs.emplace_back(proc_decl);
-						} break;
-						default:
-						{
-							error_next("Expected import, use, struct, enum or procedure declaration", 2);
-							return NULL;
-						}
-					}
-				}
-				else
+				case TOKEN_KEYWORD_IMPORT:
 				{
-					error_next("Expected '::'", 1);
+					Ast_Import_Decl* import_decl = parse_import_decl(parser);
+					if (!import_decl) return NULL;
+					ast->imports.emplace_back(import_decl);
+				} break;
+				case TOKEN_KEYWORD_USE:
+				{
+					Ast_Use_Decl* use_decl = parse_use_decl(parser);
+					if (!use_decl) return NULL;
+					ast->uses.emplace_back(use_decl);
+				} break;
+				case TOKEN_KEYWORD_STRUCT:
+				{
+					Ast_Struct_Decl* struct_decl = parse_struct_decl(parser);
+					if (!struct_decl) return NULL;
+					ast->structs.emplace_back(struct_decl);
+				} break;
+				case TOKEN_KEYWORD_ENUM:
+				{
+					Ast_Enum_Decl* enum_decl = parse_enum_decl(parser);
+					if (!enum_decl) return NULL;
+					ast->enums.emplace_back(enum_decl);
+				} break;
+				case TOKEN_PAREN_START:
+				{
+					Ast_Proc_Decl* proc_decl = parse_proc_decl(parser);
+					if (!proc_decl) return NULL;
+					ast->procs.emplace_back(proc_decl);
+				} break;
+				default:
+				{
+					error_next("Expected import, use, struct, enum or procedure declaration", 2);
 					return NULL;
 				}
-			} break;
-			case TOKEN_EOF: 
-			{ 
-				return ast; 
+				}
 			}
-			default: 
-			{ 
-				error("Expected global declaration identifier"); 
-				return NULL; 
+			else
+			{
+				error_next("Expected '::'", 1);
+				return NULL;
 			}
+		} break;
+		case TOKEN_EOF: 
+		{ 
+			return ast; 
+		}
+		default: 
+		{ 
+			error("Expected global declaration identifier"); 
+			return NULL; 
+		}
 		}
 	}
 
@@ -137,7 +137,7 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
 		Ast_Type type = parse_type(parser);
-		if (type.as_pointer == NULL) return NULL;
+		if (type.as_custom == NULL) return NULL;
 		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type });
 
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -194,7 +194,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
 		Ast_Type type = parse_type(parser);
-		if (type.as_pointer == NULL) return NULL;
+		if (type.as_custom == NULL) return NULL;
 		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(param.value()), type });
 
 		if (!try_consume(TOKEN_COMMA)) break;
@@ -204,7 +204,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
 		Ast_Type type = parse_type(parser);
-		if (type.as_pointer == NULL) return NULL;
+		if (type.as_custom == NULL) return NULL;
 		decl->return_type = type;
 	}
 
@@ -227,6 +227,13 @@ Ast_Type parse_type(Parser* parser)
 	Ast_Type type = {};
 	Token token = peek();
 
+	while (token.type == TOKEN_TIMES)
+	{
+		consume();
+		token = peek();
+		type.pointer_level += 1;
+	}
+
 	BasicType basic_type = token_to_basic_type(token.type);
 	if (basic_type != BASIC_TYPE_ERROR)
 	{
@@ -245,14 +252,6 @@ Ast_Type parse_type(Parser* parser)
 		type.tag = Ast_Type::Tag::Custom;
 		type.as_custom = custom;
 	} break;
-	case TOKEN_TIMES:
-	{
-		consume();
-		Ast_Type* pointer_type = parse_type_ptr(parser);
-		if (!pointer_type) return {};
-		type.tag = Ast_Type::Tag::Pointer;
-		type.as_pointer = pointer_type;
-	} break;
 	case TOKEN_BRACKET_START:
 	{
 		Ast_Array_Type* array = parse_array_type(parser);
@@ -262,57 +261,9 @@ Ast_Type parse_type(Parser* parser)
 	} break;
 	default:
 	{
-		error("Expected basic type, type identifier, pointer or array");
+		error("Expected basic type, type identifier or array type");
 		return {};
 	}
-	}
-
-	return type;
-}
-
-Ast_Type* parse_type_ptr(Parser* parser)
-{
-	Ast_Type* type = parser->arena.alloc<Ast_Type>();
-	Token token = peek();
-
-	BasicType basic_type = token_to_basic_type(token.type);
-	if (basic_type != BASIC_TYPE_ERROR)
-	{
-		consume();
-		type->tag = Ast_Type::Tag::Basic;
-		type->as_basic = basic_type;
-		return type;
-	}
-
-	switch (token.type)
-	{
-		case TOKEN_IDENT:
-		{
-			Ast_Custom_Type* custom = parse_custom_type(parser);
-			if (!custom) return NULL;
-			type->tag = Ast_Type::Tag::Custom;
-			type->as_custom = custom;
-		} break;
-		case TOKEN_TIMES:
-		{
-			consume();
-			Ast_Type* pointer_type = parse_type_ptr(parser);
-			if (!pointer_type) return NULL;
-			type->tag = Ast_Type::Tag::Pointer;
-			type->as_pointer = pointer_type;
-		} break;
-		case TOKEN_BRACKET_START:
-		{
-			Ast_Array_Type* array = parse_array_type(parser);
-			if (!array) return NULL;
-			type->tag = Ast_Type::Tag::Array;
-			type->as_array = array;
-		} break;
-		default:
-		{
-			error("Expected basic type, type identifier, pointer or array");
-			return NULL;
-		}
 	}
 
 	return type;
@@ -337,7 +288,7 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
 
 	Ast_Type type = parse_type(parser);
-	if (type.as_pointer == NULL) return NULL;
+	if (type.as_custom == NULL) return NULL;
 	array->element_type = type;
 
 	return array;
@@ -469,51 +420,51 @@ Ast_Term* parse_term(Parser* parser)
 
 	switch (token.type)
 	{
-		case TOKEN_BOOL_LITERAL:
-		case TOKEN_FLOAT_LITERAL:
-		case TOKEN_INTEGER_LITERAL:
-		case TOKEN_STRING_LITERAL:
-		{
-			term->tag = Ast_Term::Tag::Literal;
-			term->as_literal = Ast_Literal { token };
-			consume();
-		} break;
-		case TOKEN_IDENT:
-		{
-			Token next = peek_next(1);
-			Token next_2 = peek_next(2);
-			Token next_3 = peek_next(3);
-			bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
-			bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
-			bool import_enum = import_prefix && next_3.type == TOKEN_DOUBLE_COLON;
+	case TOKEN_BOOL_LITERAL:
+	case TOKEN_FLOAT_LITERAL:
+	case TOKEN_INTEGER_LITERAL:
+	case TOKEN_STRING_LITERAL:
+	{
+		term->tag = Ast_Term::Tag::Literal;
+		term->as_literal = Ast_Literal { token };
+		consume();
+	} break;
+	case TOKEN_IDENT:
+	{
+		Token next = peek_next(1);
+		Token next_2 = peek_next(2);
+		Token next_3 = peek_next(3);
+		bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
+		bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
+		bool import_enum = import_prefix && next_3.type == TOKEN_DOUBLE_COLON;
 
-			if (next.type == TOKEN_PAREN_START || import_proc_call)
-			{
-				Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
-				if (!proc_call) return NULL;
-				term->tag = Ast_Term::Tag::Proc_Call;
-				term->as_proc_call = proc_call;
-			}
-			else if (next.type == TOKEN_DOUBLE_COLON || import_enum)
-			{
-				Ast_Enum* _enum = parse_enum(parser, import_enum);
-				if (!_enum) return NULL;
-				term->tag = Ast_Term::Tag::Enum;
-				term->as_enum = _enum;
-			}
-			else
-			{
-				Ast_Var* var = parse_var(parser);
-				if (!var) return NULL;
-				term->tag = Ast_Term::Tag::Var;
-				term->as_var = var;
-			}
-		} break;
-		default:
+		if (next.type == TOKEN_PAREN_START || import_proc_call)
 		{
-			error("Expected a valid expression term");
-			return NULL;
+			Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
+			if (!proc_call) return NULL;
+			term->tag = Ast_Term::Tag::Proc_Call;
+			term->as_proc_call = proc_call;
 		}
+		else if (next.type == TOKEN_DOUBLE_COLON || import_enum)
+		{
+			Ast_Enum* _enum = parse_enum(parser, import_enum);
+			if (!_enum) return NULL;
+			term->tag = Ast_Term::Tag::Enum;
+			term->as_enum = _enum;
+		}
+		else
+		{
+			Ast_Var* var = parse_var(parser);
+			if (!var) return NULL;
+			term->tag = Ast_Term::Tag::Var;
+			term->as_var = var;
+		}
+	} break;
+	default:
+	{
+		error("Expected a valid expression term");
+		return NULL;
+	}
 	}
 
 	return term;
@@ -627,81 +578,81 @@ Ast_Statement* parse_statement(Parser* parser)
 
 	switch (token.type)
 	{
-		case TOKEN_KEYWORD_IF:
-		{
-			statement->tag = Ast_Statement::Tag::If;
-			statement->as_if = parse_if(parser);
-			if (!statement->as_if) return NULL;
-		} break;
-		case TOKEN_KEYWORD_FOR:
-		{
-			statement->tag = Ast_Statement::Tag::For;
-			statement->as_for = parse_for(parser);
-			if (!statement->as_for) return NULL;
-		} break;
-		case TOKEN_BLOCK_START:
-		{
-			statement->tag = Ast_Statement::Tag::Block;
-			statement->as_block = parse_block(parser);
-			if (!statement->as_block) return NULL;
-		} break;
-		case TOKEN_KEYWORD_DEFER:
-		{
-			statement->tag = Ast_Statement::Tag::Defer;
-			statement->as_defer = parse_defer(parser);
-			if (!statement->as_defer) return NULL;
-		} break;
-		case TOKEN_KEYWORD_BREAK:
-		{
-			statement->tag = Ast_Statement::Tag::Break;
-			statement->as_break = parse_break(parser);
-			if (!statement->as_break) return NULL;
-		} break;
-		case TOKEN_KEYWORD_RETURN:
-		{
-			statement->tag = Ast_Statement::Tag::Return;
-			statement->as_return = parse_return(parser);
-			if (!statement->as_return) return NULL;
-		} break;
-		case TOKEN_KEYWORD_CONTINUE:
-		{
-			statement->tag = Ast_Statement::Tag::Continue;
-			statement->as_continue = parse_continue(parser);
-			if (!statement->as_continue) return NULL;
-		} break;
-		case TOKEN_IDENT:
-		{
-			Token next = peek_next(1);
-			Token next_2 = peek_next(2);
-			Token next_3 = peek_next(3);
-			bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
-			bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
+	case TOKEN_KEYWORD_IF:
+	{
+		statement->tag = Ast_Statement::Tag::If;
+		statement->as_if = parse_if(parser);
+		if (!statement->as_if) return NULL;
+	} break;
+	case TOKEN_KEYWORD_FOR:
+	{
+		statement->tag = Ast_Statement::Tag::For;
+		statement->as_for = parse_for(parser);
+		if (!statement->as_for) return NULL;
+	} break;
+	case TOKEN_BLOCK_START:
+	{
+		statement->tag = Ast_Statement::Tag::Block;
+		statement->as_block = parse_block(parser);
+		if (!statement->as_block) return NULL;
+	} break;
+	case TOKEN_KEYWORD_DEFER:
+	{
+		statement->tag = Ast_Statement::Tag::Defer;
+		statement->as_defer = parse_defer(parser);
+		if (!statement->as_defer) return NULL;
+	} break;
+	case TOKEN_KEYWORD_BREAK:
+	{
+		statement->tag = Ast_Statement::Tag::Break;
+		statement->as_break = parse_break(parser);
+		if (!statement->as_break) return NULL;
+	} break;
+	case TOKEN_KEYWORD_RETURN:
+	{
+		statement->tag = Ast_Statement::Tag::Return;
+		statement->as_return = parse_return(parser);
+		if (!statement->as_return) return NULL;
+	} break;
+	case TOKEN_KEYWORD_CONTINUE:
+	{
+		statement->tag = Ast_Statement::Tag::Continue;
+		statement->as_continue = parse_continue(parser);
+		if (!statement->as_continue) return NULL;
+	} break;
+	case TOKEN_IDENT:
+	{
+		Token next = peek_next(1);
+		Token next_2 = peek_next(2);
+		Token next_3 = peek_next(3);
+		bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
+		bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
 			
-			if (next.type == TOKEN_PAREN_START || import_proc_call)
-			{
-				statement->tag = Ast_Statement::Tag::Proc_Call;
-				statement->as_proc_call = parse_proc_call(parser, import_proc_call);
-				if (!statement->as_proc_call) return NULL;
-				if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after procedure call"); return NULL; }
-			}
-			else if (next.type == TOKEN_COLON)
-			{
-				statement->tag = Ast_Statement::Tag::Var_Decl;
-				statement->as_var_decl = parse_var_decl(parser);
-				if (!statement->as_var_decl) return NULL;
-			}
-			else
-			{
-				statement->tag = Ast_Statement::Tag::Var_Assign;
-				statement->as_var_assign = parse_var_assign(parser);
-				if (!statement->as_var_assign) return NULL;
-			}
-		} break;
-		default: 
-		{ 
-			error("Expected valid statement or '}' after code block"); 
-			return NULL; 
+		if (next.type == TOKEN_PAREN_START || import_proc_call)
+		{
+			statement->tag = Ast_Statement::Tag::Proc_Call;
+			statement->as_proc_call = parse_proc_call(parser, import_proc_call);
+			if (!statement->as_proc_call) return NULL;
+			if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after procedure call"); return NULL; }
 		}
+		else if (next.type == TOKEN_COLON)
+		{
+			statement->tag = Ast_Statement::Tag::Var_Decl;
+			statement->as_var_decl = parse_var_decl(parser);
+			if (!statement->as_var_decl) return NULL;
+		}
+		else
+		{
+			statement->tag = Ast_Statement::Tag::Var_Assign;
+			statement->as_var_assign = parse_var_assign(parser);
+			if (!statement->as_var_assign) return NULL;
+		}
+	} break;
+	default: 
+	{ 
+		error("Expected valid statement or '}' after code block"); 
+		return NULL; 
+	}
 	}
 	
 	return statement;
@@ -883,7 +834,7 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 	if (!infer_type)
 	{
 		Ast_Type type = parse_type(parser);
-		if (type.as_pointer == NULL) return NULL;
+		if (type.as_custom == NULL) return NULL;
 		var_decl->type = type;
 
 		if (try_consume(TOKEN_SEMICOLON)) return var_decl;

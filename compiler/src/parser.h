@@ -16,7 +16,6 @@ static Ast_Struct_Decl* parse_struct_decl(Parser* parser);
 static Ast_Enum_Decl* parse_enum_decl(Parser* parser);
 static Ast_Proc_Decl* parse_proc_decl(Parser* parser);
 static Ast_Type parse_type(Parser* parser);
-static Ast_Type* parse_type_ptr(Parser* parser);
 static Ast_Array_Type* parse_array_type(Parser* parser);
 static Ast_Custom_Type* parse_custom_type(Parser* parser);
 static Ast_Var* parse_var(Parser* parser);

@@ -310,6 +310,7 @@ void LLVM_IR_Builder::build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc
 		{
 			debug_print_llvm_type("Expected", var_type.type);
 			debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
+			debug_print_var_decl(var_decl, 0);
 			error_exit("type mismatch in variable declaration");
 		}
 		LLVMBuildStore(builder, expr_value, var_ptr);
@@ -615,6 +616,12 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type type)
 {
 	LLVMTypeRef type_ref = NULL;
 
+	if (type.pointer_level > 0)
+	{
+		type_ref = LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
+		return Type_Meta { type_ref, false, NULL, true, type };
+	}
+
 	switch (type.tag)
 	{
 	case Ast_Type::Tag::Basic:
@@ -626,29 +633,24 @@ Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type type)
 		auto struct_meta = struct_decl_map.find(type.as_custom->type.str, hash_fnv1a_32(type.as_custom->type.str));
 		if (struct_meta)
 		{
-			return Type_Meta{ struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, {} };
+			return Type_Meta { struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, {} };
 		}
 		
 		auto enum_meta = enum_decl_map.find(type.as_custom->type.str, hash_fnv1a_32(type.as_custom->type.str));
 		if (enum_meta)
 		{
-			return Type_Meta{ enum_meta.value().variant_type, false, NULL, false, {} };
+			return Type_Meta { enum_meta.value().variant_type, false, NULL, false, {} };
 		}
 		error_exit("get_type_meta: custom type not found");
-	} break;
-	case Ast_Type::Tag::Pointer:
-	{
-		type_ref = LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
-		return Type_Meta{ type_ref, false, NULL, true, *type.as_pointer };
 	} break;
 	case Ast_Type::Tag::Array:
 	{
 		error_exit("get_type_meta: arrays not supported");
-		return Type_Meta{};
+		return Type_Meta {};
 	} break;
 	}
 
-	return Type_Meta{ type_ref, false, NULL, false, {} };
+	return Type_Meta { type_ref, false, NULL, false, {} };
 }
 
 //@Notice enums are threated like values of their basic type,
@@ -690,7 +692,7 @@ Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Sco
 	Var_Meta var_meta = bc->find_var(var->ident.str);
 	LLVMValueRef ptr = var_meta.var_value;
 	Type_Meta type_meta = var_meta.type_meta;
-
+	
 	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
 	while (access != NULL)
 	{
@@ -700,8 +702,15 @@ Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Sco
 			
 			Ast_Array_Access* array_access = access->as_array;
 			
+			//@Notice not checked to be integer value, maybe llvm checks it during validation
 			LLVMValueRef index_value = build_expr_value(array_access->index_expr, bc);
 			type_meta = get_type_meta(type_meta.pointer_ast_type);
+			
+			//@Notice new decrementing pointer level + retaking type meta
+			type_meta.pointer_ast_type.pointer_level -= 1;
+			if (type_meta.pointer_ast_type.pointer_level == 0)
+			type_meta = get_type_meta(type_meta.pointer_ast_type);
+
 			ptr = LLVMBuildGEP2(builder, type_meta.type, ptr, &index_value, 1, "array_access_ptr");
 
 			access = array_access->next.has_value() ? array_access->next.value() : NULL;

@@ -321,10 +321,14 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 
 void debug_print_type(Ast_Type type)
 {
+	for (u32 i = 0; i < type.pointer_level; i += 1)
+	{
+		printf("*");
+	}
+
 	switch (type.tag)
 	{
 		case Ast_Type::Tag::Basic: debug_print_basic_type(type.as_basic); break;
-		case Ast_Type::Tag::Pointer: { printf("*"); debug_print_type(*type.as_pointer); } break;
 		case Ast_Type::Tag::Array: debug_print_array_type(type.as_array); break;
 		case Ast_Type::Tag::Custom: debug_print_custom_type(type.as_custom); break;
 	}

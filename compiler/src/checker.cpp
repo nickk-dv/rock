@@ -285,7 +285,7 @@ void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if)
 {
 	//@Check expr, must be bool
 	auto type = check_expr(ast, bc, _if->condition_expr);
-	if (!type.has_value() || (!type.value().is_basic || type.value().basic_type != BASIC_TYPE_BOOL))
+	if (!type.has_value() || type_info_kind(type.value()) == Type_Kind::Bool)
 	{
 		printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
 		debug_print_token(_if->token, true, true);
@@ -313,7 +313,7 @@ void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
 	if (_for->condition_expr)
 	{
 		auto type = check_expr(ast, bc, _for->condition_expr.value());
-		if (!type.has_value() || (!type.value().is_basic || type.value().basic_type != BASIC_TYPE_BOOL))
+		if (!type.has_value() || type_info_kind(type.value()) == Type_Kind::Bool)
 		{
 			printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
 			debug_print_token(_for->token, true, true);
@@ -414,9 +414,9 @@ std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal li
 
 	switch (literal.token.type)
 	{
-		case TOKEN_BOOL_LITERAL: return Type_Info { true, BASIC_TYPE_BOOL, {} };
-		case TOKEN_FLOAT_LITERAL: return Type_Info { true, BASIC_TYPE_F64, {} };
-		case TOKEN_INTEGER_LITERAL: return Type_Info { true, BASIC_TYPE_I32, {} };
+		case TOKEN_BOOL_LITERAL: return type_info_from_basic(BASIC_TYPE_BOOL);
+		case TOKEN_FLOAT_LITERAL: return type_info_from_basic(BASIC_TYPE_F64);
+		case TOKEN_INTEGER_LITERAL: return type_info_from_basic(BASIC_TYPE_I32);
 		default:
 		{
 			printf("Unknown or unsupported literal value:\n");
@@ -530,7 +530,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_LOGIC_AND:
 	case BINARY_OP_LOGIC_OR:
 	{
-		if (lhs_kind == Type_Kind::Bool) return Type_Info{ true, BASIC_TYPE_BOOL, {} };
+		if (lhs_kind == Type_Kind::Bool) return type_info_from_basic(BASIC_TYPE_BOOL);
 		printf("Exprected bool operands in binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
@@ -544,7 +544,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_IS_EQUALS:
 	case BINARY_OP_NOT_EQUALS:
 	{
-		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return Type_Info{ true, BASIC_TYPE_BOOL, {} };
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return type_info_from_basic(BASIC_TYPE_BOOL);
 		printf("Exprected float or int in comparison binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
@@ -587,53 +587,58 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	}
 }
 
-Type_Kind type_info_kind(Type_Info type)
+Type_Kind type_info_kind(Type_Info type_info)
 {
-	if (type.is_basic)
+	if (type_info.type.pointer_level > 0) return Type_Kind::Pointer;
+
+	switch (type_info.type.tag)
 	{
-		switch (type.basic_type)
+	case Ast_Type::Tag::Basic:
+	{
+		switch (type_info.type.as_basic)
 		{
-			case BASIC_TYPE_I8:
-			case BASIC_TYPE_U8:
-			case BASIC_TYPE_I16:
-			case BASIC_TYPE_U16:
-			case BASIC_TYPE_I32:
-			case BASIC_TYPE_U32:
-			case BASIC_TYPE_I64:
-			case BASIC_TYPE_U64:
-				return Type_Kind::Integer;
-			case BASIC_TYPE_F32:
-			case BASIC_TYPE_F64:
-				return Type_Kind::Float;
-			case BASIC_TYPE_BOOL:
-				return Type_Kind::Bool;
-			case BASIC_TYPE_STRING:
-				return Type_Kind::String;
+		case BASIC_TYPE_I8:
+		case BASIC_TYPE_U8:
+		case BASIC_TYPE_I16:
+		case BASIC_TYPE_U16:
+		case BASIC_TYPE_I32:
+		case BASIC_TYPE_U32:
+		case BASIC_TYPE_I64:
+		case BASIC_TYPE_U64:
+			return Type_Kind::Integer;
+		case BASIC_TYPE_F32:
+		case BASIC_TYPE_F64:
+			return Type_Kind::Float;
+		case BASIC_TYPE_BOOL:
+			return Type_Kind::Bool;
+		case BASIC_TYPE_STRING:
+			return Type_Kind::String;
 		}
 	}
-
-	switch (type.type.tag)
-	{
-		case Ast_Type::Tag::Pointer: return Type_Kind::Pointer;
-		case Ast_Type::Tag::Array: return Type_Kind::Array;
-		//@Notice cant tell if type is enum or struct
-		//might need to determine this and store changes into the ast
-		case Ast_Type::Tag::Custom: return Type_Kind::Struct;
-		default: return Type_Kind::Struct;
+	case Ast_Type::Tag::Array: return Type_Kind::Array;
+	//@Notice cant tell if type is enum or struct
+	//might need to determine this and store changes into the ast
+	case Ast_Type::Tag::Custom: return Type_Kind::Struct;
+	default: return Type_Kind::Struct;
 	}
 }
 
-bool match_type_info(Type_Info type_a, Type_Info type_b)
+Type_Info type_info_from_basic(BasicType basic_type)
 {
-	bool basic_a = type_a.is_basic;
-	bool basic_b = type_b.is_basic;
-	if (basic_a != basic_b) return false;
-	if (basic_a && type_a.basic_type != type_b.basic_type) return false;
-	return match_type(type_a.type, type_b.type);
+	Ast_Type type = {};
+	type.tag = Ast_Type::Tag::Basic;
+	type.as_basic = basic_type;
+	return Type_Info { false, type };
+}
+
+bool match_type_info(Type_Info type_info_a, Type_Info type_info_b)
+{
+	return match_type(type_info_a.type, type_info_b.type);
 }
 
 bool match_type(Ast_Type type_a, Ast_Type type_b)
 {
+	if (type_a.pointer_level != type_b.pointer_level) return false;
 	if (type_a.tag != type_b.tag) return false;
 
 	switch (type_a.tag)
@@ -641,10 +646,6 @@ bool match_type(Ast_Type type_a, Ast_Type type_b)
 		case Ast_Type::Tag::Basic:
 		{
 			return type_a.as_basic == type_b.as_basic;
-		} break;
-		case Ast_Type::Tag::Pointer:
-		{
-			return match_type(*type_a.as_pointer, *type_b.as_pointer);
 		} break;
 		case Ast_Type::Tag::Array:
 		{

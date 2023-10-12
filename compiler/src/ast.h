@@ -133,20 +133,36 @@ struct Ast_Enum_Decl
 	std::vector<Ast_Ident_Literal_Pair> variants;
 };
 
+//types need to allow:
+//1. apply pointerness -> using & op
+//2. create a new ones representing basic types
+//3 arrays -> element type is value -> no problem
+
+/*
+array
+_
+3 pointer
+of array
+_
+1 pointer
+of baseq / custom
+*/
+
 struct Ast_Type
 {
 	enum class Tag
 	{
-		Basic, Pointer, Array, Custom
+		Basic, Array, Custom
 	} tag;
 
 	union
 	{
 		BasicType as_basic;
-		Ast_Type* as_pointer;
 		Ast_Array_Type* as_array;
 		Ast_Custom_Type* as_custom;
 	};
+
+	u32 pointer_level = 0;
 };
 
 struct Ast_Proc_Decl
