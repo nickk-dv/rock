@@ -163,7 +163,7 @@ int cmd_build(char* filepath)
 		ast->proc_id_start = proc_id_start;
 		
 		printf("file: %s\n", module.c_str());
-		if(!check_declarations(ast, &program, modules)) check = false;
+		if(!check_decl_uniqueness(ast, &program, modules)) check = false;
 		
 		struct_id_start += ast->structs.size();
 		enum_id_start += ast->enums.size();
@@ -183,6 +183,12 @@ int cmd_build(char* filepath)
 	{
 		printf("proc:   %llu - ", i);
 		debug_print_ident(program.procedures[i].proc_decl->ident, true, false);
+	}
+	if (!check) return 1;
+
+	for (const auto& [module, ast] : modules)
+	{
+		if (!check_decls(ast)) check = false;
 	}
 	if (!check) return 1;
 

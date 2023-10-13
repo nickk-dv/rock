@@ -11,9 +11,13 @@ struct Type_Info;
 struct Var_Info;
 struct Block_Stack;
 
-bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules);
+bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules);
+bool check_decls(Ast* ast);
 bool check_ast(Ast* ast, Ast_Program* program);
 
+static bool check_struct_decl(Ast* ast, Ast_Struct_Decl* struct_decl);
+static bool check_enum_decl(Ast* ast, Ast_Enum_Decl* enum_decl);
+static bool check_proc_decl(Ast* ast, Ast_Proc_Decl* proc_decl);
 static Ast* try_import(Ast* ast, std::optional<Ast_Ident> import);
 static std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident);
 static std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident);
@@ -26,6 +30,7 @@ static void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if);
 static void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for);
 static void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl);
 static void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign);
+static std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type);
 static std::optional<Type_Info> check_expr(Ast* ast, Block_Stack* bc, Ast_Expr* expr);
 static std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term);
 static std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var);

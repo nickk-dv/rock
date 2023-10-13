@@ -143,7 +143,7 @@ void debug_print_unary_op(UnaryOp op)
 	{
 		case UNARY_OP_MINUS: printf("-"); break;
 		case UNARY_OP_LOGIC_NOT: printf("!"); break;
-		case UNARY_OP_ADRESS_OF: printf("&"); break;
+		case UNARY_OP_ADDRESS_OF: printf("&"); break;
 		case UNARY_OP_BITWISE_NOT: printf("~"); break;
 		default: printf("[UNKNOWN UNARY OP]"); break;
 	}

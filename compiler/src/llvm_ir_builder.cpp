@@ -382,7 +382,7 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
 		UnaryOp op = unary_expr->op;
 
-		LLVMValueRef rhs = build_expr_value(unary_expr->right, bc, op == UNARY_OP_ADRESS_OF);
+		LLVMValueRef rhs = build_expr_value(unary_expr->right, bc, op == UNARY_OP_ADDRESS_OF);
 		LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
 		bool int_kind = type_is_int(rhs_type);
 		bool bool_kind = type_is_bool(rhs_type);
@@ -404,7 +404,7 @@ LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* 
 			if (bool_kind) value_ref = LLVMBuildNot(builder, rhs, "utmp");
 			else error_exit("unary_expr ! expected bool");
 		} break;
-		case UNARY_OP_ADRESS_OF:
+		case UNARY_OP_ADDRESS_OF:
 		{
 			if (pointer_kind) value_ref = rhs;
 			else error_exit("unary_expr & expected pointer value");

@@ -2,7 +2,13 @@
 
 #include "debug_printer.h"
 
-bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
+//@Design currently checking is split into 3 stages
+// 1. import paths & decl uniqueness checks
+// 2. decl signature validity checks
+// 3. proc block cfg & type and other semantics checks 
+
+//@Perf general issues with re-hashing Ast_Ident every time
+bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 {
 	bool passed = true;
 	
@@ -18,6 +24,20 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->import_table.add(ident, decl, hash_ident(ident)); }
 		else { error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); passed = false; }
+	}
+
+	for (Ast_Import_Decl* decl : ast->imports)
+	{
+		if (modules.find(decl->file_path.token.string_literal_value) != modules.end())
+		{
+			Ast* import_ast = modules.at(decl->file_path.token.string_literal_value);
+			decl->import_ast = import_ast;
+		}
+		else
+		{
+			error("Import path not found", decl->alias);
+			passed = false;
+		}
 	}
 
 	for (Ast_Use_Decl* decl : ast->uses)
@@ -82,20 +102,6 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		proc_count += 1;
 	}
 
-	for (Ast_Import_Decl* decl : ast->imports)
-	{
-		if (modules.find(decl->file_path.token.string_literal_value) != modules.end())
-		{
-			Ast* import_ast = modules.at(decl->file_path.token.string_literal_value);
-			decl->import_ast = import_ast;
-		}
-		else
-		{
-			error("Import path not found", decl->alias);
-			passed = false;
-		}
-	}
-
 	//@Low priority
 	//@Rule todo: cant import same thing under multiple names
 	//@Rule todo: cant import same type or procedure under multiple names
@@ -103,22 +109,22 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 	return passed;
 }
 
-bool check_ast(Ast* ast, Ast_Program* program)
+bool check_decls(Ast* ast)
 {
 	bool passed = true;
-	
+
 	// Find and add use symbols to current scope
-	for (Ast_Use_Decl* decl : ast->uses)
+	for (Ast_Use_Decl* use_decl : ast->uses)
 	{
-		Ast* import_ast = try_import(ast, { decl->import });
+		Ast* import_ast = try_import(ast, { use_decl->import });
 		if (import_ast == NULL)
 		{
 			passed = false;
 			continue;
 		}
 
-		Ast_Ident alias = decl->alias;
-		Ast_Ident symbol = decl->symbol;
+		Ast_Ident alias = use_decl->alias;
+		Ast_Ident symbol = use_decl->symbol;
 		auto struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
 		if (struct_decl) { ast->struct_table.add(alias, struct_decl.value(), hash_ident(alias)); continue; }
 		auto enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
@@ -126,10 +132,32 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		auto proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
 		if (proc_decl) { ast->proc_table.add(alias, proc_decl.value(), hash_ident(alias)); continue; }
 
-		error("Use symbol isnt found in imported namespace", symbol); //@Improve error
+		error("Use symbol isnt found in imported namespace", symbol);
 		passed = false;
 	}
 
+	for (Ast_Struct_Decl* struct_decl : ast->structs)
+	{
+		if (!check_struct_decl(ast, struct_decl)) passed = false;
+	}
+
+	for (Ast_Enum_Decl* enum_decl : ast->enums)
+	{
+		if (!check_enum_decl(ast, enum_decl)) passed = false;
+	}
+
+	for (Ast_Proc_Decl* proc_decl : ast->procs)
+	{
+		if (!check_proc_decl(ast, proc_decl)) passed = false;
+	}
+
+	return passed;
+}
+
+bool check_ast(Ast* ast, Ast_Program* program)
+{
+	bool passed = true;
+	
 	Block_Stack bc = {};
 	//@Notice not setting passed flag in checks
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
@@ -146,7 +174,7 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		block_stack_add_block(&bc);
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
-			//@Check validate type even if already contains
+			//@Notice input params are checked at declaration check stage
 			Type_Info type_info = Type_Info { true, param.type };
 			
 			if (block_stack_contains_var(&bc, param.ident))
@@ -161,7 +189,61 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		check_block(ast, &bc, proc_decl->block, false);
 	}
 
-	return true;
+	return passed;
+}
+
+bool check_struct_decl(Ast* ast, Ast_Struct_Decl* struct_decl)
+{
+	bool passed = true;
+	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf possibly move out from function and re-use hash_set with reset()
+
+	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
+	{
+		auto name = name_set.find_key(field.ident, hash_ident(field.ident));
+		if (!name) name_set.add(field.ident, hash_ident(field.ident));
+		else { error("Duplicate struct field identifier", field.ident); passed = false; }
+
+		if (!check_type(ast, &field.type)) passed = false;
+	}
+
+	return passed;
+}
+
+bool check_enum_decl(Ast* ast, Ast_Enum_Decl* enum_decl)
+{
+	bool passed = true;
+	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
+
+	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
+	{
+		auto name = name_set.find_key(variant.ident, hash_ident(variant.ident));
+		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
+		else { error("Duplicate enum variant identifier", variant.ident); passed = false; }
+	}
+
+	return passed;
+}
+
+bool check_proc_decl(Ast* ast, Ast_Proc_Decl* proc_decl)
+{
+	bool passed = true;
+	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
+
+	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+	{
+		auto name = name_set.find_key(param.ident, hash_ident(param.ident));
+		if (!name) name_set.add(param.ident, hash_ident(param.ident));
+		else { error("Duplicate procedure input parameter identifier", param.ident); passed = false; }
+		
+		if (!check_type(ast, &param.type)) passed = false;
+	}
+
+	if (proc_decl->return_type)
+	{
+		if (!check_type(ast, &proc_decl->return_type.value())) passed = false;
+	}
+
+	return passed;
 }
 
 Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
@@ -175,6 +257,7 @@ Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
 		error("Import module not found", import_ident);
 		return NULL;
 	}
+
 	return import_decl.value()->import_ast;
 }
 
@@ -325,7 +408,6 @@ static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_bl
 
 void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if)
 {
-	//@Check expr, must be bool
 	auto type = check_expr(ast, bc, _if->condition_expr);
 	if (!type.has_value() || type_info_kind(type.value()) != Type_Kind::Bool)
 	{
@@ -351,7 +433,6 @@ void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
 	if (_for->var_decl) check_var_decl(ast, bc, _for->var_decl.value());
 	if (_for->var_assign) check_var_assign(ast, bc, _for->var_assign.value());
 
-	//@Check expr, must be bool
 	if (_for->condition_expr)
 	{
 		auto type = check_expr(ast, bc, _for->condition_expr.value());
@@ -379,13 +460,12 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 
 	if (var_decl->type)
 	{
-		Ast_Type type = var_decl->type.value();
-		//@Check type signature
+		auto type = check_type(ast, &var_decl->type.value());
 		
 		if (var_decl->expr)
 		{
 			auto expr_type = check_expr(ast, bc, var_decl->expr.value());
-			if (expr_type && !match_type(type, expr_type.value().type))
+			if (type && expr_type && !match_type_info(type.value(), expr_type.value()))
 			{
 				error("Type mismatch in variable declaration [not printing types yet]", var_decl->ident);
 				debug_print_var_decl(var_decl, 0);
@@ -393,12 +473,10 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 			}
 		}
 		
-		//@Error handling
-		// even when expr type is broken or types dont match
-		// variable is added to the stack to be type checked in later exprs
-		if (is_valid_decl)
+		// adding var to the stack, even when expr type is not valid
+		if (is_valid_decl && type)
 		{
-			Type_Info type_info = Type_Info { true, type };
+			Type_Info type_info = type.value();
 			block_stack_add_var(bc, ident, type_info);
 		}
 	}
@@ -409,10 +487,8 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 
 		var_decl->type = expr_type.value().type;
 
-		//@Error handling
-		// not adding variable to the stack in case of error in inferred type
-		// this might raise undeclared variable errors on later uses
-		// it might be fixed by something like flagging system for broken variables
+		// @Errors this might produce "var not found" error in later checks, might be solved by flagging
+		// not adding var to the stack, when inferred type is not valid
 		if (is_valid_decl)
 		{
 			Type_Info type_info = Type_Info { true, expr_type.value().type };
@@ -439,6 +515,58 @@ void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
 		printf("Check var assign: type missmatch in variable assignment\n");
 		debug_print_var_assign(var_assign, 0);
 		printf("\n");
+	}
+}
+
+std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
+{
+	switch (type->tag)
+	{
+		case Ast_Type::Tag::Basic:
+		{
+			return Type_Info { false, *type };
+		}
+		case Ast_Type::Tag::Array:
+		{
+			auto element_type = check_type(ast, &type->as_array->element_type);
+			if (!element_type) return {};
+			return Type_Info { false, *type };
+		}
+		case Ast_Type::Tag::Custom:
+		{
+			Ast* target_ast = try_import(ast, type->as_custom->import);
+			if (target_ast == NULL) return {};
+
+			auto struct_meta = find_struct(target_ast, type->as_custom->type);
+			if (struct_meta)
+			{
+				type->tag = Ast_Type::Tag::Struct;
+				type->as_struct.struct_id = struct_meta.value().struct_id;
+				return Type_Info { false, *type };
+			}
+
+			auto enum_meta = find_enum(target_ast, type->as_custom->type);
+			if (enum_meta)
+			{
+				type->tag = Ast_Type::Tag::Enum;
+				type->as_enum.enum_id = enum_meta.value().enum_id;
+				return Type_Info { false, *type };
+			}
+
+			printf("Failed to find the custom type: ");
+			debug_print_custom_type(type->as_custom);
+			printf("\n");
+			debug_print_ident(type->as_custom->type);
+			printf("\n");
+			return {};
+		}
+		default:
+		{
+			printf("check_type: Unexpected Ast_Type::Tag, this should never happen!");
+			debug_print_type(*type);
+			printf("\n");
+			return {};
+		}
 	}
 }
 
@@ -487,11 +615,11 @@ std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
 
 std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum)
 {
-	Ast* ast_target = try_import(ast, _enum->import);
-	if (ast_target == NULL) return {};
+	Ast* target_ast = try_import(ast, _enum->import);
+	if (target_ast == NULL) return {};
 	
 	// return none type if enum wasnt found
-	auto enum_meta = find_enum(ast_target, _enum->type);
+	auto enum_meta = find_enum(target_ast, _enum->type);
 	if (!enum_meta) { error("Accessing undeclared enum", _enum->type); return {}; }
 	Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
 	_enum->enum_id = enum_meta.value().enum_id;
@@ -530,12 +658,12 @@ std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal li
 
 std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call)
 {
-	Ast* ast_target = try_import(ast, proc_call->import);
-	if (ast_target == NULL) return {};
+	Ast* target_ast = try_import(ast, proc_call->import);
+	if (target_ast == NULL) return {};
 	
 	// find procedure
 	Ast_Ident ident = proc_call->ident;
-	auto proc_meta = find_proc(ast_target, ident);
+	auto proc_meta = find_proc(target_ast, ident);
 	if (!proc_meta) { error("Calling undeclared procedure", ident); return {}; }
 	// @Todo proc_decl cant be null ?
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
@@ -575,7 +703,8 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 	{
 		if (proc_decl->return_type)
 		{
-			//@Check type signature
+			//@Notice type might be broken due to check of proc decl failing
+			// flagging of broken types or addding check stage for declarations is the solution
 			return Type_Info { false, proc_decl->return_type.value() };
 		}
 		else return {}; //@Notice void type is threated like error type, might change this
@@ -606,11 +735,11 @@ std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_E
 		printf("Cannot apply unary op '!' to non bool type\n\n");
 		return {};
 	} break;
-	case UNARY_OP_ADRESS_OF:
+	case UNARY_OP_ADDRESS_OF:
 	{
 		if (!rhs.is_var_owned)
 		{
-			printf("Cannot take adress of temporary value, use '&' with variables\n");
+			printf("Cannot take address of temporary value, use '&' with variables\n");
 			debug_print_unary_expr(unary_expr, 0);
 			printf("\n");
 			return {};
@@ -777,10 +906,9 @@ bool match_type(Ast_Type type_a, Ast_Type type_b)
 
 	switch (type_a.tag)
 	{
-		case Ast_Type::Tag::Basic:
-		{
-			return type_a.as_basic == type_b.as_basic;
-		}
+		case Ast_Type::Tag::Basic: return type_a.as_basic == type_b.as_basic;
+		case Ast_Type::Tag::Struct: return type_a.as_struct.struct_id == type_b.as_struct.struct_id;
+		case Ast_Type::Tag::Enum: return type_a.as_enum.enum_id == type_b.as_enum.enum_id;
 		case Ast_Type::Tag::Array:
 		{
 			Ast_Array_Type* array_a = type_a.as_array;
@@ -789,21 +917,14 @@ bool match_type(Ast_Type type_a, Ast_Type type_b)
 			if (array_a->fixed_size != array_b->fixed_size) return false;
 			return match_type(array_a->element_type, array_b->element_type);
 		}
-		case Ast_Type::Tag::Custom:
+		default:
 		{
-			Ast_Custom_Type* custom_a = type_a.as_custom;
-			Ast_Custom_Type* custom_b = type_b.as_custom;
-
-			//@Notice custom type can be accessed using its use alias
-			// as well as import.ident so this comparison isnt valid
-			bool import_a = custom_a->import.has_value();
-			bool import_b = custom_b->import.has_value();
-			if (import_a != import_b) return false;
-			if (import_a && !match_ident(custom_a->import.value(), custom_b->import.value())) return false; 
-			return match_ident(custom_a->type, custom_b->type);
+			printf("match_type: Unexpected Ast_Type::Tag. Disambiguate Tag::Custom by using check_type first:\n");
+			debug_print_type(type_a); printf("\n");
+			debug_print_type(type_b); printf ("\n");
+			return false;
 		}
 	}
-	return false;
 }
 
 void block_stack_reset(Block_Stack* bc)

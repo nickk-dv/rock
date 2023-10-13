@@ -6,7 +6,7 @@ UnaryOp token_to_unary_op(TokenType type)
 	{
 		case TOKEN_MINUS: return UNARY_OP_MINUS;
 		case TOKEN_LOGIC_NOT: return UNARY_OP_LOGIC_NOT;
-		case TOKEN_BITWISE_AND: return UNARY_OP_ADRESS_OF;
+		case TOKEN_BITWISE_AND: return UNARY_OP_ADDRESS_OF;
 		case TOKEN_BITWISE_NOT: return UNARY_OP_BITWISE_NOT;
 		default: return UNARY_OP_ERROR;
 	}
