@@ -287,6 +287,17 @@ std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
 	return {};
 }
 
+std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident)
+{
+	u32 count = 0;
+	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
+	{
+		if (match_ident(field.ident, ident)) return count;
+		count += 1;
+	}
+	return {};
+}
+
 Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry)
 {
 	Terminator terminator = Terminator::None;
@@ -467,9 +478,10 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 			auto expr_type = check_expr(ast, bc, var_decl->expr.value());
 			if (type && expr_type && !match_type_info(type.value(), expr_type.value()))
 			{
-				error("Type mismatch in variable declaration [not printing types yet]", var_decl->ident);
-				debug_print_var_decl(var_decl, 0);
-				printf("\n");
+				printf("Type mismatch in variable declaration:\n"); 
+				debug_print_ident(var_decl->ident);
+				printf("Expected: "); debug_print_type(type.value().type); printf("\n");
+				printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
 			}
 		}
 		
@@ -512,9 +524,10 @@ void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
 
 	if (var_type && expr_type && !match_type_info(var_type.value(), expr_type.value()))
 	{
-		printf("Check var assign: type missmatch in variable assignment\n");
-		debug_print_var_assign(var_assign, 0);
-		printf("\n");
+		printf("Type mismatch in variable assignment:\n");
+		debug_print_ident(var_assign->var->ident);
+		printf("Expected: "); debug_print_type(var_type.value().type); printf("\n");
+		printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
 	}
 }
 
@@ -542,6 +555,7 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 			{
 				type->tag = Ast_Type::Tag::Struct;
 				type->as_struct.struct_id = struct_meta.value().struct_id;
+				type->as_struct.struct_decl = struct_meta.value().struct_decl;
 				return Type_Info { false, *type };
 			}
 
@@ -550,6 +564,7 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 			{
 				type->tag = Ast_Type::Tag::Enum;
 				type->as_enum.enum_id = enum_meta.value().enum_id;
+				type->as_enum.enum_decl = enum_meta.value().enum_decl;
 				return Type_Info { false, *type };
 			}
 
@@ -567,6 +582,70 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 			printf("\n");
 			return {};
 		}
+	}
+}
+
+//@Notice not accounting for is_var_owned propagation yet using Ast_Type directly as input
+std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Access* access, Ast_Type type)
+{
+	switch (access->tag)
+	{
+	case Ast_Access::Tag::Var:
+	{
+		Ast_Var_Access* var_access = access->as_var;
+
+		Type_Kind kind = type_kind(type);
+		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type::Tag::Struct) kind = Type_Kind::Struct;
+		if (kind != Type_Kind::Struct)
+		{
+			printf("Field access might only be used on variables of struct or pointer to a struct type:\n");
+			debug_print_ident(var_access->ident);
+			printf("\n");
+			return {};
+		}
+
+		Ast_Struct_Decl* struct_decl = type.as_struct.struct_decl;
+		auto field_id = find_struct_field(struct_decl, var_access->ident);
+		if (!field_id) 
+		{ 
+			error("Failed to find struct field during access", var_access->ident); 
+			return {}; 
+		}
+		var_access->field_id = field_id.value();
+
+		Ast_Type result_type = struct_decl->fields[var_access->field_id].type;
+		if (var_access->next) return check_access(ast, bc, var_access->next.value(), result_type);
+		return Type_Info { false, result_type };
+	}
+	case Ast_Access::Tag::Array:
+	{
+		Ast_Array_Access* array_access = access->as_array;
+		
+		Type_Kind kind = type_kind(type);
+		if (kind != Type_Kind::Array)
+		{
+			printf("Array access might only be used on variables of array type:\n");
+			debug_print_access(access);
+			printf("\n\n");
+			return {};
+		}
+
+		auto expr_type = check_expr(ast, bc, array_access->index_expr);
+		if (expr_type)
+		{
+			Type_Kind expr_kind = type_info_kind(expr_type.value());
+			if (expr_kind != Type_Kind::Integer)
+			{
+				printf("Array access expression must be of integer type:\n");
+				debug_print_expr(array_access->index_expr, 0);
+				printf("\n\n");
+			}
+		}
+
+		Ast_Type result_type = type.as_array->element_type;
+		if (array_access->next) return check_access(ast, bc, array_access->next.value(), result_type);
+		return Type_Info { false, result_type };
+	}
 	}
 }
 
@@ -595,19 +674,16 @@ std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term)
 
 std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
 {
-	if (var->access)
-	{
-		printf("Check var: access chain not supported\n");
-		debug_print_var(var);
-		printf("\n");
-		return {};
-	}
-
 	auto type = block_stack_find_var_type(bc, var->ident);
 	if (!type)
 	{
 		error("Check var: var is not found or has not valid type\n", var->ident);
 		return {};
+	}
+	
+	if (var->access)
+	{
+		return check_access(ast, bc, var->access.value(), type.value().type);
 	}
 	
 	return type;
@@ -685,13 +761,18 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 		auto expr_type = check_expr(ast, bc, proc_call->input_exprs[i]);
 		if (expr_type && i < param_count)
 		{
-			if (!match_type(proc_decl->input_params[i].type, expr_type.value().type))
+			Ast_Type param_type = proc_decl->input_params[i].type;
+			if (!match_type(param_type, expr_type.value().type))
 			{
-				error("Check proc call: type mismatch between input expr and expected param type", ident);
+				printf("Type mismatch in procedure call input argument with id: %lu\n", i);
+				debug_print_ident(proc_call->ident);
+				printf("Expected: "); debug_print_type(param_type); printf("\n");
+				printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
 			}
 		}
 	}
 
+	//@Todo handle no return type and check access
 	if (proc_call->access)
 	{
 		printf("Check proc call: access chains with proc call isnt supported\n");
@@ -800,6 +881,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 		printf("\n");
 		return {};
 	} break;
+	//@Semantics == != should work for enums
 	// CmpOps [< > <= >= == !=]
 	case BINARY_OP_LESS:
 	case BINARY_OP_GREATER:
@@ -851,15 +933,15 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	}
 }
 
-Type_Kind type_info_kind(Type_Info type_info)
+Type_Kind type_kind(Ast_Type type)
 {
-	if (type_info.type.pointer_level > 0) return Type_Kind::Pointer;
+	if (type.pointer_level > 0) return Type_Kind::Pointer;
 
-	switch (type_info.type.tag)
+	switch (type.tag)
 	{
 	case Ast_Type::Tag::Basic:
 	{
-		switch (type_info.type.as_basic)
+		switch (type.as_basic)
 		{
 		case BASIC_TYPE_I8:
 		case BASIC_TYPE_U8:
@@ -880,10 +962,19 @@ Type_Kind type_info_kind(Type_Info type_info)
 		}
 	}
 	case Ast_Type::Tag::Array: return Type_Kind::Array;
-	//@Notice cant tell if type is enum or struct
-	//might need to determine this and store changes into the ast
-	case Ast_Type::Tag::Custom: return Type_Kind::Struct;
+	case Ast_Type::Tag::Struct: return Type_Kind::Struct;
+	case Ast_Type::Tag::Enum: return Type_Kind::Enum;
+	case Ast_Type::Tag::Custom:
+	{
+		printf("type_info_kind: Ast_Type::Tag::Custom is not allowed type must be checked and disambiguated beforehand.\n");
+		return Type_Kind::Struct;
 	}
+	}
+}
+
+Type_Kind type_info_kind(Type_Info type_info)
+{
+	return type_kind(type_info.type);
 }
 
 Type_Info type_info_from_basic(BasicType basic_type)

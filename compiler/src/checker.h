@@ -23,6 +23,7 @@ static std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Iden
 static std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident);
 static std::optional<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident);
 static std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
+static std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
 static Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry = false);
 static void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer);
 static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block = true);
@@ -31,6 +32,7 @@ static void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for);
 static void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl);
 static void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign);
 static std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type);
+static std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Access* access, Ast_Type type);
 static std::optional<Type_Info> check_expr(Ast* ast, Block_Stack* bc, Ast_Expr* expr);
 static std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term);
 static std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var);
@@ -39,6 +41,7 @@ static std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Lit
 static std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call);
 static std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr);
 static std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr);
+static Type_Kind type_kind(Ast_Type type);
 static Type_Kind type_info_kind(Type_Info type_info);
 static Type_Info type_info_from_basic(BasicType basic_type);
 static bool match_type_info(Type_Info type_info_a, Type_Info type_info_b);

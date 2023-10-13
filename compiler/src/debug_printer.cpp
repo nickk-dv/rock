@@ -331,6 +331,8 @@ void debug_print_type(Ast_Type type)
 		case Ast_Type::Tag::Basic: debug_print_basic_type(type.as_basic); break;
 		case Ast_Type::Tag::Array: debug_print_array_type(type.as_array); break;
 		case Ast_Type::Tag::Custom: debug_print_custom_type(type.as_custom); break;
+		case Ast_Type::Tag::Struct: debug_print_ident(type.as_struct.struct_decl->type, false, false); break;
+		case Ast_Type::Tag::Enum: debug_print_ident(type.as_enum.enum_decl->type, false, false); break;
 	}
 }
 

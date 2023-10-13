@@ -152,11 +152,13 @@ struct Ast_Enum_Decl
 struct Ast_Struct_Type
 {
 	u64 struct_id;
+	Ast_Struct_Decl* struct_decl;
 };
 
 struct Ast_Enum_Type
 {
 	u64 enum_id;
+	Ast_Enum_Decl* enum_decl;
 };
 
 struct Ast_Type
@@ -237,6 +239,8 @@ struct Ast_Var_Access
 {
 	Ast_Ident ident;
 	std::optional<Ast_Access*> next;
+	//check stage
+	u32 field_id;
 };
 
 struct Ast_Array_Access
