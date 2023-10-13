@@ -19,6 +19,8 @@ struct Ast_Ident_Literal_Pair;
 struct Ast_Type;
 struct Ast_Array_Type;
 struct Ast_Custom_Type;
+struct Ast_Struct_Type;
+struct Ast_Enum_Type;
 struct Ast_Var;
 struct Ast_Access;
 struct Ast_Var_Access;
@@ -46,6 +48,18 @@ Ast_Ident token_to_ident(Token& token);
 u32 hash_ident(Ast_Ident& ident);
 bool match_ident(Ast_Ident& a, Ast_Ident& b);
 
+struct Ast_Struct_Meta
+{
+	Ast_Struct_Decl* struct_decl;
+	LLVMTypeRef struct_type;
+};
+
+struct Ast_Enum_Meta
+{
+	Ast_Enum_Decl* enum_decl;
+	LLVMTypeRef enum_type;
+};
+
 struct Ast_Proc_Meta
 {
 	Ast_Proc_Decl* proc_decl;
@@ -53,28 +67,29 @@ struct Ast_Proc_Meta
 	LLVMValueRef proc_value;
 };
 
-struct Ast_Struct_Meta
-{
-	Ast_Struct_Decl* struct_decl;
-	LLVMTypeRef struct_type;
-};
-
 struct Ast_Program
 {
-	std::vector<Ast_Proc_Meta> procedures;
 	std::vector<Ast_Struct_Meta> structs;
+	std::vector<Ast_Enum_Meta> enums;
+	std::vector<Ast_Proc_Meta> procedures;
+};
+
+struct Ast_Struct_Decl_Meta
+{
+	u64 struct_id;
+	Ast_Struct_Decl* struct_decl;
+};
+
+struct Ast_Enum_Decl_Meta
+{
+	u64 enum_id;
+	Ast_Enum_Decl* enum_decl;
 };
 
 struct Ast_Proc_Decl_Meta
 {
 	u64 proc_id;
 	Ast_Proc_Decl* proc_decl;
-};
-
-struct Ast_Struct_Decl_Meta
-{
-	u64 proc_id;
-	Ast_Struct_Decl* struct_decl;
 };
 
 struct Ast
@@ -85,11 +100,12 @@ struct Ast
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
 	//check stage
-	u64 proc_id_start;
 	u64 struct_id_start;
+	u64 enum_id_start;
+	u64 proc_id_start;
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
 	HashMap<Ast_Ident, Ast_Struct_Decl_Meta, u32, match_ident> struct_table;
-	HashMap<Ast_Ident, Ast_Enum_Decl*, u32, match_ident> enum_table;
+	HashMap<Ast_Ident, Ast_Enum_Decl_Meta, u32, match_ident> enum_table;
 	HashMap<Ast_Ident, Ast_Proc_Decl_Meta, u32, match_ident> proc_table;
 };
 
@@ -133,26 +149,21 @@ struct Ast_Enum_Decl
 	std::vector<Ast_Ident_Literal_Pair> variants;
 };
 
-//types need to allow:
-//1. apply pointerness -> using & op
-//2. create a new ones representing basic types
-//3 arrays -> element type is value -> no problem
+struct Ast_Struct_Type
+{
+	u64 struct_id;
+};
 
-/*
-array
-_
-3 pointer
-of array
-_
-1 pointer
-of baseq / custom
-*/
+struct Ast_Enum_Type
+{
+	u64 enum_id;
+};
 
 struct Ast_Type
 {
 	enum class Tag
 	{
-		Basic, Array, Custom
+		Basic, Array, Custom, Struct, Enum
 	} tag;
 
 	union
@@ -160,6 +171,8 @@ struct Ast_Type
 		BasicType as_basic;
 		Ast_Array_Type* as_array;
 		Ast_Custom_Type* as_custom;
+		Ast_Struct_Type as_struct;
+		Ast_Enum_Type as_enum;
 	};
 
 	u32 pointer_level = 0;
@@ -237,6 +250,9 @@ struct Ast_Enum
 	std::optional<Ast_Ident> import;
 	Ast_Ident type;
 	Ast_Ident variant;
+	//check stage
+	u64 enum_id;
+	u32 variant_id;
 };
 
 struct Ast_Term

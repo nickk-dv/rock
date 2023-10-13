@@ -15,6 +15,10 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules);
 bool check_ast(Ast* ast, Ast_Program* program);
 
 static Ast* try_import(Ast* ast, std::optional<Ast_Ident> import);
+static std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident);
+static std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident);
+static std::optional<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident);
+static std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 static Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry = false);
 static void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer);
 static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block = true);

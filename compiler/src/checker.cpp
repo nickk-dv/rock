@@ -46,12 +46,22 @@ bool check_declarations(Ast* ast, Ast_Program* program, Module_Map& modules)
 		struct_count += 1;
 	}
 
+	u64 enum_count = 0;
 	for (Ast_Enum_Decl* decl : ast->enums)
 	{
 		Ast_Ident ident = decl->type;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->enum_table.add(ident, decl, hash_ident(ident)); }
+		if (!key) 
+		{ 
+			symbol_table.add(ident, hash_ident(ident));
+			ast->enum_table.add(ident, Ast_Enum_Decl_Meta { ast->enum_id_start + enum_count, decl }, hash_ident(ident));
+
+			Ast_Enum_Meta enum_meta = {};
+			enum_meta.enum_decl = decl;
+			program->enums.emplace_back(enum_meta);
+		}
 		else { error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); passed = false; }
+		enum_count += 1;
 	}
 
 	u64 proc_count = 0;
@@ -166,6 +176,32 @@ Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
 		return NULL;
 	}
 	return import_decl.value()->import_ast;
+}
+
+std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->struct_table.find(ident, hash_ident(ident));
+}
+
+std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->enum_table.find(ident, hash_ident(ident));
+}
+
+std::optional<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->proc_table.find(ident, hash_ident(ident));
+}
+
+std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
+{
+	u32 count = 0;
+	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
+	{
+		if (match_ident(variant.ident, ident)) return count;
+		count += 1;
+	}
+	return {};
 }
 
 Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry)
@@ -451,10 +487,24 @@ std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
 
 std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum)
 {
-	printf("Check enum: enum terms not supported: ");
-	debug_print_enum(_enum);
-	printf("\n");
-	return {};
+	Ast* ast_target = try_import(ast, _enum->import);
+	if (ast_target == NULL) return {};
+	
+	// return none type if enum wasnt found
+	auto enum_meta = find_enum(ast_target, _enum->type);
+	if (!enum_meta) { error("Accessing undeclared enum", _enum->type); return {}; }
+	Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
+	_enum->enum_id = enum_meta.value().enum_id;
+
+	// even when variant is invalid, return enum type
+	auto variant_id = find_enum_variant(enum_decl, _enum->variant);
+	if (!variant_id) { error("Accessing undeclared enum variant", _enum->variant); }
+	else _enum->variant_id = variant_id.value();
+
+	Ast_Type type = {};
+	type.tag = Ast_Type::Tag::Enum;
+	type.as_enum.enum_id = _enum->enum_id;
+	return Type_Info { false, type };
 }
 
 std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal literal)
@@ -482,21 +532,14 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 {
 	Ast* ast_target = try_import(ast, proc_call->import);
 	if (ast_target == NULL) return {};
-
+	
+	// find procedure
 	Ast_Ident ident = proc_call->ident;
-	Ast_Proc_Decl* proc_decl = NULL;
-
-	auto proc_meta = ast_target->proc_table.find(ident, hash_ident(ident));
-	if (!proc_meta)
-	{
-		error("Calling undeclared procedure", ident);
-		return {};
-	}
-	else
-	{
-		proc_call->proc_id = proc_meta.value().proc_id;
-		proc_decl = proc_meta.value().proc_decl;
-	}
+	auto proc_meta = find_proc(ast_target, ident);
+	if (!proc_meta) { error("Calling undeclared procedure", ident); return {}; }
+	// @Todo proc_decl cant be null ?
+	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
+	proc_call->proc_id = proc_meta.value().proc_id;
 
 	// check param count
 	u32 param_count = proc_decl == NULL ? 0 : (u32)proc_decl->input_params.size();
@@ -508,7 +551,7 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 		printf("Expected: %lu Input count: %lu \n\n", param_count, input_count);
 	}
 
-	// check expr and types 
+	// check input exprs and types 
 	for (u32 i = 0; i < input_count; i += 1)
 	{
 		auto expr_type = check_expr(ast, bc, proc_call->input_exprs[i]);
