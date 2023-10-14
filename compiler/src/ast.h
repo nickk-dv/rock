@@ -200,6 +200,8 @@ struct Ast_Ident_Literal_Pair
 	Ast_Ident ident;
 	Ast_Literal literal;
 	bool is_negative;
+	//ir stage
+	LLVMValueRef constant;
 };
 
 struct Ast_Array_Type

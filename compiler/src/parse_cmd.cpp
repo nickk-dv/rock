@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "checker.h"
 #include "llvm_ir_builder.h"
+#include "llvm_ir_builder_2.h"
 #include "llvm_backend.h"
 #include "debug_printer.h"
 
@@ -79,15 +80,15 @@ int cmd_build_file(char* filepath)
 	
 	debug_print_ast(ast);
 	
-	timer.start();
-	LLVM_IR_Builder ir_builder = {};
-	LLVMModuleRef mod = ir_builder.build_module(ast);
-	timer.end("LLVM IR Builder");
-
-	timer.start();
-	LLVM_Backend backend = {};
-	backend.build_binaries(mod);
-	timer.end("LLVM Backend   ");
+	//timer.start();
+	//LLVM_IR_Builder ir_builder = {};
+	//LLVMModuleRef mod = ir_builder.build_module(ast);
+	//timer.end("LLVM IR Builder");
+	//
+	//timer.start();
+	//LLVM_Backend backend = {};
+	//backend.build_binaries(mod);
+	//timer.end("LLVM Backend   ");
 
 	return 0;
 }
@@ -203,6 +204,9 @@ int cmd_build(char* filepath)
 		if (!check_decls(ast)) check = false;
 	}
 	if (!check) return 1;
+
+	printf("LLVMModule Build: \n\n");
+	build_module(&program);
 
 	for (const auto& [module, ast] : modules)
 	{
