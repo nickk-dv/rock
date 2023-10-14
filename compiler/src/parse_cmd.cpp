@@ -154,6 +154,7 @@ int cmd_build(char* filepath)
 	u64 enum_id_start = 0;
 	u64 proc_id_start = 0;
 	Ast_Program program = {};
+	Ast* entry_point_ast = NULL;
 
 	timer.start();
 	for (const auto& [module, ast] : modules)
@@ -164,11 +165,19 @@ int cmd_build(char* filepath)
 		
 		printf("file: %s\n", module.c_str());
 		if(!check_decl_uniqueness(ast, &program, modules)) check = false;
-		
+		if (module == "main") entry_point_ast = ast;
+
 		struct_id_start += ast->structs.size();
 		enum_id_start += ast->enums.size();
 		proc_id_start += ast->procs.size();
 	}
+
+	if (entry_point_ast == NULL)
+	{
+		printf("Entry not found. Make sure to have src/main file.\n\n");
+		check = false;
+	}
+
 	for (u64 i = 0; i < program.structs.size(); i += 1)
 	{
 		printf("struct: %llu - ", i);
@@ -184,7 +193,10 @@ int cmd_build(char* filepath)
 		printf("proc:   %llu - ", i);
 		debug_print_ident(program.procedures[i].proc_decl->ident, true, false);
 	}
+
 	if (!check) return 1;
+
+	if (!check_main_proc(entry_point_ast)) check = false;
 
 	for (const auto& [module, ast] : modules)
 	{
@@ -194,7 +206,7 @@ int cmd_build(char* filepath)
 
 	for (const auto& [module, ast] : modules)
 	{
-		if (!check_ast(ast, &program)) check = false;
+		if (!check_ast(ast)) check = false;
 	}
 	if (!check) return 1;
 	timer.end("Check Ast");

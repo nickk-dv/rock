@@ -143,7 +143,7 @@ bool check_decls(Ast* ast)
 
 	for (Ast_Enum_Decl* enum_decl : ast->enums)
 	{
-		if (!check_enum_decl(ast, enum_decl)) passed = false;
+		if (!check_enum_decl(enum_decl)) passed = false;
 	}
 
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
@@ -154,7 +154,56 @@ bool check_decls(Ast* ast)
 	return passed;
 }
 
-bool check_ast(Ast* ast, Ast_Program* program)
+bool check_main_proc(Ast* ast)
+{
+	Ast_Ident ident = {};
+	char name_arr[4] = { 'm', 'a', 'i', 'n' };
+	ident.str.data = (u8*)name_arr;
+	ident.str.count = 4;
+
+	auto proc_meta = find_proc(ast, ident);
+	if (!proc_meta)
+	{
+		printf("Main procedure not found. Make sure src/main file has 'main :: () :: i32 { ... }' declared\n\n");
+		return false;
+	}
+
+	Ast_Proc_Decl_Meta meta = proc_meta.value();
+	bool passed = true;
+	
+	if (meta.proc_decl->is_external)
+	{
+		error("Main procedure cannot be specified as external '@'. You must define a main procedure block", meta.proc_decl->ident);
+		passed = false;
+	}
+
+	if (meta.proc_decl->input_params.size() != 0)
+	{
+		error("Main procedure cannot have any input parameters. Command line arguments can be accessed using core library", meta.proc_decl->ident);
+		passed = false;
+	}
+
+	if (!meta.proc_decl->return_type)
+	{
+		error("Main procedure must have i32 return type", meta.proc_decl->ident);
+		passed = false;
+	}
+	else
+	{
+		Ast_Type return_type = meta.proc_decl->return_type.value();
+		if (return_type.tag != Ast_Type::Tag::Basic || return_type.as_basic != BASIC_TYPE_I32)
+		{
+			printf("Main procedure must have i32 return type\n");
+			debug_print_ident(meta.proc_decl->ident);
+			printf("\n");
+			passed = false;
+		}
+	}
+
+	return passed;
+}
+
+bool check_ast(Ast* ast)
 {
 	bool passed = true;
 	
@@ -165,7 +214,7 @@ bool check_ast(Ast* ast, Ast_Program* program)
 		if (proc_decl->is_external) continue;
 
 		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
-		Terminator terminator = check_block_cfg(proc_decl->block, false, false, true);
+		Terminator terminator = check_block_cfg(proc_decl->block, false, false);
 		if (proc_decl->return_type.has_value() && terminator != Terminator::Return)
 		error("Not all control flow paths return value", proc_decl->ident);
 		
@@ -209,16 +258,33 @@ bool check_struct_decl(Ast* ast, Ast_Struct_Decl* struct_decl)
 	return passed;
 }
 
-bool check_enum_decl(Ast* ast, Ast_Enum_Decl* enum_decl)
+bool check_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	bool passed = true;
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
+
+	BasicType basic_type = BASIC_TYPE_I32;
+	if (enum_decl->basic_type) basic_type = enum_decl->basic_type.value();
+	bool is_unsigned = basic_type_is_unsigned(basic_type);
+
+	//@Note this might be usefull, look into supporting string enums later
+	if (basic_type == BASIC_TYPE_STRING)
+	{
+		error("Cannot use string basic type in enum declration", enum_decl->type);
+		passed = false;
+	}
 
 	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
 	{
 		auto name = name_set.find_key(variant.ident, hash_ident(variant.ident));
 		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
 		else { error("Duplicate enum variant identifier", variant.ident); passed = false; }
+
+		if (is_unsigned && variant.is_negative)
+		{
+			error("Cannot use negative constant for enum of unsigned integer type", variant.ident);
+			passed = false;
+		}
 	}
 
 	return passed;
@@ -298,7 +364,7 @@ std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ide
 	return {};
 }
 
-Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry)
+Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
 {
 	Terminator terminator = Terminator::None;
 
@@ -408,7 +474,7 @@ static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_bl
 			case Ast_Statement::Tag::Break: break;
 			case Ast_Statement::Tag::Return: break;
 			case Ast_Statement::Tag::Continue: break;
-			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, bc, statement->as_proc_call); break;
+			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, bc, statement->as_proc_call, true); break;
 			case Ast_Statement::Tag::Var_Decl: check_var_decl(ast, bc, statement->as_var_decl); break;
 			case Ast_Statement::Tag::Var_Assign: check_var_assign(ast, bc, statement->as_var_assign); break;
 		}
@@ -665,9 +731,9 @@ std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term)
 	switch (term->tag)
 	{
 		case Ast_Term::Tag::Var: return check_var(ast, bc, term->as_var);
-		case Ast_Term::Tag::Enum: return check_enum(ast, bc, term->as_enum);
-		case Ast_Term::Tag::Literal: return check_literal(ast, bc, term->as_literal);
-		case Ast_Term::Tag::Proc_Call: return check_proc_call(ast, bc, term->as_proc_call);
+		case Ast_Term::Tag::Enum: return check_enum(ast, term->as_enum);
+		case Ast_Term::Tag::Literal: return check_literal(&term->as_literal);
+		case Ast_Term::Tag::Proc_Call: return check_proc_call(ast, bc, term->as_proc_call, false);
 		default: return {};
 	}
 }
@@ -689,7 +755,7 @@ std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
 	return type;
 }
 
-std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum)
+std::optional<Type_Info> check_enum(Ast* ast, Ast_Enum* _enum)
 {
 	Ast* target_ast = try_import(ast, _enum->import);
 	if (target_ast == NULL) return {};
@@ -708,16 +774,17 @@ std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum)
 	Ast_Type type = {};
 	type.tag = Ast_Type::Tag::Enum;
 	type.as_enum.enum_id = _enum->enum_id;
+	type.as_enum.enum_decl = enum_meta.value().enum_decl;
 	return Type_Info { false, type };
 }
 
-std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal literal)
+std::optional<Type_Info> check_literal(Ast_Literal* literal)
 {
 	//@Todo
 	//handle string literals
 	//handle integer limits and int type which is returned
 
-	switch (literal.token.type)
+	switch (literal->token.type)
 	{
 		case TOKEN_BOOL_LITERAL: return type_info_from_basic(BASIC_TYPE_BOOL);
 		case TOKEN_FLOAT_LITERAL: return type_info_from_basic(BASIC_TYPE_F64);
@@ -725,14 +792,14 @@ std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal li
 		default:
 		{
 			printf("Check literal: unknown or unsupported literal:\n");
-			debug_print_token(literal.token, true, true);
+			debug_print_token(literal->token, true, true);
 			printf("\n");
 			return {};
 		}
 	}
 }
 
-std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call)
+std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call, bool is_statement)
 {
 	Ast* target_ast = try_import(ast, proc_call->import);
 	if (target_ast == NULL) return {};
@@ -741,14 +808,13 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 	Ast_Ident ident = proc_call->ident;
 	auto proc_meta = find_proc(target_ast, ident);
 	if (!proc_meta) { error("Calling undeclared procedure", ident); return {}; }
-	// @Todo proc_decl cant be null ?
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_call->proc_id = proc_meta.value().proc_id;
 
 	// check param count
-	u32 param_count = proc_decl == NULL ? 0 : (u32)proc_decl->input_params.size();
+	u32 param_count = (u32)proc_decl->input_params.size();
 	u32 input_count = (u32)proc_call->input_exprs.size();
-	if (proc_decl != NULL && param_count != input_count)
+	if (param_count != input_count)
 	{
 		printf("Check proc call: unexpected number of input arguments:\n");
 		debug_print_ident(ident, true, true);
@@ -772,25 +838,43 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 		}
 	}
 
-	//@Todo handle no return type and check access
-	if (proc_call->access)
+	if (is_statement)
 	{
-		printf("Check proc call: access chains with proc call isnt supported\n");
-		debug_print_proc_call(proc_call, 0);
-		printf("\n");
-	}
+		if (proc_call->access)
+		{
+			printf("Procedure call statement cannot have access chains:\n");
+			debug_print_proc_call(proc_call, 0);
+			printf("\n");
+		}
 
-	if (proc_decl != NULL)
-	{
 		if (proc_decl->return_type)
 		{
-			//@Notice type might be broken due to check of proc decl failing
-			// flagging of broken types or addding check stage for declarations is the solution
-			return Type_Info { false, proc_decl->return_type.value() };
+			printf("Procedure call statement cannot discard the return type value:\n");
+			debug_print_proc_call(proc_call, 0);
+			printf("\n");
 		}
-		else return {}; //@Notice void type is threated like error type, might change this
+
+		return {};
 	}
-	else return {};
+	else
+	{
+		if (!proc_decl->return_type)
+		{
+			printf("Procedure call inside an expression must have a return type:\n");
+			debug_print_proc_call(proc_call, 0);
+			printf("\n");
+			return {};
+		}
+
+		Ast_Type return_type = proc_decl->return_type.value();
+		
+		if (proc_call->access)
+		{
+			return check_access(ast, bc, proc_call->access.value(), return_type);
+		}
+		
+		return Type_Info { false, return_type };
+	}
 }
 
 std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr)

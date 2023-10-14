@@ -137,3 +137,16 @@ bool token_is_literal(TokenType type)
 {
 	return type >= TOKEN_BOOL_LITERAL && type <= TOKEN_STRING_LITERAL;
 }
+
+bool basic_type_is_unsigned(BasicType basic_type)
+{
+	switch (basic_type)
+	{
+	case BASIC_TYPE_U8:
+	case BASIC_TYPE_U16:
+	case BASIC_TYPE_U32:
+	case BASIC_TYPE_U64:
+		return true;
+	default: return false;
+	}
+}

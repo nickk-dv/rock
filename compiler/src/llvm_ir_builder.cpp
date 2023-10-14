@@ -129,8 +129,8 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* 
 				if (terminator != Terminator_Type::None)
 				{
 					if (terminator == Terminator_Type::Return)
-						build_defer(block, bc, true);
-					else build_defer(block, bc, false);
+						build_defer(bc, true);
+					else build_defer(bc, false);
 					bc->pop_block();
 					return terminator;
 				}
@@ -143,7 +143,7 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* 
 			case Ast_Statement::Tag::Break:
 			{
 				if (!loop_meta.has_value() && defer) error_exit("defer block cannot contain 'break'");
-				build_defer(block, bc, false);
+				build_defer(bc, false);
 
 				if (!loop_meta) error_exit("break statement: no loop meta data provided");
 				LLVMBuildBr(builder, loop_meta.value().break_target);
@@ -154,7 +154,7 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* 
 			case Ast_Statement::Tag::Return:
 			{
 				if (defer) error_exit("defer block cannot contain 'return'");
-				build_defer(block, bc, true);
+				build_defer(bc, true);
 
 				Ast_Return* _return = statement->as_return;
 				if (_return->expr.has_value())
@@ -167,7 +167,7 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* 
 			case Ast_Statement::Tag::Continue:
 			{
 				if (!loop_meta.has_value() && defer) error_exit("defer block cannot contain 'continue'");
-				build_defer(block, bc, false);
+				build_defer(bc, false);
 				
 				if (!loop_meta) error_exit("continue statement: no loop meta data provided");
 				if (loop_meta.value().continue_action)
@@ -184,12 +184,12 @@ Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* 
 		}
 	}
 
-	build_defer(block, bc, false);
+	build_defer(bc, false);
 	bc->pop_block();
 	return Terminator_Type::None;
 }
 
-void LLVM_IR_Builder::build_defer(Ast_Block* block, Var_Block_Scope* bc, bool all_defers)
+void LLVM_IR_Builder::build_defer(Var_Block_Scope* bc, bool all_defers)
 {
 	if (all_defers)
 	{
@@ -235,8 +235,8 @@ void LLVM_IR_Builder::build_if(Ast_If* _if, LLVMBasicBlockRef cont_block, Var_Bl
 		}
 		else
 		{
-			Terminator_Type terminator = build_block(_else->as_block, bc, defer, loop_meta);
-			if (terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
+			Terminator_Type else_terminator = build_block(_else->as_block, bc, defer, loop_meta);
+			if (else_terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
 			set_curr_block(cont_block);
 		}
 	}
@@ -608,8 +608,6 @@ LLVMTypeRef LLVM_IR_Builder::get_basic_type(BasicType type)
 		//case BASIC_TYPE_STRING: @Undefined for now, might use a struct for a string
 		default: error_exit("get_basic_type: basic type not found"); break;
 	}
-
-	return NULL;
 }
 
 Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type type)
@@ -684,7 +682,6 @@ Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringV
 		count += 1;
 	}
 	error_exit("get_field_meta: failed to find the field");
-	return Field_Meta{};
 }
 
 Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc)

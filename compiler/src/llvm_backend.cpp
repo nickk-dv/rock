@@ -51,5 +51,5 @@ void LLVM_Backend::debug_print_module(LLVMModuleRef mod)
 	char* message = LLVMPrintModuleToString(mod);
 	printf("Module: %s", message);
 	LLVMDisposeMessage(message);
-	LLVMBool verify = LLVMVerifyModule(mod, LLVMPrintMessageAction, NULL);
+	LLVMVerifyModule(mod, LLVMPrintMessageAction, NULL);
 }

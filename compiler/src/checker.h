@@ -13,10 +13,11 @@ struct Block_Stack;
 
 bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules);
 bool check_decls(Ast* ast);
-bool check_ast(Ast* ast, Ast_Program* program);
+bool check_main_proc(Ast* ast);
+bool check_ast(Ast* ast);
 
 static bool check_struct_decl(Ast* ast, Ast_Struct_Decl* struct_decl);
-static bool check_enum_decl(Ast* ast, Ast_Enum_Decl* enum_decl);
+static bool check_enum_decl(Ast_Enum_Decl* enum_decl);
 static bool check_proc_decl(Ast* ast, Ast_Proc_Decl* proc_decl);
 static Ast* try_import(Ast* ast, std::optional<Ast_Ident> import);
 static std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident);
@@ -24,7 +25,7 @@ static std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident id
 static std::optional<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident);
 static std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 static std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
-static Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer, bool is_entry = false);
+static Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer);
 static void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer);
 static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block = true);
 static void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if);
@@ -36,9 +37,9 @@ static std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Acce
 static std::optional<Type_Info> check_expr(Ast* ast, Block_Stack* bc, Ast_Expr* expr);
 static std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term);
 static std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var);
-static std::optional<Type_Info> check_enum(Ast* ast, Block_Stack* bc, Ast_Enum* _enum);
-static std::optional<Type_Info> check_literal(Ast* ast, Block_Stack* bc, Ast_Literal literal);
-static std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call);
+static std::optional<Type_Info> check_enum(Ast* ast, Ast_Enum* _enum);
+static std::optional<Type_Info> check_literal(Ast_Literal* literal);
+static std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call, bool is_statement);
 static std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr);
 static std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr);
 static Type_Kind type_kind(Ast_Type type);

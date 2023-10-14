@@ -17,7 +17,7 @@ private:
 	void build_proc_body(Ast_Proc_Decl* proc_decl);
 
 	Terminator_Type build_block(Ast_Block* block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta = {}, bool entry = false);
-	void build_defer(Ast_Block* block, Var_Block_Scope* bc, bool all_defers);
+	void build_defer(Var_Block_Scope* bc, bool all_defers);
 	void build_if(Ast_If* _if, LLVMBasicBlockRef cont_block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta = {});
 	void build_for(Ast_For* _for, Var_Block_Scope* bc, bool defer);
 	LLVMValueRef build_proc_call(Ast_Proc_Call* _for, Var_Block_Scope* bc, bool is_statement);

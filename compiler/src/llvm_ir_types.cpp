@@ -26,7 +26,6 @@ Var_Meta Var_Block_Scope::find_var(StringView str)
 	// @Hack exiting here, this shouldnt happen in checked code
 	printf("get_var_access_meta: failed to find var in scope");
 	exit(EXIT_FAILURE);
-	return Var_Meta{};
 }
 
 void Var_Block_Scope::add_defer(Ast_Defer* defer)
