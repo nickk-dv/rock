@@ -150,14 +150,14 @@ int cmd_build(char* filepath)
 	if (parse_error) return 1;
 	timer.end("Parse init & Parse Ast");
 
-	bool check = true;
+	Ast_Program program = {};
+	Error_Handler err = {};
+	Ast* main_ast = NULL;
+
+	timer.start();
 	u64 struct_id_start = 0;
 	u64 enum_id_start = 0;
 	u64 proc_id_start = 0;
-	Ast_Program program = {};
-	Ast* entry_point_ast = NULL;
-
-	timer.start();
 	for (const auto& [module, ast] : modules)
 	{
 		ast->struct_id_start = struct_id_start;
@@ -165,51 +165,27 @@ int cmd_build(char* filepath)
 		ast->proc_id_start = proc_id_start;
 		
 		printf("file: %s\n", module.c_str());
-		if(!check_decl_uniqueness(ast, &program, modules)) check = false;
-		if (module == "main") entry_point_ast = ast;
+		check_decl_uniqueness(&err, ast, &program, modules);
+		if (module == "main") main_ast = ast;
 
 		struct_id_start += ast->structs.size();
 		enum_id_start += ast->enums.size();
 		proc_id_start += ast->procs.size();
 	}
-
-	if (entry_point_ast == NULL)
+	if (main_ast == NULL)
 	{
 		printf("Entry not found. Make sure to have src/main file.\n\n");
-		check = false;
+		err.has_err = true;
 	}
+	if (err.has_err) return 1;
 
-	for (u64 i = 0; i < program.structs.size(); i += 1)
-	{
-		printf("struct: %llu - ", i);
-		debug_print_ident(program.structs[i].struct_decl->type, true, false);
-	}
-	for (u64 i = 0; i < program.enums.size(); i += 1)
-	{
-		printf("enum:   %llu - ", i);
-		debug_print_ident(program.enums[i].enum_decl->type, true, false);
-	}
-	for (u64 i = 0; i < program.procedures.size(); i += 1)
-	{
-		printf("proc:   %llu - ", i);
-		debug_print_ident(program.procedures[i].proc_decl->ident, true, false);
-	}
-
-	if (!check) return 1;
-
-	if (!check_main_proc(entry_point_ast)) check = false;
-
-	for (const auto& [module, ast] : modules)
-	{
-		if (!check_decls(ast)) check = false;
-	}
-	if (!check) return 1;
-
-	for (const auto& [module, ast] : modules)
-	{
-		if (!check_ast(ast)) check = false;
-	}
-	if (!check) return 1;
+	check_main_proc(&err, main_ast);
+	for (const auto& [module, ast] : modules) check_decls(&err, ast);
+	if (err.has_err) return 1;
+	
+	for (const auto& [module, ast] : modules) check_ast(&err, ast);
+	if (err.has_err) return 1;
+	
 	timer.end("Check Ast");
 
 	printf("LLVMModule Build (new ir builder): \n\n");

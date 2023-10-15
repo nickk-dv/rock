@@ -8,10 +8,8 @@
 // 3. proc block cfg & type and other semantics checks 
 
 //@Perf general issues with re-hashing Ast_Ident every time
-bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
+void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, Module_Map& modules)
 {
-	bool passed = true;
-	
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 	ast->import_table.init(64);
 	ast->struct_table.init(64);
@@ -23,7 +21,7 @@ bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 		Ast_Ident ident = decl->alias;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->import_table.add(ident, decl, hash_ident(ident)); }
-		else { error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); passed = false; }
+		else { err_set; error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); }
 	}
 
 	for (Ast_Import_Decl* decl : ast->imports)
@@ -33,11 +31,7 @@ bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 			Ast* import_ast = modules.at(decl->file_path.token.string_literal_value);
 			decl->import_ast = import_ast;
 		}
-		else
-		{
-			error("Import path not found", decl->alias);
-			passed = false;
-		}
+		else { err_set; error("Import path not found", decl->alias); }
 	}
 
 	for (Ast_Use_Decl* decl : ast->uses)
@@ -45,7 +39,7 @@ bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 		Ast_Ident ident = decl->alias;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else { error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); passed = false; }
+		else { err_set; error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); }
 	}
 
 	u64 struct_count = 0;
@@ -62,7 +56,7 @@ bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 			struct_meta.struct_decl = decl;
 			program->structs.emplace_back(struct_meta);
 		}
-		else { error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); passed = false; }
+		else { err_set; error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); }
 		struct_count += 1;
 	}
 
@@ -80,7 +74,7 @@ bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 			enum_meta.enum_decl = decl;
 			program->enums.emplace_back(enum_meta);
 		}
-		else { error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); passed = false; }
+		else { err_set; error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); }
 		enum_count += 1;
 	}
 
@@ -98,28 +92,24 @@ bool check_decl_uniqueness(Ast* ast, Ast_Program* program, Module_Map& modules)
 			proc_meta.proc_decl = decl;
 			program->procedures.emplace_back(proc_meta);
 		}
-		else { error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); passed = false; }
+		else { err_set; error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); }
 		proc_count += 1;
 	}
 
 	//@Low priority
 	//@Rule todo: cant import same thing under multiple names
 	//@Rule todo: cant import same type or procedure under multiple names
-	
-	return passed;
 }
 
-bool check_decls(Ast* ast)
+void check_decls(Error_Handler* err, Ast* ast)
 {
-	bool passed = true;
-
 	// Find and add use symbols to current scope
 	for (Ast_Use_Decl* use_decl : ast->uses)
 	{
-		Ast* import_ast = try_import(ast, { use_decl->import });
+		Ast* import_ast = try_import(err, ast, { use_decl->import });
 		if (import_ast == NULL)
 		{
-			passed = false;
+			err_set;
 			continue;
 		}
 
@@ -131,30 +121,17 @@ bool check_decls(Ast* ast)
 		if (enum_decl) { ast->enum_table.add(alias, enum_decl.value(), hash_ident(alias)); continue; }
 		auto proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
 		if (proc_decl) { ast->proc_table.add(alias, proc_decl.value(), hash_ident(alias)); continue; }
-
+		
+		err_set;
 		error("Use symbol isnt found in imported namespace", symbol);
-		passed = false;
 	}
 
-	for (Ast_Struct_Decl* struct_decl : ast->structs)
-	{
-		if (!check_struct_decl(ast, struct_decl)) passed = false;
-	}
-
-	for (Ast_Enum_Decl* enum_decl : ast->enums)
-	{
-		if (!check_enum_decl(enum_decl)) passed = false;
-	}
-
-	for (Ast_Proc_Decl* proc_decl : ast->procs)
-	{
-		if (!check_proc_decl(ast, proc_decl)) passed = false;
-	}
-
-	return passed;
+	for (Ast_Struct_Decl* struct_decl : ast->structs) check_struct_decl(err, ast, struct_decl);
+	for (Ast_Enum_Decl* enum_decl : ast->enums) check_enum_decl(err, enum_decl);
+	for (Ast_Proc_Decl* proc_decl : ast->procs) check_proc_decl(err, ast, proc_decl);
 }
 
-bool check_main_proc(Ast* ast)
+void check_main_proc(Error_Handler* err, Ast* ast)
 {
 	Ast_Ident ident = {};
 	char name_arr[4] = { 'm', 'a', 'i', 'n' };
@@ -164,50 +141,45 @@ bool check_main_proc(Ast* ast)
 	auto proc_meta = find_proc(ast, ident);
 	if (!proc_meta)
 	{
+		err_set;
 		printf("Main procedure not found. Make sure src/main file has 'main :: () :: i32 { ... }' declared\n\n");
-		return false;
+		return;
 	}
-
-	Ast_Proc_Decl_Meta meta = proc_meta.value();
-	meta.proc_decl->is_main = true;
-	bool passed = true;
+	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
+	proc_decl->is_main = true;
 	
-	if (meta.proc_decl->is_external)
+	if (proc_decl->is_external)
 	{
-		error("Main procedure cannot be specified as external '@'. You must define a main procedure block", meta.proc_decl->ident);
-		passed = false;
+		err_set;
+		error("Main procedure cannot be specified as external '@'. You must define a main procedure block", proc_decl->ident);
 	}
 
-	if (meta.proc_decl->input_params.size() != 0)
+	if (proc_decl->input_params.size() != 0)
 	{
-		error("Main procedure cannot have any input parameters. Command line arguments can be accessed using core library", meta.proc_decl->ident);
-		passed = false;
+		err_set;
+		error("Main procedure cannot have any input parameters. Command line arguments can be accessed using core library", proc_decl->ident);
 	}
 
-	if (!meta.proc_decl->return_type)
+	if (!proc_decl->return_type)
 	{
-		error("Main procedure must have i32 return type", meta.proc_decl->ident);
-		passed = false;
+		err_set;
+		error("Main procedure must have i32 return type", proc_decl->ident);
 	}
 	else
 	{
-		Ast_Type return_type = meta.proc_decl->return_type.value();
+		Ast_Type return_type = proc_decl->return_type.value();
 		if (return_type.tag != Ast_Type::Tag::Basic || return_type.as_basic != BASIC_TYPE_I32)
 		{
+			err_set;
 			printf("Main procedure must have i32 return type\n");
-			debug_print_ident(meta.proc_decl->ident);
+			debug_print_ident(proc_decl->ident);
 			printf("\n");
-			passed = false;
 		}
 	}
-
-	return passed;
 }
 
-bool check_ast(Ast* ast)
+void check_ast(Error_Handler* err, Ast* ast)
 {
-	bool passed = true;
-	
 	Block_Stack bc = {};
 	//@Notice not setting passed flag in checks
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
@@ -215,13 +187,17 @@ bool check_ast(Ast* ast)
 		if (proc_decl->is_external) continue;
 
 		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
-		Terminator terminator = check_block_cfg(proc_decl->block, false, false);
+		Terminator terminator = check_block_cfg(err, proc_decl->block, false, false);
 		if (proc_decl->return_type.has_value() && terminator != Terminator::Return)
-		error("Not all control flow paths return value", proc_decl->ident);
+		{
+			err_set;
+			error("Not all control flow paths return value", proc_decl->ident);
+		}
 		
 		//@Notice need to add input variables to block stack
 		block_stack_reset(&bc);
 		block_stack_add_block(&bc);
+		bc.proc_context = proc_decl;
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
 			//@Notice input params are checked at declaration check stage
@@ -229,39 +205,31 @@ bool check_ast(Ast* ast)
 			
 			if (block_stack_contains_var(&bc, param.ident))
 			{
+				err_set;
 				error("Input parameter with same name is already exists", param.ident);
 			}
-			else 
-			{
-				block_stack_add_var(&bc, param.ident, type_info);
-			}
+			else block_stack_add_var(&bc, param.ident, type_info);
 		}
-		check_block(ast, &bc, proc_decl->block, false);
+		check_block(err, ast, &bc, proc_decl->block, false);
 	}
-
-	return passed;
 }
 
-bool check_struct_decl(Ast* ast, Ast_Struct_Decl* struct_decl)
+void check_struct_decl(Error_Handler* err, Ast* ast, Ast_Struct_Decl* struct_decl)
 {
-	bool passed = true;
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf possibly move out from function and re-use hash_set with reset()
 
 	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
 		auto name = name_set.find_key(field.ident, hash_ident(field.ident));
 		if (!name) name_set.add(field.ident, hash_ident(field.ident));
-		else { error("Duplicate struct field identifier", field.ident); passed = false; }
+		else { err_set; error("Duplicate struct field identifier", field.ident); }
 
-		if (!check_type(ast, &field.type)) passed = false;
+		check_type(err, ast, &field.type);
 	}
-
-	return passed;
 }
 
-bool check_enum_decl(Ast_Enum_Decl* enum_decl)
+void check_enum_decl(Error_Handler* err, Ast_Enum_Decl* enum_decl)
 {
-	bool passed = true;
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
 
 	BasicType basic_type = BASIC_TYPE_I32;
@@ -271,49 +239,44 @@ bool check_enum_decl(Ast_Enum_Decl* enum_decl)
 	//@Note this might be usefull, look into supporting string enums later
 	if (basic_type == BASIC_TYPE_STRING)
 	{
+		err_set;
 		error("Cannot use string basic type in enum declration", enum_decl->type);
-		passed = false;
 	}
 
 	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
 	{
 		auto name = name_set.find_key(variant.ident, hash_ident(variant.ident));
 		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
-		else { error("Duplicate enum variant identifier", variant.ident); passed = false; }
+		else { err_set; error("Duplicate enum variant identifier", variant.ident); }
 
 		if (is_unsigned && variant.is_negative)
 		{
+			err_set;
 			error("Cannot use negative constant for enum of unsigned integer type", variant.ident);
-			passed = false;
 		}
 	}
-
-	return passed;
 }
 
-bool check_proc_decl(Ast* ast, Ast_Proc_Decl* proc_decl)
+void check_proc_decl(Error_Handler* err, Ast* ast, Ast_Proc_Decl* proc_decl)
 {
-	bool passed = true;
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
 
 	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 	{
 		auto name = name_set.find_key(param.ident, hash_ident(param.ident));
 		if (!name) name_set.add(param.ident, hash_ident(param.ident));
-		else { error("Duplicate procedure input parameter identifier", param.ident); passed = false; }
+		else { err_set; error("Duplicate procedure input parameter identifier", param.ident); }
 		
-		if (!check_type(ast, &param.type)) passed = false;
+		check_type(err, ast, &param.type);
 	}
 
 	if (proc_decl->return_type)
 	{
-		if (!check_type(ast, &proc_decl->return_type.value())) passed = false;
+		check_type(err, ast, &proc_decl->return_type.value());
 	}
-
-	return passed;
 }
 
-Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
+Ast* try_import(Error_Handler* err, Ast* ast, std::optional<Ast_Ident> import)
 {
 	if (!import) return ast;
 
@@ -321,6 +284,7 @@ Ast* try_import(Ast* ast, std::optional<Ast_Ident> import)
 	auto import_decl = ast->import_table.find(import_ident, hash_ident(import_ident));
 	if (!import_decl)
 	{
+		err_set;
 		error("Import module not found", import_ident);
 		return NULL;
 	}
@@ -365,7 +329,7 @@ std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ide
 	return {};
 }
 
-Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
+Terminator check_block_cfg(Error_Handler* err, Ast_Block* block, bool is_loop, bool is_defer)
 {
 	Terminator terminator = Terminator::None;
 
@@ -373,6 +337,7 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
 	{
 		if (terminator != Terminator::None)
 		{
+			err_set;
 			printf("Unreachable statement:\n");
 			debug_print_statement(statement, 0);
 			printf("\n");
@@ -384,33 +349,33 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
 		{
 			case Ast_Statement::Tag::If:
 			{
-				check_if_cfg(statement->as_if, is_loop, is_defer);
+				check_if_cfg(err, statement->as_if, is_loop, is_defer);
 			} break;
 			case Ast_Statement::Tag::For: 
 			{
-				check_block_cfg(statement->as_for->block, true, is_defer);
+				check_block_cfg(err, statement->as_for->block, true, is_defer);
 			} break;
 			case Ast_Statement::Tag::Block: 
 			{
-				terminator = check_block_cfg(statement->as_block, is_loop, is_defer);
+				terminator = check_block_cfg(err, statement->as_block, is_loop, is_defer);
 			} break;
 			case Ast_Statement::Tag::Defer:
 			{
 				if (is_defer)
 				{
+					err_set;
 					printf("Nested defer blocks are not allowed:\n");
 					debug_print_token(statement->as_defer->token, true, true);
 					printf("\n");
 				}
-				else check_block_cfg(statement->as_defer->block, false, true);
+				else check_block_cfg(err, statement->as_defer->block, false, true);
 			} break;
 			case Ast_Statement::Tag::Break:
 			{
 				if (!is_loop)
 				{
-					if (is_defer) 
-						printf("Break statement inside defer block is not allowed:\n");
-					else printf("Break statement outside a loop:\n");
+					if (is_defer) { err_set; printf("Break statement inside defer block is not allowed:\n"); }
+					else { err_set; printf("Break statement outside a loop:\n"); }
 					debug_print_token(statement->as_break->token, true, true);
 					printf("\n");
 				}
@@ -420,6 +385,7 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
 			{
 				if (is_defer)
 				{
+					err_set;
 					printf("Defer block cant contain 'return' statements:\n");
 					debug_print_token(statement->as_defer->token, true, true);
 					printf("\n");
@@ -430,9 +396,8 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
 			{
 				if (!is_loop)
 				{
-					if (is_defer)
-						printf("Continue statement inside defer block is not allowed:\n");
-					else printf("Continue statement outside a loop:\n");
+					if (is_defer) { err_set; printf("Continue statement inside defer block is not allowed:\n"); }
+					else { err_set; printf("Continue statement outside a loop:\n"); }
 					debug_print_token(statement->as_continue->token, true, true);
 					printf("\n");
 				}
@@ -447,22 +412,22 @@ Terminator check_block_cfg(Ast_Block* block, bool is_loop, bool is_defer)
 	return terminator;
 }
 
-void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer)
+void check_if_cfg(Error_Handler* err, Ast_If* _if, bool is_loop, bool is_defer)
 {
-	check_block_cfg(_if->block, is_loop, is_defer);
+	check_block_cfg(err, _if->block, is_loop, is_defer);
 	
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else::Tag::If)
-			check_if_cfg(_else->as_if, is_loop, is_defer);
-		else check_block_cfg(_else->as_block, is_loop, is_defer);
+			check_if_cfg(err, _else->as_if, is_loop, is_defer);
+		else check_block_cfg(err, _else->as_block, is_loop, is_defer);
 	}
 }
 
 //@Todo store proc context in Block_Stack and 
 //type check return type with proc decl return type, create check_return()
-static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block)
+static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block)
 {
 	if (add_block) block_stack_add_block(bc);
 
@@ -470,83 +435,131 @@ static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_bl
 	{
 		switch (statement->tag)
 		{
-			case Ast_Statement::Tag::If: check_if(ast, bc, statement->as_if); break;
-			case Ast_Statement::Tag::For: check_for(ast, bc, statement->as_for); break;
-			case Ast_Statement::Tag::Block: check_block(ast, bc, statement->as_block); break;
-			case Ast_Statement::Tag::Defer: check_block(ast, bc, statement->as_defer->block); break;
+			case Ast_Statement::Tag::If: check_if(err, ast, bc, statement->as_if); break;
+			case Ast_Statement::Tag::For: check_for(err, ast, bc, statement->as_for); break;
+			case Ast_Statement::Tag::Block: check_block(err, ast, bc, statement->as_block); break;
+			case Ast_Statement::Tag::Defer: check_block(err, ast, bc, statement->as_defer->block); break;
 			case Ast_Statement::Tag::Break: break;
-			case Ast_Statement::Tag::Return: if (statement->as_return) check_expr(ast, bc, statement->as_return->expr.value()); break;
+			case Ast_Statement::Tag::Return: check_return(err, ast, bc, statement->as_return); break;
 			case Ast_Statement::Tag::Continue: break;
-			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, bc, statement->as_proc_call, true); break;
-			case Ast_Statement::Tag::Var_Decl: check_var_decl(ast, bc, statement->as_var_decl); break;
-			case Ast_Statement::Tag::Var_Assign: check_var_assign(ast, bc, statement->as_var_assign); break;
+			case Ast_Statement::Tag::Proc_Call: check_proc_call(err, ast, bc, statement->as_proc_call, true); break;
+			case Ast_Statement::Tag::Var_Decl: check_var_decl(err, ast, bc, statement->as_var_decl); break;
+			case Ast_Statement::Tag::Var_Assign: check_var_assign(err, ast, bc, statement->as_var_assign); break;
 		}
 	}
 
 	block_stack_remove_block(bc);
 }
 
-void check_if(Ast* ast, Block_Stack* bc, Ast_If* _if)
+void check_if(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_If* _if)
 {
-	auto type = check_expr(ast, bc, _if->condition_expr);
-	if (!type.has_value() || type_info_kind(type.value()) != Type_Kind::Bool)
+	auto type = check_expr(err, ast, bc, _if->condition_expr);
+	if (!type.has_value() || type_info_kind(err, type.value()) != Type_Kind::Bool)
 	{
+		err_set;
 		printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
 		debug_print_token(_if->token, true, true);
 		printf("\n");
 	}
 
-	check_block(ast, bc, _if->block);
+	check_block(err, ast, bc, _if->block);
 
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else::Tag::If)
-			check_if(ast, bc, _else->as_if);
-		else check_block(ast, bc, _else->as_block);
+			check_if(err, ast, bc, _else->as_if);
+		else check_block(err, ast, bc, _else->as_block);
 	}
 }
 
-void check_for(Ast* ast, Block_Stack* bc, Ast_For* _for)
+void check_for(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_For* _for)
 {
 	block_stack_add_block(bc);
-	if (_for->var_decl) check_var_decl(ast, bc, _for->var_decl.value());
-	if (_for->var_assign) check_var_assign(ast, bc, _for->var_assign.value());
+	if (_for->var_decl) check_var_decl(err, ast, bc, _for->var_decl.value());
+	if (_for->var_assign) check_var_assign(err, ast, bc, _for->var_assign.value());
 
 	if (_for->condition_expr)
 	{
-		auto type = check_expr(ast, bc, _for->condition_expr.value());
-		if (!type.has_value() || type_info_kind(type.value()) != Type_Kind::Bool)
+		auto type = check_expr(err, ast, bc, _for->condition_expr.value());
+		if (!type.has_value() || type_info_kind(err, type.value()) != Type_Kind::Bool)
 		{
+			err_set;
 			printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
 			debug_print_token(_for->token, true, true);
 			printf("\n");
 		}
 	}
 
-	check_block(ast, bc, _for->block, false);
+	check_block(err, ast, bc, _for->block, false);
 }
 
-void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
+void check_return(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Return* _return)
+{
+	if (_return->expr)
+	{
+		auto expr_type = check_expr(err, ast, bc, _return->expr.value());
+		if (!expr_type) return;
+
+		if (bc->proc_context->return_type)
+		{
+			Ast_Type ret_type = bc->proc_context->return_type.value();
+			if (!match_type(err, ret_type, expr_type.value().type))
+			{
+				err_set;
+				printf("Return type doesnt match procedure declaration:\n");
+				debug_print_token(_return->token, true, true);
+				printf("Expected: \n"); debug_print_type(ret_type); printf("\n");
+				printf("Got: "); debug_print_type(expr_type.value().type); printf("\n\n");
+			}
+		}
+		else
+		{
+			err_set;
+			Ast_Type ret_type = bc->proc_context->return_type.value();
+			printf("Return type doesnt match procedure declaration:\n");
+			debug_print_token(_return->token, true, true);
+			printf("Expected no return type\n");
+			printf("Got: "); debug_print_type(ret_type); printf("\n\n");
+		}
+	}
+	else
+	{
+		if (bc->proc_context->return_type)
+		{
+			err_set;
+			Ast_Type ret_type = bc->proc_context->return_type.value();
+			printf("Return type doesnt match procedure declaration:\n");
+			debug_print_token(_return->token, true, true);
+			printf("Expected type: "); debug_print_type(ret_type);
+			printf("Got no return type");
+			printf("\n");
+		}
+	}
+}
+
+void check_var_decl(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 {
 	Ast_Ident ident = var_decl->ident;
 	bool is_valid_decl = true;
 
 	if (block_stack_contains_var(bc, ident))
 	{
+		err_set;
 		error("Variable already in scope in variable declaration", ident);
 		is_valid_decl = false;
 	}
 
 	if (var_decl->type)
 	{
-		auto type = check_type(ast, &var_decl->type.value());
+		auto type = check_type(err, ast, &var_decl->type.value());
 		
 		if (var_decl->expr)
 		{
-			auto expr_type = check_expr(ast, bc, var_decl->expr.value());
-			if (type && expr_type && !match_type_info(type.value(), expr_type.value()))
+			auto expr_type = check_expr(err, ast, bc, var_decl->expr.value());
+			if (type && expr_type && !match_type_info(err, type.value(), expr_type.value()))
 			{
+				err_set;
 				printf("Type mismatch in variable declaration:\n"); 
 				debug_print_ident(var_decl->ident);
 				printf("Expected: "); debug_print_type(type.value().type); printf("\n");
@@ -563,7 +576,7 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 	}
 	else
 	{
-		auto expr_type = check_expr(ast, bc, var_decl->expr.value());
+		auto expr_type = check_expr(err, ast, bc, var_decl->expr.value());
 		if (!expr_type) return;
 
 		var_decl->type = expr_type.value().type;
@@ -578,21 +591,23 @@ void check_var_decl(Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl)
 	}
 }
 
-void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
+void check_var_assign(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
 {
-	auto var_type = check_var(ast, bc, var_assign->var);
-	auto expr_type = check_expr(ast, bc, var_assign->expr);
+	auto var_type = check_var(err, ast, bc, var_assign->var);
+	auto expr_type = check_expr(err, ast, bc, var_assign->expr);
 	
 	if (var_assign->op != ASSIGN_OP_NONE)
 	{
+		err_set;
 		printf("Check var assign: only '=' assign op is supported\n");
 		debug_print_var_assign(var_assign, 0);
 		printf("\n");
 		return;
 	}
 
-	if (var_type && expr_type && !match_type_info(var_type.value(), expr_type.value()))
+	if (var_type && expr_type && !match_type_info(err, var_type.value(), expr_type.value()))
 	{
+		err_set;
 		printf("Type mismatch in variable assignment:\n");
 		debug_print_ident(var_assign->var->ident);
 		printf("Expected: "); debug_print_type(var_type.value().type); printf("\n");
@@ -600,7 +615,7 @@ void check_var_assign(Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign)
 	}
 }
 
-std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
+std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type)
 {
 	switch (type->tag)
 	{
@@ -610,13 +625,13 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 		}
 		case Ast_Type::Tag::Array:
 		{
-			auto element_type = check_type(ast, &type->as_array->element_type);
+			auto element_type = check_type(err, ast, &type->as_array->element_type);
 			if (!element_type) return {};
 			return Type_Info { false, *type };
 		}
 		case Ast_Type::Tag::Custom:
 		{
-			Ast* target_ast = try_import(ast, type->as_custom->import);
+			Ast* target_ast = try_import(err, ast, type->as_custom->import);
 			if (target_ast == NULL) return {};
 
 			auto struct_meta = find_struct(target_ast, type->as_custom->type);
@@ -637,6 +652,7 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 				return Type_Info { false, *type };
 			}
 
+			err_set;
 			printf("Failed to find the custom type: ");
 			debug_print_custom_type(type->as_custom);
 			printf("\n");
@@ -646,6 +662,7 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 		}
 		default:
 		{
+			err_set;
 			printf("check_type: Unexpected Ast_Type::Tag, this should never happen!");
 			debug_print_type(*type);
 			printf("\n");
@@ -655,7 +672,7 @@ std::optional<Type_Info> check_type(Ast* ast, Ast_Type* type)
 }
 
 //@Notice not accounting for is_var_owned propagation yet using Ast_Type directly as input
-std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Access* access, Ast_Type type)
+std::optional<Type_Info> check_access(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Access* access, Ast_Type type)
 {
 	switch (access->tag)
 	{
@@ -663,10 +680,11 @@ std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Access* acc
 	{
 		Ast_Var_Access* var_access = access->as_var;
 
-		Type_Kind kind = type_kind(type);
+		Type_Kind kind = type_kind(err, type);
 		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type::Tag::Struct) kind = Type_Kind::Struct;
 		if (kind != Type_Kind::Struct)
 		{
+			err_set;
 			printf("Field access might only be used on variables of struct or pointer to a struct type:\n");
 			debug_print_ident(var_access->ident);
 			printf("\n");
@@ -677,34 +695,37 @@ std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Access* acc
 		auto field_id = find_struct_field(struct_decl, var_access->ident);
 		if (!field_id) 
 		{ 
+			err_set;
 			error("Failed to find struct field during access", var_access->ident); 
 			return {}; 
 		}
 		var_access->field_id = field_id.value();
 
 		Ast_Type result_type = struct_decl->fields[var_access->field_id].type;
-		if (var_access->next) return check_access(ast, bc, var_access->next.value(), result_type);
+		if (var_access->next) return check_access(err, ast, bc, var_access->next.value(), result_type);
 		return Type_Info { false, result_type };
 	}
 	case Ast_Access::Tag::Array:
 	{
 		Ast_Array_Access* array_access = access->as_array;
 		
-		Type_Kind kind = type_kind(type);
+		Type_Kind kind = type_kind(err, type);
 		if (kind != Type_Kind::Array)
 		{
+			err_set;
 			printf("Array access might only be used on variables of array type:\n");
 			debug_print_access(access);
 			printf("\n\n");
 			return {};
 		}
 
-		auto expr_type = check_expr(ast, bc, array_access->index_expr);
+		auto expr_type = check_expr(err, ast, bc, array_access->index_expr);
 		if (expr_type)
 		{
-			Type_Kind expr_kind = type_info_kind(expr_type.value());
+			Type_Kind expr_kind = type_info_kind(err, expr_type.value());
 			if (expr_kind != Type_Kind::Integer)
 			{
+				err_set;
 				printf("Array access expression must be of integer type:\n");
 				debug_print_expr(array_access->index_expr, 0);
 				printf("\n\n");
@@ -712,66 +733,67 @@ std::optional<Type_Info> check_access(Ast* ast, Block_Stack* bc, Ast_Access* acc
 		}
 
 		Ast_Type result_type = type.as_array->element_type;
-		if (array_access->next) return check_access(ast, bc, array_access->next.value(), result_type);
+		if (array_access->next) return check_access(err, ast, bc, array_access->next.value(), result_type);
 		return Type_Info { false, result_type };
 	}
 	}
 }
 
-std::optional<Type_Info> check_expr(Ast* ast, Block_Stack* bc, Ast_Expr* expr)
+std::optional<Type_Info> check_expr(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
-		case Ast_Expr::Tag::Term: return check_term(ast, bc, expr->as_term);
-		case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(ast, bc, expr->as_unary_expr);
-		case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(ast, bc, expr->as_binary_expr);
+		case Ast_Expr::Tag::Term: return check_term(err, ast, bc, expr->as_term);
+		case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(err, ast, bc, expr->as_unary_expr);
+		case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(err, ast, bc, expr->as_binary_expr);
 		default: return {};
 	}
 }
 
-std::optional<Type_Info> check_term(Ast* ast, Block_Stack* bc, Ast_Term* term)
+std::optional<Type_Info> check_term(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Term* term)
 {
 	switch (term->tag)
 	{
-		case Ast_Term::Tag::Var: return check_var(ast, bc, term->as_var);
-		case Ast_Term::Tag::Enum: return check_enum(ast, term->as_enum);
-		case Ast_Term::Tag::Literal: return check_literal(&term->as_literal);
-		case Ast_Term::Tag::Proc_Call: return check_proc_call(ast, bc, term->as_proc_call, false);
+		case Ast_Term::Tag::Var: return check_var(err, ast, bc, term->as_var);
+		case Ast_Term::Tag::Enum: return check_enum(err, ast, term->as_enum);
+		case Ast_Term::Tag::Literal: return check_literal(err, &term->as_literal);
+		case Ast_Term::Tag::Proc_Call: return check_proc_call(err, ast, bc, term->as_proc_call, false);
 		default: return {};
 	}
 }
 
-std::optional<Type_Info> check_var(Ast* ast, Block_Stack* bc, Ast_Var* var)
+std::optional<Type_Info> check_var(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var* var)
 {
 	auto type = block_stack_find_var_type(bc, var->ident);
 	if (!type)
 	{
-		error("Check var: var is not found or has not valid type\n", var->ident);
+		err_set;
+		error("Check var: var is not found or has not valid type", var->ident);
 		return {};
 	}
 	
 	if (var->access)
 	{
-		return check_access(ast, bc, var->access.value(), type.value().type);
+		return check_access(err, ast, bc, var->access.value(), type.value().type);
 	}
 	
 	return type;
 }
 
-std::optional<Type_Info> check_enum(Ast* ast, Ast_Enum* _enum)
+std::optional<Type_Info> check_enum(Error_Handler* err, Ast* ast, Ast_Enum* _enum)
 {
-	Ast* target_ast = try_import(ast, _enum->import);
+	Ast* target_ast = try_import(err, ast, _enum->import);
 	if (target_ast == NULL) return {};
 	
 	// return none type if enum wasnt found
 	auto enum_meta = find_enum(target_ast, _enum->type);
-	if (!enum_meta) { error("Accessing undeclared enum", _enum->type); return {}; }
+	if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->type); return {}; }
 	Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
 	_enum->enum_id = enum_meta.value().enum_id;
 
 	// even when variant is invalid, return enum type
 	auto variant_id = find_enum_variant(enum_decl, _enum->variant);
-	if (!variant_id) { error("Accessing undeclared enum variant", _enum->variant); }
+	if (!variant_id) { err_set; error("Accessing undeclared enum variant", _enum->variant); }
 	else _enum->variant_id = variant_id.value();
 
 	Ast_Type type = {};
@@ -781,7 +803,7 @@ std::optional<Type_Info> check_enum(Ast* ast, Ast_Enum* _enum)
 	return Type_Info { false, type };
 }
 
-std::optional<Type_Info> check_literal(Ast_Literal* literal)
+std::optional<Type_Info> check_literal(Error_Handler* err, Ast_Literal* literal)
 {
 	//@Todo
 	//handle string literals
@@ -794,6 +816,7 @@ std::optional<Type_Info> check_literal(Ast_Literal* literal)
 		case TOKEN_INTEGER_LITERAL: return type_info_from_basic(BASIC_TYPE_I32);
 		default:
 		{
+			err_set;
 			printf("Check literal: unknown or unsupported literal:\n");
 			debug_print_token(literal->token, true, true);
 			printf("\n");
@@ -802,15 +825,15 @@ std::optional<Type_Info> check_literal(Ast_Literal* literal)
 	}
 }
 
-std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call, bool is_statement)
+std::optional<Type_Info> check_proc_call(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call, bool is_statement)
 {
-	Ast* target_ast = try_import(ast, proc_call->import);
+	Ast* target_ast = try_import(err, ast, proc_call->import);
 	if (target_ast == NULL) return {};
 	
 	// find procedure
 	Ast_Ident ident = proc_call->ident;
 	auto proc_meta = find_proc(target_ast, ident);
-	if (!proc_meta) { error("Calling undeclared procedure", ident); return {}; }
+	if (!proc_meta) { err_set; error("Calling undeclared procedure", ident); return {}; }
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_call->proc_id = proc_meta.value().proc_id;
 
@@ -819,6 +842,7 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 	u32 input_count = (u32)proc_call->input_exprs.size();
 	if (param_count != input_count)
 	{
+		err_set;
 		printf("Check proc call: unexpected number of input arguments:\n");
 		debug_print_ident(ident, true, true);
 		printf("Expected: %lu Input count: %lu \n\n", param_count, input_count);
@@ -827,12 +851,13 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 	// check input exprs and types 
 	for (u32 i = 0; i < input_count; i += 1)
 	{
-		auto expr_type = check_expr(ast, bc, proc_call->input_exprs[i]);
+		auto expr_type = check_expr(err, ast, bc, proc_call->input_exprs[i]);
 		if (expr_type && i < param_count)
 		{
 			Ast_Type param_type = proc_decl->input_params[i].type;
-			if (!match_type(param_type, expr_type.value().type))
+			if (!match_type(err, param_type, expr_type.value().type))
 			{
+				err_set;
 				printf("Type mismatch in procedure call input argument with id: %lu\n", i);
 				debug_print_ident(proc_call->ident);
 				printf("Expected: "); debug_print_type(param_type); printf("\n");
@@ -845,6 +870,7 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 	{
 		if (proc_call->access)
 		{
+			err_set;
 			printf("Procedure call statement cannot have access chains:\n");
 			debug_print_proc_call(proc_call, 0);
 			printf("\n");
@@ -852,6 +878,7 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 
 		if (proc_decl->return_type)
 		{
+			err_set;
 			printf("Procedure call statement cannot discard the return type value:\n");
 			debug_print_proc_call(proc_call, 0);
 			printf("\n");
@@ -863,6 +890,7 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 	{
 		if (!proc_decl->return_type)
 		{
+			err_set;
 			printf("Procedure call inside an expression must have a return type:\n");
 			debug_print_proc_call(proc_call, 0);
 			printf("\n");
@@ -873,40 +901,41 @@ std::optional<Type_Info> check_proc_call(Ast* ast, Block_Stack* bc, Ast_Proc_Cal
 		
 		if (proc_call->access)
 		{
-			return check_access(ast, bc, proc_call->access.value(), return_type);
+			return check_access(err, ast, bc, proc_call->access.value(), return_type);
 		}
 		
 		return Type_Info { false, return_type };
 	}
 }
 
-std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr)
+std::optional<Type_Info> check_unary_expr(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr)
 {
-	auto rhs_result = check_expr(ast, bc, unary_expr->right);
+	auto rhs_result = check_expr(err, ast, bc, unary_expr->right);
 	if (!rhs_result) return {};
 
 	UnaryOp op = unary_expr->op;
 	Type_Info rhs = rhs_result.value();
-	Type_Kind rhs_kind = type_info_kind(rhs);
+	Type_Kind rhs_kind = type_info_kind(err, rhs);
 
 	switch (op)
 	{
 	case UNARY_OP_MINUS:
 	{
 		if (rhs_kind == Type_Kind::Float || rhs_kind == Type_Kind::Integer) return rhs;
-		printf("Cannot apply unary op '-' to non float / integer type\n\n");
+		err_set; printf("Cannot apply unary op '-' to non float / integer type\n\n");
 		return {};
 	} break;
 	case UNARY_OP_LOGIC_NOT:
 	{
 		if (rhs_kind == Type_Kind::Bool) return rhs;
-		printf("Cannot apply unary op '!' to non bool type\n\n");
+		err_set; printf("Cannot apply unary op '!' to non bool type\n\n");
 		return {};
 	} break;
 	case UNARY_OP_ADDRESS_OF:
 	{
 		if (!rhs.is_var_owned)
 		{
+			err_set;
 			printf("Cannot take address of temporary value, use '&' with variables\n");
 			debug_print_unary_expr(unary_expr, 0);
 			printf("\n");
@@ -920,29 +949,29 @@ std::optional<Type_Info> check_unary_expr(Ast* ast, Block_Stack* bc, Ast_Unary_E
 	case UNARY_OP_BITWISE_NOT:
 	{
 		if (rhs_kind == Type_Kind::Integer) return rhs;
-		printf("Cannot apply unary op '~' to non integer type\n\n");
+		err_set; printf("Cannot apply unary op '~' to non integer type\n\n");
 		return {};
 	} break;
 	default: return {};
 	}
 }
 
-std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr)
+std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr)
 {
-	auto lhs_result = check_expr(ast, bc, binary_expr->left);
-	auto rhs_result = check_expr(ast, bc, binary_expr->right);
+	auto lhs_result = check_expr(err, ast, bc, binary_expr->left);
+	auto rhs_result = check_expr(err, ast, bc, binary_expr->right);
 	if (!lhs_result) return {};
 	if (!rhs_result) return {};
 
 	BinaryOp op = binary_expr->op;
 	Type_Info lhs = lhs_result.value();
 	Type_Info rhs = rhs_result.value();
-	Type_Kind lhs_kind = type_info_kind(lhs);
-	Type_Kind rhs_kind = type_info_kind(rhs);
+	Type_Kind lhs_kind = type_info_kind(err, lhs);
+	Type_Kind rhs_kind = type_info_kind(err, rhs);
 
 	if (lhs_kind != rhs_kind)
 	{
-		printf("Type mismatch in binary expression\n");
+		err_set; printf("Type mismatch in binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -950,7 +979,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 
 	if (lhs_kind != Type_Kind::Bool && lhs_kind != Type_Kind::Float && lhs_kind != Type_Kind::Integer)
 	{
-		printf("Exprected bool float or integer type in binary expression\n");
+		err_set; printf("Exprected bool float or integer type in binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -963,7 +992,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_LOGIC_OR:
 	{
 		if (lhs_kind == Type_Kind::Bool) return type_info_from_basic(BASIC_TYPE_BOOL);
-		printf("Exprected bool operands in binary expression\n");
+		err_set; printf("Exprected bool operands in binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -978,7 +1007,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_NOT_EQUALS:
 	{
 		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return type_info_from_basic(BASIC_TYPE_BOOL);
-		printf("Exprected float or int in comparison binary expression\n");
+		err_set; printf("Exprected float or int in comparison binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -990,7 +1019,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_DIV:
 	{
 		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return lhs;
-		printf("Exprected float or int in math binary expression\n");
+		err_set; printf("Exprected float or int in math binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -998,7 +1027,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_MOD:
 	{
 		if (lhs_kind == Type_Kind::Integer) return lhs;
-		printf("Exprected int in '%%' binary expression\n");
+		err_set; printf("Exprected int in '%%' binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -1011,7 +1040,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	case BINARY_OP_BITSHIFT_RIGHT:
 	{
 		if (lhs_kind == Type_Kind::Integer) return lhs;
-		printf("Exprected int in bitwise binary expression\n");
+		err_set; printf("Exprected int in bitwise binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -1020,7 +1049,7 @@ std::optional<Type_Info> check_binary_expr(Ast* ast, Block_Stack* bc, Ast_Binary
 	}
 }
 
-Type_Kind type_kind(Ast_Type type)
+Type_Kind type_kind(Error_Handler* err, Ast_Type type)
 {
 	if (type.pointer_level > 0) return Type_Kind::Pointer;
 
@@ -1053,15 +1082,15 @@ Type_Kind type_kind(Ast_Type type)
 	case Ast_Type::Tag::Enum: return Type_Kind::Enum;
 	case Ast_Type::Tag::Custom:
 	{
-		printf("type_info_kind: Ast_Type::Tag::Custom is not allowed type must be checked and disambiguated beforehand.\n");
+		err_set; printf("type_info_kind: Ast_Type::Tag::Custom is not allowed type must be checked and disambiguated beforehand.\n");
 		return Type_Kind::Struct;
 	}
 	}
 }
 
-Type_Kind type_info_kind(Type_Info type_info)
+Type_Kind type_info_kind(Error_Handler* err, Type_Info type_info)
 {
-	return type_kind(type_info.type);
+	return type_kind(err, type_info.type);
 }
 
 Type_Info type_info_from_basic(BasicType basic_type)
@@ -1072,12 +1101,12 @@ Type_Info type_info_from_basic(BasicType basic_type)
 	return Type_Info { false, type };
 }
 
-bool match_type_info(Type_Info type_info_a, Type_Info type_info_b)
+bool match_type_info(Error_Handler* err, Type_Info type_info_a, Type_Info type_info_b)
 {
-	return match_type(type_info_a.type, type_info_b.type);
+	return match_type(err, type_info_a.type, type_info_b.type);
 }
 
-bool match_type(Ast_Type type_a, Ast_Type type_b)
+bool match_type(Error_Handler* err, Ast_Type type_a, Ast_Type type_b)
 {
 	if (type_a.pointer_level != type_b.pointer_level) return false;
 	if (type_a.tag != type_b.tag) return false;
@@ -1093,11 +1122,11 @@ bool match_type(Ast_Type type_a, Ast_Type type_b)
 			Ast_Array_Type* array_b = type_b.as_array;
 			if (array_a->is_dynamic != array_b->is_dynamic) return false;
 			if (array_a->fixed_size != array_b->fixed_size) return false;
-			return match_type(array_a->element_type, array_b->element_type);
+			return match_type(err, array_a->element_type, array_b->element_type);
 		}
 		default:
 		{
-			printf("match_type: Unexpected Ast_Type::Tag. Disambiguate Tag::Custom by using check_type first:\n");
+			err_set; printf("match_type: Unexpected Ast_Type::Tag. Disambiguate Tag::Custom by using check_type first:\n");
 			debug_print_type(type_a); printf("\n");
 			debug_print_type(type_b); printf ("\n");
 			return false;

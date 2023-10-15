@@ -78,7 +78,6 @@ LLVMModuleRef build_module(Ast_Program* program)
 
 	build_context_deinit(&context);
 
-	LLVMDumpModule(context.module);
 	return context.module;
 }
 
@@ -264,7 +263,7 @@ void build_defer(IR_Context* context, IR_Block_Stack* bc, Terminator2 terminator
 {
 	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
 	int start_defer_id = bc->defer_stack.size() - 1;
-	int end_defer_id = terminator == Terminator2::Return ? 0 : start_defer_id - block_info.defer_count;
+	int end_defer_id = terminator == Terminator2::Return ? 0 : start_defer_id - (block_info.defer_count - 1); //@Todo confusing indices fix later
 	
 	for (int i = start_defer_id; i >= end_defer_id; i -= 1) 
 	build_block(context, bc, bc->defer_stack[i]->block, BlockFlags::None);
@@ -440,7 +439,7 @@ IR_Var_Access_Info build_var(IR_Context* context, IR_Block_Stack* bc, Ast_Var* v
 			Ast_Struct_Meta struct_meta = context->program->structs[ast_type.as_struct.struct_id];
 			ptr = LLVMBuildStructGEP2(context->builder, struct_meta.struct_type, ptr, var_access->field_id, "struct_ptr");
 			ast_type = struct_meta.struct_decl->fields[var_access->field_id].type;
-			printf("struct field id: %lu\n", var_access->field_id);
+			
 			access = var_access->next.has_value() ? var_access->next.value() : NULL;
 		}
 	}
