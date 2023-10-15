@@ -48,7 +48,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 		type_array.emplace_back(type_to_llvm_type(&context, param.type));
 
 		LLVMTypeRef ret_type = proc_decl->return_type ? type_to_llvm_type(&context, proc_decl->return_type.value()) : LLVMVoidType();
-		char* name = proc_decl->is_external ? ident_to_cstr(proc_decl->ident) : "proc";
+		char* name = (proc_decl->is_external || proc_decl->is_main) ? ident_to_cstr(proc_decl->ident) : "proc";
 		proc_meta.proc_type = LLVMFunctionType(ret_type, type_array.data(), (u32)type_array.size(), 0);
 		proc_meta.proc_value = LLVMAddFunction(context.module, name, proc_meta.proc_type);
 	}
@@ -61,6 +61,8 @@ LLVMModuleRef build_module(Ast_Program* program)
 
 		block_stack_reset(&bc, proc_meta.proc_value);
 		block_stack_add(&bc);
+		LLVMBasicBlockRef entry_block = add_bb(&bc, "entry");
+		set_bb(&context, entry_block);
 		u32 count = 0;
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
@@ -68,7 +70,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 			LLVMValueRef param_value = LLVMGetParam(proc_meta.proc_value, count);
 			LLVMValueRef copy_ptr = LLVMBuildAlloca(context.builder, type, "copy_ptr");
 			LLVMBuildStore(context.builder, param_value, copy_ptr);
-			//@Notice need to add to block stack. bc.add_var(Var_Meta{ param.ident.str, copy_ptr, var_type });
+			block_stack_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, type, param.type });
 			count += 1;
 		}
 		build_block(&context, &bc, proc_decl->block, BlockFlags::DisableBlockAdd);
@@ -161,6 +163,7 @@ void block_stack_pop_back(IR_Block_Stack* bc)
 	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
 	for (u32 i = 0; i < block_info.defer_count; i += 1) bc->defer_stack.pop_back();
 	for (u32 i = 0; i < block_info.loop_count; i += 1) bc->loop_stack.pop_back();
+	for (u32 i = 0; i < block_info.var_count; i += 1) bc->var_stack.pop_back();
 	bc->blocks.pop_back();
 }
 
@@ -176,12 +179,27 @@ void block_stack_add_loop(IR_Block_Stack* bc, IR_Loop_Info loop_info)
 	bc->loop_stack.emplace_back(loop_info);
 }
 
+void block_stack_add_var(IR_Block_Stack* bc, IR_Var_Info var_info)
+{
+	bc->blocks[bc->blocks.size() - 1].var_count += 1;
+	bc->var_stack.emplace_back(var_info);
+}
+
+IR_Var_Info block_stack_find_var(IR_Block_Stack* bc, Ast_Ident ident)
+{
+	for (IR_Var_Info& var : bc->var_stack)
+	{
+		if (match_string_view(var.str, ident.str)) return var;
+	}
+	return {};
+}
+
 IR_Loop_Info block_stack_get_loop(IR_Block_Stack* bc)
 {
 	return bc->loop_stack[bc->loop_stack.size() - 1];
 }
 
-Terminator build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block, BlockFlags flags)
+Terminator2 build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block, BlockFlags flags)
 {
 	if (flags != BlockFlags::DisableBlockAdd) block_stack_add(bc);
 
@@ -193,8 +211,8 @@ Terminator build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block
 		case Ast_Statement::Tag::For: build_for(context, bc, statement->as_for); break;
 		case Ast_Statement::Tag::Block:
 		{
-			Terminator terminator = build_block(context, bc, statement->as_block, BlockFlags::None);
-			if (terminator != Terminator::None)
+			Terminator2 terminator = build_block(context, bc, statement->as_block, BlockFlags::None);
+			if (terminator != Terminator2::None)
 			{
 				build_defer(context, bc, terminator);
 				block_stack_pop_back(bc);
@@ -204,32 +222,32 @@ Terminator build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block
 		case Ast_Statement::Tag::Defer: block_stack_add_defer(bc, statement->as_defer); break;
 		case Ast_Statement::Tag::Break:
 		{
-			build_defer(context, bc, Terminator::Break);
+			build_defer(context, bc, Terminator2::Break);
 			IR_Loop_Info loop = block_stack_get_loop(bc);
 			LLVMBuildBr(context->builder, loop.break_block);
 			
 			block_stack_pop_back(bc);
-			return Terminator::Break;
+			return Terminator2::Break;
 		} break;
 		case Ast_Statement::Tag::Return:
 		{
-			build_defer(context, bc, Terminator::Return);
+			build_defer(context, bc, Terminator2::Return);
 			if (statement->as_return->expr)
 				LLVMBuildRet(context->builder, build_expr(context, bc, statement->as_return->expr.value()));
 			else LLVMBuildRetVoid(context->builder);
 			
 			block_stack_pop_back(bc);
-			return Terminator::Return;
+			return Terminator2::Return;
 		} break;
 		case Ast_Statement::Tag::Continue:
 		{
-			build_defer(context, bc, Terminator::Continue);
+			build_defer(context, bc, Terminator2::Continue);
 			IR_Loop_Info loop = block_stack_get_loop(bc);
 			if (loop.var_assign) build_var_assign(context, bc, loop.var_assign.value());
 			LLVMBuildBr(context->builder, loop.continue_block);
 
 			block_stack_pop_back(bc);
-			return Terminator::Continue;
+			return Terminator2::Continue;
 		} break;
 		case Ast_Statement::Tag::Var_Decl: build_var_decl(context, bc, statement->as_var_decl); break;
 		case Ast_Statement::Tag::Var_Assign: build_var_assign(context, bc, statement->as_var_assign); break;
@@ -237,16 +255,16 @@ Terminator build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block
 		}
 	}
 
-	build_defer(context, bc, Terminator::None);
+	build_defer(context, bc, Terminator2::None);
 	block_stack_pop_back(bc);
-	return Terminator::None;
+	return Terminator2::None;
 }
 
-void build_defer(IR_Context* context, IR_Block_Stack* bc, Terminator terminator)
+void build_defer(IR_Context* context, IR_Block_Stack* bc, Terminator2 terminator)
 {
 	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
 	int start_defer_id = bc->defer_stack.size() - 1;
-	int end_defer_id = terminator == Terminator::Return ? 0 : start_defer_id - block_info.defer_count;
+	int end_defer_id = terminator == Terminator2::Return ? 0 : start_defer_id - block_info.defer_count;
 	
 	for (int i = start_defer_id; i >= end_defer_id; i -= 1) 
 	build_block(context, bc, bc->defer_stack[i]->block, BlockFlags::None);
@@ -263,8 +281,8 @@ void build_if(IR_Context* context, IR_Block_Stack* bc, Ast_If* _if, LLVMBasicBlo
 		LLVMBuildCondBr(context->builder, cond_value, then_block, else_block);
 		set_bb(context, then_block);
 
-		Terminator terminator = build_block(context, bc, _if->block, BlockFlags::None);
-		if (terminator == Terminator::None) LLVMBuildBr(context->builder, cont_block);
+		Terminator2 terminator = build_block(context, bc, _if->block, BlockFlags::None);
+		if (terminator == Terminator2::None) LLVMBuildBr(context->builder, cont_block);
 		set_bb(context, else_block);
 
 		Ast_Else* _else = _if->_else.value();
@@ -274,8 +292,8 @@ void build_if(IR_Context* context, IR_Block_Stack* bc, Ast_If* _if, LLVMBasicBlo
 		}
 		else
 		{
-			Terminator else_terminator = build_block(context, bc, _else->as_block, BlockFlags::None);
-			if (else_terminator == Terminator::None) LLVMBuildBr(context->builder, cont_block);
+			Terminator2 else_terminator = build_block(context, bc, _else->as_block, BlockFlags::None);
+			if (else_terminator == Terminator2::None) LLVMBuildBr(context->builder, cont_block);
 			set_bb(context, cont_block);
 		}
 	}
@@ -285,8 +303,8 @@ void build_if(IR_Context* context, IR_Block_Stack* bc, Ast_If* _if, LLVMBasicBlo
 		LLVMBuildCondBr(context->builder, cond_value, then_block, cont_block);
 		set_bb(context, then_block);
 
-		Terminator terminator = build_block(context, bc, _if->block, BlockFlags::None);
-		if (terminator == Terminator::None) LLVMBuildBr(context->builder, cont_block);
+		Terminator2 terminator = build_block(context, bc, _if->block, BlockFlags::None);
+		if (terminator == Terminator2::None) LLVMBuildBr(context->builder, cont_block);
 		set_bb(context, cont_block);
 	}
 }
@@ -311,8 +329,8 @@ void build_for(IR_Context* context, IR_Block_Stack* bc, Ast_For* _for)
 
 	block_stack_add(bc);
 	block_stack_add_loop(bc, IR_Loop_Info { exit_block, cond_block, _for->var_assign });
-	Terminator terminator = build_block(context, bc, _for->block, BlockFlags::DisableBlockAdd);
-	if (terminator == Terminator::None)
+	Terminator2 terminator = build_block(context, bc, _for->block, BlockFlags::DisableBlockAdd);
+	if (terminator == Terminator2::None)
 	{
 		if (_for->var_assign) build_var_assign(context, bc, _for->var_assign.value());
 		LLVMBuildBr(context->builder, cond_block);
@@ -333,18 +351,15 @@ void build_var_decl(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Decl* var_d
 	}
 	else LLVMBuildStore(context->builder, LLVMConstNull(type), var_ptr);
 
-	//bc->add_var(Var_Meta{ var_decl->ident.str, var_ptr, var_type });
+	block_stack_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, type, var_decl->type.value() });
 }
 
 void build_var_assign(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Assign* var_assign)
 {
-	Ast_Var* var = var_assign->var;
-	//Var_Access_Meta var_access = get_var_access_meta(var, bc);
-
+	IR_Var_Access_Info var_access = build_var(context, bc, var_assign->var);
 	LLVMValueRef expr_value = build_expr(context, bc, var_assign->expr);
-	//expr_value = build_value_cast(expr_value, var_access.type);
-
-	//LLVMBuildStore(context->builder, expr_value, var_access.ptr);
+	//expr_value = build_value_cast(expr_value, var_access.var_type);
+	LLVMBuildStore(context->builder, expr_value, var_access.var_ptr);
 }
 
 LLVMValueRef build_proc_call(IR_Context* context, IR_Block_Stack* bc, Ast_Proc_Call* proc_call, ProcCallFlags flags)
@@ -374,9 +389,11 @@ LLVMValueRef build_term(IR_Context* context, IR_Block_Stack* bc, Ast_Term* term)
 {
 	switch (term->tag)
 	{
-	case Ast_Term::Tag::Var:
-	{
-		return NULL;
+	case Ast_Term::Tag::Var: 
+	{	
+		//@Todo handle unary adress op by returning ptr without load
+		IR_Var_Access_Info var_access = build_var(context, bc, term->as_var);
+		return LLVMBuildLoad2(context->builder, var_access.var_type, var_access.var_ptr, "load_val");
 	}
 	case Ast_Term::Tag::Enum:
 	{
@@ -395,12 +412,95 @@ LLVMValueRef build_term(IR_Context* context, IR_Block_Stack* bc, Ast_Term* term)
 	}
 }
 
+IR_Var_Access_Info build_var(IR_Context* context, IR_Block_Stack* bc, Ast_Var* var)
+{
+	IR_Var_Info var_info = block_stack_find_var(bc, var->ident);
+	LLVMValueRef ptr = var_info.var_ptr;
+	LLVMTypeRef type = var_info.var_type;
+	Ast_Type ast_type = var_info.ast_type;
+
+	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
+	while (access != NULL)
+	{
+		if (access->tag == Ast_Access::Tag::Array)
+		{
+			printf("llvm ir builder 2 build_var: array access isnt supported\n");
+			exit(EXIT_FAILURE);
+			return {}; //@Todo arrays
+		}
+		else
+		{
+			if (ast_type.pointer_level > 0)
+			{
+				ptr = LLVMBuildLoad2(context->builder, LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0), ptr, "ptr_load");
+				ast_type.pointer_level -= 1;
+			}
+
+			Ast_Var_Access* var_access = access->as_var;
+			Ast_Struct_Meta struct_meta = context->program->structs[ast_type.as_struct.struct_id];
+			ptr = LLVMBuildStructGEP2(context->builder, struct_meta.struct_type, ptr, var_access->field_id, "struct_ptr");
+			ast_type = struct_meta.struct_decl->fields[var_access->field_id].type;
+			printf("struct field id: %lu\n", var_access->field_id);
+			access = var_access->next.has_value() ? var_access->next.value() : NULL;
+		}
+	}
+
+	return IR_Var_Access_Info { ptr, type_to_llvm_type(context, ast_type) };
+}
+
 LLVMValueRef build_unary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Unary_Expr* unary_expr)
 {
-	return NULL;
+	UnaryOp op = unary_expr->op;
+	LLVMValueRef rhs = build_expr(context, bc, unary_expr->right);
+
+	switch (op)
+	{
+	case UNARY_OP_MINUS:
+	{
+		LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
+		if (LLVMGetTypeKind(rhs_type) == LLVMFloatTypeKind) return LLVMBuildFNeg(context->builder, rhs, "utmp");
+		else return LLVMBuildNeg(context->builder, rhs, "utmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	}
+	case UNARY_OP_LOGIC_NOT: return LLVMBuildNot(context->builder, rhs, "utmp");
+	case UNARY_OP_ADDRESS_OF: return rhs;
+	case UNARY_OP_BITWISE_NOT: return LLVMBuildNot(context->builder, rhs, "utmp");
+	}
 }
 
 LLVMValueRef build_binary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Binary_Expr* binary_expr)
 {
-	return NULL;
+	BinaryOp op = binary_expr->op;
+	LLVMValueRef lhs = build_expr(context, bc, binary_expr->left);
+	LLVMValueRef rhs = build_expr(context, bc, binary_expr->right);
+	LLVMTypeRef lhs_type = LLVMTypeOf(lhs);
+	LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
+	bool float_kind = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind;
+
+	//build_binary_value_cast(lhs, rhs, lhs_type, rhs_type);
+
+	switch (op)
+	{
+	// LogicOps [&& ||]
+	case BINARY_OP_LOGIC_AND: return LLVMBuildAnd(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_LOGIC_OR: return LLVMBuildOr(context->builder, lhs, rhs, "btmp");
+	// CmpOps [< > <= >= == !=] //@RealPredicates using ordered (no nans) variants
+	case BINARY_OP_LESS:           if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOLT, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSLT, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_GREATER:        if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOGT, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSGT, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_LESS_EQUALS:    if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOLE, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSLE, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_GREATER_EQUALS: if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOGE, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSGE, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_IS_EQUALS:      if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOEQ, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntEQ, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_NOT_EQUALS:     if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealONE, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntNE, lhs, rhs, "btmp"); //@Determine S / U predicates
+	// MathOps [+ - * / %]
+	case BINARY_OP_PLUS:  if (float_kind) return LLVMBuildFAdd(context->builder, lhs, rhs, "btmp"); else return LLVMBuildAdd(context->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	case BINARY_OP_MINUS: if (float_kind) return LLVMBuildFSub(context->builder, lhs, rhs, "btmp"); else return LLVMBuildSub(context->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	case BINARY_OP_TIMES: if (float_kind) return LLVMBuildFMul(context->builder, lhs, rhs, "btmp"); else return LLVMBuildMul(context->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	case BINARY_OP_DIV:   if (float_kind) return LLVMBuildFDiv(context->builder, lhs, rhs, "btmp"); else return LLVMBuildSDiv(context->builder, lhs, rhs, "btmp"); //@ SU variants: LLVMBuildSDiv, LLVMBuildExactSDiv, LLVMBuildUDiv, LLVMBuildExactUDiv
+	case BINARY_OP_MOD: return LLVMBuildSRem(context->builder, lhs, rhs, "btmp"); //@ SU rem variants: LLVMBuildSRem, LLVMBuildURem (using SRem always now)
+	// BitwiseOps [& | ^ << >>]
+	case BINARY_OP_BITWISE_AND: return LLVMBuildAnd(context->builder, lhs, rhs, "btmp"); // @Design only allow those for uints ideally
+	case BINARY_OP_BITWISE_OR: return LLVMBuildOr(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_BITWISE_XOR: return LLVMBuildXor(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_BITSHIFT_LEFT: return LLVMBuildShl(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_BITSHIFT_RIGHT: return LLVMBuildLShr(context->builder, lhs, rhs, "btmp"); //@LLVMBuildAShr used for maintaining the sign?
+	}
 }

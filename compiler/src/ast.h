@@ -187,6 +187,7 @@ struct Ast_Proc_Decl
 	std::optional<Ast_Type> return_type;
 	Ast_Block* block;
 	bool is_external;
+	bool is_main; //@Todo use flags or enum kinds if types cant overlap
 };
 
 struct Ast_Ident_Type_Pair

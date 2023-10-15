@@ -169,6 +169,7 @@ bool check_main_proc(Ast* ast)
 	}
 
 	Ast_Proc_Decl_Meta meta = proc_meta.value();
+	meta.proc_decl->is_main = true;
 	bool passed = true;
 	
 	if (meta.proc_decl->is_external)
@@ -459,6 +460,8 @@ void check_if_cfg(Ast_If* _if, bool is_loop, bool is_defer)
 	}
 }
 
+//@Todo store proc context in Block_Stack and 
+//type check return type with proc decl return type, create check_return()
 static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block)
 {
 	if (add_block) block_stack_add_block(bc);
@@ -472,7 +475,7 @@ static void check_block(Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_bl
 			case Ast_Statement::Tag::Block: check_block(ast, bc, statement->as_block); break;
 			case Ast_Statement::Tag::Defer: check_block(ast, bc, statement->as_defer->block); break;
 			case Ast_Statement::Tag::Break: break;
-			case Ast_Statement::Tag::Return: break;
+			case Ast_Statement::Tag::Return: if (statement->as_return) check_expr(ast, bc, statement->as_return->expr.value()); break;
 			case Ast_Statement::Tag::Continue: break;
 			case Ast_Statement::Tag::Proc_Call: check_proc_call(ast, bc, statement->as_proc_call, true); break;
 			case Ast_Statement::Tag::Var_Decl: check_var_decl(ast, bc, statement->as_var_decl); break;
