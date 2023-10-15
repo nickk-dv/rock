@@ -24,19 +24,6 @@ bool match_string_view(StringView& a, StringView& b);
 constexpr u64 hash_str_ascii_9(const StringView& str);
 constexpr u64 hash_ascii_9(const char* str);
 
-struct Atom //@Not used
-{
-	u32 hash;
-	char* name;
-};
-
-//bool atom_match(Atom* a, Atom* b) //@Not used
-//{
-//	if (a == b) return true;
-//	if (a->hash != b->hash) return false;
-//	return strcmp(a->name, b->name) == 0;
-//}
-
 struct String
 {
 	~String() { free(data); }

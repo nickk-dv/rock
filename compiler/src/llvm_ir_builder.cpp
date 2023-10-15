@@ -1,772 +1,506 @@
 #include "llvm_ir_builder.h"
 
 #include "llvm-c/Core.h"
-#include "debug_printer.h"
 
-LLVMModuleRef LLVM_IR_Builder::build_module(Ast* ast)
+LLVMModuleRef build_module(Ast_Program* program)
 {
-	module = LLVMModuleCreateWithName("module");
-	builder = LLVMCreateBuilder();
+	IR_Context context = build_context_init(program);
 
-	enum_decl_map.init(32);
-	struct_decl_map.init(32);
-	proc_decl_map.init(32);
-	for (Ast_Enum_Decl* enum_decl : ast->enums) { build_enum_decl(enum_decl); }
-	for (Ast_Struct_Decl* struct_decl : ast->structs) { build_struct_decl(struct_decl); }
-	for (Ast_Proc_Decl* proc_decl : ast->procs) { build_proc_decl(proc_decl); }
-	for (Ast_Proc_Decl* proc_decl : ast->procs) { build_proc_body(proc_decl); }
+	for (Ast_Enum_Meta& enum_meta : program->enums)
+	{
+		BasicType basic_type = BASIC_TYPE_I32; //@Notice maybe store i32 at checking stage
+		if (enum_meta.enum_decl->basic_type) basic_type = enum_meta.enum_decl->basic_type.value();
+		LLVMTypeRef type = basic_type_to_llvm_type(basic_type);
+		enum_meta.enum_type = type;
+
+		for (Ast_Ident_Literal_Pair& variant : enum_meta.enum_decl->variants)
+		{
+			int sign = variant.is_negative ? -1 : 1;
+			if (basic_type <= BASIC_TYPE_U64) variant.constant = LLVMConstInt(type, sign * variant.literal.token.integer_value, basic_type % 2 == 0); //@Check if sign extend is correct or needed
+			else if (basic_type <= BASIC_TYPE_F64) variant.constant = LLVMConstReal(type, sign * variant.literal.token.float64_value);
+			else variant.constant = LLVMConstInt(type, (int)variant.literal.token.bool_value, 0);
+		}
+	}
+
+	std::vector<LLVMTypeRef> type_array(32);
 	
-	LLVMDisposeBuilder(builder);
-	return module;
-}
-
-void LLVM_IR_Builder::build_enum_decl(Ast_Enum_Decl* enum_decl)
-{
-	LLVMTypeRef type = LLVMInt32Type();
-	if (enum_decl->basic_type.has_value()) 
-	type = get_basic_type(enum_decl->basic_type.value());
-
-	bool int_kind = type_is_int(type);
-	bool bool_kind = type_is_bool(type);
-	bool float_kind = type_is_float(type);
-
-	Enum_Meta meta = { enum_decl, type, {} };
-	for (Ast_Ident_Literal_Pair& variant: enum_decl->variants)
+	for (Ast_Struct_Meta& struct_meta : program->structs)
 	{
-		LLVMValueRef enum_constant;
-		int sign = variant.is_negative ? -1 : 1; //@Issue with negative value limits, need robust range checking and ir validation of generated values
-		if (int_kind) enum_constant = LLVMConstInt(type, sign * variant.literal.token.integer_value, 0); //@Todo sign extend?
-		else if (bool_kind) enum_constant = LLVMConstInt(type, (int)variant.literal.token.bool_value, 0);
-		else if (float_kind) enum_constant = LLVMConstReal(type, sign * variant.literal.token.float64_value);
-		else { error_exit("Enum has unsupported basic type, likely a string which is not valid"); }
-		meta.variants.emplace_back(enum_constant);
-	}
-	enum_decl_map.add(enum_decl->type.str, meta, hash_fnv1a_32(enum_decl->type.str));
-}
-
-//@Todo struct recursive dependencies, currently exiting when inner type not found
-void LLVM_IR_Builder::build_struct_decl(Ast_Struct_Decl* struct_decl)
-{
-	std::vector<LLVMTypeRef> members; //@Perf deside on better member storage
-	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
-	{
-		LLVMTypeRef type_ref = get_type_meta(field.type).type;
-		members.emplace_back(type_ref);
+		struct_meta.struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), "struct");
 	}
 
-	LLVMTypeRef struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), get_c_string(struct_decl->type));
-	LLVMStructSetBody(struct_type, members.data(), (u32)members.size(), 0);
-	Struct_Meta meta = { struct_decl, struct_type };
-	struct_decl_map.add(struct_decl->type.str, meta, hash_fnv1a_32(struct_decl->type.str));
-}
-
-void LLVM_IR_Builder::build_proc_decl(Ast_Proc_Decl* proc_decl)
-{
-	std::vector<LLVMTypeRef> param_types = {};
-	param_types.reserve(proc_decl->input_params.size());
-	for (u32 i = 0; i < proc_decl->input_params.size(); i += 1)
-	param_types.emplace_back(get_type_meta(proc_decl->input_params[i].type).type);
-
-	LLVMTypeRef ret_type = LLVMVoidType();
-	if (proc_decl->return_type.has_value())
-	ret_type = get_type_meta(proc_decl->return_type.value()).type;
-
-	LLVMTypeRef proc_type = LLVMFunctionType(ret_type, param_types.data(), (u32)param_types.size(), 0); //@Temp Discarding input args
-	LLVMValueRef proc_val = LLVMAddFunction(module, get_c_string(proc_decl->ident), proc_type);
-
-	Proc_Meta meta = { proc_type, proc_val };
-	proc_decl_map.add(proc_decl->ident.str, meta, hash_fnv1a_32(proc_decl->ident.str));
-}
-
-void LLVM_IR_Builder::build_proc_body(Ast_Proc_Decl* proc_decl)
-{
-	if (proc_decl->is_external) return;
-	auto proc_meta = proc_decl_map.find(proc_decl->ident.str, hash_fnv1a_32(proc_decl->ident.str));
-	if (!proc_meta) { error_exit("failed to find proc declaration while building its body"); return; }
-	
-	proc_value = proc_meta.value().proc_val;
-	LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(proc_value, "entry");
-	set_curr_block(entry_block);
-
-	Var_Block_Scope bc = {}; //@Perf allocating new memory for each function
-	bc.add_block();
-
-	u32 count = 0;
-	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+	for (Ast_Struct_Meta& struct_meta : program->structs)
 	{
-		Type_Meta var_type = get_type_meta(param.type);
-		LLVMValueRef param_value = LLVMGetParam(proc_value, count);
-		LLVMValueRef copy_ptr = LLVMBuildAlloca(builder, var_type.type, "copy_ptr");
-		LLVMBuildStore(builder, param_value, copy_ptr);
-		bc.add_var(Var_Meta{ param.ident.str, copy_ptr, var_type });
-		count += 1;
-	}
-
-	Terminator_Type terminator = build_block(proc_decl->block, &bc, false);
-	if (terminator == Terminator_Type::None && !proc_decl->return_type.has_value()) LLVMBuildRet(builder, NULL);
-}
-
-Terminator_Type LLVM_IR_Builder::build_block(Ast_Block* block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta, bool entry)
-{
-	if (!entry) bc->add_block();
-
-	for (Ast_Statement* statement : block->statements)
-	{
-		switch (statement->tag)
-		{
-			case Ast_Statement::Tag::If: 
-			{
-				LLVMBasicBlockRef cont_block = LLVMAppendBasicBlock(proc_value, "cont");
-				build_if(statement->as_if, cont_block, bc, defer, loop_meta);
-			} break;
-			case Ast_Statement::Tag::For: 
-			{
-				build_for(statement->as_for, bc, defer); 
-			} break;
-			case Ast_Statement::Tag::Block:
-			{
-				Terminator_Type terminator = build_block(statement->as_block, bc, defer, loop_meta);
-				if (terminator != Terminator_Type::None)
-				{
-					if (terminator == Terminator_Type::Return)
-						build_defer(bc, true);
-					else build_defer(bc, false);
-					bc->pop_block();
-					return terminator;
-				}
-			} break;
-			case Ast_Statement::Tag::Defer:
-			{
-				if (defer) error_exit("defer block cannot contain nested 'defer'");
-				bc->add_defer(statement->as_defer);
-			} break;
-			case Ast_Statement::Tag::Break:
-			{
-				if (!loop_meta.has_value() && defer) error_exit("defer block cannot contain 'break'");
-				build_defer(bc, false);
-
-				if (!loop_meta) error_exit("break statement: no loop meta data provided");
-				LLVMBuildBr(builder, loop_meta.value().break_target);
-				
-				bc->pop_block();
-				return Terminator_Type::Break;
-			} break;
-			case Ast_Statement::Tag::Return:
-			{
-				if (defer) error_exit("defer block cannot contain 'return'");
-				build_defer(bc, true);
-
-				Ast_Return* _return = statement->as_return;
-				if (_return->expr.has_value())
-					LLVMBuildRet(builder, build_expr_value(_return->expr.value(), bc));
-				else LLVMBuildRet(builder, NULL);
-				
-				bc->pop_block();
-				return Terminator_Type::Return;
-			} break;
-			case Ast_Statement::Tag::Continue:
-			{
-				if (!loop_meta.has_value() && defer) error_exit("defer block cannot contain 'continue'");
-				build_defer(bc, false);
-				
-				if (!loop_meta) error_exit("continue statement: no loop meta data provided");
-				if (loop_meta.value().continue_action)
-					build_var_assign(loop_meta.value().continue_action.value(), bc);
-				LLVMBuildBr(builder, loop_meta.value().continue_target);
-
-				bc->pop_block();
-				return Terminator_Type::Continue;
-			} break;
-			case Ast_Statement::Tag::Proc_Call: build_proc_call(statement->as_proc_call, bc, true); break;
-			case Ast_Statement::Tag::Var_Decl: build_var_decl(statement->as_var_decl, bc); break;
-			case Ast_Statement::Tag::Var_Assign: build_var_assign(statement->as_var_assign, bc); break;
-			default: break;
-		}
-	}
-
-	build_defer(bc, false);
-	bc->pop_block();
-	return Terminator_Type::None;
-}
-
-void LLVM_IR_Builder::build_defer(Var_Block_Scope* bc, bool all_defers)
-{
-	if (all_defers)
-	{
-		for (auto it = bc->defer_stack.rbegin(); it != bc->defer_stack.rend(); ++it)
-		{
-			Ast_Defer* defer = *it;
-			build_block(defer->block, bc, true);
-		}
-	}
-	else
-	{
-		u32 defer_count = bc->get_curr_defer_count();
-		auto begin = bc->defer_stack.rbegin();
-		auto end = std::next(begin, defer_count);
-		for (auto it = begin; it != end; ++it)
-		{
-			Ast_Defer* defer = *it;
-			build_block(defer->block, bc, true);
-		}
-	}
-}
-
-void LLVM_IR_Builder::build_if(Ast_If* _if, LLVMBasicBlockRef cont_block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta)
-{
-	LLVMValueRef cond_value = build_expr_value(_if->condition_expr, bc);
-	if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
-
-	if (_if->_else.has_value())
-	{
-		LLVMBasicBlockRef then_block = LLVMAppendBasicBlock(proc_value, "then");
-		LLVMBasicBlockRef else_block = LLVMAppendBasicBlock(proc_value, "else");
-		LLVMBuildCondBr(builder, cond_value, then_block, else_block);
-		set_curr_block(then_block);
-
-		Terminator_Type terminator = build_block(_if->block, bc, defer, loop_meta);
-		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
-		set_curr_block(else_block);
-
-		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else::Tag::If)
-		{
-			build_if(_else->as_if, cont_block, bc, defer, loop_meta);
-		}
-		else
-		{
-			Terminator_Type else_terminator = build_block(_else->as_block, bc, defer, loop_meta);
-			if (else_terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
-			set_curr_block(cont_block);
-		}
-	}
-	else
-	{
-		LLVMBasicBlockRef then_block = LLVMAppendBasicBlock(proc_value, "then");
-		LLVMBuildCondBr(builder, cond_value, then_block, cont_block);
-		set_curr_block(then_block);
-
-		Terminator_Type terminator = build_block(_if->block, bc, defer, loop_meta);
-		if (terminator == Terminator_Type::None) LLVMBuildBr(builder, cont_block);
-		set_curr_block(cont_block);
-	}
-}
-
-void LLVM_IR_Builder::build_for(Ast_For* _for, Var_Block_Scope* bc, bool defer)
-{
-	if (_for->var_decl) build_var_decl(_for->var_decl.value(), bc);
-	
-	LLVMBasicBlockRef cond_block = LLVMAppendBasicBlock(proc_value, "loop_cond");
-	LLVMBuildBr(builder, cond_block);
-	set_curr_block(cond_block);
-	
-	LLVMBasicBlockRef body_block = LLVMAppendBasicBlock(proc_value, "loop_body");
-	LLVMBasicBlockRef exit_block = LLVMAppendBasicBlock(proc_value, "loop_exit");
-	if (_for->condition_expr)
-	{
-		LLVMValueRef cond_value = build_expr_value(_for->condition_expr.value(), bc);
-		if (LLVMInt1Type() != LLVMTypeOf(cond_value)) error_exit("if: expected i1(bool) expression value");
-		LLVMBuildCondBr(builder, cond_value, body_block, exit_block);
-	}
-	else LLVMBuildBr(builder, body_block);
-	set_curr_block(body_block);
-
-	Terminator_Type terminator = build_block(_for->block, bc, defer, Loop_Meta { exit_block, cond_block, _for->var_assign });
-	if (terminator == Terminator_Type::None)
-	{
-		if (_for->var_assign) build_var_assign(_for->var_assign.value(), bc);
-		LLVMBuildBr(builder, cond_block);
-	}
-	set_curr_block(exit_block);
-}
-
-//@Notice ignoring import access
-LLVMValueRef LLVM_IR_Builder::build_proc_call(Ast_Proc_Call* proc_call, Var_Block_Scope* bc, bool is_statement)
-{
-	std::optional<Proc_Meta> proc_meta = proc_decl_map.find(proc_call->ident.str, hash_fnv1a_32(proc_call->ident.str));
-	if (!proc_meta) { error_exit("failed to find proc declaration while trying to call it"); }
-
-	std::vector<LLVMValueRef> input_values = {};
-	input_values.reserve(proc_call->input_exprs.size());
-	for (u32 i = 0; i < proc_call->input_exprs.size(); i += 1)
-	input_values.emplace_back(build_expr_value(proc_call->input_exprs[i], bc));
-
-	LLVMValueRef ret_val = LLVMBuildCall2(builder, proc_meta.value().proc_type, proc_meta.value().proc_val, input_values.data(), (u32)input_values.size(), is_statement ? "" : "call_val");
-	return ret_val;
-}
-
-void LLVM_IR_Builder::build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc)
-{
-	if (!var_decl->type.has_value()) error_exit("var decl expected type to be known");
-	Type_Meta var_type = get_type_meta(var_decl->type.value());
-
-	LLVMValueRef var_ptr = LLVMBuildAlloca(builder, var_type.type, get_c_string(var_decl->ident));
-	if (var_decl->expr.has_value())
-	{
-		LLVMValueRef expr_value = build_expr_value(var_decl->expr.value(), bc);
-		expr_value = build_value_cast(expr_value, var_type.type);
-
-		if (var_type.type != LLVMTypeOf(expr_value))
-		{
-			debug_print_llvm_type("Expected", var_type.type);
-			debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
-			debug_print_var_decl(var_decl, 0);
-			error_exit("type mismatch in variable declaration");
-		}
-		LLVMBuildStore(builder, expr_value, var_ptr);
-	}
-	else LLVMBuildStore(builder, LLVMConstNull(var_type.type), var_ptr);
-
-	bc->add_var(Var_Meta{ var_decl->ident.str, var_ptr, var_type });
-}
-
-void LLVM_IR_Builder::build_var_assign(Ast_Var_Assign* var_assign, Var_Block_Scope* bc)
-{
-	if (var_assign->op != ASSIGN_OP_NONE) error_exit("var assign: only = op is supported");
-
-	Ast_Var* var = var_assign->var;
-	Var_Access_Meta var_access = get_var_access_meta(var, bc);
-
-	LLVMValueRef expr_value = build_expr_value(var_assign->expr, bc);
-	expr_value = build_value_cast(expr_value, var_access.type);
-
-	if (var_access.type != LLVMTypeOf(expr_value))
-	{
-		debug_print_llvm_type("Expected", var_access.type);
-		debug_print_llvm_type("GotExpr", LLVMTypeOf(expr_value));
-		error_exit("type mismatch in variable assignment");
-	}
-	LLVMBuildStore(builder, expr_value, var_access.ptr);
-}
-
-LLVMValueRef LLVM_IR_Builder::build_expr_value(Ast_Expr* expr, Var_Block_Scope* bc, bool adress_op)
-{
-	LLVMValueRef value_ref = NULL;
-
-	switch (expr->tag)
-	{
-	case Ast_Expr::Tag::Term:
-	{
-		Ast_Term* term = expr->as_term;
-
-		switch (term->tag)
-		{
-		case Ast_Term::Tag::Var:
-		{
-			Ast_Var* var = term->as_var;
-			Var_Access_Meta var_access = get_var_access_meta(var, bc);
-			if (adress_op) value_ref = var_access.ptr;
-			else value_ref = LLVMBuildLoad2(builder, var_access.type, var_access.ptr, "load_val");
-		} break;
-		case Ast_Term::Tag::Enum: //@Notice ignoring import access
-		{
-			Ast_Enum* _enum = term->as_enum;
-			value_ref = get_enum_value(_enum);
-		} break;
-		case Ast_Term::Tag::Literal:
-		{
-			Token token = term->as_literal.token;
-			if (token.type == TOKEN_BOOL_LITERAL) value_ref = LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
-			else if (token.type == TOKEN_FLOAT_LITERAL) value_ref = LLVMConstReal(LLVMDoubleType(), token.float64_value);
-			else if (token.type == TOKEN_INTEGER_LITERAL) value_ref = LLVMConstInt(LLVMInt32Type(), token.integer_value, 0); //@Todo sign extend?
-			else error_exit("unary_expr: unknown literal type");
-		} break;
-		case Ast_Term::Tag::Proc_Call:
-		{
-			value_ref = build_proc_call(term->as_proc_call, bc, false);
-		} break;
-		}
-	} break;
-	case Ast_Expr::Tag::Unary_Expr:
-	{
-		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		UnaryOp op = unary_expr->op;
-
-		LLVMValueRef rhs = build_expr_value(unary_expr->right, bc, op == UNARY_OP_ADDRESS_OF);
-		LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
-		bool int_kind = type_is_int(rhs_type);
-		bool bool_kind = type_is_bool(rhs_type);
-		bool float_kind = type_is_float(rhs_type);
-		bool pointer_kind = type_is_pointer(rhs_type);
-		if (!int_kind && !bool_kind && !float_kind && !pointer_kind)
-			error_exit("unary_expr: expected float int bool or pointer type");
-
-		switch (op)
-		{
-		case UNARY_OP_MINUS:
-		{
-			if (float_kind) value_ref = LLVMBuildFNeg(builder, rhs, "utmp");
-			else if (int_kind) value_ref = LLVMBuildNeg(builder, rhs, "utmp'"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-			else error_exit("unary_expr - expected fd or i");
-		} break;
-		case UNARY_OP_LOGIC_NOT:
-		{
-			if (bool_kind) value_ref = LLVMBuildNot(builder, rhs, "utmp");
-			else error_exit("unary_expr ! expected bool");
-		} break;
-		case UNARY_OP_ADDRESS_OF:
-		{
-			if (pointer_kind) value_ref = rhs;
-			else error_exit("unary_expr & expected pointer value");
-		} break;
-		case UNARY_OP_BITWISE_NOT:
-		{
-			if (int_kind) value_ref = LLVMBuildNot(builder, rhs, "utmp"); //@Design only allow uint
-			else error_exit("unary_expr ~ expected i");
-		} break;
-		default: error_exit("unary_expr unknown unary op"); break;
-		}
-	} break;
-	case Ast_Expr::Tag::Binary_Expr:
-	{
-		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		BinaryOp op = binary_expr->op;
-
-		LLVMValueRef lhs = build_expr_value(binary_expr->left, bc);
-		LLVMTypeRef lhs_type = LLVMTypeOf(lhs);
-		LLVMValueRef rhs = build_expr_value(binary_expr->right, bc);
-		LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
-		bool int_kind = type_is_int(lhs_type) && type_is_int(rhs_type);
-		bool bool_kind = type_is_bool(lhs_type) && type_is_bool(rhs_type);
-		bool float_kind = type_is_float(lhs_type) && type_is_float(rhs_type);
-		if (!int_kind && !bool_kind && !float_kind)
-			error_exit("binary_expr: expected matching float int or bool types");
-
-		//@Incomplete for now this performs float-double upcast if nesessary
-		build_binary_value_cast(lhs, rhs, lhs_type, rhs_type);
-
-		switch (op)
-		{
-		// LogicOps [&& ||]
-		case BINARY_OP_LOGIC_AND:
-		{
-			if (!bool_kind) error_exit("bin_expr && expected bool");
-			value_ref = LLVMBuildAnd(builder, lhs, rhs, "btmp");
-		} break;
-		case BINARY_OP_LOGIC_OR:
-		{
-			if (!bool_kind) error_exit("bin_expr || expected bool");
-			value_ref = LLVMBuildOr(builder, lhs, rhs, "btmp");
-		} break;
-		// CmpOps [< > <= >= == !=]
-		case BINARY_OP_LESS: //@RealPredicates using ordered (no nans) variants
-		{
-			if (float_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOLT, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSLT, lhs, rhs, "btmp"); //@Determine S / U predicates
-			else error_exit("bin_expr < expected fd or i got bool");
-		} break;
-		case BINARY_OP_GREATER:
-		{
-			if (float_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOGT, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSGT, lhs, rhs, "btmp"); //@Determine S / U predicates
-			else error_exit("bin_expr > expected fd or i got bool");
-		} break;
-		case BINARY_OP_LESS_EQUALS:
-		{
-			if (float_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOLE, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSLE, lhs, rhs, "btmp"); //@Determine S / U predicates
-			else error_exit("bin_expr <= expected fd or i got bool");
-		} break;
-		case BINARY_OP_GREATER_EQUALS:
-		{
-			if (float_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOGE, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntSGE, lhs, rhs, "btmp"); //@Determine S / U predicates
-			else error_exit("bin_expr >= expected fd or i got bool");
-		} break;
-		case BINARY_OP_IS_EQUALS:
-		{
-			if (float_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealOEQ, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntEQ, lhs, rhs, "btmp"); //@Determine S / U predicates
-			else error_exit("bin_expr == expected fd or i got bool");
-		} break;
-		case BINARY_OP_NOT_EQUALS:
-		{
-			if (float_kind) value_ref = LLVMBuildFCmp(builder, LLVMRealONE, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildICmp(builder, LLVMIntNE, lhs, rhs, "btmp"); //@Determine S / U predicates
-			else error_exit("bin_expr != expected fd or i got bool");
-		} break;
-		// MathOps [+ - * / %]
-		case BINARY_OP_PLUS:
-		{
-			if (float_kind) value_ref = LLVMBuildFAdd(builder, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildAdd(builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-			else error_exit("bin_expr + expected fd or i got bool");
-		} break;
-		case BINARY_OP_MINUS:
-		{
-			if (float_kind) value_ref = LLVMBuildFSub(builder, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildSub(builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-			else error_exit("bin_expr + expected fd or i got bool");
-		} break;
-		case BINARY_OP_TIMES:
-		{
-			if (float_kind) value_ref = LLVMBuildFMul(builder, lhs, rhs, "btmp");
-			else if (int_kind) value_ref = LLVMBuildMul(builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-			else error_exit("bin_expr * expected fd or i got bool");
-		} break;
-		case BINARY_OP_DIV:
-		{
-			if (float_kind) value_ref = LLVMBuildFDiv(builder, lhs, rhs, "btmp");
-			//@ SU variants: LLVMBuildSDiv, LLVMBuildExactSDiv, LLVMBuildUDiv, LLVMBuildExactUDiv
-			else if (int_kind) value_ref = LLVMBuildSDiv(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr / expected fd or i got bool");
-		} break;
-		case BINARY_OP_MOD: //@Design float modulo is possible but isnt too usefull
-		{
-			//@ SU rem variants: LLVMBuildSRem, LLVMBuildURem (using SRem always now)
-			if (int_kind) value_ref = LLVMBuildSRem(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr % expected i");
-		} break;
-		// BitwiseOps [& | ^ << >>]
-		case BINARY_OP_BITWISE_AND: // @Design only allow those for uints ideally
-		{
-			if (int_kind) value_ref = LLVMBuildAnd(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr & expected i");
-		} break;
-		case BINARY_OP_BITWISE_OR:
-		{
-			if (int_kind) value_ref = LLVMBuildOr(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr | expected i");
-		} break;
-		case BINARY_OP_BITWISE_XOR:
-		{
-			if (int_kind) value_ref = LLVMBuildXor(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr ^ expected i");
-		} break;
-		case BINARY_OP_BITSHIFT_LEFT:
-		{
-			if (int_kind) value_ref = LLVMBuildShl(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr << expected i");
-		} break;
-		case BINARY_OP_BITSHIFT_RIGHT: //@LLVMBuildAShr used for maintaining the sign?
-		{
-			if (int_kind) value_ref = LLVMBuildLShr(builder, lhs, rhs, "btmp");
-			else error_exit("bin_expr >> expected i");
-		} break;
-		default: error_exit("bin_expr unknown binary op"); break;
-		}
-	} break;
-	}
-
-	if (value_ref == NULL) error_exit("build_expr_value: value_ref is null on return");
-	return value_ref;
-}
-
-LLVMValueRef LLVM_IR_Builder::build_value_cast(LLVMValueRef value, LLVMTypeRef target_type)
-{
-	LLVMTypeRef value_type = LLVMTypeOf(value);
-	if (value_type == target_type) return value;
-
-	if (type_is_float(value_type) && type_is_float(target_type))
-		return LLVMBuildFPCast(builder, value, target_type, "fpcast_val");
-
-	if (type_is_int(value_type) && type_is_int(target_type))
-	{
-		if (type_int_bit_witdh(value_type) < type_int_bit_witdh(target_type))
-		return LLVMBuildSExt(builder, value, target_type, "icast_val"); // @Possible issue SExt might not work as expected with uints, might also work since we upcast
-	}
-
-	return value;
-}
-
-void LLVM_IR_Builder::build_binary_value_cast(LLVMValueRef& value_lhs, LLVMValueRef& value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs)
-{
-	if (type_lhs == type_rhs) return;
-
-	if (type_is_float(type_lhs) && type_is_float(type_rhs))
-	{
-		if (type_is_f32(type_lhs))
-			value_lhs = LLVMBuildFPExt(builder, value_lhs, type_rhs, "fpcast_val");
-		else value_rhs = LLVMBuildFPExt(builder, value_rhs, type_lhs, "fpcast_val");
-		return;
-	}
-
-	if (type_is_int(type_lhs) && type_is_int(type_rhs))
-	{
-		if (type_int_bit_witdh(type_lhs) < type_int_bit_witdh(type_rhs))
-			value_lhs = LLVMBuildSExt(builder, value_lhs, type_rhs, "icast_val");
-		else value_rhs = LLVMBuildSExt(builder, value_rhs, type_lhs, "icast_val");
-		return;
-	}
-}
-
-LLVMTypeRef LLVM_IR_Builder::get_basic_type(BasicType type)
-{
-	switch (type)
-	{
-		case BASIC_TYPE_I8: return LLVMInt8Type();
-		case BASIC_TYPE_U8: return LLVMInt8Type();
-		case BASIC_TYPE_I16: return LLVMInt16Type();
-		case BASIC_TYPE_U16: return LLVMInt16Type();
-		case BASIC_TYPE_I32: return LLVMInt32Type();
-		case BASIC_TYPE_U32: return LLVMInt32Type();
-		case BASIC_TYPE_I64: return LLVMInt64Type();
-		case BASIC_TYPE_U64: return LLVMInt64Type();
-		case BASIC_TYPE_F32: return LLVMFloatType();
-		case BASIC_TYPE_F64: return LLVMDoubleType();
-		case BASIC_TYPE_BOOL: return LLVMInt1Type();
-		//case BASIC_TYPE_STRING: @Undefined for now, might use a struct for a string
-		default: error_exit("get_basic_type: basic type not found"); break;
-	}
-}
-
-Type_Meta LLVM_IR_Builder::get_type_meta(Ast_Type type)
-{
-	LLVMTypeRef type_ref = NULL;
-
-	if (type.pointer_level > 0)
-	{
-		type_ref = LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
-		return Type_Meta { type_ref, false, NULL, true, type };
-	}
-
-	switch (type.tag)
-	{
-	case Ast_Type::Tag::Basic:
-	{
-		type_ref = get_basic_type(type.as_basic);
-	} break;
-	case Ast_Type::Tag::Custom: //@Notice ignoring import access
-	{
-		auto struct_meta = struct_decl_map.find(type.as_custom->type.str, hash_fnv1a_32(type.as_custom->type.str));
-		if (struct_meta)
-		{
-			return Type_Meta { struct_meta.value().struct_type, true, struct_meta.value().struct_decl, false, {} };
-		}
+		type_array.clear();
+		Ast_Struct_Decl* struct_decl = struct_meta.struct_decl;
+		for (Ast_Ident_Type_Pair& field : struct_decl->fields) 
+		type_array.emplace_back(type_to_llvm_type(&context, field.type));
 		
-		auto enum_meta = enum_decl_map.find(type.as_custom->type.str, hash_fnv1a_32(type.as_custom->type.str));
-		if (enum_meta)
-		{
-			return Type_Meta { enum_meta.value().variant_type, false, NULL, false, {} };
-		}
-		error_exit("get_type_meta: custom type not found");
-	} break;
-	case Ast_Type::Tag::Array:
-	{
-		error_exit("get_type_meta: arrays not supported");
-		return Type_Meta {};
-	} break;
+		LLVMStructSetBody(struct_meta.struct_type, type_array.data(), (u32)type_array.size(), 0);
+
+		LLVMAddGlobal(context.module, struct_meta.struct_type, "global_test");
 	}
 
-	return Type_Meta { type_ref, false, NULL, false, {} };
+	for (Ast_Proc_Meta& proc_meta : program->procedures)
+	{
+		type_array.clear();
+		Ast_Proc_Decl* proc_decl = proc_meta.proc_decl;
+		for (Ast_Ident_Type_Pair& param : proc_decl->input_params) 
+		type_array.emplace_back(type_to_llvm_type(&context, param.type));
+
+		LLVMTypeRef ret_type = proc_decl->return_type ? type_to_llvm_type(&context, proc_decl->return_type.value()) : LLVMVoidType();
+		char* name = (proc_decl->is_external || proc_decl->is_main) ? ident_to_cstr(proc_decl->ident) : "proc";
+		proc_meta.proc_type = LLVMFunctionType(ret_type, type_array.data(), (u32)type_array.size(), 0);
+		proc_meta.proc_value = LLVMAddFunction(context.module, name, proc_meta.proc_type);
+	}
+
+	IR_Block_Stack bc = {};
+	for (Ast_Proc_Meta& proc_meta : program->procedures)
+	{
+		Ast_Proc_Decl* proc_decl = proc_meta.proc_decl;
+		if (proc_decl->is_external) continue;
+
+		block_stack_reset(&bc, proc_meta.proc_value);
+		block_stack_add(&bc);
+		LLVMBasicBlockRef entry_block = add_bb(&bc, "entry");
+		set_bb(&context, entry_block);
+		u32 count = 0;
+		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		{
+			LLVMTypeRef type = type_to_llvm_type(&context, param.type);
+			LLVMValueRef param_value = LLVMGetParam(proc_meta.proc_value, count);
+			LLVMValueRef copy_ptr = LLVMBuildAlloca(context.builder, type, "copy_ptr");
+			LLVMBuildStore(context.builder, param_value, copy_ptr);
+			block_stack_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, type, param.type });
+			count += 1;
+		}
+		build_block(&context, &bc, proc_decl->block, BlockFlags::DisableBlockAdd);
+	}
+
+	build_context_deinit(&context);
+
+	return context.module;
 }
 
-//@Notice enums are threated like values of their basic type,
-//its possible to set enum variable or field to the value outside its variant pool
-//this shouild be checked for in checker, ir sholdnt care about this semantics
-LLVMValueRef LLVM_IR_Builder::get_enum_value(Ast_Enum* _enum) //@Perf copying the vector of llvm values
+IR_Context build_context_init(Ast_Program* program)
 {
-	auto enum_meta = enum_decl_map.find(_enum->type.str, hash_fnv1a_32(_enum->type.str));
-	if (!enum_meta) error_exit("get_enum_variant: failed to find enum type");
-	
-	u32 count = 0;
-	for (const Ast_Ident_Literal_Pair& variant: enum_meta.value().enum_decl->variants)
-	{
-		if (variant.ident.str == _enum->variant.str)
-		{
-			return enum_meta.value().variants[count];
-		}
-		count += 1;
-	}
-	error_exit("get_enum_variant: failed to find enum variant");
-	return NULL;
+	IR_Context context = {};
+	context.program = program;
+	context.builder = LLVMCreateBuilder();
+	context.module = LLVMModuleCreateWithName("program");
+	return context;
 }
 
-Field_Meta LLVM_IR_Builder::get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str)
+void build_context_deinit(IR_Context* context)
 {
-	u32 count = 0;
-	for (const auto& field : struct_decl->fields)
-	{
-		if (field.ident.str == field_str)
-			return Field_Meta{ count, get_type_meta(field.type) };
-		count += 1;
-	}
-	error_exit("get_field_meta: failed to find the field");
+	LLVMDisposeBuilder(context->builder);
 }
 
-Var_Access_Meta LLVM_IR_Builder::get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc)
-{
-	Var_Meta var_meta = bc->find_var(var->ident.str);
-	LLVMValueRef ptr = var_meta.var_value;
-	Type_Meta type_meta = var_meta.type_meta;
-	
-	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
-	while (access != NULL)
-	{
-		if (access->tag == Ast_Access::Tag::Array)
-		{
-			if (!type_meta.is_pointer) error_exit("get_var_access_meta: trying array access on non pointer variable");
-			
-			Ast_Array_Access* array_access = access->as_array;
-			
-			//@Notice not checked to be integer value, maybe llvm checks it during validation
-			LLVMValueRef index_value = build_expr_value(array_access->index_expr, bc);
-			type_meta = get_type_meta(type_meta.pointer_ast_type);
-			
-			//@Notice new decrementing pointer level + retaking type meta
-			type_meta.pointer_ast_type.pointer_level -= 1;
-			if (type_meta.pointer_ast_type.pointer_level == 0)
-			type_meta = get_type_meta(type_meta.pointer_ast_type);
-
-			ptr = LLVMBuildGEP2(builder, type_meta.type, ptr, &index_value, 1, "array_access_ptr");
-
-			access = array_access->next.has_value() ? array_access->next.value() : NULL;
-		}
-		else
-		{
-			if (type_meta.is_pointer)
-			{
-				ptr = LLVMBuildLoad2(builder, type_meta.type, ptr, "ptr_load");
-				type_meta = get_type_meta(type_meta.pointer_ast_type);
-			}
-
-			if (!type_meta.is_struct) 
-			{
-				debug_print_ident(access->as_var->ident);
-				debug_print_llvm_type("Type: ", type_meta.type);
-				error_exit("get_var_access_meta: trying var access on non struct variable");
-			}
-
-			Ast_Var_Access* var_access = access->as_var;
-			Field_Meta field = get_field_meta(type_meta.struct_decl, var_access->ident.str);
-			ptr = LLVMBuildStructGEP2(builder, type_meta.type, ptr, field.id, "struct_access_ptr");
-			type_meta = field.type_meta;
-
-			access = var_access->next.has_value() ? var_access->next.value() : NULL;
-		}
-	}
-
-	return Var_Access_Meta { ptr, type_meta.type };
-}
-
-bool LLVM_IR_Builder::type_is_int(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1; }
-bool LLVM_IR_Builder::type_is_bool(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) == 1; }
-bool LLVM_IR_Builder::type_is_float(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMFloatTypeKind || LLVMGetTypeKind(type) == LLVMDoubleTypeKind; }
-bool LLVM_IR_Builder::type_is_f32(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMFloatTypeKind; }
-bool LLVM_IR_Builder::type_is_f64(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMDoubleTypeKind; }
-bool LLVM_IR_Builder::type_is_pointer(LLVMTypeRef type) { return LLVMGetTypeKind(type) == LLVMPointerTypeKind; }
-u32 LLVM_IR_Builder::type_int_bit_witdh(LLVMTypeRef type) { return LLVMGetIntTypeWidth(type); }
-
-char* LLVM_IR_Builder::get_c_string(Ast_Ident& ident) //@Unsafe hack to get c string from string view of source file string, need to do smth better
+char* ident_to_cstr(Ast_Ident& ident)
 {
 	ident.str.data[ident.str.count] = '\0';
 	return (char*)ident.str.data;
 }
 
-void LLVM_IR_Builder::error_exit(const char* message)
+LLVMBasicBlockRef add_bb(IR_Block_Stack* bc, const char* name)
 {
-	printf("backend error: %s.\n", message);
-	exit(EXIT_FAILURE);
+	return LLVMAppendBasicBlock(bc->proc_value, name);
 }
 
-void LLVM_IR_Builder::debug_print_llvm_type(const char* message, LLVMTypeRef type)
+void set_bb(IR_Context* context, LLVMBasicBlockRef block)
 {
-	char* msg = LLVMPrintTypeToString(type);
-	printf("%s %s\n", message, msg);
-	LLVMDisposeMessage(msg);
+	LLVMPositionBuilderAtEnd(context->builder, block);
 }
 
-void LLVM_IR_Builder::set_curr_block(LLVMBasicBlockRef block)
+LLVMTypeRef basic_type_to_llvm_type(BasicType basic_type)
 {
-	LLVMPositionBuilderAtEnd(builder, block);
+	switch (basic_type)
+	{
+	case BASIC_TYPE_I8: return LLVMInt8Type();
+	case BASIC_TYPE_U8: return LLVMInt8Type();
+	case BASIC_TYPE_I16: return LLVMInt16Type();
+	case BASIC_TYPE_U16: return LLVMInt16Type();
+	case BASIC_TYPE_I32: return LLVMInt32Type();
+	case BASIC_TYPE_U32: return LLVMInt32Type();
+	case BASIC_TYPE_I64: return LLVMInt64Type();
+	case BASIC_TYPE_U64: return LLVMInt64Type();
+	case BASIC_TYPE_F32: return LLVMFloatType();
+	case BASIC_TYPE_F64: return LLVMDoubleType();
+	case BASIC_TYPE_BOOL: return LLVMInt1Type();
+	default: return LLVMVoidType(); //@Notice string is void type
+	}
+}
+
+LLVMTypeRef type_to_llvm_type(IR_Context* context, Ast_Type type)
+{
+	if (type.pointer_level > 0) return LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
+
+	switch (type.tag)
+	{
+	case Ast_Type::Tag::Basic: return basic_type_to_llvm_type(type.as_basic);
+	case Ast_Type::Tag::Array: return LLVMVoidType(); //@Notice array type isnt supported
+	case Ast_Type::Tag::Struct: return context->program->structs[type.as_struct.struct_id].struct_type;
+	case Ast_Type::Tag::Enum: return context->program->enums[type.as_enum.enum_id].enum_type;
+	default: return LLVMVoidType();
+	}
+}
+
+void block_stack_reset(IR_Block_Stack* bc, LLVMValueRef proc_value)
+{
+	bc->proc_value = proc_value;
+	bc->blocks.clear();
+	bc->defer_stack.clear();
+	bc->loop_stack.clear();
+}
+
+void block_stack_add(IR_Block_Stack* bc)
+{
+	bc->blocks.emplace_back(IR_Block_Info { 0, 0 });
+}
+
+void block_stack_pop_back(IR_Block_Stack* bc)
+{
+	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
+	for (u32 i = 0; i < block_info.defer_count; i += 1) bc->defer_stack.pop_back();
+	for (u32 i = 0; i < block_info.loop_count; i += 1) bc->loop_stack.pop_back();
+	for (u32 i = 0; i < block_info.var_count; i += 1) bc->var_stack.pop_back();
+	bc->blocks.pop_back();
+}
+
+void block_stack_add_defer(IR_Block_Stack* bc, Ast_Defer* defer)
+{
+	bc->blocks[bc->blocks.size() - 1].defer_count += 1;
+	bc->defer_stack.emplace_back(defer);
+}
+
+void block_stack_add_loop(IR_Block_Stack* bc, IR_Loop_Info loop_info)
+{
+	bc->blocks[bc->blocks.size() - 1].loop_count += 1;
+	bc->loop_stack.emplace_back(loop_info);
+}
+
+void block_stack_add_var(IR_Block_Stack* bc, IR_Var_Info var_info)
+{
+	bc->blocks[bc->blocks.size() - 1].var_count += 1;
+	bc->var_stack.emplace_back(var_info);
+}
+
+IR_Var_Info block_stack_find_var(IR_Block_Stack* bc, Ast_Ident ident)
+{
+	for (IR_Var_Info& var : bc->var_stack)
+	{
+		if (match_string_view(var.str, ident.str)) return var;
+	}
+	return {};
+}
+
+IR_Loop_Info block_stack_get_loop(IR_Block_Stack* bc)
+{
+	return bc->loop_stack[bc->loop_stack.size() - 1];
+}
+
+Terminator2 build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block, BlockFlags flags)
+{
+	if (flags != BlockFlags::DisableBlockAdd) block_stack_add(bc);
+
+	for (Ast_Statement* statement : block->statements)
+	{
+		switch (statement->tag)
+		{
+		case Ast_Statement::Tag::If: build_if(context, bc, statement->as_if, add_bb(bc, "cont")); break;
+		case Ast_Statement::Tag::For: build_for(context, bc, statement->as_for); break;
+		case Ast_Statement::Tag::Block:
+		{
+			Terminator2 terminator = build_block(context, bc, statement->as_block, BlockFlags::None);
+			if (terminator != Terminator2::None)
+			{
+				build_defer(context, bc, terminator);
+				block_stack_pop_back(bc);
+				return terminator;
+			}
+		} break;
+		case Ast_Statement::Tag::Defer: block_stack_add_defer(bc, statement->as_defer); break;
+		case Ast_Statement::Tag::Break:
+		{
+			build_defer(context, bc, Terminator2::Break);
+			IR_Loop_Info loop = block_stack_get_loop(bc);
+			LLVMBuildBr(context->builder, loop.break_block);
+			
+			block_stack_pop_back(bc);
+			return Terminator2::Break;
+		} break;
+		case Ast_Statement::Tag::Return:
+		{
+			build_defer(context, bc, Terminator2::Return);
+			if (statement->as_return->expr)
+				LLVMBuildRet(context->builder, build_expr(context, bc, statement->as_return->expr.value()));
+			else LLVMBuildRetVoid(context->builder);
+			
+			block_stack_pop_back(bc);
+			return Terminator2::Return;
+		} break;
+		case Ast_Statement::Tag::Continue:
+		{
+			build_defer(context, bc, Terminator2::Continue);
+			IR_Loop_Info loop = block_stack_get_loop(bc);
+			if (loop.var_assign) build_var_assign(context, bc, loop.var_assign.value());
+			LLVMBuildBr(context->builder, loop.continue_block);
+
+			block_stack_pop_back(bc);
+			return Terminator2::Continue;
+		} break;
+		case Ast_Statement::Tag::Var_Decl: build_var_decl(context, bc, statement->as_var_decl); break;
+		case Ast_Statement::Tag::Var_Assign: build_var_assign(context, bc, statement->as_var_assign); break;
+		case Ast_Statement::Tag::Proc_Call: build_proc_call(context, bc, statement->as_proc_call, ProcCallFlags::AsStatement); break;
+		}
+	}
+
+	build_defer(context, bc, Terminator2::None);
+	block_stack_pop_back(bc);
+	return Terminator2::None;
+}
+
+void build_defer(IR_Context* context, IR_Block_Stack* bc, Terminator2 terminator)
+{
+	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
+	int start_defer_id = bc->defer_stack.size() - 1;
+	int end_defer_id = terminator == Terminator2::Return ? 0 : start_defer_id - (block_info.defer_count - 1); //@Todo confusing indices fix later
+	
+	for (int i = start_defer_id; i >= end_defer_id; i -= 1) 
+	build_block(context, bc, bc->defer_stack[i]->block, BlockFlags::None);
+}
+
+void build_if(IR_Context* context, IR_Block_Stack* bc, Ast_If* _if, LLVMBasicBlockRef cont_block)
+{
+	LLVMValueRef cond_value = build_expr(context, bc, _if->condition_expr);
+
+	if (_if->_else)
+	{
+		LLVMBasicBlockRef then_block = add_bb(bc, "then");
+		LLVMBasicBlockRef else_block = add_bb(bc, "else");
+		LLVMBuildCondBr(context->builder, cond_value, then_block, else_block);
+		set_bb(context, then_block);
+
+		Terminator2 terminator = build_block(context, bc, _if->block, BlockFlags::None);
+		if (terminator == Terminator2::None) LLVMBuildBr(context->builder, cont_block);
+		set_bb(context, else_block);
+
+		Ast_Else* _else = _if->_else.value();
+		if (_else->tag == Ast_Else::Tag::If)
+		{
+			build_if(context, bc, _else->as_if, cont_block);
+		}
+		else
+		{
+			Terminator2 else_terminator = build_block(context, bc, _else->as_block, BlockFlags::None);
+			if (else_terminator == Terminator2::None) LLVMBuildBr(context->builder, cont_block);
+			set_bb(context, cont_block);
+		}
+	}
+	else
+	{
+		LLVMBasicBlockRef then_block = add_bb(bc, "then");
+		LLVMBuildCondBr(context->builder, cond_value, then_block, cont_block);
+		set_bb(context, then_block);
+
+		Terminator2 terminator = build_block(context, bc, _if->block, BlockFlags::None);
+		if (terminator == Terminator2::None) LLVMBuildBr(context->builder, cont_block);
+		set_bb(context, cont_block);
+	}
+}
+
+void build_for(IR_Context* context, IR_Block_Stack* bc, Ast_For* _for)
+{
+	if (_for->var_decl) build_var_decl(context, bc, _for->var_decl.value());
+
+	LLVMBasicBlockRef cond_block = add_bb(bc, "loop_cond");
+	LLVMBuildBr(context->builder, cond_block);
+	set_bb(context, cond_block);
+
+	LLVMBasicBlockRef body_block = add_bb(bc, "loop_body");
+	LLVMBasicBlockRef exit_block = add_bb(bc, "loop_exit");
+	if (_for->condition_expr)
+	{
+		LLVMValueRef cond_value = build_expr(context, bc, _for->condition_expr.value());
+		LLVMBuildCondBr(context->builder, cond_value, body_block, exit_block);
+	}
+	else LLVMBuildBr(context->builder, body_block);
+	set_bb(context, body_block);
+
+	block_stack_add(bc);
+	block_stack_add_loop(bc, IR_Loop_Info { exit_block, cond_block, _for->var_assign });
+	Terminator2 terminator = build_block(context, bc, _for->block, BlockFlags::DisableBlockAdd);
+	if (terminator == Terminator2::None)
+	{
+		if (_for->var_assign) build_var_assign(context, bc, _for->var_assign.value());
+		LLVMBuildBr(context->builder, cond_block);
+	}
+	set_bb(context, exit_block);
+}
+
+void build_var_decl(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Decl* var_decl)
+{
+	LLVMTypeRef type = type_to_llvm_type(context, var_decl->type.value());
+
+	LLVMValueRef var_ptr = LLVMBuildAlloca(context->builder, type, ident_to_cstr(var_decl->ident));
+	if (var_decl->expr)
+	{
+		LLVMValueRef expr_value = build_expr(context, bc, var_decl->expr.value());
+		//expr_value = build_value_cast(expr_value, type);
+		LLVMBuildStore(context->builder, expr_value, var_ptr);
+	}
+	else LLVMBuildStore(context->builder, LLVMConstNull(type), var_ptr);
+
+	block_stack_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, type, var_decl->type.value() });
+}
+
+void build_var_assign(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Assign* var_assign)
+{
+	IR_Var_Access_Info var_access = build_var(context, bc, var_assign->var);
+	LLVMValueRef expr_value = build_expr(context, bc, var_assign->expr);
+	//expr_value = build_value_cast(expr_value, var_access.var_type);
+	LLVMBuildStore(context->builder, expr_value, var_access.var_ptr);
+}
+
+LLVMValueRef build_proc_call(IR_Context* context, IR_Block_Stack* bc, Ast_Proc_Call* proc_call, ProcCallFlags flags)
+{
+	Ast_Proc_Meta proc_meta = context->program->procedures[proc_call->proc_id];
+
+	std::vector<LLVMValueRef> input_values = {}; //@Perf memory overhead
+	input_values.reserve(proc_call->input_exprs.size());
+	for (Ast_Expr* expr : proc_call->input_exprs)
+	input_values.emplace_back(build_expr(context, bc, expr));
+
+	return LLVMBuildCall2(context->builder, proc_meta.proc_type, proc_meta.proc_value, 
+	input_values.data(), (u32)input_values.size(), flags == ProcCallFlags::AsStatement ? "" : "call_val");
+}
+
+LLVMValueRef build_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Expr* expr)
+{
+	switch (expr->tag)
+	{
+	case Ast_Expr::Tag::Term: return build_term(context, bc, expr->as_term);
+	case Ast_Expr::Tag::Unary_Expr: return build_unary_expr(context, bc, expr->as_unary_expr);
+	case Ast_Expr::Tag::Binary_Expr: return build_binary_expr(context, bc, expr->as_binary_expr);
+	}
+}
+
+LLVMValueRef build_term(IR_Context* context, IR_Block_Stack* bc, Ast_Term* term)
+{
+	switch (term->tag)
+	{
+	case Ast_Term::Tag::Var: 
+	{	
+		//@Todo handle unary adress op by returning ptr without load
+		IR_Var_Access_Info var_access = build_var(context, bc, term->as_var);
+		return LLVMBuildLoad2(context->builder, var_access.var_type, var_access.var_ptr, "load_val");
+	}
+	case Ast_Term::Tag::Enum:
+	{
+		Ast_Enum* _enum = term->as_enum;
+		return context->program->enums[_enum->enum_id].enum_decl->variants[_enum->variant_id].constant;
+	}
+	case Ast_Term::Tag::Literal:
+	{
+		Token token = term->as_literal.token;
+		if (token.type == TOKEN_BOOL_LITERAL) return LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
+		else if (token.type == TOKEN_FLOAT_LITERAL) return LLVMConstReal(LLVMDoubleType(), token.float64_value);
+		else if (token.type == TOKEN_INTEGER_LITERAL) return LLVMConstInt(LLVMInt32Type(), token.integer_value, 0); //@Todo sign extend?
+		else return LLVMConstInt(LLVMInt32Type(), 0, 0); //@Notice string literal isnt supported
+	}
+	case Ast_Term::Tag::Proc_Call: return build_proc_call(context, bc, term->as_proc_call, ProcCallFlags::None);
+	}
+}
+
+IR_Var_Access_Info build_var(IR_Context* context, IR_Block_Stack* bc, Ast_Var* var)
+{
+	IR_Var_Info var_info = block_stack_find_var(bc, var->ident);
+	LLVMValueRef ptr = var_info.var_ptr;
+	LLVMTypeRef type = var_info.var_type;
+	Ast_Type ast_type = var_info.ast_type;
+
+	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
+	while (access != NULL)
+	{
+		if (access->tag == Ast_Access::Tag::Array)
+		{
+			printf("llvm ir builder 2 build_var: array access isnt supported\n");
+			exit(EXIT_FAILURE);
+			return {}; //@Todo arrays
+		}
+		else
+		{
+			if (ast_type.pointer_level > 0)
+			{
+				ptr = LLVMBuildLoad2(context->builder, LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0), ptr, "ptr_load");
+				ast_type.pointer_level -= 1;
+			}
+
+			Ast_Var_Access* var_access = access->as_var;
+			Ast_Struct_Meta struct_meta = context->program->structs[ast_type.as_struct.struct_id];
+			ptr = LLVMBuildStructGEP2(context->builder, struct_meta.struct_type, ptr, var_access->field_id, "struct_ptr");
+			ast_type = struct_meta.struct_decl->fields[var_access->field_id].type;
+			
+			access = var_access->next.has_value() ? var_access->next.value() : NULL;
+		}
+	}
+
+	return IR_Var_Access_Info { ptr, type_to_llvm_type(context, ast_type) };
+}
+
+LLVMValueRef build_unary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Unary_Expr* unary_expr)
+{
+	UnaryOp op = unary_expr->op;
+	LLVMValueRef rhs = build_expr(context, bc, unary_expr->right);
+
+	switch (op)
+	{
+	case UNARY_OP_MINUS:
+	{
+		LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
+		if (LLVMGetTypeKind(rhs_type) == LLVMFloatTypeKind) return LLVMBuildFNeg(context->builder, rhs, "utmp");
+		else return LLVMBuildNeg(context->builder, rhs, "utmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	}
+	case UNARY_OP_LOGIC_NOT: return LLVMBuildNot(context->builder, rhs, "utmp");
+	case UNARY_OP_ADDRESS_OF: return rhs;
+	case UNARY_OP_BITWISE_NOT: return LLVMBuildNot(context->builder, rhs, "utmp");
+	}
+}
+
+LLVMValueRef build_binary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Binary_Expr* binary_expr)
+{
+	BinaryOp op = binary_expr->op;
+	LLVMValueRef lhs = build_expr(context, bc, binary_expr->left);
+	LLVMValueRef rhs = build_expr(context, bc, binary_expr->right);
+	LLVMTypeRef lhs_type = LLVMTypeOf(lhs);
+	LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
+	bool float_kind = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind;
+
+	//build_binary_value_cast(lhs, rhs, lhs_type, rhs_type);
+
+	switch (op)
+	{
+	// LogicOps [&& ||]
+	case BINARY_OP_LOGIC_AND: return LLVMBuildAnd(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_LOGIC_OR: return LLVMBuildOr(context->builder, lhs, rhs, "btmp");
+	// CmpOps [< > <= >= == !=] //@RealPredicates using ordered (no nans) variants
+	case BINARY_OP_LESS:           if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOLT, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSLT, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_GREATER:        if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOGT, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSGT, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_LESS_EQUALS:    if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOLE, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSLE, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_GREATER_EQUALS: if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOGE, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntSGE, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_IS_EQUALS:      if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealOEQ, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntEQ, lhs, rhs, "btmp"); //@Determine S / U predicates
+	case BINARY_OP_NOT_EQUALS:     if (float_kind) return LLVMBuildFCmp(context->builder, LLVMRealONE, lhs, rhs, "btmp"); else return LLVMBuildICmp(context->builder, LLVMIntNE, lhs, rhs, "btmp"); //@Determine S / U predicates
+	// MathOps [+ - * / %]
+	case BINARY_OP_PLUS:  if (float_kind) return LLVMBuildFAdd(context->builder, lhs, rhs, "btmp"); else return LLVMBuildAdd(context->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	case BINARY_OP_MINUS: if (float_kind) return LLVMBuildFSub(context->builder, lhs, rhs, "btmp"); else return LLVMBuildSub(context->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	case BINARY_OP_TIMES: if (float_kind) return LLVMBuildFMul(context->builder, lhs, rhs, "btmp"); else return LLVMBuildMul(context->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
+	case BINARY_OP_DIV:   if (float_kind) return LLVMBuildFDiv(context->builder, lhs, rhs, "btmp"); else return LLVMBuildSDiv(context->builder, lhs, rhs, "btmp"); //@ SU variants: LLVMBuildSDiv, LLVMBuildExactSDiv, LLVMBuildUDiv, LLVMBuildExactUDiv
+	case BINARY_OP_MOD: return LLVMBuildSRem(context->builder, lhs, rhs, "btmp"); //@ SU rem variants: LLVMBuildSRem, LLVMBuildURem (using SRem always now)
+	// BitwiseOps [& | ^ << >>]
+	case BINARY_OP_BITWISE_AND: return LLVMBuildAnd(context->builder, lhs, rhs, "btmp"); // @Design only allow those for uints ideally
+	case BINARY_OP_BITWISE_OR: return LLVMBuildOr(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_BITWISE_XOR: return LLVMBuildXor(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_BITSHIFT_LEFT: return LLVMBuildShl(context->builder, lhs, rhs, "btmp");
+	case BINARY_OP_BITSHIFT_RIGHT: return LLVMBuildLShr(context->builder, lhs, rhs, "btmp"); //@LLVMBuildAShr used for maintaining the sign?
+	}
 }

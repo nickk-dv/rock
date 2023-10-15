@@ -4,7 +4,6 @@
 int parse_cmd(int argc, char** argv);
 
 static bool match_arg(char* arg, const char* match);
-static int cmd_build_file(char* filepath);
 static int cmd_build(char* filepath);
 
 #endif

@@ -1,55 +1,111 @@
 #ifndef LLVM_IR_BUILDER_H
 #define LLVM_IR_BUILDER_H
 
-#include "ast.h"
 #include "llvm-c/Types.h"
-#include "llvm_ir_types.h"
+#include "ast.h"
 
-struct LLVM_IR_Builder
+struct IR_Context;
+struct IR_Block_Info;
+struct IR_Loop_Info;
+struct IR_Var_Info;
+struct IR_Var_Access_Info;
+struct IR_Block_Stack;
+enum class Terminator2;
+enum class BlockFlags;
+enum class ProcCallFlags;
+
+LLVMModuleRef build_module(Ast_Program* program);
+
+static IR_Context build_context_init(Ast_Program* program);
+static void build_context_deinit(IR_Context* builder);
+static char* ident_to_cstr(Ast_Ident& ident);
+static LLVMBasicBlockRef add_bb(IR_Block_Stack* bc, const char* name);
+static void set_bb(IR_Context* context, LLVMBasicBlockRef block);
+static LLVMTypeRef basic_type_to_llvm_type(BasicType basic_type);
+static LLVMTypeRef type_to_llvm_type(IR_Context* context, Ast_Type type);
+static void block_stack_reset(IR_Block_Stack* bc, LLVMValueRef proc_value);
+static void block_stack_add(IR_Block_Stack* bc);
+static void block_stack_pop_back(IR_Block_Stack* bc);
+static void block_stack_add_defer(IR_Block_Stack* bc, Ast_Defer* defer);
+static void block_stack_add_loop(IR_Block_Stack* bc, IR_Loop_Info loop_info);
+static void block_stack_add_var(IR_Block_Stack* bc, IR_Var_Info var_info);
+static IR_Var_Info block_stack_find_var(IR_Block_Stack* bc, Ast_Ident ident);
+static IR_Loop_Info block_stack_get_loop(IR_Block_Stack* bc);
+static Terminator2 build_block(IR_Context* context, IR_Block_Stack* bc, Ast_Block* block, BlockFlags flags);
+static void build_defer(IR_Context* context, IR_Block_Stack* bc, Terminator2 terminator);
+static void build_if(IR_Context* context, IR_Block_Stack* bc, Ast_If* _if, LLVMBasicBlockRef cont_block);
+static void build_for(IR_Context* context, IR_Block_Stack* bc, Ast_For* _for);
+static void build_var_decl(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Decl* var_decl);
+static void build_var_assign(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Assign* var_assign);
+LLVMValueRef build_proc_call(IR_Context* context, IR_Block_Stack* bc, Ast_Proc_Call* proc_call, ProcCallFlags flags);
+LLVMValueRef build_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Expr* expr);
+LLVMValueRef build_term(IR_Context* context, IR_Block_Stack* bc, Ast_Term* term);
+IR_Var_Access_Info build_var(IR_Context* context, IR_Block_Stack* bc, Ast_Var* var);
+LLVMValueRef build_unary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Unary_Expr* unary_expr);
+LLVMValueRef build_binary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Binary_Expr* binary_expr);
+
+struct IR_Context
 {
-public:
-	LLVMModuleRef build_module(Ast* ast);
-
-private:
-	void build_enum_decl(Ast_Enum_Decl* enum_decl);
-	void build_struct_decl(Ast_Struct_Decl* struct_decl);
-	void build_proc_decl(Ast_Proc_Decl* proc_decl);
-	void build_proc_body(Ast_Proc_Decl* proc_decl);
-
-	Terminator_Type build_block(Ast_Block* block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta = {}, bool entry = false);
-	void build_defer(Var_Block_Scope* bc, bool all_defers);
-	void build_if(Ast_If* _if, LLVMBasicBlockRef cont_block, Var_Block_Scope* bc, bool defer, std::optional<Loop_Meta> loop_meta = {});
-	void build_for(Ast_For* _for, Var_Block_Scope* bc, bool defer);
-	LLVMValueRef build_proc_call(Ast_Proc_Call* _for, Var_Block_Scope* bc, bool is_statement);
-	void build_var_decl(Ast_Var_Decl* var_decl, Var_Block_Scope* bc);
-	void build_var_assign(Ast_Var_Assign* var_assign, Var_Block_Scope* bc);
-	LLVMValueRef build_expr_value(Ast_Expr* expr, Var_Block_Scope* bc, bool adress_op = false);
-	LLVMValueRef build_value_cast(LLVMValueRef value, LLVMTypeRef target_type);
-	void build_binary_value_cast(LLVMValueRef& value_lhs, LLVMValueRef& value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs);
-
-	LLVMTypeRef get_basic_type(BasicType type);
-	Type_Meta get_type_meta(Ast_Type type);
-	LLVMValueRef get_enum_value(Ast_Enum* _enum);
-	Field_Meta get_field_meta(Ast_Struct_Decl* struct_decl, StringView field_str);
-	Var_Access_Meta get_var_access_meta(Ast_Var* var, Var_Block_Scope* bc);
-	bool type_is_int(LLVMTypeRef type);
-	bool type_is_bool(LLVMTypeRef type);
-	bool type_is_float(LLVMTypeRef type);
-	bool type_is_f32(LLVMTypeRef type);
-	bool type_is_f64(LLVMTypeRef type);
-	bool type_is_pointer(LLVMTypeRef type);
-	u32 type_int_bit_witdh(LLVMTypeRef type);
-	char* get_c_string(Ast_Ident& ident);
-	void error_exit(const char* message);
-	void debug_print_llvm_type(const char* message, LLVMTypeRef type);
-	void set_curr_block(LLVMBasicBlockRef block);
-
-	LLVMModuleRef module;
+	Ast_Program* program;
 	LLVMBuilderRef builder;
+	LLVMModuleRef module;
+};
+
+struct IR_Block_Info
+{
+	u32 defer_count;
+	u32 loop_count;
+	u32 var_count;
+};
+
+struct IR_Loop_Info
+{
+	LLVMBasicBlockRef break_block;
+	LLVMBasicBlockRef continue_block;
+	std::optional<Ast_Var_Assign*> var_assign;
+};
+
+struct IR_Var_Info
+{
+	StringView str;
+	LLVMValueRef var_ptr;
+	LLVMTypeRef var_type;
+	Ast_Type ast_type;
+};
+
+struct IR_Var_Access_Info
+{
+	LLVMValueRef var_ptr;
+	LLVMTypeRef var_type;
+};
+
+struct IR_Block_Stack
+{
 	LLVMValueRef proc_value;
-	HashMap<StringView, Enum_Meta, u32, match_string_view> enum_decl_map;
-	HashMap<StringView, Proc_Meta, u32, match_string_view> proc_decl_map;
-	HashMap<StringView, Struct_Meta, u32, match_string_view> struct_decl_map;
+	std::vector<IR_Block_Info> blocks;
+	std::vector<Ast_Defer*> defer_stack;
+	std::vector<IR_Loop_Info> loop_stack;
+	std::vector<IR_Var_Info> var_stack;
+};
+
+enum class Terminator2
+{
+	None,
+	Break,
+	Return,
+	Continue,
+};
+
+enum class BlockFlags
+{
+	None,
+	DisableBlockAdd,
+};
+
+enum class ProcCallFlags
+{
+	None,
+	AsStatement,
 };
 
 #endif
