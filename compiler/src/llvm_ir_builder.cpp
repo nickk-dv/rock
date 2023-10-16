@@ -345,13 +345,32 @@ void build_for(IR_Context* context, IR_Block_Stack* bc, Ast_For* _for)
 void build_var_decl(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Decl* var_decl)
 {
 	LLVMTypeRef type = type_to_llvm_type(context, var_decl->type.value());
-
 	LLVMValueRef var_ptr = LLVMBuildAlloca(context->builder, type, ident_to_cstr(var_decl->ident));
+	
 	if (var_decl->expr)
 	{
-		LLVMValueRef expr_value = build_expr(context, bc, var_decl->expr.value());
-		build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), type);
-		LLVMBuildStore(context->builder, expr_value, var_ptr);
+		//@Special case for struct initialization may generalize to work as normal expression
+		Ast_Expr* decl_expr = var_decl->expr.value();
+		if (decl_expr->tag == Ast_Expr::Tag::Term && decl_expr->as_term->tag == Ast_Term::Tag::Struct_Init)
+		{
+			u32 count = 0;
+			Ast_Struct_Init* struct_init = decl_expr->as_term->as_struct_init;
+			for (Ast_Expr* expr : struct_init->input_exprs)
+			{
+				LLVMValueRef expr_value = build_expr(context, bc, expr);
+				LLVMTypeRef field_type = LLVMStructGetTypeAtIndex(type, count);
+				build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), field_type);
+				LLVMValueRef field_ptr = LLVMBuildStructGEP2(context->builder, type, var_ptr, count, "fieldptr");
+				LLVMBuildStore(context->builder, expr_value, field_ptr);
+				count += 1;
+			}
+		}
+		else
+		{
+			LLVMValueRef expr_value = build_expr(context, bc, var_decl->expr.value());
+			build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), type);
+			LLVMBuildStore(context->builder, expr_value, var_ptr);
+		}
 	}
 	else LLVMBuildStore(context->builder, LLVMConstNull(type), var_ptr);
 
@@ -361,6 +380,29 @@ void build_var_decl(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Decl* var_d
 void build_var_assign(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Assign* var_assign)
 {
 	IR_Var_Access_Info var_access = build_var(context, bc, var_assign->var);
+	
+	//@Special case for struct initialization may generalize to work as normal expression
+	Ast_Expr* expr = var_assign->expr;
+	if (expr->tag == Ast_Expr::Tag::Term)
+	{
+		Ast_Term* term = expr->as_term;
+		if (term->tag == Ast_Term::Tag::Struct_Init)
+		{
+			u32 count = 0;
+			Ast_Struct_Init* struct_init = term->as_struct_init;
+			for (Ast_Expr* expr : struct_init->input_exprs)
+			{
+				LLVMValueRef expr_value = build_expr(context, bc, expr);
+				LLVMTypeRef field_type = LLVMStructGetTypeAtIndex(var_access.var_type, count);
+				build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), field_type);
+				LLVMValueRef field_ptr = LLVMBuildStructGEP2(context->builder, var_access.var_type, var_access.var_ptr, count, "fieldptr");
+				LLVMBuildStore(context->builder, expr_value, field_ptr);
+				count += 1;
+			}
+			return;
+		}
+	}
+
 	LLVMValueRef expr_value = build_expr(context, bc, var_assign->expr);
 	build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), var_access.var_type);
 	LLVMBuildStore(context->builder, expr_value, var_access.var_ptr);
@@ -413,6 +455,7 @@ LLVMValueRef build_term(IR_Context* context, IR_Block_Stack* bc, Ast_Term* term)
 		else return LLVMConstInt(LLVMInt32Type(), 0, 0); //@Notice string literal isnt supported
 	}
 	case Ast_Term::Tag::Proc_Call: return build_proc_call(context, bc, term->as_proc_call, ProcCallFlags::None);
+	case Ast_Term::Tag::Struct_Init: return NULL; //@Notice returning null on struct init, it should be handled on var assigned for now
 	}
 }
 

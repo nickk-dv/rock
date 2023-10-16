@@ -132,6 +132,9 @@ int cmd_build(char* filepath)
 	check_main_proc(&err, main_ast);
 	for (const auto& [module, ast] : modules) check_decls(&err, ast);
 	if (err.has_err) return 1;
+
+	check_program(&err, &program);
+	if (err.has_err) return 1;
 	
 	for (const auto& [module, ast] : modules) check_ast(&err, ast);
 	if (err.has_err) return 1;

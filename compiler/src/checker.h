@@ -15,6 +15,7 @@ struct Block_Stack;
 void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, Module_Map& modules);
 void check_decls(Error_Handler* err, Ast* ast);
 void check_main_proc(Error_Handler* err, Ast* ast);
+void check_program(Error_Handler* err, Ast_Program* program);
 void check_ast(Error_Handler* err, Ast* ast);
 
 static void check_struct_decl(Error_Handler* err, Ast* ast, Ast_Struct_Decl* struct_decl);

@@ -178,6 +178,88 @@ void check_main_proc(Error_Handler* err, Ast* ast)
 	}
 }
 
+void check_program(Error_Handler* err, Ast_Program* program)
+{
+	struct Visit_State
+	{
+		Ast_Struct_Decl* struct_decl;
+		u64 struct_id;
+		u32 field_id;
+		u64 field_count;
+	};
+
+	for (u64 i = 0; i < program->structs.size(); i += 1)
+	{
+		u64 search_target = i;
+		bool found = false;
+		std::vector<Visit_State> visit_stack;
+		std::vector<u64> visited;
+
+		Ast_Struct_Meta meta = program->structs[search_target];
+		Visit_State visit = Visit_State { meta.struct_decl, search_target, 0, meta.struct_decl->fields.size() };
+		visit_stack.emplace_back(visit);
+		visited.emplace_back(visit.struct_id);
+
+		while (!visit_stack.empty() && !found)
+		{
+			bool new_visit = false;
+
+			u64 curr_id = visit_stack.size() - 1;
+			Visit_State& state = visit_stack[curr_id];
+			while (state.field_id < state.field_count)
+			{
+				Ast_Type type = state.struct_decl->fields[state.field_id].type;
+				if (type_kind(err, type) == Type_Kind::Struct)
+				{
+					u64 struct_id = type.as_struct.struct_id;
+					if (struct_id == search_target)
+					{ 
+						found = true; 
+						break; 
+					}
+
+					bool already_visited = std::find(visited.begin(), visited.end(), struct_id) != visited.end();
+					if (!already_visited)
+					{
+						Ast_Struct_Meta visit_meta = program->structs[struct_id];
+						Visit_State visit2 = { visit_meta.struct_decl, struct_id, 0, visit_meta.struct_decl->fields.size() };
+						visit_stack.push_back(visit2);
+						visited.push_back(struct_id);
+						new_visit = true;
+						break;
+					}
+				}
+				state.field_id += 1;
+			}
+
+			if (!new_visit)
+			{
+				if (found) break;
+				else visit_stack.pop_back();
+			}
+		}
+
+		if (found)
+		{
+			err_set;
+			printf("Found struct with infinite size: ");
+			Visit_State err_visit = visit_stack[0];
+			debug_print_ident(err_visit.struct_decl->type, true, true);
+			printf("Field access path: ");
+			debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
+			for (u32 k = 1; k < visit_stack.size(); k += 1)
+			{
+				printf(".");
+				err_visit = visit_stack[k];
+				debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
+			}
+			printf("\n");
+			printf("Hint: struct cannot directly store intance of itself. Use pointer for indirection.\n");
+			printf("\n");
+		}
+	}
+}
+
 void check_ast(Error_Handler* err, Ast* ast)
 {
 	Block_Stack bc = {};
