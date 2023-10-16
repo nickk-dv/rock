@@ -43,6 +43,8 @@ LLVMValueRef build_term(IR_Context* context, IR_Block_Stack* bc, Ast_Term* term)
 IR_Var_Access_Info build_var(IR_Context* context, IR_Block_Stack* bc, Ast_Var* var);
 LLVMValueRef build_unary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Unary_Expr* unary_expr);
 LLVMValueRef build_binary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Binary_Expr* binary_expr);
+void build_implicit_cast(IR_Context* context, LLVMValueRef* value, LLVMTypeRef type, LLVMTypeRef target_type);
+void build_implicit_binary_cast(IR_Context* context, LLVMValueRef* value_lhs, LLVMValueRef* value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs);
 
 struct IR_Context
 {
@@ -69,7 +71,6 @@ struct IR_Var_Info
 {
 	StringView str;
 	LLVMValueRef var_ptr;
-	LLVMTypeRef var_type;
 	Ast_Type ast_type;
 };
 

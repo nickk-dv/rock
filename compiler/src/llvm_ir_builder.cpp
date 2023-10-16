@@ -71,10 +71,14 @@ LLVMModuleRef build_module(Ast_Program* program)
 			LLVMValueRef param_value = LLVMGetParam(proc_meta.proc_value, count);
 			LLVMValueRef copy_ptr = LLVMBuildAlloca(context.builder, type, "copy_ptr");
 			LLVMBuildStore(context.builder, param_value, copy_ptr);
-			block_stack_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, type, param.type });
+			block_stack_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, param.type });
 			count += 1;
 		}
 		build_block(&context, &bc, proc_decl->block, BlockFlags::DisableBlockAdd);
+		
+		LLVMBasicBlockRef proc_exit_bb = LLVMGetInsertBlock(context.builder);
+		LLVMValueRef proc_terminator = LLVMGetBasicBlockTerminator(proc_exit_bb);
+		if (proc_terminator == NULL) LLVMBuildRetVoid(context.builder);
 	}
 
 	build_context_deinit(&context);
@@ -346,19 +350,19 @@ void build_var_decl(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Decl* var_d
 	if (var_decl->expr)
 	{
 		LLVMValueRef expr_value = build_expr(context, bc, var_decl->expr.value());
-		//expr_value = build_value_cast(expr_value, type);
+		build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), type);
 		LLVMBuildStore(context->builder, expr_value, var_ptr);
 	}
 	else LLVMBuildStore(context->builder, LLVMConstNull(type), var_ptr);
 
-	block_stack_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, type, var_decl->type.value() });
+	block_stack_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, var_decl->type.value() });
 }
 
 void build_var_assign(IR_Context* context, IR_Block_Stack* bc, Ast_Var_Assign* var_assign)
 {
 	IR_Var_Access_Info var_access = build_var(context, bc, var_assign->var);
 	LLVMValueRef expr_value = build_expr(context, bc, var_assign->expr);
-	//expr_value = build_value_cast(expr_value, var_access.var_type);
+	build_implicit_cast(context, &expr_value, LLVMTypeOf(expr_value), var_access.var_type);
 	LLVMBuildStore(context->builder, expr_value, var_access.var_ptr);
 }
 
@@ -416,7 +420,6 @@ IR_Var_Access_Info build_var(IR_Context* context, IR_Block_Stack* bc, Ast_Var* v
 {
 	IR_Var_Info var_info = block_stack_find_var(bc, var->ident);
 	LLVMValueRef ptr = var_info.var_ptr;
-	LLVMTypeRef type = var_info.var_type;
 	Ast_Type ast_type = var_info.ast_type;
 
 	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
@@ -474,9 +477,8 @@ LLVMValueRef build_binary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Bina
 	LLVMValueRef rhs = build_expr(context, bc, binary_expr->right);
 	LLVMTypeRef lhs_type = LLVMTypeOf(lhs);
 	LLVMTypeRef rhs_type = LLVMTypeOf(rhs);
-	bool float_kind = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind;
-
-	//build_binary_value_cast(lhs, rhs, lhs_type, rhs_type);
+	bool float_kind = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind || LLVMGetTypeKind(lhs_type) == LLVMDoubleTypeKind;
+	build_implicit_binary_cast(context, &lhs, &rhs, lhs_type, rhs_type);
 
 	switch (op)
 	{
@@ -502,5 +504,45 @@ LLVMValueRef build_binary_expr(IR_Context* context, IR_Block_Stack* bc, Ast_Bina
 	case BINARY_OP_BITWISE_XOR: return LLVMBuildXor(context->builder, lhs, rhs, "btmp");
 	case BINARY_OP_BITSHIFT_LEFT: return LLVMBuildShl(context->builder, lhs, rhs, "btmp");
 	case BINARY_OP_BITSHIFT_RIGHT: return LLVMBuildLShr(context->builder, lhs, rhs, "btmp"); //@LLVMBuildAShr used for maintaining the sign?
+	}
+}
+
+void build_implicit_cast(IR_Context* context, LLVMValueRef* value, LLVMTypeRef type, LLVMTypeRef target_type)
+{
+	if (type == target_type) return;
+	LLVMTypeKind kind = LLVMGetTypeKind(type);
+	bool is_float = kind == LLVMFloatTypeKind || kind == LLVMDoubleTypeKind;
+	bool is_int = !is_float;
+
+	if (is_float)
+	{
+		*value = LLVMBuildFPCast(context->builder, *value, target_type, "fval");
+		return;
+	}
+
+	if (is_int)
+	{
+		//
+	}
+}
+
+void build_implicit_binary_cast(IR_Context* context, LLVMValueRef* value_lhs, LLVMValueRef* value_rhs, LLVMTypeRef type_lhs, LLVMTypeRef type_rhs)
+{
+	if (type_lhs == type_rhs) return;
+	LLVMTypeKind kind_lhs = LLVMGetTypeKind(type_lhs);
+	bool is_float = kind_lhs == LLVMFloatTypeKind || kind_lhs == LLVMDoubleTypeKind;
+	bool is_int = !is_float;
+
+	if (is_float)
+	{
+		if (kind_lhs == LLVMFloatTypeKind)
+			*value_lhs = LLVMBuildFPCast(context->builder, *value_lhs, type_rhs, "fval");
+		else *value_rhs = LLVMBuildFPCast(context->builder, *value_rhs, type_lhs, "fval");
+		return;
+	}
+
+	if (is_int)
+	{
+		//
 	}
 }

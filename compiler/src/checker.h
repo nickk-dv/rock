@@ -47,6 +47,9 @@ static std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, 
 static Type_Kind type_kind(Error_Handler* err, Ast_Type type);
 static Type_Kind type_info_kind(Error_Handler* err, Type_Info type_info);
 static Type_Info type_info_from_basic(BasicType basic_type);
+static void type_implicit_cast(Error_Handler* err, Ast_Type* type, Ast_Type target_type);
+static void type_implicit_binary_cast(Error_Handler* err, Ast_Type* type_a, Ast_Type* type_b);
+
 static bool match_type_info(Error_Handler* err, Type_Info type_info_a, Type_Info type_info_b);
 static bool match_type(Error_Handler* err, Ast_Type type_a, Ast_Type type_b);
 static void block_stack_reset(Block_Stack* bc);

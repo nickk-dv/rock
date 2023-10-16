@@ -181,17 +181,20 @@ void check_main_proc(Error_Handler* err, Ast* ast)
 void check_ast(Error_Handler* err, Ast* ast)
 {
 	Block_Stack bc = {};
-	//@Notice not setting passed flag in checks
+
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
 	{
 		if (proc_decl->is_external) continue;
 
 		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
 		Terminator terminator = check_block_cfg(err, proc_decl->block, false, false);
-		if (proc_decl->return_type.has_value() && terminator != Terminator::Return)
+		if (terminator != Terminator::Return)
 		{
-			err_set;
-			error("Not all control flow paths return value", proc_decl->ident);
+			if (proc_decl->return_type)
+			{
+				err_set;
+				error("Not all control flow paths return value", proc_decl->ident);
+			}
 		}
 		
 		//@Notice need to add input variables to block stack
@@ -557,13 +560,18 @@ void check_var_decl(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Decl*
 		if (var_decl->expr)
 		{
 			auto expr_type = check_expr(err, ast, bc, var_decl->expr.value());
-			if (type && expr_type && !match_type_info(err, type.value(), expr_type.value()))
+			if (type && expr_type)
 			{
-				err_set;
-				printf("Type mismatch in variable declaration:\n"); 
-				debug_print_ident(var_decl->ident);
-				printf("Expected: "); debug_print_type(type.value().type); printf("\n");
-				printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
+				type_implicit_cast(err, &expr_type.value().type, type.value().type);
+
+				if (!match_type_info(err, type.value(), expr_type.value()))
+				{
+					err_set;
+					printf("Type mismatch in variable declaration:\n"); 
+					debug_print_ident(var_decl->ident);
+					printf("Expected: "); debug_print_type(type.value().type); printf("\n");
+					printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
+				}
 			}
 		}
 		
@@ -605,13 +613,18 @@ void check_var_assign(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Ass
 		return;
 	}
 
-	if (var_type && expr_type && !match_type_info(err, var_type.value(), expr_type.value()))
+	if (var_type && expr_type)
 	{
-		err_set;
-		printf("Type mismatch in variable assignment:\n");
-		debug_print_ident(var_assign->var->ident);
-		printf("Expected: "); debug_print_type(var_type.value().type); printf("\n");
-		printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
+		type_implicit_cast(err, &expr_type.value().type, var_type.value().type);
+
+		if (!match_type_info(err, var_type.value(), expr_type.value()))
+		{
+			err_set;
+			printf("Type mismatch in variable assignment:\n");
+			debug_print_ident(var_assign->var->ident);
+			printf("Expected: "); debug_print_type(var_type.value().type); printf("\n");
+			printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
+		}
 	}
 }
 
@@ -985,6 +998,11 @@ std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_S
 		return {};
 	}
 
+	//@Notice type checking
+	// need to check equality of types for some operations ( uint / int should be threated as same? )
+	// do all ops need matching operand types? test in llvm backend
+	type_implicit_binary_cast(err, &lhs.type, &rhs.type);
+	
 	switch (op)
 	{
 	// LogicOps [&& ||]
@@ -1019,7 +1037,7 @@ std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_S
 	case BINARY_OP_DIV:
 	{
 		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return lhs;
-		err_set; printf("Exprected float or int in math binary expression\n");
+		err_set; printf("Expected float or int in math binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -1027,7 +1045,7 @@ std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_S
 	case BINARY_OP_MOD:
 	{
 		if (lhs_kind == Type_Kind::Integer) return lhs;
-		err_set; printf("Exprected int in '%%' binary expression\n");
+		err_set; printf("Expected int in '%%' binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -1040,7 +1058,7 @@ std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_S
 	case BINARY_OP_BITSHIFT_RIGHT:
 	{
 		if (lhs_kind == Type_Kind::Integer) return lhs;
-		err_set; printf("Exprected int in bitwise binary expression\n");
+		err_set; printf("Expected int in bitwise binary expression\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -1099,6 +1117,48 @@ Type_Info type_info_from_basic(BasicType basic_type)
 	type.tag = Ast_Type::Tag::Basic;
 	type.as_basic = basic_type;
 	return Type_Info { false, type };
+}
+
+void type_implicit_cast(Error_Handler* err, Ast_Type* type, Ast_Type target_type)
+{
+	if (type->tag != Ast_Type::Tag::Basic) return;
+	if (target_type.tag != Ast_Type::Tag::Basic) return;
+	if (type->as_basic == target_type.as_basic) return;
+	Type_Kind kind = type_kind(err, *type);
+	Type_Kind target_kind = type_kind(err, target_type);
+
+	if (kind == Type_Kind::Float && target_kind == Type_Kind::Float)
+	{
+		type->as_basic = target_type.as_basic;
+		return;
+	}
+	
+	if (kind == Type_Kind::Integer && target_kind == Type_Kind::Integer)
+	{
+		//
+	}
+}
+
+void type_implicit_binary_cast(Error_Handler* err, Ast_Type* type_a, Ast_Type* type_b)
+{
+	if (type_a->tag != Ast_Type::Tag::Basic) return;
+	if (type_b->tag != Ast_Type::Tag::Basic) return;
+	if (type_a->as_basic == type_b->as_basic) return;
+	Type_Kind kind_a = type_kind(err, *type_a);
+	Type_Kind kind_b = type_kind(err, *type_b);
+
+	if (kind_a == Type_Kind::Float && kind_b == Type_Kind::Float)
+	{
+		if (type_a->as_basic == BASIC_TYPE_F32) 
+			type_a->as_basic = BASIC_TYPE_F64;
+		else type_b->as_basic = BASIC_TYPE_F64;
+		return;
+	}
+
+	if (kind_a == Type_Kind::Integer && kind_b == Type_Kind::Integer)
+	{
+		//
+	}
 }
 
 bool match_type_info(Error_Handler* err, Type_Info type_info_a, Type_Info type_info_b)
