@@ -17,7 +17,7 @@ static std::optional<u8> peek_character(Tokenizer* tokenizer, u32 offset);
 static void consume_character(Tokenizer* tokenizer);
 
 const u64 TOKENIZER_BUFFER_SIZE = 256;
-const u64 TOKENIZER_LOOKAHEAD = 3;
+const u64 TOKENIZER_LOOKAHEAD = 4;
 
 enum LexemeType
 {

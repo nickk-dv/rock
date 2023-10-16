@@ -413,6 +413,29 @@ Ast_Enum* parse_enum(Parser* parser, bool import)
 	return _enum;
 }
 
+Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
+{
+	Ast_Struct_Init* struct_init = parser->arena.alloc<Ast_Struct_Init>();
+	if (import) { struct_init->import = token_to_ident(consume_get()); consume(); }
+	if (type) { struct_init->type = token_to_ident(consume_get()); }
+	consume();
+	
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }
+	while (true)
+	{
+		if (try_consume(TOKEN_BLOCK_END)) return struct_init;
+
+		Ast_Expr* expr = parse_sub_expr(parser);
+		if (!expr) return NULL;
+		struct_init->input_exprs.emplace_back(expr);
+
+		if (!try_consume(TOKEN_COMMA)) break;
+	}
+	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' in struct initializer"); return NULL; }
+
+	return struct_init;
+}
+
 Ast_Term* parse_term(Parser* parser)
 {
 	Ast_Term* term = parser->arena.alloc<Ast_Term>();
@@ -429,35 +452,56 @@ Ast_Term* parse_term(Parser* parser)
 		term->as_literal = Ast_Literal { token };
 		consume();
 	} break;
+	case TOKEN_DOT:
+	{
+		Ast_Struct_Init* struct_init = parse_struct_init(parser, false, false);
+		if (!struct_init) return NULL;
+		term->tag = Ast_Term::Tag::Struct_Init;
+		term->as_struct_init = struct_init;
+	} break;
 	case TOKEN_IDENT:
 	{
 		Token next = peek_next(1);
 		Token next_2 = peek_next(2);
 		Token next_3 = peek_next(3);
 		bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
-		bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
 		bool import_enum = import_prefix && next_3.type == TOKEN_DOUBLE_COLON;
+		bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
 
-		if (next.type == TOKEN_PAREN_START || import_proc_call)
-		{
-			Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
-			if (!proc_call) return NULL;
-			term->tag = Ast_Term::Tag::Proc_Call;
-			term->as_proc_call = proc_call;
-		}
-		else if (next.type == TOKEN_DOUBLE_COLON || import_enum)
+		if (next.type == TOKEN_DOUBLE_COLON || import_enum)
 		{
 			Ast_Enum* _enum = parse_enum(parser, import_enum);
 			if (!_enum) return NULL;
 			term->tag = Ast_Term::Tag::Enum;
 			term->as_enum = _enum;
 		}
+		else if (next.type == TOKEN_PAREN_START || import_proc_call)
+		{
+			Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
+			if (!proc_call) return NULL;
+			term->tag = Ast_Term::Tag::Proc_Call;
+			term->as_proc_call = proc_call;
+		}
 		else
 		{
-			Ast_Var* var = parse_var(parser);
-			if (!var) return NULL;
-			term->tag = Ast_Term::Tag::Var;
-			term->as_var = var;
+			Token next_4 = peek_next(4);
+			bool si_just_type = next.type == TOKEN_DOT && next_2.type == TOKEN_BLOCK_START;
+			bool si_with_import = import_prefix && next_3.type == TOKEN_DOT && next_4.type == TOKEN_BLOCK_START;
+			
+			if (si_just_type || si_with_import)
+			{
+				Ast_Struct_Init* struct_init = parse_struct_init(parser, si_with_import, true);
+				if (!struct_init) return NULL;
+				term->tag = Ast_Term::Tag::Struct_Init;
+				term->as_struct_init = struct_init;
+			}
+			else
+			{
+				Ast_Var* var = parse_var(parser);
+				if (!var) return NULL;
+				term->tag = Ast_Term::Tag::Var;
+				term->as_var = var;
+			}
 		}
 	} break;
 	default:
@@ -794,22 +838,20 @@ Ast_Continue* parse_continue(Parser* parser)
 Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 {
 	Ast_Proc_Call* proc_call = parser->arena.alloc<Ast_Proc_Call>();
-
 	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
 	proc_call->ident = token_to_ident(consume_get());
+	
 	consume();
-
 	while (true)
 	{
 		if (try_consume(TOKEN_PAREN_END)) return proc_call;
 
-		Ast_Expr* param_expr = parse_sub_expr(parser);
-		if (!param_expr) return NULL;
-		proc_call->input_exprs.emplace_back(param_expr);
+		Ast_Expr* expr = parse_sub_expr(parser);
+		if (!expr) return NULL;
+		proc_call->input_exprs.emplace_back(expr);
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
-
 	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')' after procedure call"); return NULL; }
 
 	Token token = peek();

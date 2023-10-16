@@ -26,6 +26,7 @@ struct Ast_Access;
 struct Ast_Var_Access;
 struct Ast_Array_Access;
 struct Ast_Enum;
+struct Ast_Struct_Init;
 struct Ast_Term;
 struct Ast_Expr;
 struct Ast_Unary_Expr;
@@ -262,11 +263,20 @@ struct Ast_Enum
 	u32 variant_id;
 };
 
+struct Ast_Struct_Init
+{
+	std::optional<Ast_Ident> import;
+	std::optional<Ast_Ident> type;
+	std::vector<Ast_Expr*> input_exprs;
+	//check stage
+	u64 struct_id;
+};
+
 struct Ast_Term
 {
 	enum class Tag
 	{
-		Var, Enum, Literal, Proc_Call
+		Var, Enum, Literal, Proc_Call, Struct_Init
 	} tag;
 
 	union
@@ -275,6 +285,7 @@ struct Ast_Term
 		Ast_Enum* as_enum;
 		Ast_Literal as_literal;
 		Ast_Proc_Call* as_proc_call;
+		Ast_Struct_Init* as_struct_init;
 	};
 };
 

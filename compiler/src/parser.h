@@ -23,6 +23,7 @@ static Ast_Access* parse_access(Parser* parser);
 static Ast_Var_Access* parse_var_access(Parser* parser);
 static Ast_Array_Access* parse_array_access(Parser* parser);
 static Ast_Enum* parse_enum(Parser* parser, bool import);
+static Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type);
 static Ast_Term* parse_term(Parser* parser);
 static Ast_Expr* parse_expr(Parser* parser);
 static Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec = 0);
