@@ -29,6 +29,7 @@ void debug_print_for(Ast_For* _for, u32 depth);
 void debug_print_defer(Ast_Defer* defer, u32 depth);
 void debug_print_break(Ast_Break* _break, u32 depth);
 void debug_print_return(Ast_Return* _return, u32 depth);
+void debug_print_switch(Ast_Switch* _switch, u32 depth);
 void debug_print_continue(Ast_Continue* _continue, u32 depth);
 void debug_print_var_decl(Ast_Var_Decl* var_decl, u32 depth);
 void debug_print_var_assign(Ast_Var_Assign* var_assign, u32 depth);

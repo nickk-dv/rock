@@ -52,9 +52,8 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{
-			symbol_table.add(ident, hash_ident(ident)); 
-			ast->struct_table.add(ident, Ast_Struct_Decl_Meta { ast->curr_struct_id, decl }, hash_ident(ident));
-			ast->curr_struct_id += 1;
+			symbol_table.add(ident, hash_ident(ident));
+			ast->struct_table.add(ident, Ast_Struct_Decl_Meta { (u32)program->structs.size(), decl }, hash_ident(ident));
 
 			Ast_Struct_Meta struct_meta = {};
 			struct_meta.struct_decl = decl;
@@ -70,8 +69,7 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
-			ast->enum_table.add(ident, Ast_Enum_Decl_Meta { ast->curr_enum_id, decl }, hash_ident(ident));
-			ast->curr_enum_id += 1;
+			ast->enum_table.add(ident, Ast_Enum_Decl_Meta { (u32)program->enums.size(), decl }, hash_ident(ident));
 
 			Ast_Enum_Meta enum_meta = {};
 			enum_meta.enum_decl = decl;
@@ -87,8 +85,7 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
-			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { ast->curr_proc_id, decl }, hash_ident(ident));
-			ast->curr_proc_id += 1;
+			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { (u32)program->procedures.size(), decl }, hash_ident(ident));
 
 			Ast_Proc_Meta proc_meta = {};
 			proc_meta.proc_decl = decl;
@@ -539,12 +536,13 @@ static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block
 void check_if(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_If* _if)
 {
 	auto type = check_expr(err, ast, bc, _if->condition_expr);
-	if (!type.has_value() || type_info_kind(err, type.value()) != Type_Kind::Bool)
+	if (type && type_info_kind(err, type.value()) != Type_Kind::Bool)
 	{
 		err_set;
-		printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
+		printf("Expected conditional expression to be of type 'bool':\n");
 		debug_print_token(_if->token, true, true);
-		printf("\n");
+		printf("Got: "); debug_print_type(type.value().type);
+		printf("\n\n");
 	}
 
 	check_block(err, ast, bc, _if->block);
@@ -567,12 +565,13 @@ void check_for(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_For* _for)
 	if (_for->condition_expr)
 	{
 		auto type = check_expr(err, ast, bc, _for->condition_expr.value());
-		if (!type.has_value() || type_info_kind(err, type.value()) != Type_Kind::Bool)
+		if (type && type_info_kind(err, type.value()) != Type_Kind::Bool)
 		{
 			err_set;
-			printf("Expected conditional expression to be of type 'bool', got not bool or type error:\n");
+			printf("Expected conditional expression to be of type 'bool':\n");
 			debug_print_token(_for->token, true, true);
-			printf("\n");
+			printf("Got: "); debug_print_type(type.value().type);
+			printf("\n\n");
 		}
 	}
 
@@ -594,7 +593,7 @@ void check_return(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Return* _re
 				err_set;
 				printf("Return type doesnt match procedure declaration:\n");
 				debug_print_token(_return->token, true, true);
-				printf("Expected: \n"); debug_print_type(ret_type); printf("\n");
+				printf("Expected: "); debug_print_type(ret_type); printf("\n");
 				printf("Got: "); debug_print_type(expr_type.value().type); printf("\n\n");
 			}
 		}
@@ -1066,7 +1065,9 @@ std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_S
 
 	if (lhs_kind != rhs_kind)
 	{
-		err_set; printf("Type mismatch in binary expression\n");
+		err_set; printf("Type mismatch in binary expression:\n");
+		printf("Left:  "); debug_print_type(lhs.type); printf("\n");
+		printf("Right: "); debug_print_type(rhs.type); printf("\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};
@@ -1074,7 +1075,9 @@ std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_S
 
 	if (lhs_kind != Type_Kind::Bool && lhs_kind != Type_Kind::Float && lhs_kind != Type_Kind::Integer)
 	{
-		err_set; printf("Exprected bool float or integer type in binary expression\n");
+		err_set; printf("Expected operands with basic types in binary expression:\n");
+		printf("Left:  "); debug_print_type(lhs.type); printf("\n");
+		printf("Right: "); debug_print_type(rhs.type); printf("\n");
 		debug_print_binary_expr(binary_expr, 0);
 		printf("\n");
 		return {};

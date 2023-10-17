@@ -52,6 +52,7 @@ void debug_print_token(Token token, bool endl, bool location)
 		case TOKEN_KEYWORD_DEFER: printf("defer"); break;
 		case TOKEN_KEYWORD_BREAK: printf("break"); break;
 		case TOKEN_KEYWORD_RETURN: printf("return"); break;
+		case TOKEN_KEYWORD_SWITCH: printf("switch"); break;
 		case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
 		case TOKEN_KEYWORD_IMPORT: printf("import"); break;
 		case TOKEN_KEYWORD_USE: printf("use"); break;
@@ -363,6 +364,7 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 	case Ast_Statement::Tag::Defer: debug_print_defer(statement->as_defer, depth); break;
 	case Ast_Statement::Tag::Break: debug_print_break(statement->as_break, depth); break;
 	case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
+	case Ast_Statement::Tag::Switch: debug_print_switch(statement->as_switch, depth); break;
 	case Ast_Statement::Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
 	case Ast_Statement::Tag::Var_Decl: debug_print_var_decl(statement->as_var_decl, depth); break;
 	case Ast_Statement::Tag::Var_Assign: debug_print_var_assign(statement->as_var_assign, depth); break;
@@ -459,6 +461,23 @@ void debug_print_return(Ast_Return* _return, u32 depth)
 		debug_print_expr(_return->expr.value(), depth);
 	}
 	else printf("---\n");
+}
+
+void debug_print_switch(Ast_Switch* _switch, u32 depth)
+{
+	debug_print_branch(depth);
+	printf("Switch: \n");
+
+	debug_print_term(_switch->term, depth);
+	
+	for (Ast_Switch_Case& _case : _switch->cases)
+	{
+		debug_print_spacing(depth);
+		printf("Case: \n");
+		debug_print_term(_case.term, depth);
+		if (_case.block)
+		debug_print_block(_case.block.value(), depth);
+	}
 }
 
 void debug_print_continue(Ast_Continue* _continue, u32 depth)

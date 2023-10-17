@@ -39,6 +39,8 @@ struct Ast_For;
 struct Ast_Defer;
 struct Ast_Break;
 struct Ast_Return;
+struct Ast_Switch;
+struct Ast_Switch_Case;
 struct Ast_Continue;
 struct Ast_Var_Decl;
 struct Ast_Var_Assign;
@@ -93,9 +95,6 @@ struct Ast
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
 	//checker
-	u32 curr_struct_id;
-	u32 curr_enum_id;
-	u32 curr_proc_id;
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
 	HashMap<Ast_Ident, Ast_Struct_Decl_Meta, u32, match_ident> struct_table;
 	HashMap<Ast_Ident, Ast_Enum_Decl_Meta, u32, match_ident> enum_table;
@@ -240,7 +239,7 @@ struct Ast_Statement
 	enum class Tag
 	{
 		If, For, Block, Defer, Break, Return,
-		Continue, Var_Decl, Var_Assign, Proc_Call
+		Switch, Continue, Var_Decl, Var_Assign, Proc_Call
 	} tag;
 
 	union
@@ -251,6 +250,7 @@ struct Ast_Statement
 		Ast_Defer* as_defer;
 		Ast_Break* as_break;
 		Ast_Return* as_return;
+		Ast_Switch* as_switch;
 		Ast_Continue* as_continue;
 		Ast_Var_Decl* as_var_decl;
 		Ast_Var_Assign* as_var_assign;
@@ -306,6 +306,23 @@ struct Ast_Return
 {
 	Token token;
 	std::optional<Ast_Expr*> expr;
+};
+
+struct Ast_Switch
+{
+	Token token;
+	Ast_Term* term;
+	std::vector<Ast_Switch_Case> cases;
+	//checker
+	Ast_Type type;
+};
+
+struct Ast_Switch_Case
+{
+	Ast_Term* term;
+	std::optional<Ast_Block*> block;
+	//ir builder
+	LLVMBasicBlockRef basic_block;
 };
 
 struct Ast_Continue

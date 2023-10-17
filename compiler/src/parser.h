@@ -28,6 +28,7 @@ static Ast_For* parse_for(Parser* parser);
 static Ast_Defer* parse_defer(Parser* parser);
 static Ast_Break* parse_break(Parser* parser);
 static Ast_Return* parse_return(Parser* parser);
+static Ast_Switch* parse_switch(Parser* parser);
 static Ast_Continue* parse_continue(Parser* parser);
 static Ast_Var_Decl* parse_var_decl(Parser* parser);
 static Ast_Var_Assign* parse_var_assign(Parser* parser);
@@ -49,6 +50,7 @@ static void consume_token(Parser* parser);
 static Token consume_get_token(Parser* parser);
 static std::optional<Token> try_consume_token(Parser* parser, TokenType token_type);
 static void parse_error(Parser* parser, const char* message, u32 offset);
+static void parse_error_token(Parser* parser, const char* message, Token token);
 
 struct Parser
 {

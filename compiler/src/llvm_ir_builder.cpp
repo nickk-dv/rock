@@ -125,6 +125,7 @@ Block_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, Block_Fla
 			context_block_pop_back(bc);
 			return Block_Terminator::Return;
 		} break;
+		case Ast_Statement::Tag::Switch: build_switch(bc, statement->as_switch); break;
 		case Ast_Statement::Tag::Continue:
 		{
 			build_defer(bc, Block_Terminator::Continue);
@@ -225,6 +226,47 @@ void build_for(IR_Builder_Context* bc, Ast_For* _for)
 		if (_for->var_assign) build_var_assign(bc, _for->var_assign.value());
 		LLVMBuildBr(bc->builder, cond_block);
 	}
+	context_set_bb(bc, exit_block);
+}
+
+void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
+{
+	Value on_value = build_term(bc, _switch->term);
+	Basic_Block exit_block = context_add_bb(bc, "switch_exit");
+	Value switch_value = LLVMBuildSwitch(bc->builder, on_value, exit_block, (u32)_switch->cases.size());
+
+	for (Ast_Switch_Case& _case : _switch->cases)
+	{
+		_case.basic_block = context_add_bb(bc, "case_block");
+	}
+
+	for (u64 i = 0; i < _switch->cases.size(); i += 1)
+	{
+		Ast_Switch_Case _case = _switch->cases[i];
+		Value case_value = build_term(bc, _case.term);
+		Basic_Block case_block = _case.basic_block;
+		LLVMAddCase(switch_value, case_value, case_block);
+		context_set_bb(bc, case_block);
+		
+		if (_case.block)
+		{
+			Block_Terminator terminator = build_block(bc, _case.block.value(), Block_Flags::None);
+			if (terminator == Block_Terminator::None) LLVMBuildBr(bc->builder, exit_block);
+		}
+		else
+		{
+			for (u64 k = i; k < _switch->cases.size(); k += 1)
+			{
+				Ast_Switch_Case next_case = _switch->cases[k];
+				if (next_case.block)
+				{
+					LLVMBuildBr(bc->builder, next_case.basic_block);
+					break;
+				}
+			}
+		}
+	}
+
 	context_set_bb(bc, exit_block);
 }
 

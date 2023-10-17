@@ -9,6 +9,7 @@
 #define try_consume(token_type) try_consume_token(parser, token_type)
 #define error(message) parse_error(parser, message, 0);
 #define error_next(message, offset) parse_error(parser, message, offset);
+#define error_token(message, token) parse_error_token(parser, message, token);
 
 bool parser_init(Parser* parser, const char* filepath)
 {
@@ -369,6 +370,12 @@ Ast_Statement* parse_statement(Parser* parser)
 		statement->as_return = parse_return(parser);
 		if (!statement->as_return) return NULL;
 	} break;
+	case TOKEN_KEYWORD_SWITCH:
+	{
+		statement->tag = Ast_Statement::Tag::Switch;
+		statement->as_switch = parse_switch(parser);
+		if (!statement->as_switch) return NULL;
+	} break;
 	case TOKEN_KEYWORD_CONTINUE:
 	{
 		statement->tag = Ast_Statement::Tag::Continue;
@@ -535,6 +542,51 @@ Ast_Return* parse_return(Parser* parser)
 	if (!expr) return NULL;
 	_return->expr = expr;
 	return _return;
+}
+
+Ast_Switch* parse_switch(Parser* parser)
+{
+	Ast_Switch* _switch = parser->arena.alloc<Ast_Switch>();
+	_switch->token = consume_get();
+
+	Ast_Term* term = parse_term(parser);
+	if (!term) return NULL;
+	_switch->term = term;
+
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' in switch statement"); return NULL; }
+	
+	while (true)
+	{
+		if (try_consume(TOKEN_BLOCK_END))
+		{
+			if (_switch->cases.empty())
+			{
+				error_token("Expected switch statement to have at least one case", _switch->token);
+				return NULL;
+			}
+			return _switch;
+		}
+
+		Ast_Term* case_term = parse_term(parser);
+		if (!case_term) return NULL;
+
+		Ast_Switch_Case switch_case = {};
+		switch_case.term = case_term;
+
+		if (peek().type == TOKEN_BLOCK_START)
+		{
+			Ast_Block* block = parse_block(parser);
+			if (!block) return NULL;
+			switch_case.block = block;
+		}
+		else if (peek().type == TOKEN_BLOCK_END)
+		{ 
+			error("Expected block before the end of switch statement"); 
+			return NULL;
+		}
+
+		_switch->cases.emplace_back(switch_case);
+	}
 }
 
 Ast_Continue* parse_continue(Parser* parser)
@@ -946,4 +998,10 @@ void parse_error(Parser* parser, const char* message, u32 offset)
 {
 	printf("%s.\n", message);
 	debug_print_token(peek_next(offset), true, true);
+}
+
+void parse_error_token(Parser* parser, const char* message, Token token)
+{
+	printf("%s.\n", message);
+	debug_print_token(token, true, true);
 }

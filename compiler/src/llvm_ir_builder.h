@@ -9,6 +9,7 @@ static Block_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, Bl
 static void build_defer(IR_Builder_Context* bc, Block_Terminator terminator);
 static void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block);
 static void build_for(IR_Builder_Context* bc, Ast_For* _for);
+static void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch);
 static void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl);
 static void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign);
 static Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, Proc_Call_Flags flags);

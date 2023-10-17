@@ -37,6 +37,7 @@ enum TokenType
 	TOKEN_KEYWORD_DEFER,         // defer
 	TOKEN_KEYWORD_BREAK,         // break
 	TOKEN_KEYWORD_RETURN,        // return
+	TOKEN_KEYWORD_SWITCH,        // switch
 	TOKEN_KEYWORD_CONTINUE,      // continue
 	TOKEN_KEYWORD_IMPORT,        // import
 	TOKEN_KEYWORD_USE,           // use

@@ -4,7 +4,7 @@ project "compiler"
 	cppdialect "C++17"
 	staticruntime "off"
 	
-	files { "src/main.cpp", "src/**.h" }
+	files { "src/**.cpp", "src/**.h" }
 	
 	includedirs
 	{
