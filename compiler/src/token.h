@@ -111,8 +111,9 @@ enum UnaryOp
 {
 	UNARY_OP_MINUS,           // -
 	UNARY_OP_LOGIC_NOT,       // !
-	UNARY_OP_ADDRESS_OF,      // &
 	UNARY_OP_BITWISE_NOT,     // ~
+	UNARY_OP_ADDRESS_OF,      // *
+	UNARY_OP_DEREFERENCE,     // <<
 	UNARY_OP_ERROR,
 };
 

@@ -236,21 +236,6 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 	}
 }
 
-void tokenizer_skip_whitespace(Tokenizer* tokenizer)
-{
-	while (peek().has_value())
-	{
-		u8 c = peek().value();
-		if (!is_whitespace(c)) break;
-		if (c == '\n')
-		{
-			tokenizer->line_id += 1;
-			tokenizer->line_cursor = tokenizer->input_cursor;
-		}
-		consume();
-	}
-}
-
 void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 {
 	while (peek().has_value())

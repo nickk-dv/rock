@@ -90,6 +90,95 @@ Ast* parser_parse(Parser* parser)
 	return ast;
 }
 
+Ast_Type parse_type(Parser* parser)
+{
+	Ast_Type type = {};
+	Token token = peek();
+
+	while (token.type == TOKEN_TIMES)
+	{
+		consume();
+		token = peek();
+		type.pointer_level += 1;
+	}
+
+	BasicType basic_type = token_to_basic_type(token.type);
+	if (basic_type != BASIC_TYPE_ERROR)
+	{
+		consume();
+		type.tag = Ast_Type::Tag::Basic;
+		type.as_basic = basic_type;
+		return type;
+	}
+
+	switch (token.type)
+	{
+	case TOKEN_IDENT:
+	{
+		Ast_Custom_Type* custom = parse_custom_type(parser);
+		if (!custom) return {};
+		type.tag = Ast_Type::Tag::Custom;
+		type.as_custom = custom;
+	} break;
+	case TOKEN_BRACKET_START:
+	{
+		Ast_Array_Type* array = parse_array_type(parser);
+		if (!array) return {};
+		type.tag = Ast_Type::Tag::Array;
+		type.as_array = array;
+	} break;
+	default:
+	{
+		error("Expected basic type, type identifier or array type");
+		return {};
+	}
+	}
+
+	return type;
+}
+
+Ast_Array_Type* parse_array_type(Parser* parser)
+{
+	Ast_Array_Type* array = parser->arena.alloc<Ast_Array_Type>();
+	consume();
+
+	Token token = peek();
+	if (token.type == TOKEN_INTEGER_LITERAL)
+	{
+		consume();
+		array->fixed_size = token.integer_value;
+	}
+	else if (try_consume(TOKEN_DOUBLE_DOT))
+	{
+		array->is_dynamic = true;
+	}
+	else { error("Expected '..' or integer size specifier"); return NULL; }
+	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
+
+	Ast_Type type = parse_type(parser);
+	if (type.as_custom == NULL) return NULL;
+	array->element_type = type;
+
+	return array;
+}
+
+Ast_Custom_Type* parse_custom_type(Parser* parser)
+{
+	Ast_Custom_Type* custom = parser->arena.alloc<Ast_Custom_Type>();
+
+	Ast_Ident ident = token_to_ident(consume_get());
+	if (try_consume(TOKEN_DOT))
+	{
+		custom->import = ident;
+		auto type = try_consume(TOKEN_IDENT);
+		if (!type) { error("Expected type identifier"); return NULL; }
+		custom->type = token_to_ident(type.value());
+	}
+	else custom->type = ident;
+
+	return custom;
+}
+
 Ast_Import_Decl* parse_import_decl(Parser* parser)
 {
 	Ast_Import_Decl* decl = parser->arena.alloc<Ast_Import_Decl>();
@@ -220,384 +309,6 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 	}
 
 	return decl;
-}
-
-Ast_Type parse_type(Parser* parser)
-{
-	Ast_Type type = {};
-	Token token = peek();
-
-	while (token.type == TOKEN_TIMES)
-	{
-		consume();
-		token = peek();
-		type.pointer_level += 1;
-	}
-
-	BasicType basic_type = token_to_basic_type(token.type);
-	if (basic_type != BASIC_TYPE_ERROR)
-	{
-		consume();
-		type.tag = Ast_Type::Tag::Basic;
-		type.as_basic = basic_type;
-		return type;
-	}
-
-	switch (token.type)
-	{
-	case TOKEN_IDENT:
-	{
-		Ast_Custom_Type* custom = parse_custom_type(parser);
-		if (!custom) return {};
-		type.tag = Ast_Type::Tag::Custom;
-		type.as_custom = custom;
-	} break;
-	case TOKEN_BRACKET_START:
-	{
-		Ast_Array_Type* array = parse_array_type(parser);
-		if (!array) return {};
-		type.tag = Ast_Type::Tag::Array;
-		type.as_array = array;
-	} break;
-	default:
-	{
-		error("Expected basic type, type identifier or array type");
-		return {};
-	}
-	}
-
-	return type;
-}
-
-Ast_Array_Type* parse_array_type(Parser* parser)
-{
-	Ast_Array_Type* array = parser->arena.alloc<Ast_Array_Type>();
-	consume();
-
-	Token token = peek();
-	if (token.type == TOKEN_INTEGER_LITERAL)
-	{
-		consume();
-		array->fixed_size = token.integer_value;
-	}
-	else if (try_consume(TOKEN_DOUBLE_DOT))
-	{
-		array->is_dynamic = true;
-	}
-	else { error("Expected '..' or integer size specifier"); return NULL; }
-	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
-
-	Ast_Type type = parse_type(parser);
-	if (type.as_custom == NULL) return NULL;
-	array->element_type = type;
-
-	return array;
-}
-
-Ast_Custom_Type* parse_custom_type(Parser* parser)
-{
-	Ast_Custom_Type* custom = parser->arena.alloc<Ast_Custom_Type>();
-
-	Ast_Ident ident = token_to_ident(consume_get());
-	if (try_consume(TOKEN_DOT))
-	{
-		custom->import = ident;
-		auto type = try_consume(TOKEN_IDENT);
-		if (!type) { error("Expected type identifier"); return NULL; }
-		custom->type = token_to_ident(type.value());
-	}
-	else custom->type = ident;
-	
-	return custom;
-}
-
-Ast_Var* parse_var(Parser* parser)
-{
-	Ast_Var* var = parser->arena.alloc<Ast_Var>();
-	var->ident = token_to_ident(consume_get());
-
-	Token token = peek();
-	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
-	{
-		Ast_Access* access = parse_access(parser);
-		if (!access) return NULL;
-		var->access = access;
-	}
-
-	return var;
-}
-
-Ast_Access* parse_access(Parser* parser)
-{
-	Ast_Access* access = parser->arena.alloc<Ast_Access>();
-	Token token = peek();
-	
-	if (token.type == TOKEN_DOT)
-	{
-		consume();
-		Ast_Var_Access* var_access = parse_var_access(parser);
-		if (!var_access) return NULL;
-		access->tag = Ast_Access::Tag::Var;
-		access->as_var = var_access;
-	}
-	else if (token.type == TOKEN_BRACKET_START)
-	{
-		consume();
-		Ast_Array_Access* array_access = parse_array_access(parser);
-		if (!array_access) return NULL;
-		access->tag = Ast_Access::Tag::Array;
-		access->as_array = array_access;
-	}
-	else
-	{
-		error("Fatal parse error in parse_access");
-		return NULL;
-	}
-
-	return access;
-}
-
-Ast_Var_Access* parse_var_access(Parser* parser)
-{
-	Ast_Var_Access* var_access = parser->arena.alloc<Ast_Var_Access>();
-
-	auto ident = try_consume(TOKEN_IDENT);
-	if (!ident) { error("Expected field identifier"); return NULL; }
-	var_access->ident = token_to_ident(ident.value());
-
-	Token token = peek();
-	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
-	{
-		Ast_Access* access = parse_access(parser);
-		if (!access) return NULL;
-		var_access->next = access;
-	}
-
-	return var_access;
-}
-
-Ast_Array_Access* parse_array_access(Parser* parser)
-{
-	Ast_Array_Access* array_access = parser->arena.alloc<Ast_Array_Access>();
-
-	Ast_Expr* expr = parse_sub_expr(parser);
-	if (!expr) return NULL;
-	array_access->index_expr = expr;
-
-	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
-
-	Token token = peek();
-	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
-	{
-		Ast_Access* access = parse_access(parser);
-		if (!access) return NULL;
-		array_access->next = access;
-	}
-
-	return array_access;
-}
-
-Ast_Enum* parse_enum(Parser* parser, bool import)
-{
-	Ast_Enum* _enum = parser->arena.alloc<Ast_Enum>();
-	if (import) { _enum->import = token_to_ident(consume_get()); consume(); }
-	
-	auto ident = try_consume(TOKEN_IDENT);
-	if (!ident) { error("Expected enum type identifier"); return NULL; }
-	_enum->type = token_to_ident(ident.value());
-	consume();
-	auto variant = try_consume(TOKEN_IDENT);
-	if (!variant) { error("Expected enum variant identifier"); return NULL; }
-	_enum->variant = token_to_ident(variant.value());
-
-	return _enum;
-}
-
-Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
-{
-	Ast_Struct_Init* struct_init = parser->arena.alloc<Ast_Struct_Init>();
-	if (import) { struct_init->import = token_to_ident(consume_get()); consume(); }
-	if (type) { struct_init->type = token_to_ident(consume_get()); }
-	consume();
-	
-	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }
-	while (true)
-	{
-		if (try_consume(TOKEN_BLOCK_END)) return struct_init;
-
-		Ast_Expr* expr = parse_sub_expr(parser);
-		if (!expr) return NULL;
-		struct_init->input_exprs.emplace_back(expr);
-
-		if (!try_consume(TOKEN_COMMA)) break;
-	}
-	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' in struct initializer"); return NULL; }
-
-	return struct_init;
-}
-
-Ast_Term* parse_term(Parser* parser)
-{
-	Ast_Term* term = parser->arena.alloc<Ast_Term>();
-	Token token = peek();
-
-	switch (token.type)
-	{
-	case TOKEN_BOOL_LITERAL:
-	case TOKEN_FLOAT_LITERAL:
-	case TOKEN_INTEGER_LITERAL:
-	case TOKEN_STRING_LITERAL:
-	{
-		term->tag = Ast_Term::Tag::Literal;
-		term->as_literal = Ast_Literal { token };
-		consume();
-	} break;
-	case TOKEN_DOT:
-	{
-		Ast_Struct_Init* struct_init = parse_struct_init(parser, false, false);
-		if (!struct_init) return NULL;
-		term->tag = Ast_Term::Tag::Struct_Init;
-		term->as_struct_init = struct_init;
-	} break;
-	case TOKEN_IDENT:
-	{
-		Token next = peek_next(1);
-		Token next_2 = peek_next(2);
-		Token next_3 = peek_next(3);
-		bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
-		bool import_enum = import_prefix && next_3.type == TOKEN_DOUBLE_COLON;
-		bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
-
-		if (next.type == TOKEN_DOUBLE_COLON || import_enum)
-		{
-			Ast_Enum* _enum = parse_enum(parser, import_enum);
-			if (!_enum) return NULL;
-			term->tag = Ast_Term::Tag::Enum;
-			term->as_enum = _enum;
-		}
-		else if (next.type == TOKEN_PAREN_START || import_proc_call)
-		{
-			Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
-			if (!proc_call) return NULL;
-			term->tag = Ast_Term::Tag::Proc_Call;
-			term->as_proc_call = proc_call;
-		}
-		else
-		{
-			Token next_4 = peek_next(4);
-			bool si_just_type = next.type == TOKEN_DOT && next_2.type == TOKEN_BLOCK_START;
-			bool si_with_import = import_prefix && next_3.type == TOKEN_DOT && next_4.type == TOKEN_BLOCK_START;
-			
-			if (si_just_type || si_with_import)
-			{
-				Ast_Struct_Init* struct_init = parse_struct_init(parser, si_with_import, true);
-				if (!struct_init) return NULL;
-				term->tag = Ast_Term::Tag::Struct_Init;
-				term->as_struct_init = struct_init;
-			}
-			else
-			{
-				Ast_Var* var = parse_var(parser);
-				if (!var) return NULL;
-				term->tag = Ast_Term::Tag::Var;
-				term->as_var = var;
-			}
-		}
-	} break;
-	default:
-	{
-		error("Expected a valid expression term");
-		return NULL;
-	}
-	}
-
-	return term;
-}
-
-Ast_Expr* parse_expr(Parser* parser)
-{
-	Ast_Expr* expr = parse_sub_expr(parser);
-	if (!expr) return NULL;
-	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after expression"); return NULL; }
-	return expr;
-}
-
-Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
-{
-	Ast_Expr* expr_lhs = parse_primary_expr(parser);
-	if (!expr_lhs) return NULL;
-
-	while (true)
-	{
-		Token token_op = peek();
-		BinaryOp op = token_to_binary_op(token_op.type);
-		if (op == BINARY_OP_ERROR) break;
-		u32 prec = token_binary_op_prec(op);
-		if (prec < min_prec) break;
-		consume();
-
-		u32 next_min_prec = prec + 1;
-		Ast_Expr* expr_rhs = parse_sub_expr(parser, next_min_prec);
-		if (expr_rhs == NULL) return NULL;
-
-		Ast_Expr* expr_lhs_copy = parser->arena.alloc<Ast_Expr>();
-		expr_lhs_copy->tag = expr_lhs->tag;
-		expr_lhs_copy->as_term = expr_lhs->as_term;
-		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
-
-		Ast_Binary_Expr* bin_expr = parser->arena.alloc<Ast_Binary_Expr>();
-		bin_expr->op = op;
-		bin_expr->left = expr_lhs_copy;
-		bin_expr->right = expr_rhs;
-
-		expr_lhs->tag = Ast_Expr::Tag::Binary_Expr;
-		expr_lhs->as_binary_expr = bin_expr;
-	}
-
-	return expr_lhs;
-}
-
-Ast_Expr* parse_primary_expr(Parser* parser)
-{
-	if (try_consume(TOKEN_PAREN_START))
-	{
-		Ast_Expr* expr = parse_sub_expr(parser);
-
-		if (!try_consume(TOKEN_PAREN_END))
-		{
-			error("Expected ')'");
-			return NULL;
-		}
-
-		return expr;
-	}
-
-	Token token = peek();
-	UnaryOp op = token_to_unary_op(token.type);
-	if (op != UNARY_OP_ERROR)
-	{
-		consume();
-		Ast_Expr* right_expr = parse_primary_expr(parser);
-		if (!right_expr) return NULL;
-
-		Ast_Unary_Expr* unary_expr = parser->arena.alloc<Ast_Unary_Expr>();
-		unary_expr->op = op;
-		unary_expr->right = right_expr;
-
-		Ast_Expr* expr = parser->arena.alloc<Ast_Expr>();
-		expr->tag = Ast_Expr::Tag::Unary_Expr;
-		expr->as_unary_expr = unary_expr;
-		return expr;
-	}
-
-	Ast_Term* term = parse_term(parser);
-	if (!term) return NULL;
-
-	Ast_Expr* expr = parser->arena.alloc<Ast_Expr>();
-	expr->tag = Ast_Expr::Tag::Term;
-	expr->as_term = term;
-
-	return expr;
 }
 
 Ast_Block* parse_block(Parser* parser)
@@ -835,36 +546,6 @@ Ast_Continue* parse_continue(Parser* parser)
 	return _continue;
 }
 
-Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
-{
-	Ast_Proc_Call* proc_call = parser->arena.alloc<Ast_Proc_Call>();
-	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
-	proc_call->ident = token_to_ident(consume_get());
-	
-	consume();
-	while (true)
-	{
-		if (try_consume(TOKEN_PAREN_END)) return proc_call;
-
-		Ast_Expr* expr = parse_sub_expr(parser);
-		if (!expr) return NULL;
-		proc_call->input_exprs.emplace_back(expr);
-
-		if (!try_consume(TOKEN_COMMA)) break;
-	}
-	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')' after procedure call"); return NULL; }
-
-	Token token = peek();
-	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
-	{
-		Ast_Access* access = parse_access(parser);
-		if (!access) return NULL;
-		proc_call->access = access;
-	}
-
-	return proc_call;
-}
-
 Ast_Var_Decl* parse_var_decl(Parser* parser)
 {
 	Ast_Var_Decl* var_decl = parser->arena.alloc<Ast_Var_Decl>();
@@ -907,6 +588,325 @@ Ast_Var_Assign* parse_var_assign(Parser* parser)
 	if (!expr) return NULL;
 	var_assign->expr = expr;
 	return var_assign;
+}
+
+Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
+{
+	Ast_Proc_Call* proc_call = parser->arena.alloc<Ast_Proc_Call>();
+	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
+	proc_call->ident = token_to_ident(consume_get());
+
+	consume();
+	while (true)
+	{
+		if (try_consume(TOKEN_PAREN_END)) return proc_call;
+
+		Ast_Expr* expr = parse_sub_expr(parser);
+		if (!expr) return NULL;
+		proc_call->input_exprs.emplace_back(expr);
+
+		if (!try_consume(TOKEN_COMMA)) break;
+	}
+	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')' after procedure call"); return NULL; }
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access(parser);
+		if (!access) return NULL;
+		proc_call->access = access;
+	}
+
+	return proc_call;
+}
+
+Ast_Expr* parse_expr(Parser* parser)
+{
+	Ast_Expr* expr = parse_sub_expr(parser);
+	if (!expr) return NULL;
+	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after expression"); return NULL; }
+	return expr;
+}
+
+Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
+{
+	Ast_Expr* expr_lhs = parse_primary_expr(parser);
+	if (!expr_lhs) return NULL;
+
+	while (true)
+	{
+		Token token_op = peek();
+		BinaryOp op = token_to_binary_op(token_op.type);
+		if (op == BINARY_OP_ERROR) break;
+		u32 prec = token_binary_op_prec(op);
+		if (prec < min_prec) break;
+		consume();
+
+		u32 next_min_prec = prec + 1;
+		Ast_Expr* expr_rhs = parse_sub_expr(parser, next_min_prec);
+		if (expr_rhs == NULL) return NULL;
+
+		Ast_Expr* expr_lhs_copy = parser->arena.alloc<Ast_Expr>();
+		expr_lhs_copy->tag = expr_lhs->tag;
+		expr_lhs_copy->as_term = expr_lhs->as_term;
+		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
+
+		Ast_Binary_Expr* bin_expr = parser->arena.alloc<Ast_Binary_Expr>();
+		bin_expr->op = op;
+		bin_expr->left = expr_lhs_copy;
+		bin_expr->right = expr_rhs;
+
+		expr_lhs->tag = Ast_Expr::Tag::Binary_Expr;
+		expr_lhs->as_binary_expr = bin_expr;
+	}
+
+	return expr_lhs;
+}
+
+Ast_Expr* parse_primary_expr(Parser* parser)
+{
+	if (try_consume(TOKEN_PAREN_START))
+	{
+		Ast_Expr* expr = parse_sub_expr(parser);
+
+		if (!try_consume(TOKEN_PAREN_END))
+		{
+			error("Expected ')'");
+			return NULL;
+		}
+
+		return expr;
+	}
+
+	Token token = peek();
+	UnaryOp op = token_to_unary_op(token.type);
+	if (op != UNARY_OP_ERROR)
+	{
+		consume();
+		Ast_Expr* right_expr = parse_primary_expr(parser);
+		if (!right_expr) return NULL;
+
+		Ast_Unary_Expr* unary_expr = parser->arena.alloc<Ast_Unary_Expr>();
+		unary_expr->op = op;
+		unary_expr->right = right_expr;
+
+		Ast_Expr* expr = parser->arena.alloc<Ast_Expr>();
+		expr->tag = Ast_Expr::Tag::Unary_Expr;
+		expr->as_unary_expr = unary_expr;
+		return expr;
+	}
+
+	Ast_Term* term = parse_term(parser);
+	if (!term) return NULL;
+
+	Ast_Expr* expr = parser->arena.alloc<Ast_Expr>();
+	expr->tag = Ast_Expr::Tag::Term;
+	expr->as_term = term;
+
+	return expr;
+}
+
+Ast_Term* parse_term(Parser* parser)
+{
+	Ast_Term* term = parser->arena.alloc<Ast_Term>();
+	Token token = peek();
+
+	switch (token.type)
+	{
+	case TOKEN_BOOL_LITERAL:
+	case TOKEN_FLOAT_LITERAL:
+	case TOKEN_INTEGER_LITERAL:
+	case TOKEN_STRING_LITERAL:
+	{
+		term->tag = Ast_Term::Tag::Literal;
+		term->as_literal = Ast_Literal{ token };
+		consume();
+	} break;
+	case TOKEN_DOT:
+	{
+		Ast_Struct_Init* struct_init = parse_struct_init(parser, false, false);
+		if (!struct_init) return NULL;
+		term->tag = Ast_Term::Tag::Struct_Init;
+		term->as_struct_init = struct_init;
+	} break;
+	case TOKEN_IDENT:
+	{
+		Token next = peek_next(1);
+		Token next_2 = peek_next(2);
+		Token next_3 = peek_next(3);
+		bool import_prefix = next.type == TOKEN_DOT && next_2.type == TOKEN_IDENT;
+		bool import_enum = import_prefix && next_3.type == TOKEN_DOUBLE_COLON;
+		bool import_proc_call = import_prefix && next_3.type == TOKEN_PAREN_START;
+
+		if (next.type == TOKEN_DOUBLE_COLON || import_enum)
+		{
+			Ast_Enum* _enum = parse_enum(parser, import_enum);
+			if (!_enum) return NULL;
+			term->tag = Ast_Term::Tag::Enum;
+			term->as_enum = _enum;
+		}
+		else if (next.type == TOKEN_PAREN_START || import_proc_call)
+		{
+			Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
+			if (!proc_call) return NULL;
+			term->tag = Ast_Term::Tag::Proc_Call;
+			term->as_proc_call = proc_call;
+		}
+		else
+		{
+			Token next_4 = peek_next(4);
+			bool si_just_type = next.type == TOKEN_DOT && next_2.type == TOKEN_BLOCK_START;
+			bool si_with_import = import_prefix && next_3.type == TOKEN_DOT && next_4.type == TOKEN_BLOCK_START;
+
+			if (si_just_type || si_with_import)
+			{
+				Ast_Struct_Init* struct_init = parse_struct_init(parser, si_with_import, true);
+				if (!struct_init) return NULL;
+				term->tag = Ast_Term::Tag::Struct_Init;
+				term->as_struct_init = struct_init;
+			}
+			else
+			{
+				Ast_Var* var = parse_var(parser);
+				if (!var) return NULL;
+				term->tag = Ast_Term::Tag::Var;
+				term->as_var = var;
+			}
+		}
+	} break;
+	default:
+	{
+		error("Expected a valid expression term");
+		return NULL;
+	}
+	}
+
+	return term;
+}
+
+Ast_Var* parse_var(Parser* parser)
+{
+	Ast_Var* var = parser->arena.alloc<Ast_Var>();
+	var->ident = token_to_ident(consume_get());
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access(parser);
+		if (!access) return NULL;
+		var->access = access;
+	}
+
+	return var;
+}
+
+Ast_Access* parse_access(Parser* parser)
+{
+	Ast_Access* access = parser->arena.alloc<Ast_Access>();
+	Token token = peek();
+
+	if (token.type == TOKEN_DOT)
+	{
+		consume();
+		Ast_Var_Access* var_access = parse_var_access(parser);
+		if (!var_access) return NULL;
+		access->tag = Ast_Access::Tag::Var;
+		access->as_var = var_access;
+	}
+	else if (token.type == TOKEN_BRACKET_START)
+	{
+		consume();
+		Ast_Array_Access* array_access = parse_array_access(parser);
+		if (!array_access) return NULL;
+		access->tag = Ast_Access::Tag::Array;
+		access->as_array = array_access;
+	}
+	else
+	{
+		error("Fatal parse error in parse_access");
+		return NULL;
+	}
+
+	return access;
+}
+
+Ast_Var_Access* parse_var_access(Parser* parser)
+{
+	Ast_Var_Access* var_access = parser->arena.alloc<Ast_Var_Access>();
+
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) { error("Expected field identifier"); return NULL; }
+	var_access->ident = token_to_ident(ident.value());
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access(parser);
+		if (!access) return NULL;
+		var_access->next = access;
+	}
+
+	return var_access;
+}
+
+Ast_Array_Access* parse_array_access(Parser* parser)
+{
+	Ast_Array_Access* array_access = parser->arena.alloc<Ast_Array_Access>();
+
+	Ast_Expr* expr = parse_sub_expr(parser);
+	if (!expr) return NULL;
+	array_access->index_expr = expr;
+
+	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
+
+	Token token = peek();
+	if (token.type == TOKEN_DOT || token.type == TOKEN_BRACKET_START)
+	{
+		Ast_Access* access = parse_access(parser);
+		if (!access) return NULL;
+		array_access->next = access;
+	}
+
+	return array_access;
+}
+
+Ast_Enum* parse_enum(Parser* parser, bool import)
+{
+	Ast_Enum* _enum = parser->arena.alloc<Ast_Enum>();
+	if (import) { _enum->import = token_to_ident(consume_get()); consume(); }
+
+	auto ident = try_consume(TOKEN_IDENT);
+	if (!ident) { error("Expected enum type identifier"); return NULL; }
+	_enum->type = token_to_ident(ident.value());
+	consume();
+	auto variant = try_consume(TOKEN_IDENT);
+	if (!variant) { error("Expected enum variant identifier"); return NULL; }
+	_enum->variant = token_to_ident(variant.value());
+
+	return _enum;
+}
+
+Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
+{
+	Ast_Struct_Init* struct_init = parser->arena.alloc<Ast_Struct_Init>();
+	if (import) { struct_init->import = token_to_ident(consume_get()); consume(); }
+	if (type) { struct_init->type = token_to_ident(consume_get()); }
+	consume();
+
+	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }
+	while (true)
+	{
+		if (try_consume(TOKEN_BLOCK_END)) return struct_init;
+
+		Ast_Expr* expr = parse_sub_expr(parser);
+		if (!expr) return NULL;
+		struct_init->input_exprs.emplace_back(expr);
+
+		if (!try_consume(TOKEN_COMMA)) break;
+	}
+	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' in struct initializer"); return NULL; }
+
+	return struct_init;
 }
 
 Token peek_token(Parser* parser, u32 offset)

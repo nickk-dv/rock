@@ -6,9 +6,21 @@
 #include "llvm_ir_builder.h"
 #include "llvm_backend.h"
 
+#include <filesystem>
+#include <unordered_map>
+#include "debug_printer.h"
+
+namespace fs = std::filesystem;
+
 int parse_cmd(int argc, char** argv)
 {
-	for (int i = 1; i < argc; i++)
+	if (argc == 1)
+	{
+		printf("Usage: use 'help' command in your terminal.\n");
+		return 0;
+	}
+	
+	for (int i = 1; i < argc; i += 1)
 	{
 		char* arg = argv[i];
 
@@ -34,7 +46,6 @@ int parse_cmd(int argc, char** argv)
 		}
 	}
 
-	printf("Usage: use 'help' command in your terminal.\n");
 	return 0;
 }
 
@@ -42,10 +53,6 @@ bool match_arg(char* arg, const char* match)
 {
 	return strcmp(arg, match) == 0;
 }
-
-#include <filesystem>
-#include <unordered_map>
-namespace fs = std::filesystem;
 
 int cmd_build(char* filepath)
 {
@@ -100,27 +107,21 @@ int cmd_build(char* filepath)
 	if (parse_error) return 1;
 	timer.end("Parse init & Parse Ast");
 
+	for (const auto& [module, ast] : modules)
+	{
+		debug_print_ast(ast);
+	}
+
 	Ast_Program program = {};
 	Error_Handler err = {};
 	Ast* main_ast = NULL;
 
 	timer.start();
-	u64 struct_id_start = 0;
-	u64 enum_id_start = 0;
-	u64 proc_id_start = 0;
 	for (const auto& [module, ast] : modules)
 	{
-		ast->struct_id_start = struct_id_start;
-		ast->enum_id_start = enum_id_start;
-		ast->proc_id_start = proc_id_start;
-		
 		printf("file: %s\n", module.c_str());
 		check_decl_uniqueness(&err, ast, &program, modules);
 		if (module == "main") main_ast = ast;
-
-		struct_id_start += ast->structs.size();
-		enum_id_start += ast->enums.size();
-		proc_id_start += ast->procs.size();
 	}
 	if (main_ast == NULL)
 	{

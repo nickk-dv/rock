@@ -20,7 +20,11 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 	{
 		Ast_Ident ident = decl->alias;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) { symbol_table.add(ident, hash_ident(ident)); ast->import_table.add(ident, decl, hash_ident(ident)); }
+		if (!key) 
+		{ 
+			symbol_table.add(ident, hash_ident(ident)); 
+			ast->import_table.add(ident, decl, hash_ident(ident)); 
+		}
 		else { err_set; error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); }
 	}
 
@@ -42,7 +46,6 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		else { err_set; error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); }
 	}
 
-	u64 struct_count = 0;
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
 		Ast_Ident ident = decl->type;
@@ -50,17 +53,16 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		if (!key) 
 		{
 			symbol_table.add(ident, hash_ident(ident)); 
-			ast->struct_table.add(ident, Ast_Struct_Decl_Meta { ast->struct_id_start + struct_count, decl }, hash_ident(ident));
-			
+			ast->struct_table.add(ident, Ast_Struct_Decl_Meta { ast->curr_struct_id, decl }, hash_ident(ident));
+			ast->curr_struct_id += 1;
+
 			Ast_Struct_Meta struct_meta = {};
 			struct_meta.struct_decl = decl;
 			program->structs.emplace_back(struct_meta);
 		}
 		else { err_set; error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); }
-		struct_count += 1;
 	}
 
-	u64 enum_count = 0;
 	for (Ast_Enum_Decl* decl : ast->enums)
 	{
 		Ast_Ident ident = decl->type;
@@ -68,17 +70,16 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
-			ast->enum_table.add(ident, Ast_Enum_Decl_Meta { ast->enum_id_start + enum_count, decl }, hash_ident(ident));
+			ast->enum_table.add(ident, Ast_Enum_Decl_Meta { ast->curr_enum_id, decl }, hash_ident(ident));
+			ast->curr_enum_id += 1;
 
 			Ast_Enum_Meta enum_meta = {};
 			enum_meta.enum_decl = decl;
 			program->enums.emplace_back(enum_meta);
 		}
 		else { err_set; error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); }
-		enum_count += 1;
 	}
 
-	u64 proc_count = 0;
 	for (Ast_Proc_Decl* decl : ast->procs)
 	{
 		Ast_Ident ident = decl->ident;
@@ -86,14 +87,14 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
-			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { ast->proc_id_start + proc_count, decl }, hash_ident(ident));
-			
+			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { ast->curr_proc_id, decl }, hash_ident(ident));
+			ast->curr_proc_id += 1;
+
 			Ast_Proc_Meta proc_meta = {};
 			proc_meta.proc_decl = decl;
 			program->procedures.emplace_back(proc_meta);
 		}
 		else { err_set; error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); }
-		proc_count += 1;
 	}
 
 	//@Low priority
@@ -183,20 +184,20 @@ void check_program(Error_Handler* err, Ast_Program* program)
 	struct Visit_State
 	{
 		Ast_Struct_Decl* struct_decl;
-		u64 struct_id;
+		u32 struct_id;
 		u32 field_id;
-		u64 field_count;
+		u32 field_count;
 	};
 
-	for (u64 i = 0; i < program->structs.size(); i += 1)
+	for (u32 i = 0; i < program->structs.size(); i += 1)
 	{
-		u64 search_target = i;
+		u32 search_target = i;
 		bool found = false;
 		std::vector<Visit_State> visit_stack;
-		std::vector<u64> visited;
+		std::vector<u32> visited;
 
 		Ast_Struct_Meta meta = program->structs[search_target];
-		Visit_State visit = Visit_State { meta.struct_decl, search_target, 0, meta.struct_decl->fields.size() };
+		Visit_State visit = Visit_State { meta.struct_decl, search_target, 0, (u32)meta.struct_decl->fields.size() };
 		visit_stack.emplace_back(visit);
 		visited.emplace_back(visit.struct_id);
 
@@ -204,14 +205,14 @@ void check_program(Error_Handler* err, Ast_Program* program)
 		{
 			bool new_visit = false;
 
-			u64 curr_id = visit_stack.size() - 1;
+			u32 curr_id = (u32)visit_stack.size() - 1;
 			Visit_State& state = visit_stack[curr_id];
 			while (state.field_id < state.field_count)
 			{
 				Ast_Type type = state.struct_decl->fields[state.field_id].type;
 				if (type_kind(err, type) == Type_Kind::Struct)
 				{
-					u64 struct_id = type.as_struct.struct_id;
+					u32 struct_id = type.as_struct.struct_id;
 					if (struct_id == search_target)
 					{ 
 						found = true; 
@@ -222,7 +223,7 @@ void check_program(Error_Handler* err, Ast_Program* program)
 					if (!already_visited)
 					{
 						Ast_Struct_Meta visit_meta = program->structs[struct_id];
-						Visit_State visit2 = { visit_meta.struct_decl, struct_id, 0, visit_meta.struct_decl->fields.size() };
+						Visit_State visit2 = { visit_meta.struct_decl, struct_id, 0, (u32)visit_meta.struct_decl->fields.size() };
 						visit_stack.push_back(visit2);
 						visited.push_back(struct_id);
 						new_visit = true;
@@ -426,71 +427,70 @@ Terminator check_block_cfg(Error_Handler* err, Ast_Block* block, bool is_loop, b
 			printf("Unreachable statement:\n");
 			debug_print_statement(statement, 0);
 			printf("\n");
-			statement->unreachable = true;
 			break;
 		}
 
 		switch (statement->tag)
 		{
-			case Ast_Statement::Tag::If:
+		case Ast_Statement::Tag::If:
+		{
+			check_if_cfg(err, statement->as_if, is_loop, is_defer);
+		} break;
+		case Ast_Statement::Tag::For: 
+		{
+			check_block_cfg(err, statement->as_for->block, true, is_defer);
+		} break;
+		case Ast_Statement::Tag::Block: 
+		{
+			terminator = check_block_cfg(err, statement->as_block, is_loop, is_defer);
+		} break;
+		case Ast_Statement::Tag::Defer:
+		{
+			if (is_defer)
 			{
-				check_if_cfg(err, statement->as_if, is_loop, is_defer);
-			} break;
-			case Ast_Statement::Tag::For: 
+				err_set;
+				printf("Nested defer blocks are not allowed:\n");
+				debug_print_token(statement->as_defer->token, true, true);
+				printf("\n");
+			}
+			else check_block_cfg(err, statement->as_defer->block, false, true);
+		} break;
+		case Ast_Statement::Tag::Break:
+		{
+			if (!is_loop)
 			{
-				check_block_cfg(err, statement->as_for->block, true, is_defer);
-			} break;
-			case Ast_Statement::Tag::Block: 
+				if (is_defer) { err_set; printf("Break statement inside defer block is not allowed:\n"); }
+				else { err_set; printf("Break statement outside a loop:\n"); }
+				debug_print_token(statement->as_break->token, true, true);
+				printf("\n");
+			}
+			else terminator = Terminator::Break;
+		} break;
+		case Ast_Statement::Tag::Return:
+		{
+			if (is_defer)
 			{
-				terminator = check_block_cfg(err, statement->as_block, is_loop, is_defer);
-			} break;
-			case Ast_Statement::Tag::Defer:
+				err_set;
+				printf("Defer block cant contain 'return' statements:\n");
+				debug_print_token(statement->as_defer->token, true, true);
+				printf("\n");
+			}
+			else terminator = Terminator::Return;
+		} break;
+		case Ast_Statement::Tag::Continue:
+		{
+			if (!is_loop)
 			{
-				if (is_defer)
-				{
-					err_set;
-					printf("Nested defer blocks are not allowed:\n");
-					debug_print_token(statement->as_defer->token, true, true);
-					printf("\n");
-				}
-				else check_block_cfg(err, statement->as_defer->block, false, true);
-			} break;
-			case Ast_Statement::Tag::Break:
-			{
-				if (!is_loop)
-				{
-					if (is_defer) { err_set; printf("Break statement inside defer block is not allowed:\n"); }
-					else { err_set; printf("Break statement outside a loop:\n"); }
-					debug_print_token(statement->as_break->token, true, true);
-					printf("\n");
-				}
-				else terminator = Terminator::Break;
-			} break;
-			case Ast_Statement::Tag::Return:
-			{
-				if (is_defer)
-				{
-					err_set;
-					printf("Defer block cant contain 'return' statements:\n");
-					debug_print_token(statement->as_defer->token, true, true);
-					printf("\n");
-				}
-				else terminator = Terminator::Return;
-			} break;
-			case Ast_Statement::Tag::Continue:
-			{
-				if (!is_loop)
-				{
-					if (is_defer) { err_set; printf("Continue statement inside defer block is not allowed:\n"); }
-					else { err_set; printf("Continue statement outside a loop:\n"); }
-					debug_print_token(statement->as_continue->token, true, true);
-					printf("\n");
-				}
-				else terminator = Terminator::Continue;
-			} break;
-			case Ast_Statement::Tag::Proc_Call: break;
-			case Ast_Statement::Tag::Var_Decl: break;
-			case Ast_Statement::Tag::Var_Assign: break;
+				if (is_defer) { err_set; printf("Continue statement inside defer block is not allowed:\n"); }
+				else { err_set; printf("Continue statement outside a loop:\n"); }
+				debug_print_token(statement->as_continue->token, true, true);
+				printf("\n");
+			}
+			else terminator = Terminator::Continue;
+		} break;
+		case Ast_Statement::Tag::Proc_Call: break;
+		case Ast_Statement::Tag::Var_Decl: break;
+		case Ast_Statement::Tag::Var_Assign: break;
 		}
 	}
 
@@ -520,16 +520,16 @@ static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block
 	{
 		switch (statement->tag)
 		{
-			case Ast_Statement::Tag::If: check_if(err, ast, bc, statement->as_if); break;
-			case Ast_Statement::Tag::For: check_for(err, ast, bc, statement->as_for); break;
-			case Ast_Statement::Tag::Block: check_block(err, ast, bc, statement->as_block); break;
-			case Ast_Statement::Tag::Defer: check_block(err, ast, bc, statement->as_defer->block); break;
-			case Ast_Statement::Tag::Break: break;
-			case Ast_Statement::Tag::Return: check_return(err, ast, bc, statement->as_return); break;
-			case Ast_Statement::Tag::Continue: break;
-			case Ast_Statement::Tag::Proc_Call: check_proc_call(err, ast, bc, statement->as_proc_call, true); break;
-			case Ast_Statement::Tag::Var_Decl: check_var_decl(err, ast, bc, statement->as_var_decl); break;
-			case Ast_Statement::Tag::Var_Assign: check_var_assign(err, ast, bc, statement->as_var_assign); break;
+		case Ast_Statement::Tag::If: check_if(err, ast, bc, statement->as_if); break;
+		case Ast_Statement::Tag::For: check_for(err, ast, bc, statement->as_for); break;
+		case Ast_Statement::Tag::Block: check_block(err, ast, bc, statement->as_block); break;
+		case Ast_Statement::Tag::Defer: check_block(err, ast, bc, statement->as_defer->block); break;
+		case Ast_Statement::Tag::Break: break;
+		case Ast_Statement::Tag::Return: check_return(err, ast, bc, statement->as_return); break;
+		case Ast_Statement::Tag::Continue: break;
+		case Ast_Statement::Tag::Proc_Call: check_proc_call(err, ast, bc, statement->as_proc_call, true); break;
+		case Ast_Statement::Tag::Var_Decl: check_var_decl(err, ast, bc, statement->as_var_decl); break;
+		case Ast_Statement::Tag::Var_Assign: check_var_assign(err, ast, bc, statement->as_var_assign); break;
 		}
 	}
 
@@ -714,55 +714,55 @@ std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type
 {
 	switch (type->tag)
 	{
-		case Ast_Type::Tag::Basic:
+	case Ast_Type::Tag::Basic:
+	{
+		return Type_Info { false, *type };
+	}
+	case Ast_Type::Tag::Array:
+	{
+		auto element_type = check_type(err, ast, &type->as_array->element_type);
+		if (!element_type) return {};
+		return Type_Info { false, *type };
+	}
+	case Ast_Type::Tag::Custom:
+	{
+		Ast* target_ast = try_import(err, ast, type->as_custom->import);
+		if (target_ast == NULL) return {};
+
+		auto struct_meta = find_struct(target_ast, type->as_custom->type);
+		if (struct_meta)
 		{
+			type->tag = Ast_Type::Tag::Struct;
+			type->as_struct.struct_id = struct_meta.value().struct_id;
+			type->as_struct.struct_decl = struct_meta.value().struct_decl;
 			return Type_Info { false, *type };
 		}
-		case Ast_Type::Tag::Array:
+
+		auto enum_meta = find_enum(target_ast, type->as_custom->type);
+		if (enum_meta)
 		{
-			auto element_type = check_type(err, ast, &type->as_array->element_type);
-			if (!element_type) return {};
+			type->tag = Ast_Type::Tag::Enum;
+			type->as_enum.enum_id = enum_meta.value().enum_id;
+			type->as_enum.enum_decl = enum_meta.value().enum_decl;
 			return Type_Info { false, *type };
 		}
-		case Ast_Type::Tag::Custom:
-		{
-			Ast* target_ast = try_import(err, ast, type->as_custom->import);
-			if (target_ast == NULL) return {};
 
-			auto struct_meta = find_struct(target_ast, type->as_custom->type);
-			if (struct_meta)
-			{
-				type->tag = Ast_Type::Tag::Struct;
-				type->as_struct.struct_id = struct_meta.value().struct_id;
-				type->as_struct.struct_decl = struct_meta.value().struct_decl;
-				return Type_Info { false, *type };
-			}
-
-			auto enum_meta = find_enum(target_ast, type->as_custom->type);
-			if (enum_meta)
-			{
-				type->tag = Ast_Type::Tag::Enum;
-				type->as_enum.enum_id = enum_meta.value().enum_id;
-				type->as_enum.enum_decl = enum_meta.value().enum_decl;
-				return Type_Info { false, *type };
-			}
-
-			err_set;
-			printf("Failed to find the custom type: ");
-			debug_print_custom_type(type->as_custom);
-			printf("\n");
-			debug_print_ident(type->as_custom->type);
-			printf("\n");
-			return {};
-		}
-		default:
-		{
-			err_set;
-			printf("check_type: Unexpected Ast_Type::Tag, this should never happen!");
-			debug_print_type(*type);
-			printf("\n");
-			return {};
-		}
+		err_set;
+		printf("Failed to find the custom type: ");
+		debug_print_custom_type(type->as_custom);
+		printf("\n");
+		debug_print_ident(type->as_custom->type);
+		printf("\n");
+		return {};
+	}
+	default:
+	{
+		err_set;
+		printf("check_type: Unexpected Ast_Type::Tag, this should never happen!");
+		debug_print_type(*type);
+		printf("\n");
+		return {};
+	}
 	}
 }
 
@@ -838,10 +838,10 @@ std::optional<Type_Info> check_expr(Error_Handler* err, Ast* ast, Block_Stack* b
 {
 	switch (expr->tag)
 	{
-		case Ast_Expr::Tag::Term: return check_term(err, ast, bc, expr->as_term);
-		case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(err, ast, bc, expr->as_unary_expr);
-		case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(err, ast, bc, expr->as_binary_expr);
-		default: return {};
+	case Ast_Expr::Tag::Term: return check_term(err, ast, bc, expr->as_term);
+	case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(err, ast, bc, expr->as_unary_expr);
+	case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(err, ast, bc, expr->as_binary_expr);
+	default: return {};
 	}
 }
 
@@ -849,11 +849,11 @@ std::optional<Type_Info> check_term(Error_Handler* err, Ast* ast, Block_Stack* b
 {
 	switch (term->tag)
 	{
-		case Ast_Term::Tag::Var: return check_var(err, ast, bc, term->as_var);
-		case Ast_Term::Tag::Enum: return check_enum(err, ast, term->as_enum);
-		case Ast_Term::Tag::Literal: return check_literal(err, &term->as_literal);
-		case Ast_Term::Tag::Proc_Call: return check_proc_call(err, ast, bc, term->as_proc_call, false);
-		default: return {};
+	case Ast_Term::Tag::Var: return check_var(err, ast, bc, term->as_var);
+	case Ast_Term::Tag::Enum: return check_enum(err, ast, term->as_enum);
+	case Ast_Term::Tag::Literal: return check_literal(err, &term->as_literal);
+	case Ast_Term::Tag::Proc_Call: return check_proc_call(err, ast, bc, term->as_proc_call, false);
+	default: return {};
 	}
 }
 
@@ -906,17 +906,17 @@ std::optional<Type_Info> check_literal(Error_Handler* err, Ast_Literal* literal)
 
 	switch (literal->token.type)
 	{
-		case TOKEN_BOOL_LITERAL: return type_info_from_basic(BASIC_TYPE_BOOL);
-		case TOKEN_FLOAT_LITERAL: return type_info_from_basic(BASIC_TYPE_F64);
-		case TOKEN_INTEGER_LITERAL: return type_info_from_basic(BASIC_TYPE_I32);
-		default:
-		{
-			err_set;
-			printf("Check literal: unknown or unsupported literal:\n");
-			debug_print_token(literal->token, true, true);
-			printf("\n");
-			return {};
-		}
+	case TOKEN_BOOL_LITERAL: return type_info_from_basic(BASIC_TYPE_BOOL);
+	case TOKEN_FLOAT_LITERAL: return type_info_from_basic(BASIC_TYPE_F64);
+	case TOKEN_INTEGER_LITERAL: return type_info_from_basic(BASIC_TYPE_I32);
+	default:
+	{
+		err_set;
+		printf("Check literal: unknown or unsupported literal:\n");
+		debug_print_token(literal->token, true, true);
+		printf("\n");
+		return {};
+	}
 	}
 }
 
@@ -1255,24 +1255,24 @@ bool match_type(Error_Handler* err, Ast_Type type_a, Ast_Type type_b)
 
 	switch (type_a.tag)
 	{
-		case Ast_Type::Tag::Basic: return type_a.as_basic == type_b.as_basic;
-		case Ast_Type::Tag::Struct: return type_a.as_struct.struct_id == type_b.as_struct.struct_id;
-		case Ast_Type::Tag::Enum: return type_a.as_enum.enum_id == type_b.as_enum.enum_id;
-		case Ast_Type::Tag::Array:
-		{
-			Ast_Array_Type* array_a = type_a.as_array;
-			Ast_Array_Type* array_b = type_b.as_array;
-			if (array_a->is_dynamic != array_b->is_dynamic) return false;
-			if (array_a->fixed_size != array_b->fixed_size) return false;
-			return match_type(err, array_a->element_type, array_b->element_type);
-		}
-		default:
-		{
-			err_set; printf("match_type: Unexpected Ast_Type::Tag. Disambiguate Tag::Custom by using check_type first:\n");
-			debug_print_type(type_a); printf("\n");
-			debug_print_type(type_b); printf ("\n");
-			return false;
-		}
+	case Ast_Type::Tag::Basic: return type_a.as_basic == type_b.as_basic;
+	case Ast_Type::Tag::Struct: return type_a.as_struct.struct_id == type_b.as_struct.struct_id;
+	case Ast_Type::Tag::Enum: return type_a.as_enum.enum_id == type_b.as_enum.enum_id;
+	case Ast_Type::Tag::Array:
+	{
+		Ast_Array_Type* array_a = type_a.as_array;
+		Ast_Array_Type* array_b = type_b.as_array;
+		if (array_a->is_dynamic != array_b->is_dynamic) return false;
+		if (array_a->fixed_size != array_b->fixed_size) return false;
+		return match_type(err, array_a->element_type, array_b->element_type);
+	}
+	default:
+	{
+		err_set; printf("match_type: Unexpected Ast_Type::Tag. Disambiguate Tag::Custom by using check_type first:\n");
+		debug_print_type(type_a); printf("\n");
+		debug_print_type(type_b); printf ("\n");
+		return false;
+	}
 	}
 }
 

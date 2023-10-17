@@ -149,9 +149,13 @@ Block_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, Block_Fla
 void build_defer(IR_Builder_Context* bc, Block_Terminator terminator)
 {
 	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
-	int start_defer_id = bc->defer_stack.size() - 1;
-	int end_defer_id = terminator == Block_Terminator::Return ? 0 : start_defer_id - (block_info.defer_count - 1); //@Todo confusing indices fix later
-	
+	u64 total_defer_count = bc->defer_stack.size();
+	u32 block_defer_count = block_info.defer_count;
+
+	int start_defer_id = (int)(total_defer_count - 1);
+	int end_defer_id = (int)(total_defer_count - block_defer_count);
+	if (terminator == Block_Terminator::Return) end_defer_id = 0;
+
 	for (int i = start_defer_id; i >= end_defer_id; i -= 1) 
 	build_block(bc, bc->defer_stack[i]->block, Block_Flags::None);
 }
@@ -264,10 +268,10 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 	IR_Access_Info access_info = build_var(bc, var_assign->var);
 	
 	//@Special case for struct initialization may generalize to work as normal expression
-	Ast_Expr* expr = var_assign->expr;
-	if (expr->tag == Ast_Expr::Tag::Term)
+	Ast_Expr* assign_expr = var_assign->expr;
+	if (assign_expr->tag == Ast_Expr::Tag::Term)
 	{
-		Ast_Term* term = expr->as_term;
+		Ast_Term* term = assign_expr->as_term;
 		if (term->tag == Ast_Term::Tag::Struct_Init)
 		{
 			u32 count = 0;
@@ -390,8 +394,9 @@ Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr)
 		else return LLVMBuildNeg(bc->builder, rhs, "utmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
 	}
 	case UNARY_OP_LOGIC_NOT: return LLVMBuildNot(bc->builder, rhs, "utmp");
-	case UNARY_OP_ADDRESS_OF: return rhs;
 	case UNARY_OP_BITWISE_NOT: return LLVMBuildNot(bc->builder, rhs, "utmp");
+	case UNARY_OP_ADDRESS_OF: return rhs;
+	case UNARY_OP_DEREFERENCE: return NULL; //@Notice dereference isnt handled yet
 	}
 }
 
