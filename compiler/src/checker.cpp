@@ -474,6 +474,10 @@ Terminator check_block_cfg(Error_Handler* err, Ast_Block* block, bool is_loop, b
 			}
 			else terminator = Terminator::Return;
 		} break;
+		case Ast_Statement::Tag::Switch:
+		{
+			check_switch_cfg(err, statement->as_switch, is_loop, is_defer);
+		} break;
 		case Ast_Statement::Tag::Continue:
 		{
 			if (!is_loop)
@@ -507,6 +511,14 @@ void check_if_cfg(Error_Handler* err, Ast_If* _if, bool is_loop, bool is_defer)
 	}
 }
 
+void check_switch_cfg(Error_Handler* err, Ast_Switch* _switch, bool is_loop, bool is_defer)
+{
+	for (Ast_Switch_Case& _case : _switch->cases)
+	{
+		if (_case.block) check_block_cfg(err, _case.block.value(), is_loop, is_defer);
+	}
+}
+
 //@Todo store proc context in Block_Stack and 
 //type check return type with proc decl return type, create check_return()
 static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block)
@@ -523,6 +535,7 @@ static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block
 		case Ast_Statement::Tag::Defer: check_block(err, ast, bc, statement->as_defer->block); break;
 		case Ast_Statement::Tag::Break: break;
 		case Ast_Statement::Tag::Return: check_return(err, ast, bc, statement->as_return); break;
+		case Ast_Statement::Tag::Switch: check_switch(err, ast, bc, statement->as_switch); break;
 		case Ast_Statement::Tag::Continue: break;
 		case Ast_Statement::Tag::Proc_Call: check_proc_call(err, ast, bc, statement->as_proc_call, true); break;
 		case Ast_Statement::Tag::Var_Decl: check_var_decl(err, ast, bc, statement->as_var_decl); break;
@@ -618,6 +631,116 @@ void check_return(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Return* _re
 			printf("Expected type: "); debug_print_type(ret_type);
 			printf("Got no return type");
 			printf("\n");
+		}
+	}
+}
+
+void check_switch(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Switch* _switch)
+{
+	//@Todo clean this up when proper literal typing and inference are in place
+	//@Check if switch is exaustive with enums / integers, require
+	// add default or discard like syntax _ for default case
+
+	auto type = check_term(err, ast, bc, _switch->term);
+	bool switched_type_is_correct = true;
+	bool all_terms_correct = true;
+	if (type)
+	{
+		Type_Kind kind = type_info_kind(err, type.value());
+		if (kind != Type_Kind::Integer && kind != Type_Kind::Enum)
+		{
+			err_set;
+			switched_type_is_correct = false;
+			all_terms_correct = false;
+			printf("Switching is only allowed on value of enum or integer types\n");
+			debug_print_type(type.value().type);
+			printf("\n");
+			debug_print_term(_switch->term, 0);
+			printf("\n");
+		}
+	}
+
+	for (Ast_Switch_Case& _case : _switch->cases)
+	{
+		//@Notice checking if its a Integer constant basically, no contant propagation or expressions are tracked yet
+		if (_case.term->tag != Ast_Term::Tag::Literal && _case.term->tag != Ast_Term::Tag::Enum)
+		{
+			err_set;
+			all_terms_correct = false;
+			printf("Switch case term must be enum or integer literal\n");
+			debug_print_term(_case.term, 0);
+			printf("\n");
+		}
+		else
+		{
+			auto case_type = check_term(err, ast, bc, _case.term);
+			if (case_type)
+			{
+				Type_Kind case_kind = type_info_kind(err, case_type.value());
+				if (case_kind != Type_Kind::Integer && case_kind != Type_Kind::Enum)
+				{
+					err_set;
+					all_terms_correct = false;
+					printf("Switch case term must be enum or integer literal\n");
+					debug_print_term(_case.term, 0);
+					printf("\n");
+				}
+				else
+				{
+					if (switched_type_is_correct && type && case_type && !match_type_info(err, type.value(), case_type.value()))
+					{
+						err_set;
+						all_terms_correct = false;
+						printf("Type mismatch in switch case:\n");
+						printf("Expected: "); debug_print_type(type.value().type); printf("\n");
+						printf("Got:      "); debug_print_type(case_type.value().type); printf("\n");
+						debug_print_term(_case.term, 0);
+						printf("\n");
+					}
+				}
+			}
+		}
+
+	}
+
+	if (all_terms_correct)
+	{
+		std::vector<u64> ints_or_variant_ids;
+		Type_Kind kind = type_info_kind(err, type.value());
+		bool is_int = kind == Type_Kind::Integer;
+
+		u32 count = 0;
+		for (Ast_Switch_Case& _case : _switch->cases)
+		{
+			u64 value;
+			if (is_int) value = _case.term->as_literal.token.integer_value;
+			else value = _case.term->as_enum->variant_id;
+			ints_or_variant_ids.emplace_back(value);
+
+			bool found_match = false;
+			for (u64 i = 0; i < ints_or_variant_ids.size(); i += 1)
+			{
+				u64 curr_value = ints_or_variant_ids[i];
+				if (i != count && value == curr_value)
+				{
+					err_set;
+					printf("Switch cases [ %llu ] and [ %lu ] cannot have the same values:\n", i, count);
+					debug_print_token(_switch->token, true, true);
+					printf("\n");
+					found_match = true;
+					break;
+				}
+			}
+			if (found_match) break;
+			count += 1;
+		}
+	}
+
+	for (Ast_Switch_Case& _case : _switch->cases)
+	{
+		if (_case.block)
+		{
+			check_block(err, ast, bc, _case.block.value());
 		}
 	}
 }

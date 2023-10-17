@@ -29,10 +29,12 @@ static std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident 
 static std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
 static Terminator check_block_cfg(Error_Handler* err, Ast_Block* block, bool is_loop, bool is_defer);
 static void check_if_cfg(Error_Handler* err, Ast_If* _if, bool is_loop, bool is_defer);
+static void check_switch_cfg(Error_Handler* err, Ast_Switch* _switch, bool is_loop, bool is_defer);
 static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block = true);
 static void check_if(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_If* _if);
 static void check_for(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_For* _for);
 static void check_return(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Return* _return);
+static void check_switch(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Switch* _switch);
 static void check_var_decl(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl);
 static void check_var_assign(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign);
 static std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type);

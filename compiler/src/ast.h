@@ -313,8 +313,6 @@ struct Ast_Switch
 	Token token;
 	Ast_Term* term;
 	std::vector<Ast_Switch_Case> cases;
-	//checker
-	Ast_Type type;
 };
 
 struct Ast_Switch_Case
