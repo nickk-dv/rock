@@ -5,7 +5,7 @@
 Module build_module(Ast_Program* program)
 {
 	IR_Builder_Context bc = {};
-	context_init(&bc, program);
+	builder_context_init(&bc, program);
 
 	for (Ast_Enum_Meta& enum_meta : program->enums)
 	{
@@ -59,10 +59,10 @@ Module build_module(Ast_Program* program)
 		Ast_Proc_Decl* proc_decl = proc_meta.proc_decl;
 		if (proc_decl->is_external) continue;
 
-		context_block_reset(&bc, proc_meta.proc_value);
-		context_block_add(&bc);
-		Basic_Block entry_block = context_add_bb(&bc, "entry");
-		context_set_bb(&bc, entry_block);
+		builder_context_block_reset(&bc, proc_meta.proc_value);
+		builder_context_block_add(&bc);
+		Basic_Block entry_block = builder_context_add_bb(&bc, "entry");
+		builder_context_set_bb(&bc, entry_block);
 		u32 count = 0;
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
@@ -70,83 +70,83 @@ Module build_module(Ast_Program* program)
 			Value param_value = LLVMGetParam(proc_meta.proc_value, count);
 			Value copy_ptr = LLVMBuildAlloca(bc.builder, type, "copy_ptr");
 			LLVMBuildStore(bc.builder, param_value, copy_ptr);
-			context_block_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, param.type });
+			builder_context_block_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, param.type });
 			count += 1;
 		}
-		build_block(&bc, proc_decl->block, Block_Flags::Already_Added);
+		build_block(&bc, proc_decl->block, IR_Block_Flags::Already_Added);
 		
-		Basic_Block proc_exit_bb = context_get_bb(&bc);
+		Basic_Block proc_exit_bb = builder_context_get_bb(&bc);
 		Value terminator = LLVMGetBasicBlockTerminator(proc_exit_bb);
 		if (terminator == NULL) LLVMBuildRetVoid(bc.builder);
 	}
 
-	context_deinit(&bc);
+	builder_context_deinit(&bc);
 	return bc.module;
 }
 
-Block_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, Block_Flags flags)
+IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Flags flags)
 {
-	if (flags != Block_Flags::Already_Added) context_block_add(bc);
+	if (flags != IR_Block_Flags::Already_Added) builder_context_block_add(bc);
 
 	for (Ast_Statement* statement : block->statements)
 	{
 		switch (statement->tag)
 		{
-		case Ast_Statement::Tag::If: build_if(bc, statement->as_if, context_add_bb(bc, "cont")); break;
+		case Ast_Statement::Tag::If: build_if(bc, statement->as_if, builder_context_add_bb(bc, "cont")); break;
 		case Ast_Statement::Tag::For: build_for(bc, statement->as_for); break;
 		case Ast_Statement::Tag::Block:
 		{
-			Block_Terminator terminator = build_block(bc, statement->as_block, Block_Flags::None);
-			if (terminator != Block_Terminator::None)
+			IR_Terminator terminator = build_block(bc, statement->as_block, IR_Block_Flags::None);
+			if (terminator != IR_Terminator::None)
 			{
 				build_defer(bc, terminator);
-				context_block_pop_back(bc);
+				builder_context_block_pop_back(bc);
 				return terminator;
 			}
 		} break;
-		case Ast_Statement::Tag::Defer: context_block_add_defer(bc, statement->as_defer); break;
+		case Ast_Statement::Tag::Defer: builder_context_block_add_defer(bc, statement->as_defer); break;
 		case Ast_Statement::Tag::Break:
 		{
-			build_defer(bc, Block_Terminator::Break);
-			IR_Loop_Info loop = context_block_get_loop(bc);
+			build_defer(bc, IR_Terminator::Break);
+			IR_Loop_Info loop = builder_context_block_get_loop(bc);
 			LLVMBuildBr(bc->builder, loop.break_block);
 			
-			context_block_pop_back(bc);
-			return Block_Terminator::Break;
+			builder_context_block_pop_back(bc);
+			return IR_Terminator::Break;
 		} break;
 		case Ast_Statement::Tag::Return:
 		{
-			build_defer(bc, Block_Terminator::Return);
+			build_defer(bc, IR_Terminator::Return);
 			if (statement->as_return->expr)
 				LLVMBuildRet(bc->builder, build_expr(bc, statement->as_return->expr.value()));
 			else LLVMBuildRetVoid(bc->builder);
 			
-			context_block_pop_back(bc);
-			return Block_Terminator::Return;
+			builder_context_block_pop_back(bc);
+			return IR_Terminator::Return;
 		} break;
 		case Ast_Statement::Tag::Switch: build_switch(bc, statement->as_switch); break;
 		case Ast_Statement::Tag::Continue:
 		{
-			build_defer(bc, Block_Terminator::Continue);
-			IR_Loop_Info loop = context_block_get_loop(bc);
+			build_defer(bc, IR_Terminator::Continue);
+			IR_Loop_Info loop = builder_context_block_get_loop(bc);
 			if (loop.var_assign) build_var_assign(bc, loop.var_assign.value());
 			LLVMBuildBr(bc->builder, loop.continue_block);
 
-			context_block_pop_back(bc);
-			return Block_Terminator::Continue;
+			builder_context_block_pop_back(bc);
+			return IR_Terminator::Continue;
 		} break;
 		case Ast_Statement::Tag::Var_Decl: build_var_decl(bc, statement->as_var_decl); break;
 		case Ast_Statement::Tag::Var_Assign: build_var_assign(bc, statement->as_var_assign); break;
-		case Ast_Statement::Tag::Proc_Call: build_proc_call(bc, statement->as_proc_call, Proc_Call_Flags::Is_Statement); break;
+		case Ast_Statement::Tag::Proc_Call: build_proc_call(bc, statement->as_proc_call, IR_Proc_Call_Flags::In_Statement); break;
 		}
 	}
 
-	build_defer(bc, Block_Terminator::None);
-	context_block_pop_back(bc);
-	return Block_Terminator::None;
+	build_defer(bc, IR_Terminator::None);
+	builder_context_block_pop_back(bc);
+	return IR_Terminator::None;
 }
 
-void build_defer(IR_Builder_Context* bc, Block_Terminator terminator)
+void build_defer(IR_Builder_Context* bc, IR_Terminator terminator)
 {
 	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
 	u64 total_defer_count = bc->defer_stack.size();
@@ -154,10 +154,10 @@ void build_defer(IR_Builder_Context* bc, Block_Terminator terminator)
 
 	int start_defer_id = (int)(total_defer_count - 1);
 	int end_defer_id = (int)(total_defer_count - block_defer_count);
-	if (terminator == Block_Terminator::Return) end_defer_id = 0;
+	if (terminator == IR_Terminator::Return) end_defer_id = 0;
 
 	for (int i = start_defer_id; i >= end_defer_id; i -= 1) 
-	build_block(bc, bc->defer_stack[i]->block, Block_Flags::None);
+	build_block(bc, bc->defer_stack[i]->block, IR_Block_Flags::None);
 }
 
 void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
@@ -166,14 +166,14 @@ void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
 
 	if (_if->_else)
 	{
-		Basic_Block then_block = context_add_bb(bc, "then");
-		Basic_Block else_block = context_add_bb(bc, "else");
+		Basic_Block then_block = builder_context_add_bb(bc, "then");
+		Basic_Block else_block = builder_context_add_bb(bc, "else");
 		LLVMBuildCondBr(bc->builder, cond_value, then_block, else_block);
-		context_set_bb(bc, then_block);
+		builder_context_set_bb(bc, then_block);
 
-		Block_Terminator terminator = build_block(bc, _if->block, Block_Flags::None);
-		if (terminator == Block_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
-		context_set_bb(bc, else_block);
+		IR_Terminator terminator = build_block(bc, _if->block, IR_Block_Flags::None);
+		if (terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
+		builder_context_set_bb(bc, else_block);
 
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else::Tag::If)
@@ -182,20 +182,20 @@ void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
 		}
 		else
 		{
-			Block_Terminator else_terminator = build_block(bc, _else->as_block, Block_Flags::None);
-			if (else_terminator == Block_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
-			context_set_bb(bc, cont_block);
+			IR_Terminator else_terminator = build_block(bc, _else->as_block, IR_Block_Flags::None);
+			if (else_terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
+			builder_context_set_bb(bc, cont_block);
 		}
 	}
 	else
 	{
-		Basic_Block then_block = context_add_bb(bc, "then");
+		Basic_Block then_block = builder_context_add_bb(bc, "then");
 		LLVMBuildCondBr(bc->builder, cond_value, then_block, cont_block);
-		context_set_bb(bc, then_block);
+		builder_context_set_bb(bc, then_block);
 
-		Block_Terminator terminator = build_block(bc, _if->block, Block_Flags::None);
-		if (terminator == Block_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
-		context_set_bb(bc, cont_block);
+		IR_Terminator terminator = build_block(bc, _if->block, IR_Block_Flags::None);
+		if (terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
+		builder_context_set_bb(bc, cont_block);
 	}
 }
 
@@ -203,40 +203,40 @@ void build_for(IR_Builder_Context* bc, Ast_For* _for)
 {
 	if (_for->var_decl) build_var_decl(bc, _for->var_decl.value());
 
-	Basic_Block cond_block = context_add_bb(bc, "loop_cond");
+	Basic_Block cond_block = builder_context_add_bb(bc, "loop_cond");
 	LLVMBuildBr(bc->builder, cond_block);
-	context_set_bb(bc, cond_block);
+	builder_context_set_bb(bc, cond_block);
 
-	Basic_Block body_block = context_add_bb(bc, "loop_body");
-	Basic_Block exit_block = context_add_bb(bc, "loop_exit");
+	Basic_Block body_block = builder_context_add_bb(bc, "loop_body");
+	Basic_Block exit_block = builder_context_add_bb(bc, "loop_exit");
 	if (_for->condition_expr)
 	{
 		Value cond_value = build_expr(bc, _for->condition_expr.value());
 		LLVMBuildCondBr(bc->builder, cond_value, body_block, exit_block);
 	}
 	else LLVMBuildBr(bc->builder, body_block);
-	context_set_bb(bc, body_block);
+	builder_context_set_bb(bc, body_block);
 
-	context_block_add(bc);
-	context_block_add_loop(bc, IR_Loop_Info { exit_block, cond_block, _for->var_assign });
-	Block_Terminator terminator = build_block(bc, _for->block, Block_Flags::Already_Added);
-	if (terminator == Block_Terminator::None)
+	builder_context_block_add(bc);
+	builder_context_block_add_loop(bc, IR_Loop_Info { exit_block, cond_block, _for->var_assign });
+	IR_Terminator terminator = build_block(bc, _for->block, IR_Block_Flags::Already_Added);
+	if (terminator == IR_Terminator::None)
 	{
 		if (_for->var_assign) build_var_assign(bc, _for->var_assign.value());
 		LLVMBuildBr(bc->builder, cond_block);
 	}
-	context_set_bb(bc, exit_block);
+	builder_context_set_bb(bc, exit_block);
 }
 
 void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 {
 	Value on_value = build_term(bc, _switch->term);
-	Basic_Block exit_block = context_add_bb(bc, "switch_exit");
+	Basic_Block exit_block = builder_context_add_bb(bc, "switch_exit");
 	Value switch_value = LLVMBuildSwitch(bc->builder, on_value, exit_block, (u32)_switch->cases.size());
 
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
-		_case.basic_block = context_add_bb(bc, "case_block");
+		_case.basic_block = builder_context_add_bb(bc, "case_block");
 	}
 
 	for (u64 i = 0; i < _switch->cases.size(); i += 1)
@@ -245,12 +245,12 @@ void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 		Value case_value = build_term(bc, _case.term);
 		Basic_Block case_block = _case.basic_block;
 		LLVMAddCase(switch_value, case_value, case_block);
-		context_set_bb(bc, case_block);
+		builder_context_set_bb(bc, case_block);
 		
 		if (_case.block)
 		{
-			Block_Terminator terminator = build_block(bc, _case.block.value(), Block_Flags::None);
-			if (terminator == Block_Terminator::None) LLVMBuildBr(bc->builder, exit_block);
+			IR_Terminator terminator = build_block(bc, _case.block.value(), IR_Block_Flags::None);
+			if (terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, exit_block);
 		}
 		else
 		{
@@ -266,7 +266,7 @@ void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 		}
 	}
 
-	context_set_bb(bc, exit_block);
+	builder_context_set_bb(bc, exit_block);
 }
 
 void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
@@ -301,7 +301,7 @@ void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
 	}
 	else LLVMBuildStore(bc->builder, LLVMConstNull(type), var_ptr);
 
-	context_block_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, var_decl->type.value() });
+	builder_context_block_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, var_decl->type.value() });
 }
 
 void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
@@ -335,7 +335,7 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 	LLVMBuildStore(bc->builder, expr_value, access_info.ptr);
 }
 
-Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, Proc_Call_Flags flags)
+Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags)
 {
 	Ast_Proc_Meta proc_meta = bc->program->procedures[proc_call->proc_id];
 
@@ -345,7 +345,7 @@ Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, Proc_Cal
 	input_values.emplace_back(build_expr(bc, expr));
 
 	return LLVMBuildCall2(bc->builder, proc_meta.proc_type, proc_meta.proc_value, 
-	input_values.data(), (u32)input_values.size(), flags == Proc_Call_Flags::Is_Statement ? "" : "call_val");
+	input_values.data(), (u32)input_values.size(), flags == IR_Proc_Call_Flags::In_Statement ? "" : "call_val");
 }
 
 Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr)
@@ -383,14 +383,14 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 		else if (token.type == TOKEN_INTEGER_LITERAL) return LLVMConstInt(type_from_basic_type(basic_Type), token.integer_value, 0); //@Todo sign extend?
 		else return LLVMConstInt(LLVMInt32Type(), 0, 0); //@Notice string literal isnt supported
 	}
-	case Ast_Term::Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, Proc_Call_Flags::None);
+	case Ast_Term::Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
 	case Ast_Term::Tag::Struct_Init: return NULL; //@Notice returning null on struct init, it should be handled on var assigned for now
 	}
 }
 
 IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
-	IR_Var_Info var_info = context_block_find_var(bc, var->ident);
+	IR_Var_Info var_info = builder_context_block_find_var(bc, var->ident);
 	Value ptr = var_info.ptr;
 	Ast_Type ast_type = var_info.ast_type;
 

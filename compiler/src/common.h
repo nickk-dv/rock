@@ -1,6 +1,8 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+//@Hack to not crash in debug on vector checks at _ITERATOR_DEBUG_LEVEL 2
+#define _ITERATOR_DEBUG_LEVEL 0
 #include <unordered_map>
 #include <optional>
 #include <vector>

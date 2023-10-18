@@ -5,14 +5,14 @@
 
 Module build_module(Ast_Program* program);
 
-static Block_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, Block_Flags flags);
-static void build_defer(IR_Builder_Context* bc, Block_Terminator terminator);
+static IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Flags flags);
+static void build_defer(IR_Builder_Context* bc, IR_Terminator terminator);
 static void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block);
 static void build_for(IR_Builder_Context* bc, Ast_For* _for);
 static void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch);
 static void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl);
 static void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign);
-static Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, Proc_Call_Flags flags);
+static Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags);
 static Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr);
 static Value build_term(IR_Builder_Context* bc, Ast_Term* term);
 static IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var);

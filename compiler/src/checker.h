@@ -1,135 +1,51 @@
 #ifndef CHECKER_H
 #define CHECKER_H
 
-#include "common.h"
 #include "ast.h"
-#include "error_handler.h"
+#include "checker_context.h"
 
-typedef std::unordered_map<std::string, Ast*> Module_Map;
-enum class Terminator;
-enum class Type_Kind;
-struct Type_Info;
-struct Var_Info;
-struct Block_Stack;
+void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules);
+void check_decls(Checker_Context* cc);
+void check_main_proc(Checker_Context* cc);
+void check_program(Checker_Context* cc);
+void check_ast(Checker_Context* cc);
 
-void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, Module_Map& modules);
-void check_decls(Error_Handler* err, Ast* ast);
-void check_main_proc(Error_Handler* err, Ast* ast);
-void check_program(Error_Handler* err, Ast_Program* program);
-void check_ast(Error_Handler* err, Ast* ast);
-
-static void check_struct_decl(Error_Handler* err, Ast* ast, Ast_Struct_Decl* struct_decl);
-static void check_enum_decl(Error_Handler* err, Ast_Enum_Decl* enum_decl);
-static void check_proc_decl(Error_Handler* err, Ast* ast, Ast_Proc_Decl* proc_decl);
-static Ast* try_import(Error_Handler* err, Ast* ast, std::optional<Ast_Ident> import);
+static void check_struct_decl(Checker_Context* cc, Ast_Struct_Decl* struct_decl);
+static void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl);
+static void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl);
+static Ast* try_import(Checker_Context* cc, std::optional<Ast_Ident> import);
 static std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident);
 static std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident);
 static std::optional<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident);
 static std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 static std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
-static Terminator check_block_cfg(Error_Handler* err, Ast_Block* block, bool is_loop, bool is_defer);
-static void check_if_cfg(Error_Handler* err, Ast_If* _if, bool is_loop, bool is_defer);
-static void check_switch_cfg(Error_Handler* err, Ast_Switch* _switch, bool is_loop, bool is_defer);
-static void check_block(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Block* block, bool add_block = true);
-static void check_if(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_If* _if);
-static void check_for(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_For* _for);
-static void check_return(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Return* _return);
-static void check_switch(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Switch* _switch);
-static void check_var_decl(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Decl* var_decl);
-static void check_var_assign(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Assign* var_assign);
-static std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type);
-static std::optional<Type_Info> check_access(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Access* access, Ast_Type type);
-static std::optional<Type_Info> check_expr(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Expr* expr);
-static std::optional<Type_Info> check_term(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Term* term);
-static std::optional<Type_Info> check_var(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var* var);
-static std::optional<Type_Info> check_enum(Error_Handler* err, Ast* ast, Ast_Enum* _enum);
-static std::optional<Type_Info> check_literal(Error_Handler* err, Ast_Literal* literal);
-static std::optional<Type_Info> check_proc_call(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Proc_Call* proc_call, bool is_statement);
-static std::optional<Type_Info> check_unary_expr(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Unary_Expr* unary_expr);
-static std::optional<Type_Info> check_binary_expr(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Binary_Expr* binary_expr);
-static Type_Kind type_kind(Error_Handler* err, Ast_Type type);
-static Type_Kind type_info_kind(Error_Handler* err, Type_Info type_info);
-static Type_Info type_info_from_basic(BasicType basic_type);
-static void type_implicit_cast(Error_Handler* err, Ast_Type* type, Ast_Type target_type);
-static void type_implicit_binary_cast(Error_Handler* err, Ast_Type* type_a, Ast_Type* type_b);
 
-static bool match_type_info(Error_Handler* err, Type_Info type_info_a, Type_Info type_info_b);
-static bool match_type(Error_Handler* err, Ast_Type type_a, Ast_Type type_b);
-static void block_stack_reset(Block_Stack* bc);
-static void block_stack_add_block(Block_Stack* bc);
-static void block_stack_remove_block(Block_Stack* bc);
-static void block_stack_add_var(Block_Stack* bc, Ast_Ident ident, Type_Info type_info);
-static bool block_stack_contains_var(Block_Stack* bc, Ast_Ident ident);
-static std::optional<Type_Info> block_stack_find_var_type(Block_Stack* bc, Ast_Ident ident);
+static Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, bool is_defer);
+static void check_if_cfg(Checker_Context* cc, Ast_If* _if, bool is_loop, bool is_defer);
+static void check_switch_cfg(Checker_Context* cc, Ast_Switch* _switch, bool is_loop, bool is_defer);
+static void check_block(Checker_Context* cc, Ast_Block* block, Checker_Block_Flags flags);
+static void check_if(Checker_Context* cc, Ast_If* _if);
+static void check_for(Checker_Context* cc, Ast_For* _for);
+static void check_return(Checker_Context* cc, Ast_Return* _return);
+static void check_switch(Checker_Context* cc, Ast_Switch* _switch);
+static void check_var_decl(Checker_Context* cc, Ast_Var_Decl* var_decl);
+static void check_var_assign(Checker_Context* cc, Ast_Var_Assign* var_assign);
+
+static Type_Kind type_kind(Checker_Context* cc, Ast_Type type);
+static Ast_Type type_from_basic(BasicType basic_type);
+static bool match_type(Checker_Context* cc, Ast_Type type_a, Ast_Type type_b);
+static void type_implicit_cast(Checker_Context* cc, Ast_Type* type, Ast_Type target_type);
+static void type_implicit_binary_cast(Checker_Context* cc, Ast_Type* type_a, Ast_Type* type_b);
+static Option(Ast_Type) check_type_signature(Checker_Context* cc, Ast_Type* type);
+static Option(Ast_Type) check_expr(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Expr* expr);
+static Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Term* term);
+static Option(Ast_Type) check_var(Checker_Context* cc, Ast_Var* var);
+static Option(Ast_Type) check_access(Checker_Context* cc, Ast_Type type, std::optional<Ast_Access*> optional_access);
+static Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags);
+static Option(Ast_Type) check_unary_expr(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Unary_Expr* unary_expr);
+static Option(Ast_Type) check_binary_expr(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Binary_Expr* binary_expr);
+
 static void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
 static void error(const char* message, Ast_Ident ident);
-
-enum class Terminator
-{
-	None,
-	Break,
-	Return,
-	Continue,
-};
-
-enum class Type_Kind
-{
-	Bool,
-	Float,
-	Integer,
-	String,
-	Pointer,
-	Array,
-	Struct,
-	Enum,
-};
-
-struct Type_Info
-{
-	bool is_var_owned; //@Issue accidental propagation of this might be weird, only need for '&' adress op
-	Ast_Type type;
-};
-
-struct Var_Info
-{
-	Ast_Ident ident;
-	Type_Info type_info;
-};
-
-struct Block_Stack
-{
-	Ast_Proc_Decl* proc_context;
-	u32 block_count = 0;
-	std::vector<u32> var_count_stack;
-	std::vector<Var_Info> var_stack;
-};
-
-// NEW TYPE CHECKING WITH CONTEXT
-// aim is to support constant expressions
-// perform type casts and range checks with context
-// assign basic types to literals in the process
-// also might constant fold the expressions
-
-#include "base.h"
-
-struct Type_Context
-{
-	Ast_Type expect_type;
-	bool expect_constant;
-};
-
-struct Checker_Context
-{
-	Ast* ast;
-	Block_Stack* bc;
-	Error_Handler* err;
-};
-
-OptionDecl(Ast_Type);
-Option(Ast_Type) context_check_type_signature(Checker_Context* cc, Ast_Type* type);
-Option(Ast_Type) context_check_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Expr* expr);
-Option(Ast_Type) context_check_term(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Term* term);
-Option(Ast_Type) context_check_unary_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Unary_Expr* unary_expr);
-Option(Ast_Type) context_check_binary_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Binary_Expr* binary_expr);
 
 #endif

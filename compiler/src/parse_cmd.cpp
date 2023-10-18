@@ -109,18 +109,19 @@ int cmd_build(char* filepath)
 
 	for (const auto& [module, ast] : modules)
 	{
-		debug_print_ast(ast);
+		//debug_print_ast(ast);
 	}
 
 	Ast_Program program = {};
 	Error_Handler err = {};
 	Ast* main_ast = NULL;
+	Checker_Context cc = {};
 
 	timer.start();
 	for (const auto& [module, ast] : modules)
 	{
-		printf("file: %s\n", module.c_str());
-		check_decl_uniqueness(&err, ast, &program, modules);
+		checker_context_init(&cc, ast, &program, &err);
+		check_decl_uniqueness(&cc, modules);
 		if (module == "main") main_ast = ast;
 	}
 	if (main_ast == NULL)
@@ -128,18 +129,44 @@ int cmd_build(char* filepath)
 		printf("Entry not found. Make sure to have src/main file.\n\n");
 		err.has_err = true;
 	}
-	if (err.has_err) return 1;
 
-	check_main_proc(&err, main_ast);
-	for (const auto& [module, ast] : modules) check_decls(&err, ast);
-	if (err.has_err) return 1;
+	if (err.has_err)
+	{
+		timer.end("Check Ast Error");
+		return 1;
+	}
 
-	check_program(&err, &program);
-	if (err.has_err) return 1;
+	checker_context_init(&cc, main_ast, &program, &err);
+	check_main_proc(&cc);
+	for (const auto& [module, ast] : modules) 
+	{
+		checker_context_init(&cc, ast, &program, &err);
+		check_decls(&cc);
+	}
+	if (err.has_err)
+	{
+		timer.end("Check Ast Error");
+		return 1;
+	}
+
+	checker_context_init(&cc, NULL, &program, &err);
+	check_program(&cc);
+	if (err.has_err)
+	{
+		timer.end("Check Ast Error");
+		return 1;
+	}
 	
-	for (const auto& [module, ast] : modules) check_ast(&err, ast);
-	if (err.has_err) return 1;
-	
+	for (const auto& [module, ast] : modules)
+	{
+		checker_context_init(&cc, ast, &program, &err);
+		check_ast(&cc);
+	}
+	if (err.has_err) 
+	{
+		timer.end("Check Ast Error");
+		return 1;
+	}
 	timer.end("Check Ast");
 
 	printf("LLVMModule Build (new ir builder): \n\n");

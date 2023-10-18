@@ -15,23 +15,23 @@ struct IR_Block_Info;
 struct IR_Var_Info;
 struct IR_Loop_Info;
 struct IR_Access_Info;
-enum class Block_Flags;
-enum class Proc_Call_Flags;
-enum class Block_Terminator;
+enum class IR_Terminator;
+enum class IR_Block_Flags;
+enum class IR_Proc_Call_Flags;
 
-void context_init(IR_Builder_Context* bc, Ast_Program* program);
-void context_deinit(IR_Builder_Context* bc);
-void context_block_reset(IR_Builder_Context* bc, Value curr_proc);
-void context_block_add(IR_Builder_Context* bc);
-void context_block_pop_back(IR_Builder_Context* bc);
-void context_block_add_defer(IR_Builder_Context* bc, Ast_Defer* defer);
-void context_block_add_loop(IR_Builder_Context* bc, IR_Loop_Info loop_info);
-void context_block_add_var(IR_Builder_Context* bc, IR_Var_Info var_info);
-IR_Var_Info context_block_find_var(IR_Builder_Context* bc, Ast_Ident var_ident);
-IR_Loop_Info context_block_get_loop(IR_Builder_Context* bc);
-Basic_Block context_add_bb(IR_Builder_Context* bc, const char* name);
-Basic_Block context_get_bb(IR_Builder_Context* bc);
-void context_set_bb(IR_Builder_Context* bc, Basic_Block basic_block);
+void builder_context_init(IR_Builder_Context* bc, Ast_Program* program);
+void builder_context_deinit(IR_Builder_Context* bc);
+void builder_context_block_reset(IR_Builder_Context* bc, Value curr_proc);
+void builder_context_block_add(IR_Builder_Context* bc);
+void builder_context_block_pop_back(IR_Builder_Context* bc);
+void builder_context_block_add_defer(IR_Builder_Context* bc, Ast_Defer* defer);
+void builder_context_block_add_loop(IR_Builder_Context* bc, IR_Loop_Info loop_info);
+void builder_context_block_add_var(IR_Builder_Context* bc, IR_Var_Info var_info);
+IR_Var_Info builder_context_block_find_var(IR_Builder_Context* bc, Ast_Ident var_ident);
+IR_Loop_Info builder_context_block_get_loop(IR_Builder_Context* bc);
+Basic_Block builder_context_add_bb(IR_Builder_Context* bc, const char* name);
+Basic_Block builder_context_get_bb(IR_Builder_Context* bc);
+void builder_context_set_bb(IR_Builder_Context* bc, Basic_Block basic_block);
 
 struct IR_Builder_Context
 {
@@ -72,24 +72,24 @@ struct IR_Access_Info
 	Type type;
 };
 
-enum class Block_Flags
-{
-	None,
-	Already_Added,
-};
-
-enum class Proc_Call_Flags
-{
-	None,
-	Is_Statement,
-};
-
-enum class Block_Terminator
+enum class IR_Terminator
 {
 	None,
 	Break,
 	Return,
 	Continue,
+};
+
+enum class IR_Block_Flags
+{
+	None,
+	Already_Added,
+};
+
+enum class IR_Proc_Call_Flags
+{
+	In_Expr,
+	In_Statement,
 };
 
 #endif
