@@ -167,15 +167,15 @@ Ast_Custom_Type* parse_custom_type(Parser* parser)
 {
 	Ast_Custom_Type* custom = parser->arena.alloc<Ast_Custom_Type>();
 
-	Ast_Ident ident = token_to_ident(consume_get());
+	Ast_Ident import = token_to_ident(consume_get());
 	if (try_consume(TOKEN_DOT))
 	{
-		custom->import = ident;
-		auto type = try_consume(TOKEN_IDENT);
-		if (!type) { error("Expected type identifier"); return NULL; }
-		custom->type = token_to_ident(type.value());
+		custom->import = import;
+		auto ident = try_consume(TOKEN_IDENT);
+		if (!ident) { error("Expected type identifier"); return NULL; }
+		custom->ident = token_to_ident(ident.value());
 	}
-	else custom->type = ident;
+	else custom->ident = import;
 
 	return custom;
 }
@@ -216,7 +216,7 @@ Ast_Use_Decl* parse_use_decl(Parser* parser)
 Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 {
 	Ast_Struct_Decl* decl = parser->arena.alloc<Ast_Struct_Decl>();
-	decl->type = token_to_ident(consume_get());
+	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 	
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
@@ -240,7 +240,7 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 {
 	Ast_Enum_Decl* decl = parser->arena.alloc<Ast_Enum_Decl>();
-	decl->type = token_to_ident(consume_get());
+	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
@@ -250,6 +250,7 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 		consume();
 		decl->basic_type = basic_type;
 	}
+	else decl->basic_type = BASIC_TYPE_I32;
 
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
 	while (true)
@@ -929,7 +930,7 @@ Ast_Enum* parse_enum(Parser* parser, bool import)
 
 	auto ident = try_consume(TOKEN_IDENT);
 	if (!ident) { error("Expected enum type identifier"); return NULL; }
-	_enum->type = token_to_ident(ident.value());
+	_enum->ident = token_to_ident(ident.value());
 	consume();
 	auto variant = try_consume(TOKEN_IDENT);
 	if (!variant) { error("Expected enum variant identifier"); return NULL; }
@@ -942,7 +943,7 @@ Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
 {
 	Ast_Struct_Init* struct_init = parser->arena.alloc<Ast_Struct_Init>();
 	if (import) { struct_init->import = token_to_ident(consume_get()); consume(); }
-	if (type) { struct_init->type = token_to_ident(consume_get()); }
+	if (type) { struct_init->ident = token_to_ident(consume_get()); }
 	consume();
 
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }

@@ -104,4 +104,32 @@ struct Block_Stack
 	std::vector<Var_Info> var_stack;
 };
 
+// NEW TYPE CHECKING WITH CONTEXT
+// aim is to support constant expressions
+// perform type casts and range checks with context
+// assign basic types to literals in the process
+// also might constant fold the expressions
+
+#include "base.h"
+
+struct Type_Context
+{
+	Ast_Type expect_type;
+	bool expect_constant;
+};
+
+struct Checker_Context
+{
+	Ast* ast;
+	Block_Stack* bc;
+	Error_Handler* err;
+};
+
+OptionDecl(Ast_Type);
+Option(Ast_Type) context_check_type_signature(Checker_Context* cc, Ast_Type* type);
+Option(Ast_Type) context_check_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Expr* expr);
+Option(Ast_Type) context_check_term(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Term* term);
+Option(Ast_Type) context_check_unary_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Unary_Expr* unary_expr);
+Option(Ast_Type) context_check_binary_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Binary_Expr* binary_expr);
+
 #endif

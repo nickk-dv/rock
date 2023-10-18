@@ -2,7 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-
+/*
 void arena_init(Arena* arena, u64 block_size)
 {
 	arena->block_size = block_size;
@@ -41,3 +41,4 @@ void arena_alloc_block(Arena* arena)
 	block->prev = arena->curr;
 	arena->curr = block;
 }
+*/

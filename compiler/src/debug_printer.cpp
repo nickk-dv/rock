@@ -233,8 +233,8 @@ void debug_print_type(Ast_Type type)
 	case Ast_Type::Tag::Basic: debug_print_basic_type(type.as_basic); break;
 	case Ast_Type::Tag::Array: debug_print_array_type(type.as_array); break;
 	case Ast_Type::Tag::Custom: debug_print_custom_type(type.as_custom); break;
-	case Ast_Type::Tag::Struct: debug_print_ident(type.as_struct.struct_decl->type, false, false); break;
-	case Ast_Type::Tag::Enum: debug_print_ident(type.as_enum.enum_decl->type, false, false); break;
+	case Ast_Type::Tag::Struct: debug_print_ident(type.as_struct.struct_decl->ident, false, false); break;
+	case Ast_Type::Tag::Enum: debug_print_ident(type.as_enum.enum_decl->ident, false, false); break;
 	}
 }
 
@@ -252,7 +252,7 @@ void debug_print_custom_type(Ast_Custom_Type* custom_type)
 		debug_print_ident(custom_type->import.value(), false, false);
 		printf(".");
 	}
-	debug_print_ident(custom_type->type, false, false);
+	debug_print_ident(custom_type->ident, false, false);
 }
 
 void debug_print_import_decl(Ast_Import_Decl* import_decl)
@@ -279,7 +279,7 @@ void debug_print_use_decl(Ast_Use_Decl* use_decl)
 void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 {
 	printf("\nStruct_Decl: "); 
-	debug_print_ident(struct_decl->type, true, false);
+	debug_print_ident(struct_decl->ident, true, false);
 
 	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
@@ -293,12 +293,10 @@ void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 {
 	printf("\nEnum_Decl: "); 
-	debug_print_ident(enum_decl->type, false, false);
+	debug_print_ident(enum_decl->ident, false, false);
 	
 	printf (": ");
-	if (enum_decl->basic_type.has_value())
-		debug_print_basic_type(enum_decl->basic_type.value());
-	else debug_print_basic_type(BASIC_TYPE_I32);
+	debug_print_basic_type(enum_decl->basic_type);
 	printf("\n");
 
 	for (const Ast_Ident_Literal_Pair& variant : enum_decl->variants)
@@ -630,7 +628,7 @@ void debug_print_enum(Ast_Enum* _enum)
 		debug_print_ident(_enum->import.value(), false, false);
 		printf(".");
 	}
-	debug_print_ident(_enum->type, false, false);
+	debug_print_ident(_enum->ident, false, false);
 	printf("::");
 	debug_print_ident(_enum->variant, true, false);
 }
@@ -647,9 +645,9 @@ void debug_print_struct_init(Ast_Struct_Init* struct_init, u32 depth)
 		debug_print_ident(struct_init->import.value(), false, false);
 		printf(".");
 	}
-	if (struct_init->type)
+	if (struct_init->ident)
 	{
-		debug_print_ident(struct_init->type.value(), true, false);
+		debug_print_ident(struct_init->ident.value(), true, false);
 	}
 	else printf("[?]\n");
 	

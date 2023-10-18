@@ -48,7 +48,7 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
-		Ast_Ident ident = decl->type;
+		Ast_Ident ident = decl->ident;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{
@@ -64,7 +64,7 @@ void check_decl_uniqueness(Error_Handler* err, Ast* ast, Ast_Program* program, M
 
 	for (Ast_Enum_Decl* decl : ast->enums)
 	{
-		Ast_Ident ident = decl->type;
+		Ast_Ident ident = decl->ident;
 		auto key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{ 
@@ -242,7 +242,7 @@ void check_program(Error_Handler* err, Ast_Program* program)
 			err_set;
 			printf("Found struct with infinite size: ");
 			Visit_State err_visit = visit_stack[0];
-			debug_print_ident(err_visit.struct_decl->type, true, true);
+			debug_print_ident(err_visit.struct_decl->ident, true, true);
 			printf("Field access path: ");
 			debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
 			for (u32 k = 1; k < visit_stack.size(); k += 1)
@@ -315,15 +315,14 @@ void check_enum_decl(Error_Handler* err, Ast_Enum_Decl* enum_decl)
 {
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
 
-	BasicType basic_type = BASIC_TYPE_I32;
-	if (enum_decl->basic_type) basic_type = enum_decl->basic_type.value();
+	BasicType basic_type = enum_decl->basic_type;
 	bool is_unsigned = basic_type_is_unsigned(basic_type);
 
 	//@Note this might be usefull, look into supporting string enums later
 	if (basic_type == BASIC_TYPE_STRING)
 	{
 		err_set;
-		error("Cannot use string basic type in enum declration", enum_decl->type);
+		error("Cannot use string basic type in enum declaration", enum_decl->ident);
 	}
 
 	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
@@ -628,9 +627,9 @@ void check_return(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Return* _re
 			Ast_Type ret_type = bc->proc_context->return_type.value();
 			printf("Return type doesnt match procedure declaration:\n");
 			debug_print_token(_return->token, true, true);
-			printf("Expected type: "); debug_print_type(ret_type);
+			printf("Expected type: "); debug_print_type(ret_type); printf("\n");
 			printf("Got no return type");
-			printf("\n");
+			printf("\n\n");
 		}
 	}
 }
@@ -759,45 +758,46 @@ void check_var_decl(Error_Handler* err, Ast* ast, Block_Stack* bc, Ast_Var_Decl*
 
 	if (var_decl->type)
 	{
-		auto type = check_type(err, ast, &var_decl->type.value());
+		Checker_Context cc = { ast, bc, err };
+		Option(Ast_Type) type = context_check_type_signature(&cc, &var_decl->type.value());
 		
-		if (var_decl->expr)
+		if (is_some(type) && var_decl->expr)
 		{
-			auto expr_type = check_expr(err, ast, bc, var_decl->expr.value());
-			if (type && expr_type)
-			{
-				type_implicit_cast(err, &expr_type.value().type, type.value().type);
+			Type_Context type_context = { type.value, false };
+			Option(Ast_Type) expr_type = context_check_expr(&type_context, &cc, var_decl->expr.value());
 
-				if (!match_type_info(err, type.value(), expr_type.value()))
+			if (is_some(expr_type))
+			{
+				type_implicit_cast(err, &expr_type.value, type.value);
+				if (!match_type(err, type.value, expr_type.value))
 				{
 					err_set;
 					printf("Type mismatch in variable declaration:\n"); 
 					debug_print_ident(var_decl->ident);
-					printf("Expected: "); debug_print_type(type.value().type); printf("\n");
-					printf("Got:      "); debug_print_type(expr_type.value().type); printf("\n\n");
+					printf("Expected: "); debug_print_type(type.value); printf("\n");
+					printf("Got:      "); debug_print_type(expr_type.value); printf("\n\n");
 				}
 			}
 		}
 		
-		// adding var to the stack, even when expr type is not valid
-		if (is_valid_decl && type)
+		if (is_some(type) && is_valid_decl)
 		{
-			Type_Info type_info = type.value();
+			Type_Info type_info = { false, type.value };
 			block_stack_add_var(bc, ident, type_info);
 		}
 	}
 	else
 	{
-		auto expr_type = check_expr(err, ast, bc, var_decl->expr.value());
-		if (!expr_type) return;
-
-		var_decl->type = expr_type.value().type;
+		Checker_Context cc = { ast, bc, err };
+		Option(Ast_Type) expr_type = context_check_expr({}, &cc, var_decl->expr.value());
+		if (is_none(expr_type)) return;
+		var_decl->type = expr_type.value;
 
 		// @Errors this might produce "var not found" error in later checks, might be solved by flagging
 		// not adding var to the stack, when inferred type is not valid
 		if (is_valid_decl)
 		{
-			Type_Info type_info = Type_Info { true, expr_type.value().type };
+			Type_Info type_info = Type_Info { true, expr_type.value };
 			block_stack_add_var(bc, ident, type_info);
 		}
 	}
@@ -851,7 +851,7 @@ std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type
 		Ast* target_ast = try_import(err, ast, type->as_custom->import);
 		if (target_ast == NULL) return {};
 
-		auto struct_meta = find_struct(target_ast, type->as_custom->type);
+		auto struct_meta = find_struct(target_ast, type->as_custom->ident);
 		if (struct_meta)
 		{
 			type->tag = Ast_Type::Tag::Struct;
@@ -860,7 +860,7 @@ std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type
 			return Type_Info { false, *type };
 		}
 
-		auto enum_meta = find_enum(target_ast, type->as_custom->type);
+		auto enum_meta = find_enum(target_ast, type->as_custom->ident);
 		if (enum_meta)
 		{
 			type->tag = Ast_Type::Tag::Enum;
@@ -873,7 +873,7 @@ std::optional<Type_Info> check_type(Error_Handler* err, Ast* ast, Ast_Type* type
 		printf("Failed to find the custom type: ");
 		debug_print_custom_type(type->as_custom);
 		printf("\n");
-		debug_print_ident(type->as_custom->type);
+		debug_print_ident(type->as_custom->ident);
 		printf("\n");
 		return {};
 	}
@@ -1003,8 +1003,8 @@ std::optional<Type_Info> check_enum(Error_Handler* err, Ast* ast, Ast_Enum* _enu
 	if (target_ast == NULL) return {};
 	
 	// return none type if enum wasnt found
-	auto enum_meta = find_enum(target_ast, _enum->type);
-	if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->type); return {}; }
+	auto enum_meta = find_enum(target_ast, _enum->ident);
+	if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->ident); return {}; }
 	Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
 	_enum->enum_id = enum_meta.value().enum_id;
 
@@ -1030,7 +1030,11 @@ std::optional<Type_Info> check_literal(Error_Handler* err, Ast_Literal* literal)
 	{
 	case TOKEN_BOOL_LITERAL: return type_info_from_basic(BASIC_TYPE_BOOL);
 	case TOKEN_FLOAT_LITERAL: return type_info_from_basic(BASIC_TYPE_F64);
-	case TOKEN_INTEGER_LITERAL: return type_info_from_basic(BASIC_TYPE_I32);
+	case TOKEN_INTEGER_LITERAL:
+	{
+		literal->basic_type = BASIC_TYPE_I32; //@Always i32 no context
+		return type_info_from_basic(BASIC_TYPE_I32);
+	}
 	default:
 	{
 		err_set;
@@ -1467,4 +1471,295 @@ void error(const char* message, Ast_Ident ident)
 	printf("%s:\n", message);
 	debug_print_ident(ident, true, true);
 	printf("\n");
+}
+
+Option(Ast_Type) context_check_type_signature(Checker_Context* cc, Ast_Type* type)
+{
+	switch (type->tag)
+	{
+	case Ast_Type::Tag::Basic:
+	{
+		return Some(*type);
+	}
+	case Ast_Type::Tag::Array:
+	{
+		Option(Ast_Type) element_type = context_check_type_signature(cc, &type->as_array->element_type);
+		if (is_none(element_type)) return None();
+		return Some(*type);
+	}
+	case Ast_Type::Tag::Custom:
+	{
+		Ast* target_ast = try_import(cc->err, cc->ast, type->as_custom->import);
+		if (target_ast == NULL) return None();
+
+		auto struct_meta = find_struct(target_ast, type->as_custom->ident);
+		if (struct_meta)
+		{
+			type->tag = Ast_Type::Tag::Struct;
+			type->as_struct.struct_id = struct_meta.value().struct_id;
+			type->as_struct.struct_decl = struct_meta.value().struct_decl;
+			return Some(*type);
+		}
+
+		auto enum_meta = find_enum(target_ast, type->as_custom->ident);
+		if (enum_meta)
+		{
+			type->tag = Ast_Type::Tag::Enum;
+			type->as_enum.enum_id = enum_meta.value().enum_id;
+			type->as_enum.enum_decl = enum_meta.value().enum_decl;
+			return Some(*type);
+		}
+
+		err_set2;
+		printf("Failed to find the custom type: ");
+		debug_print_custom_type(type->as_custom);
+		printf("\n");
+		debug_print_ident(type->as_custom->ident);
+		printf("\n");
+		return None();
+	}
+	default:
+	{
+		err_set2;
+		printf("[COMPILER ERROR] Ast_Type signature cannot be checked multiple times\n");
+		printf("Hint: submit a bug report if you see this error message\n");
+		debug_print_type(*type);
+		printf("\n");
+		return None();
+	}
+	}
+}
+
+Option(Ast_Type) context_check_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Expr* expr)
+{
+	switch (expr->tag)
+	{
+	case Ast_Expr::Tag::Term: return context_check_term(context, cc, expr->as_term);
+	case Ast_Expr::Tag::Unary_Expr: return context_check_unary_expr(context, cc, expr->as_unary_expr);
+	case Ast_Expr::Tag::Binary_Expr: return context_check_binary_expr(context, cc, expr->as_binary_expr);
+	}
+}
+
+Option(Ast_Type) context_check_term(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Term* term)
+{
+	switch (term->tag)
+	{
+	case Ast_Term::Tag::Var:
+	{
+		Ast_Var* var = term->as_var;
+
+		auto type = block_stack_find_var_type(cc->bc, var->ident);
+		if (!type)
+		{
+			err_set2;
+			error("Check var: var is not found or has not valid type", var->ident);
+			return None();
+		}
+		if (var->access)
+		{
+			auto access_type = check_access(cc->err, cc->ast, cc->bc, var->access.value(), type.value().type);
+			if (!access_type) return None();
+			return Some(access_type.value().type);
+		}
+
+		return Some(type.value().type);
+	}
+	case Ast_Term::Tag::Enum:
+	{
+		Ast_Enum* _enum = term->as_enum;
+
+		Ast* target_ast = try_import(cc->err, cc->ast, _enum->import);
+		if (target_ast == NULL) return None();
+
+		auto enum_meta = find_enum(target_ast, _enum->ident);
+		if (!enum_meta) { err_set2; error("Accessing undeclared enum", _enum->ident); return None(); }
+		Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
+		_enum->enum_id = enum_meta.value().enum_id;
+		
+		auto variant_id = find_enum_variant(enum_decl, _enum->variant);
+		if (!variant_id) { err_set2; error("Accessing undeclared enum variant", _enum->variant); }
+		else _enum->variant_id = variant_id.value();
+
+		Ast_Type type = {};
+		type.tag = Ast_Type::Tag::Enum;
+		type.as_enum.enum_id = _enum->enum_id;
+		type.as_enum.enum_decl = enum_meta.value().enum_decl;
+		return Some(type);
+	}
+	case Ast_Term::Tag::Literal:
+	{
+		Ast_Literal literal = term->as_literal;
+		switch (literal.token.type)
+		{
+		case TOKEN_BOOL_LITERAL: return Some(type_info_from_basic(BASIC_TYPE_BOOL).type);
+		case TOKEN_FLOAT_LITERAL: return Some(type_info_from_basic(BASIC_TYPE_F64).type);
+		case TOKEN_INTEGER_LITERAL:
+		{
+			literal.basic_type = BASIC_TYPE_I32; //@Always i32 no context
+			return Some(type_info_from_basic(BASIC_TYPE_I32).type);
+		}
+		default:
+		{
+			err_set2;
+			printf("Unknown or unsupported literal:\n");
+			debug_print_token(literal.token, true, true);
+			printf("\n");
+			return None();
+		}
+		}
+	}
+	case Ast_Term::Tag::Proc_Call:
+	{
+		Ast_Proc_Call* proc_call = term->as_proc_call;
+
+		Ast* target_ast = try_import(cc->err, cc->ast, proc_call->import);
+		if (target_ast == NULL) return None();
+		
+		// find proc
+		Ast_Ident ident = proc_call->ident;
+		auto proc_meta = find_proc(target_ast, ident);
+		if (!proc_meta) { err_set2; error("Calling undeclared procedure", ident); return {}; }
+		Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
+		proc_call->proc_id = proc_meta.value().proc_id;
+
+		// check input count
+		u32 param_count = (u32)proc_decl->input_params.size();
+		u32 input_count = (u32)proc_call->input_exprs.size();
+		if (param_count != input_count)
+		{
+			err_set2;
+			printf("Unexpected number of arguments in procedure call:\n");
+			debug_print_ident(ident, true, true);
+			printf("Expected: %lu Got: %lu \n\n", param_count, input_count);
+		}
+
+		// check input exprs
+		for (u32 i = 0; i < input_count; i += 1)
+		{
+			if (i < param_count)
+			{
+				Ast_Type param_type = proc_decl->input_params[i].type;
+				Type_Context type_context = { param_type, false };
+				Option(Ast_Type) expr_type = context_check_expr(&type_context, cc, proc_call->input_exprs[i]);
+				if (is_some(expr_type))
+				{
+					if (!match_type(cc->err, param_type, expr_type.value))
+					{
+						err_set2;
+						printf("Type mismatch in procedure call input argument with id: %lu\n", i);
+						debug_print_ident(proc_call->ident);
+						printf("Expected: "); debug_print_type(param_type); printf("\n");
+						printf("Got:      "); debug_print_type(expr_type.value); printf("\n\n");
+					}
+				}
+			}
+		}
+
+		return None();
+	}
+	case Ast_Term::Tag::Struct_Init:
+	{
+		Ast_Struct_Init* struct_init = term->as_struct_init;
+
+		Ast* target_ast = try_import(cc->err, cc->ast, struct_init->import);
+		if (target_ast == NULL) return None();
+
+		Ast_Struct_Decl* struct_decl = NULL;
+		u32 struct_id = 0;
+
+		if (struct_init->ident)
+		{
+			Ast_Ident ident = struct_init->ident.value();
+			auto struct_meta = find_struct(target_ast, ident);
+			if (!struct_meta) { err_set2; error("Struct type identifier wasnt found", ident); return {}; }
+			struct_decl = struct_meta.value().struct_decl;
+			struct_id = struct_meta.value().struct_id;
+		}
+
+		if (context)
+		{
+			Type_Context* t_context = context.value();
+			Ast_Type expect_type = t_context->expect_type;
+			if (expect_type.tag == Ast_Type::Tag::Struct)
+			{
+				Ast_Struct_Type expected_struct = expect_type.as_struct;
+				if (struct_decl == NULL)
+				{
+					struct_decl = expected_struct.struct_decl;
+					struct_id = expected_struct.struct_id;
+				}
+				else
+				{
+					if (struct_id != expected_struct.struct_id)
+					{
+						err_set2;
+						printf("Struct initializer struct type doesnt match the expected type\n\n");
+						return None();
+					}
+				}
+			}
+		}
+
+		if (struct_decl == NULL)
+		{
+			err_set2;
+			printf("Cannot infer the struct initializer type without a context\n");
+			printf("Hint: specify type on varible: var : Type = .{ ... }, or on initializer var := Type.{ ... }\n\n");
+			return None();
+		}
+
+		// check input count
+		u32 field_count = (u32)struct_decl->fields.size();
+		u32 input_count = (u32)struct_init->input_exprs.size();
+		if (field_count != input_count)
+		{
+			err_set2;
+			printf("Unexpected number of fields in struct initializer:\n");
+			printf("Expected: %lu Got: %lu \n", field_count, input_count);
+			debug_print_struct_init(struct_init, 0); printf("\n");
+		}
+
+		// check input exprs
+		for (u32 i = 0; i < input_count; i += 1)
+		{
+			if (i < field_count)
+			{
+				Ast_Type param_type = struct_decl->fields[i].type;
+				Type_Context type_context = { param_type, false };
+				Option(Ast_Type) expr_type = context_check_expr(&type_context, cc, struct_init->input_exprs[i]);
+				if (is_some(expr_type))
+				{
+					if (!match_type(cc->err, param_type, expr_type.value))
+					{
+						err_set2;
+						printf("Type mismatch in struct initializer input argument with id: %lu\n", i);
+						printf("Expected: "); debug_print_type(param_type); printf("\n");
+						printf("Got:      "); debug_print_type(expr_type.value); printf("\n");
+						debug_print_expr(struct_init->input_exprs[i], 0); printf("\n");
+					}
+				}
+			}
+		}
+
+		Ast_Type type = {};
+		type.tag = Ast_Type::Tag::Struct;
+		type.as_struct.struct_id = struct_id;
+		type.as_struct.struct_decl = struct_decl;
+		return Some(type);
+	}
+	}
+}
+
+Option(Ast_Type) context_check_unary_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Unary_Expr* unary_expr)
+{
+	err_set2;
+	printf("[TODO] Unary expr is not checked\n\n");
+	return None();
+}
+
+Option(Ast_Type) context_check_binary_expr(std::optional<Type_Context*> context, Checker_Context* cc, Ast_Binary_Expr* binary_expr)
+{
+	err_set2;
+	printf("[TODO] Binary expr is not checked\n\n");
+	return None();
 }

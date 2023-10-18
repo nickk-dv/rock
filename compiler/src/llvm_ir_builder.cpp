@@ -9,8 +9,7 @@ Module build_module(Ast_Program* program)
 
 	for (Ast_Enum_Meta& enum_meta : program->enums)
 	{
-		BasicType basic_type = BASIC_TYPE_I32; //@Notice maybe store i32 at checking stage
-		if (enum_meta.enum_decl->basic_type) basic_type = enum_meta.enum_decl->basic_type.value();
+		BasicType basic_type = enum_meta.enum_decl->basic_type;
 		Type type = type_from_basic_type(basic_type);
 		enum_meta.enum_type = type;
 
@@ -377,9 +376,11 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 	case Ast_Term::Tag::Literal:
 	{
 		Token token = term->as_literal.token;
+		//@Notice using basic type provided by literal only for integers
+		BasicType basic_Type = term->as_literal.basic_type;
 		if (token.type == TOKEN_BOOL_LITERAL) return LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
 		else if (token.type == TOKEN_FLOAT_LITERAL) return LLVMConstReal(LLVMDoubleType(), token.float64_value);
-		else if (token.type == TOKEN_INTEGER_LITERAL) return LLVMConstInt(LLVMInt32Type(), token.integer_value, 0); //@Todo sign extend?
+		else if (token.type == TOKEN_INTEGER_LITERAL) return LLVMConstInt(type_from_basic_type(basic_Type), token.integer_value, 0); //@Todo sign extend?
 		else return LLVMConstInt(LLVMInt32Type(), 0, 0); //@Notice string literal isnt supported
 	}
 	case Ast_Term::Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, Proc_Call_Flags::None);

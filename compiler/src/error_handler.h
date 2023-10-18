@@ -8,5 +8,6 @@ struct Error_Handler
 };
 
 #define err_set err->has_err = true
+#define err_set2 cc->err->has_err = true
 
 #endif

@@ -129,15 +129,16 @@ struct Ast_Ident
 struct Ast_Literal
 {
 	Token token;
+	BasicType basic_type;
 };
 
-struct Ast_Struct_Type
+struct Ast_Struct_Type  //@Memory can remove decl and use program id lookup in checker
 {
 	u32 struct_id;
 	Ast_Struct_Decl* struct_decl;
 };
 
-struct Ast_Enum_Type
+struct Ast_Enum_Type //@Memory can remove decl and use program id lookup in checker
 {
 	u32 enum_id;
 	Ast_Enum_Decl* enum_decl;
@@ -166,7 +167,7 @@ struct Ast_Type
 struct Ast_Custom_Type
 {
 	std::optional<Ast_Ident> import;
-	Ast_Ident type;
+	Ast_Ident ident;
 };
 
 struct Ast_Array_Type
@@ -208,14 +209,14 @@ struct Ast_Use_Decl
 
 struct Ast_Struct_Decl
 {
-	Ast_Ident type;
+	Ast_Ident ident;
 	std::vector<Ast_Ident_Type_Pair> fields;
 };
 
 struct Ast_Enum_Decl
 {
-	Ast_Ident type;
-	std::optional<BasicType> basic_type;
+	Ast_Ident ident;
+	BasicType basic_type;
 	std::vector<Ast_Ident_Literal_Pair> variants;
 };
 
@@ -421,7 +422,7 @@ struct Ast_Array_Access
 struct Ast_Enum
 {
 	std::optional<Ast_Ident> import;
-	Ast_Ident type;
+	Ast_Ident ident;
 	Ast_Ident variant;
 	//checker
 	u32 enum_id;
@@ -431,7 +432,7 @@ struct Ast_Enum
 struct Ast_Struct_Init
 {
 	std::optional<Ast_Ident> import;
-	std::optional<Ast_Ident> type;
+	std::optional<Ast_Ident> ident;
 	std::vector<Ast_Expr*> input_exprs;
 };
 

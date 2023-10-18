@@ -13,7 +13,7 @@ typedef float f32;
 typedef double f64;
 
 #define Option(Type) Option_##Type
-#define OptionDecl(Type) typedef struct Option_##Type { Type value; bool has_value; } Option_##Type;
+#define OptionDecl(Type) typedef struct Option_##Type { Type value; bool has_value; } Option_##Type
 #define Some(value) { value, true }
 #define None() { {}, false }
 #define is_some(option) option.has_value
@@ -21,7 +21,7 @@ typedef double f64;
 
 #define arena_alloc(arena, Type) (Type*)arena_void_alloc(arena, sizeof(Type))
 #define array_add(array, value, Type) array_add_##Type(&array, value)
-
+/*
 typedef struct Arena_Block
 {
 	void* data;
@@ -35,11 +35,11 @@ typedef struct Arena
 	u64 block_size;
 	Arena_Block* curr;
 } Arena;
-
 void arena_init(Arena* arena, u64 block_size);
 void arena_deinit(Arena* arena);
 static void* arena_void_alloc(Arena* arena, u64 size);
 static void arena_alloc_block(Arena* arena);
+*/
 
 #define Array(Type) Array_##Type
 #define ArrayDecl(Type) \
