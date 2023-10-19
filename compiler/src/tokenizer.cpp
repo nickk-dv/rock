@@ -141,7 +141,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					tokenizer->input.data[tokenizer->input_cursor + expected_len] = '\0';
 					char* start = (char*)tokenizer->input.data + (tokenizer->input_cursor - 1);
 					char* end = start + 1;
-					double f64 = strtod(start, &end); //@Later replace this with custom to avoid \0 hacks and ensure valid number grammar
+					f64 float64_value = strtod(start, &end); //@Later replace this with custom to avoid \0 hacks and ensure valid number grammar
 					tokenizer->input.data[tokenizer->input_cursor + expected_len] = last_c;
 
 					for (u32 i = 0; i < offset; i += 1)
@@ -152,7 +152,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					if (end != start)
 					{
 						token.type = TOKEN_FLOAT_LITERAL;
-						token.float64_value = f64;
+						token.float64_value = float64_value;
 					}
 				}
 				else
@@ -293,7 +293,7 @@ void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 	}
 }
 
-std::optional<u8> peek_character(Tokenizer* tokenizer, u32 offset)
+option<u8> peek_character(Tokenizer* tokenizer, u32 offset)
 {
 	if (tokenizer->input_cursor + offset < tokenizer->input.count)
 		return tokenizer->input.data[tokenizer->input_cursor + offset];

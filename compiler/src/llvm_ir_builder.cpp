@@ -15,10 +15,10 @@ Module build_module(Ast_Program* program)
 
 		for (Ast_Ident_Literal_Pair& variant : enum_meta.enum_decl->variants)
 		{
-			int sign = variant.is_negative ? -1 : 1;
+			i32 sign = variant.is_negative ? -1 : 1;
 			if (basic_type <= BASIC_TYPE_U64) variant.constant = LLVMConstInt(type, sign * variant.literal.token.integer_value, basic_type % 2 == 0); //@Check if sign extend is correct or needed
 			else if (basic_type <= BASIC_TYPE_F64) variant.constant = LLVMConstReal(type, sign * variant.literal.token.float64_value);
-			else variant.constant = LLVMConstInt(type, (int)variant.literal.token.bool_value, 0);
+			else variant.constant = LLVMConstInt(type, (i32)variant.literal.token.bool_value, 0);
 		}
 	}
 
@@ -152,11 +152,11 @@ void build_defer(IR_Builder_Context* bc, IR_Terminator terminator)
 	u64 total_defer_count = bc->defer_stack.size();
 	u32 block_defer_count = block_info.defer_count;
 
-	int start_defer_id = (int)(total_defer_count - 1);
-	int end_defer_id = (int)(total_defer_count - block_defer_count);
+	i32 start_defer_id = (i32)(total_defer_count - 1);
+	i32 end_defer_id = (i32)(total_defer_count - block_defer_count);
 	if (terminator == IR_Terminator::Return) end_defer_id = 0;
 
-	for (int i = start_defer_id; i >= end_defer_id; i -= 1) 
+	for (i32 i = start_defer_id; i >= end_defer_id; i -= 1)
 	build_block(bc, bc->defer_stack[i]->block, IR_Block_Flags::None);
 }
 
@@ -386,7 +386,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 		//@Notice using basic type provided by literal only for integers
 		Token token = term->as_literal.token;
 		BasicType basic_Type = term->as_literal.basic_type;
-		if (token.type == TOKEN_BOOL_LITERAL) return LLVMConstInt(LLVMInt1Type(), (int)token.bool_value, 0);
+		if (token.type == TOKEN_BOOL_LITERAL) return LLVMConstInt(LLVMInt1Type(), (i32)token.bool_value, 0);
 		else if (token.type == TOKEN_FLOAT_LITERAL) return LLVMConstReal(LLVMDoubleType(), token.float64_value);
 		else if (token.type == TOKEN_INTEGER_LITERAL) return LLVMConstInt(type_from_basic_type(basic_Type), token.integer_value, 0); //@Todo sign extend?
 		else if (token.type == TOKEN_STRING_LITERAL) return LLVMBuildGlobalStringPtr(bc->builder, token.string_literal_value, "str");

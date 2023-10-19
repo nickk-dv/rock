@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-int parse_cmd(int argc, char** argv)
+i32 parse_cmd(i32 argc, char** argv)
 {
 	if (argc == 1)
 	{
@@ -20,7 +20,7 @@ int parse_cmd(int argc, char** argv)
 		return 0;
 	}
 	
-	for (int i = 1; i < argc; i += 1)
+	for (i32 i = 1; i < argc; i += 1)
 	{
 		char* arg = argv[i];
 
@@ -54,7 +54,7 @@ bool match_arg(char* arg, const char* match)
 	return strcmp(arg, match) == 0;
 }
 
-int cmd_build(char* filepath)
+i32 cmd_build(char* filepath)
 {
 	tokenizer_init();
 
@@ -69,7 +69,8 @@ int cmd_build(char* filepath)
 		return 1;
 	}
 	
-	Arena parser_arena(128 * 1024);
+	Arena parser_arena = {};
+	arena_init(&parser_arena, 128 * 1024);
 	std::vector<Parser*> parsers = {};
 	std::unordered_map<std::string, Ast*> modules;
 	bool parse_error = false;
@@ -77,13 +78,13 @@ int cmd_build(char* filepath)
 	Timer timer;
 	timer.start();
 	fs::path root = fs::path(filepath);
-	for (const auto& entry : fs::recursive_directory_iterator(root))
+	for (const fs::directory_entry& entry : fs::recursive_directory_iterator(root))
 	{
 		if (fs::is_regular_file(entry.path()) && entry.path().extension() == ".txt")
 		{
 			std::string file = entry.path().string();
 			
-			Parser* parser = parser_arena.alloc<Parser>();
+			Parser* parser = arena_alloc<Parser>(&parser_arena);
 			parsers.emplace_back(parser);
 			if (!parser_init(parser, file.c_str()))
 			{

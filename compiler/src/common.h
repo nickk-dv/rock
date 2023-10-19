@@ -10,14 +10,26 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+typedef signed char i8;
 typedef unsigned char u8;
+typedef short i16;
+typedef unsigned short u16;
+typedef int i32;
 typedef unsigned int u32;
+typedef long long i64;
 typedef unsigned long long u64;
+typedef float f32;
+typedef double f64;
+
+template <class T>
+using option = std::optional<T>;
+
 struct String;
 struct StringView;
 struct Timer;
 struct StringStorage;
 struct Arena;
+struct Arena_Block;
 
 u32 hash_fnv1a_32(const StringView& str);
 u64 hash_fnv1a_64(const StringView& str);
@@ -25,6 +37,34 @@ bool os_file_read_all(const char* file_path, String* str);
 bool match_string_view(StringView& a, StringView& b);
 constexpr u64 hash_str_ascii_9(const StringView& str);
 constexpr u64 hash_ascii_9(const char* str);
+
+struct Arena
+{
+	u8* data;
+	u64 offset;
+	u64 block_size;
+	Arena_Block* curr;
+};
+
+struct Arena_Block
+{
+	void* data;
+	struct Arena_Block* prev;
+};
+
+void arena_init(Arena* arena, u64 block_size);
+void arena_deinit(Arena* arena);
+void arena_alloc_block(Arena* arena);
+
+template<typename T>
+T* arena_alloc(Arena* arena)
+{
+	if (arena->offset + sizeof(T) > arena->block_size)
+		arena_alloc_block(arena);
+	T* ptr = (T*)(arena->data + arena->offset);
+	arena->offset += sizeof(T);
+	return ptr;
+}
 
 struct String
 {
@@ -86,7 +126,7 @@ struct Timer
 	{
 		TimePoint t1 = Clock::now();
 		Ns ns = std::chrono::duration_cast<Ns>(t1 - t0);
-		const float ns_to_ms = 1000000.0f;
+		const f32 ns_to_ms = 1000000.0f;
 		printf("%s ms: %f\n", message, ns.count() / ns_to_ms);
 	}
 
@@ -118,39 +158,6 @@ private:
 	char* buffer;
 	u64 cursor = 0;
 	u64 str_start = 0;
-};
-
-struct Arena
-{
-	Arena() {};
-	Arena(size_t block_size) { init(block_size); };
-	~Arena() { destroy(); }
-
-public:
-	void init(size_t block_size) { m_block_size = block_size; alloc_block(); }
-	void destroy() { for (u8* block : m_data_blocks) free(block); }
-
-	template<typename T>
-	T* alloc() {
-		if (m_offset + sizeof(T) > m_block_size) alloc_block();
-		T* ptr = (T*)(m_data + m_offset);
-		m_offset += sizeof(T);
-		return ptr;
-	}
-
-private:
-	void alloc_block() {
-		m_offset = 0;
-		m_data = (u8*)malloc(m_block_size);
-		if (m_data != NULL)
-			memset(m_data, 0, m_block_size);
-		m_data_blocks.emplace_back(m_data);
-	}
-
-	u8* m_data = NULL;
-	size_t m_offset = 0;
-	size_t m_block_size = 0;
-	std::vector<u8*> m_data_blocks;
 };
 
 template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
@@ -196,7 +203,7 @@ public:
 		return false;
 	}
 
-	std::optional<ValueType> find(KeyType key, HashType hash) {
+	option<ValueType> find(KeyType key, HashType hash) {
 		u32 slot = hash % table_size;
 		while (array[slot].hash != 0) {
 			if (match_proc(key, array[slot].key))
@@ -275,7 +282,7 @@ public:
 		return false;
 	}
 
-	std::optional<KeyType> find_key(KeyType key, HashType hash) {
+	option<KeyType> find_key(KeyType key, HashType hash) {
 		u32 slot = hash % table_size;
 		while (array[slot].hash != 0) {
 			if (match_proc(key, array[slot].key))

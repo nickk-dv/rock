@@ -41,11 +41,11 @@ bool checker_context_block_contains_var(Checker_Context* cc, Ast_Ident ident)
 	return false;
 }
 
-Option(Ast_Type) checker_context_block_find_var_type(Checker_Context* cc, Ast_Ident ident)
+option<Ast_Type> checker_context_block_find_var_type(Checker_Context* cc, Ast_Ident ident)
 {
 	for (Var_Info& var : cc->var_stack)
 	{
-		if (match_ident(var.ident, ident)) return Some(var.type);
+		if (match_ident(var.ident, ident)) return var.type;
 	}
-	return None();
+	return {};
 }

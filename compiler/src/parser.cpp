@@ -13,13 +13,14 @@
 
 bool parser_init(Parser* parser, const char* filepath)
 {
-	parser->arena.init(1024 * 1024);
+	parser->arena = {};
+	arena_init(&parser->arena, 1024 * 1024);
 	return tokenizer_set_input(&parser->tokenizer, filepath);
 }
 
 Ast* parser_parse(Parser* parser)
 {
-	Ast* ast = parser->arena.alloc<Ast>();
+	Ast* ast = arena_alloc<Ast>(&parser->arena);
 	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
 
 	while (true) 
@@ -91,7 +92,7 @@ Ast* parser_parse(Parser* parser)
 	return ast;
 }
 
-std::optional<Ast_Type> parse_type(Parser* parser)
+option<Ast_Type> parse_type(Parser* parser)
 {
 	Ast_Type type = {};
 	Token token = peek();
@@ -140,7 +141,7 @@ std::optional<Ast_Type> parse_type(Parser* parser)
 
 Ast_Array_Type* parse_array_type(Parser* parser)
 {
-	Ast_Array_Type* array = parser->arena.alloc<Ast_Array_Type>();
+	Ast_Array_Type* array = arena_alloc<Ast_Array_Type>(&parser->arena);
 	consume();
 
 	Token token = peek();
@@ -156,7 +157,7 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 	else { error("Expected '..' or integer size specifier"); return NULL; }
 	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
 
-	auto type = parse_type(parser);
+	option<Ast_Type> type = parse_type(parser);
 	if (!type) return NULL;
 	array->element_type = type.value();
 
@@ -165,13 +166,13 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 
 Ast_Custom_Type* parse_custom_type(Parser* parser)
 {
-	Ast_Custom_Type* custom = parser->arena.alloc<Ast_Custom_Type>();
+	Ast_Custom_Type* custom = arena_alloc<Ast_Custom_Type>(&parser->arena);
 
 	Ast_Ident import = token_to_ident(consume_get());
 	if (try_consume(TOKEN_DOT))
 	{
 		custom->import = import;
-		auto ident = try_consume(TOKEN_IDENT);
+		option<Token> ident = try_consume(TOKEN_IDENT);
 		if (!ident) { error("Expected type identifier"); return NULL; }
 		custom->ident = token_to_ident(ident.value());
 	}
@@ -182,11 +183,11 @@ Ast_Custom_Type* parse_custom_type(Parser* parser)
 
 Ast_Import_Decl* parse_import_decl(Parser* parser)
 {
-	Ast_Import_Decl* decl = parser->arena.alloc<Ast_Import_Decl>();
+	Ast_Import_Decl* decl = arena_alloc<Ast_Import_Decl>(&parser->arena);
 	decl->alias = token_to_ident(consume_get());
 	consume(); consume();
 
-	auto token = try_consume(TOKEN_STRING_LITERAL);
+	option<Token> token = try_consume(TOKEN_STRING_LITERAL);
 	if (!token) { error("Expected path string literal in 'import' declaration"); return NULL; }
 	decl->file_path = Ast_Literal { token.value() };
 
@@ -195,17 +196,17 @@ Ast_Import_Decl* parse_import_decl(Parser* parser)
 
 Ast_Use_Decl* parse_use_decl(Parser* parser)
 {
-	Ast_Use_Decl* decl = parser->arena.alloc<Ast_Use_Decl>();
+	Ast_Use_Decl* decl = arena_alloc<Ast_Use_Decl>(&parser->arena);
 	decl->alias = token_to_ident(consume_get());
 	consume(); consume();
 
-	auto import = try_consume(TOKEN_IDENT);
+	option<Token> import = try_consume(TOKEN_IDENT);
 	if (!import) { error("Expected imported namespace identifier"); return NULL; }
 	decl->import = token_to_ident(import.value());
 
 	if (!try_consume(TOKEN_DOT)) { error("Expected '.' followed by symbol"); return NULL; }
 	
-	auto symbol = try_consume(TOKEN_IDENT);
+	option<Token> symbol = try_consume(TOKEN_IDENT);
 	if (!symbol) { error("Expected symbol identifier"); return NULL; }
 	decl->symbol = token_to_ident(symbol.value());
 
@@ -215,18 +216,18 @@ Ast_Use_Decl* parse_use_decl(Parser* parser)
 
 Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 {
-	Ast_Struct_Decl* decl = parser->arena.alloc<Ast_Struct_Decl>();
+	Ast_Struct_Decl* decl = arena_alloc<Ast_Struct_Decl>(&parser->arena);
 	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 	
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
 	while (true)
 	{
-		auto field = try_consume(TOKEN_IDENT);
+		option<Token> field = try_consume(TOKEN_IDENT);
 		if (!field) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
-		auto type = parse_type(parser);
+		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
 		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type.value() });
 
@@ -239,7 +240,7 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 
 Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 {
-	Ast_Enum_Decl* decl = parser->arena.alloc<Ast_Enum_Decl>();
+	Ast_Enum_Decl* decl = arena_alloc<Ast_Enum_Decl>(&parser->arena);
 	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 
@@ -255,7 +256,7 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{'"); return NULL; }
 	while (true)
 	{
-		auto ident = try_consume(TOKEN_IDENT);
+		option<Token> ident = try_consume(TOKEN_IDENT);
 		if (!ident) break;
 
 		if (!try_consume(TOKEN_ASSIGN)) { error("Expected '=' followed by value of enum variant"); return NULL; }
@@ -274,7 +275,7 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 
 Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 {
-	Ast_Proc_Decl* decl = parser->arena.alloc<Ast_Proc_Decl>();
+	Ast_Proc_Decl* decl = arena_alloc<Ast_Proc_Decl>(&parser->arena);
 	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 	
@@ -282,11 +283,11 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 	{
 		if (try_consume(TOKEN_DOUBLE_DOT)) { decl->is_variadic = true; break; }
 
-		auto ident = try_consume(TOKEN_IDENT);
+		option<Token> ident = try_consume(TOKEN_IDENT);
 		if (!ident) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
-		auto type = parse_type(parser);
+		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
 		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(ident.value()), type.value() });
 
@@ -296,7 +297,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
-		auto type = parse_type(parser);
+		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
 		decl->return_type = type.value();
 	}
@@ -317,7 +318,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 Ast_Block* parse_block(Parser* parser)
 {
-	Ast_Block* block = parser->arena.alloc<Ast_Block>();
+	Ast_Block* block = arena_alloc<Ast_Block>(&parser->arena);
 
 	if (!try_consume(TOKEN_BLOCK_START)) { error("Expected '{' before code block"); return NULL; }
 	while (true)
@@ -332,7 +333,7 @@ Ast_Block* parse_block(Parser* parser)
 
 Ast_Statement* parse_statement(Parser* parser)
 {
-	Ast_Statement* statement = parser->arena.alloc<Ast_Statement>();
+	Ast_Statement* statement = arena_alloc<Ast_Statement>(&parser->arena);
 	Token token = peek();
 
 	switch (token.type)
@@ -425,7 +426,7 @@ Ast_Statement* parse_statement(Parser* parser)
 
 Ast_If* parse_if(Parser* parser)
 {
-	Ast_If* _if = parser->arena.alloc<Ast_If>();
+	Ast_If* _if = arena_alloc<Ast_If>(&parser->arena);
 	_if->token = consume_get();
 
 	Ast_Expr* expr = parse_sub_expr(parser);
@@ -449,7 +450,7 @@ Ast_If* parse_if(Parser* parser)
 
 Ast_Else* parse_else(Parser* parser)
 {
-	Ast_Else* _else = parser->arena.alloc<Ast_Else>();
+	Ast_Else* _else = arena_alloc<Ast_Else>(&parser->arena);
 	_else->token = consume_get();
 	Token next = peek();
 
@@ -474,7 +475,7 @@ Ast_Else* parse_else(Parser* parser)
 
 Ast_For* parse_for(Parser* parser)
 {
-	Ast_For* _for = parser->arena.alloc<Ast_For>();
+	Ast_For* _for = arena_alloc<Ast_For>(&parser->arena);
 	_for->token = consume_get();
 	Token curr = peek();
 	Token next = peek_next(1);
@@ -515,7 +516,7 @@ Ast_For* parse_for(Parser* parser)
 
 Ast_Defer* parse_defer(Parser* parser)
 {
-	Ast_Defer* defer = parser->arena.alloc<Ast_Defer>();
+	Ast_Defer* defer = arena_alloc<Ast_Defer>(&parser->arena);
 	defer->token = consume_get();
 
 	Ast_Block* block = parse_block(parser);
@@ -527,7 +528,7 @@ Ast_Defer* parse_defer(Parser* parser)
 
 Ast_Break* parse_break(Parser* parser)
 {
-	Ast_Break* _break = parser->arena.alloc<Ast_Break>();
+	Ast_Break* _break = arena_alloc<Ast_Break>(&parser->arena);
 	_break->token = consume_get();
 
 	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after 'break'"); return NULL; }
@@ -536,7 +537,7 @@ Ast_Break* parse_break(Parser* parser)
 
 Ast_Return* parse_return(Parser* parser)
 {
-	Ast_Return* _return = parser->arena.alloc<Ast_Return>();
+	Ast_Return* _return = arena_alloc<Ast_Return>(&parser->arena);
 	_return->token = consume_get();
 
 	if (try_consume(TOKEN_SEMICOLON)) return _return;
@@ -549,7 +550,7 @@ Ast_Return* parse_return(Parser* parser)
 
 Ast_Switch* parse_switch(Parser* parser)
 {
-	Ast_Switch* _switch = parser->arena.alloc<Ast_Switch>();
+	Ast_Switch* _switch = arena_alloc<Ast_Switch>(&parser->arena);
 	_switch->token = consume_get();
 
 	Ast_Term* term = parse_term(parser);
@@ -594,7 +595,7 @@ Ast_Switch* parse_switch(Parser* parser)
 
 Ast_Continue* parse_continue(Parser* parser)
 {
-	Ast_Continue* _continue = parser->arena.alloc<Ast_Continue>();
+	Ast_Continue* _continue = arena_alloc<Ast_Continue>(&parser->arena);
 	_continue->token = consume_get();
 
 	if (!try_consume(TOKEN_SEMICOLON)) { error("Expected ';' after 'continue'"); return NULL; }
@@ -603,7 +604,7 @@ Ast_Continue* parse_continue(Parser* parser)
 
 Ast_Var_Decl* parse_var_decl(Parser* parser)
 {
-	Ast_Var_Decl* var_decl = parser->arena.alloc<Ast_Var_Decl>();
+	Ast_Var_Decl* var_decl = arena_alloc<Ast_Var_Decl>(&parser->arena);
 	var_decl->ident = token_to_ident(consume_get());
 	consume();
 
@@ -611,7 +612,7 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 
 	if (!infer_type)
 	{
-		auto type = parse_type(parser);
+		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
 		var_decl->type = type.value();
 
@@ -627,7 +628,7 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 
 Ast_Var_Assign* parse_var_assign(Parser* parser)
 {
-	Ast_Var_Assign* var_assign = parser->arena.alloc<Ast_Var_Assign>();
+	Ast_Var_Assign* var_assign = arena_alloc<Ast_Var_Assign>(&parser->arena);
 
 	Ast_Var* var = parse_var(parser);
 	if (!var) return NULL;
@@ -647,7 +648,7 @@ Ast_Var_Assign* parse_var_assign(Parser* parser)
 
 Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 {
-	Ast_Proc_Call* proc_call = parser->arena.alloc<Ast_Proc_Call>();
+	Ast_Proc_Call* proc_call = arena_alloc<Ast_Proc_Call>(&parser->arena);
 	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
 	proc_call->ident = token_to_ident(consume_get());
 
@@ -701,12 +702,12 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 		Ast_Expr* expr_rhs = parse_sub_expr(parser, next_min_prec);
 		if (expr_rhs == NULL) return NULL;
 
-		Ast_Expr* expr_lhs_copy = parser->arena.alloc<Ast_Expr>();
+		Ast_Expr* expr_lhs_copy = arena_alloc<Ast_Expr>(&parser->arena);
 		expr_lhs_copy->tag = expr_lhs->tag;
 		expr_lhs_copy->as_term = expr_lhs->as_term;
 		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
 
-		Ast_Binary_Expr* bin_expr = parser->arena.alloc<Ast_Binary_Expr>();
+		Ast_Binary_Expr* bin_expr = arena_alloc<Ast_Binary_Expr>(&parser->arena);
 		bin_expr->op = op;
 		bin_expr->left = expr_lhs_copy;
 		bin_expr->right = expr_rhs;
@@ -741,11 +742,11 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 		Ast_Expr* right_expr = parse_primary_expr(parser);
 		if (!right_expr) return NULL;
 
-		Ast_Unary_Expr* unary_expr = parser->arena.alloc<Ast_Unary_Expr>();
+		Ast_Unary_Expr* unary_expr = arena_alloc<Ast_Unary_Expr>(&parser->arena);
 		unary_expr->op = op;
 		unary_expr->right = right_expr;
 
-		Ast_Expr* expr = parser->arena.alloc<Ast_Expr>();
+		Ast_Expr* expr = arena_alloc<Ast_Expr>(&parser->arena);
 		expr->tag = Ast_Expr::Tag::Unary_Expr;
 		expr->as_unary_expr = unary_expr;
 		return expr;
@@ -754,7 +755,7 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 	Ast_Term* term = parse_term(parser);
 	if (!term) return NULL;
 
-	Ast_Expr* expr = parser->arena.alloc<Ast_Expr>();
+	Ast_Expr* expr = arena_alloc<Ast_Expr>(&parser->arena);
 	expr->tag = Ast_Expr::Tag::Term;
 	expr->as_term = term;
 
@@ -763,7 +764,7 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 
 Ast_Term* parse_term(Parser* parser)
 {
-	Ast_Term* term = parser->arena.alloc<Ast_Term>();
+	Ast_Term* term = arena_alloc<Ast_Term>(&parser->arena);
 	Token token = peek();
 
 	switch (token.type)
@@ -848,7 +849,7 @@ Ast_Term* parse_term(Parser* parser)
 
 Ast_Var* parse_var(Parser* parser)
 {
-	Ast_Var* var = parser->arena.alloc<Ast_Var>();
+	Ast_Var* var = arena_alloc<Ast_Var>(&parser->arena);
 	var->ident = token_to_ident(consume_get());
 
 	Token token = peek();
@@ -864,7 +865,7 @@ Ast_Var* parse_var(Parser* parser)
 
 Ast_Access* parse_access(Parser* parser)
 {
-	Ast_Access* access = parser->arena.alloc<Ast_Access>();
+	Ast_Access* access = arena_alloc<Ast_Access>(&parser->arena);
 	Token token = peek();
 
 	if (token.type == TOKEN_DOT)
@@ -894,9 +895,9 @@ Ast_Access* parse_access(Parser* parser)
 
 Ast_Var_Access* parse_var_access(Parser* parser)
 {
-	Ast_Var_Access* var_access = parser->arena.alloc<Ast_Var_Access>();
+	Ast_Var_Access* var_access = arena_alloc<Ast_Var_Access>(&parser->arena);
 
-	auto ident = try_consume(TOKEN_IDENT);
+	option<Token> ident = try_consume(TOKEN_IDENT);
 	if (!ident) { error("Expected field identifier"); return NULL; }
 	var_access->ident = token_to_ident(ident.value());
 
@@ -913,7 +914,7 @@ Ast_Var_Access* parse_var_access(Parser* parser)
 
 Ast_Array_Access* parse_array_access(Parser* parser)
 {
-	Ast_Array_Access* array_access = parser->arena.alloc<Ast_Array_Access>();
+	Ast_Array_Access* array_access = arena_alloc<Ast_Array_Access>(&parser->arena);
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
@@ -934,14 +935,14 @@ Ast_Array_Access* parse_array_access(Parser* parser)
 
 Ast_Enum* parse_enum(Parser* parser, bool import)
 {
-	Ast_Enum* _enum = parser->arena.alloc<Ast_Enum>();
+	Ast_Enum* _enum = arena_alloc<Ast_Enum>(&parser->arena);
 	if (import) { _enum->import = token_to_ident(consume_get()); consume(); }
 
-	auto ident = try_consume(TOKEN_IDENT);
+	option<Token> ident = try_consume(TOKEN_IDENT);
 	if (!ident) { error("Expected enum type identifier"); return NULL; }
 	_enum->ident = token_to_ident(ident.value());
 	consume();
-	auto variant = try_consume(TOKEN_IDENT);
+	option<Token> variant = try_consume(TOKEN_IDENT);
 	if (!variant) { error("Expected enum variant identifier"); return NULL; }
 	_enum->variant = token_to_ident(variant.value());
 
@@ -950,12 +951,12 @@ Ast_Enum* parse_enum(Parser* parser, bool import)
 
 Ast_Sizeof* parse_sizeof(Parser* parser)
 {
-	Ast_Sizeof* _sizeof = parser->arena.alloc<Ast_Sizeof>();
+	Ast_Sizeof* _sizeof = arena_alloc<Ast_Sizeof>(&parser->arena);
 	consume();
 
 	if (!try_consume(TOKEN_PAREN_START)) { error("Expected '(' in sizeof"); return NULL; }
 	
-	auto type = parse_type(parser);
+	option<Ast_Type> type = parse_type(parser);
 	if (!type) return NULL;
 	_sizeof->type = type.value();
 
@@ -966,7 +967,7 @@ Ast_Sizeof* parse_sizeof(Parser* parser)
 
 Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
 {
-	Ast_Struct_Init* struct_init = parser->arena.alloc<Ast_Struct_Init>();
+	Ast_Struct_Init* struct_init = arena_alloc<Ast_Struct_Init>(&parser->arena);
 	if (import) { struct_init->import = token_to_ident(consume_get()); consume(); }
 	if (type) { struct_init->ident = token_to_ident(consume_get()); }
 	consume();
@@ -1009,7 +1010,7 @@ Token consume_get_token(Parser* parser)
 	return token;
 }
 
-std::optional<Token> try_consume_token(Parser* parser, TokenType token_type)
+option<Token> try_consume_token(Parser* parser, TokenType token_type)
 {
 	Token token = peek();
 	if (token.type == token_type)

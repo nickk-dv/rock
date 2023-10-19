@@ -1,6 +1,6 @@
 #include "parse_cmd.h"
 
-int main(int argc, char** argv)
+i32 main(i32 argc, char** argv)
 {
 	return parse_cmd(argc, argv);
 }

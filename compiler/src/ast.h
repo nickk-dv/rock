@@ -167,7 +167,7 @@ struct Ast_Type
 
 struct Ast_Custom_Type
 {
-	std::optional<Ast_Ident> import;
+	option<Ast_Ident> import;
 	Ast_Ident ident;
 };
 
@@ -225,7 +225,7 @@ struct Ast_Proc_Decl
 {
 	Ast_Ident ident;
 	std::vector<Ast_Ident_Type_Pair> input_params;
-	std::optional<Ast_Type> return_type;
+	option<Ast_Type> return_type;
 	Ast_Block* block;
 	bool is_external;
 	bool is_main; //@Todo use flags or enum kinds if types cant overlap
@@ -266,7 +266,7 @@ struct Ast_If
 	Token token;
 	Ast_Expr* condition_expr;
 	Ast_Block* block;
-	std::optional<Ast_Else*> _else;
+	option<Ast_Else*> _else;
 };
 
 struct Ast_Else
@@ -288,9 +288,9 @@ struct Ast_Else
 struct Ast_For
 {
 	Token token;
-	std::optional<Ast_Var_Decl*> var_decl;
-	std::optional<Ast_Expr*> condition_expr;
-	std::optional<Ast_Var_Assign*> var_assign;
+	option<Ast_Var_Decl*> var_decl;
+	option<Ast_Expr*> condition_expr;
+	option<Ast_Var_Assign*> var_assign;
 	Ast_Block* block;
 };
 
@@ -308,7 +308,7 @@ struct Ast_Break
 struct Ast_Return
 {
 	Token token;
-	std::optional<Ast_Expr*> expr;
+	option<Ast_Expr*> expr;
 };
 
 struct Ast_Switch
@@ -321,7 +321,7 @@ struct Ast_Switch
 struct Ast_Switch_Case
 {
 	Ast_Term* term;
-	std::optional<Ast_Block*> block;
+	option<Ast_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
 };
@@ -334,8 +334,8 @@ struct Ast_Continue
 struct Ast_Var_Decl
 {
 	Ast_Ident ident;
-	std::optional<Ast_Type> type;
-	std::optional<Ast_Expr*> expr;
+	option<Ast_Type> type;
+	option<Ast_Expr*> expr;
 };
 
 struct Ast_Var_Assign
@@ -347,10 +347,10 @@ struct Ast_Var_Assign
 
 struct Ast_Proc_Call
 {
-	std::optional<Ast_Ident> import;
+	option<Ast_Ident> import;
 	Ast_Ident ident;
 	std::vector<Ast_Expr*> input_exprs;
-	std::optional<Ast_Access*> access;
+	option<Ast_Access*> access;
 	//checker
 	u32 proc_id;
 };
@@ -392,7 +392,7 @@ struct Ast_Term
 struct Ast_Var
 {
 	Ast_Ident ident;
-	std::optional<Ast_Access*> access;
+	option<Ast_Access*> access;
 };
 
 struct Ast_Access
@@ -412,7 +412,7 @@ struct Ast_Access
 struct Ast_Var_Access
 {
 	Ast_Ident ident;
-	std::optional<Ast_Access*> next;
+	option<Ast_Access*> next;
 	//checker
 	u32 field_id;
 };
@@ -420,12 +420,12 @@ struct Ast_Var_Access
 struct Ast_Array_Access
 {
 	Ast_Expr* index_expr;
-	std::optional<Ast_Access*> next;
+	option<Ast_Access*> next;
 };
 
 struct Ast_Enum
 {
-	std::optional<Ast_Ident> import;
+	option<Ast_Ident> import;
 	Ast_Ident ident;
 	Ast_Ident variant;
 	//checker
@@ -440,8 +440,8 @@ struct Ast_Sizeof
 
 struct Ast_Struct_Init
 {
-	std::optional<Ast_Ident> import;
-	std::optional<Ast_Ident> ident;
+	option<Ast_Ident> import;
+	option<Ast_Ident> ident;
 	std::vector<Ast_Expr*> input_exprs;
 };
 

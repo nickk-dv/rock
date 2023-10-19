@@ -2,10 +2,8 @@
 #define CHECKER_CONTEXT_H
 
 #include "ast.h"
-#include "base.h"
 #include "error_handler.h"
 
-OptionDecl(Ast_Type);
 typedef std::unordered_map<std::string, Ast*> Module_Map;
 
 struct Checker_Context;
@@ -23,7 +21,7 @@ void checker_context_block_add(Checker_Context* cc);
 void checker_context_block_pop_back(Checker_Context* cc);
 void checker_context_block_add_var(Checker_Context* cc, Ast_Ident ident, Ast_Type type);
 bool checker_context_block_contains_var(Checker_Context* cc, Ast_Ident ident);
-Option(Ast_Type) checker_context_block_find_var_type(Checker_Context* cc, Ast_Ident ident);
+option<Ast_Type> checker_context_block_find_var_type(Checker_Context* cc, Ast_Ident ident);
 
 struct Checker_Context
 {

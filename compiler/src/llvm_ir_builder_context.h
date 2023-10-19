@@ -56,7 +56,7 @@ struct IR_Loop_Info
 {
 	Basic_Block break_block;
 	Basic_Block continue_block;
-	std::optional<Ast_Var_Assign*> var_assign;
+	option<Ast_Var_Assign*> var_assign;
 };
 
 struct IR_Var_Info

@@ -22,8 +22,8 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 	for (Ast_Import_Decl* decl : ast->imports)
 	{
 		Ast_Ident ident = decl->alias;
-		auto key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) 
+		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
+		if (!key)
 		{ 
 			symbol_table.add(ident, hash_ident(ident)); 
 			ast->import_table.add(ident, decl, hash_ident(ident)); 
@@ -44,7 +44,7 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident ident = decl->alias;
-		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) symbol_table.add(ident, hash_ident(ident));
 		else { err_set; error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); }
 	}
@@ -52,7 +52,7 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
 		Ast_Ident ident = decl->ident;
-		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{
 			symbol_table.add(ident, hash_ident(ident));
@@ -68,7 +68,7 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 	for (Ast_Enum_Decl* decl : ast->enums)
 	{
 		Ast_Ident ident = decl->ident;
-		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
@@ -84,7 +84,7 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 	for (Ast_Proc_Decl* decl : ast->procs)
 	{
 		Ast_Ident ident = decl->ident;
-		auto key = symbol_table.find_key(ident, hash_ident(ident));
+		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
@@ -118,11 +118,11 @@ void check_decls(Checker_Context* cc)
 
 		Ast_Ident alias = use_decl->alias;
 		Ast_Ident symbol = use_decl->symbol;
-		auto struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
+		option<Ast_Struct_Decl_Meta> struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
 		if (struct_decl) { ast->struct_table.add(alias, struct_decl.value(), hash_ident(alias)); continue; }
-		auto enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
+		option<Ast_Enum_Decl_Meta> enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
 		if (enum_decl) { ast->enum_table.add(alias, enum_decl.value(), hash_ident(alias)); continue; }
-		auto proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
+		option<Ast_Proc_Decl_Meta> proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
 		if (proc_decl) { ast->proc_table.add(alias, proc_decl.value(), hash_ident(alias)); continue; }
 		
 		err_set;
@@ -141,7 +141,7 @@ void check_main_proc(Checker_Context* cc)
 	ident.str.data = (u8*)name_arr;
 	ident.str.count = 4;
 
-	auto proc_meta = find_proc(cc->ast, ident);
+	option<Ast_Proc_Decl_Meta> proc_meta = find_proc(cc->ast, ident);
 	if (!proc_meta)
 	{
 		err_set;
@@ -310,7 +310,7 @@ void check_struct_decl(Checker_Context* cc, Ast_Struct_Decl* struct_decl)
 
 	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
-		auto name = name_set.find_key(field.ident, hash_ident(field.ident));
+		option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
 		if (!name) name_set.add(field.ident, hash_ident(field.ident));
 		else { err_set; error("Duplicate struct field identifier", field.ident); }
 
@@ -334,7 +334,7 @@ void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
 
 	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
 	{
-		auto name = name_set.find_key(variant.ident, hash_ident(variant.ident));
+		option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
 		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
 		else { err_set; error("Duplicate enum variant identifier", variant.ident); }
 
@@ -352,7 +352,7 @@ void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
 
 	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 	{
-		auto name = name_set.find_key(param.ident, hash_ident(param.ident));
+		option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
 		if (!name) name_set.add(param.ident, hash_ident(param.ident));
 		else { err_set; error("Duplicate procedure input parameter identifier", param.ident); }
 		
@@ -365,12 +365,12 @@ void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
 	}
 }
 
-Ast* try_import(Checker_Context* cc, std::optional<Ast_Ident> import)
+Ast* try_import(Checker_Context* cc, option<Ast_Ident> import)
 {
 	if (!import) return cc->ast;
 
 	Ast_Ident import_ident = import.value();
-	auto import_decl = cc->ast->import_table.find(import_ident, hash_ident(import_ident));
+	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(import_ident, hash_ident(import_ident));
 	if (!import_decl)
 	{
 		err_set;
@@ -381,22 +381,22 @@ Ast* try_import(Checker_Context* cc, std::optional<Ast_Ident> import)
 	return import_decl.value()->import_ast;
 }
 
-std::optional<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident)
+option<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident)
 {
 	return target_ast->struct_table.find(ident, hash_ident(ident));
 }
 
-std::optional<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident)
+option<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident)
 {
 	return target_ast->enum_table.find(ident, hash_ident(ident));
 }
 
-std::optional<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident)
+option<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident)
 {
 	return target_ast->proc_table.find(ident, hash_ident(ident));
 }
 
-std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
+option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
 {
 	u32 count = 0;
 	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
@@ -407,7 +407,7 @@ std::optional<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
 	return {};
 }
 
-std::optional<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident)
+option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident)
 {
 	u32 count = 0;
 	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
@@ -554,13 +554,13 @@ static void check_block(Checker_Context* cc, Ast_Block* block, Checker_Block_Fla
 
 void check_if(Checker_Context* cc, Ast_If* _if)
 {
-	Option(Ast_Type) type = check_expr(cc, {}, _if->condition_expr);
-	if (is_some(type) && type_kind(cc, type.value) != Type_Kind::Bool)
+	option<Ast_Type> type = check_expr(cc, {}, _if->condition_expr);
+	if (type && type_kind(cc, type.value()) != Type_Kind::Bool)
 	{
 		err_set;
 		printf("Expected conditional expression to be of type 'bool':\n");
 		debug_print_token(_if->token, true, true);
-		printf("Got: "); debug_print_type(type.value);
+		printf("Got: "); debug_print_type(type.value());
 		printf("\n\n");
 	}
 
@@ -583,13 +583,13 @@ void check_for(Checker_Context* cc, Ast_For* _for)
 
 	if (_for->condition_expr)
 	{
-		Option(Ast_Type) type = check_expr(cc, {}, _for->condition_expr.value());
-		if (is_some(type) && type_kind(cc, type.value) != Type_Kind::Bool)
+		option<Ast_Type> type = check_expr(cc, {}, _for->condition_expr.value());
+		if (type && type_kind(cc, type.value()) != Type_Kind::Bool)
 		{
 			err_set;
 			printf("Expected conditional expression to be of type 'bool':\n");
 			debug_print_token(_for->token, true, true);
-			printf("Got: "); debug_print_type(type.value);
+			printf("Got: "); debug_print_type(type.value());
 			printf("\n\n");
 		}
 	}
@@ -603,22 +603,20 @@ void check_return(Checker_Context* cc, Ast_Return* _return)
 
 	if (_return->expr)
 	{
-		//@TODO putting in context to this would be nice, we can return struct init without specifying the type
-
 		if (curr_proc->return_type)
 		{
 			Ast_Type ret_type = curr_proc->return_type.value();
 			Type_Context type_context = { ret_type, false };
-			Option(Ast_Type) expr_type = check_expr(cc, &type_context, _return->expr.value());
-			if (is_none(expr_type)) return;
+			option<Ast_Type> expr_type = check_expr(cc, &type_context, _return->expr.value());
+			if (!expr_type) return;
 			
-			if (!match_type(cc, ret_type, expr_type.value))
+			if (!match_type(cc, ret_type, expr_type.value()))
 			{
 				err_set;
 				printf("Return type doesnt match procedure declaration:\n");
 				debug_print_token(_return->token, true, true);
 				printf("Expected: "); debug_print_type(ret_type); printf("\n");
-				printf("Got: "); debug_print_type(expr_type.value); printf("\n\n");
+				printf("Got: "); debug_print_type(expr_type.value()); printf("\n\n");
 			}
 		}
 		else
@@ -652,19 +650,19 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 	// add default or discard like syntax _ for default case
 
 	//@Todo add context with switch on type and constant requirement
-	Option(Ast_Type) type = check_term(cc, {}, _switch->term);
+	option<Ast_Type> type = check_term(cc, {}, _switch->term);
 	bool switched_type_is_correct = true;
 	bool all_terms_correct = true;
-	if (is_some(type))
+	if (type)
 	{
-		Type_Kind kind = type_kind(cc, type.value);
+		Type_Kind kind = type_kind(cc, type.value());
 		if (kind != Type_Kind::Integer && kind != Type_Kind::Enum)
 		{
 			err_set;
 			switched_type_is_correct = false;
 			all_terms_correct = false;
 			printf("Switching is only allowed on value of enum or integer types\n");
-			debug_print_type(type.value);
+			debug_print_type(type.value());
 			printf("\n");
 			debug_print_term(_switch->term, 0);
 			printf("\n");
@@ -684,10 +682,10 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 		}
 		else
 		{
-			Option(Ast_Type) case_type = check_term(cc, {}, _case.term);
-			if (is_some(case_type))
+			option<Ast_Type> case_type = check_term(cc, {}, _case.term);
+			if (case_type)
 			{
-				Type_Kind case_kind = type_kind(cc, case_type.value);
+				Type_Kind case_kind = type_kind(cc, case_type.value());
 				if (case_kind != Type_Kind::Integer && case_kind != Type_Kind::Enum)
 				{
 					err_set;
@@ -698,13 +696,13 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 				}
 				else
 				{
-					if (switched_type_is_correct && is_some(type) && is_some(case_type) && !match_type(cc, type.value, case_type.value))
+					if (switched_type_is_correct && type && case_type && !match_type(cc, type.value(), case_type.value()))
 					{
 						err_set;
 						all_terms_correct = false;
 						printf("Type mismatch in switch case:\n");
-						printf("Expected: "); debug_print_type(type.value); printf("\n");
-						printf("Got:      "); debug_print_type(case_type.value); printf("\n");
+						printf("Expected: "); debug_print_type(type.value()); printf("\n");
+						printf("Got:      "); debug_print_type(case_type.value()); printf("\n");
 						debug_print_term(_case.term, 0);
 						printf("\n");
 					}
@@ -717,7 +715,7 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 	if (all_terms_correct)
 	{
 		std::vector<u64> ints_or_variant_ids;
-		Type_Kind kind = type_kind(cc, type.value);
+		Type_Kind kind = type_kind(cc, type.value());
 		bool is_int = kind == Type_Kind::Integer;
 
 		u32 count = 0;
@@ -769,47 +767,47 @@ void check_var_decl(Checker_Context* cc, Ast_Var_Decl* var_decl)
 
 	if (var_decl->type)
 	{
-		Option(Ast_Type) type = check_type_signature(cc, &var_decl->type.value());
-		if (is_none(type)) return;
+		option<Ast_Type> type = check_type_signature(cc, &var_decl->type.value());
+		if (!type) return;
 
 		if (var_decl->expr)
 		{
-			Type_Context type_context = { type.value, false };
-			Option(Ast_Type) expr_type = check_expr(cc, &type_context, var_decl->expr.value());
+			Type_Context type_context = { type.value(), false};
+			option<Ast_Type> expr_type = check_expr(cc, &type_context, var_decl->expr.value());
 
-			if (is_some(expr_type))
+			if (expr_type)
 			{
-				type_implicit_cast(cc, &expr_type.value, type.value);
-				if (!match_type(cc, type.value, expr_type.value))
+				type_implicit_cast(cc, &expr_type.value(), type.value());
+				if (!match_type(cc, type.value(), expr_type.value()))
 				{
 					err_set;
 					printf("Type mismatch in variable declaration:\n"); 
 					debug_print_ident(var_decl->ident);
-					printf("Expected: "); debug_print_type(type.value); printf("\n");
-					printf("Got:      "); debug_print_type(expr_type.value); printf("\n\n");
+					printf("Expected: "); debug_print_type(type.value()); printf("\n");
+					printf("Got:      "); debug_print_type(expr_type.value()); printf("\n\n");
 				}
 			}
 		}
 		
-		checker_context_block_add_var(cc, ident, type.value);
+		checker_context_block_add_var(cc, ident, type.value());
 	}
 	else
 	{
 		// @Errors this might produce "var not found" error in later checks, might be solved by flagging
 		// not adding var to the stack, when inferred type is not valid
-		Option(Ast_Type) expr_type = check_expr(cc, {}, var_decl->expr.value());
-		if (is_some(expr_type))
+		option<Ast_Type> expr_type = check_expr(cc, {}, var_decl->expr.value());
+		if (expr_type)
 		{
-			var_decl->type = expr_type.value;
-			checker_context_block_add_var(cc, ident, expr_type.value);
+			var_decl->type = expr_type.value();
+			checker_context_block_add_var(cc, ident, expr_type.value());
 		}
 	}
 }
 
 void check_var_assign(Checker_Context* cc, Ast_Var_Assign* var_assign)
 {
-	Option(Ast_Type) var_type = check_var(cc, var_assign->var);
-	if (is_none(var_type)) return;
+	option<Ast_Type> var_type = check_var(cc, var_assign->var);
+	if (!var_type) return;
 
 	if (var_assign->op != ASSIGN_OP_NONE)
 	{
@@ -820,19 +818,19 @@ void check_var_assign(Checker_Context* cc, Ast_Var_Assign* var_assign)
 		return;
 	}
 
-	Type_Context type_context = { var_type.value, false };
-	Option(Ast_Type) expr_type = check_expr(cc, &type_context, var_assign->expr);
-	if (is_some(expr_type))
+	Type_Context type_context = { var_type.value(), false};
+	option<Ast_Type> expr_type = check_expr(cc, &type_context, var_assign->expr);
+	if (expr_type)
 	{
-		type_implicit_cast(cc, &expr_type.value, var_type.value);
+		type_implicit_cast(cc, &expr_type.value(), var_type.value());
 
-		if (!match_type(cc, var_type.value, expr_type.value))
+		if (!match_type(cc, var_type.value(), expr_type.value()))
 		{
 			err_set;
 			printf("Type mismatch in variable assignment:\n");
 			debug_print_ident(var_assign->var->ident);
-			printf("Expected: "); debug_print_type(var_type.value); printf("\n");
-			printf("Got:      "); debug_print_type(expr_type.value); printf("\n\n");
+			printf("Expected: "); debug_print_type(var_type.value()); printf("\n");
+			printf("Got:      "); debug_print_type(expr_type.value()); printf("\n\n");
 		}
 	}
 }
@@ -947,41 +945,41 @@ void type_implicit_binary_cast(Checker_Context* cc, Ast_Type* type_a, Ast_Type* 
 	}
 }
 
-Option(Ast_Type) check_type_signature(Checker_Context* cc, Ast_Type* type)
+option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 {
 	switch (type->tag)
 	{
 	case Ast_Type::Tag::Basic:
 	{
-		return Some(*type);
+		return *type;
 	}
 	case Ast_Type::Tag::Array:
 	{
-		Option(Ast_Type) element_type = check_type_signature(cc, &type->as_array->element_type);
-		if (is_none(element_type)) return None();
-		return Some(*type);
+		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
+		if (!element_type) return {};
+		return *type;
 	}
 	case Ast_Type::Tag::Custom:
 	{
 		Ast* target_ast = try_import(cc, type->as_custom->import);
-		if (target_ast == NULL) return None();
+		if (target_ast == NULL) return {};
 
-		auto struct_meta = find_struct(target_ast, type->as_custom->ident);
+		option<Ast_Struct_Decl_Meta> struct_meta = find_struct(target_ast, type->as_custom->ident);
 		if (struct_meta)
 		{
 			type->tag = Ast_Type::Tag::Struct;
 			type->as_struct.struct_id = struct_meta.value().struct_id;
 			type->as_struct.struct_decl = struct_meta.value().struct_decl;
-			return Some(*type);
+			return *type;
 		}
 
-		auto enum_meta = find_enum(target_ast, type->as_custom->ident);
+		option<Ast_Enum_Decl_Meta> enum_meta = find_enum(target_ast, type->as_custom->ident);
 		if (enum_meta)
 		{
 			type->tag = Ast_Type::Tag::Enum;
 			type->as_enum.enum_id = enum_meta.value().enum_id;
 			type->as_enum.enum_decl = enum_meta.value().enum_decl;
-			return Some(*type);
+			return *type;
 		}
 
 		err_set;
@@ -990,7 +988,7 @@ Option(Ast_Type) check_type_signature(Checker_Context* cc, Ast_Type* type)
 		printf("\n");
 		debug_print_ident(type->as_custom->ident);
 		printf("\n");
-		return None();
+		return {};
 	}
 	default:
 	{
@@ -999,12 +997,12 @@ Option(Ast_Type) check_type_signature(Checker_Context* cc, Ast_Type* type)
 		printf("Hint: submit a bug report if you see this error message\n");
 		debug_print_type(*type);
 		printf("\n");
-		return None();
+		return {};
 	}
 	}
 }
 
-Option(Ast_Type) check_expr(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Expr* expr)
+option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
@@ -1014,7 +1012,7 @@ Option(Ast_Type) check_expr(Checker_Context* cc, std::optional<Type_Context*> co
 	}
 }
 
-Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Term* term)
+option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, Ast_Term* term)
 {
 	switch (term->tag)
 	{
@@ -1023,14 +1021,14 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 	{
 		Ast_Enum* _enum = term->as_enum;
 		Ast* target_ast = try_import(cc, _enum->import);
-		if (target_ast == NULL) return None();
+		if (target_ast == NULL) return {};
 
-		auto enum_meta = find_enum(target_ast, _enum->ident);
-		if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->ident); return None(); }
+		option<Ast_Enum_Decl_Meta> enum_meta = find_enum(target_ast, _enum->ident);
+		if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->ident); return {}; }
 		Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
 		_enum->enum_id = enum_meta.value().enum_id;
 		
-		auto variant_id = find_enum_variant(enum_decl, _enum->variant);
+		option<u32> variant_id = find_enum_variant(enum_decl, _enum->variant);
 		if (!variant_id) { err_set; error("Accessing undeclared enum variant", _enum->variant); }
 		else _enum->variant_id = variant_id.value();
 
@@ -1038,32 +1036,32 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 		type.tag = Ast_Type::Tag::Enum;
 		type.as_enum.enum_id = _enum->enum_id;
 		type.as_enum.enum_decl = enum_meta.value().enum_decl;
-		return Some(type);
+		return type;
 	}
 	case Ast_Term::Tag::Sizeof:
 	{
 		//@Notice not doing sizing of types yet, cant know the numeric range
-		Option(Ast_Type) type = check_type_signature(cc, &term->as_sizeof->type);
-		if (is_some(type)) return Some(type_from_basic(BASIC_TYPE_U64));
-		return None();
+		option<Ast_Type> type = check_type_signature(cc, &term->as_sizeof->type);
+		if (type) return type_from_basic(BASIC_TYPE_U64);
+		return {};
 	}
 	case Ast_Term::Tag::Literal:
 	{
 		Ast_Literal literal = term->as_literal;
 		switch (literal.token.type)
 		{
-		case TOKEN_BOOL_LITERAL: return Some(type_from_basic(BASIC_TYPE_BOOL));
-		case TOKEN_FLOAT_LITERAL: return Some(type_from_basic(BASIC_TYPE_F64));
+		case TOKEN_BOOL_LITERAL: return type_from_basic(BASIC_TYPE_BOOL);
+		case TOKEN_FLOAT_LITERAL: return type_from_basic(BASIC_TYPE_F64);
 		case TOKEN_INTEGER_LITERAL:
 		{
 			term->as_literal.basic_type = BASIC_TYPE_I32; //@Always i32 no context
-			return Some(type_from_basic(BASIC_TYPE_I32));
+			return type_from_basic(BASIC_TYPE_I32);
 		}
 		case TOKEN_STRING_LITERAL:
 		{
 			Ast_Type string_ptr = type_from_basic(BASIC_TYPE_I8);
 			string_ptr.pointer_level += 1;
-			return Some(string_ptr);
+			return string_ptr;
 		}
 		default:
 		{
@@ -1071,7 +1069,7 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 			printf("Unknown literal:\n");
 			debug_print_token(literal.token, true, true);
 			printf("\n");
-			return None();
+			return {};
 		}
 		}
 	}
@@ -1083,7 +1081,7 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
 		Ast* target_ast = try_import(cc, struct_init->import);
-		if (target_ast == NULL) return None();
+		if (target_ast == NULL) return {};
 
 		// find struct
 		Ast_Struct_Decl* struct_decl = NULL;
@@ -1092,12 +1090,12 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 		if (struct_init->ident)
 		{
 			Ast_Ident ident = struct_init->ident.value();
-			auto struct_meta = find_struct(target_ast, ident);
+			option<Ast_Struct_Decl_Meta> struct_meta = find_struct(target_ast, ident);
 			if (!struct_meta) 
 			{ 
 				err_set; 
 				error("Struct type identifier wasnt found", ident); 
-				return None(); 
+				return {}; 
 			}
 			struct_decl = struct_meta.value().struct_decl;
 			struct_id = struct_meta.value().struct_id;
@@ -1122,7 +1120,7 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 						err_set;
 						printf("Struct initializer struct type doesnt match the expected type:\n");
 						debug_print_struct_init(struct_init, 0); printf("\n");
-						return None();
+						return {};
 					}
 				}
 			}
@@ -1134,7 +1132,7 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 			printf("Cannot infer the struct initializer type without a context\n");
 			printf("Hint: specify type on varible: var : Type = .{ ... }, or on initializer var := Type.{ ... }\n");
 			debug_print_struct_init(struct_init, 0); printf("\n");
-			return None();
+			return {};
 		}
 
 		// check input count
@@ -1155,15 +1153,15 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 			{
 				Ast_Type param_type = struct_decl->fields[i].type;
 				Type_Context type_context = { param_type, false };
-				Option(Ast_Type) expr_type = check_expr(cc, &type_context, struct_init->input_exprs[i]);
-				if (is_some(expr_type))
+				option<Ast_Type> expr_type = check_expr(cc, &type_context, struct_init->input_exprs[i]);
+				if (expr_type)
 				{
-					if (!match_type(cc, param_type, expr_type.value))
+					if (!match_type(cc, param_type, expr_type.value()))
 					{
 						err_set;
 						printf("Type mismatch in struct initializer input argument with id: %lu\n", i);
 						printf("Expected: "); debug_print_type(param_type); printf("\n");
-						printf("Got:      "); debug_print_type(expr_type.value); printf("\n");
+						printf("Got:      "); debug_print_type(expr_type.value()); printf("\n");
 						debug_print_expr(struct_init->input_exprs[i], 0); printf("\n");
 					}
 				}
@@ -1174,24 +1172,24 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 		type.tag = Ast_Type::Tag::Struct;
 		type.as_struct.struct_id = struct_id;
 		type.as_struct.struct_decl = struct_decl;
-		return Some(type);
+		return type;
 	}
 	}
 }
 
-Option(Ast_Type) check_var(Checker_Context* cc, Ast_Var* var)
+option<Ast_Type> check_var(Checker_Context* cc, Ast_Var* var)
 {
-	Option(Ast_Type) type = checker_context_block_find_var_type(cc, var->ident);
-	if (is_some(type)) return check_access(cc, type.value, var->access);
+	option<Ast_Type> type = checker_context_block_find_var_type(cc, var->ident);
+	if (type) return check_access(cc, type.value(), var->access);
 
 	err_set;
 	error("Check var: var is not found or has not valid type", var->ident);
-	return None();
+	return {};
 }
 
-Option(Ast_Type) check_access(Checker_Context* cc, Ast_Type type, std::optional<Ast_Access*> optional_access)
+option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Access*> optional_access)
 {
-	if (!optional_access) return Some(type);
+	if (!optional_access) return type;
 	Ast_Access* access = optional_access.value();
 	
 	switch (access->tag)
@@ -1206,16 +1204,16 @@ Option(Ast_Type) check_access(Checker_Context* cc, Ast_Type type, std::optional<
 		{
 			err_set;
 			error("Field access might only be used on variables of struct or pointer to a struct type", var_access->ident);
-			return None();
+			return {};
 		}
 
 		Ast_Struct_Decl* struct_decl = type.as_struct.struct_decl;
-		auto field_id = find_struct_field(struct_decl, var_access->ident);
+		option<u32> field_id = find_struct_field(struct_decl, var_access->ident);
 		if (!field_id)
 		{
 			err_set;
 			error("Failed to find struct field during access", var_access->ident);
-			return None();
+			return {};
 		}
 		var_access->field_id = field_id.value();
 
@@ -1233,13 +1231,13 @@ Option(Ast_Type) check_access(Checker_Context* cc, Ast_Type type, std::optional<
 			printf("Array access might only be used on variables of array type:\n");
 			debug_print_access(access);
 			printf("\n\n");
-			return None();
+			return {};
 		}
 
-		Option(Ast_Type) expr_type = check_expr(cc, {}, array_access->index_expr);
-		if (is_some(expr_type))
+		option<Ast_Type> expr_type = check_expr(cc, {}, array_access->index_expr);
+		if (expr_type)
 		{
-			Type_Kind expr_kind = type_kind(cc, expr_type.value);
+			Type_Kind expr_kind = type_kind(cc, expr_type.value());
 			if (expr_kind != Type_Kind::Integer)
 			{
 				err_set;
@@ -1255,19 +1253,19 @@ Option(Ast_Type) check_access(Checker_Context* cc, Ast_Type type, std::optional<
 	}
 }
 
-Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags)
+option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags)
 {
 	Ast* target_ast = try_import(cc, proc_call->import);
-	if (target_ast == NULL) return None();
+	if (target_ast == NULL) return {};
 
 	// find proc
 	Ast_Ident ident = proc_call->ident;
-	auto proc_meta = find_proc(target_ast, ident);
+	option<Ast_Proc_Decl_Meta> proc_meta = find_proc(target_ast, ident);
 	if (!proc_meta)
 	{
 		err_set;
 		error("Calling undeclared procedure", ident);
-		return None();
+		return {};
 	}
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_call->proc_id = proc_meta.value().proc_id;
@@ -1305,23 +1303,23 @@ Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 		{
 			Ast_Type param_type = proc_decl->input_params[i].type;
 			Type_Context type_context = { param_type, false };
-			Option(Ast_Type) expr_type = check_expr(cc, &type_context, proc_call->input_exprs[i]);
-			if (is_some(expr_type))
+			option<Ast_Type> expr_type = check_expr(cc, &type_context, proc_call->input_exprs[i]);
+			if (expr_type)
 			{
-				if (!match_type(cc, param_type, expr_type.value))
+				if (!match_type(cc, param_type, expr_type.value()))
 				{
 					err_set;
 					printf("Type mismatch in procedure call input argument with id: %lu\n", i);
 					debug_print_ident(proc_call->ident);
 					printf("Expected: "); debug_print_type(param_type); printf("\n");
-					printf("Got:      "); debug_print_type(expr_type.value); printf("\n\n");
+					printf("Got:      "); debug_print_type(expr_type.value()); printf("\n\n");
 				}
 			}
 		}
 		else if (is_variadic)
 		{
 			//on variadic inputs no context is available
-			Option(Ast_Type) expr_type = check_expr(cc, {}, proc_call->input_exprs[i]);
+			option<Ast_Type> expr_type = check_expr(cc, {}, proc_call->input_exprs[i]);
 		}
 	}
 
@@ -1334,7 +1332,7 @@ Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 			printf("Procedure call inside expression must have a return type:\n");
 			debug_print_proc_call(proc_call, 0);
 			printf("\n");
-			return None();
+			return {};
 		}
 
 		return check_access(cc, proc_decl->return_type.value(), proc_call->access);
@@ -1357,22 +1355,22 @@ Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 			printf("\n");
 		}
 
-		return None();
+		return {};
 	}
 }
 
-Option(Ast_Type) check_unary_expr(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Unary_Expr* unary_expr)
+option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Unary_Expr* unary_expr)
 {
 	err_set;
 	printf("[TODO] Unary expr is not checked\n\n");
-	return None();
+	return {};
 }
 
-Option(Ast_Type) check_binary_expr(Checker_Context* cc, std::optional<Type_Context*> context, Ast_Binary_Expr* binary_expr)
+option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Binary_Expr* binary_expr)
 {
 	err_set;
 	printf("[TODO] Binary expr is not checked\n\n");
-	return None();
+	return {};
 }
 
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)

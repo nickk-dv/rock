@@ -10,7 +10,7 @@ struct Parser;
 bool parser_init(Parser* parser, const char* filepath);
 Ast* parser_parse(Parser* parser);
 
-static std::optional<Ast_Type> parse_type(Parser* parser);
+static option<Ast_Type> parse_type(Parser* parser);
 static Ast_Array_Type* parse_array_type(Parser* parser);
 static Ast_Custom_Type* parse_custom_type(Parser* parser);
 
@@ -49,7 +49,7 @@ static Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type
 static Token peek_token(Parser* parser, u32 offset);
 static void consume_token(Parser* parser);
 static Token consume_get_token(Parser* parser);
-static std::optional<Token> try_consume_token(Parser* parser, TokenType token_type);
+static option<Token> try_consume_token(Parser* parser, TokenType token_type);
 static void parse_error(Parser* parser, const char* message, u32 offset);
 static void parse_error_token(Parser* parser, const char* message, Token token);
 

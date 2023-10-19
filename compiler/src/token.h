@@ -186,7 +186,7 @@ struct Token
 	union
 	{
 		bool bool_value;
-		double float64_value;
+		f64 float64_value;
 		u64 integer_value;
 		char* string_literal_value; //@Not sure about nessesary implementation yet
 		StringView string_value;
