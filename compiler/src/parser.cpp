@@ -784,6 +784,13 @@ Ast_Term* parse_term(Parser* parser)
 		term->tag = Ast_Term::Tag::Struct_Init;
 		term->as_struct_init = struct_init;
 	} break;
+	case TOKEN_KEYWORD_SIZEOF:
+	{
+		Ast_Sizeof* _sizeof = parse_sizeof(parser);
+		if (!_sizeof) return NULL;
+		term->tag = Ast_Term::Tag::Sizeof;
+		term->as_sizeof = _sizeof;
+	} break;
 	case TOKEN_IDENT:
 	{
 		Token next = peek_next(1);
@@ -939,6 +946,22 @@ Ast_Enum* parse_enum(Parser* parser, bool import)
 	_enum->variant = token_to_ident(variant.value());
 
 	return _enum;
+}
+
+Ast_Sizeof* parse_sizeof(Parser* parser)
+{
+	Ast_Sizeof* _sizeof = parser->arena.alloc<Ast_Sizeof>();
+	consume();
+
+	if (!try_consume(TOKEN_PAREN_START)) { error("Expected '(' in sizeof"); return NULL; }
+	
+	auto type = parse_type(parser);
+	if (!type) return NULL;
+	_sizeof->type = type.value();
+
+	if (!try_consume(TOKEN_PAREN_END)) { error("Expected ')' in sizeof"); return NULL; }
+
+	return _sizeof;
 }
 
 Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)

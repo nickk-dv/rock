@@ -373,6 +373,14 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 		Ast_Enum* _enum = term->as_enum;
 		return bc->program->enums[_enum->enum_id].enum_decl->variants[_enum->variant_id].constant;
 	}
+	case Ast_Term::Tag::Sizeof:
+	{
+		//@Notice returning 0 in void case to avoid crashing
+		Ast_Sizeof* _sizeof = term->as_sizeof;
+		Type type = type_from_ast_type(bc, _sizeof->type);
+		if (LLVMTypeIsSized(type)) return LLVMSizeOf(type);
+		return LLVMConstInt(LLVMInt64Type(), 0, 0);
+	}
 	case Ast_Term::Tag::Literal:
 	{
 		//@Notice using basic type provided by literal only for integers

@@ -39,6 +39,7 @@ enum TokenType
 	TOKEN_KEYWORD_RETURN,        // return
 	TOKEN_KEYWORD_SWITCH,        // switch
 	TOKEN_KEYWORD_CONTINUE,      // continue
+	TOKEN_KEYWORD_SIZEOF,        // sizeof
 	TOKEN_KEYWORD_IMPORT,        // import
 	TOKEN_KEYWORD_USE,           // use
 

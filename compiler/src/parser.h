@@ -43,6 +43,7 @@ static Ast_Access* parse_access(Parser* parser);
 static Ast_Var_Access* parse_var_access(Parser* parser);
 static Ast_Array_Access* parse_array_access(Parser* parser);
 static Ast_Enum* parse_enum(Parser* parser, bool import);
+static Ast_Sizeof* parse_sizeof(Parser* parser);
 static Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type);
 
 static Token peek_token(Parser* parser, u32 offset);

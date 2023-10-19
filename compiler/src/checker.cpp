@@ -1040,6 +1040,13 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 		type.as_enum.enum_decl = enum_meta.value().enum_decl;
 		return Some(type);
 	}
+	case Ast_Term::Tag::Sizeof:
+	{
+		//@Notice not doing sizing of types yet, cant know the numeric range
+		Option(Ast_Type) type = check_type_signature(cc, &term->as_sizeof->type);
+		if (is_some(type)) return Some(type_from_basic(BASIC_TYPE_U64));
+		return None();
+	}
 	case Ast_Term::Tag::Literal:
 	{
 		Ast_Literal literal = term->as_literal;

@@ -54,6 +54,7 @@ void debug_print_token(Token token, bool endl, bool location)
 		case TOKEN_KEYWORD_RETURN: printf("return"); break;
 		case TOKEN_KEYWORD_SWITCH: printf("switch"); break;
 		case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
+		case TOKEN_KEYWORD_SIZEOF: printf("sizeof"); break;
 		case TOKEN_KEYWORD_IMPORT: printf("import"); break;
 		case TOKEN_KEYWORD_USE: printf("use"); break;
 
@@ -576,6 +577,11 @@ void debug_print_term(Ast_Term* term, u32 depth)
 		debug_print_branch(depth);
 		printf("Term_Enum: ");
 	}
+	else if (term->tag == Ast_Term::Tag::Sizeof)
+	{
+		debug_print_branch(depth);
+		printf("Term_Sizeof: ");
+	}
 	else if (term->tag == Ast_Term::Tag::Literal)
 	{
 		debug_print_branch(depth);
@@ -586,6 +592,7 @@ void debug_print_term(Ast_Term* term, u32 depth)
 	{
 	case Ast_Term::Tag::Var: debug_print_var(term->as_var); break;
 	case Ast_Term::Tag::Enum: debug_print_enum(term->as_enum); break;
+	case Ast_Term::Tag::Sizeof: debug_print_sizeof(term->as_sizeof); break;
 	case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
 	case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 	case Ast_Term::Tag::Struct_Init: debug_print_struct_init(term->as_struct_init, depth); break;
@@ -631,6 +638,11 @@ void debug_print_enum(Ast_Enum* _enum)
 	debug_print_ident(_enum->ident, false, false);
 	printf("::");
 	debug_print_ident(_enum->variant, true, false);
+}
+
+void debug_print_sizeof(Ast_Sizeof* _sizeof)
+{
+	debug_print_type(_sizeof->type);
 }
 
 void debug_print_struct_init(Ast_Struct_Init* struct_init, u32 depth)

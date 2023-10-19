@@ -53,6 +53,7 @@ struct Ast_Access;
 struct Ast_Var_Access;
 struct Ast_Array_Access;
 struct Ast_Enum;
+struct Ast_Sizeof;
 struct Ast_Struct_Init;
 struct Ast_Unary_Expr;
 struct Ast_Binary_Expr;
@@ -373,13 +374,15 @@ struct Ast_Term
 {
 	enum class Tag
 	{
-		Var, Enum, Literal, Proc_Call, Struct_Init
+		Var, Enum, Sizeof, Literal,
+		Proc_Call, Struct_Init
 	} tag;
 
 	union
 	{
 		Ast_Var* as_var;
 		Ast_Enum* as_enum;
+		Ast_Sizeof* as_sizeof;
 		Ast_Literal as_literal;
 		Ast_Proc_Call* as_proc_call;
 		Ast_Struct_Init* as_struct_init;
@@ -428,6 +431,11 @@ struct Ast_Enum
 	//checker
 	u32 enum_id;
 	u32 variant_id;
+};
+
+struct Ast_Sizeof
+{
+	Ast_Type type;
 };
 
 struct Ast_Struct_Init
