@@ -10,7 +10,7 @@ struct Parser;
 bool parser_init(Parser* parser, const char* filepath);
 Ast* parser_parse(Parser* parser);
 
-static Ast_Type parse_type(Parser* parser);
+static std::optional<Ast_Type> parse_type(Parser* parser);
 static Ast_Array_Type* parse_array_type(Parser* parser);
 static Ast_Custom_Type* parse_custom_type(Parser* parser);
 

@@ -91,7 +91,7 @@ Ast* parser_parse(Parser* parser)
 	return ast;
 }
 
-Ast_Type parse_type(Parser* parser)
+std::optional<Ast_Type> parse_type(Parser* parser)
 {
 	Ast_Type type = {};
 	Token token = peek();
@@ -156,9 +156,9 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 	else { error("Expected '..' or integer size specifier"); return NULL; }
 	if (!try_consume(TOKEN_BRACKET_END)) { error("Expected ']'"); return NULL; }
 
-	Ast_Type type = parse_type(parser);
-	if (type.as_custom == NULL) return NULL;
-	array->element_type = type;
+	auto type = parse_type(parser);
+	if (!type) return NULL;
+	array->element_type = type.value();
 
 	return array;
 }
@@ -226,9 +226,9 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 		if (!field) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
-		Ast_Type type = parse_type(parser);
-		if (type.as_custom == NULL) return NULL;
-		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type });
+		auto type = parse_type(parser);
+		if (!type) return NULL;
+		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type.value() });
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -280,13 +280,15 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 	
 	while (true)
 	{
-		auto param = try_consume(TOKEN_IDENT);
-		if (!param) break;
+		if (try_consume(TOKEN_DOUBLE_DOT)) { decl->is_variadic = true; break; }
+
+		auto ident = try_consume(TOKEN_IDENT);
+		if (!ident) break;
 		if (!try_consume(TOKEN_COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
 
-		Ast_Type type = parse_type(parser);
-		if (type.as_custom == NULL) return NULL;
-		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(param.value()), type });
+		auto type = parse_type(parser);
+		if (!type) return NULL;
+		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(ident.value()), type.value() });
 
 		if (!try_consume(TOKEN_COMMA)) break;
 	}
@@ -294,9 +296,9 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
-		Ast_Type type = parse_type(parser);
-		if (type.as_custom == NULL) return NULL;
-		decl->return_type = type;
+		auto type = parse_type(parser);
+		if (!type) return NULL;
+		decl->return_type = type.value();
 	}
 
 	if (try_consume(TOKEN_AT))
@@ -306,7 +308,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 	else
 	{
 		Ast_Block* block = parse_block(parser);
-		if (!block) return {};
+		if (!block) return NULL;
 		decl->block = block;
 	}
 
@@ -609,9 +611,9 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 
 	if (!infer_type)
 	{
-		Ast_Type type = parse_type(parser);
-		if (type.as_custom == NULL) return NULL;
-		var_decl->type = type;
+		auto type = parse_type(parser);
+		if (!type) return NULL;
+		var_decl->type = type.value();
 
 		if (try_consume(TOKEN_SEMICOLON)) return var_decl;
 		if (!try_consume(TOKEN_ASSIGN)) { error("Expected '=' or ';' in a variable declaration"); return NULL; }

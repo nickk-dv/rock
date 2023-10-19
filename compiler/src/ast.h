@@ -228,6 +228,7 @@ struct Ast_Proc_Decl
 	Ast_Block* block;
 	bool is_external;
 	bool is_main; //@Todo use flags or enum kinds if types cant overlap
+	bool is_variadic;
 };
 
 struct Ast_Block

@@ -157,6 +157,12 @@ void check_main_proc(Checker_Context* cc)
 		error("Main procedure cannot be specified as external '@'. You must define a main procedure block", proc_decl->ident);
 	}
 
+	if (proc_decl->is_variadic)
+	{
+		err_set;
+		error("Main procedure cannot be variadic. Remove '..' from the parameter list", proc_decl->ident);
+	}
+
 	if (proc_decl->input_params.size() != 0)
 	{
 		err_set;
@@ -1043,7 +1049,7 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 		case TOKEN_FLOAT_LITERAL: return Some(type_from_basic(BASIC_TYPE_F64));
 		case TOKEN_INTEGER_LITERAL:
 		{
-			literal.basic_type = BASIC_TYPE_I32; //@Always i32 no context
+			term->as_literal.basic_type = BASIC_TYPE_I32; //@Always i32 no context
 			return Some(type_from_basic(BASIC_TYPE_I32));
 		}
 		default:
@@ -1256,12 +1262,27 @@ Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 	// check input count
 	u32 param_count = (u32)proc_decl->input_params.size();
 	u32 input_count = (u32)proc_call->input_exprs.size();
-	if (param_count != input_count)
+	bool is_variadic = proc_decl->is_variadic;
+	
+	if (is_variadic)
 	{
-		err_set;
-		printf("Unexpected number of arguments in procedure call:\n");
-		printf("Expected: %lu Got: %lu \n", param_count, input_count);
-		debug_print_ident(ident, true, true); printf("\n");
+		if (input_count < param_count)
+		{
+			err_set;
+			printf("Unexpected number of arguments in variadic procedure call:\n");
+			printf("Expected at least: %lu Got: %lu \n", param_count, input_count);
+			debug_print_ident(ident, true, true); printf("\n");
+		}
+	}
+	else
+	{
+		if (param_count != input_count)
+		{
+			err_set;
+			printf("Unexpected number of arguments in procedure call:\n");
+			printf("Expected: %lu Got: %lu \n", param_count, input_count);
+			debug_print_ident(ident, true, true); printf("\n");
+		}
 	}
 
 	// check input exprs
@@ -1283,6 +1304,11 @@ Option(Ast_Type) check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 					printf("Got:      "); debug_print_type(expr_type.value); printf("\n\n");
 				}
 			}
+		}
+		else if (is_variadic)
+		{
+			//on variadic inputs no context is available
+			Option(Ast_Type) expr_type = check_expr(cc, {}, proc_call->input_exprs[i]);
 		}
 	}
 
