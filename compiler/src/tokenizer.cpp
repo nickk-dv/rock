@@ -175,23 +175,56 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 			case LEXEME_STRING:
 			{
 				bool terminated = false;
+				bool escapes_valid = true;
 				tokenizer->strings.start_str();
 
 				while (peek().has_value())
 				{
 					u8 c = peek().value();
 					consume();
+					
 					if (c == '"') { terminated = true; break; }
-					else if (c == '\n') break;
-					else
+					if (c == '\n') break;
+					if (c == '\\')
 					{
-						tokenizer->strings.put_char(c);
+						u32 line = tokenizer->line_id;
+						u32 col = u32(tokenizer->input_cursor - tokenizer->line_cursor) - 1;
+						
+						if (peek().has_value())
+						{
+							u8 next = peek().value();
+							consume();
+
+							switch (next)
+							{
+							case 'n': tokenizer->strings.put_char('\n'); break;
+							case 'r': tokenizer->strings.put_char('\r'); break;
+							case 't': tokenizer->strings.put_char('\t'); break;
+							case '\"': tokenizer->strings.put_char('\"'); break;
+							case '\\': tokenizer->strings.put_char('\\'); break;
+							case '0': tokenizer->strings.put_char('\0'); break;
+							default:
+							{
+								tokenizer->strings.put_char(next);
+								escapes_valid = false;
+								printf("Invalid escape character: \\%c at %lu:%lu\n", next, line, col);
+								printf("Hint: if you meant to use backslash type: \\\\ \n\n");
+							}
+							}
+						}
+						else
+						{
+							escapes_valid = false;
+							printf("Invalid escape character: \\ at %lu:%lu\n", line, col);
+							printf("Hint: if you meant to use backslash type: \\\\ \n\n");
+						}
 					}
+					else tokenizer->strings.put_char(c);
 				}
 
 				token.type = TOKEN_STRING_LITERAL;
 				token.string_literal_value = tokenizer->strings.end_str();
-				if (!terminated) token.type = TOKEN_ERROR;
+				if (!terminated || !escapes_valid) token.type = TOKEN_ERROR;
 			} break;
 			case LEXEME_SYMBOL:
 			{

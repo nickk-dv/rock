@@ -36,7 +36,7 @@ void debug_print_token(Token token, bool endl, bool location)
 	}
 	else if (token.type == TOKEN_STRING_LITERAL)
 	{
-		printf("%s", token.string_literal_value);
+		printf("%s", token.string_literal_value); //@Later print raw string without escape characters
 	}
 	else
 	{

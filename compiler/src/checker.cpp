@@ -1052,10 +1052,16 @@ Option(Ast_Type) check_term(Checker_Context* cc, std::optional<Type_Context*> co
 			term->as_literal.basic_type = BASIC_TYPE_I32; //@Always i32 no context
 			return Some(type_from_basic(BASIC_TYPE_I32));
 		}
+		case TOKEN_STRING_LITERAL:
+		{
+			Ast_Type string_ptr = type_from_basic(BASIC_TYPE_I8);
+			string_ptr.pointer_level += 1;
+			return Some(string_ptr);
+		}
 		default:
 		{
 			err_set;
-			printf("Unknown or unsupported literal:\n");
+			printf("Unknown literal:\n");
 			debug_print_token(literal.token, true, true);
 			printf("\n");
 			return None();
