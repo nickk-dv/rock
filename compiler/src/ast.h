@@ -6,14 +6,14 @@
 #include "llvm-c/Types.h"
 
 struct Ast_Program;
-struct Ast_Struct_Meta;
-struct Ast_Enum_Meta;
-struct Ast_Proc_Meta;
+struct Ast_Struct_IR_Info;
+struct Ast_Enum_IR_Info;
+struct Ast_Proc_IR_Info;
 
 struct Ast;
-struct Ast_Struct_Decl_Meta;
-struct Ast_Enum_Decl_Meta;
-struct Ast_Proc_Decl_Meta;
+struct Ast_Struct_Info;
+struct Ast_Enum_Info;
+struct Ast_Proc_Info;
 
 struct Ast_Ident;
 struct Ast_Literal;
@@ -65,24 +65,24 @@ bool match_ident(Ast_Ident& a, Ast_Ident& b);
 
 struct Ast_Program
 {
-	std::vector<Ast_Struct_Meta> structs;
-	std::vector<Ast_Enum_Meta> enums;
-	std::vector<Ast_Proc_Meta> procedures;
+	std::vector<Ast_Struct_IR_Info> structs;
+	std::vector<Ast_Enum_IR_Info> enums;
+	std::vector<Ast_Proc_IR_Info> procedures;
 };
 
-struct Ast_Struct_Meta
+struct Ast_Struct_IR_Info
 {
 	Ast_Struct_Decl* struct_decl;
 	LLVMTypeRef struct_type;
 };
 
-struct Ast_Enum_Meta
+struct Ast_Enum_IR_Info
 {
 	Ast_Enum_Decl* enum_decl;
 	LLVMTypeRef enum_type;
 };
 
-struct Ast_Proc_Meta
+struct Ast_Proc_IR_Info
 {
 	Ast_Proc_Decl* proc_decl;
 	LLVMTypeRef proc_type;
@@ -98,24 +98,24 @@ struct Ast
 	std::vector<Ast_Proc_Decl*> procs;
 	//checker
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
-	HashMap<Ast_Ident, Ast_Struct_Decl_Meta, u32, match_ident> struct_table;
-	HashMap<Ast_Ident, Ast_Enum_Decl_Meta, u32, match_ident> enum_table;
-	HashMap<Ast_Ident, Ast_Proc_Decl_Meta, u32, match_ident> proc_table;
+	HashMap<Ast_Ident, Ast_Struct_Info, u32, match_ident> struct_table;
+	HashMap<Ast_Ident, Ast_Enum_Info, u32, match_ident> enum_table;
+	HashMap<Ast_Ident, Ast_Proc_Info, u32, match_ident> proc_table;
 };
 
-struct Ast_Struct_Decl_Meta
+struct Ast_Struct_Info
 {
 	u32 struct_id;
 	Ast_Struct_Decl* struct_decl;
 };
 
-struct Ast_Enum_Decl_Meta
+struct Ast_Enum_Info
 {
 	u32 enum_id;
 	Ast_Enum_Decl* enum_decl;
 };
 
-struct Ast_Proc_Decl_Meta
+struct Ast_Proc_Info
 {
 	u32 proc_id;
 	Ast_Proc_Decl* proc_decl;
@@ -328,7 +328,7 @@ struct Ast_Switch
 
 struct Ast_Switch_Case
 {
-	Ast_Term* term;
+	Ast_Term* term; //@Todo support const exprs with enums
 	option<Ast_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
@@ -465,6 +465,8 @@ struct Ast_Struct_Init
 	option<Ast_Ident> import;
 	option<Ast_Ident> ident;
 	std::vector<Ast_Expr*> input_exprs;
+	//checker
+	u32 struct_id;
 };
 
 struct Ast_Unary_Expr
@@ -481,27 +483,3 @@ struct Ast_Binary_Expr
 };
 
 #endif
-
-/*
-
-when using a enum for each node
-enum is sized based on sizeof biggest data type:
-3 + 3 + 3 = 9 total
-
-NodeNumber    -size 1
-NodeBinaryOp  -size 1
-NodeBinaryExpr -size 3
-{
-	NodeNumber
-	NodeNumber
-	NodeBinaryOp
-}
-
-when using arena you allocate different structures:
-
-arena:
-| 1size| 1size| 3size| = 5 total
-
-
-
-*/

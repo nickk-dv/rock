@@ -56,11 +56,11 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 		if (!key) 
 		{
 			symbol_table.add(ident, hash_ident(ident));
-			ast->struct_table.add(ident, Ast_Struct_Decl_Meta { (u32)program->structs.size(), decl }, hash_ident(ident));
+			ast->struct_table.add(ident, Ast_Struct_Info { (u32)program->structs.size(), decl }, hash_ident(ident));
 
-			Ast_Struct_Meta struct_meta = {};
-			struct_meta.struct_decl = decl;
-			program->structs.emplace_back(struct_meta);
+			Ast_Struct_IR_Info struct_info = {};
+			struct_info.struct_decl = decl;
+			program->structs.emplace_back(struct_info);
 		}
 		else { err_set; error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); }
 	}
@@ -72,11 +72,11 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
-			ast->enum_table.add(ident, Ast_Enum_Decl_Meta { (u32)program->enums.size(), decl }, hash_ident(ident));
+			ast->enum_table.add(ident, Ast_Enum_Info { (u32)program->enums.size(), decl }, hash_ident(ident));
 
-			Ast_Enum_Meta enum_meta = {};
-			enum_meta.enum_decl = decl;
-			program->enums.emplace_back(enum_meta);
+			Ast_Enum_IR_Info enum_info = {};
+			enum_info.enum_decl = decl;
+			program->enums.emplace_back(enum_info);
 		}
 		else { err_set; error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); }
 	}
@@ -88,11 +88,11 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 		if (!key) 
 		{ 
 			symbol_table.add(ident, hash_ident(ident));
-			ast->proc_table.add(ident, Ast_Proc_Decl_Meta { (u32)program->procedures.size(), decl }, hash_ident(ident));
+			ast->proc_table.add(ident, Ast_Proc_Info { (u32)program->procedures.size(), decl }, hash_ident(ident));
 
-			Ast_Proc_Meta proc_meta = {};
-			proc_meta.proc_decl = decl;
-			program->procedures.emplace_back(proc_meta);
+			Ast_Proc_IR_Info proc_info = {};
+			proc_info.proc_decl = decl;
+			program->procedures.emplace_back(proc_info);
 		}
 		else { err_set; error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); }
 	}
@@ -118,11 +118,11 @@ void check_decls(Checker_Context* cc)
 
 		Ast_Ident alias = use_decl->alias;
 		Ast_Ident symbol = use_decl->symbol;
-		option<Ast_Struct_Decl_Meta> struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
+		option<Ast_Struct_Info> struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
 		if (struct_decl) { ast->struct_table.add(alias, struct_decl.value(), hash_ident(alias)); continue; }
-		option<Ast_Enum_Decl_Meta> enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
+		option<Ast_Enum_Info> enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
 		if (enum_decl) { ast->enum_table.add(alias, enum_decl.value(), hash_ident(alias)); continue; }
-		option<Ast_Proc_Decl_Meta> proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
+		option<Ast_Proc_Info> proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
 		if (proc_decl) { ast->proc_table.add(alias, proc_decl.value(), hash_ident(alias)); continue; }
 		
 		err_set;
@@ -141,7 +141,7 @@ void check_main_proc(Checker_Context* cc)
 	ident.str.data = (u8*)name_arr;
 	ident.str.count = 4;
 
-	option<Ast_Proc_Decl_Meta> proc_meta = find_proc(cc->ast, ident);
+	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, ident);
 	if (!proc_meta)
 	{
 		err_set;
@@ -206,7 +206,7 @@ void check_program(Checker_Context* cc)
 		std::vector<Visit_State> visit_stack;
 		std::vector<u32> visited;
 
-		Ast_Struct_Meta meta = program->structs[search_target];
+		Ast_Struct_IR_Info meta = program->structs[search_target];
 		Visit_State visit = Visit_State { meta.struct_decl, search_target, 0, (u32)meta.struct_decl->fields.size() };
 		visit_stack.emplace_back(visit);
 		visited.emplace_back(visit.struct_id);
@@ -232,7 +232,7 @@ void check_program(Checker_Context* cc)
 					bool already_visited = std::find(visited.begin(), visited.end(), struct_id) != visited.end();
 					if (!already_visited)
 					{
-						Ast_Struct_Meta visit_meta = program->structs[struct_id];
+						Ast_Struct_IR_Info visit_meta = program->structs[struct_id];
 						Visit_State visit2 = { visit_meta.struct_decl, struct_id, 0, (u32)visit_meta.struct_decl->fields.size() };
 						visit_stack.push_back(visit2);
 						visited.push_back(struct_id);
@@ -390,17 +390,17 @@ Ast* try_import(Checker_Context* cc, option<Ast_Ident> import)
 	return import_decl.value()->import_ast;
 }
 
-option<Ast_Struct_Decl_Meta> find_struct(Ast* target_ast, Ast_Ident ident)
+option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident)
 {
 	return target_ast->struct_table.find(ident, hash_ident(ident));
 }
 
-option<Ast_Enum_Decl_Meta> find_enum(Ast* target_ast, Ast_Ident ident)
+option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident)
 {
 	return target_ast->enum_table.find(ident, hash_ident(ident));
 }
 
-option<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident)
+option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident)
 {
 	return target_ast->proc_table.find(ident, hash_ident(ident));
 }
@@ -973,7 +973,7 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 		Ast* target_ast = try_import(cc, type->as_custom->import);
 		if (target_ast == NULL) return {};
 
-		option<Ast_Struct_Decl_Meta> struct_meta = find_struct(target_ast, type->as_custom->ident);
+		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_custom->ident);
 		if (struct_meta)
 		{
 			type->tag = Ast_Type::Tag::Struct;
@@ -982,7 +982,7 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 			return *type;
 		}
 
-		option<Ast_Enum_Decl_Meta> enum_meta = find_enum(target_ast, type->as_custom->ident);
+		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_custom->ident);
 		if (enum_meta)
 		{
 			type->tag = Ast_Type::Tag::Enum;
@@ -1185,7 +1185,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		Ast* target_ast = try_import(cc, _enum->import);
 		if (target_ast == NULL) return {};
 
-		option<Ast_Enum_Decl_Meta> enum_meta = find_enum(target_ast, _enum->ident);
+		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, _enum->ident);
 		if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->ident); return {}; }
 		Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
 		_enum->enum_id = enum_meta.value().enum_id;
@@ -1245,7 +1245,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		if (struct_init->ident)
 		{
 			Ast_Ident ident = struct_init->ident.value();
-			option<Ast_Struct_Decl_Meta> struct_meta = find_struct(target_ast, ident);
+			option<Ast_Struct_Info> struct_meta = find_struct(target_ast, ident);
 			if (!struct_meta) 
 			{ 
 				err_set; 
@@ -1323,10 +1323,13 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 			}
 		}
 
+		struct_init->struct_id = struct_id;
+		
 		Ast_Type type = {};
 		type.tag = Ast_Type::Tag::Struct;
 		type.as_struct.struct_id = struct_id;
 		type.as_struct.struct_decl = struct_decl;
+
 		return type;
 	}
 	}
@@ -1415,7 +1418,7 @@ option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 
 	// find proc
 	Ast_Ident ident = proc_call->ident;
-	option<Ast_Proc_Decl_Meta> proc_meta = find_proc(target_ast, ident);
+	option<Ast_Proc_Info> proc_meta = find_proc(target_ast, ident);
 	if (!proc_meta)
 	{
 		err_set;

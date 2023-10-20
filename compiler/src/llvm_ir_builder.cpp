@@ -7,13 +7,13 @@ Module build_module(Ast_Program* program)
 	IR_Builder_Context bc = {};
 	builder_context_init(&bc, program);
 
-	for (Ast_Enum_Meta& enum_meta : program->enums)
+	for (Ast_Enum_IR_Info& enum_info : program->enums)
 	{
-		BasicType basic_type = enum_meta.enum_decl->basic_type;
+		BasicType basic_type = enum_info.enum_decl->basic_type;
 		Type type = type_from_basic_type(basic_type);
-		enum_meta.enum_type = type;
+		enum_info.enum_type = type;
 
-		for (Ast_Enum_Variant& variant : enum_meta.enum_decl->variants)
+		for (Ast_Enum_Variant& variant : enum_info.enum_decl->variants)
 		{
 			variant.constant = build_const_expr(&bc, variant.expr->as_const_expr);
 		}
@@ -21,42 +21,42 @@ Module build_module(Ast_Program* program)
 
 	std::vector<Type> type_array(32);
 	
-	for (Ast_Struct_Meta& struct_meta : program->structs)
+	for (Ast_Struct_IR_Info& struct_info : program->structs)
 	{
-		struct_meta.struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), "struct");
+		struct_info.struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), "struct");
 	}
 
-	for (Ast_Struct_Meta& struct_meta : program->structs)
+	for (Ast_Struct_IR_Info& struct_info : program->structs)
 	{
 		type_array.clear();
-		Ast_Struct_Decl* struct_decl = struct_meta.struct_decl;
+		Ast_Struct_Decl* struct_decl = struct_info.struct_decl;
 		for (Ast_Ident_Type_Pair& field : struct_decl->fields) 
 		type_array.emplace_back(type_from_ast_type(&bc, field.type));
 		
-		LLVMStructSetBody(struct_meta.struct_type, type_array.data(), (u32)type_array.size(), 0);
+		LLVMStructSetBody(struct_info.struct_type, type_array.data(), (u32)type_array.size(), 0);
 
-		LLVMAddGlobal(bc.module, struct_meta.struct_type, "global_test");
+		LLVMAddGlobal(bc.module, struct_info.struct_type, "global_test");
 	}
 
-	for (Ast_Proc_Meta& proc_meta : program->procedures)
+	for (Ast_Proc_IR_Info& proc_info : program->procedures)
 	{
 		type_array.clear();
-		Ast_Proc_Decl* proc_decl = proc_meta.proc_decl;
+		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params) 
 		type_array.emplace_back(type_from_ast_type(&bc, param.type));
 
 		Type ret_type = proc_decl->return_type ? type_from_ast_type(&bc, proc_decl->return_type.value()) : LLVMVoidType();
 		char* name = (proc_decl->is_external || proc_decl->is_main) ? ident_to_cstr(proc_decl->ident) : "proc";
-		proc_meta.proc_type = LLVMFunctionType(ret_type, type_array.data(), (u32)type_array.size(), proc_meta.proc_decl->is_variadic);
-		proc_meta.proc_value = LLVMAddFunction(bc.module, name, proc_meta.proc_type);
+		proc_info.proc_type = LLVMFunctionType(ret_type, type_array.data(), (u32)type_array.size(), proc_info.proc_decl->is_variadic);
+		proc_info.proc_value = LLVMAddFunction(bc.module, name, proc_info.proc_type);
 	}
 
-	for (Ast_Proc_Meta& proc_meta : program->procedures)
+	for (Ast_Proc_IR_Info& proc_info : program->procedures)
 	{
-		Ast_Proc_Decl* proc_decl = proc_meta.proc_decl;
+		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
 		if (proc_decl->is_external) continue;
 
-		builder_context_block_reset(&bc, proc_meta.proc_value);
+		builder_context_block_reset(&bc, proc_info.proc_value);
 		builder_context_block_add(&bc);
 		Basic_Block entry_block = builder_context_add_bb(&bc, "entry");
 		builder_context_set_bb(&bc, entry_block);
@@ -64,7 +64,7 @@ Module build_module(Ast_Program* program)
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
 			Type type = type_from_ast_type(&bc, param.type);
-			Value param_value = LLVMGetParam(proc_meta.proc_value, count);
+			Value param_value = LLVMGetParam(proc_info.proc_value, count);
 			Value copy_ptr = LLVMBuildAlloca(bc.builder, type, "copy_ptr");
 			LLVMBuildStore(bc.builder, param_value, copy_ptr);
 			builder_context_block_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, param.type });
@@ -273,28 +273,9 @@ void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
 	
 	if (var_decl->expr)
 	{
-		//@Special case for struct initialization may generalize to work as normal expression
-		Ast_Expr* decl_expr = var_decl->expr.value();
-		if (decl_expr->tag == Ast_Expr::Tag::Term && decl_expr->as_term->tag == Ast_Term::Tag::Struct_Init)
-		{
-			u32 count = 0;
-			Ast_Struct_Init* struct_init = decl_expr->as_term->as_struct_init;
-			for (Ast_Expr* expr : struct_init->input_exprs)
-			{
-				Value expr_value = build_expr(bc, expr);
-				Type field_type = LLVMStructGetTypeAtIndex(type, count);
-				build_implicit_cast(bc, &expr_value, LLVMTypeOf(expr_value), field_type);
-				Value field_ptr = LLVMBuildStructGEP2(bc->builder, type, var_ptr, count, "fieldptr");
-				LLVMBuildStore(bc->builder, expr_value, field_ptr);
-				count += 1;
-			}
-		}
-		else
-		{
-			Value expr_value = build_expr(bc, var_decl->expr.value());
-			build_implicit_cast(bc, &expr_value, LLVMTypeOf(expr_value), type);
-			LLVMBuildStore(bc->builder, expr_value, var_ptr);
-		}
+		Value value = build_expr(bc, var_decl->expr.value());
+		build_implicit_cast(bc, &value, LLVMTypeOf(value), type);
+		LLVMBuildStore(bc->builder, value, var_ptr);
 	}
 	else LLVMBuildStore(bc->builder, LLVMConstNull(type), var_ptr);
 
@@ -304,44 +285,21 @@ void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
 void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 {
 	IR_Access_Info access_info = build_var(bc, var_assign->var);
-	
-	//@Special case for struct initialization may generalize to work as normal expression
-	Ast_Expr* assign_expr = var_assign->expr;
-	if (assign_expr->tag == Ast_Expr::Tag::Term)
-	{
-		Ast_Term* term = assign_expr->as_term;
-		if (term->tag == Ast_Term::Tag::Struct_Init)
-		{
-			u32 count = 0;
-			Ast_Struct_Init* struct_init = term->as_struct_init;
-			for (Ast_Expr* expr : struct_init->input_exprs)
-			{
-				Value expr_value = build_expr(bc, expr);
-				Type field_type = LLVMStructGetTypeAtIndex(access_info.type, count);
-				build_implicit_cast(bc, &expr_value, LLVMTypeOf(expr_value), field_type);
-				Value field_ptr = LLVMBuildStructGEP2(bc->builder, access_info.type, access_info.ptr, count, "fieldptr");
-				LLVMBuildStore(bc->builder, expr_value, field_ptr);
-				count += 1;
-			}
-			return;
-		}
-	}
-
-	Value expr_value = build_expr(bc, var_assign->expr);
-	build_implicit_cast(bc, &expr_value, LLVMTypeOf(expr_value), access_info.type);
-	LLVMBuildStore(bc->builder, expr_value, access_info.ptr);
+	Value value = build_expr(bc, var_assign->expr);
+	build_implicit_cast(bc, &value, LLVMTypeOf(value), access_info.type);
+	LLVMBuildStore(bc->builder, value, access_info.ptr);
 }
 
 Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags)
 {
-	Ast_Proc_Meta proc_meta = bc->program->procedures[proc_call->proc_id];
+	Ast_Proc_IR_Info proc_info = bc->program->procedures[proc_call->proc_id];
 
 	std::vector<Value> input_values = {}; //@Perf memory overhead
 	input_values.reserve(proc_call->input_exprs.size());
 	for (Ast_Expr* expr : proc_call->input_exprs)
 	input_values.emplace_back(build_expr(bc, expr));
 
-	return LLVMBuildCall2(bc->builder, proc_meta.proc_type, proc_meta.proc_value, 
+	return LLVMBuildCall2(bc->builder, proc_info.proc_type, proc_info.proc_value,
 	input_values.data(), (u32)input_values.size(), flags == IR_Proc_Call_Flags::In_Statement ? "" : "call_val");
 }
 
@@ -382,7 +340,11 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 	case Ast_Term::Tag::Literal:
 	{
 		Token token = term->as_literal.token;
-		if (token.type == TOKEN_STRING_LITERAL) return LLVMBuildGlobalStringPtr(bc->builder, token.string_literal_value, "str");
+		if (token.type == TOKEN_STRING_LITERAL)
+		{
+			//@Notice crash when no functions were declared (llvm bug)
+			return LLVMBuildGlobalStringPtr(bc->builder, token.string_literal_value, "str");
+		}
 		else
 		{
 			printf("IR Builder: Expected Ast_Term literal to only be a string literal. Other things are Const_Expr now\n");
@@ -390,7 +352,25 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 		}
 	}
 	case Ast_Term::Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
-	case Ast_Term::Tag::Struct_Init: return NULL; //@Notice returning null on struct init, it should be handled on var assigned for now
+	case Ast_Term::Tag::Struct_Init:
+	{
+		Ast_Struct_Init* struct_init = term->as_struct_init;
+		Type type = bc->program->structs[struct_init->struct_id].struct_type;
+		Value terp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
+		
+		u32 count = 0;
+		for (Ast_Expr* expr : struct_init->input_exprs)
+		{
+			Value value = build_expr(bc, expr);
+			Type field_type = LLVMStructGetTypeAtIndex(type, count);
+			build_implicit_cast(bc, &value, LLVMTypeOf(value), field_type);
+			Value field_ptr = LLVMBuildStructGEP2(bc->builder, type, terp_ptr, count, "fieldptr");
+			LLVMBuildStore(bc->builder, value, field_ptr);
+			count += 1;
+		}
+		Value temp_value = LLVMBuildLoad2(bc->builder, type, terp_ptr, "temp_struct_val");
+		return temp_value;
+	}
 	}
 }
 
@@ -418,9 +398,9 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 			}
 
 			Ast_Var_Access* var_access = access->as_var;
-			Ast_Struct_Meta struct_meta = bc->program->structs[ast_type.as_struct.struct_id];
-			ptr = LLVMBuildStructGEP2(bc->builder, struct_meta.struct_type, ptr, var_access->field_id, "struct_ptr");
-			ast_type = struct_meta.struct_decl->fields[var_access->field_id].type;
+			Ast_Struct_IR_Info struct_info = bc->program->structs[ast_type.as_struct.struct_id];
+			ptr = LLVMBuildStructGEP2(bc->builder, struct_info.struct_type, ptr, var_access->field_id, "struct_ptr");
+			ast_type = struct_info.struct_decl->fields[var_access->field_id].type;
 			
 			access = var_access->next.has_value() ? var_access->next.value() : NULL;
 		}
