@@ -37,6 +37,7 @@ static bool match_type(Checker_Context* cc, Ast_Type type_a, Ast_Type type_b);
 static void type_implicit_cast(Checker_Context* cc, Ast_Type* type, Ast_Type target_type);
 static void type_implicit_binary_cast(Checker_Context* cc, Ast_Type* type_a, Ast_Type* type_b);
 static option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type);
+static option<Ast_Type> check_expr_type(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr);
 static option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr);
 static option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, Ast_Term* term);
 static option<Ast_Type> check_var(Checker_Context* cc, Ast_Var* var);
@@ -44,24 +45,6 @@ static option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<
 static option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags);
 static option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Unary_Expr* unary_expr);
 static option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Binary_Expr* binary_expr);
-
-enum class Literal_Kind
-{
-	Bool, Float, Int, UInt
-};
-
-struct Literal
-{
-	Literal_Kind kind;
-
-	union
-	{
-		bool as_bool;
-		f64 as_f64;
-		i64 as_i64;
-		u64 as_u64;
-	};
-};
 
 static bool check_is_const_expr(Ast_Expr* expr);
 static option<Literal> check_const_expr(Ast_Expr* expr);

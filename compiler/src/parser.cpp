@@ -724,13 +724,11 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 	if (try_consume(TOKEN_PAREN_START))
 	{
 		Ast_Expr* expr = parse_sub_expr(parser);
-
 		if (!try_consume(TOKEN_PAREN_END))
 		{
 			error("Expected ')'");
 			return NULL;
 		}
-
 		return expr;
 	}
 

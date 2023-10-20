@@ -46,6 +46,7 @@ void debug_print_sizeof(Ast_Sizeof* _sizeof);
 void debug_print_struct_init(Ast_Struct_Init* struct_init, u32 depth);
 void debug_print_unary_expr(Ast_Unary_Expr* unary_expr, u32 depth);
 void debug_print_binary_expr(Ast_Binary_Expr* binary_expr, u32 depth);
+void debug_print_const_expr(Ast_Const_Expr const_expr, u32 depth);
 
 static void debug_print_branch(u32& depth);
 static void debug_print_spacing(u32 depth);

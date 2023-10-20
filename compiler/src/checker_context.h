@@ -10,7 +10,9 @@ struct Checker_Context;
 struct Block_Info;
 struct Var_Info;
 struct Type_Context;
+struct Literal;
 enum class Type_Kind;
+enum class Literal_Kind;
 enum class Terminator;
 enum class Checker_Block_Flags;
 enum class Checker_Proc_Call_Flags;
@@ -50,6 +52,19 @@ struct Type_Context
 	bool expect_constant;
 };
 
+struct Literal
+{
+	Literal_Kind kind;
+
+	union
+	{
+		bool as_bool;
+		f64 as_f64;
+		i64 as_i64;
+		u64 as_u64;
+	};
+};
+
 enum class Type_Kind
 {
 	Bool,
@@ -60,6 +75,14 @@ enum class Type_Kind
 	Array,
 	Struct,
 	Enum,
+};
+
+enum class Literal_Kind
+{
+	Bool, 
+	Float, 
+	Int, 
+	UInt
 };
 
 enum class Terminator

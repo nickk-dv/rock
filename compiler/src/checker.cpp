@@ -1002,18 +1002,51 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 	}
 }
 
+//@Not used, unsure if top level thing like this is needed
+option<Ast_Type> check_expr_type(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
+{
+	option<Ast_Type> type = check_expr(cc, context, expr);
+	if (!type) return {};
+	if (!context) return type;
+	if (!match_type(cc, type.value(), context.value()->expect_type))
+	{
+		err_set;
+		printf("Type mismatch:\n");
+		printf("Expected: "); debug_print_type(context.value()->expect_type); printf("\n");
+		printf("Got:      "); debug_print_type(type.value()); printf("\n\n");
+		return {};
+	}
+	return type;
+}
+
 option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
 {
-	if (check_is_const_expr(expr))
+	if (!check_is_const_expr(expr))
+	{
+		switch (expr->tag)
+		{
+		case Ast_Expr::Tag::Term: return check_term(cc, context, expr->as_term);
+		case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(cc, context, expr->as_unary_expr);
+		case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(cc, context, expr->as_binary_expr);
+		}
+	}
+	else
 	{
 		printf("Constant expr: \n");
-		printf("Evaluation: ");
 
-		option<Literal> lit = check_const_expr(expr);
-		if (!lit) printf("Invalid const expr");
+		option<Literal> lit_result = check_const_expr(expr);
+		if (!lit_result)
+		{
+			err_set; //propagate err inside check const expr instead of here
+			printf("Invalid const expr");
+			debug_print_expr(expr, 0);
+			printf("\n\n");
+			return {};
+		}
 		else
 		{
-			Literal literal = lit.value();
+			printf("Evaluation: ");
+			Literal literal = lit_result.value();
 			switch (literal.kind)
 			{
 			case Literal_Kind::Bool:
@@ -1029,13 +1062,97 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 		printf("\n");
 		debug_print_expr(expr, 0);
 		printf("\n");
-	}
 
-	switch (expr->tag)
-	{
-	case Ast_Expr::Tag::Term: return check_term(cc, context, expr->as_term);
-	case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(cc, context, expr->as_unary_expr);
-	case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(cc, context, expr->as_binary_expr);
+		//@Todo fold and store value into ast
+		//@Todo gen Ast_Type from literal
+
+		Ast_Const_Expr const_expr = {};
+
+		Literal lit = lit_result.value();
+		if (context)
+		{
+			switch (lit.kind)
+			{
+				case Literal_Kind::Bool: 
+				{
+					const_expr.basic_type = BASIC_TYPE_BOOL;
+					const_expr.as_bool = lit.as_bool;
+					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->as_const_expr = const_expr;
+					return type_from_basic(BASIC_TYPE_BOOL);
+				}
+				case Literal_Kind::Float:
+				{
+					//@Base on context
+					const_expr.basic_type = BASIC_TYPE_F64;
+					const_expr.as_f64 = lit.as_f64;
+					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->as_const_expr = const_expr;
+					return type_from_basic(BASIC_TYPE_F64);
+				}
+				case Literal_Kind::Int:
+				{
+					//@Base on context
+					//@Todo range based
+					const_expr.basic_type = BASIC_TYPE_I32;
+					const_expr.as_i64 = lit.as_i64;
+					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->as_const_expr = const_expr;
+					return type_from_basic(BASIC_TYPE_I32);
+				}
+				case Literal_Kind::UInt:
+				{
+					//@Base on context
+					//@Todo range based
+					const_expr.basic_type = BASIC_TYPE_I32;
+					const_expr.as_u64 = lit.as_u64;
+					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->as_const_expr = const_expr;
+					return type_from_basic(BASIC_TYPE_I32);
+				}
+			}
+		}
+		else
+		{
+			switch (lit.kind)
+			{
+			case Literal_Kind::Bool:
+			{
+				const_expr.basic_type = BASIC_TYPE_BOOL;
+				const_expr.as_bool = lit.as_bool;
+				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->as_const_expr = const_expr;
+				return type_from_basic(BASIC_TYPE_BOOL);
+			}
+			case Literal_Kind::Float:
+			{
+				const_expr.basic_type = BASIC_TYPE_F64;
+				const_expr.as_f64 = lit.as_f64;
+				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->as_const_expr = const_expr;
+				return type_from_basic(BASIC_TYPE_F64);
+			}
+			case Literal_Kind::Int:
+			{
+				//@Todo range based default int type
+				const_expr.basic_type = BASIC_TYPE_I32;
+				const_expr.as_i64 = lit.as_i64;
+				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->as_const_expr = const_expr;
+				return type_from_basic(BASIC_TYPE_I32);
+			}
+			case Literal_Kind::UInt:
+			{
+				//@Todo range based default int type
+				//@Might become a u64 if its too big
+				const_expr.basic_type = BASIC_TYPE_I32;
+				const_expr.as_u64 = lit.as_u64;
+				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->as_const_expr = const_expr;
+				return type_from_basic(BASIC_TYPE_I32);
+			}
+			}
+		}
 	}
 }
 
@@ -1044,7 +1161,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 	switch (term->tag)
 	{
 	case Ast_Term::Tag::Var: return check_var(cc, term->as_var);
-	case Ast_Term::Tag::Enum:
+	case Ast_Term::Tag::Enum: //@Const fold this should be part of constant evaluation
 	{
 		Ast_Enum* _enum = term->as_enum;
 		Ast* target_ast = try_import(cc, _enum->import);
@@ -1065,7 +1182,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		type.as_enum.enum_decl = enum_meta.value().enum_decl;
 		return type;
 	}
-	case Ast_Term::Tag::Sizeof:
+	case Ast_Term::Tag::Sizeof: //@Const fold this should be part of constant evaluation
 	{
 		//@Notice not doing sizing of types yet, cant know the numeric range
 		option<Ast_Type> type = check_type_signature(cc, &term->as_sizeof->type);
@@ -1077,14 +1194,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		Ast_Literal literal = term->as_literal;
 		switch (literal.token.type)
 		{
-		case TOKEN_BOOL_LITERAL: return type_from_basic(BASIC_TYPE_BOOL);
-		case TOKEN_FLOAT_LITERAL: return type_from_basic(BASIC_TYPE_F64);
-		case TOKEN_INTEGER_LITERAL:
-		{
-			term->as_literal.basic_type = BASIC_TYPE_I32; //@Always i32 no context
-			return type_from_basic(BASIC_TYPE_I32);
-		}
-		case TOKEN_STRING_LITERAL:
+		case TOKEN_STRING_LITERAL: //@ Strings are just *i8 cstrings for now
 		{
 			Ast_Type string_ptr = type_from_basic(BASIC_TYPE_I8);
 			string_ptr.pointer_level += 1;
@@ -1093,7 +1203,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		default:
 		{
 			err_set;
-			printf("Unknown literal:\n");
+			printf("Check_term: Unsupported literal term, only string literals are allowed to be proccesed:\n");
 			debug_print_token(literal.token, true, true);
 			printf("\n");
 			return {};
@@ -1409,7 +1519,8 @@ bool check_is_const_expr(Ast_Expr* expr)
 		Ast_Term* term = expr->as_term;
 		switch (term->tag)
 		{
-		case Ast_Term::Tag::Enum: return true;
+		//@Notice not handling enum as constexpr yet 
+		//case Ast_Term::Tag::Enum: return true;
 		case Ast_Term::Tag::Literal: return term->as_literal.token.type != TOKEN_STRING_LITERAL;
 		default: return false;
 		}

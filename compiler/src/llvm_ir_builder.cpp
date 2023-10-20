@@ -355,6 +355,7 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr)
 	case Ast_Expr::Tag::Term: return build_term(bc, expr->as_term);
 	case Ast_Expr::Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
 	case Ast_Expr::Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
+	case Ast_Expr::Tag::Const_Expr: return build_const_expr(bc, expr->as_const_expr);
 	}
 }
 
@@ -383,13 +384,13 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 	}
 	case Ast_Term::Tag::Literal:
 	{
-		//@Notice using basic type provided by literal only for integers
 		Token token = term->as_literal.token;
-		BasicType basic_Type = term->as_literal.basic_type;
-		if (token.type == TOKEN_BOOL_LITERAL) return LLVMConstInt(LLVMInt1Type(), (i32)token.bool_value, 0);
-		else if (token.type == TOKEN_FLOAT_LITERAL) return LLVMConstReal(LLVMDoubleType(), token.float64_value);
-		else if (token.type == TOKEN_INTEGER_LITERAL) return LLVMConstInt(type_from_basic_type(basic_Type), token.integer_value, 0); //@Todo sign extend?
-		else if (token.type == TOKEN_STRING_LITERAL) return LLVMBuildGlobalStringPtr(bc->builder, token.string_literal_value, "str");
+		if (token.type == TOKEN_STRING_LITERAL) return LLVMBuildGlobalStringPtr(bc->builder, token.string_literal_value, "str");
+		else
+		{
+			printf("IR Builder: Expected Ast_Term literal to only be a string literal. Other things are Const_Expr now\n");
+			exit(EXIT_FAILURE);
+		}
 	}
 	case Ast_Term::Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
 	case Ast_Term::Tag::Struct_Init: return NULL; //@Notice returning null on struct init, it should be handled on var assigned for now
@@ -485,6 +486,22 @@ Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr)
 	case BINARY_OP_BITWISE_XOR: return LLVMBuildXor(bc->builder, lhs, rhs, "btmp");
 	case BINARY_OP_BITSHIFT_LEFT: return LLVMBuildShl(bc->builder, lhs, rhs, "btmp");
 	case BINARY_OP_BITSHIFT_RIGHT: return LLVMBuildLShr(bc->builder, lhs, rhs, "btmp"); //@LLVMBuildAShr used for maintaining the sign?
+	}
+}
+
+Value build_const_expr(IR_Builder_Context* bc, Ast_Const_Expr const_expr)
+{
+	Type type = type_from_basic_type(const_expr.basic_type);
+	switch (const_expr.basic_type)
+	{
+	case BASIC_TYPE_BOOL: return LLVMConstInt(type, (int)const_expr.as_bool, 0);
+	case BASIC_TYPE_F32:
+	case BASIC_TYPE_F64: return LLVMConstReal(type, const_expr.as_f64);
+	case BASIC_TYPE_I8:
+	case BASIC_TYPE_I16:
+	case BASIC_TYPE_I32:
+	case BASIC_TYPE_I64: return LLVMConstInt(type, const_expr.as_i64, 1);
+	default: return LLVMConstInt(type, const_expr.as_u64, 1);
 	}
 }
 

@@ -57,6 +57,7 @@ struct Ast_Sizeof;
 struct Ast_Struct_Init;
 struct Ast_Unary_Expr;
 struct Ast_Binary_Expr;
+struct Ast_Const_Expr;
 
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
@@ -130,7 +131,6 @@ struct Ast_Ident
 struct Ast_Literal
 {
 	Token token;
-	BasicType basic_type;
 };
 
 struct Ast_Struct_Type  //@Memory can remove decl and use program id lookup in checker
@@ -355,11 +355,24 @@ struct Ast_Proc_Call
 	u32 proc_id;
 };
 
+struct Ast_Const_Expr
+{
+	BasicType basic_type;
+
+	union
+	{
+		bool as_bool;
+		f64 as_f64;
+		i64 as_i64;
+		u64 as_u64;
+	};
+};
+
 struct Ast_Expr
 {
 	enum class Tag
 	{
-		Term, Unary_Expr, Binary_Expr
+		Term, Unary_Expr, Binary_Expr, Const_Expr
 	} tag;
 
 	union
@@ -367,6 +380,7 @@ struct Ast_Expr
 		Ast_Term* as_term;
 		Ast_Unary_Expr* as_unary_expr;
 		Ast_Binary_Expr* as_binary_expr;
+		Ast_Const_Expr as_const_expr;
 	};
 };
 
