@@ -259,16 +259,13 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 		option<Token> ident = try_consume(TOKEN_IDENT);
 		if (!ident) break;
 
-		if (!try_consume(TOKEN_ASSIGN)) { error("Expected '=' followed by value of enum variant"); return NULL; }
-		bool is_negative = try_consume(TOKEN_MINUS).has_value();
-		Token token = peek();
-		if (!token_is_literal(token.type)) { error("Expected literal value: number, bool, string"); return NULL; }
-		consume();
-		decl->variants.emplace_back(Ast_Ident_Literal_Pair { token_to_ident(ident.value()), Ast_Literal { token }, is_negative });
+		if (!try_consume(TOKEN_ASSIGN)) { error("Expected '=' followed by constant expression"); return NULL; }
+		Ast_Expr* expr = parse_expr(parser);
+		if (!expr) return NULL;
+		decl->variants.emplace_back(Ast_Enum_Variant { token_to_ident(ident.value()), expr });
 		
-		if (!try_consume(TOKEN_COMMA)) break;
+		if (try_consume(TOKEN_BLOCK_END)) break;
 	}
-	if (!try_consume(TOKEN_BLOCK_END)) { error("Expected '}' after enum declaration"); return NULL; }
 
 	return decl;
 }

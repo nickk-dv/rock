@@ -13,12 +13,9 @@ Module build_module(Ast_Program* program)
 		Type type = type_from_basic_type(basic_type);
 		enum_meta.enum_type = type;
 
-		for (Ast_Ident_Literal_Pair& variant : enum_meta.enum_decl->variants)
+		for (Ast_Enum_Variant& variant : enum_meta.enum_decl->variants)
 		{
-			i32 sign = variant.is_negative ? -1 : 1;
-			if (basic_type <= BASIC_TYPE_U64) variant.constant = LLVMConstInt(type, sign * variant.literal.token.integer_value, basic_type % 2 == 0); //@Check if sign extend is correct or needed
-			else if (basic_type <= BASIC_TYPE_F64) variant.constant = LLVMConstReal(type, sign * variant.literal.token.float64_value);
-			else variant.constant = LLVMConstInt(type, (i32)variant.literal.token.bool_value, 0);
+			variant.constant = build_const_expr(&bc, variant.expr->as_const_expr);
 		}
 	}
 

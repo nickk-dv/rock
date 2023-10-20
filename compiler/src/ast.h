@@ -23,12 +23,12 @@ struct Ast_Custom_Type;
 struct Ast_Struct_Type;
 struct Ast_Enum_Type;
 struct Ast_Ident_Type_Pair;
-struct Ast_Ident_Literal_Pair;
 
 struct Ast_Import_Decl;
 struct Ast_Use_Decl;
 struct Ast_Struct_Decl;
 struct Ast_Enum_Decl;
+struct Ast_Enum_Variant;
 struct Ast_Proc_Decl;
 
 struct Ast_Block;
@@ -218,7 +218,15 @@ struct Ast_Enum_Decl
 {
 	Ast_Ident ident;
 	BasicType basic_type;
-	std::vector<Ast_Ident_Literal_Pair> variants;
+	std::vector<Ast_Enum_Variant> variants;
+};
+
+struct Ast_Enum_Variant
+{
+	Ast_Ident ident;
+	Ast_Expr* expr;
+	//ir builder
+	LLVMValueRef constant;
 };
 
 struct Ast_Proc_Decl
@@ -473,3 +481,27 @@ struct Ast_Binary_Expr
 };
 
 #endif
+
+/*
+
+when using a enum for each node
+enum is sized based on sizeof biggest data type:
+3 + 3 + 3 = 9 total
+
+NodeNumber    -size 1
+NodeBinaryOp  -size 1
+NodeBinaryExpr -size 3
+{
+	NodeNumber
+	NodeNumber
+	NodeBinaryOp
+}
+
+when using arena you allocate different structures:
+
+arena:
+| 1size| 1size| 3size| = 5 total
+
+
+
+*/

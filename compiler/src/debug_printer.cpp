@@ -300,11 +300,11 @@ void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 	debug_print_basic_type(enum_decl->basic_type);
 	printf("\n");
 
-	for (const Ast_Ident_Literal_Pair& variant : enum_decl->variants)
+	for (const Ast_Enum_Variant& variant : enum_decl->variants)
 	{
 		debug_print_ident(variant.ident, false, false);
-		printf(": ");
-		debug_print_token(variant.literal.token, true);
+		printf("Variant Expr: \n");
+		debug_print_expr(variant.expr, 0);
 	}
 }
 

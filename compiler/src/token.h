@@ -17,7 +17,6 @@ option<BasicType> token_to_basic_type(TokenType type);
 u32 token_binary_op_prec(BinaryOp binary_op);
 TokenType token_str_to_keyword(StringView str);
 bool token_is_literal(TokenType type);
-bool basic_type_is_unsigned(BasicType basic_type);
 
 enum TokenType
 {

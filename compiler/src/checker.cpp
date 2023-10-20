@@ -323,25 +323,31 @@ void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
 
 	BasicType basic_type = enum_decl->basic_type;
-	bool is_unsigned = basic_type_is_unsigned(basic_type);
+	Ast_Type enum_basic_type = type_from_basic(basic_type);
+	Type_Context type_context = { enum_basic_type, true };
 
-	//@Note this might be usefull, look into supporting string enums later
+	//@Todo check circular enum dependency when enums as constants are supported
+	//@Todo ban strings on parsing @Note this might be usefull, look into supporting string enums later
 	if (basic_type == BASIC_TYPE_STRING)
 	{
 		err_set;
 		error("Cannot use string basic type in enum declaration", enum_decl->ident);
 	}
 
-	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
+	for (Ast_Enum_Variant& variant : enum_decl->variants)
 	{
 		option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
 		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
 		else { err_set; error("Duplicate enum variant identifier", variant.ident); }
 
-		if (is_unsigned && variant.is_negative)
+		option<Ast_Type> type = check_expr(cc, &type_context, variant.expr);
+		if (type && !match_type(cc, enum_basic_type, type.value()))
 		{
 			err_set;
-			error("Cannot use negative constant for enum of unsigned integer type", variant.ident);
+			printf("Variant type doesnt match enum type:\n");
+			debug_print_ident(variant.ident);
+			printf("Expected: "); debug_print_type(enum_basic_type); printf("\n");
+			printf("Got:      "); debug_print_type(type.value()); printf("\n\n");
 		}
 	}
 }
@@ -349,7 +355,7 @@ void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
 void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
 {
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
-
+	
 	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 	{
 		option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
@@ -363,6 +369,9 @@ void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
 	{
 		check_type_signature(cc, &proc_decl->return_type.value());
 	}
+
+	//@Todo not important for now
+	// Check uniquess of enum variants
 }
 
 Ast* try_import(Checker_Context* cc, option<Ast_Ident> import)
@@ -399,7 +408,7 @@ option<Ast_Proc_Decl_Meta> find_proc(Ast* target_ast, Ast_Ident ident)
 option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
 {
 	u32 count = 0;
-	for (Ast_Ident_Literal_Pair& variant : enum_decl->variants)
+	for (Ast_Enum_Variant& variant : enum_decl->variants)
 	{
 		if (match_ident(variant.ident, ident)) return count;
 		count += 1;
@@ -1023,6 +1032,15 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 {
 	if (!check_is_const_expr(expr))
 	{
+		if (context && context.value()->expect_constant)
+		{
+			err_set;
+			printf("Expected constant expression. Got: \n");
+			debug_print_expr(expr, 0);
+			printf("\n\n");
+			return {};
+		}
+
 		switch (expr->tag)
 		{
 		case Ast_Expr::Tag::Term: return check_term(cc, context, expr->as_term);
