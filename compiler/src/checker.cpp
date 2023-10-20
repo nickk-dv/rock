@@ -1004,6 +1004,33 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 
 option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
 {
+	if (check_is_const_expr(expr))
+	{
+		printf("Constant expr: \n");
+		printf("Evaluation: ");
+
+		option<Literal> lit = check_const_expr(expr);
+		if (!lit) printf("Invalid const expr");
+		else
+		{
+			Literal literal = lit.value();
+			switch (literal.kind)
+			{
+			case Literal_Kind::Bool:
+			{
+				if (literal.as_bool) printf("true");
+				else printf("false");
+			} break;
+			case Literal_Kind::Float: printf("%f", literal.as_f64); break;
+			case Literal_Kind::Int: printf("%lld", literal.as_i64); break;
+			case Literal_Kind::UInt: printf("%llu", literal.as_u64); break;
+			}
+		}
+		printf("\n");
+		debug_print_expr(expr, 0);
+		printf("\n");
+	}
+
 	switch (expr->tag)
 	{
 	case Ast_Expr::Tag::Term: return check_term(cc, context, expr->as_term);
@@ -1371,6 +1398,284 @@ option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> co
 	err_set;
 	printf("[TODO] Binary expr is not checked\n\n");
 	return {};
+}
+
+bool check_is_const_expr(Ast_Expr* expr)
+{
+	switch (expr->tag)
+	{
+	case Ast_Expr::Tag::Term:
+	{
+		Ast_Term* term = expr->as_term;
+		switch (term->tag)
+		{
+		case Ast_Term::Tag::Enum: return true;
+		case Ast_Term::Tag::Literal: return term->as_literal.token.type != TOKEN_STRING_LITERAL;
+		default: return false;
+		}
+	}
+	case Ast_Expr::Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
+	case Ast_Expr::Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
+	}
+}
+
+// perform operations on highest sized types and only on call site determine
+// and type check / infer the type based on the resulting value
+// the only possible errors are:
+// 1. int range overflow
+// 2. invalid op semantics
+// 3. float NaN
+// 4. division / mod by 0
+
+option<Literal> check_const_expr(Ast_Expr* expr)
+{
+	switch (expr->tag)
+	{
+	case Ast_Expr::Tag::Term: return check_const_term(expr->as_term);
+	case Ast_Expr::Tag::Unary_Expr: return check_const_unary_expr(expr->as_unary_expr);
+	case Ast_Expr::Tag::Binary_Expr: return check_const_binary_expr(expr->as_binary_expr);
+	}
+}
+
+option<Literal> check_const_term(Ast_Term* term)
+{
+	switch (term->tag)
+	{
+	case Ast_Term::Tag::Literal:
+	{
+		Token token = term->as_literal.token;
+		Literal lit = {};
+
+		if (token.type == TOKEN_BOOL_LITERAL)
+		{
+			lit.kind = Literal_Kind::Bool;
+			lit.as_bool = token.bool_value;
+		}
+		else if (token.type == TOKEN_FLOAT_LITERAL)
+		{
+			lit.kind = Literal_Kind::Float;
+			lit.as_f64 = token.float64_value;
+		}
+		else
+		{
+			lit.kind = Literal_Kind::UInt;
+			lit.as_u64 = token.integer_value;
+		}
+
+		return lit;
+	}
+	default: return {};
+	}
+}
+
+option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr)
+{
+	option<Literal> rhs_result = check_const_expr(unary_expr->right);
+	if (!rhs_result) return {};
+
+	UnaryOp op = unary_expr->op;
+	Literal rhs = rhs_result.value();
+	Literal_Kind rhs_kind = rhs.kind;
+
+	switch (op)
+	{
+	case UNARY_OP_MINUS:
+	{
+		if (rhs_kind == Literal_Kind::Bool) { printf("Cannot apply unary - to bool expression\n"); return {}; }
+		if (rhs_kind == Literal_Kind::Float) { rhs.as_f64 = -rhs.as_f64; return rhs; }
+		if (rhs_kind == Literal_Kind::Int) { rhs.as_i64 = -rhs.as_i64; return rhs; }
+
+		if (rhs.as_u64 <= 1 + static_cast<u64>(std::numeric_limits<i64>::max()))
+		{
+			rhs.kind = Literal_Kind::Int;
+			rhs.as_i64 = -static_cast<i64>(rhs.as_u64);
+			return rhs;
+		}
+		printf("Unary - results in integer oveflow\n");
+		return {};
+	}
+	case UNARY_OP_LOGIC_NOT:
+	{
+		if (rhs_kind == Literal_Kind::Bool) { rhs.as_bool = !rhs.as_bool; return rhs; }
+		printf("Unary ! can only be applied to bool expression\n");
+		return {};
+	}
+	case UNARY_OP_BITWISE_NOT:
+	{
+		if (rhs_kind == Literal_Kind::Bool) { printf("Cannot apply unary ~ to bool expression\n"); return {}; }
+		if (rhs_kind == Literal_Kind::Float) { printf("Cannot apply unary ~ to float expression\n"); return {}; }
+		if (rhs_kind == Literal_Kind::Int) { rhs.as_i64 = ~rhs.as_i64; return rhs; }
+		rhs.as_u64 = ~rhs.as_u64; return rhs;
+	}
+	case UNARY_OP_ADDRESS_OF:
+	{
+		printf("Unary adress of * cannot be used on temporary values\n");
+		return {};
+	}
+	case UNARY_OP_DEREFERENCE:
+	{
+		printf("Unary dereference << cannot be used on temporary values\n");
+		return {};
+	}
+	}
+}
+
+option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
+{
+	option<Literal> lhs_result = check_const_expr(binary_expr->left);
+	if (!lhs_result) return {};
+	option<Literal> rhs_result = check_const_expr(binary_expr->right);
+	if (!rhs_result) return {};
+
+	BinaryOp op = binary_expr->op;
+	Literal lhs = lhs_result.value();
+	Literal_Kind lhs_kind = lhs.kind;
+	Literal rhs = rhs_result.value();
+	Literal_Kind rhs_kind = rhs.kind;
+	bool same_kind = lhs_kind == rhs_kind;
+
+	//@Need apply i64 to u64 conversion if possible
+
+	switch (op)
+	{
+	case BINARY_OP_LOGIC_AND:
+	{
+		if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool && rhs.as_bool };
+		printf("Binary && can only be applied to bool expressions\n");
+		return {};
+	}
+	case BINARY_OP_LOGIC_OR:
+	{
+		if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool || rhs.as_bool };
+		printf("Binary || can only be applied to bool expressions\n");
+		return {};
+	}
+	case BINARY_OP_LESS:
+	{
+		if (!same_kind) { printf("Binary < can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply < to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) return Literal{ Literal_Kind::Bool, lhs.as_f64 < rhs.as_f64 };
+		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 < rhs.as_i64 };
+		return Literal{ Literal_Kind::Bool, lhs.as_u64 < rhs.as_u64 };
+	}
+	case BINARY_OP_GREATER:
+	{
+		if (!same_kind) { printf("Binary > can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply > to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) return Literal{ Literal_Kind::Bool, lhs.as_f64 > rhs.as_f64 };
+		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 > rhs.as_i64 };
+		return Literal{ Literal_Kind::Bool, lhs.as_u64 > rhs.as_u64 };
+	}
+	case BINARY_OP_LESS_EQUALS:
+	{
+		if (!same_kind) { printf("Binary <= can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply <= to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) return Literal{ Literal_Kind::Bool, lhs.as_f64 <= rhs.as_f64 };
+		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 <= rhs.as_i64 };
+		return Literal{ Literal_Kind::Bool, lhs.as_u64 <= rhs.as_u64 };
+	}
+	case BINARY_OP_GREATER_EQUALS:
+	{
+		if (!same_kind) { printf("Binary >= can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply >= to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) return Literal{ Literal_Kind::Bool, lhs.as_f64 >= rhs.as_f64 };
+		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 >= rhs.as_i64 };
+		return Literal{ Literal_Kind::Bool, lhs.as_u64 >= rhs.as_u64 };
+	}
+	case BINARY_OP_IS_EQUALS:
+	{
+		if (!same_kind) { printf("Binary == can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool == rhs.as_bool };
+		if (lhs_kind == Literal_Kind::Float) return Literal{ Literal_Kind::Bool, lhs.as_f64 == rhs.as_f64 };
+		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 == rhs.as_i64 };
+		return Literal{ Literal_Kind::Bool, lhs.as_u64 == rhs.as_u64 };
+	}
+	case BINARY_OP_NOT_EQUALS:
+	{
+		if (!same_kind) { printf("Binary != can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool != rhs.as_bool };
+		if (lhs_kind == Literal_Kind::Float) return Literal{ Literal_Kind::Bool, lhs.as_f64 != rhs.as_f64 };
+		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 != rhs.as_i64 };
+		return Literal{ Literal_Kind::Bool, lhs.as_u64 != rhs.as_u64 };
+	}
+	case BINARY_OP_PLUS:
+	{
+		if (!same_kind) { printf("Binary + can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply + to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) { lhs.as_f64 += rhs.as_f64; return lhs; }
+		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 += rhs.as_i64; return lhs; } //@Range
+		lhs.as_u64 += rhs.as_u64; return lhs; //@Range
+	}
+	case BINARY_OP_MINUS:
+	{
+		if (!same_kind) { printf("Binary - can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply - to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) { lhs.as_f64 -= rhs.as_f64; return lhs; }
+		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 -= rhs.as_i64; return lhs; } //@Range
+		lhs.as_u64 -= rhs.as_u64; return lhs; //@Undeflow
+	}
+	case BINARY_OP_TIMES:
+	{
+		if (!same_kind) { printf("Binary * can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply * to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) { lhs.as_f64 *= rhs.as_f64; return lhs; }
+		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 *= rhs.as_i64; return lhs; } //@Range
+		lhs.as_u64 *= rhs.as_u64; return lhs; //@Range
+	}
+	case BINARY_OP_DIV:
+	{
+		if (!same_kind) { printf("Binary / can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply / to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) { lhs.as_f64 /= rhs.as_f64; return lhs; } //@Nan
+		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 /= rhs.as_i64; return lhs; } //@Div 0
+		lhs.as_u64 /= rhs.as_u64; return lhs; //@Div 0
+	}
+	case BINARY_OP_MOD:
+	{
+		if (!same_kind) { printf("Binary %% can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply %% to binary expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Float) { printf("Cannot apply %% to float expressions\n"); return {}; }
+		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 %= rhs.as_i64; return lhs; } //@Mod 0
+		lhs.as_u64 %= rhs.as_u64; return lhs; //@Mod 0
+	}
+	case BINARY_OP_BITWISE_AND: //@Unnesesary error messages on same_kind
+	{
+		if (!same_kind) { printf("Binary & can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind != Literal_Kind::UInt) { printf("Binary & can only be applied to unsigned integers\n"); return {}; }
+		lhs.as_u64 &= rhs.as_u64;
+		return lhs;
+	}
+	case BINARY_OP_BITWISE_OR:
+	{
+		if (!same_kind) { printf("Binary | can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind != Literal_Kind::UInt) { printf("Binary | can only be applied to unsigned integers\n"); return {}; }
+		lhs.as_u64 |= rhs.as_u64;
+		return lhs;
+	}
+	case BINARY_OP_BITWISE_XOR:
+	{
+		if (!same_kind) { printf("Binary ^ can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind != Literal_Kind::UInt) { printf("Binary ^ can only be applied to unsigned integers\n"); return {}; }
+		lhs.as_u64 ^= rhs.as_u64;
+		return lhs;
+	}
+	case BINARY_OP_BITSHIFT_LEFT:
+	{
+		if (!same_kind) { printf("Binary << can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind != Literal_Kind::UInt) { printf("Binary << can only be applied to unsigned integers\n"); return {}; }
+		//@Check bitshift amount to be 64
+		lhs.as_u64 <<= rhs.as_u64;
+		return lhs;
+	}
+	case BINARY_OP_BITSHIFT_RIGHT:
+	{
+		if (!same_kind) { printf("Binary >> can only be applied to expressions of same kind\n"); return {}; }
+		if (lhs_kind != Literal_Kind::UInt) { printf("Binary >> can only be applied to unsigned integers\n"); return {}; }
+		//@Check bitshift amount to be 64
+		lhs.as_u64 >>= rhs.as_u64;
+		return lhs;
+	}
+	}
 }
 
 void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)

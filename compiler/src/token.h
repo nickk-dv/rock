@@ -10,10 +10,10 @@ enum AssignOp;
 enum BasicType;
 struct Token;
 
-UnaryOp token_to_unary_op(TokenType type);
-BinaryOp token_to_binary_op(TokenType type);
-AssignOp token_to_assign_op(TokenType type);
-BasicType token_to_basic_type(TokenType type);
+option<UnaryOp> token_to_unary_op(TokenType type);
+option<BinaryOp> token_to_binary_op(TokenType type);
+option<AssignOp> token_to_assign_op(TokenType type);
+option<BasicType> token_to_basic_type(TokenType type);
 u32 token_binary_op_prec(BinaryOp binary_op);
 TokenType token_str_to_keyword(StringView str);
 bool token_is_literal(TokenType type);
@@ -116,7 +116,6 @@ enum UnaryOp
 	UNARY_OP_BITWISE_NOT,     // ~
 	UNARY_OP_ADDRESS_OF,      // *
 	UNARY_OP_DEREFERENCE,     // <<
-	UNARY_OP_ERROR,
 };
 
 enum BinaryOp
@@ -139,7 +138,6 @@ enum BinaryOp
 	BINARY_OP_BITWISE_XOR,    // ^
 	BINARY_OP_BITSHIFT_LEFT,  // <<
 	BINARY_OP_BITSHIFT_RIGHT, // >>
-	BINARY_OP_ERROR,
 };
 
 enum AssignOp
@@ -155,7 +153,6 @@ enum AssignOp
 	ASSIGN_OP_BITWISE_XOR,	  // ^=
 	ASSIGN_OP_BITSHIFT_LEFT,  // <<=
 	ASSIGN_OP_BITSHIFT_RIGHT, // >>=
-	ASSIGN_OP_ERROR,
 };
 
 enum BasicType
@@ -172,7 +169,6 @@ enum BasicType
 	BASIC_TYPE_F64,
 	BASIC_TYPE_BOOL, 
 	BASIC_TYPE_STRING,
-	BASIC_TYPE_ERROR,
 };
 
 struct Token

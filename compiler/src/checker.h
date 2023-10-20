@@ -45,6 +45,30 @@ static option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc
 static option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Unary_Expr* unary_expr);
 static option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Binary_Expr* binary_expr);
 
+enum class Literal_Kind
+{
+	Bool, Float, Int, UInt
+};
+
+struct Literal
+{
+	Literal_Kind kind;
+
+	union
+	{
+		bool as_bool;
+		f64 as_f64;
+		i64 as_i64;
+		u64 as_u64;
+	};
+};
+
+static bool check_is_const_expr(Ast_Expr* expr);
+static option<Literal> check_const_expr(Ast_Expr* expr);
+static option<Literal> check_const_term(Ast_Term* term);
+static option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr);
+static option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr);
+
 static void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB);
 static void error(const char* message, Ast_Ident ident);
 

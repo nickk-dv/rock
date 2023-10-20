@@ -48,8 +48,8 @@ void LLVM_Backend::build_binaries(LLVMModuleRef mod)
 void LLVM_Backend::debug_print_module(LLVMModuleRef mod)
 {
 	LLVMPrintModuleToFile(mod, "output.ll", NULL);
-	char* message = LLVMPrintModuleToString(mod);
-	printf("Module: %s", message);
-	LLVMDisposeMessage(message);
+	//char* message = LLVMPrintModuleToString(mod);
+	//printf("Module: %s", message);
+	//LLVMDisposeMessage(message);
 	LLVMVerifyModule(mod, LLVMPrintMessageAction, NULL);
 }

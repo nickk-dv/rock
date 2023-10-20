@@ -1,6 +1,6 @@
 #include "token.h"
 
-UnaryOp token_to_unary_op(TokenType type) 
+option<UnaryOp> token_to_unary_op(TokenType type)
 {
 	switch (type) 
 	{
@@ -9,11 +9,11 @@ UnaryOp token_to_unary_op(TokenType type)
 	case TOKEN_BITWISE_NOT: return UNARY_OP_BITWISE_NOT;
 	case TOKEN_TIMES: return UNARY_OP_ADDRESS_OF;
 	case TOKEN_BITSHIFT_LEFT: return UNARY_OP_DEREFERENCE;
-	default: return UNARY_OP_ERROR;
+	default: return {};
 	}
 }
 
-BinaryOp token_to_binary_op(TokenType type) 
+option<BinaryOp> token_to_binary_op(TokenType type)
 {
 	switch (type) 
 	{
@@ -35,11 +35,11 @@ BinaryOp token_to_binary_op(TokenType type)
 	case TOKEN_BITWISE_XOR: return BINARY_OP_BITWISE_XOR;
 	case TOKEN_BITSHIFT_LEFT: return BINARY_OP_BITSHIFT_LEFT;
 	case TOKEN_BITSHIFT_RIGHT: return BINARY_OP_BITSHIFT_RIGHT;
-	default: return BINARY_OP_ERROR;
+	default: return {};
 	}
 }
 
-AssignOp token_to_assign_op(TokenType type) 
+option<AssignOp> token_to_assign_op(TokenType type)
 {
 	switch (type) 
 	{
@@ -54,14 +54,14 @@ AssignOp token_to_assign_op(TokenType type)
 	case TOKEN_BITWISE_XOR_EQUALS: return ASSIGN_OP_BITWISE_XOR;
 	case TOKEN_BITSHIFT_LEFT_EQUALS: return ASSIGN_OP_BITSHIFT_LEFT;
 	case TOKEN_BITSHIFT_RIGHT_EQUALS: return ASSIGN_OP_BITSHIFT_RIGHT;
-	default: return ASSIGN_OP_ERROR;
+	default: return {};
 	}
 }
 
-BasicType token_to_basic_type(TokenType type)
+option<BasicType> token_to_basic_type(TokenType type)
 {
 	if (type < TOKEN_TYPE_I8 || type > TOKEN_TYPE_STRING)
-		return BASIC_TYPE_ERROR;
+		return {};
 	return BasicType(type - TOKEN_TYPE_I8);
 }
 
@@ -93,7 +93,6 @@ u32 token_binary_op_prec(BinaryOp binary_op)
 	case BINARY_OP_BITSHIFT_LEFT:
 	case BINARY_OP_BITSHIFT_RIGHT:
 		return 5;
-	default: return 0;
 	}
 }
 

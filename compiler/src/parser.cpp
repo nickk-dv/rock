@@ -104,12 +104,12 @@ option<Ast_Type> parse_type(Parser* parser)
 		type.pointer_level += 1;
 	}
 
-	BasicType basic_type = token_to_basic_type(token.type);
-	if (basic_type != BASIC_TYPE_ERROR)
+	option<BasicType> basic_type = token_to_basic_type(token.type);
+	if (basic_type)
 	{
 		consume();
 		type.tag = Ast_Type::Tag::Basic;
-		type.as_basic = basic_type;
+		type.as_basic = basic_type.value();
 		return type;
 	}
 
@@ -246,10 +246,10 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 
 	if (try_consume(TOKEN_DOUBLE_COLON))
 	{
-		BasicType basic_type = token_to_basic_type(peek().type);
-		if (basic_type == BASIC_TYPE_ERROR) { error("Expected basic type in enum declaration"); return NULL; }
+		option<BasicType> basic_type = token_to_basic_type(peek().type);
+		if (!basic_type) { error("Expected basic type in enum declaration"); return NULL; }
 		consume();
-		decl->basic_type = basic_type;
+		decl->basic_type = basic_type.value();
 	}
 	else decl->basic_type = BASIC_TYPE_I32;
 
@@ -635,9 +635,9 @@ Ast_Var_Assign* parse_var_assign(Parser* parser)
 	var_assign->var = var;
 
 	Token token = peek();
-	AssignOp op = token_to_assign_op(token.type);
-	if (op == ASSIGN_OP_ERROR) { error("Expected assignment operator"); return NULL; }
-	var_assign->op = op;
+	option<AssignOp> op = token_to_assign_op(token.type);
+	if (!op) { error("Expected assignment operator"); return NULL; }
+	var_assign->op = op.value();
 	consume();
 
 	Ast_Expr* expr = parse_expr(parser);
@@ -692,9 +692,9 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 	while (true)
 	{
 		Token token_op = peek();
-		BinaryOp op = token_to_binary_op(token_op.type);
-		if (op == BINARY_OP_ERROR) break;
-		u32 prec = token_binary_op_prec(op);
+		option<BinaryOp> op = token_to_binary_op(token_op.type);
+		if (!op) break;
+		u32 prec = token_binary_op_prec(op.value());
 		if (prec < min_prec) break;
 		consume();
 
@@ -708,7 +708,7 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
 
 		Ast_Binary_Expr* bin_expr = arena_alloc<Ast_Binary_Expr>(&parser->arena);
-		bin_expr->op = op;
+		bin_expr->op = op.value();
 		bin_expr->left = expr_lhs_copy;
 		bin_expr->right = expr_rhs;
 
@@ -735,15 +735,15 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 	}
 
 	Token token = peek();
-	UnaryOp op = token_to_unary_op(token.type);
-	if (op != UNARY_OP_ERROR)
+	option<UnaryOp> op = token_to_unary_op(token.type);
+	if (op)
 	{
 		consume();
 		Ast_Expr* right_expr = parse_primary_expr(parser);
 		if (!right_expr) return NULL;
 
 		Ast_Unary_Expr* unary_expr = arena_alloc<Ast_Unary_Expr>(&parser->arena);
-		unary_expr->op = op;
+		unary_expr->op = op.value();
 		unary_expr->right = right_expr;
 
 		Ast_Expr* expr = arena_alloc<Ast_Expr>(&parser->arena);

@@ -157,6 +157,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 				}
 				else
 				{
+					//@Todo catch u64 overflows
 					u64 integer = fc - '0';
 
 					while (peek().has_value())
