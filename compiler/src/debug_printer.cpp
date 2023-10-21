@@ -15,26 +15,26 @@ void debug_print_token(Token token, bool endl, bool location)
 {
 	if (location) printf("%lu:%lu ", token.l0, token.c0);
 
-	if (token.type == TOKEN_IDENT)
+	if (token.type == TokenType::IDENT)
 	{
 		for (u64 i = 0; i < token.string_value.count; i++)
 			printf("%c", token.string_value.data[i]);
 	}
-	else if (token.type == TOKEN_BOOL_LITERAL)
+	else if (token.type == TokenType::BOOL_LITERAL)
 	{
 		if (token.bool_value)
 			printf("true");
 		else printf("false");
 	}
-	else if (token.type == TOKEN_FLOAT_LITERAL)
+	else if (token.type == TokenType::FLOAT_LITERAL)
 	{
 		printf("%f", token.float64_value);
 	}
-	else if (token.type == TOKEN_INTEGER_LITERAL)
+	else if (token.type == TokenType::INTEGER_LITERAL)
 	{
 		printf("%llu", token.integer_value);
 	}
-	else if (token.type == TOKEN_STRING_LITERAL)
+	else if (token.type == TokenType::STRING_LITERAL)
 	{
 		printf("%s", token.string_literal_value); //@Later print raw string without escape characters
 	}
@@ -42,84 +42,84 @@ void debug_print_token(Token token, bool endl, bool location)
 	{
 		switch (token.type) 
 		{
-		case TOKEN_KEYWORD_STRUCT: printf("struct"); break;
-		case TOKEN_KEYWORD_ENUM: printf("enum"); break;
-		case TOKEN_KEYWORD_IF: printf("if"); break;
-		case TOKEN_KEYWORD_ELSE: printf("else"); break;
-		case TOKEN_KEYWORD_TRUE: printf("true"); break;
-		case TOKEN_KEYWORD_FALSE: printf("false"); break;
-		case TOKEN_KEYWORD_FOR: printf("for"); break;
-		case TOKEN_KEYWORD_DEFER: printf("defer"); break;
-		case TOKEN_KEYWORD_BREAK: printf("break"); break;
-		case TOKEN_KEYWORD_RETURN: printf("return"); break;
-		case TOKEN_KEYWORD_SWITCH: printf("switch"); break;
-		case TOKEN_KEYWORD_CONTINUE: printf("continue"); break;
-		case TOKEN_KEYWORD_SIZEOF: printf("sizeof"); break;
-		case TOKEN_KEYWORD_IMPORT: printf("import"); break;
-		case TOKEN_KEYWORD_USE: printf("use"); break;
+		case TokenType::KEYWORD_STRUCT: printf("struct"); break;
+		case TokenType::KEYWORD_ENUM: printf("enum"); break;
+		case TokenType::KEYWORD_IF: printf("if"); break;
+		case TokenType::KEYWORD_ELSE: printf("else"); break;
+		case TokenType::KEYWORD_TRUE: printf("true"); break;
+		case TokenType::KEYWORD_FALSE: printf("false"); break;
+		case TokenType::KEYWORD_FOR: printf("for"); break;
+		case TokenType::KEYWORD_DEFER: printf("defer"); break;
+		case TokenType::KEYWORD_BREAK: printf("break"); break;
+		case TokenType::KEYWORD_RETURN: printf("return"); break;
+		case TokenType::KEYWORD_SWITCH: printf("switch"); break;
+		case TokenType::KEYWORD_CONTINUE: printf("continue"); break;
+		case TokenType::KEYWORD_SIZEOF: printf("sizeof"); break;
+		case TokenType::KEYWORD_IMPORT: printf("import"); break;
+		case TokenType::KEYWORD_USE: printf("use"); break;
 
-		case TOKEN_TYPE_I8: printf("i8"); break;
-		case TOKEN_TYPE_U8: printf("u8"); break;
-		case TOKEN_TYPE_I16: printf("i16"); break;
-		case TOKEN_TYPE_U16: printf("u16"); break;
-		case TOKEN_TYPE_I32: printf("i32"); break;
-		case TOKEN_TYPE_U32: printf("u32"); break;
-		case TOKEN_TYPE_I64: printf("i64"); break;
-		case TOKEN_TYPE_U64: printf("u64"); break;
-		case TOKEN_TYPE_F32: printf("f32"); break;
-		case TOKEN_TYPE_F64: printf("f64"); break;
-		case TOKEN_TYPE_BOOL: printf("bool"); break;
-		case TOKEN_TYPE_STRING: printf("string"); break;
+		case TokenType::TYPE_I8: printf("i8"); break;
+		case TokenType::TYPE_U8: printf("u8"); break;
+		case TokenType::TYPE_I16: printf("i16"); break;
+		case TokenType::TYPE_U16: printf("u16"); break;
+		case TokenType::TYPE_I32: printf("i32"); break;
+		case TokenType::TYPE_U32: printf("u32"); break;
+		case TokenType::TYPE_I64: printf("i64"); break;
+		case TokenType::TYPE_U64: printf("u64"); break;
+		case TokenType::TYPE_F32: printf("f32"); break;
+		case TokenType::TYPE_F64: printf("f64"); break;
+		case TokenType::TYPE_BOOL: printf("bool"); break;
+		case TokenType::TYPE_STRING: printf("string"); break;
 
-		case TOKEN_DOT: printf("."); break;
-		case TOKEN_COLON: printf(":"); break;
-		case TOKEN_QUOTE: printf("'"); break;
-		case TOKEN_COMMA: printf(","); break;
-		case TOKEN_SEMICOLON: printf(";"); break;
-		case TOKEN_DOUBLE_DOT: printf(".."); break;
-		case TOKEN_DOUBLE_COLON: printf("::"); break;
-		case TOKEN_BLOCK_START: printf("{"); break;
-		case TOKEN_BLOCK_END: printf("}"); break;
-		case TOKEN_BRACKET_START: printf("["); break;
-		case TOKEN_BRACKET_END: printf("]"); break;
-		case TOKEN_PAREN_START: printf("("); break;
-		case TOKEN_PAREN_END: printf(")"); break;
-		case TOKEN_AT: printf("@"); break;
-		case TOKEN_HASH: printf("#"); break;
-		case TOKEN_QUESTION: printf("?"); break;
+		case TokenType::DOT: printf("."); break;
+		case TokenType::COLON: printf(":"); break;
+		case TokenType::QUOTE: printf("'"); break;
+		case TokenType::COMMA: printf(","); break;
+		case TokenType::SEMICOLON: printf(";"); break;
+		case TokenType::DOUBLE_DOT: printf(".."); break;
+		case TokenType::DOUBLE_COLON: printf("::"); break;
+		case TokenType::BLOCK_START: printf("{"); break;
+		case TokenType::BLOCK_END: printf("}"); break;
+		case TokenType::BRACKET_START: printf("["); break;
+		case TokenType::BRACKET_END: printf("]"); break;
+		case TokenType::PAREN_START: printf("("); break;
+		case TokenType::PAREN_END: printf(")"); break;
+		case TokenType::AT: printf("@"); break;
+		case TokenType::HASH: printf("#"); break;
+		case TokenType::QUESTION: printf("?"); break;
 
-		case TOKEN_ASSIGN: printf("="); break;
-		case TOKEN_PLUS: printf("+"); break;
-		case TOKEN_MINUS: printf("-"); break;
-		case TOKEN_TIMES: printf("*"); break;
-		case TOKEN_DIV: printf("/"); break;
-		case TOKEN_MOD: printf("%%"); break;
-		case TOKEN_BITWISE_AND: printf("&"); break;
-		case TOKEN_BITWISE_OR: printf("|"); break;
-		case TOKEN_BITWISE_XOR: printf("^"); break;
-		case TOKEN_LESS: printf("<"); break;
-		case TOKEN_GREATER: printf(">"); break;
-		case TOKEN_LOGIC_NOT: printf("!"); break;
-		case TOKEN_IS_EQUALS: printf("=="); break;
-		case TOKEN_PLUS_EQUALS: printf("+="); break;
-		case TOKEN_MINUS_EQUALS: printf("-="); break;
-		case TOKEN_TIMES_EQUALS: printf("*="); break;
-		case TOKEN_DIV_EQUALS: printf("/="); break;
-		case TOKEN_MOD_EQUALS: printf("%%="); break;
-		case TOKEN_BITWISE_AND_EQUALS: printf("&="); break;
-		case TOKEN_BITWISE_OR_EQUALS: printf("|="); break;
-		case TOKEN_BITWISE_XOR_EQUALS: printf("^="); break;
-		case TOKEN_LESS_EQUALS: printf("<="); break;
-		case TOKEN_GREATER_EQUALS: printf(">="); break;
-		case TOKEN_NOT_EQUALS: printf("!="); break;
-		case TOKEN_LOGIC_AND: printf("&&"); break;
-		case TOKEN_LOGIC_OR: printf("||"); break;
-		case TOKEN_BITWISE_NOT: printf("~"); break;
-		case TOKEN_BITSHIFT_LEFT: printf("<<"); break;
-		case TOKEN_BITSHIFT_RIGHT: printf(">>"); break;
+		case TokenType::ASSIGN: printf("="); break;
+		case TokenType::PLUS: printf("+"); break;
+		case TokenType::MINUS: printf("-"); break;
+		case TokenType::TIMES: printf("*"); break;
+		case TokenType::DIV: printf("/"); break;
+		case TokenType::MOD: printf("%%"); break;
+		case TokenType::BITWISE_AND: printf("&"); break;
+		case TokenType::BITWISE_OR: printf("|"); break;
+		case TokenType::BITWISE_XOR: printf("^"); break;
+		case TokenType::LESS: printf("<"); break;
+		case TokenType::GREATER: printf(">"); break;
+		case TokenType::LOGIC_NOT: printf("!"); break;
+		case TokenType::IS_EQUALS: printf("=="); break;
+		case TokenType::PLUS_EQUALS: printf("+="); break;
+		case TokenType::MINUS_EQUALS: printf("-="); break;
+		case TokenType::TIMES_EQUALS: printf("*="); break;
+		case TokenType::DIV_EQUALS: printf("/="); break;
+		case TokenType::MOD_EQUALS: printf("%%="); break;
+		case TokenType::BITWISE_AND_EQUALS: printf("&="); break;
+		case TokenType::BITWISE_OR_EQUALS: printf("|="); break;
+		case TokenType::BITWISE_XOR_EQUALS: printf("^="); break;
+		case TokenType::LESS_EQUALS: printf("<="); break;
+		case TokenType::GREATER_EQUALS: printf(">="); break;
+		case TokenType::NOT_EQUALS: printf("!="); break;
+		case TokenType::LOGIC_AND: printf("&&"); break;
+		case TokenType::LOGIC_OR: printf("||"); break;
+		case TokenType::BITWISE_NOT: printf("~"); break;
+		case TokenType::BITSHIFT_LEFT: printf("<<"); break;
+		case TokenType::BITSHIFT_RIGHT: printf(">>"); break;
 
-		case TOKEN_ERROR: printf("Token Error"); break;
-		case TOKEN_EOF: printf("End of file"); break;
+		case TokenType::ERROR: printf("Token Error"); break;
+		case TokenType::INPUT_END: printf("End of file"); break;
 
 		default: printf("[UNKNOWN TOKEN]"); break;
 		}
@@ -143,11 +143,11 @@ void debug_print_unary_op(UnaryOp op)
 	printf("UnaryOp: ");
 	switch (op)
 	{
-	case UNARY_OP_MINUS: printf("-"); break;
-	case UNARY_OP_LOGIC_NOT: printf("!"); break;
-	case UNARY_OP_BITWISE_NOT: printf("~"); break;
-	case UNARY_OP_ADDRESS_OF: printf("*"); break;
-	case UNARY_OP_DEREFERENCE: printf("<<"); break;
+	case UnaryOp::MINUS: printf("-"); break;
+	case UnaryOp::LOGIC_NOT: printf("!"); break;
+	case UnaryOp::BITWISE_NOT: printf("~"); break;
+	case UnaryOp::ADDRESS_OF: printf("*"); break;
+	case UnaryOp::DEREFERENCE: printf("<<"); break;
 	default: printf("[UNKNOWN UNARY OP]"); break;
 	}
 	printf("\n");
@@ -158,24 +158,24 @@ void debug_print_binary_op(BinaryOp op)
 	printf ("BinaryOp: ");
 	switch (op)
 	{
-	case BINARY_OP_LOGIC_AND: printf("&&"); break;
-	case BINARY_OP_LOGIC_OR: printf("||"); break;
-	case BINARY_OP_LESS: printf("<"); break;
-	case BINARY_OP_GREATER: printf(">"); break;
-	case BINARY_OP_LESS_EQUALS: printf("<="); break;
-	case BINARY_OP_GREATER_EQUALS: printf(">="); break;
-	case BINARY_OP_IS_EQUALS: printf("=="); break;
-	case BINARY_OP_NOT_EQUALS: printf("!="); break;
-	case BINARY_OP_PLUS: printf("+"); break;
-	case BINARY_OP_MINUS: printf("-"); break;
-	case BINARY_OP_TIMES: printf("*"); break;
-	case BINARY_OP_DIV: printf("/"); break;
-	case BINARY_OP_MOD: printf("%%"); break;
-	case BINARY_OP_BITWISE_AND: printf("&"); break;
-	case BINARY_OP_BITWISE_OR: printf("|"); break;
-	case BINARY_OP_BITWISE_XOR: printf("^"); break;
-	case BINARY_OP_BITSHIFT_LEFT: printf("<<"); break;
-	case BINARY_OP_BITSHIFT_RIGHT: printf(">>"); break;
+	case BinaryOp::LOGIC_AND: printf("&&"); break;
+	case BinaryOp::LOGIC_OR: printf("||"); break;
+	case BinaryOp::LESS: printf("<"); break;
+	case BinaryOp::GREATER: printf(">"); break;
+	case BinaryOp::LESS_EQUALS: printf("<="); break;
+	case BinaryOp::GREATER_EQUALS: printf(">="); break;
+	case BinaryOp::IS_EQUALS: printf("=="); break;
+	case BinaryOp::NOT_EQUALS: printf("!="); break;
+	case BinaryOp::PLUS: printf("+"); break;
+	case BinaryOp::MINUS: printf("-"); break;
+	case BinaryOp::TIMES: printf("*"); break;
+	case BinaryOp::DIV: printf("/"); break;
+	case BinaryOp::MOD: printf("%%"); break;
+	case BinaryOp::BITWISE_AND: printf("&"); break;
+	case BinaryOp::BITWISE_OR: printf("|"); break;
+	case BinaryOp::BITWISE_XOR: printf("^"); break;
+	case BinaryOp::BITSHIFT_LEFT: printf("<<"); break;
+	case BinaryOp::BITSHIFT_RIGHT: printf(">>"); break;
 	default: printf("[UNKNOWN BINARY OP]"); break;
 	}
 	printf("\n");
@@ -186,17 +186,17 @@ void debug_print_assign_op(AssignOp op)
 	printf("AssignOp: ");
 	switch (op)
 	{
-	case ASSIGN_OP_NONE: printf("="); break;
-	case ASSIGN_OP_PLUS: printf("+="); break;
-	case ASSIGN_OP_MINUS: printf("-="); break;
-	case ASSIGN_OP_TIMES: printf("*="); break;
-	case ASSIGN_OP_DIV: printf("/="); break;
-	case ASSIGN_OP_MOD: printf("%%="); break;
-	case ASSIGN_OP_BITWISE_AND: printf("&="); break;
-	case ASSIGN_OP_BITWISE_OR: printf("|="); break;
-	case ASSIGN_OP_BITWISE_XOR: printf("^="); break;
-	case ASSIGN_OP_BITSHIFT_LEFT: printf("<<="); break;
-	case ASSIGN_OP_BITSHIFT_RIGHT: printf(">>="); break;
+	case AssignOp::NONE: printf("="); break;
+	case AssignOp::PLUS: printf("+="); break;
+	case AssignOp::MINUS: printf("-="); break;
+	case AssignOp::TIMES: printf("*="); break;
+	case AssignOp::DIV: printf("/="); break;
+	case AssignOp::MOD: printf("%%="); break;
+	case AssignOp::BITWISE_AND: printf("&="); break;
+	case AssignOp::BITWISE_OR: printf("|="); break;
+	case AssignOp::BITWISE_XOR: printf("^="); break;
+	case AssignOp::BITSHIFT_LEFT: printf("<<="); break;
+	case AssignOp::BITSHIFT_RIGHT: printf(">>="); break;
 	default: printf("[UNKNOWN ASSIGN OP]"); break;
 	}
 	printf("\n");
@@ -206,18 +206,18 @@ void debug_print_basic_type(BasicType type)
 {
 	switch (type)
 	{
-	case BASIC_TYPE_I8: printf("i8"); break;
-	case BASIC_TYPE_U8: printf("u8"); break;
-	case BASIC_TYPE_I16: printf("i16"); break;
-	case BASIC_TYPE_U16: printf("u16"); break;
-	case BASIC_TYPE_I32: printf("i32"); break;
-	case BASIC_TYPE_U32: printf("u32"); break;
-	case BASIC_TYPE_I64: printf("i64"); break;
-	case BASIC_TYPE_U64: printf("u64"); break;
-	case BASIC_TYPE_F32: printf("f32"); break;
-	case BASIC_TYPE_F64: printf("f64"); break;
-	case BASIC_TYPE_BOOL: printf("bool"); break;
-	case BASIC_TYPE_STRING: printf("string"); break;
+	case BasicType::I8: printf("i8"); break;
+	case BasicType::U8: printf("u8"); break;
+	case BasicType::I16: printf("i16"); break;
+	case BasicType::U16: printf("u16"); break;
+	case BasicType::I32: printf("i32"); break;
+	case BasicType::U32: printf("u32"); break;
+	case BasicType::I64: printf("i64"); break;
+	case BasicType::U64: printf("u64"); break;
+	case BasicType::F32: printf("f32"); break;
+	case BasicType::F64: printf("f64"); break;
+	case BasicType::BOOL: printf("bool"); break;
+	case BasicType::STRING: printf("string"); break;
 	default: printf("[UNKNOWN BASIC TYPE]"); break;
 	}
 }
@@ -703,21 +703,21 @@ void debug_print_const_expr(Ast_Const_Expr const_expr, u32 depth)
 
 	switch (const_expr.basic_type)
 	{
-	case BASIC_TYPE_BOOL:
+	case BasicType::BOOL:
 	{
 		if (const_expr.as_bool) printf("true"); 
 		else printf("false");
 	} break;
-	case BASIC_TYPE_F32:
-	case BASIC_TYPE_F64: 
+	case BasicType::F32:
+	case BasicType::F64: 
 	{
 		printf("%f", const_expr.as_f64);
 		break;
 	}
-	case BASIC_TYPE_I8:
-	case BASIC_TYPE_I16:
-	case BASIC_TYPE_I32:
-	case BASIC_TYPE_I64: 
+	case BasicType::I8:
+	case BasicType::I16:
+	case BasicType::I32:
+	case BasicType::I64: 
 	{
 		printf("%lld", const_expr.as_i64); 
 		break;

@@ -3,178 +3,178 @@
 
 #include "common.h"
 
-enum TokenType;
-enum UnaryOp;
-enum BinaryOp;
-enum AssignOp;
-enum BasicType;
+enum class TokenType;
+enum class UnaryOp;
+enum class BinaryOp;
+enum class AssignOp;
+enum class BasicType;
 struct Token;
 
-option<UnaryOp> token_to_unary_op(TokenType type);
-option<BinaryOp> token_to_binary_op(TokenType type);
-option<AssignOp> token_to_assign_op(TokenType type);
-option<BasicType> token_to_basic_type(TokenType type);
-u32 token_binary_op_prec(BinaryOp binary_op);
 TokenType token_str_to_keyword(StringView str);
-bool token_is_literal(TokenType type);
+constexpr option<UnaryOp> token_to_unary_op(TokenType type);
+constexpr option<BinaryOp> token_to_binary_op(TokenType type);
+constexpr option<AssignOp> token_to_assign_op(TokenType type);
+constexpr option<BasicType> token_to_basic_type(TokenType type);
+constexpr u32 token_binary_op_prec(BinaryOp binary_op);
+constexpr bool token_basic_type_is_integer(BasicType type);
 
-enum TokenType
+enum class TokenType
 {
-	TOKEN_IDENT,                 // name
-	TOKEN_BOOL_LITERAL,          // true false
-	TOKEN_FLOAT_LITERAL,         // 10.5
-	TOKEN_INTEGER_LITERAL,       // 10
-	TOKEN_STRING_LITERAL,        // "string"
+	IDENT,                 // name
+	BOOL_LITERAL,          // true false
+	FLOAT_LITERAL,         // 10.5
+	INTEGER_LITERAL,       // 10
+	STRING_LITERAL,        // "string"
 
-	TOKEN_KEYWORD_STRUCT,        // struct
-	TOKEN_KEYWORD_ENUM,          // enum
-	TOKEN_KEYWORD_IF,            // if
-	TOKEN_KEYWORD_ELSE,          // else
-	TOKEN_KEYWORD_TRUE,          // true
-	TOKEN_KEYWORD_FALSE,         // false
-	TOKEN_KEYWORD_FOR,           // for
-	TOKEN_KEYWORD_DEFER,         // defer
-	TOKEN_KEYWORD_BREAK,         // break
-	TOKEN_KEYWORD_RETURN,        // return
-	TOKEN_KEYWORD_SWITCH,        // switch
-	TOKEN_KEYWORD_CONTINUE,      // continue
-	TOKEN_KEYWORD_SIZEOF,        // sizeof
-	TOKEN_KEYWORD_IMPORT,        // import
-	TOKEN_KEYWORD_USE,           // use
+	KEYWORD_STRUCT,        // struct
+	KEYWORD_ENUM,          // enum
+	KEYWORD_IF,            // if
+	KEYWORD_ELSE,          // else
+	KEYWORD_TRUE,          // true
+	KEYWORD_FALSE,         // false
+	KEYWORD_FOR,           // for
+	KEYWORD_DEFER,         // defer
+	KEYWORD_BREAK,         // break
+	KEYWORD_RETURN,        // return
+	KEYWORD_SWITCH,        // switch
+	KEYWORD_CONTINUE,      // continue
+	KEYWORD_SIZEOF,        // sizeof
+	KEYWORD_IMPORT,        // import
+	KEYWORD_USE,           // use
 
-	TOKEN_TYPE_I8,               // i8
-	TOKEN_TYPE_U8,               // u8
-	TOKEN_TYPE_I16,              // i16
-	TOKEN_TYPE_U16,              // u16
-	TOKEN_TYPE_I32,              // i32
-	TOKEN_TYPE_U32,              // u32
-	TOKEN_TYPE_I64,              // i64
-	TOKEN_TYPE_U64,              // u64
-	TOKEN_TYPE_F32,              // f32
-	TOKEN_TYPE_F64,              // f64
-	TOKEN_TYPE_BOOL,             // bool
-	TOKEN_TYPE_STRING,           // string
+	TYPE_I8,               // i8
+	TYPE_U8,               // u8
+	TYPE_I16,              // i16
+	TYPE_U16,              // u16
+	TYPE_I32,              // i32
+	TYPE_U32,              // u32
+	TYPE_I64,              // i64
+	TYPE_U64,              // u64
+	TYPE_F32,              // f32
+	TYPE_F64,              // f64
+	TYPE_BOOL,             // bool
+	TYPE_STRING,           // string
 
-	TOKEN_DOT,                   // .
-	TOKEN_COLON,                 // :
-	TOKEN_QUOTE,                 // '
-	TOKEN_COMMA,                 // ,
-	TOKEN_SEMICOLON,             // ;
-	TOKEN_DOUBLE_DOT,            // ..
-	TOKEN_DOUBLE_COLON,          // ::
-	TOKEN_BLOCK_START,           // {
-	TOKEN_BLOCK_END,             // }
-	TOKEN_BRACKET_START,         // [
-	TOKEN_BRACKET_END,           // ]
-	TOKEN_PAREN_START,           // (
-	TOKEN_PAREN_END,             // )
-	TOKEN_AT,                    // @
-	TOKEN_HASH,                  // #
-	TOKEN_QUESTION,              // ?
+	DOT,                   // .
+	COLON,                 // :
+	QUOTE,                 // '
+	COMMA,                 // ,
+	SEMICOLON,             // ;
+	DOUBLE_DOT,            // ..
+	DOUBLE_COLON,          // ::
+	BLOCK_START,           // {
+	BLOCK_END,             // }
+	BRACKET_START,         // [
+	BRACKET_END,           // ]
+	PAREN_START,           // (
+	PAREN_END,             // )
+	AT,                    // @
+	HASH,                  // #
+	QUESTION,              // ?
 
-	TOKEN_ASSIGN,                // =
-	TOKEN_PLUS,                  // +
-	TOKEN_MINUS,                 // -
-	TOKEN_TIMES,                 // *
-	TOKEN_DIV,                   // /
-	TOKEN_MOD,                   // %
-	TOKEN_BITWISE_AND,           // &
-	TOKEN_BITWISE_OR,            // |
-	TOKEN_BITWISE_XOR,           // ^
-	TOKEN_LESS,                  // <
-	TOKEN_GREATER,               // >
-	TOKEN_LOGIC_NOT,             // !
-	TOKEN_IS_EQUALS,             // ==
-	TOKEN_PLUS_EQUALS,           // +=
-	TOKEN_MINUS_EQUALS,          // -=
-	TOKEN_TIMES_EQUALS,          // *=
-	TOKEN_DIV_EQUALS,            // /=
-	TOKEN_MOD_EQUALS,            // %=
-	TOKEN_BITWISE_AND_EQUALS,    // &=
-	TOKEN_BITWISE_OR_EQUALS,     // |=
-	TOKEN_BITWISE_XOR_EQUALS,    // ^=
-	TOKEN_LESS_EQUALS,           // <=
-	TOKEN_GREATER_EQUALS,        // >=
-	TOKEN_NOT_EQUALS,            // !=
-	TOKEN_LOGIC_AND,             // &&
-	TOKEN_LOGIC_OR,              // ||
-	TOKEN_BITWISE_NOT,           // ~
-	TOKEN_BITSHIFT_LEFT,         // <<
-	TOKEN_BITSHIFT_RIGHT,        // >>
-	TOKEN_BITSHIFT_LEFT_EQUALS,  // <<=
-	TOKEN_BITSHIFT_RIGHT_EQUALS, // >>=
+	ASSIGN,                // =
+	PLUS,                  // +
+	MINUS,                 // -
+	TIMES,                 // *
+	DIV,                   // /
+	MOD,                   // %
+	BITWISE_AND,           // &
+	BITWISE_OR,            // |
+	BITWISE_XOR,           // ^
+	LESS,                  // <
+	GREATER,               // >
+	LOGIC_NOT,             // !
+	IS_EQUALS,             // ==
+	PLUS_EQUALS,           // +=
+	MINUS_EQUALS,          // -=
+	TIMES_EQUALS,          // *=
+	DIV_EQUALS,            // /=
+	MOD_EQUALS,            // %=
+	BITWISE_AND_EQUALS,    // &=
+	BITWISE_OR_EQUALS,     // |=
+	BITWISE_XOR_EQUALS,    // ^=
+	LESS_EQUALS,           // <=
+	GREATER_EQUALS,        // >=
+	NOT_EQUALS,            // !=
+	LOGIC_AND,             // &&
+	LOGIC_OR,              // ||
+	BITWISE_NOT,           // ~
+	BITSHIFT_LEFT,         // <<
+	BITSHIFT_RIGHT,        // >>
+	BITSHIFT_LEFT_EQUALS,  // <<=
+	BITSHIFT_RIGHT_EQUALS, // >>=
 
-	TOKEN_ERROR,
-	TOKEN_EOF,
+	INPUT_END,
+	ERROR,
 };
 
-enum UnaryOp
+enum class UnaryOp
 {
-	UNARY_OP_MINUS,           // -
-	UNARY_OP_LOGIC_NOT,       // !
-	UNARY_OP_BITWISE_NOT,     // ~
-	UNARY_OP_ADDRESS_OF,      // *
-	UNARY_OP_DEREFERENCE,     // <<
+	MINUS,          // -
+	LOGIC_NOT,      // !
+	BITWISE_NOT,    // ~
+	ADDRESS_OF,     // *
+	DEREFERENCE,    // <<
 };
 
-enum BinaryOp
+enum class BinaryOp
 {
-	BINARY_OP_LOGIC_AND,      // &&
-	BINARY_OP_LOGIC_OR,       // ||
-	BINARY_OP_LESS,           // <
-	BINARY_OP_GREATER,        // >
-	BINARY_OP_LESS_EQUALS,    // <=
-	BINARY_OP_GREATER_EQUALS, // >=
-	BINARY_OP_IS_EQUALS,      // ==
-	BINARY_OP_NOT_EQUALS,     // !=
-	BINARY_OP_PLUS,           // +
-	BINARY_OP_MINUS,          // -
-	BINARY_OP_TIMES,          // *
-	BINARY_OP_DIV,            // /
-	BINARY_OP_MOD,            // %
-	BINARY_OP_BITWISE_AND,    // &
-	BINARY_OP_BITWISE_OR,     // |
-	BINARY_OP_BITWISE_XOR,    // ^
-	BINARY_OP_BITSHIFT_LEFT,  // <<
-	BINARY_OP_BITSHIFT_RIGHT, // >>
+	LOGIC_AND,      // &&
+	LOGIC_OR,       // ||
+	LESS,           // <
+	GREATER,        // >
+	LESS_EQUALS,    // <=
+	GREATER_EQUALS, // >=
+	IS_EQUALS,      // ==
+	NOT_EQUALS,     // !=
+	PLUS,           // +
+	MINUS,          // -
+	TIMES,          // *
+	DIV,            // /
+	MOD,            // %
+	BITWISE_AND,    // &
+	BITWISE_OR,     // |
+	BITWISE_XOR,    // ^
+	BITSHIFT_LEFT,  // <<
+	BITSHIFT_RIGHT, // >>
 };
 
-enum AssignOp
+enum class AssignOp
 {
-	ASSIGN_OP_NONE,           // =
-	ASSIGN_OP_PLUS,           // +=
-	ASSIGN_OP_MINUS,          // -=
-	ASSIGN_OP_TIMES,          // *=
-	ASSIGN_OP_DIV,            // /=
-	ASSIGN_OP_MOD,            // %=
-	ASSIGN_OP_BITWISE_AND,    // &=
-	ASSIGN_OP_BITWISE_OR,	  // |=
-	ASSIGN_OP_BITWISE_XOR,	  // ^=
-	ASSIGN_OP_BITSHIFT_LEFT,  // <<=
-	ASSIGN_OP_BITSHIFT_RIGHT, // >>=
+	NONE,           // =
+	PLUS,           // +=
+	MINUS,          // -=
+	TIMES,          // *=
+	DIV,            // /=
+	MOD,            // %=
+	BITWISE_AND,    // &=
+	BITWISE_OR,     // |=
+	BITWISE_XOR,    // ^=
+	BITSHIFT_LEFT,  // <<=
+	BITSHIFT_RIGHT, // >>=
 };
 
-enum BasicType
+enum class BasicType
 {
-	BASIC_TYPE_I8, 
-	BASIC_TYPE_U8,
-	BASIC_TYPE_I16, 
-	BASIC_TYPE_U16,
-	BASIC_TYPE_I32, 
-	BASIC_TYPE_U32,
-	BASIC_TYPE_I64, 
-	BASIC_TYPE_U64,
-	BASIC_TYPE_F32, 
-	BASIC_TYPE_F64,
-	BASIC_TYPE_BOOL, 
-	BASIC_TYPE_STRING,
+	I8,
+	U8,
+	I16,
+	U16,
+	I32,
+	U32,
+	I64,
+	U64,
+	BOOL,
+	F32,
+	F64,
+	STRING,
 };
 
 struct Token
 {
 	Token() {};
 
-	TokenType type = TOKEN_ERROR;
+	TokenType type = TokenType::ERROR;
 	u32 l0 = 0;
 	u32 c0 = 0;
 
@@ -187,5 +187,127 @@ struct Token
 		StringView string_value;
 	};
 };
+
+constexpr option<UnaryOp> token_to_unary_op(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::MINUS:         return UnaryOp::MINUS;
+	case TokenType::LOGIC_NOT:     return UnaryOp::LOGIC_NOT;
+	case TokenType::BITWISE_NOT:   return UnaryOp::BITWISE_NOT;
+	case TokenType::TIMES:         return UnaryOp::ADDRESS_OF;
+	case TokenType::BITSHIFT_LEFT: return UnaryOp::DEREFERENCE;
+	default: return {};
+	}
+}
+
+constexpr option<BinaryOp> token_to_binary_op(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::LOGIC_AND:      return BinaryOp::LOGIC_AND;
+	case TokenType::LOGIC_OR:       return BinaryOp::LOGIC_OR;
+	case TokenType::LESS:           return BinaryOp::LESS;
+	case TokenType::GREATER:        return BinaryOp::GREATER;
+	case TokenType::LESS_EQUALS:    return BinaryOp::LESS_EQUALS;
+	case TokenType::GREATER_EQUALS: return BinaryOp::GREATER_EQUALS;
+	case TokenType::IS_EQUALS:      return BinaryOp::IS_EQUALS;
+	case TokenType::NOT_EQUALS:     return BinaryOp::NOT_EQUALS;
+	case TokenType::PLUS:           return BinaryOp::PLUS;
+	case TokenType::MINUS:          return BinaryOp::MINUS;
+	case TokenType::TIMES:          return BinaryOp::TIMES;
+	case TokenType::DIV:            return BinaryOp::DIV;
+	case TokenType::MOD:            return BinaryOp::MOD;
+	case TokenType::BITWISE_AND:    return BinaryOp::BITWISE_AND;
+	case TokenType::BITWISE_OR:     return BinaryOp::BITWISE_OR;
+	case TokenType::BITWISE_XOR:    return BinaryOp::BITWISE_XOR;
+	case TokenType::BITSHIFT_LEFT:  return BinaryOp::BITSHIFT_LEFT;
+	case TokenType::BITSHIFT_RIGHT: return BinaryOp::BITSHIFT_RIGHT;
+	default: return {};
+	}
+}
+
+constexpr option<AssignOp> token_to_assign_op(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::ASSIGN:                return AssignOp::NONE;
+	case TokenType::PLUS_EQUALS:           return AssignOp::PLUS;
+	case TokenType::MINUS_EQUALS:          return AssignOp::MINUS;
+	case TokenType::TIMES_EQUALS:          return AssignOp::TIMES;
+	case TokenType::DIV_EQUALS:            return AssignOp::DIV;
+	case TokenType::MOD_EQUALS:            return AssignOp::MOD;
+	case TokenType::BITWISE_AND_EQUALS:    return AssignOp::BITWISE_AND;
+	case TokenType::BITWISE_OR_EQUALS:     return AssignOp::BITWISE_OR;
+	case TokenType::BITWISE_XOR_EQUALS:    return AssignOp::BITWISE_XOR;
+	case TokenType::BITSHIFT_LEFT_EQUALS:  return AssignOp::BITSHIFT_LEFT;
+	case TokenType::BITSHIFT_RIGHT_EQUALS: return AssignOp::BITSHIFT_RIGHT;
+	default: return {};
+	}
+}
+
+constexpr option<BasicType> token_to_basic_type(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::TYPE_I8:     return BasicType::I8;
+	case TokenType::TYPE_U8:     return BasicType::U8;
+	case TokenType::TYPE_I16:    return BasicType::I16;
+	case TokenType::TYPE_U16:    return BasicType::U16;
+	case TokenType::TYPE_I32:    return BasicType::I32;
+	case TokenType::TYPE_U32:    return BasicType::U32;
+	case TokenType::TYPE_I64:    return BasicType::I64;
+	case TokenType::TYPE_U64:    return BasicType::U64;
+	case TokenType::TYPE_F32:    return BasicType::F32;
+	case TokenType::TYPE_F64:    return BasicType::F64;
+	case TokenType::TYPE_BOOL:   return BasicType::BOOL;
+	case TokenType::TYPE_STRING: return BasicType::STRING;
+	default: return {};
+	}
+}
+
+constexpr u32 token_binary_op_prec(BinaryOp binary_op)
+{
+	switch (binary_op)
+	{
+	case BinaryOp::LOGIC_AND:
+	case BinaryOp::LOGIC_OR:
+		return 0;
+	case BinaryOp::LESS:
+	case BinaryOp::GREATER:
+	case BinaryOp::LESS_EQUALS:
+	case BinaryOp::GREATER_EQUALS:
+	case BinaryOp::IS_EQUALS:
+	case BinaryOp::NOT_EQUALS:
+		return 1;
+	case BinaryOp::PLUS:
+	case BinaryOp::MINUS:
+		return 2;
+	case BinaryOp::TIMES:
+	case BinaryOp::DIV:
+	case BinaryOp::MOD:
+		return 3;
+	case BinaryOp::BITWISE_AND:
+	case BinaryOp::BITWISE_OR:
+	case BinaryOp::BITWISE_XOR:
+		return 4;
+	case BinaryOp::BITSHIFT_LEFT:
+	case BinaryOp::BITSHIFT_RIGHT:
+		return 5;
+	}
+}
+
+constexpr bool token_basic_type_is_integer(BasicType type)
+{
+	switch (type)
+	{
+	case BasicType::BOOL:
+	case BasicType::F32:
+	case BasicType::F64:
+	case BasicType::STRING:
+		return false;
+	default: return true;
+	}
+}
 
 #endif

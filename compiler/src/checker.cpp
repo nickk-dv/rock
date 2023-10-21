@@ -177,7 +177,7 @@ void check_main_proc(Checker_Context* cc)
 	else
 	{
 		Ast_Type return_type = proc_decl->return_type.value();
-		if (return_type.tag != Ast_Type::Tag::Basic || return_type.as_basic != BASIC_TYPE_I32)
+		if (return_type.tag != Ast_Type::Tag::Basic || return_type.as_basic != BasicType::I32)
 		{
 			err_set;
 			printf("Main procedure must have i32 return type\n");
@@ -308,6 +308,13 @@ void check_struct_decl(Checker_Context* cc, Ast_Struct_Decl* struct_decl)
 {
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf possibly move out from function and re-use hash_set with reset()
 
+	if (struct_decl->fields.empty())
+	{
+		err_set;
+		error("Struct must have at least 1 field", struct_decl->ident);
+		return;
+	}
+
 	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
 	{
 		option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
@@ -322,16 +329,14 @@ void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
 {
 	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
 
-	BasicType basic_type = enum_decl->basic_type;
-	Ast_Type enum_basic_type = type_from_basic(basic_type);
-	Type_Context type_context = { enum_basic_type, true };
+	BasicType type = enum_decl->basic_type;
+	Ast_Type enum_type = type_from_basic(type);
+	Type_Context type_context = { enum_type, true };
 
-	//@Todo check circular enum dependency when enums as constants are supported
-	//@Todo ban strings on parsing @Note this might be usefull, look into supporting string enums later
-	if (basic_type == BASIC_TYPE_STRING)
+	if (!token_basic_type_is_integer(type))
 	{
 		err_set;
-		error("Cannot use string basic type in enum declaration", enum_decl->ident);
+		error("Cannot use non integer type in enum declaration", enum_decl->ident);
 	}
 
 	for (Ast_Enum_Variant& variant : enum_decl->variants)
@@ -341,15 +346,18 @@ void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
 		else { err_set; error("Duplicate enum variant identifier", variant.ident); }
 
 		option<Ast_Type> type = check_expr(cc, &type_context, variant.expr);
-		if (type && !match_type(cc, enum_basic_type, type.value()))
+		if (type && !match_type(cc, enum_type, type.value()))
 		{
 			err_set;
 			printf("Variant type doesnt match enum type:\n");
 			debug_print_ident(variant.ident);
-			printf("Expected: "); debug_print_type(enum_basic_type); printf("\n");
+			printf("Expected: "); debug_print_type(enum_type); printf("\n");
 			printf("Got:      "); debug_print_type(type.value()); printf("\n\n");
 		}
 	}
+	
+	//@Todo check circular enum dependency when enums as constants are supported
+	//@Todo check constant value overlap
 }
 
 void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
@@ -358,20 +366,17 @@ void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
 	
 	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 	{
+		check_type_signature(cc, &param.type);
+		
 		option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
 		if (!name) name_set.add(param.ident, hash_ident(param.ident));
 		else { err_set; error("Duplicate procedure input parameter identifier", param.ident); }
-		
-		check_type_signature(cc, &param.type);
 	}
 
 	if (proc_decl->return_type)
 	{
 		check_type_signature(cc, &proc_decl->return_type.value());
 	}
-
-	//@Todo not important for now
-	// Check uniquess of enum variants
 }
 
 Ast* try_import(Checker_Context* cc, option<Ast_Ident> import)
@@ -678,6 +683,14 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 		}
 	}
 
+	if (_switch->cases.empty())
+	{
+		err_set;
+		printf("Switch must have at least one case: \n");
+		debug_print_token(_switch->token, true, true);
+		return;
+	}
+
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
 		//@Notice checking if its a Integer constant basically, no contant propagation or expressions are tracked yet
@@ -818,7 +831,7 @@ void check_var_assign(Checker_Context* cc, Ast_Var_Assign* var_assign)
 	option<Ast_Type> var_type = check_var(cc, var_assign->var);
 	if (!var_type) return;
 
-	if (var_assign->op != ASSIGN_OP_NONE)
+	if (var_assign->op != AssignOp::NONE)
 	{
 		err_set;
 		printf("Check var assign: only '=' assign op is supported\n");
@@ -854,10 +867,10 @@ Type_Kind type_kind(Checker_Context* cc, Ast_Type type)
 	{
 		switch (type.as_basic)
 		{
-		case BASIC_TYPE_F32:
-		case BASIC_TYPE_F64: return Type_Kind::Float;
-		case BASIC_TYPE_BOOL: return Type_Kind::Bool;
-		case BASIC_TYPE_STRING: return Type_Kind::String;
+		case BasicType::F32:
+		case BasicType::F64: return Type_Kind::Float;
+		case BasicType::BOOL: return Type_Kind::Bool;
+		case BasicType::STRING: return Type_Kind::String;
 		default: return Type_Kind::Integer;
 		}
 	}
@@ -942,9 +955,9 @@ void type_implicit_binary_cast(Checker_Context* cc, Ast_Type* type_a, Ast_Type* 
 
 	if (kind_a == Type_Kind::Float && kind_b == Type_Kind::Float)
 	{
-		if (type_a->as_basic == BASIC_TYPE_F32) 
-			type_a->as_basic = BASIC_TYPE_F64;
-		else type_b->as_basic = BASIC_TYPE_F64;
+		if (type_a->as_basic == BasicType::F32) 
+			type_a->as_basic = BasicType::F64;
+		else type_b->as_basic = BasicType::F64;
 		return;
 	}
 
@@ -1093,40 +1106,40 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 			{
 				case Literal_Kind::Bool: 
 				{
-					const_expr.basic_type = BASIC_TYPE_BOOL;
+					const_expr.basic_type = BasicType::BOOL;
 					const_expr.as_bool = lit.as_bool;
 					expr->tag = Ast_Expr::Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
-					return type_from_basic(BASIC_TYPE_BOOL);
+					return type_from_basic(BasicType::BOOL);
 				}
 				case Literal_Kind::Float:
 				{
 					//@Base on context
-					const_expr.basic_type = BASIC_TYPE_F64;
+					const_expr.basic_type = BasicType::F64;
 					const_expr.as_f64 = lit.as_f64;
 					expr->tag = Ast_Expr::Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
-					return type_from_basic(BASIC_TYPE_F64);
+					return type_from_basic(BasicType::F64);
 				}
 				case Literal_Kind::Int:
 				{
 					//@Base on context
 					//@Todo range based
-					const_expr.basic_type = BASIC_TYPE_I32;
+					const_expr.basic_type = BasicType::I32;
 					const_expr.as_i64 = lit.as_i64;
 					expr->tag = Ast_Expr::Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
-					return type_from_basic(BASIC_TYPE_I32);
+					return type_from_basic(BasicType::I32);
 				}
 				case Literal_Kind::UInt:
 				{
 					//@Base on context
 					//@Todo range based
-					const_expr.basic_type = BASIC_TYPE_I32;
+					const_expr.basic_type = BasicType::I32;
 					const_expr.as_u64 = lit.as_u64;
 					expr->tag = Ast_Expr::Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
-					return type_from_basic(BASIC_TYPE_I32);
+					return type_from_basic(BasicType::I32);
 				}
 			}
 		}
@@ -1136,38 +1149,38 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 			{
 			case Literal_Kind::Bool:
 			{
-				const_expr.basic_type = BASIC_TYPE_BOOL;
+				const_expr.basic_type = BasicType::BOOL;
 				const_expr.as_bool = lit.as_bool;
 				expr->tag = Ast_Expr::Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
-				return type_from_basic(BASIC_TYPE_BOOL);
+				return type_from_basic(BasicType::BOOL);
 			}
 			case Literal_Kind::Float:
 			{
-				const_expr.basic_type = BASIC_TYPE_F64;
+				const_expr.basic_type = BasicType::F64;
 				const_expr.as_f64 = lit.as_f64;
 				expr->tag = Ast_Expr::Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
-				return type_from_basic(BASIC_TYPE_F64);
+				return type_from_basic(BasicType::F64);
 			}
 			case Literal_Kind::Int:
 			{
 				//@Todo range based default int type
-				const_expr.basic_type = BASIC_TYPE_I32;
+				const_expr.basic_type = BasicType::I32;
 				const_expr.as_i64 = lit.as_i64;
 				expr->tag = Ast_Expr::Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
-				return type_from_basic(BASIC_TYPE_I32);
+				return type_from_basic(BasicType::I32);
 			}
 			case Literal_Kind::UInt:
 			{
 				//@Todo range based default int type
 				//@Might become a u64 if its too big
-				const_expr.basic_type = BASIC_TYPE_I32;
+				const_expr.basic_type = BasicType::I32;
 				const_expr.as_u64 = lit.as_u64;
 				expr->tag = Ast_Expr::Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
-				return type_from_basic(BASIC_TYPE_I32);
+				return type_from_basic(BasicType::I32);
 			}
 			}
 		}
@@ -1204,7 +1217,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 	{
 		//@Notice not doing sizing of types yet, cant know the numeric range
 		option<Ast_Type> type = check_type_signature(cc, &term->as_sizeof->type);
-		if (type) return type_from_basic(BASIC_TYPE_U64);
+		if (type) return type_from_basic(BasicType::U64);
 		return {};
 	}
 	case Ast_Term::Tag::Literal:
@@ -1212,9 +1225,9 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		Ast_Literal literal = term->as_literal;
 		switch (literal.token.type)
 		{
-		case TOKEN_STRING_LITERAL: //@ Strings are just *i8 cstrings for now
+		case TokenType::STRING_LITERAL: //@ Strings are just *i8 cstrings for now
 		{
-			Ast_Type string_ptr = type_from_basic(BASIC_TYPE_I8);
+			Ast_Type string_ptr = type_from_basic(BasicType::I8);
 			string_ptr.pointer_level += 1;
 			return string_ptr;
 		}
@@ -1542,7 +1555,7 @@ bool check_is_const_expr(Ast_Expr* expr)
 		{
 		//@Notice not handling enum as constexpr yet 
 		//case Ast_Term::Tag::Enum: return true;
-		case Ast_Term::Tag::Literal: return term->as_literal.token.type != TOKEN_STRING_LITERAL;
+		case Ast_Term::Tag::Literal: return term->as_literal.token.type != TokenType::STRING_LITERAL;
 		default: return false;
 		}
 	}
@@ -1578,12 +1591,12 @@ option<Literal> check_const_term(Ast_Term* term)
 		Token token = term->as_literal.token;
 		Literal lit = {};
 
-		if (token.type == TOKEN_BOOL_LITERAL)
+		if (token.type == TokenType::BOOL_LITERAL)
 		{
 			lit.kind = Literal_Kind::Bool;
 			lit.as_bool = token.bool_value;
 		}
-		else if (token.type == TOKEN_FLOAT_LITERAL)
+		else if (token.type == TokenType::FLOAT_LITERAL)
 		{
 			lit.kind = Literal_Kind::Float;
 			lit.as_f64 = token.float64_value;
@@ -1611,7 +1624,7 @@ option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr)
 
 	switch (op)
 	{
-	case UNARY_OP_MINUS:
+	case UnaryOp::MINUS:
 	{
 		if (rhs_kind == Literal_Kind::Bool) { printf("Cannot apply unary - to bool expression\n"); return {}; }
 		if (rhs_kind == Literal_Kind::Float) { rhs.as_f64 = -rhs.as_f64; return rhs; }
@@ -1626,25 +1639,25 @@ option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr)
 		printf("Unary - results in integer oveflow\n");
 		return {};
 	}
-	case UNARY_OP_LOGIC_NOT:
+	case UnaryOp::LOGIC_NOT:
 	{
 		if (rhs_kind == Literal_Kind::Bool) { rhs.as_bool = !rhs.as_bool; return rhs; }
 		printf("Unary ! can only be applied to bool expression\n");
 		return {};
 	}
-	case UNARY_OP_BITWISE_NOT:
+	case UnaryOp::BITWISE_NOT:
 	{
 		if (rhs_kind == Literal_Kind::Bool) { printf("Cannot apply unary ~ to bool expression\n"); return {}; }
 		if (rhs_kind == Literal_Kind::Float) { printf("Cannot apply unary ~ to float expression\n"); return {}; }
 		if (rhs_kind == Literal_Kind::Int) { rhs.as_i64 = ~rhs.as_i64; return rhs; }
 		rhs.as_u64 = ~rhs.as_u64; return rhs;
 	}
-	case UNARY_OP_ADDRESS_OF:
+	case UnaryOp::ADDRESS_OF:
 	{
 		printf("Unary adress of * cannot be used on temporary values\n");
 		return {};
 	}
-	case UNARY_OP_DEREFERENCE:
+	case UnaryOp::DEREFERENCE:
 	{
 		printf("Unary dereference << cannot be used on temporary values\n");
 		return {};
@@ -1670,19 +1683,19 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 
 	switch (op)
 	{
-	case BINARY_OP_LOGIC_AND:
+	case BinaryOp::LOGIC_AND:
 	{
 		if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool && rhs.as_bool };
 		printf("Binary && can only be applied to bool expressions\n");
 		return {};
 	}
-	case BINARY_OP_LOGIC_OR:
+	case BinaryOp::LOGIC_OR:
 	{
 		if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool || rhs.as_bool };
 		printf("Binary || can only be applied to bool expressions\n");
 		return {};
 	}
-	case BINARY_OP_LESS:
+	case BinaryOp::LESS:
 	{
 		if (!same_kind) { printf("Binary < can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply < to binary expressions\n"); return {}; }
@@ -1690,7 +1703,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 < rhs.as_i64 };
 		return Literal{ Literal_Kind::Bool, lhs.as_u64 < rhs.as_u64 };
 	}
-	case BINARY_OP_GREATER:
+	case BinaryOp::GREATER:
 	{
 		if (!same_kind) { printf("Binary > can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply > to binary expressions\n"); return {}; }
@@ -1698,7 +1711,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 > rhs.as_i64 };
 		return Literal{ Literal_Kind::Bool, lhs.as_u64 > rhs.as_u64 };
 	}
-	case BINARY_OP_LESS_EQUALS:
+	case BinaryOp::LESS_EQUALS:
 	{
 		if (!same_kind) { printf("Binary <= can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply <= to binary expressions\n"); return {}; }
@@ -1706,7 +1719,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 <= rhs.as_i64 };
 		return Literal{ Literal_Kind::Bool, lhs.as_u64 <= rhs.as_u64 };
 	}
-	case BINARY_OP_GREATER_EQUALS:
+	case BinaryOp::GREATER_EQUALS:
 	{
 		if (!same_kind) { printf("Binary >= can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply >= to binary expressions\n"); return {}; }
@@ -1714,7 +1727,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 >= rhs.as_i64 };
 		return Literal{ Literal_Kind::Bool, lhs.as_u64 >= rhs.as_u64 };
 	}
-	case BINARY_OP_IS_EQUALS:
+	case BinaryOp::IS_EQUALS:
 	{
 		if (!same_kind) { printf("Binary == can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool == rhs.as_bool };
@@ -1722,7 +1735,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 == rhs.as_i64 };
 		return Literal{ Literal_Kind::Bool, lhs.as_u64 == rhs.as_u64 };
 	}
-	case BINARY_OP_NOT_EQUALS:
+	case BinaryOp::NOT_EQUALS:
 	{
 		if (!same_kind) { printf("Binary != can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool != rhs.as_bool };
@@ -1730,7 +1743,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) return Literal{ Literal_Kind::Bool, lhs.as_i64 != rhs.as_i64 };
 		return Literal{ Literal_Kind::Bool, lhs.as_u64 != rhs.as_u64 };
 	}
-	case BINARY_OP_PLUS:
+	case BinaryOp::PLUS:
 	{
 		if (!same_kind) { printf("Binary + can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply + to binary expressions\n"); return {}; }
@@ -1738,7 +1751,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 += rhs.as_i64; return lhs; } //@Range
 		lhs.as_u64 += rhs.as_u64; return lhs; //@Range
 	}
-	case BINARY_OP_MINUS:
+	case BinaryOp::MINUS:
 	{
 		if (!same_kind) { printf("Binary - can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply - to binary expressions\n"); return {}; }
@@ -1746,7 +1759,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 -= rhs.as_i64; return lhs; } //@Range
 		lhs.as_u64 -= rhs.as_u64; return lhs; //@Undeflow
 	}
-	case BINARY_OP_TIMES:
+	case BinaryOp::TIMES:
 	{
 		if (!same_kind) { printf("Binary * can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply * to binary expressions\n"); return {}; }
@@ -1754,7 +1767,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 *= rhs.as_i64; return lhs; } //@Range
 		lhs.as_u64 *= rhs.as_u64; return lhs; //@Range
 	}
-	case BINARY_OP_DIV:
+	case BinaryOp::DIV:
 	{
 		if (!same_kind) { printf("Binary / can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply / to binary expressions\n"); return {}; }
@@ -1762,7 +1775,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 /= rhs.as_i64; return lhs; } //@Div 0
 		lhs.as_u64 /= rhs.as_u64; return lhs; //@Div 0
 	}
-	case BINARY_OP_MOD:
+	case BinaryOp::MOD:
 	{
 		if (!same_kind) { printf("Binary %% can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind == Literal_Kind::Bool) { printf("Cannot apply %% to binary expressions\n"); return {}; }
@@ -1770,28 +1783,28 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		if (lhs_kind == Literal_Kind::Int) { lhs.as_i64 %= rhs.as_i64; return lhs; } //@Mod 0
 		lhs.as_u64 %= rhs.as_u64; return lhs; //@Mod 0
 	}
-	case BINARY_OP_BITWISE_AND: //@Unnesesary error messages on same_kind
+	case BinaryOp::BITWISE_AND: //@Unnesesary error messages on same_kind
 	{
 		if (!same_kind) { printf("Binary & can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind != Literal_Kind::UInt) { printf("Binary & can only be applied to unsigned integers\n"); return {}; }
 		lhs.as_u64 &= rhs.as_u64;
 		return lhs;
 	}
-	case BINARY_OP_BITWISE_OR:
+	case BinaryOp::BITWISE_OR:
 	{
 		if (!same_kind) { printf("Binary | can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind != Literal_Kind::UInt) { printf("Binary | can only be applied to unsigned integers\n"); return {}; }
 		lhs.as_u64 |= rhs.as_u64;
 		return lhs;
 	}
-	case BINARY_OP_BITWISE_XOR:
+	case BinaryOp::BITWISE_XOR:
 	{
 		if (!same_kind) { printf("Binary ^ can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind != Literal_Kind::UInt) { printf("Binary ^ can only be applied to unsigned integers\n"); return {}; }
 		lhs.as_u64 ^= rhs.as_u64;
 		return lhs;
 	}
-	case BINARY_OP_BITSHIFT_LEFT:
+	case BinaryOp::BITSHIFT_LEFT:
 	{
 		if (!same_kind) { printf("Binary << can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind != Literal_Kind::UInt) { printf("Binary << can only be applied to unsigned integers\n"); return {}; }
@@ -1799,7 +1812,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		lhs.as_u64 <<= rhs.as_u64;
 		return lhs;
 	}
-	case BINARY_OP_BITSHIFT_RIGHT:
+	case BinaryOp::BITSHIFT_RIGHT:
 	{
 		if (!same_kind) { printf("Binary >> can only be applied to expressions of same kind\n"); return {}; }
 		if (lhs_kind != Literal_Kind::UInt) { printf("Binary >> can only be applied to unsigned integers\n"); return {}; }

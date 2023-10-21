@@ -16,41 +16,41 @@ void tokenizer_init()
 {
 	for (u8 i = 0; i < 128; i++)
 	{
-		c_to_sym[i] = TOKEN_ERROR;
+		c_to_sym[i] = TokenType::ERROR;
 	}
 
-	c_to_sym['.'] = TOKEN_DOT;
-	c_to_sym[':'] = TOKEN_COLON;
-	c_to_sym['\''] = TOKEN_QUOTE;
-	c_to_sym[','] = TOKEN_COMMA;
-	c_to_sym[';'] = TOKEN_SEMICOLON;
-	c_to_sym['{'] = TOKEN_BLOCK_START;
-	c_to_sym['}'] = TOKEN_BLOCK_END;
-	c_to_sym['['] = TOKEN_BRACKET_START;
-	c_to_sym[']'] = TOKEN_BRACKET_END;
-	c_to_sym['('] = TOKEN_PAREN_START;
-	c_to_sym[')'] = TOKEN_PAREN_END;
-	c_to_sym['@'] = TOKEN_AT;
-	c_to_sym['#'] = TOKEN_HASH;
-	c_to_sym['?'] = TOKEN_QUESTION;
-	c_to_sym['='] = TOKEN_ASSIGN;
-	c_to_sym['+'] = TOKEN_PLUS;
-	c_to_sym['-'] = TOKEN_MINUS;
-	c_to_sym['*'] = TOKEN_TIMES;
-	c_to_sym['/'] = TOKEN_DIV;
-	c_to_sym['%'] = TOKEN_MOD;
-	c_to_sym['&'] = TOKEN_BITWISE_AND;
-	c_to_sym['|'] = TOKEN_BITWISE_OR;
-	c_to_sym['^'] = TOKEN_BITWISE_XOR;
-	c_to_sym['<'] = TOKEN_LESS;
-	c_to_sym['>'] = TOKEN_GREATER;
-	c_to_sym['!'] = TOKEN_LOGIC_NOT;
-	c_to_sym['~'] = TOKEN_BITWISE_NOT;
+	c_to_sym['.'] = TokenType::DOT;
+	c_to_sym[':'] = TokenType::COLON;
+	c_to_sym['\''] = TokenType::QUOTE;
+	c_to_sym[','] = TokenType::COMMA;
+	c_to_sym[';'] = TokenType::SEMICOLON;
+	c_to_sym['{'] = TokenType::BLOCK_START;
+	c_to_sym['}'] = TokenType::BLOCK_END;
+	c_to_sym['['] = TokenType::BRACKET_START;
+	c_to_sym[']'] = TokenType::BRACKET_END;
+	c_to_sym['('] = TokenType::PAREN_START;
+	c_to_sym[')'] = TokenType::PAREN_END;
+	c_to_sym['@'] = TokenType::AT;
+	c_to_sym['#'] = TokenType::HASH;
+	c_to_sym['?'] = TokenType::QUESTION;
+	c_to_sym['='] = TokenType::ASSIGN;
+	c_to_sym['+'] = TokenType::PLUS;
+	c_to_sym['-'] = TokenType::MINUS;
+	c_to_sym['*'] = TokenType::TIMES;
+	c_to_sym['/'] = TokenType::DIV;
+	c_to_sym['%'] = TokenType::MOD;
+	c_to_sym['&'] = TokenType::BITWISE_AND;
+	c_to_sym['|'] = TokenType::BITWISE_OR;
+	c_to_sym['^'] = TokenType::BITWISE_XOR;
+	c_to_sym['<'] = TokenType::LESS;
+	c_to_sym['>'] = TokenType::GREATER;
+	c_to_sym['!'] = TokenType::LOGIC_NOT;
+	c_to_sym['~'] = TokenType::BITWISE_NOT;
 
 	for (u8 c = 0; c < 128; c++)
 	{
 		if (is_letter(c) || (c == '_')) lexeme_types[c] = LEXEME_IDENT;
-		else if (c_to_sym[c] != TOKEN_ERROR) lexeme_types[c] = LEXEME_SYMBOL;
+		else if (c_to_sym[c] != TokenType::ERROR) lexeme_types[c] = LEXEME_SYMBOL;
 		else if (is_number(c)) lexeme_types[c] = LEXEME_NUMBER;
 		else if (c == '"') lexeme_types[c] = LEXEME_STRING;
 		else lexeme_types[c] = LEXEME_ERROR;
@@ -83,7 +83,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 		{
 			for (u32 i = k; i < TOKENIZER_BUFFER_SIZE; i++)
 			{
-				tokens[i].type = TOKEN_EOF;
+				tokens[i].type = TokenType::INPUT_END;
 			}
 			return;
 		}
@@ -107,17 +107,17 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					consume();
 				}
 
-				token.type = TOKEN_IDENT;
+				token.type = TokenType::IDENT;
 				token.string_value.data = tokenizer->input.data + lexeme_start;
 				token.string_value.count = tokenizer->input_cursor - lexeme_start;
 
 				TokenType keyword = token_str_to_keyword(token.string_value);
-				if (keyword != TOKEN_ERROR) token.type = keyword;
+				if (keyword != TokenType::ERROR) token.type = keyword;
 
-				if (keyword == TOKEN_KEYWORD_TRUE) 
-				{ token.type = TOKEN_BOOL_LITERAL; token.bool_value = true; }
-				else if (keyword == TOKEN_KEYWORD_FALSE)
-				{ token.type = TOKEN_BOOL_LITERAL; token.bool_value = false; }
+				if (keyword == TokenType::KEYWORD_TRUE) 
+				{ token.type = TokenType::BOOL_LITERAL; token.bool_value = true; }
+				else if (keyword == TokenType::KEYWORD_FALSE)
+				{ token.type = TokenType::BOOL_LITERAL; token.bool_value = false; }
 			} break;
 			case LEXEME_NUMBER:
 			{
@@ -151,7 +151,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 
 					if (end != start)
 					{
-						token.type = TOKEN_FLOAT_LITERAL;
+						token.type = TokenType::FLOAT_LITERAL;
 						token.float64_value = float64_value;
 					}
 				}
@@ -169,7 +169,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 						integer += c - '0';
 					}
 
-					token.type = TOKEN_INTEGER_LITERAL;
+					token.type = TokenType::INTEGER_LITERAL;
 					token.integer_value = integer;
 				}
 			} break;
@@ -223,27 +223,31 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					else tokenizer->strings.put_char(c);
 				}
 
-				token.type = TOKEN_STRING_LITERAL;
+				token.type = TokenType::STRING_LITERAL;
 				token.string_literal_value = tokenizer->strings.end_str();
-				if (!terminated || !escapes_valid) token.type = TOKEN_ERROR;
+				if (!terminated || !escapes_valid) token.type = TokenType::ERROR;
 			} break;
 			case LEXEME_SYMBOL:
 			{
 				token.type = c_to_sym[fc];
 
+				//@Hack to avoid switches for 2-3 symbol tokens
 				if (peek().has_value())
 				{
 					u8 c = peek().value();
+					u32 sym2 = static_cast<u32>(TokenType::ERROR);
 
 					constexpr u32 equal_composable_symbol_token_offset = 12;
 					constexpr u32 double_composable_symbol_token_offset = 18;
 					constexpr u32 bitshift_to_bitshift_equals_offset = 2;
 
-					u32 sym2 = TOKEN_ERROR;
-					if (c == '=' && token.type >= TOKEN_ASSIGN && token.type <= TOKEN_LOGIC_NOT) sym2 = token.type + equal_composable_symbol_token_offset;
+					if (c == '=' && token.type >= TokenType::ASSIGN && token.type <= TokenType::LOGIC_NOT)
+					{
+						sym2 = static_cast<u32>(token.type) + equal_composable_symbol_token_offset;
+					}
 					else if ((c == fc) && (c == '&' || c == '|' || c == '<' || c == '>'))
 					{
-						sym2 = token.type + double_composable_symbol_token_offset;
+						sym2 = static_cast<u32>(token.type) + double_composable_symbol_token_offset;
 						if (peek_next(1).has_value() && peek_next(1).value() == '=')
 						{
 							sym2 += bitshift_to_bitshift_equals_offset;
@@ -252,13 +256,13 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					}
 					else if (c == fc)
 					{
-						if (c == ':') sym2 = TOKEN_DOUBLE_COLON;
-						else if (c == '.') sym2 = TOKEN_DOUBLE_DOT;
+						if (c == ':') sym2 = static_cast<u32>(TokenType::DOUBLE_COLON);
+						else if (c == '.') sym2 = static_cast<u32>(TokenType::DOUBLE_DOT);
 					}
 
-					if (sym2 != TOKEN_ERROR)
+					if (sym2 != static_cast<u32>(TokenType::ERROR))
 					{
-						token.type = (TokenType)sym2;
+						token.type = static_cast<TokenType>(sym2);
 						consume();
 					}
 				}
