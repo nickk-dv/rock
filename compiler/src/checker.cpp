@@ -97,24 +97,18 @@ void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 		else { err_set; error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); }
 	}
 
-	//@Low priority
-	//@Rule todo: cant import same thing under multiple names
-	//@Rule todo: cant import same type or procedure under multiple names
+	//@Todo check cant import same thing under multiple names
+	//@Todo check cant import same type or procedure under multiple names
 }
 
 void check_decls(Checker_Context* cc)
 {
 	Ast* ast = cc->ast;
 
-	// Find and add use symbols to current scope
 	for (Ast_Use_Decl* use_decl : ast->uses)
 	{
-		Ast* import_ast = try_import(cc, { use_decl->import });
-		if (import_ast == NULL)
-		{
-			err_set;
-			continue;
-		}
+		Ast* import_ast = check_try_import(cc, { use_decl->import });
+		if (import_ast == NULL) continue;
 
 		Ast_Ident alias = use_decl->alias;
 		Ast_Ident symbol = use_decl->symbol;
@@ -129,62 +123,89 @@ void check_decls(Checker_Context* cc)
 		error("Use symbol isnt found in imported namespace", symbol);
 	}
 
-	for (Ast_Struct_Decl* struct_decl : ast->structs) check_struct_decl(cc, struct_decl);
-	for (Ast_Enum_Decl* enum_decl : ast->enums) check_enum_decl(cc, enum_decl);
-	for (Ast_Proc_Decl* proc_decl : ast->procs) check_proc_decl(cc, proc_decl);
+	HashSet<Ast_Ident, u32, match_ident> name_set(32);
+
+	for (Ast_Struct_Decl* struct_decl : ast->structs)
+	{
+		if (!struct_decl->fields.empty()) name_set.zero_reset();
+		
+		for (Ast_Ident_Type_Pair& field : struct_decl->fields)
+		{
+			check_type_signature(cc, &field.type);
+			
+			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
+			if (!name) name_set.add(field.ident, hash_ident(field.ident));
+			else { err_set; error("Duplicate struct field identifier", field.ident); }
+		}
+	}
+
+	//@Todo check circular enum dependency when enum constants are supported
+	//@Todo check constant value overlap
+	//@Todo const bounds check should be done inside check_expr top level call within a context 
+
+	for (Ast_Enum_Decl* enum_decl : ast->enums)
+	{
+		if (!enum_decl->variants.empty()) name_set.zero_reset();
+
+		BasicType type = enum_decl->basic_type;
+		Ast_Type enum_type = type_from_basic(type);
+		Type_Context type_context = { enum_type, true };
+
+		if (!token_basic_type_is_integer(type))
+		{
+			err_set;
+			error("Cannot use non integer type in enum declaration", enum_decl->ident);
+		}
+
+		for (Ast_Enum_Variant& variant : enum_decl->variants)
+		{
+			option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
+			if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
+			else { err_set; error("Duplicate enum variant identifier", variant.ident); }
+
+			option<Ast_Type> type = check_expr(cc, &type_context, variant.const_expr);
+			if (type && !match_type(cc, enum_type, type.value()))
+			{
+				err_set;
+				printf("Variant type doesnt match enum type:\n");
+				debug_print_ident(variant.ident);
+				printf("Expected: "); debug_print_type(enum_type); printf("\n");
+				printf("Got:      "); debug_print_type(type.value()); printf("\n\n");
+			}
+		}
+	}
+	
+	for (Ast_Proc_Decl* proc_decl : ast->procs)
+	{
+		if (!proc_decl->input_params.empty()) name_set.zero_reset();
+
+		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		{
+			check_type_signature(cc, &param.type);
+			
+			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
+			if (!name) name_set.add(param.ident, hash_ident(param.ident));
+			else { err_set; error("Duplicate procedure input parameter identifier", param.ident); }
+		}
+
+		if (proc_decl->return_type)
+		{
+			check_type_signature(cc, &proc_decl->return_type.value());
+		}
+	}
 }
 
 void check_main_proc(Checker_Context* cc)
 {
-	Ast_Ident ident = {};
-	char name_arr[4] = { 'm', 'a', 'i', 'n' };
-	ident.str.data = (u8*)name_arr;
-	ident.str.count = 4;
-
-	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, ident);
-	if (!proc_meta)
-	{
-		err_set;
-		printf("Main procedure not found. Make sure src/main file has 'main :: () :: i32 { ... }' declared\n\n");
-		return;
-	}
+	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, Ast_Ident { 0, 0, { "main", 4} });
+	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); return; }
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_decl->is_main = true;
-	
-	if (proc_decl->is_external)
-	{
-		err_set;
-		error("Main procedure cannot be specified as external '@'. You must define a main procedure block", proc_decl->ident);
-	}
-
-	if (proc_decl->is_variadic)
-	{
-		err_set;
-		error("Main procedure cannot be variadic. Remove '..' from the parameter list", proc_decl->ident);
-	}
-
-	if (proc_decl->input_params.size() != 0)
-	{
-		err_set;
-		error("Main procedure cannot have any input parameters. Command line arguments can be accessed using core library", proc_decl->ident);
-	}
-
-	if (!proc_decl->return_type)
-	{
-		err_set;
-		error("Main procedure must have i32 return type", proc_decl->ident);
-	}
-	else
-	{
-		Ast_Type return_type = proc_decl->return_type.value();
-		if (return_type.tag != Ast_Type::Tag::Basic || return_type.as_basic != BasicType::I32)
-		{
-			err_set;
-			printf("Main procedure must have i32 return type\n");
-			debug_print_ident(proc_decl->ident);
-			printf("\n");
-		}
-	}
+	if (proc_decl->is_external) err_report(Error::MAIN_PROC_EXTERNAL);
+	if (proc_decl->is_variadic) err_report(Error::MAIN_PROC_VARIADIC);
+	if (proc_decl->input_params.size() != 0) err_report(Error::MAIN_NOT_ZERO_PARAMS);
+	if (!proc_decl->return_type) err_report(Error::MAIN_PROC_NO_RETURN_TYPE);
+	else if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE);
 }
 
 void check_program(Checker_Context* cc)
@@ -293,6 +314,7 @@ void check_ast(Checker_Context* cc)
 		checker_context_block_add(cc);
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
+			//this is already checked for in decl checks
 			if (checker_context_block_contains_var(cc, param.ident))
 			{
 				err_set;
@@ -304,82 +326,7 @@ void check_ast(Checker_Context* cc)
 	}
 }
 
-void check_struct_decl(Checker_Context* cc, Ast_Struct_Decl* struct_decl)
-{
-	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf possibly move out from function and re-use hash_set with reset()
-
-	if (struct_decl->fields.empty())
-	{
-		err_set;
-		error("Struct must have at least 1 field", struct_decl->ident);
-		return;
-	}
-
-	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
-	{
-		option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
-		if (!name) name_set.add(field.ident, hash_ident(field.ident));
-		else { err_set; error("Duplicate struct field identifier", field.ident); }
-
-		check_type_signature(cc, &field.type);
-	}
-}
-
-void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
-{
-	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
-
-	BasicType type = enum_decl->basic_type;
-	Ast_Type enum_type = type_from_basic(type);
-	Type_Context type_context = { enum_type, true };
-
-	if (!token_basic_type_is_integer(type))
-	{
-		err_set;
-		error("Cannot use non integer type in enum declaration", enum_decl->ident);
-	}
-
-	for (Ast_Enum_Variant& variant : enum_decl->variants)
-	{
-		option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
-		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
-		else { err_set; error("Duplicate enum variant identifier", variant.ident); }
-
-		option<Ast_Type> type = check_expr(cc, &type_context, variant.const_expr);
-		if (type && !match_type(cc, enum_type, type.value()))
-		{
-			err_set;
-			printf("Variant type doesnt match enum type:\n");
-			debug_print_ident(variant.ident);
-			printf("Expected: "); debug_print_type(enum_type); printf("\n");
-			printf("Got:      "); debug_print_type(type.value()); printf("\n\n");
-		}
-	}
-	
-	//@Todo check circular enum dependency when enums as constants are supported
-	//@Todo check constant value overlap
-}
-
-void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl)
-{
-	HashSet<Ast_Ident, u32, match_ident> name_set(16); //@Perf read check_struct_decl comment
-	
-	for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
-	{
-		check_type_signature(cc, &param.type);
-		
-		option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
-		if (!name) name_set.add(param.ident, hash_ident(param.ident));
-		else { err_set; error("Duplicate procedure input parameter identifier", param.ident); }
-	}
-
-	if (proc_decl->return_type)
-	{
-		check_type_signature(cc, &proc_decl->return_type.value());
-	}
-}
-
-Ast* try_import(Checker_Context* cc, option<Ast_Ident> import)
+Ast* check_try_import(Checker_Context* cc, option<Ast_Ident> import)
 {
 	if (!import) return cc->ast;
 
@@ -925,7 +872,7 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 	}
 	case Ast_Type::Tag::Custom:
 	{
-		Ast* target_ast = try_import(cc, type->as_custom->import);
+		Ast* target_ast = check_try_import(cc, type->as_custom->import);
 		if (target_ast == NULL) return {};
 
 		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_custom->ident);
@@ -1113,7 +1060,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 	case Ast_Term::Tag::Enum: //@Const fold this should be part of constant evaluation
 	{
 		Ast_Enum* _enum = term->as_enum;
-		Ast* target_ast = try_import(cc, _enum->import);
+		Ast* target_ast = check_try_import(cc, _enum->import);
 		if (target_ast == NULL) return {};
 
 		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, _enum->ident);
@@ -1166,7 +1113,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 	case Ast_Term::Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
-		Ast* target_ast = try_import(cc, struct_init->import);
+		Ast* target_ast = check_try_import(cc, struct_init->import);
 		if (target_ast == NULL) return {};
 
 		// find struct
@@ -1344,7 +1291,7 @@ option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Acc
 
 option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags)
 {
-	Ast* target_ast = try_import(cc, proc_call->import);
+	Ast* target_ast = check_try_import(cc, proc_call->import);
 	if (target_ast == NULL) return {};
 
 	// find proc

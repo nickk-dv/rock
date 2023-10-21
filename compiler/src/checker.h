@@ -10,10 +10,7 @@ void check_main_proc(Checker_Context* cc);
 void check_program(Checker_Context* cc);
 void check_ast(Checker_Context* cc);
 
-static void check_struct_decl(Checker_Context* cc, Ast_Struct_Decl* struct_decl);
-static void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl);
-static void check_proc_decl(Checker_Context* cc, Ast_Proc_Decl* proc_decl);
-static Ast* try_import(Checker_Context* cc, option<Ast_Ident> import);
+static Ast* check_try_import(Checker_Context* cc, option<Ast_Ident> import);
 static option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident);
 static option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident);
 static option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident);

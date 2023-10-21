@@ -77,10 +77,17 @@ struct String
 struct StringView
 {
 	StringView() {};
+
 	StringView(const String& str)
 	{
 		data = str.data;
 		count = str.count;
+	}
+
+	StringView(const char* c_str, size_t len)
+	{
+		data = (u8*)c_str;
+		count = len;
 	}
 
 	bool operator == (const StringView& other) const
@@ -171,6 +178,10 @@ public:
 	void init(u32 size) { alloc_table(size); }
 	void destroy() { free(array); }
 
+	void zero_reset() {
+		memset(array, 0, sizeof(Slot) * table_size);
+	}
+
 	void alloc_table(u32 size) {
 		table_size = size;
 		slots_filled = 0;
@@ -250,6 +261,10 @@ public:
 	void init(u32 size) { alloc_table(size); }
 	void destroy() { free(array); }
 
+	void zero_reset() {
+		memset(array, 0, sizeof(Slot) * table_size);
+	}
+	
 	void alloc_table(u32 size) {
 		table_size = size;
 		slots_filled = 0;

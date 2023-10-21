@@ -32,7 +32,7 @@ struct Checker_Context
 	Error_Handler* err;
 	Ast_Proc_Decl* curr_proc;
 	std::vector<Block_Info> blocks;
-	std::vector<Var_Info> var_stack;
+	std::vector<Var_Info> var_stack; //@Perf try hashmap with reset() on larger files
 };
 
 struct Block_Info

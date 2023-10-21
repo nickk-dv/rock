@@ -34,8 +34,6 @@ Module build_module(Ast_Program* program)
 		type_array.emplace_back(type_from_ast_type(&bc, field.type));
 		
 		LLVMStructSetBody(struct_info.struct_type, type_array.data(), (u32)type_array.size(), 0);
-
-		LLVMAddGlobal(bc.module, struct_info.struct_type, "global_test");
 	}
 
 	for (Ast_Proc_IR_Info& proc_info : program->procedures)

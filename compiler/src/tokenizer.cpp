@@ -49,11 +49,11 @@ void tokenizer_init()
 
 	for (u8 c = 0; c < 128; c++)
 	{
-		if (is_letter(c) || (c == '_')) lexeme_types[c] = LEXEME_IDENT;
-		else if (c_to_sym[c] != TokenType::ERROR) lexeme_types[c] = LEXEME_SYMBOL;
-		else if (is_number(c)) lexeme_types[c] = LEXEME_NUMBER;
-		else if (c == '"') lexeme_types[c] = LEXEME_STRING;
-		else lexeme_types[c] = LEXEME_ERROR;
+		if (is_letter(c) || (c == '_')) lexeme_types[c] = LexemeType::IDENT;
+		else if (c_to_sym[c] != TokenType::ERROR) lexeme_types[c] = LexemeType::SYMBOL;
+		else if (is_number(c)) lexeme_types[c] = LexemeType::NUMBER;
+		else if (c == '"') lexeme_types[c] = LexemeType::STRING;
+		else lexeme_types[c] = LexemeType::ERROR;
 	}
 }
 
@@ -89,7 +89,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 		}
 
 		u8 fc = peek().value();
-		LexemeType type = fc < 128 ? lexeme_types[fc] : LEXEME_ERROR;
+		LexemeType type = fc < 128 ? lexeme_types[fc] : LexemeType::ERROR;
 		u64 lexeme_start = tokenizer->input_cursor;
 		consume();
 
@@ -99,7 +99,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 
 		switch (type)
 		{
-			case LEXEME_IDENT:
+			case LexemeType::IDENT:
 			{
 				while (peek().has_value())
 				{
@@ -119,7 +119,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 				else if (keyword == TokenType::KEYWORD_FALSE)
 				{ token.type = TokenType::BOOL_LITERAL; token.bool_value = false; }
 			} break;
-			case LEXEME_NUMBER:
+			case LexemeType::NUMBER:
 			{
 				u32 offset = 0;
 				bool is_float = false;
@@ -173,7 +173,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					token.integer_value = integer;
 				}
 			} break;
-			case LEXEME_STRING:
+			case LexemeType::STRING:
 			{
 				bool terminated = false;
 				bool escapes_valid = true;
@@ -227,7 +227,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 				token.string_literal_value = tokenizer->strings.end_str();
 				if (!terminated || !escapes_valid) token.type = TokenType::ERROR;
 			} break;
-			case LEXEME_SYMBOL:
+			case LexemeType::SYMBOL:
 			{
 				token.type = c_to_sym[fc];
 

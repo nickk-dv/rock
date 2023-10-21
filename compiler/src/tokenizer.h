@@ -4,8 +4,8 @@
 #include "common.h"
 #include "token.h"
 
-enum LexemeType;
 struct Tokenizer;
+enum class LexemeType;
 
 void tokenizer_init();
 bool tokenizer_set_input(Tokenizer* tokenizer, const char* filepath);
@@ -18,15 +18,6 @@ static void consume_character(Tokenizer* tokenizer);
 const u64 TOKENIZER_BUFFER_SIZE = 256;
 const u64 TOKENIZER_LOOKAHEAD = 4;
 
-enum LexemeType
-{
-	LEXEME_IDENT,
-	LEXEME_NUMBER,
-	LEXEME_STRING,
-	LEXEME_SYMBOL,
-	LEXEME_ERROR
-};
-
 struct Tokenizer
 {
 	String input;
@@ -34,6 +25,15 @@ struct Tokenizer
 	u32 line_id;
 	u64 line_cursor;
 	StringStorage strings;
+};
+
+enum class LexemeType
+{
+	IDENT,
+	NUMBER,
+	STRING,
+	SYMBOL,
+	ERROR
 };
 
 #endif

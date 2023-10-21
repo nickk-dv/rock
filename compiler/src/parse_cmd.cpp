@@ -125,13 +125,9 @@ i32 cmd_build(char* filepath)
 		check_decl_uniqueness(&cc, modules);
 		if (module == "main") main_ast = ast;
 	}
-	if (main_ast == NULL)
-	{
-		printf("Entry not found. Make sure to have src/main file.\n\n");
-		err.has_err = true;
-	}
+	if (main_ast == NULL) err_report(Error::MAIN_FILE_NOT_FOUND);
 
-	if (err.has_err)
+	if (err.has_err || err_get_status())
 	{
 		timer.end("Check Ast Error");
 		return 1;
@@ -144,7 +140,7 @@ i32 cmd_build(char* filepath)
 		checker_context_init(&cc, ast, &program, &err);
 		check_decls(&cc);
 	}
-	if (err.has_err)
+	if (err.has_err || err_get_status())
 	{
 		timer.end("Check Ast Error");
 		return 1;
@@ -152,7 +148,7 @@ i32 cmd_build(char* filepath)
 
 	checker_context_init(&cc, NULL, &program, &err);
 	check_program(&cc);
-	if (err.has_err)
+	if (err.has_err || err_get_status())
 	{
 		timer.end("Check Ast Error");
 		return 1;
@@ -163,7 +159,7 @@ i32 cmd_build(char* filepath)
 		checker_context_init(&cc, ast, &program, &err);
 		check_ast(&cc);
 	}
-	if (err.has_err) 
+	if (err.has_err || err_get_status())
 	{
 		timer.end("Check Ast Error");
 		return 1;
