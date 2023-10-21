@@ -15,7 +15,7 @@ Module build_module(Ast_Program* program)
 
 		for (Ast_Enum_Variant& variant : enum_info.enum_decl->variants)
 		{
-			variant.constant = build_const_expr(&bc, variant.expr->as_const_expr);
+			variant.constant = build_expr(&bc, variant.const_expr);
 		}
 	}
 
@@ -239,7 +239,7 @@ void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 	for (u64 i = 0; i < _switch->cases.size(); i += 1)
 	{
 		Ast_Switch_Case _case = _switch->cases[i];
-		Value case_value = build_term(bc, _case.term);
+		Value case_value = build_expr(bc, _case.const_expr);
 		Basic_Block case_block = _case.basic_block;
 		LLVMAddCase(switch_value, case_value, case_block);
 		builder_context_set_bb(bc, case_block);

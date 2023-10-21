@@ -345,7 +345,7 @@ void check_enum_decl(Checker_Context* cc, Ast_Enum_Decl* enum_decl)
 		if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
 		else { err_set; error("Duplicate enum variant identifier", variant.ident); }
 
-		option<Ast_Type> type = check_expr(cc, &type_context, variant.expr);
+		option<Ast_Type> type = check_expr(cc, &type_context, variant.const_expr);
 		if (type && !match_type(cc, enum_type, type.value()))
 		{
 			err_set;
@@ -659,9 +659,21 @@ void check_return(Checker_Context* cc, Ast_Return* _return)
 
 void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 {
-	//@Todo clean this up when proper literal typing and inference are in place
+	//@Very unfinished. Share const expr unique pool logic with EnumVariants
+	
 	//@Check if switch is exaustive with enums / integers, require
-	// add default or discard like syntax _ for default case
+	//add default or discard like syntax _ for default case
+	//@Check matching switched on => case expr type
+	//@Todo check case constant value overlap
+	//@Todo check that cases fall into block, and theres no cases that dont do anything
+	
+	for (Ast_Switch_Case& _case : _switch->cases)
+	{
+		if (_case.block)
+		{
+			check_block(cc, _case.block.value(), Checker_Block_Flags::None);
+		}
+	}
 
 	//@Todo add context with switch on type and constant requirement
 	option<Ast_Type> type = check_term(cc, {}, _switch->term);
@@ -682,6 +694,10 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 			printf("\n");
 		}
 	}
+	else
+	{
+		return; //@Check blocks even when switched on type is broken
+	}
 
 	if (_switch->cases.empty())
 	{
@@ -691,88 +707,14 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 		return;
 	}
 
+	Type_Context type_context = { type.value(), true};
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
-		//@Notice checking if its a Integer constant basically, no contant propagation or expressions are tracked yet
-		if (_case.term->tag != Ast_Term::Tag::Literal && _case.term->tag != Ast_Term::Tag::Enum)
-		{
-			err_set;
-			all_terms_correct = false;
-			printf("Switch case term must be enum or integer literal\n");
-			debug_print_term(_case.term, 0);
-			printf("\n");
-		}
-		else
-		{
-			option<Ast_Type> case_type = check_term(cc, {}, _case.term);
-			if (case_type)
-			{
-				Type_Kind case_kind = type_kind(cc, case_type.value());
-				if (case_kind != Type_Kind::Integer && case_kind != Type_Kind::Enum)
-				{
-					err_set;
-					all_terms_correct = false;
-					printf("Switch case term must be enum or integer literal\n");
-					debug_print_term(_case.term, 0);
-					printf("\n");
-				}
-				else
-				{
-					if (switched_type_is_correct && type && case_type && !match_type(cc, type.value(), case_type.value()))
-					{
-						err_set;
-						all_terms_correct = false;
-						printf("Type mismatch in switch case:\n");
-						printf("Expected: "); debug_print_type(type.value()); printf("\n");
-						printf("Got:      "); debug_print_type(case_type.value()); printf("\n");
-						debug_print_term(_case.term, 0);
-						printf("\n");
-					}
-				}
-			}
-		}
-
-	}
-
-	if (all_terms_correct)
-	{
-		std::vector<u64> ints_or_variant_ids;
-		Type_Kind kind = type_kind(cc, type.value());
-		bool is_int = kind == Type_Kind::Integer;
-
-		u32 count = 0;
-		for (Ast_Switch_Case& _case : _switch->cases)
-		{
-			u64 value;
-			if (is_int) value = _case.term->as_literal.token.integer_value;
-			else value = _case.term->as_enum->variant_id;
-			ints_or_variant_ids.emplace_back(value);
-
-			bool found_match = false;
-			for (u64 i = 0; i < ints_or_variant_ids.size(); i += 1)
-			{
-				u64 curr_value = ints_or_variant_ids[i];
-				if (i != count && value == curr_value)
-				{
-					err_set;
-					printf("Switch cases [ %llu ] and [ %lu ] cannot have the same values:\n", i, count);
-					debug_print_token(_switch->token, true, true);
-					printf("\n");
-					found_match = true;
-					break;
-				}
-			}
-			if (found_match) break;
-			count += 1;
-		}
-	}
-
-	for (Ast_Switch_Case& _case : _switch->cases)
-	{
-		if (_case.block)
-		{
-			check_block(cc, _case.block.value(), Checker_Block_Flags::None);
-		}
+		//@Notice type check should be full performed inside the check_expr based on context
+		// rework this later for all check_expr calls.
+		// use top level function for this instead of recursive check_expr
+		// only top level will print errors maybe.
+		option<Ast_Type> case_type = check_expr(cc, &type_context, _case.const_expr);
 	}
 }
 
@@ -1063,8 +1005,6 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 	}
 	else
 	{
-		printf("Constant expr: \n");
-
 		option<Literal> lit_result = check_const_expr(expr);
 		if (!lit_result)
 		{
@@ -1074,32 +1014,10 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 			printf("\n\n");
 			return {};
 		}
-		else
-		{
-			printf("Evaluation: ");
-			Literal literal = lit_result.value();
-			switch (literal.kind)
-			{
-			case Literal_Kind::Bool:
-			{
-				if (literal.as_bool) printf("true");
-				else printf("false");
-			} break;
-			case Literal_Kind::Float: printf("%f", literal.as_f64); break;
-			case Literal_Kind::Int: printf("%lld", literal.as_i64); break;
-			case Literal_Kind::UInt: printf("%llu", literal.as_u64); break;
-			}
-		}
-		printf("\n");
-		debug_print_expr(expr, 0);
-		printf("\n");
-
-		//@Todo fold and store value into ast
-		//@Todo gen Ast_Type from literal
 
 		Ast_Const_Expr const_expr = {};
-
 		Literal lit = lit_result.value();
+
 		if (context)
 		{
 			switch (lit.kind)

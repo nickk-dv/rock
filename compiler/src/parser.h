@@ -21,6 +21,7 @@ static Ast_Enum_Decl* parse_enum_decl(Parser* parser);
 static Ast_Proc_Decl* parse_proc_decl(Parser* parser);
 
 static Ast_Block* parse_block(Parser* parser);
+static Ast_Block* parse_small_block(Parser * parser);
 static Ast_Statement* parse_statement(Parser* parser);
 static Ast_If* parse_if(Parser* parser);
 static Ast_Else* parse_else(Parser* parser);

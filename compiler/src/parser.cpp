@@ -220,20 +220,22 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 	
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{'"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in struct declaration"); return NULL; }
 	while (true)
 	{
 		option<Token> field = try_consume(TokenType::IDENT);
 		if (!field) break;
-		if (!try_consume(TokenType::COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
+		if (!try_consume(TokenType::COLON)) { error("Expected ':' followed by type signature"); return NULL; }
 
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
 		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type.value() });
 
-		if (!try_consume(TokenType::COMMA)) break;
+		//@Todo optional default value expr indicated by '=', else ';'
+		
+		if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after struct field declaration"); return NULL; }
 	}
-	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' after struct declaration"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in struct declaration"); return NULL; }
 
 	return decl;
 }
@@ -253,19 +255,21 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 	}
 	else decl->basic_type = BasicType::I32;
 
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{'"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in enum declaration"); return NULL; }
 	while (true)
 	{
 		option<Token> ident = try_consume(TokenType::IDENT);
 		if (!ident) break;
 
+		//@Todo optional default assignment with just ';'
+
 		if (!try_consume(TokenType::ASSIGN)) { error("Expected '=' followed by constant expression"); return NULL; }
+		
 		Ast_Expr* expr = parse_expr(parser);
 		if (!expr) return NULL;
 		decl->variants.emplace_back(Ast_Enum_Variant { token_to_ident(ident.value()), expr });
-		
-		if (try_consume(TokenType::BLOCK_END)) break;
 	}
+	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in enum declaration"); return NULL; }
 
 	return decl;
 }
@@ -282,7 +286,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 		option<Token> ident = try_consume(TokenType::IDENT);
 		if (!ident) break;
-		if (!try_consume(TokenType::COLON)) { error("Expected ':' followed by type identifier"); return NULL; }
+		if (!try_consume(TokenType::COLON)) { error("Expected ':' followed by type signature"); return NULL; }
 
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
@@ -290,7 +294,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 		if (!try_consume(TokenType::COMMA)) break;
 	}
-	if (!try_consume(TokenType::PAREN_END)) { error("Expected ')'"); return NULL; }
+	if (!try_consume(TokenType::PAREN_END)) { error("Expected ')' in procedure declaration"); return NULL; }
 
 	if (try_consume(TokenType::DOUBLE_COLON))
 	{
@@ -326,6 +330,19 @@ Ast_Block* parse_block(Parser* parser)
 		if (!statement) return NULL;
 		block->statements.emplace_back(statement);
 	}
+}
+
+Ast_Block* parse_small_block(Parser* parser)
+{
+	if (peek().type == TokenType::BLOCK_START) return parse_block(parser);
+
+	Ast_Block* block = arena_alloc<Ast_Block>(&parser->arena);
+
+	Ast_Statement* statement = parse_statement(parser);
+	if (!statement) return NULL;
+	block->statements.emplace_back(statement);
+
+	return block;
 }
 
 Ast_Statement* parse_statement(Parser* parser)
@@ -390,7 +407,7 @@ Ast_Statement* parse_statement(Parser* parser)
 		Token next_3 = peek_next(3);
 		bool import_prefix = next.type == TokenType::DOT && next_2.type == TokenType::IDENT;
 		bool import_proc_call = import_prefix && next_3.type == TokenType::PAREN_START;
-			
+
 		if (next.type == TokenType::PAREN_START || import_proc_call)
 		{
 			statement->tag = Ast_Statement::Tag::Proc_Call;
@@ -516,7 +533,7 @@ Ast_Defer* parse_defer(Parser* parser)
 	Ast_Defer* defer = arena_alloc<Ast_Defer>(&parser->arena);
 	defer->token = consume_get();
 
-	Ast_Block* block = parse_block(parser);
+	Ast_Block* block = parse_small_block(parser);
 	if (!block) return NULL;
 	defer->block = block;
 
@@ -560,22 +577,17 @@ Ast_Switch* parse_switch(Parser* parser)
 	{
 		if (try_consume(TokenType::BLOCK_END)) return _switch;
 
-		Ast_Term* case_term = parse_term(parser);
-		if (!case_term) return NULL;
-
 		Ast_Switch_Case switch_case = {};
-		switch_case.term = case_term;
+		
+		Ast_Expr* expr = parse_sub_expr(parser);
+		if (!expr) return NULL;
+		switch_case.const_expr = expr;
 
-		if (peek().type == TokenType::BLOCK_START)
+		if (!try_consume(TokenType::COLON))
 		{
-			Ast_Block* block = parse_block(parser);
+			Ast_Block* block = parse_small_block(parser);
 			if (!block) return NULL;
 			switch_case.block = block;
-		}
-		else if (peek().type == TokenType::BLOCK_END)
-		{ 
-			error("Expected block before the end of switch statement"); 
-			return NULL;
 		}
 
 		_switch->cases.emplace_back(switch_case);

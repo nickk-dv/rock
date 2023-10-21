@@ -224,7 +224,7 @@ struct Ast_Enum_Decl
 struct Ast_Enum_Variant
 {
 	Ast_Ident ident;
-	Ast_Expr* expr;
+	Ast_Expr* const_expr;
 	//ir builder
 	LLVMValueRef constant;
 };
@@ -328,7 +328,7 @@ struct Ast_Switch
 
 struct Ast_Switch_Case
 {
-	Ast_Term* term; //@Todo support const exprs with enums
+	Ast_Expr* const_expr;
 	option<Ast_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
