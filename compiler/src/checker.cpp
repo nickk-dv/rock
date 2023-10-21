@@ -7,100 +7,77 @@
 // 2. decl signature validity checks
 // 3. proc block cfg & type and other semantics checks 
 
-//@Perf general issues with re-hashing Ast_Ident every time
+//@Todo check cant import same file under multiple names
+//@Todo check cant use same type or procedure under multiple names
 void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
 {
 	Ast* ast = cc->ast;
-	Ast_Program* program = cc->program;
-
-	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 	ast->import_table.init(64);
 	ast->struct_table.init(64);
 	ast->enum_table.init(64);
 	ast->proc_table.init(64);
+	
+	Ast_Program* program = cc->program;
+	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 
+	for (Ast_Import_Decl* decl : ast->imports)
+	{
+		bool path_exists = modules.find(decl->file_path.token.string_literal_value) != modules.end();
+		if (!path_exists) { err_report(Error::IMPORT_PATH_NOT_FOUND); continue; }
+		decl->import_ast = modules.at(decl->file_path.token.string_literal_value);
+	}
+	
 	for (Ast_Import_Decl* decl : ast->imports)
 	{
 		Ast_Ident ident = decl->alias;
 		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key)
-		{ 
-			symbol_table.add(ident, hash_ident(ident)); 
-			ast->import_table.add(ident, decl, hash_ident(ident)); 
-		}
-		else { err_set; error_pair("Symbol already declared", "Import", ident, "Symbol", key.value()); }
-	}
-
-	for (Ast_Import_Decl* decl : ast->imports)
-	{
-		if (modules.find(decl->file_path.token.string_literal_value) != modules.end())
-		{
-			Ast* import_ast = modules.at(decl->file_path.token.string_literal_value);
-			decl->import_ast = import_ast;
-		}
-		else { err_set; error("Import path not found", decl->alias); }
+		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		symbol_table.add(ident, hash_ident(ident));
+		ast->import_table.add(ident, decl, hash_ident(ident));
 	}
 
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident ident = decl->alias;
 		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) symbol_table.add(ident, hash_ident(ident));
-		else { err_set; error_pair("Symbol already declared", "Use", ident, "Symbol", key.value()); }
+		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		symbol_table.add(ident, hash_ident(ident));
 	}
 
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
 		Ast_Ident ident = decl->ident;
 		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) 
-		{
-			symbol_table.add(ident, hash_ident(ident));
-			ast->struct_table.add(ident, Ast_Struct_Info { (u32)program->structs.size(), decl }, hash_ident(ident));
-
-			Ast_Struct_IR_Info struct_info = {};
-			struct_info.struct_decl = decl;
-			program->structs.emplace_back(struct_info);
-		}
-		else { err_set; error_pair("Symbol already declared", "Struct", ident, "Symbol", key.value()); }
+		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		symbol_table.add(ident, hash_ident(ident));
+		ast->struct_table.add(ident, Ast_Struct_Info { (u32)program->structs.size(), decl }, hash_ident(ident));
+		program->structs.emplace_back(Ast_Struct_IR_Info { decl });
 	}
 
 	for (Ast_Enum_Decl* decl : ast->enums)
 	{
 		Ast_Ident ident = decl->ident;
 		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) 
-		{ 
-			symbol_table.add(ident, hash_ident(ident));
-			ast->enum_table.add(ident, Ast_Enum_Info { (u32)program->enums.size(), decl }, hash_ident(ident));
-
-			Ast_Enum_IR_Info enum_info = {};
-			enum_info.enum_decl = decl;
-			program->enums.emplace_back(enum_info);
-		}
-		else { err_set; error_pair("Symbol already declared", "Enum", ident, "Symbol", key.value()); }
+		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		symbol_table.add(ident, hash_ident(ident));
+		ast->enum_table.add(ident, Ast_Enum_Info { (u32)program->enums.size(), decl }, hash_ident(ident));
+		program->enums.emplace_back(Ast_Enum_IR_Info { decl });
 	}
 
 	for (Ast_Proc_Decl* decl : ast->procs)
 	{
 		Ast_Ident ident = decl->ident;
 		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (!key) 
-		{ 
-			symbol_table.add(ident, hash_ident(ident));
-			ast->proc_table.add(ident, Ast_Proc_Info { (u32)program->procedures.size(), decl }, hash_ident(ident));
-
-			Ast_Proc_IR_Info proc_info = {};
-			proc_info.proc_decl = decl;
-			program->procedures.emplace_back(proc_info);
-		}
-		else { err_set; error_pair("Symbol already declared", "Procedure", ident, "Symbol", key.value()); }
+		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		symbol_table.add(ident, hash_ident(ident));
+		ast->proc_table.add(ident, Ast_Proc_Info { (u32)program->procs.size(), decl }, hash_ident(ident));
+		program->procs.emplace_back(Ast_Proc_IR_Info { decl });
 	}
-
-	//@Todo check cant import same thing under multiple names
-	//@Todo check cant import same type or procedure under multiple names
 }
 
+//@Todo check circular enum dependency when enum constants are supported
+//@Todo check enum constant value overlap
+//@Todo const bounds check should be done inside check_expr top level call within a context 
 void check_decls(Checker_Context* cc)
 {
 	Ast* ast = cc->ast;
@@ -112,15 +89,14 @@ void check_decls(Checker_Context* cc)
 
 		Ast_Ident alias = use_decl->alias;
 		Ast_Ident symbol = use_decl->symbol;
-		option<Ast_Struct_Info> struct_decl = import_ast->struct_table.find(symbol, hash_ident(symbol));
-		if (struct_decl) { ast->struct_table.add(alias, struct_decl.value(), hash_ident(alias)); continue; }
-		option<Ast_Enum_Info> enum_decl = import_ast->enum_table.find(symbol, hash_ident(symbol));
-		if (enum_decl) { ast->enum_table.add(alias, enum_decl.value(), hash_ident(alias)); continue; }
-		option<Ast_Proc_Info> proc_decl = import_ast->proc_table.find(symbol, hash_ident(symbol));
-		if (proc_decl) { ast->proc_table.add(alias, proc_decl.value(), hash_ident(alias)); continue; }
+		option<Ast_Struct_Info> struct_info = import_ast->struct_table.find(symbol, hash_ident(symbol));
+		if (struct_info) { ast->struct_table.add(alias, struct_info.value(), hash_ident(alias)); continue; }
+		option<Ast_Enum_Info> enum_info = import_ast->enum_table.find(symbol, hash_ident(symbol));
+		if (enum_info) { ast->enum_table.add(alias, enum_info.value(), hash_ident(alias)); continue; }
+		option<Ast_Proc_Info> proc_info = import_ast->proc_table.find(symbol, hash_ident(symbol));
+		if (proc_info) { ast->proc_table.add(alias, proc_info.value(), hash_ident(alias)); continue; }
 		
-		err_set;
-		error("Use symbol isnt found in imported namespace", symbol);
+		err_report(Error::USE_SYMBOL_NOT_FOUND);
 	}
 
 	HashSet<Ast_Ident, u32, match_ident> name_set(32);
@@ -134,14 +110,10 @@ void check_decls(Checker_Context* cc)
 			check_type_signature(cc, &field.type);
 			
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
-			if (!name) name_set.add(field.ident, hash_ident(field.ident));
-			else { err_set; error("Duplicate struct field identifier", field.ident); }
+			if (name) err_report(Error::STRUCT_DUPLICATE_FIELD);
+			else name_set.add(field.ident, hash_ident(field.ident));
 		}
 	}
-
-	//@Todo check circular enum dependency when enum constants are supported
-	//@Todo check constant value overlap
-	//@Todo const bounds check should be done inside check_expr top level call within a context 
 
 	for (Ast_Enum_Decl* enum_decl : ast->enums)
 	{
@@ -151,17 +123,13 @@ void check_decls(Checker_Context* cc)
 		Ast_Type enum_type = type_from_basic(type);
 		Type_Context type_context = { enum_type, true };
 
-		if (!token_basic_type_is_integer(type))
-		{
-			err_set;
-			error("Cannot use non integer type in enum declaration", enum_decl->ident);
-		}
+		if (!token_basic_type_is_integer(type)) err_report(Error::ENUM_NON_INTEGER_TYPE);
 
 		for (Ast_Enum_Variant& variant : enum_decl->variants)
 		{
 			option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
-			if (!name) name_set.add(variant.ident, hash_ident(variant.ident));
-			else { err_set; error("Duplicate enum variant identifier", variant.ident); }
+			if (name) err_report(Error::ENUM_DUPLICATE_VARIANT);
+			else name_set.add(variant.ident, hash_ident(variant.ident));
 
 			option<Ast_Type> type = check_expr(cc, &type_context, variant.const_expr);
 			if (type && !match_type(cc, enum_type, type.value()))
@@ -184,8 +152,8 @@ void check_decls(Checker_Context* cc)
 			check_type_signature(cc, &param.type);
 			
 			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
-			if (!name) name_set.add(param.ident, hash_ident(param.ident));
-			else { err_set; error("Duplicate procedure input parameter identifier", param.ident); }
+			if (name) err_report(Error::PROC_DUPLICATE_PARAM);
+			else name_set.add(param.ident, hash_ident(param.ident));
 		}
 
 		if (proc_decl->return_type)
@@ -273,8 +241,7 @@ void check_program(Checker_Context* cc)
 
 		if (found)
 		{
-			err_set;
-			printf("Found struct with infinite size: ");
+			err_report(Error::STRUCT_INFINITE_SIZE);
 			Visit_State err_visit = visit_stack[0];
 			debug_print_ident(err_visit.struct_decl->ident, true, true);
 			printf("Field access path: ");
@@ -285,9 +252,6 @@ void check_program(Checker_Context* cc)
 				err_visit = visit_stack[k];
 				debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
 			}
-			printf("\n");
-			printf("Hint: struct cannot directly store intance of itself. Use pointer for indirection.\n");
-			printf("\n");
 		}
 	}
 }
@@ -299,28 +263,17 @@ void check_ast(Checker_Context* cc)
 		if (proc_decl->is_external) continue;
 
 		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
+		// const exprs arent considered
 		Terminator terminator = check_block_cfg(cc, proc_decl->block, false, false);
-		if (terminator != Terminator::Return)
-		{
-			if (proc_decl->return_type)
-			{
-				err_set;
-				error("Not all control flow paths return value", proc_decl->ident);
-			}
-		}
+		if (terminator != Terminator::Return && proc_decl->return_type) err_report(Error::CFG_NOT_ALL_PATHS_RETURN);
 		
-		//@Notice need to add input variables to block stack
 		checker_context_block_reset(cc, proc_decl);
 		checker_context_block_add(cc);
 		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
 		{
-			//this is already checked for in decl checks
-			if (checker_context_block_contains_var(cc, param.ident))
-			{
-				err_set;
-				error("Input parameter with same name is already exists", param.ident);
-			}
-			else checker_context_block_add_var(cc, param.ident, param.type);
+			//@Notice this is checked in proc_decl but might be usefull for err recovery later
+			if (!checker_context_block_contains_var(cc, param.ident))
+			checker_context_block_add_var(cc, param.ident, param.type);
 		}
 		check_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
 	}
@@ -329,53 +282,27 @@ void check_ast(Checker_Context* cc)
 Ast* check_try_import(Checker_Context* cc, option<Ast_Ident> import)
 {
 	if (!import) return cc->ast;
-
 	Ast_Ident import_ident = import.value();
 	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(import_ident, hash_ident(import_ident));
-	if (!import_decl)
-	{
-		err_set;
-		error("Import module not found", import_ident);
-		return NULL;
-	}
-
+	if (!import_decl) { err_report(Error::IMPORT_MODULE_NOT_FOUND); return {}; }
 	return import_decl.value()->import_ast;
 }
 
-option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident)
-{
-	return target_ast->struct_table.find(ident, hash_ident(ident));
-}
-
-option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident)
-{
-	return target_ast->enum_table.find(ident, hash_ident(ident));
-}
-
-option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident)
-{
-	return target_ast->proc_table.find(ident, hash_ident(ident));
-}
+option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident) { return target_ast->struct_table.find(ident, hash_ident(ident)); }
+option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident) { return target_ast->enum_table.find(ident, hash_ident(ident)); }
+option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident) { return target_ast->proc_table.find(ident, hash_ident(ident)); }
 
 option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
 {
-	u32 count = 0;
-	for (Ast_Enum_Variant& variant : enum_decl->variants)
-	{
-		if (match_ident(variant.ident, ident)) return count;
-		count += 1;
-	}
+	for (u64 i = 0; i < enum_decl->variants.size(); i += 1)
+	{ if (match_ident(enum_decl->variants[i].ident, ident)) return (u32)i; }
 	return {};
 }
 
 option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident)
 {
-	u32 count = 0;
-	for (Ast_Ident_Type_Pair& field : struct_decl->fields)
-	{
-		if (match_ident(field.ident, ident)) return count;
-		count += 1;
-	}
+	for (u64 i = 0; i < struct_decl->fields.size(); i += 1) 
+	{ if (match_ident(struct_decl->fields[i].ident, ident)) return (u32)i; }
 	return {};
 }
 
@@ -387,8 +314,7 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 	{
 		if (terminator != Terminator::None)
 		{
-			err_set;
-			printf("Unreachable statement:\n");
+			err_report(Error::CFG_UNREACHABLE_STATEMENT);
 			debug_print_statement(statement, 0);
 			printf("\n");
 			break;
@@ -412,8 +338,7 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 		{
 			if (is_defer)
 			{
-				err_set;
-				printf("Nested defer blocks are not allowed:\n");
+				err_report(Error::CFG_NESTED_DEFER);
 				debug_print_token(statement->as_defer->token, true, true);
 				printf("\n");
 			}
@@ -423,8 +348,8 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 		{
 			if (!is_loop)
 			{
-				if (is_defer) { err_set; printf("Break statement inside defer block is not allowed:\n"); }
-				else { err_set; printf("Break statement outside a loop:\n"); }
+				if (is_defer) err_report(Error::CFG_BREAK_INSIDE_DEFER);
+				else err_report(Error::CFG_BREAK_OUTSIDE_LOOP);
 				debug_print_token(statement->as_break->token, true, true);
 				printf("\n");
 			}
@@ -434,8 +359,7 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 		{
 			if (is_defer)
 			{
-				err_set;
-				printf("Defer block cant contain 'return' statements:\n");
+				err_report(Error::CFG_RETURN_INSIDE_DEFER);
 				debug_print_token(statement->as_defer->token, true, true);
 				printf("\n");
 			}
@@ -449,8 +373,8 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 		{
 			if (!is_loop)
 			{
-				if (is_defer) { err_set; printf("Continue statement inside defer block is not allowed:\n"); }
-				else { err_set; printf("Continue statement outside a loop:\n"); }
+				if (is_defer) err_report(Error::CFG_CONTINUE_INSIDE_DEFER);
+				else err_report(Error::CFG_CONTINUE_OUTSIDE_LOOP);
 				debug_print_token(statement->as_continue->token, true, true);
 				printf("\n");
 			}
@@ -486,8 +410,6 @@ void check_switch_cfg(Checker_Context* cc, Ast_Switch* _switch, bool is_loop, bo
 	}
 }
 
-//@Todo store proc context in Block_Stack and 
-//type check return type with proc decl return type, create check_return()
 static void check_block(Checker_Context* cc, Ast_Block* block, Checker_Block_Flags flags)
 {
 	if (flags != Checker_Block_Flags::Already_Added) checker_context_block_add(cc);

@@ -67,7 +67,7 @@ struct Ast_Program
 {
 	std::vector<Ast_Struct_IR_Info> structs;
 	std::vector<Ast_Enum_IR_Info> enums;
-	std::vector<Ast_Proc_IR_Info> procedures;
+	std::vector<Ast_Proc_IR_Info> procs;
 };
 
 struct Ast_Struct_IR_Info

@@ -36,7 +36,7 @@ Module build_module(Ast_Program* program)
 		LLVMStructSetBody(struct_info.struct_type, type_array.data(), (u32)type_array.size(), 0);
 	}
 
-	for (Ast_Proc_IR_Info& proc_info : program->procedures)
+	for (Ast_Proc_IR_Info& proc_info : program->procs)
 	{
 		type_array.clear();
 		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
@@ -49,7 +49,7 @@ Module build_module(Ast_Program* program)
 		proc_info.proc_value = LLVMAddFunction(bc.module, name, proc_info.proc_type);
 	}
 
-	for (Ast_Proc_IR_Info& proc_info : program->procedures)
+	for (Ast_Proc_IR_Info& proc_info : program->procs)
 	{
 		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
 		if (proc_decl->is_external) continue;
@@ -290,7 +290,7 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 
 Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags)
 {
-	Ast_Proc_IR_Info proc_info = bc->program->procedures[proc_call->proc_id];
+	Ast_Proc_IR_Info proc_info = bc->program->procs[proc_call->proc_id];
 
 	std::vector<Value> input_values = {}; //@Perf memory overhead
 	input_values.reserve(proc_call->input_exprs.size());
