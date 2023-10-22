@@ -225,7 +225,7 @@ void build_for(IR_Builder_Context* bc, Ast_For* _for)
 
 void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 {
-	Value on_value = build_term(bc, _switch->term);
+	Value on_value = build_expr(bc, _switch->expr);
 	Basic_Block exit_block = builder_context_add_bb(bc, "switch_exit");
 	Value switch_value = LLVMBuildSwitch(bc->builder, on_value, exit_block, (u32)_switch->cases.size());
 

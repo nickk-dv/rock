@@ -12,5 +12,5 @@ u32 hash_ident(Ast_Ident& ident)
 
 bool match_ident(Ast_Ident& a, Ast_Ident& b)
 {
-	return a.str == b.str;
+	return match_string_view(a.str, b.str);
 }

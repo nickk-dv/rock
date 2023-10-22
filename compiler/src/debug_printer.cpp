@@ -467,7 +467,9 @@ void debug_print_switch(Ast_Switch* _switch, u32 depth)
 	debug_print_branch(depth);
 	printf("Switch: \n");
 
-	debug_print_term(_switch->term, depth);
+	debug_print_spacing(depth);
+	printf("On_Expr: \n");
+	debug_print_expr(_switch->expr, depth);
 	
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{

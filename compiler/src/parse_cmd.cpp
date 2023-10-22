@@ -54,64 +54,15 @@ bool match_arg(char* arg, const char* match)
 	return strcmp(arg, match) == 0;
 }
 
-i32 cmd_build(char* filepath)
+i32 cmd_build(char* path)
 {
-	tokenizer_init();
-
-	if (!fs::exists(filepath)) 
-	{
-		printf("Filepath is not found: %s\n", filepath);
-		return 1;
-	}
-	if (!fs::is_directory(filepath)) 
-	{
-		printf("Filepath is not a directory: %s\n", filepath);
-		return 1;
-	}
+	Timer timer = {};
 	
-	Arena parser_arena = {};
-	arena_init(&parser_arena, 128 * 1024);
-	std::vector<Parser*> parsers = {};
-	std::unordered_map<std::string, Ast*> modules;
-	bool parse_error = false;
-
-	Timer timer;
 	timer.start();
-	fs::path root = fs::path(filepath);
-	for (const fs::directory_entry& entry : fs::recursive_directory_iterator(root))
-	{
-		if (fs::is_regular_file(entry.path()) && entry.path().extension() == ".txt")
-		{
-			std::string file = entry.path().string();
-			
-			Parser* parser = arena_alloc<Parser>(&parser_arena);
-			parsers.emplace_back(parser);
-			if (!parser_init(parser, file.c_str()))
-			{
-				printf("Failed to open a file, or file empty: %s\n", file.c_str());
-				parse_error = true;
-				continue;
-			}
-			
-			Ast* ast = parser_parse(parser);
-			if (ast == NULL)
-			{
-				printf("Failed to parse Ast: %s\n", file.c_str());
-				parse_error = true;
-				continue;
-			}
-
-			std::string trim = entry.path().lexically_relative(root).replace_extension("").string();
-			modules.emplace(trim, ast);
-		}
-	}
-	if (parse_error) return 1;
-	timer.end("Parse init & Parse Ast");
-
-	for (const auto& [module, ast] : modules)
-	{
-		//debug_print_ast(ast);
-	}
+	Parser parser = {};
+	bool parse_result = parse(&parser, path);
+	timer.end("Parse");
+	if (!parse_result) return 1;
 
 	Ast_Program program = {};
 	Error_Handler err = {};
@@ -119,10 +70,10 @@ i32 cmd_build(char* filepath)
 	Checker_Context cc = {};
 
 	timer.start();
-	for (const auto& [module, ast] : modules)
+	for (const auto& [module, ast] : parser.module_map)
 	{
 		checker_context_init(&cc, ast, &program, &err);
-		check_decl_uniqueness(&cc, modules);
+		check_decl_uniqueness(&cc, parser.module_map);
 		if (module == "main") main_ast = ast;
 	}
 	if (main_ast == NULL) err_report(Error::MAIN_FILE_NOT_FOUND);
@@ -135,7 +86,7 @@ i32 cmd_build(char* filepath)
 
 	checker_context_init(&cc, main_ast, &program, &err);
 	check_main_proc(&cc);
-	for (const auto& [module, ast] : modules) 
+	for (const auto& [module, ast] : parser.module_map)
 	{
 		checker_context_init(&cc, ast, &program, &err);
 		check_decls(&cc);
@@ -154,7 +105,7 @@ i32 cmd_build(char* filepath)
 		return 1;
 	}
 	
-	for (const auto& [module, ast] : modules)
+	for (const auto& [module, ast] : parser.module_map)
 	{
 		checker_context_init(&cc, ast, &program, &err);
 		check_ast(&cc);

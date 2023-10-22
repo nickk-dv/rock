@@ -33,7 +33,6 @@ struct Arena_Block;
 
 u32 hash_fnv1a_32(const StringView& str);
 u64 hash_fnv1a_64(const StringView& str);
-bool os_file_read_all(const char* file_path, String* str);
 bool match_string_view(StringView& a, StringView& b);
 constexpr u64 hash_str_ascii_9(const StringView& str);
 constexpr u64 hash_ascii_9(const char* str);
@@ -66,40 +65,20 @@ T* arena_alloc(Arena* arena)
 	return ptr;
 }
 
-struct String
+template<typename T>
+T* arena_alloc_buffer(Arena* arena, u64 size)
 {
-	~String() { free(data); }
-
-	u8* data;
-	size_t count;
-};
+	if (arena->offset + size * sizeof(T) > arena->block_size)
+		arena_alloc_block(arena);
+	T* ptr = (T*)(arena->data + arena->offset);
+	arena->offset += size * sizeof(T);
+	return ptr;
+}
 
 struct StringView
 {
-	StringView() {};
-
-	StringView(const String& str)
-	{
-		data = str.data;
-		count = str.count;
-	}
-
-	StringView(const char* c_str, size_t len)
-	{
-		data = (u8*)c_str;
-		count = len;
-	}
-
-	bool operator == (const StringView& other) const
-	{
-		if (count != other.count) return false;
-		for (u64 i = 0; i < count; i++)
-			if (data[i] != other.data[i]) return false;
-		return true;
-	}
-
 	u8* data;
-	size_t count;
+	u64 count;
 };
 
 constexpr u64 hash_str_ascii_9(const StringView& str)

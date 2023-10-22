@@ -91,11 +91,15 @@ struct Ast_Proc_IR_Info
 
 struct Ast
 {
+	StringView source;
+	std::string filepath;
+
 	std::vector<Ast_Import_Decl*> imports;
 	std::vector<Ast_Use_Decl*> uses;
 	std::vector<Ast_Struct_Decl*> structs;
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
+	
 	//checker
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
 	HashMap<Ast_Ident, Ast_Struct_Info, u32, match_ident> struct_table;
@@ -254,6 +258,7 @@ enum class Ast_Statement_Tag
 
 struct Ast_Statement
 {
+	Span span;
 	Ast_Statement_Tag tag;
 
 	union
@@ -326,7 +331,7 @@ struct Ast_Return
 struct Ast_Switch
 {
 	Token token;
-	Ast_Term* term;
+	Ast_Expr* expr;
 	std::vector<Ast_Switch_Case> cases;
 };
 
@@ -407,7 +412,6 @@ enum class Ast_Term_Tag
 
 struct Ast_Term
 {
-	Span span;
 	Ast_Term_Tag tag;
 
 	union

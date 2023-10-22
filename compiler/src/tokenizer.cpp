@@ -57,15 +57,13 @@ void tokenizer_init()
 	}
 }
 
-bool tokenizer_set_input(Tokenizer* tokenizer, const char* filepath)
+void tokenizer_set_input(Tokenizer* tokenizer, StringView source)
 {
+	tokenizer->input = source;
 	tokenizer->input_cursor = 0;
-	tokenizer->line_cursor = 0;
 	tokenizer->line_id = 1;
-	tokenizer->strings.init();
-	return os_file_read_all(filepath, &tokenizer->input);
+	tokenizer->line_cursor = 0;
 }
-#include "debug_printer.h" //@Remove
 
 void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 {
@@ -177,7 +175,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 			{
 				bool terminated = false;
 				bool escapes_valid = true;
-				tokenizer->strings.start_str();
+				tokenizer->strings->start_str();
 
 				while (peek().has_value())
 				{
@@ -199,15 +197,15 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 
 							switch (next)
 							{
-							case 'n': tokenizer->strings.put_char('\n'); break;
-							case 'r': tokenizer->strings.put_char('\r'); break;
-							case 't': tokenizer->strings.put_char('\t'); break;
-							case '\"': tokenizer->strings.put_char('\"'); break;
-							case '\\': tokenizer->strings.put_char('\\'); break;
-							case '0': tokenizer->strings.put_char('\0'); break;
+							case 'n': tokenizer->strings->put_char('\n'); break;
+							case 'r': tokenizer->strings->put_char('\r'); break;
+							case 't': tokenizer->strings->put_char('\t'); break;
+							case '\"': tokenizer->strings->put_char('\"'); break;
+							case '\\': tokenizer->strings->put_char('\\'); break;
+							case '0': tokenizer->strings->put_char('\0'); break;
 							default:
 							{
-								tokenizer->strings.put_char(next);
+								tokenizer->strings->put_char(next);
 								escapes_valid = false;
 								printf("Invalid escape character: \\%c at %lu:%lu\n", next, line, col);
 								printf("Hint: if you meant to use backslash type: \\\\ \n\n");
@@ -221,11 +219,11 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 							printf("Hint: if you meant to use backslash type: \\\\ \n\n");
 						}
 					}
-					else tokenizer->strings.put_char(c);
+					else tokenizer->strings->put_char(c);
 				}
 
 				token.type = TokenType::STRING_LITERAL;
-				token.string_literal_value = tokenizer->strings.end_str();
+				token.string_literal_value = tokenizer->strings->end_str();
 				if (!terminated || !escapes_valid) token.type = TokenType::ERROR;
 			} break;
 			case LexemeType::SYMBOL:

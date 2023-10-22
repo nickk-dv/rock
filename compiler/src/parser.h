@@ -7,9 +7,9 @@
 
 struct Parser;
 
-bool parser_init(Parser* parser, const char* filepath);
-Ast* parser_parse(Parser* parser);
+bool parse(Parser* parser, const char* path);
 
+static Ast* parse_ast(Parser* parser, StringView source, std::string& filepath);
 static option<Ast_Type> parse_type(Parser* parser);
 static Ast_Array_Type* parse_array_type(Parser* parser);
 static Ast_Custom_Type* parse_custom_type(Parser* parser);
@@ -63,6 +63,8 @@ struct Parser
 	Token prev_last;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
 	u32 peek_index = 0;
+	StringStorage strings;
+	std::unordered_map<std::string, Ast*> module_map;
 };
 
 #endif

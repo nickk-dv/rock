@@ -1,6 +1,7 @@
 #include "parser.h"
 
 #include "debug_printer.h"
+#include <filesystem>
 
 #define peek() peek_token(parser, 0)
 #define peek_next(offset) peek_token(parser, offset)
@@ -11,16 +12,54 @@
 #define error_next(message, offset) parse_error(parser, message, offset);
 #define error_token(message, token) parse_error_token(parser, message, token);
 
-bool parser_init(Parser* parser, const char* filepath)
+namespace fs = std::filesystem;
+
+bool parse(Parser* parser, const char* path)
 {
-	parser->arena = {};
-	arena_init(&parser->arena, 1024 * 1024);
-	return tokenizer_set_input(&parser->tokenizer, filepath);
+	fs::path src = fs::path(path);
+	if (!fs::exists(src)) { printf("Path doesnt exist: %s\n", path); return false; }
+	if (!fs::is_directory(src)) { printf("Path must be a directory: %s\n", path); return false; }
+	
+	tokenizer_init();
+	parser->strings.init();
+	parser->tokenizer.strings = &parser->strings;
+	arena_init(&parser->arena, 32 * 1024 * 1024);
+
+	for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(src))
+	{
+		fs::path entry = dir_entry.path();
+		if (!fs::is_regular_file(entry)) continue;
+		if (entry.extension() != ".txt") continue;
+		
+		FILE* file;
+		fopen_s(&file, entry.u8string().c_str(), "rb");
+		if (!file) { printf("File open failed\n"); return false; }
+		fseek(file, 0, SEEK_END);
+		u64 size = (u64)ftell(file);
+		fseek(file, 0, SEEK_SET);
+		
+		u8* data = arena_alloc_buffer<u8>(&parser->arena, size);
+		u64 read_size = fread(data, 1, size, file);
+		fclose(file);
+		if (read_size != size) { printf("File read failed\n"); return false; }
+		
+		StringView source = StringView { data, size };
+		std::string filepath = entry.lexically_relative(src).replace_extension("").string();
+		Ast* ast = parse_ast(parser, source, filepath);
+		if (ast == NULL) return false;
+		parser->module_map.emplace(filepath, ast);
+	}
+	return true;
 }
 
-Ast* parser_parse(Parser* parser)
+Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 {
 	Ast* ast = arena_alloc<Ast>(&parser->arena);
+	ast->source = source;
+	ast->filepath = filepath;
+	
+	parser->peek_index = 0;
+	tokenizer_set_input(&parser->tokenizer, source);
 	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
 
 	while (true) 
@@ -347,6 +386,7 @@ Ast_Block* parse_small_block(Parser* parser)
 
 Ast_Statement* parse_statement(Parser* parser)
 {
+	u32 start = get_span_start(parser);
 	Ast_Statement* statement = arena_alloc<Ast_Statement>(&parser->arena);
 	Token token = peek();
 
@@ -435,6 +475,8 @@ Ast_Statement* parse_statement(Parser* parser)
 	}
 	}
 	
+	statement->span.start = start;
+	statement->span.end = get_span_end(parser);
 	return statement;
 }
 
@@ -567,9 +609,9 @@ Ast_Switch* parse_switch(Parser* parser)
 	Ast_Switch* _switch = arena_alloc<Ast_Switch>(&parser->arena);
 	_switch->token = consume_get();
 
-	Ast_Term* term = parse_term(parser);
-	if (!term) return NULL;
-	_switch->term = term;
+	Ast_Expr* expr = parse_sub_expr(parser);
+	if (!expr) return NULL;
+	_switch->expr = expr;
 
 	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in switch statement"); return NULL; }
 	
@@ -720,9 +762,6 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 
 	expr_lhs->span.start = start;
 	expr_lhs->span.end = get_span_end(parser);
-	for (u32 i = expr_lhs->span.start; i <= expr_lhs->span.end; i+= 1)
-	printf("%c", parser->tokenizer.input.data[i]);
-	printf("\n");
 	return expr_lhs;
 }
 

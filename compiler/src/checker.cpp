@@ -165,7 +165,7 @@ void check_decls(Checker_Context* cc)
 
 void check_main_proc(Checker_Context* cc)
 {
-	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, Ast_Ident { 0, 0, { "main", 4} });
+	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, Ast_Ident { 0, 0, { (u8*)"main", 4} });
 	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); return; }
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_decl->is_main = true;
@@ -545,21 +545,17 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 	}
 
 	//@Todo add context with switch on type and constant requirement
-	option<Ast_Type> type = check_term(cc, {}, _switch->term);
-	bool switched_type_is_correct = true;
-	bool all_terms_correct = true;
+	option<Ast_Type> type = check_expr(cc, {}, _switch->expr);
 	if (type)
 	{
 		Type_Kind kind = type_kind(cc, type.value());
 		if (kind != Type_Kind::Integer && kind != Type_Kind::Enum)
 		{
 			err_set;
-			switched_type_is_correct = false;
-			all_terms_correct = false;
 			printf("Switching is only allowed on value of enum or integer types\n");
 			debug_print_type(type.value());
 			printf("\n");
-			debug_print_term(_switch->term, 0);
+			debug_print_expr(_switch->expr, 0);
 			printf("\n");
 		}
 	}
