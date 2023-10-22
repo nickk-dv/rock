@@ -87,9 +87,9 @@ IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Fla
 	{
 		switch (statement->tag)
 		{
-		case Ast_Statement::Tag::If: build_if(bc, statement->as_if, builder_context_add_bb(bc, "cont")); break;
-		case Ast_Statement::Tag::For: build_for(bc, statement->as_for); break;
-		case Ast_Statement::Tag::Block:
+		case Ast_Statement_Tag::If: build_if(bc, statement->as_if, builder_context_add_bb(bc, "cont")); break;
+		case Ast_Statement_Tag::For: build_for(bc, statement->as_for); break;
+		case Ast_Statement_Tag::Block:
 		{
 			IR_Terminator terminator = build_block(bc, statement->as_block, IR_Block_Flags::None);
 			if (terminator != IR_Terminator::None)
@@ -99,8 +99,8 @@ IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Fla
 				return terminator;
 			}
 		} break;
-		case Ast_Statement::Tag::Defer: builder_context_block_add_defer(bc, statement->as_defer); break;
-		case Ast_Statement::Tag::Break:
+		case Ast_Statement_Tag::Defer: builder_context_block_add_defer(bc, statement->as_defer); break;
+		case Ast_Statement_Tag::Break:
 		{
 			build_defer(bc, IR_Terminator::Break);
 			IR_Loop_Info loop = builder_context_block_get_loop(bc);
@@ -109,7 +109,7 @@ IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Fla
 			builder_context_block_pop_back(bc);
 			return IR_Terminator::Break;
 		} break;
-		case Ast_Statement::Tag::Return:
+		case Ast_Statement_Tag::Return:
 		{
 			build_defer(bc, IR_Terminator::Return);
 			if (statement->as_return->expr)
@@ -119,8 +119,8 @@ IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Fla
 			builder_context_block_pop_back(bc);
 			return IR_Terminator::Return;
 		} break;
-		case Ast_Statement::Tag::Switch: build_switch(bc, statement->as_switch); break;
-		case Ast_Statement::Tag::Continue:
+		case Ast_Statement_Tag::Switch: build_switch(bc, statement->as_switch); break;
+		case Ast_Statement_Tag::Continue:
 		{
 			build_defer(bc, IR_Terminator::Continue);
 			IR_Loop_Info loop = builder_context_block_get_loop(bc);
@@ -130,9 +130,9 @@ IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Fla
 			builder_context_block_pop_back(bc);
 			return IR_Terminator::Continue;
 		} break;
-		case Ast_Statement::Tag::Var_Decl: build_var_decl(bc, statement->as_var_decl); break;
-		case Ast_Statement::Tag::Var_Assign: build_var_assign(bc, statement->as_var_assign); break;
-		case Ast_Statement::Tag::Proc_Call: build_proc_call(bc, statement->as_proc_call, IR_Proc_Call_Flags::In_Statement); break;
+		case Ast_Statement_Tag::Var_Decl: build_var_decl(bc, statement->as_var_decl); break;
+		case Ast_Statement_Tag::Var_Assign: build_var_assign(bc, statement->as_var_assign); break;
+		case Ast_Statement_Tag::Proc_Call: build_proc_call(bc, statement->as_proc_call, IR_Proc_Call_Flags::In_Statement); break;
 		}
 	}
 
@@ -171,7 +171,7 @@ void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
 		builder_context_set_bb(bc, else_block);
 
 		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else::Tag::If)
+		if (_else->tag == Ast_Else_Tag::If)
 		{
 			build_if(bc, _else->as_if, cont_block);
 		}
@@ -305,10 +305,10 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
-	case Ast_Expr::Tag::Term: return build_term(bc, expr->as_term);
-	case Ast_Expr::Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
-	case Ast_Expr::Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
-	case Ast_Expr::Tag::Const_Expr: return build_const_expr(bc, expr->as_const_expr);
+	case Ast_Expr_Tag::Term: return build_term(bc, expr->as_term);
+	case Ast_Expr_Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
+	case Ast_Expr_Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
+	case Ast_Expr_Tag::Const_Expr: return build_const_expr(bc, expr->as_const_expr);
 	}
 }
 
@@ -316,18 +316,18 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 {
 	switch (term->tag)
 	{
-	case Ast_Term::Tag::Var: 
+	case Ast_Term_Tag::Var: 
 	{	
 		//@Todo handle unary adress op by returning ptr without load
 		IR_Access_Info access_info = build_var(bc, term->as_var);
 		return LLVMBuildLoad2(bc->builder, access_info.type, access_info.ptr, "load_val");
 	}
-	case Ast_Term::Tag::Enum:
+	case Ast_Term_Tag::Enum:
 	{
 		Ast_Enum* _enum = term->as_enum;
 		return bc->program->enums[_enum->enum_id].enum_decl->variants[_enum->variant_id].constant;
 	}
-	case Ast_Term::Tag::Sizeof:
+	case Ast_Term_Tag::Sizeof:
 	{
 		//@Notice returning 0 in void case to avoid crashing
 		Ast_Sizeof* _sizeof = term->as_sizeof;
@@ -335,7 +335,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 		if (LLVMTypeIsSized(type)) return LLVMSizeOf(type);
 		return LLVMConstInt(LLVMInt64Type(), 0, 0);
 	}
-	case Ast_Term::Tag::Literal:
+	case Ast_Term_Tag::Literal:
 	{
 		Token token = term->as_literal.token;
 		if (token.type == TokenType::STRING_LITERAL)
@@ -349,8 +349,8 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term)
 			exit(EXIT_FAILURE);
 		}
 	}
-	case Ast_Term::Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
-	case Ast_Term::Tag::Struct_Init:
+	case Ast_Term_Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
+	case Ast_Term_Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
 		Type type = bc->program->structs[struct_init->struct_id].struct_type;
@@ -381,7 +381,7 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
 	while (access != NULL)
 	{
-		if (access->tag == Ast_Access::Tag::Array)
+		if (access->tag == Ast_Access_Tag::Array)
 		{
 			printf("llvm ir builder 2 build_var: array access isnt supported\n");
 			exit(EXIT_FAILURE);
@@ -551,10 +551,10 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 
 	switch (type.tag)
 	{
-	case Ast_Type::Tag::Basic: return type_from_basic_type(type.as_basic);
-	case Ast_Type::Tag::Array: return LLVMVoidType(); //@Notice array type isnt supported
-	case Ast_Type::Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;
-	case Ast_Type::Tag::Enum: return bc->program->enums[type.as_enum.enum_id].enum_type;
+	case Ast_Type_Tag::Basic: return type_from_basic_type(type.as_basic);
+	case Ast_Type_Tag::Array: return LLVMVoidType(); //@Notice array type isnt supported
+	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;
+	case Ast_Type_Tag::Enum: return bc->program->enums[type.as_enum.enum_id].enum_type;
 	default: return LLVMVoidType();
 	}
 }

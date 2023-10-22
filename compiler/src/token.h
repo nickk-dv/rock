@@ -8,6 +8,7 @@ enum class UnaryOp;
 enum class BinaryOp;
 enum class AssignOp;
 enum class BasicType;
+struct Span;
 struct Token;
 
 TokenType token_str_to_keyword(StringView str);
@@ -170,13 +171,18 @@ enum class BasicType
 	STRING,
 };
 
+struct Span
+{
+	u32 start;
+	u32 end;
+};
+
 struct Token
 {
 	Token() {};
 
+	Span span;
 	TokenType type = TokenType::ERROR;
-	u32 l0 = 0;
-	u32 c0 = 0;
 
 	union
 	{

@@ -123,8 +123,7 @@ struct Ast_Proc_Info
 
 struct Ast_Ident
 {
-	u32 l0 = 0;
-	u32 c0 = 0;
+	Span span;
 	StringView str;
 };
 
@@ -145,12 +144,14 @@ struct Ast_Enum_Type //@Memory can remove decl and use program id lookup in chec
 	Ast_Enum_Decl* enum_decl;
 };
 
+enum class Ast_Type_Tag
+{
+	Basic, Array, Custom, Struct, Enum
+};
+
 struct Ast_Type
 {
-	enum class Tag
-	{
-		Basic, Array, Custom, Struct, Enum
-	} tag;
+	Ast_Type_Tag tag;
 
 	union
 	{
@@ -245,13 +246,15 @@ struct Ast_Block
 	std::vector<Ast_Statement*> statements;
 };
 
+enum class Ast_Statement_Tag
+{
+	If, For, Block, Defer, Break, Return,
+	Switch, Continue, Var_Decl, Var_Assign, Proc_Call
+};
+
 struct Ast_Statement
 {
-	enum class Tag
-	{
-		If, For, Block, Defer, Break, Return,
-		Switch, Continue, Var_Decl, Var_Assign, Proc_Call
-	} tag;
+	Ast_Statement_Tag tag;
 
 	union
 	{
@@ -277,14 +280,15 @@ struct Ast_If
 	option<Ast_Else*> _else;
 };
 
+enum class Ast_Else_Tag
+{
+	If, Block
+};
+
 struct Ast_Else
 {
 	Token token;
-
-	enum class Tag
-	{
-		If, Block
-	} tag;
+	Ast_Else_Tag tag;
 
 	union
 	{
@@ -376,36 +380,42 @@ struct Ast_Const_Expr
 	};
 };
 
+enum class Ast_Expr_Tag
+{
+	Term, Unary_Expr, Binary_Expr, Const_Expr
+};
+
 struct Ast_Expr
 {
-	enum class Tag
-	{
-		Term, Unary_Expr, Binary_Expr, Const_Expr
-	} tag;
+	Span span;
+	Ast_Expr_Tag tag;
 
 	union
 	{
 		Ast_Term* as_term;
 		Ast_Unary_Expr* as_unary_expr;
 		Ast_Binary_Expr* as_binary_expr;
-		Ast_Const_Expr as_const_expr;
+		Ast_Const_Expr as_const_expr; //@Notice span doesnt change after const fold
 	};
+};
+
+enum class Ast_Term_Tag
+{
+	Var, Enum, Sizeof, Literal,
+	Proc_Call, Struct_Init
 };
 
 struct Ast_Term
 {
-	enum class Tag
-	{
-		Var, Enum, Sizeof, Literal,
-		Proc_Call, Struct_Init
-	} tag;
+	Span span;
+	Ast_Term_Tag tag;
 
 	union
 	{
 		Ast_Var* as_var;
 		Ast_Enum* as_enum;
 		Ast_Sizeof* as_sizeof;
-		Ast_Literal as_literal;
+		Ast_Literal as_literal; //@Pointer todo to squish size
 		Ast_Proc_Call* as_proc_call;
 		Ast_Struct_Init* as_struct_init;
 	};
@@ -417,12 +427,14 @@ struct Ast_Var
 	option<Ast_Access*> access;
 };
 
+enum class Ast_Access_Tag
+{
+	Var, Array
+};
+
 struct Ast_Access
 {
-	enum class Tag
-	{
-		Var, Array
-	} tag;
+	Ast_Access_Tag tag;
 
 	union
 	{

@@ -108,7 +108,7 @@ option<Ast_Type> parse_type(Parser* parser)
 	if (basic_type)
 	{
 		consume();
-		type.tag = Ast_Type::Tag::Basic;
+		type.tag = Ast_Type_Tag::Basic;
 		type.as_basic = basic_type.value();
 		return type;
 	}
@@ -119,14 +119,14 @@ option<Ast_Type> parse_type(Parser* parser)
 	{
 		Ast_Custom_Type* custom = parse_custom_type(parser);
 		if (!custom) return {};
-		type.tag = Ast_Type::Tag::Custom;
+		type.tag = Ast_Type_Tag::Custom;
 		type.as_custom = custom;
 	} break;
 	case TokenType::BRACKET_START:
 	{
 		Ast_Array_Type* array = parse_array_type(parser);
 		if (!array) return {};
-		type.tag = Ast_Type::Tag::Array;
+		type.tag = Ast_Type_Tag::Array;
 		type.as_array = array;
 	} break;
 	default:
@@ -354,49 +354,49 @@ Ast_Statement* parse_statement(Parser* parser)
 	{
 	case TokenType::KEYWORD_IF:
 	{
-		statement->tag = Ast_Statement::Tag::If;
+		statement->tag = Ast_Statement_Tag::If;
 		statement->as_if = parse_if(parser);
 		if (!statement->as_if) return NULL;
 	} break;
 	case TokenType::KEYWORD_FOR:
 	{
-		statement->tag = Ast_Statement::Tag::For;
+		statement->tag = Ast_Statement_Tag::For;
 		statement->as_for = parse_for(parser);
 		if (!statement->as_for) return NULL;
 	} break;
 	case TokenType::BLOCK_START:
 	{
-		statement->tag = Ast_Statement::Tag::Block;
+		statement->tag = Ast_Statement_Tag::Block;
 		statement->as_block = parse_block(parser);
 		if (!statement->as_block) return NULL;
 	} break;
 	case TokenType::KEYWORD_DEFER:
 	{
-		statement->tag = Ast_Statement::Tag::Defer;
+		statement->tag = Ast_Statement_Tag::Defer;
 		statement->as_defer = parse_defer(parser);
 		if (!statement->as_defer) return NULL;
 	} break;
 	case TokenType::KEYWORD_BREAK:
 	{
-		statement->tag = Ast_Statement::Tag::Break;
+		statement->tag = Ast_Statement_Tag::Break;
 		statement->as_break = parse_break(parser);
 		if (!statement->as_break) return NULL;
 	} break;
 	case TokenType::KEYWORD_RETURN:
 	{
-		statement->tag = Ast_Statement::Tag::Return;
+		statement->tag = Ast_Statement_Tag::Return;
 		statement->as_return = parse_return(parser);
 		if (!statement->as_return) return NULL;
 	} break;
 	case TokenType::KEYWORD_SWITCH:
 	{
-		statement->tag = Ast_Statement::Tag::Switch;
+		statement->tag = Ast_Statement_Tag::Switch;
 		statement->as_switch = parse_switch(parser);
 		if (!statement->as_switch) return NULL;
 	} break;
 	case TokenType::KEYWORD_CONTINUE:
 	{
-		statement->tag = Ast_Statement::Tag::Continue;
+		statement->tag = Ast_Statement_Tag::Continue;
 		statement->as_continue = parse_continue(parser);
 		if (!statement->as_continue) return NULL;
 	} break;
@@ -410,20 +410,20 @@ Ast_Statement* parse_statement(Parser* parser)
 
 		if (next.type == TokenType::PAREN_START || import_proc_call)
 		{
-			statement->tag = Ast_Statement::Tag::Proc_Call;
+			statement->tag = Ast_Statement_Tag::Proc_Call;
 			statement->as_proc_call = parse_proc_call(parser, import_proc_call);
 			if (!statement->as_proc_call) return NULL;
 			if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after procedure call"); return NULL; }
 		}
 		else if (next.type == TokenType::COLON)
 		{
-			statement->tag = Ast_Statement::Tag::Var_Decl;
+			statement->tag = Ast_Statement_Tag::Var_Decl;
 			statement->as_var_decl = parse_var_decl(parser);
 			if (!statement->as_var_decl) return NULL;
 		}
 		else
 		{
-			statement->tag = Ast_Statement::Tag::Var_Assign;
+			statement->tag = Ast_Statement_Tag::Var_Assign;
 			statement->as_var_assign = parse_var_assign(parser);
 			if (!statement->as_var_assign) return NULL;
 		}
@@ -472,14 +472,14 @@ Ast_Else* parse_else(Parser* parser)
 	{
 		Ast_If* _if = parse_if(parser);
 		if (!_if) return NULL;
-		_else->tag = Ast_Else::Tag::If;
+		_else->tag = Ast_Else_Tag::If;
 		_else->as_if = _if;
 	}
 	else if (next.type == TokenType::BLOCK_START)
 	{
 		Ast_Block* block = parse_block(parser);
 		if (!block) return NULL;
-		_else->tag = Ast_Else::Tag::Block;
+		_else->tag = Ast_Else_Tag::Block;
 		_else->as_block = block;
 	}
 	else { error("Expected 'if' or code block '{ ... }'"); return NULL; }
@@ -687,6 +687,7 @@ Ast_Expr* parse_expr(Parser* parser)
 
 Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 {
+	u32 start = get_span_start(parser);
 	Ast_Expr* expr_lhs = parse_primary_expr(parser);
 	if (!expr_lhs) return NULL;
 
@@ -713,10 +714,15 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 		bin_expr->left = expr_lhs_copy;
 		bin_expr->right = expr_rhs;
 
-		expr_lhs->tag = Ast_Expr::Tag::Binary_Expr;
+		expr_lhs->tag = Ast_Expr_Tag::Binary_Expr;
 		expr_lhs->as_binary_expr = bin_expr;
 	}
 
+	expr_lhs->span.start = start;
+	expr_lhs->span.end = get_span_end(parser);
+	for (u32 i = expr_lhs->span.start; i <= expr_lhs->span.end; i+= 1)
+	printf("%c", parser->tokenizer.input.data[i]);
+	printf("\n");
 	return expr_lhs;
 }
 
@@ -746,7 +752,7 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 		unary_expr->right = right_expr;
 
 		Ast_Expr* expr = arena_alloc<Ast_Expr>(&parser->arena);
-		expr->tag = Ast_Expr::Tag::Unary_Expr;
+		expr->tag = Ast_Expr_Tag::Unary_Expr;
 		expr->as_unary_expr = unary_expr;
 		return expr;
 	}
@@ -755,7 +761,7 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 	if (!term) return NULL;
 
 	Ast_Expr* expr = arena_alloc<Ast_Expr>(&parser->arena);
-	expr->tag = Ast_Expr::Tag::Term;
+	expr->tag = Ast_Expr_Tag::Term;
 	expr->as_term = term;
 
 	return expr;
@@ -773,7 +779,7 @@ Ast_Term* parse_term(Parser* parser)
 	case TokenType::INTEGER_LITERAL:
 	case TokenType::STRING_LITERAL:
 	{
-		term->tag = Ast_Term::Tag::Literal;
+		term->tag = Ast_Term_Tag::Literal;
 		term->as_literal = Ast_Literal{ token };
 		consume();
 	} break;
@@ -781,14 +787,14 @@ Ast_Term* parse_term(Parser* parser)
 	{
 		Ast_Struct_Init* struct_init = parse_struct_init(parser, false, false);
 		if (!struct_init) return NULL;
-		term->tag = Ast_Term::Tag::Struct_Init;
+		term->tag = Ast_Term_Tag::Struct_Init;
 		term->as_struct_init = struct_init;
 	} break;
 	case TokenType::KEYWORD_SIZEOF:
 	{
 		Ast_Sizeof* _sizeof = parse_sizeof(parser);
 		if (!_sizeof) return NULL;
-		term->tag = Ast_Term::Tag::Sizeof;
+		term->tag = Ast_Term_Tag::Sizeof;
 		term->as_sizeof = _sizeof;
 	} break;
 	case TokenType::IDENT:
@@ -804,14 +810,14 @@ Ast_Term* parse_term(Parser* parser)
 		{
 			Ast_Enum* _enum = parse_enum(parser, import_enum);
 			if (!_enum) return NULL;
-			term->tag = Ast_Term::Tag::Enum;
+			term->tag = Ast_Term_Tag::Enum;
 			term->as_enum = _enum;
 		}
 		else if (next.type == TokenType::PAREN_START || import_proc_call)
 		{
 			Ast_Proc_Call* proc_call = parse_proc_call(parser, import_proc_call);
 			if (!proc_call) return NULL;
-			term->tag = Ast_Term::Tag::Proc_Call;
+			term->tag = Ast_Term_Tag::Proc_Call;
 			term->as_proc_call = proc_call;
 		}
 		else
@@ -824,14 +830,14 @@ Ast_Term* parse_term(Parser* parser)
 			{
 				Ast_Struct_Init* struct_init = parse_struct_init(parser, si_with_import, true);
 				if (!struct_init) return NULL;
-				term->tag = Ast_Term::Tag::Struct_Init;
+				term->tag = Ast_Term_Tag::Struct_Init;
 				term->as_struct_init = struct_init;
 			}
 			else
 			{
 				Ast_Var* var = parse_var(parser);
 				if (!var) return NULL;
-				term->tag = Ast_Term::Tag::Var;
+				term->tag = Ast_Term_Tag::Var;
 				term->as_var = var;
 			}
 		}
@@ -872,7 +878,7 @@ Ast_Access* parse_access(Parser* parser)
 		consume();
 		Ast_Var_Access* var_access = parse_var_access(parser);
 		if (!var_access) return NULL;
-		access->tag = Ast_Access::Tag::Var;
+		access->tag = Ast_Access_Tag::Var;
 		access->as_var = var_access;
 	}
 	else if (token.type == TokenType::BRACKET_START)
@@ -880,7 +886,7 @@ Ast_Access* parse_access(Parser* parser)
 		consume();
 		Ast_Array_Access* array_access = parse_array_access(parser);
 		if (!array_access) return NULL;
-		access->tag = Ast_Access::Tag::Array;
+		access->tag = Ast_Access_Tag::Array;
 		access->as_array = array_access;
 	}
 	else
@@ -998,6 +1004,7 @@ void consume_token(Parser* parser)
 	if (parser->peek_index >= (TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD))
 	{
 		parser->peek_index = 0;
+		parser->prev_last = parser->tokens[TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD - 1]; //@Hack
 		tokenizer_tokenize(&parser->tokenizer, parser->tokens);
 	}
 }
@@ -1018,6 +1025,17 @@ option<Token> try_consume_token(Parser* parser, TokenType token_type)
 		return token;
 	}
 	return {};
+}
+
+u32 get_span_start(Parser* parser)
+{
+	return parser->tokens[parser->peek_index].span.start;
+}
+
+u32 get_span_end(Parser* parser)
+{
+	if (parser->peek_index == 0) return parser->prev_last.span.end; //@Hack saving last on tokenization
+	return parser->tokens[parser->peek_index - 1].span.end;
 }
 
 void parse_error(Parser* parser, const char* message, u32 offset)

@@ -65,6 +65,7 @@ bool tokenizer_set_input(Tokenizer* tokenizer, const char* filepath)
 	tokenizer->strings.init();
 	return os_file_read_all(filepath, &tokenizer->input);
 }
+#include "debug_printer.h" //@Remove
 
 void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 {
@@ -88,14 +89,13 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 			return;
 		}
 
+		Token token = {};
+		token.span.start = (u32)tokenizer->input_cursor; //@Change cursor to u32; 
+		
 		u8 fc = peek().value();
 		LexemeType type = fc < 128 ? lexeme_types[fc] : LexemeType::ERROR;
 		u64 lexeme_start = tokenizer->input_cursor;
 		consume();
-
-		Token token = {};
-		token.l0 = tokenizer->line_id;
-		token.c0 = u32(tokenizer->input_cursor - tokenizer->line_cursor) - 1;
 
 		switch (type)
 		{
@@ -184,6 +184,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					u8 c = peek().value();
 					consume();
 					
+					//@Notice \ followed by " causes termination and no error about escape sequence
 					if (c == '"') { terminated = true; break; }
 					if (c == '\n') break;
 					if (c == '\\')
@@ -269,7 +270,8 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 			} break;
 			default: break;
 		}
-
+		
+		token.span.end = (u32)tokenizer->input_cursor - 1; //@Change cursor to u32
 		tokens[k] = token;
 	}
 }

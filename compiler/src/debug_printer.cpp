@@ -13,7 +13,7 @@ void debug_print_ast(Ast* ast)
 
 void debug_print_token(Token token, bool endl, bool location)
 {
-	if (location) printf("%lu:%lu ", token.l0, token.c0);
+	if (location) printf("%lu:%lu ", token.span.start, token.span.end);
 
 	if (token.type == TokenType::IDENT)
 	{
@@ -130,7 +130,7 @@ void debug_print_token(Token token, bool endl, bool location)
 
 void debug_print_ident(Ast_Ident ident, bool endl, bool location)
 {
-	if (location) printf("%lu:%lu ", ident.l0, ident.c0);
+	if (location) printf("%lu:%lu ", ident.span.start, ident.span.end);
 	
 	for (u64 i = 0; i < ident.str.count; i++)
 		printf("%c", ident.str.data[i]);
@@ -231,11 +231,11 @@ void debug_print_type(Ast_Type type)
 
 	switch (type.tag)
 	{
-	case Ast_Type::Tag::Basic: debug_print_basic_type(type.as_basic); break;
-	case Ast_Type::Tag::Array: debug_print_array_type(type.as_array); break;
-	case Ast_Type::Tag::Custom: debug_print_custom_type(type.as_custom); break;
-	case Ast_Type::Tag::Struct: debug_print_ident(type.as_struct.struct_decl->ident, false, false); break;
-	case Ast_Type::Tag::Enum: debug_print_ident(type.as_enum.enum_decl->ident, false, false); break;
+	case Ast_Type_Tag::Basic: debug_print_basic_type(type.as_basic); break;
+	case Ast_Type_Tag::Array: debug_print_array_type(type.as_array); break;
+	case Ast_Type_Tag::Custom: debug_print_custom_type(type.as_custom); break;
+	case Ast_Type_Tag::Struct: debug_print_ident(type.as_struct.struct_decl->ident, false, false); break;
+	case Ast_Type_Tag::Enum: debug_print_ident(type.as_enum.enum_decl->ident, false, false); break;
 	}
 }
 
@@ -357,17 +357,17 @@ void debug_print_statement(Ast_Statement* statement, u32 depth)
 {
 	switch (statement->tag)
 	{
-	case Ast_Statement::Tag::If: debug_print_if(statement->as_if, depth); break;
-	case Ast_Statement::Tag::For: debug_print_for(statement->as_for, depth); break;
-	case Ast_Statement::Tag::Block: debug_print_block(statement->as_block, depth); break;
-	case Ast_Statement::Tag::Defer: debug_print_defer(statement->as_defer, depth); break;
-	case Ast_Statement::Tag::Break: debug_print_break(statement->as_break, depth); break;
-	case Ast_Statement::Tag::Return: debug_print_return(statement->as_return, depth); break;
-	case Ast_Statement::Tag::Switch: debug_print_switch(statement->as_switch, depth); break;
-	case Ast_Statement::Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
-	case Ast_Statement::Tag::Var_Decl: debug_print_var_decl(statement->as_var_decl, depth); break;
-	case Ast_Statement::Tag::Var_Assign: debug_print_var_assign(statement->as_var_assign, depth); break;
-	case Ast_Statement::Tag::Proc_Call: debug_print_proc_call(statement->as_proc_call, depth); break;
+	case Ast_Statement_Tag::If: debug_print_if(statement->as_if, depth); break;
+	case Ast_Statement_Tag::For: debug_print_for(statement->as_for, depth); break;
+	case Ast_Statement_Tag::Block: debug_print_block(statement->as_block, depth); break;
+	case Ast_Statement_Tag::Defer: debug_print_defer(statement->as_defer, depth); break;
+	case Ast_Statement_Tag::Break: debug_print_break(statement->as_break, depth); break;
+	case Ast_Statement_Tag::Return: debug_print_return(statement->as_return, depth); break;
+	case Ast_Statement_Tag::Switch: debug_print_switch(statement->as_switch, depth); break;
+	case Ast_Statement_Tag::Continue: debug_print_continue(statement->as_continue, depth); break;
+	case Ast_Statement_Tag::Var_Decl: debug_print_var_decl(statement->as_var_decl, depth); break;
+	case Ast_Statement_Tag::Var_Assign: debug_print_var_assign(statement->as_var_assign, depth); break;
+	case Ast_Statement_Tag::Proc_Call: debug_print_proc_call(statement->as_proc_call, depth); break;
 	}
 }
 
@@ -392,8 +392,8 @@ void debug_print_else(Ast_Else* _else, u32 depth)
 
 	switch (_else->tag)
 	{
-	case Ast_Else::Tag::If: debug_print_if(_else->as_if, depth); break;
-	case Ast_Else::Tag::Block: debug_print_block(_else->as_block, depth); break;
+	case Ast_Else_Tag::If: debug_print_if(_else->as_if, depth); break;
+	case Ast_Else_Tag::Block: debug_print_block(_else->as_block, depth); break;
 	}
 }
 
@@ -559,31 +559,31 @@ void debug_print_expr(Ast_Expr* expr, u32 depth)
 {
 	switch (expr->tag)
 	{
-	case Ast_Expr::Tag::Term: debug_print_term(expr->as_term, depth); break;
-	case Ast_Expr::Tag::Unary_Expr: debug_print_unary_expr(expr->as_unary_expr, depth); break;
-	case Ast_Expr::Tag::Binary_Expr: debug_print_binary_expr(expr->as_binary_expr, depth); break;
-	case Ast_Expr::Tag::Const_Expr: debug_print_const_expr(expr->as_const_expr, depth); break;
+	case Ast_Expr_Tag::Term: debug_print_term(expr->as_term, depth); break;
+	case Ast_Expr_Tag::Unary_Expr: debug_print_unary_expr(expr->as_unary_expr, depth); break;
+	case Ast_Expr_Tag::Binary_Expr: debug_print_binary_expr(expr->as_binary_expr, depth); break;
+	case Ast_Expr_Tag::Const_Expr: debug_print_const_expr(expr->as_const_expr, depth); break;
 	}
 }
 
 void debug_print_term(Ast_Term* term, u32 depth)
 {
-	if (term->tag == Ast_Term::Tag::Var)
+	if (term->tag == Ast_Term_Tag::Var)
 	{
 		debug_print_branch(depth);
 		printf("Term_Var: ");
 	}
-	else if (term->tag == Ast_Term::Tag::Enum)
+	else if (term->tag == Ast_Term_Tag::Enum)
 	{
 		debug_print_branch(depth);
 		printf("Term_Enum: ");
 	}
-	else if (term->tag == Ast_Term::Tag::Sizeof)
+	else if (term->tag == Ast_Term_Tag::Sizeof)
 	{
 		debug_print_branch(depth);
 		printf("Term_Sizeof: ");
 	}
-	else if (term->tag == Ast_Term::Tag::Literal)
+	else if (term->tag == Ast_Term_Tag::Literal)
 	{
 		debug_print_branch(depth);
 		printf("Term_Literal: ");
@@ -591,12 +591,12 @@ void debug_print_term(Ast_Term* term, u32 depth)
 
 	switch (term->tag)
 	{
-	case Ast_Term::Tag::Var: debug_print_var(term->as_var); break;
-	case Ast_Term::Tag::Enum: debug_print_enum(term->as_enum); break;
-	case Ast_Term::Tag::Sizeof: debug_print_sizeof(term->as_sizeof); break;
-	case Ast_Term::Tag::Literal: debug_print_token(term->as_literal.token, true); break;
-	case Ast_Term::Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
-	case Ast_Term::Tag::Struct_Init: debug_print_struct_init(term->as_struct_init, depth); break;
+	case Ast_Term_Tag::Var: debug_print_var(term->as_var); break;
+	case Ast_Term_Tag::Enum: debug_print_enum(term->as_enum); break;
+	case Ast_Term_Tag::Sizeof: debug_print_sizeof(term->as_sizeof); break;
+	case Ast_Term_Tag::Literal: debug_print_token(term->as_literal.token, true); break;
+	case Ast_Term_Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
+	case Ast_Term_Tag::Struct_Init: debug_print_struct_init(term->as_struct_init, depth); break;
 	}
 }
 
@@ -609,7 +609,7 @@ void debug_print_var(Ast_Var* var)
 
 void debug_print_access(Ast_Access* access)
 {
-	if (access->tag == Ast_Access::Tag::Var)
+	if (access->tag == Ast_Access_Tag::Var)
 	{
 		printf(".");
 		debug_print_var_access(access->as_var);

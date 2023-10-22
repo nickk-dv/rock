@@ -51,6 +51,8 @@ static Token peek_token(Parser* parser, u32 offset);
 static void consume_token(Parser* parser);
 static Token consume_get_token(Parser* parser);
 static option<Token> try_consume_token(Parser* parser, TokenType token_type);
+static u32 get_span_start(Parser* parser);
+static u32 get_span_end(Parser* parser);
 static void parse_error(Parser* parser, const char* message, u32 offset);
 static void parse_error_token(Parser* parser, const char* message, Token token);
 
@@ -58,6 +60,7 @@ struct Parser
 {
 	Arena arena;
 	Tokenizer tokenizer;
+	Token prev_last;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
 	u32 peek_index = 0;
 };

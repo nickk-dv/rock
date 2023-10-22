@@ -322,19 +322,19 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 
 		switch (statement->tag)
 		{
-		case Ast_Statement::Tag::If:
+		case Ast_Statement_Tag::If:
 		{
 			check_if_cfg(cc, statement->as_if, is_loop, is_defer);
 		} break;
-		case Ast_Statement::Tag::For: 
+		case Ast_Statement_Tag::For: 
 		{
 			check_block_cfg(cc, statement->as_for->block, true, is_defer);
 		} break;
-		case Ast_Statement::Tag::Block: 
+		case Ast_Statement_Tag::Block: 
 		{
 			terminator = check_block_cfg(cc, statement->as_block, is_loop, is_defer);
 		} break;
-		case Ast_Statement::Tag::Defer:
+		case Ast_Statement_Tag::Defer:
 		{
 			if (is_defer)
 			{
@@ -344,7 +344,7 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 			}
 			else check_block_cfg(cc, statement->as_defer->block, false, true);
 		} break;
-		case Ast_Statement::Tag::Break:
+		case Ast_Statement_Tag::Break:
 		{
 			if (!is_loop)
 			{
@@ -355,7 +355,7 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 			}
 			else terminator = Terminator::Break;
 		} break;
-		case Ast_Statement::Tag::Return:
+		case Ast_Statement_Tag::Return:
 		{
 			if (is_defer)
 			{
@@ -365,11 +365,11 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 			}
 			else terminator = Terminator::Return;
 		} break;
-		case Ast_Statement::Tag::Switch:
+		case Ast_Statement_Tag::Switch:
 		{
 			check_switch_cfg(cc, statement->as_switch, is_loop, is_defer);
 		} break;
-		case Ast_Statement::Tag::Continue:
+		case Ast_Statement_Tag::Continue:
 		{
 			if (!is_loop)
 			{
@@ -380,9 +380,9 @@ Terminator check_block_cfg(Checker_Context* cc, Ast_Block* block, bool is_loop, 
 			}
 			else terminator = Terminator::Continue;
 		} break;
-		case Ast_Statement::Tag::Proc_Call: break;
-		case Ast_Statement::Tag::Var_Decl: break;
-		case Ast_Statement::Tag::Var_Assign: break;
+		case Ast_Statement_Tag::Proc_Call: break;
+		case Ast_Statement_Tag::Var_Decl: break;
+		case Ast_Statement_Tag::Var_Assign: break;
 		}
 	}
 
@@ -396,7 +396,7 @@ void check_if_cfg(Checker_Context* cc, Ast_If* _if, bool is_loop, bool is_defer)
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else::Tag::If)
+		if (_else->tag == Ast_Else_Tag::If)
 			check_if_cfg(cc, _else->as_if, is_loop, is_defer);
 		else check_block_cfg(cc, _else->as_block, is_loop, is_defer);
 	}
@@ -418,17 +418,17 @@ static void check_block(Checker_Context* cc, Ast_Block* block, Checker_Block_Fla
 	{
 		switch (statement->tag)
 		{
-		case Ast_Statement::Tag::If: check_if(cc, statement->as_if); break;
-		case Ast_Statement::Tag::For: check_for(cc, statement->as_for); break;
-		case Ast_Statement::Tag::Block: check_block(cc, statement->as_block, Checker_Block_Flags::None); break;
-		case Ast_Statement::Tag::Defer: check_block(cc, statement->as_defer->block, Checker_Block_Flags::None); break;
-		case Ast_Statement::Tag::Break: break;
-		case Ast_Statement::Tag::Return: check_return(cc, statement->as_return); break;
-		case Ast_Statement::Tag::Switch: check_switch(cc, statement->as_switch); break;
-		case Ast_Statement::Tag::Continue: break;
-		case Ast_Statement::Tag::Proc_Call: check_proc_call(cc, statement->as_proc_call, Checker_Proc_Call_Flags::In_Statement); break;
-		case Ast_Statement::Tag::Var_Decl: check_var_decl(cc, statement->as_var_decl); break;
-		case Ast_Statement::Tag::Var_Assign: check_var_assign(cc, statement->as_var_assign); break;
+		case Ast_Statement_Tag::If: check_if(cc, statement->as_if); break;
+		case Ast_Statement_Tag::For: check_for(cc, statement->as_for); break;
+		case Ast_Statement_Tag::Block: check_block(cc, statement->as_block, Checker_Block_Flags::None); break;
+		case Ast_Statement_Tag::Defer: check_block(cc, statement->as_defer->block, Checker_Block_Flags::None); break;
+		case Ast_Statement_Tag::Break: break;
+		case Ast_Statement_Tag::Return: check_return(cc, statement->as_return); break;
+		case Ast_Statement_Tag::Switch: check_switch(cc, statement->as_switch); break;
+		case Ast_Statement_Tag::Continue: break;
+		case Ast_Statement_Tag::Proc_Call: check_proc_call(cc, statement->as_proc_call, Checker_Proc_Call_Flags::In_Statement); break;
+		case Ast_Statement_Tag::Var_Decl: check_var_decl(cc, statement->as_var_decl); break;
+		case Ast_Statement_Tag::Var_Assign: check_var_assign(cc, statement->as_var_assign); break;
 		}
 	}
 
@@ -452,7 +452,7 @@ void check_if(Checker_Context* cc, Ast_If* _if)
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else::Tag::If)
+		if (_else->tag == Ast_Else_Tag::If)
 			check_if(cc, _else->as_if);
 		else check_block(cc, _else->as_block, Checker_Block_Flags::None);
 	}
@@ -674,7 +674,7 @@ Type_Kind type_kind(Checker_Context* cc, Ast_Type type)
 
 	switch (type.tag)
 	{
-	case Ast_Type::Tag::Basic:
+	case Ast_Type_Tag::Basic:
 	{
 		switch (type.as_basic)
 		{
@@ -685,9 +685,9 @@ Type_Kind type_kind(Checker_Context* cc, Ast_Type type)
 		default: return Type_Kind::Integer;
 		}
 	}
-	case Ast_Type::Tag::Array: return Type_Kind::Array;
-	case Ast_Type::Tag::Struct: return Type_Kind::Struct;
-	case Ast_Type::Tag::Enum: return Type_Kind::Enum;
+	case Ast_Type_Tag::Array: return Type_Kind::Array;
+	case Ast_Type_Tag::Struct: return Type_Kind::Struct;
+	case Ast_Type_Tag::Enum: return Type_Kind::Enum;
 	default:
 	{
 		err_set; 
@@ -703,7 +703,7 @@ Type_Kind type_kind(Checker_Context* cc, Ast_Type type)
 Ast_Type type_from_basic(BasicType basic_type)
 {
 	Ast_Type type = {};
-	type.tag = Ast_Type::Tag::Basic;
+	type.tag = Ast_Type_Tag::Basic;
 	type.as_basic = basic_type;
 	return type;
 }
@@ -715,10 +715,10 @@ bool match_type(Checker_Context* cc, Ast_Type type_a, Ast_Type type_b)
 
 	switch (type_a.tag)
 	{
-	case Ast_Type::Tag::Basic: return type_a.as_basic == type_b.as_basic;
-	case Ast_Type::Tag::Struct: return type_a.as_struct.struct_id == type_b.as_struct.struct_id;
-	case Ast_Type::Tag::Enum: return type_a.as_enum.enum_id == type_b.as_enum.enum_id;
-	case Ast_Type::Tag::Array:
+	case Ast_Type_Tag::Basic: return type_a.as_basic == type_b.as_basic;
+	case Ast_Type_Tag::Struct: return type_a.as_struct.struct_id == type_b.as_struct.struct_id;
+	case Ast_Type_Tag::Enum: return type_a.as_enum.enum_id == type_b.as_enum.enum_id;
+	case Ast_Type_Tag::Array:
 	{
 		Ast_Array_Type* array_a = type_a.as_array;
 		Ast_Array_Type* array_b = type_b.as_array;
@@ -728,7 +728,7 @@ bool match_type(Checker_Context* cc, Ast_Type type_a, Ast_Type type_b)
 	}
 	default:
 	{
-		err_set; printf("match_type: Unexpected Ast_Type::Tag. Disambiguate Tag::Custom by using check_type first:\n");
+		err_set; printf("match_type: Unexpected Ast_Type_Tag. Disambiguate Tag::Custom by using check_type first:\n");
 		debug_print_type(type_a); printf("\n");
 		debug_print_type(type_b); printf("\n");
 		return false;
@@ -738,8 +738,8 @@ bool match_type(Checker_Context* cc, Ast_Type type_a, Ast_Type type_b)
 
 void type_implicit_cast(Checker_Context* cc, Ast_Type* type, Ast_Type target_type)
 {
-	if (type->tag != Ast_Type::Tag::Basic) return;
-	if (target_type.tag != Ast_Type::Tag::Basic) return;
+	if (type->tag != Ast_Type_Tag::Basic) return;
+	if (target_type.tag != Ast_Type_Tag::Basic) return;
 	if (type->as_basic == target_type.as_basic) return;
 	Type_Kind kind = type_kind(cc, *type);
 	Type_Kind target_kind = type_kind(cc, target_type);
@@ -758,8 +758,8 @@ void type_implicit_cast(Checker_Context* cc, Ast_Type* type, Ast_Type target_typ
 
 void type_implicit_binary_cast(Checker_Context* cc, Ast_Type* type_a, Ast_Type* type_b)
 {
-	if (type_a->tag != Ast_Type::Tag::Basic) return;
-	if (type_b->tag != Ast_Type::Tag::Basic) return;
+	if (type_a->tag != Ast_Type_Tag::Basic) return;
+	if (type_b->tag != Ast_Type_Tag::Basic) return;
 	if (type_a->as_basic == type_b->as_basic) return;
 	Type_Kind kind_a = type_kind(cc, *type_a);
 	Type_Kind kind_b = type_kind(cc, *type_b);
@@ -782,17 +782,17 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 {
 	switch (type->tag)
 	{
-	case Ast_Type::Tag::Basic:
+	case Ast_Type_Tag::Basic:
 	{
 		return *type;
 	}
-	case Ast_Type::Tag::Array:
+	case Ast_Type_Tag::Array:
 	{
 		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
 		if (!element_type) return {};
 		return *type;
 	}
-	case Ast_Type::Tag::Custom:
+	case Ast_Type_Tag::Custom:
 	{
 		Ast* target_ast = check_try_import(cc, type->as_custom->import);
 		if (target_ast == NULL) return {};
@@ -800,7 +800,7 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_custom->ident);
 		if (struct_meta)
 		{
-			type->tag = Ast_Type::Tag::Struct;
+			type->tag = Ast_Type_Tag::Struct;
 			type->as_struct.struct_id = struct_meta.value().struct_id;
 			type->as_struct.struct_decl = struct_meta.value().struct_decl;
 			return *type;
@@ -809,7 +809,7 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_custom->ident);
 		if (enum_meta)
 		{
-			type->tag = Ast_Type::Tag::Enum;
+			type->tag = Ast_Type_Tag::Enum;
 			type->as_enum.enum_id = enum_meta.value().enum_id;
 			type->as_enum.enum_decl = enum_meta.value().enum_decl;
 			return *type;
@@ -867,9 +867,9 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 
 		switch (expr->tag)
 		{
-		case Ast_Expr::Tag::Term: return check_term(cc, context, expr->as_term);
-		case Ast_Expr::Tag::Unary_Expr: return check_unary_expr(cc, context, expr->as_unary_expr);
-		case Ast_Expr::Tag::Binary_Expr: return check_binary_expr(cc, context, expr->as_binary_expr);
+		case Ast_Expr_Tag::Term: return check_term(cc, context, expr->as_term);
+		case Ast_Expr_Tag::Unary_Expr: return check_unary_expr(cc, context, expr->as_unary_expr);
+		case Ast_Expr_Tag::Binary_Expr: return check_binary_expr(cc, context, expr->as_binary_expr);
 		}
 	}
 	else
@@ -895,7 +895,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 				{
 					const_expr.basic_type = BasicType::BOOL;
 					const_expr.as_bool = lit.as_bool;
-					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->tag = Ast_Expr_Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
 					return type_from_basic(BasicType::BOOL);
 				}
@@ -904,7 +904,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 					//@Base on context
 					const_expr.basic_type = BasicType::F64;
 					const_expr.as_f64 = lit.as_f64;
-					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->tag = Ast_Expr_Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
 					return type_from_basic(BasicType::F64);
 				}
@@ -914,7 +914,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 					//@Todo range based
 					const_expr.basic_type = BasicType::I32;
 					const_expr.as_i64 = lit.as_i64;
-					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->tag = Ast_Expr_Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
 					return type_from_basic(BasicType::I32);
 				}
@@ -924,7 +924,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 					//@Todo range based
 					const_expr.basic_type = BasicType::I32;
 					const_expr.as_u64 = lit.as_u64;
-					expr->tag = Ast_Expr::Tag::Const_Expr;
+					expr->tag = Ast_Expr_Tag::Const_Expr;
 					expr->as_const_expr = const_expr;
 					return type_from_basic(BasicType::I32);
 				}
@@ -938,7 +938,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 			{
 				const_expr.basic_type = BasicType::BOOL;
 				const_expr.as_bool = lit.as_bool;
-				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->tag = Ast_Expr_Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
 				return type_from_basic(BasicType::BOOL);
 			}
@@ -946,7 +946,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 			{
 				const_expr.basic_type = BasicType::F64;
 				const_expr.as_f64 = lit.as_f64;
-				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->tag = Ast_Expr_Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
 				return type_from_basic(BasicType::F64);
 			}
@@ -955,7 +955,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 				//@Todo range based default int type
 				const_expr.basic_type = BasicType::I32;
 				const_expr.as_i64 = lit.as_i64;
-				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->tag = Ast_Expr_Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
 				return type_from_basic(BasicType::I32);
 			}
@@ -965,7 +965,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 				//@Might become a u64 if its too big
 				const_expr.basic_type = BasicType::I32;
 				const_expr.as_u64 = lit.as_u64;
-				expr->tag = Ast_Expr::Tag::Const_Expr;
+				expr->tag = Ast_Expr_Tag::Const_Expr;
 				expr->as_const_expr = const_expr;
 				return type_from_basic(BasicType::I32);
 			}
@@ -978,8 +978,8 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 {
 	switch (term->tag)
 	{
-	case Ast_Term::Tag::Var: return check_var(cc, term->as_var);
-	case Ast_Term::Tag::Enum: //@Const fold this should be part of constant evaluation
+	case Ast_Term_Tag::Var: return check_var(cc, term->as_var);
+	case Ast_Term_Tag::Enum: //@Const fold this should be part of constant evaluation
 	{
 		Ast_Enum* _enum = term->as_enum;
 		Ast* target_ast = check_try_import(cc, _enum->import);
@@ -995,19 +995,19 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		else _enum->variant_id = variant_id.value();
 
 		Ast_Type type = {};
-		type.tag = Ast_Type::Tag::Enum;
+		type.tag = Ast_Type_Tag::Enum;
 		type.as_enum.enum_id = _enum->enum_id;
 		type.as_enum.enum_decl = enum_meta.value().enum_decl;
 		return type;
 	}
-	case Ast_Term::Tag::Sizeof: //@Const fold this should be part of constant evaluation
+	case Ast_Term_Tag::Sizeof: //@Const fold this should be part of constant evaluation
 	{
 		//@Notice not doing sizing of types yet, cant know the numeric range
 		option<Ast_Type> type = check_type_signature(cc, &term->as_sizeof->type);
 		if (type) return type_from_basic(BasicType::U64);
 		return {};
 	}
-	case Ast_Term::Tag::Literal:
+	case Ast_Term_Tag::Literal:
 	{
 		Ast_Literal literal = term->as_literal;
 		switch (literal.token.type)
@@ -1028,11 +1028,11 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		}
 		}
 	}
-	case Ast_Term::Tag::Proc_Call: 
+	case Ast_Term_Tag::Proc_Call: 
 	{
 		return check_proc_call(cc, term->as_proc_call, Checker_Proc_Call_Flags::In_Expr);
 	}
-	case Ast_Term::Tag::Struct_Init:
+	case Ast_Term_Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
 		Ast* target_ast = check_try_import(cc, struct_init->import);
@@ -1060,7 +1060,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		{
 			Type_Context* t_context = context.value();
 			Ast_Type expect_type = t_context->expect_type;
-			if (expect_type.tag == Ast_Type::Tag::Struct)
+			if (expect_type.tag == Ast_Type_Tag::Struct)
 			{
 				Ast_Struct_Type expected_struct = expect_type.as_struct;
 				if (struct_decl == NULL)
@@ -1126,7 +1126,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		struct_init->struct_id = struct_id;
 		
 		Ast_Type type = {};
-		type.tag = Ast_Type::Tag::Struct;
+		type.tag = Ast_Type_Tag::Struct;
 		type.as_struct.struct_id = struct_id;
 		type.as_struct.struct_decl = struct_decl;
 
@@ -1152,12 +1152,12 @@ option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Acc
 	
 	switch (access->tag)
 	{
-	case Ast_Access::Tag::Var:
+	case Ast_Access_Tag::Var:
 	{
 		Ast_Var_Access* var_access = access->as_var;
 
 		Type_Kind kind = type_kind(cc, type);
-		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type::Tag::Struct) kind = Type_Kind::Struct;
+		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type_Tag::Struct) kind = Type_Kind::Struct;
 		if (kind != Type_Kind::Struct)
 		{
 			err_set;
@@ -1178,7 +1178,7 @@ option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Acc
 		Ast_Type result_type = struct_decl->fields[var_access->field_id].type;
 		return check_access(cc, result_type, var_access->next);
 	}
-	case Ast_Access::Tag::Array:
+	case Ast_Access_Tag::Array:
 	{
 		Ast_Array_Access* array_access = access->as_array;
 
@@ -1335,19 +1335,19 @@ bool check_is_const_expr(Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
-	case Ast_Expr::Tag::Term:
+	case Ast_Expr_Tag::Term:
 	{
 		Ast_Term* term = expr->as_term;
 		switch (term->tag)
 		{
 		//@Notice not handling enum as constexpr yet 
-		//case Ast_Term::Tag::Enum: return true;
-		case Ast_Term::Tag::Literal: return term->as_literal.token.type != TokenType::STRING_LITERAL;
+		//case Ast_Term_Tag::Enum: return true;
+		case Ast_Term_Tag::Literal: return term->as_literal.token.type != TokenType::STRING_LITERAL;
 		default: return false;
 		}
 	}
-	case Ast_Expr::Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
-	case Ast_Expr::Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
+	case Ast_Expr_Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
+	case Ast_Expr_Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
 	}
 }
 
@@ -1363,9 +1363,9 @@ option<Literal> check_const_expr(Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
-	case Ast_Expr::Tag::Term: return check_const_term(expr->as_term);
-	case Ast_Expr::Tag::Unary_Expr: return check_const_unary_expr(expr->as_unary_expr);
-	case Ast_Expr::Tag::Binary_Expr: return check_const_binary_expr(expr->as_binary_expr);
+	case Ast_Expr_Tag::Term: return check_const_term(expr->as_term);
+	case Ast_Expr_Tag::Unary_Expr: return check_const_unary_expr(expr->as_unary_expr);
+	case Ast_Expr_Tag::Binary_Expr: return check_const_binary_expr(expr->as_binary_expr);
 	}
 }
 
@@ -1373,7 +1373,7 @@ option<Literal> check_const_term(Ast_Term* term)
 {
 	switch (term->tag)
 	{
-	case Ast_Term::Tag::Literal:
+	case Ast_Term_Tag::Literal:
 	{
 		Token token = term->as_literal.token;
 		Literal lit = {};

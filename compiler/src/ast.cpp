@@ -2,7 +2,7 @@
 
 Ast_Ident token_to_ident(const Token& token)
 {
-	return Ast_Ident { token.l0, token.c0, token.string_value };
+	return Ast_Ident { token.span, token.string_value };
 }
 
 u32 hash_ident(Ast_Ident& ident)
