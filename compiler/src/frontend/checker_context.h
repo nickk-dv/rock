@@ -2,7 +2,7 @@
 #define CHECKER_CONTEXT_H
 
 #include "ast.h"
-#include "error_handler.h"
+#include "general/error_handler.h"
 
 struct Checker_Context;
 struct Block_Info;

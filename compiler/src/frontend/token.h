@@ -1,7 +1,7 @@
 #ifndef TOKEN_H
 #define TOKEN_H
 
-#include "common.h"
+#include "general/general.h"
 
 enum class TokenType;
 enum class UnaryOp;

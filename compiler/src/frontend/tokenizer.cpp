@@ -88,11 +88,11 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 		}
 
 		Token token = {};
-		token.span.start = (u32)tokenizer->cursor; //@Change cursor to u32; 
+		token.span.start = tokenizer->cursor;
 		
 		u8 fc = peek().value();
 		LexemeType type = fc < 128 ? lexeme_types[fc] : LexemeType::ERROR;
-		u64 lexeme_start = tokenizer->cursor;
+		u32 lexeme_start = tokenizer->cursor;
 		consume();
 
 		switch (type)
@@ -182,9 +182,6 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					u8 c = peek().value();
 					consume();
 					
-					//@Notice \ followed by " causes termination and no error about escape sequence
-					if (c == '"') { terminated = true; break; }
-					if (c == '\n') break;
 					if (c == '\\')
 					{
 						u32 line = tokenizer->line_id;
@@ -219,7 +216,12 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 							printf("Hint: if you meant to use backslash type: \\\\ \n\n");
 						}
 					}
-					else tokenizer->strings->put_char(c);
+					else
+					{
+						if (c == '"') { terminated = true; break; }
+						if (c == '\n') break;
+						tokenizer->strings->put_char(c);
+					}
 				}
 
 				token.type = TokenType::STRING_LITERAL;
@@ -269,7 +271,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 			default: break;
 		}
 		
-		token.span.end = (u32)tokenizer->cursor - 1; //@Change cursor to u32
+		token.span.end = tokenizer->cursor - 1;
 		tokens[k] = token;
 	}
 }

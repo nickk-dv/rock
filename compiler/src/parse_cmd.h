@@ -1,7 +1,7 @@
 #ifndef PARSE_CMD_H
 #define PARSE_CMD_H
 
-#include "common.h"
+#include "general/general.h"
 
 i32 parse_cmd(int argc, char** argv);
 

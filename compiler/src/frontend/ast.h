@@ -1,8 +1,8 @@
 #ifndef AST_H
 #define AST_H
 
-#include "common.h"
 #include "token.h"
+#include "general/hashmap.h"
 #include "llvm-c/Types.h"
 
 struct Ast_Program;

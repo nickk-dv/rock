@@ -1,7 +1,6 @@
 #ifndef TOKENIZER_H
 #define TOKENIZER_H
 
-#include "common.h"
 #include "token.h"
 
 struct Tokenizer;
@@ -22,9 +21,9 @@ struct Tokenizer
 {
 	StringView source;
 	StringStorage* strings;
-	u64 cursor = 0;
+	u32 cursor = 0;
 	u32 line_id = 1;
-	u64 line_cursor = 0;
+	u32 line_cursor = 0;
 };
 
 enum class LexemeType

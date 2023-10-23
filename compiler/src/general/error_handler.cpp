@@ -1,6 +1,6 @@
 #include "error_handler.h"
 
-#include "common.h"
+#include <stdio.h>
 
 bool error_status = false;
 

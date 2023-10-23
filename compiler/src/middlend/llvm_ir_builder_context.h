@@ -2,7 +2,7 @@
 #define LLVM_IR_BUILDER_CONTEXT_H
 
 #include "llvm-c/Types.h"
-#include "ast.h"
+#include "frontend/ast.h"
 
 typedef LLVMTypeRef Type;
 typedef LLVMValueRef Value;

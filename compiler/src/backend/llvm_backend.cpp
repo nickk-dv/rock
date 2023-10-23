@@ -1,9 +1,9 @@
 #include "llvm_backend.h"
 
-#include "common.h"
 #include "llvm-c/Core.h"
 #include "llvm-c/Analysis.h"
 #include "llvm-c/TargetMachine.h"
+#include <stdio.h>
 
 void backend_build_module(LLVMModuleRef mod)
 {
@@ -16,7 +16,7 @@ void backend_build_module(LLVMModuleRef mod)
 	LLVMInitializeAllTargetMCs();
 	LLVMInitializeAllAsmParsers();
 	LLVMInitializeAllAsmPrinters();
-
+	
 	LLVMTargetRef target;
 	char* error = 0;
 	char* cpu = LLVMGetHostCPUName();
@@ -33,7 +33,7 @@ void backend_build_module(LLVMModuleRef mod)
 	LLVMSetDataLayout(mod, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
 	backend_print_module(mod);
-
+	
 	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &error);
 	if (error != NULL) printf("error: %s\n", error);
 	

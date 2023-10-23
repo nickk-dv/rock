@@ -1,5 +1,7 @@
 #include "token.h"
 
+#include <unordered_map>
+
 static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 {
 	{ hash_ascii_9("struct"),   TokenType::KEYWORD_STRUCT },
