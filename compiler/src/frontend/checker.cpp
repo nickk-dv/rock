@@ -760,8 +760,7 @@ bool match_type(Checker_Context* cc, Ast_Type type_a, Ast_Type type_b)
 	{
 		Ast_Array_Type* array_a = type_a.as_array;
 		Ast_Array_Type* array_b = type_b.as_array;
-		if (array_a->is_dynamic != array_b->is_dynamic) return false;
-		if (array_a->fixed_size != array_b->fixed_size) return false;
+		//@Array match constexpr sizes
 		return match_type(cc, array_a->element_type, array_b->element_type);
 	}
 	default:
@@ -826,6 +825,10 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 	}
 	case Ast_Type_Tag::Array:
 	{
+		//@Notice arrays work in progress. Requing size to fit into u64
+		Type_Context context = Type_Context { type_from_basic(BasicType::U32), true };
+		option<Ast_Type> expr_type = check_expr(cc, &context, type->as_array->const_expr);
+
 		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
 		if (!element_type) return {};
 		return *type;
@@ -1230,6 +1233,8 @@ option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Acc
 			return {};
 		}
 
+		//@Notice improve / change type checks to u64 context
+		//limit to u32 to fit llvm api
 		option<Ast_Type> expr_type = check_expr(cc, {}, array_access->index_expr);
 		if (expr_type)
 		{

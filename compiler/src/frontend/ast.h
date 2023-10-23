@@ -182,8 +182,7 @@ struct Ast_Custom_Type
 struct Ast_Array_Type
 {
 	Ast_Type element_type;
-	bool is_dynamic;
-	u64 fixed_size;
+	Ast_Expr* const_expr;
 };
 
 struct Ast_Ident_Type_Pair

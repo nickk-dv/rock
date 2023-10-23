@@ -383,9 +383,14 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 	{
 		if (access->tag == Ast_Access_Tag::Array)
 		{
-			printf("llvm ir builder 2 build_var: array access isnt supported\n");
-			exit(EXIT_FAILURE);
-			return {}; //@Todo arrays
+			Ast_Array_Access* array_access = access->as_array;
+
+			Value index = build_expr(bc, array_access->index_expr);
+			Type element_type = type_from_ast_type(bc, ast_type.as_array->element_type);
+			ptr = LLVMBuildGEP2(bc->builder, element_type, ptr, &index, 1, "array_gep");
+			ast_type = ast_type.as_array->element_type;
+
+			access = array_access->next.has_value() ? array_access->next.value() : NULL;
 		}
 		else
 		{
@@ -552,7 +557,13 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: return type_from_basic_type(type.as_basic);
-	case Ast_Type_Tag::Array: return LLVMVoidType(); //@Notice array type isnt supported
+	case Ast_Type_Tag::Array:
+	{
+		Ast_Array_Type* array = type.as_array;
+		Type element_type = type_from_ast_type(bc, array->element_type);
+		u32 size = (u32)array->const_expr->as_const_expr.as_u64;
+		return LLVMArrayType(element_type, size);
+	}
 	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;
 	case Ast_Type_Tag::Enum: return bc->program->enums[type.as_enum.enum_id].enum_type;
 	default: return LLVMVoidType();

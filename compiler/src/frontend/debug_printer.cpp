@@ -241,8 +241,7 @@ void debug_print_type(Ast_Type type)
 
 void debug_print_array_type(Ast_Array_Type* array_type)
 {
-	if (array_type->is_dynamic) printf("[..]");
-	else printf("[%llu]", array_type->fixed_size);
+	printf("[size expr]");
 	debug_print_type(array_type->element_type);
 }
 

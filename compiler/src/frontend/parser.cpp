@@ -184,27 +184,20 @@ option<Ast_Type> parse_type(Parser* parser)
 
 Ast_Array_Type* parse_array_type(Parser* parser)
 {
-	Ast_Array_Type* array = arena_alloc<Ast_Array_Type>(&parser->arena);
+	Ast_Array_Type* array_type = arena_alloc<Ast_Array_Type>(&parser->arena);
 	consume();
 
-	Token token = peek();
-	if (token.type == TokenType::INTEGER_LITERAL)
-	{
-		consume();
-		array->fixed_size = token.integer_value;
-	}
-	else if (try_consume(TokenType::DOUBLE_DOT))
-	{
-		array->is_dynamic = true;
-	}
-	else { error("Expected '..' or integer size specifier"); return NULL; }
+	Ast_Expr* expr = parse_sub_expr(parser);
+	if (!expr) return NULL;
+	array_type->const_expr = expr;
+
 	if (!try_consume(TokenType::BRACKET_END)) { error("Expected ']'"); return NULL; }
 
 	option<Ast_Type> type = parse_type(parser);
 	if (!type) return NULL;
-	array->element_type = type.value();
+	array_type->element_type = type.value();
 
-	return array;
+	return array_type;
 }
 
 Ast_Custom_Type* parse_custom_type(Parser* parser)
