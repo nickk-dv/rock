@@ -60,72 +60,22 @@ i32 cmd_build(char* path)
 	
 	timer.start();
 	Parser parser = {};
-	bool parse_result = parse(&parser, path);
+	Ast_Program* program = parse_program(&parser, path);
 	timer.end("Parse");
-	if (!parse_result) return 1;
-
-	Ast_Program program = {};
-	Error_Handler err = {};
-	Ast* main_ast = NULL;
-	Checker_Context cc = {};
+	if (program == NULL) return 1;
 
 	timer.start();
-	for (const auto& [module, ast] : parser.module_map)
-	{
-		checker_context_init(&cc, ast, &program, &err);
-		check_decl_uniqueness(&cc, parser.module_map);
-		if (module == "main") main_ast = ast;
-	}
-	if (main_ast == NULL) err_report(Error::MAIN_FILE_NOT_FOUND);
-
-	if (err.has_err || err_get_status())
-	{
-		timer.end("Check Ast Error");
-		return 1;
-	}
-
-	checker_context_init(&cc, main_ast, &program, &err);
-	check_main_proc(&cc);
-	for (const auto& [module, ast] : parser.module_map)
-	{
-		checker_context_init(&cc, ast, &program, &err);
-		check_decls(&cc);
-	}
-	if (err.has_err || err_get_status())
-	{
-		timer.end("Check Ast Error");
-		return 1;
-	}
-
-	checker_context_init(&cc, NULL, &program, &err);
-	check_program(&cc);
-	if (err.has_err || err_get_status())
-	{
-		timer.end("Check Ast Error");
-		return 1;
-	}
+	bool check = check_program(program);
+	timer.end("Check");
+	if (!check) return 1;
 	
-	for (const auto& [module, ast] : parser.module_map)
-	{
-		checker_context_init(&cc, ast, &program, &err);
-		check_ast(&cc);
-	}
-	if (err.has_err || err_get_status())
-	{
-		timer.end("Check Ast Error");
-		return 1;
-	}
-	timer.end("Check Ast");
-
-	printf("LLVMModule Build (new ir builder): \n\n");
 	timer.start();
-	LLVMModuleRef mod = build_module(&program);
+	LLVMModuleRef mod = build_module(program);
 	timer.end("LLVM Build IR");
 	
 	timer.start();
-	LLVM_Backend backend = {};
-	backend.build_binaries(mod);
-	timer.end("LLVM Backend ");
+	backend_build_module(mod);
+	timer.end("LLVM Backend");
 
 	return 0;
 }

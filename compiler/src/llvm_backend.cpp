@@ -5,7 +5,7 @@
 #include "llvm-c/Analysis.h"
 #include "llvm-c/TargetMachine.h"
 
-void LLVM_Backend::build_binaries(LLVMModuleRef mod)
+void backend_build_module(LLVMModuleRef mod)
 {
 	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
 	//even during IR building for dev period
@@ -32,7 +32,7 @@ void LLVM_Backend::build_binaries(LLVMModuleRef mod)
 	char* datalayout_str = LLVMCopyStringRepOfTargetData(datalayout);
 	LLVMSetDataLayout(mod, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
-	debug_print_module(mod);
+	backend_print_module(mod);
 
 	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &error);
 	if (error != NULL) printf("error: %s\n", error);
@@ -45,7 +45,7 @@ void LLVM_Backend::build_binaries(LLVMModuleRef mod)
 	LLVMDisposeMessage(triple);
 }
 
-void LLVM_Backend::debug_print_module(LLVMModuleRef mod)
+void backend_print_module(LLVMModuleRef mod)
 {
 	LLVMPrintModuleToFile(mod, "output.ll", NULL);
 	char* message = LLVMPrintModuleToString(mod);

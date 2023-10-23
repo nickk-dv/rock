@@ -4,11 +4,13 @@
 #include "ast.h"
 #include "checker_context.h"
 
-void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules);
-void check_decls(Checker_Context* cc);
-void check_main_proc(Checker_Context* cc);
-void check_program(Checker_Context* cc);
-void check_ast(Checker_Context* cc);
+bool check_program(Ast_Program* program);
+
+static void check_decl_uniqueness(Checker_Context* cc);
+static void check_decls(Checker_Context* cc);
+static void check_main_proc(Checker_Context* cc);
+static void check_program(Checker_Context* cc);
+static void check_ast(Checker_Context* cc);
 
 static Ast* check_try_import(Checker_Context* cc, option<Ast_Ident> import);
 static option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident);

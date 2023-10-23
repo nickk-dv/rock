@@ -14,3 +14,8 @@ bool match_ident(Ast_Ident& a, Ast_Ident& b)
 {
 	return match_string_view(a.str, b.str);
 }
+
+bool match_string(std::string& a, std::string& b)
+{
+	return a == b;
+}

@@ -3,10 +3,7 @@
 
 #include "llvm-c/Types.h"
 
-struct LLVM_Backend
-{
-	void build_binaries(LLVMModuleRef module);
-	void debug_print_module(LLVMModuleRef module);
-};
+void backend_build_module(LLVMModuleRef module);
+void backend_print_module(LLVMModuleRef module);
 
 #endif

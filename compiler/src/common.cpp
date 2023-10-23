@@ -66,3 +66,8 @@ bool match_string_view(StringView& a, StringView& b)
 	if (a.data[i] != b.data[i]) return false;
 	return true;
 }
+
+StringView string_view_from_string(const std::string& string)
+{
+	return StringView { (u8*)string.data(), string.size() };
+}

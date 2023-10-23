@@ -6,7 +6,6 @@
 
 typedef LLVMTypeRef Type;
 typedef LLVMValueRef Value;
-typedef LLVMModuleRef Module;
 typedef LLVMBuilderRef Builder;
 typedef LLVMBasicBlockRef Basic_Block;
 
@@ -36,7 +35,7 @@ void builder_context_set_bb(IR_Builder_Context* bc, Basic_Block basic_block);
 struct IR_Builder_Context
 {
 	Ast_Program* program;
-	Module module;
+	LLVMModuleRef module;
 	Builder builder;
 	Value curr_proc;
 	std::vector<IR_Block_Info> blocks;

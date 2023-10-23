@@ -7,7 +7,7 @@
 
 struct Parser;
 
-bool parse(Parser* parser, const char* path);
+Ast_Program* parse_program(Parser* parser, const char* path);
 
 static Ast* parse_ast(Parser* parser, StringView source, std::string& filepath);
 static option<Ast_Type> parse_type(Parser* parser);
@@ -60,11 +60,10 @@ struct Parser
 {
 	Arena arena;
 	Tokenizer tokenizer;
+	StringStorage strings;
+	u32 peek_index = 0;
 	Token prev_last;
 	Token tokens[TOKENIZER_BUFFER_SIZE];
-	u32 peek_index = 0;
-	StringStorage strings;
-	std::unordered_map<std::string, Ast*> module_map;
 };
 
 #endif

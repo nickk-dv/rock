@@ -2,7 +2,7 @@
 
 #include "llvm-c/Core.h"
 
-Module build_module(Ast_Program* program)
+LLVMModuleRef build_module(Ast_Program* program)
 {
 	IR_Builder_Context bc = {};
 	builder_context_init(&bc, program);

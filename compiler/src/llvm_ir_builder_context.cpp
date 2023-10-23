@@ -5,8 +5,8 @@
 void builder_context_init(IR_Builder_Context* bc, Ast_Program* program)
 {
 	bc->program = program;
-	bc->builder = LLVMCreateBuilder();
 	bc->module = LLVMModuleCreateWithName("program_module");
+	bc->builder = LLVMCreateBuilder();
 }
 
 void builder_context_deinit(IR_Builder_Context* bc)

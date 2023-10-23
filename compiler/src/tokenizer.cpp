@@ -57,17 +57,17 @@ void tokenizer_init()
 	}
 }
 
-void tokenizer_set_input(Tokenizer* tokenizer, StringView source)
+Tokenizer tokenizer_create(StringView source, StringStorage* strings)
 {
-	tokenizer->input = source;
-	tokenizer->input_cursor = 0;
-	tokenizer->line_id = 1;
-	tokenizer->line_cursor = 0;
+	Tokenizer tokenizer = {};
+	tokenizer.source = source;
+	tokenizer.strings = strings;
+	return tokenizer;
 }
 
 void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 {
-	u32 copy_count = tokenizer->input_cursor == 0 ? 0 : TOKENIZER_LOOKAHEAD;
+	u32 copy_count = tokenizer->cursor == 0 ? 0 : TOKENIZER_LOOKAHEAD;
 
 	for (u32 k = 0; k < copy_count; k++)
 	{
@@ -88,11 +88,11 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 		}
 
 		Token token = {};
-		token.span.start = (u32)tokenizer->input_cursor; //@Change cursor to u32; 
+		token.span.start = (u32)tokenizer->cursor; //@Change cursor to u32; 
 		
 		u8 fc = peek().value();
 		LexemeType type = fc < 128 ? lexeme_types[fc] : LexemeType::ERROR;
-		u64 lexeme_start = tokenizer->input_cursor;
+		u64 lexeme_start = tokenizer->cursor;
 		consume();
 
 		switch (type)
@@ -106,8 +106,8 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 				}
 
 				token.type = TokenType::IDENT;
-				token.string_value.data = tokenizer->input.data + lexeme_start;
-				token.string_value.count = tokenizer->input_cursor - lexeme_start;
+				token.string_value.data = tokenizer->source.data + lexeme_start;
+				token.string_value.count = tokenizer->cursor - lexeme_start;
 
 				TokenType keyword = token_str_to_keyword(token.string_value);
 				if (keyword != TokenType::ERROR) token.type = keyword;
@@ -135,12 +135,12 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 				if (is_float)
 				{
 					u64 expected_len = offset + 1;
-					u8 last_c = tokenizer->input.data[tokenizer->input_cursor + expected_len];
-					tokenizer->input.data[tokenizer->input_cursor + expected_len] = '\0';
-					char* start = (char*)tokenizer->input.data + (tokenizer->input_cursor - 1);
+					u8 last_c = tokenizer->source.data[tokenizer->cursor + expected_len];
+					tokenizer->source.data[tokenizer->cursor + expected_len] = '\0';
+					char* start = (char*)tokenizer->source.data + (tokenizer->cursor - 1);
 					char* end = start + 1;
 					f64 float64_value = strtod(start, &end); //@Later replace this with custom to avoid \0 hacks and ensure valid number grammar
-					tokenizer->input.data[tokenizer->input_cursor + expected_len] = last_c;
+					tokenizer->source.data[tokenizer->cursor + expected_len] = last_c;
 
 					for (u32 i = 0; i < offset; i += 1)
 					{
@@ -188,7 +188,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 					if (c == '\\')
 					{
 						u32 line = tokenizer->line_id;
-						u32 col = u32(tokenizer->input_cursor - tokenizer->line_cursor) - 1;
+						u32 col = u32(tokenizer->cursor - tokenizer->line_cursor) - 1;
 						
 						if (peek().has_value())
 						{
@@ -269,7 +269,7 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 			default: break;
 		}
 		
-		token.span.end = (u32)tokenizer->input_cursor - 1; //@Change cursor to u32
+		token.span.end = (u32)tokenizer->cursor - 1; //@Change cursor to u32
 		tokens[k] = token;
 	}
 }
@@ -284,7 +284,7 @@ void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 			if (c == '\n')
 			{
 				tokenizer->line_id += 1;
-				tokenizer->line_cursor = tokenizer->input_cursor;
+				tokenizer->line_cursor = tokenizer->cursor;
 			}
 			consume();
 		}
@@ -300,12 +300,12 @@ void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 
 option<u8> peek_character(Tokenizer* tokenizer, u32 offset)
 {
-	if (tokenizer->input_cursor + offset < tokenizer->input.count)
-		return tokenizer->input.data[tokenizer->input_cursor + offset];
+	if (tokenizer->cursor + offset < tokenizer->source.count)
+		return tokenizer->source.data[tokenizer->cursor + offset];
 	return {};
 }
 
 void consume_character(Tokenizer* tokenizer)
 {
-	tokenizer->input_cursor += 1;
+	tokenizer->cursor += 1;
 }

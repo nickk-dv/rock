@@ -6,25 +6,67 @@
 // 1. import paths & decl uniqueness checks
 // 2. decl signature validity checks
 // 3. proc block cfg & type and other semantics checks 
-
 //@Todo check cant import same file under multiple names
 //@Todo check cant use same type or procedure under multiple names
-void check_decl_uniqueness(Checker_Context* cc, Module_Map& modules)
+
+bool check_program(Ast_Program* program)
+{
+	Checker_Context cc = {};
+	Error_Handler err = {}; //@Temp until all errors are replaced with err_report(Error)
+	Ast* main_ast = NULL;
+
+	//1. check global symbols
+	for (Ast* ast : program->modules)
+	{
+		checker_context_init(&cc, ast, program, &err);
+		check_decl_uniqueness(&cc);
+		if (ast->filepath == "main") main_ast = ast;
+	}
+	if (main_ast == NULL) err_report(Error::MAIN_FILE_NOT_FOUND);
+	if (err.has_err || err_get_status()) return false;
+
+	//2. checks decls & main proc
+	checker_context_init(&cc, main_ast, program, &err);
+	check_main_proc(&cc);
+	for (Ast* ast : program->modules)
+	{
+		checker_context_init(&cc, ast, program, &err);
+		check_decls(&cc);
+	}
+	if (err.has_err || err_get_status()) return false;
+
+	//3. checks struct circular storage
+	checker_context_init(&cc, NULL, program, &err);
+	check_program(&cc);
+	if (err.has_err || err_get_status()) return false;
+
+	//4. checks proc blocks
+	for (Ast* ast : program->modules)
+	{
+		checker_context_init(&cc, ast, program, &err);
+		check_ast(&cc);
+	}
+	if (err.has_err || err_get_status()) return false;
+
+	return true;
+}
+
+void check_decl_uniqueness(Checker_Context* cc)
 {
 	Ast* ast = cc->ast;
 	ast->import_table.init(64);
 	ast->struct_table.init(64);
 	ast->enum_table.init(64);
 	ast->proc_table.init(64);
-	
-	Ast_Program* program = cc->program;
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
+	Ast_Program* program = cc->program;
 
 	for (Ast_Import_Decl* decl : ast->imports)
 	{
-		bool path_exists = modules.find(decl->file_path.token.string_literal_value) != modules.end();
-		if (!path_exists) { err_report(Error::IMPORT_PATH_NOT_FOUND); continue; }
-		decl->import_ast = modules.at(decl->file_path.token.string_literal_value);
+		char* path = decl->file_path.token.string_literal_value;
+		option<Ast*> import_ast = cc->program->module_map.find(std::string(path), hash_fnv1a_32(string_view_from_string(std::string(path))));
+		if (!import_ast) { err_report(Error::IMPORT_PATH_NOT_FOUND); continue; }
+		decl->import_ast = import_ast.value();
 	}
 	
 	for (Ast_Import_Decl* decl : ast->imports)

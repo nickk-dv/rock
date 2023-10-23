@@ -14,16 +14,17 @@
 
 namespace fs = std::filesystem;
 
-bool parse(Parser* parser, const char* path)
+Ast_Program* parse_program(Parser* parser, const char* path)
 {
 	fs::path src = fs::path(path);
-	if (!fs::exists(src)) { printf("Path doesnt exist: %s\n", path); return false; }
-	if (!fs::is_directory(src)) { printf("Path must be a directory: %s\n", path); return false; }
+	if (!fs::exists(src)) { printf("Path doesnt exist: %s\n", path); return NULL; }
+	if (!fs::is_directory(src)) { printf("Path must be a directory: %s\n", path); return NULL; }
 	
 	tokenizer_init();
 	parser->strings.init();
-	parser->tokenizer.strings = &parser->strings;
-	arena_init(&parser->arena, 32 * 1024 * 1024);
+	arena_init(&parser->arena, 4 * 1024 * 1024);
+	Ast_Program* program = arena_alloc<Ast_Program>(&parser->arena);
+	program->module_map.init(32);
 
 	for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(src))
 	{
@@ -33,7 +34,7 @@ bool parse(Parser* parser, const char* path)
 		
 		FILE* file;
 		fopen_s(&file, entry.u8string().c_str(), "rb");
-		if (!file) { printf("File open failed\n"); return false; }
+		if (!file) { printf("File open failed\n"); return NULL; }
 		fseek(file, 0, SEEK_END);
 		u64 size = (u64)ftell(file);
 		fseek(file, 0, SEEK_SET);
@@ -41,26 +42,29 @@ bool parse(Parser* parser, const char* path)
 		u8* data = arena_alloc_buffer<u8>(&parser->arena, size);
 		u64 read_size = fread(data, 1, size, file);
 		fclose(file);
-		if (read_size != size) { printf("File read failed\n"); return false; }
+		if (read_size != size) { printf("File read failed\n"); return NULL; }
 		
 		StringView source = StringView { data, size };
 		std::string filepath = entry.lexically_relative(src).replace_extension("").string();
 		Ast* ast = parse_ast(parser, source, filepath);
-		if (ast == NULL) return false;
-		parser->module_map.emplace(filepath, ast);
+		if (ast == NULL) return NULL;
+		
+		program->modules.emplace_back(ast);
+		program->module_map.add(filepath, ast, hash_fnv1a_32(string_view_from_string(filepath)));
 	}
-	return true;
+
+	return program;
 }
 
 Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 {
+	parser->peek_index = 0;
+	parser->tokenizer = tokenizer_create(source, &parser->strings);
+	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
+	
 	Ast* ast = arena_alloc<Ast>(&parser->arena);
 	ast->source = source;
-	ast->filepath = filepath;
-	
-	parser->peek_index = 0;
-	tokenizer_set_input(&parser->tokenizer, source);
-	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
+	ast->filepath = std::string(filepath);
 
 	while (true) 
 	{

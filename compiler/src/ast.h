@@ -62,9 +62,12 @@ struct Ast_Const_Expr;
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
 bool match_ident(Ast_Ident& a, Ast_Ident& b);
+bool match_string(std::string& a, std::string& b);
 
 struct Ast_Program
 {
+	std::vector<Ast*> modules;
+	HashMap<std::string, Ast*, u32, match_string> module_map;
 	std::vector<Ast_Struct_IR_Info> structs;
 	std::vector<Ast_Enum_IR_Info> enums;
 	std::vector<Ast_Proc_IR_Info> procs;

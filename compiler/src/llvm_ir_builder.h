@@ -3,7 +3,7 @@
 
 #include "llvm_ir_builder_context.h"
 
-Module build_module(Ast_Program* program);
+LLVMModuleRef build_module(Ast_Program* program);
 
 static IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Flags flags);
 static void build_defer(IR_Builder_Context* bc, IR_Terminator terminator);

@@ -8,7 +8,7 @@ struct Tokenizer;
 enum class LexemeType;
 
 void tokenizer_init();
-void tokenizer_set_input(Tokenizer* tokenizer, StringView source);
+Tokenizer tokenizer_create(StringView source, StringStorage* strings);
 void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens);
 
 static void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer);
@@ -20,11 +20,11 @@ const u64 TOKENIZER_LOOKAHEAD = 4;
 
 struct Tokenizer
 {
-	StringView input;
-	u64 input_cursor;
-	u32 line_id;
-	u64 line_cursor;
+	StringView source;
 	StringStorage* strings;
+	u64 cursor = 0;
+	u32 line_id = 1;
+	u64 line_cursor = 0;
 };
 
 enum class LexemeType

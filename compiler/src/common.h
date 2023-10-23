@@ -7,6 +7,7 @@
 #include <optional>
 #include <vector>
 #include <chrono>
+#include <string>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -24,7 +25,6 @@ typedef double f64;
 template <class T>
 using option = std::optional<T>;
 
-struct String;
 struct StringView;
 struct Timer;
 struct StringStorage;
@@ -81,6 +81,8 @@ struct StringView
 	u64 count;
 };
 
+StringView string_view_from_string(const std::string& string);
+
 constexpr u64 hash_str_ascii_9(const StringView& str)
 {
 	u64 hash = 0;
@@ -97,7 +99,7 @@ constexpr u64 hash_ascii_9(const char* str)
 	return hash;
 }
 
-struct Timer
+struct Timer //@Todo change to scope based instrumentation
 {
 	typedef std::chrono::high_resolution_clock Clock;
 	typedef std::chrono::steady_clock::time_point TimePoint;

@@ -4,8 +4,6 @@
 #include "ast.h"
 #include "error_handler.h"
 
-typedef std::unordered_map<std::string, Ast*> Module_Map;
-
 struct Checker_Context;
 struct Block_Info;
 struct Var_Info;
