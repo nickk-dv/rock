@@ -356,6 +356,15 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Type type = bc->program->structs[struct_init->struct_id].struct_type;
 		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
 		
+		std::vector<Value> values; //@Perf frequent allocation
+		bool is_const = true;
+		for (Ast_Expr* expr : struct_init->input_exprs)
+		{
+			if (expr->tag == Ast_Expr_Tag::Const_Expr) values.emplace_back(build_const_expr(bc, expr->as_const_expr));
+			else { is_const = false; break; }
+		}
+		if (is_const) return LLVMConstNamedStruct(type, values.data(), (u32)values.size());
+
 		u32 count = 0;
 		for (Ast_Expr* expr : struct_init->input_exprs)
 		{
@@ -369,12 +378,21 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Value temp_value = LLVMBuildLoad2(bc->builder, type, temp_ptr, "temp_struct_val");
 		return temp_value;
 	}
-	case Ast_Term_Tag::Array_Init: //@Later if array init is constant use LLVMConstArray
+	case Ast_Term_Tag::Array_Init:
 	{
 		Ast_Array_Init* array_init = term->as_array_init;
 		Type type = type_from_ast_type(bc, array_init->type.value());
 		Type element_type = type_from_ast_type(bc, array_init->type.value().as_array->element_type);
 		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_array");
+
+		std::vector<Value> values; //@Perf frequent allocation
+		bool is_const = true;
+		for (Ast_Expr* expr : array_init->input_exprs)
+		{
+			if (expr->tag == Ast_Expr_Tag::Const_Expr) values.emplace_back(build_const_expr(bc, expr->as_const_expr));
+			else { is_const = false; break; }
+		}
+		if (is_const) return LLVMConstArray(element_type, values.data(), (u32)values.size());
 		
 		u32 count = 0;
 		for (Ast_Expr* expr : array_init->input_exprs)
@@ -382,7 +400,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 			Value value = build_expr(bc, expr);
 			build_implicit_cast(bc, &value, LLVMTypeOf(value), element_type);
 			Value index = LLVMConstInt(type_from_basic_type(BasicType::U32), count, 0);
-			Value array_ptr = LLVMBuildGEP2(bc->builder, type, temp_ptr, &index, 1, "arrayptr");
+			Value array_ptr = LLVMBuildGEP2(bc->builder, element_type, temp_ptr, &index, 1, "arrayptr");
 			LLVMBuildStore(bc->builder, value, array_ptr);
 			count += 1;
 		}
