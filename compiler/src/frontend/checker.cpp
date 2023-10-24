@@ -1101,23 +1101,27 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		{
 			Type_Context* t_context = context.value();
 			Ast_Type expect_type = t_context->expect_type;
-			if (expect_type.tag == Ast_Type_Tag::Struct)
+			if (type_kind(cc, expect_type) != Type_Kind::Struct)
 			{
-				Ast_Struct_Type expected_struct = expect_type.as_struct;
-				if (struct_decl == NULL)
+				err_set; printf("Cannot use struct initializer in non struct type context\n");
+				printf("Context: "); debug_print_type(expect_type); printf("\n");
+				return {};
+			}
+
+			Ast_Struct_Type expected_struct = expect_type.as_struct;
+			if (struct_decl == NULL)
+			{
+				struct_decl = expected_struct.struct_decl;
+				struct_id = expected_struct.struct_id;
+			}
+			else
+			{
+				if (struct_id != expected_struct.struct_id)
 				{
-					struct_decl = expected_struct.struct_decl;
-					struct_id = expected_struct.struct_id;
-				}
-				else
-				{
-					if (struct_id != expected_struct.struct_id)
-					{
-						err_set;
-						printf("Struct initializer struct type doesnt match the expected type:\n");
-						debug_print_struct_init(struct_init, 0); printf("\n");
-						return {};
-					}
+					err_set;
+					printf("Struct initializer struct type doesnt match the expected type:\n");
+					debug_print_struct_init(struct_init, 0); printf("\n");
+					return {};
 				}
 			}
 		}
@@ -1171,6 +1175,87 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		type.as_struct.struct_id = struct_id;
 		type.as_struct.struct_decl = struct_decl;
 
+		return type;
+	}
+	case Ast_Term_Tag::Array_Init:
+	{
+		Ast_Array_Init* array_init = term->as_array_init;
+
+		option<Ast_Type> type = {};
+		if (array_init->type)
+		{
+			type = check_type_signature(cc, &array_init->type.value());
+			if (!type) return {};
+			Type_Kind kind = type_kind(cc, type.value());
+			if (kind != Type_Kind::Array)
+			{
+				err_set; printf("Array initializer must have array type signature\n");
+				return {};
+			}
+		}
+
+		if (context)
+		{
+			Type_Context* t_context = context.value();
+			Ast_Type expect_type = t_context->expect_type;
+			if (type_kind(cc, expect_type) != Type_Kind::Array)
+			{
+				err_set; printf("Cannot use array initializer in non array type context\n");
+				printf("Context: "); debug_print_type(expect_type); printf("\n");
+				return {};
+			}
+
+			if (!type)
+			{
+				type = expect_type;
+			}
+			else
+			{
+				if (!match_type(cc, type.value(), expect_type))
+				{
+					err_set;
+					printf("Array initializer type doesnt match the expected type:\n");
+					return {};
+				}
+			}
+		}
+
+		if (!type)
+		{
+			err_set;
+			printf("Cannot infer the array initializer type without a context\n");
+			printf("Hint: specify type on varible: var : [2]i32 = { 2, 3 } or var := [2]i32{ 2, 3 }\n");
+			return {};
+		}
+
+		//@Check input count compared to array size
+		// check input count
+		u32 input_count = (u32)array_init->input_exprs.size();
+		u32 expected_count = input_count; //@move 1 line up
+
+		// check input exprs
+		for (u32 i = 0; i < input_count; i += 1)
+		{
+			if (i < expected_count)
+			{
+				Ast_Type element_type = type.value().as_array->element_type;
+				Type_Context type_context = { element_type, false };
+				option<Ast_Type> expr_type = check_expr(cc, &type_context, array_init->input_exprs[i]);
+				if (expr_type)
+				{
+					if (!match_type(cc, element_type, expr_type.value()))
+					{
+						err_set;
+						printf("Type mismatch in array initializer input argument with id: %lu\n", i);
+						printf("Expected: "); debug_print_type(element_type); printf("\n");
+						printf("Got:      "); debug_print_type(expr_type.value()); printf("\n");
+						debug_print_expr(array_init->input_exprs[i], 0); printf("\n");
+					}
+				}
+			}
+		}
+
+		array_init->type = type;
 		return type;
 	}
 	}

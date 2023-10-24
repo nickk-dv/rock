@@ -692,18 +692,18 @@ Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
 	proc_call->ident = token_to_ident(consume_get());
 
-	consume();
-	while (true)
+	if (!try_consume(TokenType::PAREN_START)) { error("Expected '(' in procedure call"); return NULL; }
+	if (!try_consume(TokenType::PAREN_END))
 	{
-		if (try_consume(TokenType::PAREN_END)) return proc_call;
-
-		Ast_Expr* expr = parse_sub_expr(parser);
-		if (!expr) return NULL;
-		proc_call->input_exprs.emplace_back(expr);
-
-		if (!try_consume(TokenType::COMMA)) break;
+		while (true)
+		{
+			Ast_Expr* expr = parse_sub_expr(parser);
+			if (!expr) return NULL;
+			proc_call->input_exprs.emplace_back(expr);
+			if (!try_consume(TokenType::COMMA)) break;
+		}
+		if (!try_consume(TokenType::PAREN_END)) { error("Expected ')' in procedure call"); return NULL; }
 	}
-	if (!try_consume(TokenType::PAREN_END)) { error("Expected ')' after procedure call"); return NULL; }
 
 	Token token = peek();
 	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
@@ -825,6 +825,14 @@ Ast_Term* parse_term(Parser* parser)
 		if (!struct_init) return NULL;
 		term->tag = Ast_Term_Tag::Struct_Init;
 		term->as_struct_init = struct_init;
+	} break;
+	case TokenType::BLOCK_START:
+	case TokenType::BRACKET_START:
+	{
+		Ast_Array_Init* array_init = parse_array_init(parser);
+		if (!array_init) return NULL;
+		term->tag = Ast_Term_Tag::Array_Init;
+		term->as_array_init = array_init;
 	} break;
 	case TokenType::KEYWORD_SIZEOF:
 	{
@@ -1014,19 +1022,45 @@ Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
 	consume();
 
 	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }
-	while (true)
+	if (!try_consume(TokenType::BLOCK_END))
 	{
-		if (try_consume(TokenType::BLOCK_END)) return struct_init;
-
-		Ast_Expr* expr = parse_sub_expr(parser);
-		if (!expr) return NULL;
-		struct_init->input_exprs.emplace_back(expr);
-
-		if (!try_consume(TokenType::COMMA)) break;
+		while (true)
+		{
+			Ast_Expr* expr = parse_sub_expr(parser);
+			if (!expr) return NULL;
+			struct_init->input_exprs.emplace_back(expr);
+			if (!try_consume(TokenType::COMMA)) break;
+		}
+		if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in struct initializer"); return NULL; }
 	}
-	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in struct initializer"); return NULL; }
 
 	return struct_init;
+}
+
+Ast_Array_Init* parse_array_init(Parser* parser)
+{
+	Ast_Array_Init* array_init = arena_alloc<Ast_Array_Init>(&parser->arena);
+
+	if (peek().type == TokenType::BRACKET_START)
+	{
+		array_init->type = parse_type(parser);
+		if (!array_init->type) return NULL;
+	}
+
+	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in array initializer"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_END))
+	{
+		while (true)
+		{
+			Ast_Expr* expr = parse_sub_expr(parser);
+			if (!expr) return NULL;
+			array_init->input_exprs.emplace_back(expr);
+			if (!try_consume(TokenType::COMMA)) break;
+		}
+		if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in array initializer"); return NULL; }
+	}
+
+	return array_init;
 }
 
 Token peek_token(Parser* parser, u32 offset)

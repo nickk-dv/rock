@@ -55,6 +55,7 @@ struct Ast_Array_Access;
 struct Ast_Enum;
 struct Ast_Sizeof;
 struct Ast_Struct_Init;
+struct Ast_Array_Init;
 struct Ast_Unary_Expr;
 struct Ast_Binary_Expr;
 struct Ast_Const_Expr;
@@ -409,7 +410,7 @@ struct Ast_Expr
 enum class Ast_Term_Tag
 {
 	Var, Enum, Sizeof, Literal,
-	Proc_Call, Struct_Init
+	Proc_Call, Struct_Init, Array_Init
 };
 
 struct Ast_Term
@@ -424,6 +425,7 @@ struct Ast_Term
 		Ast_Literal as_literal; //@Pointer todo to squish size
 		Ast_Proc_Call* as_proc_call;
 		Ast_Struct_Init* as_struct_init;
+		Ast_Array_Init* as_array_init;
 	};
 };
 
@@ -485,6 +487,12 @@ struct Ast_Struct_Init
 	std::vector<Ast_Expr*> input_exprs;
 	//checker
 	u32 struct_id;
+};
+
+struct Ast_Array_Init
+{
+	option<Ast_Type> type;
+	std::vector<Ast_Expr*> input_exprs;
 };
 
 struct Ast_Unary_Expr

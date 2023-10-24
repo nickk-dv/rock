@@ -354,7 +354,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
 		Type type = bc->program->structs[struct_init->struct_id].struct_type;
-		Value terp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
+		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
 		
 		u32 count = 0;
 		for (Ast_Expr* expr : struct_init->input_exprs)
@@ -362,11 +362,31 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 			Value value = build_expr(bc, expr);
 			Type field_type = LLVMStructGetTypeAtIndex(type, count);
 			build_implicit_cast(bc, &value, LLVMTypeOf(value), field_type);
-			Value field_ptr = LLVMBuildStructGEP2(bc->builder, type, terp_ptr, count, "fieldptr");
+			Value field_ptr = LLVMBuildStructGEP2(bc->builder, type, temp_ptr, count, "fieldptr");
 			LLVMBuildStore(bc->builder, value, field_ptr);
 			count += 1;
 		}
-		Value temp_value = LLVMBuildLoad2(bc->builder, type, terp_ptr, "temp_struct_val");
+		Value temp_value = LLVMBuildLoad2(bc->builder, type, temp_ptr, "temp_struct_val");
+		return temp_value;
+	}
+	case Ast_Term_Tag::Array_Init: //@Later if array init is constant use LLVMConstArray
+	{
+		Ast_Array_Init* array_init = term->as_array_init;
+		Type type = type_from_ast_type(bc, array_init->type.value());
+		Type element_type = type_from_ast_type(bc, array_init->type.value().as_array->element_type);
+		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_array");
+		
+		u32 count = 0;
+		for (Ast_Expr* expr : array_init->input_exprs)
+		{
+			Value value = build_expr(bc, expr);
+			build_implicit_cast(bc, &value, LLVMTypeOf(value), element_type);
+			Value index = LLVMConstInt(type_from_basic_type(BasicType::U32), count, 0);
+			Value array_ptr = LLVMBuildGEP2(bc->builder, type, temp_ptr, &index, 1, "arrayptr");
+			LLVMBuildStore(bc->builder, value, array_ptr);
+			count += 1;
+		}
+		Value temp_value = LLVMBuildLoad2(bc->builder, type, temp_ptr, "temp_array_val");
 		return temp_value;
 	}
 	}
