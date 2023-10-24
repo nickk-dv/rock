@@ -1223,7 +1223,9 @@ option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Acc
 	{
 		Ast_Array_Access* array_access = access->as_array;
 
+		//@Notice allowing pointer array access, temp, slices later
 		Type_Kind kind = type_kind(cc, type);
+		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type_Tag::Array) kind = Type_Kind::Array;
 		if (kind != Type_Kind::Array)
 		{
 			err_set;
@@ -1362,16 +1364,117 @@ option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 
 option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Unary_Expr* unary_expr)
 {
-	err_set;
-	printf("[TODO] Unary expr is not checked\n\n");
-	return {};
+	option<Ast_Type> rhs_result = check_expr(cc, context, unary_expr->right);
+	if (!rhs_result) return {};
+
+	UnaryOp op = unary_expr->op;
+	Ast_Type rhs = rhs_result.value();
+	Type_Kind rhs_kind = type_kind(cc, rhs);
+
+	switch (op)
+	{
+	case UnaryOp::MINUS:
+	{
+		if (rhs_kind == Type_Kind::Float || rhs_kind == Type_Kind::Integer) return rhs;
+		err_set; printf("UNARY OP - only works on float or integer\n"); 
+		debug_print_unary_expr(unary_expr, 0); return {};
+	}
+	case UnaryOp::LOGIC_NOT:
+	{
+		if (rhs_kind == Type_Kind::Bool) return rhs;
+		err_set; printf("UNARY OP ! only works on bool\n"); 
+		debug_print_unary_expr(unary_expr, 0); return {};
+	}
+	case UnaryOp::BITWISE_NOT:
+	{
+		if (rhs_kind == Type_Kind::Integer) return rhs;
+		err_set; printf("UNARY OP ~ only works on integer\n"); 
+		debug_print_unary_expr(unary_expr, 0); return {};
+	}
+	case UnaryOp::ADDRESS_OF:
+	{
+		//@Todo prevent adress of temporary values
+		rhs.pointer_level += 1;
+		return rhs;
+	}
+	case UnaryOp::DEREFERENCE:
+	{
+		err_set; printf("UNARY OP << unsupported\n"); debug_print_unary_expr(unary_expr, 0); return {};
+	}
+	}
 }
 
 option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Binary_Expr* binary_expr)
 {
-	err_set;
-	printf("[TODO] Binary expr is not checked\n\n");
-	return {};
+	option<Ast_Type> lhs_result = check_expr(cc, context, binary_expr->left);
+	if (!lhs_result) return {};
+	option<Ast_Type> rhs_result = check_expr(cc, context, binary_expr->right);
+	if (!rhs_result) return {};
+
+	BinaryOp op = binary_expr->op;
+	Ast_Type lhs = lhs_result.value();
+	Type_Kind lhs_kind = type_kind(cc, lhs);
+	Ast_Type rhs = rhs_result.value();
+	Type_Kind rhs_kind = type_kind(cc, rhs);
+	bool same_kind = lhs_kind == rhs_kind;
+
+	if (!same_kind)
+	{
+		err_set;
+		printf("Binary expr cannot be done on different type kinds\n");
+		debug_print_binary_expr(binary_expr, 0); return {};
+	}
+
+	type_implicit_binary_cast(cc, &lhs, &rhs);
+	//@Todo int basic types arent accounted for during this
+
+	switch (op)
+	{
+	case BinaryOp::LOGIC_AND:
+	case BinaryOp::LOGIC_OR:
+	{
+		if (lhs_kind == Type_Kind::Bool) return rhs;
+		err_set; printf("BINARY Logic Ops (&& ||) only work on bools\n"); 
+		debug_print_binary_expr(binary_expr, 0); return {};
+	}
+	case BinaryOp::LESS:
+	case BinaryOp::GREATER:
+	case BinaryOp::LESS_EQUALS:
+	case BinaryOp::GREATER_EQUALS:
+	case BinaryOp::IS_EQUALS: //@Todo == != on enums
+	case BinaryOp::NOT_EQUALS:
+	{
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return type_from_basic(BasicType::BOOL);
+		err_set; printf("BINARY Comparison Ops (< > <= >= == !=) only work on floats or integers\n"); 
+		debug_print_binary_expr(binary_expr, 0); return {};
+	}
+	case BinaryOp::PLUS:
+	case BinaryOp::MINUS:
+	case BinaryOp::TIMES:
+	case BinaryOp::DIV:
+	{
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return lhs;
+		err_set; printf("BINARY Math Ops (+ - * /) only work on floats or integers\n");
+		debug_print_binary_expr(binary_expr, 0); return {};
+	}
+	case BinaryOp::MOD:
+	{
+		if (lhs_kind == Type_Kind::Integer) return lhs;
+		err_set; printf("BINARY Op %% only works on integers\n");
+		debug_print_binary_expr(binary_expr, 0); return {};
+	}
+	case BinaryOp::BITWISE_AND:
+	case BinaryOp::BITWISE_OR:
+	case BinaryOp::BITWISE_XOR:
+	case BinaryOp::BITSHIFT_LEFT:
+	case BinaryOp::BITSHIFT_RIGHT:
+	{
+		if (lhs_kind == Type_Kind::Integer) return lhs;
+		err_set; printf("BINARY Bitwise Ops (& | ^ << >>) only work on integers\n");
+		debug_print_binary_expr(binary_expr, 0); return {};
+	}
+	}
+
 }
 
 bool check_is_const_expr(Ast_Expr* expr)

@@ -301,25 +301,25 @@ Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_
 	input_values.data(), (u32)input_values.size(), flags == IR_Proc_Call_Flags::In_Statement ? "" : "call_val");
 }
 
-Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr)
+Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 {
 	switch (expr->tag)
 	{
-	case Ast_Expr_Tag::Term: return build_term(bc, expr->as_term);
+	case Ast_Expr_Tag::Term: return build_term(bc, expr->as_term, unary_address);
 	case Ast_Expr_Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
 	case Ast_Expr_Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
 	case Ast_Expr_Tag::Const_Expr: return build_const_expr(bc, expr->as_const_expr);
 	}
 }
 
-Value build_term(IR_Builder_Context* bc, Ast_Term* term)
+Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 {
 	switch (term->tag)
 	{
 	case Ast_Term_Tag::Var: 
-	{	
-		//@Todo handle unary adress op by returning ptr without load
+	{
 		IR_Access_Info access_info = build_var(bc, term->as_var);
+		if (unary_address) return access_info.ptr;
 		return LLVMBuildLoad2(bc->builder, access_info.type, access_info.ptr, "load_val");
 	}
 	case Ast_Term_Tag::Enum:
@@ -383,6 +383,12 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 	{
 		if (access->tag == Ast_Access_Tag::Array)
 		{
+			if (ast_type.pointer_level > 0) //@Temp allowing pointer to array array access before slices
+			{
+				ptr = LLVMBuildLoad2(bc->builder, LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0), ptr, "ptr_load");
+				ast_type.pointer_level -= 1;
+			}
+
 			Ast_Array_Access* array_access = access->as_array;
 
 			Value index = build_expr(bc, array_access->index_expr);
@@ -401,6 +407,7 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 			}
 
 			Ast_Var_Access* var_access = access->as_var;
+			
 			Ast_Struct_IR_Info struct_info = bc->program->structs[ast_type.as_struct.struct_id];
 			ptr = LLVMBuildStructGEP2(bc->builder, struct_info.struct_type, ptr, var_access->field_id, "struct_ptr");
 			ast_type = struct_info.struct_decl->fields[var_access->field_id].type;
@@ -415,7 +422,8 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr)
 {
 	UnaryOp op = unary_expr->op;
-	Value rhs = build_expr(bc, unary_expr->right);
+	bool unary_address = op == UnaryOp::ADDRESS_OF;
+	Value rhs = build_expr(bc, unary_expr->right, unary_address);
 
 	switch (op)
 	{
