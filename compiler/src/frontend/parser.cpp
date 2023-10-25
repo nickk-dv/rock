@@ -53,6 +53,12 @@ Ast_Program* parse_program(Parser* parser, const char* path)
 		program->module_map.add(filepath, ast, hash_fnv1a_32(string_view_from_string(filepath)));
 	}
 
+	fs::path src_parent = src.parent_path();
+	fs::path build_dir = src_parent / "build";
+	if (!fs::exists(build_dir) && !fs::create_directory(build_dir))
+	{ printf("Failed to create build directory\n"); return NULL; }
+	fs::current_path(build_dir);
+
 	return program;
 }
 

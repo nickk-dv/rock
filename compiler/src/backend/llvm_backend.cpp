@@ -4,9 +4,12 @@
 #include "llvm-c/Analysis.h"
 #include "llvm-c/TargetMachine.h"
 #include <stdio.h>
+#include <cstdlib>
 
 void backend_build_module(LLVMModuleRef mod)
 {
+	backend_verify_module(mod);
+
 	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
 	//even during IR building for dev period
 	//@Performance: any benefits of doing only init for one platform?
@@ -32,7 +35,6 @@ void backend_build_module(LLVMModuleRef mod)
 	char* datalayout_str = LLVMCopyStringRepOfTargetData(datalayout);
 	LLVMSetDataLayout(mod, datalayout_str);
 	LLVMDisposeMessage(datalayout_str);
-	backend_print_module(mod);
 	
 	LLVMTargetMachineEmitToFile(machine, mod, "result.o", LLVMObjectFile, &error);
 	if (error != NULL) printf("error: %s\n", error);
@@ -43,13 +45,23 @@ void backend_build_module(LLVMModuleRef mod)
 	LLVMDisposeMessage(cpu);
 	LLVMDisposeMessage(cpu_features);
 	LLVMDisposeMessage(triple);
+
+	backend_run_clang();
 }
 
-void backend_print_module(LLVMModuleRef mod)
+void backend_run()
+{
+	system("result");
+}
+
+void backend_verify_module(LLVMModuleRef mod)
 {
 	LLVMPrintModuleToFile(mod, "output.ll", NULL);
-	char* message = LLVMPrintModuleToString(mod);
-	printf("Module: %s", message);
-	LLVMDisposeMessage(message);
 	LLVMVerifyModule(mod, LLVMPrintMessageAction, NULL);
+}
+
+void backend_run_clang()
+{
+	const char* cmd = "clang -o result.exe result.o";
+	int exit_code = system(cmd);
 }
