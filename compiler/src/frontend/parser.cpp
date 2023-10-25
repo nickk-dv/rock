@@ -272,11 +272,18 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
-		decl->fields.emplace_back(Ast_Ident_Type_Pair { token_to_ident(field.value()), type.value() });
 
-		//@Todo optional default value expr indicated by '=', else ';'
-		
-		if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after struct field declaration"); return NULL; }
+		if (try_consume(TokenType::ASSIGN))
+		{
+			Ast_Expr* expr = parse_expr(parser);
+			if (!expr) return NULL;
+			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), expr });
+		}
+		else
+		{
+			decl->fields.emplace_back(Ast_Struct_Field{ token_to_ident(field.value()), type.value(), {} });
+			if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after struct field declaration"); return NULL; }
+		}
 	}
 	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in struct declaration"); return NULL; }
 
@@ -333,7 +340,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
-		decl->input_params.emplace_back(Ast_Ident_Type_Pair { token_to_ident(ident.value()), type.value() });
+		decl->input_params.emplace_back(Ast_Proc_Param { token_to_ident(ident.value()), type.value() });
 
 		if (!try_consume(TokenType::COMMA)) break;
 	}

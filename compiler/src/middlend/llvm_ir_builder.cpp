@@ -30,7 +30,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 	{
 		type_array.clear();
 		Ast_Struct_Decl* struct_decl = struct_info.struct_decl;
-		for (Ast_Ident_Type_Pair& field : struct_decl->fields) 
+		for (Ast_Struct_Field& field : struct_decl->fields) 
 		type_array.emplace_back(type_from_ast_type(&bc, field.type));
 		
 		LLVMStructSetBody(struct_info.struct_type, type_array.data(), (u32)type_array.size(), 0);
@@ -40,7 +40,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 	{
 		type_array.clear();
 		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
-		for (Ast_Ident_Type_Pair& param : proc_decl->input_params) 
+		for (Ast_Proc_Param& param : proc_decl->input_params) 
 		type_array.emplace_back(type_from_ast_type(&bc, param.type));
 
 		Type ret_type = proc_decl->return_type ? type_from_ast_type(&bc, proc_decl->return_type.value()) : LLVMVoidType();
@@ -69,7 +69,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 		Basic_Block entry_block = builder_context_add_bb(&bc, "entry");
 		builder_context_set_bb(&bc, entry_block);
 		u32 count = 0;
-		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
 			Type type = type_from_ast_type(&bc, param.type);
 			Value param_value = LLVMGetParam(proc_info.proc_value, count);

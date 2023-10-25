@@ -160,7 +160,7 @@ void check_decls(Checker_Context* cc)
 	{
 		if (!struct_decl->fields.empty()) name_set.zero_reset();
 		
-		for (Ast_Ident_Type_Pair& field : struct_decl->fields)
+		for (Ast_Struct_Field& field : struct_decl->fields)
 		{
 			check_type_signature(cc, &field.type);
 			
@@ -202,7 +202,7 @@ void check_decls(Checker_Context* cc)
 	{
 		if (!proc_decl->input_params.empty()) name_set.zero_reset();
 
-		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
 			check_type_signature(cc, &param.type);
 			
@@ -332,7 +332,7 @@ void check_ast(Checker_Context* cc)
 		
 		checker_context_block_reset(cc, proc_decl);
 		checker_context_block_add(cc);
-		for (Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
 			//@Notice this is checked in proc_decl but might be usefull for err recovery later
 			if (!checker_context_block_contains_var(cc, param.ident))

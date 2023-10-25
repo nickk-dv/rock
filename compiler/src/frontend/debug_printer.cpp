@@ -281,7 +281,7 @@ void debug_print_struct_decl(Ast_Struct_Decl* struct_decl)
 	printf("\nStruct_Decl: "); 
 	debug_print_ident(struct_decl->ident, true, false);
 
-	for (const Ast_Ident_Type_Pair& field : struct_decl->fields)
+	for (const Ast_Struct_Field& field : struct_decl->fields)
 	{
 		debug_print_ident(field.ident, false, false);
 		printf(": "); 
@@ -316,7 +316,7 @@ void debug_print_proc_decl(Ast_Proc_Decl* proc_decl)
 	if (!proc_decl->input_params.empty())
 	{
 		printf("\n");
-		for (const Ast_Ident_Type_Pair& param : proc_decl->input_params)
+		for (const Ast_Proc_Param& param : proc_decl->input_params)
 		{
 			debug_print_ident(param.ident, false, false);
 			printf(": ");

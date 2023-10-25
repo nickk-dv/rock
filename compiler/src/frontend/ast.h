@@ -24,14 +24,15 @@ struct Ast_Array_Type;
 struct Ast_Custom_Type;
 struct Ast_Struct_Type;
 struct Ast_Enum_Type;
-struct Ast_Ident_Type_Pair;
 
 struct Ast_Import_Decl;
 struct Ast_Use_Decl;
 struct Ast_Struct_Decl;
+struct Ast_Struct_Field;
 struct Ast_Enum_Decl;
 struct Ast_Enum_Variant;
 struct Ast_Proc_Decl;
+struct Ast_Proc_Param;
 struct Ast_Global_Decl;
 
 struct Ast_Block;
@@ -204,21 +205,6 @@ struct Ast_Array_Type
 	Ast_Expr* const_expr;
 };
 
-struct Ast_Ident_Type_Pair
-{
-	Ast_Ident ident;
-	Ast_Type type;
-};
-
-struct Ast_Ident_Literal_Pair
-{
-	Ast_Ident ident;
-	Ast_Literal literal;
-	bool is_negative;
-	//ir builder
-	LLVMValueRef constant;
-};
-
 struct Ast_Import_Decl
 {
 	Ast_Ident alias;
@@ -237,7 +223,14 @@ struct Ast_Use_Decl
 struct Ast_Struct_Decl
 {
 	Ast_Ident ident;
-	std::vector<Ast_Ident_Type_Pair> fields;
+	std::vector<Ast_Struct_Field> fields;
+};
+
+struct Ast_Struct_Field
+{
+	Ast_Ident ident;
+	Ast_Type type;
+	option<Ast_Expr*> const_expr;
 };
 
 struct Ast_Enum_Decl
@@ -258,12 +251,18 @@ struct Ast_Enum_Variant
 struct Ast_Proc_Decl
 {
 	Ast_Ident ident;
-	std::vector<Ast_Ident_Type_Pair> input_params;
+	std::vector<Ast_Proc_Param> input_params;
 	option<Ast_Type> return_type;
 	Ast_Block* block;
 	bool is_external;
 	bool is_main; //@Todo use flags or enum kinds if types cant overlap
 	bool is_variadic;
+};
+
+struct Ast_Proc_Param
+{
+	Ast_Ident ident;
+	Ast_Type type;
 };
 
 struct Ast_Global_Decl
