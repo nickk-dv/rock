@@ -9,11 +9,13 @@ struct Ast_Program;
 struct Ast_Struct_IR_Info;
 struct Ast_Enum_IR_Info;
 struct Ast_Proc_IR_Info;
+struct Ast_Global_IR_Info;
 
 struct Ast;
 struct Ast_Struct_Info;
 struct Ast_Enum_Info;
 struct Ast_Proc_Info;
+struct Ast_Global_Info;
 
 struct Ast_Ident;
 struct Ast_Literal;
@@ -30,6 +32,7 @@ struct Ast_Struct_Decl;
 struct Ast_Enum_Decl;
 struct Ast_Enum_Variant;
 struct Ast_Proc_Decl;
+struct Ast_Global_Decl;
 
 struct Ast_Block;
 struct Ast_Statement;
@@ -72,6 +75,7 @@ struct Ast_Program
 	std::vector<Ast_Struct_IR_Info> structs;
 	std::vector<Ast_Enum_IR_Info> enums;
 	std::vector<Ast_Proc_IR_Info> procs;
+	std::vector<Ast_Global_IR_Info> globals;
 };
 
 struct Ast_Struct_IR_Info
@@ -93,6 +97,12 @@ struct Ast_Proc_IR_Info
 	LLVMValueRef proc_value;
 };
 
+struct Ast_Global_IR_Info
+{
+	Ast_Global_Decl* global_decl;
+	LLVMValueRef global_value;
+};
+
 struct Ast
 {
 	StringView source;
@@ -103,12 +113,14 @@ struct Ast
 	std::vector<Ast_Struct_Decl*> structs;
 	std::vector<Ast_Enum_Decl*> enums;
 	std::vector<Ast_Proc_Decl*> procs;
+	std::vector<Ast_Global_Decl*> globals;
 	
 	//checker
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
 	HashMap<Ast_Ident, Ast_Struct_Info, u32, match_ident> struct_table;
 	HashMap<Ast_Ident, Ast_Enum_Info, u32, match_ident> enum_table;
 	HashMap<Ast_Ident, Ast_Proc_Info, u32, match_ident> proc_table;
+	HashMap<Ast_Ident, Ast_Global_Info, u32, match_ident> global_table;
 };
 
 struct Ast_Struct_Info
@@ -127,6 +139,12 @@ struct Ast_Proc_Info
 {
 	u32 proc_id;
 	Ast_Proc_Decl* proc_decl;
+};
+
+struct Ast_Global_Info
+{
+	u32 global_id;
+	Ast_Global_Decl* global_decl;
 };
 
 struct Ast_Ident
@@ -246,6 +264,12 @@ struct Ast_Proc_Decl
 	bool is_external;
 	bool is_main; //@Todo use flags or enum kinds if types cant overlap
 	bool is_variadic;
+};
+
+struct Ast_Global_Decl
+{
+	Ast_Ident ident;
+	Ast_Expr* const_expr;
 };
 
 struct Ast_Block

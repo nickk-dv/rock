@@ -115,9 +115,10 @@ Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 				} break;
 				default:
 				{
-					error_next("Expected import, use, struct, enum or procedure declaration", 2);
-					return NULL;
-				}
+					Ast_Global_Decl* global_decl = parse_global_decl(parser);
+					if (!global_decl) return NULL;
+					ast->globals.emplace_back(global_decl);
+				} break;
 				}
 			}
 			else
@@ -355,6 +356,19 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 		if (!block) return NULL;
 		decl->block = block;
 	}
+
+	return decl;
+}
+
+Ast_Global_Decl* parse_global_decl(Parser* parser)
+{
+	Ast_Global_Decl* decl = arena_alloc<Ast_Global_Decl>(&parser->arena);
+	decl->ident = token_to_ident(consume_get());
+	consume();
+
+	Ast_Expr* expr = parse_expr(parser);
+	if (!expr) return NULL;
+	decl->const_expr = expr;
 
 	return decl;
 }

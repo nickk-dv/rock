@@ -49,6 +49,16 @@ LLVMModuleRef build_module(Ast_Program* program)
 		proc_info.proc_value = LLVMAddFunction(bc.module, name, proc_info.proc_type);
 	}
 
+	for (Ast_Global_IR_Info& global_info : program->globals)
+	{
+		Ast_Global_Decl* global_decl = global_info.global_decl;
+		Value const_value = build_expr(&bc, global_decl->const_expr);
+		Value global = LLVMAddGlobal(bc.module, LLVMTypeOf(const_value), "g");
+		LLVMSetInitializer(global, const_value);
+		//LLVMSetGlobalConstant(global_info.global_value, 1);
+		global_info.global_value = global;
+	}
+
 	for (Ast_Proc_IR_Info& proc_info : program->procs)
 	{
 		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
@@ -370,7 +380,6 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
 		Type type = bc->program->structs[struct_init->struct_id].struct_type;
-		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
 		
 		std::vector<Value> values; //@Perf frequent allocation
 		bool is_const = true;
@@ -381,6 +390,8 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		}
 		if (is_const) return LLVMConstNamedStruct(type, values.data(), (u32)values.size());
 
+		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
+		
 		u32 count = 0;
 		for (Ast_Expr* expr : struct_init->input_exprs)
 		{
@@ -399,7 +410,6 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Ast_Array_Init* array_init = term->as_array_init;
 		Type type = type_from_ast_type(bc, array_init->type.value());
 		Type element_type = type_from_ast_type(bc, array_init->type.value().as_array->element_type);
-		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_array");
 
 		std::vector<Value> values; //@Perf frequent allocation
 		bool is_const = true;
@@ -409,6 +419,8 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 			else { is_const = false; break; }
 		}
 		if (is_const) return LLVMConstArray(element_type, values.data(), (u32)values.size());
+		
+		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_array");
 		
 		u32 count = 0;
 		for (Ast_Expr* expr : array_init->input_exprs)

@@ -58,6 +58,7 @@ void check_decl_uniqueness(Checker_Context* cc)
 	ast->struct_table.init(64);
 	ast->enum_table.init(64);
 	ast->proc_table.init(64);
+	ast->global_table.init(64);
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 	Ast_Program* program = cc->program;
 
@@ -115,6 +116,16 @@ void check_decl_uniqueness(Checker_Context* cc)
 		ast->proc_table.add(ident, Ast_Proc_Info { (u32)program->procs.size(), decl }, hash_ident(ident));
 		program->procs.emplace_back(Ast_Proc_IR_Info { decl });
 	}
+
+	for (Ast_Global_Decl* decl : ast->globals)
+	{
+		Ast_Ident ident = decl->ident;
+		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
+		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		symbol_table.add(ident, hash_ident(ident));
+		ast->global_table.add(ident, Ast_Global_Info { (u32)program->globals.size(), decl }, hash_ident(ident));
+		program->globals.emplace_back(Ast_Global_IR_Info { decl });
+	}
 }
 
 //@Todo check circular enum dependency when enum constants are supported
@@ -137,7 +148,9 @@ void check_decls(Checker_Context* cc)
 		if (enum_info) { ast->enum_table.add(alias, enum_info.value(), hash_ident(alias)); continue; }
 		option<Ast_Proc_Info> proc_info = import_ast->proc_table.find(symbol, hash_ident(symbol));
 		if (proc_info) { ast->proc_table.add(alias, proc_info.value(), hash_ident(alias)); continue; }
-		
+		option<Ast_Global_Info> global_info = import_ast->global_table.find(symbol, hash_ident(symbol));
+		if (global_info) { ast->global_table.add(alias, global_info.value(), hash_ident(alias)); continue; }
+
 		err_report(Error::USE_SYMBOL_NOT_FOUND);
 	}
 
@@ -202,6 +215,14 @@ void check_decls(Checker_Context* cc)
 		{
 			check_type_signature(cc, &proc_decl->return_type.value());
 		}
+	}
+
+	for (Ast_Global_Decl* global_decl : ast->globals)
+	{
+		//@Check must be constant expr
+		//@Cannot specify constext as constant with no type with current structure
+		//just to resolve type signatures
+		check_expr(cc, {}, global_decl->const_expr);
 	}
 }
 
