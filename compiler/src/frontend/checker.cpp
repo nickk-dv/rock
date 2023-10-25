@@ -1186,8 +1186,7 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 		{
 			type = check_type_signature(cc, &array_init->type.value());
 			if (!type) return {};
-			Type_Kind kind = type_kind(cc, type.value());
-			if (kind != Type_Kind::Array)
+			if (type_kind(cc, type.value()) != Type_Kind::Array)
 			{
 				err_set; printf("Array initializer must have array type signature\n");
 				return {};

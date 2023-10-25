@@ -288,6 +288,7 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 	LLVMBuildStore(bc->builder, value, access_info.ptr);
 }
 
+//@Notice proc result access might be changed to work with address / deref similarly to var 
 Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags)
 {
 	Ast_Proc_IR_Info proc_info = bc->program->procs[proc_call->proc_id];
@@ -297,8 +298,23 @@ Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_
 	for (Ast_Expr* expr : proc_call->input_exprs)
 	input_values.emplace_back(build_expr(bc, expr));
 
-	return LLVMBuildCall2(bc->builder, proc_info.proc_type, proc_info.proc_value,
-	input_values.data(), (u32)input_values.size(), flags == IR_Proc_Call_Flags::In_Statement ? "" : "call_val");
+	if (flags == IR_Proc_Call_Flags::In_Statement)
+	{
+		return LLVMBuildCall2(bc->builder, proc_info.proc_type, proc_info.proc_value, 
+		input_values.data(), (u32)input_values.size(), "");
+	}
+
+	Value return_value = LLVMBuildCall2(bc->builder, proc_info.proc_type, proc_info.proc_value, 
+	input_values.data(), (u32)input_values.size(), "call_val");
+	if (!proc_call->access) return return_value;
+
+	Ast_Type return_ast_type = proc_info.proc_decl->return_type.value();
+	Type return_type = type_from_ast_type(bc, return_ast_type);
+	Value temp_ptr = LLVMBuildAlloca(bc->builder, return_type, "call_temp");
+	LLVMBuildStore(bc->builder, return_value, temp_ptr);
+
+	IR_Access_Info access_info = build_access(bc, proc_call->access.value(), temp_ptr, return_ast_type);
+	return LLVMBuildLoad2(bc->builder, access_info.type, access_info.ptr, "call_access_val");
 }
 
 Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
@@ -413,10 +429,14 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
 	IR_Var_Info var_info = builder_context_block_find_var(bc, var->ident);
-	Value ptr = var_info.ptr;
-	Ast_Type ast_type = var_info.ast_type;
+	return build_access(bc, var->access, var_info.ptr, var_info.ast_type);
+}
 
-	Ast_Access* access = var->access.has_value() ? var->access.value() : NULL;
+IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_option, Value ptr, Ast_Type ast_type)
+{
+	if (!access_option) return IR_Access_Info{ ptr, type_from_ast_type(bc, ast_type) };
+
+	Ast_Access* access = access_option.value();
 	while (access != NULL)
 	{
 		if (access->tag == Ast_Access_Tag::Array)
@@ -445,16 +465,16 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 			}
 
 			Ast_Var_Access* var_access = access->as_var;
-			
+
 			Ast_Struct_IR_Info struct_info = bc->program->structs[ast_type.as_struct.struct_id];
 			ptr = LLVMBuildStructGEP2(bc->builder, struct_info.struct_type, ptr, var_access->field_id, "struct_ptr");
 			ast_type = struct_info.struct_decl->fields[var_access->field_id].type;
-			
+
 			access = var_access->next.has_value() ? var_access->next.value() : NULL;
 		}
 	}
 
-	return IR_Access_Info { ptr, type_from_ast_type(bc, ast_type) };
+	return IR_Access_Info{ ptr, type_from_ast_type(bc, ast_type) };
 }
 
 Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr)

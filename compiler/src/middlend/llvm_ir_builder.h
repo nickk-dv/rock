@@ -16,6 +16,7 @@ static Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, I
 static Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address = false);
 static Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address = false);
 static IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var);
+static IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_option, Value ptr, Ast_Type ast_type);
 static Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr);
 static Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr);
 static Value build_const_expr(IR_Builder_Context* bc, Ast_Const_Expr const_expr);
