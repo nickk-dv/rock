@@ -926,7 +926,10 @@ Ast_Term* parse_term(Parser* parser)
 Ast_Var* parse_var(Parser* parser)
 {
 	Ast_Var* var = arena_alloc<Ast_Var>(&parser->arena);
-	var->ident = token_to_ident(consume_get());
+
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) { error("Expected variable identifier"); return NULL; }
+	var->ident = token_to_ident(ident.value());
 
 	Token token = peek();
 	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)

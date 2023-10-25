@@ -222,7 +222,7 @@ void check_decls(Checker_Context* cc)
 		//@Check must be constant expr
 		//@Cannot specify constext as constant with no type with current structure
 		//just to resolve type signatures
-		check_expr(cc, {}, global_decl->const_expr);
+		global_decl->type = check_expr(cc, {}, global_decl->const_expr);
 	}
 }
 
@@ -334,9 +334,18 @@ void check_ast(Checker_Context* cc)
 		checker_context_block_add(cc);
 		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
-			//@Notice this is checked in proc_decl but might be usefull for err recovery later
-			if (!checker_context_block_contains_var(cc, param.ident))
-			checker_context_block_add_var(cc, param.ident, param.type);
+			option<Ast_Global_Info> global_info = find_global(cc->ast, param.ident);
+			if (global_info)
+			{
+				err_set;
+				error("Global variable with same identifier is already in scope", param.ident);
+			}
+			else
+			{
+				//@Notice this is checked in proc_decl but might be usefull for err recovery later
+				if (!checker_context_block_contains_var(cc, param.ident))
+				checker_context_block_add_var(cc, param.ident, param.type);
+			}
 		}
 		check_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
 	}
@@ -354,6 +363,7 @@ Ast* check_try_import(Checker_Context* cc, option<Ast_Ident> import)
 option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident) { return target_ast->struct_table.find(ident, hash_ident(ident)); }
 option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident) { return target_ast->enum_table.find(ident, hash_ident(ident)); }
 option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident) { return target_ast->proc_table.find(ident, hash_ident(ident)); }
+option<Ast_Global_Info> find_global(Ast* target_ast, Ast_Ident ident) { return target_ast->global_table.find(ident, hash_ident(ident)); }
 
 option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
 {
@@ -650,6 +660,14 @@ void check_var_decl(Checker_Context* cc, Ast_Var_Decl* var_decl)
 {
 	Ast_Ident ident = var_decl->ident;
 
+	option<Ast_Global_Info> global_info = find_global(cc->ast, ident);
+	if (global_info)
+	{
+		err_set;
+		error("Global variable with same identifier is already in scope", ident);
+		return;
+	}
+
 	if (checker_context_block_contains_var(cc, ident))
 	{
 		err_set;
@@ -916,7 +934,12 @@ option<Ast_Type> check_expr_type(Checker_Context* cc, option<Type_Context*> cont
 
 option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
 {
-	if (!check_is_const_expr(expr))
+	if (check_is_const_expr(expr))
+	{
+		expr->is_const = true;
+	}
+
+	if (!check_is_const_foldable_expr(expr))
 	{
 		if (context && context.value()->expect_constant)
 		{
@@ -1283,12 +1306,51 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 
 option<Ast_Type> check_var(Checker_Context* cc, Ast_Var* var)
 {
-	option<Ast_Type> type = checker_context_block_find_var_type(cc, var->ident);
-	if (type) return check_access(cc, type.value(), var->access);
+	Ast_Ident ident = var->ident;
+	Ast* target_ast = cc->ast;
+	
+	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(ident, hash_ident(ident));
+	if (import_decl && var->access && var->access.value()->tag == Ast_Access_Tag::Var) 
+	{
+		target_ast = import_decl.value()->import_ast;
+		Ast_Var_Access* var_access = var->access.value()->as_var;
+		var->access = var_access->next;
+		Ast_Ident global_ident = var_access->ident;
 
-	err_set;
-	error("Check var: var is not found or has not valid type", var->ident);
-	return {};
+		option<Ast_Global_Info> global = find_global(target_ast, global_ident);
+		if (global)
+		{
+			var->global_id = global.value().global_id;
+			option<Ast_Type> type = global.value().global_decl->type;
+			if (type) return check_access(cc, type.value(), var->access);
+			else return {};
+		}
+		else
+		{
+			err_set;
+			error_pair("Failed to find global variable in module", "Module: ", ident, "Global identifier: ", global_ident);
+		}
+	}
+	else
+	{
+		option<Ast_Global_Info> global = find_global(target_ast, ident);
+		if (global)
+		{
+			var->global_id = global.value().global_id;
+			option<Ast_Type> type = global.value().global_decl->type;
+			if (type) return check_access(cc, type.value(), var->access);
+			else return {};
+		}
+		else
+		{
+			option<Ast_Type> type = checker_context_block_find_var_type(cc, var->ident);
+			if (type) return check_access(cc, type.value(), var->access);
+
+			err_set;
+			error("Check var: var is not found or has not valid type", var->ident);
+			return {};
+		}
+	}
 }
 
 option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Access*> optional_access)
@@ -1584,6 +1646,39 @@ option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> co
 
 bool check_is_const_expr(Ast_Expr* expr)
 {
+	if (check_is_const_foldable_expr(expr)) return true;
+
+	switch (expr->tag)
+	{
+	case Ast_Expr_Tag::Term:
+	{
+		Ast_Term* term = expr->as_term;
+		switch (term->tag)
+		{
+		case Ast_Term_Tag::Array_Init:
+		{
+			Ast_Array_Init* array_init = term->as_array_init;
+			for (Ast_Expr* expr : array_init->input_exprs)
+			if (!check_is_const_expr(expr)) return false;
+			return true;
+		}
+		case Ast_Term_Tag::Struct_Init:
+		{
+			Ast_Struct_Init* struct_init = term->as_struct_init;
+			for (Ast_Expr* expr : struct_init->input_exprs)
+			if (!check_is_const_expr(expr)) return false;
+			return true;
+		}
+		default: return false;
+		}
+	}
+	case Ast_Expr_Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
+	case Ast_Expr_Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
+	}
+}
+
+bool check_is_const_foldable_expr(Ast_Expr* expr)
+{
 	switch (expr->tag)
 	{
 	case Ast_Expr_Tag::Term:
@@ -1597,8 +1692,8 @@ bool check_is_const_expr(Ast_Expr* expr)
 		default: return false;
 		}
 	}
-	case Ast_Expr_Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
-	case Ast_Expr_Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
+	case Ast_Expr_Tag::Unary_Expr: return check_is_const_foldable_expr(expr->as_unary_expr->right);
+	case Ast_Expr_Tag::Binary_Expr: return check_is_const_foldable_expr(expr->as_binary_expr->left) && check_is_const_foldable_expr(expr->as_binary_expr->right);
 	}
 }
 

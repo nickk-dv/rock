@@ -269,6 +269,7 @@ struct Ast_Global_Decl
 {
 	Ast_Ident ident;
 	Ast_Expr* const_expr;
+	option<Ast_Type> type;
 };
 
 struct Ast_Block
@@ -420,6 +421,7 @@ struct Ast_Expr
 {
 	Span span;
 	Ast_Expr_Tag tag;
+	bool is_const;
 
 	union
 	{
@@ -456,6 +458,8 @@ struct Ast_Var
 {
 	Ast_Ident ident;
 	option<Ast_Access*> access;
+	//checker
+	option<u32> global_id;
 };
 
 enum class Ast_Access_Tag

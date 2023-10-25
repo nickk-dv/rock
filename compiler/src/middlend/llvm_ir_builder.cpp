@@ -385,8 +385,8 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		bool is_const = true;
 		for (Ast_Expr* expr : struct_init->input_exprs)
 		{
-			if (expr->tag == Ast_Expr_Tag::Const_Expr) values.emplace_back(build_const_expr(bc, expr->as_const_expr));
-			else { is_const = false; break; }
+			if (!expr->is_const) is_const = false;
+			values.emplace_back(build_expr(bc, expr));
 		}
 		if (is_const) return LLVMConstNamedStruct(type, values.data(), (u32)values.size());
 
@@ -415,8 +415,8 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		bool is_const = true;
 		for (Ast_Expr* expr : array_init->input_exprs)
 		{
-			if (expr->tag == Ast_Expr_Tag::Const_Expr) values.emplace_back(build_const_expr(bc, expr->as_const_expr));
-			else { is_const = false; break; }
+			if (!expr->is_const) is_const = false;
+			values.emplace_back(build_expr(bc, expr));
 		}
 		if (is_const) return LLVMConstArray(element_type, values.data(), (u32)values.size());
 		
@@ -440,8 +440,16 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 
 IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
-	IR_Var_Info var_info = builder_context_block_find_var(bc, var->ident);
-	return build_access(bc, var->access, var_info.ptr, var_info.ast_type);
+	if (var->global_id)
+	{
+		Ast_Global_IR_Info global = bc->program->globals[var->global_id.value()];
+		return build_access(bc, var->access, global.global_value, global.global_decl->type.value());
+	}
+	else
+	{
+		IR_Var_Info var_info = builder_context_block_find_var(bc, var->ident);
+		return build_access(bc, var->access, var_info.ptr, var_info.ast_type);
+	}
 }
 
 IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_option, Value ptr, Ast_Type ast_type)

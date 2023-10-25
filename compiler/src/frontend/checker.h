@@ -16,6 +16,7 @@ static Ast* check_try_import(Checker_Context* cc, option<Ast_Ident> import);
 static option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident);
 static option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident);
 static option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident);
+static option<Ast_Global_Info> find_global(Ast* target_ast, Ast_Ident ident);
 static option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 static option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
 
@@ -46,6 +47,7 @@ static option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Contex
 static option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Binary_Expr* binary_expr);
 
 static bool check_is_const_expr(Ast_Expr* expr);
+static bool check_is_const_foldable_expr(Ast_Expr* expr);
 static option<Literal> check_const_expr(Ast_Expr* expr);
 static option<Literal> check_const_term(Ast_Term* term);
 static option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr);
