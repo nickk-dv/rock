@@ -163,6 +163,8 @@ void check_decls(Checker_Context* cc)
 		for (Ast_Struct_Field& field : struct_decl->fields)
 		{
 			check_type_signature(cc, &field.type);
+			//@Check is const expr + matching type, not doing it yet
+			if (field.const_expr) check_expr(cc, {}, field.const_expr.value());
 			
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
 			if (name) err_report(Error::STRUCT_DUPLICATE_FIELD);
@@ -173,6 +175,12 @@ void check_decls(Checker_Context* cc)
 	for (Ast_Enum_Decl* enum_decl : ast->enums)
 	{
 		if (!enum_decl->variants.empty()) name_set.zero_reset();
+		else
+		{
+			err_set;
+			error("Enum must have at least 1 variant", enum_decl->ident);
+			continue;
+		}
 
 		BasicType type = enum_decl->basic_type;
 		Ast_Type enum_type = type_from_basic(type);
@@ -219,9 +227,8 @@ void check_decls(Checker_Context* cc)
 
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
-		//@Check must be constant expr
 		//@Cannot specify constext as constant with no type with current structure
-		//just to resolve type signatures
+		//@Check is const expr, not doing it yet (need new expr checking / context system for this)
 		global_decl->type = check_expr(cc, {}, global_decl->const_expr);
 	}
 }

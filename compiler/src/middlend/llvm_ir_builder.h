@@ -12,6 +12,7 @@ static void build_for(IR_Builder_Context* bc, Ast_For* _for);
 static void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch);
 static void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl);
 static void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign);
+static Value build_default_value(IR_Builder_Context* bc, Ast_Type type);
 static Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags);
 static Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address = false);
 static Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address = false);

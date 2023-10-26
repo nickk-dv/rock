@@ -83,6 +83,7 @@ struct Ast_Struct_IR_Info
 {
 	Ast_Struct_Decl* struct_decl;
 	LLVMTypeRef struct_type;
+	LLVMValueRef default_value;
 };
 
 struct Ast_Enum_IR_Info

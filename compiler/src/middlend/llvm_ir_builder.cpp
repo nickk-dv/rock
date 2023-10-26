@@ -59,6 +59,26 @@ LLVMModuleRef build_module(Ast_Program* program)
 		global_info.global_value = global;
 	}
 
+	std::vector<Value> values;
+
+	for (Ast_Struct_IR_Info& struct_info : program->structs)
+	{
+		values.clear();
+		Ast_Struct_Decl* struct_decl = struct_info.struct_decl;
+		for (Ast_Struct_Field& field : struct_decl->fields)
+		{
+			Type field_type = type_from_ast_type(&bc, field.type);
+			if (field.const_expr)
+			{
+				Value value = build_expr(&bc, field.const_expr.value());
+				build_implicit_cast(&bc, &value, LLVMTypeOf(value), field_type);
+				values.emplace_back(value);
+			}
+			else values.emplace_back(LLVMConstNull(field_type));
+		}
+		struct_info.default_value = LLVMConstNamedStruct(struct_info.struct_type, values.data(), (u32)values.size());
+	}
+
 	for (Ast_Proc_IR_Info& proc_info : program->procs)
 	{
 		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
@@ -285,7 +305,11 @@ void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
 		build_implicit_cast(bc, &value, LLVMTypeOf(value), type);
 		LLVMBuildStore(bc->builder, value, var_ptr);
 	}
-	else LLVMBuildStore(bc->builder, LLVMConstNull(type), var_ptr);
+	else
+	{
+		Value default_value = build_default_value(bc, var_decl->type.value());
+		LLVMBuildStore(bc->builder, default_value, var_ptr);
+	}
 
 	builder_context_block_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, var_decl->type.value() });
 }
@@ -296,6 +320,41 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 	Value value = build_expr(bc, var_assign->expr);
 	build_implicit_cast(bc, &value, LLVMTypeOf(value), access_info.type);
 	LLVMBuildStore(bc->builder, value, access_info.ptr);
+}
+
+Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
+{
+	Type type = type_from_ast_type(bc, ast_type);
+
+	switch (ast_type.tag)
+	{
+	case Ast_Type_Tag::Basic:
+	{
+		return LLVMConstNull(type);
+	}
+	case Ast_Type_Tag::Array:
+	{
+		Ast_Array_Type* array_type = ast_type.as_array;
+		u32 size = LLVMGetArrayLength(type);
+		Value default_value = build_default_value(bc, array_type->element_type);
+		
+		std::vector<Value> values;
+		values.reserve(size);
+		for (u32 i = 0; i < size; i += 1)
+		values.emplace_back(default_value);
+		
+		Type element_type = type_from_ast_type(bc, array_type->element_type);
+		return LLVMConstArray(element_type, values.data(), size);
+	}
+	case Ast_Type_Tag::Struct:
+	{
+		return bc->program->structs[ast_type.as_struct.struct_id].default_value;
+	}
+	case Ast_Type_Tag::Enum:
+	{
+		return ast_type.as_enum.enum_decl->variants[0].constant;
+	}
+	}
 }
 
 //@Notice proc result access might be changed to work with address / deref similarly to var 
