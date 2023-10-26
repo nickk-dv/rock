@@ -59,26 +59,11 @@ LLVMModuleRef build_module(Ast_Program* program)
 		global_info.global_value = global;
 	}
 
-	std::vector<Value> values;
-
 	for (Ast_Struct_IR_Info& struct_info : program->structs)
 	{
-		values.clear();
-		Ast_Struct_Decl* struct_decl = struct_info.struct_decl;
-		for (Ast_Struct_Field& field : struct_decl->fields)
-		{
-			Type field_type = type_from_ast_type(&bc, field.type);
-			if (field.const_expr)
-			{
-				Value value = build_expr(&bc, field.const_expr.value());
-				build_implicit_cast(&bc, &value, LLVMTypeOf(value), field_type);
-				values.emplace_back(value);
-			}
-			else values.emplace_back(LLVMConstNull(field_type));
-		}
-		struct_info.default_value = LLVMConstNamedStruct(struct_info.struct_type, values.data(), (u32)values.size());
+		struct_info.default_value = build_default_struct(&bc, &struct_info);
 	}
-
+	
 	for (Ast_Proc_IR_Info& proc_info : program->procs)
 	{
 		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
@@ -322,6 +307,30 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 	LLVMBuildStore(bc->builder, value, access_info.ptr);
 }
 
+Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_info)
+{
+	std::vector<Value> values;
+	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
+
+	for (Ast_Struct_Field& field : struct_decl->fields)
+	{
+		if (field.const_expr)
+		{
+			Value value = build_expr(bc, field.const_expr.value());
+			build_implicit_cast(bc, &value, LLVMTypeOf(value), type_from_ast_type(bc, field.type));
+			values.emplace_back(value);
+		}
+		else
+		{
+			Value value = build_default_value(bc, field.type);
+			values.emplace_back(value);
+		}
+	}
+
+	struct_info->default_value = LLVMConstNamedStruct(struct_info->struct_type, values.data(), (u32)values.size());
+	return struct_info->default_value;
+}
+
 Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 {
 	Type type = type_from_ast_type(bc, ast_type);
@@ -348,7 +357,9 @@ Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 	}
 	case Ast_Type_Tag::Struct:
 	{
-		return bc->program->structs[ast_type.as_struct.struct_id].default_value;
+		Value default_struct = bc->program->structs[ast_type.as_struct.struct_id].default_value;
+		if (default_struct == NULL) return build_default_struct(bc, &bc->program->structs[ast_type.as_struct.struct_id]);
+		return default_struct;
 	}
 	case Ast_Type_Tag::Enum:
 	{

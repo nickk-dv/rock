@@ -322,6 +322,7 @@ void check_program(Checker_Context* cc)
 				err_visit = visit_stack[k];
 				debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
 			}
+			printf("\n\n");
 		}
 	}
 }
