@@ -73,7 +73,6 @@ void debug_print_token(Token token, bool endl, bool location)
 
 		case TokenType::DOT: printf("."); break;
 		case TokenType::COLON: printf(":"); break;
-		case TokenType::QUOTE: printf("'"); break;
 		case TokenType::COMMA: printf(","); break;
 		case TokenType::SEMICOLON: printf(";"); break;
 		case TokenType::DOUBLE_DOT: printf(".."); break;

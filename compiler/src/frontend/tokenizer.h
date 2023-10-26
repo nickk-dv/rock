@@ -31,6 +31,7 @@ enum class LexemeType
 	IDENT,
 	NUMBER,
 	STRING,
+	CHAR,
 	SYMBOL,
 	ERROR
 };

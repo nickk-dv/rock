@@ -58,7 +58,6 @@ enum class TokenType
 
 	DOT,                   // .
 	COLON,                 // :
-	QUOTE,                 // '
 	COMMA,                 // ,
 	SEMICOLON,             // ;
 	DOUBLE_DOT,            // ..

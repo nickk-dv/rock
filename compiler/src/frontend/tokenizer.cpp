@@ -21,7 +21,6 @@ void tokenizer_init()
 
 	c_to_sym['.'] = TokenType::DOT;
 	c_to_sym[':'] = TokenType::COLON;
-	c_to_sym['\''] = TokenType::QUOTE;
 	c_to_sym[','] = TokenType::COMMA;
 	c_to_sym[';'] = TokenType::SEMICOLON;
 	c_to_sym['{'] = TokenType::BLOCK_START;
@@ -53,6 +52,7 @@ void tokenizer_init()
 		else if (c_to_sym[c] != TokenType::ERROR) lexeme_types[c] = LexemeType::SYMBOL;
 		else if (is_number(c)) lexeme_types[c] = LexemeType::NUMBER;
 		else if (c == '"') lexeme_types[c] = LexemeType::STRING;
+		else if (c == '\'') lexeme_types[c] = LexemeType::CHAR;
 		else lexeme_types[c] = LexemeType::ERROR;
 	}
 }
@@ -202,7 +202,6 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 							case '0': tokenizer->strings->put_char('\0'); break;
 							default:
 							{
-								tokenizer->strings->put_char(next);
 								escapes_valid = false;
 								printf("Invalid escape character: \\%c at %lu:%lu\n", next, line, col);
 								printf("Hint: if you meant to use backslash type: \\\\ \n\n");
@@ -226,6 +225,68 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 
 				token.type = TokenType::STRING_LITERAL;
 				token.string_literal_value = tokenizer->strings->end_str();
+				if (!terminated || !escapes_valid) token.type = TokenType::ERROR;
+			} break;
+			case LexemeType::CHAR:
+			{
+				bool terminated = false;
+				bool escapes_valid = true;
+
+				if (!peek().has_value())
+				{
+					token.type = TokenType::ERROR;
+					u32 line = tokenizer->line_id;
+					u32 col = u32(tokenizer->cursor - tokenizer->line_cursor) - 1;
+					printf("Expected valid character literal at: %lu:%lu\n\n", line, col);
+					break;
+				}
+
+				u8 c = peek().value();
+				consume();
+
+				if (c == '\\')
+				{
+					u32 line = tokenizer->line_id;
+					u32 col = u32(tokenizer->cursor - tokenizer->line_cursor) - 1;
+
+					if (peek().has_value())
+					{
+						u8 next = peek().value();
+						consume();
+
+						switch (next)
+						{
+						case 'n': c = '\n'; break;
+						case 'r': c = '\r'; break;
+						case 't': c = '\t'; break;
+						case '\'': c = '\''; break;
+						case '\\': c = '\\'; break;
+						case '0': c = '\0'; break;
+						default:
+						{
+							escapes_valid = false;
+							printf("Invalid escape character: \\%c at %lu:%lu\n", next, line, col);
+							printf("Hint: if you meant to use backslash type: \\\\ \n\n");
+						}
+						}
+					}
+					else
+					{
+						escapes_valid = false;
+						printf("Invalid escape character: \\ at %lu:%lu\n", line, col);
+						printf("Hint: if you meant to use backslash type: \\\\ \n\n");
+					}
+				}
+				
+				if (peek().has_value())
+				{
+					u8 next = peek().value();
+					consume();
+					if (next == '\'') terminated = true;
+				}
+
+				token.type = TokenType::INTEGER_LITERAL;
+				token.integer_value = c;
 				if (!terminated || !escapes_valid) token.type = TokenType::ERROR;
 			} break;
 			case LexemeType::SYMBOL:
