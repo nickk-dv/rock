@@ -46,9 +46,11 @@ struct Var_Info
 
 struct Type_Context
 {
-	Ast_Type expect_type;
+	option<Ast_Type> expect_type;
 	bool expect_constant;
 };
+
+Type_Context type_context_make(option<Ast_Type> expect_type, bool expect_constant);
 
 struct Literal
 {

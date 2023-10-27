@@ -550,7 +550,7 @@ void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 	{
 		printf("\n");
 		for (Ast_Expr* expr : proc_call->input_exprs)
-			debug_print_expr(expr, depth);
+		debug_print_expr(expr, depth);
 	}
 	else printf("---\n");
 }
@@ -597,6 +597,7 @@ void debug_print_term(Ast_Term* term, u32 depth)
 	case Ast_Term_Tag::Literal: debug_print_token(term->as_literal.token, true); break;
 	case Ast_Term_Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 	case Ast_Term_Tag::Struct_Init: debug_print_struct_init(term->as_struct_init, depth); break;
+	case Ast_Term_Tag::Array_Init: debug_print_array_init(term->as_array_init, depth); break;
 	}
 }
 
@@ -670,7 +671,30 @@ void debug_print_struct_init(Ast_Struct_Init* struct_init, u32 depth)
 	{
 		printf("\n");
 		for (Ast_Expr* expr : struct_init->input_exprs)
-			debug_print_expr(expr, depth);
+		debug_print_expr(expr, depth);
+	}
+	else printf("---\n");
+}
+
+void debug_print_array_init(Ast_Array_Init* array_init, u32 depth)
+{
+	debug_print_branch(depth);
+	printf("Array_Init\n");
+
+	debug_print_spacing(depth);
+	printf("Array_Type: ");
+	if (array_init->type)
+		debug_print_type(array_init->type.value());
+	else printf("[?]");
+	printf("\n");
+
+	debug_print_spacing(depth);
+	printf("Input_Exprs: ");
+	if (!array_init->input_exprs.empty())
+	{
+		printf("\n");
+		for (Ast_Expr* expr : array_init->input_exprs)
+		debug_print_expr(expr, depth);
 	}
 	else printf("---\n");
 }

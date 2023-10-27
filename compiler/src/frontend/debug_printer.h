@@ -44,6 +44,7 @@ void debug_print_array_access(Ast_Array_Access* array_access);
 void debug_print_enum(Ast_Enum* _enum);
 void debug_print_sizeof(Ast_Sizeof* _sizeof);
 void debug_print_struct_init(Ast_Struct_Init* struct_init, u32 depth);
+void debug_print_array_init(Ast_Array_Init* array_init, u32 depth);
 void debug_print_unary_expr(Ast_Unary_Expr* unary_expr, u32 depth);
 void debug_print_binary_expr(Ast_Binary_Expr* binary_expr, u32 depth);
 void debug_print_const_expr(Ast_Const_Expr const_expr, u32 depth);

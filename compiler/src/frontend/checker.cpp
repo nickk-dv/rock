@@ -162,9 +162,13 @@ void check_decls(Checker_Context* cc)
 		
 		for (Ast_Struct_Field& field : struct_decl->fields)
 		{
-			check_type_signature(cc, &field.type);
-			//@Check is const expr + matching type, not doing it yet
-			if (field.const_expr) check_expr(cc, {}, field.const_expr.value());
+			if (!check_type_signature(cc, &field.type)) continue;
+
+			if (field.const_expr)
+			{
+				Type_Context context = type_context_make(field.type, true);
+				check_expr(cc, &context, field.const_expr.value());
+			}
 			
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
 			if (name) err_report(Error::STRUCT_DUPLICATE_FIELD);
@@ -184,9 +188,13 @@ void check_decls(Checker_Context* cc)
 
 		BasicType type = enum_decl->basic_type;
 		Ast_Type enum_type = type_from_basic(type);
-		Type_Context type_context = { enum_type, true };
+		Type_Context context = type_context_make(enum_type, true);
 
-		if (!token_basic_type_is_integer(type)) err_report(Error::ENUM_NON_INTEGER_TYPE);
+		if (!token_basic_type_is_integer(type))
+		{
+			err_report(Error::ENUM_NON_INTEGER_TYPE);
+			continue;
+		}
 
 		for (Ast_Enum_Variant& variant : enum_decl->variants)
 		{
@@ -194,7 +202,7 @@ void check_decls(Checker_Context* cc)
 			if (name) err_report(Error::ENUM_DUPLICATE_VARIANT);
 			else name_set.add(variant.ident, hash_ident(variant.ident));
 
-			option<Ast_Type> type = check_expr(cc, &type_context, variant.const_expr);
+			option<Ast_Type> type = check_expr(cc, &context, variant.const_expr);
 			if (type && !match_type(cc, enum_type, type.value()))
 			{
 				err_set;
@@ -227,9 +235,8 @@ void check_decls(Checker_Context* cc)
 
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
-		//@Cannot specify constext as constant with no type with current structure
-		//@Check is const expr, not doing it yet (need new expr checking / context system for this)
-		global_decl->type = check_expr(cc, {}, global_decl->const_expr);
+		Type_Context context = type_context_make({}, true);
+		global_decl->type = check_expr(cc, &context, global_decl->const_expr);
 	}
 }
 
@@ -518,7 +525,9 @@ static void check_block(Checker_Context* cc, Ast_Block* block, Checker_Block_Fla
 
 void check_if(Checker_Context* cc, Ast_If* _if)
 {
-	option<Ast_Type> type = check_expr(cc, {}, _if->condition_expr);
+	Type_Context context = type_context_make({}, false);
+	option<Ast_Type> type = check_expr(cc, &context, _if->condition_expr);
+	
 	if (type && type_kind(cc, type.value()) != Type_Kind::Bool)
 	{
 		err_set;
@@ -547,7 +556,9 @@ void check_for(Checker_Context* cc, Ast_For* _for)
 
 	if (_for->condition_expr)
 	{
-		option<Ast_Type> type = check_expr(cc, {}, _for->condition_expr.value());
+		Type_Context context = type_context_make({}, false);
+		option<Ast_Type> type = check_expr(cc, &context, _for->condition_expr.value());
+		
 		if (type && type_kind(cc, type.value()) != Type_Kind::Bool)
 		{
 			err_set;
@@ -570,17 +581,16 @@ void check_return(Checker_Context* cc, Ast_Return* _return)
 		if (curr_proc->return_type)
 		{
 			Ast_Type ret_type = curr_proc->return_type.value();
-			Type_Context type_context = { ret_type, false };
-			option<Ast_Type> expr_type = check_expr(cc, &type_context, _return->expr.value());
-			if (!expr_type) return;
+			Type_Context context = type_context_make(ret_type, false);
+			option<Ast_Type> type = check_expr(cc, &context, _return->expr.value());
 			
-			if (!match_type(cc, ret_type, expr_type.value()))
+			if (type && !match_type(cc, ret_type, type.value()))
 			{
 				err_set;
 				printf("Return type doesnt match procedure declaration:\n");
 				debug_print_token(_return->token, true, true);
 				printf("Expected: "); debug_print_type(ret_type); printf("\n");
-				printf("Got: "); debug_print_type(expr_type.value()); printf("\n\n");
+				printf("Got: "); debug_print_type(type.value()); printf("\n\n");
 			}
 		}
 		else
@@ -626,7 +636,9 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 	}
 
 	//@Todo add context with switch on type and constant requirement
-	option<Ast_Type> type = check_expr(cc, {}, _switch->expr);
+	Type_Context context = type_context_make({}, false);
+	option<Ast_Type> type = check_expr(cc, &context, _switch->expr);
+
 	if (type)
 	{
 		Type_Kind kind = type_kind(cc, type.value());
@@ -653,14 +665,14 @@ void check_switch(Checker_Context* cc, Ast_Switch* _switch)
 		return;
 	}
 
-	Type_Context type_context = { type.value(), true};
+	Type_Context case_context = type_context_make(type.value(), true);
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
 		//@Notice type check should be full performed inside the check_expr based on context
 		// rework this later for all check_expr calls.
 		// use top level function for this instead of recursive check_expr
 		// only top level will print errors maybe.
-		option<Ast_Type> case_type = check_expr(cc, &type_context, _case.const_expr);
+		option<Ast_Type> case_type = check_expr(cc, &case_context, _case.const_expr);
 	}
 }
 
@@ -690,8 +702,8 @@ void check_var_decl(Checker_Context* cc, Ast_Var_Decl* var_decl)
 
 		if (var_decl->expr)
 		{
-			Type_Context type_context = { type.value(), false};
-			option<Ast_Type> expr_type = check_expr(cc, &type_context, var_decl->expr.value());
+			Type_Context context = type_context_make(type.value(), false);
+			option<Ast_Type> expr_type = check_expr(cc, &context, var_decl->expr.value());
 
 			if (expr_type)
 			{
@@ -713,7 +725,9 @@ void check_var_decl(Checker_Context* cc, Ast_Var_Decl* var_decl)
 	{
 		// @Errors this might produce "var not found" error in later checks, might be solved by flagging
 		// not adding var to the stack, when inferred type is not valid
-		option<Ast_Type> expr_type = check_expr(cc, {}, var_decl->expr.value());
+		Type_Context context = type_context_make({}, false);
+		option<Ast_Type> expr_type = check_expr(cc, &context, var_decl->expr.value());
+		
 		if (expr_type)
 		{
 			var_decl->type = expr_type.value();
@@ -736,8 +750,9 @@ void check_var_assign(Checker_Context* cc, Ast_Var_Assign* var_assign)
 		return;
 	}
 
-	Type_Context type_context = { var_type.value(), false};
-	option<Ast_Type> expr_type = check_expr(cc, &type_context, var_assign->expr);
+	Type_Context context = type_context_make(var_type.value(), false);
+	option<Ast_Type> expr_type = check_expr(cc, &context, var_assign->expr);
+
 	if (expr_type)
 	{
 		type_implicit_cast(cc, &expr_type.value(), var_type.value());
@@ -872,8 +887,10 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 	}
 	case Ast_Type_Tag::Array:
 	{
-		//@Notice arrays work in progress. Requing size to fit into u64
-		Type_Context context = Type_Context { type_from_basic(BasicType::U32), true };
+		//@Notice arrays work in progress. Requing size to fit into u32
+		//@Todo also must be > 0
+		//@Notice no type check is made, will be made inside top level type
+		Type_Context context = type_context_make(type_from_basic(BasicType::U32), true);
 		option<Ast_Type> expr_type = check_expr(cc, &context, type->as_array->const_expr);
 
 		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
@@ -924,9 +941,9 @@ option<Ast_Type> check_type_signature(Checker_Context* cc, Ast_Type* type)
 }
 
 //@Not used, unsure if top level thing like this is needed
-option<Ast_Type> check_expr_type(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
+option<Ast_Type> check_expr_type(Checker_Context* cc, Type_Context* context, Ast_Expr* expr)
 {
-	option<Ast_Type> type = check_expr(cc, context, expr);
+	/*option<Ast_Type> type = check_expr(cc, context, expr);
 	if (!type) return {};
 	if (!context) return type;
 	if (!match_type(cc, type.value(), context.value()->expect_type))
@@ -936,11 +953,11 @@ option<Ast_Type> check_expr_type(Checker_Context* cc, option<Type_Context*> cont
 		printf("Expected: "); debug_print_type(context.value()->expect_type); printf("\n");
 		printf("Got:      "); debug_print_type(type.value()); printf("\n\n");
 		return {};
-	}
-	return type;
+	} 
+	return type;*/
 }
 
-option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Expr* expr)
+option<Ast_Type> check_expr(Checker_Context* cc, Type_Context* context, Ast_Expr* expr)
 {
 	if (check_is_const_expr(expr))
 	{
@@ -949,7 +966,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 
 	if (!check_is_const_foldable_expr(expr))
 	{
-		if (context && context.value()->expect_constant)
+		if (expr->is_const == false && context->expect_constant)
 		{
 			err_set;
 			printf("Expected constant expression. Got: \n");
@@ -1067,7 +1084,7 @@ option<Ast_Type> check_expr(Checker_Context* cc, option<Type_Context*> context, 
 	}
 }
 
-option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, Ast_Term* term)
+option<Ast_Type> check_term(Checker_Context* cc, Type_Context* context, Ast_Term* term)
 {
 	switch (term->tag)
 	{
@@ -1149,10 +1166,9 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 			struct_id = struct_meta.value().struct_id;
 		}
 
-		if (context)
+		if (context->expect_type)
 		{
-			Type_Context* t_context = context.value();
-			Ast_Type expect_type = t_context->expect_type;
+			Ast_Type expect_type = context->expect_type.value();
 			if (type_kind(cc, expect_type) != Type_Kind::Struct)
 			{
 				err_set; printf("Cannot use struct initializer in non struct type context\n");
@@ -1204,18 +1220,16 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 			if (i < field_count)
 			{
 				Ast_Type param_type = struct_decl->fields[i].type;
-				Type_Context type_context = { param_type, false };
+				Type_Context type_context = type_context_make(param_type, context->expect_constant);
 				option<Ast_Type> expr_type = check_expr(cc, &type_context, struct_init->input_exprs[i]);
-				if (expr_type)
+				
+				if (expr_type && !match_type(cc, param_type, expr_type.value()))
 				{
-					if (!match_type(cc, param_type, expr_type.value()))
-					{
-						err_set;
-						printf("Type mismatch in struct initializer input argument with id: %lu\n", i);
-						printf("Expected: "); debug_print_type(param_type); printf("\n");
-						printf("Got:      "); debug_print_type(expr_type.value()); printf("\n");
-						debug_print_expr(struct_init->input_exprs[i], 0); printf("\n");
-					}
+					err_set;
+					printf("Type mismatch in struct initializer input argument with id: %lu\n", i);
+					printf("Expected: "); debug_print_type(param_type); printf("\n");
+					printf("Got:      "); debug_print_type(expr_type.value()); printf("\n");
+					debug_print_expr(struct_init->input_exprs[i], 0); printf("\n");
 				}
 			}
 		}
@@ -1245,10 +1259,9 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 			}
 		}
 
-		if (context)
+		if (context->expect_type)
 		{
-			Type_Context* t_context = context.value();
-			Ast_Type expect_type = t_context->expect_type;
+			Ast_Type expect_type = context->expect_type.value();
 			if (type_kind(cc, expect_type) != Type_Kind::Array)
 			{
 				err_set; printf("Cannot use array initializer in non array type context\n");
@@ -1290,18 +1303,16 @@ option<Ast_Type> check_term(Checker_Context* cc, option<Type_Context*> context, 
 			if (i < expected_count)
 			{
 				Ast_Type element_type = type.value().as_array->element_type;
-				Type_Context type_context = { element_type, false };
+				Type_Context type_context = type_context_make(element_type, context->expect_constant);
 				option<Ast_Type> expr_type = check_expr(cc, &type_context, array_init->input_exprs[i]);
-				if (expr_type)
+
+				if (expr_type && !match_type(cc, element_type, expr_type.value()))
 				{
-					if (!match_type(cc, element_type, expr_type.value()))
-					{
-						err_set;
-						printf("Type mismatch in array initializer input argument with id: %lu\n", i);
-						printf("Expected: "); debug_print_type(element_type); printf("\n");
-						printf("Got:      "); debug_print_type(expr_type.value()); printf("\n");
-						debug_print_expr(array_init->input_exprs[i], 0); printf("\n");
-					}
+					err_set;
+					printf("Type mismatch in array initializer input argument with id: %lu\n", i);
+					printf("Expected: "); debug_print_type(element_type); printf("\n");
+					printf("Got:      "); debug_print_type(expr_type.value()); printf("\n");
+					debug_print_expr(array_init->input_exprs[i], 0); printf("\n");
 				}
 			}
 		}
@@ -1410,9 +1421,9 @@ option<Ast_Type> check_access(Checker_Context* cc, Ast_Type type, option<Ast_Acc
 			return {};
 		}
 
-		//@Notice improve / change type checks to u64 context
-		//limit to u32 to fit llvm api
-		option<Ast_Type> expr_type = check_expr(cc, {}, array_access->index_expr);
+		Type_Context context = type_context_make(type_from_basic(BasicType::U32), false);
+		option<Ast_Type> expr_type = check_expr(cc, &context, array_access->index_expr);
+
 		if (expr_type)
 		{
 			Type_Kind expr_kind = type_kind(cc, expr_type.value());
@@ -1480,24 +1491,22 @@ option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 		if (i < param_count)
 		{
 			Ast_Type param_type = proc_decl->input_params[i].type;
-			Type_Context type_context = { param_type, false };
-			option<Ast_Type> expr_type = check_expr(cc, &type_context, proc_call->input_exprs[i]);
-			if (expr_type)
+			Type_Context context = type_context_make(param_type, false);
+			option<Ast_Type> expr_type = check_expr(cc, &context, proc_call->input_exprs[i]);
+			
+			if (expr_type && !match_type(cc, param_type, expr_type.value()))
 			{
-				if (!match_type(cc, param_type, expr_type.value()))
-				{
-					err_set;
-					printf("Type mismatch in procedure call input argument with id: %lu\n", i);
-					debug_print_ident(proc_call->ident);
-					printf("Expected: "); debug_print_type(param_type); printf("\n");
-					printf("Got:      "); debug_print_type(expr_type.value()); printf("\n\n");
-				}
+				err_set;
+				printf("Type mismatch in procedure call input argument with id: %lu\n", i);
+				debug_print_ident(proc_call->ident);
+				printf("Expected: "); debug_print_type(param_type); printf("\n");
+				printf("Got:      "); debug_print_type(expr_type.value()); printf("\n\n");
 			}
 		}
 		else if (is_variadic)
 		{
-			//on variadic inputs no context is available
-			option<Ast_Type> expr_type = check_expr(cc, {}, proc_call->input_exprs[i]);
+			Type_Context context = type_context_make({}, false);
+			option<Ast_Type> expr_type = check_expr(cc, &context, proc_call->input_exprs[i]);
 		}
 	}
 
@@ -1537,7 +1546,7 @@ option<Ast_Type> check_proc_call(Checker_Context* cc, Ast_Proc_Call* proc_call, 
 	}
 }
 
-option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Unary_Expr* unary_expr)
+option<Ast_Type> check_unary_expr(Checker_Context* cc, Type_Context* context, Ast_Unary_Expr* unary_expr)
 {
 	option<Ast_Type> rhs_result = check_expr(cc, context, unary_expr->right);
 	if (!rhs_result) return {};
@@ -1579,7 +1588,7 @@ option<Ast_Type> check_unary_expr(Checker_Context* cc, option<Type_Context*> con
 	}
 }
 
-option<Ast_Type> check_binary_expr(Checker_Context* cc, option<Type_Context*> context, Ast_Binary_Expr* binary_expr)
+option<Ast_Type> check_binary_expr(Checker_Context* cc, Type_Context* context, Ast_Binary_Expr* binary_expr)
 {
 	option<Ast_Type> lhs_result = check_expr(cc, context, binary_expr->left);
 	if (!lhs_result) return {};

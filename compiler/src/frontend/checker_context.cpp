@@ -49,3 +49,8 @@ option<Ast_Type> checker_context_block_find_var_type(Checker_Context* cc, Ast_Id
 	}
 	return {};
 }
+
+Type_Context type_context_make(option<Ast_Type> expect_type, bool expect_constant)
+{
+	return Type_Context { expect_type, expect_constant };
+}
