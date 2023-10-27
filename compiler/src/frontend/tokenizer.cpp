@@ -357,6 +357,33 @@ void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 			consume();
 			while (peek().has_value() && peek().value() != '\n') consume();
 		}
+		else if (c == '/' && peek_next(1).has_value() && peek_next(1).value() == '*')
+		{
+			consume();
+			consume();
+			u32 depth = 1;
+			while (peek().has_value() && depth != 0)
+			{
+				u8 mc = peek().value();
+				if (mc == '\n')
+				{
+					tokenizer->line_id += 1;
+					tokenizer->line_cursor = tokenizer->cursor;
+				}
+				consume();
+				
+				if (mc == '/' && peek().has_value() && peek().value() == '*')
+				{
+					consume();
+					depth += 1;
+				}
+				else if (mc == '*' && peek().has_value() && peek().value() == '/')
+				{
+					consume();
+					depth -= 1;
+				}
+			}
+		}
 		else break;
 	}
 }
