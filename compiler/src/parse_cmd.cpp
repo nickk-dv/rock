@@ -1,7 +1,7 @@
 #include "parse_cmd.h"
 
 #include "frontend/parser.h"
-#include "frontend/checker.h"
+#include "frontend/check.h"
 #include "middlend/llvm_ir_builder.h"
 #include "backend/llvm_backend.h"
 
