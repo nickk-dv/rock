@@ -82,6 +82,9 @@ struct Ast_Program
 struct Ast_Struct_IR_Info
 {
 	Ast_Struct_Decl* struct_decl;
+	bool is_sized = false;
+	u32 struct_size;
+	u32 max_align;
 	LLVMTypeRef struct_type;
 	LLVMValueRef default_value;
 };

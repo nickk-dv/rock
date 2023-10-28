@@ -263,6 +263,10 @@ void check_perform_struct_sizing(Check_Context* cc)
 			}
 			printf("\n\n");
 		}
+		else
+		{
+			check_struct_size(&cc->program->structs[i]);
+		}
 	}
 
 	//@Todo sizing on valid structs
@@ -293,12 +297,134 @@ bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u3
 option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type)
 {
 	if (type.pointer_level > 0) return {};
-	
+
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Array: return check_extract_struct_value_type(type.as_array->element_type);
 	case Ast_Type_Tag::Struct: return type.as_struct;
 	default: return {};
+	}
+}
+
+void check_struct_size(Ast_Struct_IR_Info* struct_info)
+{
+	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
+	u32 field_count = struct_decl->fields.size();
+	
+	u32 total_size = 0;
+	u32 max_align = 0;
+
+	for (u32 i = 0; i < field_count; i += 1)
+	{
+		u32 field_size = check_get_type_size(struct_decl->fields[i].type);
+		total_size += field_size;
+
+		if (i + 1 < field_count)
+		{
+			u32 align = check_get_type_align(struct_decl->fields[i + 1].type);
+			if (align > field_size)
+			{
+				u32 padding = align - field_size;
+				total_size += padding;
+			}
+			if (align > max_align) max_align = align;
+		}
+		else
+		{
+			u32 align = max_align;
+			if (align > field_size)
+			{
+				u32 padding = align - field_size;
+				total_size += padding;
+			}
+		}
+	}
+
+	struct_info->is_sized = true;
+	struct_info->struct_size = total_size;
+	struct_info->max_align = max_align;
+
+	printf("size: %lu struct: ", total_size);
+	debug_print_ident(struct_info->struct_decl->ident, true, false);
+}
+
+u32 check_get_basic_type_size(BasicType basic_type)
+{
+	switch (basic_type)
+	{
+	case BasicType::I8: return 1;
+	case BasicType::U8: return 1;
+	case BasicType::I16: return 2;
+	case BasicType::U16: return 2;
+	case BasicType::I32: return 4;
+	case BasicType::U32: return 4;
+	case BasicType::I64: return 8;
+	case BasicType::U64: return 8;
+	case BasicType::BOOL: return 1;
+	case BasicType::F32: return 4;
+	case BasicType::F64: return 8;
+	case BasicType::STRING: return 0; //@Not implemented
+	}
+}
+
+u32 check_get_basic_type_align(BasicType basic_type)
+{
+	switch (basic_type)
+	{
+	case BasicType::I8: return 1;
+	case BasicType::U8: return 1;
+	case BasicType::I16: return 2;
+	case BasicType::U16: return 2;
+	case BasicType::I32: return 4;
+	case BasicType::U32: return 4;
+	case BasicType::I64: return 8;
+	case BasicType::U64: return 8;
+	case BasicType::BOOL: return 1;
+	case BasicType::F32: return 4;
+	case BasicType::F64: return 8;
+	case BasicType::STRING: return 0; //@Not implemented
+	}
+}
+
+u32 check_get_type_size(Ast_Type type)
+{
+	if (type.pointer_level > 0) return 8; //@Assume 64bit
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Basic: return check_get_basic_type_size(type.as_basic);
+	case Ast_Type_Tag::Array:
+	{
+		printf("array type size not implemented\n");
+		return 0;
+	}
+	case Ast_Type_Tag::Struct:
+	{
+		printf("struct type size not implemented\n");
+		return 0;
+	}
+	case Ast_Type_Tag::Enum: return check_get_basic_type_size(type.as_enum.enum_decl->basic_type);
+	}
+}
+
+u32 check_get_type_align(Ast_Type type)
+{
+	if (type.pointer_level > 0) return 8; //@Assume 64bit
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Basic: return check_get_basic_type_align(type.as_basic);
+	case Ast_Type_Tag::Array:
+	{
+		printf("array type allign not implemented\n");
+		return 0;
+	}
+	case Ast_Type_Tag::Struct:
+	{
+		printf("struct type allign not implemented\n");
+		return 0;
+	}
+	case Ast_Type_Tag::Enum: return check_get_basic_type_align(type.as_enum.enum_decl->basic_type);
 	}
 }
 
