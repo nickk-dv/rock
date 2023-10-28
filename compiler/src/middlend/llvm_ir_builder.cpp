@@ -334,6 +334,7 @@ Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_in
 Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 {
 	Type type = type_from_ast_type(bc, ast_type);
+	if (ast_type.pointer_level > 0) return LLVMConstNull(type);
 
 	switch (ast_type.tag)
 	{
@@ -717,7 +718,7 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 	{
 		Ast_Array_Type* array = type.as_array;
 		Type element_type = type_from_ast_type(bc, array->element_type);
-		u32 size = (u32)array->const_expr->as_const_expr.as_u64;
+		u32 size = (u32)array->const_expr->as_const_expr.as_u64; //@Notice what if its positive i64
 		return LLVMArrayType(element_type, size);
 	}
 	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;

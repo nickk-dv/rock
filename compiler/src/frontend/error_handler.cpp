@@ -31,14 +31,15 @@ ErrorMessage error_get_message(Error error)
 	case Error::MAIN_PROC_NO_RETURN_TYPE:    return { "Main procedure must have i32 return type", "Main declaration should be: main :: () :: i32" };
 	case Error::MAIN_PROC_WRONG_RETURN_TYPE: return { "Main procedure must have i32 return type", "Main declaration should be: main :: () :: i32" };
 	
+	case Error::SYMBOL_ALREADY_DECLARED:     return { "Symbol is already declared", "" };
 	case Error::IMPORT_PATH_NOT_FOUND:       return { "Import path is not found", "" };
 	case Error::IMPORT_MODULE_NOT_FOUND:     return { "Import module is not found", "" };
 	case Error::USE_SYMBOL_NOT_FOUND:        return { "Symbol is not found in the imported module", "" };
-	case Error::SYMBOL_ALREADY_DECLARED:     return { "Symbol is already declared", "" };
 	case Error::STRUCT_DUPLICATE_FIELD:      return { "Struct has duplicate field identifiers", "" };
 	case Error::STRUCT_INFINITE_SIZE:        return { "Struct has infinite size", "Struct cannot store intance of itself. Use pointers for indirection" };
-	case Error::ENUM_DUPLICATE_VARIANT:      return { "Enum has duplicate variant identifiers", "" };
+	case Error::ENUM_ZERO_VARIANTS:          return { "Enum must have at least one variant", "" };
 	case Error::ENUM_NON_INTEGER_TYPE:       return { "Enum can only have integer basic type", "" };
+	case Error::ENUM_DUPLICATE_VARIANT:      return { "Enum has duplicate variant identifiers", "" };
 	case Error::PROC_DUPLICATE_PARAM:        return { "Procedure has duplicate input parameters", "" };
 
 	case Error::CFG_NOT_ALL_PATHS_RETURN:    return { "Not all control flow paths return a value", "" };
@@ -46,8 +47,8 @@ ErrorMessage error_get_message(Error error)
 	case Error::CFG_NESTED_DEFER:            return { "Defer cannot be nested", "" };
 	case Error::CFG_RETURN_INSIDE_DEFER:     return { "Defer cannot contain 'return' statement", "" };
 	case Error::CFG_BREAK_INSIDE_DEFER:      return { "Defer cannot contain 'break' statement", "Break can only be used in loops declared inside defer block" };
-	case Error::CFG_BREAK_OUTSIDE_LOOP:      return { "Break outside a loop", "" };
 	case Error::CFG_CONTINUE_INSIDE_DEFER:   return { "Defer cannot contain 'continue' statement", "Continue can only be used in loops declared inside defer block" };
+	case Error::CFG_BREAK_OUTSIDE_LOOP:      return { "Break outside a loop", "" };
 	case Error::CFG_CONTINUE_OUTSIDE_LOOP:   return { "Continue outside a loop", "" };
 	}
 }

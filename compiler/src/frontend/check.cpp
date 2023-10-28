@@ -37,9 +37,9 @@ bool check_program(Ast_Program* program)
 	}
 	if (err.has_err || err_get_status()) return false;
 
-	//3. checks struct circular storage
+	//3. checks struct self storage
 	check_context_init(&cc, NULL, program, &err);
-	check_program(&cc);
+	check_perform_struct_sizing(&cc);
 	if (err.has_err || err_get_status()) return false;
 
 	//4. checks proc blocks
@@ -130,9 +130,6 @@ void check_decl_uniqueness(Check_Context* cc)
 	}
 }
 
-//@Todo check circular enum dependency when enum constants are supported
-//@Todo check enum constant value overlap
-//@Todo const bounds check should be done inside check_expr top level call within a context 
 void check_decls(Check_Context* cc)
 {
 	Ast* ast = cc->ast;
@@ -182,8 +179,7 @@ void check_decls(Check_Context* cc)
 		if (!enum_decl->variants.empty()) name_set.zero_reset();
 		else
 		{
-			err_set;
-			error("Enum must have at least 1 variant", enum_decl->ident);
+			err_report(Error::ENUM_ZERO_VARIANTS);
 			continue;
 		}
 
@@ -240,88 +236,69 @@ void check_main_proc(Check_Context* cc)
 	if (proc_decl->is_external) err_report(Error::MAIN_PROC_EXTERNAL);
 	if (proc_decl->is_variadic) err_report(Error::MAIN_PROC_VARIADIC);
 	if (proc_decl->input_params.size() != 0) err_report(Error::MAIN_NOT_ZERO_PARAMS);
-	if (!proc_decl->return_type) err_report(Error::MAIN_PROC_NO_RETURN_TYPE);
-	else if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE);
+	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); return; }
+	if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE);
 }
 
-void check_program(Check_Context* cc)
+void check_perform_struct_sizing(Check_Context* cc)
 {
-	Ast_Program* program = cc->program;
+	std::vector<u32> visited_ids;
+	std::vector<Ast_Ident> field_chain;
 
-	struct Visit_State
+	for (u32 i = 0; i < cc->program->structs.size(); i += 1)
 	{
-		Ast_Struct_Decl* struct_decl;
-		u32 struct_id;
-		u32 field_id;
-		u32 field_count;
-	};
-
-	for (u32 i = 0; i < program->structs.size(); i += 1)
-	{
-		u32 search_target = i;
-		bool found = false;
-		std::vector<Visit_State> visit_stack;
-		std::vector<u32> visited;
-
-		Ast_Struct_IR_Info meta = program->structs[search_target];
-		Visit_State visit = Visit_State { meta.struct_decl, search_target, 0, (u32)meta.struct_decl->fields.size() };
-		visit_stack.emplace_back(visit);
-		visited.emplace_back(visit.struct_id);
-
-		while (!visit_stack.empty() && !found)
-		{
-			bool new_visit = false;
-
-			u32 curr_id = (u32)visit_stack.size() - 1;
-			Visit_State& state = visit_stack[curr_id];
-			while (state.field_id < state.field_count)
-			{
-				Ast_Type type = state.struct_decl->fields[state.field_id].type;
-				if (type_kind(cc, type) == Type_Kind::Struct)
-				{
-					u32 struct_id = type.as_struct.struct_id;
-					if (struct_id == search_target)
-					{ 
-						found = true; 
-						break; 
-					}
-
-					bool already_visited = std::find(visited.begin(), visited.end(), struct_id) != visited.end();
-					if (!already_visited)
-					{
-						Ast_Struct_IR_Info visit_meta = program->structs[struct_id];
-						Visit_State visit2 = { visit_meta.struct_decl, struct_id, 0, (u32)visit_meta.struct_decl->fields.size() };
-						visit_stack.push_back(visit2);
-						visited.push_back(struct_id);
-						new_visit = true;
-						break;
-					}
-				}
-				state.field_id += 1;
-			}
-
-			if (!new_visit)
-			{
-				if (found) break;
-				else visit_stack.pop_back();
-			}
-		}
-
-		if (found)
+		visited_ids.clear();
+		field_chain.clear();
+		Ast_Struct_Decl* in_struct = cc->program->structs[i].struct_decl;
+		bool is_infinite = check_struct_self_storage(cc, in_struct, i, visited_ids, field_chain);
+		if (is_infinite)
 		{
 			err_report(Error::STRUCT_INFINITE_SIZE);
-			Visit_State err_visit = visit_stack[0];
-			debug_print_ident(err_visit.struct_decl->ident, true, true);
 			printf("Field access path: ");
-			debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
-			for (u32 k = 1; k < visit_stack.size(); k += 1)
+			debug_print_ident(field_chain[field_chain.size() - 1], false, false);
+			for (int k = (int)field_chain.size() - 2; k >= 0; k -= 1)
 			{
 				printf(".");
-				err_visit = visit_stack[k];
-				debug_print_ident(err_visit.struct_decl->fields[err_visit.field_id].ident, false, false);
+				debug_print_ident(field_chain[k], false, false);
 			}
 			printf("\n\n");
 		}
+	}
+
+	//@Todo sizing on valid structs
+	//@Notice struct sizing must be done in earlier stages
+	//to allow for correct const folding and range checking on sizeof expressions
+}
+
+bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u32 struct_id, std::vector<u32>& visited_ids, std::vector<Ast_Ident>& field_chain)
+{
+	for (Ast_Struct_Field& field : in_struct->fields)
+	{
+		option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(field.type);
+		if (!struct_type) continue;
+		if (struct_type.value().struct_id == struct_id) { field_chain.emplace_back(field.ident); return true; }
+		
+		bool already_visited = false;
+		for (u32 id : visited_ids) if (struct_type.value().struct_id == id) { already_visited = true; break; }
+		if (already_visited) continue;
+		
+		visited_ids.emplace_back(struct_type.value().struct_id);
+		bool is_infinite = check_struct_self_storage(cc, struct_type.value().struct_decl, struct_id, visited_ids, field_chain);
+		if (is_infinite) { field_chain.emplace_back(field.ident); return true; }
+	}
+
+	return false;
+}
+
+option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type)
+{
+	if (type.pointer_level > 0) return {};
+	
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Array: return check_extract_struct_value_type(type.as_array->element_type);
+	case Ast_Type_Tag::Struct: return type.as_struct;
+	default: return {};
 	}
 }
 
