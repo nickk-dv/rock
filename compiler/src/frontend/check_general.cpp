@@ -53,20 +53,3 @@ option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident)
 	}
 	return {};
 }
-
-void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)
-{
-	printf("%s:\n", message);
-	printf("%s: ", labelA);
-	debug_print_ident(identA, true, true);
-	printf("%s: ", labelB);
-	debug_print_ident(identB, true, true);
-	printf("\n");
-}
-
-void error(const char* message, Ast_Ident ident)
-{
-	printf("%s:\n", message);
-	debug_print_ident(ident, true, true);
-	printf("\n");
-}

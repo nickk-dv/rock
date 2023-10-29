@@ -182,7 +182,9 @@ enum class Ast_Type_Tag
 
 struct Ast_Type
 {
+	Span span;
 	Ast_Type_Tag tag;
+	u32 pointer_level = 0;
 
 	union
 	{
@@ -193,8 +195,6 @@ struct Ast_Type
 		Ast_Struct_Type as_struct;
 		Ast_Enum_Type as_enum;
 	};
-
-	u32 pointer_level = 0;
 };
 
 struct Ast_Custom_Type
@@ -289,7 +289,6 @@ enum class Ast_Statement_Tag
 
 struct Ast_Statement
 {
-	Span span;
 	Ast_Statement_Tag tag;
 
 	union
@@ -310,7 +309,7 @@ struct Ast_Statement
 
 struct Ast_If
 {
-	Token token;
+	Span span;
 	Ast_Expr* condition_expr;
 	Ast_Block* block;
 	option<Ast_Else*> _else;
@@ -323,7 +322,7 @@ enum class Ast_Else_Tag
 
 struct Ast_Else
 {
-	Token token;
+	Span span;
 	Ast_Else_Tag tag;
 
 	union
@@ -335,7 +334,7 @@ struct Ast_Else
 
 struct Ast_For
 {
-	Token token;
+	Span span;
 	option<Ast_Var_Decl*> var_decl;
 	option<Ast_Expr*> condition_expr;
 	option<Ast_Var_Assign*> var_assign;
@@ -344,24 +343,24 @@ struct Ast_For
 
 struct Ast_Defer
 {
-	Token token;
+	Span span;
 	Ast_Block* block;
 };
 
 struct Ast_Break
 {
-	Token token;
+	Span span;
 };
 
 struct Ast_Return
 {
-	Token token;
+	Span span;
 	option<Ast_Expr*> expr;
 };
 
 struct Ast_Switch
 {
-	Token token;
+	Span span;
 	Ast_Expr* expr;
 	std::vector<Ast_Switch_Case> cases;
 };
@@ -376,11 +375,12 @@ struct Ast_Switch_Case
 
 struct Ast_Continue
 {
-	Token token;
+	Span span;
 };
 
 struct Ast_Var_Decl
 {
+	Span span;
 	Ast_Ident ident;
 	option<Ast_Type> type;
 	option<Ast_Expr*> expr;
@@ -388,6 +388,7 @@ struct Ast_Var_Decl
 
 struct Ast_Var_Assign
 {
+	Span span;
 	Ast_Var* var;
 	AssignOp op;
 	Ast_Expr* expr;
@@ -395,6 +396,7 @@ struct Ast_Var_Assign
 
 struct Ast_Proc_Call
 {
+	Span span;
 	option<Ast_Ident> import;
 	Ast_Ident ident;
 	std::vector<Ast_Expr*> input_exprs;

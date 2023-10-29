@@ -11,6 +11,9 @@
 #define error(message) parse_error(parser, message, 0);
 #define error_next(message, offset) parse_error(parser, message, offset);
 #define error_token(message, token) parse_error_token(parser, message, token);
+#define span_start() u32 start = get_span_start(parser)
+#define span_end(node) node->span.start = start; node->span.end = get_span_end(parser)
+#define span_end_dot(node) node.span.start = start; node.span.end = get_span_end(parser)
 
 namespace fs = std::filesystem;
 
@@ -145,6 +148,8 @@ Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 option<Ast_Type> parse_type(Parser* parser)
 {
 	Ast_Type type = {};
+	span_start();
+
 	Token token = peek();
 
 	while (token.type == TokenType::TIMES)
@@ -186,6 +191,7 @@ option<Ast_Type> parse_type(Parser* parser)
 	}
 	}
 
+	span_end_dot(type);
 	return type;
 }
 
@@ -410,7 +416,6 @@ Ast_Block* parse_small_block(Parser* parser)
 
 Ast_Statement* parse_statement(Parser* parser)
 {
-	u32 start = get_span_start(parser);
 	Ast_Statement* statement = arena_alloc<Ast_Statement>(&parser->arena);
 	Token token = peek();
 
@@ -499,15 +504,14 @@ Ast_Statement* parse_statement(Parser* parser)
 	}
 	}
 	
-	statement->span.start = start;
-	statement->span.end = get_span_end(parser);
 	return statement;
 }
 
 Ast_If* parse_if(Parser* parser)
 {
 	Ast_If* _if = arena_alloc<Ast_If>(&parser->arena);
-	_if->token = consume_get();
+	span_start();
+	consume();
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
@@ -525,23 +529,26 @@ Ast_If* parse_if(Parser* parser)
 		_if->_else = _else;
 	}
 
+	span_end(_if);
 	return _if;
 }
 
 Ast_Else* parse_else(Parser* parser)
 {
 	Ast_Else* _else = arena_alloc<Ast_Else>(&parser->arena);
-	_else->token = consume_get();
-	Token next = peek();
+	span_start();
+	consume();
+	
+	Token token = peek();
 
-	if (next.type == TokenType::KEYWORD_IF)
+	if (token.type == TokenType::KEYWORD_IF)
 	{
 		Ast_If* _if = parse_if(parser);
 		if (!_if) return NULL;
 		_else->tag = Ast_Else_Tag::If;
 		_else->as_if = _if;
 	}
-	else if (next.type == TokenType::BLOCK_START)
+	else if (token.type == TokenType::BLOCK_START)
 	{
 		Ast_Block* block = parse_block(parser);
 		if (!block) return NULL;
@@ -550,13 +557,16 @@ Ast_Else* parse_else(Parser* parser)
 	}
 	else { error("Expected 'if' or code block '{ ... }'"); return NULL; }
 
+	span_end(_else);
 	return _else;
 }
 
 Ast_For* parse_for(Parser* parser)
 {
 	Ast_For* _for = arena_alloc<Ast_For>(&parser->arena);
-	_for->token = consume_get();
+	span_start();
+	consume();
+	
 	Token curr = peek();
 	Token next = peek_next(1);
 
@@ -566,6 +576,7 @@ Ast_For* parse_for(Parser* parser)
 		if (!block) return NULL;
 		_for->block = block;
 		
+		span_end(_for);
 		return _for;
 	}
 
@@ -591,47 +602,58 @@ Ast_For* parse_for(Parser* parser)
 	if (!block) return NULL;
 	_for->block = block;
 
+	span_end(_for);
 	return _for;
 }
 
 Ast_Defer* parse_defer(Parser* parser)
 {
 	Ast_Defer* defer = arena_alloc<Ast_Defer>(&parser->arena);
-	defer->token = consume_get();
+	span_start();
+	consume();
 
 	Ast_Block* block = parse_small_block(parser);
 	if (!block) return NULL;
 	defer->block = block;
 
+	span_end(defer);
 	return defer;
 }
 
 Ast_Break* parse_break(Parser* parser)
 {
 	Ast_Break* _break = arena_alloc<Ast_Break>(&parser->arena);
-	_break->token = consume_get();
+	span_start();
+	consume();
 
 	if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after 'break'"); return NULL; }
+	
+	span_end(_break);
 	return _break;
 }
 
 Ast_Return* parse_return(Parser* parser)
 {
 	Ast_Return* _return = arena_alloc<Ast_Return>(&parser->arena);
-	_return->token = consume_get();
+	span_start();
+	consume();
 
-	if (try_consume(TokenType::SEMICOLON)) return _return;
+	if (!try_consume(TokenType::SEMICOLON))
+	{
+		Ast_Expr* expr = parse_expr(parser);
+		if (!expr) return NULL;
+		_return->expr = expr;
+	}
 
-	Ast_Expr* expr = parse_expr(parser);
-	if (!expr) return NULL;
-	_return->expr = expr;
+	span_end(_return);
 	return _return;
 }
 
 Ast_Switch* parse_switch(Parser* parser)
 {
 	Ast_Switch* _switch = arena_alloc<Ast_Switch>(&parser->arena);
-	_switch->token = consume_get();
+	span_start();
+	consume();
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
@@ -641,7 +663,7 @@ Ast_Switch* parse_switch(Parser* parser)
 	
 	while (true)
 	{
-		if (try_consume(TokenType::BLOCK_END)) return _switch;
+		if (try_consume(TokenType::BLOCK_END)) break;
 
 		Ast_Switch_Case switch_case = {};
 		
@@ -658,20 +680,27 @@ Ast_Switch* parse_switch(Parser* parser)
 
 		_switch->cases.emplace_back(switch_case);
 	}
+
+	span_end(_switch);
+	return _switch;
 }
 
 Ast_Continue* parse_continue(Parser* parser)
 {
 	Ast_Continue* _continue = arena_alloc<Ast_Continue>(&parser->arena);
-	_continue->token = consume_get();
+	span_start();
+	consume();
 
 	if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after 'continue'"); return NULL; }
+	
+	span_end(_continue);
 	return _continue;
 }
 
 Ast_Var_Decl* parse_var_decl(Parser* parser)
 {
 	Ast_Var_Decl* var_decl = arena_alloc<Ast_Var_Decl>(&parser->arena);
+	span_start();
 	var_decl->ident = token_to_ident(consume_get());
 	consume();
 
@@ -683,19 +712,26 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 		if (!type) return NULL;
 		var_decl->type = type.value();
 
-		if (try_consume(TokenType::SEMICOLON)) return var_decl;
+		if (try_consume(TokenType::SEMICOLON)) 
+		{
+			span_end(var_decl);
+			return var_decl;
+		}
 		if (!try_consume(TokenType::ASSIGN)) { error("Expected '=' or ';' in a variable declaration"); return NULL; }
 	}
 
 	Ast_Expr* expr = parse_expr(parser);
 	if (!expr) return NULL;
 	var_decl->expr = expr;
+
+	span_end(var_decl);
 	return var_decl;
 }
 
 Ast_Var_Assign* parse_var_assign(Parser* parser)
 {
 	Ast_Var_Assign* var_assign = arena_alloc<Ast_Var_Assign>(&parser->arena);
+	span_start();
 
 	Ast_Var* var = parse_var(parser);
 	if (!var) return NULL;
@@ -710,12 +746,16 @@ Ast_Var_Assign* parse_var_assign(Parser* parser)
 	Ast_Expr* expr = parse_expr(parser);
 	if (!expr) return NULL;
 	var_assign->expr = expr;
+
+	span_end(var_assign);
 	return var_assign;
 }
 
 Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 {
 	Ast_Proc_Call* proc_call = arena_alloc<Ast_Proc_Call>(&parser->arena);
+	span_start();
+
 	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
 	proc_call->ident = token_to_ident(consume_get());
 
@@ -740,6 +780,7 @@ Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 		proc_call->access = access;
 	}
 
+	span_end(proc_call);
 	return proc_call;
 }
 
@@ -753,7 +794,7 @@ Ast_Expr* parse_expr(Parser* parser)
 
 Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 {
-	u32 start = get_span_start(parser);
+	span_start();
 	Ast_Expr* expr_lhs = parse_primary_expr(parser);
 	if (!expr_lhs) return NULL;
 
@@ -784,8 +825,7 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 		expr_lhs->as_binary_expr = bin_expr;
 	}
 
-	expr_lhs->span.start = start;
-	expr_lhs->span.end = get_span_end(parser);
+	span_end(expr_lhs);
 	return expr_lhs;
 }
 

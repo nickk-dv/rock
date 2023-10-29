@@ -25,11 +25,12 @@ Type_Kind type_kind(Check_Context* cc, Ast_Type type)
 	case Ast_Type_Tag::Enum: return Type_Kind::Enum;
 	default:
 	{
-		err_set;
-		printf("[COMPILER ERROR] Ast_Type signature wasnt checked, tag cannot be Tag::Custom\n");
-		printf("Hint: submit a bug report if you see this error message\n");
-		debug_print_type(type);
-		printf("\n");
+		//@Err internal
+		//err_set;
+		//printf("[COMPILER ERROR] Ast_Type signature wasnt checked, tag cannot be Tag::Custom\n");
+		//printf("Hint: submit a bug report if you see this error message\n");
+		//debug_print_type(type);
+		//printf("\n");
 		return Type_Kind::Integer;
 	}
 	}
@@ -86,21 +87,18 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 			return *type;
 		}
 
-		err_set;
-		printf("Failed to find the custom type: ");
-		debug_print_custom_type(type->as_custom);
-		printf("\n");
-		debug_print_ident(type->as_custom->ident);
-		printf("\n");
+		err_report(Error::TYPE_CUSTOM_NOT_FOUND);
+		err_context(cc, type->span);
 		return {};
 	}
 	default:
 	{
-		err_set;
-		printf("[COMPILER ERROR] Ast_Type signature cannot be checked multiple times\n");
-		printf("Hint: submit a bug report if you see this error message\n");
-		debug_print_type(*type);
-		printf("\n");
+		//@Err internal
+		//err_set;
+		//printf("[COMPILER ERROR] Ast_Type signature cannot be checked multiple times\n");
+		//printf("Hint: submit a bug report if you see this error message\n");
+		//debug_print_type(*type);
+		//printf("\n");
 		return {};
 	}
 	}
@@ -118,17 +116,10 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 
 	if (!match_type(cc, type.value(), expect_type.value()))
 	{
-		err_set;
-		printf("Type mismatch:\n");
-		printf("Expected: "); debug_print_type(expect_type.value()); printf("\n");
-		printf("Got:      "); debug_print_type(type.value()); printf("\n");
-		//@Temp printing here
-		printf("In Expr: ");
-		for (u32 i = expr->span.start; i <= expr->span.end; i += 1)
-		{
-			printf("%c", cc->ast->source.data[i]);
-		}
-		printf("\n\n");
+		err_report(Error::TYPE_MISMATCH);
+		err_context(cc, expect_type.value().span); //@Err add ability to add messages
+		err_context(cc, type.value().span); //@Span isnt available for generated types, use custom printing for them
+		err_context(cc, expr->span);
 		return {};
 	}
 
@@ -154,9 +145,10 @@ bool match_type(Check_Context* cc, Ast_Type type_a, Ast_Type type_b)
 	}
 	default:
 	{
-		err_set; printf("match_type: Unexpected Ast_Type_Tag. Disambiguate Tag::Custom by using check_type first:\n");
-		debug_print_type(type_a); printf("\n");
-		debug_print_type(type_b); printf("\n");
+		//@Err internal
+		//err_set; printf("match_type: Unexpected Ast_Type_Tag. Disambiguate Tag::Custom by using check_type first:\n");
+		//debug_print_type(type_a); printf("\n");
+		//debug_print_type(type_b); printf("\n");
 		return false;
 	}
 	}
@@ -204,8 +196,8 @@ bool check_is_const_foldable_expr(Ast_Expr* expr)
 		Ast_Term* term = expr->as_term;
 		switch (term->tag)
 		{
-			//@Notice not handling enum as constexpr yet 
-			//case Ast_Term_Tag::Enum: return true;
+		//@Notice not handling enum as constexpr yet 
+		//case Ast_Term_Tag::Enum: return true;
 		case Ast_Term_Tag::Literal: return term->as_literal.token.type != TokenType::STRING_LITERAL;
 		default: return false;
 		}
@@ -268,10 +260,8 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 	{
 		if (expr->is_const == false && context->expect_constant)
 		{
-			err_set;
-			printf("Expected constant expression. Got: \n");
-			debug_print_expr(expr, 0);
-			printf("\n\n");
+			err_report(Error::EXPR_EXPECTED_CONSTANT);
+			err_context(cc, expr->span);
 			return {};
 		}
 
@@ -285,14 +275,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 	else
 	{
 		option<Literal> lit_result = check_const_expr(expr);
-		if (!lit_result)
-		{
-			err_set; //propagate err inside check const expr instead of here
-			printf("Invalid const expr");
-			debug_print_expr(expr, 0);
-			printf("\n\n");
-			return {};
-		}
+		if (!lit_result) return {};
 
 		Ast_Const_Expr const_expr = {};
 		Literal lit = lit_result.value();
@@ -384,6 +367,25 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 	}
 }
 
+//@TODO temp allowing old errors:
+#define err_set (void)0;
+#include "debug_printer.h"
+static void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)
+{
+	printf("%s:\n", message);
+	printf("%s: ", labelA);
+	debug_print_ident(identA, true, true);
+	printf("%s: ", labelB);
+	debug_print_ident(identB, true, true);
+	printf("\n");
+}
+static void error(const char* message, Ast_Ident ident)
+{
+	printf("%s:\n", message);
+	debug_print_ident(ident, true, true);
+	printf("\n");
+}
+
 option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* term)
 {
 	switch (term->tag)
@@ -396,12 +398,21 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		if (target_ast == NULL) return {};
 
 		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, _enum->ident);
-		if (!enum_meta) { err_set; error("Accessing undeclared enum", _enum->ident); return {}; }
+		if (!enum_meta) 
+		{ 
+			err_report(Error::ENUM_UNDECLARED);
+			err_context(cc, _enum->ident.span);
+			return {}; 
+		}
 		Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
 		_enum->enum_id = enum_meta.value().enum_id;
 
 		option<u32> variant_id = find_enum_variant(enum_decl, _enum->variant);
-		if (!variant_id) { err_set; error("Accessing undeclared enum variant", _enum->variant); }
+		if (!variant_id) 
+		{
+			err_report(Error::ENUM_VARIANT_UNDECLARED);
+			err_context(cc, _enum->variant.span);
+		}
 		else _enum->variant_id = variant_id.value();
 
 		Ast_Type type = {};
@@ -430,10 +441,11 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		}
 		default:
 		{
-			err_set;
-			printf("Check_term: Unsupported literal term, only string literals are allowed to be proccesed:\n");
-			debug_print_token(literal.token, true, true);
-			printf("\n");
+			//@Err internal
+			//err_set;
+			//printf("Check_term: Unsupported literal term, only string literals are allowed to be proccesed:\n");
+			//debug_print_token(literal.token, true, true);
+			//printf("\n");
 			return {};
 		}
 		}

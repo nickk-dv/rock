@@ -292,7 +292,7 @@ void check_main_proc(Check_Context* cc)
 	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); /*@Error add context*/ return; }
 	if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
 }
-
+#include "debug_printer.h" //@Temp
 void check_perform_struct_sizing(Check_Context* cc)
 {
 	std::vector<u32> visited_ids;
@@ -482,7 +482,7 @@ void check_ast(Check_Context* cc)
 		if (proc_decl->is_external) continue;
 
 		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
-		// const exprs arent considered
+		//const exprs arent considered
 		Terminator terminator = check_block_cfg(cc, proc_decl->block, false, false);
 		if (terminator != Terminator::Return && proc_decl->return_type) err_report(Error::CFG_NOT_ALL_PATHS_RETURN);
 		
@@ -493,12 +493,12 @@ void check_ast(Check_Context* cc)
 			option<Ast_Global_Info> global_info = find_global(cc->ast, param.ident);
 			if (global_info)
 			{
-				err_set;
-				error("Global variable with same identifier is already in scope", param.ident);
+				err_report(Error::VAR_DECL_ALREADY_IS_GLOBAL);
+				err_context(cc, param.ident.span);
 			}
 			else
 			{
-				//@Notice this is checked in proc_decl but might be usefull for err recovery later
+				//@Notice this is checked in proc_decl but might be usefull for err recovery
 				if (!check_context_block_contains_var(cc, param.ident))
 				check_context_block_add_var(cc, param.ident, param.type);
 			}
@@ -516,7 +516,7 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		if (terminator != Terminator::None)
 		{
 			err_report(Error::CFG_UNREACHABLE_STATEMENT);
-			err_context(cc, statement->span);
+			err_context(cc, statement->as_if->span); //@Hack
 			break;
 		}
 
@@ -536,21 +536,21 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		} break;
 		case Ast_Statement_Tag::Defer:
 		{
-			if (is_defer) { err_report(Error::CFG_NESTED_DEFER); err_context(cc, statement->span); }
+			if (is_defer) { err_report(Error::CFG_NESTED_DEFER); err_context(cc, statement->as_defer->span); }
 			else check_block_cfg(cc, statement->as_defer->block, false, true);
 		} break;
 		case Ast_Statement_Tag::Break:
 		{
 			if (!is_loop)
 			{
-				if (is_defer) { err_report(Error::CFG_BREAK_INSIDE_DEFER); err_context(cc, statement->span); }
-				else { err_report(Error::CFG_BREAK_OUTSIDE_LOOP); err_context(cc, statement->span); }
+				if (is_defer) { err_report(Error::CFG_BREAK_INSIDE_DEFER); err_context(cc, statement->as_break->span); }
+				else { err_report(Error::CFG_BREAK_OUTSIDE_LOOP); err_context(cc, statement->as_break->span); }
 			}
 			else terminator = Terminator::Break;
 		} break;
 		case Ast_Statement_Tag::Return:
 		{
-			if (is_defer) { err_report(Error::CFG_RETURN_INSIDE_DEFER); err_context(cc, statement->span); }
+			if (is_defer) { err_report(Error::CFG_RETURN_INSIDE_DEFER); err_context(cc, statement->as_return->span); }
 			else terminator = Terminator::Return;
 		} break;
 		case Ast_Statement_Tag::Switch:
@@ -561,8 +561,8 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		{
 			if (!is_loop)
 			{
-				if (is_defer) { err_report(Error::CFG_CONTINUE_INSIDE_DEFER); err_context(cc, statement->span); }
-				else { err_report(Error::CFG_CONTINUE_OUTSIDE_LOOP); err_context(cc, statement->span); }
+				if (is_defer) { err_report(Error::CFG_CONTINUE_INSIDE_DEFER); err_context(cc, statement->as_continue->span); }
+				else { err_report(Error::CFG_CONTINUE_OUTSIDE_LOOP); err_context(cc, statement->as_continue->span); }
 			}
 			else terminator = Terminator::Continue;
 		} break;
@@ -655,24 +655,17 @@ void check_return(Check_Context* cc, Ast_Return* _return)
 		}
 		else
 		{
-			err_set;
-			printf("Return type doesnt match procedure declaration:\n");
-			debug_print_token(_return->token, true, true);
-			printf("Expected no return expression");
-			printf("\n\n");
+			err_report(Error::RETURN_EXPECTED_NO_EXPR);
+			err_context(cc, _return->span);
 		}
 	}
 	else
 	{
 		if (curr_proc->return_type)
 		{
-			err_set;
-			Ast_Type ret_type = curr_proc->return_type.value();
-			printf("Return type doesnt match procedure declaration:\n");
-			debug_print_token(_return->token, true, true);
-			printf("Expected type: "); debug_print_type(ret_type); printf("\n");
-			printf("Got no return expression");
-			printf("\n\n");
+			err_report(Error::RETURN_EXPECTED_EXPR);
+			err_context(cc, curr_proc->return_type.value().span);
+			err_context(cc, _return->span);
 		}
 	}
 }
@@ -701,19 +694,15 @@ void check_switch(Check_Context* cc, Ast_Switch* _switch)
 	Type_Kind kind = type_kind(cc, type.value());
 	if (kind != Type_Kind::Integer && kind != Type_Kind::Enum)
 	{
-		err_set;
-		printf("Switching is only allowed on value of enum or integer types\n");
-		debug_print_type(type.value());
-		printf("\n");
-		debug_print_expr(_switch->expr, 0);
-		printf("\n");
+		err_report(Error::SWITCH_INCORRECT_EXPR_TYPE);
+		//@Context add expr type
+		err_context(cc, _switch->expr->span);
 	}
 
 	if (_switch->cases.empty())
 	{
-		err_set;
-		printf("Switch must have at least one case: \n");
-		debug_print_token(_switch->token, true, true);
+		err_report(Error::SWITCH_ZERO_CASES);
+		err_context(cc, _switch->span);
 		return;
 	}
 
@@ -730,15 +719,17 @@ void check_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 	option<Ast_Global_Info> global_info = find_global(cc->ast, ident);
 	if (global_info)
 	{
-		err_set;
-		error("Global variable with same identifier is already in scope", ident);
+		err_report(Error::VAR_DECL_ALREADY_IS_GLOBAL);
+		err_context(cc, var_decl->span);
+		//@Todo global decl context
 		return;
 	}
 
 	if (check_context_block_contains_var(cc, ident))
 	{
-		err_set;
-		error("Declared variable is already in scope", ident);
+		err_report(Error::VAR_DECL_ALREADY_IN_SCOPE);
+		err_context(cc, var_decl->span);
+		//@Todo context of prev declaration
 		return;
 	}
 
@@ -772,12 +763,10 @@ void check_var_assign(Check_Context* cc, Ast_Var_Assign* var_assign)
 	option<Ast_Type> var_type = check_var(cc, var_assign->var);
 	if (!var_type) return;
 
-	if (var_assign->op != AssignOp::NONE)
+	if (var_assign->op != AssignOp::NONE) //@Temp error, implement var asssign ops
 	{
-		err_set;
-		printf("Check var assign: only '=' assign op is supported\n");
-		debug_print_var_assign(var_assign, 0);
-		printf("\n");
+		err_report(Error::TEMP_VAR_ASSIGN_OP);
+		err_context(cc, var_assign->var->ident.span);
 		return;
 	}
 

@@ -72,5 +72,20 @@ ErrorMessage err_get_message(Error error)
 	case Error::CFG_CONTINUE_INSIDE_DEFER:   return { "Defer cannot contain 'continue' statement", "Continue can only be used in loops declared inside defer block" };
 	case Error::CFG_BREAK_OUTSIDE_LOOP:      return { "Break outside a loop", "" };
 	case Error::CFG_CONTINUE_OUTSIDE_LOOP:   return { "Continue outside a loop", "" };
+
+	case Error::RETURN_EXPECTED_NO_EXPR:     return { "Expected no return expression", "" };
+	case Error::RETURN_EXPECTED_EXPR:        return { "Expected return expression to match return type of the procedure", "" };
+	case Error::SWITCH_INCORRECT_EXPR_TYPE:  return { "Switching is only allowed on expression of enum or integer type", "" };
+	case Error::SWITCH_ZERO_CASES:           return { "Switch must have at least one case", "" };
+	case Error::VAR_DECL_ALREADY_IS_GLOBAL:  return { "Global variable with same identifier is already in scope", "" };
+	case Error::VAR_DECL_ALREADY_IN_SCOPE:   return { "Variable is already in scope", "Variable shadowing isnt supported" };
+
+	case Error::TYPE_CUSTOM_NOT_FOUND:       return { "Custom type is not found", "" };
+	case Error::TYPE_MISMATCH:               return { "Type mismatch", "" };
+	case Error::EXPR_EXPECTED_CONSTANT:      return { "Expected constant expression", "" };
+	case Error::ENUM_UNDECLARED:             return { "Enum type is not declared", "" };
+	case Error::ENUM_VARIANT_UNDECLARED:     return { "Enum variant is not declared", "" };
+
+	case Error::TEMP_VAR_ASSIGN_OP:          return { "Only = operator is supported in variable assignments", "" };
 	}
 }
