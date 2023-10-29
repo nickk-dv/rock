@@ -1,9 +1,8 @@
 #include "check_context.h"
 
-void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program, Error_Handler* err)
+void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program)
 {
 	cc->ast = ast,
-	cc->err = err;
 	cc->program = program;
 }
 

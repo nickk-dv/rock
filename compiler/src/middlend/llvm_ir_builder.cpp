@@ -55,7 +55,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 		Value const_value = build_expr(&bc, global_decl->const_expr);
 		Value global = LLVMAddGlobal(bc.module, LLVMTypeOf(const_value), "g");
 		LLVMSetInitializer(global, const_value);
-		//LLVMSetGlobalConstant(global_info.global_value, 1);
+		LLVMSetGlobalConstant(global, 1);
 		global_info.global_value = global;
 	}
 

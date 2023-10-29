@@ -1,5 +1,6 @@
 #include "error_handler.h"
 
+#include "debug_printer.h"
 #include <stdio.h>
 
 bool error_status = false;
@@ -11,15 +12,36 @@ bool err_get_status()
 
 void err_report(Error error)
 {
+	ErrorMessage message = err_get_message(error);
 	error_status = true;
-	ErrorMessage message = error_get_message(error);
+	
+	printf("\n\033[0;31m");
+	printf("error: ");
+	printf("\033[0m");
+
 	printf("%s.\n", message.error);
 	if (message.hint != "") 
 	printf("Hint: %s.\n", message.hint);
+}
+
+void err_context(Check_Context* cc)
+{
+	printf("%s: ", cc->ast->filepath.c_str());
+}
+
+void err_context(Check_Context* cc, Span span)
+{
+	printf("%s:", cc->ast->filepath.c_str());
+	printf("%lu:%lu ", span.start, span.end);
+	while (span.start <= span.end)
+	{
+		printf("%c", cc->ast->source.data[span.start]);
+		span.start += 1;
+	}
 	printf("\n");
 }
 
-ErrorMessage error_get_message(Error error)
+ErrorMessage err_get_message(Error error)
 {
 	switch (error)
 	{

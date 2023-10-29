@@ -1,23 +1,17 @@
 #ifndef ERROR_HANDLER_H
 #define ERROR_HANDLER_H
 
-//@Notice just storing has_err, in the future extend err handler to simplify err reporting of checker
-struct Error_Handler
-{
-	bool has_err = false;
-};
-
-#define err_set cc->err->has_err = true
-
-//@Todo add ability to attach context to the error
-//for example ident, token, type, or source code span
+#include "check_context.h"
 
 enum class Error;
 struct ErrorMessage;
 
 bool err_get_status();
 void err_report(Error error);
-static ErrorMessage error_get_message(Error error);
+void err_context(Check_Context* cc);
+void err_context(Check_Context* cc, Span span);
+
+static ErrorMessage err_get_message(Error error);
 
 struct ErrorMessage
 {

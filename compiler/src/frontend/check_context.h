@@ -2,7 +2,6 @@
 #define CHECK_CONTEXT_H
 
 #include "ast.h"
-#include "error_handler.h"
 
 struct Check_Context;
 struct Block_Info;
@@ -11,7 +10,7 @@ enum class Terminator;
 enum class Checker_Block_Flags;
 enum class Checker_Proc_Call_Flags;
 
-void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program, Error_Handler* err);
+void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program);
 void check_context_block_reset(Check_Context* cc, Ast_Proc_Decl* curr_proc);
 void check_context_block_add(Check_Context* cc);
 void check_context_block_pop_back(Check_Context* cc);
@@ -23,7 +22,6 @@ struct Check_Context
 {
 	Ast* ast;
 	Ast_Program* program;
-	Error_Handler* err;
 	Ast_Proc_Decl* curr_proc;
 	std::vector<Block_Info> blocks;
 	std::vector<Var_Info> var_stack; //@Perf try hashmap with reset() on larger files

@@ -1,13 +1,18 @@
 #include "check_general.h"
 
-#include "debug_printer.h"
+#include "error_handler.h"
 
 Ast* find_import(Check_Context* cc, option<Ast_Ident> import)
 {
 	if (!import) return cc->ast;
 	Ast_Ident import_ident = import.value();
 	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(import_ident, hash_ident(import_ident));
-	if (!import_decl) { err_report(Error::IMPORT_MODULE_NOT_FOUND); return {}; }
+	if (!import_decl)
+	{
+		err_report(Error::IMPORT_MODULE_NOT_FOUND);
+		err_context(cc, import_ident.span);
+		return NULL;
+	}
 	return import_decl.value()->import_ast;
 }
 

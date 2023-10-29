@@ -1,7 +1,7 @@
 #include "check_type.h"
 
+#include "error_handler.h"
 #include "check_general.h"
-#include "debug_printer.h"
 
 Type_Kind type_kind(Check_Context* cc, Ast_Type type)
 {

@@ -1,8 +1,8 @@
 #include "check.h"
 
+#include "error_handler.h"
 #include "check_general.h"
 #include "check_type.h"
-#include "debug_printer.h"
 
 //@Design currently checking is split into 3 stages
 // 1. import paths & decl uniqueness checks
@@ -14,43 +14,42 @@
 bool check_program(Ast_Program* program)
 {
 	Check_Context cc = {};
-	Error_Handler err = {}; //@Temp until all errors are replaced with err_report(Error)
-	Ast* main_ast = NULL;
 
 	//1. check global symbols
+	bool main_found = false;
 	for (Ast* ast : program->modules)
 	{
-		check_context_init(&cc, ast, program, &err);
+		check_context_init(&cc, ast, program);
 		check_decl_uniqueness(&cc);
-		if (ast->filepath == "main") main_ast = ast;
+		if (ast->filepath == "main")
+		{
+			main_found = true;
+			check_main_proc(&cc);
+		}
 	}
-	if (main_ast == NULL) err_report(Error::MAIN_FILE_NOT_FOUND);
-	if (err.has_err || err_get_status()) return false;
+	if (!main_found) err_report(Error::MAIN_FILE_NOT_FOUND);
 
-	//2. checks decls & main proc
-	check_context_init(&cc, main_ast, program, &err);
-	check_main_proc(&cc);
+	//2. check decls
 	for (Ast* ast : program->modules)
 	{
-		check_context_init(&cc, ast, program, &err);
+		check_context_init(&cc, ast, program);
 		check_decls(&cc);
 	}
-	if (err.has_err || err_get_status()) return false;
+	//if (err.has_err || err_get_status()) return false;
 
-	//3. checks struct self storage
-	check_context_init(&cc, NULL, program, &err);
+	//3. check struct self storage
+	check_context_init(&cc, NULL, program);
 	check_perform_struct_sizing(&cc);
-	if (err.has_err || err_get_status()) return false;
+	//if (err.has_err || err_get_status()) return false;
 
-	//4. checks proc blocks
+	//4. check proc blocks
 	for (Ast* ast : program->modules)
 	{
-		check_context_init(&cc, ast, program, &err);
+		check_context_init(&cc, ast, program);
 		check_ast(&cc);
 	}
-	if (err.has_err || err_get_status()) return false;
 
-	return true;
+	return !err_get_status();
 }
 
 void check_decl_uniqueness(Check_Context* cc)
@@ -61,39 +60,60 @@ void check_decl_uniqueness(Check_Context* cc)
 	ast->enum_table.init(64);
 	ast->proc_table.init(64);
 	ast->global_table.init(64);
+
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 	Ast_Program* program = cc->program;
-
-	for (Ast_Import_Decl* decl : ast->imports)
-	{
-		char* path = decl->file_path.token.string_literal_value;
-		option<Ast*> import_ast = cc->program->module_map.find(std::string(path), hash_fnv1a_32(string_view_from_string(std::string(path))));
-		if (!import_ast) { err_report(Error::IMPORT_PATH_NOT_FOUND); continue; }
-		decl->import_ast = import_ast.value();
-	}
 	
 	for (Ast_Import_Decl* decl : ast->imports)
 	{
 		Ast_Ident ident = decl->alias;
-		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
+		if (symbol)
+		{ 
+			err_report(Error::SYMBOL_ALREADY_DECLARED); 
+			err_context(cc, ident.span);
+			err_context(cc, symbol.value().span);
+			continue;
+		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->import_table.add(ident, decl, hash_ident(ident));
+		
+		char* path = decl->file_path.token.string_literal_value;
+		option<Ast*> import_ast = cc->program->module_map.find(std::string(path), hash_fnv1a_32(string_view_from_string(std::string(path))));
+		if (!import_ast)
+		{
+			err_report(Error::IMPORT_PATH_NOT_FOUND);
+			err_context(cc, decl->file_path.token.span);
+			continue;
+		}
+		decl->import_ast = import_ast.value();
 	}
 
 	for (Ast_Use_Decl* decl : ast->uses)
 	{
 		Ast_Ident ident = decl->alias;
-		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
+		if (symbol)
+		{
+			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_context(cc, ident.span);
+			err_context(cc, symbol.value().span);
+			continue;
+		}
 		symbol_table.add(ident, hash_ident(ident));
 	}
 
 	for (Ast_Struct_Decl* decl : ast->structs)
 	{
 		Ast_Ident ident = decl->ident;
-		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
+		if (symbol)
+		{
+			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_context(cc, ident.span);
+			err_context(cc, symbol.value().span);
+			continue;
+		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->struct_table.add(ident, Ast_Struct_Info { (u32)program->structs.size(), decl }, hash_ident(ident));
 		program->structs.emplace_back(Ast_Struct_IR_Info { decl });
@@ -102,8 +122,14 @@ void check_decl_uniqueness(Check_Context* cc)
 	for (Ast_Enum_Decl* decl : ast->enums)
 	{
 		Ast_Ident ident = decl->ident;
-		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
+		if (symbol)
+		{
+			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_context(cc, ident.span);
+			err_context(cc, symbol.value().span);
+			continue;
+		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->enum_table.add(ident, Ast_Enum_Info { (u32)program->enums.size(), decl }, hash_ident(ident));
 		program->enums.emplace_back(Ast_Enum_IR_Info { decl });
@@ -112,8 +138,14 @@ void check_decl_uniqueness(Check_Context* cc)
 	for (Ast_Proc_Decl* decl : ast->procs)
 	{
 		Ast_Ident ident = decl->ident;
-		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
+		if (symbol)
+		{
+			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_context(cc, ident.span);
+			err_context(cc, symbol.value().span);
+			continue;
+		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->proc_table.add(ident, Ast_Proc_Info { (u32)program->procs.size(), decl }, hash_ident(ident));
 		program->procs.emplace_back(Ast_Proc_IR_Info { decl });
@@ -122,8 +154,14 @@ void check_decl_uniqueness(Check_Context* cc)
 	for (Ast_Global_Decl* decl : ast->globals)
 	{
 		Ast_Ident ident = decl->ident;
-		option<Ast_Ident> key = symbol_table.find_key(ident, hash_ident(ident));
-		if (key) { err_report(Error::SYMBOL_ALREADY_DECLARED); continue; }
+		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
+		if (symbol)
+		{
+			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_context(cc, ident.span);
+			err_context(cc, symbol.value().span);
+			continue;
+		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->global_table.add(ident, Ast_Global_Info { (u32)program->globals.size(), decl }, hash_ident(ident));
 		program->globals.emplace_back(Ast_Global_IR_Info { decl });
@@ -151,6 +189,7 @@ void check_decls(Check_Context* cc)
 		if (global_info) { ast->global_table.add(alias, global_info.value(), hash_ident(alias)); continue; }
 
 		err_report(Error::USE_SYMBOL_NOT_FOUND);
+		err_context(cc, symbol.span);
 	}
 
 	HashSet<Ast_Ident, u32, match_ident> name_set(32);
@@ -169,7 +208,11 @@ void check_decls(Check_Context* cc)
 			}
 			
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
-			if (name) err_report(Error::STRUCT_DUPLICATE_FIELD);
+			if (name) 
+			{
+				err_report(Error::STRUCT_DUPLICATE_FIELD);
+				err_context(cc, name.value().span);
+			}
 			else name_set.add(field.ident, hash_ident(field.ident));
 		}
 	}
@@ -180,6 +223,7 @@ void check_decls(Check_Context* cc)
 		else
 		{
 			err_report(Error::ENUM_ZERO_VARIANTS);
+			err_context(cc, enum_decl->ident.span);
 			continue;
 		}
 
@@ -189,13 +233,18 @@ void check_decls(Check_Context* cc)
 		if (!token_basic_type_is_integer(type))
 		{
 			err_report(Error::ENUM_NON_INTEGER_TYPE);
+			err_context(cc, enum_decl->ident.span);
 			continue;
 		}
 
 		for (Ast_Enum_Variant& variant : enum_decl->variants)
 		{
 			option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
-			if (name) err_report(Error::ENUM_DUPLICATE_VARIANT);
+			if (name) 
+			{
+				err_report(Error::ENUM_DUPLICATE_VARIANT);
+				err_context(cc, name.value().span);
+			}
 			else name_set.add(variant.ident, hash_ident(variant.ident));
 
 			check_expr_type(cc, variant.const_expr, enum_type, true);
@@ -211,7 +260,11 @@ void check_decls(Check_Context* cc)
 			check_type_signature(cc, &param.type);
 			
 			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
-			if (name) err_report(Error::PROC_DUPLICATE_PARAM);
+			if (name) 
+			{
+				err_report(Error::PROC_DUPLICATE_PARAM);
+				err_context(cc, name.value().span);
+			}
 			else name_set.add(param.ident, hash_ident(param.ident));
 		}
 
@@ -230,14 +283,14 @@ void check_decls(Check_Context* cc)
 void check_main_proc(Check_Context* cc)
 {
 	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, Ast_Ident { 0, 0, { (u8*)"main", 4} });
-	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); return; }
+	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); err_context(cc); return; }
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_decl->is_main = true;
-	if (proc_decl->is_external) err_report(Error::MAIN_PROC_EXTERNAL);
-	if (proc_decl->is_variadic) err_report(Error::MAIN_PROC_VARIADIC);
-	if (proc_decl->input_params.size() != 0) err_report(Error::MAIN_NOT_ZERO_PARAMS);
-	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); return; }
-	if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE);
+	if (proc_decl->is_external) { err_report(Error::MAIN_PROC_EXTERNAL); /*@Error add context*/ }
+	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); /*@Error add context*/ }
+	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); /*@Error add context*/ }
+	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); /*@Error add context*/ return; }
+	if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
 }
 
 void check_perform_struct_sizing(Check_Context* cc)
@@ -254,6 +307,7 @@ void check_perform_struct_sizing(Check_Context* cc)
 		if (is_infinite)
 		{
 			err_report(Error::STRUCT_INFINITE_SIZE);
+			err_context(cc, in_struct->ident.span);
 			printf("Field access path: ");
 			debug_print_ident(field_chain[field_chain.size() - 1], false, false);
 			for (int k = (int)field_chain.size() - 2; k >= 0; k -= 1)
@@ -309,7 +363,7 @@ option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type)
 void check_struct_size(Ast_Struct_IR_Info* struct_info)
 {
 	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
-	u32 field_count = struct_decl->fields.size();
+	u32 field_count = (u32)struct_decl->fields.size();
 	
 	u32 total_size = 0;
 	u32 max_align = 0;
@@ -343,9 +397,6 @@ void check_struct_size(Ast_Struct_IR_Info* struct_info)
 	struct_info->is_sized = true;
 	struct_info->struct_size = total_size;
 	struct_info->max_align = max_align;
-
-	printf("size: %lu struct: ", total_size);
-	debug_print_ident(struct_info->struct_decl->ident, true, false);
 }
 
 u32 check_get_basic_type_size(BasicType basic_type)
@@ -395,12 +446,10 @@ u32 check_get_type_size(Ast_Type type)
 	case Ast_Type_Tag::Basic: return check_get_basic_type_size(type.as_basic);
 	case Ast_Type_Tag::Array:
 	{
-		printf("array type size not implemented\n");
 		return 0;
 	}
 	case Ast_Type_Tag::Struct:
 	{
-		printf("struct type size not implemented\n");
 		return 0;
 	}
 	case Ast_Type_Tag::Enum: return check_get_basic_type_size(type.as_enum.enum_decl->basic_type);
@@ -416,12 +465,10 @@ u32 check_get_type_align(Ast_Type type)
 	case Ast_Type_Tag::Basic: return check_get_basic_type_align(type.as_basic);
 	case Ast_Type_Tag::Array:
 	{
-		printf("array type allign not implemented\n");
 		return 0;
 	}
 	case Ast_Type_Tag::Struct:
 	{
-		printf("struct type allign not implemented\n");
 		return 0;
 	}
 	case Ast_Type_Tag::Enum: return check_get_basic_type_align(type.as_enum.enum_decl->basic_type);
@@ -469,8 +516,7 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		if (terminator != Terminator::None)
 		{
 			err_report(Error::CFG_UNREACHABLE_STATEMENT);
-			debug_print_statement(statement, 0);
-			printf("\n");
+			err_context(cc, statement->span);
 			break;
 		}
 
@@ -490,33 +536,21 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		} break;
 		case Ast_Statement_Tag::Defer:
 		{
-			if (is_defer)
-			{
-				err_report(Error::CFG_NESTED_DEFER);
-				debug_print_token(statement->as_defer->token, true, true);
-				printf("\n");
-			}
+			if (is_defer) { err_report(Error::CFG_NESTED_DEFER); err_context(cc, statement->span); }
 			else check_block_cfg(cc, statement->as_defer->block, false, true);
 		} break;
 		case Ast_Statement_Tag::Break:
 		{
 			if (!is_loop)
 			{
-				if (is_defer) err_report(Error::CFG_BREAK_INSIDE_DEFER);
-				else err_report(Error::CFG_BREAK_OUTSIDE_LOOP);
-				debug_print_token(statement->as_break->token, true, true);
-				printf("\n");
+				if (is_defer) { err_report(Error::CFG_BREAK_INSIDE_DEFER); err_context(cc, statement->span); }
+				else { err_report(Error::CFG_BREAK_OUTSIDE_LOOP); err_context(cc, statement->span); }
 			}
 			else terminator = Terminator::Break;
 		} break;
 		case Ast_Statement_Tag::Return:
 		{
-			if (is_defer)
-			{
-				err_report(Error::CFG_RETURN_INSIDE_DEFER);
-				debug_print_token(statement->as_defer->token, true, true);
-				printf("\n");
-			}
+			if (is_defer) { err_report(Error::CFG_RETURN_INSIDE_DEFER); err_context(cc, statement->span); }
 			else terminator = Terminator::Return;
 		} break;
 		case Ast_Statement_Tag::Switch:
@@ -527,16 +561,14 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		{
 			if (!is_loop)
 			{
-				if (is_defer) err_report(Error::CFG_CONTINUE_INSIDE_DEFER);
-				else err_report(Error::CFG_CONTINUE_OUTSIDE_LOOP);
-				debug_print_token(statement->as_continue->token, true, true);
-				printf("\n");
+				if (is_defer) { err_report(Error::CFG_CONTINUE_INSIDE_DEFER); err_context(cc, statement->span); }
+				else { err_report(Error::CFG_CONTINUE_OUTSIDE_LOOP); err_context(cc, statement->span); }
 			}
 			else terminator = Terminator::Continue;
 		} break;
-		case Ast_Statement_Tag::Proc_Call: break;
 		case Ast_Statement_Tag::Var_Decl: break;
 		case Ast_Statement_Tag::Var_Assign: break;
+		case Ast_Statement_Tag::Proc_Call: break;
 		}
 	}
 
