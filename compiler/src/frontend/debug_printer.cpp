@@ -302,7 +302,7 @@ void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 	{
 		debug_print_ident(variant.ident, false, false);
 		printf("Variant Expr: \n");
-		debug_print_expr(variant.const_expr, 0);
+		debug_print_expr(variant.const_expr.expr, 0);
 	}
 }
 
@@ -473,7 +473,7 @@ void debug_print_switch(Ast_Switch* _switch, u32 depth)
 	{
 		debug_print_spacing(depth);
 		printf("Case: \n");
-		debug_print_expr(_case.const_expr, depth);
+		debug_print_expr(_case.const_expr.expr, depth);
 		if (_case.block)
 		debug_print_block(_case.block.value(), depth);
 	}
@@ -562,7 +562,7 @@ void debug_print_expr(Ast_Expr* expr, u32 depth)
 	case Ast_Expr_Tag::Term: debug_print_term(expr->as_term, depth); break;
 	case Ast_Expr_Tag::Unary_Expr: debug_print_unary_expr(expr->as_unary_expr, depth); break;
 	case Ast_Expr_Tag::Binary_Expr: debug_print_binary_expr(expr->as_binary_expr, depth); break;
-	case Ast_Expr_Tag::Const_Expr: debug_print_const_expr(expr->as_const_expr, depth); break;
+	case Ast_Expr_Tag::Folded_Expr: debug_print_folded_expr(expr->as_folded_expr, depth); break;
 	}
 }
 
@@ -720,22 +720,22 @@ void debug_print_binary_expr(Ast_Binary_Expr* binary_expr, u32 depth)
 	debug_print_expr(binary_expr->right, depth);
 }
 
-void debug_print_const_expr(Ast_Const_Expr const_expr, u32 depth)
+void debug_print_folded_expr(Ast_Folded_Expr folded_expr, u32 depth)
 {
 	debug_print_branch(depth);
 	printf("Const_Expr: ");
 
-	switch (const_expr.basic_type)
+	switch (folded_expr.basic_type)
 	{
 	case BasicType::BOOL:
 	{
-		if (const_expr.as_bool) printf("true"); 
+		if (folded_expr.as_bool) printf("true");
 		else printf("false");
 	} break;
 	case BasicType::F32:
 	case BasicType::F64: 
 	{
-		printf("%f", const_expr.as_f64);
+		printf("%f", folded_expr.as_f64);
 		break;
 	}
 	case BasicType::I8:
@@ -743,12 +743,12 @@ void debug_print_const_expr(Ast_Const_Expr const_expr, u32 depth)
 	case BasicType::I32:
 	case BasicType::I64: 
 	{
-		printf("%lld", const_expr.as_i64); 
+		printf("%lld", folded_expr.as_i64);
 		break;
 	}
 	default:
 	{
-		printf("%llu", const_expr.as_u64);
+		printf("%llu", folded_expr.as_u64);
 		break;
 	}
 	}

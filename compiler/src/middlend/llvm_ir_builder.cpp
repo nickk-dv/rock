@@ -15,7 +15,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 
 		for (Ast_Enum_Variant& variant : enum_info.enum_decl->variants)
 		{
-			variant.constant = build_expr(&bc, variant.const_expr);
+			variant.constant = build_expr(&bc, variant.const_expr.expr);
 		}
 	}
 
@@ -52,7 +52,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 	for (Ast_Global_IR_Info& global_info : program->globals)
 	{
 		Ast_Global_Decl* global_decl = global_info.global_decl;
-		Value const_value = build_expr(&bc, global_decl->const_expr);
+		Value const_value = build_expr(&bc, global_decl->const_expr.expr);
 		Value global = LLVMAddGlobal(bc.module, LLVMTypeOf(const_value), "g");
 		LLVMSetInitializer(global, const_value);
 		LLVMSetGlobalConstant(global, 1);
@@ -252,7 +252,7 @@ void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 	for (u64 i = 0; i < _switch->cases.size(); i += 1)
 	{
 		Ast_Switch_Case _case = _switch->cases[i];
-		Value case_value = build_expr(bc, _case.const_expr);
+		Value case_value = build_expr(bc, _case.const_expr.expr);
 		Basic_Block case_block = _case.basic_block;
 		LLVMAddCase(switch_value, case_value, case_block);
 		builder_context_set_bb(bc, case_block);
@@ -316,7 +316,7 @@ Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_in
 	{
 		if (field.const_expr)
 		{
-			Value value = build_expr(bc, field.const_expr.value());
+			Value value = build_expr(bc, field.const_expr.value().expr);
 			build_implicit_cast(bc, &value, LLVMTypeOf(value), type_from_ast_type(bc, field.type));
 			values.emplace_back(value);
 		}
@@ -405,7 +405,7 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 	case Ast_Expr_Tag::Term: return build_term(bc, expr->as_term, unary_address);
 	case Ast_Expr_Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
 	case Ast_Expr_Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
-	case Ast_Expr_Tag::Const_Expr: return build_const_expr(bc, expr->as_const_expr);
+	case Ast_Expr_Tag::Folded_Expr: return build_folded_expr(bc, expr->as_folded_expr);
 	}
 }
 
@@ -626,19 +626,19 @@ Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr)
 	}
 }
 
-Value build_const_expr(IR_Builder_Context* bc, Ast_Const_Expr const_expr)
+Value build_folded_expr(IR_Builder_Context* bc, Ast_Folded_Expr folded_expr)
 {
-	Type type = type_from_basic_type(const_expr.basic_type);
-	switch (const_expr.basic_type)
+	Type type = type_from_basic_type(folded_expr.basic_type);
+	switch (folded_expr.basic_type)
 	{
-	case BasicType::BOOL: return LLVMConstInt(type, (int)const_expr.as_bool, 0);
+	case BasicType::BOOL: return LLVMConstInt(type, (int)folded_expr.as_bool, 0);
 	case BasicType::F32:
-	case BasicType::F64: return LLVMConstReal(type, const_expr.as_f64);
+	case BasicType::F64: return LLVMConstReal(type, folded_expr.as_f64);
 	case BasicType::I8:
 	case BasicType::I16:
 	case BasicType::I32:
-	case BasicType::I64: return LLVMConstInt(type, const_expr.as_i64, 1);
-	default: return LLVMConstInt(type, const_expr.as_u64, 1);
+	case BasicType::I64: return LLVMConstInt(type, folded_expr.as_i64, 1);
+	default: return LLVMConstInt(type, folded_expr.as_u64, 1);
 	}
 }
 
@@ -718,7 +718,7 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 	{
 		Ast_Array_Type* array = type.as_array;
 		Type element_type = type_from_ast_type(bc, array->element_type);
-		u32 size = (u32)array->const_expr->as_const_expr.as_u64; //@Notice what if its positive i64
+		u32 size = (u32)array->const_expr.expr->as_folded_expr.as_u64; //@Notice what if its positive i64
 		return LLVMArrayType(element_type, size);
 	}
 	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;

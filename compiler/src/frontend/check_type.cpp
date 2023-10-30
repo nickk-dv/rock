@@ -56,7 +56,7 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 	{
 		//@Todo also must be > 0
 		//@Temp using i32 instead of u32 for static arrays to avoid type mismatch
-		option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr, type_from_basic(BasicType::I32), true);
+		option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr.expr, type_from_basic(BasicType::I32), true);
 		if (!expr_type) return {};
 		
 		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
@@ -253,7 +253,8 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 {
 	if (context->expect_constant)
 	{
-		check_expect_const_expr(cc, expr);
+		Const_Eval eval = check_const_eval(cc, expr);
+		if (eval == Const_Eval::Invalid) return {};
 	}
 	
 	if (check_is_const_expr(expr))
@@ -282,7 +283,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 		option<Literal> lit_result = check_const_expr(expr);
 		if (!lit_result) return {};
 
-		Ast_Const_Expr const_expr = {};
+		Ast_Folded_Expr folded_expr = {};
 		Literal lit = lit_result.value();
 
 		if (context)
@@ -291,39 +292,39 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 			{
 			case Literal_Kind::Bool:
 			{
-				const_expr.basic_type = BasicType::BOOL;
-				const_expr.as_bool = lit.as_bool;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::BOOL;
+				folded_expr.as_bool = lit.as_bool;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::BOOL);
 			}
 			case Literal_Kind::Float:
 			{
 				//@Base on context
-				const_expr.basic_type = BasicType::F64;
-				const_expr.as_f64 = lit.as_f64;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::F64;
+				folded_expr.as_f64 = lit.as_f64;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::F64);
 			}
 			case Literal_Kind::Int:
 			{
 				//@Base on context
 				//@Todo range based
-				const_expr.basic_type = BasicType::I32;
-				const_expr.as_i64 = lit.as_i64;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::I32;
+				folded_expr.as_i64 = lit.as_i64;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::I32);
 			}
 			case Literal_Kind::UInt:
 			{
 				//@Base on context
 				//@Todo range based
-				const_expr.basic_type = BasicType::I32;
-				const_expr.as_u64 = lit.as_u64;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::I32;
+				folded_expr.as_u64 = lit.as_u64;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::I32);
 			}
 			}
@@ -334,37 +335,37 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 			{
 			case Literal_Kind::Bool:
 			{
-				const_expr.basic_type = BasicType::BOOL;
-				const_expr.as_bool = lit.as_bool;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::BOOL;
+				folded_expr.as_bool = lit.as_bool;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::BOOL);
 			}
 			case Literal_Kind::Float:
 			{
-				const_expr.basic_type = BasicType::F64;
-				const_expr.as_f64 = lit.as_f64;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::F64;
+				folded_expr.as_f64 = lit.as_f64;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::F64);
 			}
 			case Literal_Kind::Int:
 			{
 				//@Todo range based default int type
-				const_expr.basic_type = BasicType::I32;
-				const_expr.as_i64 = lit.as_i64;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::I32;
+				folded_expr.as_i64 = lit.as_i64;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::I32);
 			}
 			case Literal_Kind::UInt:
 			{
 				//@Todo range based default int type
 				//@Might become a u64 if its too big
-				const_expr.basic_type = BasicType::I32;
-				const_expr.as_u64 = lit.as_u64;
-				expr->tag = Ast_Expr_Tag::Const_Expr;
-				expr->as_const_expr = const_expr;
+				folded_expr.basic_type = BasicType::I32;
+				folded_expr.as_u64 = lit.as_u64;
+				expr->tag = Ast_Expr_Tag::Folded_Expr;
+				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::I32);
 			}
 			}
@@ -936,14 +937,6 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Type_Context* context, Ast
 
 }
 
-// perform operations on highest sized types and only on call site determine
-// and type check / infer the type based on the resulting value
-// the only possible errors are:
-// 1. int range overflow
-// 2. invalid op semantics
-// 3. float NaN
-// 4. division / mod by 0
-
 option<Literal> check_const_expr(Ast_Expr* expr)
 {
 	switch (expr->tag)
@@ -1195,7 +1188,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 	}
 }
 
-bool check_expect_const_expr(Check_Context* cc, Ast_Expr* expr)
+Const_Eval check_const_eval(Check_Context* cc, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
@@ -1204,52 +1197,57 @@ bool check_expect_const_expr(Check_Context* cc, Ast_Expr* expr)
 		Ast_Term* term = expr->as_term;
 		switch (term->tag)
 		{
-		case Ast_Term_Tag::Var: return false; //only if its proccesed into global
-		case Ast_Term_Tag::Enum: return true;
-		case Ast_Term_Tag::Sizeof: return true;
-		case Ast_Term_Tag::Literal: return true;
+		case Ast_Term_Tag::Var:
+		{
+			Ast_Var* var = term->as_var;
+			if (!check_var_signature(cc, var)) return Const_Eval::Invalid;
+			if (var->global_id) return Const_Eval::Not_Evaluated;
+			err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
+			err_context(cc, expr->span);
+			return Const_Eval::Invalid;
+		}
+		case Ast_Term_Tag::Enum: return Const_Eval::Not_Evaluated;
+		case Ast_Term_Tag::Sizeof: return Const_Eval::Not_Evaluated;
+		case Ast_Term_Tag::Literal: return Const_Eval::Not_Evaluated;
 		case Ast_Term_Tag::Proc_Call:
 		{
 			err_report(Error::CONST_PROC_IS_NOT_CONST);
 			err_context(cc, expr->span);
-			return false;
+			return Const_Eval::Invalid;
 		}
 		case Ast_Term_Tag::Struct_Init:
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
 			for (Ast_Expr* input_expr : struct_init->input_exprs)
-			{
-				bool is_const = check_expect_const_expr(cc, input_expr);
-				if (!is_const) return false;
-			}
-			return true;
+			if (check_const_eval(cc, input_expr) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Array_Init:
 		{
 			Ast_Array_Init* array_init = term->as_array_init;
 			for (Ast_Expr* input_expr : array_init->input_exprs)
-			{
-				bool is_const = check_expect_const_expr(cc, input_expr);
-				if (!is_const) return false;
-			}
-			return true;
+			if (check_const_eval(cc, input_expr) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			return Const_Eval::Not_Evaluated;
 		}
 		}
 	}
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		return check_expect_const_expr(cc, unary_expr->right);
+		if (check_const_eval(cc, unary_expr->right) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		return Const_Eval::Not_Evaluated;
 	}
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		return check_expect_const_expr(cc, binary_expr->left) && check_expect_const_expr(cc, binary_expr->right);
+		if (check_const_eval(cc, binary_expr->left) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_eval(cc, binary_expr->right) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		return Const_Eval::Not_Evaluated;
 	}
 	}
 }
 
-void check_var_signature(Check_Context* cc, Ast_Var* var)
+bool check_var_signature(Check_Context* cc, Ast_Var* var)
 {
 	Ast_Ident ident = var->ident;
 	Ast* target_ast = cc->ast;
@@ -1257,28 +1255,24 @@ void check_var_signature(Check_Context* cc, Ast_Var* var)
 	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(ident, hash_ident(ident));
 	if (import_decl && var->access && var->access.value()->tag == Ast_Access_Tag::Var)
 	{
-		target_ast = import_decl.value()->import_ast;
 		Ast_Var_Access* var_access = var->access.value()->as_var;
-		var->access = var_access->next;
 		Ast_Ident global_ident = var_access->ident;
+		var->access = var_access->next;
 
+		target_ast = import_decl.value()->import_ast;
 		option<Ast_Global_Info> global = find_global(target_ast, global_ident);
-		if (global)
-		{
-			var->global_id = global.value().global_id;
-		}
+		if (global) var->global_id = global.value().global_id;
 		else
 		{
-			err_set;
-			error_pair("Failed to find global variable in module", "Module: ", ident, "Global identifier: ", global_ident);
+			err_report(Error::VAR_GLOBAL_IS_NOT_FOUND);
+			err_context(cc, global_ident.span);
+			return false;
 		}
 	}
 	else
 	{
 		option<Ast_Global_Info> global = find_global(target_ast, ident);
-		if (global)
-		{
-			var->global_id = global.value().global_id;
-		}
+		if (global) var->global_id = global.value().global_id;
 	}
+	return true;
 }

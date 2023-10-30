@@ -202,7 +202,7 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
-	array_type->const_expr = expr;
+	array_type->const_expr.expr = expr;
 
 	if (!try_consume(TokenType::BRACKET_END)) { error("Expected ']'"); return NULL; }
 
@@ -283,7 +283,9 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 		{
 			Ast_Expr* expr = parse_expr(parser);
 			if (!expr) return NULL;
-			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), expr });
+			Ast_Const_Expr const_expr = {};
+			const_expr.expr = expr;
+			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), const_expr });
 		}
 		else
 		{
@@ -381,7 +383,7 @@ Ast_Global_Decl* parse_global_decl(Parser* parser)
 
 	Ast_Expr* expr = parse_expr(parser);
 	if (!expr) return NULL;
-	decl->const_expr = expr;
+	decl->const_expr.expr = expr;
 
 	return decl;
 }
@@ -669,7 +671,7 @@ Ast_Switch* parse_switch(Parser* parser)
 		
 		Ast_Expr* expr = parse_sub_expr(parser);
 		if (!expr) return NULL;
-		switch_case.const_expr = expr;
+		switch_case.const_expr.expr = expr;
 
 		if (!try_consume(TokenType::COLON))
 		{

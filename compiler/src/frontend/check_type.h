@@ -30,8 +30,8 @@ static option<Literal> check_const_term(Ast_Term* term);
 static option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr);
 static option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr);
 
-bool check_expect_const_expr(Check_Context* cc, Ast_Expr* expr);
-void check_var_signature(Check_Context* cc, Ast_Var* var);
+static Const_Eval check_const_eval(Check_Context* cc, Ast_Expr* expr);
+static bool check_var_signature(Check_Context* cc, Ast_Var* var);
 
 struct Literal
 {

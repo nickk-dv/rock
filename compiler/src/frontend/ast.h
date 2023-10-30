@@ -24,6 +24,7 @@ struct Ast_Array_Type;
 struct Ast_Custom_Type;
 struct Ast_Struct_Type;
 struct Ast_Enum_Type;
+struct Ast_Const_Expr;
 
 struct Ast_Import_Decl;
 struct Ast_Use_Decl;
@@ -175,6 +176,19 @@ struct Ast_Enum_Type //@Memory can remove decl and use program id lookup in chec
 	Ast_Enum_Decl* enum_decl;
 };
 
+enum class Const_Eval
+{
+	Not_Evaluated = 0,
+	Invalid = 1,
+	Valid = 2,
+};
+
+struct Ast_Const_Expr
+{
+	Ast_Expr* expr;
+	Const_Eval eval;
+};
+
 enum class Ast_Type_Tag
 {
 	Basic, Array, Custom, Struct, Enum
@@ -206,7 +220,7 @@ struct Ast_Custom_Type
 struct Ast_Array_Type
 {
 	Ast_Type element_type;
-	Ast_Expr* const_expr;
+	Ast_Const_Expr const_expr;
 };
 
 struct Ast_Import_Decl
@@ -234,7 +248,7 @@ struct Ast_Struct_Field
 {
 	Ast_Ident ident;
 	Ast_Type type;
-	option<Ast_Expr*> const_expr;
+	option<Ast_Const_Expr> const_expr;
 };
 
 struct Ast_Enum_Decl
@@ -247,7 +261,7 @@ struct Ast_Enum_Decl
 struct Ast_Enum_Variant
 {
 	Ast_Ident ident;
-	Ast_Expr* const_expr;
+	Ast_Const_Expr const_expr;
 	//ir builder
 	LLVMValueRef constant;
 };
@@ -272,7 +286,7 @@ struct Ast_Proc_Param
 struct Ast_Global_Decl
 {
 	Ast_Ident ident;
-	Ast_Expr* const_expr;
+	Ast_Const_Expr const_expr;
 	option<Ast_Type> type;
 };
 
@@ -367,7 +381,7 @@ struct Ast_Switch
 
 struct Ast_Switch_Case
 {
-	Ast_Expr* const_expr;
+	Ast_Const_Expr const_expr;
 	option<Ast_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
@@ -405,7 +419,7 @@ struct Ast_Proc_Call
 	u32 proc_id;
 };
 
-struct Ast_Const_Expr
+struct Ast_Folded_Expr
 {
 	BasicType basic_type;
 
@@ -420,7 +434,7 @@ struct Ast_Const_Expr
 
 enum class Ast_Expr_Tag
 {
-	Term, Unary_Expr, Binary_Expr, Const_Expr
+	Term, Unary_Expr, Binary_Expr, Folded_Expr
 };
 
 struct Ast_Expr
@@ -434,7 +448,7 @@ struct Ast_Expr
 		Ast_Term* as_term;
 		Ast_Unary_Expr* as_unary_expr;
 		Ast_Binary_Expr* as_binary_expr;
-		Ast_Const_Expr as_const_expr; //@Notice span doesnt change after const fold
+		Ast_Folded_Expr as_folded_expr; //@Notice span doesnt change after const fold
 	};
 };
 

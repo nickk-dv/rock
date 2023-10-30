@@ -112,6 +112,7 @@ ErrorMessage err_get_message(Error error)
 	case Error::SWITCH_ZERO_CASES:           return { "Switch must have at least one case", "" };
 	case Error::VAR_DECL_ALREADY_IS_GLOBAL:  return { "Global variable with same identifier is already in scope", "" };
 	case Error::VAR_DECL_ALREADY_IN_SCOPE:   return { "Variable is already in scope", "Variable shadowing isnt supported" };
+	case Error::VAR_GLOBAL_IS_NOT_FOUND:     return { "Failed to find global variable in imported module", "" };
 
 	case Error::TYPE_CUSTOM_NOT_FOUND:       return { "Custom type is not found", "" };
 	case Error::TYPE_MISMATCH:               return { "Type mismatch", "" };
