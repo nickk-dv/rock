@@ -4,10 +4,6 @@
 #include "check_general.h"
 #include "check_type.h"
 
-//@Design currently checking is split into 3 stages
-// 1. import paths & decl uniqueness checks
-// 2. decl signature validity checks
-// 3. proc block cfg & type and other semantics checks 
 //@Todo check cant import same file under multiple names
 //@Todo check cant use same type or procedure under multiple names
 

@@ -251,6 +251,11 @@ void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* ty
 
 option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* expr)
 {
+	if (context->expect_constant)
+	{
+		check_expect_const_expr(cc, expr);
+	}
+	
 	if (check_is_const_expr(expr))
 	{
 		expr->is_const = true;
@@ -1187,5 +1192,93 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		lhs.as_u64 >>= rhs.as_u64;
 		return lhs;
 	}
+	}
+}
+
+bool check_expect_const_expr(Check_Context* cc, Ast_Expr* expr)
+{
+	switch (expr->tag)
+	{
+	case Ast_Expr_Tag::Term:
+	{
+		Ast_Term* term = expr->as_term;
+		switch (term->tag)
+		{
+		case Ast_Term_Tag::Var: return false; //only if its proccesed into global
+		case Ast_Term_Tag::Enum: return true;
+		case Ast_Term_Tag::Sizeof: return true;
+		case Ast_Term_Tag::Literal: return true;
+		case Ast_Term_Tag::Proc_Call:
+		{
+			err_report(Error::CONST_PROC_IS_NOT_CONST);
+			err_context(cc, expr->span);
+			return false;
+		}
+		case Ast_Term_Tag::Struct_Init:
+		{
+			Ast_Struct_Init* struct_init = term->as_struct_init;
+			for (Ast_Expr* input_expr : struct_init->input_exprs)
+			{
+				bool is_const = check_expect_const_expr(cc, input_expr);
+				if (!is_const) return false;
+			}
+			return true;
+		}
+		case Ast_Term_Tag::Array_Init:
+		{
+			Ast_Array_Init* array_init = term->as_array_init;
+			for (Ast_Expr* input_expr : array_init->input_exprs)
+			{
+				bool is_const = check_expect_const_expr(cc, input_expr);
+				if (!is_const) return false;
+			}
+			return true;
+		}
+		}
+	}
+	case Ast_Expr_Tag::Unary_Expr:
+	{
+		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
+		return check_expect_const_expr(cc, unary_expr->right);
+	}
+	case Ast_Expr_Tag::Binary_Expr:
+	{
+		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
+		return check_expect_const_expr(cc, binary_expr->left) && check_expect_const_expr(cc, binary_expr->right);
+	}
+	}
+}
+
+void check_var_signature(Check_Context* cc, Ast_Var* var)
+{
+	Ast_Ident ident = var->ident;
+	Ast* target_ast = cc->ast;
+
+	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(ident, hash_ident(ident));
+	if (import_decl && var->access && var->access.value()->tag == Ast_Access_Tag::Var)
+	{
+		target_ast = import_decl.value()->import_ast;
+		Ast_Var_Access* var_access = var->access.value()->as_var;
+		var->access = var_access->next;
+		Ast_Ident global_ident = var_access->ident;
+
+		option<Ast_Global_Info> global = find_global(target_ast, global_ident);
+		if (global)
+		{
+			var->global_id = global.value().global_id;
+		}
+		else
+		{
+			err_set;
+			error_pair("Failed to find global variable in module", "Module: ", ident, "Global identifier: ", global_ident);
+		}
+	}
+	else
+	{
+		option<Ast_Global_Info> global = find_global(target_ast, ident);
+		if (global)
+		{
+			var->global_id = global.value().global_id;
+		}
 	}
 }

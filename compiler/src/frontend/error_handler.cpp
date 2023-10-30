@@ -19,9 +19,9 @@ void err_report(Error error)
 	printf("error: ");
 	printf("\033[0m");
 
-	printf("%s.\n", message.error);
+	printf("%s\n", message.error);
 	if (message.hint != "") 
-	printf("Hint: %s.\n", message.hint);
+	printf("hint:  %s\n", message.hint);
 }
 
 void err_context(Check_Context* cc)
@@ -30,6 +30,39 @@ void err_context(Check_Context* cc)
 }
 
 void err_context(Check_Context* cc, Span span)
+{
+	printf("%s:", cc->ast->filepath.c_str());
+	printf("%lu:%lu", span.start, span.end);
+	printf("\n  |");
+	printf("\n4 |");
+
+	while (span.start > 1 && cc->ast->source.data[span.start - 1] != '\n')
+	{
+		span.start -= 1;
+	}
+
+	u32 max_lines = 5;
+	u32 lines = 0;
+
+	while (span.start <= span.end)
+	{
+		u8 c = cc->ast->source.data[span.start];
+		printf("%c", c);
+		if (c == '\n')
+		{
+			printf("  |");
+			lines += 1;
+			if (lines >= max_lines) break;
+		}
+		span.start += 1;
+	}
+
+	if (lines >= max_lines) printf(" ...");
+	else printf("\n  |");
+	printf("\n");
+}
+
+void err_context_old(Check_Context* cc, Span span)
 {
 	printf("%s:", cc->ast->filepath.c_str());
 	printf("%lu:%lu ", span.start, span.end);
@@ -85,6 +118,9 @@ ErrorMessage err_get_message(Error error)
 	case Error::EXPR_EXPECTED_CONSTANT:      return { "Expected constant expression", "" };
 	case Error::ENUM_UNDECLARED:             return { "Enum type is not declared", "" };
 	case Error::ENUM_VARIANT_UNDECLARED:     return { "Enum variant is not declared", "" };
+
+	case Error::CONST_PROC_IS_NOT_CONST:     return { "Constant expression cannot contain procedure call", "" };
+	case Error::CONST_VAR_IS_NOT_GLOBAL:     return { "Constant expression variable must be a global variable", "" };
 
 	case Error::TEMP_VAR_ASSIGN_OP:          return { "Only = operator is supported in variable assignments", "" };
 	}
