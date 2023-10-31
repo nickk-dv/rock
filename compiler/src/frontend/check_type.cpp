@@ -253,8 +253,15 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 {
 	if (context->expect_constant)
 	{
-		Const_Eval eval = check_const_eval(cc, expr);
+		std::vector<Ast_Const_Expr*> dependencies;
+		Const_Eval eval = check_const_expr_eval(cc, expr, dependencies);
 		if (eval == Const_Eval::Invalid) return {};
+
+		printf("Const_Expr: \n");
+		err_context(cc, expr->span);
+		printf("Dependencies: \n");
+		for (Ast_Const_Expr* const_expr : dependencies)
+		err_context(cc, const_expr->expr->span);
 	}
 	
 	if (check_is_const_expr(expr))
@@ -400,31 +407,13 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Enum: //@Const fold this should be part of constant evaluation
 	{
 		Ast_Enum* _enum = term->as_enum;
-		Ast* target_ast = find_import(cc, _enum->import);
-		if (target_ast == NULL) return {};
-
-		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, _enum->ident);
-		if (!enum_meta) 
-		{ 
-			err_report(Error::ENUM_UNDECLARED);
-			err_context(cc, _enum->ident.span);
-			return {}; 
-		}
-		Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
-		_enum->enum_id = enum_meta.value().enum_id;
-
-		option<u32> variant_id = find_enum_variant(enum_decl, _enum->variant);
-		if (!variant_id) 
-		{
-			err_report(Error::ENUM_VARIANT_UNDECLARED);
-			err_context(cc, _enum->variant.span);
-		}
-		else _enum->variant_id = variant_id.value();
+		check_enum_resolve(cc, _enum);
+		if (_enum->tag == Ast_Enum_Tag::Invalid) return {};
 
 		Ast_Type type = {};
 		type.tag = Ast_Type_Tag::Enum;
-		type.as_enum.enum_id = _enum->enum_id;
-		type.as_enum.enum_decl = enum_meta.value().enum_decl;
+		type.as_enum.enum_id = _enum->resolved.enum_id;
+		type.as_enum.enum_decl = _enum->resolved.enum_decl;
 		return type;
 	}
 	case Ast_Term_Tag::Sizeof: //@Const fold this should be part of constant evaluation
@@ -1188,7 +1177,19 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 	}
 }
 
-Const_Eval check_const_eval(Check_Context* cc, Ast_Expr* expr)
+option<Ast_Type> check_const_expr(Check_Context* cc, Ast_Const_Expr* const_expr)
+{
+	std::vector<Ast_Const_Expr*> dependencies;
+	Const_Eval eval = check_const_expr_eval(cc, const_expr->expr, dependencies);
+	if (eval == Const_Eval::Invalid) return {};
+
+	printf("Const_Expr: \n");
+	err_context(cc, const_expr->expr->span);
+	printf("Dependencies: \n");
+	for (Ast_Const_Expr* const_expr : dependencies) err_context(cc, const_expr->expr->span);
+}
+
+Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<Ast_Const_Expr*>& dependencies)
 {
 	switch (expr->tag)
 	{
@@ -1199,16 +1200,38 @@ Const_Eval check_const_eval(Check_Context* cc, Ast_Expr* expr)
 		{
 		case Ast_Term_Tag::Var:
 		{
+			//@Consider access with expressions also
 			Ast_Var* var = term->as_var;
 			if (!check_var_signature(cc, var)) return Const_Eval::Invalid;
-			if (var->global_id) return Const_Eval::Not_Evaluated;
-			err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
-			err_context(cc, expr->span);
-			return Const_Eval::Invalid;
+			if (!var->global_id)
+			{
+				err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
+				err_context(cc, expr->span);
+				return Const_Eval::Invalid;
+			}
+			Ast_Global_Decl* global_decl = cc->program->globals[var->global_id.value()].global_decl;
+			Const_Eval global_eval = global_decl->const_expr.eval;
+			if (global_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (global_eval == Const_Eval::Not_Evaluated) dependencies.emplace_back(&global_decl->const_expr);
+			return Const_Eval::Not_Evaluated;
 		}
-		case Ast_Term_Tag::Enum: return Const_Eval::Not_Evaluated;
-		case Ast_Term_Tag::Sizeof: return Const_Eval::Not_Evaluated;
-		case Ast_Term_Tag::Literal: return Const_Eval::Not_Evaluated;
+		case Ast_Term_Tag::Enum:
+		{
+			Ast_Enum* _enum = term->as_enum;
+			check_enum_resolve(cc, _enum);
+			if (_enum->tag == Ast_Enum_Tag::Invalid) return Const_Eval::Invalid;
+			return Const_Eval::Not_Evaluated;
+		}
+		case Ast_Term_Tag::Sizeof:
+		{
+			//@How to check if sizeof type signature is valid?
+			//also consider with array size expressions
+			return Const_Eval::Not_Evaluated;
+		}
+		case Ast_Term_Tag::Literal:
+		{
+			return Const_Eval::Not_Evaluated;
+		}
 		case Ast_Term_Tag::Proc_Call:
 		{
 			err_report(Error::CONST_PROC_IS_NOT_CONST);
@@ -1219,14 +1242,15 @@ Const_Eval check_const_eval(Check_Context* cc, Ast_Expr* expr)
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
 			for (Ast_Expr* input_expr : struct_init->input_exprs)
-			if (check_const_eval(cc, input_expr) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (check_const_expr_eval(cc, input_expr, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
 			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Array_Init:
 		{
+			//@Consider array type signature
 			Ast_Array_Init* array_init = term->as_array_init;
 			for (Ast_Expr* input_expr : array_init->input_exprs)
-			if (check_const_eval(cc, input_expr) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (check_const_expr_eval(cc, input_expr, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
 			return Const_Eval::Not_Evaluated;
 		}
 		}
@@ -1234,14 +1258,14 @@ Const_Eval check_const_eval(Check_Context* cc, Ast_Expr* expr)
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		if (check_const_eval(cc, unary_expr->right) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_expr_eval(cc, unary_expr->right, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		if (check_const_eval(cc, binary_expr->left) == Const_Eval::Invalid) return Const_Eval::Invalid;
-		if (check_const_eval(cc, binary_expr->right) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_expr_eval(cc, binary_expr->left, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_expr_eval(cc, binary_expr->right, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
 	}
@@ -1275,4 +1299,40 @@ bool check_var_signature(Check_Context* cc, Ast_Var* var)
 		if (global) var->global_id = global.value().global_id;
 	}
 	return true;
+}
+
+void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
+{
+	if (_enum->tag != Ast_Enum_Tag::Unresolved) return;
+
+	Ast* target_ast = find_import(cc, _enum->unresolved.import);
+	if (target_ast == NULL) 
+	{
+		_enum->tag = Ast_Enum_Tag::Invalid;
+		return;
+	}
+
+	option<Ast_Enum_Info> enum_meta = find_enum(target_ast, _enum->unresolved.ident);
+	if (!enum_meta)
+	{
+		err_report(Error::ENUM_UNDECLARED);
+		err_context(cc, _enum->unresolved.ident.span);
+		_enum->tag = Ast_Enum_Tag::Invalid;
+		return;
+	}
+
+	Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
+	option<u32> variant_id = find_enum_variant(enum_decl, _enum->unresolved.variant);
+	if (!variant_id)
+	{
+		err_report(Error::ENUM_VARIANT_UNDECLARED);
+		err_context(cc, _enum->unresolved.variant.span);
+		_enum->tag = Ast_Enum_Tag::Invalid;
+		return;
+	}
+
+	_enum->tag = Ast_Enum_Tag::Resolved;
+	_enum->resolved.enum_decl = enum_meta.value().enum_decl;
+	_enum->resolved.enum_id = enum_meta.value().enum_id;
+	_enum->resolved.variant_id = variant_id.value();
 }

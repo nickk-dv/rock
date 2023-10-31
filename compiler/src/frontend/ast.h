@@ -512,14 +512,31 @@ struct Ast_Array_Access
 	option<Ast_Access*> next;
 };
 
+enum class Ast_Enum_Tag
+{
+	Unresolved, Resolved, Invalid
+};
+
 struct Ast_Enum
 {
-	option<Ast_Ident> import;
-	Ast_Ident ident;
-	Ast_Ident variant;
-	//checker
-	u32 enum_id;
-	u32 variant_id;
+	Ast_Enum_Tag tag;
+	
+	union
+	{
+		struct Unresolved
+		{
+			option<Ast_Ident> import;
+			Ast_Ident ident;
+			Ast_Ident variant;
+		} unresolved;
+
+		struct Resolved
+		{
+			Ast_Enum_Decl* enum_decl;
+			u32 enum_id;
+			u32 variant_id;
+		} resolved;
+	};
 };
 
 struct Ast_Sizeof

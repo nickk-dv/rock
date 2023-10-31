@@ -422,7 +422,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	case Ast_Term_Tag::Enum:
 	{
 		Ast_Enum* _enum = term->as_enum;
-		return bc->program->enums[_enum->enum_id].enum_decl->variants[_enum->variant_id].constant;
+		return bc->program->enums[_enum->resolved.enum_id].enum_decl->variants[_enum->resolved.variant_id].constant;
 	}
 	case Ast_Term_Tag::Sizeof:
 	{

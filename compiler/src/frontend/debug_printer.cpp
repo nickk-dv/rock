@@ -632,14 +632,14 @@ void debug_print_array_access(Ast_Array_Access* array_access)
 
 void debug_print_enum(Ast_Enum* _enum)
 {
-	if (_enum->import)
+	if (_enum->unresolved.import)
 	{
-		debug_print_ident(_enum->import.value(), false, false);
+		debug_print_ident(_enum->unresolved.import.value(), false, false);
 		printf(".");
 	}
-	debug_print_ident(_enum->ident, false, false);
+	debug_print_ident(_enum->unresolved.ident, false, false);
 	printf("::");
-	debug_print_ident(_enum->variant, true, false);
+	debug_print_ident(_enum->unresolved.variant, true, false);
 }
 
 void debug_print_sizeof(Ast_Sizeof* _sizeof)

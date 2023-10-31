@@ -1057,15 +1057,17 @@ Ast_Array_Access* parse_array_access(Parser* parser)
 Ast_Enum* parse_enum(Parser* parser, bool import)
 {
 	Ast_Enum* _enum = arena_alloc<Ast_Enum>(&parser->arena);
-	if (import) { _enum->import = token_to_ident(consume_get()); consume(); }
+	_enum->tag = Ast_Enum_Tag::Unresolved;
+	if (import) { _enum->unresolved.import = token_to_ident(consume_get()); consume(); }
 
 	option<Token> ident = try_consume(TokenType::IDENT);
 	if (!ident) { error("Expected enum type identifier"); return NULL; }
-	_enum->ident = token_to_ident(ident.value());
+	_enum->unresolved.ident = token_to_ident(ident.value());
 	consume();
+	
 	option<Token> variant = try_consume(TokenType::IDENT);
 	if (!variant) { error("Expected enum variant identifier"); return NULL; }
-	_enum->variant = token_to_ident(variant.value());
+	_enum->unresolved.variant = token_to_ident(variant.value());
 
 	return _enum;
 }
