@@ -32,8 +32,10 @@ static option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr);
 
 static option<Ast_Type> check_const_expr(Check_Context* cc, Ast_Const_Expr* const_expr);
 static Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<Ast_Const_Expr*>& dependencies);
-static bool check_var_signature(Check_Context* cc, Ast_Var* var);
+static void check_var_resolve(Check_Context* cc, Ast_Var* var);
 static void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum);
+static void check_proc_call_resolve(Check_Context* cc, Ast_Proc_Call* proc_call);
+static void check_struct_init_resolve(Check_Context* cc, Ast_Struct_Init* struct_init);
 
 struct Literal
 {

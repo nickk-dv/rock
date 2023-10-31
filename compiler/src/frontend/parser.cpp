@@ -756,10 +756,11 @@ Ast_Var_Assign* parse_var_assign(Parser* parser)
 Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 {
 	Ast_Proc_Call* proc_call = arena_alloc<Ast_Proc_Call>(&parser->arena);
+	proc_call->tag = Ast_Proc_Call_Tag::Unresolved;
 	span_start();
 
-	if (import) { proc_call->import = token_to_ident(consume_get()); consume(); }
-	proc_call->ident = token_to_ident(consume_get());
+	if (import) { proc_call->unresolved.import = token_to_ident(consume_get()); consume(); }
+	proc_call->unresolved.ident = token_to_ident(consume_get());
 
 	if (!try_consume(TokenType::PAREN_START)) { error("Expected '(' in procedure call"); return NULL; }
 	if (!try_consume(TokenType::PAREN_END))
@@ -968,10 +969,11 @@ Ast_Term* parse_term(Parser* parser)
 Ast_Var* parse_var(Parser* parser)
 {
 	Ast_Var* var = arena_alloc<Ast_Var>(&parser->arena);
+	var->tag = Ast_Var_Tag::Unresolved;
 
 	option<Token> ident = try_consume(TokenType::IDENT);
 	if (!ident) { error("Expected variable identifier"); return NULL; }
-	var->ident = token_to_ident(ident.value());
+	var->unresolved.ident = token_to_ident(ident.value());
 
 	Token token = peek();
 	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
@@ -1091,8 +1093,10 @@ Ast_Sizeof* parse_sizeof(Parser* parser)
 Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
 {
 	Ast_Struct_Init* struct_init = arena_alloc<Ast_Struct_Init>(&parser->arena);
-	if (import) { struct_init->import = token_to_ident(consume_get()); consume(); }
-	if (type) { struct_init->ident = token_to_ident(consume_get()); }
+	struct_init->tag = Ast_Struct_Init_Tag::Unresolved;
+
+	if (import) { struct_init->unresolved.import = token_to_ident(consume_get()); consume(); }
+	if (type) { struct_init->unresolved.ident = token_to_ident(consume_get()); }
 	consume();
 
 	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }

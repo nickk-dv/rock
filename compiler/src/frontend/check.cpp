@@ -762,7 +762,7 @@ void check_var_assign(Check_Context* cc, Ast_Var_Assign* var_assign)
 	if (var_assign->op != AssignOp::NONE) //@Temp error, implement var asssign ops
 	{
 		err_report(Error::TEMP_VAR_ASSIGN_OP);
-		err_context(cc, var_assign->var->ident.span);
+		err_context(cc, var_assign->var->local.ident.span);
 		return;
 	}
 

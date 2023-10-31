@@ -106,6 +106,7 @@ ErrorMessage err_get_message(Error error)
 	case Error::CFG_BREAK_OUTSIDE_LOOP:      return { "Break outside a loop", "" };
 	case Error::CFG_CONTINUE_OUTSIDE_LOOP:   return { "Continue outside a loop", "" };
 
+	case Error::VAR_LOCAL_NOT_FOUND:         return { "Local variable is not found in current scope", "" };
 	case Error::RETURN_EXPECTED_NO_EXPR:     return { "Expected no return expression", "" };
 	case Error::RETURN_EXPECTED_EXPR:        return { "Expected return expression to match return type of the procedure", "" };
 	case Error::SWITCH_INCORRECT_EXPR_TYPE:  return { "Switching is only allowed on expression of enum or integer type", "" };
@@ -119,6 +120,8 @@ ErrorMessage err_get_message(Error error)
 	case Error::EXPR_EXPECTED_CONSTANT:      return { "Expected constant expression", "" };
 	case Error::ENUM_UNDECLARED:             return { "Enum type is not declared", "" };
 	case Error::ENUM_VARIANT_UNDECLARED:     return { "Enum variant is not declared", "" };
+	case Error::STRUCT_UNDECLARED:           return { "Struct type is not declared", "" };
+	case Error::PROC_UNDECLARED:             return { "Procedure is not declared", "" };
 
 	case Error::CONST_PROC_IS_NOT_CONST:     return { "Constant expression cannot contain procedure call", "" };
 	case Error::CONST_VAR_IS_NOT_GLOBAL:     return { "Constant expression variable must be a global variable", "" };

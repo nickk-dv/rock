@@ -528,12 +528,12 @@ void debug_print_proc_call(Ast_Proc_Call* proc_call, u32 depth)
 	debug_print_branch(depth);
 	printf("Proc_Call: ");
 	
-	if (proc_call->import)
+	if (proc_call->unresolved.import)
 	{
-		debug_print_ident(proc_call->import.value(), false, false);
+		debug_print_ident(proc_call->unresolved.import.value(), false, false);
 		printf(".");
 	}
-	debug_print_ident(proc_call->ident, true, false);
+	debug_print_ident(proc_call->unresolved.ident, true, false);
 
 	debug_print_spacing(depth);
 	printf("Access: ");
@@ -603,7 +603,7 @@ void debug_print_term(Ast_Term* term, u32 depth)
 
 void debug_print_var(Ast_Var* var)
 {
-	debug_print_ident(var->ident, false, false);
+	debug_print_ident(var->local.ident, false, false);
 	if (var->access) debug_print_access(var->access.value());
 	printf("\n");
 }
@@ -654,14 +654,14 @@ void debug_print_struct_init(Ast_Struct_Init* struct_init, u32 depth)
 
 	debug_print_spacing(depth);
 	printf("Struct_Type: ");
-	if (struct_init->import)
+	if (struct_init->unresolved.import)
 	{
-		debug_print_ident(struct_init->import.value(), false, false);
+		debug_print_ident(struct_init->unresolved.import.value(), false, false);
 		printf(".");
 	}
-	if (struct_init->ident)
+	if (struct_init->unresolved.ident)
 	{
-		debug_print_ident(struct_init->ident.value(), true, false);
+		debug_print_ident(struct_init->unresolved.ident.value(), true, false);
 	}
 	else printf("[?]\n");
 	

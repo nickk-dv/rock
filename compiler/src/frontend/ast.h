@@ -408,15 +408,32 @@ struct Ast_Var_Assign
 	Ast_Expr* expr;
 };
 
+enum class Ast_Proc_Call_Tag
+{
+	Unresolved, Resolved, Invalid
+};
+
 struct Ast_Proc_Call
 {
 	Span span;
-	option<Ast_Ident> import;
-	Ast_Ident ident;
+	Ast_Proc_Call_Tag tag;
 	std::vector<Ast_Expr*> input_exprs;
 	option<Ast_Access*> access;
-	//checker
-	u32 proc_id;
+
+	union
+	{
+		struct Unresolved
+		{
+			option<Ast_Ident> import;
+			Ast_Ident ident;
+		} unresolved;
+
+		struct Resolved
+		{
+			Ast_Proc_Decl* proc_decl;
+			u32 proc_id;
+		} resolved;
+	};
 };
 
 struct Ast_Folded_Expr
@@ -474,12 +491,34 @@ struct Ast_Term
 	};
 };
 
+enum class Ast_Var_Tag
+{
+	Unresolved, Local, Global, Invalid
+};
+
 struct Ast_Var
 {
-	Ast_Ident ident;
+	Ast_Var_Tag tag;
 	option<Ast_Access*> access;
-	//checker
-	option<u32> global_id;
+
+	union
+	{
+		struct Unresolved
+		{
+			Ast_Ident ident;
+		} unresolved;
+
+		struct Local
+		{
+			Ast_Ident ident;
+		} local;
+
+		struct Global
+		{
+			Ast_Global_Decl* global_decl;
+			u32 global_id;
+		} global;
+	};
 };
 
 enum class Ast_Access_Tag
@@ -532,8 +571,7 @@ struct Ast_Enum
 
 		struct Resolved
 		{
-			Ast_Enum_Decl* enum_decl;
-			u32 enum_id;
+			Ast_Enum_Type type;
 			u32 variant_id;
 		} resolved;
 	};
@@ -544,13 +582,29 @@ struct Ast_Sizeof
 	Ast_Type type;
 };
 
+enum class Ast_Struct_Init_Tag
+{
+	Unresolved, Resolved, Invalid
+};
+
 struct Ast_Struct_Init
 {
-	option<Ast_Ident> import;
-	option<Ast_Ident> ident;
+	Ast_Struct_Init_Tag tag;
 	std::vector<Ast_Expr*> input_exprs;
-	//checker
-	u32 struct_id;
+
+	union
+	{
+		struct Unresolved
+		{
+			option<Ast_Ident> import;
+			option<Ast_Ident> ident;
+		} unresolved;
+
+		struct Resolved
+		{
+			option<Ast_Struct_Type> type;
+		} resolved;
+	};
 };
 
 struct Ast_Array_Init

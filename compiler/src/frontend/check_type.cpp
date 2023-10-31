@@ -412,8 +412,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 
 		Ast_Type type = {};
 		type.tag = Ast_Type_Tag::Enum;
-		type.as_enum.enum_id = _enum->resolved.enum_id;
-		type.as_enum.enum_decl = _enum->resolved.enum_decl;
+		type.as_enum = _enum->resolved.type;
 		return type;
 	}
 	case Ast_Term_Tag::Sizeof: //@Const fold this should be part of constant evaluation
@@ -452,46 +451,25 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
-		Ast* target_ast = find_import(cc, struct_init->import);
-		if (target_ast == NULL) return {};
-
-		// find struct
-		Ast_Struct_Decl* struct_decl = NULL;
-		u32 struct_id = 0;
-
-		if (struct_init->ident)
-		{
-			Ast_Ident ident = struct_init->ident.value();
-			option<Ast_Struct_Info> struct_meta = find_struct(target_ast, ident);
-			if (!struct_meta)
-			{
-				err_set;
-				error("Struct type identifier wasnt found", ident);
-				return {};
-			}
-			struct_decl = struct_meta.value().struct_decl;
-			struct_id = struct_meta.value().struct_id;
-		}
+		check_struct_init_resolve(cc, struct_init);
+		if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return {};
 
 		if (context->expect_type)
 		{
 			Ast_Type expect_type = context->expect_type.value();
 			if (type_kind(cc, expect_type) != Type_Kind::Struct)
 			{
-				err_set; printf("Cannot use struct initializer in non struct type context\n");
+				err_set; 
+				printf("Cannot use struct initializer in non struct type context\n");
 				printf("Context: "); debug_print_type(expect_type); printf("\n");
 				return {};
 			}
 
 			Ast_Struct_Type expected_struct = expect_type.as_struct;
-			if (struct_decl == NULL)
+			if (struct_init->resolved.type)
 			{
-				struct_decl = expected_struct.struct_decl;
-				struct_id = expected_struct.struct_id;
-			}
-			else
-			{
-				if (struct_id != expected_struct.struct_id)
+				Ast_Struct_Type struct_type = struct_init->resolved.type.value();
+				if (struct_type.struct_id != expected_struct.struct_id)
 				{
 					err_set;
 					printf("Struct initializer struct type doesnt match the expected type:\n");
@@ -499,9 +477,10 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 					return {};
 				}
 			}
+			else struct_init->resolved.type = expected_struct;
 		}
 
-		if (struct_decl == NULL)
+		if (!struct_init->resolved.type)
 		{
 			err_set;
 			printf("Cannot infer the struct initializer type without a context\n");
@@ -511,6 +490,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		}
 
 		// check input count
+		Ast_Struct_Decl* struct_decl = struct_init->resolved.type.value().struct_decl;
 		u32 field_count = (u32)struct_decl->fields.size();
 		u32 input_count = (u32)struct_init->input_exprs.size();
 		if (field_count != input_count)
@@ -531,13 +511,9 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 			}
 		}
 
-		struct_init->struct_id = struct_id;
-
 		Ast_Type type = {};
 		type.tag = Ast_Type_Tag::Struct;
-		type.as_struct.struct_id = struct_id;
-		type.as_struct.struct_decl = struct_decl;
-
+		type.as_struct = struct_init->resolved.type.value();
 		return type;
 	}
 	case Ast_Term_Tag::Array_Init:
@@ -612,50 +588,28 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var)
 {
-	Ast_Ident ident = var->ident;
-	Ast* target_ast = cc->ast;
+	check_var_resolve(cc, var);
+	if (var->tag == Ast_Var_Tag::Invalid) return {};
 
-	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(ident, hash_ident(ident));
-	if (import_decl && var->access && var->access.value()->tag == Ast_Access_Tag::Var)
+	switch (var->tag)
 	{
-		target_ast = import_decl.value()->import_ast;
-		Ast_Var_Access* var_access = var->access.value()->as_var;
-		var->access = var_access->next;
-		Ast_Ident global_ident = var_access->ident;
-
-		option<Ast_Global_Info> global = find_global(target_ast, global_ident);
-		if (global)
-		{
-			var->global_id = global.value().global_id;
-			option<Ast_Type> type = global.value().global_decl->type;
-			if (type) return check_access(cc, type.value(), var->access);
-			else return {};
-		}
-		else
-		{
-			err_set;
-			error_pair("Failed to find global variable in module", "Module: ", ident, "Global identifier: ", global_ident);
-		}
-	}
-	else
+	case Ast_Var_Tag::Local:
 	{
-		option<Ast_Global_Info> global = find_global(target_ast, ident);
-		if (global)
+		option<Ast_Type> type = check_context_block_find_var_type(cc, var->local.ident);
+		if (!type)
 		{
-			var->global_id = global.value().global_id;
-			option<Ast_Type> type = global.value().global_decl->type;
-			if (type) return check_access(cc, type.value(), var->access);
-			else return {};
-		}
-		else
-		{
-			option<Ast_Type> type = check_context_block_find_var_type(cc, var->ident);
-			if (type) return check_access(cc, type.value(), var->access);
-
-			err_set;
-			error("Check var: var is not found or has not valid type", var->ident);
+			err_report(Error::VAR_LOCAL_NOT_FOUND);
+			err_context(cc, var->local.ident.span);
 			return {};
 		}
+		return check_access(cc, type.value(), var->access);
+	}
+	case Ast_Var_Tag::Global:
+	{
+		option<Ast_Type> type = var->global.global_decl->type;
+		if (!type) return {};
+		return check_access(cc, type.value(), var->access);
+	}
 	}
 }
 
@@ -720,22 +674,11 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 
 option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags)
 {
-	Ast* target_ast = find_import(cc, proc_call->import);
-	if (target_ast == NULL) return {};
-
-	// find proc
-	Ast_Ident ident = proc_call->ident;
-	option<Ast_Proc_Info> proc_meta = find_proc(target_ast, ident);
-	if (!proc_meta)
-	{
-		err_set;
-		error("Calling undeclared procedure", ident);
-		return {};
-	}
-	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
-	proc_call->proc_id = proc_meta.value().proc_id;
+	check_proc_call_resolve(cc, proc_call);
+	if (proc_call->tag == Ast_Proc_Call_Tag::Invalid) return {};
 
 	// check input count
+	Ast_Proc_Decl* proc_decl = proc_call->resolved.proc_decl;
 	u32 param_count = (u32)proc_decl->input_params.size();
 	u32 input_count = (u32)proc_call->input_exprs.size();
 	bool is_variadic = proc_decl->is_variadic;
@@ -747,7 +690,7 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 			err_set;
 			printf("Unexpected number of arguments in variadic procedure call:\n");
 			printf("Expected at least: %lu Got: %lu \n", param_count, input_count);
-			debug_print_ident(ident, true, true); printf("\n");
+			debug_print_ident(proc_call->resolved.proc_decl->ident, true, true); printf("\n");
 		}
 	}
 	else
@@ -757,7 +700,7 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 			err_set;
 			printf("Unexpected number of arguments in procedure call:\n");
 			printf("Expected: %lu Got: %lu \n", param_count, input_count);
-			debug_print_ident(ident, true, true); printf("\n");
+			debug_print_ident(proc_call->resolved.proc_decl->ident, true, true); printf("\n");
 		}
 	}
 
@@ -1202,14 +1145,16 @@ Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<
 		{
 			//@Consider access with expressions also
 			Ast_Var* var = term->as_var;
-			if (!check_var_signature(cc, var)) return Const_Eval::Invalid;
-			if (!var->global_id)
+			check_var_resolve(cc, var);
+			if (var->tag == Ast_Var_Tag::Invalid) return Const_Eval::Invalid;
+			if (var->tag == Ast_Var_Tag::Local)
 			{
 				err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
 				err_context(cc, expr->span);
 				return Const_Eval::Invalid;
 			}
-			Ast_Global_Decl* global_decl = cc->program->globals[var->global_id.value()].global_decl;
+
+			Ast_Global_Decl* global_decl = var->global.global_decl;
 			Const_Eval global_eval = global_decl->const_expr.eval;
 			if (global_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
 			if (global_eval == Const_Eval::Not_Evaluated) dependencies.emplace_back(&global_decl->const_expr);
@@ -1271,9 +1216,11 @@ Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<
 	}
 }
 
-bool check_var_signature(Check_Context* cc, Ast_Var* var)
+void check_var_resolve(Check_Context* cc, Ast_Var* var)
 {
-	Ast_Ident ident = var->ident;
+	if (var->tag != Ast_Var_Tag::Unresolved) return;
+
+	Ast_Ident ident = var->unresolved.ident;
 	Ast* target_ast = cc->ast;
 
 	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(ident, hash_ident(ident));
@@ -1285,20 +1232,34 @@ bool check_var_signature(Check_Context* cc, Ast_Var* var)
 
 		target_ast = import_decl.value()->import_ast;
 		option<Ast_Global_Info> global = find_global(target_ast, global_ident);
-		if (global) var->global_id = global.value().global_id;
+		if (global) 
+		{
+			var->tag = Ast_Var_Tag::Global;
+			var->global.global_decl = global.value().global_decl;
+			var->global.global_id = global.value().global_id;
+			return;
+		}
 		else
 		{
 			err_report(Error::VAR_GLOBAL_IS_NOT_FOUND);
 			err_context(cc, global_ident.span);
-			return false;
+			var->tag = Ast_Var_Tag::Invalid;
+			return;
 		}
 	}
 	else
 	{
 		option<Ast_Global_Info> global = find_global(target_ast, ident);
-		if (global) var->global_id = global.value().global_id;
+		if (global)
+		{
+			var->tag = Ast_Var_Tag::Global;
+			var->global.global_decl = global.value().global_decl;
+			var->global.global_id = global.value().global_id;
+			return;
+		}
 	}
-	return true;
+
+	var->tag = Ast_Var_Tag::Local;
 }
 
 void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
@@ -1308,12 +1269,12 @@ void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
 	Ast* target_ast = find_import(cc, _enum->unresolved.import);
 	if (target_ast == NULL) 
 	{
-		_enum->tag = Ast_Enum_Tag::Invalid;
+		_enum->tag = Ast_Enum_Tag::Invalid; 
 		return;
 	}
 
-	option<Ast_Enum_Info> enum_meta = find_enum(target_ast, _enum->unresolved.ident);
-	if (!enum_meta)
+	option<Ast_Enum_Info> enum_info = find_enum(target_ast, _enum->unresolved.ident);
+	if (!enum_info)
 	{
 		err_report(Error::ENUM_UNDECLARED);
 		err_context(cc, _enum->unresolved.ident.span);
@@ -1321,7 +1282,7 @@ void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
 		return;
 	}
 
-	Ast_Enum_Decl* enum_decl = enum_meta.value().enum_decl;
+	Ast_Enum_Decl* enum_decl = enum_info.value().enum_decl;
 	option<u32> variant_id = find_enum_variant(enum_decl, _enum->unresolved.variant);
 	if (!variant_id)
 	{
@@ -1332,7 +1293,63 @@ void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
 	}
 
 	_enum->tag = Ast_Enum_Tag::Resolved;
-	_enum->resolved.enum_decl = enum_meta.value().enum_decl;
-	_enum->resolved.enum_id = enum_meta.value().enum_id;
+	_enum->resolved.type = Ast_Enum_Type { enum_info.value().enum_id, enum_info.value().enum_decl };
 	_enum->resolved.variant_id = variant_id.value();
+}
+
+void check_proc_call_resolve(Check_Context* cc, Ast_Proc_Call* proc_call)
+{
+	if (proc_call->tag != Ast_Proc_Call_Tag::Unresolved) return;
+
+	Ast* target_ast = find_import(cc, proc_call->unresolved.import);
+	if (target_ast == NULL)
+	{
+		proc_call->tag = Ast_Proc_Call_Tag::Invalid;
+		return;
+	}
+
+	option<Ast_Proc_Info> proc_info = find_proc(target_ast, proc_call->unresolved.ident);
+	if (!proc_info)
+	{
+		err_report(Error::PROC_UNDECLARED);
+		err_context(cc, proc_call->unresolved.ident.span);
+		proc_call->tag = Ast_Proc_Call_Tag::Invalid;
+		return;
+	}
+
+	proc_call->tag = Ast_Proc_Call_Tag::Resolved;
+	proc_call->resolved.proc_id = proc_info.value().proc_id;
+	proc_call->resolved.proc_decl = proc_info.value().proc_decl;
+}
+
+void check_struct_init_resolve(Check_Context* cc, Ast_Struct_Init* struct_init)
+{
+	if (struct_init->tag != Ast_Struct_Init_Tag::Unresolved) return;
+
+	Ast* target_ast = find_import(cc, struct_init->unresolved.import);
+	if (target_ast == NULL)
+	{
+		struct_init->tag = Ast_Struct_Init_Tag::Invalid;
+		return;
+	}
+
+	if (struct_init->unresolved.ident)
+	{
+		option<Ast_Struct_Info> struct_info = find_struct(target_ast, struct_init->unresolved.ident.value());
+		if (!struct_info)
+		{
+			err_report(Error::STRUCT_UNDECLARED);
+			err_context(cc, struct_init->unresolved.ident.value().span);
+			struct_init->tag = Ast_Struct_Init_Tag::Invalid;
+			return;
+		}
+
+		struct_init->tag = Ast_Struct_Init_Tag::Resolved;
+		struct_init->resolved.type = Ast_Struct_Type { struct_info.value().struct_id, struct_info.value().struct_decl };
+	}
+	else
+	{
+		struct_init->tag = Ast_Struct_Init_Tag::Resolved;
+		struct_init->resolved.type = {};
+	}
 }

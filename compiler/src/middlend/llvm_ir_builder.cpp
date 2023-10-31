@@ -372,7 +372,7 @@ Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 //@Notice proc result access might be changed to work with address / deref similarly to var 
 Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags)
 {
-	Ast_Proc_IR_Info proc_info = bc->program->procs[proc_call->proc_id];
+	Ast_Proc_IR_Info proc_info = bc->program->procs[proc_call->resolved.proc_id];
 
 	std::vector<Value> input_values = {}; //@Perf memory overhead
 	input_values.reserve(proc_call->input_exprs.size());
@@ -422,7 +422,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	case Ast_Term_Tag::Enum:
 	{
 		Ast_Enum* _enum = term->as_enum;
-		return bc->program->enums[_enum->resolved.enum_id].enum_decl->variants[_enum->resolved.variant_id].constant;
+		return bc->program->enums[_enum->resolved.type.enum_id].enum_decl->variants[_enum->resolved.variant_id].constant;
 	}
 	case Ast_Term_Tag::Sizeof:
 	{
@@ -450,7 +450,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	case Ast_Term_Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
-		Type type = bc->program->structs[struct_init->struct_id].struct_type;
+		Type type = bc->program->structs[struct_init->resolved.type.value().struct_id].struct_type;
 		
 		std::vector<Value> values; //@Perf frequent allocation
 		bool is_const = true;
@@ -511,14 +511,14 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 
 IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
-	if (var->global_id)
+	if (var->tag == Ast_Var_Tag::Global)
 	{
-		Ast_Global_IR_Info global = bc->program->globals[var->global_id.value()];
+		Ast_Global_IR_Info global = bc->program->globals[var->global.global_id];
 		return build_access(bc, var->access, global.global_value, global.global_decl->type.value());
 	}
 	else
 	{
-		IR_Var_Info var_info = builder_context_block_find_var(bc, var->ident);
+		IR_Var_Info var_info = builder_context_block_find_var(bc, var->local.ident);
 		return build_access(bc, var->access, var_info.ptr, var_info.ast_type);
 	}
 }
