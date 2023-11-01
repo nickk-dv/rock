@@ -1,5 +1,5 @@
 use super::token::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, default};
 
 pub struct AstProgram<'a> {
     pub modules: Vec<&'a mut Ast<'a>>,
@@ -68,7 +68,7 @@ pub struct AstGlobalInfo<'a> {
 
 pub struct AstIdent<'a> {
     pub span: Span,
-    pub str: &'a str,
+    pub str: &'a u8,
 }
 
 pub struct AstType<'a> {
@@ -107,7 +107,7 @@ pub struct AstEnumType<'a> {
 
 pub struct AstImportDecl<'a> {
     pub alias: AstIdent<'a>,
-    pub filepath: AstLiteral,
+    pub filepath: AstLiteral<'a>,
     pub import_ast: &'a mut Ast<'a>,
 }
 
@@ -124,7 +124,7 @@ pub struct AstStructDecl<'a> {
 
 pub struct AstStructField<'a> {
     pub ident: AstIdent<'a>,
-    pub r#type: AstType<'a>,
+    pub type_: AstType<'a>,
     pub const_expr: Option<AstConstExpr<'a>>,
 }
 
@@ -147,13 +147,13 @@ pub struct AstProcDecl<'a> {
 
 pub struct AstProcParam<'a> {
     pub ident: AstIdent<'a>,
-    pub r#type: AstType<'a>,
+    pub type_: AstType<'a>,
 }
 
 pub struct AstGlobalDecl<'a> {
     pub ident: AstIdent<'a>,
     pub const_expr: AstConstExpr<'a>,
-    pub r#type: Option<AstType<'a>>,
+    pub type_: Option<AstType<'a>>,
 }
 
 pub struct AstBlock<'a> {
@@ -230,7 +230,7 @@ pub struct AstContinue {
 pub struct AstVarDecl<'a> {
     pub span: Span,
     pub ident: AstIdent<'a>,
-    pub r#type: Option<AstType<'a>>,
+    pub type_: Option<AstType<'a>>,
     pub expr: Option<&'a mut AstExpr<'a>>,
 }
 
@@ -278,7 +278,7 @@ pub enum FoldedLiteral {
 }
 
 pub struct AstConstExpr<'a> {
-    pub expr: AstExpr<'a>,
+    pub expr: &'a mut AstExpr<'a>,
     pub eval: ConstEval,
 }
 
@@ -292,7 +292,7 @@ pub enum AstTerm<'a> {
     Var(&'a mut AstVar<'a>),
     Enum(&'a mut AstEnum<'a>),
     Sizeof(&'a mut AstSizeof<'a>),
-    Literal(&'a mut AstLiteral),
+    Literal(&'a mut AstLiteral<'a>),
     ProcCall(&'a mut AstProcCall<'a>),
     ArrayInit(&'a mut AstArrayInit<'a>),
     StructInit(&'a mut AstStructInit<'a>),
@@ -350,7 +350,7 @@ pub struct AstEnumUnresolved<'a> {
 }
 
 pub struct AstEnumResolved<'a> {
-    pub r#type: AstEnumType<'a>,
+    pub type_: AstEnumType<'a>,
     pub variant_id: u32,
 }
 
@@ -358,8 +358,8 @@ pub struct AstSizeof<'a> {
     pub r#type: AstType<'a>,
 }
 
-pub struct AstLiteral {
-    pub token: Token,
+pub struct AstLiteral<'a> {
+    pub token: Token<'a>,
 }
 
 pub struct AstProcCall<'a> {
@@ -385,7 +385,7 @@ pub struct AstProcCallResolved<'a> {
 }
 
 pub struct AstArrayInit<'a> {
-    pub r#type: Option<AstType<'a>>,
+    pub type_: Option<AstType<'a>>,
     pub input_exprs: Vec<&'a mut AstExpr<'a>>,
 }
 
@@ -405,5 +405,29 @@ pub struct AstStructInitUnresolved<'a> {
 }
 
 pub struct AstStructInitResolved<'a> {
-    pub r#type: Option<AstStructType<'a>>,
+    pub type_: Option<AstStructType<'a>>,
+}
+
+impl<'a> AstIdent<'a> {
+    pub fn from_token(token: Token<'a>) -> Self {
+        match token.data {
+            TokenData::Ident(str) => Self {
+                span: token.span,
+                str,
+            },
+            _ => {
+                panic!("AstIdent from_token: token is not TokenType::Ident");
+            }
+        }
+    }
+}
+
+impl Default for AstType<'_> {
+    fn default() -> Self {
+        Self {
+            span: Span::default(),
+            pointer_level: 0,
+            union: AstTypeUnion::Basic(BasicType::I8),
+        }
+    }
 }

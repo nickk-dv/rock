@@ -1,5 +1,3 @@
-use std::fs::copy;
-
 use super::token::*;
 
 pub const TOKEN_BUFFER_SIZE: usize = 256;
@@ -65,7 +63,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn tokenize(&mut self, tokens: &mut [Token; TOKEN_BUFFER_SIZE]) {
+    pub fn tokenize(&mut self, tokens: &mut [Token<'a>; TOKEN_BUFFER_SIZE]) {
         let copy_count: usize = if self.cursor == 0 { 0 } else { TOKEN_LOOKAHEAD };
 
         for i in 0..copy_count {
@@ -77,7 +75,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn get_token(&mut self) -> Token {
+    fn get_token(&mut self) -> Token<'a> {
         self.skip_whitespace_and_comments();
 
         match self.peek() {
@@ -94,7 +92,7 @@ impl<'a> Lexer<'a> {
 
     fn skip_whitespace_and_comments(&mut self) {}
 
-    fn get_char_token(&mut self, c: u8) -> Token {
+    fn get_char_token(&mut self, c: u8) -> Token<'a> {
         let mut token = Token::default();
         token.span.start = self.cursor;
         self.consume();
@@ -133,7 +131,7 @@ impl<'a> Lexer<'a> {
         return token;
     }
 
-    fn get_string_token(&mut self, c: u8) -> Token {
+    fn get_string_token(&mut self, c: u8) -> Token<'a> {
         let mut token = Token::default();
         token.span.start = self.cursor;
         self.consume();
@@ -142,7 +140,7 @@ impl<'a> Lexer<'a> {
         return token;
     }
 
-    fn get_ident_token(&mut self, c: u8) -> Token {
+    fn get_ident_token(&mut self, c: u8) -> Token<'a> {
         let mut token = Token::default();
         token.span.start = self.cursor;
         self.consume();
@@ -167,7 +165,7 @@ impl<'a> Lexer<'a> {
         return token;
     }
 
-    fn get_number_token(&mut self, c: u8) -> Token {
+    fn get_number_token(&mut self, c: u8) -> Token<'a> {
         let mut token = Token::default();
         token.span.start = self.cursor;
         self.consume();
@@ -175,7 +173,7 @@ impl<'a> Lexer<'a> {
         return token;
     }
 
-    fn get_symbol_token(&mut self, c: u8) -> Token {
+    fn get_symbol_token(&mut self, c: u8) -> Token<'a> {
         let mut token = Token::default();
         token.span.start = self.cursor;
 

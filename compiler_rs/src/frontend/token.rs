@@ -5,21 +5,22 @@ pub struct Span {
 }
 
 #[derive(Copy, Clone)]
-pub struct Token {
+pub struct Token<'a> {
     pub span: Span,
     pub token_type: TokenType,
-    pub data: TokenData,
+    pub data: TokenData<'a>,
 }
 
 #[derive(Copy, Clone)]
-pub enum TokenData {
+pub enum TokenData<'a> {
     Char(u8),
     Bool(bool),
     Float(f64),
     Integer(u64),
+    Ident(&'a u8),
 }
 
-impl Default for Token {
+impl Default for Token<'_> {
     fn default() -> Self {
         Self {
             span: Span::default(),

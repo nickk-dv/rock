@@ -7,8 +7,8 @@ pub struct Parser<'a> {
     arena: Arena<'a>,
     lexer: Lexer<'a>,
     peek_index: u32,
-    prev_last: Token,
-    tokens: [Token; TOKEN_BUFFER_SIZE],
+    prev_last: Token<'a>,
+    tokens: [Token<'a>; TOKEN_BUFFER_SIZE],
 }
 
 impl<'a> Parser<'a> {
@@ -95,22 +95,133 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Option<AstType<'a>> {
-        return None;
+        let mut type_ = AstType::default();
+        let mut token = self.peek();
+
+        while token.token_type == TokenType::Times {
+            self.consume();
+            token = self.peek();
+            type_.pointer_level += 1;
+        }
+
+        if let Some(basic_type) = token.token_type.to_basic_type() {
+            self.consume();
+            type_.union = AstTypeUnion::Basic(basic_type);
+            return Some(type_);
+        }
+
+        match token.token_type {
+            TokenType::Ident => {
+                self.parse_custom_type().and_then(|custom| {
+                    type_.union = AstTypeUnion::Custom(custom);
+                    Some(())
+                });
+            }
+            TokenType::BracketStart => {
+                self.parse_array_type().and_then(|array| {
+                    type_.union = AstTypeUnion::Array(array);
+                    Some(())
+                });
+            }
+            _ => {
+                println!("Expected basic type, type identifier or array type");
+                return None;
+            }
+        }
+
+        return Some(type_);
     }
 
     fn parse_array_type(&mut self) -> Option<&'a mut AstArrayType<'a>> {
-        return None;
+        let array_type = self.arena.alloc::<AstArrayType>();
+        self.consume();
+
+        self.parse_sub_expr(0).and_then(|expr| {
+            array_type.const_expr.expr = expr;
+            Some(())
+        });
+
+        if let None = self.try_consume(TokenType::BracketEnd) {
+            println!("Expected ']' in array type");
+            return None;
+        }
+
+        self.parse_type().and_then(|type_| {
+            array_type.element_type = type_;
+            Some(())
+        });
+
+        return Some(array_type);
     }
 
     fn parse_custom_type(&mut self) -> Option<&'a mut AstCustomType<'a>> {
-        return None;
+        let custom = self.arena.alloc::<AstCustomType>();
+
+        let import = AstIdent::from_token(self.consume_get());
+        if let None = self.try_consume(TokenType::Dot) {
+            custom.ident = import;
+        } else {
+            custom.import = Some(import);
+            if let Some(ident) = self.try_consume(TokenType::Ident) {
+                custom.ident = AstIdent::from_token(ident);
+            } else {
+                println!("Expected type identifier");
+                return None;
+            }
+        }
+
+        return Some(custom);
     }
 
     fn parse_import_decl(&mut self) -> Option<&'a mut AstImportDecl<'a>> {
-        return None;
+        let decl = self.arena.alloc::<AstImportDecl>();
+        decl.alias = AstIdent::from_token(self.consume_get());
+        self.consume();
+        self.consume();
+
+        return match self.try_consume(TokenType::LiteralString) {
+            Some(token) => {
+                decl.filepath.token = token;
+                Some(decl)
+            }
+            None => {
+                println!("Expected string literal in 'import' declaration");
+                None
+            }
+        };
     }
 
     fn parse_use_decl(&mut self) -> Option<&'a mut AstUseDecl<'a>> {
+        let decl = self.arena.alloc::<AstUseDecl>();
+        decl.alias = AstIdent::from_token(self.consume_get());
+        self.consume();
+        self.consume();
+
+        match self.try_consume(TokenType::Ident) {
+            Some(token) => {
+                decl.import = AstIdent::from_token(token);
+            }
+            None => {
+                println!("Expected imported module identifier");
+                return None;
+            }
+        };
+
+        if self.try_consume(TokenType::Dot).is_none() {
+            println!("Expected '.' followed by symbol");
+            return None;
+        }
+
+        match self.try_consume(TokenType::Ident) {
+            Some(token) => {
+                decl.symbol = AstIdent::from_token(token);
+            }
+            None => {
+                println!("Expected symbol identifier");
+                return None;
+            }
+        };
+
         return None;
     }
 
@@ -238,11 +349,11 @@ impl<'a> Parser<'a> {
         return None;
     }
 
-    fn peek(&mut self) -> Token {
+    fn peek(&mut self) -> Token<'a> {
         return self.peek_next(0);
     }
 
-    fn peek_next(&mut self, offset: u32) -> Token {
+    fn peek_next(&mut self, offset: u32) -> Token<'a> {
         return *self
             .tokens
             .get((self.peek_index + offset) as usize)
@@ -253,13 +364,13 @@ impl<'a> Parser<'a> {
         self.peek_index += 1;
     }
 
-    fn consume_get(&mut self) -> Token {
+    fn consume_get(&mut self) -> Token<'a> {
         let token = self.peek();
         self.consume();
         return token;
     }
 
-    fn try_consume(&mut self, token_type: TokenType) -> Option<Token> {
+    fn try_consume(&mut self, token_type: TokenType) -> Option<Token<'a>> {
         let token = self.peek();
         if token_type == token.token_type {
             Some(token)
