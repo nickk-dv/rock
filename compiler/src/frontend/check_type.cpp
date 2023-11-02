@@ -56,7 +56,7 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 	{
 		//@Todo also must be > 0
 		//@Temp using i32 instead of u32 for static arrays to avoid type mismatch
-		option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr.expr, type_from_basic(BasicType::I32), true);
+		option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr->expr, type_from_basic(BasicType::I32), true);
 		if (!expr_type) return {};
 		
 		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
@@ -251,19 +251,6 @@ void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* ty
 
 option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* expr)
 {
-	if (context->expect_constant)
-	{
-		std::vector<Ast_Const_Expr*> dependencies;
-		Const_Eval eval = check_const_expr_eval(cc, expr, dependencies);
-		if (eval == Const_Eval::Invalid) return {};
-
-		printf("Const_Expr: \n");
-		err_context(cc, expr->span);
-		printf("Dependencies: \n");
-		for (Ast_Const_Expr* const_expr : dependencies)
-		err_context(cc, const_expr->expr->span);
-	}
-	
 	if (check_is_const_expr(expr))
 	{
 		expr->is_const = true;
@@ -273,6 +260,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 	{
 		if (expr->is_const == false && context->expect_constant)
 		{
+			//@Removed error in old const expr pipeline
 			err_report(Error::EXPR_EXPECTED_CONSTANT);
 			err_context(cc, expr->span);
 			return {};
@@ -1120,19 +1108,35 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 	}
 }
 
-option<Ast_Type> check_const_expr(Check_Context* cc, Ast_Const_Expr* const_expr)
+option<Ast_Type> check_const_expr(Check_Context* cc, Const_Dependency constant)
 {
-	std::vector<Ast_Const_Expr*> dependencies;
-	Const_Eval eval = check_const_expr_eval(cc, const_expr->expr, dependencies);
+	Ast_Const_Expr* const_expr = const_dependency_get_const_expr(constant);
+	if (const_expr->eval == Const_Eval::Invalid) return {};
+	//@Constant might be already resolved and valid
+	
+	Arena arena = {};
+	arena_init(&arena, 1024);
+
+	Const_Dependency_Dag_Node* node = arena_alloc<Const_Dependency_Dag_Node>(&arena);
+	node->parent = NULL;
+	node->constant = constant;
+
+	Const_Eval eval = check_const_expr_dependencies(cc, &arena, const_expr->expr, node);
 	if (eval == Const_Eval::Invalid) return {};
 
-	printf("Const_Expr: \n");
-	err_context(cc, const_expr->expr->span);
-	printf("Dependencies: \n");
-	for (Ast_Const_Expr* const_expr : dependencies) err_context(cc, const_expr->expr->span);
+	//@Temp
+	return type_from_basic(BasicType::I8);
 }
 
-Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<Ast_Const_Expr*>& dependencies)
+static bool const_dependency_node_has_cycle_bottom_up(Const_Dependency constant, Const_Dependency_Dag_Node* node)
+{
+	node = node->parent;
+	if (node == NULL) return false;
+	if (match_const_dependency(constant, node->constant)) return true;
+	return const_dependency_node_has_cycle_bottom_up(constant, node);
+}
+
+Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Const_Dependency_Dag_Node* parent)
 {
 	switch (expr->tag)
 	{
@@ -1153,11 +1157,35 @@ Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<
 				err_context(cc, expr->span);
 				return Const_Eval::Invalid;
 			}
-
+			
 			Ast_Global_Decl* global_decl = var->global.global_decl;
-			Const_Eval global_eval = global_decl->const_expr.eval;
-			if (global_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
-			if (global_eval == Const_Eval::Not_Evaluated) dependencies.emplace_back(&global_decl->const_expr);
+			Const_Eval eval = global_decl->const_expr->eval;
+			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (eval == Const_Eval::Not_Evaluated)
+			{
+				Const_Dependency_Dag_Node* node = arena_alloc<Const_Dependency_Dag_Node>(arena);
+				node->parent = parent;
+				node->constant = const_dependency_from_global(global_decl);
+
+				//@Need to mark as invalid in case of cycles
+				//@Checking for cycle right away + breaking out
+				if (const_dependency_node_has_cycle_bottom_up(node->constant, node))
+				{
+					printf("Dependency expr is part of a cycle: \n");
+					switch (node->constant.tag)
+					{
+					case Const_Dependency_Tag::Global: err_context(cc, node->constant.as_global->const_expr->expr->span); break;
+					case Const_Dependency_Tag::Enum_Variant: err_context(cc, node->constant.as_enum_variant->const_expr->expr->span); break;
+					}
+
+					return Const_Eval::Invalid;
+				}
+				else
+				{
+					node->dependencies.emplace_back(node);
+					return check_const_expr_dependencies(cc, arena, global_decl->const_expr->expr, node);
+				}
+			}
 			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Enum:
@@ -1187,7 +1215,7 @@ Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
 			for (Ast_Expr* input_expr : struct_init->input_exprs)
-			if (check_const_expr_eval(cc, input_expr, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Array_Init:
@@ -1195,7 +1223,7 @@ Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<
 			//@Consider array type signature
 			Ast_Array_Init* array_init = term->as_array_init;
 			for (Ast_Expr* input_expr : array_init->input_exprs)
-			if (check_const_expr_eval(cc, input_expr, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 			return Const_Eval::Not_Evaluated;
 		}
 		}
@@ -1203,14 +1231,14 @@ Const_Eval check_const_expr_eval(Check_Context* cc, Ast_Expr* expr, std::vector<
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		if (check_const_expr_eval(cc, unary_expr->right, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_expr_dependencies(cc, arena, unary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		if (check_const_expr_eval(cc, binary_expr->left, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
-		if (check_const_expr_eval(cc, binary_expr->right, dependencies) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_expr_dependencies(cc, arena, binary_expr->left, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_const_expr_dependencies(cc, arena, binary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
 	}
@@ -1352,4 +1380,39 @@ void check_struct_init_resolve(Check_Context* cc, Ast_Struct_Init* struct_init)
 		struct_init->tag = Ast_Struct_Init_Tag::Resolved;
 		struct_init->resolved.type = {};
 	}
+}
+
+bool match_const_dependency(Const_Dependency a, Const_Dependency b)
+{
+	if (a.tag != b.tag) return false;
+	switch (a.tag)
+	{ 
+	case Const_Dependency_Tag::Global: return a.as_global == b.as_global;
+	case Const_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
+	}
+}
+
+Ast_Const_Expr* const_dependency_get_const_expr(Const_Dependency constant)
+{
+	switch (constant.tag)
+	{
+	case Const_Dependency_Tag::Global: return constant.as_global->const_expr;
+	case Const_Dependency_Tag::Enum_Variant: return constant.as_enum_variant->const_expr;
+	}
+}
+
+Const_Dependency const_dependency_from_global(Ast_Global_Decl* global_decl)
+{
+	Const_Dependency constant = {};
+	constant.tag = Const_Dependency_Tag::Global;
+	constant.as_global = global_decl;
+	return constant;
+}
+
+Const_Dependency const_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant)
+{
+	Const_Dependency constant = {};
+	constant.tag = Const_Dependency_Tag::Enum_Variant;
+	constant.as_enum_variant = enum_variant;
+	return constant;
 }

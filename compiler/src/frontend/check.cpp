@@ -200,7 +200,7 @@ void check_decls(Check_Context* cc)
 
 			if (field.const_expr)
 			{
-				check_expr_type(cc, field.const_expr.value().expr, field.type, true);
+				check_expr_type(cc, field.const_expr.value()->expr, field.type, true);
 			}
 			
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
@@ -243,7 +243,7 @@ void check_decls(Check_Context* cc)
 			}
 			else name_set.add(variant.ident, hash_ident(variant.ident));
 
-			check_expr_type(cc, variant.const_expr.expr, enum_type, true);
+			check_expr_type(cc, variant.const_expr->expr, enum_type, true);
 		}
 	}
 	
@@ -272,7 +272,10 @@ void check_decls(Check_Context* cc)
 
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
-		global_decl->type = check_expr_type(cc, global_decl->const_expr.expr, {}, true);
+		//@New pipeline
+		global_decl->type = check_const_expr(cc, const_dependency_from_global(global_decl));
+		//@Old
+		global_decl->type = check_expr_type(cc, global_decl->const_expr->expr, {}, true);
 	}
 }
 
@@ -704,7 +707,7 @@ void check_switch(Check_Context* cc, Ast_Switch* _switch)
 
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
-		check_expr_type(cc, _case.const_expr.expr, type.value(), true);
+		check_expr_type(cc, _case.const_expr->expr, type.value(), true);
 	}
 }
 

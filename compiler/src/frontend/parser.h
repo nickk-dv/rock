@@ -39,6 +39,7 @@ static Ast_Proc_Call* parse_proc_call(Parser* parser, bool import);
 static Ast_Expr* parse_expr(Parser* parser);
 static Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec = 0);
 static Ast_Expr* parse_primary_expr(Parser* parser);
+static Ast_Const_Expr* parse_const_expr(Parser* parser, Ast_Expr* expr);
 static Ast_Term* parse_term(Parser* parser);
 static Ast_Var* parse_var(Parser* parser);
 static Ast_Access* parse_access(Parser* parser);

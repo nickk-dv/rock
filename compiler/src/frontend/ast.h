@@ -24,7 +24,6 @@ struct Ast_Array_Type;
 struct Ast_Custom_Type;
 struct Ast_Struct_Type;
 struct Ast_Enum_Type;
-struct Ast_Const_Expr;
 
 struct Ast_Import_Decl;
 struct Ast_Use_Decl;
@@ -74,6 +73,7 @@ struct Ast_Program
 {
 	std::vector<Ast*> modules;
 	HashMap<std::string, Ast*, u32, match_string> module_map;
+	
 	std::vector<Ast_Struct_IR_Info> structs;
 	std::vector<Ast_Enum_IR_Info> enums;
 	std::vector<Ast_Proc_IR_Info> procs;
@@ -121,7 +121,6 @@ struct Ast
 	std::vector<Ast_Proc_Decl*> procs;
 	std::vector<Ast_Global_Decl*> globals;
 	
-	//checker
 	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
 	HashMap<Ast_Ident, Ast_Struct_Info, u32, match_ident> struct_table;
 	HashMap<Ast_Ident, Ast_Enum_Info, u32, match_ident> enum_table;
@@ -183,12 +182,6 @@ enum class Const_Eval
 	Valid = 2,
 };
 
-struct Ast_Const_Expr
-{
-	Ast_Expr* expr;
-	Const_Eval eval;
-};
-
 enum class Ast_Type_Tag
 {
 	Basic, Array, Custom, Struct, Enum
@@ -220,7 +213,7 @@ struct Ast_Custom_Type
 struct Ast_Array_Type
 {
 	Ast_Type element_type;
-	Ast_Const_Expr const_expr;
+	Ast_Const_Expr* const_expr;
 };
 
 struct Ast_Import_Decl
@@ -248,7 +241,7 @@ struct Ast_Struct_Field
 {
 	Ast_Ident ident;
 	Ast_Type type;
-	option<Ast_Const_Expr> const_expr;
+	option<Ast_Const_Expr*> const_expr;
 };
 
 struct Ast_Enum_Decl
@@ -261,7 +254,7 @@ struct Ast_Enum_Decl
 struct Ast_Enum_Variant
 {
 	Ast_Ident ident;
-	Ast_Const_Expr const_expr;
+	Ast_Const_Expr* const_expr;
 	//ir builder
 	LLVMValueRef constant;
 };
@@ -286,7 +279,7 @@ struct Ast_Proc_Param
 struct Ast_Global_Decl
 {
 	Ast_Ident ident;
-	Ast_Const_Expr const_expr;
+	Ast_Const_Expr* const_expr;
 	option<Ast_Type> type;
 };
 
@@ -381,7 +374,7 @@ struct Ast_Switch
 
 struct Ast_Switch_Case
 {
-	Ast_Const_Expr const_expr;
+	Ast_Const_Expr* const_expr;
 	option<Ast_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
@@ -624,6 +617,12 @@ struct Ast_Binary_Expr
 	BinaryOp op;
 	Ast_Expr* left;
 	Ast_Expr* right;
+};
+
+struct Ast_Const_Expr
+{
+	Ast_Expr* expr;
+	Const_Eval eval;
 };
 
 #endif
