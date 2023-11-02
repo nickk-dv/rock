@@ -243,6 +243,9 @@ void check_decls(Check_Context* cc)
 			}
 			else name_set.add(variant.ident, hash_ident(variant.ident));
 
+			//@New pipeline
+			check_const_expr(cc, const_dependency_from_enum_variant(&variant));
+			//@Old
 			check_expr_type(cc, variant.const_expr->expr, enum_type, true);
 		}
 	}

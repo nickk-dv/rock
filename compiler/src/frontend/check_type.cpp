@@ -1108,35 +1108,24 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 	}
 }
 
+#include "general/tree.h"
+#include "general/arena.h"
+
 option<Ast_Type> check_const_expr(Check_Context* cc, Const_Dependency constant)
 {
 	Ast_Const_Expr* const_expr = const_dependency_get_const_expr(constant);
 	if (const_expr->eval == Const_Eval::Invalid) return {};
 	//@Constant might be already resolved and valid
-	
-	Arena arena = {};
-	arena_init(&arena, 1024);
 
-	Const_Dependency_Dag_Node* node = arena_alloc<Const_Dependency_Dag_Node>(&arena);
-	node->parent = NULL;
-	node->constant = constant;
-
-	Const_Eval eval = check_const_expr_dependencies(cc, &arena, const_expr->expr, node);
+	Tree<Const_Dependency> tree(2048, constant);
+	Const_Eval eval = check_const_expr_dependencies(cc, &tree.arena, const_expr->expr, tree.root);
 	if (eval == Const_Eval::Invalid) return {};
 
 	//@Temp
 	return type_from_basic(BasicType::I8);
 }
 
-static bool const_dependency_node_has_cycle_bottom_up(Const_Dependency constant, Const_Dependency_Dag_Node* node)
-{
-	node = node->parent;
-	if (node == NULL) return false;
-	if (match_const_dependency(constant, node->constant)) return true;
-	return const_dependency_node_has_cycle_bottom_up(constant, node);
-}
-
-Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Const_Dependency_Dag_Node* parent)
+Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Const_Dependency>* parent)
 {
 	switch (expr->tag)
 	{
@@ -1147,7 +1136,9 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		{
 		case Ast_Term_Tag::Var:
 		{
+			//@Need to mark as invalid in case of cycles
 			//@Consider access with expressions also
+
 			Ast_Var* var = term->as_var;
 			check_var_resolve(cc, var);
 			if (var->tag == Ast_Var_Tag::Invalid) return Const_Eval::Invalid;
@@ -1163,28 +1154,19 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
 			if (eval == Const_Eval::Not_Evaluated)
 			{
-				Const_Dependency_Dag_Node* node = arena_alloc<Const_Dependency_Dag_Node>(arena);
-				node->parent = parent;
-				node->constant = const_dependency_from_global(global_decl);
-
-				//@Need to mark as invalid in case of cycles
-				//@Checking for cycle right away + breaking out
-				if (const_dependency_node_has_cycle_bottom_up(node->constant, node))
+				Const_Dependency global_constant = const_dependency_from_global(global_decl);
+				Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, global_constant);
+				if (tree_node_has_cycle(node, global_constant, match_const_dependency))
 				{
 					printf("Dependency expr is part of a cycle: \n");
-					switch (node->constant.tag)
+					switch (node->value.tag)
 					{
-					case Const_Dependency_Tag::Global: err_context(cc, node->constant.as_global->const_expr->expr->span); break;
-					case Const_Dependency_Tag::Enum_Variant: err_context(cc, node->constant.as_enum_variant->const_expr->expr->span); break;
+					case Const_Dependency_Tag::Global: err_context(cc, node->value.as_global->const_expr->expr->span); break;
+					case Const_Dependency_Tag::Enum_Variant: err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
 					}
-
 					return Const_Eval::Invalid;
 				}
-				else
-				{
-					node->dependencies.emplace_back(node);
-					return check_const_expr_dependencies(cc, arena, global_decl->const_expr->expr, node);
-				}
+				else return check_const_expr_dependencies(cc, arena, global_decl->const_expr->expr, node);
 			}
 			return Const_Eval::Not_Evaluated;
 		}
@@ -1193,6 +1175,27 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			Ast_Enum* _enum = term->as_enum;
 			check_enum_resolve(cc, _enum);
 			if (_enum->tag == Ast_Enum_Tag::Invalid) return Const_Eval::Invalid;
+
+			Ast_Enum_Decl* enum_decl = _enum->resolved.type.enum_decl;
+			Ast_Enum_Variant* enum_variant = &enum_decl->variants[_enum->resolved.variant_id];
+			Const_Eval eval = enum_variant->const_expr->eval;
+			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (eval == Const_Eval::Not_Evaluated)
+			{
+				Const_Dependency enum_variant_constant = const_dependency_from_enum_variant(enum_variant);
+				Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, enum_variant_constant);
+				if (tree_node_has_cycle(node, enum_variant_constant, match_const_dependency))
+				{
+					printf("Dependency expr is part of a cycle: \n");
+					switch (node->value.tag)
+					{
+					case Const_Dependency_Tag::Global: err_context(cc, node->value.as_global->const_expr->expr->span); break;
+					case Const_Dependency_Tag::Enum_Variant: err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
+					}
+					return Const_Eval::Invalid;
+				}
+				else return check_const_expr_dependencies(cc, arena, enum_variant->const_expr->expr, node);
+			}
 			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Sizeof:
