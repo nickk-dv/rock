@@ -17,6 +17,7 @@ static u32 check_get_type_size(Ast_Type type);
 static u32 check_get_type_align(Ast_Type type);
 static void check_ast(Check_Context* cc);
 static void check_proc_block(Check_Context* cc, Ast_Proc_Decl* proc_decl);
+static bool basic_type_is_integer(BasicType type);
 
 static Terminator check_cfg_block(Check_Context* cc, Ast_Block* block, bool is_loop, bool is_defer);
 static void check_cfg_if(Check_Context* cc, Ast_If* _if, bool is_loop, bool is_defer);

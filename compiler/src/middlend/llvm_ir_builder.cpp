@@ -366,6 +366,7 @@ Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 	{
 		return ast_type.as_enum.enum_decl->variants[0].constant;
 	}
+	default: { err_internal("build_default_value: invalid Ast_Type_Tag"); return NULL; }
 	}
 }
 
@@ -406,6 +407,7 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 	case Ast_Expr_Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
 	case Ast_Expr_Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
 	case Ast_Expr_Tag::Folded_Expr: return build_folded_expr(bc, expr->as_folded_expr);
+	default: { err_internal("build_expr: invalid Ast_Expr_Tag"); return NULL; }
 	}
 }
 
@@ -506,6 +508,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Value temp_value = LLVMBuildLoad2(bc->builder, type, temp_ptr, "temp_array_val");
 		return temp_value;
 	}
+	default: { err_internal("build_term: invalid Ast_Term_Tag"); return NULL; }
 	}
 }
 
@@ -586,6 +589,7 @@ Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr)
 	case UnaryOp::BITWISE_NOT: return LLVMBuildNot(bc->builder, rhs, "utmp");
 	case UnaryOp::ADDRESS_OF: return rhs;
 	case UnaryOp::DEREFERENCE: return NULL; //@Notice dereference isnt handled yet
+	default: { err_internal("build_unary_expr: invalid UnaryOp"); return NULL; }
 	}
 }
 
@@ -623,6 +627,7 @@ Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr)
 	case BinaryOp::BITWISE_XOR: return LLVMBuildXor(bc->builder, lhs, rhs, "btmp");
 	case BinaryOp::BITSHIFT_LEFT: return LLVMBuildShl(bc->builder, lhs, rhs, "btmp");
 	case BinaryOp::BITSHIFT_RIGHT: return LLVMBuildLShr(bc->builder, lhs, rhs, "btmp"); //@LLVMBuildAShr used for maintaining the sign?
+	default: { err_internal("build_binary_expr: invalid BinaryOp"); return NULL; }
 	}
 }
 

@@ -2,6 +2,7 @@
 #define TOKEN_H
 
 #include "general/general.h"
+#include "error_handler.h"
 
 enum class TokenType;
 enum class UnaryOp;
@@ -17,7 +18,6 @@ constexpr option<BinaryOp> token_to_binary_op(TokenType type);
 constexpr option<AssignOp> token_to_assign_op(TokenType type);
 constexpr option<BasicType> token_to_basic_type(TokenType type);
 constexpr u32 token_binary_op_prec(BinaryOp binary_op);
-constexpr bool token_basic_type_is_integer(BasicType type);
 
 enum class TokenType
 {
@@ -170,12 +170,6 @@ enum class BasicType
 	STRING,
 };
 
-struct Span
-{
-	u32 start;
-	u32 end;
-};
-
 struct Token
 {
 	Token() {};
@@ -297,21 +291,14 @@ constexpr u32 token_binary_op_prec(BinaryOp binary_op)
 	case BinaryOp::BITWISE_XOR:
 		return 4;
 	case BinaryOp::BITSHIFT_LEFT:
-	case BinaryOp::BITSHIFT_RIGHT:
+	case BinaryOp::BITSHIFT_RIGHT: 
 		return 5;
-	}
-}
-
-constexpr bool token_basic_type_is_integer(BasicType type)
-{
-	switch (type)
+	default:
 	{
-	case BasicType::BOOL:
-	case BasicType::F32:
-	case BasicType::F64:
-	case BasicType::STRING:
-		return false;
-	default: return true;
+		err_report(Error::COMPILER_INTERNAL);
+		err_context("unexpected switch case in token_binary_op_prec");
+		return 0;
+	}
 	}
 }
 

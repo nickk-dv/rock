@@ -1,17 +1,27 @@
 #ifndef ERROR_HANDLER_H
 #define ERROR_HANDLER_H
 
-#include "check_context.h"
+#include "general/general.h"
 
-enum class Error;
+struct Span;
 struct ErrorMessage;
+struct Check_Context;
+enum class Error;
 
 bool err_get_status();
 void err_report(Error error);
 void err_context(Check_Context* cc);
 void err_context(Check_Context* cc, Span span);
+void err_context(const char* message);
+void err_internal(const char* message);
 
 static ErrorMessage err_get_message(Error error);
+
+struct Span
+{
+	u32 start;
+	u32 end;
+};
 
 struct ErrorMessage
 {
@@ -21,6 +31,7 @@ struct ErrorMessage
 
 enum class Error
 {
+	COMPILER_INTERNAL,
 	MAIN_FILE_NOT_FOUND,
 	MAIN_PROC_NOT_FOUND,
 	MAIN_PROC_EXTERNAL,
@@ -29,6 +40,16 @@ enum class Error
 	MAIN_PROC_NO_RETURN_TYPE,
 	MAIN_PROC_WRONG_RETURN_TYPE,
 	
+	DECL_SYMBOL_ALREADY_DECLARED,
+	DECL_IMPORT_PATH_NOT_FOUND,
+	DECL_USE_SYMBOL_NOT_FOUND,
+	DECL_STRUCT_DUPLICATE_FIELD,
+	DECL_STRUCT_SELF_STORAGE,
+	DECL_ENUM_ZERO_VARIANTS,
+	DECL_ENUM_NON_INTEGER_TYPE,
+	DECL_ENUM_DUPLICATE_VARIANT,
+	DECL_PROC_DUPLICATE_PARAM,
+	
 	RESOLVE_IMPORT_NOT_FOUND,
 	RESOLVE_TYPE_NOT_FOUND,
 	RESOLVE_VAR_GLOBAL_NOT_FOUND,
@@ -36,16 +57,6 @@ enum class Error
 	RESOLVE_ENUM_VARIANT_NOT_FOUND,
 	RESOLVE_PROC_NOT_FOUND,
 	RESOLVE_STRUCT_NOT_FOUND,
-	
-	SYMBOL_ALREADY_DECLARED,
-	IMPORT_PATH_NOT_FOUND,
-	USE_SYMBOL_NOT_FOUND,
-	STRUCT_DUPLICATE_FIELD,
-	STRUCT_INFINITE_SIZE,
-	ENUM_ZERO_VARIANTS,
-	ENUM_NON_INTEGER_TYPE,
-	ENUM_DUPLICATE_VARIANT,
-	PROC_DUPLICATE_PARAM,
 	
 	CFG_NOT_ALL_PATHS_RETURN,
 	CFG_UNREACHABLE_STATEMENT,

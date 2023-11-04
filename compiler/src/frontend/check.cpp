@@ -8,8 +8,6 @@
 
 bool check_program(Ast_Program* program)
 {
-	auto tok = token_to_basic_type((TokenType)11239912);
-
 	Check_Context cc = {};
 
 	//1. check global symbols
@@ -67,7 +65,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
 		if (symbol)
 		{ 
-			err_report(Error::SYMBOL_ALREADY_DECLARED); 
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED); 
 			err_context(cc, ident.span);
 			err_context(cc, symbol.value().span);
 			continue;
@@ -79,7 +77,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast*> import_ast = cc->program->module_map.find(std::string(path), hash_fnv1a_32(string_view_from_string(std::string(path))));
 		if (!import_ast)
 		{
-			err_report(Error::IMPORT_PATH_NOT_FOUND);
+			err_report(Error::DECL_IMPORT_PATH_NOT_FOUND);
 			err_context(cc, decl->file_path.token.span);
 			continue;
 		}
@@ -92,7 +90,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
 		if (symbol)
 		{
-			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
 			err_context(cc, ident.span);
 			err_context(cc, symbol.value().span);
 			continue;
@@ -106,7 +104,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
 		if (symbol)
 		{
-			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
 			err_context(cc, ident.span);
 			err_context(cc, symbol.value().span);
 			continue;
@@ -122,7 +120,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
 		if (symbol)
 		{
-			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
 			err_context(cc, ident.span);
 			err_context(cc, symbol.value().span);
 			continue;
@@ -138,7 +136,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
 		if (symbol)
 		{
-			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
 			err_context(cc, ident.span);
 			err_context(cc, symbol.value().span);
 			continue;
@@ -154,7 +152,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
 		if (symbol)
 		{
-			err_report(Error::SYMBOL_ALREADY_DECLARED);
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
 			err_context(cc, ident.span);
 			err_context(cc, symbol.value().span);
 			continue;
@@ -185,7 +183,7 @@ void check_decls(Check_Context* cc)
 		option<Ast_Global_Info> global_info = import_ast->global_table.find(symbol, hash_ident(symbol));
 		if (global_info) { ast->global_table.add(alias, global_info.value(), hash_ident(alias)); continue; }
 
-		err_report(Error::USE_SYMBOL_NOT_FOUND);
+		err_report(Error::DECL_USE_SYMBOL_NOT_FOUND);
 		err_context(cc, symbol.span);
 	}
 
@@ -207,7 +205,7 @@ void check_decls(Check_Context* cc)
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
 			if (name) 
 			{
-				err_report(Error::STRUCT_DUPLICATE_FIELD);
+				err_report(Error::DECL_STRUCT_DUPLICATE_FIELD);
 				err_context(cc, name.value().span);
 			}
 			else name_set.add(field.ident, hash_ident(field.ident));
@@ -219,7 +217,7 @@ void check_decls(Check_Context* cc)
 		if (!enum_decl->variants.empty()) name_set.zero_reset();
 		else
 		{
-			err_report(Error::ENUM_ZERO_VARIANTS);
+			err_report(Error::DECL_ENUM_ZERO_VARIANTS);
 			err_context(cc, enum_decl->ident.span);
 			continue;
 		}
@@ -227,9 +225,9 @@ void check_decls(Check_Context* cc)
 		BasicType type = enum_decl->basic_type;
 		Ast_Type enum_type = type_from_basic(type);
 
-		if (!token_basic_type_is_integer(type))
+		if (!basic_type_is_integer(type))
 		{
-			err_report(Error::ENUM_NON_INTEGER_TYPE);
+			err_report(Error::DECL_ENUM_NON_INTEGER_TYPE);
 			err_context(cc, enum_decl->ident.span);
 			continue;
 		}
@@ -239,7 +237,7 @@ void check_decls(Check_Context* cc)
 			option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
 			if (name) 
 			{
-				err_report(Error::ENUM_DUPLICATE_VARIANT);
+				err_report(Error::DECL_ENUM_DUPLICATE_VARIANT);
 				err_context(cc, name.value().span);
 			}
 			else name_set.add(variant.ident, hash_ident(variant.ident));
@@ -262,7 +260,7 @@ void check_decls(Check_Context* cc)
 			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
 			if (name) 
 			{
-				err_report(Error::PROC_DUPLICATE_PARAM);
+				err_report(Error::DECL_PROC_DUPLICATE_PARAM);
 				err_context(cc, name.value().span);
 			}
 			else name_set.add(param.ident, hash_ident(param.ident));
@@ -310,7 +308,7 @@ void check_perform_struct_sizing(Check_Context* cc)
 		if (is_infinite)
 		{
 			in_struct->size_eval = Const_Eval::Invalid;
-			err_report(Error::STRUCT_INFINITE_SIZE);
+			err_report(Error::DECL_STRUCT_SELF_STORAGE);
 			err_context(cc, in_struct->ident.span);
 			printf("Field access path: ");
 			debug_print_ident(field_chain[field_chain.size() - 1], false, false);
@@ -332,6 +330,7 @@ void check_perform_struct_sizing(Check_Context* cc)
 	//to allow for correct const folding and range checking on sizeof expressions
 }
 
+//@Incomplete rework in context of check_perform_struct_sizing to only check for self storage and set const size_eval flag on struct decl
 bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u32 struct_id, std::vector<u32>& visited_ids, std::vector<Ast_Ident>& field_chain)
 {
 	for (Ast_Struct_Field& field : in_struct->fields)
@@ -407,6 +406,7 @@ u32 check_get_basic_type_size(BasicType basic_type)
 	case BasicType::F32: return 4;
 	case BasicType::F64: return 8;
 	case BasicType::STRING: return 0; //@Not implemented
+	default: { err_internal("check_get_basic_type_size: invalid BasicType"); return 0; }
 	}
 }
 
@@ -426,9 +426,11 @@ u32 check_get_basic_type_align(BasicType basic_type)
 	case BasicType::F32: return 4;
 	case BasicType::F64: return 8;
 	case BasicType::STRING: return 0; //@Not implemented
+	default: { err_internal("check_get_basic_type_align: invalid BasicType"); return 0; }
 	}
 }
 
+//@Incomplete
 u32 check_get_type_size(Ast_Type type)
 {
 	if (type.pointer_level > 0) return 8; //@Assume 64bit
@@ -436,18 +438,14 @@ u32 check_get_type_size(Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: return check_get_basic_type_size(type.as_basic);
-	case Ast_Type_Tag::Array:
-	{
-		return 0;
-	}
-	case Ast_Type_Tag::Struct:
-	{
-		return 0;
-	}
+	case Ast_Type_Tag::Array: return 0;
+	case Ast_Type_Tag::Struct: return 0;
 	case Ast_Type_Tag::Enum: return check_get_basic_type_size(type.as_enum.enum_decl->basic_type);
+	default: { err_internal("check_get_type_size: invalid Ast_Type_Tag"); return 0; }
 	}
 }
 
+//@Incomplete
 u32 check_get_type_align(Ast_Type type)
 {
 	if (type.pointer_level > 0) return 8; //@Assume 64bit
@@ -455,15 +453,10 @@ u32 check_get_type_align(Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: return check_get_basic_type_align(type.as_basic);
-	case Ast_Type_Tag::Array:
-	{
-		return 0;
-	}
-	case Ast_Type_Tag::Struct:
-	{
-		return 0;
-	}
+	case Ast_Type_Tag::Array: return 0;
+	case Ast_Type_Tag::Struct: return 0;
 	case Ast_Type_Tag::Enum: return check_get_basic_type_align(type.as_enum.enum_decl->basic_type);
+	default: { err_internal("check_get_type_align: invalid Ast_Type_Tag"); return 0; }
 	}
 }
 
@@ -502,6 +495,19 @@ void check_proc_block(Check_Context* cc, Ast_Proc_Decl* proc_decl)
 		}
 	}
 	check_statement_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
+}
+
+bool basic_type_is_integer(BasicType type)
+{
+	switch (type)
+	{
+	case BasicType::BOOL:
+	case BasicType::F32:
+	case BasicType::F64:
+	case BasicType::STRING:
+		return false;
+	default: return true;
+	}
 }
 
 Terminator check_cfg_block(Check_Context* cc, Ast_Block* block, bool is_loop, bool is_defer)

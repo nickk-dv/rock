@@ -183,6 +183,7 @@ bool check_is_const_expr(Ast_Expr* expr)
 	}
 	case Ast_Expr_Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
 	case Ast_Expr_Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
+	default: { err_internal("check_is_const_expr: invalid Ast_Expr_Tag"); return false; }
 	}
 }
 
@@ -203,6 +204,7 @@ bool check_is_const_foldable_expr(Ast_Expr* expr)
 	}
 	case Ast_Expr_Tag::Unary_Expr: return check_is_const_foldable_expr(expr->as_unary_expr->right);
 	case Ast_Expr_Tag::Binary_Expr: return check_is_const_foldable_expr(expr->as_binary_expr->left) && check_is_const_foldable_expr(expr->as_binary_expr->right);
+	default: { err_internal("check_is_const_foldable_expr: invalid Ast_Expr_Tag"); return false; }
 	}
 }
 
@@ -270,6 +272,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 		case Ast_Expr_Tag::Term: return check_term(cc, context, expr->as_term);
 		case Ast_Expr_Tag::Unary_Expr: return check_unary_expr(cc, context, expr->as_unary_expr);
 		case Ast_Expr_Tag::Binary_Expr: return check_binary_expr(cc, context, expr->as_binary_expr);
+		default: { err_internal("check_expr: invalid Ast_Expr_Tag"); return {}; }
 		}
 	}
 	else
@@ -321,6 +324,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::I32);
 			}
+			default: { err_internal("check_expr: invalid Literal_Kind"); return {}; }
 			}
 		}
 		else
@@ -362,6 +366,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 				expr->as_folded_expr = folded_expr;
 				return type_from_basic(BasicType::I32);
 			}
+			default: { err_internal("check_expr: invalid Literal_Kind"); return {}; }
 			}
 		}
 	}
@@ -570,6 +575,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		array_init->type = type;
 		return type;
 	}
+	default: { err_internal("check_term: invalid Ast_Term_Tag"); return {}; }
 	}
 }
 
@@ -597,6 +603,7 @@ option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var)
 		if (!type) return {};
 		return check_access(cc, type.value(), var->access);
 	}
+	default: { err_internal("check_var: invalid Ast_Var_Tag"); return {}; }
 	}
 }
 
@@ -656,6 +663,7 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		Ast_Type result_type = type.as_array->element_type;
 		return check_access(cc, result_type, array_access->next);
 	}
+	default: { err_internal("check_access: invalid Ast_Access_Tag"); return {}; }
 	}
 }
 
@@ -780,6 +788,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Type_Context* context, Ast_
 	{
 		err_set; printf("UNARY OP << unsupported\n"); debug_print_unary_expr(unary_expr, 0); return {};
 	}
+	default: { err_internal("check_unary_expr: invalid UnaryOp"); return {}; }
 	}
 }
 
@@ -852,8 +861,8 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Type_Context* context, Ast
 		err_set; printf("BINARY Bitwise Ops (& | ^ << >>) only work on integers\n");
 		debug_print_binary_expr(binary_expr, 0); return {};
 	}
+	default: { err_internal("check_binary_expr: invalid BinaryOp"); return {}; }
 	}
-
 }
 
 option<Literal> check_const_expr(Ast_Expr* expr)
@@ -863,6 +872,7 @@ option<Literal> check_const_expr(Ast_Expr* expr)
 	case Ast_Expr_Tag::Term: return check_const_term(expr->as_term);
 	case Ast_Expr_Tag::Unary_Expr: return check_const_unary_expr(expr->as_unary_expr);
 	case Ast_Expr_Tag::Binary_Expr: return check_const_binary_expr(expr->as_binary_expr);
+	default: { err_internal("check_const_expr: invalid Ast_Expr_Tag"); return {}; }
 	}
 }
 
@@ -946,6 +956,7 @@ option<Literal> check_const_unary_expr(Ast_Unary_Expr* unary_expr)
 		printf("Unary dereference << cannot be used on temporary values\n");
 		return {};
 	}
+	default: { err_internal("check_const_unary_expr: invalid UnaryOp"); return {}; }
 	}
 }
 
@@ -1104,6 +1115,7 @@ option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr)
 		lhs.as_u64 >>= rhs.as_u64;
 		return lhs;
 	}
+	default: { err_internal("check_const_binary_expr: invalid BinaryOp"); return {}; }
 	}
 }
 
@@ -1257,6 +1269,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		if (check_const_expr_dependencies(cc, arena, binary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
+	default: { err_internal("check_const_expr_dependencies: invalid Ast_Expr_Tag"); return Const_Eval::Invalid; }
 	}
 }
 
@@ -1519,6 +1532,7 @@ bool match_const_dependency(Const_Dependency a, Const_Dependency b)
 	case Const_Dependency_Tag::Global: return a.as_global == b.as_global;
 	case Const_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
 	case Const_Dependency_Tag::Sizeof_Struct: return a.as_sizeof_struct == b.as_sizeof_struct;
+	default: { err_internal("match_const_dependency: invalid Const_Dependency_Tag"); return false; }
 	}
 }
 
@@ -1528,6 +1542,7 @@ Ast_Const_Expr* const_dependency_get_const_expr(Const_Dependency constant)
 	{
 	case Const_Dependency_Tag::Global: return constant.as_global->const_expr;
 	case Const_Dependency_Tag::Enum_Variant: return constant.as_enum_variant->const_expr;
+	default: { err_internal("const_dependency_get_const_expr: invalid Const_Dependency_Tag"); return NULL; }
 	}
 }
 
