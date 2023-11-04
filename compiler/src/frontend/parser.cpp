@@ -165,6 +165,7 @@ option<Ast_Type> parse_type(Parser* parser)
 		consume();
 		type.tag = Ast_Type_Tag::Basic;
 		type.as_basic = basic_type.value();
+		span_end_dot(type);
 		return type;
 	}
 
@@ -172,10 +173,10 @@ option<Ast_Type> parse_type(Parser* parser)
 	{
 	case TokenType::IDENT:
 	{
-		Ast_Custom_Type* custom = parse_custom_type(parser);
-		if (!custom) return {};
-		type.tag = Ast_Type_Tag::Custom;
-		type.as_custom = custom;
+		Ast_Unresolved_Type* unresolved = parse_unresolved_type(parser);
+		if (!unresolved) return {};
+		type.tag = Ast_Type_Tag::Unresolved;
+		type.as_unresolved = unresolved;
 	} break;
 	case TokenType::BRACKET_START:
 	{
@@ -213,21 +214,21 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 	return array_type;
 }
 
-Ast_Custom_Type* parse_custom_type(Parser* parser)
+Ast_Unresolved_Type* parse_unresolved_type(Parser* parser)
 {
-	Ast_Custom_Type* custom = arena_alloc<Ast_Custom_Type>(&parser->arena);
+	Ast_Unresolved_Type* unresolved = arena_alloc<Ast_Unresolved_Type>(&parser->arena);
 
 	Ast_Ident import = token_to_ident(consume_get());
 	if (try_consume(TokenType::DOT))
 	{
-		custom->import = import;
+		unresolved->import = import;
 		option<Token> ident = try_consume(TokenType::IDENT);
 		if (!ident) { error("Expected type identifier"); return NULL; }
-		custom->ident = token_to_ident(ident.value());
+		unresolved->ident = token_to_ident(ident.value());
 	}
-	else custom->ident = import;
+	else unresolved->ident = import;
 
-	return custom;
+	return unresolved;
 }
 
 Ast_Import_Decl* parse_import_decl(Parser* parser)

@@ -64,12 +64,12 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 		
 		return *type;
 	}
-	case Ast_Type_Tag::Custom:
+	case Ast_Type_Tag::Unresolved:
 	{
-		Ast* target_ast = find_import(cc, type->as_custom->import);
+		Ast* target_ast = find_import(cc, type->as_unresolved->import);
 		if (target_ast == NULL) return {};
 
-		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_custom->ident);
+		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_unresolved->ident);
 		if (struct_meta)
 		{
 			type->tag = Ast_Type_Tag::Struct;
@@ -78,7 +78,7 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 			return *type;
 		}
 
-		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_custom->ident);
+		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_unresolved->ident);
 		if (enum_meta)
 		{
 			type->tag = Ast_Type_Tag::Enum;
@@ -1152,23 +1152,18 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			Ast_Global_Decl* global_decl = var->global.global_decl;
 			Const_Eval eval = global_decl->const_expr->eval;
 			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
-			if (eval == Const_Eval::Not_Evaluated)
+			if (eval == Const_Eval::Valid) return Const_Eval::Not_Evaluated;
+
+			Const_Dependency constant = const_dependency_from_global(global_decl);
+			Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, constant);
+			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
-				Const_Dependency global_constant = const_dependency_from_global(global_decl);
-				Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, global_constant);
-				if (tree_node_has_cycle(node, global_constant, match_const_dependency))
-				{
-					printf("Dependency expr is part of a cycle: \n");
-					switch (node->value.tag)
-					{
-					case Const_Dependency_Tag::Global: err_context(cc, node->value.as_global->const_expr->expr->span); break;
-					case Const_Dependency_Tag::Enum_Variant: err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
-					}
-					return Const_Eval::Invalid;
-				}
-				else return check_const_expr_dependencies(cc, arena, global_decl->const_expr->expr, node);
+				printf("Dependency expr is part of a cycle: \n");
+				err_context(cc, node->value.as_global->const_expr->expr->span);
+				return Const_Eval::Invalid;
 			}
-			return Const_Eval::Not_Evaluated;
+
+			return check_const_expr_dependencies(cc, arena, global_decl->const_expr->expr, node);
 		}
 		case Ast_Term_Tag::Enum:
 		{
@@ -1180,28 +1175,47 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			Ast_Enum_Variant* enum_variant = &enum_decl->variants[_enum->resolved.variant_id];
 			Const_Eval eval = enum_variant->const_expr->eval;
 			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
-			if (eval == Const_Eval::Not_Evaluated)
+			if (eval == Const_Eval::Valid) return Const_Eval::Not_Evaluated;
+
+			Const_Dependency constant = const_dependency_from_enum_variant(enum_variant);
+			Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, constant);
+			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
-				Const_Dependency enum_variant_constant = const_dependency_from_enum_variant(enum_variant);
-				Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, enum_variant_constant);
-				if (tree_node_has_cycle(node, enum_variant_constant, match_const_dependency))
-				{
-					printf("Dependency expr is part of a cycle: \n");
-					switch (node->value.tag)
-					{
-					case Const_Dependency_Tag::Global: err_context(cc, node->value.as_global->const_expr->expr->span); break;
-					case Const_Dependency_Tag::Enum_Variant: err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
-					}
-					return Const_Eval::Invalid;
-				}
-				else return check_const_expr_dependencies(cc, arena, enum_variant->const_expr->expr, node);
+				printf("Dependency expr is part of a cycle: \n");
+				err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
+				return Const_Eval::Invalid;
 			}
-			return Const_Eval::Not_Evaluated;
+
+			return check_const_expr_dependencies(cc, arena, enum_variant->const_expr->expr, node);
 		}
 		case Ast_Term_Tag::Sizeof:
 		{
-			//@How to check if sizeof type signature is valid?
-			//also consider with array size expressions
+			Ast_Sizeof* size_of = term->as_sizeof;
+			check_type_resolve(cc, &size_of->type);
+			if (size_of->type.tag == Ast_Type_Tag::Poison) return Const_Eval::Invalid;
+			
+			option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(size_of->type);
+			if (!struct_type) return Const_Eval::Not_Evaluated;
+			
+			Ast_Struct_Decl* struct_decl = struct_type.value().struct_decl;
+			Const_Eval eval = struct_decl->size_eval;
+			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+			if (eval == Const_Eval::Valid) return Const_Eval::Not_Evaluated;
+
+			Const_Dependency constant = const_dependency_from_struct(struct_decl);
+			Tree_Node<Const_Dependency>* node = tree_node_add_child(arena, parent, constant);
+			if (tree_node_has_cycle(node, constant, match_const_dependency))
+			{
+				printf("Dependency expr is part of a cycle: \n");
+				err_context(cc, node->value.as_sizeof_struct->ident.span); break;
+				return Const_Eval::Invalid;
+			}
+
+			for (Ast_Struct_Field& field : struct_decl->fields)
+			{
+				//@Todo requires const expr pipeline to be completed
+			}
+
 			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Literal:
@@ -1247,6 +1261,54 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 	}
 }
 
+void check_type_resolve(Check_Context* cc, Ast_Type* type)
+{
+	switch (type->tag)
+	{
+	case Ast_Type_Tag::Basic: break;
+	case Ast_Type_Tag::Array:
+	{
+		Ast_Type* element_type = &type->as_array->element_type;
+		check_type_resolve(cc, element_type);
+		if (element_type->tag == Ast_Type_Tag::Poison) type->tag = Ast_Type_Tag::Poison;
+	} break;
+	case Ast_Type_Tag::Struct: break;
+	case Ast_Type_Tag::Enum: break;
+	case Ast_Type_Tag::Unresolved:
+	{
+		Ast* target_ast = find_import(cc, type->as_unresolved->import);
+		if (target_ast == NULL) 
+		{
+			type->tag = Ast_Type_Tag::Poison;
+			return;
+		}
+
+		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_unresolved->ident);
+		if (struct_meta)
+		{
+			type->tag = Ast_Type_Tag::Struct;
+			type->as_struct.struct_id = struct_meta.value().struct_id;
+			type->as_struct.struct_decl = struct_meta.value().struct_decl;
+			return;
+		}
+		
+		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_unresolved->ident);
+		if (enum_meta)
+		{
+			type->tag = Ast_Type_Tag::Enum;
+			type->as_enum.enum_id = enum_meta.value().enum_id;
+			type->as_enum.enum_decl = enum_meta.value().enum_decl;
+			return;
+		}
+
+		type->tag = Ast_Type_Tag::Poison;
+		err_report(Error::TYPE_CUSTOM_NOT_FOUND);
+		err_context(cc, type->span);
+	} break;
+	case Ast_Type_Tag::Poison: break;
+	}
+}
+
 void check_var_resolve(Check_Context* cc, Ast_Var* var)
 {
 	if (var->tag != Ast_Var_Tag::Unresolved) return;
@@ -1266,8 +1328,8 @@ void check_var_resolve(Check_Context* cc, Ast_Var* var)
 		if (global) 
 		{
 			var->tag = Ast_Var_Tag::Global;
-			var->global.global_decl = global.value().global_decl;
 			var->global.global_id = global.value().global_id;
+			var->global.global_decl = global.value().global_decl;
 			return;
 		}
 		else
@@ -1284,8 +1346,8 @@ void check_var_resolve(Check_Context* cc, Ast_Var* var)
 		if (global)
 		{
 			var->tag = Ast_Var_Tag::Global;
-			var->global.global_decl = global.value().global_decl;
 			var->global.global_id = global.value().global_id;
+			var->global.global_decl = global.value().global_decl;
 			return;
 		}
 	}
@@ -1392,6 +1454,7 @@ bool match_const_dependency(Const_Dependency a, Const_Dependency b)
 	{ 
 	case Const_Dependency_Tag::Global: return a.as_global == b.as_global;
 	case Const_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
+	case Const_Dependency_Tag::Sizeof_Struct: return a.as_sizeof_struct == b.as_sizeof_struct;
 	}
 }
 
@@ -1418,4 +1481,24 @@ Const_Dependency const_dependency_from_enum_variant(Ast_Enum_Variant* enum_varia
 	constant.tag = Const_Dependency_Tag::Enum_Variant;
 	constant.as_enum_variant = enum_variant;
 	return constant;
+}
+
+Const_Dependency const_dependency_from_struct(Ast_Struct_Decl* struct_decl)
+{
+	Const_Dependency constant = {};
+	constant.tag = Const_Dependency_Tag::Sizeof_Struct;
+	constant.as_sizeof_struct = struct_decl;
+	return constant;
+}
+
+option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type)
+{
+	if (type.pointer_level > 0) return {};
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Array: return check_extract_struct_value_type(type.as_array->element_type);
+	case Ast_Type_Tag::Struct: return type.as_struct;
+	default: return {};
+	}
 }

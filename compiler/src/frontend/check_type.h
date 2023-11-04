@@ -35,6 +35,7 @@ static option<Literal> check_const_binary_expr(Ast_Binary_Expr* binary_expr);
 
 option<Ast_Type> check_const_expr(Check_Context* cc, Const_Dependency constant);
 static Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Const_Dependency>* parent);
+static void check_type_resolve(Check_Context* cc, Ast_Type* type);
 static void check_var_resolve(Check_Context* cc, Ast_Var* var);
 static void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum);
 static void check_proc_call_resolve(Check_Context* cc, Ast_Proc_Call* proc_call);
@@ -43,10 +44,12 @@ static bool match_const_dependency(Const_Dependency a, Const_Dependency b);
 static Ast_Const_Expr* const_dependency_get_const_expr(Const_Dependency constant);
 Const_Dependency const_dependency_from_global(Ast_Global_Decl* global_decl);
 Const_Dependency const_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant);
+Const_Dependency const_dependency_from_struct(Ast_Struct_Decl* struct_decl);
+option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type);
 
 enum class Const_Dependency_Tag
 {
-	Global, Enum_Variant,
+	Global, Enum_Variant, Sizeof_Struct,
 };
 
 struct Const_Dependency
@@ -57,6 +60,7 @@ struct Const_Dependency
 	{
 		Ast_Global_Decl* as_global;
 		Ast_Enum_Variant* as_enum_variant;
+		Ast_Struct_Decl* as_sizeof_struct;
 	};
 };
 

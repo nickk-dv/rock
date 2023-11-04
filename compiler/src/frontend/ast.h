@@ -21,9 +21,9 @@ struct Ast_Ident;
 struct Ast_Literal;
 struct Ast_Type;
 struct Ast_Array_Type;
-struct Ast_Custom_Type;
 struct Ast_Struct_Type;
 struct Ast_Enum_Type;
+struct Ast_Unresolved_Type;
 
 struct Ast_Import_Decl;
 struct Ast_Use_Decl;
@@ -163,6 +163,13 @@ struct Ast_Literal
 	Token token;
 };
 
+enum class Const_Eval
+{
+	Not_Evaluated = 0,
+	Invalid = 1,
+	Valid = 2,
+};
+
 struct Ast_Struct_Type  //@Memory can remove decl and use program id lookup in checker
 {
 	u32 struct_id;
@@ -175,16 +182,9 @@ struct Ast_Enum_Type //@Memory can remove decl and use program id lookup in chec
 	Ast_Enum_Decl* enum_decl;
 };
 
-enum class Const_Eval
-{
-	Not_Evaluated = 0,
-	Invalid = 1,
-	Valid = 2,
-};
-
 enum class Ast_Type_Tag
 {
-	Basic, Array, Custom, Struct, Enum
+	Basic, Array, Struct, Enum, Unresolved, Poison
 };
 
 struct Ast_Type
@@ -197,23 +197,22 @@ struct Ast_Type
 	{
 		BasicType as_basic;
 		Ast_Array_Type* as_array;
-		Ast_Custom_Type* as_custom;
-		//checker
 		Ast_Struct_Type as_struct;
 		Ast_Enum_Type as_enum;
+		Ast_Unresolved_Type* as_unresolved;
 	};
-};
-
-struct Ast_Custom_Type
-{
-	option<Ast_Ident> import;
-	Ast_Ident ident;
 };
 
 struct Ast_Array_Type
 {
 	Ast_Type element_type;
 	Ast_Const_Expr* const_expr;
+};
+
+struct Ast_Unresolved_Type
+{
+	option<Ast_Ident> import;
+	Ast_Ident ident;
 };
 
 struct Ast_Import_Decl
@@ -235,6 +234,8 @@ struct Ast_Struct_Decl
 {
 	Ast_Ident ident;
 	std::vector<Ast_Struct_Field> fields;
+	Const_Eval size_eval;
+	u64 size;
 };
 
 struct Ast_Struct_Field
@@ -508,8 +509,8 @@ struct Ast_Var
 
 		struct Global
 		{
-			Ast_Global_Decl* global_decl;
 			u32 global_id;
+			Ast_Global_Decl* global_decl;
 		} global;
 	};
 };

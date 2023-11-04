@@ -10,7 +10,6 @@ static void check_decls(Check_Context* cc);
 static void check_main_proc(Check_Context* cc);
 static void check_perform_struct_sizing(Check_Context* cc);
 static bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u32 struct_id, std::vector<u32>& visited_ids, std::vector<Ast_Ident>& field_chain);
-static option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type);
 static void check_struct_size(Ast_Struct_IR_Info* struct_info);
 static u32 check_get_basic_type_size(BasicType basic_type);
 static u32 check_get_basic_type_align(BasicType basic_type);

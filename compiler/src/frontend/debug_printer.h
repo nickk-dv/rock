@@ -13,7 +13,7 @@ void debug_print_basic_type(BasicType type);
 
 void debug_print_type(Ast_Type type);
 void debug_print_array_type(Ast_Array_Type* array_type);
-void debug_print_custom_type(Ast_Custom_Type* custom_type);
+void debug_print_unresolved_type(Ast_Unresolved_Type* unresolved_type);
 
 void debug_print_import_decl(Ast_Import_Decl* import_decl);
 void debug_print_use_decl(Ast_Use_Decl* use_decl);

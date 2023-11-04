@@ -308,6 +308,7 @@ void check_perform_struct_sizing(Check_Context* cc)
 		bool is_infinite = check_struct_self_storage(cc, in_struct, i, visited_ids, field_chain);
 		if (is_infinite)
 		{
+			in_struct->size_eval = Const_Eval::Invalid;
 			err_report(Error::STRUCT_INFINITE_SIZE);
 			err_context(cc, in_struct->ident.span);
 			printf("Field access path: ");
@@ -348,18 +349,6 @@ bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u3
 	}
 
 	return false;
-}
-
-option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type)
-{
-	if (type.pointer_level > 0) return {};
-
-	switch (type.tag)
-	{
-	case Ast_Type_Tag::Array: return check_extract_struct_value_type(type.as_array->element_type);
-	case Ast_Type_Tag::Struct: return type.as_struct;
-	default: return {};
-	}
 }
 
 void check_struct_size(Ast_Struct_IR_Info* struct_info)

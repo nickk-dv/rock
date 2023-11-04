@@ -232,9 +232,10 @@ void debug_print_type(Ast_Type type)
 	{
 	case Ast_Type_Tag::Basic: debug_print_basic_type(type.as_basic); break;
 	case Ast_Type_Tag::Array: debug_print_array_type(type.as_array); break;
-	case Ast_Type_Tag::Custom: debug_print_custom_type(type.as_custom); break;
 	case Ast_Type_Tag::Struct: debug_print_ident(type.as_struct.struct_decl->ident, false, false); break;
 	case Ast_Type_Tag::Enum: debug_print_ident(type.as_enum.enum_decl->ident, false, false); break;
+	case Ast_Type_Tag::Unresolved: debug_print_unresolved_type(type.as_unresolved); break;
+	case Ast_Type_Tag::Poison: printf("[poison]");
 	}
 }
 
@@ -244,14 +245,14 @@ void debug_print_array_type(Ast_Array_Type* array_type)
 	debug_print_type(array_type->element_type);
 }
 
-void debug_print_custom_type(Ast_Custom_Type* custom_type)
+void debug_print_unresolved_type(Ast_Unresolved_Type* unresolved_type)
 {
-	if (custom_type->import)
+	if (unresolved_type->import)
 	{
-		debug_print_ident(custom_type->import.value(), false, false);
+		debug_print_ident(unresolved_type->import.value(), false, false);
 		printf(".");
 	}
-	debug_print_ident(custom_type->ident, false, false);
+	debug_print_ident(unresolved_type->ident, false, false);
 }
 
 void debug_print_import_decl(Ast_Import_Decl* import_decl)
