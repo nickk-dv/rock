@@ -595,7 +595,7 @@ void debug_print_term(Ast_Term* term, u32 depth)
 	case Ast_Term_Tag::Var: debug_print_var(term->as_var); break;
 	case Ast_Term_Tag::Enum: debug_print_enum(term->as_enum); break;
 	case Ast_Term_Tag::Sizeof: debug_print_sizeof(term->as_sizeof); break;
-	case Ast_Term_Tag::Literal: debug_print_token(term->as_literal.token, true); break;
+	case Ast_Term_Tag::Literal: debug_print_token(term->as_literal->token, true); break;
 	case Ast_Term_Tag::Proc_Call: debug_print_proc_call(term->as_proc_call, depth); break;
 	case Ast_Term_Tag::Struct_Init: debug_print_struct_init(term->as_struct_init, depth); break;
 	case Ast_Term_Tag::Array_Init: debug_print_array_init(term->as_array_init, depth); break;

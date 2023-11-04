@@ -894,8 +894,10 @@ Ast_Term* parse_term(Parser* parser)
 	case TokenType::INTEGER_LITERAL:
 	case TokenType::STRING_LITERAL:
 	{
+		Ast_Literal* literal = arena_alloc<Ast_Literal>(&parser->arena);
+		literal->token = token;
 		term->tag = Ast_Term_Tag::Literal;
-		term->as_literal = Ast_Literal{ token };
+		term->as_literal = literal;
 		consume();
 	} break;
 	case TokenType::DOT:

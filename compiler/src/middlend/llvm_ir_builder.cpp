@@ -434,7 +434,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	}
 	case Ast_Term_Tag::Literal:
 	{
-		Token token = term->as_literal.token;
+		Token token = term->as_literal->token;
 		if (token.type == TokenType::STRING_LITERAL)
 		{
 			//@Notice crash when no functions were declared (llvm bug)

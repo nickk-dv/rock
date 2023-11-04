@@ -1,7 +1,6 @@
 #include "check_type.h"
 
 #include "error_handler.h"
-#include "check_general.h"
 
 Type_Kind type_kind(Check_Context* cc, Ast_Type type)
 {
@@ -66,7 +65,7 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 	}
 	case Ast_Type_Tag::Unresolved:
 	{
-		Ast* target_ast = find_import(cc, type->as_unresolved->import);
+		Ast* target_ast = resolve_import(cc, type->as_unresolved->import);
 		if (target_ast == NULL) return {};
 
 		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_unresolved->ident);
@@ -87,7 +86,7 @@ option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
 			return *type;
 		}
 
-		err_report(Error::TYPE_CUSTOM_NOT_FOUND);
+		err_report(Error::RESOLVE_TYPE_NOT_FOUND);
 		err_context(cc, type->span);
 		return {};
 	}
@@ -198,7 +197,7 @@ bool check_is_const_foldable_expr(Ast_Expr* expr)
 		{
 		//@Notice not handling enum as constexpr yet 
 		//case Ast_Term_Tag::Enum: return true;
-		case Ast_Term_Tag::Literal: return term->as_literal.token.type != TokenType::STRING_LITERAL;
+		case Ast_Term_Tag::Literal: return term->as_literal->token.type != TokenType::STRING_LITERAL;
 		default: return false;
 		}
 	}
@@ -395,7 +394,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Enum: //@Const fold this should be part of constant evaluation
 	{
 		Ast_Enum* _enum = term->as_enum;
-		check_enum_resolve(cc, _enum);
+		resolve_enum(cc, _enum);
 		if (_enum->tag == Ast_Enum_Tag::Invalid) return {};
 
 		Ast_Type type = {};
@@ -412,7 +411,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	}
 	case Ast_Term_Tag::Literal:
 	{
-		Ast_Literal literal = term->as_literal;
+		Ast_Literal literal = *term->as_literal;
 		switch (literal.token.type)
 		{
 		case TokenType::STRING_LITERAL: //@ Strings are just *i8 cstrings for now
@@ -439,7 +438,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
-		check_struct_init_resolve(cc, struct_init);
+		resolve_struct_init(cc, struct_init);
 		if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return {};
 
 		if (context->expect_type)
@@ -576,7 +575,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var)
 {
-	check_var_resolve(cc, var);
+	resolve_var(cc, var);
 	if (var->tag == Ast_Var_Tag::Invalid) return {};
 
 	switch (var->tag)
@@ -662,7 +661,7 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 
 option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags)
 {
-	check_proc_call_resolve(cc, proc_call);
+	resolve_proc_call(cc, proc_call);
 	if (proc_call->tag == Ast_Proc_Call_Tag::Invalid) return {};
 
 	// check input count
@@ -873,7 +872,7 @@ option<Literal> check_const_term(Ast_Term* term)
 	{
 	case Ast_Term_Tag::Literal:
 	{
-		Token token = term->as_literal.token;
+		Token token = term->as_literal->token;
 		Literal lit = {};
 
 		if (token.type == TokenType::BOOL_LITERAL)
@@ -1140,7 +1139,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			//@Consider access with expressions also
 
 			Ast_Var* var = term->as_var;
-			check_var_resolve(cc, var);
+			resolve_var(cc, var);
 			if (var->tag == Ast_Var_Tag::Invalid) return Const_Eval::Invalid;
 			if (var->tag == Ast_Var_Tag::Local)
 			{
@@ -1168,7 +1167,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		case Ast_Term_Tag::Enum:
 		{
 			Ast_Enum* _enum = term->as_enum;
-			check_enum_resolve(cc, _enum);
+			resolve_enum(cc, _enum);
 			if (_enum->tag == Ast_Enum_Tag::Invalid) return Const_Eval::Invalid;
 
 			Ast_Enum_Decl* enum_decl = _enum->resolved.type.enum_decl;
@@ -1191,7 +1190,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
-			check_type_resolve(cc, &size_of->type);
+			resolve_type(cc, &size_of->type);
 			if (size_of->type.tag == Ast_Type_Tag::Poison) return Const_Eval::Invalid;
 			
 			option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(size_of->type);
@@ -1228,18 +1227,18 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			err_context(cc, expr->span);
 			return Const_Eval::Invalid;
 		}
-		case Ast_Term_Tag::Struct_Init:
-		{
-			Ast_Struct_Init* struct_init = term->as_struct_init;
-			for (Ast_Expr* input_expr : struct_init->input_exprs)
-			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
-			return Const_Eval::Not_Evaluated;
-		}
 		case Ast_Term_Tag::Array_Init:
 		{
 			//@Consider array type signature
 			Ast_Array_Init* array_init = term->as_array_init;
 			for (Ast_Expr* input_expr : array_init->input_exprs)
+			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			return Const_Eval::Not_Evaluated;
+		}
+		case Ast_Term_Tag::Struct_Init:
+		{
+			Ast_Struct_Init* struct_init = term->as_struct_init;
+			for (Ast_Expr* input_expr : struct_init->input_exprs)
 			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 			return Const_Eval::Not_Evaluated;
 		}
@@ -1261,7 +1260,59 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 	}
 }
 
-void check_type_resolve(Check_Context* cc, Ast_Type* type)
+option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->struct_table.find(ident, hash_ident(ident));
+}
+
+option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->enum_table.find(ident, hash_ident(ident));
+}
+
+option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->proc_table.find(ident, hash_ident(ident));
+}
+
+option<Ast_Global_Info> find_global(Ast* target_ast, Ast_Ident ident)
+{
+	return target_ast->global_table.find(ident, hash_ident(ident));
+}
+
+option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident)
+{
+	for (u64 i = 0; i < enum_decl->variants.size(); i += 1)
+	{
+		if (match_ident(enum_decl->variants[i].ident, ident)) return (u32)i;
+	}
+	return {};
+}
+
+option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident)
+{
+	for (u64 i = 0; i < struct_decl->fields.size(); i += 1)
+	{
+		if (match_ident(struct_decl->fields[i].ident, ident)) return (u32)i;
+	}
+	return {};
+}
+
+Ast* resolve_import(Check_Context* cc, option<Ast_Ident> import)
+{
+	if (!import) return cc->ast;
+	Ast_Ident import_ident = import.value();
+	option<Ast_Import_Decl*> import_decl = cc->ast->import_table.find(import_ident, hash_ident(import_ident));
+	if (!import_decl)
+	{
+		err_report(Error::RESOLVE_IMPORT_NOT_FOUND);
+		err_context(cc, import_ident.span);
+		return NULL;
+	}
+	return import_decl.value()->import_ast;
+}
+
+void resolve_type(Check_Context* cc, Ast_Type* type)
 {
 	switch (type->tag)
 	{
@@ -1269,14 +1320,14 @@ void check_type_resolve(Check_Context* cc, Ast_Type* type)
 	case Ast_Type_Tag::Array:
 	{
 		Ast_Type* element_type = &type->as_array->element_type;
-		check_type_resolve(cc, element_type);
+		resolve_type(cc, element_type);
 		if (element_type->tag == Ast_Type_Tag::Poison) type->tag = Ast_Type_Tag::Poison;
 	} break;
 	case Ast_Type_Tag::Struct: break;
 	case Ast_Type_Tag::Enum: break;
 	case Ast_Type_Tag::Unresolved:
 	{
-		Ast* target_ast = find_import(cc, type->as_unresolved->import);
+		Ast* target_ast = resolve_import(cc, type->as_unresolved->import);
 		if (target_ast == NULL) 
 		{
 			type->tag = Ast_Type_Tag::Poison;
@@ -1302,14 +1353,14 @@ void check_type_resolve(Check_Context* cc, Ast_Type* type)
 		}
 
 		type->tag = Ast_Type_Tag::Poison;
-		err_report(Error::TYPE_CUSTOM_NOT_FOUND);
+		err_report(Error::RESOLVE_TYPE_NOT_FOUND);
 		err_context(cc, type->span);
 	} break;
 	case Ast_Type_Tag::Poison: break;
 	}
 }
 
-void check_var_resolve(Check_Context* cc, Ast_Var* var)
+void resolve_var(Check_Context* cc, Ast_Var* var)
 {
 	if (var->tag != Ast_Var_Tag::Unresolved) return;
 
@@ -1334,7 +1385,7 @@ void check_var_resolve(Check_Context* cc, Ast_Var* var)
 		}
 		else
 		{
-			err_report(Error::VAR_GLOBAL_IS_NOT_FOUND);
+			err_report(Error::RESOLVE_VAR_GLOBAL_NOT_FOUND);
 			err_context(cc, global_ident.span);
 			var->tag = Ast_Var_Tag::Invalid;
 			return;
@@ -1355,11 +1406,11 @@ void check_var_resolve(Check_Context* cc, Ast_Var* var)
 	var->tag = Ast_Var_Tag::Local;
 }
 
-void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
+void resolve_enum(Check_Context* cc, Ast_Enum* _enum)
 {
 	if (_enum->tag != Ast_Enum_Tag::Unresolved) return;
 
-	Ast* target_ast = find_import(cc, _enum->unresolved.import);
+	Ast* target_ast = resolve_import(cc, _enum->unresolved.import);
 	if (target_ast == NULL) 
 	{
 		_enum->tag = Ast_Enum_Tag::Invalid; 
@@ -1369,7 +1420,7 @@ void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
 	option<Ast_Enum_Info> enum_info = find_enum(target_ast, _enum->unresolved.ident);
 	if (!enum_info)
 	{
-		err_report(Error::ENUM_UNDECLARED);
+		err_report(Error::RESOLVE_ENUM_NOT_FOUND);
 		err_context(cc, _enum->unresolved.ident.span);
 		_enum->tag = Ast_Enum_Tag::Invalid;
 		return;
@@ -1379,7 +1430,7 @@ void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
 	option<u32> variant_id = find_enum_variant(enum_decl, _enum->unresolved.variant);
 	if (!variant_id)
 	{
-		err_report(Error::ENUM_VARIANT_UNDECLARED);
+		err_report(Error::RESOLVE_ENUM_VARIANT_NOT_FOUND);
 		err_context(cc, _enum->unresolved.variant.span);
 		_enum->tag = Ast_Enum_Tag::Invalid;
 		return;
@@ -1390,11 +1441,16 @@ void check_enum_resolve(Check_Context* cc, Ast_Enum* _enum)
 	_enum->resolved.variant_id = variant_id.value();
 }
 
-void check_proc_call_resolve(Check_Context* cc, Ast_Proc_Call* proc_call)
+void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of)
+{
+	resolve_type(cc, &size_of->type);
+}
+
+void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call)
 {
 	if (proc_call->tag != Ast_Proc_Call_Tag::Unresolved) return;
 
-	Ast* target_ast = find_import(cc, proc_call->unresolved.import);
+	Ast* target_ast = resolve_import(cc, proc_call->unresolved.import);
 	if (target_ast == NULL)
 	{
 		proc_call->tag = Ast_Proc_Call_Tag::Invalid;
@@ -1404,7 +1460,7 @@ void check_proc_call_resolve(Check_Context* cc, Ast_Proc_Call* proc_call)
 	option<Ast_Proc_Info> proc_info = find_proc(target_ast, proc_call->unresolved.ident);
 	if (!proc_info)
 	{
-		err_report(Error::PROC_UNDECLARED);
+		err_report(Error::RESOLVE_PROC_NOT_FOUND);
 		err_context(cc, proc_call->unresolved.ident.span);
 		proc_call->tag = Ast_Proc_Call_Tag::Invalid;
 		return;
@@ -1415,11 +1471,19 @@ void check_proc_call_resolve(Check_Context* cc, Ast_Proc_Call* proc_call)
 	proc_call->resolved.proc_decl = proc_info.value().proc_decl;
 }
 
-void check_struct_init_resolve(Check_Context* cc, Ast_Struct_Init* struct_init)
+void resolve_array_init(Check_Context* cc, Ast_Array_Init* array_init)
+{
+	if (array_init->type)
+	{
+		resolve_type(cc, &array_init->type.value());
+	}
+}
+
+void resolve_struct_init(Check_Context* cc, Ast_Struct_Init* struct_init)
 {
 	if (struct_init->tag != Ast_Struct_Init_Tag::Unresolved) return;
 
-	Ast* target_ast = find_import(cc, struct_init->unresolved.import);
+	Ast* target_ast = resolve_import(cc, struct_init->unresolved.import);
 	if (target_ast == NULL)
 	{
 		struct_init->tag = Ast_Struct_Init_Tag::Invalid;
@@ -1431,7 +1495,7 @@ void check_struct_init_resolve(Check_Context* cc, Ast_Struct_Init* struct_init)
 		option<Ast_Struct_Info> struct_info = find_struct(target_ast, struct_init->unresolved.ident.value());
 		if (!struct_info)
 		{
-			err_report(Error::STRUCT_UNDECLARED);
+			err_report(Error::RESOLVE_STRUCT_NOT_FOUND);
 			err_context(cc, struct_init->unresolved.ident.value().span);
 			struct_init->tag = Ast_Struct_Init_Tag::Invalid;
 			return;

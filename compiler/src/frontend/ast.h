@@ -48,9 +48,13 @@ struct Ast_Switch_Case;
 struct Ast_Continue;
 struct Ast_Var_Decl;
 struct Ast_Var_Assign;
-struct Ast_Proc_Call;
 
 struct Ast_Expr;
+struct Ast_Unary_Expr;
+struct Ast_Binary_Expr;
+struct Ast_Folded_Expr;
+enum class Const_Eval;
+struct Ast_Const_Expr;
 struct Ast_Term;
 struct Ast_Var;
 struct Ast_Access;
@@ -58,11 +62,9 @@ struct Ast_Var_Access;
 struct Ast_Array_Access;
 struct Ast_Enum;
 struct Ast_Sizeof;
-struct Ast_Struct_Init;
+struct Ast_Proc_Call;
 struct Ast_Array_Init;
-struct Ast_Unary_Expr;
-struct Ast_Binary_Expr;
-struct Ast_Const_Expr;
+struct Ast_Struct_Init;
 
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
@@ -163,20 +165,13 @@ struct Ast_Literal
 	Token token;
 };
 
-enum class Const_Eval
-{
-	Not_Evaluated = 0,
-	Invalid = 1,
-	Valid = 2,
-};
-
-struct Ast_Struct_Type  //@Memory can remove decl and use program id lookup in checker
+struct Ast_Struct_Type
 {
 	u32 struct_id;
 	Ast_Struct_Decl* struct_decl;
 };
 
-struct Ast_Enum_Type //@Memory can remove decl and use program id lookup in checker
+struct Ast_Enum_Type
 {
 	u32 enum_id;
 	Ast_Enum_Decl* enum_decl;
@@ -184,7 +179,12 @@ struct Ast_Enum_Type //@Memory can remove decl and use program id lookup in chec
 
 enum class Ast_Type_Tag
 {
-	Basic, Array, Struct, Enum, Unresolved, Poison
+	Basic, 
+	Array, 
+	Struct, 
+	Enum, 
+	Unresolved, 
+	Poison,
 };
 
 struct Ast_Type
@@ -266,8 +266,8 @@ struct Ast_Proc_Decl
 	std::vector<Ast_Proc_Param> input_params;
 	option<Ast_Type> return_type;
 	Ast_Block* block;
+	bool is_main;
 	bool is_external;
-	bool is_main; //@Todo use flags or enum kinds if types cant overlap
 	bool is_variadic;
 };
 
@@ -291,8 +291,17 @@ struct Ast_Block
 
 enum class Ast_Statement_Tag
 {
-	If, For, Block, Defer, Break, Return,
-	Switch, Continue, Var_Decl, Var_Assign, Proc_Call
+	If, 
+	For, 
+	Block, 
+	Defer, 
+	Break, 
+	Return,
+	Switch, 
+	Continue, 
+	Var_Decl, 
+	Var_Assign, 
+	Proc_Call,
 };
 
 struct Ast_Statement
@@ -402,34 +411,6 @@ struct Ast_Var_Assign
 	Ast_Expr* expr;
 };
 
-enum class Ast_Proc_Call_Tag
-{
-	Unresolved, Resolved, Invalid
-};
-
-struct Ast_Proc_Call
-{
-	Span span;
-	Ast_Proc_Call_Tag tag;
-	std::vector<Ast_Expr*> input_exprs;
-	option<Ast_Access*> access;
-
-	union
-	{
-		struct Unresolved
-		{
-			option<Ast_Ident> import;
-			Ast_Ident ident;
-		} unresolved;
-
-		struct Resolved
-		{
-			Ast_Proc_Decl* proc_decl;
-			u32 proc_id;
-		} resolved;
-	};
-};
-
 struct Ast_Folded_Expr
 {
 	BasicType basic_type;
@@ -445,7 +426,10 @@ struct Ast_Folded_Expr
 
 enum class Ast_Expr_Tag
 {
-	Term, Unary_Expr, Binary_Expr, Folded_Expr
+	Term, 
+	Unary_Expr, 
+	Binary_Expr, 
+	Folded_Expr,
 };
 
 struct Ast_Expr
@@ -459,14 +443,45 @@ struct Ast_Expr
 		Ast_Term* as_term;
 		Ast_Unary_Expr* as_unary_expr;
 		Ast_Binary_Expr* as_binary_expr;
-		Ast_Folded_Expr as_folded_expr; //@Notice span doesnt change after const fold
+		Ast_Folded_Expr as_folded_expr;
 	};
+};
+
+struct Ast_Unary_Expr
+{
+	UnaryOp op;
+	Ast_Expr* right;
+};
+
+struct Ast_Binary_Expr
+{
+	BinaryOp op;
+	Ast_Expr* left;
+	Ast_Expr* right;
+};
+
+enum class Const_Eval
+{
+	Not_Evaluated = 0,
+	Invalid = 1,
+	Valid = 2,
+};
+
+struct Ast_Const_Expr
+{
+	Ast_Expr* expr;
+	Const_Eval eval;
 };
 
 enum class Ast_Term_Tag
 {
-	Var, Enum, Sizeof, Literal,
-	Proc_Call, Struct_Init, Array_Init
+	Var,
+	Enum,
+	Sizeof,
+	Literal,
+	Proc_Call,
+	Array_Init,
+	Struct_Init,
 };
 
 struct Ast_Term
@@ -478,16 +493,19 @@ struct Ast_Term
 		Ast_Var* as_var;
 		Ast_Enum* as_enum;
 		Ast_Sizeof* as_sizeof;
-		Ast_Literal as_literal; //@Pointer todo to squish size
+		Ast_Literal* as_literal;
 		Ast_Proc_Call* as_proc_call;
-		Ast_Struct_Init* as_struct_init;
 		Ast_Array_Init* as_array_init;
+		Ast_Struct_Init* as_struct_init;
 	};
 };
 
 enum class Ast_Var_Tag
 {
-	Unresolved, Local, Global, Invalid
+	Unresolved, 
+	Local,
+	Global,
+	Invalid,
 };
 
 struct Ast_Var
@@ -497,27 +515,28 @@ struct Ast_Var
 
 	union
 	{
-		struct Unresolved
-		{
-			Ast_Ident ident;
+		struct Unresolved 
+		{ 
+			Ast_Ident ident; 
 		} unresolved;
 
-		struct Local
-		{
-			Ast_Ident ident;
+		struct Local 
+		{ 
+			Ast_Ident ident; 
 		} local;
 
-		struct Global
-		{
+		struct Global 
+		{ 
 			u32 global_id;
-			Ast_Global_Decl* global_decl;
+			Ast_Global_Decl* global_decl; 
 		} global;
 	};
 };
 
 enum class Ast_Access_Tag
 {
-	Var, Array
+	Var, 
+	Array,
 };
 
 struct Ast_Access
@@ -547,7 +566,9 @@ struct Ast_Array_Access
 
 enum class Ast_Enum_Tag
 {
-	Unresolved, Resolved, Invalid
+	Unresolved, 
+	Resolved, 
+	Invalid,
 };
 
 struct Ast_Enum
@@ -576,9 +597,47 @@ struct Ast_Sizeof
 	Ast_Type type;
 };
 
+enum class Ast_Proc_Call_Tag
+{
+	Unresolved,
+	Resolved,
+	Invalid,
+};
+
+struct Ast_Proc_Call
+{
+	Span span;
+	Ast_Proc_Call_Tag tag;
+	option<Ast_Access*> access;
+	std::vector<Ast_Expr*> input_exprs;
+
+	union
+	{
+		struct Unresolved
+		{
+			option<Ast_Ident> import;
+			Ast_Ident ident;
+		} unresolved;
+
+		struct Resolved
+		{
+			Ast_Proc_Decl* proc_decl;
+			u32 proc_id;
+		} resolved;
+	};
+};
+
+struct Ast_Array_Init
+{
+	option<Ast_Type> type;
+	std::vector<Ast_Expr*> input_exprs;
+};
+
 enum class Ast_Struct_Init_Tag
 {
-	Unresolved, Resolved, Invalid
+	Unresolved,
+	Resolved,
+	Invalid,
 };
 
 struct Ast_Struct_Init
@@ -599,31 +658,6 @@ struct Ast_Struct_Init
 			option<Ast_Struct_Type> type;
 		} resolved;
 	};
-};
-
-struct Ast_Array_Init
-{
-	option<Ast_Type> type;
-	std::vector<Ast_Expr*> input_exprs;
-};
-
-struct Ast_Unary_Expr
-{
-	UnaryOp op;
-	Ast_Expr* right;
-};
-
-struct Ast_Binary_Expr
-{
-	BinaryOp op;
-	Ast_Expr* left;
-	Ast_Expr* right;
-};
-
-struct Ast_Const_Expr
-{
-	Ast_Expr* expr;
-	Const_Eval eval;
 };
 
 #endif

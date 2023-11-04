@@ -1,7 +1,6 @@
 #include "check.h"
 
 #include "error_handler.h"
-#include "check_general.h"
 #include "check_type.h"
 
 //@Todo check cant import same file under multiple names
@@ -9,6 +8,8 @@
 
 bool check_program(Ast_Program* program)
 {
+	auto tok = token_to_basic_type((TokenType)11239912);
+
 	Check_Context cc = {};
 
 	//1. check global symbols
@@ -170,7 +171,7 @@ void check_decls(Check_Context* cc)
 
 	for (Ast_Use_Decl* use_decl : ast->uses)
 	{
-		Ast* import_ast = find_import(cc, { use_decl->import });
+		Ast* import_ast = resolve_import(cc, { use_decl->import });
 		if (import_ast == NULL) continue;
 
 		Ast_Ident alias = use_decl->alias;
@@ -470,35 +471,40 @@ void check_ast(Check_Context* cc)
 {
 	for (Ast_Proc_Decl* proc_decl : cc->ast->procs)
 	{
-		if (proc_decl->is_external) continue;
-
-		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
-		//const exprs arent considered
-		Terminator terminator = check_block_cfg(cc, proc_decl->block, false, false);
-		if (terminator != Terminator::Return && proc_decl->return_type) err_report(Error::CFG_NOT_ALL_PATHS_RETURN);
-		
-		check_context_block_reset(cc, proc_decl);
-		check_context_block_add(cc);
-		for (Ast_Proc_Param& param : proc_decl->input_params)
-		{
-			option<Ast_Global_Info> global_info = find_global(cc->ast, param.ident);
-			if (global_info)
-			{
-				err_report(Error::VAR_DECL_ALREADY_IS_GLOBAL);
-				err_context(cc, param.ident.span);
-			}
-			else
-			{
-				//@Notice this is checked in proc_decl but might be usefull for err recovery
-				if (!check_context_block_contains_var(cc, param.ident))
-				check_context_block_add_var(cc, param.ident, param.type);
-			}
-		}
-		check_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
+		check_proc_block(cc, proc_decl);
 	}
 }
 
-Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bool is_defer)
+void check_proc_block(Check_Context* cc, Ast_Proc_Decl* proc_decl)
+{
+	if (proc_decl->is_external) return;
+
+	//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
+	//const exprs arent considered
+	Terminator terminator = check_cfg_block(cc, proc_decl->block, false, false);
+	if (terminator != Terminator::Return && proc_decl->return_type) err_report(Error::CFG_NOT_ALL_PATHS_RETURN);
+
+	check_context_block_reset(cc, proc_decl);
+	check_context_block_add(cc);
+	for (Ast_Proc_Param& param : proc_decl->input_params)
+	{
+		option<Ast_Global_Info> global_info = find_global(cc->ast, param.ident);
+		if (global_info)
+		{
+			err_report(Error::VAR_DECL_ALREADY_IS_GLOBAL);
+			err_context(cc, param.ident.span);
+		}
+		else
+		{
+			//@Notice this is checked in proc_decl but might be usefull for err recovery
+			if (!check_context_block_contains_var(cc, param.ident))
+				check_context_block_add_var(cc, param.ident, param.type);
+		}
+	}
+	check_statement_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
+}
+
+Terminator check_cfg_block(Check_Context* cc, Ast_Block* block, bool is_loop, bool is_defer)
 {
 	Terminator terminator = Terminator::None;
 
@@ -515,20 +521,20 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		{
 		case Ast_Statement_Tag::If:
 		{
-			check_if_cfg(cc, statement->as_if, is_loop, is_defer);
+			check_cfg_if(cc, statement->as_if, is_loop, is_defer);
 		} break;
 		case Ast_Statement_Tag::For: 
 		{
-			check_block_cfg(cc, statement->as_for->block, true, is_defer);
+			check_cfg_block(cc, statement->as_for->block, true, is_defer);
 		} break;
 		case Ast_Statement_Tag::Block: 
 		{
-			terminator = check_block_cfg(cc, statement->as_block, is_loop, is_defer);
+			terminator = check_cfg_block(cc, statement->as_block, is_loop, is_defer);
 		} break;
 		case Ast_Statement_Tag::Defer:
 		{
 			if (is_defer) { err_report(Error::CFG_NESTED_DEFER); err_context(cc, statement->as_defer->span); }
-			else check_block_cfg(cc, statement->as_defer->block, false, true);
+			else check_cfg_block(cc, statement->as_defer->block, false, true);
 		} break;
 		case Ast_Statement_Tag::Break:
 		{
@@ -546,7 +552,7 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 		} break;
 		case Ast_Statement_Tag::Switch:
 		{
-			check_switch_cfg(cc, statement->as_switch, is_loop, is_defer);
+			check_cfg_switch(cc, statement->as_switch, is_loop, is_defer);
 		} break;
 		case Ast_Statement_Tag::Continue:
 		{
@@ -566,28 +572,28 @@ Terminator check_block_cfg(Check_Context* cc, Ast_Block* block, bool is_loop, bo
 	return terminator;
 }
 
-void check_if_cfg(Check_Context* cc, Ast_If* _if, bool is_loop, bool is_defer)
+void check_cfg_if(Check_Context* cc, Ast_If* _if, bool is_loop, bool is_defer)
 {
-	check_block_cfg(cc, _if->block, is_loop, is_defer);
+	check_cfg_block(cc, _if->block, is_loop, is_defer);
 	
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else_Tag::If)
-			check_if_cfg(cc, _else->as_if, is_loop, is_defer);
-		else check_block_cfg(cc, _else->as_block, is_loop, is_defer);
+			check_cfg_if(cc, _else->as_if, is_loop, is_defer);
+		else check_cfg_block(cc, _else->as_block, is_loop, is_defer);
 	}
 }
 
-void check_switch_cfg(Check_Context* cc, Ast_Switch* _switch, bool is_loop, bool is_defer)
+void check_cfg_switch(Check_Context* cc, Ast_Switch* _switch, bool is_loop, bool is_defer)
 {
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
-		if (_case.block) check_block_cfg(cc, _case.block.value(), is_loop, is_defer);
+		if (_case.block) check_cfg_block(cc, _case.block.value(), is_loop, is_defer);
 	}
 }
 
-static void check_block(Check_Context* cc, Ast_Block* block, Checker_Block_Flags flags)
+static void check_statement_block(Check_Context* cc, Ast_Block* block, Checker_Block_Flags flags)
 {
 	if (flags != Checker_Block_Flags::Already_Added) check_context_block_add(cc);
 
@@ -595,46 +601,46 @@ static void check_block(Check_Context* cc, Ast_Block* block, Checker_Block_Flags
 	{
 		switch (statement->tag)
 		{
-		case Ast_Statement_Tag::If: check_if(cc, statement->as_if); break;
-		case Ast_Statement_Tag::For: check_for(cc, statement->as_for); break;
-		case Ast_Statement_Tag::Block: check_block(cc, statement->as_block, Checker_Block_Flags::None); break;
-		case Ast_Statement_Tag::Defer: check_block(cc, statement->as_defer->block, Checker_Block_Flags::None); break;
+		case Ast_Statement_Tag::If: check_statement_if(cc, statement->as_if); break;
+		case Ast_Statement_Tag::For: check_statement_for(cc, statement->as_for); break;
+		case Ast_Statement_Tag::Block: check_statement_block(cc, statement->as_block, Checker_Block_Flags::None); break;
+		case Ast_Statement_Tag::Defer: check_statement_block(cc, statement->as_defer->block, Checker_Block_Flags::None); break;
 		case Ast_Statement_Tag::Break: break;
-		case Ast_Statement_Tag::Return: check_return(cc, statement->as_return); break;
-		case Ast_Statement_Tag::Switch: check_switch(cc, statement->as_switch); break;
+		case Ast_Statement_Tag::Return: check_statement_return(cc, statement->as_return); break;
+		case Ast_Statement_Tag::Switch: check_statement_switch(cc, statement->as_switch); break;
 		case Ast_Statement_Tag::Continue: break;
 		case Ast_Statement_Tag::Proc_Call: check_proc_call(cc, statement->as_proc_call, Checker_Proc_Call_Flags::In_Statement); break;
-		case Ast_Statement_Tag::Var_Decl: check_var_decl(cc, statement->as_var_decl); break;
-		case Ast_Statement_Tag::Var_Assign: check_var_assign(cc, statement->as_var_assign); break;
+		case Ast_Statement_Tag::Var_Decl: check_statement_var_decl(cc, statement->as_var_decl); break;
+		case Ast_Statement_Tag::Var_Assign: check_statement_var_assign(cc, statement->as_var_assign); break;
 		}
 	}
 
 	check_context_block_pop_back(cc);
 }
 
-void check_if(Check_Context* cc, Ast_If* _if)
+void check_statement_if(Check_Context* cc, Ast_If* _if)
 {
 	check_expr_type(cc, _if->condition_expr, type_from_basic(BasicType::BOOL), false);
-	check_block(cc, _if->block, Checker_Block_Flags::None);
+	check_statement_block(cc, _if->block, Checker_Block_Flags::None);
 
 	if (_if->_else)
 	{
 		Ast_Else* _else = _if->_else.value();
-		if (_else->tag == Ast_Else_Tag::If) check_if(cc, _else->as_if);
-		else check_block(cc, _else->as_block, Checker_Block_Flags::None);
+		if (_else->tag == Ast_Else_Tag::If) check_statement_if(cc, _else->as_if);
+		else check_statement_block(cc, _else->as_block, Checker_Block_Flags::None);
 	}
 }
 
-void check_for(Check_Context* cc, Ast_For* _for)
+void check_statement_for(Check_Context* cc, Ast_For* _for)
 {
 	check_context_block_add(cc);
-	if (_for->var_decl) check_var_decl(cc, _for->var_decl.value());
-	if (_for->var_assign) check_var_assign(cc, _for->var_assign.value());
+	if (_for->var_decl) check_statement_var_decl(cc, _for->var_decl.value());
+	if (_for->var_assign) check_statement_var_assign(cc, _for->var_assign.value());
 	if (_for->condition_expr) check_expr_type(cc, _for->condition_expr.value(), type_from_basic(BasicType::BOOL), false);
-	check_block(cc, _for->block, Checker_Block_Flags::Already_Added);
+	check_statement_block(cc, _for->block, Checker_Block_Flags::Already_Added);
 }
 
-void check_return(Check_Context* cc, Ast_Return* _return)
+void check_statement_return(Check_Context* cc, Ast_Return* _return)
 {
 	Ast_Proc_Decl* curr_proc = cc->curr_proc;
 
@@ -661,7 +667,7 @@ void check_return(Check_Context* cc, Ast_Return* _return)
 	}
 }
 
-void check_switch(Check_Context* cc, Ast_Switch* _switch)
+void check_statement_switch(Check_Context* cc, Ast_Switch* _switch)
 {
 	//@Very unfinished. Share const expr unique pool logic with EnumVariants
 	
@@ -675,7 +681,7 @@ void check_switch(Check_Context* cc, Ast_Switch* _switch)
 	{
 		if (_case.block)
 		{
-			check_block(cc, _case.block.value(), Checker_Block_Flags::None);
+			check_statement_block(cc, _case.block.value(), Checker_Block_Flags::None);
 		}
 	}
 
@@ -703,7 +709,7 @@ void check_switch(Check_Context* cc, Ast_Switch* _switch)
 	}
 }
 
-void check_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
+void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 {
 	Ast_Ident ident = var_decl->ident;
 
@@ -749,7 +755,7 @@ void check_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 	}
 }
 
-void check_var_assign(Check_Context* cc, Ast_Var_Assign* var_assign)
+void check_statement_var_assign(Check_Context* cc, Ast_Var_Assign* var_assign)
 {
 	option<Ast_Type> var_type = check_var(cc, var_assign->var);
 	if (!var_type) return;
