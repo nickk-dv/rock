@@ -11,13 +11,19 @@ enum class Type_Kind;
 enum class Literal_Kind;
 enum class Const_Dependency_Tag;
 
+bool type_match(Check_Context* cc, Ast_Type type_a, Ast_Type type_b);
+bool type_is_poison(Ast_Type type);
 Type_Kind type_kind(Check_Context* cc, Ast_Type type);
 Ast_Type type_from_basic(BasicType basic_type);
-option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type);
+static void check_struct_size(Ast_Struct_IR_Info* struct_info);
+static u32 check_get_basic_type_size(BasicType basic_type);
+static u32 check_get_basic_type_align(BasicType basic_type);
+static u32 check_get_type_size(Ast_Type type);
+static u32 check_get_type_align(Ast_Type type);
+
 option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> expect_type, bool expect_constant);
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var);
 option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags);
-bool match_type(Check_Context* cc, Ast_Type type_a, Ast_Type type_b);
 
 static bool check_is_const_expr(Ast_Expr* expr);
 static bool check_is_const_foldable_expr(Ast_Expr* expr);
@@ -50,7 +56,7 @@ option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
 
 Ast* resolve_import(Check_Context* cc, option<Ast_Ident> import);
-static void resolve_type(Check_Context* cc, Ast_Type* type);
+void resolve_type(Check_Context* cc, Ast_Type* type);
 static void resolve_var(Check_Context* cc, Ast_Var* var);
 static void resolve_enum(Check_Context* cc, Ast_Enum* _enum);
 static void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of);

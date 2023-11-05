@@ -1,6 +1,7 @@
 #include "check_type.h"
 
 #include "error_handler.h"
+#include "debug_printer.h"
 
 Type_Kind type_kind(Check_Context* cc, Ast_Type type)
 {
@@ -22,16 +23,7 @@ Type_Kind type_kind(Check_Context* cc, Ast_Type type)
 	case Ast_Type_Tag::Array: return Type_Kind::Array;
 	case Ast_Type_Tag::Struct: return Type_Kind::Struct;
 	case Ast_Type_Tag::Enum: return Type_Kind::Enum;
-	default:
-	{
-		//@Err internal
-		//err_set;
-		//printf("[COMPILER ERROR] Ast_Type signature wasnt checked, tag cannot be Tag::Custom\n");
-		//printf("Hint: submit a bug report if you see this error message\n");
-		//debug_print_type(type);
-		//printf("\n");
-		return Type_Kind::Integer;
-	}
+	default: { err_internal("type_kind: invalid Ast_Type_Tag"); return Type_Kind::Bool; }
 	}
 }
 
@@ -42,64 +34,112 @@ Ast_Type type_from_basic(BasicType basic_type)
 	type.as_basic = basic_type;
 	return type;
 }
-
-option<Ast_Type> check_type_signature(Check_Context* cc, Ast_Type* type)
+void check_struct_size(Ast_Struct_IR_Info* struct_info)
 {
-	switch (type->tag)
-	{
-	case Ast_Type_Tag::Basic:
-	{
-		return *type;
-	}
-	case Ast_Type_Tag::Array:
-	{
-		//@Todo also must be > 0
-		//@Temp using i32 instead of u32 for static arrays to avoid type mismatch
-		option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr->expr, type_from_basic(BasicType::I32), true);
-		if (!expr_type) return {};
-		
-		option<Ast_Type> element_type = check_type_signature(cc, &type->as_array->element_type);
-		if (!element_type) return {};
-		
-		return *type;
-	}
-	case Ast_Type_Tag::Unresolved:
-	{
-		Ast* target_ast = resolve_import(cc, type->as_unresolved->import);
-		if (target_ast == NULL) return {};
+	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
+	u32 field_count = (u32)struct_decl->fields.size();
 
-		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_unresolved->ident);
-		if (struct_meta)
+	u32 total_size = 0;
+	u32 max_align = 0;
+
+	for (u32 i = 0; i < field_count; i += 1)
+	{
+		u32 field_size = check_get_type_size(struct_decl->fields[i].type);
+		total_size += field_size;
+
+		if (i + 1 < field_count)
 		{
-			type->tag = Ast_Type_Tag::Struct;
-			type->as_struct.struct_id = struct_meta.value().struct_id;
-			type->as_struct.struct_decl = struct_meta.value().struct_decl;
-			return *type;
+			u32 align = check_get_type_align(struct_decl->fields[i + 1].type);
+			if (align > field_size)
+			{
+				u32 padding = align - field_size;
+				total_size += padding;
+			}
+			if (align > max_align) max_align = align;
 		}
-
-		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_unresolved->ident);
-		if (enum_meta)
+		else
 		{
-			type->tag = Ast_Type_Tag::Enum;
-			type->as_enum.enum_id = enum_meta.value().enum_id;
-			type->as_enum.enum_decl = enum_meta.value().enum_decl;
-			return *type;
+			u32 align = max_align;
+			if (align > field_size)
+			{
+				u32 padding = align - field_size;
+				total_size += padding;
+			}
 		}
+	}
 
-		err_report(Error::RESOLVE_TYPE_NOT_FOUND);
-		err_context(cc, type->span);
-		return {};
-	}
-	default:
+	struct_info->is_sized = true;
+	struct_info->struct_size = total_size;
+	struct_info->max_align = max_align;
+}
+
+u32 check_get_basic_type_size(BasicType basic_type)
+{
+	switch (basic_type)
 	{
-		//@Err internal
-		//err_set;
-		//printf("[COMPILER ERROR] Ast_Type signature cannot be checked multiple times\n");
-		//printf("Hint: submit a bug report if you see this error message\n");
-		//debug_print_type(*type);
-		//printf("\n");
-		return {};
+	case BasicType::I8: return 1;
+	case BasicType::U8: return 1;
+	case BasicType::I16: return 2;
+	case BasicType::U16: return 2;
+	case BasicType::I32: return 4;
+	case BasicType::U32: return 4;
+	case BasicType::I64: return 8;
+	case BasicType::U64: return 8;
+	case BasicType::BOOL: return 1;
+	case BasicType::F32: return 4;
+	case BasicType::F64: return 8;
+	case BasicType::STRING: return 0; //@Not implemented
+	default: { err_internal("check_get_basic_type_size: invalid BasicType"); return 0; }
 	}
+}
+
+u32 check_get_basic_type_align(BasicType basic_type)
+{
+	switch (basic_type)
+	{
+	case BasicType::I8: return 1;
+	case BasicType::U8: return 1;
+	case BasicType::I16: return 2;
+	case BasicType::U16: return 2;
+	case BasicType::I32: return 4;
+	case BasicType::U32: return 4;
+	case BasicType::I64: return 8;
+	case BasicType::U64: return 8;
+	case BasicType::BOOL: return 1;
+	case BasicType::F32: return 4;
+	case BasicType::F64: return 8;
+	case BasicType::STRING: return 0; //@Not implemented
+	default: { err_internal("check_get_basic_type_align: invalid BasicType"); return 0; }
+	}
+}
+
+//@Incomplete
+u32 check_get_type_size(Ast_Type type)
+{
+	if (type.pointer_level > 0) return 8; //@Assume 64bit
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Basic: return check_get_basic_type_size(type.as_basic);
+	case Ast_Type_Tag::Array: return 0;
+	case Ast_Type_Tag::Struct: return 0;
+	case Ast_Type_Tag::Enum: return check_get_basic_type_size(type.as_enum.enum_decl->basic_type);
+	default: { err_internal("check_get_type_size: invalid Ast_Type_Tag"); return 0; }
+	}
+}
+
+//@Incomplete
+u32 check_get_type_align(Ast_Type type)
+{
+	if (type.pointer_level > 0) return 8; //@Assume 64bit
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Basic: return check_get_basic_type_align(type.as_basic);
+	case Ast_Type_Tag::Array: return 0;
+	case Ast_Type_Tag::Struct: return 0;
+	case Ast_Type_Tag::Enum: return check_get_basic_type_align(type.as_enum.enum_decl->basic_type);
+	default: { err_internal("check_get_type_align: invalid Ast_Type_Tag"); return 0; }
 	}
 }
 
@@ -113,11 +153,16 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 
 	type_implicit_cast(cc, &type.value(), expect_type.value());
 
-	if (!match_type(cc, type.value(), expect_type.value()))
+	if (!type_match(cc, type.value(), expect_type.value()))
 	{
 		err_report(Error::TYPE_MISMATCH);
-		err_context(cc, expect_type.value().span); //@Err add ability to add messages
-		err_context(cc, type.value().span); //@Span isnt available for generated types, use custom printing for them
+		//err_context(cc, expect_type.value().span); //@Err add ability to add messages
+		//err_context(cc, type.value().span); //@Span isnt available for generated types, use custom printing for them
+		err_context("Expected: ");
+		debug_print_type(type.value());
+		err_context("\nGot: ");
+		debug_print_type(expect_type.value());
+		err_context("\nIn expression:");
 		err_context(cc, expr->span);
 		return {};
 	}
@@ -125,7 +170,7 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 	return type;
 }
 
-bool match_type(Check_Context* cc, Ast_Type type_a, Ast_Type type_b)
+bool type_match(Check_Context* cc, Ast_Type type_a, Ast_Type type_b)
 {
 	if (type_a.pointer_level != type_b.pointer_level) return false;
 	if (type_a.tag != type_b.tag) return false;
@@ -140,17 +185,15 @@ bool match_type(Check_Context* cc, Ast_Type type_a, Ast_Type type_b)
 		Ast_Array_Type* array_a = type_a.as_array;
 		Ast_Array_Type* array_b = type_b.as_array;
 		//@Array match constexpr sizes
-		return match_type(cc, array_a->element_type, array_b->element_type);
+		return type_match(cc, array_a->element_type, array_b->element_type);
 	}
-	default:
-	{
-		//@Err internal
-		//err_set; printf("match_type: Unexpected Ast_Type_Tag. Disambiguate Tag::Custom by using check_type first:\n");
-		//debug_print_type(type_a); printf("\n");
-		//debug_print_type(type_b); printf("\n");
-		return false;
+	default: { err_internal("type_match: invalid Ast_Type_Tag"); return false; }
 	}
-	}
+}
+
+bool type_is_poison(Ast_Type type)
+{
+	return type.tag == Ast_Type_Tag::Poison;
 }
 
 bool check_is_const_expr(Ast_Expr* expr)
@@ -409,10 +452,12 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	}
 	case Ast_Term_Tag::Sizeof: //@Const fold this should be part of constant evaluation
 	{
+		Ast_Sizeof* size_of = term->as_sizeof;
+		resolve_sizeof(cc, size_of);
+		if (size_of->tag == Ast_Sizeof_Tag::Invalid) return {};
+
 		//@Notice not doing sizing of types yet, cant know the numeric range
-		option<Ast_Type> type = check_type_signature(cc, &term->as_sizeof->type);
-		if (type) return type_from_basic(BasicType::U64);
-		return {};
+		return type_from_basic(BasicType::U64);
 	}
 	case Ast_Term_Tag::Literal:
 	{
@@ -451,7 +496,8 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 			Ast_Type expect_type = context->expect_type.value();
 			if (type_kind(cc, expect_type) != Type_Kind::Struct)
 			{
-				err_set; 
+				err_set;
+				err_context(cc, struct_init->input_exprs[0]->span); //@Temp debugging
 				printf("Cannot use struct initializer in non struct type context\n");
 				printf("Context: "); debug_print_type(expect_type); printf("\n");
 				return {};
@@ -511,15 +557,17 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Array_Init:
 	{
 		Ast_Array_Init* array_init = term->as_array_init;
+		resolve_array_init(cc, array_init);
+		if (array_init->tag == Ast_Array_Init_Tag::Invalid) return {};
 
 		option<Ast_Type> type = {};
 		if (array_init->type)
 		{
-			type = check_type_signature(cc, &array_init->type.value());
-			if (!type) return {};
+			type = array_init->type.value();
 			if (type_kind(cc, type.value()) != Type_Kind::Array)
 			{
-				err_set; printf("Array initializer must have array type signature\n");
+				err_set; 
+				printf("Array initializer must have array type signature\n");
 				return {};
 			}
 		}
@@ -540,7 +588,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 			}
 			else
 			{
-				if (!match_type(cc, type.value(), expect_type))
+				if (!type_match(cc, type.value(), expect_type))
 				{
 					err_set;
 					printf("Array initializer type doesnt match the expected type:\n");
@@ -1202,8 +1250,8 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
-			resolve_type(cc, &size_of->type);
-			if (size_of->type.tag == Ast_Type_Tag::Poison) return Const_Eval::Invalid;
+			resolve_sizeof(cc, size_of);
+			if (size_of->tag == Ast_Sizeof_Tag::Invalid) return Const_Eval::Invalid;
 			
 			option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(size_of->type);
 			if (!struct_type) return Const_Eval::Not_Evaluated;
@@ -1241,17 +1289,30 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		}
 		case Ast_Term_Tag::Array_Init:
 		{
-			//@Consider array type signature
+			//@Consider array type signature const expressions
+
 			Ast_Array_Init* array_init = term->as_array_init;
+			resolve_array_init(cc, array_init);
+			if (array_init->tag == Ast_Array_Init_Tag::Invalid) return Const_Eval::Invalid;
+
 			for (Ast_Expr* input_expr : array_init->input_exprs)
-			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			{
+				Const_Eval input_eval = check_const_expr_dependencies(cc, arena, input_expr, parent);
+				if (input_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+			}
 			return Const_Eval::Not_Evaluated;
 		}
 		case Ast_Term_Tag::Struct_Init:
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
+			resolve_struct_init(cc, struct_init);
+			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return Const_Eval::Invalid;
+
 			for (Ast_Expr* input_expr : struct_init->input_exprs)
-			if (check_const_expr_dependencies(cc, arena, input_expr, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+			{
+				Const_Eval input_eval = check_const_expr_dependencies(cc, arena, input_expr, parent);
+				if (input_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+			}
 			return Const_Eval::Not_Evaluated;
 		}
 		}
@@ -1332,9 +1393,23 @@ void resolve_type(Check_Context* cc, Ast_Type* type)
 	case Ast_Type_Tag::Basic: break;
 	case Ast_Type_Tag::Array:
 	{
+		//@For backward compatability, ir builder reads from
+		//folded expr, so this is required for codegen
+		//switch to new expr checking pipeline
+		//@Hack for some reason its being folded multiple times
+		if (type->as_array->const_expr->expr->tag != Ast_Expr_Tag::Folded_Expr)
+		{
+			option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr->expr, type_from_basic(BasicType::I32), true);
+			if (!expr_type)
+			{
+				type->tag = Ast_Type_Tag::Poison;
+				return;
+			}
+		}
+
 		Ast_Type* element_type = &type->as_array->element_type;
 		resolve_type(cc, element_type);
-		if (element_type->tag == Ast_Type_Tag::Poison) type->tag = Ast_Type_Tag::Poison;
+		if (type_is_poison(*element_type)) type->tag = Ast_Type_Tag::Poison;
 	} break;
 	case Ast_Type_Tag::Struct: break;
 	case Ast_Type_Tag::Enum: break;
@@ -1347,21 +1422,21 @@ void resolve_type(Check_Context* cc, Ast_Type* type)
 			return;
 		}
 
-		option<Ast_Struct_Info> struct_meta = find_struct(target_ast, type->as_unresolved->ident);
-		if (struct_meta)
+		option<Ast_Struct_Info> struct_info = find_struct(target_ast, type->as_unresolved->ident);
+		if (struct_info)
 		{
 			type->tag = Ast_Type_Tag::Struct;
-			type->as_struct.struct_id = struct_meta.value().struct_id;
-			type->as_struct.struct_decl = struct_meta.value().struct_decl;
+			type->as_struct.struct_id = struct_info.value().struct_id;
+			type->as_struct.struct_decl = struct_info.value().struct_decl;
 			return;
 		}
 		
-		option<Ast_Enum_Info> enum_meta = find_enum(target_ast, type->as_unresolved->ident);
-		if (enum_meta)
+		option<Ast_Enum_Info> enum_info = find_enum(target_ast, type->as_unresolved->ident);
+		if (enum_info)
 		{
 			type->tag = Ast_Type_Tag::Enum;
-			type->as_enum.enum_id = enum_meta.value().enum_id;
-			type->as_enum.enum_decl = enum_meta.value().enum_decl;
+			type->as_enum.enum_id = enum_info.value().enum_id;
+			type->as_enum.enum_decl = enum_info.value().enum_decl;
 			return;
 		}
 
@@ -1388,6 +1463,12 @@ void resolve_var(Check_Context* cc, Ast_Var* var)
 		var->access = var_access->next;
 
 		target_ast = import_decl.value()->import_ast;
+		if (target_ast == NULL)
+		{
+			var->tag = Ast_Var_Tag::Invalid;
+			return;
+		}
+
 		option<Ast_Global_Info> global = find_global(target_ast, global_ident);
 		if (global) 
 		{
@@ -1457,6 +1538,9 @@ void resolve_enum(Check_Context* cc, Ast_Enum* _enum)
 void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of)
 {
 	resolve_type(cc, &size_of->type);
+	if (type_is_poison(size_of->type))
+		size_of->tag = Ast_Sizeof_Tag::Invalid;
+	else size_of->tag = Ast_Sizeof_Tag::Resolved;
 }
 
 void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call)
@@ -1489,6 +1573,9 @@ void resolve_array_init(Check_Context* cc, Ast_Array_Init* array_init)
 	if (array_init->type)
 	{
 		resolve_type(cc, &array_init->type.value());
+		if (type_is_poison(array_init->type.value()))
+			array_init->tag = Ast_Array_Init_Tag::Invalid;
+		else array_init->tag = Ast_Array_Init_Tag::Resolved;
 	}
 }
 

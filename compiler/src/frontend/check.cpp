@@ -111,7 +111,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->struct_table.add(ident, Ast_Struct_Info { (u32)program->structs.size(), decl }, hash_ident(ident));
-		program->structs.emplace_back(Ast_Struct_IR_Info { decl });
+		program->structs.emplace_back(Ast_Struct_IR_Info { cc->ast, decl });
 	}
 
 	for (Ast_Enum_Decl* decl : ast->enums)
@@ -193,22 +193,28 @@ void check_decls(Check_Context* cc)
 	{
 		if (!struct_decl->fields.empty()) name_set.zero_reset();
 		
-		for (Ast_Struct_Field& field : struct_decl->fields)
+		for (u32 i = 0; i < (u32)struct_decl->fields.size();)
 		{
-			if (!check_type_signature(cc, &field.type)) continue;
-
-			if (field.const_expr)
-			{
-				check_expr_type(cc, field.const_expr.value()->expr, field.type, true);
-			}
-			
+			Ast_Struct_Field field = struct_decl->fields[i];
 			option<Ast_Ident> name = name_set.find_key(field.ident, hash_ident(field.ident));
-			if (name) 
+			if (name)
 			{
 				err_report(Error::DECL_STRUCT_DUPLICATE_FIELD);
 				err_context(cc, name.value().span);
+				struct_decl->fields.erase(struct_decl->fields.begin() + i);
 			}
-			else name_set.add(field.ident, hash_ident(field.ident));
+			else
+			{
+				name_set.add(field.ident, hash_ident(field.ident));
+				resolve_type(cc, &struct_decl->fields[i].type);
+				i += 1;
+
+				//@Default const expr should be evaluated after all structure types and globals etc
+				if (field.const_expr)
+				{
+					check_expr_type(cc, field.const_expr.value()->expr, field.type, true);
+				}
+			}
 		}
 	}
 
@@ -240,12 +246,15 @@ void check_decls(Check_Context* cc)
 				err_report(Error::DECL_ENUM_DUPLICATE_VARIANT);
 				err_context(cc, name.value().span);
 			}
-			else name_set.add(variant.ident, hash_ident(variant.ident));
+			else 
+			{
+				name_set.add(variant.ident, hash_ident(variant.ident));
 
-			//@New pipeline
-			check_const_expr(cc, const_dependency_from_enum_variant(&variant));
-			//@Old
-			check_expr_type(cc, variant.const_expr->expr, enum_type, true);
+				//@New pipeline
+				check_const_expr(cc, const_dependency_from_enum_variant(&variant));
+				//@Old
+				check_expr_type(cc, variant.const_expr->expr, enum_type, true);
+			}
 		}
 	}
 	
@@ -255,7 +264,7 @@ void check_decls(Check_Context* cc)
 
 		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
-			check_type_signature(cc, &param.type);
+			resolve_type(cc, &param.type);
 			
 			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
 			if (name) 
@@ -268,7 +277,7 @@ void check_decls(Check_Context* cc)
 
 		if (proc_decl->return_type)
 		{
-			check_type_signature(cc, &proc_decl->return_type.value());
+			resolve_type(cc, &proc_decl->return_type.value());
 		}
 	}
 
@@ -291,7 +300,7 @@ void check_main_proc(Check_Context* cc)
 	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); /*@Error add context*/ }
 	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); /*@Error add context*/ }
 	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); /*@Error add context*/ return; }
-	if (!match_type(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
+	if (!type_match(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
 }
 #include "debug_printer.h" //@Temp
 void check_perform_struct_sizing(Check_Context* cc)
@@ -308,6 +317,7 @@ void check_perform_struct_sizing(Check_Context* cc)
 		if (is_infinite)
 		{
 			in_struct->size_eval = Const_Eval::Invalid;
+			cc->ast = cc->program->structs[i].from_ast;
 			err_report(Error::DECL_STRUCT_SELF_STORAGE);
 			err_context(cc, in_struct->ident.span);
 			printf("Field access path: ");
@@ -317,11 +327,12 @@ void check_perform_struct_sizing(Check_Context* cc)
 				printf(".");
 				debug_print_ident(field_chain[k], false, false);
 			}
-			printf("\n\n");
+			printf("\n");
 		}
 		else
 		{
-			check_struct_size(&cc->program->structs[i]);
+			//@Not doing struct sizing only self storage detection
+			//check_struct_size(&cc->program->structs[i]);
 		}
 	}
 
@@ -349,115 +360,6 @@ bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u3
 	}
 
 	return false;
-}
-
-void check_struct_size(Ast_Struct_IR_Info* struct_info)
-{
-	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
-	u32 field_count = (u32)struct_decl->fields.size();
-	
-	u32 total_size = 0;
-	u32 max_align = 0;
-
-	for (u32 i = 0; i < field_count; i += 1)
-	{
-		u32 field_size = check_get_type_size(struct_decl->fields[i].type);
-		total_size += field_size;
-
-		if (i + 1 < field_count)
-		{
-			u32 align = check_get_type_align(struct_decl->fields[i + 1].type);
-			if (align > field_size)
-			{
-				u32 padding = align - field_size;
-				total_size += padding;
-			}
-			if (align > max_align) max_align = align;
-		}
-		else
-		{
-			u32 align = max_align;
-			if (align > field_size)
-			{
-				u32 padding = align - field_size;
-				total_size += padding;
-			}
-		}
-	}
-
-	struct_info->is_sized = true;
-	struct_info->struct_size = total_size;
-	struct_info->max_align = max_align;
-}
-
-u32 check_get_basic_type_size(BasicType basic_type)
-{
-	switch (basic_type)
-	{
-	case BasicType::I8: return 1;
-	case BasicType::U8: return 1;
-	case BasicType::I16: return 2;
-	case BasicType::U16: return 2;
-	case BasicType::I32: return 4;
-	case BasicType::U32: return 4;
-	case BasicType::I64: return 8;
-	case BasicType::U64: return 8;
-	case BasicType::BOOL: return 1;
-	case BasicType::F32: return 4;
-	case BasicType::F64: return 8;
-	case BasicType::STRING: return 0; //@Not implemented
-	default: { err_internal("check_get_basic_type_size: invalid BasicType"); return 0; }
-	}
-}
-
-u32 check_get_basic_type_align(BasicType basic_type)
-{
-	switch (basic_type)
-	{
-	case BasicType::I8: return 1;
-	case BasicType::U8: return 1;
-	case BasicType::I16: return 2;
-	case BasicType::U16: return 2;
-	case BasicType::I32: return 4;
-	case BasicType::U32: return 4;
-	case BasicType::I64: return 8;
-	case BasicType::U64: return 8;
-	case BasicType::BOOL: return 1;
-	case BasicType::F32: return 4;
-	case BasicType::F64: return 8;
-	case BasicType::STRING: return 0; //@Not implemented
-	default: { err_internal("check_get_basic_type_align: invalid BasicType"); return 0; }
-	}
-}
-
-//@Incomplete
-u32 check_get_type_size(Ast_Type type)
-{
-	if (type.pointer_level > 0) return 8; //@Assume 64bit
-
-	switch (type.tag)
-	{
-	case Ast_Type_Tag::Basic: return check_get_basic_type_size(type.as_basic);
-	case Ast_Type_Tag::Array: return 0;
-	case Ast_Type_Tag::Struct: return 0;
-	case Ast_Type_Tag::Enum: return check_get_basic_type_size(type.as_enum.enum_decl->basic_type);
-	default: { err_internal("check_get_type_size: invalid Ast_Type_Tag"); return 0; }
-	}
-}
-
-//@Incomplete
-u32 check_get_type_align(Ast_Type type)
-{
-	if (type.pointer_level > 0) return 8; //@Assume 64bit
-
-	switch (type.tag)
-	{
-	case Ast_Type_Tag::Basic: return check_get_basic_type_align(type.as_basic);
-	case Ast_Type_Tag::Array: return 0;
-	case Ast_Type_Tag::Struct: return 0;
-	case Ast_Type_Tag::Enum: return check_get_basic_type_align(type.as_enum.enum_decl->basic_type);
-	default: { err_internal("check_get_type_align: invalid Ast_Type_Tag"); return 0; }
-	}
 }
 
 void check_ast(Check_Context* cc)
@@ -738,15 +640,15 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 
 	if (var_decl->type)
 	{
-		option<Ast_Type> type = check_type_signature(cc, &var_decl->type.value());
-		if (!type) return;
+		resolve_type(cc, &var_decl->type.value());
+		if (type_is_poison(var_decl->type.value())) return;
 
 		if (var_decl->expr)
 		{
-			option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), type.value(), false);
+			option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), false);
 		}
 		
-		check_context_block_add_var(cc, ident, type.value());
+		check_context_block_add_var(cc, ident, var_decl->type.value());
 	}
 	else
 	{

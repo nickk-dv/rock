@@ -235,7 +235,7 @@ void debug_print_type(Ast_Type type)
 	case Ast_Type_Tag::Struct: debug_print_ident(type.as_struct.struct_decl->ident, false, false); break;
 	case Ast_Type_Tag::Enum: debug_print_ident(type.as_enum.enum_decl->ident, false, false); break;
 	case Ast_Type_Tag::Unresolved: debug_print_unresolved_type(type.as_unresolved); break;
-	case Ast_Type_Tag::Poison: printf("[poison]");
+	case Ast_Type_Tag::Poison: printf("[Poison]");
 	}
 }
 

@@ -84,6 +84,7 @@ struct Ast_Program
 
 struct Ast_Struct_IR_Info
 {
+	Ast* from_ast; //@Hack needed for err_context in self storage check
 	Ast_Struct_Decl* struct_decl;
 	bool is_sized = false;
 	u32 struct_size;
@@ -592,8 +593,16 @@ struct Ast_Enum
 	};
 };
 
+enum class Ast_Sizeof_Tag
+{
+	Unresolved,
+	Resolved,
+	Invalid,
+};
+
 struct Ast_Sizeof
 {
+	Ast_Sizeof_Tag tag;
 	Ast_Type type;
 };
 
@@ -627,8 +636,16 @@ struct Ast_Proc_Call
 	};
 };
 
+enum class Ast_Array_Init_Tag
+{
+	Unresolved,
+	Resolved,
+	Invalid,
+};
+
 struct Ast_Array_Init
 {
+	Ast_Array_Init_Tag tag;
 	option<Ast_Type> type;
 	std::vector<Ast_Expr*> input_exprs;
 };
