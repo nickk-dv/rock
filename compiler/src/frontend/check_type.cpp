@@ -1249,7 +1249,7 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 #include "general/tree.h"
 #include "general/arena.h"
 
-option<Ast_Type> check_const_expr(Check_Context* cc, Consteval_Dependency constant)
+option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant)
 {
 	Ast_Const_Expr* const_expr = const_dependency_get_const_expr(constant);
 	if (const_expr->eval == Const_Eval::Invalid) return {};
@@ -1258,6 +1258,11 @@ option<Ast_Type> check_const_expr(Check_Context* cc, Consteval_Dependency consta
 	Tree<Consteval_Dependency> tree(2048, constant);
 	Const_Eval eval = check_const_expr_dependencies(cc, &tree.arena, const_expr->expr, tree.root);
 	if (eval == Const_Eval::Invalid) return {};
+
+	printf("Consteval Dependency tree\n");
+	check_print_consteval_tree(cc, tree.root);
+	printf("\n\n");
+	check_evaluate_consteval_tree(cc, tree.root);
 
 	//@Temp
 	return type_from_basic(BasicType::I8);
@@ -1411,6 +1416,28 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 	}
 	default: { err_internal("check_const_expr_dependencies: invalid Ast_Expr_Tag"); return Const_Eval::Invalid; }
 	}
+}
+
+void check_print_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	switch (node->value.tag)
+	{
+	case Consteval_Dependency_Tag::Global: err_context(cc, node->value.as_global->const_expr->expr->span); break;
+	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
+	case Consteval_Dependency_Tag::Sizeof_Struct: err_context(cc, node->value.as_sizeof_struct->ident.span); break;
+	default: break;
+	}
+
+	if (node->first_child != nullptr) check_print_consteval_tree(cc, node->first_child);
+	if (node->next_sibling != nullptr) check_print_consteval_tree(cc, node->next_sibling);
+}
+
+void check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	Consteval_Dependency constant = node->value;
+
+	if (node->first_child != nullptr) check_evaluate_consteval_tree(cc, node->first_child);
+	if (node->next_sibling != nullptr) check_evaluate_consteval_tree(cc, node->next_sibling);
 }
 
 option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident)

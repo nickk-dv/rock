@@ -38,8 +38,10 @@ static option<Ast_Type> check_unary_expr(Check_Context* cc, Type_Context* contex
 static option<Ast_Type> check_binary_expr(Check_Context* cc, Type_Context* context, Ast_Binary_Expr* binary_expr);
 static option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr);
 
-option<Ast_Type> check_const_expr(Check_Context* cc, Consteval_Dependency constant);
+option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
 static Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent);
+static void check_print_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
+static void check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 static bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b);
 static Ast_Const_Expr* const_dependency_get_const_expr(Consteval_Dependency constant);
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl);

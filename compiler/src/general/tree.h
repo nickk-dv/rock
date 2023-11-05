@@ -8,7 +8,8 @@ struct Tree_Node
 {
 	T value;
 	Tree_Node* parent;
-	Tree_Node* next_child;
+	Tree_Node* first_child;
+	Tree_Node* next_sibling;
 };
 
 template<typename T>
@@ -23,7 +24,8 @@ struct Tree
 		root = arena_alloc<Tree_Node<T>>(&arena);
 		root->value = root_value;
 		root->parent = nullptr;
-		root->next_child = nullptr;
+		root->first_child = nullptr;
+		root->next_sibling = nullptr;
 	}
 
 	~Tree() { arena_deinit(&arena); }
@@ -35,17 +37,18 @@ Tree_Node<T>* tree_node_add_child(Arena* arena, Tree_Node<T>* parent, T value)
 	Tree_Node<T>* node = arena_alloc<Tree_Node<T>>(arena);
 	node->value = value;
 	node->parent = parent;
-	node->next_child = nullptr;
-	
-	if (parent->next_child == nullptr) 
+	node->first_child = nullptr;
+	node->next_sibling = nullptr;
+
+	if (parent->first_child == nullptr)
 	{
-		parent->next_child = node;
+		parent->first_child = node;
 		return node;
 	}
-
-	Tree_Node<T>* curr = parent->next_child;
-	while (curr->next_child != nullptr) curr = curr->next_child;
-	curr->next_child = node;
+	
+	Tree_Node<T>* sibling = parent->first_child;
+	while (sibling->next_sibling != nullptr) sibling = sibling->next_sibling;
+	sibling->next_sibling = node;
 	return node;
 }
 

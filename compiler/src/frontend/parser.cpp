@@ -879,6 +879,7 @@ Ast_Const_Expr* parse_const_expr(Parser* parser, Ast_Expr* expr)
 	Ast_Const_Expr* const_expr = arena_alloc<Ast_Const_Expr>(&parser->arena);
 	const_expr->eval = Const_Eval::Not_Evaluated;
 	const_expr->expr = expr;
+	expr->is_const = true;
 	return const_expr;
 }
 

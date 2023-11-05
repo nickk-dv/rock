@@ -51,12 +51,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 
 	for (Ast_Global_IR_Info& global_info : program->globals)
 	{
-		Ast_Global_Decl* global_decl = global_info.global_decl;
-		Value const_value = build_expr(&bc, global_decl->const_expr->expr);
-		Value global = LLVMAddGlobal(bc.module, LLVMTypeOf(const_value), "g");
-		LLVMSetInitializer(global, const_value);
-		LLVMSetGlobalConstant(global, 1);
-		global_info.global_value = global;
+		build_global_var(&bc, &global_info);
 	}
 
 	for (Ast_Struct_IR_Info& struct_info : program->structs)
@@ -307,6 +302,18 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 	LLVMBuildStore(bc->builder, value, access_info.ptr);
 }
 
+void build_global_var(IR_Builder_Context* bc, Ast_Global_IR_Info* global_info)
+{
+	if (global_info->global_value != NULL) return;
+
+	Ast_Global_Decl* global_decl = global_info->global_decl;
+	Value const_value = build_expr(bc, global_decl->const_expr->expr);
+	Value global = LLVMAddGlobal(bc->module, LLVMTypeOf(const_value), "g");
+	LLVMSetInitializer(global, const_value);
+	LLVMSetGlobalConstant(global, 1);
+	global_info->global_value = global;
+}
+
 Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_info)
 {
 	std::vector<Value> values;
@@ -445,7 +452,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		else
 		{
 			printf("IR Builder: Expected Ast_Term literal to only be a string literal. Other things are Const_Expr now\n");
-			exit(EXIT_FAILURE);
+			exit(EXIT_FAILURE); //@Hack, maybe use compiler internal error instead
 		}
 	}
 	case Ast_Term_Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
@@ -516,8 +523,9 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
 	if (var->tag == Ast_Var_Tag::Global)
 	{
-		Ast_Global_IR_Info global = bc->program->globals[var->global.global_id];
-		return build_access(bc, var->access, global.global_value, global.global_decl->type.value());
+		Ast_Global_IR_Info* global_info = &bc->program->globals[var->global.global_id];
+		build_global_var(bc, global_info);
+		return build_access(bc, var->access, global_info->global_value, global_info->global_decl->type.value());
 	}
 	else
 	{
