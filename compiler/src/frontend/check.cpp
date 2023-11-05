@@ -251,7 +251,7 @@ void check_decls(Check_Context* cc)
 				name_set.add(variant.ident, hash_ident(variant.ident));
 
 				//@New pipeline
-				check_const_expr(cc, const_dependency_from_enum_variant(&variant));
+				check_const_expr(cc, consteval_dependency_from_enum_variant(&variant));
 				//@Old
 				check_expr_type(cc, variant.const_expr->expr, enum_type, true);
 			}
@@ -284,7 +284,7 @@ void check_decls(Check_Context* cc)
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
 		//@New pipeline
-		global_decl->type = check_const_expr(cc, const_dependency_from_global(global_decl));
+		global_decl->type = check_const_expr(cc, consteval_dependency_from_global(global_decl));
 		//@Old
 		global_decl->type = check_expr_type(cc, global_decl->const_expr->expr, {}, true);
 	}
