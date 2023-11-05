@@ -137,6 +137,7 @@ ErrorMessage err_get_message(Error error)
 	case Error::EXPR_EXPECTED_CONSTANT:         return { "Expected constant expression", "" };
 	case Error::CONST_PROC_IS_NOT_CONST:        return { "Constant expression cannot contain procedure call", "" };
 	case Error::CONST_VAR_IS_NOT_GLOBAL:        return { "Constant expression variable must be a global variable", "" };
+	case Error::CONSTEVAL_DEPENDENCY_CYCLE:     return { "Compile time constant is part of dependency cycle", "" };
 	case Error::TEMP_VAR_ASSIGN_OP:             return { "Only = operator is supported in variable assignments", "" };
 	
 	default:

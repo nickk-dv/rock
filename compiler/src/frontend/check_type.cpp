@@ -341,6 +341,7 @@ bool check_is_const_foldable_expr(Ast_Expr* expr)
 	}
 	case Ast_Expr_Tag::Unary_Expr: return check_is_const_foldable_expr(expr->as_unary_expr->right);
 	case Ast_Expr_Tag::Binary_Expr: return check_is_const_foldable_expr(expr->as_binary_expr->left) && check_is_const_foldable_expr(expr->as_binary_expr->right);
+	case Ast_Expr_Tag::Folded_Expr: return true;
 	default: { err_internal("check_is_const_foldable_expr: invalid Ast_Expr_Tag"); return false; }
 	}
 }
@@ -991,8 +992,10 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 		{
 		case Ast_Term_Tag::Var:
 		{
-			printf("var const folding isnt supported yet\n");
-			return {};
+			//@Todo access unsupported
+			Ast_Var* var = term->as_var;
+			Ast_Const_Expr* const_expr = var->global.global_decl->const_expr;
+			return check_foldable_expr(cc, const_expr->expr);
 		}
 		case Ast_Term_Tag::Enum:
 		{
@@ -1021,8 +1024,8 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 			}
 			else
 			{
-				lit.kind = Literal_Kind::UInt;
-				lit.as_u64 = token.integer_value;
+				lit.kind = Literal_Kind::Int; //@Notice setting to signed int as temporary measure
+				lit.as_i64 = token.integer_value;
 			}
 
 			return lit;
@@ -1242,6 +1245,47 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 		default: { err_internal("check_foldable_expr: invalid BinaryOp"); return {}; }
 		}
 	}
+	case Ast_Expr_Tag::Folded_Expr:
+	{
+		Ast_Folded_Expr folded_expr = expr->as_folded_expr;
+		Literal lit = {};
+
+		switch (folded_expr.basic_type)
+		{
+		case BasicType::BOOL:
+		{
+			lit.kind = Literal_Kind::Bool;
+			lit.as_bool = folded_expr.as_bool;
+			return lit;
+		}
+		case BasicType::F32:
+		case BasicType::F64:
+		{
+			lit.kind = Literal_Kind::Float;
+			lit.as_f64 = folded_expr.as_f64;
+			return lit;
+		}
+		case BasicType::I8:
+		case BasicType::I16:
+		case BasicType::I32:
+		case BasicType::I64:
+		{
+			lit.kind = Literal_Kind::Int;
+			lit.as_i64 = folded_expr.as_i64;
+			return lit;
+		}
+		case BasicType::U8:
+		case BasicType::U16:
+		case BasicType::U32:
+		case BasicType::U64:
+		{
+			lit.kind = Literal_Kind::UInt;
+			lit.as_u64 = folded_expr.as_u64;
+			return lit;
+		}
+		default: { err_internal("check_foldable_expr: invalid folded_expr BasicType"); return {}; }
+		}
+	}
 	default: { err_internal("check_foldable_expr: invalid Ast_Expr_Tag"); return {}; }
 	}
 }
@@ -1259,13 +1303,16 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 	Const_Eval eval = check_const_expr_dependencies(cc, &tree.arena, const_expr->expr, tree.root);
 	if (eval == Const_Eval::Invalid) return {};
 
-	printf("Consteval Dependency tree\n");
-	check_print_consteval_tree(cc, tree.root);
-	printf("\n\n");
-	check_evaluate_consteval_tree(cc, tree.root);
+	Const_Eval tree_eval = check_evaluate_consteval_tree(cc, tree.root);
+	if (tree_eval != Const_Eval::Valid) return {};
 
-	//@Temp
-	return type_from_basic(BasicType::I8);
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global: return constant.as_global->type.value();
+	case Consteval_Dependency_Tag::Enum_Variant: return type_from_basic(BasicType::I32); //@Incomplete need to know basic type of the enum, similarly to other place
+	case Consteval_Dependency_Tag::Sizeof_Struct: return type_from_basic(BasicType::U64);
+	default: { err_internal("check_consteval_expr: invalid Consteval_Dependency_Tag"); return {}; }
+	}
 }
 
 Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent)
@@ -1301,7 +1348,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
-				printf("Dependency expr is part of a cycle: \n");
+				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
 				err_context(cc, node->value.as_global->const_expr->expr->span);
 				return Const_Eval::Invalid;
 			}
@@ -1324,7 +1371,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
-				printf("Dependency expr is part of a cycle: \n");
+				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
 				err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
 				return Const_Eval::Invalid;
 			}
@@ -1414,30 +1461,74 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		if (check_const_expr_dependencies(cc, arena, binary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
+	case Ast_Expr_Tag::Folded_Expr:
+	{
+		return Const_Eval::Not_Evaluated;
+	}
 	default: { err_internal("check_const_expr_dependencies: invalid Ast_Expr_Tag"); return Const_Eval::Invalid; }
 	}
 }
 
-void check_print_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
-{
-	switch (node->value.tag)
-	{
-	case Consteval_Dependency_Tag::Global: err_context(cc, node->value.as_global->const_expr->expr->span); break;
-	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
-	case Consteval_Dependency_Tag::Sizeof_Struct: err_context(cc, node->value.as_sizeof_struct->ident.span); break;
-	default: break;
-	}
-
-	if (node->first_child != nullptr) check_print_consteval_tree(cc, node->first_child);
-	if (node->next_sibling != nullptr) check_print_consteval_tree(cc, node->next_sibling);
-}
-
-void check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
 {
 	Consteval_Dependency constant = node->value;
 
-	if (node->first_child != nullptr) check_evaluate_consteval_tree(cc, node->first_child);
-	if (node->next_sibling != nullptr) check_evaluate_consteval_tree(cc, node->next_sibling);
+	if (node->next_sibling != nullptr) 
+	{
+		Const_Eval eval = check_evaluate_consteval_tree(cc, node->next_sibling);
+		if (eval == Const_Eval::Invalid)
+		{
+			switch (constant.tag) //@Notice this might not be correct tagging
+			{
+			case Consteval_Dependency_Tag::Global: constant.as_global->const_expr->eval = Const_Eval::Invalid; break;
+			case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->const_expr->eval = Const_Eval::Invalid; break;
+			case Consteval_Dependency_Tag::Sizeof_Struct: constant.as_sizeof_struct->size_eval = Const_Eval::Invalid; break;
+			default: break;
+			}
+			return Const_Eval::Invalid;
+		}
+	}
+	
+	if (node->first_child != nullptr) 
+	{
+		Const_Eval eval = check_evaluate_consteval_tree(cc, node->first_child);
+		if (eval == Const_Eval::Invalid)
+		{
+			switch (constant.tag) //@Notice this might not be correct tagging
+			{
+			case Consteval_Dependency_Tag::Global: constant.as_global->const_expr->eval = Const_Eval::Invalid; break;
+			case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->const_expr->eval = Const_Eval::Invalid; break;
+			case Consteval_Dependency_Tag::Sizeof_Struct: constant.as_sizeof_struct->size_eval = Const_Eval::Invalid; break;
+			default: break;
+			}
+			return Const_Eval::Invalid;
+		}
+	}
+
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global:
+	{
+		Ast_Const_Expr* const_expr = constant.as_global->const_expr;
+		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, true);
+		if (!type) return Const_Eval::Invalid;
+		constant.as_global->type = type.value();
+	} break;
+	case Consteval_Dependency_Tag::Enum_Variant:
+	{
+		//@Need to have access to the basic type of the enum as expected type
+		Ast_Const_Expr* const_expr = constant.as_enum_variant->const_expr;
+		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, true);
+	} break;
+	case Consteval_Dependency_Tag::Sizeof_Struct:
+	{
+		//@Incomplete calculate size if its not already available
+		Ast_Struct_Decl* struct_decl = constant.as_sizeof_struct;
+	} break;
+	default: break;
+	}
+
+	return Const_Eval::Valid;
 }
 
 option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident)
