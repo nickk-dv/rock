@@ -304,14 +304,14 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 
 void build_global_var(IR_Builder_Context* bc, Ast_Global_IR_Info* global_info)
 {
-	if (global_info->global_value != NULL) return;
+	if (global_info->global_ptr != NULL) return;
 
 	Ast_Global_Decl* global_decl = global_info->global_decl;
 	Value const_value = build_expr(bc, global_decl->const_expr->expr);
 	Value global = LLVMAddGlobal(bc->module, LLVMTypeOf(const_value), "g");
 	LLVMSetInitializer(global, const_value);
 	LLVMSetGlobalConstant(global, 1);
-	global_info->global_value = global;
+	global_info->global_ptr = global;
 }
 
 Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_info)
@@ -525,7 +525,7 @@ IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 	{
 		Ast_Global_IR_Info* global_info = &bc->program->globals[var->global.global_id];
 		build_global_var(bc, global_info);
-		return build_access(bc, var->access, global_info->global_value, global_info->global_decl->type.value());
+		return build_access(bc, var->access, global_info->global_ptr, global_info->global_decl->type.value());
 	}
 	else
 	{

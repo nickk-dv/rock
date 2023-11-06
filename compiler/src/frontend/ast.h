@@ -109,7 +109,7 @@ struct Ast_Proc_IR_Info
 struct Ast_Global_IR_Info
 {
 	Ast_Global_Decl* global_decl;
-	LLVMValueRef global_value;
+	LLVMValueRef global_ptr;
 };
 
 struct Ast

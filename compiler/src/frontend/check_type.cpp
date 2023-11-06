@@ -1317,6 +1317,7 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 
 Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent)
 {
+	printf("call check_const_expr_dependencies\n"); //@Temp debugging
 	switch (expr->tag)
 	{
 	case Ast_Expr_Tag::Term:
@@ -1326,16 +1327,22 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		{
 		case Ast_Term_Tag::Var:
 		{
-			//@Need to mark as invalid in case of cycles
 			//@Consider access with expressions also
 
 			Ast_Var* var = term->as_var;
 			resolve_var(cc, var);
-			if (var->tag == Ast_Var_Tag::Invalid) return Const_Eval::Invalid;
+			
+			if (var->tag == Ast_Var_Tag::Invalid) 
+			{
+				tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
+				return Const_Eval::Invalid;
+			}
+
 			if (var->tag == Ast_Var_Tag::Local)
 			{
 				err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
 				err_context(cc, expr->span);
+				tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
 				return Const_Eval::Invalid;
 			}
 			
@@ -1349,7 +1356,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
 				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
-				err_context(cc, node->value.as_global->const_expr->expr->span);
+				tree_node_apply_proc_to_cycle(node, cc, check_mark_and_print);
 				return Const_Eval::Invalid;
 			}
 
@@ -1372,17 +1379,21 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
 				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
-				err_context(cc, node->value.as_enum_variant->const_expr->expr->span); break;
+				tree_node_apply_proc_to_cycle(node, cc, check_mark_and_print);
 				return Const_Eval::Invalid;
 			}
-
+			
 			return check_const_expr_dependencies(cc, arena, enum_variant->const_expr->expr, node);
 		}
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
 			resolve_sizeof(cc, size_of);
-			if (size_of->tag == Ast_Sizeof_Tag::Invalid) return Const_Eval::Invalid;
+			if (size_of->tag == Ast_Sizeof_Tag::Invalid)
+			{
+				tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
+				return Const_Eval::Invalid;
+			}
 			
 			option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(size_of->type);
 			if (!struct_type) return Const_Eval::Not_Evaluated;
@@ -1396,8 +1407,8 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 			if (tree_node_has_cycle(node, constant, match_const_dependency))
 			{
-				printf("Dependency expr is part of a cycle: \n");
-				err_context(cc, node->value.as_sizeof_struct->ident.span); break;
+				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
+				tree_node_apply_proc_to_cycle(node, cc, check_mark_and_print);
 				return Const_Eval::Invalid;
 			}
 
@@ -1416,6 +1427,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		{
 			err_report(Error::CONST_PROC_IS_NOT_CONST);
 			err_context(cc, expr->span);
+			tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
 			return Const_Eval::Invalid;
 		}
 		case Ast_Term_Tag::Array_Init:
@@ -1424,12 +1436,20 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 
 			Ast_Array_Init* array_init = term->as_array_init;
 			resolve_array_init(cc, array_init);
-			if (array_init->tag == Ast_Array_Init_Tag::Invalid) return Const_Eval::Invalid;
+			if (array_init->tag == Ast_Array_Init_Tag::Invalid)
+			{
+				tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
+				return Const_Eval::Invalid;
+			}
 
 			for (Ast_Expr* input_expr : array_init->input_exprs)
 			{
 				Const_Eval input_eval = check_const_expr_dependencies(cc, arena, input_expr, parent);
-				if (input_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+				if (input_eval == Const_Eval::Invalid)
+				{
+					tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
+					return Const_Eval::Invalid;
+				}
 			}
 			return Const_Eval::Not_Evaluated;
 		}
@@ -1437,12 +1457,20 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
 			resolve_struct_init(cc, struct_init);
-			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return Const_Eval::Invalid;
+			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid)
+			{
+				tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
+				return Const_Eval::Invalid;
+			}
 
 			for (Ast_Expr* input_expr : struct_init->input_exprs)
 			{
 				Const_Eval input_eval = check_const_expr_dependencies(cc, arena, input_expr, parent);
-				if (input_eval == Const_Eval::Invalid) return Const_Eval::Invalid;
+				if (input_eval == Const_Eval::Invalid)
+				{
+					tree_node_apply_proc_to_cycle(parent, cc, check_mark_as_invalid);
+					return Const_Eval::Invalid;
+				}
 			}
 			return Const_Eval::Not_Evaluated;
 		}
@@ -1466,6 +1494,36 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		return Const_Eval::Not_Evaluated;
 	}
 	default: { err_internal("check_const_expr_dependencies: invalid Ast_Expr_Tag"); return Const_Eval::Invalid; }
+	}
+}
+
+void check_mark_and_print(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	check_mark_as_invalid(cc, node);
+	check_consteval_print(cc, node);
+}
+
+void check_mark_as_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	Consteval_Dependency constant = node->value;
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global: constant.as_global->const_expr->eval = Const_Eval::Invalid; break;
+	case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->const_expr->eval = Const_Eval::Invalid; break;
+	case Consteval_Dependency_Tag::Sizeof_Struct: constant.as_sizeof_struct->size_eval = Const_Eval::Invalid; break;
+	default: break;
+	}
+}
+
+void check_consteval_print(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	Consteval_Dependency constant = node->value;
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global: err_context(cc, constant.as_global->const_expr->expr->span); break;
+	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, constant.as_enum_variant->const_expr->expr->span); break;
+	case Consteval_Dependency_Tag::Sizeof_Struct: err_context(cc, constant.as_sizeof_struct->ident.span); break;
+	default: break;
 	}
 }
 
