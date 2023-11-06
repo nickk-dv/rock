@@ -64,7 +64,7 @@ bool tree_node_has_cycle(Tree_Node<T>* node, T match_value, Match_Proc match)
 }
 
 template<typename T, typename Apply_Proc, typename Context>
-void tree_node_apply_proc_to_cycle(Tree_Node<T>* node, Context* context, Apply_Proc apply)
+void tree_node_apply_proc_up_to_root(Tree_Node<T>* node, Context* context, Apply_Proc apply)
 {
 	std::vector<Tree_Node<T>*> cycle_nodes;
 
