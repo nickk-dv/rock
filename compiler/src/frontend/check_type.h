@@ -11,15 +11,16 @@ enum class Type_Kind;
 enum class Literal_Kind;
 enum class Consteval_Dependency_Tag;
 
-bool type_match(Check_Context* cc, Ast_Type type_a, Ast_Type type_b);
 bool type_is_poison(Ast_Type type);
-Type_Kind type_kind(Check_Context* cc, Ast_Type type);
+bool type_match(Ast_Type type_a, Ast_Type type_b);
+Type_Kind type_kind(Ast_Type type);
 Ast_Type type_from_basic(BasicType basic_type);
+option<Ast_Struct_Type> type_extract_struct_value_type(Ast_Type type);
 static void check_struct_size(Ast_Struct_IR_Info* struct_info);
-static u32 check_get_basic_type_size(BasicType basic_type);
-static u32 check_get_basic_type_align(BasicType basic_type);
-static u32 check_get_type_size(Ast_Type type);
-static u32 check_get_type_align(Ast_Type type);
+static u32 type_basic_size(BasicType basic_type);
+static u32 type_basic_align(BasicType basic_type);
+static u32 type_size(Ast_Type type);
+static u32 type_align(Ast_Type type);
 
 option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> expect_type, bool expect_constant);
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var);
@@ -38,18 +39,16 @@ static option<Ast_Type> check_unary_expr(Check_Context* cc, Type_Context* contex
 static option<Ast_Type> check_binary_expr(Check_Context* cc, Type_Context* context, Ast_Binary_Expr* binary_expr);
 static option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr);
 
-option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
-static Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent);
-static void check_mark_and_print(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
-static void check_mark_as_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
-static void check_consteval_print(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
-static Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
-static bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b);
-static Ast_Const_Expr* const_dependency_get_const_expr(Consteval_Dependency constant);
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant);
-Consteval_Dependency consteval_dependency_from_struct(Ast_Struct_Decl* struct_decl);
-option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type);
+Consteval_Dependency consteval_dependency_from_sizeof_struct(Ast_Struct_Decl* struct_decl);
+option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
+static Const_Eval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent);
+static Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
+static Ast_Const_Expr* consteval_dependency_get_const_expr(Consteval_Dependency constant);
+static bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b);
+static void consteval_dependency_mark_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
+static void consteval_dependency_err_context(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 
 option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident);
 option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident);

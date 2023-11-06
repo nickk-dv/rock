@@ -3,7 +3,7 @@
 #include "error_handler.h"
 #include "debug_printer.h"
 
-Type_Kind type_kind(Check_Context* cc, Ast_Type type)
+Type_Kind type_kind(Ast_Type type)
 {
 	if (type.pointer_level > 0) return Type_Kind::Pointer;
 
@@ -34,6 +34,19 @@ Ast_Type type_from_basic(BasicType basic_type)
 	type.as_basic = basic_type;
 	return type;
 }
+
+option<Ast_Struct_Type> type_extract_struct_value_type(Ast_Type type)
+{
+	if (type.pointer_level > 0) return {};
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Array: return type_extract_struct_value_type(type.as_array->element_type);
+	case Ast_Type_Tag::Struct: return type.as_struct;
+	default: return {};
+	}
+}
+
 void check_struct_size(Ast_Struct_IR_Info* struct_info)
 {
 	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
@@ -44,12 +57,12 @@ void check_struct_size(Ast_Struct_IR_Info* struct_info)
 
 	for (u32 i = 0; i < field_count; i += 1)
 	{
-		u32 field_size = check_get_type_size(struct_decl->fields[i].type);
+		u32 field_size = type_size(struct_decl->fields[i].type);
 		total_size += field_size;
 
 		if (i + 1 < field_count)
 		{
-			u32 align = check_get_type_align(struct_decl->fields[i + 1].type);
+			u32 align = type_align(struct_decl->fields[i + 1].type);
 			if (align > field_size)
 			{
 				u32 padding = align - field_size;
@@ -73,7 +86,7 @@ void check_struct_size(Ast_Struct_IR_Info* struct_info)
 	struct_info->max_align = max_align;
 }
 
-u32 check_get_basic_type_size(BasicType basic_type)
+u32 type_basic_size(BasicType basic_type)
 {
 	switch (basic_type)
 	{
@@ -93,7 +106,7 @@ u32 check_get_basic_type_size(BasicType basic_type)
 	}
 }
 
-u32 check_get_basic_type_align(BasicType basic_type)
+u32 type_basic_align(BasicType basic_type)
 {
 	switch (basic_type)
 	{
@@ -114,31 +127,31 @@ u32 check_get_basic_type_align(BasicType basic_type)
 }
 
 //@Incomplete
-u32 check_get_type_size(Ast_Type type)
+u32 type_size(Ast_Type type)
 {
 	if (type.pointer_level > 0) return 8; //@Assume 64bit
 
 	switch (type.tag)
 	{
-	case Ast_Type_Tag::Basic: return check_get_basic_type_size(type.as_basic);
+	case Ast_Type_Tag::Basic: return type_basic_size(type.as_basic);
 	case Ast_Type_Tag::Array: return 0;
 	case Ast_Type_Tag::Struct: return 0;
-	case Ast_Type_Tag::Enum: return check_get_basic_type_size(type.as_enum.enum_decl->basic_type);
+	case Ast_Type_Tag::Enum: return type_basic_size(type.as_enum.enum_decl->basic_type);
 	default: { err_internal("check_get_type_size: invalid Ast_Type_Tag"); return 0; }
 	}
 }
 
 //@Incomplete
-u32 check_get_type_align(Ast_Type type)
+u32 type_align(Ast_Type type)
 {
 	if (type.pointer_level > 0) return 8; //@Assume 64bit
 
 	switch (type.tag)
 	{
-	case Ast_Type_Tag::Basic: return check_get_basic_type_align(type.as_basic);
+	case Ast_Type_Tag::Basic: return type_basic_align(type.as_basic);
 	case Ast_Type_Tag::Array: return 0;
 	case Ast_Type_Tag::Struct: return 0;
-	case Ast_Type_Tag::Enum: return check_get_basic_type_align(type.as_enum.enum_decl->basic_type);
+	case Ast_Type_Tag::Enum: return type_basic_align(type.as_enum.enum_decl->basic_type);
 	default: { err_internal("check_get_type_align: invalid Ast_Type_Tag"); return 0; }
 	}
 }
@@ -153,7 +166,7 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 
 	type_implicit_cast(cc, &type.value(), expect_type.value());
 
-	if (!type_match(cc, type.value(), expect_type.value()))
+	if (!type_match(type.value(), expect_type.value()))
 	{
 		err_report(Error::TYPE_MISMATCH);
 		//err_context(cc, expect_type.value().span); //@Err add ability to add messages
@@ -170,7 +183,7 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 	return type;
 }
 
-bool type_match(Check_Context* cc, Ast_Type type_a, Ast_Type type_b)
+bool type_match(Ast_Type type_a, Ast_Type type_b)
 {
 	if (type_a.pointer_level != type_b.pointer_level) return false;
 	if (type_a.tag != type_b.tag) return false;
@@ -185,7 +198,7 @@ bool type_match(Check_Context* cc, Ast_Type type_a, Ast_Type type_b)
 		Ast_Array_Type* array_a = type_a.as_array;
 		Ast_Array_Type* array_b = type_b.as_array;
 		//@Array match constexpr sizes
-		return type_match(cc, array_a->element_type, array_b->element_type);
+		return type_match(array_a->element_type, array_b->element_type);
 	}
 	default: { err_internal("type_match: invalid Ast_Type_Tag"); return false; }
 	}
@@ -351,8 +364,8 @@ void type_implicit_cast(Check_Context* cc, Ast_Type* type, Ast_Type target_type)
 	if (type->tag != Ast_Type_Tag::Basic) return;
 	if (target_type.tag != Ast_Type_Tag::Basic) return;
 	if (type->as_basic == target_type.as_basic) return;
-	Type_Kind kind = type_kind(cc, *type);
-	Type_Kind target_kind = type_kind(cc, target_type);
+	Type_Kind kind = type_kind(*type);
+	Type_Kind target_kind = type_kind(target_type);
 
 	if (kind == Type_Kind::Float && target_kind == Type_Kind::Float)
 	{
@@ -371,8 +384,8 @@ void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* ty
 	if (type_a->tag != Ast_Type_Tag::Basic) return;
 	if (type_b->tag != Ast_Type_Tag::Basic) return;
 	if (type_a->as_basic == type_b->as_basic) return;
-	Type_Kind kind_a = type_kind(cc, *type_a);
-	Type_Kind kind_b = type_kind(cc, *type_b);
+	Type_Kind kind_a = type_kind(*type_a);
+	Type_Kind kind_b = type_kind(*type_b);
 
 	if (kind_a == Type_Kind::Float && kind_b == Type_Kind::Float)
 	{
@@ -562,7 +575,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		if (context->expect_type)
 		{
 			Ast_Type expect_type = context->expect_type.value();
-			if (type_kind(cc, expect_type) != Type_Kind::Struct)
+			if (type_kind(expect_type) != Type_Kind::Struct)
 			{
 				err_set;
 				err_context(cc, struct_init->input_exprs[0]->span); //@Temp debugging
@@ -632,7 +645,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		if (array_init->type)
 		{
 			type = array_init->type.value();
-			if (type_kind(cc, type.value()) != Type_Kind::Array)
+			if (type_kind(type.value()) != Type_Kind::Array)
 			{
 				err_set; 
 				printf("Array initializer must have array type signature\n");
@@ -643,7 +656,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 		if (context->expect_type)
 		{
 			Ast_Type expect_type = context->expect_type.value();
-			if (type_kind(cc, expect_type) != Type_Kind::Array)
+			if (type_kind(expect_type) != Type_Kind::Array)
 			{
 				err_set; printf("Cannot use array initializer in non array type context\n");
 				printf("Context: "); debug_print_type(expect_type); printf("\n");
@@ -656,7 +669,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 			}
 			else
 			{
-				if (!type_match(cc, type.value(), expect_type))
+				if (!type_match(type.value(), expect_type))
 				{
 					err_set;
 					printf("Array initializer type doesnt match the expected type:\n");
@@ -734,7 +747,7 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 	{
 		Ast_Var_Access* var_access = access->as_var;
 
-		Type_Kind kind = type_kind(cc, type);
+		Type_Kind kind = type_kind(type);
 		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type_Tag::Struct) kind = Type_Kind::Struct;
 		if (kind != Type_Kind::Struct)
 		{
@@ -761,7 +774,7 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		Ast_Array_Access* array_access = access->as_array;
 
 		//@Notice allowing pointer array access, temp, slices later
-		Type_Kind kind = type_kind(cc, type);
+		Type_Kind kind = type_kind(type);
 		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type_Tag::Array) kind = Type_Kind::Array;
 		if (kind != Type_Kind::Array)
 		{
@@ -872,7 +885,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Type_Context* context, Ast_
 
 	UnaryOp op = unary_expr->op;
 	Ast_Type rhs = rhs_result.value();
-	Type_Kind rhs_kind = type_kind(cc, rhs);
+	Type_Kind rhs_kind = type_kind(rhs);
 
 	switch (op)
 	{
@@ -917,9 +930,9 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Type_Context* context, Ast
 
 	BinaryOp op = binary_expr->op;
 	Ast_Type lhs = lhs_result.value();
-	Type_Kind lhs_kind = type_kind(cc, lhs);
+	Type_Kind lhs_kind = type_kind(lhs);
 	Ast_Type rhs = rhs_result.value();
-	Type_Kind rhs_kind = type_kind(cc, rhs);
+	Type_Kind rhs_kind = type_kind(rhs);
 	bool same_kind = lhs_kind == rhs_kind;
 
 	if (!same_kind)
@@ -1293,9 +1306,33 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 #include "general/tree.h"
 #include "general/arena.h"
 
+Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl)
+{
+	Consteval_Dependency constant = {};
+	constant.tag = Consteval_Dependency_Tag::Global;
+	constant.as_global = global_decl;
+	return constant;
+}
+
+Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant)
+{
+	Consteval_Dependency constant = {};
+	constant.tag = Consteval_Dependency_Tag::Enum_Variant;
+	constant.as_enum_variant = enum_variant;
+	return constant;
+}
+
+Consteval_Dependency consteval_dependency_from_sizeof_struct(Ast_Struct_Decl* struct_decl)
+{
+	Consteval_Dependency constant = {};
+	constant.tag = Consteval_Dependency_Tag::Sizeof_Struct;
+	constant.as_sizeof_struct = struct_decl;
+	return constant;
+}
+
 option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant)
 {
-	Ast_Const_Expr* const_expr = const_dependency_get_const_expr(constant);
+	Ast_Const_Expr* const_expr = consteval_dependency_get_const_expr(constant);
 	if (const_expr->eval == Const_Eval::Invalid) return {};
 	if (const_expr->eval == Const_Eval::Valid)
 	{
@@ -1309,7 +1346,7 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 	}
 
 	Tree<Consteval_Dependency> tree(2048, constant);
-	Const_Eval dependency_eval = check_const_expr_dependencies(cc, &tree.arena, const_expr->expr, tree.root);
+	Const_Eval dependency_eval = check_consteval_dependencies(cc, &tree.arena, const_expr->expr, tree.root);
 	if (dependency_eval == Const_Eval::Invalid) return {};
 
 	Const_Eval tree_eval = check_evaluate_consteval_tree(cc, tree.root);
@@ -1324,7 +1361,7 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 	}
 }
 
-Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent)
+Const_Eval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent)
 {
 	switch (expr->tag)
 	{
@@ -1342,7 +1379,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			
 			if (var->tag == Ast_Var_Tag::Invalid) 
 			{
-				tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 
@@ -1350,7 +1387,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			{
 				err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
 				err_context(cc, expr->span);
-				tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 			
@@ -1361,14 +1398,16 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 
 			Consteval_Dependency constant = consteval_dependency_from_global(global_decl);
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
-			if (tree_node_has_cycle(node, constant, match_const_dependency))
+			option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
+			if (cycle_node)
 			{
 				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
-				tree_node_apply_proc_up_to_root(node, cc, check_mark_and_print);
+				tree_node_apply_proc_in_reverse_up_to_node(node, cycle_node.value(), cc, consteval_dependency_err_context);
+				tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 
-			return check_const_expr_dependencies(cc, arena, global_decl->const_expr->expr, node);
+			return check_consteval_dependencies(cc, arena, global_decl->const_expr->expr, node);
 		}
 		case Ast_Term_Tag::Enum:
 		{
@@ -1384,14 +1423,16 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 
 			Consteval_Dependency constant = consteval_dependency_from_enum_variant(enum_variant);
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
-			if (tree_node_has_cycle(node, constant, match_const_dependency))
+			option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
+			if (cycle_node)
 			{
 				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
-				tree_node_apply_proc_up_to_root(node, cc, check_mark_and_print);
+				tree_node_apply_proc_in_reverse_up_to_node(node, cycle_node.value(), cc, consteval_dependency_err_context);
+				tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 			
-			return check_const_expr_dependencies(cc, arena, enum_variant->const_expr->expr, node);
+			return check_consteval_dependencies(cc, arena, enum_variant->const_expr->expr, node);
 		}
 		case Ast_Term_Tag::Sizeof:
 		{
@@ -1399,11 +1440,11 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			resolve_sizeof(cc, size_of);
 			if (size_of->tag == Ast_Sizeof_Tag::Invalid)
 			{
-				tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 			
-			option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(size_of->type);
+			option<Ast_Struct_Type> struct_type = type_extract_struct_value_type(size_of->type);
 			if (!struct_type) return Const_Eval::Not_Evaluated;
 			
 			Ast_Struct_Decl* struct_decl = struct_type.value().struct_decl;
@@ -1411,12 +1452,14 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			if (eval == Const_Eval::Invalid) return Const_Eval::Invalid;
 			if (eval == Const_Eval::Valid) return Const_Eval::Not_Evaluated;
 
-			Consteval_Dependency constant = consteval_dependency_from_struct(struct_decl);
+			Consteval_Dependency constant = consteval_dependency_from_sizeof_struct(struct_decl);
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
-			if (tree_node_has_cycle(node, constant, match_const_dependency))
+			option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
+			if (cycle_node)
 			{
 				err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
-				tree_node_apply_proc_up_to_root(node, cc, check_mark_and_print);
+				tree_node_apply_proc_in_reverse_up_to_node(node, cycle_node.value(), cc, consteval_dependency_err_context);
+				tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 
@@ -1435,7 +1478,7 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		{
 			err_report(Error::CONST_PROC_IS_NOT_CONST);
 			err_context(cc, expr->span);
-			tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+			tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 			return Const_Eval::Invalid;
 		}
 		case Ast_Term_Tag::Array_Init:
@@ -1446,16 +1489,16 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			resolve_array_init(cc, array_init);
 			if (array_init->tag == Ast_Array_Init_Tag::Invalid)
 			{
-				tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 
 			for (Ast_Expr* input_expr : array_init->input_exprs)
 			{
-				Const_Eval input_eval = check_const_expr_dependencies(cc, arena, input_expr, parent);
+				Const_Eval input_eval = check_consteval_dependencies(cc, arena, input_expr, parent);
 				if (input_eval == Const_Eval::Invalid)
 				{
-					tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+					tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 					return Const_Eval::Invalid;
 				}
 			}
@@ -1467,16 +1510,16 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 			resolve_struct_init(cc, struct_init);
 			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid)
 			{
-				tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 				return Const_Eval::Invalid;
 			}
 
 			for (Ast_Expr* input_expr : struct_init->input_exprs)
 			{
-				Const_Eval input_eval = check_const_expr_dependencies(cc, arena, input_expr, parent);
+				Const_Eval input_eval = check_consteval_dependencies(cc, arena, input_expr, parent);
 				if (input_eval == Const_Eval::Invalid)
 				{
-					tree_node_apply_proc_up_to_root(parent, cc, check_mark_as_invalid);
+					tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 					return Const_Eval::Invalid;
 				}
 			}
@@ -1487,14 +1530,14 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		if (check_const_expr_dependencies(cc, arena, unary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_consteval_dependencies(cc, arena, unary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		if (check_const_expr_dependencies(cc, arena, binary_expr->left, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
-		if (check_const_expr_dependencies(cc, arena, binary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_consteval_dependencies(cc, arena, binary_expr->left, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
+		if (check_consteval_dependencies(cc, arena, binary_expr->right, parent) == Const_Eval::Invalid) return Const_Eval::Invalid;
 		return Const_Eval::Not_Evaluated;
 	}
 	case Ast_Expr_Tag::Folded_Expr:
@@ -1502,36 +1545,6 @@ Const_Eval check_const_expr_dependencies(Check_Context* cc, Arena* arena, Ast_Ex
 		return Const_Eval::Not_Evaluated;
 	}
 	default: { err_internal("check_const_expr_dependencies: invalid Ast_Expr_Tag"); return Const_Eval::Invalid; }
-	}
-}
-
-void check_mark_and_print(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
-{
-	check_mark_as_invalid(cc, node);
-	check_consteval_print(cc, node);
-}
-
-void check_mark_as_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
-{
-	Consteval_Dependency constant = node->value;
-	switch (constant.tag)
-	{
-	case Consteval_Dependency_Tag::Global: constant.as_global->const_expr->eval = Const_Eval::Invalid; break;
-	case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->const_expr->eval = Const_Eval::Invalid; break;
-	case Consteval_Dependency_Tag::Sizeof_Struct: constant.as_sizeof_struct->size_eval = Const_Eval::Invalid; break;
-	default: break;
-	}
-}
-
-void check_consteval_print(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
-{
-	Consteval_Dependency constant = node->value;
-	switch (constant.tag)
-	{
-	case Consteval_Dependency_Tag::Global: err_context(cc, constant.as_global->const_expr->expr->span); break;
-	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, constant.as_enum_variant->const_expr->expr->span); break;
-	case Consteval_Dependency_Tag::Sizeof_Struct: err_context(cc, constant.as_sizeof_struct->ident.span); break;
-	default: break;
 	}
 }
 
@@ -1559,7 +1572,7 @@ Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_
 		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, true);
 		if (!type)
 		{
-			tree_node_apply_proc_up_to_root(node, cc, check_mark_as_invalid);
+			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
 			return Const_Eval::Invalid;
 		}
 		const_expr->eval = Const_Eval::Valid;
@@ -1572,7 +1585,7 @@ Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_
 		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, true);
 		if (!type)
 		{
-			tree_node_apply_proc_up_to_root(node, cc, check_mark_as_invalid);
+			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
 			return Const_Eval::Invalid;
 		}
 		const_expr->eval = Const_Eval::Valid;
@@ -1586,6 +1599,52 @@ Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_
 	}
 
 	return Const_Eval::Valid;
+}
+
+Ast_Const_Expr* consteval_dependency_get_const_expr(Consteval_Dependency constant)
+{
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global: return constant.as_global->const_expr;
+	case Consteval_Dependency_Tag::Enum_Variant: return constant.as_enum_variant->const_expr;
+	default: { err_internal("const_dependency_get_const_expr: invalid Const_Dependency_Tag"); return NULL; }
+	}
+}
+
+bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b)
+{
+	if (a.tag != b.tag) return false;
+	switch (a.tag)
+	{
+	case Consteval_Dependency_Tag::Global: return a.as_global == b.as_global;
+	case Consteval_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
+	case Consteval_Dependency_Tag::Sizeof_Struct: return a.as_sizeof_struct == b.as_sizeof_struct;
+	default: { err_internal("match_const_dependency: invalid Const_Dependency_Tag"); return false; }
+	}
+}
+
+void consteval_dependency_mark_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	Consteval_Dependency constant = node->value;
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global: constant.as_global->const_expr->eval = Const_Eval::Invalid; break;
+	case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->const_expr->eval = Const_Eval::Invalid; break;
+	case Consteval_Dependency_Tag::Sizeof_Struct: constant.as_sizeof_struct->size_eval = Const_Eval::Invalid; break;
+	default: break;
+	}
+}
+
+void consteval_dependency_err_context(Check_Context* cc, Tree_Node<Consteval_Dependency>* node)
+{
+	Consteval_Dependency constant = node->value;
+	switch (constant.tag)
+	{
+	case Consteval_Dependency_Tag::Global: err_context(cc, constant.as_global->const_expr->expr->span); break;
+	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, constant.as_enum_variant->const_expr->expr->span); break;
+	case Consteval_Dependency_Tag::Sizeof_Struct: err_context(cc, constant.as_sizeof_struct->ident.span); break;
+	default: break;
+	}
 }
 
 option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident)
@@ -1862,63 +1921,5 @@ void resolve_struct_init(Check_Context* cc, Ast_Struct_Init* struct_init)
 	{
 		struct_init->tag = Ast_Struct_Init_Tag::Resolved;
 		struct_init->resolved.type = {};
-	}
-}
-
-bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b)
-{
-	if (a.tag != b.tag) return false;
-	switch (a.tag)
-	{ 
-	case Consteval_Dependency_Tag::Global: return a.as_global == b.as_global;
-	case Consteval_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
-	case Consteval_Dependency_Tag::Sizeof_Struct: return a.as_sizeof_struct == b.as_sizeof_struct;
-	default: { err_internal("match_const_dependency: invalid Const_Dependency_Tag"); return false; }
-	}
-}
-
-Ast_Const_Expr* const_dependency_get_const_expr(Consteval_Dependency constant)
-{
-	switch (constant.tag)
-	{
-	case Consteval_Dependency_Tag::Global: return constant.as_global->const_expr;
-	case Consteval_Dependency_Tag::Enum_Variant: return constant.as_enum_variant->const_expr;
-	default: { err_internal("const_dependency_get_const_expr: invalid Const_Dependency_Tag"); return NULL; }
-	}
-}
-
-Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl)
-{
-	Consteval_Dependency constant = {};
-	constant.tag = Consteval_Dependency_Tag::Global;
-	constant.as_global = global_decl;
-	return constant;
-}
-
-Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant)
-{
-	Consteval_Dependency constant = {};
-	constant.tag = Consteval_Dependency_Tag::Enum_Variant;
-	constant.as_enum_variant = enum_variant;
-	return constant;
-}
-
-Consteval_Dependency consteval_dependency_from_struct(Ast_Struct_Decl* struct_decl)
-{
-	Consteval_Dependency constant = {};
-	constant.tag = Consteval_Dependency_Tag::Sizeof_Struct;
-	constant.as_sizeof_struct = struct_decl;
-	return constant;
-}
-
-option<Ast_Struct_Type> check_extract_struct_value_type(Ast_Type type)
-{
-	if (type.pointer_level > 0) return {};
-
-	switch (type.tag)
-	{
-	case Ast_Type_Tag::Array: return check_extract_struct_value_type(type.as_array->element_type);
-	case Ast_Type_Tag::Struct: return type.as_struct;
-	default: return {};
 	}
 }

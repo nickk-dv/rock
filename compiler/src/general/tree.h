@@ -53,30 +53,41 @@ Tree_Node<T>* tree_node_add_child(Arena* arena, Tree_Node<T>* parent, T value)
 }
 
 template<typename T, typename Match_Proc>
-bool tree_node_has_cycle(Tree_Node<T>* node, T match_value, Match_Proc match)
+option<Tree_Node<T>*> tree_node_find_cycle(Tree_Node<T>* node, T match_value, Match_Proc match)
 {
 	while (node->parent != nullptr)
 	{
 		node = node->parent;
-	    if (match(node->value, match_value)) return true;
+	    if (match(node->value, match_value)) return node;
 	}
-	return false;
+	return {};
+}
+
+template<typename T, typename Apply_Proc, typename Context>
+void tree_node_apply_proc_in_reverse_up_to_node(Tree_Node<T>* node, Tree_Node<T>* up_to_node, Context* context, Apply_Proc apply)
+{
+	std::vector<Tree_Node<T>*> nodes;
+
+	while (node != nullptr)
+	{
+		nodes.emplace_back(node);
+		if (node == up_to_node) break;
+		node = node->parent;
+	}
+
+	for (auto it = nodes.rbegin(); it != nodes.rend(); it++)
+	{
+		apply(context, *it);
+	}
 }
 
 template<typename T, typename Apply_Proc, typename Context>
 void tree_node_apply_proc_up_to_root(Tree_Node<T>* node, Context* context, Apply_Proc apply)
 {
-	std::vector<Tree_Node<T>*> cycle_nodes;
-
 	while (node != nullptr)
 	{
-		cycle_nodes.emplace_back(node);
+		apply(context, node);
 		node = node->parent;
-	}
-
-	for (auto it = cycle_nodes.rbegin(); it != cycle_nodes.rend(); it++) 
-	{
-		apply(context, *it);
 	}
 }
 

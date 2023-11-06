@@ -296,7 +296,7 @@ void check_main_proc(Check_Context* cc)
 	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); /*@Error add context*/ }
 	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); /*@Error add context*/ }
 	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); /*@Error add context*/ return; }
-	if (!type_match(cc, proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
+	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
 }
 #include "debug_printer.h" //@Temp
 void check_perform_struct_sizing(Check_Context* cc)
@@ -342,7 +342,7 @@ bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u3
 {
 	for (Ast_Struct_Field& field : in_struct->fields)
 	{
-		option<Ast_Struct_Type> struct_type = check_extract_struct_value_type(field.type);
+		option<Ast_Struct_Type> struct_type = type_extract_struct_value_type(field.type);
 		if (!struct_type) continue;
 		if (struct_type.value().struct_id == struct_id) { field_chain.emplace_back(field.ident); return true; }
 		
@@ -592,7 +592,7 @@ void check_statement_switch(Check_Context* cc, Ast_Switch* _switch)
 	option<Ast_Type> type = check_expr_type(cc, _switch->expr, {}, false);
 	if (!type) return;
 
-	Type_Kind kind = type_kind(cc, type.value());
+	Type_Kind kind = type_kind(type.value());
 	if (kind != Type_Kind::Integer && kind != Type_Kind::Enum)
 	{
 		err_report(Error::SWITCH_INCORRECT_EXPR_TYPE);
