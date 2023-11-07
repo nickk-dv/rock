@@ -731,7 +731,7 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 	{
 		Ast_Array_Type* array = type.as_array;
 		Type element_type = type_from_ast_type(bc, array->element_type);
-		u32 size = (u32)array->consteval_expr->expr->as_folded_expr.as_u64; //@Notice what if its positive i64
+		u32 size = (u32)array->size_expr->as_folded_expr.as_u64; //@Notice what if its positive i64
 		return LLVMArrayType(element_type, size);
 	}
 	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;

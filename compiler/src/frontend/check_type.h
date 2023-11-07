@@ -43,8 +43,7 @@ static option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr);
 
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant);
-Consteval_Dependency consteval_dependency_from_sizeof_struct(Ast_Struct_Decl* struct_decl);
-Consteval_Dependency consteval_dependency_from_array_type(Ast_Array_Type* array_type);
+Consteval_Dependency consteval_dependency_from_sizeof(Ast_Sizeof* size_of);
 option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
 static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent);
 static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
@@ -61,7 +60,7 @@ option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
 
 Ast* resolve_import(Check_Context* cc, option<Ast_Ident> import);
-void resolve_type(Check_Context* cc, Ast_Type* type);
+void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size = true);
 static void resolve_var(Check_Context* cc, Ast_Var* var);
 static void resolve_enum(Check_Context* cc, Ast_Enum* _enum);
 static void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of);
@@ -71,7 +70,7 @@ static void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_St
 
 enum class Consteval_Dependency_Tag
 {
-	Global, Enum_Variant, Sizeof_Struct, Array_Size,
+	Global, Enum_Variant, Sizeof,
 };
 
 struct Consteval_Dependency
@@ -82,8 +81,7 @@ struct Consteval_Dependency
 	{
 		Ast_Global_Decl* as_global;
 		Ast_Enum_Variant* as_enum_variant;
-		Ast_Struct_Decl* as_sizeof_struct;
-		Ast_Array_Type* as_array_size;
+		Ast_Sizeof* as_sizeof;
 	};
 };
 

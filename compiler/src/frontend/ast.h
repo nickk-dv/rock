@@ -207,7 +207,7 @@ struct Ast_Type
 struct Ast_Array_Type
 {
 	Ast_Type element_type;
-	Ast_Consteval_Expr* consteval_expr;
+	Ast_Expr* size_expr;
 };
 
 struct Ast_Unresolved_Type

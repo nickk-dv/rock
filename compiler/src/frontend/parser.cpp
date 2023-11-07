@@ -203,7 +203,7 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
-	array_type->consteval_expr = parse_consteval_expr(parser, expr);
+	array_type->size_expr = expr;
 
 	if (!try_consume(TokenType::BRACKET_END)) { error("Expected ']'"); return NULL; }
 
