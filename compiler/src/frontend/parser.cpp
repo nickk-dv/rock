@@ -203,7 +203,7 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
-	array_type->const_expr = parse_const_expr(parser, expr);
+	array_type->consteval_expr = parse_consteval_expr(parser, expr);
 
 	if (!try_consume(TokenType::BRACKET_END)) { error("Expected ']'"); return NULL; }
 
@@ -284,8 +284,7 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 		{
 			Ast_Expr* expr = parse_expr(parser);
 			if (!expr) return NULL;
-			Ast_Const_Expr* const_expr = parse_const_expr(parser, expr);
-			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), const_expr });
+			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), expr });
 		}
 		else
 		{
@@ -325,7 +324,7 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 		
 		Ast_Expr* expr = parse_expr(parser);
 		if (!expr) return NULL;
-		Ast_Const_Expr* const_expr = parse_const_expr(parser, expr);
+		Ast_Consteval_Expr* const_expr = parse_consteval_expr(parser, expr);
 		decl->variants.emplace_back(Ast_Enum_Variant { token_to_ident(ident.value()), const_expr });
 	}
 	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in enum declaration"); return NULL; }
@@ -384,7 +383,7 @@ Ast_Global_Decl* parse_global_decl(Parser* parser)
 
 	Ast_Expr* expr = parse_expr(parser);
 	if (!expr) return NULL;
-	decl->const_expr = parse_const_expr(parser, expr);
+	decl->consteval_expr = parse_consteval_expr(parser, expr);
 
 	return decl;
 }
@@ -672,7 +671,7 @@ Ast_Switch* parse_switch(Parser* parser)
 		
 		Ast_Expr* expr = parse_sub_expr(parser);
 		if (!expr) return NULL;
-		switch_case.const_expr = parse_const_expr(parser, expr);
+		switch_case.case_expr = expr;
 		
 		if (!try_consume(TokenType::COLON))
 		{
@@ -874,13 +873,13 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 	return expr;
 }
 
-Ast_Const_Expr* parse_const_expr(Parser* parser, Ast_Expr* expr)
+Ast_Consteval_Expr* parse_consteval_expr(Parser* parser, Ast_Expr* expr)
 {
-	Ast_Const_Expr* const_expr = arena_alloc<Ast_Const_Expr>(&parser->arena);
-	const_expr->eval = Const_Eval::Not_Evaluated;
-	const_expr->expr = expr;
+	Ast_Consteval_Expr* consteval_expr = arena_alloc<Ast_Consteval_Expr>(&parser->arena);
+	consteval_expr->eval = Consteval::Not_Evaluated;
+	consteval_expr->expr = expr;
 	expr->is_const = true;
-	return const_expr;
+	return consteval_expr;
 }
 
 Ast_Term* parse_term(Parser* parser)

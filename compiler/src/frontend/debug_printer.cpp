@@ -303,7 +303,7 @@ void debug_print_enum_decl(Ast_Enum_Decl* enum_decl)
 	{
 		debug_print_ident(variant.ident, false, false);
 		printf("Variant Expr: \n");
-		debug_print_expr(variant.const_expr->expr, 0);
+		debug_print_expr(variant.consteval_expr->expr, 0);
 	}
 }
 
@@ -474,7 +474,7 @@ void debug_print_switch(Ast_Switch* _switch, u32 depth)
 	{
 		debug_print_spacing(depth);
 		printf("Case: \n");
-		debug_print_expr(_case.const_expr->expr, depth);
+		debug_print_expr(_case.case_expr, depth);
 		if (_case.block)
 		debug_print_block(_case.block.value(), depth);
 	}

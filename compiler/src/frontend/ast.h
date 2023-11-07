@@ -53,8 +53,8 @@ struct Ast_Expr;
 struct Ast_Unary_Expr;
 struct Ast_Binary_Expr;
 struct Ast_Folded_Expr;
-enum class Const_Eval;
-struct Ast_Const_Expr;
+enum class Consteval;
+struct Ast_Consteval_Expr;
 struct Ast_Term;
 struct Ast_Var;
 struct Ast_Access;
@@ -207,7 +207,7 @@ struct Ast_Type
 struct Ast_Array_Type
 {
 	Ast_Type element_type;
-	Ast_Const_Expr* const_expr;
+	Ast_Consteval_Expr* consteval_expr;
 };
 
 struct Ast_Unresolved_Type
@@ -235,7 +235,7 @@ struct Ast_Struct_Decl
 {
 	Ast_Ident ident;
 	std::vector<Ast_Struct_Field> fields;
-	Const_Eval size_eval;
+	Consteval size_eval;
 	u64 size;
 };
 
@@ -243,7 +243,7 @@ struct Ast_Struct_Field
 {
 	Ast_Ident ident;
 	Ast_Type type;
-	option<Ast_Const_Expr*> const_expr;
+	option<Ast_Expr*> default_expr;
 };
 
 struct Ast_Enum_Decl
@@ -256,7 +256,7 @@ struct Ast_Enum_Decl
 struct Ast_Enum_Variant
 {
 	Ast_Ident ident;
-	Ast_Const_Expr* const_expr;
+	Ast_Consteval_Expr* consteval_expr;
 	//ir builder
 	LLVMValueRef constant;
 };
@@ -281,7 +281,7 @@ struct Ast_Proc_Param
 struct Ast_Global_Decl
 {
 	Ast_Ident ident;
-	Ast_Const_Expr* const_expr;
+	Ast_Consteval_Expr* consteval_expr;
 	option<Ast_Type> type;
 };
 
@@ -385,7 +385,7 @@ struct Ast_Switch
 
 struct Ast_Switch_Case
 {
-	Ast_Const_Expr* const_expr;
+	Ast_Expr* case_expr;
 	option<Ast_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
@@ -461,17 +461,17 @@ struct Ast_Binary_Expr
 	Ast_Expr* right;
 };
 
-enum class Const_Eval
+enum class Consteval
 {
 	Not_Evaluated = 0,
 	Invalid = 1,
 	Valid = 2,
 };
 
-struct Ast_Const_Expr
+struct Ast_Consteval_Expr
 {
 	Ast_Expr* expr;
-	Const_Eval eval;
+	Consteval eval;
 };
 
 enum class Ast_Term_Tag

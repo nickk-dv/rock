@@ -210,9 +210,9 @@ void check_decls(Check_Context* cc)
 				i += 1;
 
 				//@Default const expr should be evaluated after all structure types and globals etc
-				if (field.const_expr)
+				if (field.default_expr)
 				{
-					check_expr_type(cc, field.const_expr.value()->expr, field.type, Expr_Constness::Const);
+					check_expr_type(cc, field.default_expr.value(), field.type, Expr_Constness::Const);
 				}
 			}
 		}
@@ -312,7 +312,7 @@ void check_perform_struct_sizing(Check_Context* cc)
 		bool is_infinite = check_struct_self_storage(cc, in_struct, i, visited_ids, field_chain);
 		if (is_infinite)
 		{
-			in_struct->size_eval = Const_Eval::Invalid;
+			in_struct->size_eval = Consteval::Invalid;
 			cc->ast = cc->program->structs[i].from_ast;
 			err_report(Error::DECL_STRUCT_SELF_STORAGE);
 			err_context(cc, in_struct->ident.span);
@@ -609,7 +609,7 @@ void check_statement_switch(Check_Context* cc, Ast_Switch* _switch)
 
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
-		check_expr_type(cc, _case.const_expr->expr, type.value(), Expr_Constness::Const);
+		check_expr_type(cc, _case.case_expr, type.value(), Expr_Constness::Const);
 	}
 }
 
