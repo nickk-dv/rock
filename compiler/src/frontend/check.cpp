@@ -212,7 +212,7 @@ void check_decls(Check_Context* cc)
 				//@Default const expr should be evaluated after all structure types and globals etc
 				if (field.const_expr)
 				{
-					check_expr_type(cc, field.const_expr.value()->expr, field.type, true);
+					check_expr_type(cc, field.const_expr.value()->expr, field.type, Expr_Constness::Const);
 				}
 			}
 		}
@@ -524,7 +524,7 @@ static void check_statement_block(Check_Context* cc, Ast_Block* block, Checker_B
 
 void check_statement_if(Check_Context* cc, Ast_If* _if)
 {
-	check_expr_type(cc, _if->condition_expr, type_from_basic(BasicType::BOOL), false);
+	check_expr_type(cc, _if->condition_expr, type_from_basic(BasicType::BOOL), Expr_Constness::Normal);
 	check_statement_block(cc, _if->block, Checker_Block_Flags::None);
 
 	if (_if->_else)
@@ -540,7 +540,7 @@ void check_statement_for(Check_Context* cc, Ast_For* _for)
 	check_context_block_add(cc);
 	if (_for->var_decl) check_statement_var_decl(cc, _for->var_decl.value());
 	if (_for->var_assign) check_statement_var_assign(cc, _for->var_assign.value());
-	if (_for->condition_expr) check_expr_type(cc, _for->condition_expr.value(), type_from_basic(BasicType::BOOL), false);
+	if (_for->condition_expr) check_expr_type(cc, _for->condition_expr.value(), type_from_basic(BasicType::BOOL), Expr_Constness::Normal);
 	check_statement_block(cc, _for->block, Checker_Block_Flags::Already_Added);
 }
 
@@ -552,7 +552,7 @@ void check_statement_return(Check_Context* cc, Ast_Return* _return)
 	{
 		if (curr_proc->return_type)
 		{
-			check_expr_type(cc, _return->expr.value(), curr_proc->return_type, false);
+			check_expr_type(cc, _return->expr.value(), curr_proc->return_type, Expr_Constness::Normal);
 		}
 		else
 		{
@@ -589,7 +589,7 @@ void check_statement_switch(Check_Context* cc, Ast_Switch* _switch)
 		}
 	}
 
-	option<Ast_Type> type = check_expr_type(cc, _switch->expr, {}, false);
+	option<Ast_Type> type = check_expr_type(cc, _switch->expr, {}, Expr_Constness::Normal);
 	if (!type) return;
 
 	Type_Kind kind = type_kind(type.value());
@@ -609,7 +609,7 @@ void check_statement_switch(Check_Context* cc, Ast_Switch* _switch)
 
 	for (Ast_Switch_Case& _case : _switch->cases)
 	{
-		check_expr_type(cc, _case.const_expr->expr, type.value(), true);
+		check_expr_type(cc, _case.const_expr->expr, type.value(), Expr_Constness::Const);
 	}
 }
 
@@ -641,7 +641,7 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 
 		if (var_decl->expr)
 		{
-			option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), false);
+			option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), Expr_Constness::Normal);
 		}
 		
 		check_context_block_add_var(cc, ident, var_decl->type.value());
@@ -650,7 +650,7 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 	{
 		// @Errors this might produce "var not found" error in later checks, might be solved by flagging
 		// not adding var to the stack, when inferred type is not valid
-		option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), {}, false);
+		option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), {}, Expr_Constness::Normal);
 		if (expr_type)
 		{
 			var_decl->type = expr_type.value();
@@ -671,5 +671,5 @@ void check_statement_var_assign(Check_Context* cc, Ast_Var_Assign* var_assign)
 		return;
 	}
 
-	check_expr_type(cc, var_assign->expr, var_type.value(), false);
+	check_expr_type(cc, var_assign->expr, var_type.value(), Expr_Constness::Normal);
 }

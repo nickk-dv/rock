@@ -114,7 +114,13 @@ ErrorMessage err_get_message(Error error)
 	case Error::RESOLVE_ENUM_NOT_FOUND:         return { "Enum type is not declared", "" };
 	case Error::RESOLVE_ENUM_VARIANT_NOT_FOUND: return { "Enum variant is not declared", "" };
 	case Error::RESOLVE_PROC_NOT_FOUND:         return { "Procedure is not declared", "" };
+	case Error::RESOLVE_ARRAY_WRONG_CONTEXT:    return { "Array initializer in non array expression context", "" };
+	case Error::RESOLVE_ARRAY_TYPE_MISMATCH:    return { "Array initializer type mismatch", "" };
+	case Error::RESOLVE_ARRAY_NO_CONTEXT:       return { "Array initializer type cannot be inferred from expression context", "Provide context: 'var : [2]i32 = { 1, 2 }' or specify array type: 'var := [2]i32 { 1, 2 }'" };
 	case Error::RESOLVE_STRUCT_NOT_FOUND:       return { "Struct type is not declared", "" };
+	case Error::RESOLVE_STRUCT_WRONG_CONTEXT:   return { "Struct initializer in non struct expression context", "" };
+	case Error::RESOLVE_STRUCT_TYPE_MISMATCH:   return { "Struct initializer type mismatch", "" };
+	case Error::RESOLVE_STRUCT_NO_CONTEXT:      return { "Struct initializer type cannot be inferred from expression context", "Provide context: 'var : Type = .{ 1, 2 }' or specify struct type: 'var : Type.{ 1, 2 }'" };
 	
 	case Error::CFG_NOT_ALL_PATHS_RETURN:       return { "Not all control flow paths return a value", "" };
 	case Error::CFG_UNREACHABLE_STATEMENT:      return { "Statement is never executed", "Comment out or remove dead code" };

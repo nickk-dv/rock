@@ -156,9 +156,9 @@ u32 type_align(Ast_Type type)
 	}
 }
 
-option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> expect_type, bool expect_constant)
+option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> expect_type, Expr_Constness constness)
 {
-	Type_Context context = { expect_type, expect_constant };
+	Expr_Context context = { expect_type, constness };
 	option<Ast_Type> type = check_expr(cc, &context, expr);
 
 	if (!type) return {};
@@ -209,7 +209,7 @@ bool type_is_poison(Ast_Type type)
 	return type.tag == Ast_Type_Tag::Poison;
 }
 
-bool resolve_expr(Check_Context* cc, Ast_Expr* expr)
+bool resolve_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
@@ -267,13 +267,13 @@ bool resolve_expr(Check_Context* cc, Ast_Expr* expr)
 		case Ast_Term_Tag::Array_Init:
 		{
 			Ast_Array_Init* array_init = term->as_array_init;
-			resolve_array_init(cc, array_init);
+			resolve_array_init(cc, context, array_init);
 			if (array_init->tag == Ast_Array_Init_Tag::Invalid) return false;
 		} break;
 		case Ast_Term_Tag::Struct_Init:
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
-			resolve_struct_init(cc, struct_init);
+			resolve_struct_init(cc, context, struct_init);
 			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return false;
 		} break;
 		}
@@ -281,12 +281,12 @@ bool resolve_expr(Check_Context* cc, Ast_Expr* expr)
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		return resolve_expr(cc, unary_expr->right);
+		return resolve_expr(cc, context, unary_expr->right);
 	} break;
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		return resolve_expr(cc, binary_expr->left) && resolve_expr(cc, binary_expr->right);
+		return resolve_expr(cc, context, binary_expr->left) && resolve_expr(cc, context, binary_expr->right);
 	} break;
 	}
 
@@ -401,9 +401,9 @@ void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* ty
 	}
 }
 
-option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* expr)
+option<Ast_Type> check_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* expr)
 {
-	if (!resolve_expr(cc, expr)) return {};
+	if (!resolve_expr(cc, context, expr)) return {};
 
 	if (check_is_const_expr(expr))
 	{
@@ -412,7 +412,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Type_Context* context, Ast_Expr* 
 
 	if (!check_is_const_foldable_expr(expr))
 	{
-		if (expr->is_const == false && context->expect_constant)
+		if (expr->is_const == false && context->constness == Expr_Constness::Const) //@Todo this error will be specific to the expr term level resolve checks
 		{
 			err_report(Error::EXPR_EXPECTED_CONSTANT);
 			err_context(cc, expr->span);
@@ -543,7 +543,7 @@ static void error(const char* message, Ast_Ident ident)
 	printf("\n");
 }
 
-option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* term)
+option<Ast_Type> check_term(Check_Context* cc, Expr_Context* context, Ast_Term* term)
 {
 	switch (term->tag)
 	{
@@ -569,44 +569,8 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Struct_Init:
 	{
 		Ast_Struct_Init* struct_init = term->as_struct_init;
-		resolve_struct_init(cc, struct_init);
+		resolve_struct_init(cc, context, struct_init);
 		if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return {};
-
-		if (context->expect_type)
-		{
-			Ast_Type expect_type = context->expect_type.value();
-			if (type_kind(expect_type) != Type_Kind::Struct)
-			{
-				err_set;
-				err_context(cc, struct_init->input_exprs[0]->span); //@Temp debugging
-				printf("Cannot use struct initializer in non struct type context\n");
-				printf("Context: "); debug_print_type(expect_type); printf("\n");
-				return {};
-			}
-
-			Ast_Struct_Type expected_struct = expect_type.as_struct;
-			if (struct_init->resolved.type)
-			{
-				Ast_Struct_Type struct_type = struct_init->resolved.type.value();
-				if (struct_type.struct_id != expected_struct.struct_id)
-				{
-					err_set;
-					printf("Struct initializer struct type doesnt match the expected type:\n");
-					debug_print_struct_init(struct_init, 0); printf("\n");
-					return {};
-				}
-			}
-			else struct_init->resolved.type = expected_struct;
-		}
-
-		if (!struct_init->resolved.type)
-		{
-			err_set;
-			printf("Cannot infer the struct initializer type without a context\n");
-			printf("Hint: specify type on varible: var : Type = .{ ... }, or on initializer var := Type.{ ... }\n");
-			debug_print_struct_init(struct_init, 0); printf("\n");
-			return {};
-		}
 
 		// check input count
 		Ast_Struct_Decl* struct_decl = struct_init->resolved.type.value().struct_decl;
@@ -626,7 +590,7 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 			if (i < field_count)
 			{
 				Ast_Type field_type = struct_decl->fields[i].type;
-				check_expr_type(cc, struct_init->input_exprs[i], field_type, context->expect_constant);
+				check_expr_type(cc, struct_init->input_exprs[i], field_type, context->constness);
 			}
 		}
 
@@ -638,66 +602,23 @@ option<Ast_Type> check_term(Check_Context* cc, Type_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Array_Init:
 	{
 		Ast_Array_Init* array_init = term->as_array_init;
-		resolve_array_init(cc, array_init);
+		resolve_array_init(cc, context, array_init);
 		if (array_init->tag == Ast_Array_Init_Tag::Invalid) return {};
-
-		option<Ast_Type> type = {};
-		if (array_init->type)
-		{
-			type = array_init->type.value();
-			if (type_kind(type.value()) != Type_Kind::Array)
-			{
-				err_set; 
-				printf("Array initializer must have array type signature\n");
-				return {};
-			}
-		}
-
-		if (context->expect_type)
-		{
-			Ast_Type expect_type = context->expect_type.value();
-			if (type_kind(expect_type) != Type_Kind::Array)
-			{
-				err_set; printf("Cannot use array initializer in non array type context\n");
-				printf("Context: "); debug_print_type(expect_type); printf("\n");
-				return {};
-			}
-
-			if (!type)
-			{
-				type = expect_type;
-			}
-			else
-			{
-				if (!type_match(type.value(), expect_type))
-				{
-					err_set;
-					printf("Array initializer type doesnt match the expected type:\n");
-					return {};
-				}
-			}
-		}
-
-		if (!type)
-		{
-			err_set;
-			printf("Cannot infer the array initializer type without a context\n");
-			printf("Hint: specify type on varible: var : [2]i32 = { 2, 3 } or var := [2]i32{ 2, 3 }\n");
-			return {};
-		}
 
 		//@Check input count compared to array size
 		// check input count
 		u32 input_count = (u32)array_init->input_exprs.size();
 		u32 expected_count = input_count; //@move 1 line up
+		
+		Ast_Type type = array_init->type.value();
 
 		// check input exprs
 		for (u32 i = 0; i < input_count; i += 1)
 		{
 			if (i < expected_count)
 			{
-				Ast_Type element_type = type.value().as_array->element_type;
-				check_expr_type(cc, array_init->input_exprs[i], element_type, context->expect_constant);
+				Ast_Type element_type = type.as_array->element_type;
+				check_expr_type(cc, array_init->input_exprs[i], element_type, context->constness);
 			}
 		}
 
@@ -787,7 +708,7 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 
 		//@Notice allowing u64 for dynamic array and slices
 		//@Temp using i32 instead of u64 to avoid type mismatch
-		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::I32), false);
+		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::I32), Expr_Constness::Normal);
 
 		Ast_Type result_type = type.as_array->element_type;
 		return check_access(cc, result_type, array_access->next);
@@ -834,11 +755,11 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 		if (i < param_count)
 		{
 			Ast_Type param_type = proc_decl->input_params[i].type;
-			check_expr_type(cc, proc_call->input_exprs[i], param_type, false);
+			check_expr_type(cc, proc_call->input_exprs[i], param_type, Expr_Constness::Normal);
 		}
 		else if (is_variadic)
 		{
-			check_expr_type(cc, proc_call->input_exprs[i], {}, false);
+			check_expr_type(cc, proc_call->input_exprs[i], {}, Expr_Constness::Normal);
 		}
 	}
 
@@ -878,7 +799,7 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 	}
 }
 
-option<Ast_Type> check_unary_expr(Check_Context* cc, Type_Context* context, Ast_Unary_Expr* unary_expr)
+option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context* context, Ast_Unary_Expr* unary_expr)
 {
 	option<Ast_Type> rhs_result = check_expr(cc, context, unary_expr->right);
 	if (!rhs_result) return {};
@@ -921,7 +842,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Type_Context* context, Ast_
 	}
 }
 
-option<Ast_Type> check_binary_expr(Check_Context* cc, Type_Context* context, Ast_Binary_Expr* binary_expr)
+option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast_Binary_Expr* binary_expr)
 {
 	option<Ast_Type> lhs_result = check_expr(cc, context, binary_expr->left);
 	if (!lhs_result) return {};
@@ -1486,7 +1407,8 @@ Const_Eval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Exp
 			//@Consider array type signature const expressions
 
 			Ast_Array_Init* array_init = term->as_array_init;
-			resolve_array_init(cc, array_init);
+			Expr_Context context = { {}, Expr_Constness::Const };
+			resolve_array_init(cc, &context, array_init);
 			if (array_init->tag == Ast_Array_Init_Tag::Invalid)
 			{
 				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
@@ -1507,7 +1429,8 @@ Const_Eval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Exp
 		case Ast_Term_Tag::Struct_Init:
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
-			resolve_struct_init(cc, struct_init);
+			Expr_Context context = { {}, Expr_Constness::Const };
+			resolve_struct_init(cc, &context, struct_init);
 			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid)
 			{
 				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
@@ -1569,7 +1492,7 @@ Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_
 	case Consteval_Dependency_Tag::Global:
 	{
 		Ast_Const_Expr* const_expr = constant.as_global->const_expr;
-		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, true);
+		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, Expr_Constness::Const);
 		if (!type)
 		{
 			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
@@ -1582,7 +1505,7 @@ Const_Eval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_
 	{
 		//@Need to have access to the basic type of the enum as expected type
 		Ast_Const_Expr* const_expr = constant.as_enum_variant->const_expr;
-		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, true);
+		option<Ast_Type> type = check_expr_type(cc, const_expr->expr, {}, Expr_Constness::Const);
 		if (!type)
 		{
 			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
@@ -1712,7 +1635,8 @@ void resolve_type(Check_Context* cc, Ast_Type* type)
 		//@Hack for some reason its being folded multiple times
 		if (type->as_array->const_expr->expr->tag != Ast_Expr_Tag::Folded_Expr)
 		{
-			option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr->expr, type_from_basic(BasicType::I32), true);
+			//@Todo this is a consteval dependency that replaces sizeof struct eval and actually has Const_Expr already
+			option<Ast_Type> expr_type = check_expr_type(cc, type->as_array->const_expr->expr, type_from_basic(BasicType::I32), Expr_Constness::Const);
 			if (!expr_type)
 			{
 				type->tag = Ast_Type_Tag::Poison;
@@ -1881,7 +1805,7 @@ void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call)
 	proc_call->resolved.proc_decl = proc_info.value().proc_decl;
 }
 
-void resolve_array_init(Check_Context* cc, Ast_Array_Init* array_init)
+void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init* array_init)
 {
 	if (array_init->type)
 	{
@@ -1890,9 +1814,44 @@ void resolve_array_init(Check_Context* cc, Ast_Array_Init* array_init)
 			array_init->tag = Ast_Array_Init_Tag::Invalid;
 		else array_init->tag = Ast_Array_Init_Tag::Resolved;
 	}
+
+	if (context->expect_type)
+	{
+		Ast_Type expect_type = context->expect_type.value();
+		if (type_kind(expect_type) != Type_Kind::Array)
+		{
+			//@err_context
+			err_report(Error::RESOLVE_ARRAY_WRONG_CONTEXT);
+			debug_print_type(expect_type); printf("\n");
+			array_init->tag = Ast_Array_Init_Tag::Invalid;
+			return;
+		}
+
+		if (array_init->type)
+		{
+			if (!type_match(array_init->type.value(), expect_type))
+			{
+				//@err_context
+				err_report(Error::RESOLVE_ARRAY_TYPE_MISMATCH);
+				debug_print_array_init(array_init, 0); printf("\n");
+				array_init->tag = Ast_Array_Init_Tag::Invalid;
+				return;
+			}
+		}
+		else array_init->type = expect_type;
+	}
+
+	if (!array_init->type)
+	{
+		//@err_context
+		err_report(Error::RESOLVE_ARRAY_NO_CONTEXT);
+		debug_print_array_init(array_init, 0); printf("\n");
+		array_init->tag = Ast_Array_Init_Tag::Invalid;
+		return;
+	}
 }
 
-void resolve_struct_init(Check_Context* cc, Ast_Struct_Init* struct_init)
+void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_Struct_Init* struct_init)
 {
 	if (struct_init->tag != Ast_Struct_Init_Tag::Unresolved) return;
 
@@ -1921,5 +1880,42 @@ void resolve_struct_init(Check_Context* cc, Ast_Struct_Init* struct_init)
 	{
 		struct_init->tag = Ast_Struct_Init_Tag::Resolved;
 		struct_init->resolved.type = {};
+	}
+
+	if (context->expect_type)
+	{
+		Ast_Type expect_type = context->expect_type.value();
+		if (type_kind(expect_type) != Type_Kind::Struct)
+		{
+			//@err_context
+			err_report(Error::RESOLVE_STRUCT_WRONG_CONTEXT);
+			debug_print_type(expect_type); printf("\n");
+			struct_init->tag = Ast_Struct_Init_Tag::Invalid;
+			return;
+		}
+
+		Ast_Struct_Type expected_struct = expect_type.as_struct;
+		if (struct_init->resolved.type)
+		{
+			Ast_Struct_Type struct_type = struct_init->resolved.type.value();
+			if (struct_type.struct_id != expected_struct.struct_id)
+			{
+				//@err_context
+				err_report(Error::RESOLVE_STRUCT_TYPE_MISMATCH);
+				debug_print_struct_init(struct_init, 0); printf("\n");
+				struct_init->tag = Ast_Struct_Init_Tag::Invalid;
+				return;
+			}
+		}
+		else struct_init->resolved.type = expected_struct;
+	}
+
+	if (!struct_init->resolved.type)
+	{
+		//@err_context
+		err_report(Error::RESOLVE_STRUCT_NO_CONTEXT);
+		debug_print_struct_init(struct_init, 0); printf("\n");
+		struct_init->tag = Ast_Struct_Init_Tag::Invalid;
+		return;
 	}
 }
