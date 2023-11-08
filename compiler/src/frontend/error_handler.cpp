@@ -36,6 +36,76 @@ void err_context(Check_Context* cc, Span span)
 	printf("\n  |");
 	printf("\n4 |");
 
+	Span context = span;
+
+	while (span.start > 1 && cc->ast->source.data[span.start - 1] != '\n')
+	{
+		span.start -= 1;
+	}
+
+	u32 max_lines = 5;
+	u32 lines = 1;
+
+	u32 cursor = span.start;
+	while (cursor <= span.end)
+	{
+		u8 c = cc->ast->source.data[cursor];
+		
+		if (c == '\t') printf(" ");
+		else printf("%c", c);
+
+		if (c == '\n')
+		{
+			printf("  |");
+			lines += 1;
+			if (lines >= max_lines) break;
+		}
+		cursor += 1;
+	}
+
+	if (lines == 1)
+	{
+		u64 total_size = cc->ast->source.count;
+		while (cursor < total_size)
+		{
+			u8 c = cc->ast->source.data[cursor];
+			if (c == '\n') break;
+
+			if (c == '\t') printf(" ");
+			else printf("%c", c);
+			
+			cursor += 1;
+		}
+	}
+
+	if (lines >= max_lines) printf(" ...");
+	else
+	{
+		printf("\n  |");
+		if (lines == 1)
+		{
+			u32 diff = context.start - span.start;
+			for (u32 i = 0; i < diff; i += 1)
+			{
+				printf(" ");
+			}
+			u32 width = context.end - context.start;
+			for (u32 i = 0; i <= width; i += 1)
+			{
+				printf("^");
+			}
+		}
+	}
+	printf("\n");
+}
+
+void err_context_old1(Check_Context* cc, Span span)
+{
+	printf("%s:", cc->ast->filepath.c_str());
+	printf("%lu:%lu", span.start, span.end);
+	printf("\n  |");
+	printf("\n4 |");
+
 	while (span.start > 1 && cc->ast->source.data[span.start - 1] != '\n')
 	{
 		span.start -= 1;
@@ -62,18 +132,7 @@ void err_context(Check_Context* cc, Span span)
 	printf("\n");
 }
 
-void err_context(const char* message)
-{
-	printf("%s\n", message);
-}
-
-void err_internal(const char* message)
-{
-	err_report(Error::COMPILER_INTERNAL);
-	err_context(message);
-}
-
-void err_context_old(Check_Context* cc, Span span)
+void err_context_old2(Check_Context* cc, Span span)
 {
 	printf("%s:", cc->ast->filepath.c_str());
 	printf("%lu:%lu ", span.start, span.end);
@@ -83,6 +142,17 @@ void err_context_old(Check_Context* cc, Span span)
 		span.start += 1;
 	}
 	printf("\n");
+}
+
+void err_context(const char* message)
+{
+	printf("%s\n", message);
+}
+
+void err_internal(const char* message)
+{
+	err_report(Error::COMPILER_INTERNAL);
+	err_context(message);
 }
 
 ErrorMessage err_get_message(Error error)
