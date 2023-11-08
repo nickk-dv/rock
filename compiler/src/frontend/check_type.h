@@ -18,6 +18,7 @@ bool type_match(Ast_Type type_a, Ast_Type type_b);
 Type_Kind type_kind(Ast_Type type);
 Ast_Type type_from_basic(BasicType basic_type);
 option<Ast_Struct_Type> type_extract_struct_value_type(Ast_Type type);
+option<Ast_Array_Type*> type_extract_array_value_type(Ast_Type type);
 static void check_struct_size(Ast_Struct_IR_Info* struct_info);
 static u32 type_basic_size(BasicType basic_type);
 static u32 type_basic_align(BasicType basic_type);
@@ -43,8 +44,9 @@ static option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr);
 
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant);
-Consteval_Dependency consteval_dependency_from_sizeof(Ast_Sizeof* size_of);
+Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* struct_decl);
 option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
+static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Struct_Decl* struct_decl, Tree_Node<Consteval_Dependency>* parent);
 static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent);
 static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 static Ast_Consteval_Expr* consteval_dependency_get_consteval_expr(Consteval_Dependency constant);
@@ -70,7 +72,7 @@ static void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_St
 
 enum class Consteval_Dependency_Tag
 {
-	Global, Enum_Variant, Sizeof,
+	Global, Enum_Variant, Struct_Size,
 };
 
 struct Consteval_Dependency
@@ -81,7 +83,7 @@ struct Consteval_Dependency
 	{
 		Ast_Global_Decl* as_global;
 		Ast_Enum_Variant* as_enum_variant;
-		Ast_Sizeof* as_sizeof;
+		Ast_Struct_Decl* as_struct_size;
 	};
 };
 
