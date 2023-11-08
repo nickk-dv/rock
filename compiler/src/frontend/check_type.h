@@ -62,17 +62,23 @@ option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
 option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
 
 Ast* resolve_import(Check_Context* cc, option<Ast_Ident> import);
-void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size = true);
+void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size_expr);
 static void resolve_var(Check_Context* cc, Ast_Var* var);
 static void resolve_enum(Check_Context* cc, Ast_Enum* _enum);
-static void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of);
+static void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of, bool check_array_size_expr);
 static void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call);
-static void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init* array_init);
+static void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init* array_init, bool check_array_size_expr);
 static void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_Struct_Init* struct_init);
 
 enum class Consteval_Dependency_Tag
 {
-	Global, Enum_Variant, Struct_Size,
+	Global, Enum_Variant, Struct_Size, Array_Size_Expr,
+};
+
+struct Array_Size_Dependency
+{
+	Ast_Expr* size_expr;
+	Ast_Type* type;
 };
 
 struct Consteval_Dependency
@@ -84,6 +90,7 @@ struct Consteval_Dependency
 		Ast_Global_Decl* as_global;
 		Ast_Enum_Variant* as_enum_variant;
 		Ast_Struct_Decl* as_struct_size;
+		Array_Size_Dependency as_array_size;
 	};
 };
 

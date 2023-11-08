@@ -184,9 +184,9 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 		//err_context(cc, expect_type.value().span); //@Err add ability to add messages
 		//err_context(cc, type.value().span); //@Span isnt available for generated types, use custom printing for them
 		err_context("Expected: ");
-		debug_print_type(type.value());
-		err_context("\nGot: ");
 		debug_print_type(expect_type.value());
+		err_context("\nGot: ");
+		debug_print_type(type.value());
 		err_context("\nIn expression:");
 		err_context(cc, expr->span);
 		return {};
@@ -209,6 +209,21 @@ bool type_match(Ast_Type type_a, Ast_Type type_b)
 	{
 		Ast_Array_Type* array_a = type_a.as_array;
 		Ast_Array_Type* array_b = type_b.as_array;
+
+		if (array_a->size_expr->tag != Ast_Expr_Tag::Folded_Expr || array_b->size_expr->tag != Ast_Expr_Tag::Folded_Expr) 
+		{
+			err_internal("type_match: expected size_expr to be Ast_Expr_Tag::Folded_Expr");
+		}
+		else if (array_a->size_expr->as_folded_expr.basic_type != BasicType::I32 || array_b->size_expr->as_folded_expr.basic_type != BasicType::I32)
+		{
+			err_internal("type_match: array size_expr expected folded type to be i32 (this is temporary, will be u32 later)");
+		}
+		else
+		{
+			//@Array size reading from i64 before u32 @Fold is completed
+			if (array_a->size_expr->as_folded_expr.as_i64 != array_b->size_expr->as_folded_expr.as_i64) return false;
+		}
+
 		//@Array match constexpr sizes
 		return type_match(array_a->element_type, array_b->element_type);
 	}
@@ -263,7 +278,7 @@ bool resolve_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* expr)
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
-			resolve_sizeof(cc, size_of);
+			resolve_sizeof(cc, size_of, true);
 			if (size_of->tag == Ast_Sizeof_Tag::Invalid) return false;
 		} break;
 		case Ast_Term_Tag::Literal:
@@ -279,7 +294,7 @@ bool resolve_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* expr)
 		case Ast_Term_Tag::Array_Init:
 		{
 			Ast_Array_Init* array_init = term->as_array_init;
-			resolve_array_init(cc, context, array_init);
+			resolve_array_init(cc, context, array_init, true);
 			if (array_init->tag == Ast_Array_Init_Tag::Invalid) return false;
 		} break;
 		case Ast_Term_Tag::Struct_Init:
@@ -614,27 +629,44 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context* context, Ast_Term* 
 	case Ast_Term_Tag::Array_Init:
 	{
 		Ast_Array_Init* array_init = term->as_array_init;
-		resolve_array_init(cc, context, array_init);
+		resolve_array_init(cc, context, array_init, true);
 		if (array_init->tag == Ast_Array_Init_Tag::Invalid) return {};
 
 		//@Check input count compared to array size
 		// check input count
-		u32 input_count = (u32)array_init->input_exprs.size();
-		u32 expected_count = input_count; //@move 1 line up
-		
-		Ast_Type type = array_init->type.value();
 
+		if (array_init->type.value().as_array->size_expr->tag != Ast_Expr_Tag::Folded_Expr)
+		{
+			err_internal("check_term: expected array size_expr to be Ast_Expr_Tag::Folded_Expr");
+		}
+		else if (array_init->type.value().as_array->size_expr->as_folded_expr.basic_type != BasicType::I32)
+		{
+			err_internal("check_term: array size_expr expected folded type to be i32 (this is temporary, will be u32 later)");
+		}
+
+		//@Fold array similarly to other places reasing from i64 insted of u64 folded expr
+		u32 size_count = (u32)array_init->type.value().as_array->size_expr->as_folded_expr.as_i64;
+		u32 input_count = (u32)array_init->input_exprs.size();
+		if (size_count != input_count)
+		{
+			err_set;
+			printf("Unexpected number of fields in array initializer:\n");
+			printf("Expected: %lu Got: %lu \n", size_count, input_count);
+			debug_print_array_init(array_init, 0); printf("\n");
+		}
+
+		Ast_Type type = array_init->type.value();
+		Ast_Type element_type = type.as_array->element_type;
+		
 		// check input exprs
 		for (u32 i = 0; i < input_count; i += 1)
 		{
-			if (i < expected_count)
+			if (i < size_count)
 			{
-				Ast_Type element_type = type.as_array->element_type;
 				check_expr_type(cc, array_init->input_exprs[i], element_type, context->constness);
 			}
 		}
 
-		array_init->type = type;
 		return type;
 	}
 	default: { err_internal("check_term: invalid Ast_Term_Tag"); return {}; }
@@ -1263,6 +1295,14 @@ Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* stru
 	return constant;
 }
 
+Consteval_Dependency consteval_dependency_from_array_size_expr(Ast_Expr* size_expr, Ast_Type* type)
+{
+	Consteval_Dependency constant = {};
+	constant.tag = Consteval_Dependency_Tag::Array_Size_Expr;
+	constant.as_array_size = Array_Size_Dependency { size_expr, type };
+	return constant;
+}
+
 /*
 Implement sizeof(Type) into consteval
 sizeof consteval tree needs to be resolvable at compile time
@@ -1389,9 +1429,9 @@ Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_St
 		option<Ast_Array_Type*> array_type = type_extract_array_value_type(field.type);
 		while (array_type)
 		{
+			tree_node_add_child(arena, parent, consteval_dependency_from_array_size_expr(array_type.value()->size_expr, &field.type));
 			Consteval eval = check_consteval_dependencies(cc, arena, array_type.value()->size_expr, parent);
 			if (eval == Consteval::Invalid) return Consteval::Invalid;
-			
 			array_type = type_extract_array_value_type(array_type.value()->element_type);
 		}
 	}
@@ -1479,7 +1519,7 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
-			resolve_sizeof(cc, size_of);
+			resolve_sizeof(cc, size_of, false);
 			if (size_of->tag == Ast_Sizeof_Tag::Invalid)
 			{
 				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
@@ -1507,9 +1547,9 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 			option<Ast_Array_Type*> array_type = type_extract_array_value_type(size_of->type);
 			while (array_type)
 			{
+				tree_node_add_child(arena, parent, consteval_dependency_from_array_size_expr(array_type.value()->size_expr, &size_of->type));
 				Consteval eval = check_consteval_dependencies(cc, arena, array_type.value()->size_expr, parent);
 				if (eval == Consteval::Invalid) return Consteval::Invalid;
-				
 				array_type = type_extract_array_value_type(array_type.value()->element_type);
 			}
 
@@ -1530,11 +1570,20 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 		{
 			Ast_Array_Init* array_init = term->as_array_init;
 			Expr_Context context = { {}, Expr_Constness::Const };
-			resolve_array_init(cc, &context, array_init);
+			resolve_array_init(cc, &context, array_init, false);
 			if (array_init->tag == Ast_Array_Init_Tag::Invalid)
 			{
 				tree_node_apply_proc_up_to_root(parent, cc, consteval_dependency_mark_invalid);
 				return Consteval::Invalid;
+			}
+
+			option<Ast_Array_Type*> array_type = type_extract_array_value_type(array_init->type.value());
+			while (array_type)
+			{
+				tree_node_add_child(arena, parent, consteval_dependency_from_array_size_expr(array_type.value()->size_expr, &array_init->type.value()));
+				Consteval eval = check_consteval_dependencies(cc, arena, array_type.value()->size_expr, parent);
+				if (eval == Consteval::Invalid) return Consteval::Invalid;
+				array_type = type_extract_array_value_type(array_type.value()->element_type);
 			}
 
 			for (Ast_Expr* input_expr : array_init->input_exprs)
@@ -1634,6 +1683,17 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 		//@Incomplete
 		constant.as_struct_size->size_eval = Consteval::Invalid;
 	} break;
+	case Consteval_Dependency_Tag::Array_Size_Expr:
+	{
+		//@Todo change to u32 when folding of integer types works better
+		option<Ast_Type> type = check_expr_type(cc, constant.as_array_size.size_expr, type_from_basic(BasicType::I32), Expr_Constness::Const);
+		if (!type)
+		{
+			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
+			constant.as_array_size.type->tag = Ast_Type_Tag::Poison;
+			return Consteval::Invalid;
+		}
+	} break;
 	default: break;
 	}
 
@@ -1658,6 +1718,7 @@ bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b)
 	case Consteval_Dependency_Tag::Global: return a.as_global == b.as_global;
 	case Consteval_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
 	case Consteval_Dependency_Tag::Struct_Size: return a.as_struct_size == b.as_struct_size;
+	case Consteval_Dependency_Tag::Array_Size_Expr: return false;
 	default: { err_internal("match_const_dependency: invalid Const_Dependency_Tag"); return false; }
 	}
 }
@@ -1670,6 +1731,7 @@ void consteval_dependency_mark_invalid(Check_Context* cc, Tree_Node<Consteval_De
 	case Consteval_Dependency_Tag::Global: constant.as_global->consteval_expr->eval = Consteval::Invalid; break;
 	case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->consteval_expr->eval = Consteval::Invalid; break;
 	case Consteval_Dependency_Tag::Struct_Size: constant.as_struct_size->size_eval = Consteval::Invalid; break;
+	case Consteval_Dependency_Tag::Array_Size_Expr: break;
 	default: err_internal("consteval_dependency_mark_invalid: invalid Const_Dependency_Tag"); break;
 	}
 }
@@ -1684,6 +1746,7 @@ void consteval_dependency_err_context(Check_Context* cc, Tree_Node<Consteval_Dep
 	case Consteval_Dependency_Tag::Global: err_context(cc, constant.as_global->consteval_expr->expr->span); break;
 	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, constant.as_enum_variant->consteval_expr->expr->span); break;
 	case Consteval_Dependency_Tag::Struct_Size: err_context(cc, constant.as_struct_size->ident.span); break;
+	case Consteval_Dependency_Tag::Array_Size_Expr: err_context(cc, constant.as_array_size.size_expr->span); break;
 	default: err_internal("consteval_dependency_err_context: invalid Const_Dependency_Tag"); break;
 	}
 }
@@ -1760,7 +1823,7 @@ void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size)
 		}
 
 		Ast_Type* element_type = &type->as_array->element_type;
-		resolve_type(cc, element_type);
+		resolve_type(cc, element_type, check_array_size);
 		if (type_is_poison(*element_type)) type->tag = Ast_Type_Tag::Poison;
 	} break;
 	case Ast_Type_Tag::Struct: break;
@@ -1887,9 +1950,9 @@ void resolve_enum(Check_Context* cc, Ast_Enum* _enum)
 	_enum->resolved.variant_id = variant_id.value();
 }
 
-void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of)
+void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of, bool check_array_size_expr)
 {
-	resolve_type(cc, &size_of->type, false); //@Todo false to test
+	resolve_type(cc, &size_of->type, check_array_size_expr); //@Todo false to test
 	if (type_is_poison(size_of->type))
 		size_of->tag = Ast_Sizeof_Tag::Invalid;
 	else size_of->tag = Ast_Sizeof_Tag::Resolved;
@@ -1920,11 +1983,12 @@ void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call)
 	proc_call->resolved.proc_decl = proc_info.value().proc_decl;
 }
 
-void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init* array_init)
+//@Think about what happenes to poisoned type of array init when its part of consteval tree resolution
+void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init* array_init, bool check_array_size_expr)
 {
 	if (array_init->type)
 	{
-		resolve_type(cc, &array_init->type.value());
+		resolve_type(cc, &array_init->type.value(), check_array_size_expr);
 		if (type_is_poison(array_init->type.value()))
 			array_init->tag = Ast_Array_Init_Tag::Invalid;
 		else array_init->tag = Ast_Array_Init_Tag::Resolved;

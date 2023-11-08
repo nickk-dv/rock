@@ -275,7 +275,7 @@ void check_decls(Check_Context* cc)
 
 		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
-			resolve_type(cc, &param.type);
+			resolve_type(cc, &param.type, true);
 			
 			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
 			if (name) 
@@ -288,7 +288,7 @@ void check_decls(Check_Context* cc)
 
 		if (proc_decl->return_type)
 		{
-			resolve_type(cc, &proc_decl->return_type.value());
+			resolve_type(cc, &proc_decl->return_type.value(), true);
 		}
 	}
 }
@@ -643,7 +643,7 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 
 	if (var_decl->type)
 	{
-		resolve_type(cc, &var_decl->type.value());
+		resolve_type(cc, &var_decl->type.value(), true);
 		if (type_is_poison(var_decl->type.value())) return;
 
 		if (var_decl->expr)
