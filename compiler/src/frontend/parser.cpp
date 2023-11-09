@@ -1,6 +1,5 @@
 #include "parser.h"
 
-#include "debug_printer.h"
 #include <filesystem>
 
 #define peek() peek_token(parser, 0)
@@ -8,12 +7,13 @@
 #define consume() consume_token(parser)
 #define consume_get() consume_get_token(parser)
 #define try_consume(token_type) try_consume_token(parser, token_type)
-#define error(message) parse_error(parser, message, 0);
-#define error_next(message, offset) parse_error(parser, message, offset);
-#define error_token(message, token) parse_error_token(parser, message, token);
+#define error(expected) parse_error(parser, expected, 0);
+#define error_next(expected, offset) parse_error(parser, expected, offset);
+#define error_token(expected, token) parse_error_token(parser, expected, token);
 #define span_start() u32 start = get_span_start(parser)
 #define span_end(node) node->span.start = start; node->span.end = get_span_end(parser)
 #define span_end_dot(node) node.span.start = start; node.span.end = get_span_end(parser)
+#define err parser->ast
 
 namespace fs = std::filesystem;
 
@@ -67,13 +67,14 @@ Ast_Program* parse_program(Parser* parser, const char* path)
 
 Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 {
-	parser->peek_index = 0;
-	parser->tokenizer = tokenizer_create(source, &parser->strings);
-	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
-	
 	Ast* ast = arena_alloc<Ast>(&parser->arena);
 	ast->source = source;
 	ast->filepath = std::string(filepath);
+	
+	parser->ast = ast;
+	parser->peek_index = 0;
+	parser->tokenizer = tokenizer_create(source, &parser->strings, &ast->line_spans);
+	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
 
 	while (true) 
 	{
@@ -126,18 +127,18 @@ Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 			}
 			else
 			{
-				error_next("Expected '::'", 1);
+				err_parse(parser, TokenType::DOUBLE_COLON, "global declaration", 1);
 				return NULL;
 			}
 		} break;
 		case TokenType::INPUT_END: 
-		{ 
-			return ast; 
+		{
+			return ast;
 		}
 		default: 
-		{ 
-			error("Expected global declaration identifier"); 
-			return NULL; 
+		{
+			err_parse(parser, TokenType::IDENT, "global declaration");
+			return NULL;
 		}
 		}
 	}
@@ -187,7 +188,9 @@ option<Ast_Type> parse_type(Parser* parser)
 	} break;
 	default:
 	{
-		error("Expected basic type, type identifier or array type");
+		//@Err was: Expected basic type, type identifier or array type
+		//sets arent supported by err reporting system
+		err_parse(parser, TokenType::IDENT, "type signature");
 		return {};
 	}
 	}
@@ -205,7 +208,7 @@ Ast_Array_Type* parse_array_type(Parser* parser)
 	if (!expr) return NULL;
 	array_type->size_expr = expr;
 
-	if (!try_consume(TokenType::BRACKET_END)) { error("Expected ']'"); return NULL; }
+	if (!try_consume(TokenType::BRACKET_END)) { err_parse(parser, TokenType::BRACKET_END, "array type signature"); return NULL; }
 
 	option<Ast_Type> type = parse_type(parser);
 	if (!type) return NULL;
@@ -223,7 +226,7 @@ Ast_Unresolved_Type* parse_unresolved_type(Parser* parser)
 	{
 		unresolved->import = import;
 		option<Token> ident = try_consume(TokenType::IDENT);
-		if (!ident) { error("Expected type identifier"); return NULL; }
+		if (!ident) { err_parse(parser, TokenType::IDENT, "custom type signature"); NULL; }
 		unresolved->ident = token_to_ident(ident.value());
 	}
 	else unresolved->ident = import;
@@ -238,7 +241,7 @@ Ast_Import_Decl* parse_import_decl(Parser* parser)
 	consume(); consume();
 
 	option<Token> token = try_consume(TokenType::STRING_LITERAL);
-	if (!token) { error("Expected path string literal in 'import' declaration"); return NULL; }
+	if (!token) { err_parse(parser, TokenType::STRING_LITERAL, "import path of 'import' declaration"); return NULL; }
 	decl->file_path = Ast_Literal { token.value() };
 
 	return decl;
@@ -251,16 +254,15 @@ Ast_Use_Decl* parse_use_decl(Parser* parser)
 	consume(); consume();
 
 	option<Token> import = try_consume(TokenType::IDENT);
-	if (!import) { error("Expected imported namespace identifier"); return NULL; }
+	if (!import) { err_parse(parser, TokenType::IDENT, "import module of 'use' declaration"); return NULL; }
 	decl->import = token_to_ident(import.value());
 
-	if (!try_consume(TokenType::DOT)) { error("Expected '.' followed by symbol"); return NULL; }
+	if (!try_consume(TokenType::DOT)) { err_parse(parser, TokenType::DOT, "'use' declaration"); return NULL; }
 	
 	option<Token> symbol = try_consume(TokenType::IDENT);
-	if (!symbol) { error("Expected symbol identifier"); return NULL; }
+	if (!symbol) { err_parse(parser, TokenType::IDENT, "symbol of 'use' declaration"); return NULL; }
 	decl->symbol = token_to_ident(symbol.value());
 
-	if (try_consume(TokenType::DOT)) { error("Expected use declaration like this: 'alias :: use import.symbol'.\nDeep namespace access is not allowed, import necessary namespace instead"); return NULL; }
 	return decl;
 }
 
@@ -270,12 +272,12 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 	
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in struct declaration"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { err_parse(parser, TokenType::BLOCK_START, "struct declaration"); return NULL; }
 	while (true)
 	{
 		option<Token> field = try_consume(TokenType::IDENT);
 		if (!field) break;
-		if (!try_consume(TokenType::COLON)) { error("Expected ':' followed by type signature"); return NULL; }
+		if (!try_consume(TokenType::COLON)) { err_parse(parser, TokenType::COLON, "struct field type definition"); return NULL; }
 
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
@@ -288,11 +290,11 @@ Ast_Struct_Decl* parse_struct_decl(Parser* parser)
 		}
 		else
 		{
-			decl->fields.emplace_back(Ast_Struct_Field{ token_to_ident(field.value()), type.value(), {} });
-			if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after struct field declaration"); return NULL; }
+			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), {} });
+			if (!try_consume(TokenType::SEMICOLON)) { err_parse(parser, TokenType::SEMICOLON, "struct field declaration"); return NULL; }
 		}
 	}
-	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in struct declaration"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_END)) { err_parse(parser, TokenType::BLOCK_END, "struct declaration"); return NULL; }
 
 	return decl;
 }
@@ -306,13 +308,14 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 	if (try_consume(TokenType::DOUBLE_COLON))
 	{
 		option<BasicType> basic_type = token_to_basic_type(peek().type);
-		if (!basic_type) { error("Expected basic type in enum declaration"); return NULL; }
+		//@Err need basic type set
+		if (!basic_type) { err_parse(parser, TokenType::TYPE_BOOL, "enum declaration"); return NULL; }
 		consume();
 		decl->basic_type = basic_type.value();
 	}
 	else decl->basic_type = BasicType::I32;
 
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in enum declaration"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { err_parse(parser, TokenType::BLOCK_START, "enum declaration"); return NULL; }
 	while (true)
 	{
 		option<Token> ident = try_consume(TokenType::IDENT);
@@ -320,14 +323,14 @@ Ast_Enum_Decl* parse_enum_decl(Parser* parser)
 
 		//@Todo optional default assignment with just ';'
 
-		if (!try_consume(TokenType::ASSIGN)) { error("Expected '=' followed by constant expression"); return NULL; }
+		if (!try_consume(TokenType::ASSIGN)) { err_parse(parser, TokenType::ASSIGN, "enum variant expression"); return NULL; }
 		
 		Ast_Expr* expr = parse_expr(parser);
 		if (!expr) return NULL;
 		Ast_Consteval_Expr* const_expr = parse_consteval_expr(parser, expr);
 		decl->variants.emplace_back(Ast_Enum_Variant { token_to_ident(ident.value()), const_expr });
 	}
-	if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in enum declaration"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_END)) { err_parse(parser, TokenType::BLOCK_END, "enum declaration"); return NULL; }
 
 	return decl;
 }
@@ -344,7 +347,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 		option<Token> ident = try_consume(TokenType::IDENT);
 		if (!ident) break;
-		if (!try_consume(TokenType::COLON)) { error("Expected ':' followed by type signature"); return NULL; }
+		if (!try_consume(TokenType::COLON)) { err_parse(parser, TokenType::COLON, "procedure parameter type definition"); return NULL; }
 
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
@@ -352,7 +355,7 @@ Ast_Proc_Decl* parse_proc_decl(Parser* parser)
 
 		if (!try_consume(TokenType::COMMA)) break;
 	}
-	if (!try_consume(TokenType::PAREN_END)) { error("Expected ')' in procedure declaration"); return NULL; }
+	if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "procedure declaration"); return NULL; }
 
 	if (try_consume(TokenType::DOUBLE_COLON))
 	{
@@ -392,7 +395,7 @@ Ast_Block* parse_block(Parser* parser)
 {
 	Ast_Block* block = arena_alloc<Ast_Block>(&parser->arena);
 
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' before code block"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { err_parse(parser, TokenType::BLOCK_START, "code block"); return NULL; }
 	while (true)
 	{
 		if (try_consume(TokenType::BLOCK_END)) return block;
@@ -484,7 +487,7 @@ Ast_Statement* parse_statement(Parser* parser)
 			statement->tag = Ast_Statement_Tag::Proc_Call;
 			statement->as_proc_call = parse_proc_call(parser, import_proc_call);
 			if (!statement->as_proc_call) return NULL;
-			if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after procedure call"); return NULL; }
+			if (!try_consume(TokenType::SEMICOLON)) { err_parse(parser, TokenType::SEMICOLON, "procedure call statement"); return NULL; }
 		}
 		else if (next.type == TokenType::COLON)
 		{
@@ -500,9 +503,10 @@ Ast_Statement* parse_statement(Parser* parser)
 		}
 	} break;
 	default: 
-	{ 
-		error("Expected valid statement or '}' after code block"); 
-		return NULL; 
+	{
+		//@Err set Expected valid statement or '}' after code block
+		err_parse(parser, TokenType::BLOCK_END, "code block or a valid statement");
+		return NULL;
 	}
 	}
 	
@@ -557,7 +561,8 @@ Ast_Else* parse_else(Parser* parser)
 		_else->tag = Ast_Else_Tag::Block;
 		_else->as_block = block;
 	}
-	else { error("Expected 'if' or code block '{ ... }'"); return NULL; }
+	//@Err set Expected 'if' or code block '{ ... }
+	else { err_parse(parser, TokenType::KEYWORD_IF, "branch chain"); return NULL; }
 
 	span_end(_else);
 	return _else;
@@ -590,7 +595,7 @@ Ast_For* parse_for(Parser* parser)
 	}
 
 	Ast_Expr* condition_expr = parse_sub_expr(parser);
-	if (!condition_expr) { error("Expected conditional expression"); return NULL; }
+	if (!condition_expr) return NULL; //@Err this was just more context "Expected conditional expression"
 	_for->condition_expr = condition_expr;
 
 	if (try_consume(TokenType::SEMICOLON))
@@ -628,7 +633,7 @@ Ast_Break* parse_break(Parser* parser)
 	span_start();
 	consume();
 
-	if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after 'break'"); return NULL; }
+	if (!try_consume(TokenType::SEMICOLON)) { err_parse(parser, TokenType::SEMICOLON, "break statement"); return NULL; }
 	
 	span_end(_break);
 	return _break;
@@ -661,7 +666,7 @@ Ast_Switch* parse_switch(Parser* parser)
 	if (!expr) return NULL;
 	_switch->expr = expr;
 
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in switch statement"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { err_parse(parser, TokenType::BLOCK_START, "switch statement"); return NULL; }
 	
 	while (true)
 	{
@@ -693,7 +698,7 @@ Ast_Continue* parse_continue(Parser* parser)
 	span_start();
 	consume();
 
-	if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after 'continue'"); return NULL; }
+	if (!try_consume(TokenType::SEMICOLON)) { err_parse(parser, TokenType::SEMICOLON, "continue statement"); return NULL; }
 	
 	span_end(_continue);
 	return _continue;
@@ -719,7 +724,7 @@ Ast_Var_Decl* parse_var_decl(Parser* parser)
 			span_end(var_decl);
 			return var_decl;
 		}
-		if (!try_consume(TokenType::ASSIGN)) { error("Expected '=' or ';' in a variable declaration"); return NULL; }
+		if (!try_consume(TokenType::ASSIGN)) { err_parse(parser, TokenType::ASSIGN, "continue statement"); return NULL; } //@Err Expected '=' or ';' in a variable declaration
 	}
 
 	Ast_Expr* expr = parse_expr(parser);
@@ -741,7 +746,7 @@ Ast_Var_Assign* parse_var_assign(Parser* parser)
 
 	Token token = peek();
 	option<AssignOp> op = token_to_assign_op(token.type);
-	if (!op) { error("Expected assignment operator"); return NULL; }
+	if (!op) { err_parse(parser, TokenType::ASSIGN, "variable assignment statement"); return NULL; } //@Err set of assignment operators
 	var_assign->op = op.value();
 	consume();
 
@@ -762,7 +767,7 @@ Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 	if (import) { proc_call->unresolved.import = token_to_ident(consume_get()); consume(); }
 	proc_call->unresolved.ident = token_to_ident(consume_get());
 
-	if (!try_consume(TokenType::PAREN_START)) { error("Expected '(' in procedure call"); return NULL; }
+	if (!try_consume(TokenType::PAREN_START)) { err_parse(parser, TokenType::PAREN_START, "procedure call"); return NULL; }
 	if (!try_consume(TokenType::PAREN_END))
 	{
 		while (true)
@@ -772,7 +777,7 @@ Ast_Proc_Call* parse_proc_call(Parser* parser, bool import)
 			proc_call->input_exprs.emplace_back(expr);
 			if (!try_consume(TokenType::COMMA)) break;
 		}
-		if (!try_consume(TokenType::PAREN_END)) { error("Expected ')' in procedure call"); return NULL; }
+		if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "procedure call"); return NULL; }
 	}
 
 	Token token = peek();
@@ -791,7 +796,7 @@ Ast_Expr* parse_expr(Parser* parser)
 {
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
-	if (!try_consume(TokenType::SEMICOLON)) { error("Expected ';' after expression"); return NULL; }
+	if (!try_consume(TokenType::SEMICOLON)) { err_parse(parser, TokenType::SEMICOLON, "expression"); return NULL; }
 	return expr;
 }
 
@@ -839,7 +844,7 @@ Ast_Expr* parse_primary_expr(Parser* parser)
 		Ast_Expr* expr = parse_sub_expr(parser);
 		if (!try_consume(TokenType::PAREN_END))
 		{
-			error("Expected ')'");
+			err_parse(parser, TokenType::PAREN_END, "parenthesised expression");
 			return NULL;
 		}
 		return expr;
@@ -969,7 +974,8 @@ Ast_Term* parse_term(Parser* parser)
 	} break;
 	default:
 	{
-		error("Expected a valid expression term");
+		//@Err set: Expected a valid expression term
+		err_parse(parser, TokenType::IDENT, "expression term");
 		return NULL;
 	}
 	}
@@ -983,7 +989,7 @@ Ast_Var* parse_var(Parser* parser)
 	var->tag = Ast_Var_Tag::Unresolved;
 
 	option<Token> ident = try_consume(TokenType::IDENT);
-	if (!ident) { error("Expected variable identifier"); return NULL; }
+	if (!ident) { err_parse(parser, TokenType::IDENT, "variable"); return NULL; }
 	var->unresolved.ident = token_to_ident(ident.value());
 
 	Token token = peek();
@@ -1020,7 +1026,8 @@ Ast_Access* parse_access(Parser* parser)
 	}
 	else
 	{
-		error("Fatal parse error in parse_access");
+		//@Err set dot or bracker start
+		err_parse(parser, TokenType::DOT, "variable access");
 		return NULL;
 	}
 
@@ -1032,7 +1039,7 @@ Ast_Var_Access* parse_var_access(Parser* parser)
 	Ast_Var_Access* var_access = arena_alloc<Ast_Var_Access>(&parser->arena);
 
 	option<Token> ident = try_consume(TokenType::IDENT);
-	if (!ident) { error("Expected field identifier"); return NULL; }
+	if (!ident) { err_parse(parser, TokenType::IDENT, "struct field access"); return NULL; }
 	var_access->ident = token_to_ident(ident.value());
 
 	Token token = peek();
@@ -1054,7 +1061,7 @@ Ast_Array_Access* parse_array_access(Parser* parser)
 	if (!expr) return NULL;
 	array_access->index_expr = expr;
 
-	if (!try_consume(TokenType::BRACKET_END)) { error("Expected ']'"); return NULL; }
+	if (!try_consume(TokenType::BRACKET_END)) { err_parse(parser, TokenType::BRACKET_END, "array access"); return NULL; }
 
 	Token token = peek();
 	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
@@ -1074,12 +1081,12 @@ Ast_Enum* parse_enum(Parser* parser, bool import)
 	if (import) { _enum->unresolved.import = token_to_ident(consume_get()); consume(); }
 
 	option<Token> ident = try_consume(TokenType::IDENT);
-	if (!ident) { error("Expected enum type identifier"); return NULL; }
+	if (!ident) { err_parse(parser, TokenType::IDENT, "enum type declaration"); return NULL; }
 	_enum->unresolved.ident = token_to_ident(ident.value());
 	consume();
 	
 	option<Token> variant = try_consume(TokenType::IDENT);
-	if (!variant) { error("Expected enum variant identifier"); return NULL; }
+	if (!variant) { err_parse(parser, TokenType::IDENT, "enum variant declaration"); return NULL; }
 	_enum->unresolved.variant = token_to_ident(variant.value());
 
 	return _enum;
@@ -1090,13 +1097,13 @@ Ast_Sizeof* parse_sizeof(Parser* parser)
 	Ast_Sizeof* _sizeof = arena_alloc<Ast_Sizeof>(&parser->arena);
 	consume();
 
-	if (!try_consume(TokenType::PAREN_START)) { error("Expected '(' in sizeof"); return NULL; }
+	if (!try_consume(TokenType::PAREN_START)) { err_parse(parser, TokenType::PAREN_START, "sizeof statement"); return NULL; }
 	
 	option<Ast_Type> type = parse_type(parser);
 	if (!type) return NULL;
 	_sizeof->type = type.value();
 
-	if (!try_consume(TokenType::PAREN_END)) { error("Expected ')' in sizeof"); return NULL; }
+	if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "sizeof statement"); return NULL; }
 
 	return _sizeof;
 }
@@ -1110,7 +1117,7 @@ Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
 	if (type) { struct_init->unresolved.ident = token_to_ident(consume_get()); }
 	consume();
 
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in struct initializer"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { err_parse(parser, TokenType::BLOCK_START, "struct initializer"); return NULL; }
 	if (!try_consume(TokenType::BLOCK_END))
 	{
 		while (true)
@@ -1120,7 +1127,7 @@ Ast_Struct_Init* parse_struct_init(Parser* parser, bool import, bool type)
 			struct_init->input_exprs.emplace_back(expr);
 			if (!try_consume(TokenType::COMMA)) break;
 		}
-		if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in struct initializer"); return NULL; }
+		if (!try_consume(TokenType::BLOCK_END)) { err_parse(parser, TokenType::BLOCK_END, "struct initializer"); return NULL; }
 	}
 
 	return struct_init;
@@ -1136,7 +1143,7 @@ Ast_Array_Init* parse_array_init(Parser* parser)
 		if (!array_init->type) return NULL;
 	}
 
-	if (!try_consume(TokenType::BLOCK_START)) { error("Expected '{' in array initializer"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START)) { err_parse(parser, TokenType::BLOCK_START, "array initializer"); return NULL; }
 	if (!try_consume(TokenType::BLOCK_END))
 	{
 		while (true)
@@ -1146,7 +1153,7 @@ Ast_Array_Init* parse_array_init(Parser* parser)
 			array_init->input_exprs.emplace_back(expr);
 			if (!try_consume(TokenType::COMMA)) break;
 		}
-		if (!try_consume(TokenType::BLOCK_END)) { error("Expected '}' in array initializer"); return NULL; }
+		if (!try_consume(TokenType::BLOCK_END)) { err_parse(parser, TokenType::BLOCK_END, "array initializer"); return NULL; }
 	}
 
 	return array_init;
@@ -1197,14 +1204,12 @@ u32 get_span_end(Parser* parser)
 	return parser->tokens[parser->peek_index - 1].span.end;
 }
 
-void parse_error(Parser* parser, const char* message, u32 offset)
+void err_parse(Parser* parser, TokenType expected, option<const char*> in, u32 offset)
 {
-	printf("%s.\n", message);
-	debug_print_token(peek_next(offset), true, true);
+	err_report_parse(parser->ast, expected, in, peek_token(parser, offset));
 }
 
-void parse_error_token(Parser* parser, const char* message, Token token)
+void err_parse(Parser* parser, TokenType expected, option<const char*> in, Token token)
 {
-	printf("%s.\n", message);
-	debug_print_token(token, true, true);
+	err_report_parse(parser->ast, expected, in, token);
 }

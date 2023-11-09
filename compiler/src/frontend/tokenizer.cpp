@@ -57,11 +57,13 @@ void tokenizer_init()
 	}
 }
 
-Tokenizer tokenizer_create(StringView source, StringStorage* strings)
+Tokenizer tokenizer_create(StringView source, StringStorage* strings, std::vector<Span>* line_spans)
 {
 	Tokenizer tokenizer = {};
 	tokenizer.source = source;
 	tokenizer.strings = strings;
+	tokenizer.line_spans = line_spans;
+	tokenizer.line_spans->emplace_back(Span{ 0, 0 });
 	return tokenizer;
 }
 
@@ -80,6 +82,9 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 
 		if (!peek().has_value())
 		{
+			if (tokenizer->line_spans->back().end != tokenizer->cursor)
+			tokenizer->line_spans->back().end = tokenizer->cursor - 1;
+
 			for (u32 i = k; i < TOKENIZER_BUFFER_SIZE; i++)
 			{
 				tokens[i].type = TokenType::INPUT_END;
@@ -348,6 +353,8 @@ void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 			{
 				tokenizer->line_id += 1;
 				tokenizer->line_cursor = tokenizer->cursor;
+				tokenizer->line_spans->back().end = tokenizer->cursor;
+				tokenizer->line_spans->emplace_back(Span { tokenizer->cursor + 1, tokenizer->cursor + 1 });
 			}
 			consume();
 		}
@@ -369,9 +376,11 @@ void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer)
 				{
 					tokenizer->line_id += 1;
 					tokenizer->line_cursor = tokenizer->cursor;
+					tokenizer->line_spans->back().end = tokenizer->cursor;
+					tokenizer->line_spans->emplace_back(Span{ tokenizer->cursor + 1, tokenizer->cursor + 1 });
 				}
 				consume();
-				
+
 				if (mc == '/' && peek().has_value() && peek().value() == '*')
 				{
 					consume();

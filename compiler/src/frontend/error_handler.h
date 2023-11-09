@@ -4,12 +4,16 @@
 #include "general/general.h"
 
 struct Span;
+struct Ast;
+struct Token;
 struct ErrorMessage;
 struct Check_Context;
+enum class TokenType;
 enum class Error;
 
 bool err_get_status();
 void err_report(Error error);
+void err_report_parse(Ast* source, TokenType expected, option<const char*> in, Token token);
 void err_context(Check_Context* cc);
 void err_context(Check_Context* cc, Span span);
 void err_context(const char* message);

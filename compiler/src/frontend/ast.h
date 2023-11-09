@@ -116,6 +116,7 @@ struct Ast
 {
 	StringView source;
 	std::string filepath;
+	std::vector<Span> line_spans;
 
 	std::vector<Ast_Import_Decl*> imports;
 	std::vector<Ast_Use_Decl*> uses;

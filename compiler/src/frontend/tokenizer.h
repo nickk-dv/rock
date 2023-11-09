@@ -7,7 +7,7 @@ struct Tokenizer;
 enum class LexemeType;
 
 void tokenizer_init();
-Tokenizer tokenizer_create(StringView source, StringStorage* strings);
+Tokenizer tokenizer_create(StringView source, StringStorage* strings, std::vector<Span>* line_spans);
 void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens);
 
 static void tokenizer_skip_whitespace_comments(Tokenizer* tokenizer);
@@ -21,6 +21,7 @@ struct Tokenizer
 {
 	StringView source;
 	StringStorage* strings;
+	std::vector<Span>* line_spans;
 	u32 cursor = 0;
 	u32 line_id = 1;
 	u32 line_cursor = 0;

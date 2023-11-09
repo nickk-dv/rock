@@ -305,7 +305,7 @@ void check_main_proc(Check_Context* cc)
 	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); /*@Error add context*/ return; }
 	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
 }
-#include "debug_printer.h" //@Temp
+
 void check_perform_struct_sizing(Check_Context* cc)
 {
 	std::vector<u32> visited_ids;
@@ -324,13 +324,15 @@ void check_perform_struct_sizing(Check_Context* cc)
 			err_report(Error::DECL_STRUCT_SELF_STORAGE);
 			err_context(cc, in_struct->ident.span);
 			printf("Field access path: ");
-			debug_print_ident(field_chain[field_chain.size() - 1], false, false);
-			for (int k = (int)field_chain.size() - 2; k >= 0; k -= 1)
-			{
-				printf(".");
-				debug_print_ident(field_chain[k], false, false);
-			}
-			printf("\n");
+			//@Context support foreigh context by having Ast source from on decls
+			//will allow to nicely print full field paths with location and file
+			//debug_print_ident(field_chain[field_chain.size() - 1], false, false);
+			//for (int k = (int)field_chain.size() - 2; k >= 0; k -= 1)
+			//{
+			//	printf(".");
+			//	debug_print_ident(field_chain[k], false, false);
+			//}
+			//printf("\n");
 		}
 		else
 		{

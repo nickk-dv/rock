@@ -1,7 +1,7 @@
 #include "check_type.h"
 
 #include "error_handler.h"
-#include "debug_printer.h"
+#include "printer.h"
 
 Type_Kind type_kind(Ast_Type type)
 {
@@ -184,9 +184,9 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 		//err_context(cc, expect_type.value().span); //@Err add ability to add messages
 		//err_context(cc, type.value().span); //@Span isnt available for generated types, use custom printing for them
 		err_context("Expected: ");
-		debug_print_type(expect_type.value());
+		print_type(expect_type.value());
 		err_context("\nGot: ");
-		debug_print_type(type.value());
+		print_type(type.value());
 		err_context("\nIn expression:");
 		err_context(cc, expr->span);
 		return {};
@@ -553,22 +553,6 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* 
 
 //@TODO temp allowing old errors:
 #define err_set (void)0;
-#include "debug_printer.h"
-static void error_pair(const char* message, const char* labelA, Ast_Ident identA, const char* labelB, Ast_Ident identB)
-{
-	printf("%s:\n", message);
-	printf("%s: ", labelA);
-	debug_print_ident(identA, true, true);
-	printf("%s: ", labelB);
-	debug_print_ident(identB, true, true);
-	printf("\n");
-}
-static void error(const char* message, Ast_Ident ident)
-{
-	printf("%s:\n", message);
-	debug_print_ident(ident, true, true);
-	printf("\n");
-}
 
 option<Ast_Type> check_term(Check_Context* cc, Expr_Context* context, Ast_Term* term)
 {
@@ -605,10 +589,10 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context* context, Ast_Term* 
 		u32 input_count = (u32)struct_init->input_exprs.size();
 		if (field_count != input_count)
 		{
+			//@Err
 			err_set;
 			printf("Unexpected number of fields in struct initializer:\n");
 			printf("Expected: %lu Got: %lu \n", field_count, input_count);
-			debug_print_struct_init(struct_init, 0); printf("\n");
 		}
 
 		// check input exprs
@@ -649,10 +633,10 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context* context, Ast_Term* 
 		u32 input_count = (u32)array_init->input_exprs.size();
 		if (size_count != input_count)
 		{
+			//@Err
 			err_set;
 			printf("Unexpected number of fields in array initializer:\n");
 			printf("Expected: %lu Got: %lu \n", size_count, input_count);
-			debug_print_array_init(array_init, 0); printf("\n");
 		}
 
 		Ast_Type type = array_init->type.value();
@@ -716,8 +700,11 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type_Tag::Struct) kind = Type_Kind::Struct;
 		if (kind != Type_Kind::Struct)
 		{
+			//@Err
 			err_set;
-			error("Field access might only be used on variables of struct or pointer to a struct type", var_access->ident);
+			printf("Field access might only be used on variables of struct or pointer to a struct type\n");
+			print_str(var_access->ident.str);
+			printf("\n");
 			return {};
 		}
 
@@ -726,7 +713,9 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		if (!field_id)
 		{
 			err_set;
-			error("Failed to find struct field during access", var_access->ident);
+			printf("Failed to find struct field during access\n");
+			print_str(var_access->ident.str);
+			printf("\n");
 			return {};
 		}
 		var_access->field_id = field_id.value();
@@ -743,10 +732,9 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		if (kind == Type_Kind::Pointer && type.pointer_level == 1 && type.tag == Ast_Type_Tag::Array) kind = Type_Kind::Array;
 		if (kind != Type_Kind::Array)
 		{
+			//@Err
 			err_set;
 			printf("Array access might only be used on variables of array type:\n");
-			debug_print_access(access);
-			printf("\n\n");
 			return {};
 		}
 
@@ -776,20 +764,20 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 	{
 		if (input_count < param_count)
 		{
+			//@Err
 			err_set;
 			printf("Unexpected number of arguments in variadic procedure call:\n");
 			printf("Expected at least: %lu Got: %lu \n", param_count, input_count);
-			debug_print_ident(proc_call->resolved.proc_decl->ident, true, true); printf("\n");
 		}
 	}
 	else
 	{
 		if (param_count != input_count)
 		{
+			//@Err
 			err_set;
 			printf("Unexpected number of arguments in procedure call:\n");
 			printf("Expected: %lu Got: %lu \n", param_count, input_count);
-			debug_print_ident(proc_call->resolved.proc_decl->ident, true, true); printf("\n");
 		}
 	}
 
@@ -812,10 +800,9 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 	{
 		if (!proc_decl->return_type)
 		{
+			//@Err
 			err_set;
 			printf("Procedure call inside expression must have a return type:\n");
-			debug_print_proc_call(proc_call, 0);
-			printf("\n");
 			return {};
 		}
 
@@ -825,17 +812,17 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 	{
 		if (proc_call->access)
 		{
+			//@Err
 			err_set;
 			printf("Procedure call statement cannot have access chains:\n");
-			debug_print_proc_call(proc_call, 0);
 			printf("\n");
 		}
 
 		if (proc_decl->return_type)
 		{
+			//@Err
 			err_set;
 			printf("Procedure call result cannot be discarded:\n");
-			debug_print_proc_call(proc_call, 0);
 			printf("\n");
 		}
 
@@ -858,19 +845,19 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context* context, Ast_
 	{
 		if (rhs_kind == Type_Kind::Float || rhs_kind == Type_Kind::Integer) return rhs;
 		err_set; printf("UNARY OP - only works on float or integer\n");
-		debug_print_unary_expr(unary_expr, 0); return {};
+		return {};
 	}
 	case UnaryOp::LOGIC_NOT:
 	{
 		if (rhs_kind == Type_Kind::Bool) return rhs;
 		err_set; printf("UNARY OP ! only works on bool\n");
-		debug_print_unary_expr(unary_expr, 0); return {};
+		return {};
 	}
 	case UnaryOp::BITWISE_NOT:
 	{
 		if (rhs_kind == Type_Kind::Integer) return rhs;
 		err_set; printf("UNARY OP ~ only works on integer\n");
-		debug_print_unary_expr(unary_expr, 0); return {};
+		return {};
 	}
 	case UnaryOp::ADDRESS_OF:
 	{
@@ -880,7 +867,8 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context* context, Ast_
 	}
 	case UnaryOp::DEREFERENCE:
 	{
-		err_set; printf("UNARY OP << unsupported\n"); debug_print_unary_expr(unary_expr, 0); return {};
+		err_set; printf("UNARY OP << unsupported\n");
+		return {};
 	}
 	default: { err_internal("check_unary_expr: invalid UnaryOp"); return {}; }
 	}
@@ -904,7 +892,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast
 	{
 		err_set;
 		printf("Binary expr cannot be done on different type kinds\n");
-		debug_print_binary_expr(binary_expr, 0); return {};
+		return {};
 	}
 
 	type_implicit_binary_cast(cc, &lhs, &rhs);
@@ -917,7 +905,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast
 	{
 		if (lhs_kind == Type_Kind::Bool) return rhs;
 		err_set; printf("BINARY Logic Ops (&& ||) only work on bools\n");
-		debug_print_binary_expr(binary_expr, 0); return {};
+		return {};
 	}
 	case BinaryOp::LESS:
 	case BinaryOp::GREATER:
@@ -928,7 +916,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast
 	{
 		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return type_from_basic(BasicType::BOOL);
 		err_set; printf("BINARY Comparison Ops (< > <= >= == !=) only work on floats or integers\n");
-		debug_print_binary_expr(binary_expr, 0); return {};
+		return {};
 	}
 	case BinaryOp::PLUS:
 	case BinaryOp::MINUS:
@@ -937,13 +925,13 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast
 	{
 		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return lhs;
 		err_set; printf("BINARY Math Ops (+ - * /) only work on floats or integers\n");
-		debug_print_binary_expr(binary_expr, 0); return {};
+		return {};
 	}
 	case BinaryOp::MOD:
 	{
 		if (lhs_kind == Type_Kind::Integer) return lhs;
 		err_set; printf("BINARY Op %% only works on integers\n");
-		debug_print_binary_expr(binary_expr, 0); return {};
+		return {};
 	}
 	case BinaryOp::BITWISE_AND:
 	case BinaryOp::BITWISE_OR:
@@ -953,7 +941,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast
 	{
 		if (lhs_kind == Type_Kind::Integer) return lhs;
 		err_set; printf("BINARY Bitwise Ops (& | ^ << >>) only work on integers\n");
-		debug_print_binary_expr(binary_expr, 0); return {};
+		return {};
 	}
 	default: { err_internal("check_binary_expr: invalid BinaryOp"); return {}; }
 	}
@@ -2001,7 +1989,7 @@ void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init
 		{
 			//@err_context
 			err_report(Error::RESOLVE_ARRAY_WRONG_CONTEXT);
-			debug_print_type(expect_type); printf("\n");
+			print_type(expect_type); printf("\n");
 			array_init->tag = Ast_Array_Init_Tag::Invalid;
 			return;
 		}
@@ -2012,7 +2000,6 @@ void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init
 			{
 				//@err_context
 				err_report(Error::RESOLVE_ARRAY_TYPE_MISMATCH);
-				debug_print_array_init(array_init, 0); printf("\n");
 				array_init->tag = Ast_Array_Init_Tag::Invalid;
 				return;
 			}
@@ -2024,7 +2011,6 @@ void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init
 	{
 		//@err_context
 		err_report(Error::RESOLVE_ARRAY_NO_CONTEXT);
-		debug_print_array_init(array_init, 0); printf("\n");
 		array_init->tag = Ast_Array_Init_Tag::Invalid;
 		return;
 	}
@@ -2068,7 +2054,7 @@ void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_Struct_In
 		{
 			//@err_context
 			err_report(Error::RESOLVE_STRUCT_WRONG_CONTEXT);
-			debug_print_type(expect_type); printf("\n");
+			print_type(expect_type); printf("\n");
 			struct_init->tag = Ast_Struct_Init_Tag::Invalid;
 			return;
 		}
@@ -2081,7 +2067,6 @@ void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_Struct_In
 			{
 				//@err_context
 				err_report(Error::RESOLVE_STRUCT_TYPE_MISMATCH);
-				debug_print_struct_init(struct_init, 0); printf("\n");
 				struct_init->tag = Ast_Struct_Init_Tag::Invalid;
 				return;
 			}
@@ -2093,7 +2078,6 @@ void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_Struct_In
 	{
 		//@err_context
 		err_report(Error::RESOLVE_STRUCT_NO_CONTEXT);
-		debug_print_struct_init(struct_init, 0); printf("\n");
 		struct_init->tag = Ast_Struct_Init_Tag::Invalid;
 		return;
 	}

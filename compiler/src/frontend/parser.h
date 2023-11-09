@@ -56,11 +56,12 @@ static Token consume_get_token(Parser* parser);
 static option<Token> try_consume_token(Parser* parser, TokenType token_type);
 static u32 get_span_start(Parser* parser);
 static u32 get_span_end(Parser* parser);
-static void parse_error(Parser* parser, const char* message, u32 offset);
-static void parse_error_token(Parser* parser, const char* message, Token token);
+static void err_parse(Parser* parser, TokenType expected, option<const char*> in, u32 offset = 0);
+static void err_parse(Parser* parser, TokenType expected, option<const char*> in, Token token);
 
 struct Parser
 {
+	Ast* ast;
 	Arena arena;
 	Tokenizer tokenizer;
 	StringStorage strings;
