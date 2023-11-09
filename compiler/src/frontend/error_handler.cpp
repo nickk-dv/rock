@@ -35,7 +35,13 @@ void err_report_parse(Ast* source, TokenType expected, option<const char*> in, T
 	print_token_type(expected);
 	printf("'");
 	if (in) printf(" in %s\n", in.value());
-	print_span_context(source, token.span);
+	if (token.type == TokenType::INPUT_END)
+	{
+		printf("%s '", source->filepath.c_str());
+		print_token_type(TokenType::INPUT_END);
+		printf("'\n");
+	}
+	else print_span_context(source, token.span);
 }
 
 void err_context(Check_Context* cc)

@@ -207,15 +207,15 @@ void check_decls(Check_Context* cc)
 		}
 	}
 
+	for (Ast_Struct_Decl* struct_decl : ast->structs)
+	{
+		check_consteval_expr(cc, consteval_dependency_from_struct_size(struct_decl));
+	}
+
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
 		//@New pipeline
 		global_decl->type = check_consteval_expr(cc, consteval_dependency_from_global(global_decl));
-	}
-	
-	for (Ast_Struct_Decl* struct_decl : ast->structs)
-	{
-		check_consteval_expr(cc, consteval_dependency_from_struct_size(struct_decl));
 	}
 
 	//also remove from vector if duplicate?

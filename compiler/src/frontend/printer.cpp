@@ -180,8 +180,8 @@ void print_token_type(TokenType type)
 	case TokenType::BITSHIFT_LEFT: printf("<<"); break;
 	case TokenType::BITSHIFT_RIGHT: printf(">>"); break;
 
-	case TokenType::ERROR: printf("Token Error"); break;
-	case TokenType::INPUT_END: printf("End of file"); break;
+	case TokenType::ERROR: printf("error token"); break;
+	case TokenType::INPUT_END: printf("end of file"); break;
 	default: err_internal("print_token_type: invalid TokenType");
 	}
 }

@@ -13,6 +13,12 @@ enum class Expr_Kind;
 enum class Expr_Constness;
 enum class Consteval_Dependency_Tag;
 
+struct Expr_Context
+{
+	option<Ast_Type> expect_type;
+	Expr_Constness constness;
+};
+
 bool type_is_poison(Ast_Type type);
 bool type_match(Ast_Type type_a, Ast_Type type_b);
 Type_Kind type_kind(Ast_Type type);
@@ -29,17 +35,17 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var);
 option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags);
 
-static bool resolve_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* expr);
+static bool resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
 static bool check_is_const_expr(Ast_Expr* expr);
 static bool check_is_const_foldable_expr(Ast_Expr* expr);
 
 static void type_implicit_cast(Check_Context* cc, Ast_Type* type, Ast_Type target_type);
 static void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* type_b);
-static option<Ast_Type> check_expr(Check_Context* cc, Expr_Context* context, Ast_Expr* expr);
-static option<Ast_Type> check_term(Check_Context* cc, Expr_Context* context, Ast_Term* term);
+static option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
+static option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term);
 static option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Access*> optional_access);
-static option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context* context, Ast_Unary_Expr* unary_expr);
-static option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context* context, Ast_Binary_Expr* binary_expr);
+static option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_Unary_Expr* unary_expr);
+static option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_Binary_Expr* binary_expr);
 static option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr);
 
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl);
@@ -47,7 +53,7 @@ Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* en
 Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* struct_decl);
 option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
 static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Struct_Decl* struct_decl, Tree_Node<Consteval_Dependency>* parent);
-static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent);
+static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent, option<Expr_Context> context = {});
 static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 static Ast_Consteval_Expr* consteval_dependency_get_consteval_expr(Consteval_Dependency constant);
 static bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b);
@@ -67,8 +73,8 @@ static void resolve_var(Check_Context* cc, Ast_Var* var);
 static void resolve_enum(Check_Context* cc, Ast_Enum* _enum);
 static void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of, bool check_array_size_expr);
 static void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call);
-static void resolve_array_init(Check_Context* cc, Expr_Context* context, Ast_Array_Init* array_init, bool check_array_size_expr);
-static void resolve_struct_init(Check_Context* cc, Expr_Context* context, Ast_Struct_Init* struct_init);
+static void resolve_array_init(Check_Context* cc, Expr_Context context, Ast_Array_Init* array_init, bool check_array_size_expr);
+static void resolve_struct_init(Check_Context* cc, Expr_Context context, Ast_Struct_Init* struct_init);
 
 enum class Consteval_Dependency_Tag
 {
@@ -119,12 +125,6 @@ enum class Expr_Kind
 	Const,
 	Constfold,
 	Consteval,
-};
-
-struct Expr_Context
-{
-	option<Ast_Type> expect_type;
-	Expr_Constness constness;
 };
 
 enum class Type_Kind
