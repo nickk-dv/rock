@@ -168,7 +168,8 @@ u32 type_align(Ast_Type type)
 
 option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> expect_type, Expr_Constness constness)
 {
-	if (expect_type && type_is_poison(expect_type.value())) return {}; //@Not sure if its good idea
+	//@Design when context has poison type expr is not checked
+	if (expect_type && type_is_poison(expect_type.value())) return {};
 
 	Expr_Context context = { expect_type, constness };
 	option<Ast_Type> type = check_expr(cc, context, expr);
@@ -181,13 +182,8 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 	if (!type_match(type.value(), expect_type.value()))
 	{
 		err_report(Error::TYPE_MISMATCH);
-		//err_context(cc, expect_type.value().span); //@Err add ability to add messages
-		//err_context(cc, type.value().span); //@Span isnt available for generated types, use custom printing for them
-		err_context("Expected: ");
-		print_type(expect_type.value());
-		err_context("\nGot: ");
-		print_type(type.value());
-		err_context("\nIn expression:");
+		printf("Expected: "); print_type(expect_type.value()); printf("\n");
+		printf("Got: "); print_type(type.value()); printf("\n");
 		err_context(cc, expr->span);
 		return {};
 	}
@@ -214,17 +210,15 @@ bool type_match(Ast_Type type_a, Ast_Type type_b)
 		{
 			err_internal("type_match: expected size_expr to be Ast_Expr_Tag::Folded_Expr");
 		}
-		else if (array_a->size_expr->as_folded_expr.basic_type != BasicType::I32 || array_b->size_expr->as_folded_expr.basic_type != BasicType::I32)
+		else if (array_a->size_expr->as_folded_expr.basic_type != BasicType::U32 || array_b->size_expr->as_folded_expr.basic_type != BasicType::U32)
 		{
-			err_internal("type_match: array size_expr expected folded type to be i32 (this is temporary, will be u32 later)");
+			err_internal("type_match: array size_expr expected folded type to be u32");
 		}
 		else
 		{
-			//@Array size reading from i64 before u32 @Fold is completed
-			if (array_a->size_expr->as_folded_expr.as_i64 != array_b->size_expr->as_folded_expr.as_i64) return false;
+			if (array_a->size_expr->as_folded_expr.as_u64 != array_b->size_expr->as_folded_expr.as_u64) return false;
 		}
 
-		//@Array match constexpr sizes
 		return type_match(array_a->element_type, array_b->element_type);
 	}
 	default: { err_internal("type_match: invalid Ast_Type_Tag"); return false; }
@@ -456,98 +450,178 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 	}
 	else
 	{
+		if (expr->tag == Ast_Expr_Tag::Folded_Expr) 
+		{
+			//@Debug potential multi check errors with multi dimentional arrays etc
+			//printf("Folding folded expr\n");
+			//err_context(cc, expr->span);
+			return type_from_basic(expr->as_folded_expr.basic_type);
+		}
+
 		option<Literal> lit_result = check_foldable_expr(cc, expr);
 		if (!lit_result) return {};
 
-		Ast_Folded_Expr folded_expr = {};
+		Ast_Folded_Expr folded = {};
 		Literal lit = lit_result.value();
 
-		if (context.expect_type)
+		switch (lit.kind)
 		{
-			switch (lit.kind)
-			{
-			case Literal_Kind::Bool:
-			{
-				folded_expr.basic_type = BasicType::BOOL;
-				folded_expr.as_bool = lit.as_bool;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::BOOL);
-			}
-			case Literal_Kind::Float:
-			{
-				//@Base on context
-				folded_expr.basic_type = BasicType::F64;
-				folded_expr.as_f64 = lit.as_f64;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::F64);
-			}
-			case Literal_Kind::Int:
-			{
-				//@Base on context
-				//@Todo range based
-				folded_expr.basic_type = BasicType::I32;
-				folded_expr.as_i64 = lit.as_i64;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::I32);
-			}
-			case Literal_Kind::UInt:
-			{
-				//@Base on context
-				//@Todo range based
-				folded_expr.basic_type = BasicType::I32;
-				folded_expr.as_u64 = lit.as_u64;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::I32);
-			}
-			default: { err_internal("check_expr: invalid Literal_Kind"); return {}; }
-			}
-		}
-		else
+		case Literal_Kind::Bool:
 		{
-			switch (lit.kind)
+			folded.basic_type = BasicType::BOOL;
+			folded.as_bool = lit.as_bool;
+		} break;
+		case Literal_Kind::Float:
+		{
+			folded.basic_type = BasicType::F64;
+			folded.as_f64 = lit.as_f64;
+
+			if (context.expect_type)
 			{
-			case Literal_Kind::Bool:
+				Ast_Type type = context.expect_type.value();
+				if (type_match(type, type_from_basic(BasicType::F32))) 
+				{
+					folded.basic_type = BasicType::F32;
+				}
+			}
+		} break;
+		case Literal_Kind::Int:
+		{
+			bool default = true;
+
+			if (context.expect_type)
 			{
-				folded_expr.basic_type = BasicType::BOOL;
-				folded_expr.as_bool = lit.as_bool;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::BOOL);
+				Ast_Type type = context.expect_type.value();
+				if (type.tag == Ast_Type_Tag::Basic)
+				{
+					BasicType basic_type = type.as_basic;
+					default = false;
+
+					switch (basic_type)
+					{
+					case BasicType::I8:  if (lit.as_i64 < INT8_MIN  || lit.as_i64 > INT8_MAX)  { err_internal("fold int out of range of expected i8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::I16: if (lit.as_i64 < INT16_MIN || lit.as_i64 > INT16_MAX) { err_internal("fold int out of range of expected i16"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::I32: if (lit.as_i64 < INT32_MIN || lit.as_i64 > INT32_MAX) { err_internal("fold int out of range of expected i32"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::I64: break;
+					case BasicType::U8:  if (lit.as_i64 < 0 || lit.as_i64 > UINT8_MAX)  { err_internal("fold int out of range of expected u8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::U16: if (lit.as_i64 < 0 || lit.as_i64 > UINT16_MAX) { err_internal("fold int out of range of expected u16"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U32: if (lit.as_i64 < 0 || lit.as_i64 > UINT32_MAX) { err_internal("fold int out of range of expected u32"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U64: if (lit.as_i64 < 0)                            { err_internal("fold int out of range of expected u64"); err_context(cc, expr->span); return {}; } break;
+					default: default = true; break;
+					}
+
+					switch (basic_type)
+					{
+					case BasicType::I8:
+					case BasicType::I16:
+					case BasicType::I32:
+					case BasicType::I64:
+					{
+						folded.basic_type = basic_type;
+						folded.as_i64 = lit.as_i64;
+					} break;
+					case BasicType::U8:
+					case BasicType::U16:
+					case BasicType::U32:
+					case BasicType::U64:
+					{
+						folded.basic_type = basic_type;
+						folded.as_u64 = static_cast<u64>(lit.as_i64);
+					} break;
+					default: default = true; break;
+					}
+				}
 			}
-			case Literal_Kind::Float:
+			
+			if (default)
 			{
-				folded_expr.basic_type = BasicType::F64;
-				folded_expr.as_f64 = lit.as_f64;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::F64);
+				//default to: i32, i64
+				if (lit.as_i64 >= INT32_MIN && lit.as_i64 <= INT32_MAX)
+				{
+					folded.basic_type = BasicType::I32;
+					folded.as_i64 = lit.as_i64;
+				}
+				else
+				{
+					folded.basic_type = BasicType::I64;
+					folded.as_i64 = lit.as_i64;
+				}
 			}
-			case Literal_Kind::Int:
+		} break;
+		case Literal_Kind::UInt:
+		{
+			bool default = true;
+
+			if (context.expect_type)
 			{
-				//@Todo range based default int type
-				folded_expr.basic_type = BasicType::I32;
-				folded_expr.as_i64 = lit.as_i64;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::I32);
+				Ast_Type type = context.expect_type.value();
+				if (type.tag == Ast_Type_Tag::Basic) 
+				{
+					BasicType basic_type = type.as_basic;
+					default = false;
+
+					switch (basic_type)
+					{
+					case BasicType::I8:  if (lit.as_u64 > INT8_MAX)   { err_internal("fold uint out of range of expected i8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::I16: if (lit.as_u64 > INT16_MAX)  { err_internal("fold uint out of range of expected i16"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::I32: if (lit.as_u64 > INT32_MAX)  { err_internal("fold uint out of range of expected i32"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::I64: if (lit.as_u64 > INT64_MAX)  { err_internal("fold uint out of range of expected i64"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U8:  if (lit.as_u64 > UINT8_MAX)  { err_internal("fold uint out of range of expected u8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::U16: if (lit.as_u64 > UINT16_MAX) { err_internal("fold uint out of range of expected u16"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U32: if (lit.as_u64 > UINT32_MAX) { err_internal("fold uint out of range of expected u32"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U64: break;
+					default: default = true; break;
+					}
+
+					switch (basic_type)
+					{
+					case BasicType::I8:
+					case BasicType::I16:
+					case BasicType::I32:
+					case BasicType::I64: 
+					{
+						folded.basic_type = basic_type;
+						folded.as_i64 = static_cast<i64>(lit.as_u64); 
+					} break;
+					case BasicType::U8:
+					case BasicType::U16:
+					case BasicType::U32:
+					case BasicType::U64: 
+					{ 
+						folded.basic_type = basic_type; 
+						folded.as_u64 = lit.as_u64; 
+					} break;
+					default: default = true; break;
+					}
+				}
 			}
-			case Literal_Kind::UInt:
-			{
-				//@Todo range based default int type
-				//@Might become a u64 if its too big
-				folded_expr.basic_type = BasicType::I32;
-				folded_expr.as_u64 = lit.as_u64;
-				expr->tag = Ast_Expr_Tag::Folded_Expr;
-				expr->as_folded_expr = folded_expr;
-				return type_from_basic(BasicType::I32);
+			
+			if (default)
+			{	
+				//default to: i32, i64, u64
+				if (lit.as_u64 <= INT32_MAX)
+				{
+					folded.basic_type = BasicType::I32;
+					folded.as_i64 = static_cast<i64>(lit.as_u64);
+				}
+				else if (lit.as_u64 <= INT64_MAX)
+				{
+					folded.basic_type = BasicType::I64;
+					folded.as_i64 = static_cast<i64>(lit.as_u64);
+				}
+				else 
+				{
+					folded.basic_type = BasicType::U64;
+					folded.as_u64 = lit.as_u64;
+				}
 			}
-			default: { err_internal("check_expr: invalid Literal_Kind"); return {}; }
-			}
+		} break;
+		default: { err_internal("check_expr: invalid Literal_Kind"); return {}; }
 		}
+		
+		expr->tag = Ast_Expr_Tag::Folded_Expr;
+		expr->as_folded_expr = folded;
+		return type_from_basic(folded.basic_type);
 	}
 }
 
@@ -616,20 +690,17 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* t
 		resolve_array_init(cc, context, array_init, true);
 		if (array_init->tag == Ast_Array_Init_Tag::Invalid) return {};
 
-		//@Check input count compared to array size
-		// check input count
-
 		if (array_init->type.value().as_array->size_expr->tag != Ast_Expr_Tag::Folded_Expr)
 		{
 			err_internal("check_term: expected array size_expr to be Ast_Expr_Tag::Folded_Expr");
 		}
-		else if (array_init->type.value().as_array->size_expr->as_folded_expr.basic_type != BasicType::I32)
+		else if (array_init->type.value().as_array->size_expr->as_folded_expr.basic_type != BasicType::U32)
 		{
-			err_internal("check_term: array size_expr expected folded type to be i32 (this is temporary, will be u32 later)");
+			err_internal("check_term: array size_expr expected folded type to be u32");
+			err_context(cc, array_init->type.value().as_array->size_expr->span);
 		}
 
-		//@Fold array similarly to other places reasing from i64 insted of u64 folded expr
-		u32 size_count = (u32)array_init->type.value().as_array->size_expr->as_folded_expr.as_i64;
+		u32 size_count = (u32)array_init->type.value().as_array->size_expr->as_folded_expr.as_u64;
 		u32 input_count = (u32)array_init->input_exprs.size();
 		if (size_count != input_count)
 		{
@@ -737,9 +808,8 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 			return {};
 		}
 
-		//@Notice allowing u64 for dynamic array and slices
-		//@Temp using i32 instead of u64 to avoid type mismatch
-		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::I32), Expr_Constness::Normal);
+		//@Notice allowing u64 for dynamic array and slice access
+		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::U64), Expr_Constness::Normal);
 
 		Ast_Type result_type = type.as_array->element_type;
 		return check_access(cc, result_type, array_access->next);
@@ -977,20 +1047,24 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 			Token token = term->as_literal->token;
 			Literal lit = {};
 
-			if (token.type == TokenType::BOOL_LITERAL)
+			switch (token.type)
+			{
+			case TokenType::BOOL_LITERAL:
 			{
 				lit.kind = Literal_Kind::Bool;
 				lit.as_bool = token.bool_value;
-			}
-			else if (token.type == TokenType::FLOAT_LITERAL)
+			} break;
+			case TokenType::FLOAT_LITERAL:
 			{
 				lit.kind = Literal_Kind::Float;
 				lit.as_f64 = token.float64_value;
-			}
-			else
+			} break;
+			case TokenType::INTEGER_LITERAL:
 			{
-				lit.kind = Literal_Kind::Int; //@Notice setting to signed int as temporary measure
-				lit.as_i64 = token.integer_value;
+				lit.kind = Literal_Kind::UInt;
+				lit.as_u64 = token.integer_value;
+			} break;
+			default: { err_internal("check_foldable_expr: invalid TokenType"); return {}; }
 			}
 
 			return lit;
@@ -1685,8 +1759,7 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 	} break;
 	case Consteval_Dependency_Tag::Array_Size_Expr:
 	{
-		//@Todo change to u32 when folding of integer types works better
-		option<Ast_Type> type = check_expr_type(cc, constant.as_array_size.size_expr, type_from_basic(BasicType::I32), Expr_Constness::Const);
+		option<Ast_Type> type = check_expr_type(cc, constant.as_array_size.size_expr, type_from_basic(BasicType::U32), Expr_Constness::Const);
 		if (!type)
 		{
 			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
@@ -1811,10 +1884,9 @@ void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size)
 	case Ast_Type_Tag::Basic: break;
 	case Ast_Type_Tag::Array:
 	{
-		//@Todo change to u32 when folding of integer types works better
 		if (check_array_size)
 		{
-			option<Ast_Type> size_type = check_expr_type(cc, type->as_array->size_expr, type_from_basic(BasicType::I32), Expr_Constness::Const);
+			option<Ast_Type> size_type = check_expr_type(cc, type->as_array->size_expr, type_from_basic(BasicType::U32), Expr_Constness::Const);
 			if (!size_type)
 			{
 				type->tag = Ast_Type_Tag::Poison;
