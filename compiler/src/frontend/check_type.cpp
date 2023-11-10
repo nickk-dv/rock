@@ -57,14 +57,12 @@ option<Ast_Array_Type*> type_extract_array_value_type(Ast_Type type)
 	}
 }
 
-void check_struct_size(Ast_Struct_IR_Info* struct_info)
+void compute_struct_size(Ast_Struct_Decl* struct_decl)
 {
-	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
 	u32 field_count = (u32)struct_decl->fields.size();
-
 	u32 total_size = 0;
 	u32 max_align = 0;
-
+	
 	for (u32 i = 0; i < field_count; i += 1)
 	{
 		u32 field_size = type_size(struct_decl->fields[i].type);
@@ -91,9 +89,8 @@ void check_struct_size(Ast_Struct_IR_Info* struct_info)
 		}
 	}
 
-	struct_info->is_sized = true;
-	struct_info->struct_size = total_size;
-	struct_info->max_align = max_align;
+	struct_decl->struct_size = total_size;
+	struct_decl->max_align = max_align;
 }
 
 u32 type_basic_size(BasicType basic_type)
@@ -136,7 +133,6 @@ u32 type_basic_align(BasicType basic_type)
 	}
 }
 
-//@Incomplete
 u32 type_size(Ast_Type type)
 {
 	if (type.pointer_level > 0) return 8; //@Assume 64bit
@@ -144,14 +140,24 @@ u32 type_size(Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: return type_basic_size(type.as_basic);
-	case Ast_Type_Tag::Array: return 0;
-	case Ast_Type_Tag::Struct: return 0;
+	case Ast_Type_Tag::Array: 
+	{
+		if (type.as_array->size_expr->tag != Ast_Expr_Tag::Folded_Expr || type.as_array->size_expr->as_folded_expr.basic_type != BasicType::U32)
+			err_internal("type_size: array size expr is not folded or has incorrect type");
+		u32 count = (u32)type.as_array->size_expr->as_folded_expr.as_u64;
+		return count * type_size(type.as_array->element_type);
+	}
+	case Ast_Type_Tag::Struct:
+	{
+		if (type.as_struct.struct_decl->size_eval != Consteval::Valid)
+			err_internal("type_size: expected struct size_eval to be Consteval::Valid");
+		return type.as_struct.struct_decl->struct_size;
+	}
 	case Ast_Type_Tag::Enum: return type_basic_size(type.as_enum.enum_decl->basic_type);
 	default: { err_internal("check_get_type_size: invalid Ast_Type_Tag"); return 0; }
 	}
 }
 
-//@Incomplete
 u32 type_align(Ast_Type type)
 {
 	if (type.pointer_level > 0) return 8; //@Assume 64bit
@@ -159,10 +165,15 @@ u32 type_align(Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: return type_basic_align(type.as_basic);
-	case Ast_Type_Tag::Array: return 0;
-	case Ast_Type_Tag::Struct: return 0;
+	case Ast_Type_Tag::Array: return type_align(type.as_array->element_type);
+	case Ast_Type_Tag::Struct: 
+	{
+		if (type.as_struct.struct_decl->size_eval != Consteval::Valid) 
+			err_internal("type_align: expected struct size_eval to be Consteval::Valid");
+		return type.as_struct.struct_decl->max_align;
+	}
 	case Ast_Type_Tag::Enum: return type_basic_align(type.as_enum.enum_decl->basic_type);
-	default: { err_internal("check_get_type_align: invalid Ast_Type_Tag"); return 0; }
+	default: { err_internal("type_align: invalid Ast_Type_Tag"); return 0; }
 	}
 }
 
@@ -316,7 +327,7 @@ bool resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
 
 bool check_is_const_expr(Ast_Expr* expr)
 {
-	if (check_is_const_foldable_expr(expr)) return true;
+	if (check_is_foldable_expr(expr)) return true;
 
 	switch (expr->tag)
 	{
@@ -353,7 +364,7 @@ bool check_is_const_expr(Ast_Expr* expr)
 	}
 }
 
-bool check_is_const_foldable_expr(Ast_Expr* expr)
+bool check_is_foldable_expr(Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
@@ -365,7 +376,7 @@ bool check_is_const_foldable_expr(Ast_Expr* expr)
 		case Ast_Term_Tag::Var:
 		{
 			Ast_Var* var = term->as_var;
-			return var->tag == Ast_Var_Tag::Global && check_is_const_foldable_expr(var->global.global_decl->consteval_expr->expr);
+			return var->tag == Ast_Var_Tag::Global && check_is_foldable_expr(var->global.global_decl->consteval_expr->expr);
 		}
 		case Ast_Term_Tag::Enum: return true;
 		case Ast_Term_Tag::Sizeof: return true;
@@ -373,10 +384,10 @@ bool check_is_const_foldable_expr(Ast_Expr* expr)
 		default: return false;
 		}
 	}
-	case Ast_Expr_Tag::Unary_Expr: return check_is_const_foldable_expr(expr->as_unary_expr->right);
-	case Ast_Expr_Tag::Binary_Expr: return check_is_const_foldable_expr(expr->as_binary_expr->left) && check_is_const_foldable_expr(expr->as_binary_expr->right);
+	case Ast_Expr_Tag::Unary_Expr: return check_is_foldable_expr(expr->as_unary_expr->right);
+	case Ast_Expr_Tag::Binary_Expr: return check_is_foldable_expr(expr->as_binary_expr->left) && check_is_foldable_expr(expr->as_binary_expr->right);
 	case Ast_Expr_Tag::Folded_Expr: return true;
-	default: { err_internal("check_is_const_foldable_expr: invalid Ast_Expr_Tag"); return false; }
+	default: { err_internal("check_is_foldable_expr: invalid Ast_Expr_Tag"); return false; }
 	}
 }
 
@@ -431,7 +442,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 		expr->is_const = true;
 	}
 
-	if (!check_is_const_foldable_expr(expr))
+	if (!check_is_foldable_expr(expr))
 	{
 		if (expr->is_const == false && context.constness == Expr_Constness::Const) //@Todo this error will be specific to the expr term level resolve checks
 		{
@@ -458,7 +469,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 			return type_from_basic(expr->as_folded_expr.basic_type);
 		}
 
-		option<Literal> lit_result = check_foldable_expr(cc, expr);
+		option<Literal> lit_result = check_folded_expr(cc, expr);
 		if (!lit_result) return {};
 
 		Ast_Folded_Expr folded = {};
@@ -1016,7 +1027,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	}
 }
 
-option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
+option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
@@ -1030,17 +1041,22 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 			//@Todo access unsupported
 			Ast_Var* var = term->as_var;
 			Ast_Consteval_Expr* consteval_expr = var->global.global_decl->consteval_expr;
-			return check_foldable_expr(cc, consteval_expr->expr);
+			return check_folded_expr(cc, consteval_expr->expr);
 		}
 		case Ast_Term_Tag::Enum:
 		{
-			printf("enum const folding isnt supported yet\n");
+			err_internal("Enum folding isnt supported");
 			return {};
 		}
 		case Ast_Term_Tag::Sizeof:
 		{
-			printf("sizeof const folding isnt supported yet\n");
-			return {};
+			Ast_Sizeof* size_of = term->as_sizeof;
+			if (type_is_poison(size_of->type)) return {};
+
+			Literal lit = {};
+			lit.kind = Literal_Kind::UInt;
+			lit.as_u64 = type_size(size_of->type);
+			return lit;
 		}
 		case Ast_Term_Tag::Literal:
 		{
@@ -1075,7 +1091,7 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		option<Literal> rhs_result = check_foldable_expr(cc, unary_expr->right);
+		option<Literal> rhs_result = check_folded_expr(cc, unary_expr->right);
 		if (!rhs_result) return {};
 
 		UnaryOp op = unary_expr->op;
@@ -1128,9 +1144,9 @@ option<Literal> check_foldable_expr(Check_Context* cc, Ast_Expr* expr)
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		option<Literal> lhs_result = check_foldable_expr(cc, binary_expr->left);
+		option<Literal> lhs_result = check_folded_expr(cc, binary_expr->left);
 		if (!lhs_result) return {};
-		option<Literal> rhs_result = check_foldable_expr(cc, binary_expr->right);
+		option<Literal> rhs_result = check_folded_expr(cc, binary_expr->right);
 		if (!rhs_result) return {};
 
 		BinaryOp op = binary_expr->op;
@@ -1754,8 +1770,8 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 	} break;
 	case Consteval_Dependency_Tag::Struct_Size:
 	{
-		//@Incomplete
-		constant.as_struct_size->size_eval = Consteval::Invalid;
+		compute_struct_size(constant.as_struct_size);
+		constant.as_struct_size->size_eval = Consteval::Valid;
 	} break;
 	case Consteval_Dependency_Tag::Array_Size_Expr:
 	{

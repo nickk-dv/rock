@@ -86,9 +86,6 @@ struct Ast_Struct_IR_Info
 {
 	Ast* from_ast; //@Hack needed for err_context in self storage check
 	Ast_Struct_Decl* struct_decl;
-	bool is_sized = false;
-	u32 struct_size;
-	u32 max_align;
 	LLVMTypeRef struct_type;
 	LLVMValueRef default_value;
 };
@@ -237,7 +234,8 @@ struct Ast_Struct_Decl
 	Ast_Ident ident;
 	std::vector<Ast_Struct_Field> fields;
 	Consteval size_eval;
-	u64 size;
+	u32 struct_size;
+	u32 max_align;
 };
 
 struct Ast_Struct_Field
