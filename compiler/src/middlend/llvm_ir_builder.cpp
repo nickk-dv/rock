@@ -413,7 +413,7 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 	case Ast_Expr_Tag::Term: return build_term(bc, expr->as_term, unary_address);
 	case Ast_Expr_Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
 	case Ast_Expr_Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
-	case Ast_Expr_Tag::Folded_Expr: return build_folded_expr(bc, expr->as_folded_expr);
+	case Ast_Expr_Tag::Folded_Expr: return build_folded_expr(expr->as_folded_expr);
 	default: { err_internal("build_expr: invalid Ast_Expr_Tag"); return NULL; }
 	}
 }
@@ -433,14 +433,6 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Ast_Enum* _enum = term->as_enum;
 		return bc->program->enums[_enum->resolved.type.enum_id].enum_decl->variants[_enum->resolved.variant_id].constant;
 	}
-	case Ast_Term_Tag::Sizeof:
-	{
-		//@Notice returning 0 in void case to avoid crashing
-		Ast_Sizeof* _sizeof = term->as_sizeof;
-		Type type = type_from_ast_type(bc, _sizeof->type);
-		if (LLVMTypeIsSized(type)) return LLVMSizeOf(type);
-		return LLVMConstInt(LLVMInt64Type(), 0, 0);
-	}
 	case Ast_Term_Tag::Literal:
 	{
 		Token token = term->as_literal->token;
@@ -451,8 +443,8 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		}
 		else
 		{
-			printf("IR Builder: Expected Ast_Term literal to only be a string literal. Other things are Const_Expr now\n");
-			exit(EXIT_FAILURE); //@Hack, maybe use compiler internal error instead
+			err_internal("build_term: invalid Ast_Term_Tag");
+			return NULL;
 		}
 	}
 	case Ast_Term_Tag::Proc_Call: return build_proc_call(bc, term->as_proc_call, IR_Proc_Call_Flags::In_Expr);
@@ -639,7 +631,7 @@ Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr)
 	}
 }
 
-Value build_folded_expr(IR_Builder_Context* bc, Ast_Folded_Expr folded_expr)
+Value build_folded_expr(Ast_Folded_Expr folded_expr)
 {
 	Type type = type_from_basic_type(folded_expr.basic_type);
 	switch (folded_expr.basic_type)

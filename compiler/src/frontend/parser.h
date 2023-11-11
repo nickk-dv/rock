@@ -57,7 +57,6 @@ static option<Token> try_consume_token(Parser* parser, TokenType token_type);
 static u32 get_span_start(Parser* parser);
 static u32 get_span_end(Parser* parser);
 static void err_parse(Parser* parser, TokenType expected, option<const char*> in, u32 offset = 0);
-static void err_parse(Parser* parser, TokenType expected, option<const char*> in, Token token);
 
 struct Parser
 {

@@ -35,12 +35,10 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var);
 option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags);
 
-static bool resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
-static bool check_is_const_expr(Ast_Expr* expr);
-static bool check_is_foldable_expr(Ast_Expr* expr);
+option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
 
-static void type_implicit_cast(Check_Context* cc, Ast_Type* type, Ast_Type target_type);
-static void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* type_b);
+static void type_implicit_cast(Ast_Type* type, Ast_Type target_type);
+static void type_implicit_binary_cast(Ast_Type* type_a, Ast_Type* type_b);
 static option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
 static option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term);
 static option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Access*> optional_access);
@@ -124,7 +122,7 @@ enum class Expr_Kind
 	Normal,
 	Const,
 	Constfold,
-	Consteval,
+	//Consteval, @Not used yet
 };
 
 enum class Type_Kind

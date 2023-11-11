@@ -63,5 +63,5 @@ void backend_verify_module(LLVMModuleRef mod)
 void backend_run_clang()
 {
 	const char* cmd = "clang -o result.exe result.o";
-	int exit_code = system(cmd);
+	system(cmd);
 }

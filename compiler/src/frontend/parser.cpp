@@ -7,13 +7,9 @@
 #define consume() consume_token(parser)
 #define consume_get() consume_get_token(parser)
 #define try_consume(token_type) try_consume_token(parser, token_type)
-#define error(expected) parse_error(parser, expected, 0);
-#define error_next(expected, offset) parse_error(parser, expected, offset);
-#define error_token(expected, token) parse_error_token(parser, expected, token);
 #define span_start() u32 start = get_span_start(parser)
 #define span_end(node) node->span.start = start; node->span.end = get_span_end(parser)
 #define span_end_dot(node) node.span.start = start; node.span.end = get_span_end(parser)
-#define err parser->ast
 
 namespace fs = std::filesystem;
 
@@ -674,9 +670,9 @@ Ast_Switch* parse_switch(Parser* parser)
 
 		Ast_Switch_Case switch_case = {};
 		
-		Ast_Expr* expr = parse_sub_expr(parser);
-		if (!expr) return NULL;
-		switch_case.case_expr = expr;
+		Ast_Expr* case_expr = parse_sub_expr(parser);
+		if (!case_expr) return NULL;
+		switch_case.case_expr = case_expr;
 		
 		if (!try_consume(TokenType::COLON))
 		{
@@ -1207,9 +1203,4 @@ u32 get_span_end(Parser* parser)
 void err_parse(Parser* parser, TokenType expected, option<const char*> in, u32 offset)
 {
 	err_report_parse(parser->ast, expected, in, peek_token(parser, offset));
-}
-
-void err_parse(Parser* parser, TokenType expected, option<const char*> in, Token token)
-{
-	err_report_parse(parser->ast, expected, in, token);
 }

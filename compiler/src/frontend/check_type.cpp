@@ -188,7 +188,7 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 	if (!type) return {};
 	if (!expect_type) return type;
 
-	type_implicit_cast(cc, &type.value(), expect_type.value());
+	type_implicit_cast(&type.value(), expect_type.value());
 
 	if (!type_match(type.value(), expect_type.value()))
 	{
@@ -241,7 +241,7 @@ bool type_is_poison(Ast_Type type)
 	return type.tag == Ast_Type_Tag::Poison;
 }
 
-bool resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
+option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
 {
 	switch (expr->tag)
 	{
@@ -254,7 +254,6 @@ bool resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
 		{
 			Ast_Var* var = term->as_var;
 			resolve_var(cc, var);
-
 			switch (var->tag)
 			{
 			case Ast_Var_Tag::Local:
@@ -263,135 +262,125 @@ bool resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
 				{
 					err_report(Error::VAR_LOCAL_NOT_FOUND);
 					err_context(cc, var->local.ident.span);
-					return false;
+					return {};
 				}
-			} break;
+				return Expr_Kind::Normal;
+			}
 			case Ast_Var_Tag::Global:
 			{
-				Ast_Consteval_Expr* consteval_expr = var->global.global_decl->consteval_expr;
-				if (consteval_expr->eval == Consteval::Invalid) return false;
-			} break;
-			default: return false;
+				Ast_Global_Decl* global_decl = var->global.global_decl;
+				Ast_Consteval_Expr* consteval_expr = global_decl->consteval_expr;
+				if (consteval_expr->eval != Consteval::Valid) return {};
+				
+				return resolve_expr(cc, context, consteval_expr->expr);
 			}
-		} break;
+			default: return {};
+			}
+		}
 		case Ast_Term_Tag::Enum:
 		{
 			Ast_Enum* _enum = term->as_enum;
 			resolve_enum(cc, _enum);
-			if (_enum->tag == Ast_Enum_Tag::Invalid) return false;
-		} break;
+			if (_enum->tag != Ast_Enum_Tag::Resolved) return {};
+			
+			Ast_Enum_Decl* enum_decl = _enum->resolved.type.enum_decl;
+			Ast_Enum_Variant* enum_variant = &enum_decl->variants[_enum->resolved.variant_id];
+			Ast_Consteval_Expr* consteval_expr = enum_variant->consteval_expr;
+			if (consteval_expr->eval != Consteval::Valid) return {};
+			
+			return Expr_Kind::Constfold;
+		}
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
 			resolve_sizeof(cc, size_of, true);
-			if (size_of->tag == Ast_Sizeof_Tag::Invalid) return false;
-		} break;
+			if (size_of->tag != Ast_Sizeof_Tag::Resolved) return {};
+			return Expr_Kind::Constfold;
+		}
 		case Ast_Term_Tag::Literal:
 		{
-			return true;
-		} break;
+			Ast_Literal* lit = term->as_literal;
+			if (lit->token.type == TokenType::STRING_LITERAL) return Expr_Kind::Const; //@Incomplete strings
+			else return Expr_Kind::Constfold;
+		}
 		case Ast_Term_Tag::Proc_Call:
 		{
 			Ast_Proc_Call* proc_call = term->as_proc_call;
 			resolve_proc_call(cc, proc_call);
-			if (proc_call->tag == Ast_Proc_Call_Tag::Invalid) return false;
-		} break;
+			if (proc_call->tag != Ast_Proc_Call_Tag::Resolved) return {};
+			return Expr_Kind::Normal;
+		}
 		case Ast_Term_Tag::Array_Init:
 		{
 			Ast_Array_Init* array_init = term->as_array_init;
 			resolve_array_init(cc, context, array_init, true);
-			if (array_init->tag == Ast_Array_Init_Tag::Invalid) return false;
-		} break;
+			if (array_init->tag != Ast_Array_Init_Tag::Resolved) return {};
+			
+			Expr_Kind kind = Expr_Kind::Const;
+
+			Expr_Context input_context = Expr_Context { {}, context.constness };
+			if (array_init->type) 
+			{
+				Ast_Array_Type* array = array_init->type.value().as_array;
+				input_context.expect_type = array->element_type;
+			}
+
+			for (Ast_Expr* input_expr : array_init->input_exprs)
+			{
+				option<Expr_Kind> input_kind = resolve_expr(cc, input_context, input_expr);
+				if (!input_kind) return {};
+				if (input_kind.value() == Expr_Kind::Normal) kind = Expr_Kind::Normal;
+			}
+			return kind;
+		}
 		case Ast_Term_Tag::Struct_Init:
 		{
 			Ast_Struct_Init* struct_init = term->as_struct_init;
 			resolve_struct_init(cc, context, struct_init);
-			if (struct_init->tag == Ast_Struct_Init_Tag::Invalid) return false;
-		} break;
+			if (struct_init->tag != Ast_Struct_Init_Tag::Resolved) return {};
+
+			Expr_Kind kind = Expr_Kind::Const;
+			
+			Ast_Struct_Decl* struct_decl = struct_init->resolved.type.value().struct_decl;
+			u32 count = 0;
+			
+			for (Ast_Expr* input_expr : struct_init->input_exprs)
+			{
+				Expr_Context input_context = Expr_Context { struct_decl->fields[count].type, context.constness };
+				count += 1;
+
+				option<Expr_Kind> input_kind = resolve_expr(cc, input_context, input_expr);
+				if (!input_kind) return {};
+				if (input_kind.value() == Expr_Kind::Normal) kind = Expr_Kind::Normal;
+			}
+			return kind;
 		}
-	} break;
+		default: { err_internal("resolve_expr: invalid Ast_Term_Tag"); return {}; }
+		}
+	}
 	case Ast_Expr_Tag::Unary_Expr:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
-		return resolve_expr(cc, context, unary_expr->right);
-	} break;
+		option<Expr_Kind> rhs_kind = resolve_expr(cc, context, unary_expr->right);
+		return rhs_kind;
+	}
 	case Ast_Expr_Tag::Binary_Expr:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
-		return resolve_expr(cc, context, binary_expr->left) && resolve_expr(cc, context, binary_expr->right);
-	} break;
+		option<Expr_Kind> lhs_kind = resolve_expr(cc, context, binary_expr->left);
+		option<Expr_Kind> rhs_kind = resolve_expr(cc, context, binary_expr->right);
+		if (!lhs_kind || !rhs_kind) return {};
+		return lhs_kind.value() < rhs_kind.value() ? lhs_kind.value() : rhs_kind.value();
 	}
-
-	return true;
-}
-
-bool check_is_const_expr(Ast_Expr* expr)
-{
-	if (check_is_foldable_expr(expr)) return true;
-
-	switch (expr->tag)
+	case Ast_Expr_Tag::Folded_Expr:
 	{
-	case Ast_Expr_Tag::Term:
-	{
-		Ast_Term* term = expr->as_term;
-		switch (term->tag)
-		{
-		case Ast_Term_Tag::Var:
-		{
-			Ast_Var* var = term->as_var;
-			return var->tag == Ast_Var_Tag::Global && check_is_const_expr(var->global.global_decl->consteval_expr->expr);
-		}
-		case Ast_Term_Tag::Array_Init:
-		{
-			Ast_Array_Init* array_init = term->as_array_init;
-			for (Ast_Expr* expr : array_init->input_exprs)
-			if (!check_is_const_expr(expr)) return false;
-			return true;
-		}
-		case Ast_Term_Tag::Struct_Init:
-		{
-			Ast_Struct_Init* struct_init = term->as_struct_init;
-			for (Ast_Expr* expr : struct_init->input_exprs)
-			if (!check_is_const_expr(expr)) return false;
-			return true;
-		}
-		default: return false;
-		}
+		return Expr_Kind::Constfold;
 	}
-	case Ast_Expr_Tag::Unary_Expr: return check_is_const_expr(expr->as_unary_expr->right);
-	case Ast_Expr_Tag::Binary_Expr: return check_is_const_expr(expr->as_binary_expr->left) && check_is_const_expr(expr->as_binary_expr->right);
-	default: { err_internal("check_is_const_expr: invalid Ast_Expr_Tag"); return false; }
+	default: { err_internal("resolve_expr: invalid Ast_Expr_Tag"); return {}; }
 	}
 }
 
-bool check_is_foldable_expr(Ast_Expr* expr)
-{
-	switch (expr->tag)
-	{
-	case Ast_Expr_Tag::Term:
-	{
-		Ast_Term* term = expr->as_term;
-		switch (term->tag)
-		{
-		case Ast_Term_Tag::Var:
-		{
-			Ast_Var* var = term->as_var;
-			return var->tag == Ast_Var_Tag::Global && check_is_foldable_expr(var->global.global_decl->consteval_expr->expr);
-		}
-		case Ast_Term_Tag::Enum: return true;
-		case Ast_Term_Tag::Sizeof: return true;
-		case Ast_Term_Tag::Literal: return term->as_literal->token.type != TokenType::STRING_LITERAL;
-		default: return false;
-		}
-	}
-	case Ast_Expr_Tag::Unary_Expr: return check_is_foldable_expr(expr->as_unary_expr->right);
-	case Ast_Expr_Tag::Binary_Expr: return check_is_foldable_expr(expr->as_binary_expr->left) && check_is_foldable_expr(expr->as_binary_expr->right);
-	case Ast_Expr_Tag::Folded_Expr: return true;
-	default: { err_internal("check_is_foldable_expr: invalid Ast_Expr_Tag"); return false; }
-	}
-}
-
-void type_implicit_cast(Check_Context* cc, Ast_Type* type, Ast_Type target_type)
+void type_implicit_cast(Ast_Type* type, Ast_Type target_type)
 {
 	if (type->tag != Ast_Type_Tag::Basic) return;
 	if (target_type.tag != Ast_Type_Tag::Basic) return;
@@ -411,7 +400,7 @@ void type_implicit_cast(Check_Context* cc, Ast_Type* type, Ast_Type target_type)
 	}
 }
 
-void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* type_b)
+void type_implicit_binary_cast(Ast_Type* type_a, Ast_Type* type_b)
 {
 	if (type_a->tag != Ast_Type_Tag::Basic) return;
 	if (type_b->tag != Ast_Type_Tag::Basic) return;
@@ -435,22 +424,23 @@ void type_implicit_binary_cast(Check_Context* cc, Ast_Type* type_a, Ast_Type* ty
 
 option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
 {
-	if (!resolve_expr(cc, context, expr)) return {};
-
-	if (check_is_const_expr(expr))
+	option<Expr_Kind> kind_result = resolve_expr(cc, context, expr);
+	if (!kind_result) return {};
+	Expr_Kind kind = kind_result.value();
+	
+	expr->is_const = kind == Expr_Kind::Const || kind == Expr_Kind::Constfold;
+	if (context.constness == Expr_Constness::Const && !expr->is_const)
 	{
-		expr->is_const = true;
+		err_report(Error::EXPR_EXPECTED_CONSTANT);
+		err_context(cc, expr->span);
+		return {};
 	}
 
-	if (!check_is_foldable_expr(expr))
+	switch (kind)
 	{
-		if (expr->is_const == false && context.constness == Expr_Constness::Const) //@Todo this error will be specific to the expr term level resolve checks
-		{
-			err_report(Error::EXPR_EXPECTED_CONSTANT);
-			err_context(cc, expr->span);
-			return {};
-		}
-
+	case Expr_Kind::Normal:
+	case Expr_Kind::Const:
+	{
 		switch (expr->tag)
 		{
 		case Ast_Expr_Tag::Term: return check_term(cc, context, expr->as_term);
@@ -459,9 +449,9 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 		default: { err_internal("check_expr: invalid Ast_Expr_Tag"); return {}; }
 		}
 	}
-	else
+	case Expr_Kind::Constfold:
 	{
-		if (expr->tag == Ast_Expr_Tag::Folded_Expr) 
+		if (expr->tag == Ast_Expr_Tag::Folded_Expr)
 		{
 			//@Debug potential multi check errors with multi dimentional arrays etc
 			//printf("Folding folded expr\n");
@@ -471,9 +461,9 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 
 		option<Literal> lit_result = check_folded_expr(cc, expr);
 		if (!lit_result) return {};
+		Literal lit = lit_result.value();
 
 		Ast_Folded_Expr folded = {};
-		Literal lit = lit_result.value();
 
 		switch (lit.kind)
 		{
@@ -490,7 +480,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 			if (context.expect_type)
 			{
 				Ast_Type type = context.expect_type.value();
-				if (type_match(type, type_from_basic(BasicType::F32))) 
+				if (type_match(type, type_from_basic(BasicType::F32)))
 				{
 					folded.basic_type = BasicType::F32;
 				}
@@ -510,14 +500,14 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 
 					switch (basic_type)
 					{
-					case BasicType::I8:  if (lit.as_i64 < INT8_MIN  || lit.as_i64 > INT8_MAX)  { err_internal("fold int out of range of expected i8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::I8:  if (lit.as_i64 < INT8_MIN || lit.as_i64 > INT8_MAX) { err_internal("fold int out of range of expected i8");  err_context(cc, expr->span); return {}; } break;
 					case BasicType::I16: if (lit.as_i64 < INT16_MIN || lit.as_i64 > INT16_MAX) { err_internal("fold int out of range of expected i16"); err_context(cc, expr->span); return {}; } break;
 					case BasicType::I32: if (lit.as_i64 < INT32_MIN || lit.as_i64 > INT32_MAX) { err_internal("fold int out of range of expected i32"); err_context(cc, expr->span); return {}; } break;
 					case BasicType::I64: break;
-					case BasicType::U8:  if (lit.as_i64 < 0 || lit.as_i64 > UINT8_MAX)  { err_internal("fold int out of range of expected u8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::U8:  if (lit.as_i64 < 0 || lit.as_i64 > UINT8_MAX) { err_internal("fold int out of range of expected u8");  err_context(cc, expr->span); return {}; } break;
 					case BasicType::U16: if (lit.as_i64 < 0 || lit.as_i64 > UINT16_MAX) { err_internal("fold int out of range of expected u16"); err_context(cc, expr->span); return {}; } break;
 					case BasicType::U32: if (lit.as_i64 < 0 || lit.as_i64 > UINT32_MAX) { err_internal("fold int out of range of expected u32"); err_context(cc, expr->span); return {}; } break;
-					case BasicType::U64: if (lit.as_i64 < 0)                            { err_internal("fold int out of range of expected u64"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U64: if (lit.as_i64 < 0) { err_internal("fold int out of range of expected u64"); err_context(cc, expr->span); return {}; } break;
 					default: default = true; break;
 					}
 
@@ -543,7 +533,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 					}
 				}
 			}
-			
+
 			if (default)
 			{
 				//default to: i32, i64
@@ -566,18 +556,18 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 			if (context.expect_type)
 			{
 				Ast_Type type = context.expect_type.value();
-				if (type.tag == Ast_Type_Tag::Basic) 
+				if (type.tag == Ast_Type_Tag::Basic)
 				{
 					BasicType basic_type = type.as_basic;
 					default = false;
 
 					switch (basic_type)
 					{
-					case BasicType::I8:  if (lit.as_u64 > INT8_MAX)   { err_internal("fold uint out of range of expected i8");  err_context(cc, expr->span); return {}; } break;
-					case BasicType::I16: if (lit.as_u64 > INT16_MAX)  { err_internal("fold uint out of range of expected i16"); err_context(cc, expr->span); return {}; } break;
-					case BasicType::I32: if (lit.as_u64 > INT32_MAX)  { err_internal("fold uint out of range of expected i32"); err_context(cc, expr->span); return {}; } break;
-					case BasicType::I64: if (lit.as_u64 > INT64_MAX)  { err_internal("fold uint out of range of expected i64"); err_context(cc, expr->span); return {}; } break;
-					case BasicType::U8:  if (lit.as_u64 > UINT8_MAX)  { err_internal("fold uint out of range of expected u8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::I8:  if (lit.as_u64 > INT8_MAX) { err_internal("fold uint out of range of expected i8");  err_context(cc, expr->span); return {}; } break;
+					case BasicType::I16: if (lit.as_u64 > INT16_MAX) { err_internal("fold uint out of range of expected i16"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::I32: if (lit.as_u64 > INT32_MAX) { err_internal("fold uint out of range of expected i32"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::I64: if (lit.as_u64 > INT64_MAX) { err_internal("fold uint out of range of expected i64"); err_context(cc, expr->span); return {}; } break;
+					case BasicType::U8:  if (lit.as_u64 > UINT8_MAX) { err_internal("fold uint out of range of expected u8");  err_context(cc, expr->span); return {}; } break;
 					case BasicType::U16: if (lit.as_u64 > UINT16_MAX) { err_internal("fold uint out of range of expected u16"); err_context(cc, expr->span); return {}; } break;
 					case BasicType::U32: if (lit.as_u64 > UINT32_MAX) { err_internal("fold uint out of range of expected u32"); err_context(cc, expr->span); return {}; } break;
 					case BasicType::U64: break;
@@ -589,26 +579,26 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 					case BasicType::I8:
 					case BasicType::I16:
 					case BasicType::I32:
-					case BasicType::I64: 
+					case BasicType::I64:
 					{
 						folded.basic_type = basic_type;
-						folded.as_i64 = static_cast<i64>(lit.as_u64); 
+						folded.as_i64 = static_cast<i64>(lit.as_u64);
 					} break;
 					case BasicType::U8:
 					case BasicType::U16:
 					case BasicType::U32:
-					case BasicType::U64: 
-					{ 
-						folded.basic_type = basic_type; 
-						folded.as_u64 = lit.as_u64; 
+					case BasicType::U64:
+					{
+						folded.basic_type = basic_type;
+						folded.as_u64 = lit.as_u64;
 					} break;
 					default: default = true; break;
 					}
 				}
 			}
-			
+
 			if (default)
-			{	
+			{
 				//default to: i32, i64, u64
 				if (lit.as_u64 <= INT32_MAX)
 				{
@@ -620,7 +610,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 					folded.basic_type = BasicType::I64;
 					folded.as_i64 = static_cast<i64>(lit.as_u64);
 				}
-				else 
+				else
 				{
 					folded.basic_type = BasicType::U64;
 					folded.as_u64 = lit.as_u64;
@@ -629,10 +619,12 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 		} break;
 		default: { err_internal("check_expr: invalid Literal_Kind"); return {}; }
 		}
-		
+
 		expr->tag = Ast_Expr_Tag::Folded_Expr;
 		expr->as_folded_expr = folded;
 		return type_from_basic(folded.basic_type);
+	}
+	default: { err_internal("check_expr: invalid Expr_Kind"); return {}; }
 	}
 }
 
@@ -975,7 +967,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 		return {};
 	}
 
-	type_implicit_binary_cast(cc, &lhs, &rhs);
+	type_implicit_binary_cast(&lhs, &rhs);
 	//@Todo int basic types arent accounted for during this
 
 	switch (op)

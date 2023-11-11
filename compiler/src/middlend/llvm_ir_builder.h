@@ -22,7 +22,7 @@ static IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var);
 static IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_option, Value ptr, Ast_Type ast_type);
 static Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr);
 static Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr);
-static Value build_folded_expr(IR_Builder_Context* bc, Ast_Folded_Expr folded_expr);
+static Value build_folded_expr(Ast_Folded_Expr folded_expr);
 static void build_implicit_cast(IR_Builder_Context* bc, Value* value, Type type, Type target_type);
 static void build_implicit_binary_cast(IR_Builder_Context* bc, Value* value_lhs, Value* value_rhs, Type type_lhs, Type type_rhs);
 static char* ident_to_cstr(Ast_Ident& ident);
