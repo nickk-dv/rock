@@ -34,6 +34,7 @@ enum class TokenType
 	KEYWORD_TRUE,          // true
 	KEYWORD_FALSE,         // false
 	KEYWORD_FOR,           // for
+	KEYWORD_CAST,          // cast
 	KEYWORD_DEFER,         // defer
 	KEYWORD_BREAK,         // break
 	KEYWORD_RETURN,        // return

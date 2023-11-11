@@ -61,6 +61,7 @@ struct Ast_Access;
 struct Ast_Var_Access;
 struct Ast_Array_Access;
 struct Ast_Enum;
+struct Ast_Cast;
 struct Ast_Sizeof;
 struct Ast_Proc_Call;
 struct Ast_Array_Init;
@@ -291,16 +292,16 @@ struct Ast_Block
 
 enum class Ast_Statement_Tag
 {
-	If, 
-	For, 
-	Block, 
-	Defer, 
-	Break, 
+	If,
+	For,
+	Block,
+	Defer,
+	Break,
 	Return,
-	Switch, 
-	Continue, 
-	Var_Decl, 
-	Var_Assign, 
+	Switch,
+	Continue,
+	Var_Decl,
+	Var_Assign,
 	Proc_Call,
 };
 
@@ -477,6 +478,7 @@ enum class Ast_Term_Tag
 {
 	Var,
 	Enum,
+	Cast,
 	Sizeof,
 	Literal,
 	Proc_Call,
@@ -492,6 +494,7 @@ struct Ast_Term
 	{
 		Ast_Var* as_var;
 		Ast_Enum* as_enum;
+		Ast_Cast* as_cast;
 		Ast_Sizeof* as_sizeof;
 		Ast_Literal* as_literal;
 		Ast_Proc_Call* as_proc_call;
@@ -590,6 +593,12 @@ struct Ast_Enum
 			u32 variant_id;
 		} resolved;
 	};
+};
+
+struct Ast_Cast
+{
+	BasicType basic_type;
+	Ast_Expr* expr;
 };
 
 enum class Ast_Sizeof_Tag

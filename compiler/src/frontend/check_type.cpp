@@ -290,6 +290,18 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 			
 			return Expr_Kind::Constfold;
 		}
+		case Ast_Term_Tag::Cast:
+		{
+			Ast_Cast* cast = term->as_cast;
+			if (cast->basic_type != BasicType::F64)
+			{
+				//@Temp error
+				err_internal("Only f64 cast is supported");
+				err_context(cc, cast->expr->span);
+				return {};
+			}
+			return resolve_expr(cc, context, cast->expr);
+		}
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
@@ -636,6 +648,13 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* t
 	switch (term->tag)
 	{
 	case Ast_Term_Tag::Var: return check_var(cc, term->as_var);
+	case Ast_Term_Tag::Cast:
+	{
+		Ast_Cast* cast = term->as_cast;
+		option<Ast_Type> expr_type = check_expr_type(cc, cast->expr, {}, context.constness);
+		//@Check that type can be cast into basic_type
+		return type_from_basic(cast->basic_type);
+	}
 	case Ast_Term_Tag::Literal:
 	{
 		Ast_Literal literal = *term->as_literal;
@@ -1038,6 +1057,11 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		case Ast_Term_Tag::Enum:
 		{
 			err_internal("Enum folding isnt supported");
+			return {};
+		}
+		case Ast_Term_Tag::Cast:
+		{
+			err_internal("Cast folding isnt supported");
 			return {};
 		}
 		case Ast_Term_Tag::Sizeof:
@@ -2028,6 +2052,11 @@ void resolve_enum(Check_Context* cc, Ast_Enum* _enum)
 	_enum->tag = Ast_Enum_Tag::Resolved;
 	_enum->resolved.type = Ast_Enum_Type { enum_info.value().enum_id, enum_info.value().enum_decl };
 	_enum->resolved.variant_id = variant_id.value();
+}
+
+void resolve_cast(Check_Context* cc, Ast_Cast* cast)
+{
+
 }
 
 void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of, bool check_array_size_expr)

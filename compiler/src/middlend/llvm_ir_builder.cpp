@@ -433,6 +433,14 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Ast_Enum* _enum = term->as_enum;
 		return bc->program->enums[_enum->resolved.type.enum_id].enum_decl->variants[_enum->resolved.variant_id].constant;
 	}
+	case Ast_Term_Tag::Cast:
+	{
+		//@Notice no presice cast info is avalable, assuming int to float cast
+		Ast_Cast* cast = term->as_cast;
+		Type type = type_from_basic_type(cast->basic_type);
+		Value value = build_expr(bc, cast->expr);
+		return LLVMBuildSIToFP(bc->builder, value, type, "cast_result");;
+	}
 	case Ast_Term_Tag::Literal:
 	{
 		Token token = term->as_literal->token;

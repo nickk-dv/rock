@@ -916,6 +916,13 @@ Ast_Term* parse_term(Parser* parser)
 		term->tag = Ast_Term_Tag::Array_Init;
 		term->as_array_init = array_init;
 	} break;
+	case TokenType::KEYWORD_CAST:
+	{
+		Ast_Cast* cast = parse_cast(parser);
+		if (!cast) return NULL;
+		term->tag = Ast_Term_Tag::Cast;
+		term->as_cast = cast;
+	} break;
 	case TokenType::KEYWORD_SIZEOF:
 	{
 		Ast_Sizeof* _sizeof = parse_sizeof(parser);
@@ -1086,6 +1093,30 @@ Ast_Enum* parse_enum(Parser* parser, bool import)
 	_enum->unresolved.variant = token_to_ident(variant.value());
 
 	return _enum;
+}
+
+Ast_Cast* parse_cast(Parser* parser)
+{
+	Ast_Cast* cast = arena_alloc<Ast_Cast>(&parser->arena);
+	consume();
+
+	if (!try_consume(TokenType::PAREN_START)) { err_parse(parser, TokenType::PAREN_START, "cast statement"); return NULL; }
+
+	Token token = peek();
+	option<BasicType> basic_type = token_to_basic_type(token.type);
+	if (!basic_type) { err_parse(parser, TokenType::TYPE_I8, "cast statement"); return NULL; } //@Error basic type set
+	cast->basic_type = basic_type.value();
+	consume();
+
+	if (!try_consume(TokenType::COMMA)) { err_parse(parser, TokenType::COMMA, "cast statement"); return NULL; }
+
+	Ast_Expr* expr = parse_sub_expr(parser);
+	if (!expr) return NULL;
+	cast->expr = expr;
+
+	if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "cast statement"); return NULL; }
+
+	return cast;
 }
 
 Ast_Sizeof* parse_sizeof(Parser* parser)

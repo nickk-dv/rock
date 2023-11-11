@@ -11,6 +11,7 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("true"),     TokenType::KEYWORD_TRUE },
 	{ hash_ascii_9("false"),    TokenType::KEYWORD_FALSE },
 	{ hash_ascii_9("for"),      TokenType::KEYWORD_FOR },
+	{ hash_ascii_9("cast"),     TokenType::KEYWORD_CAST },
 	{ hash_ascii_9("defer"),    TokenType::KEYWORD_DEFER },
 	{ hash_ascii_9("break"),    TokenType::KEYWORD_BREAK },
 	{ hash_ascii_9("return"),   TokenType::KEYWORD_RETURN },
