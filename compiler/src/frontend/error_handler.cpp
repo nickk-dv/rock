@@ -124,6 +124,15 @@ ErrorMessage err_get_message(Error error)
 	case Error::CONST_PROC_IS_NOT_CONST:        return { "Constant expression cannot contain procedure call", "" };
 	case Error::CONST_VAR_IS_NOT_GLOBAL:        return { "Constant expression variable must be a global variable", "" };
 	case Error::CONSTEVAL_DEPENDENCY_CYCLE:     return { "Compile time constant is part of dependency cycle", "" };
+	
+	case Error::CAST_EXPR_NON_BASIC_TYPE:       return { "Cast can only be used on expressions of numeric basic types", "" };
+	case Error::CAST_EXPR_BOOL_BASIC_TYPE:      return { "Cast cannot be used on bool expressions", "" };
+	case Error::CAST_EXPR_STRING_BASIC_TYPE:    return { "Cast cannot be used on string expressions", "" };
+	case Error::CAST_INTO_BOOL_BASIC_TYPE:      return { "Cast into bool is not supported", "" };
+	case Error::CAST_INTO_STRING_BASIC_TYPE:    return { "Cast into string is not supported", "" };
+	case Error::CAST_REDUNDANT_FLOAT_CAST:      return { "Cast into same float type is redundant", "Remove redundant cast" };
+	case Error::CAST_REDUNDANT_INTEGER_CAST:    return { "Cast into same integer type is redundant", "Remove redundant cast" };
+	
 	case Error::TEMP_VAR_ASSIGN_OP:             return { "Only = operator is supported in variable assignments", "" };
 	
 	default:

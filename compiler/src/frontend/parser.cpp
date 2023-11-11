@@ -29,7 +29,8 @@ Ast_Program* parse_program(Parser* parser, const char* path)
 	{
 		fs::path entry = dir_entry.path();
 		if (!fs::is_regular_file(entry)) continue;
-		if (entry.extension() != ".txt") continue;
+		//@No extension requirements yet
+		//if (entry.extension() != ".txt") continue;
 		
 		FILE* file;
 		fopen_s(&file, entry.u8string().c_str(), "rb");

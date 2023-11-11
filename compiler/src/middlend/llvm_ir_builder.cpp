@@ -435,11 +435,22 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 	}
 	case Ast_Term_Tag::Cast:
 	{
-		//@Notice no presice cast info is avalable, assuming int to float cast
 		Ast_Cast* cast = term->as_cast;
 		Type type = type_from_basic_type(cast->basic_type);
 		Value value = build_expr(bc, cast->expr);
-		return LLVMBuildSIToFP(bc->builder, value, type, "cast_result");;
+		switch (cast->tag)
+		{
+		case Ast_Cast_Tag::Int_Trunc____LLVMTrunc:   return LLVMBuildCast(bc->builder, LLVMTrunc,   value, type, "cast_val");
+		case Ast_Cast_Tag::Int_Extend___LLVMSExt:    return LLVMBuildCast(bc->builder, LLVMSExt,    value, type, "cast_val");
+		case Ast_Cast_Tag::Uint_Extend__LLVMZExt:    return LLVMBuildCast(bc->builder, LLVMSExt,    value, type, "cast_val");
+		case Ast_Cast_Tag::Float_Uint___LLVMFPToUI:  return LLVMBuildCast(bc->builder, LLVMFPToUI,  value, type, "cast_val");
+		case Ast_Cast_Tag::Float_Int____LLVMFPToSI:  return LLVMBuildCast(bc->builder, LLVMFPToSI,  value, type, "cast_val");
+		case Ast_Cast_Tag::Uint_Float___LLVMSIToFP:  return LLVMBuildCast(bc->builder, LLVMUIToFP,  value, type, "cast_val");
+		case Ast_Cast_Tag::Int_Float____LLVMSIToFP:  return LLVMBuildCast(bc->builder, LLVMSIToFP,  value, type, "cast_val");
+		case Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc: return LLVMBuildCast(bc->builder, LLVMFPTrunc, value, type, "cast_val");
+		case Ast_Cast_Tag::Float_Extend_LLVMFPExt:   return LLVMBuildCast(bc->builder, LLVMFPExt,   value, type, "cast_val");
+		default: { err_internal("build_term: invalid Ast_Cast_Tag"); return NULL; }
+		}
 	}
 	case Ast_Term_Tag::Literal:
 	{

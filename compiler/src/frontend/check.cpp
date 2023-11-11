@@ -209,13 +209,13 @@ void check_decls(Check_Context* cc)
 
 	for (Ast_Struct_Decl* struct_decl : ast->structs)
 	{
-		check_consteval_expr(cc, consteval_dependency_from_struct_size(struct_decl));
+		check_consteval_expr(cc, consteval_dependency_from_struct_size(struct_decl, struct_decl->ident.span));
 	}
 
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
 		//@New pipeline
-		global_decl->type = check_consteval_expr(cc, consteval_dependency_from_global(global_decl));
+		global_decl->type = check_consteval_expr(cc, consteval_dependency_from_global(global_decl, global_decl->ident.span));
 	}
 
 	//also remove from vector if duplicate?
@@ -252,7 +252,7 @@ void check_decls(Check_Context* cc)
 				name_set.add(variant.ident, hash_ident(variant.ident));
 
 				//@New pipeline
-				check_consteval_expr(cc, consteval_dependency_from_enum_variant(&variant));
+				check_consteval_expr(cc, consteval_dependency_from_enum_variant(&variant, variant.ident.span));
 			}
 		}
 	}
@@ -299,11 +299,11 @@ void check_main_proc(Check_Context* cc)
 	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); err_context(cc); return; }
 	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
 	proc_decl->is_main = true;
-	if (proc_decl->is_external) { err_report(Error::MAIN_PROC_EXTERNAL); /*@Error add context*/ }
-	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); /*@Error add context*/ }
-	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); /*@Error add context*/ }
-	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); /*@Error add context*/ return; }
-	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); /*@Error add context*/ }
+	if (proc_decl->is_external) { err_report(Error::MAIN_PROC_EXTERNAL); err_context(cc, proc_decl->ident.span); }
+	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); err_context(cc, proc_decl->ident.span); }
+	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); err_context(cc, proc_decl->ident.span); }
+	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); err_context(cc, proc_decl->ident.span); return; }
+	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); err_context(cc, proc_decl->ident.span); }
 }
 
 void check_perform_struct_sizing(Check_Context* cc)

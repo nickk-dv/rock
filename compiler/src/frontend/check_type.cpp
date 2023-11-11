@@ -293,13 +293,9 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 		case Ast_Term_Tag::Cast:
 		{
 			Ast_Cast* cast = term->as_cast;
-			if (cast->basic_type != BasicType::F64)
-			{
-				//@Temp error
-				err_internal("Only f64 cast is supported");
-				err_context(cc, cast->expr->span);
-				return {};
-			}
+			resolve_cast(cc, context, cast);
+			if (cast->tag == Ast_Cast_Tag::Invalid) return {};
+
 			return resolve_expr(cc, context, cast->expr);
 		}
 		case Ast_Term_Tag::Sizeof:
@@ -651,8 +647,6 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* t
 	case Ast_Term_Tag::Cast:
 	{
 		Ast_Cast* cast = term->as_cast;
-		option<Ast_Type> expr_type = check_expr_type(cc, cast->expr, {}, context.constness);
-		//@Check that type can be cast into basic_type
 		return type_from_basic(cast->basic_type);
 	}
 	case Ast_Term_Tag::Literal:
@@ -831,7 +825,8 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		}
 
 		//@Notice allowing u64 for dynamic array and slice access
-		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::U64), Expr_Constness::Normal);
+		//@Temp changed u64 requirement to i32 since int casting isnt implemented yet
+		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::I32), Expr_Constness::Normal);
 
 		Ast_Type result_type = type.as_array->element_type;
 		return check_access(cc, result_type, array_access->next);
@@ -1364,27 +1359,27 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 #include "general/tree.h"
 #include "general/arena.h"
 
-Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl)
+Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl, Span span)
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Global;
-	constant.as_global = global_decl;
+	constant.as_global = Global_Dependency { global_decl, span };
 	return constant;
 }
 
-Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant)
+Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant, Span span)
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Enum_Variant;
-	constant.as_enum_variant = enum_variant;
+	constant.as_enum_variant = Enum_Variant_Dependency { enum_variant, span };
 	return constant;
 }
 
-Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* struct_decl)
+Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* struct_decl, Span span)
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Struct_Size;
-	constant.as_struct_size = struct_decl;
+	constant.as_struct_size = Struct_Size_Dependency { struct_decl, span };
 	return constant;
 }
 
@@ -1434,12 +1429,12 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 {
 	if (constant.tag == Consteval_Dependency_Tag::Struct_Size)
 	{
-		Consteval size_eval = constant.as_struct_size->size_eval;
+		Consteval size_eval = constant.as_struct_size.struct_decl->size_eval;
 		if (size_eval == Consteval::Invalid) return {};
 		if (size_eval == Consteval::Valid) return type_from_basic(BasicType::U64);
 
 		Tree<Consteval_Dependency> tree(2048, constant);
-		Consteval dependency_eval = check_struct_size_dependencies(cc, &tree.arena, constant.as_struct_size, tree.root);
+		Consteval dependency_eval = check_struct_size_dependencies(cc, &tree.arena, constant.as_struct_size.struct_decl, tree.root);
 		if (dependency_eval == Consteval::Invalid) return {};
 
 		Consteval tree_eval = check_evaluate_consteval_tree(cc, tree.root);
@@ -1455,7 +1450,7 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 		{
 			switch (constant.tag)
 			{
-			case Consteval_Dependency_Tag::Global: return constant.as_global->type.value();
+			case Consteval_Dependency_Tag::Global: return constant.as_global.global_decl->type.value();
 			case Consteval_Dependency_Tag::Enum_Variant: return type_from_basic(BasicType::I32); //@Incomplete need to know basic type of the enum, similarly to other place
 			default: { err_internal("check_consteval_expr: invalid Consteval_Dependency_Tag"); return {}; }
 			}
@@ -1470,7 +1465,7 @@ option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency co
 
 		switch (constant.tag)
 		{
-		case Consteval_Dependency_Tag::Global: return constant.as_global->type.value();
+		case Consteval_Dependency_Tag::Global: return constant.as_global.global_decl->type.value();
 		case Consteval_Dependency_Tag::Enum_Variant: return type_from_basic(BasicType::I32); //@Incomplete need to know basic type of the enum, similarly to other place
 		default: { err_internal("check_consteval_expr: invalid Consteval_Dependency_Tag"); return {}; }
 		}
@@ -1504,7 +1499,7 @@ Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_St
 				return Consteval::Invalid;
 			}
 
-			Consteval_Dependency constant = consteval_dependency_from_struct_size(field_struct);
+			Consteval_Dependency constant = consteval_dependency_from_struct_size(field_struct, field_struct->ident.span);
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 			option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
 			if (cycle_node)
@@ -1567,7 +1562,7 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 			if (eval == Consteval::Invalid) return Consteval::Invalid;
 			if (eval == Consteval::Valid) return Consteval::Not_Evaluated;
 
-			Consteval_Dependency constant = consteval_dependency_from_global(global_decl);
+			Consteval_Dependency constant = consteval_dependency_from_global(global_decl, expr->span);
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 			option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
 			if (cycle_node)
@@ -1579,6 +1574,11 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 			}
 
 			return check_consteval_dependencies(cc, arena, global_decl->consteval_expr->expr, node);
+		}
+		case Ast_Term_Tag::Cast:
+		{
+			Ast_Cast* cast = term->as_cast;
+			return check_consteval_dependencies(cc, arena, cast->expr, parent);
 		}
 		case Ast_Term_Tag::Enum:
 		{
@@ -1596,7 +1596,7 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 			if (eval == Consteval::Invalid) return Consteval::Invalid;
 			if (eval == Consteval::Valid) return Consteval::Not_Evaluated;
 
-			Consteval_Dependency constant = consteval_dependency_from_enum_variant(enum_variant);
+			Consteval_Dependency constant = consteval_dependency_from_enum_variant(enum_variant, expr->span);
 			Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 			option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
 			if (cycle_node)
@@ -1622,7 +1622,7 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 			option<Ast_Struct_Type> struct_type = type_extract_struct_value_type(size_of->type);
 			if (struct_type)
 			{
-				Consteval_Dependency constant = consteval_dependency_from_struct_size(struct_type.value().struct_decl);
+				Consteval_Dependency constant = consteval_dependency_from_struct_size(struct_type.value().struct_decl, expr->span);
 				Tree_Node<Consteval_Dependency>* node = tree_node_add_child(arena, parent, constant);
 				option<Tree_Node<Consteval_Dependency>*> cycle_node = tree_node_find_cycle(node, constant, match_const_dependency);
 				if (cycle_node)
@@ -1762,7 +1762,7 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 	{
 	case Consteval_Dependency_Tag::Global:
 	{
-		Ast_Consteval_Expr* consteval_expr = constant.as_global->consteval_expr;
+		Ast_Consteval_Expr* consteval_expr = constant.as_global.global_decl->consteval_expr;
 		option<Ast_Type> type = check_expr_type(cc, consteval_expr->expr, {}, Expr_Constness::Const);
 		if (!type)
 		{
@@ -1770,12 +1770,12 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 			return Consteval::Invalid;
 		}
 		consteval_expr->eval = Consteval::Valid;
-		constant.as_global->type = type.value();
+		constant.as_global.global_decl->type = type.value();
 	} break;
 	case Consteval_Dependency_Tag::Enum_Variant:
 	{
 		//@Need to have access to the basic type of the enum as expected type
-		Ast_Consteval_Expr* consteval_expr = constant.as_enum_variant->consteval_expr;
+		Ast_Consteval_Expr* consteval_expr = constant.as_enum_variant.enum_variant->consteval_expr;
 		option<Ast_Type> type = check_expr_type(cc, consteval_expr->expr, {}, Expr_Constness::Const);
 		if (!type)
 		{
@@ -1786,8 +1786,8 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 	} break;
 	case Consteval_Dependency_Tag::Struct_Size:
 	{
-		compute_struct_size(constant.as_struct_size);
-		constant.as_struct_size->size_eval = Consteval::Valid;
+		compute_struct_size(constant.as_struct_size.struct_decl);
+		constant.as_struct_size.struct_decl->size_eval = Consteval::Valid;
 	} break;
 	case Consteval_Dependency_Tag::Array_Size_Expr:
 	{
@@ -1795,7 +1795,6 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 		if (!type)
 		{
 			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
-			constant.as_array_size.type->tag = Ast_Type_Tag::Poison;
 			return Consteval::Invalid;
 		}
 	} break;
@@ -1809,8 +1808,8 @@ Ast_Consteval_Expr* consteval_dependency_get_consteval_expr(Consteval_Dependency
 {
 	switch (constant.tag)
 	{
-	case Consteval_Dependency_Tag::Global: return constant.as_global->consteval_expr;
-	case Consteval_Dependency_Tag::Enum_Variant: return constant.as_enum_variant->consteval_expr;
+	case Consteval_Dependency_Tag::Global: return constant.as_global.global_decl->consteval_expr;
+	case Consteval_Dependency_Tag::Enum_Variant: return constant.as_enum_variant.enum_variant->consteval_expr;
 	default: { err_internal("const_dependency_get_consteval_expr: invalid Const_Dependency_Tag"); return NULL; }
 	}
 }
@@ -1820,9 +1819,9 @@ bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b)
 	if (a.tag != b.tag) return false;
 	switch (a.tag)
 	{
-	case Consteval_Dependency_Tag::Global: return a.as_global == b.as_global;
-	case Consteval_Dependency_Tag::Enum_Variant: return a.as_enum_variant == b.as_enum_variant;
-	case Consteval_Dependency_Tag::Struct_Size: return a.as_struct_size == b.as_struct_size;
+	case Consteval_Dependency_Tag::Global: return a.as_global.global_decl == b.as_global.global_decl;
+	case Consteval_Dependency_Tag::Enum_Variant: return a.as_enum_variant.enum_variant == b.as_enum_variant.enum_variant;
+	case Consteval_Dependency_Tag::Struct_Size: return a.as_struct_size.struct_decl == b.as_struct_size.struct_decl;
 	case Consteval_Dependency_Tag::Array_Size_Expr: return false;
 	default: { err_internal("match_const_dependency: invalid Const_Dependency_Tag"); return false; }
 	}
@@ -1833,10 +1832,10 @@ void consteval_dependency_mark_invalid(Check_Context* cc, Tree_Node<Consteval_De
 	Consteval_Dependency constant = node->value;
 	switch (constant.tag)
 	{
-	case Consteval_Dependency_Tag::Global: constant.as_global->consteval_expr->eval = Consteval::Invalid; break;
-	case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant->consteval_expr->eval = Consteval::Invalid; break;
-	case Consteval_Dependency_Tag::Struct_Size: constant.as_struct_size->size_eval = Consteval::Invalid; break;
-	case Consteval_Dependency_Tag::Array_Size_Expr: break;
+	case Consteval_Dependency_Tag::Global: constant.as_global.global_decl->consteval_expr->eval = Consteval::Invalid; break;
+	case Consteval_Dependency_Tag::Enum_Variant: constant.as_enum_variant.enum_variant->consteval_expr->eval = Consteval::Invalid; break;
+	case Consteval_Dependency_Tag::Struct_Size: constant.as_struct_size.struct_decl->size_eval = Consteval::Invalid; break;
+	case Consteval_Dependency_Tag::Array_Size_Expr: constant.as_array_size.type->tag = Ast_Type_Tag::Poison; break;
 	default: err_internal("consteval_dependency_mark_invalid: invalid Const_Dependency_Tag"); break;
 	}
 }
@@ -1848,9 +1847,9 @@ void consteval_dependency_err_context(Check_Context* cc, Tree_Node<Consteval_Dep
 	Consteval_Dependency constant = node->value;
 	switch (constant.tag)
 	{
-	case Consteval_Dependency_Tag::Global: err_context(cc, constant.as_global->consteval_expr->expr->span); break;
-	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, constant.as_enum_variant->consteval_expr->expr->span); break;
-	case Consteval_Dependency_Tag::Struct_Size: err_context(cc, constant.as_struct_size->ident.span); break;
+	case Consteval_Dependency_Tag::Global: err_context(cc, constant.as_global.span); break;
+	case Consteval_Dependency_Tag::Enum_Variant: err_context(cc, constant.as_enum_variant.span); break;
+	case Consteval_Dependency_Tag::Struct_Size: err_context(cc, constant.as_struct_size.span); break;
 	case Consteval_Dependency_Tag::Array_Size_Expr: err_context(cc, constant.as_array_size.size_expr->span); break;
 	default: err_internal("consteval_dependency_err_context: invalid Const_Dependency_Tag"); break;
 	}
@@ -2054,16 +2053,132 @@ void resolve_enum(Check_Context* cc, Ast_Enum* _enum)
 	_enum->resolved.variant_id = variant_id.value();
 }
 
-void resolve_cast(Check_Context* cc, Ast_Cast* cast)
+void resolve_cast(Check_Context* cc, Expr_Context context, Ast_Cast* cast)
 {
+	option<Ast_Type> type = check_expr_type(cc, cast->expr, {}, context.constness);
+	if (!type) 
+	{ 
+		cast->tag = Ast_Cast_Tag::Invalid; 
+		return; 
+	}
 
+	if (type.value().tag != Ast_Type_Tag::Basic)
+	{
+		err_report(Error::CAST_EXPR_NON_BASIC_TYPE);
+		printf("Type: "); print_type(type.value());
+		err_context(cc, cast->expr->span);
+		cast->tag = Ast_Cast_Tag::Invalid;
+		return;
+	}
+
+	BasicType expr_type = type.value().as_basic;
+	if (expr_type == BasicType::BOOL)   { err_report(Error::CAST_EXPR_BOOL_BASIC_TYPE);   err_context(cc, cast->expr->span); cast->tag = Ast_Cast_Tag::Invalid; return; }
+	if (expr_type == BasicType::STRING) { err_report(Error::CAST_EXPR_STRING_BASIC_TYPE); err_context(cc, cast->expr->span); cast->tag = Ast_Cast_Tag::Invalid; return; }
+	
+	BasicType cast_into = cast->basic_type;
+	if (cast_into == BasicType::BOOL)   { err_report(Error::CAST_INTO_BOOL_BASIC_TYPE);   err_context(cc, cast->expr->span); cast->tag = Ast_Cast_Tag::Invalid; return; }
+	if (cast_into == BasicType::STRING) { err_report(Error::CAST_INTO_STRING_BASIC_TYPE); err_context(cc, cast->expr->span); cast->tag = Ast_Cast_Tag::Invalid; return; }
+
+	Literal_Kind cast_kind = {};
+	Literal_Kind expr_kind = {};
+
+	switch (cast_into)
+	{
+	case BasicType::I8:
+	case BasicType::I16:
+	case BasicType::I32:
+	case BasicType::I64: cast_kind = Literal_Kind::Int; break;
+	case BasicType::U8:
+	case BasicType::U16:
+	case BasicType::U32:
+	case BasicType::U64: cast_kind = Literal_Kind::UInt; break;
+	case BasicType::F32:
+	case BasicType::F64: cast_kind = Literal_Kind::Float; break;
+	default: 
+	{
+		err_internal("resolve_cast: invalid cast_type BasicType");
+		err_context(cc, cast->expr->span);
+		cast->tag = Ast_Cast_Tag::Invalid;
+		return;
+	}
+	}
+
+	switch (expr_type)
+	{
+	case BasicType::I8:
+	case BasicType::I16:
+	case BasicType::I32:
+	case BasicType::I64: expr_kind = Literal_Kind::Int; break;
+	case BasicType::U8:
+	case BasicType::U16:
+	case BasicType::U32:
+	case BasicType::U64: expr_kind = Literal_Kind::UInt; break;
+	case BasicType::F32:
+	case BasicType::F64: expr_kind = Literal_Kind::Float; break;
+	default:
+	{
+		err_internal("resolve_cast: invalid expr_type BasicType");
+		err_context(cc, cast->expr->span);
+		cast->tag = Ast_Cast_Tag::Invalid;
+		return;
+	}
+	}
+
+	u32 cast_into_size = type_basic_size(cast_into);
+	u32 expr_type_size = type_basic_size(expr_type);
+
+	//@Todo redundant cast errors, when literal kinds are same and size is same
+	switch (expr_kind)
+	{
+	case Literal_Kind::Float:
+	{
+		switch (cast_kind)
+		{
+		case Literal_Kind::Float:
+		{
+			if (cast_into_size > expr_type_size)      cast->tag = Ast_Cast_Tag::Float_Extend_LLVMFPExt;
+			else if (cast_into_size < expr_type_size) cast->tag = Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc;
+			else
+			{
+				err_report(Error::CAST_REDUNDANT_FLOAT_CAST);
+				err_context(cc, cast->expr->span);
+				cast->tag = Ast_Cast_Tag::Invalid;
+				return;
+			}
+		} break;
+		case Literal_Kind::Int:  cast->tag = Ast_Cast_Tag::Float_Int____LLVMFPToSI; break;
+		case Literal_Kind::UInt: cast->tag = Ast_Cast_Tag::Float_Uint___LLVMFPToUI; break;
+		}
+	} break;
+	case Literal_Kind::Int:
+	{
+		switch (cast_kind)
+		{
+		case Literal_Kind::Float: cast->tag = Ast_Cast_Tag::Int_Float____LLVMSIToFP; break;
+		case Literal_Kind::Int: err_internal("resolve_cast: Int to Int unfinished"); break; //@Todo
+		case Literal_Kind::UInt: err_internal("resolve_cast: Int to Uint unfinished"); break; //@Todo
+		}
+	} break;
+	case Literal_Kind::UInt:
+	{
+		switch (cast_kind)
+		{
+		case Literal_Kind::Float: cast->tag = Ast_Cast_Tag::Uint_Float___LLVMSIToFP; break;
+		case Literal_Kind::Int: err_internal("resolve_cast: Uint to Int unfinished"); break; //@Todo
+		case Literal_Kind::UInt: err_internal("resolve_cast: Uint to Uint unfinished"); break; //@Todo
+		}
+	} break;
+	}
 }
 
 void resolve_sizeof(Check_Context* cc, Ast_Sizeof* size_of, bool check_array_size_expr)
 {
-	resolve_type(cc, &size_of->type, check_array_size_expr); //@Todo false to test
+	resolve_type(cc, &size_of->type, check_array_size_expr);
 	if (type_is_poison(size_of->type))
+	{
 		size_of->tag = Ast_Sizeof_Tag::Invalid;
+		return;
+	}
 	else size_of->tag = Ast_Sizeof_Tag::Resolved;
 }
 
@@ -2099,7 +2214,10 @@ void resolve_array_init(Check_Context* cc, Expr_Context context, Ast_Array_Init*
 	{
 		resolve_type(cc, &array_init->type.value(), check_array_size_expr);
 		if (type_is_poison(array_init->type.value()))
+		{
 			array_init->tag = Ast_Array_Init_Tag::Invalid;
+			return;
+		}
 		else array_init->tag = Ast_Array_Init_Tag::Resolved;
 	}
 
@@ -2121,6 +2239,8 @@ void resolve_array_init(Check_Context* cc, Expr_Context context, Ast_Array_Init*
 			{
 				//@err_context
 				err_report(Error::RESOLVE_ARRAY_TYPE_MISMATCH);
+				printf("Expected: "); print_type(expect_type); printf("\n");
+				printf("Got:      "); print_type(array_init->type.value()); printf("\n");
 				array_init->tag = Ast_Array_Init_Tag::Invalid;
 				return;
 			}

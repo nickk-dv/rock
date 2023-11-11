@@ -595,8 +595,24 @@ struct Ast_Enum
 	};
 };
 
+enum class Ast_Cast_Tag
+{
+	Unresolved,
+	Invalid,
+	Int_Trunc____LLVMTrunc,
+	Uint_Extend__LLVMZExt,
+	Int_Extend___LLVMSExt,
+	Float_Uint___LLVMFPToUI,
+	Float_Int____LLVMFPToSI,
+	Uint_Float___LLVMSIToFP,
+	Int_Float____LLVMSIToFP,
+	Float_Trunc__LLVMFPTrunc,
+	Float_Extend_LLVMFPExt,
+};
+
 struct Ast_Cast
 {
+	Ast_Cast_Tag tag;
 	BasicType basic_type;
 	Ast_Expr* expr;
 };
