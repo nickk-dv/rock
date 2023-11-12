@@ -30,21 +30,21 @@ static u32 type_basic_size(BasicType basic_type);
 static u32 type_basic_align(BasicType basic_type);
 static u32 type_size(Ast_Type type);
 static u32 type_align(Ast_Type type);
+static void type_implicit_cast(Ast_Type* type, Ast_Type target_type);
+static void type_implicit_binary_cast(Ast_Type* type_a, Ast_Type* type_b);
 
 option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> type, Expr_Constness constness);
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var);
 option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Checker_Proc_Call_Flags flags);
 
-option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
-
-static void type_implicit_cast(Ast_Type* type, Ast_Type target_type);
-static void type_implicit_binary_cast(Ast_Type* type_a, Ast_Type* type_b);
 static option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
+static option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
 static option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term);
 static option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Access*> optional_access);
 static option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_Unary_Expr* unary_expr);
 static option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_Binary_Expr* binary_expr);
 static option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr);
+static option<Ast_Type> check_apply_expr_fold(Check_Context* cc, Expr_Context context, Ast_Expr* expr, Literal lit);
 
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl, Span span);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant, Span span);
