@@ -70,6 +70,19 @@ ErrorMessage err_get_message(Error error)
 	switch (error)
 	{
 	case Error::COMPILER_INTERNAL:              return { "Internal compiler error", "Sumbit a bug report if you see this error" };
+	
+	case Error::OS_DIR_CREATE_FAILED:           return { "Failed to create a directory", "Verify permissions to create directories at that location" };
+	case Error::OS_FILE_CREATE_FAILED:          return { "Failed to create a file", "Verify permissions to create file at that location" };
+	case Error::OS_FILE_OPEN_FAILED:            return { "Failed to open a file", "Verify that file isnt used by another process and check for permissions" };
+	case Error::OS_FILE_READ_FAILED:            return { "Failed to read a file", "Verify that file isnt corrupted and check for permissions" };
+
+	case Error::CMD_NO_ARGS:                    return { "Usage: use 'help' command in your terminal to list all available commands", "" };
+	case Error::CMD_INVALID:                    return { "Unknown command: use 'help' command in your terminal to list all available commands", "" };
+	case Error::CMD_NEW_DIR_ALREADY_EXIST:      return { "Directory with the same name already exists", "" };
+	case Error::CMD_NEW_GIT_NOT_INSTALLED:      return { "Git is not installed, install git to create a new project", "Failed to run 'git version' command" };
+	case Error::CMD_NEW_GIT_INIT_FAILED:        return { "Git init failed while creating a new project", "Failed to run 'git init' command" };
+	case Error::PARSE_SRC_DIR_NOT_FOUND:        return { "Failed to find 'src' folder during parsing", "Make sure that current directory is set to the project root directory" };
+	
 	case Error::MAIN_FILE_NOT_FOUND:            return { "Main file not found", "Make sure src/main file exists" };
 	case Error::MAIN_PROC_NOT_FOUND:            return { "Main procedure is not found", "Make sure src/main has main :: () :: i32 { ... }" };
 	case Error::MAIN_PROC_EXTERNAL:             return { "Main procedure cannot be external", "Remove '@' from main declaration" };

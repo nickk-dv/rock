@@ -6,8 +6,10 @@
 i32 parse_cmd(int argc, char** argv);
 
 static bool match_arg(char* arg, const char* match);
-static i32 cmd_check(char* path);
-static i32 cmd_build(char* path);
-static i32 cmd_run(char* path);
+static i32 cmd_help();
+static i32 cmd_new(char* name);
+static i32 cmd_check();
+static i32 cmd_build();
+static i32 cmd_run();
 
 #endif

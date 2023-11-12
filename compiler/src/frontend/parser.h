@@ -7,7 +7,7 @@
 
 struct Parser;
 
-Ast_Program* parse_program(Parser* parser, const char* path);
+Ast_Program* parse_program(Parser* parser);
 
 static Ast* parse_ast(Parser* parser, StringView source, std::string& filepath);
 static option<Ast_Type> parse_type(Parser* parser);

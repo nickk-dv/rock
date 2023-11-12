@@ -4,7 +4,6 @@
 #include "llvm-c/Analysis.h"
 #include "llvm-c/TargetMachine.h"
 #include <stdio.h>
-#include <cstdlib>
 
 void backend_build_module(LLVMModuleRef mod)
 {

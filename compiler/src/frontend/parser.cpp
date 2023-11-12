@@ -13,28 +13,26 @@
 
 namespace fs = std::filesystem;
 
-Ast_Program* parse_program(Parser* parser, const char* path)
+Ast_Program* parse_program(Parser* parser)
 {
-	fs::path src = fs::path(path);
-	if (!fs::exists(src)) { printf("Path doesnt exist: %s\n", path); return NULL; }
-	if (!fs::is_directory(src)) { printf("Path must be a directory: %s\n", path); return NULL; }
+	fs::path src = fs::path("src");
+	if (!fs::exists(src)) { err_report(Error::PARSE_SRC_DIR_NOT_FOUND); return NULL; }
 	
 	tokenizer_init();
 	parser->strings.init();
 	arena_init(&parser->arena, 4 * 1024 * 1024);
 	Ast_Program* program = arena_alloc<Ast_Program>(&parser->arena);
-	program->module_map.init(32);
+	program->module_map.init(64);
 
 	for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(src))
 	{
 		fs::path entry = dir_entry.path();
 		if (!fs::is_regular_file(entry)) continue;
-		//@No extension requirements yet
-		//if (entry.extension() != ".txt") continue;
+		//if (entry.extension() != ".txt") continue; //@Branding check extension
 		
 		FILE* file;
 		fopen_s(&file, entry.u8string().c_str(), "rb");
-		if (!file) { printf("File open failed\n"); return NULL; }
+		if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); return NULL; } //@add context
 		fseek(file, 0, SEEK_END);
 		u64 size = (u64)ftell(file);
 		fseek(file, 0, SEEK_SET);
@@ -42,7 +40,7 @@ Ast_Program* parse_program(Parser* parser, const char* path)
 		u8* data = arena_alloc_buffer<u8>(&parser->arena, size);
 		u64 read_size = fread(data, 1, size, file);
 		fclose(file);
-		if (read_size != size) { printf("File read failed\n"); return NULL; }
+		if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); return NULL; } //@add context
 		
 		StringView source = StringView { data, size };
 		std::string filepath = entry.lexically_relative(src).replace_extension("").string();
@@ -53,11 +51,9 @@ Ast_Program* parse_program(Parser* parser, const char* path)
 		program->module_map.add(filepath, ast, hash_fnv1a_32(string_view_from_string(filepath)));
 	}
 
-	fs::path src_parent = src.parent_path();
-	fs::path build_dir = src_parent / "build";
-	if (!fs::exists(build_dir) && !fs::create_directory(build_dir))
-	{ printf("Failed to create build directory\n"); return NULL; }
-	fs::current_path(build_dir);
+	if (!fs::exists("build") && !fs::create_directory("build")) 
+	{ err_report(Error::OS_DIR_CREATE_FAILED); return NULL; } //@add context
+	fs::current_path("build");
 
 	return program;
 }
