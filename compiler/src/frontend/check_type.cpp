@@ -895,8 +895,27 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		}
 		case Ast_Term_Tag::Cast:
 		{
-			err_internal("Cast folding isnt supported");
-			return {};
+			Ast_Cast* cast = term->as_cast;
+			option<Literal> lit_result = check_folded_expr(cc, cast->expr);
+			if (!lit_result) return {};
+			Literal lit = lit_result.value();
+
+			switch (cast->tag)
+			{
+			case Ast_Cast_Tag::Integer_No_Op:            { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
+			case Ast_Cast_Tag::Int_Trunc____LLVMTrunc:   { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
+			case Ast_Cast_Tag::Uint_Extend__LLVMZExt:    { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
+			case Ast_Cast_Tag::Int_Extend___LLVMSExt:    { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
+			case Ast_Cast_Tag::Float_Uint___LLVMFPToUI: lit.as_u64 = static_cast<u64>(lit.as_f64); break;
+			case Ast_Cast_Tag::Float_Int____LLVMFPToSI: lit.as_i64 = static_cast<i64>(lit.as_f64); break;
+			case Ast_Cast_Tag::Uint_Float___LLVMUIToFP: lit.as_f64 = static_cast<f64>(lit.as_u64); break;
+			case Ast_Cast_Tag::Int_Float____LLVMSIToFP: lit.as_f64 = static_cast<f64>(lit.as_i64); break;
+			case Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc: { err_report(Error::CAST_FOLD_REDUNDANT_FLOAT_CAST); err_context(cc, expr->span); } break;
+			case Ast_Cast_Tag::Float_Extend_LLVMFPExt:   { err_report(Error::CAST_FOLD_REDUNDANT_FLOAT_CAST); err_context(cc, expr->span); } break;
+			default: { err_internal("check_folded_expr: invalid Ast_Cast_Tag"); return {}; }
+			}
+
+			return lit;
 		}
 		case Ast_Term_Tag::Sizeof:
 		{
@@ -2096,7 +2115,35 @@ void resolve_cast(Check_Context* cc, Expr_Context context, Ast_Cast* cast)
 	u32 cast_into_size = type_basic_size(cast_into);
 	u32 expr_type_size = type_basic_size(expr_type);
 
-	//@Todo redundant cast errors, when literal kinds are same and size is same
+	if (expr_type == cast_into && cast_into_size && expr_type_size)
+	{
+		switch (expr_kind)
+		{
+		case Literal_Kind::Float:
+		{
+			err_report(Error::CAST_REDUNDANT_FLOAT_CAST);
+			err_context(cc, cast->expr->span);
+			cast->tag = Ast_Cast_Tag::Invalid;
+			return;
+		}
+		case Literal_Kind::Int:
+		case Literal_Kind::UInt:
+		{
+			err_report(Error::CAST_REDUNDANT_INTEGER_CAST); 
+			err_context(cc, cast->expr->span); 
+			cast->tag = Ast_Cast_Tag::Invalid; 
+			return;
+		}
+		default:
+		{
+			err_internal("resolve_cast: invalid expr_kind Literal_Kind"); 
+			err_context(cc, cast->expr->span); 
+			cast->tag = Ast_Cast_Tag::Invalid; 
+			return;
+		}
+		}
+	}
+
 	switch (expr_kind)
 	{
 	case Literal_Kind::Float:
@@ -2106,14 +2153,7 @@ void resolve_cast(Check_Context* cc, Expr_Context context, Ast_Cast* cast)
 		case Literal_Kind::Float:
 		{
 			if (cast_into_size > expr_type_size)      cast->tag = Ast_Cast_Tag::Float_Extend_LLVMFPExt;
-			else if (cast_into_size < expr_type_size) cast->tag = Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc;
-			else
-			{
-				err_report(Error::CAST_REDUNDANT_FLOAT_CAST);
-				err_context(cc, cast->expr->span);
-				cast->tag = Ast_Cast_Tag::Invalid;
-				return;
-			}
+			else cast->tag = Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc;
 		} break;
 		case Literal_Kind::Int:  cast->tag = Ast_Cast_Tag::Float_Int____LLVMFPToSI; break;
 		case Literal_Kind::UInt: cast->tag = Ast_Cast_Tag::Float_Uint___LLVMFPToUI; break;
@@ -2124,17 +2164,35 @@ void resolve_cast(Check_Context* cc, Expr_Context context, Ast_Cast* cast)
 		switch (cast_kind)
 		{
 		case Literal_Kind::Float: cast->tag = Ast_Cast_Tag::Int_Float____LLVMSIToFP; break;
-		case Literal_Kind::Int: err_internal("resolve_cast: Int to Int unfinished"); break; //@Todo
-		case Literal_Kind::UInt: err_internal("resolve_cast: Int to Uint unfinished"); break; //@Todo
+		case Literal_Kind::Int:
+		{
+			if (cast_into_size > expr_type_size) cast->tag = Ast_Cast_Tag::Int_Extend___LLVMSExt;
+			else cast->tag = Ast_Cast_Tag::Int_Trunc____LLVMTrunc;
+		} break;
+		case Literal_Kind::UInt:
+		{
+			if (cast_into_size == expr_type_size) cast->tag = Ast_Cast_Tag::Integer_No_Op;
+			else if (cast_into_size > expr_type_size) cast->tag = Ast_Cast_Tag::Int_Extend___LLVMSExt;
+			else cast->tag = Ast_Cast_Tag::Int_Trunc____LLVMTrunc;
+		} break;
 		}
 	} break;
 	case Literal_Kind::UInt:
 	{
 		switch (cast_kind)
 		{
-		case Literal_Kind::Float: cast->tag = Ast_Cast_Tag::Uint_Float___LLVMSIToFP; break;
-		case Literal_Kind::Int: err_internal("resolve_cast: Uint to Int unfinished"); break; //@Todo
-		case Literal_Kind::UInt: err_internal("resolve_cast: Uint to Uint unfinished"); break; //@Todo
+		case Literal_Kind::Float: cast->tag = Ast_Cast_Tag::Uint_Float___LLVMUIToFP; break;
+		case Literal_Kind::Int:
+		{
+			if (cast_into_size == expr_type_size) cast->tag = Ast_Cast_Tag::Integer_No_Op;
+			else if (cast_into_size > expr_type_size) cast->tag = Ast_Cast_Tag::Uint_Extend__LLVMZExt;
+			else cast->tag = Ast_Cast_Tag::Int_Trunc____LLVMTrunc;
+		} break;
+		case Literal_Kind::UInt:
+		{
+			if (cast_into_size > expr_type_size) cast->tag = Ast_Cast_Tag::Uint_Extend__LLVMZExt;
+			else cast->tag = Ast_Cast_Tag::Int_Trunc____LLVMTrunc;
+		} break;
 		}
 	} break;
 	}

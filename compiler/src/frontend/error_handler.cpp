@@ -145,6 +145,8 @@ ErrorMessage err_get_message(Error error)
 	case Error::CAST_INTO_STRING_BASIC_TYPE:    return { "Cast into string is not supported", "" };
 	case Error::CAST_REDUNDANT_FLOAT_CAST:      return { "Cast into same float type is redundant", "Remove redundant cast" };
 	case Error::CAST_REDUNDANT_INTEGER_CAST:    return { "Cast into same integer type is redundant", "Remove redundant cast" };
+	case Error::CAST_FOLD_REDUNDANT_INT_CAST:   return { "Cast int to int in constant expression is redundant", "Remove redundant cast" };
+	case Error::CAST_FOLD_REDUNDANT_FLOAT_CAST: return { "Cast float to float in constant expression is redundant", "Remove redundant cast" };
 	
 	case Error::TEMP_VAR_ASSIGN_OP:             return { "Only = operator is supported in variable assignments", "" };
 	
