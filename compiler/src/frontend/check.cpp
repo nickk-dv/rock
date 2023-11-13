@@ -646,25 +646,15 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 	if (var_decl->type)
 	{
 		resolve_type(cc, &var_decl->type.value(), true);
-		if (type_is_poison(var_decl->type.value())) return;
-
-		if (var_decl->expr)
-		{
-			option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), Expr_Constness::Normal);
-		}
-		
-		check_context_block_add_var(cc, ident, var_decl->type.value());
+		if (type_is_poison(var_decl->type.value())) check_context_block_add_var(cc, ident, type_from_poison());
+		else check_context_block_add_var(cc, ident, var_decl->type.value());
+		if (var_decl->expr) check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), Expr_Constness::Normal);
 	}
 	else
 	{
-		// @Errors this might produce "var not found" error in later checks, might be solved by flagging
-		// not adding var to the stack, when inferred type is not valid
 		option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), {}, Expr_Constness::Normal);
-		if (expr_type)
-		{
-			var_decl->type = expr_type.value();
-			check_context_block_add_var(cc, ident, expr_type.value());
-		}
+		if (expr_type) check_context_block_add_var(cc, ident, expr_type.value());
+		else check_context_block_add_var(cc, ident, type_from_poison());
 	}
 }
 

@@ -22,6 +22,7 @@ struct Expr_Context
 bool type_is_poison(Ast_Type type);
 bool type_match(Ast_Type type_a, Ast_Type type_b);
 Type_Kind type_kind(Ast_Type type);
+Ast_Type type_from_poison();
 Ast_Type type_from_basic(BasicType basic_type);
 option<Ast_Struct_Type> type_extract_struct_value_type(Ast_Type type);
 option<Ast_Array_Type*> type_extract_array_value_type(Ast_Type type);

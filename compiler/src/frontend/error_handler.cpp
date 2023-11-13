@@ -103,6 +103,7 @@ ErrorMessage err_get_message(Error error)
 	
 	case Error::RESOLVE_IMPORT_NOT_FOUND:       return { "Import module is not found", "" };
 	case Error::RESOLVE_TYPE_NOT_FOUND:         return { "Custom type is not found", "" };
+	case Error::RESOLVE_TYPE_ARRAY_ZERO_SIZE:   return { "Static array cannot have size of 0", "Array size expression cannot evaluate to 0" };
 	case Error::RESOLVE_VAR_GLOBAL_NOT_FOUND:   return { "Failed to find global variable in imported module", "" };
 	case Error::RESOLVE_ENUM_NOT_FOUND:         return { "Enum type is not declared", "" };
 	case Error::RESOLVE_ENUM_VARIANT_NOT_FOUND: return { "Enum variant is not declared", "" };

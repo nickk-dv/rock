@@ -27,6 +27,13 @@ Type_Kind type_kind(Ast_Type type)
 	}
 }
 
+Ast_Type type_from_poison()
+{
+	Ast_Type type = {};
+	type.tag = Ast_Type_Tag::Poison;
+	return type;
+}
+
 Ast_Type type_from_basic(BasicType basic_type)
 {
 	Ast_Type type = {};
@@ -1905,9 +1912,20 @@ void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size)
 	{
 		if (check_array_size)
 		{
-			option<Ast_Type> size_type = check_expr_type(cc, type->as_array->size_expr, type_from_basic(BasicType::U32), Expr_Constness::Const);
+			Ast_Expr* size_expr = type->as_array->size_expr;
+			
+			option<Ast_Type> size_type = check_expr_type(cc, size_expr, type_from_basic(BasicType::U32), Expr_Constness::Const);
 			if (!size_type)
 			{
+				type->tag = Ast_Type_Tag::Poison;
+				return;
+			}
+			
+			Ast_Folded_Expr size_folded = size_expr->as_folded_expr;
+			if (size_folded.as_u64 == 0) 
+			{
+				err_report(Error::RESOLVE_TYPE_ARRAY_ZERO_SIZE);
+				err_context(cc, size_expr->span);
 				type->tag = Ast_Type_Tag::Poison;
 				return;
 			}
