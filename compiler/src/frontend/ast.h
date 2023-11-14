@@ -432,11 +432,23 @@ enum class Ast_Expr_Tag
 	Folded_Expr,
 };
 
+enum Ast_Expr_Flags
+{
+	AST_EXPR_FLAG_CONST_BIT               = 1 << 0,
+	AST_EXPR_FLAG_AUTO_CAST_F32_F64_BIT   = 1 << 1,
+	AST_EXPR_FLAG_AUTO_CAST_F64_F32_BIT   = 1 << 2,
+	AST_EXPR_FLAG_AUTO_CAST_INT_SEXT_BIT  = 1 << 3,
+	AST_EXPR_FLAG_AUTO_CAST_UINT_ZEXT_BIT = 1 << 4,
+	AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT = 1 << 5,
+	AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT = 1 << 6,
+	AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT = 1 << 7,
+};
+
 struct Ast_Expr
 {
 	Span span;
 	Ast_Expr_Tag tag;
-	bool is_const;
+	u8 flags;
 
 	union
 	{

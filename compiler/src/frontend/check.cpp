@@ -555,7 +555,7 @@ void check_statement_switch(Check_Context* cc, Ast_Switch* _switch)
 	if (!type) return;
 
 	Type_Kind kind = type_kind(type.value());
-	if (kind != Type_Kind::Integer && kind != Type_Kind::Enum)
+	if (kind != Type_Kind::Int && kind != Type_Kind::Uint && kind != Type_Kind::Enum)
 	{
 		err_report(Error::SWITCH_INCORRECT_EXPR_TYPE);
 		//@Context add expr type

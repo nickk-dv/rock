@@ -13,11 +13,19 @@ Type_Kind type_kind(Ast_Type type)
 	{
 		switch (type.as_basic)
 		{
+		case BasicType::I8:
+		case BasicType::I16:
+		case BasicType::I32:
+		case BasicType::I64: return Type_Kind::Int;
+		case BasicType::U8:
+		case BasicType::U16:
+		case BasicType::U32:
+		case BasicType::U64: return Type_Kind::Uint;
 		case BasicType::F32:
 		case BasicType::F64: return Type_Kind::Float;
 		case BasicType::BOOL: return Type_Kind::Bool;
 		case BasicType::STRING: return Type_Kind::String;
-		default: return Type_Kind::Integer;
+		default: { err_internal("type_kind: invalid Ast_Type_Tag"); return Type_Kind::Bool; }
 		}
 	}
 	case Ast_Type_Tag::Array: return Type_Kind::Array;
@@ -194,7 +202,7 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 	if (!type) return {};
 	if (!expect_type) return type;
 
-	type_implicit_cast(&type.value(), expect_type.value());
+	type_auto_cast(&type.value(), expect_type.value(), expr);
 
 	if (!type_match(type.value(), expect_type.value()))
 	{
@@ -247,45 +255,74 @@ bool type_is_poison(Ast_Type type)
 	return type.tag == Ast_Type_Tag::Poison;
 }
 
-void type_implicit_cast(Ast_Type* type, Ast_Type target_type)
+void type_auto_cast(Ast_Type* type, Ast_Type expect_type, Ast_Expr* expr)
 {
 	if (type->tag != Ast_Type_Tag::Basic) return;
-	if (target_type.tag != Ast_Type_Tag::Basic) return;
-	if (type->as_basic == target_type.as_basic) return;
+	if (expect_type.tag != Ast_Type_Tag::Basic) return;
+	if (type->as_basic == expect_type.as_basic) return;
+	
 	Type_Kind kind = type_kind(*type);
-	Type_Kind target_kind = type_kind(target_type);
+	Type_Kind expect_kind = type_kind(expect_type);
 
-	if (kind == Type_Kind::Float && target_kind == Type_Kind::Float)
+	if (kind == Type_Kind::Float && expect_kind == Type_Kind::Float)
 	{
-		type->as_basic = target_type.as_basic;
+		if (type->as_basic == BasicType::F32)
+		{
+			type->as_basic = BasicType::F64;
+			expr->flags |= AST_EXPR_FLAG_AUTO_CAST_F32_F64_BIT;
+		}
+		else
+		{
+			type->as_basic = BasicType::F32;
+			expr->flags |= AST_EXPR_FLAG_AUTO_CAST_F64_F32_BIT;
+		}
 		return;
 	}
 
-	if (kind == Type_Kind::Integer && target_kind == Type_Kind::Integer)
+	u32 size = type_basic_size(type->as_basic);
+	u32 expect_size = type_basic_size(expect_type.as_basic);
+	if (expect_size <= size) return;
+	
+	if (kind == Type_Kind::Int && expect_kind == Type_Kind::Int)
 	{
-		//
+		expr->flags |= AST_EXPR_FLAG_AUTO_CAST_INT_SEXT_BIT;
+		switch (expect_type.as_basic)
+		{
+		case BasicType::I16: { type->as_basic = BasicType::I16; expr->flags |= AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT; return; }
+		case BasicType::I32: { type->as_basic = BasicType::I32; expr->flags |= AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT; return; }
+		case BasicType::I64: { type->as_basic = BasicType::I64; expr->flags |= AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT; return; }
+		default: { err_internal("type_auto_cast: invalid int upcast BasicType"); return; }
+		}
+	}
+	
+	if (kind == Type_Kind::Uint && expect_kind == Type_Kind::Uint)
+	{
+		expr->flags |= AST_EXPR_FLAG_AUTO_CAST_UINT_ZEXT_BIT;
+		switch (expect_type.as_basic)
+		{
+		case BasicType::U16: { type->as_basic = BasicType::U16; expr->flags |= AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT; return; }
+		case BasicType::U32: { type->as_basic = BasicType::U32; expr->flags |= AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT; return; }
+		case BasicType::U64: { type->as_basic = BasicType::U64; expr->flags |= AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT; return; }
+		default: { err_internal("type_auto_cast: invalid uint upcast BasicType"); return; }
+		}
 	}
 }
 
-void type_implicit_binary_cast(Ast_Type* type_a, Ast_Type* type_b)
+void type_auto_binary_cast(Ast_Type* lhs_type, Ast_Type* rhs_type, Ast_Expr* lhs_expr, Ast_Expr* rhs_expr)
 {
-	if (type_a->tag != Ast_Type_Tag::Basic) return;
-	if (type_b->tag != Ast_Type_Tag::Basic) return;
-	if (type_a->as_basic == type_b->as_basic) return;
-	Type_Kind kind_a = type_kind(*type_a);
-	Type_Kind kind_b = type_kind(*type_b);
+	if (lhs_type->tag != Ast_Type_Tag::Basic) return;
+	if (rhs_type->tag != Ast_Type_Tag::Basic) return;
+	if (lhs_type->as_basic == rhs_type->as_basic) return;
+	
+	Type_Kind lhs_kind = type_kind(*lhs_type);
+	Type_Kind rhs_kind = type_kind(*rhs_type);
 
-	if (kind_a == Type_Kind::Float && kind_b == Type_Kind::Float)
+	if (lhs_kind == rhs_kind)
 	{
-		if (type_a->as_basic == BasicType::F32)
-			type_a->as_basic = BasicType::F64;
-		else type_b->as_basic = BasicType::F64;
-		return;
-	}
-
-	if (kind_a == Type_Kind::Integer && kind_b == Type_Kind::Integer)
-	{
-		//
+		u32 lhs_size = type_basic_size(lhs_type->as_basic);
+		u32 rhs_size = type_basic_size(rhs_type->as_basic);
+		if (lhs_size < rhs_size) type_auto_cast(lhs_type, *rhs_type, lhs_expr);
+		else type_auto_cast(rhs_type, *lhs_type, rhs_expr);
 	}
 }
 
@@ -295,8 +332,12 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 	if (!kind_result) return {};
 	Expr_Kind kind = kind_result.value();
 	
-	expr->is_const = kind == Expr_Kind::Const || kind == Expr_Kind::Constfold;
-	if (context.constness == Expr_Constness::Const && !expr->is_const)
+	if (kind == Expr_Kind::Const || kind == Expr_Kind::Constfold)
+	{
+		expr->flags |= AST_EXPR_FLAG_CONST_BIT;
+	}
+
+	if (context.constness == Expr_Constness::Const && (expr->flags & AST_EXPR_FLAG_CONST_BIT) == 0)
 	{
 		err_report(Error::EXPR_EXPECTED_CONSTANT);
 		err_context(cc, expr->span);
@@ -780,7 +821,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_U
 	{
 	case UnaryOp::MINUS:
 	{
-		if (rhs_kind == Type_Kind::Float || rhs_kind == Type_Kind::Integer) return rhs;
+		if (rhs_kind == Type_Kind::Float || rhs_kind == Type_Kind::Int || rhs_kind == Type_Kind::Uint) return rhs;
 		err_set; printf("UNARY OP - only works on float or integer\n");
 		return {};
 	}
@@ -792,7 +833,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_U
 	}
 	case UnaryOp::BITWISE_NOT:
 	{
-		if (rhs_kind == Type_Kind::Integer) return rhs;
+		if (rhs_kind == Type_Kind::Int || rhs_kind == Type_Kind::Uint) return rhs;
 		err_set; printf("UNARY OP ~ only works on integer\n");
 		return {};
 	}
@@ -825,15 +866,15 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	Type_Kind rhs_kind = type_kind(rhs);
 	bool same_kind = lhs_kind == rhs_kind;
 
-	//if (!same_kind)
+	//if (!same_kind) //@Maybe still use it for simplicity
 	//{
 	//	err_set;
 	//	printf("Binary expr cannot be done on different type kinds\n");
 	//	return {};
 	//}
 
-	type_implicit_binary_cast(&lhs, &rhs);
-	//@Todo int basic types arent accounted for during this
+	type_auto_binary_cast(&lhs, &rhs, binary_expr->left, binary_expr->right);
+	//@Enforce same basic type for non enums
 
 	switch (op)
 	{
@@ -886,7 +927,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	case BinaryOp::IS_EQUALS: //@Todo == != on enums
 	case BinaryOp::NOT_EQUALS:
 	{
-		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return type_from_basic(BasicType::BOOL);
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return type_from_basic(BasicType::BOOL);
 		err_set; printf("BINARY Comparison Ops (< > <= >= == !=) only work on floats or integers\n");
 		return {};
 	}
@@ -895,13 +936,13 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	case BinaryOp::TIMES:
 	case BinaryOp::DIV:
 	{
-		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Integer) return lhs;
+		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return lhs;
 		err_set; printf("BINARY Math Ops (+ - * /) only work on floats or integers\n");
 		return {};
 	}
 	case BinaryOp::MOD:
 	{
-		if (lhs_kind == Type_Kind::Integer) return lhs;
+		if (lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return lhs;
 		err_set; printf("BINARY Op %% only works on integers\n");
 		return {};
 	}
@@ -911,7 +952,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	case BinaryOp::BITSHIFT_LEFT:
 	case BinaryOp::BITSHIFT_RIGHT:
 	{
-		if (lhs_kind == Type_Kind::Integer) return lhs;
+		if (lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return lhs;
 		err_set; printf("BINARY Bitwise Ops (& | ^ << >>) only work on integers\n");
 		return {};
 	}

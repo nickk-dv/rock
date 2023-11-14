@@ -282,7 +282,6 @@ void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
 	if (var_decl->expr)
 	{
 		Value value = build_expr(bc, var_decl->expr.value());
-		build_implicit_cast(bc, &value, LLVMTypeOf(value), type);
 		LLVMBuildStore(bc->builder, value, var_ptr);
 	}
 	else
@@ -298,7 +297,6 @@ void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
 {
 	IR_Access_Info access_info = build_var(bc, var_assign->var);
 	Value value = build_expr(bc, var_assign->expr);
-	build_implicit_cast(bc, &value, LLVMTypeOf(value), access_info.type);
 	LLVMBuildStore(bc->builder, value, access_info.ptr);
 }
 
@@ -324,7 +322,6 @@ Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_in
 		if (field.default_expr)
 		{
 			Value value = build_expr(bc, field.default_expr.value());
-			build_implicit_cast(bc, &value, LLVMTypeOf(value), type_from_ast_type(bc, field.type));
 			values.emplace_back(value);
 		}
 		else
@@ -408,14 +405,44 @@ Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_
 
 Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 {
+	Value value = NULL;
+
 	switch (expr->tag)
 	{
-	case Ast_Expr_Tag::Term: return build_term(bc, expr->as_term, unary_address);
-	case Ast_Expr_Tag::Unary_Expr: return build_unary_expr(bc, expr->as_unary_expr);
-	case Ast_Expr_Tag::Binary_Expr: return build_binary_expr(bc, expr->as_binary_expr);
-	case Ast_Expr_Tag::Folded_Expr: return build_folded_expr(expr->as_folded_expr);
+	case Ast_Expr_Tag::Term: value = build_term(bc, expr->as_term, unary_address); break;
+	case Ast_Expr_Tag::Unary_Expr: value = build_unary_expr(bc, expr->as_unary_expr); break;
+	case Ast_Expr_Tag::Binary_Expr: value = build_binary_expr(bc, expr->as_binary_expr); break;
+	case Ast_Expr_Tag::Folded_Expr: value = build_folded_expr(expr->as_folded_expr); break;
 	default: { err_internal("build_expr: invalid Ast_Expr_Tag"); return NULL; }
 	}
+
+	return build_expr_auto_cast(bc, expr, value);
+}
+
+Value build_expr_auto_cast(IR_Builder_Context* bc, Ast_Expr* expr, Value value)
+{
+	if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_F32_F64_BIT) return LLVMBuildFPExt(bc->builder, value, LLVMDoubleType(), "auto_cast_f");
+	if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_F64_F32_BIT) return LLVMBuildFPTrunc(bc->builder, value, LLVMFloatType(), "auto_cast_f");
+	
+	bool sext_int = expr->flags & AST_EXPR_FLAG_AUTO_CAST_INT_SEXT_BIT;
+	if (sext_int)
+	{
+		if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT) return LLVMBuildCast(bc->builder, LLVMSExt, value, LLVMInt16Type(), "auto_cast_i");
+		if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT) return LLVMBuildCast(bc->builder, LLVMSExt, value, LLVMInt32Type(), "auto_cast_i");
+		if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT) return LLVMBuildCast(bc->builder, LLVMSExt, value, LLVMInt64Type(), "auto_cast_i");
+		return value;
+	}
+
+	bool zext_int = expr->flags & AST_EXPR_FLAG_AUTO_CAST_UINT_ZEXT_BIT;
+	if (zext_int)
+	{
+		if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT) return LLVMBuildCast(bc->builder, LLVMZExt, value, LLVMInt16Type(), "auto_cast_u");
+		if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT) return LLVMBuildCast(bc->builder, LLVMZExt, value, LLVMInt32Type(), "auto_cast_u");
+		if (expr->flags & AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT) return LLVMBuildCast(bc->builder, LLVMZExt, value, LLVMInt64Type(), "auto_cast_u");
+		return value;
+	}
+
+	return value;
 }
 
 Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
@@ -477,23 +504,19 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		bool is_const = true;
 		for (Ast_Expr* expr : struct_init->input_exprs)
 		{
-			if (!expr->is_const) is_const = false;
+			if ((expr->flags & AST_EXPR_FLAG_CONST_BIT) == 0) is_const = false;
 			values.emplace_back(build_expr(bc, expr));
 		}
 		if (is_const) return LLVMConstNamedStruct(type, values.data(), (u32)values.size());
 
 		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_struct");
 		
-		u32 count = 0;
-		for (Ast_Expr* expr : struct_init->input_exprs)
+		for (u32 i = 0; i < (u32)struct_init->input_exprs.size(); i += 1)
 		{
-			Value value = build_expr(bc, expr);
-			Type field_type = LLVMStructGetTypeAtIndex(type, count);
-			build_implicit_cast(bc, &value, LLVMTypeOf(value), field_type);
-			Value field_ptr = LLVMBuildStructGEP2(bc->builder, type, temp_ptr, count, "fieldptr");
-			LLVMBuildStore(bc->builder, value, field_ptr);
-			count += 1;
+			Value field_ptr = LLVMBuildStructGEP2(bc->builder, type, temp_ptr, i, "fieldptr");
+			LLVMBuildStore(bc->builder, values[i], field_ptr);
 		}
+
 		Value temp_value = LLVMBuildLoad2(bc->builder, type, temp_ptr, "temp_struct_val");
 		return temp_value;
 	}
@@ -507,23 +530,20 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		bool is_const = true;
 		for (Ast_Expr* expr : array_init->input_exprs)
 		{
-			if (!expr->is_const) is_const = false;
+			if ((expr->flags & AST_EXPR_FLAG_CONST_BIT) == 0) is_const = false;
 			values.emplace_back(build_expr(bc, expr));
 		}
 		if (is_const) return LLVMConstArray(element_type, values.data(), (u32)values.size());
 		
 		Value temp_ptr = LLVMBuildAlloca(bc->builder, type, "temp_array");
 		
-		u32 count = 0;
-		for (Ast_Expr* expr : array_init->input_exprs)
+		for (u32 i = 0; i < (u32)array_init->input_exprs.size(); i += 1)
 		{
-			Value value = build_expr(bc, expr);
-			build_implicit_cast(bc, &value, LLVMTypeOf(value), element_type);
-			Value index = LLVMConstInt(type_from_basic_type(BasicType::U32), count, 0);
+			Value index = LLVMConstInt(type_from_basic_type(BasicType::U32), i, 0);
 			Value array_ptr = LLVMBuildGEP2(bc->builder, element_type, temp_ptr, &index, 1, "arrayptr");
-			LLVMBuildStore(bc->builder, value, array_ptr);
-			count += 1;
+			LLVMBuildStore(bc->builder, values[i], array_ptr);
 		}
+
 		Value temp_value = LLVMBuildLoad2(bc->builder, type, temp_ptr, "temp_array_val");
 		return temp_value;
 	}
@@ -619,9 +639,7 @@ Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr)
 	Value lhs = build_expr(bc, binary_expr->left);
 	Value rhs = build_expr(bc, binary_expr->right);
 	Type lhs_type = LLVMTypeOf(lhs);
-	Type rhs_type = LLVMTypeOf(rhs);
 	bool float_kind = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind || LLVMGetTypeKind(lhs_type) == LLVMDoubleTypeKind;
-	build_implicit_binary_cast(bc, &lhs, &rhs, lhs_type, rhs_type);
 
 	switch (op)
 	{
@@ -664,46 +682,6 @@ Value build_folded_expr(Ast_Folded_Expr folded_expr)
 	case BasicType::I32:
 	case BasicType::I64: return LLVMConstInt(type, folded_expr.as_i64, 1);
 	default: return LLVMConstInt(type, folded_expr.as_u64, 1);
-	}
-}
-
-void build_implicit_cast(IR_Builder_Context* bc, Value* value, Type type, Type target_type)
-{
-	if (type == target_type) return;
-	LLVMTypeKind kind = LLVMGetTypeKind(type);
-	bool is_float = kind == LLVMFloatTypeKind || kind == LLVMDoubleTypeKind;
-	bool is_int = !is_float;
-
-	if (is_float)
-	{
-		*value = LLVMBuildFPCast(bc->builder, *value, target_type, "fval");
-		return;
-	}
-
-	if (is_int)
-	{
-		//
-	}
-}
-
-void build_implicit_binary_cast(IR_Builder_Context* bc, Value* value_lhs, Value* value_rhs, Type type_lhs, Type type_rhs)
-{
-	if (type_lhs == type_rhs) return;
-	LLVMTypeKind kind_lhs = LLVMGetTypeKind(type_lhs);
-	bool is_float = kind_lhs == LLVMFloatTypeKind || kind_lhs == LLVMDoubleTypeKind;
-	bool is_int = !is_float;
-
-	if (is_float)
-	{
-		if (kind_lhs == LLVMFloatTypeKind)
-			*value_lhs = LLVMBuildFPCast(bc->builder, *value_lhs, type_rhs, "fval");
-		else *value_rhs = LLVMBuildFPCast(bc->builder, *value_rhs, type_lhs, "fval");
-		return;
-	}
-
-	if (is_int)
-	{
-		//
 	}
 }
 

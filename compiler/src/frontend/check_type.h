@@ -31,8 +31,8 @@ static u32 type_basic_size(BasicType basic_type);
 static u32 type_basic_align(BasicType basic_type);
 static u32 type_size(Ast_Type type);
 static u32 type_align(Ast_Type type);
-static void type_implicit_cast(Ast_Type* type, Ast_Type target_type);
-static void type_implicit_binary_cast(Ast_Type* type_a, Ast_Type* type_b);
+static void type_auto_cast(Ast_Type* type, Ast_Type expect_type, Ast_Expr* expr);
+static void type_auto_binary_cast(Ast_Type* type_a, Ast_Type* type_b, Ast_Expr* lhs_expr, Ast_Expr* rhs_expr);
 
 option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> type, Expr_Constness constness);
 option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var);
@@ -151,7 +151,8 @@ enum class Type_Kind
 {
 	Bool,
 	Float,
-	Integer,
+	Int,
+	Uint,
 	String,
 	Pointer,
 	Array,

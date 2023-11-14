@@ -876,7 +876,7 @@ Ast_Consteval_Expr* parse_consteval_expr(Parser* parser, Ast_Expr* expr)
 	Ast_Consteval_Expr* consteval_expr = arena_alloc<Ast_Consteval_Expr>(&parser->arena);
 	consteval_expr->eval = Consteval::Not_Evaluated;
 	consteval_expr->expr = expr;
-	expr->is_const = true;
+	expr->flags |= AST_EXPR_FLAG_CONST_BIT;
 	return consteval_expr;
 }
 
