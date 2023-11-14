@@ -85,7 +85,6 @@ struct Ast_Program
 
 struct Ast_Struct_IR_Info
 {
-	Ast* from_ast; //@Hack needed for err_context in self storage check
 	Ast_Struct_Decl* struct_decl;
 	LLVMTypeRef struct_type;
 	LLVMValueRef default_value;

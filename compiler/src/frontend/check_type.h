@@ -50,7 +50,7 @@ static option<Ast_Type> check_apply_expr_fold(Check_Context* cc, Expr_Context co
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl, Span span);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant, Span span);
 Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* struct_decl, Span span);
-option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
+void check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
 static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Struct_Decl* struct_decl, Tree_Node<Consteval_Dependency>* parent);
 static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent, option<Expr_Context> context = {});
 static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);

@@ -3,51 +3,69 @@
 #include "error_handler.h"
 #include "check_type.h"
 
-//@Todo check cant import same file under multiple names
-//@Todo check cant use same type or procedure under multiple names
-
 bool check_program(Ast_Program* program)
 {
 	Check_Context cc = {};
 
-	//1. check global symbols
-	bool main_found = false;
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
-		check_decl_uniqueness(&cc);
-		if (ast->filepath == "main")
-		{
-			main_found = true;
-			check_main_proc(&cc);
-		}
+		check_decls_symbols(&cc);
 	}
-	if (!main_found) err_report(Error::MAIN_FILE_NOT_FOUND);
+	
+	check_main_entry_point(program);
 
-	//2. check decls
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
-		check_decls(&cc);
+		check_decls_consteval(&cc);
 	}
-	//if (err.has_err || err_get_status()) return false;
 
-	//3. check struct self storage
-	check_context_init(&cc, NULL, program);
-	check_perform_struct_sizing(&cc);
-	//if (err.has_err || err_get_status()) return false;
-
-	//4. check proc blocks
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
-		check_ast(&cc);
+		check_decls_finalize(&cc);
+	}
+
+	for (Ast* ast : program->modules)
+	{
+		check_context_init(&cc, ast, program);
+		check_proc_blocks(&cc);
 	}
 
 	return !err_get_status();
 }
 
-void check_decl_uniqueness(Check_Context* cc)
+void check_main_entry_point(Ast_Program* program)
+{
+	Ast* main_ast = NULL;
+
+	for (Ast* ast : program->modules)
+	{
+		if (ast->filepath == "main") main_ast = ast;
+	}
+
+	if (main_ast == NULL) 
+	{
+		err_report(Error::MAIN_FILE_NOT_FOUND);
+		return;
+	}
+
+	Check_Context cc = {};
+	check_context_init(&cc, main_ast, program);
+
+	option<Ast_Proc_Info> proc_meta = find_proc(cc.ast, Ast_Ident{ 0, 0, { (u8*)"main", 4} });
+	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); err_context(&cc); return; }
+	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
+	proc_decl->is_main = true;
+	if (proc_decl->is_external) { err_report(Error::MAIN_PROC_EXTERNAL); err_context(&cc, proc_decl->ident.span); }
+	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); err_context(&cc, proc_decl->ident.span); }
+	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); err_context(&cc, proc_decl->ident.span); }
+	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); err_context(&cc, proc_decl->ident.span); return; }
+	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); err_context(&cc, proc_decl->ident.span); }
+}
+
+void check_decls_symbols(Check_Context* cc)
 {
 	Ast* ast = cc->ast;
 	ast->import_table.init(64);
@@ -111,7 +129,7 @@ void check_decl_uniqueness(Check_Context* cc)
 		}
 		symbol_table.add(ident, hash_ident(ident));
 		ast->struct_table.add(ident, Ast_Struct_Info { (u32)program->structs.size(), decl }, hash_ident(ident));
-		program->structs.emplace_back(Ast_Struct_IR_Info { cc->ast, decl });
+		program->structs.emplace_back(Ast_Struct_IR_Info { decl });
 	}
 
 	for (Ast_Enum_Decl* decl : ast->enums)
@@ -163,7 +181,7 @@ void check_decl_uniqueness(Check_Context* cc)
 	}
 }
 
-void check_decls(Check_Context* cc)
+void check_decls_consteval(Check_Context* cc)
 {
 	Ast* ast = cc->ast;
 
@@ -187,7 +205,7 @@ void check_decls(Check_Context* cc)
 		err_context(cc, symbol.span);
 	}
 	
-	HashSet<Ast_Ident, u32, match_ident> name_set(32);
+	HashSet<Ast_Ident, u32, match_ident> name_set(64);
 
 	for (Ast_Struct_Decl* struct_decl : ast->structs)
 	{
@@ -207,6 +225,42 @@ void check_decls(Check_Context* cc)
 		}
 	}
 
+	for (Ast_Enum_Decl* enum_decl : ast->enums)
+	{
+		if (!enum_decl->variants.empty()) name_set.zero_reset();
+
+		for (u32 i = 0; i < (u32)enum_decl->variants.size();)
+		{
+			Ast_Enum_Variant variant = enum_decl->variants[i];
+			option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
+			if (name)
+			{
+				err_report(Error::DECL_ENUM_DUPLICATE_VARIANT);
+				err_context(cc, name.value().span);
+				enum_decl->variants.erase(enum_decl->variants.begin() + i);
+			}
+			else i += 1;
+		}
+	}
+
+	for (Ast_Proc_Decl* proc_decl : ast->procs)
+	{
+		if (!proc_decl->input_params.empty()) name_set.zero_reset();
+
+		for (u32 i = 0; i < (u32)proc_decl->input_params.size();)
+		{
+			Ast_Proc_Param param = proc_decl->input_params[i];
+			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
+			if (name)
+			{
+				err_report(Error::DECL_PROC_DUPLICATE_PARAM);
+				err_context(cc, name.value().span);
+				proc_decl->input_params.erase(proc_decl->input_params.begin() + i);
+			}
+			else i += 1;
+		}
+	}
+
 	for (Ast_Struct_Decl* struct_decl : ast->structs)
 	{
 		check_consteval_expr(cc, consteval_dependency_from_struct_size(struct_decl, struct_decl->ident.span));
@@ -214,15 +268,12 @@ void check_decls(Check_Context* cc)
 
 	for (Ast_Global_Decl* global_decl : ast->globals)
 	{
-		//@New pipeline
-		global_decl->type = check_consteval_expr(cc, consteval_dependency_from_global(global_decl, global_decl->ident.span));
+		check_consteval_expr(cc, consteval_dependency_from_global(global_decl, global_decl->ident.span));
 	}
 
-	//also remove from vector if duplicate?
 	for (Ast_Enum_Decl* enum_decl : ast->enums)
 	{
-		if (!enum_decl->variants.empty()) name_set.zero_reset();
-		else
+		if (enum_decl->variants.empty())
 		{
 			err_report(Error::DECL_ENUM_ZERO_VARIANTS);
 			err_context(cc, enum_decl->ident.span);
@@ -230,8 +281,7 @@ void check_decls(Check_Context* cc)
 		}
 
 		BasicType type = enum_decl->basic_type;
-		Ast_Type enum_type = type_from_basic(type);
-
+		
 		if (!basic_type_is_integer(type))
 		{
 			err_report(Error::DECL_ENUM_NON_INTEGER_TYPE);
@@ -241,49 +291,31 @@ void check_decls(Check_Context* cc)
 
 		for (Ast_Enum_Variant& variant : enum_decl->variants)
 		{
-			option<Ast_Ident> name = name_set.find_key(variant.ident, hash_ident(variant.ident));
-			if (name) 
-			{
-				err_report(Error::DECL_ENUM_DUPLICATE_VARIANT);
-				err_context(cc, name.value().span);
-			}
-			else 
-			{
-				name_set.add(variant.ident, hash_ident(variant.ident));
-
-				//@New pipeline
-				check_consteval_expr(cc, consteval_dependency_from_enum_variant(&variant, variant.ident.span));
-			}
+			check_consteval_expr(cc, consteval_dependency_from_enum_variant(&variant, variant.ident.span));
 		}
 	}
+}
+
+void check_decls_finalize(Check_Context* cc)
+{
+	Ast* ast = cc->ast;
 
 	for (Ast_Struct_Decl* struct_decl : ast->structs)
 	{
 		for (Ast_Struct_Field& field : struct_decl->fields)
 		{
-			if (field.default_expr)
+			if (field.default_expr) 
 			{
 				check_expr_type(cc, field.default_expr.value(), field.type, Expr_Constness::Const);
 			}
 		}
 	}
 
-	//also remove from vector if duplicate?
 	for (Ast_Proc_Decl* proc_decl : ast->procs)
 	{
-		if (!proc_decl->input_params.empty()) name_set.zero_reset();
-
 		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
 			resolve_type(cc, &param.type, true);
-			
-			option<Ast_Ident> name = name_set.find_key(param.ident, hash_ident(param.ident));
-			if (name) 
-			{
-				err_report(Error::DECL_PROC_DUPLICATE_PARAM);
-				err_context(cc, name.value().span);
-			}
-			else name_set.add(param.ident, hash_ident(param.ident));
 		}
 
 		if (proc_decl->return_type)
@@ -293,115 +325,36 @@ void check_decls(Check_Context* cc)
 	}
 }
 
-void check_main_proc(Check_Context* cc)
-{
-	option<Ast_Proc_Info> proc_meta = find_proc(cc->ast, Ast_Ident { 0, 0, { (u8*)"main", 4} });
-	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); err_context(cc); return; }
-	Ast_Proc_Decl* proc_decl = proc_meta.value().proc_decl;
-	proc_decl->is_main = true;
-	if (proc_decl->is_external) { err_report(Error::MAIN_PROC_EXTERNAL); err_context(cc, proc_decl->ident.span); }
-	if (proc_decl->is_variadic) { err_report(Error::MAIN_PROC_VARIADIC); err_context(cc, proc_decl->ident.span); }
-	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); err_context(cc, proc_decl->ident.span); }
-	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); err_context(cc, proc_decl->ident.span); return; }
-	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); err_context(cc, proc_decl->ident.span); }
-}
-
-void check_perform_struct_sizing(Check_Context* cc)
-{
-	std::vector<u32> visited_ids;
-	std::vector<Ast_Ident> field_chain;
-
-	for (u32 i = 0; i < cc->program->structs.size(); i += 1)
-	{
-		visited_ids.clear();
-		field_chain.clear();
-		Ast_Struct_Decl* in_struct = cc->program->structs[i].struct_decl;
-		bool is_infinite = check_struct_self_storage(cc, in_struct, i, visited_ids, field_chain);
-		if (is_infinite)
-		{
-			in_struct->size_eval = Consteval::Invalid;
-			cc->ast = cc->program->structs[i].from_ast;
-			err_report(Error::DECL_STRUCT_SELF_STORAGE);
-			err_context(cc, in_struct->ident.span);
-			printf("Field access path: ");
-			//@Context support foreigh context by having Ast source from on decls
-			//will allow to nicely print full field paths with location and file
-			//debug_print_ident(field_chain[field_chain.size() - 1], false, false);
-			//for (int k = (int)field_chain.size() - 2; k >= 0; k -= 1)
-			//{
-			//	printf(".");
-			//	debug_print_ident(field_chain[k], false, false);
-			//}
-			//printf("\n");
-		}
-		else
-		{
-			//@Not doing struct sizing only self storage detection
-			//check_struct_size(&cc->program->structs[i]);
-		}
-	}
-
-	//@Todo sizing on valid structs
-	//@Notice struct sizing must be done in earlier stages
-	//to allow for correct const folding and range checking on sizeof expressions
-}
-
-//@Incomplete rework in context of check_perform_struct_sizing to only check for self storage and set const size_eval flag on struct decl
-bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u32 struct_id, std::vector<u32>& visited_ids, std::vector<Ast_Ident>& field_chain)
-{
-	for (Ast_Struct_Field& field : in_struct->fields)
-	{
-		option<Ast_Struct_Type> struct_type = type_extract_struct_value_type(field.type);
-		if (!struct_type) continue;
-		if (struct_type.value().struct_id == struct_id) { field_chain.emplace_back(field.ident); return true; }
-		
-		bool already_visited = false;
-		for (u32 id : visited_ids) if (struct_type.value().struct_id == id) { already_visited = true; break; }
-		if (already_visited) continue;
-		
-		visited_ids.emplace_back(struct_type.value().struct_id);
-		bool is_infinite = check_struct_self_storage(cc, struct_type.value().struct_decl, struct_id, visited_ids, field_chain);
-		if (is_infinite) { field_chain.emplace_back(field.ident); return true; }
-	}
-
-	return false;
-}
-
-void check_ast(Check_Context* cc)
+void check_proc_blocks(Check_Context* cc)
 {
 	for (Ast_Proc_Decl* proc_decl : cc->ast->procs)
 	{
-		check_proc_block(cc, proc_decl);
-	}
-}
+		if (proc_decl->is_external) continue;
 
-void check_proc_block(Check_Context* cc, Ast_Proc_Decl* proc_decl)
-{
-	if (proc_decl->is_external) return;
-
-	//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
-	//const exprs arent considered
-	Terminator terminator = check_cfg_block(cc, proc_decl->block, false, false);
-	if (terminator != Terminator::Return && proc_decl->return_type) err_report(Error::CFG_NOT_ALL_PATHS_RETURN);
-
-	check_context_block_reset(cc, proc_decl);
-	check_context_block_add(cc);
-	for (Ast_Proc_Param& param : proc_decl->input_params)
-	{
-		option<Ast_Global_Info> global_info = find_global(cc->ast, param.ident);
-		if (global_info)
+		//@Notice this doesnt correctly handle if else on top level, which may allow all paths to return
+		//const exprs arent considered
+		Terminator terminator = check_cfg_block(cc, proc_decl->block, false, false);
+		if (terminator != Terminator::Return && proc_decl->return_type)
 		{
-			err_report(Error::VAR_DECL_ALREADY_IS_GLOBAL);
-			err_context(cc, param.ident.span);
+			err_report(Error::CFG_NOT_ALL_PATHS_RETURN);
+			err_context(cc, proc_decl->ident.span);
 		}
-		else
+
+		check_context_block_reset(cc, proc_decl);
+		check_context_block_add(cc);
+		for (Ast_Proc_Param& param : proc_decl->input_params)
 		{
-			//@Notice this is checked in proc_decl but might be usefull for err recovery
-			if (!check_context_block_contains_var(cc, param.ident))
-				check_context_block_add_var(cc, param.ident, param.type);
+			option<Ast_Global_Info> global_info = find_global(cc->ast, param.ident);
+			if (global_info)
+			{
+				err_report(Error::VAR_ALREADY_IS_GLOBAL);
+				err_context(cc, param.ident.span);
+			}
+			else check_context_block_add_var(cc, param.ident, param.type);
 		}
+
+		check_statement_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
 	}
-	check_statement_block(cc, proc_decl->block, Checker_Block_Flags::Already_Added);
 }
 
 bool basic_type_is_integer(BasicType type)
@@ -629,7 +582,7 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 	option<Ast_Global_Info> global_info = find_global(cc->ast, ident);
 	if (global_info)
 	{
-		err_report(Error::VAR_DECL_ALREADY_IS_GLOBAL);
+		err_report(Error::VAR_ALREADY_IS_GLOBAL);
 		err_context(cc, var_decl->span);
 		//@Todo global decl context
 		return;
@@ -646,14 +599,24 @@ void check_statement_var_decl(Check_Context* cc, Ast_Var_Decl* var_decl)
 	if (var_decl->type)
 	{
 		resolve_type(cc, &var_decl->type.value(), true);
-		if (type_is_poison(var_decl->type.value())) check_context_block_add_var(cc, ident, type_from_poison());
-		else check_context_block_add_var(cc, ident, var_decl->type.value());
-		if (var_decl->expr) check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), Expr_Constness::Normal);
+		if (type_is_poison(var_decl->type.value())) 
+		{
+			check_context_block_add_var(cc, ident, type_from_poison());
+		}
+		else
+		{
+			check_context_block_add_var(cc, ident, var_decl->type.value());
+			if (var_decl->expr) check_expr_type(cc, var_decl->expr.value(), var_decl->type.value(), Expr_Constness::Normal);
+		}
 	}
 	else
 	{
 		option<Ast_Type> expr_type = check_expr_type(cc, var_decl->expr.value(), {}, Expr_Constness::Normal);
-		if (expr_type) check_context_block_add_var(cc, ident, expr_type.value());
+		if (expr_type) 
+		{ 
+			check_context_block_add_var(cc, ident, expr_type.value()); 
+			var_decl->type = expr_type.value(); 
+		}
 		else check_context_block_add_var(cc, ident, type_from_poison());
 	}
 }

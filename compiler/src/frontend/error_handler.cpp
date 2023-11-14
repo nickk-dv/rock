@@ -21,12 +21,14 @@ void err_report(Error error)
 	printf("\033[0m");
 
 	printf("%s\n", message.error);
-	if (message.hint != "") 
+	if (message.hint[0] != '\0')
 	printf("hint:  %s\n", message.hint);
 }
 
 void err_report_parse(Ast* source, TokenType expected, option<const char*> in, Token token)
 {
+	error_status = true;
+	
 	printf("\n\033[0;31m");
 	printf("error: ");
 	printf("\033[0m");
@@ -126,11 +128,11 @@ ErrorMessage err_get_message(Error error)
 	case Error::CFG_CONTINUE_OUTSIDE_LOOP:      return { "Continue outside a loop", "" };
 
 	case Error::VAR_LOCAL_NOT_FOUND:            return { "Local variable is not found in current scope", "" };
+	case Error::VAR_ALREADY_IS_GLOBAL:          return { "Global variable with same identifier is already in scope", "" };
 	case Error::RETURN_EXPECTED_NO_EXPR:        return { "Expected no return expression", "" };
 	case Error::RETURN_EXPECTED_EXPR:           return { "Expected return expression to match return type of the procedure", "" };
 	case Error::SWITCH_INCORRECT_EXPR_TYPE:     return { "Switching is only allowed on expression of enum or integer type", "" };
 	case Error::SWITCH_ZERO_CASES:              return { "Switch must have at least one case", "" };
-	case Error::VAR_DECL_ALREADY_IS_GLOBAL:     return { "Global variable with same identifier is already in scope", "" };
 	case Error::VAR_DECL_ALREADY_IN_SCOPE:      return { "Variable is already in scope", "Variable shadowing isnt supported" };
 
 	case Error::TYPE_MISMATCH:                  return { "Type mismatch", "" };

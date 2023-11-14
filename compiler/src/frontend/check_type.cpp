@@ -186,12 +186,11 @@ u32 type_align(Ast_Type type)
 
 option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_Type> expect_type, Expr_Constness constness)
 {
-	//@Design when context has poison type expr is not checked
 	if (expect_type && type_is_poison(expect_type.value())) return {};
 
 	Expr_Context context = { expect_type, constness };
 	option<Ast_Type> type = check_expr(cc, context, expr);
-
+	
 	if (!type) return {};
 	if (!expect_type) return type;
 
@@ -201,7 +200,7 @@ option<Ast_Type> check_expr_type(Check_Context* cc, Ast_Expr* expr, option<Ast_T
 	{
 		err_report(Error::TYPE_MISMATCH);
 		printf("Expected: "); print_type(expect_type.value()); printf("\n");
-		printf("Got: "); print_type(type.value()); printf("\n");
+		printf("Got:      "); print_type(type.value()); printf("\n");
 		err_context(cc, expr->span);
 		return {};
 	}
@@ -352,13 +351,15 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 			{
 			case Ast_Var_Tag::Local:
 			{
-				if (!check_context_block_contains_var(cc, var->local.ident))
+				option<Ast_Type> var_type = check_context_block_find_var_type(cc, var->local.ident);
+				if (!var_type)
 				{
 					err_report(Error::VAR_LOCAL_NOT_FOUND);
 					err_context(cc, var->local.ident.span);
 					return {};
 				}
-				return Expr_Kind::Normal;
+				if (type_is_poison(var_type.value())) return {};
+				else return Expr_Kind::Normal;
 			}
 			case Ast_Var_Tag::Global:
 			{
@@ -1420,49 +1421,28 @@ Consteval_Dependency consteval_dependency_from_array_size_expr(Ast_Expr* size_ex
 	return constant;
 }
 
-option<Ast_Type> check_consteval_expr(Check_Context* cc, Consteval_Dependency constant)
+void check_consteval_expr(Check_Context* cc, Consteval_Dependency constant)
 {
 	if (constant.tag == Consteval_Dependency_Tag::Struct_Size)
 	{
 		Consteval size_eval = constant.as_struct_size.struct_decl->size_eval;
-		if (size_eval == Consteval::Invalid) return {};
-		if (size_eval == Consteval::Valid) return type_from_basic(BasicType::U64);
-
-		Tree<Consteval_Dependency> tree(2048, constant);
-		Consteval dependency_eval = check_struct_size_dependencies(cc, &tree.arena, constant.as_struct_size.struct_decl, tree.root);
-		if (dependency_eval == Consteval::Invalid) return {};
-
-		Consteval tree_eval = check_evaluate_consteval_tree(cc, tree.root);
-		if (tree_eval == Consteval::Invalid) return {};
-
-		return type_from_basic(BasicType::U64);
+		if (size_eval == Consteval::Not_Evaluated)
+		{
+			Tree<Consteval_Dependency> tree(2048, constant);
+			Consteval dependency_eval = check_struct_size_dependencies(cc, &tree.arena, constant.as_struct_size.struct_decl, tree.root);
+			if (dependency_eval == Consteval::Invalid) return;
+			check_evaluate_consteval_tree(cc, tree.root);
+		}
 	}
 	else
 	{
 		Ast_Consteval_Expr* consteval_expr = consteval_dependency_get_consteval_expr(constant);
-		if (consteval_expr->eval == Consteval::Invalid) return {};
-		if (consteval_expr->eval == Consteval::Valid)
+		if (consteval_expr->eval == Consteval::Not_Evaluated)
 		{
-			switch (constant.tag)
-			{
-			case Consteval_Dependency_Tag::Global: return constant.as_global.global_decl->type.value();
-			case Consteval_Dependency_Tag::Enum_Variant: return type_from_basic(BasicType::I32); //@Incomplete need to know basic type of the enum, similarly to other place
-			default: { err_internal("check_consteval_expr: invalid Consteval_Dependency_Tag"); return {}; }
-			}
-		}
-
-		Tree<Consteval_Dependency> tree(2048, constant);
-		Consteval dependency_eval = check_consteval_dependencies(cc, &tree.arena, consteval_expr->expr, tree.root);
-		if (dependency_eval == Consteval::Invalid) return {};
-
-		Consteval tree_eval = check_evaluate_consteval_tree(cc, tree.root);
-		if (tree_eval == Consteval::Invalid) return {};
-
-		switch (constant.tag)
-		{
-		case Consteval_Dependency_Tag::Global: return constant.as_global.global_decl->type.value();
-		case Consteval_Dependency_Tag::Enum_Variant: return type_from_basic(BasicType::I32); //@Incomplete need to know basic type of the enum, similarly to other place
-		default: { err_internal("check_consteval_expr: invalid Consteval_Dependency_Tag"); return {}; }
+			Tree<Consteval_Dependency> tree(2048, constant);
+			Consteval dependency_eval = check_consteval_dependencies(cc, &tree.arena, consteval_expr->expr, tree.root);
+			if (dependency_eval == Consteval::Invalid) return;
+			check_evaluate_consteval_tree(cc, tree.root);
 		}
 	}
 }
@@ -2022,6 +2002,7 @@ void resolve_var(Check_Context* cc, Ast_Var* var)
 	}
 
 	var->tag = Ast_Var_Tag::Local;
+	var->local.ident = var->unresolved.ident;
 }
 
 void resolve_enum(Check_Context* cc, Ast_Enum* _enum)

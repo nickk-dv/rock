@@ -5,13 +5,11 @@
 
 bool check_program(Ast_Program* program);
 
-static void check_decl_uniqueness(Check_Context* cc);
-static void check_decls(Check_Context* cc);
-static void check_main_proc(Check_Context* cc);
-static void check_perform_struct_sizing(Check_Context* cc);
-static bool check_struct_self_storage(Check_Context* cc, Ast_Struct_Decl* in_struct, u32 struct_id, std::vector<u32>& visited_ids, std::vector<Ast_Ident>& field_chain);
-static void check_ast(Check_Context* cc);
-static void check_proc_block(Check_Context* cc, Ast_Proc_Decl* proc_decl);
+static void check_main_entry_point(Ast_Program* program);
+static void check_decls_symbols(Check_Context* cc);
+static void check_decls_consteval(Check_Context* cc);
+static void check_decls_finalize(Check_Context* cc);
+static void check_proc_blocks(Check_Context* cc);
 static bool basic_type_is_integer(BasicType type);
 
 static Terminator check_cfg_block(Check_Context* cc, Ast_Block* block, bool is_loop, bool is_defer);
