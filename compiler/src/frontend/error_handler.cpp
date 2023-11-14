@@ -150,6 +150,16 @@ ErrorMessage err_get_message(Error error)
 	case Error::CAST_REDUNDANT_INTEGER_CAST:    return { "Cast into same integer type is redundant", "Remove redundant cast" };
 	case Error::CAST_FOLD_REDUNDANT_INT_CAST:   return { "Cast int to int in constant expression is redundant", "Remove redundant cast" };
 	case Error::CAST_FOLD_REDUNDANT_FLOAT_CAST: return { "Cast float to float in constant expression is redundant", "Remove redundant cast" };
+
+	case Error::FOLD_UNARY_MINUS_ON_BOOL:       return { "Unary op minus '-' cannot be applied on bool values, only on numeric types", "" };
+	case Error::FOLD_UNARY_MINUS_OVERFLOW:      return { "Unary op minus '-' results in integer overflow", "Expression value cannot be represented by signed 64 bit integer" };
+	case Error::FOLD_LOGIC_NOT_ONLY_ON_BOOL:    return { "Unary op logic not '!' can only be applied to expressions of bool type", "" };
+	case Error::FOLD_BITWISE_NOT_ONLY_ON_UINT:  return { "Unary op bitwise not '~' can only be applied to expresions of unsigned integer type", "" };
+	case Error::FOLD_ADDRESS_OF_ON_CONSTANT:    return { "Unary op address '*' cannot be applied on temporary or constant value", "" };
+	case Error::FOLD_DEREFERENCE_ON_CONSTANT:   return { "Unary op dereference '<<' cannot be applied on temporary or constant value", "" };
+
+	case Error::BINARY_LOGIC_AND_ONLY_ON_BOOL:  return { "Binary '&&' can only be applied to expressions of bool type", "" };
+	case Error::BINARY_LOGIC_OR_ONLY_ON_BOOL:   return { "Binary '||' can only be applied to expressions of bool type", "" };
 	
 	case Error::TEMP_VAR_ASSIGN_OP:             return { "Only = operator is supported in variable assignments", "" };
 	

@@ -45,6 +45,8 @@ static option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<As
 static option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_Unary_Expr* unary_expr);
 static option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_Binary_Expr* binary_expr);
 static option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr);
+static option<Literal> literal_convert_int_to_uint(Literal lit);
+static option<Literal> literal_convert_uint_to_int(Literal lit);
 static option<Ast_Type> check_apply_expr_fold(Check_Context* cc, Expr_Context context, Ast_Expr* expr, Literal lit);
 
 Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl, Span span);

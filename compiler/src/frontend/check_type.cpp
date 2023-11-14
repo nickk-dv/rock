@@ -398,6 +398,10 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 			Ast_Sizeof* size_of = term->as_sizeof;
 			resolve_sizeof(cc, size_of, true);
 			if (size_of->tag != Ast_Sizeof_Tag::Resolved) return {};
+			
+			option<Ast_Struct_Type> struct_type = type_extract_struct_value_type(size_of->type);
+			if (struct_type && struct_type.value().struct_decl->size_eval != Consteval::Valid) return {};
+
 			return Expr_Kind::Constfold;
 		}
 		case Ast_Term_Tag::Literal:
@@ -794,7 +798,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_U
 	}
 	case UnaryOp::ADDRESS_OF:
 	{
-		//@Todo prevent adress of temporary values
+		//@Todo prevent adress of globals or temporary values like array init and struct init
 		rhs.pointer_level += 1;
 		return rhs;
 	}
@@ -821,12 +825,12 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	Type_Kind rhs_kind = type_kind(rhs);
 	bool same_kind = lhs_kind == rhs_kind;
 
-	if (!same_kind)
-	{
-		err_set;
-		printf("Binary expr cannot be done on different type kinds\n");
-		return {};
-	}
+	//if (!same_kind)
+	//{
+	//	err_set;
+	//	printf("Binary expr cannot be done on different type kinds\n");
+	//	return {};
+	//}
 
 	type_implicit_binary_cast(&lhs, &rhs);
 	//@Todo int basic types arent accounted for during this
@@ -834,11 +838,46 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	switch (op)
 	{
 	case BinaryOp::LOGIC_AND:
+	{
+		if (lhs_kind != Type_Kind::Bool || rhs_kind != Type_Kind::Bool)
+		{
+			err_report(Error::BINARY_LOGIC_AND_ONLY_ON_BOOL);
+			if (lhs_kind != Type_Kind::Bool)
+			{
+				err_context(cc, binary_expr->left->span);
+				printf("Expression type: ");
+				print_type(lhs); printf("\n");
+			}
+			if (rhs_kind != Type_Kind::Bool)
+			{
+				err_context(cc, binary_expr->right->span);
+				printf("Expression type: ");
+				print_type(rhs); printf("\n");
+			}
+			return {};
+		}
+		return lhs;
+	}
 	case BinaryOp::LOGIC_OR:
 	{
-		if (lhs_kind == Type_Kind::Bool) return rhs;
-		err_set; printf("BINARY Logic Ops (&& ||) only work on bools\n");
-		return {};
+		if (lhs_kind != Type_Kind::Bool || rhs_kind != Type_Kind::Bool)
+		{
+			err_report(Error::BINARY_LOGIC_OR_ONLY_ON_BOOL);
+			if (lhs_kind != Type_Kind::Bool)
+			{
+				err_context(cc, binary_expr->left->span);
+				printf("Expression type: ");
+				print_type(lhs); printf("\n");
+			}
+			if (rhs_kind != Type_Kind::Bool)
+			{
+				err_context(cc, binary_expr->right->span);
+				printf("Expression type: ");
+				print_type(rhs); printf("\n");
+			}
+			return {};
+		}
+		return lhs;
 	}
 	case BinaryOp::LESS:
 	case BinaryOp::GREATER:
@@ -894,6 +933,7 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 			//@Todo access unsupported
 			Ast_Var* var = term->as_var;
 			Ast_Consteval_Expr* consteval_expr = var->global.global_decl->consteval_expr;
+			
 			return check_folded_expr(cc, consteval_expr->expr);
 		}
 		case Ast_Term_Tag::Enum:
@@ -904,20 +944,23 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		case Ast_Term_Tag::Cast:
 		{
 			Ast_Cast* cast = term->as_cast;
+			
 			option<Literal> lit_result = check_folded_expr(cc, cast->expr);
 			if (!lit_result) return {};
 			Literal lit = lit_result.value();
-
+			
+			//@int cast can be important for bitwise operations in constants
+			//@check that literal kind matches cast tag
 			switch (cast->tag)
 			{
 			case Ast_Cast_Tag::Integer_No_Op:            { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
 			case Ast_Cast_Tag::Int_Trunc____LLVMTrunc:   { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
 			case Ast_Cast_Tag::Uint_Extend__LLVMZExt:    { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
 			case Ast_Cast_Tag::Int_Extend___LLVMSExt:    { err_report(Error::CAST_FOLD_REDUNDANT_INT_CAST); err_context(cc, expr->span); } break;
-			case Ast_Cast_Tag::Float_Uint___LLVMFPToUI: lit.as_u64 = static_cast<u64>(lit.as_f64); break;
-			case Ast_Cast_Tag::Float_Int____LLVMFPToSI: lit.as_i64 = static_cast<i64>(lit.as_f64); break;
-			case Ast_Cast_Tag::Uint_Float___LLVMUIToFP: lit.as_f64 = static_cast<f64>(lit.as_u64); break;
-			case Ast_Cast_Tag::Int_Float____LLVMSIToFP: lit.as_f64 = static_cast<f64>(lit.as_i64); break;
+			case Ast_Cast_Tag::Float_Uint___LLVMFPToUI:  { lit.as_u64 = static_cast<u64>(lit.as_f64); lit.kind = Literal_Kind::UInt;  } break; //@Basic type impacts the result, negative float wraps, disallow? range check?
+			case Ast_Cast_Tag::Float_Int____LLVMFPToSI:  { lit.as_i64 = static_cast<i64>(lit.as_f64); lit.kind = Literal_Kind::Int;   } break; //@Basic type impacts the result, range check?
+			case Ast_Cast_Tag::Uint_Float___LLVMUIToFP:  { lit.as_f64 = static_cast<f64>(lit.as_u64); lit.kind = Literal_Kind::Float; } break;
+			case Ast_Cast_Tag::Int_Float____LLVMSIToFP:  { lit.as_f64 = static_cast<f64>(lit.as_i64); lit.kind = Literal_Kind::Float; } break;
 			case Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc: { err_report(Error::CAST_FOLD_REDUNDANT_FLOAT_CAST); err_context(cc, expr->span); } break;
 			case Ast_Cast_Tag::Float_Extend_LLVMFPExt:   { err_report(Error::CAST_FOLD_REDUNDANT_FLOAT_CAST); err_context(cc, expr->span); } break;
 			default: { err_internal("check_folded_expr: invalid Ast_Cast_Tag"); return {}; }
@@ -928,8 +971,7 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		case Ast_Term_Tag::Sizeof:
 		{
 			Ast_Sizeof* size_of = term->as_sizeof;
-			if (type_is_poison(size_of->type)) return {};
-
+			
 			Literal lit = {};
 			lit.kind = Literal_Kind::UInt;
 			lit.as_u64 = type_size(size_of->type);
@@ -939,7 +981,7 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		{
 			Token token = term->as_literal->token;
 			Literal lit = {};
-
+			
 			switch (token.type)
 			{
 			case TokenType::BOOL_LITERAL:
@@ -979,42 +1021,36 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		{
 		case UnaryOp::MINUS:
 		{
-			if (rhs_kind == Literal_Kind::Bool) { printf("Cannot apply unary - to bool expression\n"); return {}; }
 			if (rhs_kind == Literal_Kind::Float) { rhs.as_f64 = -rhs.as_f64; return rhs; }
 			if (rhs_kind == Literal_Kind::Int) { rhs.as_i64 = -rhs.as_i64; return rhs; }
-
-			if (rhs.as_u64 <= 1 + static_cast<u64>(std::numeric_limits<i64>::max()))
-			{
-				rhs.kind = Literal_Kind::Int;
-				rhs.as_i64 = -static_cast<i64>(rhs.as_u64);
-				return rhs;
-			}
-			printf("Unary - results in integer oveflow\n");
-			return {};
+			if (rhs_kind == Literal_Kind::Bool) { err_report(Error::FOLD_UNARY_MINUS_OVERFLOW); err_context(cc, expr->span); return {}; }
+			
+			option<Literal> lit_int = literal_convert_uint_to_int(rhs);
+			if (!lit_int) { err_report(Error::FOLD_UNARY_MINUS_OVERFLOW); err_context(cc, expr->span); return {}; }
+			
+			rhs = lit_int.value();
+			rhs.as_i64 = -rhs.as_i64; 
+			return rhs;
 		}
 		case UnaryOp::LOGIC_NOT:
 		{
 			if (rhs_kind == Literal_Kind::Bool) { rhs.as_bool = !rhs.as_bool; return rhs; }
-			printf("Unary ! can only be applied to bool expression\n");
+			
+			err_report(Error::FOLD_LOGIC_NOT_ONLY_ON_BOOL);
+			err_context(cc, expr->span);
 			return {};
 		}
 		case UnaryOp::BITWISE_NOT:
 		{
-			if (rhs_kind == Literal_Kind::Bool) { printf("Cannot apply unary ~ to bool expression\n"); return {}; }
-			if (rhs_kind == Literal_Kind::Float) { printf("Cannot apply unary ~ to float expression\n"); return {}; }
-			if (rhs_kind == Literal_Kind::Int) { rhs.as_i64 = ~rhs.as_i64; return rhs; }
-			rhs.as_u64 = ~rhs.as_u64; return rhs;
+			option<Literal> lit_uint = literal_convert_int_to_uint(rhs);
+			if (!lit_uint) { err_report(Error::FOLD_BITWISE_NOT_ONLY_ON_UINT); err_context(cc, expr->span); return {}; }
+			
+			rhs = lit_uint.value();
+			rhs.as_u64 = ~rhs.as_u64;
+			return rhs;
 		}
-		case UnaryOp::ADDRESS_OF:
-		{
-			printf("Unary adress of * cannot be used on temporary values\n");
-			return {};
-		}
-		case UnaryOp::DEREFERENCE:
-		{
-			printf("Unary dereference << cannot be used on temporary values\n");
-			return {};
-		}
+		case UnaryOp::ADDRESS_OF:  { err_report(Error::FOLD_ADDRESS_OF_ON_CONSTANT); err_context(cc, expr->span); return {}; }
+		case UnaryOp::DEREFERENCE: { err_report(Error::FOLD_DEREFERENCE_ON_CONSTANT); err_context(cc, expr->span); return {}; }
 		default: { err_internal("check_foldable_expr: invalid UnaryOp"); return {}; }
 		}
 	}
@@ -1040,14 +1076,12 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		case BinaryOp::LOGIC_AND:
 		{
 			if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool && rhs.as_bool };
-			printf("Binary && can only be applied to bool expressions\n");
-			return {};
+			err_report(Error::BINARY_LOGIC_AND_ONLY_ON_BOOL); err_context(cc, expr->span); return {};
 		}
 		case BinaryOp::LOGIC_OR:
 		{
 			if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool || rhs.as_bool };
-			printf("Binary || can only be applied to bool expressions\n");
-			return {};
+			err_report(Error::BINARY_LOGIC_OR_ONLY_ON_BOOL); err_context(cc, expr->span); return {};
 		}
 		case BinaryOp::LESS:
 		{
@@ -1219,6 +1253,40 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		}
 	}
 	default: { err_internal("check_foldable_expr: invalid Ast_Expr_Tag"); return {}; }
+	}
+}
+
+option<Literal> literal_convert_int_to_uint(Literal lit)
+{
+	switch (lit.kind)
+	{
+	case Literal_Kind::Bool: return {};
+	case Literal_Kind::Float: return {};
+	case Literal_Kind::Int:
+	{
+		if (lit.as_i64 < 0) return {};
+		lit.kind = Literal_Kind::UInt;
+		return lit;
+	}
+	case Literal_Kind::UInt: return lit;
+	default: { err_internal("literal_convert_into_uint: invalid Literal_Kind"); return {}; }
+	}
+}
+
+option<Literal> literal_convert_uint_to_int(Literal lit)
+{
+	switch (lit.kind)
+	{
+	case Literal_Kind::Bool: return {};
+	case Literal_Kind::Float: return {};
+	case Literal_Kind::Int: return lit;
+	case Literal_Kind::UInt:
+	{
+		if (lit.as_u64 > INT64_MAX) return {};
+		lit.kind = Literal_Kind::Int;
+		return lit;
+	}
+	default: { err_internal("literal_convert_into_uint: invalid Literal_Kind"); return {}; }
 	}
 }
 
