@@ -7,7 +7,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 	IR_Builder_Context bc = {};
 	builder_context_init(&bc, program);
 
-	for (Ast_Enum_IR_Info& enum_info : program->enums)
+	for (Ast_Info_IR_Enum& enum_info : program->enums)
 	{
 		BasicType basic_type = enum_info.enum_decl->basic_type;
 		Type type = type_from_basic_type(basic_type);
@@ -21,25 +21,25 @@ LLVMModuleRef build_module(Ast_Program* program)
 
 	std::vector<Type> type_array(32);
 	
-	for (Ast_Struct_IR_Info& struct_info : program->structs)
+	for (Ast_Info_IR_Struct& struct_info : program->structs)
 	{
 		struct_info.struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), "struct");
 	}
 
-	for (Ast_Struct_IR_Info& struct_info : program->structs)
+	for (Ast_Info_IR_Struct& struct_info : program->structs)
 	{
 		type_array.clear();
-		Ast_Struct_Decl* struct_decl = struct_info.struct_decl;
+		Ast_Decl_Struct* struct_decl = struct_info.struct_decl;
 		for (Ast_Struct_Field& field : struct_decl->fields) 
 		type_array.emplace_back(type_from_ast_type(&bc, field.type));
 		
 		LLVMStructSetBody(struct_info.struct_type, type_array.data(), (u32)type_array.size(), 0);
 	}
 
-	for (Ast_Proc_IR_Info& proc_info : program->procs)
+	for (Ast_Info_IR_Proc& proc_info : program->procs)
 	{
 		type_array.clear();
-		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
+		Ast_Decl_Proc* proc_decl = proc_info.proc_decl;
 		for (Ast_Proc_Param& param : proc_decl->input_params) 
 		type_array.emplace_back(type_from_ast_type(&bc, param.type));
 
@@ -49,19 +49,19 @@ LLVMModuleRef build_module(Ast_Program* program)
 		proc_info.proc_value = LLVMAddFunction(bc.module, name, proc_info.proc_type);
 	}
 
-	for (Ast_Global_IR_Info& global_info : program->globals)
+	for (Ast_Info_IR_Global& global_info : program->globals)
 	{
 		build_global_var(&bc, &global_info);
 	}
 
-	for (Ast_Struct_IR_Info& struct_info : program->structs)
+	for (Ast_Info_IR_Struct& struct_info : program->structs)
 	{
 		struct_info.default_value = build_default_struct(&bc, &struct_info);
 	}
 	
-	for (Ast_Proc_IR_Info& proc_info : program->procs)
+	for (Ast_Info_IR_Proc& proc_info : program->procs)
 	{
-		Ast_Proc_Decl* proc_decl = proc_info.proc_decl;
+		Ast_Decl_Proc* proc_decl = proc_info.proc_decl;
 		if (proc_decl->is_external) continue;
 
 		builder_context_block_reset(&bc, proc_info.proc_value);
@@ -78,7 +78,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 			builder_context_block_add_var(&bc, IR_Var_Info { param.ident.str, copy_ptr, param.type });
 			count += 1;
 		}
-		build_block(&bc, proc_decl->block, IR_Block_Flags::Already_Added);
+		build_stmt_block(&bc, proc_decl->block, IR_Block_Flags::Already_Added);
 		
 		Basic_Block proc_exit_bb = builder_context_get_bb(&bc);
 		Value terminator = LLVMGetBasicBlockTerminator(proc_exit_bb);
@@ -89,39 +89,39 @@ LLVMModuleRef build_module(Ast_Program* program)
 	return bc.module;
 }
 
-IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Flags flags)
+IR_Terminator build_stmt_block(IR_Builder_Context* bc, Ast_Stmt_Block* block, IR_Block_Flags flags)
 {
 	if (flags != IR_Block_Flags::Already_Added) builder_context_block_add(bc);
 
-	for (Ast_Statement* statement : block->statements)
+	for (Ast_Stmt* statement : block->statements)
 	{
 		switch (statement->tag)
 		{
-		case Ast_Statement_Tag::If: build_if(bc, statement->as_if, builder_context_add_bb(bc, "cont")); break;
-		case Ast_Statement_Tag::For: build_for(bc, statement->as_for); break;
-		case Ast_Statement_Tag::Block:
+		case Ast_Stmt_Tag::If: build_stmt_if(bc, statement->as_if, builder_context_add_bb(bc, "cont")); break;
+		case Ast_Stmt_Tag::For: build_stmt_for(bc, statement->as_for); break;
+		case Ast_Stmt_Tag::Block:
 		{
-			IR_Terminator terminator = build_block(bc, statement->as_block, IR_Block_Flags::None);
+			IR_Terminator terminator = build_stmt_block(bc, statement->as_block, IR_Block_Flags::None);
 			if (terminator != IR_Terminator::None)
 			{
-				build_defer(bc, terminator);
+				build_stmt_defer(bc, terminator);
 				builder_context_block_pop_back(bc);
 				return terminator;
 			}
 		} break;
-		case Ast_Statement_Tag::Defer: builder_context_block_add_defer(bc, statement->as_defer); break;
-		case Ast_Statement_Tag::Break:
+		case Ast_Stmt_Tag::Defer: builder_context_block_add_defer(bc, statement->as_defer); break;
+		case Ast_Stmt_Tag::Break:
 		{
-			build_defer(bc, IR_Terminator::Break);
+			build_stmt_defer(bc, IR_Terminator::Break);
 			IR_Loop_Info loop = builder_context_block_get_loop(bc);
 			LLVMBuildBr(bc->builder, loop.break_block);
 			
 			builder_context_block_pop_back(bc);
 			return IR_Terminator::Break;
 		} break;
-		case Ast_Statement_Tag::Return:
+		case Ast_Stmt_Tag::Return:
 		{
-			build_defer(bc, IR_Terminator::Return);
+			build_stmt_defer(bc, IR_Terminator::Return);
 			if (statement->as_return->expr)
 				LLVMBuildRet(bc->builder, build_expr(bc, statement->as_return->expr.value()));
 			else LLVMBuildRetVoid(bc->builder);
@@ -129,43 +129,29 @@ IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Fla
 			builder_context_block_pop_back(bc);
 			return IR_Terminator::Return;
 		} break;
-		case Ast_Statement_Tag::Switch: build_switch(bc, statement->as_switch); break;
-		case Ast_Statement_Tag::Continue:
+		case Ast_Stmt_Tag::Switch: build_stmt_switch(bc, statement->as_switch); break;
+		case Ast_Stmt_Tag::Continue:
 		{
-			build_defer(bc, IR_Terminator::Continue);
+			build_stmt_defer(bc, IR_Terminator::Continue);
 			IR_Loop_Info loop = builder_context_block_get_loop(bc);
-			if (loop.var_assign) build_var_assign(bc, loop.var_assign.value());
+			if (loop.var_assign) build_stmt_var_assign(bc, loop.var_assign.value());
 			LLVMBuildBr(bc->builder, loop.continue_block);
 
 			builder_context_block_pop_back(bc);
 			return IR_Terminator::Continue;
 		} break;
-		case Ast_Statement_Tag::Var_Decl: build_var_decl(bc, statement->as_var_decl); break;
-		case Ast_Statement_Tag::Var_Assign: build_var_assign(bc, statement->as_var_assign); break;
-		case Ast_Statement_Tag::Proc_Call: build_proc_call(bc, statement->as_proc_call, IR_Proc_Call_Flags::In_Statement); break;
+		case Ast_Stmt_Tag::Var_Decl: build_stmt_var_decl(bc, statement->as_var_decl); break;
+		case Ast_Stmt_Tag::Var_Assign: build_stmt_var_assign(bc, statement->as_var_assign); break;
+		case Ast_Stmt_Tag::Proc_Call: build_proc_call(bc, statement->as_proc_call, IR_Proc_Call_Flags::In_Statement); break;
 		}
 	}
 
-	build_defer(bc, IR_Terminator::None);
+	build_stmt_defer(bc, IR_Terminator::None);
 	builder_context_block_pop_back(bc);
 	return IR_Terminator::None;
 }
 
-void build_defer(IR_Builder_Context* bc, IR_Terminator terminator)
-{
-	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
-	u64 total_defer_count = bc->defer_stack.size();
-	u32 block_defer_count = block_info.defer_count;
-
-	i32 start_defer_id = (i32)(total_defer_count - 1);
-	i32 end_defer_id = (i32)(total_defer_count - block_defer_count);
-	if (terminator == IR_Terminator::Return) end_defer_id = 0;
-
-	for (i32 i = start_defer_id; i >= end_defer_id; i -= 1)
-	build_block(bc, bc->defer_stack[i]->block, IR_Block_Flags::None);
-}
-
-void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
+void build_stmt_if(IR_Builder_Context* bc, Ast_Stmt_If* _if, Basic_Block cont_block)
 {
 	Value cond_value = build_expr(bc, _if->condition_expr);
 
@@ -176,18 +162,18 @@ void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
 		LLVMBuildCondBr(bc->builder, cond_value, then_block, else_block);
 		builder_context_set_bb(bc, then_block);
 
-		IR_Terminator terminator = build_block(bc, _if->block, IR_Block_Flags::None);
+		IR_Terminator terminator = build_stmt_block(bc, _if->block, IR_Block_Flags::None);
 		if (terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
 		builder_context_set_bb(bc, else_block);
 
 		Ast_Else* _else = _if->_else.value();
 		if (_else->tag == Ast_Else_Tag::If)
 		{
-			build_if(bc, _else->as_if, cont_block);
+			build_stmt_if(bc, _else->as_if, cont_block);
 		}
 		else
 		{
-			IR_Terminator else_terminator = build_block(bc, _else->as_block, IR_Block_Flags::None);
+			IR_Terminator else_terminator = build_stmt_block(bc, _else->as_block, IR_Block_Flags::None);
 			if (else_terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
 			builder_context_set_bb(bc, cont_block);
 		}
@@ -198,15 +184,15 @@ void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block)
 		LLVMBuildCondBr(bc->builder, cond_value, then_block, cont_block);
 		builder_context_set_bb(bc, then_block);
 
-		IR_Terminator terminator = build_block(bc, _if->block, IR_Block_Flags::None);
+		IR_Terminator terminator = build_stmt_block(bc, _if->block, IR_Block_Flags::None);
 		if (terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, cont_block);
 		builder_context_set_bb(bc, cont_block);
 	}
 }
 
-void build_for(IR_Builder_Context* bc, Ast_For* _for)
+void build_stmt_for(IR_Builder_Context* bc, Ast_Stmt_For* _for)
 {
-	if (_for->var_decl) build_var_decl(bc, _for->var_decl.value());
+	if (_for->var_decl) build_stmt_var_decl(bc, _for->var_decl.value());
 
 	Basic_Block cond_block = builder_context_add_bb(bc, "loop_cond");
 	LLVMBuildBr(bc->builder, cond_block);
@@ -224,16 +210,30 @@ void build_for(IR_Builder_Context* bc, Ast_For* _for)
 
 	builder_context_block_add(bc);
 	builder_context_block_add_loop(bc, IR_Loop_Info { exit_block, cond_block, _for->var_assign });
-	IR_Terminator terminator = build_block(bc, _for->block, IR_Block_Flags::Already_Added);
+	IR_Terminator terminator = build_stmt_block(bc, _for->block, IR_Block_Flags::Already_Added);
 	if (terminator == IR_Terminator::None)
 	{
-		if (_for->var_assign) build_var_assign(bc, _for->var_assign.value());
+		if (_for->var_assign) build_stmt_var_assign(bc, _for->var_assign.value());
 		LLVMBuildBr(bc->builder, cond_block);
 	}
 	builder_context_set_bb(bc, exit_block);
 }
 
-void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
+void build_stmt_defer(IR_Builder_Context* bc, IR_Terminator terminator)
+{
+	IR_Block_Info block_info = bc->blocks[bc->blocks.size() - 1];
+	u64 total_defer_count = bc->defer_stack.size();
+	u32 block_defer_count = block_info.defer_count;
+
+	i32 start_defer_id = (i32)(total_defer_count - 1);
+	i32 end_defer_id = (i32)(total_defer_count - block_defer_count);
+	if (terminator == IR_Terminator::Return) end_defer_id = 0;
+
+	for (i32 i = start_defer_id; i >= end_defer_id; i -= 1)
+	build_stmt_block(bc, bc->defer_stack[i]->block, IR_Block_Flags::None);
+}
+
+void build_stmt_switch(IR_Builder_Context* bc, Ast_Stmt_Switch* _switch)
 {
 	Value on_value = build_expr(bc, _switch->expr);
 	Basic_Block exit_block = builder_context_add_bb(bc, "switch_exit");
@@ -254,7 +254,7 @@ void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 		
 		if (_case.block)
 		{
-			IR_Terminator terminator = build_block(bc, _case.block.value(), IR_Block_Flags::None);
+			IR_Terminator terminator = build_stmt_block(bc, _case.block.value(), IR_Block_Flags::None);
 			if (terminator == IR_Terminator::None) LLVMBuildBr(bc->builder, exit_block);
 		}
 		else
@@ -274,7 +274,7 @@ void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch)
 	builder_context_set_bb(bc, exit_block);
 }
 
-void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
+void build_stmt_var_decl(IR_Builder_Context* bc, Ast_Stmt_Var_Decl* var_decl)
 {
 	Type type = type_from_ast_type(bc, var_decl->type.value());
 	Value var_ptr = LLVMBuildAlloca(bc->builder, type, ident_to_cstr(var_decl->ident));
@@ -293,18 +293,18 @@ void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl)
 	builder_context_block_add_var(bc, IR_Var_Info { var_decl->ident.str, var_ptr, var_decl->type.value() });
 }
 
-void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign)
+void build_stmt_var_assign(IR_Builder_Context* bc, Ast_Stmt_Var_Assign* var_assign)
 {
 	IR_Access_Info access_info = build_var(bc, var_assign->var);
 	Value value = build_expr(bc, var_assign->expr);
 	LLVMBuildStore(bc->builder, value, access_info.ptr);
 }
 
-void build_global_var(IR_Builder_Context* bc, Ast_Global_IR_Info* global_info)
+void build_global_var(IR_Builder_Context* bc, Ast_Info_IR_Global* global_info)
 {
 	if (global_info->global_ptr != NULL) return;
 
-	Ast_Global_Decl* global_decl = global_info->global_decl;
+	Ast_Decl_Global* global_decl = global_info->global_decl;
 	Value const_value = build_expr(bc, global_decl->consteval_expr->expr);
 	Value global = LLVMAddGlobal(bc->module, LLVMTypeOf(const_value), "g");
 	LLVMSetInitializer(global, const_value);
@@ -312,10 +312,10 @@ void build_global_var(IR_Builder_Context* bc, Ast_Global_IR_Info* global_info)
 	global_info->global_ptr = global;
 }
 
-Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_info)
+Value build_default_struct(IR_Builder_Context* bc, Ast_Info_IR_Struct* struct_info)
 {
 	std::vector<Value> values;
-	Ast_Struct_Decl* struct_decl = struct_info->struct_decl;
+	Ast_Decl_Struct* struct_decl = struct_info->struct_decl;
 
 	for (Ast_Struct_Field& field : struct_decl->fields)
 	{
@@ -346,9 +346,19 @@ Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 	{
 		return LLVMConstNull(type);
 	}
+	case Ast_Type_Tag::Enum:
+	{
+		return ast_type.as_enum.enum_decl->variants[0].constant;
+	}
+	case Ast_Type_Tag::Struct:
+	{
+		Value default_struct = bc->program->structs[ast_type.as_struct.struct_id].default_value;
+		if (default_struct == NULL) return build_default_struct(bc, &bc->program->structs[ast_type.as_struct.struct_id]);
+		return default_struct;
+	}
 	case Ast_Type_Tag::Array:
 	{
-		Ast_Array_Type* array_type = ast_type.as_array;
+		Ast_Type_Array* array_type = ast_type.as_array;
 		u32 size = LLVMGetArrayLength(type);
 		Value default_value = build_default_value(bc, array_type->element_type);
 		
@@ -360,16 +370,6 @@ Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 		Type element_type = type_from_ast_type(bc, array_type->element_type);
 		return LLVMConstArray(element_type, values.data(), size);
 	}
-	case Ast_Type_Tag::Struct:
-	{
-		Value default_struct = bc->program->structs[ast_type.as_struct.struct_id].default_value;
-		if (default_struct == NULL) return build_default_struct(bc, &bc->program->structs[ast_type.as_struct.struct_id]);
-		return default_struct;
-	}
-	case Ast_Type_Tag::Enum:
-	{
-		return ast_type.as_enum.enum_decl->variants[0].constant;
-	}
 	default: { err_internal("build_default_value: invalid Ast_Type_Tag"); return NULL; }
 	}
 }
@@ -377,7 +377,7 @@ Value build_default_value(IR_Builder_Context* bc, Ast_Type ast_type)
 //@Notice proc result access might be changed to work with address / deref similarly to var 
 Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags)
 {
-	Ast_Proc_IR_Info proc_info = bc->program->procs[proc_call->resolved.proc_id];
+	Ast_Info_IR_Proc proc_info = bc->program->procs[proc_call->resolved.proc_id];
 
 	std::vector<Value> input_values = {}; //@Perf memory overhead
 	input_values.reserve(proc_call->input_exprs.size());
@@ -410,9 +410,9 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 	switch (expr->tag)
 	{
 	case Ast_Expr_Tag::Term: value = build_term(bc, expr->as_term, unary_address); break;
-	case Ast_Expr_Tag::Unary_Expr: value = build_unary_expr(bc, expr->as_unary_expr); break;
-	case Ast_Expr_Tag::Binary_Expr: value = build_binary_expr(bc, expr->as_binary_expr); break;
-	case Ast_Expr_Tag::Folded_Expr: value = build_folded_expr(expr->as_folded_expr); break;
+	case Ast_Expr_Tag::Unary: value = build_unary_expr(bc, expr->as_unary_expr); break;
+	case Ast_Expr_Tag::Binary: value = build_binary_expr(bc, expr->as_binary_expr); break;
+	case Ast_Expr_Tag::Folded: value = build_folded_expr(expr->as_folded_expr); break;
 	default: { err_internal("build_expr: invalid Ast_Expr_Tag"); return NULL; }
 	}
 
@@ -467,17 +467,17 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		Value value = build_expr(bc, cast->expr);
 		switch (cast->tag)
 		{
-		case Ast_Cast_Tag::Integer_No_Op:            return value;
-		case Ast_Cast_Tag::Int_Trunc____LLVMTrunc:   return LLVMBuildCast(bc->builder, LLVMTrunc,   value, type, "cast_val");
-		case Ast_Cast_Tag::Uint_Extend__LLVMZExt:    return LLVMBuildCast(bc->builder, LLVMZExt,    value, type, "cast_val");
-		case Ast_Cast_Tag::Int_Extend___LLVMSExt:    return LLVMBuildCast(bc->builder, LLVMSExt,    value, type, "cast_val");
-		case Ast_Cast_Tag::Float_Uint___LLVMFPToUI:  return LLVMBuildCast(bc->builder, LLVMFPToUI,  value, type, "cast_val");
-		case Ast_Cast_Tag::Float_Int____LLVMFPToSI:  return LLVMBuildCast(bc->builder, LLVMFPToSI,  value, type, "cast_val");
-		case Ast_Cast_Tag::Uint_Float___LLVMUIToFP:  return LLVMBuildCast(bc->builder, LLVMUIToFP,  value, type, "cast_val");
-		case Ast_Cast_Tag::Int_Float____LLVMSIToFP:  return LLVMBuildCast(bc->builder, LLVMSIToFP,  value, type, "cast_val");
-		case Ast_Cast_Tag::Float_Trunc__LLVMFPTrunc: return LLVMBuildCast(bc->builder, LLVMFPTrunc, value, type, "cast_val");
-		case Ast_Cast_Tag::Float_Extend_LLVMFPExt:   return LLVMBuildCast(bc->builder, LLVMFPExt,   value, type, "cast_val");
-		default: { err_internal("build_term: invalid Ast_Cast_Tag"); return NULL; }
+		case Ast_Resolve_Cast_Tag::Integer_No_Op:            return value;
+		case Ast_Resolve_Cast_Tag::Int_Trunc____LLVMTrunc:   return LLVMBuildCast(bc->builder, LLVMTrunc,   value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Uint_Extend__LLVMZExt:    return LLVMBuildCast(bc->builder, LLVMZExt,    value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Int_Extend___LLVMSExt:    return LLVMBuildCast(bc->builder, LLVMSExt,    value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Float_Uint___LLVMFPToUI:  return LLVMBuildCast(bc->builder, LLVMFPToUI,  value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Float_Int____LLVMFPToSI:  return LLVMBuildCast(bc->builder, LLVMFPToSI,  value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Uint_Float___LLVMUIToFP:  return LLVMBuildCast(bc->builder, LLVMUIToFP,  value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Int_Float____LLVMSIToFP:  return LLVMBuildCast(bc->builder, LLVMSIToFP,  value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Float_Trunc__LLVMFPTrunc: return LLVMBuildCast(bc->builder, LLVMFPTrunc, value, type, "cast_val");
+		case Ast_Resolve_Cast_Tag::Float_Extend_LLVMFPExt:   return LLVMBuildCast(bc->builder, LLVMFPExt,   value, type, "cast_val");
+		default: { err_internal("build_term: invalid Ast_Resolve_Cast_Tag"); return NULL; }
 		}
 	}
 	case Ast_Term_Tag::Literal:
@@ -553,9 +553,9 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 
 IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
-	if (var->tag == Ast_Var_Tag::Global)
+	if (var->tag == Ast_Resolve_Var_Tag::Global)
 	{
-		Ast_Global_IR_Info* global_info = &bc->program->globals[var->global.global_id];
+		Ast_Info_IR_Global* global_info = &bc->program->globals[var->global.global_id];
 		build_global_var(bc, global_info);
 		return build_access(bc, var->access, global_info->global_ptr, global_info->global_decl->type.value());
 	}
@@ -581,7 +581,7 @@ IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_o
 				ast_type.pointer_level -= 1;
 			}
 
-			Ast_Array_Access* array_access = access->as_array;
+			Ast_Access_Array* array_access = access->as_array;
 
 			Value index = build_expr(bc, array_access->index_expr);
 			Type element_type = type_from_ast_type(bc, ast_type.as_array->element_type);
@@ -598,9 +598,9 @@ IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_o
 				ast_type.pointer_level -= 1;
 			}
 
-			Ast_Var_Access* var_access = access->as_var;
+			Ast_Access_Var* var_access = access->as_var;
 
-			Ast_Struct_IR_Info struct_info = bc->program->structs[ast_type.as_struct.struct_id];
+			Ast_Info_IR_Struct struct_info = bc->program->structs[ast_type.as_struct.struct_id];
 			ptr = LLVMBuildStructGEP2(bc->builder, struct_info.struct_type, ptr, var_access->field_id, "struct_ptr");
 			ast_type = struct_info.struct_decl->fields[var_access->field_id].type;
 
@@ -674,14 +674,18 @@ Value build_folded_expr(Ast_Folded_Expr folded_expr)
 	Type type = type_from_basic_type(folded_expr.basic_type);
 	switch (folded_expr.basic_type)
 	{
-	case BasicType::BOOL: return LLVMConstInt(type, (int)folded_expr.as_bool, 0);
-	case BasicType::F32:
-	case BasicType::F64: return LLVMConstReal(type, folded_expr.as_f64);
 	case BasicType::I8:
 	case BasicType::I16:
 	case BasicType::I32:
 	case BasicType::I64: return LLVMConstInt(type, folded_expr.as_i64, 1);
-	default: return LLVMConstInt(type, folded_expr.as_u64, 1);
+	case BasicType::U8:
+	case BasicType::U16:
+	case BasicType::U32:
+	case BasicType::U64: return LLVMConstInt(type, folded_expr.as_u64, 0);
+	case BasicType::BOOL: return LLVMConstInt(type, (int)folded_expr.as_bool, 0);
+	case BasicType::F32:
+	case BasicType::F64: return LLVMConstReal(type, folded_expr.as_f64);
+	default: { err_internal("build_folded_expr: invalid BasicType"); return NULL; }
 	}
 }
 
@@ -703,10 +707,11 @@ Type type_from_basic_type(BasicType basic_type)
 	case BasicType::U32: return LLVMInt32Type();
 	case BasicType::I64: return LLVMInt64Type();
 	case BasicType::U64: return LLVMInt64Type();
+	case BasicType::BOOL: return LLVMInt1Type();
 	case BasicType::F32: return LLVMFloatType();
 	case BasicType::F64: return LLVMDoubleType();
-	case BasicType::BOOL: return LLVMInt1Type();
-	default: return LLVMVoidType(); //@Notice string is void type
+	//@String not implemented
+	default: { err_internal("type_from_basic_type: invalid BasicType"); return NULL; }
 	}
 }
 
@@ -717,15 +722,21 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: return type_from_basic_type(type.as_basic);
+	case Ast_Type_Tag::Enum: return bc->program->enums[type.as_enum.enum_id].enum_type;
+	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;
 	case Ast_Type_Tag::Array:
 	{
-		Ast_Array_Type* array = type.as_array;
+		Ast_Type_Array* array = type.as_array;
+		Ast_Folded_Expr folded_size = array->size_expr->as_folded_expr;
+		if (folded_size.basic_type != BasicType::U32) 
+		{
+			err_internal("type_from_ast_type: expected array size as u32"); 
+			return NULL;
+		}
 		Type element_type = type_from_ast_type(bc, array->element_type);
-		u32 size = (u32)array->size_expr->as_folded_expr.as_u64; //@Notice what if its positive i64
+		u32 size = (u32)folded_size.as_u64;
 		return LLVMArrayType(element_type, size);
 	}
-	case Ast_Type_Tag::Struct: return bc->program->structs[type.as_struct.struct_id].struct_type;
-	case Ast_Type_Tag::Enum: return bc->program->enums[type.as_enum.enum_id].enum_type;
-	default: return LLVMVoidType();
+	default: { err_internal("type_from_ast_type: invalid BasicType"); return NULL; }
 	}
 }

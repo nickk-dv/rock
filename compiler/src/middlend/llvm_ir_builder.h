@@ -5,15 +5,15 @@
 
 LLVMModuleRef build_module(Ast_Program* program);
 
-static IR_Terminator build_block(IR_Builder_Context* bc, Ast_Block* block, IR_Block_Flags flags);
-static void build_defer(IR_Builder_Context* bc, IR_Terminator terminator);
-static void build_if(IR_Builder_Context* bc, Ast_If* _if, Basic_Block cont_block);
-static void build_for(IR_Builder_Context* bc, Ast_For* _for);
-static void build_switch(IR_Builder_Context* bc, Ast_Switch* _switch);
-static void build_var_decl(IR_Builder_Context* bc, Ast_Var_Decl* var_decl);
-static void build_var_assign(IR_Builder_Context* bc, Ast_Var_Assign* var_assign);
-static void build_global_var(IR_Builder_Context* bc, Ast_Global_IR_Info* global_info);
-static Value build_default_struct(IR_Builder_Context* bc, Ast_Struct_IR_Info* struct_info);
+static IR_Terminator build_stmt_block(IR_Builder_Context* bc, Ast_Stmt_Block* block, IR_Block_Flags flags);
+static void build_stmt_if(IR_Builder_Context* bc, Ast_Stmt_If* _if, Basic_Block cont_block);
+static void build_stmt_for(IR_Builder_Context* bc, Ast_Stmt_For* _for);
+static void build_stmt_defer(IR_Builder_Context* bc, IR_Terminator terminator);
+static void build_stmt_switch(IR_Builder_Context* bc, Ast_Stmt_Switch* _switch);
+static void build_stmt_var_decl(IR_Builder_Context* bc, Ast_Stmt_Var_Decl* var_decl);
+static void build_stmt_var_assign(IR_Builder_Context* bc, Ast_Stmt_Var_Assign* var_assign);
+static void build_global_var(IR_Builder_Context* bc, Ast_Info_IR_Global* global_info);
+static Value build_default_struct(IR_Builder_Context* bc, Ast_Info_IR_Struct* struct_info);
 static Value build_default_value(IR_Builder_Context* bc, Ast_Type type);
 static Value build_proc_call(IR_Builder_Context* bc, Ast_Proc_Call* proc_call, IR_Proc_Call_Flags flags);
 static Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address = false);

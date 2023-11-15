@@ -23,7 +23,7 @@ void builder_context_deinit(IR_Builder_Context* bc);
 void builder_context_block_reset(IR_Builder_Context* bc, Value curr_proc);
 void builder_context_block_add(IR_Builder_Context* bc);
 void builder_context_block_pop_back(IR_Builder_Context* bc);
-void builder_context_block_add_defer(IR_Builder_Context* bc, Ast_Defer* defer);
+void builder_context_block_add_defer(IR_Builder_Context* bc, Ast_Stmt_Defer* defer);
 void builder_context_block_add_loop(IR_Builder_Context* bc, IR_Loop_Info loop_info);
 void builder_context_block_add_var(IR_Builder_Context* bc, IR_Var_Info var_info);
 IR_Var_Info builder_context_block_find_var(IR_Builder_Context* bc, Ast_Ident var_ident);
@@ -39,7 +39,7 @@ struct IR_Builder_Context
 	Builder builder;
 	Value curr_proc;
 	std::vector<IR_Block_Info> blocks;
-	std::vector<Ast_Defer*> defer_stack;
+	std::vector<Ast_Stmt_Defer*> defer_stack;
 	std::vector<IR_Loop_Info> loop_stack;
 	std::vector<IR_Var_Info> var_stack;
 };
@@ -55,7 +55,7 @@ struct IR_Loop_Info
 {
 	Basic_Block break_block;
 	Basic_Block continue_block;
-	option<Ast_Var_Assign*> var_assign;
+	option<Ast_Stmt_Var_Assign*> var_assign;
 };
 
 struct IR_Var_Info

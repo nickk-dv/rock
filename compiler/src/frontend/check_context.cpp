@@ -6,7 +6,7 @@ void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program)
 	cc->program = program;
 }
 
-void check_context_block_reset(Check_Context* cc, Ast_Proc_Decl* curr_proc)
+void check_context_block_reset(Check_Context* cc, Ast_Decl_Proc* curr_proc)
 {
 	cc->curr_proc = curr_proc;
 	cc->blocks.clear();

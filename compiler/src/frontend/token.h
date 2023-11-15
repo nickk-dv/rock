@@ -173,8 +173,6 @@ enum class BasicType
 
 struct Token
 {
-	Token() {};
-
 	Span span;
 	TokenType type = TokenType::ERROR;
 
@@ -183,7 +181,7 @@ struct Token
 		bool bool_value;
 		f64 float64_value;
 		u64 integer_value;
-		char* string_literal_value; //@Not sure about nessesary implementation yet
+		char* string_literal_value;
 		StringView string_value;
 	};
 };

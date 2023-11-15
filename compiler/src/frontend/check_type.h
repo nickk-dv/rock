@@ -24,9 +24,9 @@ bool type_match(Ast_Type type_a, Ast_Type type_b);
 Type_Kind type_kind(Ast_Type type);
 Ast_Type type_from_poison();
 Ast_Type type_from_basic(BasicType basic_type);
-option<Ast_Struct_Type> type_extract_struct_value_type(Ast_Type type);
-option<Ast_Array_Type*> type_extract_array_value_type(Ast_Type type);
-static void compute_struct_size(Ast_Struct_Decl* struct_decl);
+option<Ast_Type_Struct> type_extract_struct_value_type(Ast_Type type);
+option<Ast_Type_Array*> type_extract_array_value_type(Ast_Type type);
+static void compute_struct_size(Ast_Decl_Struct* struct_decl);
 static u32 type_basic_size(BasicType basic_type);
 static u32 type_basic_align(BasicType basic_type);
 static u32 type_size(Ast_Type type);
@@ -49,11 +49,11 @@ static option<Literal> literal_convert_int_to_uint(Literal lit);
 static option<Literal> literal_convert_uint_to_int(Literal lit);
 static option<Ast_Type> check_apply_expr_fold(Check_Context* cc, Expr_Context context, Ast_Expr* expr, Literal lit);
 
-Consteval_Dependency consteval_dependency_from_global(Ast_Global_Decl* global_decl, Span span);
+Consteval_Dependency consteval_dependency_from_global(Ast_Decl_Global* global_decl, Span span);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant, Span span);
-Consteval_Dependency consteval_dependency_from_struct_size(Ast_Struct_Decl* struct_decl, Span span);
+Consteval_Dependency consteval_dependency_from_struct_size(Ast_Decl_Struct* struct_decl, Span span);
 void check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
-static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Struct_Decl* struct_decl, Tree_Node<Consteval_Dependency>* parent);
+static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Decl_Struct* struct_decl, Tree_Node<Consteval_Dependency>* parent);
 static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent, option<Expr_Context> context = {});
 static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 static Ast_Consteval_Expr* consteval_dependency_get_consteval_expr(Consteval_Dependency constant);
@@ -61,12 +61,12 @@ static bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency 
 static void consteval_dependency_mark_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 static void consteval_dependency_err_context(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 
-option<Ast_Struct_Info> find_struct(Ast* target_ast, Ast_Ident ident);
-option<Ast_Enum_Info> find_enum(Ast* target_ast, Ast_Ident ident);
-option<Ast_Proc_Info> find_proc(Ast* target_ast, Ast_Ident ident);
-option<Ast_Global_Info> find_global(Ast* target_ast, Ast_Ident ident);
-option<u32> find_enum_variant(Ast_Enum_Decl* enum_decl, Ast_Ident ident);
-option<u32> find_struct_field(Ast_Struct_Decl* struct_decl, Ast_Ident ident);
+option<Ast_Info_Struct> find_struct(Ast* target_ast, Ast_Ident ident);
+option<Ast_Info_Enum> find_enum(Ast* target_ast, Ast_Ident ident);
+option<Ast_Info_Proc> find_proc(Ast* target_ast, Ast_Ident ident);
+option<Ast_Info_Global> find_global(Ast* target_ast, Ast_Ident ident);
+option<u32> find_enum_variant(Ast_Decl_Enum* enum_decl, Ast_Ident ident);
+option<u32> find_struct_field(Ast_Decl_Struct* struct_decl, Ast_Ident ident);
 
 Ast* resolve_import(Check_Context* cc, option<Ast_Ident> import);
 void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size_expr);
@@ -85,7 +85,7 @@ enum class Consteval_Dependency_Tag
 
 struct Global_Dependency
 {
-	Ast_Global_Decl* global_decl;
+	Ast_Decl_Global* global_decl;
 	Span span;
 };
 
@@ -103,7 +103,7 @@ struct Array_Size_Dependency
 
 struct Struct_Size_Dependency
 {
-	Ast_Struct_Decl* struct_decl;
+	Ast_Decl_Struct* struct_decl;
 	Span span;
 };
 
@@ -155,9 +155,9 @@ enum class Type_Kind
 	Uint,
 	String,
 	Pointer,
-	Array,
-	Struct,
 	Enum,
+	Struct,
+	Array,
 };
 
 enum class Literal_Kind

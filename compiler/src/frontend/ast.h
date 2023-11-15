@@ -5,49 +5,49 @@
 #include "general/hashmap.h"
 #include "llvm-c/Types.h"
 
-struct Ast_Program;
-struct Ast_Struct_IR_Info;
-struct Ast_Enum_IR_Info;
-struct Ast_Proc_IR_Info;
-struct Ast_Global_IR_Info;
-
 struct Ast;
-struct Ast_Struct_Info;
-struct Ast_Enum_Info;
-struct Ast_Proc_Info;
-struct Ast_Global_Info;
-
+struct Ast_Program;
 struct Ast_Ident;
 struct Ast_Literal;
+
+struct Ast_Info_Proc;
+struct Ast_Info_Enum;
+struct Ast_Info_Struct;
+struct Ast_Info_Global;
+struct Ast_Info_IR_Proc;
+struct Ast_Info_IR_Enum;
+struct Ast_Info_IR_Struct;
+struct Ast_Info_IR_Global;
+
 struct Ast_Type;
-struct Ast_Array_Type;
-struct Ast_Struct_Type;
-struct Ast_Enum_Type;
-struct Ast_Unresolved_Type;
+struct Ast_Type_Enum;
+struct Ast_Type_Array;
+struct Ast_Type_Struct;
+struct Ast_Type_Unresolved;
 
-struct Ast_Import_Decl;
-struct Ast_Use_Decl;
-struct Ast_Struct_Decl;
-struct Ast_Struct_Field;
-struct Ast_Enum_Decl;
-struct Ast_Enum_Variant;
-struct Ast_Proc_Decl;
+struct Ast_Decl_Use;
+struct Ast_Decl_Proc;
 struct Ast_Proc_Param;
-struct Ast_Global_Decl;
+struct Ast_Decl_Enum;
+struct Ast_Enum_Variant;
+struct Ast_Decl_Struct;
+struct Ast_Struct_Field;
+struct Ast_Decl_Global;
+struct Ast_Decl_Import;
 
-struct Ast_Block;
-struct Ast_Statement;
-struct Ast_If;
+struct Ast_Stmt;
+struct Ast_Stmt_If;
 struct Ast_Else;
-struct Ast_For;
-struct Ast_Defer;
-struct Ast_Break;
-struct Ast_Return;
-struct Ast_Switch;
+struct Ast_Stmt_For;
+struct Ast_Stmt_Block;
+struct Ast_Stmt_Defer;
+struct Ast_Stmt_Break;
+struct Ast_Stmt_Return;
+struct Ast_Stmt_Switch;
 struct Ast_Switch_Case;
-struct Ast_Continue;
-struct Ast_Var_Decl;
-struct Ast_Var_Assign;
+struct Ast_Stmt_Continue;
+struct Ast_Stmt_Var_Decl;
+struct Ast_Stmt_Var_Assign;
 
 struct Ast_Expr;
 struct Ast_Unary_Expr;
@@ -58,8 +58,8 @@ struct Ast_Consteval_Expr;
 struct Ast_Term;
 struct Ast_Var;
 struct Ast_Access;
-struct Ast_Var_Access;
-struct Ast_Array_Access;
+struct Ast_Access_Var;
+struct Ast_Access_Array;
 struct Ast_Enum;
 struct Ast_Cast;
 struct Ast_Sizeof;
@@ -72,86 +72,45 @@ u32 hash_ident(Ast_Ident& ident);
 bool match_ident(Ast_Ident& a, Ast_Ident& b);
 bool match_string(std::string& a, std::string& b);
 
-struct Ast_Program
-{
-	std::vector<Ast*> modules;
-	HashMap<std::string, Ast*, u32, match_string> module_map;
-	
-	std::vector<Ast_Struct_IR_Info> structs;
-	std::vector<Ast_Enum_IR_Info> enums;
-	std::vector<Ast_Proc_IR_Info> procs;
-	std::vector<Ast_Global_IR_Info> globals;
-};
-
-struct Ast_Struct_IR_Info
-{
-	Ast_Struct_Decl* struct_decl;
-	LLVMTypeRef struct_type;
-	LLVMValueRef default_value;
-};
-
-struct Ast_Enum_IR_Info
-{
-	Ast_Enum_Decl* enum_decl;
-	LLVMTypeRef enum_type;
-};
-
-struct Ast_Proc_IR_Info
-{
-	Ast_Proc_Decl* proc_decl;
-	LLVMTypeRef proc_type;
-	LLVMValueRef proc_value;
-};
-
-struct Ast_Global_IR_Info
-{
-	Ast_Global_Decl* global_decl;
-	LLVMValueRef global_ptr;
-};
-
 struct Ast
 {
 	StringView source;
 	std::string filepath;
 	std::vector<Span> line_spans;
 
-	std::vector<Ast_Import_Decl*> imports;
-	std::vector<Ast_Use_Decl*> uses;
-	std::vector<Ast_Struct_Decl*> structs;
-	std::vector<Ast_Enum_Decl*> enums;
-	std::vector<Ast_Proc_Decl*> procs;
-	std::vector<Ast_Global_Decl*> globals;
+	std::vector<Ast_Decl_Use*> uses;
+	std::vector<Ast_Decl_Proc*> procs;
+	std::vector<Ast_Decl_Enum*> enums;
+	std::vector<Ast_Decl_Struct*> structs;
+	std::vector<Ast_Decl_Global*> globals;
+	std::vector<Ast_Decl_Import*> imports;
+
+	HashMap<Ast_Ident, Ast_Info_Proc, u32, match_ident> proc_table;
+	HashMap<Ast_Ident, Ast_Info_Enum, u32, match_ident> enum_table;
+	HashMap<Ast_Ident, Ast_Info_Struct, u32, match_ident> struct_table;
+	HashMap<Ast_Ident, Ast_Info_Global, u32, match_ident> global_table;
+	HashMap<Ast_Ident, Ast_Decl_Import*, u32, match_ident> import_table;
+};
+
+struct Ast_Program
+{
+	std::vector<Ast*> modules;
+	HashMap<std::string, Ast*, u32, match_string> module_map;
 	
-	HashMap<Ast_Ident, Ast_Import_Decl*, u32, match_ident> import_table;
-	HashMap<Ast_Ident, Ast_Struct_Info, u32, match_ident> struct_table;
-	HashMap<Ast_Ident, Ast_Enum_Info, u32, match_ident> enum_table;
-	HashMap<Ast_Ident, Ast_Proc_Info, u32, match_ident> proc_table;
-	HashMap<Ast_Ident, Ast_Global_Info, u32, match_ident> global_table;
+	std::vector<Ast_Info_IR_Proc> procs;
+	std::vector<Ast_Info_IR_Enum> enums;
+	std::vector<Ast_Info_IR_Struct> structs;
+	std::vector<Ast_Info_IR_Global> globals;
 };
 
-struct Ast_Struct_Info
-{
-	u32 struct_id;
-	Ast_Struct_Decl* struct_decl;
-};
-
-struct Ast_Enum_Info
-{
-	u32 enum_id;
-	Ast_Enum_Decl* enum_decl;
-};
-
-struct Ast_Proc_Info
-{
-	u32 proc_id;
-	Ast_Proc_Decl* proc_decl;
-};
-
-struct Ast_Global_Info
-{
-	u32 global_id;
-	Ast_Global_Decl* global_decl;
-};
+struct Ast_Info_Proc      { Ast_Decl_Proc* proc_decl; u32 proc_id; };
+struct Ast_Info_Enum      { Ast_Decl_Enum* enum_decl; u32 enum_id; };
+struct Ast_Info_Struct    { Ast_Decl_Struct* struct_decl; u32 struct_id; };
+struct Ast_Info_Global    { Ast_Decl_Global* global_decl; u32 global_id; };
+struct Ast_Info_IR_Proc   { Ast_Decl_Proc* proc_decl; LLVMTypeRef proc_type; LLVMValueRef proc_value; };
+struct Ast_Info_IR_Enum   { Ast_Decl_Enum* enum_decl; LLVMTypeRef enum_type; };
+struct Ast_Info_IR_Struct { Ast_Decl_Struct* struct_decl; LLVMTypeRef struct_type; LLVMValueRef default_value; };
+struct Ast_Info_IR_Global { Ast_Decl_Global* global_decl; LLVMValueRef global_ptr; };
 
 struct Ast_Ident
 {
@@ -164,26 +123,22 @@ struct Ast_Literal
 	Token token;
 };
 
-struct Ast_Struct_Type
-{
-	u32 struct_id;
-	Ast_Struct_Decl* struct_decl;
-};
-
-struct Ast_Enum_Type
+struct Ast_Type_Enum
 {
 	u32 enum_id;
-	Ast_Enum_Decl* enum_decl;
+	Ast_Decl_Enum* enum_decl;
+};
+
+struct Ast_Type_Struct
+{
+	u32 struct_id;
+	Ast_Decl_Struct* struct_decl;
 };
 
 enum class Ast_Type_Tag
 {
-	Basic, 
-	Array, 
-	Struct, 
-	Enum, 
-	Unresolved, 
-	Poison,
+	Basic, Enum, Struct,
+	Array, Unresolved, Poison,
 };
 
 struct Ast_Type
@@ -195,41 +150,65 @@ struct Ast_Type
 	union
 	{
 		BasicType as_basic;
-		Ast_Array_Type* as_array;
-		Ast_Struct_Type as_struct;
-		Ast_Enum_Type as_enum;
-		Ast_Unresolved_Type* as_unresolved;
+		Ast_Type_Enum as_enum;
+		Ast_Type_Struct as_struct;
+		Ast_Type_Array* as_array;
+		Ast_Type_Unresolved* as_unresolved;
 	};
 };
 
-struct Ast_Array_Type
+struct Ast_Type_Array
 {
 	Ast_Type element_type;
 	Ast_Expr* size_expr;
 };
 
-struct Ast_Unresolved_Type
+struct Ast_Type_Unresolved
 {
 	option<Ast_Ident> import;
 	Ast_Ident ident;
 };
 
-struct Ast_Import_Decl
-{
-	Ast_Ident alias;
-	Ast_Literal file_path;
-	//checker
-	Ast* import_ast;
-};
-
-struct Ast_Use_Decl
+struct Ast_Decl_Use
 {
 	Ast_Ident alias;
 	Ast_Ident import;
 	Ast_Ident symbol;
 };
 
-struct Ast_Struct_Decl
+struct Ast_Decl_Proc
+{
+	Ast_Ident ident;
+	std::vector<Ast_Proc_Param> input_params;
+	option<Ast_Type> return_type;
+	Ast_Stmt_Block* block;
+	bool is_main;
+	bool is_external;
+	bool is_variadic;
+};
+
+struct Ast_Proc_Param
+{
+	Ast_Ident ident;
+	Ast_Type type;
+};
+
+struct Ast_Decl_Enum
+{
+	Ast_Ident ident;
+	BasicType basic_type;
+	std::vector<Ast_Enum_Variant> variants;
+};
+
+struct Ast_Enum_Variant
+{
+	Ast_Ident ident;
+	Ast_Consteval_Expr* consteval_expr;
+	//ir builder
+	LLVMValueRef constant;
+};
+
+struct Ast_Decl_Struct
 {
 	Ast_Ident ident;
 	std::vector<Ast_Struct_Field> fields;
@@ -245,90 +224,54 @@ struct Ast_Struct_Field
 	option<Ast_Expr*> default_expr;
 };
 
-struct Ast_Enum_Decl
-{
-	Ast_Ident ident;
-	BasicType basic_type;
-	std::vector<Ast_Enum_Variant> variants;
-};
-
-struct Ast_Enum_Variant
-{
-	Ast_Ident ident;
-	Ast_Consteval_Expr* consteval_expr;
-	//ir builder
-	LLVMValueRef constant;
-};
-
-struct Ast_Proc_Decl
-{
-	Ast_Ident ident;
-	std::vector<Ast_Proc_Param> input_params;
-	option<Ast_Type> return_type;
-	Ast_Block* block;
-	bool is_main;
-	bool is_external;
-	bool is_variadic;
-};
-
-struct Ast_Proc_Param
-{
-	Ast_Ident ident;
-	Ast_Type type;
-};
-
-struct Ast_Global_Decl
+struct Ast_Decl_Global
 {
 	Ast_Ident ident;
 	Ast_Consteval_Expr* consteval_expr;
 	option<Ast_Type> type;
 };
 
-struct Ast_Block
+struct Ast_Decl_Import
 {
-	std::vector<Ast_Statement*> statements;
+	Ast_Ident alias;
+	Ast_Literal file_path;
+	//checker
+	Ast* import_ast;
 };
 
-enum class Ast_Statement_Tag
+enum class Ast_Stmt_Tag
 {
-	If,
-	For,
-	Block,
-	Defer,
-	Break,
-	Return,
-	Switch,
-	Continue,
-	Var_Decl,
-	Var_Assign,
-	Proc_Call,
+	If, For, Block,
+	Defer, Break, Return,
+	Switch, Continue, Var_Decl,
+	Var_Assign, Proc_Call,
 };
 
-struct Ast_Statement
+struct Ast_Stmt
 {
-	Ast_Statement_Tag tag;
+	Ast_Stmt_Tag tag;
 
 	union
 	{
-		Ast_If* as_if;
-		Ast_For* as_for;
-		Ast_Block* as_block;
-		Ast_Defer* as_defer;
-		Ast_Break* as_break;
-		Ast_Return* as_return;
-		Ast_Switch* as_switch;
-		Ast_Continue* as_continue;
-		Ast_Var_Decl* as_var_decl;
-		Ast_Var_Assign* as_var_assign;
+		Ast_Stmt_If* as_if;
+		Ast_Stmt_For* as_for;
+		Ast_Stmt_Block* as_block;
+		Ast_Stmt_Defer* as_defer;
+		Ast_Stmt_Break* as_break;
+		Ast_Stmt_Return* as_return;
+		Ast_Stmt_Switch* as_switch;
+		Ast_Stmt_Continue* as_continue;
+		Ast_Stmt_Var_Decl* as_var_decl;
+		Ast_Stmt_Var_Assign* as_var_assign;
 		Ast_Proc_Call* as_proc_call;
 	};
 };
 
-struct Ast_If
+struct Ast_Stmt_If
 {
 	Span span;
 	Ast_Expr* condition_expr;
-	Ast_Block* block;
+	Ast_Stmt_Block* block;
 	option<Ast_Else*> _else;
 };
 
@@ -344,38 +287,43 @@ struct Ast_Else
 
 	union
 	{
-		Ast_If* as_if;
-		Ast_Block* as_block;
+		Ast_Stmt_If* as_if;
+		Ast_Stmt_Block* as_block;
 	};
 };
 
-struct Ast_For
+struct Ast_Stmt_For
 {
 	Span span;
-	option<Ast_Var_Decl*> var_decl;
+	option<Ast_Stmt_Var_Decl*> var_decl;
 	option<Ast_Expr*> condition_expr;
-	option<Ast_Var_Assign*> var_assign;
-	Ast_Block* block;
+	option<Ast_Stmt_Var_Assign*> var_assign;
+	Ast_Stmt_Block* block;
 };
 
-struct Ast_Defer
+struct Ast_Stmt_Block
+{
+	std::vector<Ast_Stmt*> statements;
+};
+
+struct Ast_Stmt_Defer
 {
 	Span span;
-	Ast_Block* block;
+	Ast_Stmt_Block* block;
 };
 
-struct Ast_Break
+struct Ast_Stmt_Break
 {
 	Span span;
 };
 
-struct Ast_Return
+struct Ast_Stmt_Return
 {
 	Span span;
 	option<Ast_Expr*> expr;
 };
 
-struct Ast_Switch
+struct Ast_Stmt_Switch
 {
 	Span span;
 	Ast_Expr* expr;
@@ -385,17 +333,17 @@ struct Ast_Switch
 struct Ast_Switch_Case
 {
 	Ast_Expr* case_expr;
-	option<Ast_Block*> block;
+	option<Ast_Stmt_Block*> block;
 	//ir builder
 	LLVMBasicBlockRef basic_block;
 };
 
-struct Ast_Continue
+struct Ast_Stmt_Continue
 {
 	Span span;
 };
 
-struct Ast_Var_Decl
+struct Ast_Stmt_Var_Decl
 {
 	Span span;
 	Ast_Ident ident;
@@ -403,7 +351,7 @@ struct Ast_Var_Decl
 	option<Ast_Expr*> expr;
 };
 
-struct Ast_Var_Assign
+struct Ast_Stmt_Var_Assign
 {
 	Span span;
 	Ast_Var* var;
@@ -424,14 +372,6 @@ struct Ast_Folded_Expr
 	};
 };
 
-enum class Ast_Expr_Tag
-{
-	Term, 
-	Unary_Expr, 
-	Binary_Expr, 
-	Folded_Expr,
-};
-
 enum Ast_Expr_Flags
 {
 	AST_EXPR_FLAG_CONST_BIT               = 1 << 0,
@@ -442,6 +382,14 @@ enum Ast_Expr_Flags
 	AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT = 1 << 5,
 	AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT = 1 << 6,
 	AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT = 1 << 7,
+};
+
+enum class Ast_Expr_Tag
+{
+	Term,
+	Unary,
+	Binary,
+	Folded,
 };
 
 struct Ast_Expr
@@ -487,14 +435,8 @@ struct Ast_Consteval_Expr
 
 enum class Ast_Term_Tag
 {
-	Var,
-	Enum,
-	Cast,
-	Sizeof,
-	Literal,
-	Proc_Call,
-	Array_Init,
-	Struct_Init,
+	Var, Enum, Cast, Sizeof, Literal,
+	Proc_Call, Array_Init, Struct_Init,
 };
 
 struct Ast_Term
@@ -514,7 +456,14 @@ struct Ast_Term
 	};
 };
 
-enum class Ast_Var_Tag
+enum class Ast_Resolve_Tag
+{
+	Unresolved,
+	Resolved,
+	Invalid,
+};
+
+enum class Ast_Resolve_Var_Tag
 {
 	Unresolved, 
 	Local,
@@ -524,7 +473,7 @@ enum class Ast_Var_Tag
 
 struct Ast_Var
 {
-	Ast_Var_Tag tag;
+	Ast_Resolve_Var_Tag tag;
 	option<Ast_Access*> access;
 
 	union
@@ -542,15 +491,14 @@ struct Ast_Var
 		struct Global 
 		{ 
 			u32 global_id;
-			Ast_Global_Decl* global_decl; 
+			Ast_Decl_Global* global_decl; 
 		} global;
 	};
 };
 
 enum class Ast_Access_Tag
 {
-	Var, 
-	Array,
+	Var, Array,
 };
 
 struct Ast_Access
@@ -559,12 +507,12 @@ struct Ast_Access
 
 	union
 	{
-		Ast_Var_Access* as_var;
-		Ast_Array_Access* as_array;
+		Ast_Access_Var* as_var;
+		Ast_Access_Array* as_array;
 	};
 };
 
-struct Ast_Var_Access
+struct Ast_Access_Var
 {
 	Ast_Ident ident;
 	option<Ast_Access*> next;
@@ -572,22 +520,15 @@ struct Ast_Var_Access
 	u32 field_id;
 };
 
-struct Ast_Array_Access
+struct Ast_Access_Array
 {
 	Ast_Expr* index_expr;
 	option<Ast_Access*> next;
 };
 
-enum class Ast_Enum_Tag
-{
-	Unresolved, 
-	Resolved, 
-	Invalid,
-};
-
 struct Ast_Enum
 {
-	Ast_Enum_Tag tag;
+	Ast_Resolve_Tag tag;
 	
 	union
 	{
@@ -600,13 +541,13 @@ struct Ast_Enum
 
 		struct Resolved
 		{
-			Ast_Enum_Type type;
+			Ast_Type_Enum type;
 			u32 variant_id;
 		} resolved;
 	};
 };
 
-enum class Ast_Cast_Tag
+enum class Ast_Resolve_Cast_Tag
 {
 	Unresolved,
 	Invalid,
@@ -624,35 +565,21 @@ enum class Ast_Cast_Tag
 
 struct Ast_Cast
 {
-	Ast_Cast_Tag tag;
+	Ast_Resolve_Cast_Tag tag;
 	BasicType basic_type;
 	Ast_Expr* expr;
 };
 
-enum class Ast_Sizeof_Tag
-{
-	Unresolved,
-	Resolved,
-	Invalid,
-};
-
 struct Ast_Sizeof
 {
-	Ast_Sizeof_Tag tag;
+	Ast_Resolve_Tag tag;
 	Ast_Type type;
-};
-
-enum class Ast_Proc_Call_Tag
-{
-	Unresolved,
-	Resolved,
-	Invalid,
 };
 
 struct Ast_Proc_Call
 {
 	Span span;
-	Ast_Proc_Call_Tag tag;
+	Ast_Resolve_Tag tag;
 	option<Ast_Access*> access;
 	std::vector<Ast_Expr*> input_exprs;
 
@@ -666,36 +593,22 @@ struct Ast_Proc_Call
 
 		struct Resolved
 		{
-			Ast_Proc_Decl* proc_decl;
+			Ast_Decl_Proc* proc_decl;
 			u32 proc_id;
 		} resolved;
 	};
 };
 
-enum class Ast_Array_Init_Tag
-{
-	Unresolved,
-	Resolved,
-	Invalid,
-};
-
 struct Ast_Array_Init
 {
-	Ast_Array_Init_Tag tag;
+	Ast_Resolve_Tag tag;
 	option<Ast_Type> type;
 	std::vector<Ast_Expr*> input_exprs;
 };
 
-enum class Ast_Struct_Init_Tag
-{
-	Unresolved,
-	Resolved,
-	Invalid,
-};
-
 struct Ast_Struct_Init
 {
-	Ast_Struct_Init_Tag tag;
+	Ast_Resolve_Tag tag;
 	std::vector<Ast_Expr*> input_exprs;
 
 	union
@@ -708,7 +621,7 @@ struct Ast_Struct_Init
 
 		struct Resolved
 		{
-			option<Ast_Struct_Type> type;
+			option<Ast_Type_Struct> type;
 		} resolved;
 	};
 };

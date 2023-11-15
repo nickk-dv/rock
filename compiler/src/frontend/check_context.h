@@ -11,7 +11,7 @@ enum class Checker_Block_Flags;
 enum class Checker_Proc_Call_Flags;
 
 void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program);
-void check_context_block_reset(Check_Context* cc, Ast_Proc_Decl* curr_proc);
+void check_context_block_reset(Check_Context* cc, Ast_Decl_Proc* curr_proc);
 void check_context_block_add(Check_Context* cc);
 void check_context_block_pop_back(Check_Context* cc);
 void check_context_block_add_var(Check_Context* cc, Ast_Ident ident, Ast_Type type);
@@ -22,7 +22,7 @@ struct Check_Context
 {
 	Ast* ast;
 	Ast_Program* program;
-	Ast_Proc_Decl* curr_proc;
+	Ast_Decl_Proc* curr_proc;
 	std::vector<Block_Info> blocks;
 	std::vector<Var_Info> var_stack; //@Perf try hashmap with reset() on larger files
 };

@@ -36,7 +36,7 @@ void builder_context_block_pop_back(IR_Builder_Context* bc)
 	bc->blocks.pop_back();
 }
 
-void builder_context_block_add_defer(IR_Builder_Context* bc, Ast_Defer* defer)
+void builder_context_block_add_defer(IR_Builder_Context* bc, Ast_Stmt_Defer* defer)
 {
 	bc->blocks[bc->blocks.size() - 1].defer_count += 1;
 	bc->defer_stack.emplace_back(defer);

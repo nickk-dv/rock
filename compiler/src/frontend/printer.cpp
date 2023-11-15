@@ -72,15 +72,15 @@ void print_type(Ast_Type type)
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Basic: print_basic_type(type.as_basic); break;
+	case Ast_Type_Tag::Enum: print_str(type.as_enum.enum_decl->ident.str); break;
+	case Ast_Type_Tag::Struct: print_str(type.as_struct.struct_decl->ident.str); break;
 	case Ast_Type_Tag::Array:
 	{
 		//@Fold size expr using i64 instead of u64 termporarely
-		if (type.as_array->size_expr->tag != Ast_Expr_Tag::Folded_Expr) printf("[size expr]");
+		if (type.as_array->size_expr->tag != Ast_Expr_Tag::Folded) printf("[size expr]");
 		else printf("[%llu]", (u64)type.as_array->size_expr->as_folded_expr.as_i64);
 		print_type(type.as_array->element_type);
 	} break;
-	case Ast_Type_Tag::Struct: print_str(type.as_struct.struct_decl->ident.str); break;
-	case Ast_Type_Tag::Enum: print_str(type.as_enum.enum_decl->ident.str); break;
 	case Ast_Type_Tag::Unresolved:
 	{
 		if (type.as_unresolved->import)
