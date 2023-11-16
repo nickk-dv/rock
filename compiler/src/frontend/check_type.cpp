@@ -390,7 +390,7 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 			resolve_var(cc, var);
 			switch (var->tag)
 			{
-			case Ast_Resolve_Var_Tag::Local:
+			case Ast_Resolve_Var_Tag::Resolved_Local:
 			{
 				option<Ast_Type> var_type = check_context_block_find_var_type(cc, var->local.ident);
 				if (!var_type)
@@ -402,7 +402,7 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 				if (type_is_poison(var_type.value())) return {};
 				else return Expr_Kind::Normal;
 			}
-			case Ast_Resolve_Var_Tag::Global:
+			case Ast_Resolve_Var_Tag::Resolved_Global:
 			{
 				Ast_Decl_Global* global_decl = var->global.global_decl;
 				Ast_Consteval_Expr* consteval_expr = global_decl->consteval_expr;
@@ -643,7 +643,7 @@ option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var)
 
 	switch (var->tag)
 	{
-	case Ast_Resolve_Var_Tag::Local:
+	case Ast_Resolve_Var_Tag::Resolved_Local:
 	{
 		option<Ast_Type> type = check_context_block_find_var_type(cc, var->local.ident);
 		if (!type)
@@ -654,7 +654,7 @@ option<Ast_Type> check_var(Check_Context* cc, Ast_Var* var)
 		}
 		return check_access(cc, type.value(), var->access);
 	}
-	case Ast_Resolve_Var_Tag::Global:
+	case Ast_Resolve_Var_Tag::Resolved_Global:
 	{
 		option<Ast_Type> type = var->global.global_decl->type;
 		if (!type) return {};
@@ -681,25 +681,25 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		{
 			err_set; //@Err
 			printf("Field access might only be used on variables of struct or pointer to a struct type\n");
-			print_span_context(cc->ast, var_access->ident.span);
+			print_span_context(cc->ast, var_access->unresolved.ident.span);
 			printf("Type: "); print_type(type); printf("\n");
 			return {};
 		}
 
 		Ast_Decl_Struct* struct_decl = type.as_struct.struct_decl;
-		option<u32> field_id = find_struct_field(struct_decl, var_access->ident);
+		option<u32> field_id = find_struct_field(struct_decl, var_access->unresolved.ident);
 		if (!field_id)
 		{
 			err_set; //@Err
 			printf("Failed to find struct field during access\n");
-			print_span_context(cc->ast, var_access->ident.span);
+			print_span_context(cc->ast, var_access->unresolved.ident.span);
 			printf("Type: "); print_type(type); printf("\n");
 			return {};
 		}
-		var_access->field_id = field_id.value();
+		var_access->resolved.field_id = field_id.value();
 
-		Ast_Type result_type = struct_decl->fields[var_access->field_id].type;
-		return check_access(cc, result_type, var_access->next);
+		Ast_Type result_type = struct_decl->fields[var_access->resolved.field_id].type;
+		return check_access(cc, result_type, access->next);
 	}
 	case Ast_Access_Tag::Array:
 	{
@@ -721,7 +721,7 @@ option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Acces
 		check_expr_type(cc, array_access->index_expr, type_from_basic(BasicType::I32), Expr_Constness::Normal);
 
 		Ast_Type result_type = type.as_array->element_type;
-		return check_access(cc, result_type, array_access->next);
+		return check_access(cc, result_type, access->next);
 	}
 	default: { err_internal("check_access: invalid Ast_Access_Tag"); return {}; }
 	}
@@ -1502,7 +1502,7 @@ Consteval_Dependency consteval_dependency_from_global(Ast_Decl_Global* global_de
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Global;
-	constant.as_global = Global_Dependency { global_decl, span };
+	constant.as_global = Dependency_Global { global_decl, span };
 	return constant;
 }
 
@@ -1510,7 +1510,7 @@ Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* en
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Enum_Variant;
-	constant.as_enum_variant = Enum_Variant_Dependency { enum_variant, span };
+	constant.as_enum_variant = Dependency_Enum_Variant { enum_variant, span };
 	return constant;
 }
 
@@ -1518,7 +1518,7 @@ Consteval_Dependency consteval_dependency_from_struct_size(Ast_Decl_Struct* stru
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Struct_Size;
-	constant.as_struct_size = Struct_Size_Dependency { struct_decl, span };
+	constant.as_struct_size = Dependency_Struct_Size { struct_decl, span };
 	return constant;
 }
 
@@ -1526,7 +1526,15 @@ Consteval_Dependency consteval_dependency_from_array_size_expr(Ast_Expr* size_ex
 {
 	Consteval_Dependency constant = {};
 	constant.tag = Consteval_Dependency_Tag::Array_Size_Expr;
-	constant.as_array_size = Array_Size_Dependency { size_expr, type };
+	constant.as_array_size = Dependency_Array_Size { size_expr, type };
+	return constant;
+}
+
+Consteval_Dependency consteval_dependency_from_array_access(Ast_Access_Array* array_access)
+{
+	Consteval_Dependency constant = {};
+	constant.tag = Consteval_Dependency_Tag::Array_Access_Expr;
+	constant.as_array_access = Dependency_Array_Access{ array_access->index_expr };
 	return constant;
 }
 
@@ -1622,8 +1630,6 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 		{
 		case Ast_Term_Tag::Var:
 		{
-			//@Consider access with expressions also
-
 			Ast_Var* var = term->as_var;
 			resolve_var(cc, var);
 			
@@ -1633,7 +1639,7 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 				return Consteval::Invalid;
 			}
 
-			if (var->tag == Ast_Resolve_Var_Tag::Local)
+			if (var->tag == Ast_Resolve_Var_Tag::Resolved_Local)
 			{
 				err_report(Error::CONST_VAR_IS_NOT_GLOBAL);
 				err_context(cc, expr->span);
@@ -1655,6 +1661,33 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr
 				tree_node_apply_proc_in_reverse_up_to_node(node, cycle_node.value(), cc, consteval_dependency_err_context);
 				tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
 				return Consteval::Invalid;
+			}
+
+			option<Ast_Access*> access = var->access;
+			while (access)
+			{
+				switch (access.value()->tag)
+				{
+				case Ast_Access_Tag::Var: 
+				{
+					access = access.value()->next;
+				} break;
+				case Ast_Access_Tag::Array:
+				{
+					Consteval_Dependency access_constant = consteval_dependency_from_global(global_decl, expr->span);
+					Tree_Node<Consteval_Dependency>* access_node = tree_node_add_child(arena, parent, access_constant);
+					option<Tree_Node<Consteval_Dependency>*> access_cycle_node = tree_node_find_cycle(access_node, access_constant, match_const_dependency);
+					if (access_cycle_node)
+					{
+						err_report(Error::CONSTEVAL_DEPENDENCY_CYCLE);
+						tree_node_apply_proc_in_reverse_up_to_node(access_node, access_cycle_node.value(), cc, consteval_dependency_err_context);
+						tree_node_apply_proc_up_to_root(access_node, cc, consteval_dependency_mark_invalid);
+						return Consteval::Invalid;
+					}
+					access = access.value()->next;
+				} break;
+				default: { err_internal("check_consteval_dependencies: invalid Ast_Access_Tag"); break; }
+				}
 			}
 
 			return check_consteval_dependencies(cc, arena, global_decl->consteval_expr->expr, node);
@@ -1882,7 +1915,22 @@ Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_D
 			return Consteval::Invalid;
 		}
 	} break;
-	default: break;
+	case Consteval_Dependency_Tag::Array_Access_Expr:
+	{
+		//@Hack requirement i32 as in other place, temp
+		option<Ast_Type> type = check_expr_type(cc, constant.as_array_access.access_expr, type_from_basic(BasicType::I32), Expr_Constness::Const);
+		if (!type)
+		{
+			tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid);
+			return Consteval::Invalid;
+		}
+	} break;
+	default: 
+	{ 
+		err_internal("check_evaluate_consteval_tree: Invalid Consteval_Dependency_Tag");
+		tree_node_apply_proc_up_to_root(node, cc, consteval_dependency_mark_invalid); 
+		return Consteval::Invalid; 
+	}
 	}
 
 	return Consteval::Valid;
@@ -2073,8 +2121,8 @@ void resolve_var(Check_Context* cc, Ast_Var* var)
 	if (import_decl && var->access && var->access.value()->tag == Ast_Access_Tag::Var)
 	{
 		Ast_Access_Var* var_access = var->access.value()->as_var;
-		Ast_Ident global_ident = var_access->ident;
-		var->access = var_access->next;
+		Ast_Ident global_ident = var_access->unresolved.ident;
+		var->access = var->access.value()->next;
 
 		target_ast = import_decl.value()->import_ast;
 		if (target_ast == NULL)
@@ -2086,7 +2134,7 @@ void resolve_var(Check_Context* cc, Ast_Var* var)
 		option<Ast_Info_Global> global = find_global(target_ast, global_ident);
 		if (global) 
 		{
-			var->tag = Ast_Resolve_Var_Tag::Global;
+			var->tag = Ast_Resolve_Var_Tag::Resolved_Global;
 			var->global.global_id = global.value().global_id;
 			var->global.global_decl = global.value().global_decl;
 			return;
@@ -2104,14 +2152,14 @@ void resolve_var(Check_Context* cc, Ast_Var* var)
 		option<Ast_Info_Global> global = find_global(target_ast, ident);
 		if (global)
 		{
-			var->tag = Ast_Resolve_Var_Tag::Global;
+			var->tag = Ast_Resolve_Var_Tag::Resolved_Global;
 			var->global.global_id = global.value().global_id;
 			var->global.global_decl = global.value().global_decl;
 			return;
 		}
 	}
 
-	var->tag = Ast_Resolve_Var_Tag::Local;
+	var->tag = Ast_Resolve_Var_Tag::Resolved_Local;
 	var->local.ident = var->unresolved.ident;
 }
 

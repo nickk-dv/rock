@@ -310,6 +310,7 @@ void build_global_var(IR_Builder_Context* bc, Ast_Info_IR_Global* global_info)
 	LLVMSetInitializer(global, const_value);
 	LLVMSetGlobalConstant(global, 1);
 	global_info->global_ptr = global;
+	global_info->const_value = const_value;
 }
 
 Value build_default_struct(IR_Builder_Context* bc, Ast_Info_IR_Struct* struct_info)
@@ -553,7 +554,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 
 IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var)
 {
-	if (var->tag == Ast_Resolve_Var_Tag::Global)
+	if (var->tag == Ast_Resolve_Var_Tag::Resolved_Global)
 	{
 		Ast_Info_IR_Global* global_info = &bc->program->globals[var->global.global_id];
 		build_global_var(bc, global_info);
@@ -582,13 +583,12 @@ IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_o
 			}
 
 			Ast_Access_Array* array_access = access->as_array;
+			access = access->next.has_value() ? access->next.value() : NULL;
 
 			Value index = build_expr(bc, array_access->index_expr);
 			Type element_type = type_from_ast_type(bc, ast_type.as_array->element_type);
 			ptr = LLVMBuildGEP2(bc->builder, element_type, ptr, &index, 1, "array_gep");
 			ast_type = ast_type.as_array->element_type;
-
-			access = array_access->next.has_value() ? array_access->next.value() : NULL;
 		}
 		else
 		{
@@ -599,16 +599,15 @@ IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_o
 			}
 
 			Ast_Access_Var* var_access = access->as_var;
+			access = access->next.has_value() ? access->next.value() : NULL;
 
 			Ast_Info_IR_Struct struct_info = bc->program->structs[ast_type.as_struct.struct_id];
-			ptr = LLVMBuildStructGEP2(bc->builder, struct_info.struct_type, ptr, var_access->field_id, "struct_ptr");
-			ast_type = struct_info.struct_decl->fields[var_access->field_id].type;
-
-			access = var_access->next.has_value() ? var_access->next.value() : NULL;
+			ptr = LLVMBuildStructGEP2(bc->builder, struct_info.struct_type, ptr, var_access->resolved.field_id, "struct_ptr");
+			ast_type = struct_info.struct_decl->fields[var_access->resolved.field_id].type;
 		}
 	}
 
-	return IR_Access_Info{ ptr, type_from_ast_type(bc, ast_type) };
+	return IR_Access_Info { ptr, type_from_ast_type(bc, ast_type) };
 }
 
 Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr)

@@ -52,6 +52,9 @@ static option<Ast_Type> check_apply_expr_fold(Check_Context* cc, Expr_Context co
 Consteval_Dependency consteval_dependency_from_global(Ast_Decl_Global* global_decl, Span span);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant, Span span);
 Consteval_Dependency consteval_dependency_from_struct_size(Ast_Decl_Struct* struct_decl, Span span);
+static Consteval_Dependency consteval_dependency_from_array_size(Ast_Expr* size_expr, Ast_Type* type);
+static Consteval_Dependency consteval_dependency_from_array_access(Ast_Access_Array* array_access);
+
 void check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
 static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Decl_Struct* struct_decl, Tree_Node<Consteval_Dependency>* parent);
 static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent, option<Expr_Context> context = {});
@@ -78,33 +81,19 @@ static void resolve_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call);
 static void resolve_array_init(Check_Context* cc, Expr_Context context, Ast_Array_Init* array_init, bool check_array_size_expr);
 static void resolve_struct_init(Check_Context* cc, Expr_Context context, Ast_Struct_Init* struct_init);
 
+struct Dependency_Global       { Ast_Decl_Global* global_decl; Span span; };
+struct Dependency_Enum_Variant { Ast_Enum_Variant* enum_variant; Span span; };
+struct Dependency_Struct_Size  { Ast_Decl_Struct* struct_decl; Span span; };
+struct Dependency_Array_Size   { Ast_Expr* size_expr; Ast_Type* type; };
+struct Dependency_Array_Access { Ast_Expr* access_expr; };
+
 enum class Consteval_Dependency_Tag
 {
-	Global, Enum_Variant, Struct_Size, Array_Size_Expr,
-};
-
-struct Global_Dependency
-{
-	Ast_Decl_Global* global_decl;
-	Span span;
-};
-
-struct Enum_Variant_Dependency
-{
-	Ast_Enum_Variant* enum_variant;
-	Span span;
-};
-
-struct Array_Size_Dependency
-{
-	Ast_Expr* size_expr;
-	Ast_Type* type;
-};
-
-struct Struct_Size_Dependency
-{
-	Ast_Decl_Struct* struct_decl;
-	Span span;
+	Global,
+	Enum_Variant,
+	Struct_Size,
+	Array_Size_Expr,
+	Array_Access_Expr,
 };
 
 struct Consteval_Dependency
@@ -113,10 +102,11 @@ struct Consteval_Dependency
 
 	union
 	{
-		Global_Dependency as_global;
-		Enum_Variant_Dependency as_enum_variant;
-		Struct_Size_Dependency as_struct_size;
-		Array_Size_Dependency as_array_size;
+		Dependency_Global as_global;
+		Dependency_Enum_Variant as_enum_variant;
+		Dependency_Struct_Size as_struct_size;
+		Dependency_Array_Size as_array_size;
+		Dependency_Array_Access as_array_access;
 	};
 };
 
@@ -144,7 +134,6 @@ enum class Expr_Kind
 	Normal,
 	Const,
 	Constfold,
-	//Consteval, @Not used yet
 };
 
 enum class Type_Kind
@@ -156,8 +145,8 @@ enum class Type_Kind
 	String,
 	Pointer,
 	Enum,
-	Struct,
 	Array,
+	Struct,
 };
 
 enum class Literal_Kind

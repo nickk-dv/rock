@@ -1009,7 +1009,7 @@ Ast_Access* parse_access(Parser* parser)
 	if (token.type == TokenType::DOT)
 	{
 		consume();
-		Ast_Access_Var* var_access = parse_var_access(parser);
+		Ast_Access_Var* var_access = parse_access_var(access, parser);
 		if (!var_access) return NULL;
 		access->tag = Ast_Access_Tag::Var;
 		access->as_var = var_access;
@@ -1017,7 +1017,7 @@ Ast_Access* parse_access(Parser* parser)
 	else if (token.type == TokenType::BRACKET_START)
 	{
 		consume();
-		Ast_Access_Array* array_access = parse_array_access(parser);
+		Ast_Access_Array* array_access = parse_access_array(access, parser);
 		if (!array_access) return NULL;
 		access->tag = Ast_Access_Tag::Array;
 		access->as_array = array_access;
@@ -1032,26 +1032,26 @@ Ast_Access* parse_access(Parser* parser)
 	return access;
 }
 
-Ast_Access_Var* parse_var_access(Parser* parser)
+Ast_Access_Var* parse_access_var(Ast_Access* target, Parser* parser)
 {
 	Ast_Access_Var* var_access = arena_alloc<Ast_Access_Var>(&parser->arena);
 
 	option<Token> ident = try_consume(TokenType::IDENT);
 	if (!ident) { err_parse(parser, TokenType::IDENT, "struct field access"); return NULL; }
-	var_access->ident = token_to_ident(ident.value());
+	var_access->unresolved.ident = token_to_ident(ident.value());
 
 	Token token = peek();
 	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
 	{
 		Ast_Access* access = parse_access(parser);
 		if (!access) return NULL;
-		var_access->next = access;
+		target->next = access;
 	}
 
 	return var_access;
 }
 
-Ast_Access_Array* parse_array_access(Parser* parser)
+Ast_Access_Array* parse_access_array(Ast_Access* target, Parser* parser)
 {
 	Ast_Access_Array* array_access = arena_alloc<Ast_Access_Array>(&parser->arena);
 
@@ -1066,7 +1066,7 @@ Ast_Access_Array* parse_array_access(Parser* parser)
 	{
 		Ast_Access* access = parse_access(parser);
 		if (!access) return NULL;
-		array_access->next = access;
+		target->next = access;
 	}
 
 	return array_access;

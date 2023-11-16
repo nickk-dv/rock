@@ -110,7 +110,7 @@ struct Ast_Info_Global    { Ast_Decl_Global* global_decl; u32 global_id; };
 struct Ast_Info_IR_Proc   { Ast_Decl_Proc* proc_decl; LLVMTypeRef proc_type; LLVMValueRef proc_value; };
 struct Ast_Info_IR_Enum   { Ast_Decl_Enum* enum_decl; LLVMTypeRef enum_type; };
 struct Ast_Info_IR_Struct { Ast_Decl_Struct* struct_decl; LLVMTypeRef struct_type; LLVMValueRef default_value; };
-struct Ast_Info_IR_Global { Ast_Decl_Global* global_decl; LLVMValueRef global_ptr; };
+struct Ast_Info_IR_Global { Ast_Decl_Global* global_decl; LLVMValueRef global_ptr; LLVMValueRef const_value; };
 
 struct Ast_Ident
 {
@@ -466,8 +466,8 @@ enum class Ast_Resolve_Tag
 enum class Ast_Resolve_Var_Tag
 {
 	Unresolved, 
-	Local,
-	Global,
+	Resolved_Local,
+	Resolved_Global,
 	Invalid,
 };
 
@@ -478,21 +478,9 @@ struct Ast_Var
 
 	union
 	{
-		struct Unresolved 
-		{ 
-			Ast_Ident ident; 
-		} unresolved;
-
-		struct Local 
-		{ 
-			Ast_Ident ident; 
-		} local;
-
-		struct Global 
-		{ 
-			u32 global_id;
-			Ast_Decl_Global* global_decl; 
-		} global;
+		struct Unresolved      { Ast_Ident ident; } unresolved;
+		struct Resolved_Local  { Ast_Ident ident; } local;
+		struct Resolved_Global { u32 global_id; Ast_Decl_Global* global_decl; } global;
 	};
 };
 
@@ -504,6 +492,7 @@ enum class Ast_Access_Tag
 struct Ast_Access
 {
 	Ast_Access_Tag tag;
+	option<Ast_Access*> next;
 
 	union
 	{
@@ -514,16 +503,18 @@ struct Ast_Access
 
 struct Ast_Access_Var
 {
-	Ast_Ident ident;
-	option<Ast_Access*> next;
-	//checker
-	u32 field_id;
+	Ast_Resolve_Tag tag;
+	
+	union
+	{
+		struct Unresolved { Ast_Ident ident; } unresolved;
+		struct Resolved   { u32 field_id; } resolved;
+	};
 };
 
 struct Ast_Access_Array
 {
 	Ast_Expr* index_expr;
-	option<Ast_Access*> next;
 };
 
 struct Ast_Enum
@@ -532,18 +523,8 @@ struct Ast_Enum
 	
 	union
 	{
-		struct Unresolved
-		{
-			option<Ast_Ident> import;
-			Ast_Ident ident;
-			Ast_Ident variant;
-		} unresolved;
-
-		struct Resolved
-		{
-			Ast_Type_Enum type;
-			u32 variant_id;
-		} resolved;
+		struct Unresolved { option<Ast_Ident> import; Ast_Ident ident; Ast_Ident variant; } unresolved;
+		struct Resolved   { Ast_Type_Enum type; u32 variant_id; } resolved;
 	};
 };
 
@@ -585,17 +566,8 @@ struct Ast_Proc_Call
 
 	union
 	{
-		struct Unresolved
-		{
-			option<Ast_Ident> import;
-			Ast_Ident ident;
-		} unresolved;
-
-		struct Resolved
-		{
-			Ast_Decl_Proc* proc_decl;
-			u32 proc_id;
-		} resolved;
+		struct Unresolved { option<Ast_Ident> import; Ast_Ident ident; } unresolved;
+		struct Resolved   { Ast_Decl_Proc* proc_decl; u32 proc_id; } resolved;
 	};
 };
 
@@ -610,19 +582,11 @@ struct Ast_Struct_Init
 {
 	Ast_Resolve_Tag tag;
 	std::vector<Ast_Expr*> input_exprs;
-
+	
 	union
 	{
-		struct Unresolved
-		{
-			option<Ast_Ident> import;
-			option<Ast_Ident> ident;
-		} unresolved;
-
-		struct Resolved
-		{
-			option<Ast_Type_Struct> type;
-		} resolved;
+		struct Unresolved { option<Ast_Ident> import; option<Ast_Ident> ident; } unresolved;
+		struct Resolved   { option<Ast_Type_Struct> type; } resolved;
 	};
 };
 
