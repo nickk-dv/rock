@@ -31,7 +31,7 @@ Ast_Program* parse_program(Parser* parser)
 		//if (entry.extension() != ".txt") continue; //@Branding check extension
 		
 		FILE* file;
-		fopen_s(&file, entry.u8string().c_str(), "rb");
+		fopen_s(&file, (const char*)entry.u8string().c_str(), "rb");
 		if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); return NULL; } //@add context
 		fseek(file, 0, SEEK_END);
 		u64 size = (u64)ftell(file);

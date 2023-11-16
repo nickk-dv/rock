@@ -49,16 +49,19 @@ static option<Literal> literal_convert_int_to_uint(Literal lit);
 static option<Literal> literal_convert_uint_to_int(Literal lit);
 static option<Ast_Type> check_apply_expr_fold(Check_Context* cc, Expr_Context context, Ast_Expr* expr, Literal lit);
 
+void check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
+static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Tree_Node<Consteval_Dependency>* parent, Ast_Expr* expr, option<Expr_Context> context = {});
+static Consteval check_consteval_dependencies_array_type(Check_Context* cc, Arena* arena, Tree_Node<Consteval_Dependency>* parent, Ast_Type* type);
+static Consteval check_consteval_dependencies_struct_size(Check_Context* cc, Arena* arena, Tree_Node<Consteval_Dependency>* parent, Ast_Decl_Struct* struct_decl);
+static option<Tree_Node<Consteval_Dependency>*> consteval_dependency_detect_cycle(Check_Context* cc, Arena* arena, Tree_Node<Consteval_Dependency>* parent, Consteval_Dependency constant);
+static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
+
 Consteval_Dependency consteval_dependency_from_global(Ast_Decl_Global* global_decl, Span span);
 Consteval_Dependency consteval_dependency_from_enum_variant(Ast_Enum_Variant* enum_variant, Span span);
 Consteval_Dependency consteval_dependency_from_struct_size(Ast_Decl_Struct* struct_decl, Span span);
 static Consteval_Dependency consteval_dependency_from_array_size(Ast_Expr* size_expr, Ast_Type* type);
 static Consteval_Dependency consteval_dependency_from_array_access(Ast_Access_Array* array_access);
-
-void check_consteval_expr(Check_Context* cc, Consteval_Dependency constant);
-static Consteval check_struct_size_dependencies(Check_Context* cc, Arena* arena, Ast_Decl_Struct* struct_decl, Tree_Node<Consteval_Dependency>* parent);
-static Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Ast_Expr* expr, Tree_Node<Consteval_Dependency>* parent, option<Expr_Context> context = {});
-static Consteval check_evaluate_consteval_tree(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
+static Consteval consteval_dependency_mark_and_return_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);
 static Ast_Consteval_Expr* consteval_dependency_get_consteval_expr(Consteval_Dependency constant);
 static bool match_const_dependency(Consteval_Dependency a, Consteval_Dependency b);
 static void consteval_dependency_mark_invalid(Check_Context* cc, Tree_Node<Consteval_Dependency>* node);

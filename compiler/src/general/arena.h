@@ -3,8 +3,19 @@
 
 #include "general.h"
 
-struct Arena;
-struct Arena_Block;
+struct Arena_Block
+{
+	void* data;
+	Arena_Block* prev;
+};
+
+struct Arena
+{
+	u8* data;
+	u64 offset;
+	u64 block_size;
+	Arena_Block* curr;
+};
 
 void arena_init(Arena* arena, u64 block_size);
 void arena_deinit(Arena* arena);
@@ -25,19 +36,5 @@ T* arena_alloc(Arena* arena)
 {
 	return arena_alloc_buffer<T>(arena, 1);
 }
-
-struct Arena
-{
-	u8* data;
-	u64 offset;
-	u64 block_size;
-	Arena_Block* curr;
-};
-
-struct Arena_Block
-{
-	void* data;
-	Arena_Block* prev;
-};
 
 #endif

@@ -44,7 +44,7 @@ LLVMModuleRef build_module(Ast_Program* program)
 		type_array.emplace_back(type_from_ast_type(&bc, param.type));
 
 		Type ret_type = proc_decl->return_type ? type_from_ast_type(&bc, proc_decl->return_type.value()) : LLVMVoidType();
-		char* name = (proc_decl->is_external || proc_decl->is_main) ? ident_to_cstr(proc_decl->ident) : "proc";
+		const char* name = (proc_decl->is_external || proc_decl->is_main) ? ident_to_cstr(proc_decl->ident) : "proc";
 		proc_info.proc_type = LLVMFunctionType(ret_type, type_array.data(), (u32)type_array.size(), proc_info.proc_decl->is_variadic);
 		proc_info.proc_value = LLVMAddFunction(bc.module, name, proc_info.proc_type);
 	}
