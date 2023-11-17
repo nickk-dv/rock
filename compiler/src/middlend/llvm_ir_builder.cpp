@@ -491,7 +491,7 @@ Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_address)
 		}
 		else
 		{
-			err_internal("build_term: invalid Ast_Term_Tag");
+			err_internal("build_term: invalid literal TokenType");
 			return NULL;
 		}
 	}

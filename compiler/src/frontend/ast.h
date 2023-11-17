@@ -96,6 +96,7 @@ struct Ast_Program
 {
 	std::vector<Ast*> modules;
 	HashMap<std::string, Ast*, u32, match_string> module_map;
+	HashMap<Ast_Ident, Ast_Decl_Proc*, u32, match_ident> external_proc_table;
 	
 	std::vector<Ast_Info_IR_Proc> procs;
 	std::vector<Ast_Info_IR_Enum> enums;

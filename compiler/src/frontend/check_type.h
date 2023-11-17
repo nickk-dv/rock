@@ -40,7 +40,7 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 
 static option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
 static option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
-static option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term);
+static option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term, Ast_Expr* source_expr);
 static option<Ast_Type> check_access(Check_Context* cc, Ast_Type type, option<Ast_Access*> optional_access);
 static option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_Unary_Expr* unary_expr);
 static option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_Binary_Expr* binary_expr);

@@ -102,7 +102,8 @@ ErrorMessage err_get_message(Error error)
 	case Error::DECL_ENUM_NON_INTEGER_TYPE:     return { "Enum can only have integer basic type", "" };
 	case Error::DECL_ENUM_DUPLICATE_VARIANT:    return { "Enum has duplicate variant identifiers", "" };
 	case Error::DECL_PROC_DUPLICATE_PARAM:      return { "Procedure has duplicate input parameters", "" };
-	
+	case Error::DECL_PROC_DUPLICATE_EXTERNAL:   return { "External procedure with same identifier is already defined", "Import and use existing procedure, its redefiniton will cause linker errors" };
+
 	case Error::RESOLVE_IMPORT_NOT_FOUND:       return { "Import module is not found", "" };
 	case Error::RESOLVE_TYPE_NOT_FOUND:         return { "Custom type is not found", "" };
 	case Error::RESOLVE_TYPE_ARRAY_ZERO_SIZE:   return { "Static array cannot have size of 0", "Array size expression cannot evaluate to 0" };

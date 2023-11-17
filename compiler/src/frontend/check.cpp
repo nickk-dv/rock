@@ -6,6 +6,7 @@
 bool check_program(Ast_Program* program)
 {
 	Check_Context cc = {};
+	program->external_proc_table.init(256);
 
 	for (Ast* ast : program->modules)
 	{
@@ -162,6 +163,17 @@ void check_decls_symbols(Check_Context* cc)
 		symbol_table.add(ident, hash_ident(ident));
 		ast->proc_table.add(ident, Ast_Info_Proc { decl, (u32)program->procs.size() }, hash_ident(ident));
 		program->procs.emplace_back(Ast_Info_IR_Proc { decl });
+
+		if (!decl->is_external) continue;
+		option<Ast_Decl_Proc*> external = program->external_proc_table.find(ident, hash_ident(ident));
+		if (external)
+		{
+			err_report(Error::DECL_PROC_DUPLICATE_EXTERNAL);
+			err_context(cc, ident.span);
+			err_context(cc, external.value()->ident.span); //@Need to reference ast of the declaration, same for many other error contexts
+			continue;
+		}
+		program->external_proc_table.add(ident, decl, hash_ident(ident));
 	}
 
 	for (Ast_Decl_Global* decl : ast->globals)

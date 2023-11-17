@@ -351,7 +351,7 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 	{
 		switch (expr->tag)
 		{
-		case Ast_Expr_Tag::Term: return check_term(cc, context, expr->as_term);
+		case Ast_Expr_Tag::Term: return check_term(cc, context, expr->as_term, expr);
 		case Ast_Expr_Tag::Unary: return check_unary_expr(cc, context, expr->as_unary_expr);
 		case Ast_Expr_Tag::Binary: return check_binary_expr(cc, context, expr->as_binary_expr);
 		default: { err_internal("check_expr: invalid Ast_Expr_Tag"); return {}; }
@@ -531,7 +531,7 @@ option<Expr_Kind> resolve_expr(Check_Context* cc, Expr_Context context, Ast_Expr
 //@TODO temp allowing old errors:
 #define err_set (void)0;
 
-option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term)
+option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* term, Ast_Expr* source_expr)
 {
 	switch (term->tag)
 	{
@@ -573,8 +573,9 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* t
 		{
 			//@Err
 			err_set;
-			printf("Unexpected number of fields in struct initializer:\n");
+			err_internal("Unexpected number of fields in struct initializer");
 			printf("Expected: %lu Got: %lu \n", field_count, input_count);
+			err_context(cc, source_expr->span);
 		}
 
 		// check input exprs
@@ -614,8 +615,9 @@ option<Ast_Type> check_term(Check_Context* cc, Expr_Context context, Ast_Term* t
 		{
 			//@Err
 			err_set;
-			printf("Unexpected number of fields in array initializer:\n");
+			err_internal("Unexpected number of fields in array initializer");
 			printf("Expected: %lu Got: %lu \n", size_count, input_count);
+			err_context(cc, source_expr->span);
 		}
 
 		Ast_Type type = array_init->type.value();
@@ -1064,7 +1066,7 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		{
 			if (rhs_kind == Literal_Kind::Float) { rhs.as_f64 = -rhs.as_f64; return rhs; }
 			if (rhs_kind == Literal_Kind::Int) { rhs.as_i64 = -rhs.as_i64; return rhs; }
-			if (rhs_kind == Literal_Kind::Bool) { err_report(Error::FOLD_UNARY_MINUS_OVERFLOW); err_context(cc, expr->span); return {}; }
+			if (rhs_kind == Literal_Kind::Bool) { err_report(Error::FOLD_UNARY_MINUS_ON_BOOL); err_context(cc, expr->span); return {}; }
 			
 			option<Literal> lit_int = literal_convert_uint_to_int(rhs);
 			if (!lit_int) { err_report(Error::FOLD_UNARY_MINUS_OVERFLOW); err_context(cc, expr->span); return {}; }
@@ -2282,7 +2284,6 @@ void resolve_array_init(Check_Context* cc, Expr_Context context, Ast_Array_Init*
 			array_init->tag = Ast_Resolve_Tag::Invalid;
 			return;
 		}
-		else array_init->tag = Ast_Resolve_Tag::Resolved;
 	}
 
 	if (context.expect_type)
@@ -2319,6 +2320,8 @@ void resolve_array_init(Check_Context* cc, Expr_Context context, Ast_Array_Init*
 		array_init->tag = Ast_Resolve_Tag::Invalid;
 		return;
 	}
+
+	array_init->tag = Ast_Resolve_Tag::Resolved;
 }
 
 void resolve_struct_init(Check_Context* cc, Expr_Context context, Ast_Struct_Init* struct_init)
@@ -2386,4 +2389,6 @@ void resolve_struct_init(Check_Context* cc, Expr_Context context, Ast_Struct_Ini
 		struct_init->tag = Ast_Resolve_Tag::Invalid;
 		return;
 	}
+
+	struct_init->tag = Ast_Resolve_Tag::Resolved;
 }
