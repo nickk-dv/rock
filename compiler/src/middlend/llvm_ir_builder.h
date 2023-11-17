@@ -22,7 +22,7 @@ static Value build_term(IR_Builder_Context* bc, Ast_Term* term, bool unary_addre
 static IR_Access_Info build_var(IR_Builder_Context* bc, Ast_Var* var);
 static IR_Access_Info build_access(IR_Builder_Context* bc, option<Ast_Access*> access_option, Value ptr, Ast_Type ast_type);
 static Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr);
-static Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr);
+static Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr, Ast_Expr* source_expr);
 static Value build_folded_expr(Ast_Folded_Expr folded_expr);
 static char* ident_to_cstr(Ast_Ident& ident);
 static Type type_from_basic_type(BasicType basic_type);

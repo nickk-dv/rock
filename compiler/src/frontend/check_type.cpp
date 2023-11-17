@@ -50,6 +50,18 @@ Ast_Type type_from_basic(BasicType basic_type)
 	return type;
 }
 
+option<BasicType> type_extract_basic_and_enum_type(Ast_Type type)
+{
+	if (type.pointer_level > 0) return {};
+
+	switch (type.tag)
+	{
+	case Ast_Type_Tag::Basic: return type.as_basic;
+	case Ast_Type_Tag::Enum: return type.as_enum.enum_decl->basic_type;
+	default: return {};
+	}
+}
+
 option<Ast_Type_Struct> type_extract_struct_value_type(Ast_Type type)
 {
 	if (type.pointer_level > 0) return {};
@@ -62,9 +74,10 @@ option<Ast_Type_Struct> type_extract_struct_value_type(Ast_Type type)
 	}
 }
 
-option<Ast_Type_Array*> type_extract_array_value_type(Ast_Type type)
+option<Ast_Type_Array*> type_extract_array_type(Ast_Type type)
 {
 	if (type.pointer_level > 0) return {};
+	
 	switch (type.tag)
 	{
 	case Ast_Type_Tag::Array: return type.as_array;
@@ -352,8 +365,8 @@ option<Ast_Type> check_expr(Check_Context* cc, Expr_Context context, Ast_Expr* e
 		switch (expr->tag)
 		{
 		case Ast_Expr_Tag::Term: return check_term(cc, context, expr->as_term, expr);
-		case Ast_Expr_Tag::Unary: return check_unary_expr(cc, context, expr->as_unary_expr);
-		case Ast_Expr_Tag::Binary: return check_binary_expr(cc, context, expr->as_binary_expr);
+		case Ast_Expr_Tag::Unary: return check_unary_expr(cc, context, expr->as_unary_expr, expr);
+		case Ast_Expr_Tag::Binary: return check_binary_expr(cc, context, expr->as_binary_expr, expr);
 		default: { err_internal("check_expr: invalid Ast_Expr_Tag"); return {}; }
 		}
 	}
@@ -810,7 +823,7 @@ option<Ast_Type> check_proc_call(Check_Context* cc, Ast_Proc_Call* proc_call, Ch
 	}
 }
 
-option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_Unary_Expr* unary_expr)
+option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_Unary_Expr* unary_expr, Ast_Expr* source_expr)
 {
 	option<Ast_Type> rhs_result = check_expr(cc, context, unary_expr->right);
 	if (!rhs_result) return {};
@@ -854,99 +867,86 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_U
 	}
 }
 
-option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_Binary_Expr* binary_expr)
+option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_Binary_Expr* binary_expr, Ast_Expr* source_expr)
 {
 	option<Ast_Type> lhs_result = check_expr(cc, context, binary_expr->left);
-	if (!lhs_result) return {};
 	option<Ast_Type> rhs_result = check_expr(cc, context, binary_expr->right);
-	if (!rhs_result) return {};
+	if (!lhs_result || !rhs_result) return {};
+
+	Ast_Type lhs = lhs_result.value();
+	Ast_Type rhs = rhs_result.value();
+	
+	auto err_context_binary = [&]() {
+		err_context(cc, binary_expr->left->span);
+		printf("Type: "); print_type(lhs); printf("\n");
+		err_context(cc, binary_expr->right->span);
+		printf("Type: "); print_type(rhs); printf("\n");
+	};
+
+	option<BasicType> lhs_basic_type = type_extract_basic_and_enum_type(lhs);
+	option<BasicType> rhs_basic_type = type_extract_basic_and_enum_type(rhs);
+	
+	if (!lhs_basic_type || !rhs_basic_type)
+	{
+		err_report(Error::BINARY_EXPR_NON_BASIC);
+		err_context_binary();
+		return {};
+	}
+
+	lhs = type_from_basic(lhs_basic_type.value());
+	rhs = type_from_basic(rhs_basic_type.value());
+	type_auto_binary_cast(&lhs, &rhs, binary_expr->left, binary_expr->right);
+	
+	if (lhs.as_basic != rhs.as_basic)
+	{
+		err_report(Error::BINARY_EXPR_NON_MATCHING_BASIC);
+		err_context_binary();
+		return {};
+	}
 
 	BinaryOp op = binary_expr->op;
-	Ast_Type lhs = lhs_result.value();
 	Type_Kind lhs_kind = type_kind(lhs);
-	Ast_Type rhs = rhs_result.value();
-	Type_Kind rhs_kind = type_kind(rhs);
-	bool same_kind = lhs_kind == rhs_kind;
-
-	//if (!same_kind) //@Maybe still use it for simplicity
-	//{
-	//	err_set;
-	//	printf("Binary expr cannot be done on different type kinds\n");
-	//	return {};
-	//}
-
-	type_auto_binary_cast(&lhs, &rhs, binary_expr->left, binary_expr->right);
-	//@Enforce same basic type for non enums
-
+	
+	if (lhs_kind == Type_Kind::Int)
+	{
+		source_expr->flags |= AST_EXPR_FLAG_BIN_OP_INT_SIGNED;
+	}
+	
 	switch (op)
 	{
 	case BinaryOp::LOGIC_AND:
-	{
-		if (lhs_kind != Type_Kind::Bool || rhs_kind != Type_Kind::Bool)
-		{
-			err_report(Error::BINARY_LOGIC_AND_ONLY_ON_BOOL);
-			if (lhs_kind != Type_Kind::Bool)
-			{
-				err_context(cc, binary_expr->left->span);
-				printf("Expression type: ");
-				print_type(lhs); printf("\n");
-			}
-			if (rhs_kind != Type_Kind::Bool)
-			{
-				err_context(cc, binary_expr->right->span);
-				printf("Expression type: ");
-				print_type(rhs); printf("\n");
-			}
-			return {};
-		}
-		return lhs;
-	}
 	case BinaryOp::LOGIC_OR:
 	{
-		if (lhs_kind != Type_Kind::Bool || rhs_kind != Type_Kind::Bool)
-		{
-			err_report(Error::BINARY_LOGIC_OR_ONLY_ON_BOOL);
-			if (lhs_kind != Type_Kind::Bool)
-			{
-				err_context(cc, binary_expr->left->span);
-				printf("Expression type: ");
-				print_type(lhs); printf("\n");
-			}
-			if (rhs_kind != Type_Kind::Bool)
-			{
-				err_context(cc, binary_expr->right->span);
-				printf("Expression type: ");
-				print_type(rhs); printf("\n");
-			}
-			return {};
-		}
+		if (lhs_kind != Type_Kind::Bool) { err_report(Error::BINARY_LOGIC_ONLY_ON_BOOL); err_context_binary(); return {}; }
 		return lhs;
 	}
 	case BinaryOp::LESS:
 	case BinaryOp::GREATER:
 	case BinaryOp::LESS_EQUALS:
 	case BinaryOp::GREATER_EQUALS:
-	case BinaryOp::IS_EQUALS: //@Todo == != on enums
+	{
+		if (lhs_kind == Type_Kind::Bool) { err_report(Error::BINARY_CMP_ON_BOOL); err_context_binary(); return {}; }
+		if (lhs_kind == Type_Kind::String) { err_report(Error::BINARY_CMP_ON_STRING); err_context_binary(); return {}; }
+		return type_from_basic(BasicType::BOOL);
+	}
+	case BinaryOp::IS_EQUALS:
 	case BinaryOp::NOT_EQUALS:
 	{
-		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return type_from_basic(BasicType::BOOL);
-		err_set; printf("BINARY Comparison Ops (< > <= >= == !=) only work on floats or integers\n");
-		return {};
+		//@String basic type not implemented
+		if (lhs_kind == Type_Kind::String) { err_internal("String comparisons are not implemented yet"); err_context_binary(); return {}; }
+		//@Todo if 2 enums are compared they must have same enum type, rather then being downcast to their int values
+		//currently any enums of same basic type can be compared
+		return type_from_basic(BasicType::BOOL);
 	}
 	case BinaryOp::PLUS:
 	case BinaryOp::MINUS:
 	case BinaryOp::TIMES:
 	case BinaryOp::DIV:
-	{
-		if (lhs_kind == Type_Kind::Float || lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return lhs;
-		err_set; printf("BINARY Math Ops (+ - * /) only work on floats or integers\n");
-		return {};
-	}
 	case BinaryOp::MOD:
 	{
-		if (lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return lhs;
-		err_set; printf("BINARY Op %% only works on integers\n");
-		return {};
+		if (lhs_kind != Type_Kind::Float && lhs_kind != Type_Kind::Int && lhs_kind == Type_Kind::Uint) 
+		{ err_report(Error::BINARY_MATH_ONLY_ON_NUMERIC); err_context_binary(); return {}; }
+		return lhs;
 	}
 	case BinaryOp::BITWISE_AND:
 	case BinaryOp::BITWISE_OR:
@@ -954,9 +954,8 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	case BinaryOp::BITSHIFT_LEFT:
 	case BinaryOp::BITSHIFT_RIGHT:
 	{
-		if (lhs_kind == Type_Kind::Int || lhs_kind == Type_Kind::Uint) return lhs;
-		err_set; printf("BINARY Bitwise Ops (& | ^ << >>) only work on integers\n");
-		return {};
+		if (lhs_kind != Type_Kind::Uint) { err_report(Error::BINARY_BITWISE_ONLY_ON_UINT); err_context_binary(); return {}; }
+		return lhs;
 	}
 	default: { err_internal("check_binary_expr: invalid BinaryOp"); return {}; }
 	}
@@ -1113,18 +1112,18 @@ option<Literal> check_folded_expr(Check_Context* cc, Ast_Expr* expr)
 		bool same_kind = lhs_kind == rhs_kind;
 
 		//@Need apply i64 to u64 conversion if possible
-
+		//@Todo sync the rules and errors from binary expr type checking
 		switch (op)
 		{
 		case BinaryOp::LOGIC_AND:
 		{
 			if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool && rhs.as_bool };
-			err_report(Error::BINARY_LOGIC_AND_ONLY_ON_BOOL); err_context(cc, expr->span); return {};
+			err_report(Error::BINARY_LOGIC_ONLY_ON_BOOL); err_context(cc, expr->span); return {};
 		}
 		case BinaryOp::LOGIC_OR:
 		{
 			if (same_kind && lhs_kind == Literal_Kind::Bool) return Literal{ Literal_Kind::Bool, lhs.as_bool || rhs.as_bool };
-			err_report(Error::BINARY_LOGIC_OR_ONLY_ON_BOOL); err_context(cc, expr->span); return {};
+			err_report(Error::BINARY_LOGIC_ONLY_ON_BOOL); err_context(cc, expr->span); return {};
 		}
 		case BinaryOp::LESS:
 		{
@@ -1683,12 +1682,12 @@ Consteval check_consteval_dependencies(Check_Context* cc, Arena* arena, Tree_Nod
 
 Consteval check_consteval_dependencies_array_type(Check_Context* cc, Arena* arena, Tree_Node<Consteval_Dependency>* parent, Ast_Type* type)
 {
-	option<Ast_Type_Array*> array_type = type_extract_array_value_type(*type);
+	option<Ast_Type_Array*> array_type = type_extract_array_type(*type);
 	while (array_type)
 	{
 		tree_node_add_child(arena, parent, consteval_dependency_from_array_size(array_type.value()->size_expr, type));
 		if (check_consteval_dependencies(cc, arena, parent, array_type.value()->size_expr) == Consteval::Invalid) return Consteval::Invalid;
-		array_type = type_extract_array_value_type(array_type.value()->element_type);
+		array_type = type_extract_array_type(array_type.value()->element_type);
 	}
 	return Consteval::Not_Evaluated;
 }

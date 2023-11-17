@@ -412,7 +412,7 @@ Value build_expr(IR_Builder_Context* bc, Ast_Expr* expr, bool unary_address)
 	{
 	case Ast_Expr_Tag::Term: value = build_term(bc, expr->as_term, unary_address); break;
 	case Ast_Expr_Tag::Unary: value = build_unary_expr(bc, expr->as_unary_expr); break;
-	case Ast_Expr_Tag::Binary: value = build_binary_expr(bc, expr->as_binary_expr); break;
+	case Ast_Expr_Tag::Binary: value = build_binary_expr(bc, expr->as_binary_expr, expr); break;
 	case Ast_Expr_Tag::Folded: value = build_folded_expr(expr->as_folded_expr); break;
 	default: { err_internal("build_expr: invalid Ast_Expr_Tag"); return NULL; }
 	}
@@ -632,38 +632,35 @@ Value build_unary_expr(IR_Builder_Context* bc, Ast_Unary_Expr* unary_expr)
 	}
 }
 
-Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr)
+Value build_binary_expr(IR_Builder_Context* bc, Ast_Binary_Expr* binary_expr, Ast_Expr* source_expr)
 {
 	BinaryOp op = binary_expr->op;
 	Value lhs = build_expr(bc, binary_expr->left);
 	Value rhs = build_expr(bc, binary_expr->right);
 	Type lhs_type = LLVMTypeOf(lhs);
-	bool float_kind = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind || LLVMGetTypeKind(lhs_type) == LLVMDoubleTypeKind;
+	bool is_float = LLVMGetTypeKind(lhs_type) == LLVMFloatTypeKind || LLVMGetTypeKind(lhs_type) == LLVMDoubleTypeKind;
+	bool int_signed = source_expr->flags & AST_EXPR_FLAG_BIN_OP_INT_SIGNED;
 
 	switch (op)
 	{
-	// LogicOps [&& ||]
-	case BinaryOp::LOGIC_AND: return LLVMBuildAnd(bc->builder, lhs, rhs, "btmp");
-	case BinaryOp::LOGIC_OR: return LLVMBuildOr(bc->builder, lhs, rhs, "btmp");
-	// CmpOps [< > <= >= == !=] //@RealPredicates using ordered (no nans) variants
-	case BinaryOp::LESS:           if (float_kind) return LLVMBuildFCmp(bc->builder, LLVMRealOLT, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntSLT, lhs, rhs, "btmp"); //@Determine S / U predicates
-	case BinaryOp::GREATER:        if (float_kind) return LLVMBuildFCmp(bc->builder, LLVMRealOGT, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntSGT, lhs, rhs, "btmp"); //@Determine S / U predicates
-	case BinaryOp::LESS_EQUALS:    if (float_kind) return LLVMBuildFCmp(bc->builder, LLVMRealOLE, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntSLE, lhs, rhs, "btmp"); //@Determine S / U predicates
-	case BinaryOp::GREATER_EQUALS: if (float_kind) return LLVMBuildFCmp(bc->builder, LLVMRealOGE, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntSGE, lhs, rhs, "btmp"); //@Determine S / U predicates
-	case BinaryOp::IS_EQUALS:      if (float_kind) return LLVMBuildFCmp(bc->builder, LLVMRealOEQ, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntEQ, lhs, rhs, "btmp"); //@Determine S / U predicates
-	case BinaryOp::NOT_EQUALS:     if (float_kind) return LLVMBuildFCmp(bc->builder, LLVMRealONE, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntNE, lhs, rhs, "btmp"); //@Determine S / U predicates
-	// MathOps [+ - * / %]
-	case BinaryOp::PLUS:  if (float_kind) return LLVMBuildFAdd(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildAdd(bc->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-	case BinaryOp::MINUS: if (float_kind) return LLVMBuildFSub(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildSub(bc->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-	case BinaryOp::TIMES: if (float_kind) return LLVMBuildFMul(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildMul(bc->builder, lhs, rhs, "btmp"); //@Safety NoSignedWrap & NoUnsignedWrap variants exist
-	case BinaryOp::DIV:   if (float_kind) return LLVMBuildFDiv(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildSDiv(bc->builder, lhs, rhs, "btmp"); //@ SU variants: LLVMBuildSDiv, LLVMBuildExactSDiv, LLVMBuildUDiv, LLVMBuildExactUDiv
-	case BinaryOp::MOD: return LLVMBuildSRem(bc->builder, lhs, rhs, "btmp"); //@ SU rem variants: LLVMBuildSRem, LLVMBuildURem (using SRem always now)
-	// BitwiseOps [& | ^ << >>]
-	case BinaryOp::BITWISE_AND: return LLVMBuildAnd(bc->builder, lhs, rhs, "btmp"); // @Design only allow those for uints ideally
-	case BinaryOp::BITWISE_OR: return LLVMBuildOr(bc->builder, lhs, rhs, "btmp");
-	case BinaryOp::BITWISE_XOR: return LLVMBuildXor(bc->builder, lhs, rhs, "btmp");
-	case BinaryOp::BITSHIFT_LEFT: return LLVMBuildShl(bc->builder, lhs, rhs, "btmp");
-	case BinaryOp::BITSHIFT_RIGHT: return LLVMBuildLShr(bc->builder, lhs, rhs, "btmp"); //@LLVMBuildAShr used for maintaining the sign?
+	case BinaryOp::LOGIC_AND:      return LLVMBuildAnd(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::LOGIC_OR:       return LLVMBuildOr(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::LESS:           if (is_float) return LLVMBuildFCmp(bc->builder, LLVMRealOLT, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, int_signed ? LLVMIntSLT : LLVMIntULT, lhs, rhs, "btmp");
+	case BinaryOp::GREATER:        if (is_float) return LLVMBuildFCmp(bc->builder, LLVMRealOGT, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, int_signed ? LLVMIntSGT : LLVMIntUGT, lhs, rhs, "btmp");
+	case BinaryOp::LESS_EQUALS:    if (is_float) return LLVMBuildFCmp(bc->builder, LLVMRealOLE, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, int_signed ? LLVMIntSLE : LLVMIntULE, lhs, rhs, "btmp");
+	case BinaryOp::GREATER_EQUALS: if (is_float) return LLVMBuildFCmp(bc->builder, LLVMRealOGE, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, int_signed ? LLVMIntSGE : LLVMIntUGE, lhs, rhs, "btmp");
+	case BinaryOp::IS_EQUALS:      if (is_float) return LLVMBuildFCmp(bc->builder, LLVMRealOEQ, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntEQ, lhs, rhs, "btmp");
+	case BinaryOp::NOT_EQUALS:     if (is_float) return LLVMBuildFCmp(bc->builder, LLVMRealONE, lhs, rhs, "btmp"); else return LLVMBuildICmp(bc->builder, LLVMIntNE, lhs, rhs, "btmp");
+	case BinaryOp::PLUS:           if (is_float) return LLVMBuildFAdd(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildAdd(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::MINUS:          if (is_float) return LLVMBuildFSub(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildSub(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::TIMES:          if (is_float) return LLVMBuildFMul(bc->builder, lhs, rhs, "btmp"); else return LLVMBuildMul(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::DIV:            if (is_float) return LLVMBuildFDiv(bc->builder, lhs, rhs, "btmp"); else return int_signed ? LLVMBuildSDiv(bc->builder, lhs, rhs, "btmp") : LLVMBuildUDiv(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::MOD:            if (is_float) return LLVMBuildFRem(bc->builder, lhs, rhs, "btmp"); else return int_signed ? LLVMBuildSRem(bc->builder, lhs, rhs, "btmp") : LLVMBuildURem(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::BITWISE_AND:    return LLVMBuildAnd(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::BITWISE_OR:     return LLVMBuildOr(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::BITWISE_XOR:    return LLVMBuildXor(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::BITSHIFT_LEFT:  return LLVMBuildShl(bc->builder, lhs, rhs, "btmp");
+	case BinaryOp::BITSHIFT_RIGHT: return LLVMBuildLShr(bc->builder, lhs, rhs, "btmp");
 	default: { err_internal("build_binary_expr: invalid BinaryOp"); return NULL; }
 	}
 }

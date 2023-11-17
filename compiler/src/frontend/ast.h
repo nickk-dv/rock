@@ -383,6 +383,7 @@ enum Ast_Expr_Flags
 	AST_EXPR_FLAG_AUTO_CAST_TO_INT_16_BIT = 1 << 5,
 	AST_EXPR_FLAG_AUTO_CAST_TO_INT_32_BIT = 1 << 6,
 	AST_EXPR_FLAG_AUTO_CAST_TO_INT_64_BIT = 1 << 7,
+	AST_EXPR_FLAG_BIN_OP_INT_SIGNED       = 1 << 8,
 };
 
 enum class Ast_Expr_Tag
@@ -397,7 +398,7 @@ struct Ast_Expr
 {
 	Span span;
 	Ast_Expr_Tag tag;
-	u8 flags;
+	u16 flags;
 
 	union
 	{

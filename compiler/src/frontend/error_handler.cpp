@@ -159,11 +159,15 @@ ErrorMessage err_get_message(Error error)
 	case Error::FOLD_ADDRESS_OF_ON_CONSTANT:    return { "Unary op address '*' cannot be applied on temporary or constant value", "" };
 	case Error::FOLD_DEREFERENCE_ON_CONSTANT:   return { "Unary op dereference '<<' cannot be applied on temporary or constant value", "" };
 
-	case Error::BINARY_LOGIC_AND_ONLY_ON_BOOL:  return { "Binary '&&' can only be applied to expressions of bool type", "" };
-	case Error::BINARY_LOGIC_OR_ONLY_ON_BOOL:   return { "Binary '||' can only be applied to expressions of bool type", "" };
-	
+	case Error::BINARY_EXPR_NON_BASIC:          return { "Binary ops can only be applied to expressions of basic types", "Enum types represented by set of integer constants can also be used" };
+	case Error::BINARY_EXPR_NON_MATCHING_BASIC: return { "Binary ops can only be applied to expressions of same basic types", "Use explicit 'cast', only float casts and integer upcasts are implicit" };
+	case Error::BINARY_LOGIC_ONLY_ON_BOOL:      return { "Binary logic ops can only be used on bools", "" };
+	case Error::BINARY_CMP_ON_BOOL:             return { "Binary comparison ops cannot be applied to bools", "" };
+	case Error::BINARY_CMP_ON_STRING:           return { "Binary comparison ops cannot be applied to strings", "" };
+	case Error::BINARY_MATH_ONLY_ON_NUMERIC:    return { "Binary math ops can only be used on numeric types", "" };
+	case Error::BINARY_BITWISE_ONLY_ON_UINT:    return { "Binary bitwise ops can only be used on unsigned integers", "" };
+
 	case Error::TEMP_VAR_ASSIGN_OP:             return { "Only = operator is supported in variable assignments", "" };
-	
 	default:
 	{ 
 		err_internal("Unknown or unspecified error message");
