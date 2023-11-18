@@ -164,6 +164,7 @@ ErrorMessage err_get_message(Error error)
 	case Error::BINARY_LOGIC_ONLY_ON_BOOL:      return { "Binary logic ops can only be used on bools", "" };
 	case Error::BINARY_CMP_ON_BOOL:             return { "Binary comparison ops cannot be applied to bools", "" };
 	case Error::BINARY_CMP_ON_STRING:           return { "Binary comparison ops cannot be applied to strings", "" };
+	case Error::BINARY_CMP_EQUAL_ON_ENUMS:      return { "Binary equals ops must be applied on enums of the same type", "" };
 	case Error::BINARY_MATH_ONLY_ON_NUMERIC:    return { "Binary math ops can only be used on numeric types", "" };
 	case Error::BINARY_BITWISE_ONLY_ON_UINT:    return { "Binary bitwise ops can only be used on unsigned integers", "" };
 

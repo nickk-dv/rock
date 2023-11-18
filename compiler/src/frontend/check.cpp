@@ -295,7 +295,7 @@ void check_decls_consteval(Check_Context* cc)
 		BasicType type = enum_decl->basic_type;
 		Type_Kind kind = type_kind(type_from_basic(type));
 		
-		if (kind != Type_Kind::Int && kind != Type_Kind::Uint)
+		if (kind != Type_Kind::Int && kind != Type_Kind::Uint) //@Detect this on parse stage to simplify error states
 		{
 			err_report(Error::DECL_ENUM_NON_INTEGER_TYPE);
 			err_context(cc, enum_decl->ident.span);
@@ -304,7 +304,7 @@ void check_decls_consteval(Check_Context* cc)
 
 		for (Ast_Enum_Variant& variant : enum_decl->variants)
 		{
-			check_consteval_expr(cc, consteval_dependency_from_enum_variant(&variant, variant.ident.span));
+			check_consteval_expr(cc, consteval_dependency_from_enum_variant(&variant, enum_decl->basic_type, variant.ident.span));
 		}
 	}
 }
