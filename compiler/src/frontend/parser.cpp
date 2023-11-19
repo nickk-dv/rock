@@ -813,7 +813,7 @@ Ast_Expr* parse_sub_expr(Parser* parser, u32 min_prec)
 
 		Ast_Expr* expr_lhs_copy = arena_alloc<Ast_Expr>(&parser->arena);
 		expr_lhs_copy->tag = expr_lhs->tag;
-		expr_lhs_copy->as_term = expr_lhs->as_term;
+		expr_lhs_copy->as_term = expr_lhs->as_term; //@Why copy both
 		expr_lhs_copy->as_binary_expr = expr_lhs->as_binary_expr;
 
 		Ast_Binary_Expr* bin_expr = arena_alloc<Ast_Binary_Expr>(&parser->arena);

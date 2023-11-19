@@ -1,5 +1,13 @@
 #include "check_constfold.h"
 
+enum class Literal_Kind
+{
+	Bool,
+	Float,
+	Int,
+	Uint
+};
+
 struct Literal
 {
 	Literal_Kind kind;
@@ -13,15 +21,32 @@ struct Literal
 	};
 
 	option<Ast_Type_Enum> enum_type;
-	u32 variant_id;
-};
+	u32 variant_id = 0;
 
-enum class Literal_Kind
-{
-	Bool,
-	Float,
-	Int,
-	Uint
+	Literal(bool val) { kind = Literal_Kind::Bool; this->as_bool = val; }
+	Literal(f64 val) { kind = Literal_Kind::Float; this->as_f64 = val; }
+	Literal(i64 val) { kind = Literal_Kind::Int; this->as_i64 = val; }
+	Literal(u64 val) { kind = Literal_Kind::Uint; this->as_u64 = val; }
+
+	void try_uint_convert()
+	{
+		if (kind == Literal_Kind::Int && this->as_i64 >= 0)
+		{
+			kind = Literal_Kind::Uint;
+			this->as_u64 = static_cast<u64>(this->as_i64);
+		}
+	}
+
+	void try_int_convert()
+	{
+		//@ -INT64_MAX - 1 can still be represented, off by 1 not accounted for here
+		//used for unary -
+		if (kind == Literal_Kind::Uint && this->as_u64 <= INT64_MAX)
+		{
+			kind = Literal_Kind::Int;
+			this->as_i64 = static_cast<i64>(this->as_i64);
+		}
+	}
 };
 
 option<Ast_Type> check_constfold_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr)
@@ -60,11 +85,11 @@ option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr)
 
 		switch (op)
 		{
-		case UnaryOp::MINUS:       return constfold_unary_minus(cc, rhs, rhs_kind);
-		case UnaryOp::LOGIC_NOT:   return constfold_unary_logic_not(cc, rhs, rhs_kind);
-		case UnaryOp::BITWISE_NOT: return constfold_unary_bitwise_not(cc, rhs, rhs_kind);
-		case UnaryOp::ADDRESS_OF:  return constfold_unary_address_of(cc, rhs, rhs_kind);
-		case UnaryOp::DEREFERENCE: return constfold_unary_dereference(cc, rhs, rhs_kind);
+		case UnaryOp::MINUS:       return constfold_unary_minus(cc, rhs);
+		case UnaryOp::LOGIC_NOT:   return constfold_unary_logic_not(cc, rhs);
+		case UnaryOp::BITWISE_NOT: return constfold_unary_bitwise_not(cc, rhs);
+		case UnaryOp::ADDRESS_OF:  return constfold_unary_address_of(cc, rhs);
+		case UnaryOp::DEREFERENCE: return constfold_unary_dereference(cc, rhs);
 		default: { err_internal("constfold_literal_from_expr: invalid UnaryOp"); return {}; }
 		}
 	}
@@ -81,7 +106,7 @@ option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr)
 		Literal rhs = rhs_result.value();
 		Literal_Kind lhs_kind = lhs.kind;
 		Literal_Kind rhs_kind = rhs.kind;
-
+		//@Convert or math types similar to binary expr type checker
 		switch (op)
 		{
 		case BinaryOp::LOGIC_AND:      return constfold_binary_logic_and(cc, lhs, rhs, lhs_kind);
@@ -116,6 +141,10 @@ option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr)
 option<Ast_Type> constfold_range_check(Check_Context* cc, Expr_Context context, Ast_Expr* expr, Literal lit)
 {
 	Ast_Folded_Expr folded = {};
+
+	//@Todo enum needs to be stored under folded expr?
+	//@Todo also return the enum type as ast_type
+	//account for expected type, if also expected enum return type as enum, else return the basic
 
 	switch (lit.kind)
 	{
@@ -271,7 +300,7 @@ option<Ast_Type> constfold_range_check(Check_Context* cc, Expr_Context context, 
 	} break;
 	default: { err_internal("constfold_range_check: invalid Literal_Kind"); return {}; }
 	}
-
+	
 	expr->tag = Ast_Expr_Tag::Folded;
 	expr->as_folded_expr = folded;
 	return type_from_basic(folded.basic_type);
@@ -281,17 +310,17 @@ option<Literal> constfold_literal_from_folded_expr(Ast_Folded_Expr folded)
 {
 	switch (folded.basic_type)
 	{
-	case BasicType::BOOL: return Literal { .kind = Literal_Kind::Bool, .as_bool = folded.as_bool };
+	case BasicType::BOOL: return Literal(folded.as_bool);
 	case BasicType::F32:
-	case BasicType::F64:  return Literal { .kind = Literal_Kind::Float, .as_f64 = folded.as_f64 };
+	case BasicType::F64: return Literal(folded.as_f64);
 	case BasicType::I8:
 	case BasicType::I16:
 	case BasicType::I32:
-	case BasicType::I64:  return Literal { .kind = Literal_Kind::Int, .as_i64 = folded.as_i64 };
+	case BasicType::I64: return Literal(folded.as_i64);
 	case BasicType::U8:
 	case BasicType::U16:
 	case BasicType::U32:
-	case BasicType::U64:  return Literal { .kind = Literal_Kind::Uint, .as_u64 = folded.as_u64 };
+	case BasicType::U64: return Literal(folded.as_u64);
 	default: { err_internal("constfold_literal_from_folded_expr invalid BasicType"); return {};  }
 	}
 }
@@ -344,7 +373,7 @@ option<Literal> constfold_term_cast(Check_Context* cc, Ast_Cast* cast)
 
 option<Literal> constfold_term_sizeof(Ast_Sizeof* size_of)
 {
-	return Literal { .kind = Literal_Kind::Uint, .as_u64 = type_size(size_of->type) };
+	return Literal(static_cast<u64>(type_size(size_of->type)));
 }
 
 option<Literal> constfold_term_literal(Ast_Literal* literal)
@@ -352,124 +381,245 @@ option<Literal> constfold_term_literal(Ast_Literal* literal)
 	Token token = literal->token;
 	switch (token.type)
 	{
-	case TokenType::BOOL_LITERAL:    return Literal { .kind = Literal_Kind::Bool, .as_bool = token.bool_value };
-	case TokenType::FLOAT_LITERAL:   return Literal { .kind = Literal_Kind::Float, .as_f64 = token.float64_value };
-	case TokenType::INTEGER_LITERAL: return Literal { .kind = Literal_Kind::Uint, .as_u64 = token.integer_value };
+	case TokenType::BOOL_LITERAL:    return Literal(token.bool_value);
+	case TokenType::FLOAT_LITERAL:   return Literal(token.float64_value);
+	case TokenType::INTEGER_LITERAL: return Literal(token.integer_value);
 	default: { err_internal("constfold_term_literal: invalid TokenType"); return {}; }
 	}
 }
 
-option<Literal> constfold_unary_minus(Check_Context* cc, Literal rhs, Literal_Kind kind)
+option<Literal> constfold_unary_minus(Check_Context* cc, Literal rhs)
 {
+	switch (rhs.kind)
+	{
+	case Literal_Kind::Float: return Literal(-rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(-rhs.as_i64);
+	case Literal_Kind::Uint:  
+	{
+		rhs.try_int_convert();
+		if (rhs.kind != Literal_Kind::Int) { err_report(Error::FOLD_UNARY_MINUS_OVERFLOW); return {}; }
+		return Literal(-rhs.as_i64);
+	}
+	default: { err_internal("constfold_unary_minus expected numeric type"); return {}; }
+	}
+}
+
+option<Literal> constfold_unary_logic_not(Check_Context* cc, Literal rhs)
+{
+	if (rhs.kind != Literal_Kind::Bool) { err_internal("constfold_unary_logic_not expected bool"); return {}; }
+	return Literal(!rhs.as_bool);
+}
+
+option<Literal> constfold_unary_bitwise_not(Check_Context* cc, Literal rhs)
+{
+	rhs.try_uint_convert();
+	if (rhs.kind != Literal_Kind::Uint) { err_internal("constfold_unary_bitwise_not expected uint"); return {}; }
+	return Literal(~rhs.as_u64);
+}
+
+option<Literal> constfold_unary_address_of(Check_Context* cc, Literal rhs)
+{
+	err_internal("constfold_unary_address_of on temporary");
 	return {};
 }
 
-option<Literal> constfold_unary_logic_not(Check_Context* cc, Literal rhs, Literal_Kind kind)
+option<Literal> constfold_unary_dereference(Check_Context* cc, Literal rhs)
 {
-	return {};
-}
-
-option<Literal> constfold_unary_bitwise_not(Check_Context* cc, Literal rhs, Literal_Kind kind)
-{
-	return {};
-}
-
-option<Literal> constfold_unary_address_of(Check_Context* cc, Literal rhs, Literal_Kind kind)
-{
-	return {};
-}
-
-option<Literal> constfold_unary_dereference(Check_Context* cc, Literal rhs, Literal_Kind kind)
-{
+	err_internal("constfold_unary_dereference on temporary");
 	return {};
 }
 
 option<Literal> constfold_binary_logic_and(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (kind != Literal_Kind::Bool) { err_internal("constfold_binary_logic_and"); return {}; }
+	return Literal(lhs.as_bool && rhs.as_bool);
 }
 
 option<Literal> constfold_binary_logic_or(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (kind != Literal_Kind::Bool) { err_internal("constfold_binary_logic_and"); return {}; }
+	return Literal(lhs.as_bool || rhs.as_bool);
 }
 
 option<Literal> constfold_binary_less(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	switch (kind) 
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 < rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 < rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 < rhs.as_u64);
+	default: { err_internal("constfold_binary_less expected numeric"); return {}; } 
+	}
 }
 
 option<Literal> constfold_binary_greater(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 > rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 > rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 > rhs.as_u64);
+	default: { err_internal("constfold_binary_greater expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_less_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 <= rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 <= rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 <= rhs.as_u64);
+	default: { err_internal("constfold_binary_less_equals expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_greater_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 >= rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 >= rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 >= rhs.as_u64);
+	default: { err_internal("constfold_binary_greater_equals expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_is_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (lhs.enum_type && rhs.enum_type)
+	{
+		if (lhs.enum_type.value().enum_id != rhs.enum_type.value().enum_id)
+		{
+			err_report(Error::BINARY_CMP_EQUAL_ON_ENUMS);
+			return {};
+		}
+	}
+	
+	switch (kind)
+	{
+	case Literal_Kind::Bool:  return Literal(lhs.as_bool == rhs.as_bool);
+	case Literal_Kind::Float: return Literal(lhs.as_f64 == rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 == rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 == rhs.as_u64);
+	default: { err_internal("constfold_binary_is_equals invalid Literal_Kind"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_not_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (lhs.enum_type && rhs.enum_type)
+	{
+		if (lhs.enum_type.value().enum_id != rhs.enum_type.value().enum_id)
+		{
+			err_report(Error::BINARY_CMP_EQUAL_ON_ENUMS);
+			return {};
+		}
+	}
+
+	switch (kind)
+	{
+	case Literal_Kind::Bool:  return Literal(lhs.as_bool != rhs.as_bool);
+	case Literal_Kind::Float: return Literal(lhs.as_f64 != rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 != rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 != rhs.as_u64);
+	default: { err_internal("constfold_binary_not_equals invalid Literal_Kind"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_plus(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	//@Not range checked or converted
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 + rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 + rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 + rhs.as_u64);
+	default: { err_internal("constfold_binary_plus expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_minus(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	//@Not range checked or converted
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 - rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 - rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 - rhs.as_u64);
+	default: { err_internal("constfold_binary_minus expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_times(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	//@Not range checked or converted
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 * rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 * rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 * rhs.as_u64);
+	default: { err_internal("constfold_binary_times expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_div(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	//@Not range checked or converted
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(lhs.as_f64 / rhs.as_f64);
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 / rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 / rhs.as_u64);
+	default: { err_internal("constfold_binary_div expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_mod(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	switch (kind)
+	{
+	case Literal_Kind::Float: if (rhs.as_f64 == 0.0) { err_internal("constfold_binary_mod float modulo of 0.0"); return {}; }
+	case Literal_Kind::Int:   if (rhs.as_i64 == 0.0) { err_internal("constfold_binary_mod int modulo of 0"); return {}; }
+	case Literal_Kind::Uint:  if (rhs.as_u64 == 0.0) { err_internal("constfold_binary_mod uint modulo of 0"); return {}; }
+	default: break;
+	}
+
+	switch (kind)
+	{
+	case Literal_Kind::Float: return Literal(fmod(lhs.as_f64, rhs.as_f64)); //@Hope that it matches llvm FRem behavior, tests needed
+	case Literal_Kind::Int:   return Literal(lhs.as_i64 % rhs.as_i64);
+	case Literal_Kind::Uint:  return Literal(lhs.as_u64 % rhs.as_u64);
+	default: { err_internal("constfold_binary_mod expected numeric"); return {}; }
+	}
 }
 
 option<Literal> constfold_binary_bitwise_and(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (rhs.kind != Literal_Kind::Uint) { err_internal("constfold_binary_bitwise_and expected uint"); return {}; }
+	return Literal(lhs.as_u64 & rhs.as_u64);
 }
 
 option<Literal> constfold_binary_bitwise_or(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (rhs.kind != Literal_Kind::Uint) { err_internal("constfold_binary_bitwise_or expected uint"); return {}; }
+	return Literal(lhs.as_u64 | rhs.as_u64);
 }
 
 option<Literal> constfold_binary_bitwise_xor(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (rhs.kind != Literal_Kind::Uint) { err_internal("constfold_binary_bitwise_xor expected uint"); return {}; }
+	return Literal(lhs.as_u64 ^ rhs.as_u64);
 }
 
 option<Literal> constfold_binary_bitshift_left(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (rhs.kind != Literal_Kind::Uint) { err_internal("constfold_binary_bitshift_left expected uint"); return {}; }
+	return Literal(lhs.as_u64 << rhs.as_u64);
 }
 
 option<Literal> constfold_binary_bitshift_right(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind)
 {
-	return {};
+	if (rhs.kind != Literal_Kind::Uint) { err_internal("constfold_binary_bitshift_right expected uint"); return {}; }
+	return Literal(lhs.as_u64 >> rhs.as_u64);
 }

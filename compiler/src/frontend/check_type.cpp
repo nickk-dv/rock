@@ -845,7 +845,7 @@ option<Ast_Type> check_unary_expr(Check_Context* cc, Expr_Context context, Ast_U
 		err_set; printf("UNARY OP ! only works on bool\n");
 		return {};
 	}
-	case UnaryOp::BITWISE_NOT:
+	case UnaryOp::BITWISE_NOT: //@enforce uint only
 	{
 		if (rhs_kind == Type_Kind::Int || rhs_kind == Type_Kind::Uint) return rhs;
 		err_set; printf("UNARY OP ~ only works on integer\n");
