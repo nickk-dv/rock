@@ -76,10 +76,26 @@ void print_type(Ast_Type type)
 	case Ast_Type_Tag::Struct: print_str(type.as_struct.struct_decl->ident.str); break;
 	case Ast_Type_Tag::Array:
 	{
-		//@Fold size expr using i64 instead of u64 termporarely
-		if (type.as_array->size_expr->tag != Ast_Expr_Tag::Folded) printf("[size expr]");
-		else printf("[%llu]", (u64)type.as_array->size_expr->as_folded_expr.as_i64);
-		print_type(type.as_array->element_type);
+		Ast_Type_Array* array_type = type.as_array;
+		if (array_type->size_expr->tag != Ast_Expr_Tag::Folded) printf("[size expr]");
+		else printf("[%llu]", array_type->size_expr->as_folded_expr.as_u64);
+		print_type(array_type->element_type);
+	} break;
+	case Ast_Type_Tag::Procedure:
+	{
+		Ast_Type_Procedure* procedure = type.as_procedure;
+		printf("(");
+		for (u32 i = 0; i < procedure->input_types.size(); i += 1)
+		{
+			print_type(procedure->input_types[i]);
+			if ((i + 1) != procedure->input_types.size()) printf(", ");
+		}
+		printf(")");
+		if (procedure->return_type)
+		{
+			printf("::");
+			print_type(procedure->return_type.value());
+		}
 	} break;
 	case Ast_Type_Tag::Unresolved:
 	{

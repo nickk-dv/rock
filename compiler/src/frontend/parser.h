@@ -12,6 +12,7 @@ Ast_Program* parse_program(Parser* parser);
 static Ast* parse_ast(Parser* parser, StringView source, std::string& filepath);
 static option<Ast_Type> parse_type(Parser* parser);
 static Ast_Type_Array* parse_type_array(Parser* parser);
+static Ast_Type_Procedure* parse_type_procedure(Parser* parser);
 static Ast_Type_Unresolved* parse_type_unresolved(Parser* parser);
 
 static Ast_Decl_Use* parse_decl_use(Parser* parser);

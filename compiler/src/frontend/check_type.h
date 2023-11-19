@@ -132,6 +132,7 @@ enum class Type_Kind
 	Enum,
 	Array,
 	Struct,
+	Procedure,
 };
 
 #endif

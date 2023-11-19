@@ -165,19 +165,28 @@ option<Ast_Type> parse_type(Parser* parser)
 
 	switch (token.type)
 	{
+	case TokenType::BRACKET_START:
+	{
+		consume();
+		Ast_Type_Array* array = parse_type_array(parser);
+		if (!array) return {};
+		type.tag = Ast_Type_Tag::Array;
+		type.as_array = array;
+	} break;
+	case TokenType::PAREN_START:
+	{
+		consume();
+		Ast_Type_Procedure* procedure = parse_type_procedure(parser);
+		if (!procedure) return {};
+		type.tag = Ast_Type_Tag::Procedure;
+		type.as_procedure = procedure;
+	} break;
 	case TokenType::IDENT:
 	{
 		Ast_Type_Unresolved* unresolved = parse_type_unresolved(parser);
 		if (!unresolved) return {};
 		type.tag = Ast_Type_Tag::Unresolved;
 		type.as_unresolved = unresolved;
-	} break;
-	case TokenType::BRACKET_START:
-	{
-		Ast_Type_Array* array = parse_type_array(parser);
-		if (!array) return {};
-		type.tag = Ast_Type_Tag::Array;
-		type.as_array = array;
 	} break;
 	default:
 	{
@@ -195,7 +204,6 @@ option<Ast_Type> parse_type(Parser* parser)
 Ast_Type_Array* parse_type_array(Parser* parser)
 {
 	Ast_Type_Array* array_type = arena_alloc<Ast_Type_Array>(&parser->arena);
-	consume();
 
 	Ast_Expr* expr = parse_sub_expr(parser);
 	if (!expr) return NULL;
@@ -210,6 +218,32 @@ Ast_Type_Array* parse_type_array(Parser* parser)
 	return array_type;
 }
 
+Ast_Type_Procedure* parse_type_procedure(Parser* parser)
+{
+	Ast_Type_Procedure* procedure = arena_alloc<Ast_Type_Procedure>(&parser->arena);
+
+	if (!try_consume(TokenType::PAREN_END))
+	{
+		while (true)
+		{
+			option<Ast_Type> type = parse_type(parser);
+			if (!type) return NULL;
+			procedure->input_types.emplace_back(type.value());
+			if (!try_consume(TokenType::COMMA)) break;
+		}
+		if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "procedure type signature"); return NULL; }
+	}
+
+	if (try_consume(TokenType::DOUBLE_COLON))
+	{
+		option<Ast_Type> type = parse_type(parser);
+		if (!type) return NULL;
+		procedure->return_type = type.value();
+	}
+
+	return procedure;
+}
+
 Ast_Type_Unresolved* parse_type_unresolved(Parser* parser)
 {
 	Ast_Type_Unresolved* unresolved = arena_alloc<Ast_Type_Unresolved>(&parser->arena);
@@ -219,7 +253,7 @@ Ast_Type_Unresolved* parse_type_unresolved(Parser* parser)
 	{
 		unresolved->import = import;
 		option<Token> ident = try_consume(TokenType::IDENT);
-		if (!ident) { err_parse(parser, TokenType::IDENT, "custom type signature"); NULL; }
+		if (!ident) { err_parse(parser, TokenType::IDENT, "custom type signature"); return NULL; }
 		unresolved->ident = token_to_ident(ident.value());
 	}
 	else unresolved->ident = import;

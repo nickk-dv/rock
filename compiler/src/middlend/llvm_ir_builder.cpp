@@ -733,6 +733,7 @@ Type type_from_ast_type(IR_Builder_Context* bc, Ast_Type type)
 		u32 size = (u32)folded_size.as_u64;
 		return LLVMArrayType(element_type, size);
 	}
+	case Ast_Type_Tag::Procedure: return LLVMPointerTypeInContext(LLVMGetGlobalContext(), 0);
 	default: { err_internal("type_from_ast_type: invalid BasicType"); return NULL; }
 	}
 }

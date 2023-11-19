@@ -32,6 +32,7 @@ Type_Kind type_kind(Ast_Type type)
 	case Ast_Type_Tag::Enum: return Type_Kind::Enum;
 	case Ast_Type_Tag::Struct: return Type_Kind::Struct;
 	case Ast_Type_Tag::Array: return Type_Kind::Array;
+	case Ast_Type_Tag::Procedure: return Type_Kind::Procedure;
 	default: { err_internal("type_kind: invalid Ast_Type_Tag"); return Type_Kind::Bool; }
 	}
 }
@@ -183,6 +184,7 @@ u32 type_size(Ast_Type type)
 		u32 count = (u32)type.as_array->size_expr->as_folded_expr.as_u64;
 		return count * type_size(type.as_array->element_type);
 	}
+	case Ast_Type_Tag::Procedure: return 8; //@Assume 64bit
 	default: { err_internal("check_get_type_size: invalid Ast_Type_Tag"); return 0; }
 	}
 }
@@ -202,6 +204,7 @@ u32 type_align(Ast_Type type)
 		return type.as_struct.struct_decl->max_align;
 	}
 	case Ast_Type_Tag::Array: return type_align(type.as_array->element_type);
+	case Ast_Type_Tag::Procedure: return 8; //@Assume 64bit
 	default: { err_internal("type_align: invalid Ast_Type_Tag"); return 0; }
 	}
 }
@@ -246,19 +249,25 @@ bool type_match(Ast_Type type_a, Ast_Type type_b)
 		Ast_Type_Array* array_b = type_b.as_array;
 
 		if (array_a->size_expr->tag != Ast_Expr_Tag::Folded || array_b->size_expr->tag != Ast_Expr_Tag::Folded) 
-		{
 			err_internal("type_match: expected size_expr to be Ast_Expr_Tag::Folded_Expr");
-		}
 		else if (array_a->size_expr->as_folded_expr.basic_type != BasicType::U32 || array_b->size_expr->as_folded_expr.basic_type != BasicType::U32)
-		{
 			err_internal("type_match: array size_expr expected folded type to be u32");
-		}
-		else
-		{
-			if (array_a->size_expr->as_folded_expr.as_u64 != array_b->size_expr->as_folded_expr.as_u64) return false;
-		}
+		else if (array_a->size_expr->as_folded_expr.as_u64 != array_b->size_expr->as_folded_expr.as_u64) return false;
 
 		return type_match(array_a->element_type, array_b->element_type);
+	}
+	case Ast_Type_Tag::Procedure:
+	{
+		Ast_Type_Procedure* proc_a = type_a.as_procedure;
+		Ast_Type_Procedure* proc_b = type_b.as_procedure;
+
+		if (proc_a->input_types.size() != proc_b->input_types.size()) return false;
+		for (u32 i = 0; i < proc_a->input_types.size(); i += 1)
+		if (!type_match(proc_a->input_types[i], proc_b->input_types[i])) return false;
+		
+		if (proc_a->return_type.has_value() != proc_b->return_type.has_value()) return false;
+		if (proc_a->return_type.has_value()) return type_match(proc_a->return_type.value(), proc_b->return_type.value());
+		return true;
 	}
 	default: { err_internal("type_match: invalid Ast_Type_Tag"); return false; }
 	}
@@ -917,7 +926,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	case BinaryOp::LOGIC_OR:
 	{
 		if (lhs_kind != Type_Kind::Bool) { err_report(Error::BINARY_LOGIC_ONLY_ON_BOOL); err_context_binary(); return {}; }
-		return lhs;
+		return type_from_basic(BasicType::BOOL);;
 	}
 	case BinaryOp::LESS:
 	case BinaryOp::GREATER:
@@ -945,7 +954,6 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 				err_report(Error::BINARY_CMP_EQUAL_ON_ENUMS); err_context_binary(); return {};
 			}
 		}
-
 		return type_from_basic(BasicType::BOOL);
 	}
 	case BinaryOp::PLUS:
@@ -954,7 +962,7 @@ option<Ast_Type> check_binary_expr(Check_Context* cc, Expr_Context context, Ast_
 	case BinaryOp::DIV:
 	case BinaryOp::MOD:
 	{
-		if (lhs_kind != Type_Kind::Float && lhs_kind != Type_Kind::Int && lhs_kind == Type_Kind::Uint) 
+		if (lhs_kind != Type_Kind::Float && lhs_kind != Type_Kind::Int && lhs_kind != Type_Kind::Uint) 
 		{ err_report(Error::BINARY_MATH_ONLY_ON_NUMERIC); err_context_binary(); return {}; }
 		return lhs;
 	}
@@ -1418,6 +1426,22 @@ void resolve_type(Check_Context* cc, Ast_Type* type, bool check_array_size)
 		Ast_Type* element_type = &type->as_array->element_type;
 		resolve_type(cc, element_type, check_array_size);
 		if (type_is_poison(*element_type)) type->tag = Ast_Type_Tag::Poison;
+	} break;
+	case Ast_Type_Tag::Procedure:
+	{
+		Ast_Type_Procedure* procedure = type->as_procedure;
+		
+		for (u32 i = 0; i < procedure->input_types.size(); i += 1)
+		{
+			resolve_type(cc, &procedure->input_types[i], check_array_size);
+			if (type_is_poison(procedure->input_types[i])) type->tag = Ast_Type_Tag::Poison;
+		}
+
+		if (procedure->return_type)
+		{
+			resolve_type(cc, &procedure->return_type.value(), check_array_size);
+			if (type_is_poison(procedure->return_type.value())) type->tag = Ast_Type_Tag::Poison;
+		}
 	} break;
 	case Ast_Type_Tag::Unresolved:
 	{

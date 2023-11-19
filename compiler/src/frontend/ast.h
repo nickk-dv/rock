@@ -23,6 +23,7 @@ struct Ast_Type;
 struct Ast_Type_Enum;
 struct Ast_Type_Array;
 struct Ast_Type_Struct;
+struct Ast_Type_Procedure;
 struct Ast_Type_Unresolved;
 
 struct Ast_Decl_Use;
@@ -139,7 +140,8 @@ struct Ast_Type_Struct
 enum class Ast_Type_Tag
 {
 	Basic, Enum, Struct,
-	Array, Unresolved, Poison,
+	Array, Procedure,
+	Unresolved, Poison,
 };
 
 struct Ast_Type
@@ -154,6 +156,7 @@ struct Ast_Type
 		Ast_Type_Enum as_enum;
 		Ast_Type_Struct as_struct;
 		Ast_Type_Array* as_array;
+		Ast_Type_Procedure* as_procedure;
 		Ast_Type_Unresolved* as_unresolved;
 	};
 };
@@ -162,6 +165,12 @@ struct Ast_Type_Array
 {
 	Ast_Type element_type;
 	Ast_Expr* size_expr;
+};
+
+struct Ast_Type_Procedure
+{
+	std::vector<Ast_Type> input_types;
+	option<Ast_Type> return_type;
 };
 
 struct Ast_Type_Unresolved
