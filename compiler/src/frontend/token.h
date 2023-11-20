@@ -73,6 +73,7 @@ enum class TokenType
 	HASH,                  // #
 	QUESTION,              // ?
 
+	ARROW,                 // ->
 	ASSIGN,                // =
 	PLUS,                  // +
 	MINUS,                 // -
