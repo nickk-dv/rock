@@ -2,6 +2,7 @@
 #define PARSER_H
 
 #include "ast.h"
+#include "lexer.h"
 #include "tokenizer.h"
 #include "general/arena.h"
 
@@ -64,6 +65,7 @@ struct Parser
 {
 	Ast* ast;
 	Arena arena;
+	Lexer lexer;
 	Tokenizer tokenizer;
 	StringStorage strings;
 	u32 peek_index = 0;

@@ -2,6 +2,8 @@
 
 #include <filesystem>
 
+#define NEW_LEXER true
+
 #define peek() peek_token(parser, 0)
 #define peek_next(offset) peek_token(parser, offset)
 #define consume() consume_token(parser)
@@ -66,8 +68,17 @@ Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 	
 	parser->ast = ast;
 	parser->peek_index = 0;
-	parser->tokenizer = tokenizer_create(source, &parser->strings, &ast->line_spans);
-	tokenizer_tokenize(&parser->tokenizer, parser->tokens);
+
+	if (NEW_LEXER)
+	{
+		parser->lexer = lex_init(source, &parser->strings, &ast->line_spans);
+		lex_token_buffer(&parser->lexer, parser->tokens);
+	}
+	else
+	{
+		parser->tokenizer = tokenizer_create(source, &parser->strings, &ast->line_spans);
+		tokenizer_tokenize(&parser->tokenizer, parser->tokens);
+	}
 
 	while (true) 
 	{
@@ -234,7 +245,7 @@ Ast_Type_Procedure* parse_type_procedure(Parser* parser)
 		if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "procedure type signature"); return NULL; }
 	}
 
-	if (try_consume(TokenType::DOUBLE_COLON))
+	if (try_consume(TokenType::ARROW))
 	{
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
@@ -302,7 +313,7 @@ Ast_Decl_Proc* parse_decl_proc(Parser* parser)
 	}
 	if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "procedure declaration"); return NULL; }
 
-	if (try_consume(TokenType::DOUBLE_COLON))
+	if (try_consume(TokenType::ARROW))
 	{
 		option<Ast_Type> type = parse_type(parser);
 		if (!type) return NULL;
@@ -1225,7 +1236,8 @@ void consume_token(Parser* parser)
 	{
 		parser->peek_index = 0;
 		parser->prev_last = parser->tokens[TOKENIZER_BUFFER_SIZE - TOKENIZER_LOOKAHEAD - 1]; //@Hack
-		tokenizer_tokenize(&parser->tokenizer, parser->tokens);
+		if (NEW_LEXER) lex_token_buffer(&parser->lexer, parser->tokens);
+		else tokenizer_tokenize(&parser->tokenizer, parser->tokens);
 	}
 }
 
