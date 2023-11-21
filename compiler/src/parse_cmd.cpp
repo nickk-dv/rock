@@ -87,7 +87,7 @@ i32 cmd_new(char* name)
 i32 cmd_check()
 {
 	Parser parser = {};
-	Ast_Program* program = parse_program(&parser);
+	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 	
 	bool check = check_program(program);
@@ -100,7 +100,7 @@ i32 cmd_check()
 i32 cmd_build()
 {
 	Parser parser = {};
-	Ast_Program* program = parse_program(&parser);
+	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 
 	bool check = check_program(program);
@@ -116,7 +116,7 @@ i32 cmd_build()
 i32 cmd_run()
 {
 	Parser parser = {};
-	Ast_Program* program = parse_program(&parser);
+	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 
 	bool check = check_program(program);

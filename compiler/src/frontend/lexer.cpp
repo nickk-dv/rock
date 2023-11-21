@@ -6,106 +6,14 @@ static bool is_whitespace(u8 c)   { return c == ' ' || c == '\t' || c == '\r' ||
 static bool is_ident_start(u8 c)  { return c == '_' || is_letter(c); }
 static bool is_ident_middle(u8 c) { return c == '_' || is_letter(c) || is_number(c); }
 
-#define peek() lex_peek(lexer, 0)
-#define peek_next(offset) lex_peek(lexer, offset)
-#define consume() lex_consume(lexer)
-
-option<u8> lex_peek(Lexer* lexer, u32 offset)
+enum class Lexeme
 {
-	if (lexer->cursor + offset >= lexer->source.count) return {};
-	return lexer->source.data[lexer->cursor + offset];
-}
-
-void lex_consume(Lexer* lexer)
-{
-	lexer->cursor += 1;
-}
-
-Lexer lex_init(StringView source, StringStorage* strings, std::vector<Span>* line_spans)
-{
-	line_spans->emplace_back(Span {0, 0});
-	return Lexer { .cursor = 0, .source = source, .strings = strings, .line_spans = line_spans };
-}
-
-void lex_token_buffer(Lexer* lexer, Token* tokens)
-{
-	u32 copy_count = lexer->cursor == 0 ? 0 : TOKEN_LOOKAHEAD;
-
-	for (u32 k = 0; k < copy_count; k++)
-	{
-		tokens[k] = tokens[TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD + k];
-	}
-
-	for (u32 k = copy_count; k < TOKEN_BUFFER_SIZE; k++)
-	{
-		lex_skip_whitespace(lexer);
-
-		if (!peek().has_value())
-		{
-			if (lexer->line_spans->back().end != lexer->cursor)
-				lexer->line_spans->back().end = lexer->cursor - 1;
-
-			for (u32 i = k; i < TOKEN_BUFFER_SIZE; i++)
-			{
-				tokens[i].type = TokenType::INPUT_END;
-			}
-			return;
-		}
-
-		tokens[k] = lex_token(lexer);
-	}
-}
-
-void lex_skip_whitespace(Lexer* lexer)
-{
-	while (peek().has_value())
-	{
-		u8 c = peek().value();
-		if (is_whitespace(c))
-		{
-			if (c == '\n')
-			{
-				lexer->line_spans->back().end = lexer->cursor;
-				lexer->line_spans->emplace_back(Span{ .start = lexer->cursor + 1, .end = lexer->cursor + 1 });
-			}
-			consume();
-		}
-		else if (c == '/' && peek_next(1).has_value() && peek_next(1).value() == '/')
-		{
-			consume();
-			consume();
-			while (peek().has_value() && peek().value() != '\n') consume();
-		}
-		else if (c == '/' && peek_next(1).has_value() && peek_next(1).value() == '*')
-		{
-			consume();
-			consume();
-			u32 depth = 1;
-			while (peek().has_value() && depth != 0)
-			{
-				u8 mc = peek().value();
-				if (mc == '\n')
-				{
-					lexer->line_spans->back().end = lexer->cursor;
-					lexer->line_spans->emplace_back(Span{ .start = lexer->cursor + 1, .end = lexer->cursor + 1 });
-				}
-				consume();
-
-				if (mc == '/' && peek().has_value() && peek().value() == '*')
-				{
-					consume();
-					depth += 1;
-				}
-				else if (mc == '*' && peek().has_value() && peek().value() == '/')
-				{
-					consume();
-					depth -= 1;
-				}
-			}
-		}
-		else break;
-	}
-}
+	CHAR,
+	STRING,
+	NUMBER,
+	IDENT,
+	SYMBOL,
+};
 
 Lexeme lex_lexeme(u8 c)
 {
@@ -122,27 +30,65 @@ Lexeme lex_lexeme(u8 c)
 	}
 }
 
-Token lex_token(Lexer* lexer)
+void Lexer::init(StringView source, StringStorage* strings, std::vector<Span>* line_spans)
+{
+	this->cursor = 0;
+	this->source = source;
+	this->strings = strings;
+	this->line_spans = line_spans;
+	this->line_spans->emplace_back(Span { .start = 0, .end = 0 });
+}
+
+void Lexer::lex_token_buffer(Token* tokens)
+{
+	u32 copy_count = this->cursor == 0 ? 0 : TOKEN_LOOKAHEAD;
+
+	for (u32 k = 0; k < copy_count; k++)
+	{
+		tokens[k] = tokens[TOKEN_BUFFER_SIZE - TOKEN_LOOKAHEAD + k];
+	}
+
+	for (u32 k = copy_count; k < TOKEN_BUFFER_SIZE; k++)
+	{
+		skip_whitespace();
+
+		if (!peek().has_value())
+		{
+			if (this->line_spans->back().end != this->cursor)
+				this->line_spans->back().end = this->cursor - 1;
+
+			for (u32 i = k; i < TOKEN_BUFFER_SIZE; i++)
+			{
+				tokens[i].type = TokenType::INPUT_END;
+			}
+			return;
+		}
+
+		tokens[k] = lex_token();
+	}
+}
+
+Token Lexer::lex_token()
 {
 	Token token = {};
 	u8 c = peek().value();
 	
-	u32 span_start = lexer->cursor;
+	u32 span_start = this->cursor;
 	switch (lex_lexeme(c))
 	{
-	case Lexeme::CHAR:   token = lex_char(lexer); break;
-	case Lexeme::STRING: token = lex_string(lexer); break;
-	case Lexeme::NUMBER: token = lex_number(lexer); break;
-	case Lexeme::IDENT:  token = lex_ident(lexer); break;
-	case Lexeme::SYMBOL: token = lex_symbol(lexer); break;
+	case Lexeme::CHAR:   token = lex_char(); break;
+	case Lexeme::STRING: token = lex_string(); break;
+	case Lexeme::NUMBER: token = lex_number(); break;
+	case Lexeme::IDENT:  token = lex_ident(); break;
+	case Lexeme::SYMBOL: token = lex_symbol(); break;
 	}
-	u32 span_end = lexer->cursor - 1;
+	u32 span_end = this->cursor - 1;
 	
 	token.span = Span { .start = span_start, .end = span_end };
 	return token;
 }
 
-Token lex_char(Lexer* lexer)
+Token Lexer::lex_char()
 {
 	Token token = { .type = TokenType::ERROR };
 	consume();
@@ -181,10 +127,10 @@ Token lex_char(Lexer* lexer)
 	return token;
 }
 
-Token lex_string(Lexer* lexer)
+Token Lexer::lex_string()
 {
 	Token token = { .type = TokenType::ERROR };
-	lexer->strings->start_str();
+	this->strings->start_str();
 	consume();
 
 	if (!peek().has_value()) return token; //@err missing "
@@ -201,12 +147,12 @@ Token lex_string(Lexer* lexer)
 			u8 esc = peek().value();
 			switch (esc)
 			{
-			case 't':  lexer->strings->put_char('\t'); break;
-			case 'r':  lexer->strings->put_char('\r'); break;
-			case 'n':  lexer->strings->put_char('\n'); break;
-			case '0':  lexer->strings->put_char('\0'); break;
-			case '\\': lexer->strings->put_char('\\'); break;
-			case '"':  lexer->strings->put_char('"'); break;
+			case 't':  this->strings->put_char('\t'); break;
+			case 'r':  this->strings->put_char('\r'); break;
+			case 'n':  this->strings->put_char('\n'); break;
+			case '0':  this->strings->put_char('\0'); break;
+			case '\\': this->strings->put_char('\\'); break;
+			case '"':  this->strings->put_char('"'); break;
 			default: return token; //@err invalid ecs character
 			}
 			consume();
@@ -215,7 +161,7 @@ Token lex_string(Lexer* lexer)
 		case '\n': return token; //@err missing "
 		default:
 		{
-			lexer->strings->put_char(c);
+			this->strings->put_char(c);
 			consume();
 		} break;
 		}
@@ -227,11 +173,11 @@ Token lex_string(Lexer* lexer)
 	consume();
 
 	token.type = TokenType::STRING_LITERAL;
-	token.string_literal_value = lexer->strings->end_str();
+	token.string_literal_value = this->strings->end_str();
 	return token;
 }
 
-Token lex_number(Lexer* lexer) //@rework
+Token Lexer::lex_number() //@rework
 {
 	Token token = { .type = TokenType::ERROR };
 	u8 fc = peek().value();
@@ -239,9 +185,9 @@ Token lex_number(Lexer* lexer) //@rework
 
 	u32 offset = 0;
 	bool is_float = false;
-	while (peek_next(offset).has_value())
+	while (peek(offset).has_value())
 	{
-		u8 c = peek_next(offset).value();
+		u8 c = peek(offset).value();
 		if (!is_float && c == '.')
 		{
 			is_float = true;
@@ -253,12 +199,12 @@ Token lex_number(Lexer* lexer) //@rework
 	if (is_float)
 	{
 		u64 expected_len = offset + 1;
-		u8 last_c = lexer->source.data[lexer->cursor + expected_len];
-		lexer->source.data[lexer->cursor + expected_len] = '\0';
-		char* start = (char*)lexer->source.data + (lexer->cursor - 1);
+		u8 last_c = this->source.data[this->cursor + expected_len];
+		this->source.data[this->cursor + expected_len] = '\0';
+		char* start = (char*)this->source.data + (this->cursor - 1);
 		char* end = start + 1;
 		f64 float64_value = strtod(start, &end); //@Later replace this with custom to avoid \0 hacks and ensure valid number grammar
-		lexer->source.data[lexer->cursor + expected_len] = last_c;
+		this->source.data[this->cursor + expected_len] = last_c;
 
 		for (u32 i = 0; i < offset; i += 1)
 		{
@@ -292,17 +238,17 @@ Token lex_number(Lexer* lexer) //@rework
 	return token;
 }
 
-Token lex_ident(Lexer* lexer)
+Token Lexer::lex_ident()
 {
 	Token token = { .type = TokenType::ERROR };
 	
-	u32 ident_start = lexer->cursor;
+	u32 ident_start = this->cursor;
 	consume();
 	while (peek().has_value() && is_ident_middle(peek().value())) consume();
-	u32 ident_end = lexer->cursor;
+	u32 ident_end = this->cursor;
 	
 	token.type = TokenType::IDENT;
-	token.string_value = StringView { .data = lexer->source.data + ident_start, .count = ident_end - ident_start };
+	token.string_value = StringView { .data = this->source.data + ident_start, .count = ident_end - ident_start };
 
 	TokenType keyword = lex_ident_keyword(token.string_value);
 	switch (keyword)
@@ -316,13 +262,13 @@ Token lex_ident(Lexer* lexer)
 	return token;
 }
 
-Token lex_symbol(Lexer* lexer)
+Token Lexer::lex_symbol()
 {
 	Token token = { .type = TokenType::ERROR };
 	
 	option<TokenType> symbol_1 = lex_symbol_1(peek().value());
 	consume();
-	if (!symbol_1) return token;
+	if (!symbol_1) return token; //@err invalid symbol
 	token.type = symbol_1.value();
 
 	if (!peek().has_value()) return token; 
@@ -342,7 +288,7 @@ Token lex_symbol(Lexer* lexer)
 
 #include <unordered_map>
 
-static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
+static const std::unordered_map<u64, TokenType> keyword_map =
 {
 	{ hash_ascii_9("struct"),   TokenType::KEYWORD_STRUCT },
 	{ hash_ascii_9("enum"),     TokenType::KEYWORD_ENUM },
@@ -376,15 +322,15 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("string"),   TokenType::TYPE_STRING },
 };
 
-TokenType lex_ident_keyword(StringView str)
+TokenType Lexer::lex_ident_keyword(StringView str)
 {
 	if (str.count > 8 || str.count < 2) return TokenType::ERROR;
 	u64 hash = hash_str_ascii_9(str);
-	bool is_keyword = keyword_hash_to_token_type.find(hash) != keyword_hash_to_token_type.end();
-	return is_keyword ? keyword_hash_to_token_type.at(hash) : TokenType::ERROR;
+	bool is_keyword = keyword_map.find(hash) != keyword_map.end();
+	return is_keyword ? keyword_map.at(hash) : TokenType::ERROR;
 }
 
-option<TokenType> lex_symbol_1(u8 c)
+option<TokenType> Lexer::lex_symbol_1(u8 c)
 {
 	switch (c)
 	{
@@ -416,7 +362,7 @@ option<TokenType> lex_symbol_1(u8 c)
 	}
 }
 
-option<TokenType> lex_symbol_2(u8 c, TokenType type)
+option<TokenType> Lexer::lex_symbol_2(u8 c, TokenType type)
 {
 	switch (c)
 	{
@@ -457,7 +403,7 @@ option<TokenType> lex_symbol_2(u8 c, TokenType type)
 	}
 }
 
-option<TokenType> lex_symbol_3(u8 c, TokenType type)
+option<TokenType> Lexer::lex_symbol_3(u8 c, TokenType type)
 {
 	switch (c)
 	{
@@ -472,4 +418,66 @@ option<TokenType> lex_symbol_3(u8 c, TokenType type)
 	}
 	default: return {};
 	}
+}
+
+void Lexer::skip_whitespace()
+{
+	while (peek().has_value())
+	{
+		u8 c = peek().value();
+		if (is_whitespace(c))
+		{
+			if (c == '\n')
+			{
+				this->line_spans->back().end = this->cursor;
+				this->line_spans->emplace_back(Span{ .start = this->cursor + 1, .end = this->cursor + 1 });
+			}
+			consume();
+		}
+		else if (c == '/' && peek(1).has_value() && peek(1).value() == '/')
+		{
+			consume();
+			consume();
+			while (peek().has_value() && peek().value() != '\n') consume();
+		}
+		else if (c == '/' && peek(1).has_value() && peek(1).value() == '*')
+		{
+			consume();
+			consume();
+			u32 depth = 1;
+			while (peek().has_value() && depth != 0)
+			{
+				u8 mc = peek().value();
+				if (mc == '\n')
+				{
+					this->line_spans->back().end = this->cursor;
+					this->line_spans->emplace_back(Span{ .start = this->cursor + 1, .end = this->cursor + 1 });
+				}
+				consume();
+
+				if (mc == '/' && peek().has_value() && peek().value() == '*')
+				{
+					consume();
+					depth += 1;
+				}
+				else if (mc == '*' && peek().has_value() && peek().value() == '/')
+				{
+					consume();
+					depth -= 1;
+				}
+			}
+		}
+		else break;
+	}
+}
+
+void Lexer::consume()
+{
+	this->cursor += 1;
+}
+
+option<u8> Lexer::peek(u32 offset)
+{
+	if (this->cursor + offset >= this->source.count) return {};
+	return this->source.data[this->cursor + offset];
 }
