@@ -43,6 +43,8 @@ enum class TokenType
 	KEYWORD_SIZEOF,        // sizeof
 	KEYWORD_IMPORT,        // import
 	KEYWORD_USE,           // use
+	KEYWORD_IMPL,          // impl
+	KEYWORD_SELF,          // self
 
 	TYPE_I8,               // i8
 	TYPE_U8,               // u8

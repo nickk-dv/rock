@@ -26,6 +26,7 @@ struct Ast_Type_Struct;
 struct Ast_Type_Procedure;
 struct Ast_Type_Unresolved;
 
+struct Ast_Decl_Impl;
 struct Ast_Decl_Use;
 struct Ast_Decl_Proc;
 struct Ast_Proc_Param;
@@ -79,6 +80,7 @@ struct Ast
 	std::string filepath;
 	std::vector<Span> line_spans;
 
+	std::vector<Ast_Decl_Impl*> impls;
 	std::vector<Ast_Decl_Use*> uses;
 	std::vector<Ast_Decl_Proc*> procs;
 	std::vector<Ast_Decl_Enum*> enums;
@@ -179,6 +181,12 @@ struct Ast_Type_Unresolved
 	Ast_Ident ident;
 };
 
+struct Ast_Decl_Impl
+{
+	Ast_Type type;
+	std::vector<Ast_Decl_Proc*> member_procedures;
+};
+
 struct Ast_Decl_Use
 {
 	Ast_Ident alias;
@@ -192,6 +200,7 @@ struct Ast_Decl_Proc
 	std::vector<Ast_Proc_Param> input_params;
 	option<Ast_Type> return_type;
 	Ast_Stmt_Block* block;
+	bool is_member;
 	bool is_main;
 	bool is_external;
 	bool is_variadic;
@@ -201,6 +210,7 @@ struct Ast_Proc_Param
 {
 	Ast_Ident ident;
 	Ast_Type type;
+	bool self;
 };
 
 struct Ast_Decl_Enum

@@ -360,6 +360,8 @@ static const std::unordered_map<u64, TokenType> keyword_hash_to_token_type =
 	{ hash_ascii_9("sizeof"),   TokenType::KEYWORD_SIZEOF },
 	{ hash_ascii_9("import"),   TokenType::KEYWORD_IMPORT },
 	{ hash_ascii_9("use"),      TokenType::KEYWORD_USE },
+	{ hash_ascii_9("impl"),     TokenType::KEYWORD_IMPL },
+	{ hash_ascii_9("self"),     TokenType::KEYWORD_SELF },
 	{ hash_ascii_9("i8"),       TokenType::TYPE_I8 },
 	{ hash_ascii_9("u8"),       TokenType::TYPE_U8 },
 	{ hash_ascii_9("i16"),      TokenType::TYPE_I16 },

@@ -2,6 +2,29 @@
 
 #include <filesystem>
 
+#include <chrono>
+
+class ScopedTimer {
+public:
+	ScopedTimer(const char* scopeName) : m_ScopeName(scopeName) {
+		m_StartTimepoint = std::chrono::high_resolution_clock::now();
+	}
+
+	~ScopedTimer() {
+		auto endTimepoint = std::chrono::high_resolution_clock::now();
+		auto start = std::chrono::time_point_cast<std::chrono::microseconds>(m_StartTimepoint).time_since_epoch().count();
+		auto end = std::chrono::time_point_cast<std::chrono::microseconds>(endTimepoint).time_since_epoch().count();
+
+		auto duration = end - start;
+		double ms = duration * 0.001;
+		printf("%s: %f ms\n", m_ScopeName, ms);
+	}
+
+private:
+	const char* m_ScopeName;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_StartTimepoint;
+};
+
 #define NEW_LEXER true
 
 #define peek() peek_token(parser, 0)
@@ -17,6 +40,8 @@ namespace fs = std::filesystem;
 
 Ast_Program* parse_program(Parser* parser)
 {
+	ScopedTimer timer = ScopedTimer("parse files");
+	
 	fs::path src = fs::path("src");
 	if (!fs::exists(src)) { err_report(Error::PARSE_SRC_DIR_NOT_FOUND); return NULL; }
 	
@@ -91,6 +116,12 @@ Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 			{
 				switch (peek_next(2).type)
 				{
+				case TokenType::KEYWORD_IMPL:
+				{
+					Ast_Decl_Impl* impl_decl = parse_decl_impl(parser);
+					if (!impl_decl) return NULL;
+					ast->impls.emplace_back(impl_decl);
+				} break;
 				case TokenType::KEYWORD_IMPORT:
 				{
 					Ast_Decl_Import* import_decl = parse_decl_import(parser);
@@ -117,7 +148,7 @@ Ast* parse_ast(Parser* parser, StringView source, std::string& filepath)
 				} break;
 				case TokenType::PAREN_START:
 				{
-					Ast_Decl_Proc* proc_decl = parse_decl_proc(parser);
+					Ast_Decl_Proc* proc_decl = parse_decl_proc(parser, false);
 					if (!proc_decl) return NULL;
 					ast->procs.emplace_back(proc_decl);
 				} break;
@@ -272,6 +303,36 @@ Ast_Type_Unresolved* parse_type_unresolved(Parser* parser)
 	return unresolved;
 }
 
+Ast_Decl_Impl* parse_decl_impl(Parser* parser)
+{
+	Ast_Decl_Impl* impl_decl = arena_alloc<Ast_Decl_Impl>(&parser->arena);
+
+	//@maybe parse type unresolved (import + ident) instead of full type
+	//to limit the use of basic types or arrays, etc
+	option<Ast_Type> type = parse_type(parser);
+	if (!type) return NULL;
+	impl_decl->type = type.value();
+
+	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(parser, TokenType::DOUBLE_COLON, "impl block"); return NULL; }
+	if (!try_consume(TokenType::KEYWORD_IMPL)) { err_parse(parser, TokenType::KEYWORD_IMPL, "impl block"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START))  { err_parse(parser, TokenType::BLOCK_START, "impl block"); return NULL; }
+	
+	while (!try_consume(TokenType::BLOCK_END))
+	{
+		//@this is checked externally instead of parse_proc_decl checking this
+		//@same pattern inside file level decl parsing, might change in the future
+		if (peek().type != TokenType::IDENT)        { err_parse(parser, TokenType::IDENT, "procedure declaration inside impl block"); return NULL; }
+		if (peek_next(1).type != TokenType::DOUBLE_COLON) { err_parse(parser, TokenType::DOUBLE_COLON, "procedure declaration inside impl block"); return NULL; }
+		if (peek_next(2).type != TokenType::PAREN_START)  { err_parse(parser, TokenType::PAREN_START, "procedure declaration inside impl block"); return NULL; }
+
+		Ast_Decl_Proc* member_procedure = parse_decl_proc(parser, true);
+		if (!member_procedure) return NULL;
+		impl_decl->member_procedures.emplace_back(member_procedure);
+	}
+
+	return impl_decl;
+}
+
 Ast_Decl_Use* parse_decl_use(Parser* parser)
 {
 	Ast_Decl_Use* decl = arena_alloc<Ast_Decl_Use>(&parser->arena);
@@ -291,9 +352,10 @@ Ast_Decl_Use* parse_decl_use(Parser* parser)
 	return decl;
 }
 
-Ast_Decl_Proc* parse_decl_proc(Parser* parser)
+Ast_Decl_Proc* parse_decl_proc(Parser* parser, bool in_impl)
 {
 	Ast_Decl_Proc* decl = arena_alloc<Ast_Decl_Proc>(&parser->arena);
+	decl->is_member = in_impl;
 	decl->ident = token_to_ident(consume_get());
 	consume(); consume();
 
@@ -301,14 +363,29 @@ Ast_Decl_Proc* parse_decl_proc(Parser* parser)
 	{
 		if (try_consume(TokenType::DOUBLE_DOT)) { decl->is_variadic = true; break; }
 
-		option<Token> ident = try_consume(TokenType::IDENT);
-		if (!ident) break;
-		if (!try_consume(TokenType::COLON)) { err_parse(parser, TokenType::COLON, "procedure parameter type definition"); return NULL; }
+		Ast_Proc_Param param = {};
 
-		option<Ast_Type> type = parse_type(parser);
-		if (!type) return NULL;
-		decl->input_params.emplace_back(Ast_Proc_Param{ token_to_ident(ident.value()), type.value() });
-
+		if (peek().type == TokenType::KEYWORD_SELF)
+		{
+			param.self = true;
+			param.ident = token_to_ident(consume_get());
+			decl->input_params.emplace_back(param);
+		}
+		else
+		{
+			option<Token> ident = try_consume(TokenType::IDENT);
+			if (!ident) break;
+			param.ident = token_to_ident(ident.value());
+			
+			if (!try_consume(TokenType::COLON)) { err_parse(parser, TokenType::COLON, "procedure parameter type definition"); return NULL; }
+			
+			option<Ast_Type> type = parse_type(parser);
+			if (!type) return NULL;
+			param.type = type.value();
+			
+			decl->input_params.emplace_back(param);
+		}
+		
 		if (!try_consume(TokenType::COMMA)) break;
 	}
 	if (!try_consume(TokenType::PAREN_END)) { err_parse(parser, TokenType::PAREN_END, "procedure declaration"); return NULL; }
@@ -971,6 +1048,13 @@ Ast_Term* parse_term(Parser* parser)
 		term->tag = Ast_Term_Tag::Sizeof;
 		term->as_sizeof = _sizeof;
 	} break;
+	case TokenType::KEYWORD_SELF:
+	{
+		Ast_Var* var = parse_var(parser);
+		if (!var) return NULL;
+		term->tag = Ast_Term_Tag::Var;
+		term->as_var = var;
+	} break;
 	case TokenType::IDENT:
 	{
 		Token next = peek_next(1);
@@ -1031,9 +1115,16 @@ Ast_Var* parse_var(Parser* parser)
 {
 	Ast_Var* var = arena_alloc<Ast_Var>(&parser->arena);
 
-	option<Token> ident = try_consume(TokenType::IDENT);
-	if (!ident) { err_parse(parser, TokenType::IDENT, "variable"); return NULL; }
-	var->unresolved.ident = token_to_ident(ident.value());
+	if (peek().type == TokenType::KEYWORD_SELF)
+	{
+		var->unresolved.ident = token_to_ident(consume_get());
+	}
+	else
+	{
+		option<Token> ident = try_consume(TokenType::IDENT);
+		if (!ident) { err_parse(parser, TokenType::IDENT, "variable"); return NULL; }
+		var->unresolved.ident = token_to_ident(ident.value());
+	}
 
 	Token token = peek();
 	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)

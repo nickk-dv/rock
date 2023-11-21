@@ -230,10 +230,15 @@ void check_decls_consteval(Check_Context* cc)
 			if (name)
 			{
 				err_report(Error::DECL_STRUCT_DUPLICATE_FIELD);
+				err_context(cc, field.ident.span);
 				err_context(cc, name.value().span);
 				struct_decl->fields.erase(struct_decl->fields.begin() + i);
 			}
-			else i += 1;
+			else
+			{
+				name_set.add(field.ident, hash_ident(field.ident));
+				i += 1;
+			}
 		}
 	}
 
@@ -248,10 +253,15 @@ void check_decls_consteval(Check_Context* cc)
 			if (name)
 			{
 				err_report(Error::DECL_ENUM_DUPLICATE_VARIANT);
+				err_context(cc, variant.ident.span);
 				err_context(cc, name.value().span);
 				enum_decl->variants.erase(enum_decl->variants.begin() + i);
 			}
-			else i += 1;
+			else
+			{
+				name_set.add(variant.ident, hash_ident(variant.ident));
+				i += 1;
+			}
 		}
 	}
 
@@ -266,10 +276,15 @@ void check_decls_consteval(Check_Context* cc)
 			if (name)
 			{
 				err_report(Error::DECL_PROC_DUPLICATE_PARAM);
+				err_context(cc, param.ident.span);
 				err_context(cc, name.value().span);
 				proc_decl->input_params.erase(proc_decl->input_params.begin() + i);
 			}
-			else i += 1;
+			else
+			{
+				name_set.add(param.ident, hash_ident(param.ident));
+				i += 1;
+			}
 		}
 	}
 

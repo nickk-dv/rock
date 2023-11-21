@@ -326,6 +326,10 @@ void tokenizer_tokenize(Tokenizer* tokenizer, Token* tokens)
 						if (c == ':') sym2 = static_cast<u32>(TokenType::DOUBLE_COLON);
 						else if (c == '.') sym2 = static_cast<u32>(TokenType::DOUBLE_DOT);
 					}
+					else if (c == '>' && fc == '-')
+					{
+						sym2 = (u32)TokenType::ARROW;
+					}
 
 					if (sym2 != static_cast<u32>(TokenType::ERROR))
 					{

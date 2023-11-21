@@ -16,8 +16,9 @@ static Ast_Type_Array* parse_type_array(Parser* parser);
 static Ast_Type_Procedure* parse_type_procedure(Parser* parser);
 static Ast_Type_Unresolved* parse_type_unresolved(Parser* parser);
 
+static Ast_Decl_Impl* parse_decl_impl(Parser* parser);
 static Ast_Decl_Use* parse_decl_use(Parser* parser);
-static Ast_Decl_Proc* parse_decl_proc(Parser* parser);
+static Ast_Decl_Proc* parse_decl_proc(Parser* parser, bool in_impl);
 static Ast_Decl_Enum* parse_decl_enum(Parser* parser);
 static Ast_Decl_Struct* parse_decl_struct(Parser* parser);
 static Ast_Decl_Global* parse_decl_global(Parser* parser);
