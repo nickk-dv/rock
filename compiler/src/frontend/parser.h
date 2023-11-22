@@ -64,6 +64,10 @@ private:
 	Ast_Struct_Init* parse_struct_init(bool import, bool type);
 	Ast_Array_Init* parse_array_init();
 
+	//@new syntax
+	option<Ast_Module_Access*> parse_module_access();
+	Ast_Decl_Import_New* parse_decl_import_new();
+
 	Token peek(u32 offset = 0);
 	void consume();
 	Token consume_get();

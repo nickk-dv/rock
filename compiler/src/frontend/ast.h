@@ -69,6 +69,10 @@ struct Ast_Proc_Call;
 struct Ast_Array_Init;
 struct Ast_Struct_Init;
 
+//@new syntax
+struct Ast_Module_Access;
+struct Ast_Decl_Import_New;
+
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
 bool match_ident(Ast_Ident& a, Ast_Ident& b);
@@ -608,6 +612,36 @@ struct Ast_Struct_Init
 	{
 		struct Unresolved { option<Ast_Ident> import; option<Ast_Ident> ident; } unresolved;
 		struct Resolved   { option<Ast_Type_Struct> type; } resolved;
+	};
+};
+
+//@new syntax
+struct Ast_Module_Access
+{
+	std::vector<Ast_Ident> modules;
+};
+
+enum class Ast_Resolve_Import_Tag
+{
+	Unresolved,
+	Resolved_Module,
+	Resolved_Symbol,
+	Resolved_Wildcard,
+	Resolved_Symbol_List,
+	Invalid,
+};
+
+struct Ast_Decl_Import_New
+{
+	Ast_Resolve_Import_Tag tag;
+	option<Ast_Module_Access*> module_access;
+
+	union
+	{
+		struct Unresolved           { Ast_Ident ident; } unresolved;
+		struct Resolved_Module      { Ast* target_ast; } resolved_module;
+		struct Resolved_Symbol      { Ast_Ident symbol; } resolved_symbol;
+		struct Resolved_Symbol_List { std::vector<Ast_Ident> symbols; } resolved_symbol_list;
 	};
 };
 

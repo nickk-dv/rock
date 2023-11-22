@@ -149,6 +149,11 @@ Ast* Parser::parse_ast(StringView source, std::string& filepath)
 				return NULL;
 			}
 		} break;
+		case TokenType::KEYWORD_IMPORT:
+		{
+			Ast_Decl_Import_New* import_decl = parse_decl_import_new();
+			if (!import_decl) return NULL;
+		} break;
 		case TokenType::INPUT_END: 
 		{
 			return ast;
@@ -1296,6 +1301,61 @@ Ast_Array_Init* Parser::parse_array_init()
 	}
 
 	return array_init;
+}
+
+option<Ast_Module_Access*> Parser::parse_module_access()
+{
+	if (peek().type != TokenType::IDENT) return {};
+	if (peek(1).type != TokenType::DOUBLE_COLON) return {};
+
+	Ast_Module_Access* module_access = arena_alloc<Ast_Module_Access>(&this->arena);
+	module_access->modules.emplace_back(token_to_ident(consume_get()));
+	consume();
+
+	while (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOUBLE_COLON)
+	{
+		module_access->modules.emplace_back(token_to_ident(consume_get()));
+		consume();
+	}
+
+	return module_access;
+}
+
+Ast_Decl_Import_New* Parser::parse_decl_import_new()
+{
+	if (!try_consume(TokenType::KEYWORD_IMPORT)) { err_parse(TokenType::KEYWORD_IMPORT, "import declaration"); return NULL; }
+
+	Ast_Decl_Import_New* import_decl = arena_alloc<Ast_Decl_Import_New>(&this->arena);
+	import_decl->module_access = parse_module_access();
+
+	switch (peek().type)
+	{
+	case TokenType::IDENT:
+	{
+		import_decl->tag = Ast_Resolve_Import_Tag::Unresolved;
+		import_decl->unresolved.ident = token_to_ident(consume_get());
+	} break;
+	case TokenType::TIMES: //@require module access to exist
+	{
+		import_decl->tag = Ast_Resolve_Import_Tag::Resolved_Wildcard;
+		consume();
+	} break;
+	case TokenType::BLOCK_START: //@require module access to exist
+	{
+		import_decl->tag = Ast_Resolve_Import_Tag::Resolved_Symbol_List;
+		consume();
+		while (peek().type == TokenType::IDENT)
+		{
+			import_decl->resolved_symbol_list.symbols.emplace_back(token_to_ident(consume_get()));
+			if (!try_consume(TokenType::COMMA)) break; //@disallow trailing comma {ident, ident, }
+		}
+		if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "import declaration"); return NULL; }
+	} break;
+	default: { err_parse(TokenType::IDENT, "import declaration"); return NULL; } //@err set ident, *, {
+	}
+	
+	if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "import declaration"); return NULL; }
+	return import_decl;
 }
 
 Token Parser::peek(u32 offset)
