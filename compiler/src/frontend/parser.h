@@ -67,6 +67,7 @@ private:
 	//@new syntax
 	option<Ast_Module_Access*> parse_module_access();
 	Ast_Decl_Import_New* parse_decl_import_new();
+	Ast_Import_Target* parse_import_target();
 
 	Token peek(u32 offset = 0);
 	void consume();

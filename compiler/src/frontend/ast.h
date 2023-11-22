@@ -72,6 +72,7 @@ struct Ast_Struct_Init;
 //@new syntax
 struct Ast_Module_Access;
 struct Ast_Decl_Import_New;
+struct Ast_Import_Target;
 
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
@@ -621,27 +622,27 @@ struct Ast_Module_Access
 	std::vector<Ast_Ident> modules;
 };
 
-enum class Ast_Resolve_Import_Tag
-{
-	Unresolved,
-	Resolved_Module,
-	Resolved_Symbol,
-	Resolved_Wildcard,
-	Resolved_Symbol_List,
-	Invalid,
-};
-
 struct Ast_Decl_Import_New
 {
-	Ast_Resolve_Import_Tag tag;
-	option<Ast_Module_Access*> module_access;
+	std::vector<Ast_Ident> modules;
+	option<Ast_Import_Target*> target;
+};
+
+enum class Ast_Import_Target_Tag
+{
+	Wildcard,
+	Symbol_List,
+	Symbol_Or_Module,
+};
+
+struct Ast_Import_Target
+{
+	Ast_Import_Target_Tag tag;
 
 	union
 	{
-		struct Unresolved           { Ast_Ident ident; } unresolved;
-		struct Resolved_Module      { Ast* target_ast; } resolved_module;
-		struct Resolved_Symbol      { Ast_Ident symbol; } resolved_symbol;
-		struct Resolved_Symbol_List { std::vector<Ast_Ident> symbols; } resolved_symbol_list;
+		struct Symbol_List { std::vector<Ast_Ident> symbols; } symbol_list;
+		struct Symbol_Or_Module { Ast_Ident ident; } symbol_or_module;
 	};
 };
 

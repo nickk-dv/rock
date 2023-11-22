@@ -1323,39 +1323,66 @@ option<Ast_Module_Access*> Parser::parse_module_access()
 
 Ast_Decl_Import_New* Parser::parse_decl_import_new()
 {
+	Ast_Decl_Import_New* decl = arena_alloc<Ast_Decl_Import_New>(&this->arena);
 	if (!try_consume(TokenType::KEYWORD_IMPORT)) { err_parse(TokenType::KEYWORD_IMPORT, "import declaration"); return NULL; }
+	
+	option<Token> first_module = try_consume(TokenType::IDENT);
+	if (!first_module) { err_parse(TokenType::IDENT, "import declaration"); return NULL; }
+	decl->modules.emplace_back(token_to_ident(first_module.value()));
+	
+	if (try_consume(TokenType::SEMICOLON)) return decl;
+	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "import declaration"); return NULL; }
+	
+	while (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOUBLE_COLON)
+	{
+		decl->modules.emplace_back(token_to_ident(consume_get()));
+		consume();
+	}
 
-	Ast_Decl_Import_New* import_decl = arena_alloc<Ast_Decl_Import_New>(&this->arena);
-	import_decl->module_access = parse_module_access();
+	Ast_Import_Target* target = parse_import_target();
+	if (!target) return NULL;
+	decl->target = target;
+
+	if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "import declaration"); return NULL; }
+	return decl;
+}
+
+Ast_Import_Target* Parser::parse_import_target()
+{
+	Ast_Import_Target* target = arena_alloc<Ast_Import_Target>(&this->arena);
 
 	switch (peek().type)
 	{
+	case TokenType::TIMES:
+	{
+		target->tag = Ast_Import_Target_Tag::Wildcard;
+		consume();
+	} break;
+	case TokenType::BLOCK_START:
+	{
+		target->tag = Ast_Import_Target_Tag::Symbol_List;
+		consume();
+		if (!try_consume(TokenType::BLOCK_END))
+		{
+			while (true)
+			{
+				option<Token> symbol = try_consume(TokenType::IDENT);
+				if (!symbol) return NULL;
+				target->symbol_list.symbols.emplace_back(token_to_ident(symbol.value()));
+				if (!try_consume(TokenType::COMMA)) break;
+			}
+			if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "import declaration"); return NULL; }
+		}
+	} break;
 	case TokenType::IDENT:
 	{
-		import_decl->tag = Ast_Resolve_Import_Tag::Unresolved;
-		import_decl->unresolved.ident = token_to_ident(consume_get());
-	} break;
-	case TokenType::TIMES: //@require module access to exist
-	{
-		import_decl->tag = Ast_Resolve_Import_Tag::Resolved_Wildcard;
-		consume();
-	} break;
-	case TokenType::BLOCK_START: //@require module access to exist
-	{
-		import_decl->tag = Ast_Resolve_Import_Tag::Resolved_Symbol_List;
-		consume();
-		while (peek().type == TokenType::IDENT)
-		{
-			import_decl->resolved_symbol_list.symbols.emplace_back(token_to_ident(consume_get()));
-			if (!try_consume(TokenType::COMMA)) break; //@disallow trailing comma {ident, ident, }
-		}
-		if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "import declaration"); return NULL; }
+		target->tag = Ast_Import_Target_Tag::Symbol_Or_Module;
+		target->symbol_or_module.ident = token_to_ident(consume_get());
 	} break;
 	default: { err_parse(TokenType::IDENT, "import declaration"); return NULL; } //@err set ident, *, {
 	}
-	
-	if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "import declaration"); return NULL; }
-	return import_decl;
+
+	return target;
 }
 
 Token Parser::peek(u32 offset)
