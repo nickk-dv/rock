@@ -50,6 +50,7 @@ struct Ast_Switch_Case;
 struct Ast_Stmt_Continue;
 struct Ast_Stmt_Var_Decl;
 struct Ast_Stmt_Var_Assign;
+struct Ast_Stmt_Proc_Call;
 
 struct Ast_Expr;
 struct Ast_Unary_Expr;
@@ -58,21 +59,17 @@ struct Ast_Folded_Expr;
 enum class Consteval;
 struct Ast_Consteval_Expr;
 struct Ast_Term;
-struct Ast_Var;
-struct Ast_Access;
-struct Ast_Access_Var;
-struct Ast_Access_Array;
 struct Ast_Enum;
 struct Ast_Cast;
 struct Ast_Sizeof;
-struct Ast_Proc_Call;
 struct Ast_Array_Init;
 struct Ast_Struct_Init;
 
 //@new syntax
 struct Ast_Module_Access;
-struct Ast_Decl_Import_New;
 struct Ast_Import_Target;
+struct Ast_Something;
+struct Ast_Access_Chain;
 
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
@@ -182,7 +179,7 @@ struct Ast_Type_Procedure
 
 struct Ast_Type_Unresolved
 {
-	option<Ast_Ident> import;
+	option<Ast_Module_Access*> module_access;
 	Ast_Ident ident;
 };
 
@@ -258,10 +255,8 @@ struct Ast_Decl_Global
 
 struct Ast_Decl_Import
 {
-	Ast_Ident alias;
-	Ast_Literal file_path;
-	//checker
-	Ast* import_ast;
+	std::vector<Ast_Ident> modules;
+	option<Ast_Import_Target*> target;
 };
 
 enum class Ast_Stmt_Tag
@@ -288,7 +283,7 @@ struct Ast_Stmt
 		Ast_Stmt_Continue* as_continue;
 		Ast_Stmt_Var_Decl* as_var_decl;
 		Ast_Stmt_Var_Assign* as_var_assign;
-		Ast_Proc_Call* as_proc_call;
+		Ast_Stmt_Proc_Call* as_proc_call;
 	};
 };
 
@@ -379,9 +374,14 @@ struct Ast_Stmt_Var_Decl
 struct Ast_Stmt_Var_Assign
 {
 	Span span;
-	Ast_Var* var;
+	Ast_Something* something;
 	AssignOp op;
 	Ast_Expr* expr;
+};
+
+struct Ast_Stmt_Proc_Call
+{
+	Ast_Something* something;
 };
 
 struct Ast_Folded_Expr
@@ -461,8 +461,9 @@ struct Ast_Consteval_Expr
 
 enum class Ast_Term_Tag
 {
-	Var, Enum, Cast, Sizeof, Literal,
-	Proc_Call, Array_Init, Struct_Init,
+	Enum, Cast, Sizeof, Literal,
+	Array_Init, Struct_Init,
+	Something,
 };
 
 struct Ast_Term
@@ -471,14 +472,13 @@ struct Ast_Term
 
 	union
 	{
-		Ast_Var* as_var;
 		Ast_Enum* as_enum;
 		Ast_Cast* as_cast;
 		Ast_Sizeof* as_sizeof;
 		Ast_Literal* as_literal;
-		Ast_Proc_Call* as_proc_call;
 		Ast_Array_Init* as_array_init;
 		Ast_Struct_Init* as_struct_init;
+		Ast_Something* as_something;
 	};
 };
 
@@ -489,68 +489,22 @@ enum class Ast_Resolve_Tag
 	Invalid,
 };
 
-enum class Ast_Resolve_Var_Tag
-{
-	Unresolved, 
-	Resolved_Local,
-	Resolved_Global,
-	Invalid,
-};
-
-struct Ast_Var
-{
-	Ast_Resolve_Var_Tag tag;
-	option<Ast_Access*> access;
-
-	union
-	{
-		struct Unresolved      { Ast_Ident ident; } unresolved;
-		struct Resolved_Local  { Ast_Ident ident; } local;
-		struct Resolved_Global { u32 global_id; Ast_Decl_Global* global_decl; } global;
-	};
-};
-
-enum class Ast_Access_Tag
-{
-	Var, Array,
-};
-
-struct Ast_Access
-{
-	Ast_Access_Tag tag;
-	option<Ast_Access*> next;
-
-	union
-	{
-		Ast_Access_Var* as_var;
-		Ast_Access_Array* as_array;
-	};
-};
-
-struct Ast_Access_Var
-{
-	Ast_Resolve_Tag tag;
-	
-	union
-	{
-		struct Unresolved { Ast_Ident ident; } unresolved;
-		struct Resolved   { u32 field_id; } resolved;
-	};
-};
-
-struct Ast_Access_Array
-{
-	Ast_Expr* index_expr;
-};
-
 struct Ast_Enum
 {
 	Ast_Resolve_Tag tag;
 	
 	union
 	{
-		struct Unresolved { option<Ast_Ident> import; Ast_Ident ident; Ast_Ident variant; } unresolved;
-		struct Resolved   { Ast_Type_Enum type; u32 variant_id; } resolved;
+		struct Unresolved 
+		{
+			Ast_Ident variant_ident;
+		} unresolved;
+
+		struct Resolved 
+		{ 
+			Ast_Type_Enum type; 
+			u32 variant_id; 
+		} resolved;
 	};
 };
 
@@ -583,20 +537,6 @@ struct Ast_Sizeof
 	Ast_Type type;
 };
 
-struct Ast_Proc_Call
-{
-	Span span;
-	Ast_Resolve_Tag tag;
-	option<Ast_Access*> access;
-	std::vector<Ast_Expr*> input_exprs;
-
-	union
-	{
-		struct Unresolved { option<Ast_Ident> import; Ast_Ident ident; } unresolved;
-		struct Resolved   { Ast_Decl_Proc* proc_decl; u32 proc_id; } resolved;
-	};
-};
-
 struct Ast_Array_Init
 {
 	Ast_Resolve_Tag tag;
@@ -611,8 +551,16 @@ struct Ast_Struct_Init
 	
 	union
 	{
-		struct Unresolved { option<Ast_Ident> import; option<Ast_Ident> ident; } unresolved;
-		struct Resolved   { option<Ast_Type_Struct> type; } resolved;
+		struct Unresolved 
+		{ 
+			option<Ast_Module_Access*> module_access;
+			option<Ast_Ident> struct_ident;
+		} unresolved;
+
+		struct Resolved 
+		{ 
+			option<Ast_Type_Struct> type; 
+		} resolved;
 	};
 };
 
@@ -620,12 +568,6 @@ struct Ast_Struct_Init
 struct Ast_Module_Access
 {
 	std::vector<Ast_Ident> modules;
-};
-
-struct Ast_Decl_Import_New
-{
-	std::vector<Ast_Ident> modules;
-	option<Ast_Import_Target*> target;
 };
 
 enum class Ast_Import_Target_Tag
@@ -643,6 +585,32 @@ struct Ast_Import_Target
 	{
 		struct Symbol_List { std::vector<Ast_Ident> symbols; } symbol_list;
 		struct Symbol_Or_Module { Ast_Ident ident; } symbol_or_module;
+	};
+};
+
+struct Ast_Something
+{
+	option<Ast_Module_Access*> module_access;
+	Ast_Access_Chain* chain_first;
+};
+
+enum class Ast_Access_Chain_Tag
+{
+	Ident,
+	Array,
+	Call,
+};
+
+struct Ast_Access_Chain
+{
+	Ast_Access_Chain_Tag tag;
+	option<Ast_Access_Chain*> next;
+
+	union
+	{
+		struct Ident { Ast_Ident ident; } as_ident;
+		struct Array { Ast_Expr* index_expr; } as_array;
+		struct Call { Ast_Ident ident; std::vector<Ast_Expr*> input_exprs; } as_call;
 	};
 };
 

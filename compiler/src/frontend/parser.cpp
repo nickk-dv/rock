@@ -90,8 +90,7 @@ Ast* Parser::parse_ast(StringView source, std::string& filepath)
 
 	while (true) 
 	{
-		Token token = peek();
-		switch (token.type)
+		switch (peek().type)
 		{
 		case TokenType::IDENT:
 		{
@@ -99,18 +98,6 @@ Ast* Parser::parse_ast(StringView source, std::string& filepath)
 			{
 				switch (peek(2).type)
 				{
-				case TokenType::KEYWORD_IMPL:
-				{
-					Ast_Decl_Impl* impl_decl = parse_decl_impl();
-					if (!impl_decl) return NULL;
-					ast->impls.emplace_back(impl_decl);
-				} break;
-				case TokenType::KEYWORD_IMPORT:
-				{
-					Ast_Decl_Import* import_decl = parse_decl_import();
-					if (!import_decl) return NULL;
-					ast->imports.emplace_back(import_decl);
-				} break;
 				case TokenType::KEYWORD_USE:
 				{
 					Ast_Decl_Use* use_decl = parse_decl_use();
@@ -149,10 +136,17 @@ Ast* Parser::parse_ast(StringView source, std::string& filepath)
 				return NULL;
 			}
 		} break;
+		case TokenType::KEYWORD_IMPL: //@when using :: style the :: of decl was parsed as part of the type, causing a missing ident error
+		{
+			Ast_Decl_Impl* impl_decl = parse_decl_impl();
+			if (!impl_decl) return NULL;
+			ast->impls.emplace_back(impl_decl);
+		} break;
 		case TokenType::KEYWORD_IMPORT:
 		{
-			Ast_Decl_Import_New* import_decl = parse_decl_import_new();
+			Ast_Decl_Import* import_decl = parse_decl_import();
 			if (!import_decl) return NULL;
+			ast->imports.emplace_back(import_decl);
 		} break;
 		case TokenType::INPUT_END: 
 		{
@@ -277,22 +271,19 @@ Ast_Type_Procedure* Parser::parse_type_procedure()
 Ast_Type_Unresolved* Parser::parse_type_unresolved()
 {
 	Ast_Type_Unresolved* unresolved = arena_alloc<Ast_Type_Unresolved>(&this->arena);
+	unresolved->module_access = parse_module_access();
 
-	Ast_Ident import = token_to_ident(consume_get());
-	if (try_consume(TokenType::DOT))
-	{
-		unresolved->import = import;
-		option<Token> ident = try_consume(TokenType::IDENT);
-		if (!ident) { err_parse(TokenType::IDENT, "custom type signature"); return NULL; }
-		unresolved->ident = token_to_ident(ident.value());
-	}
-	else unresolved->ident = import;
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) 
+	{ err_parse(TokenType::IDENT, "custom type signature"); return NULL; }
+	unresolved->ident = token_to_ident(ident.value());
 
 	return unresolved;
 }
 
 Ast_Decl_Impl* Parser::parse_decl_impl()
 {
+	if (!try_consume(TokenType::KEYWORD_IMPL)) { err_parse(TokenType::KEYWORD_IMPL, "impl block"); return NULL; }
 	Ast_Decl_Impl* impl_decl = arena_alloc<Ast_Decl_Impl>(&this->arena);
 
 	//@maybe parse type unresolved (import + ident) instead of full type
@@ -301,8 +292,7 @@ Ast_Decl_Impl* Parser::parse_decl_impl()
 	if (!type) return NULL;
 	impl_decl->type = type.value();
 
-	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "impl block"); return NULL; }
-	if (!try_consume(TokenType::KEYWORD_IMPL)) { err_parse(TokenType::KEYWORD_IMPL, "impl block"); return NULL; }
+	//if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "impl block"); return NULL; }
 	if (!try_consume(TokenType::BLOCK_START))  { err_parse(TokenType::BLOCK_START, "impl block"); return NULL; }
 	
 	while (!try_consume(TokenType::BLOCK_END))
@@ -484,14 +474,83 @@ Ast_Decl_Global* Parser::parse_decl_global()
 Ast_Decl_Import* Parser::parse_decl_import()
 {
 	Ast_Decl_Import* decl = arena_alloc<Ast_Decl_Import>(&this->arena);
-	decl->alias = token_to_ident(consume_get());
-	consume(); consume();
+	if (!try_consume(TokenType::KEYWORD_IMPORT)) { err_parse(TokenType::KEYWORD_IMPORT, "import declaration"); return NULL; }
 
-	option<Token> token = try_consume(TokenType::STRING_LITERAL);
-	if (!token) { err_parse(TokenType::STRING_LITERAL, "import path of 'import' declaration"); return NULL; }
-	decl->file_path = Ast_Literal{ token.value() };
+	option<Token> first_module = try_consume(TokenType::IDENT);
+	if (!first_module) { err_parse(TokenType::IDENT, "import declaration"); return NULL; }
+	decl->modules.emplace_back(token_to_ident(first_module.value()));
 
+	if (try_consume(TokenType::SEMICOLON)) return decl;
+	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "import declaration"); return NULL; }
+
+	while (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOUBLE_COLON)
+	{
+		decl->modules.emplace_back(token_to_ident(consume_get()));
+		consume();
+	}
+
+	Ast_Import_Target* target = parse_import_target();
+	if (!target) return NULL;
+	decl->target = target;
+
+	if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "import declaration"); return NULL; }
 	return decl;
+}
+
+Ast_Import_Target* Parser::parse_import_target()
+{
+	Ast_Import_Target* target = arena_alloc<Ast_Import_Target>(&this->arena);
+
+	switch (peek().type)
+	{
+	case TokenType::TIMES:
+	{
+		target->tag = Ast_Import_Target_Tag::Wildcard;
+		consume();
+	} break;
+	case TokenType::BLOCK_START:
+	{
+		target->tag = Ast_Import_Target_Tag::Symbol_List;
+		consume();
+		if (!try_consume(TokenType::BLOCK_END))
+		{
+			while (true)
+			{
+				option<Token> symbol = try_consume(TokenType::IDENT);
+				if (!symbol) return NULL;
+				target->symbol_list.symbols.emplace_back(token_to_ident(symbol.value()));
+				if (!try_consume(TokenType::COMMA)) break;
+			}
+			if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "import declaration"); return NULL; }
+		}
+	} break;
+	case TokenType::IDENT:
+	{
+		target->tag = Ast_Import_Target_Tag::Symbol_Or_Module;
+		target->symbol_or_module.ident = token_to_ident(consume_get());
+	} break;
+	default: { err_parse(TokenType::IDENT, "import declaration"); return NULL; } //@err set ident, *, {
+	}
+
+	return target;
+}
+
+option<Ast_Module_Access*> Parser::parse_module_access()
+{
+	if (peek().type != TokenType::IDENT) return {};
+	if (peek(1).type != TokenType::DOUBLE_COLON) return {};
+
+	Ast_Module_Access* module_access = arena_alloc<Ast_Module_Access>(&this->arena);
+	module_access->modules.emplace_back(token_to_ident(consume_get()));
+	consume();
+
+	while (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOUBLE_COLON)
+	{
+		module_access->modules.emplace_back(token_to_ident(consume_get()));
+		consume();
+	}
+
+	return module_access;
 }
 
 Ast_Stmt* Parser::parse_stmt()
@@ -549,40 +608,47 @@ Ast_Stmt* Parser::parse_stmt()
 		statement->as_continue = parse_stmt_continue();
 		if (!statement->as_continue) return NULL;
 	} break;
-	case TokenType::IDENT:
+	default: 
 	{
-		Token next = peek(1);
-		Token next_2 = peek(2);
-		Token next_3 = peek(3);
-		bool import_prefix = next.type == TokenType::DOT && next_2.type == TokenType::IDENT;
-		bool import_proc_call = import_prefix && next_3.type == TokenType::PAREN_START;
-
-		if (next.type == TokenType::PAREN_START || import_proc_call)
-		{
-			statement->tag = Ast_Stmt_Tag::Proc_Call;
-			statement->as_proc_call = parse_proc_call(import_proc_call);
-			if (!statement->as_proc_call) return NULL;
-			if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "procedure call statement"); return NULL; }
-		}
-		else if (next.type == TokenType::COLON)
+		if (peek().type == TokenType::IDENT && peek(1).type == TokenType::COLON)
 		{
 			statement->tag = Ast_Stmt_Tag::Var_Decl;
 			statement->as_var_decl = parse_stmt_var_decl();
 			if (!statement->as_var_decl) return NULL;
+			break;
+		}
+
+		span_start();
+		Ast_Something* something = parse_something(parse_module_access());
+		if (!something) return NULL;
+
+		if (try_consume(TokenType::SEMICOLON))
+		{
+			statement->tag = Ast_Stmt_Tag::Proc_Call;
+			statement->as_proc_call = arena_alloc<Ast_Stmt_Proc_Call>(&this->arena);
+			statement->as_proc_call->something = something;
+			break;
 		}
 		else
 		{
+			Ast_Stmt_Var_Assign* var_assign = arena_alloc<Ast_Stmt_Var_Assign>(&this->arena);
+			var_assign->something = something;
+
+			Token token = peek();
+			option<AssignOp> op = token_to_assign_op(token.type);
+			if (!op) { err_parse(TokenType::ASSIGN, "variable assignment statement"); return NULL; } //@Err set of assignment operators
+			var_assign->op = op.value();
+			consume();
+
+			Ast_Expr* expr = parse_expr();
+			if (!expr) return NULL;
+			var_assign->expr = expr;
+
 			statement->tag = Ast_Stmt_Tag::Var_Assign;
-			statement->as_var_assign = parse_stmt_var_assign();
-			if (!statement->as_var_assign) return NULL;
+			statement->as_var_assign = var_assign;
+			span_end(var_assign);
 		}
 	} break;
-	default: 
-	{
-		//@Err set Expected valid statement or '}' after code block
-		err_parse(TokenType::BLOCK_END, "code block or a valid statement");
-		return NULL;
-	}
 	}
 	
 	return statement;
@@ -649,10 +715,7 @@ Ast_Stmt_For* Parser::parse_stmt_for()
 	span_start();
 	consume();
 	
-	Token curr = peek();
-	Token next = peek(1);
-
-	if (curr.type == TokenType::BLOCK_START)
+	if (peek().type == TokenType::BLOCK_START)
 	{
 		Ast_Stmt_Block* block = parse_stmt_block();
 		if (!block) return NULL;
@@ -662,23 +725,38 @@ Ast_Stmt_For* Parser::parse_stmt_for()
 		return _for;
 	}
 
-	if (curr.type == TokenType::IDENT && next.type == TokenType::COLON)
+	if (peek().type == TokenType::IDENT && peek(1).type == TokenType::COLON)
 	{
 		Ast_Stmt_Var_Decl* var_decl = parse_stmt_var_decl();
 		if (!var_decl) return NULL;
 		_for->var_decl = var_decl;
 	}
 
-	Ast_Expr* condition_expr = parse_sub_expr();
+	Ast_Expr* condition_expr = parse_expr(); //@using full expr with ; temp
 	if (!condition_expr) return NULL; //@Err this was just more context "Expected conditional expression"
 	_for->condition_expr = condition_expr;
 
-	if (try_consume(TokenType::SEMICOLON))
-	{
-		Ast_Stmt_Var_Assign* var_assignment = parse_stmt_var_assign();
-		if (!var_assignment) return NULL;
-		_for->var_assign = var_assignment;
-	}
+	//@hardcoded var assign parsing same as in parse_stmt
+	u32 start_2 = get_span_start();
+	Ast_Something* something = parse_something(parse_module_access());
+	if (!something) return NULL;
+	Ast_Stmt_Var_Assign* var_assign = arena_alloc<Ast_Stmt_Var_Assign>(&this->arena);
+	var_assign->something = something;
+
+	Token token = peek();
+	option<AssignOp> op = token_to_assign_op(token.type);
+	if (!op) { err_parse(TokenType::ASSIGN, "variable assignment statement"); return NULL; } //@Err set of assignment operators
+	var_assign->op = op.value();
+	consume();
+
+	Ast_Expr* expr = parse_expr();
+	if (!expr) return NULL;
+	var_assign->expr = expr;
+
+	var_assign->span.start = start_2;
+	var_assign->span.end = get_span_end();
+	_for->var_assign = var_assign;
+	//@end
 
 	Ast_Stmt_Block* block = parse_stmt_block();
 	if (!block) return NULL;
@@ -827,7 +905,7 @@ Ast_Stmt_Var_Decl* Parser::parse_stmt_var_decl()
 			span_end(var_decl);
 			return var_decl;
 		}
-		if (!try_consume(TokenType::ASSIGN)) { err_parse(TokenType::ASSIGN, "continue statement"); return NULL; } //@Err Expected '=' or ';' in a variable declaration
+		if (!try_consume(TokenType::ASSIGN)) { err_parse(TokenType::ASSIGN, "var decl statement"); return NULL; } //@Err Expected '=' or ';' in a variable declaration
 	}
 
 	Ast_Expr* expr = parse_expr();
@@ -836,62 +914,6 @@ Ast_Stmt_Var_Decl* Parser::parse_stmt_var_decl()
 
 	span_end(var_decl);
 	return var_decl;
-}
-
-Ast_Stmt_Var_Assign* Parser::parse_stmt_var_assign()
-{
-	Ast_Stmt_Var_Assign* var_assign = arena_alloc<Ast_Stmt_Var_Assign>(&this->arena);
-	span_start();
-
-	Ast_Var* var = parse_var();
-	if (!var) return NULL;
-	var_assign->var = var;
-
-	Token token = peek();
-	option<AssignOp> op = token_to_assign_op(token.type);
-	if (!op) { err_parse(TokenType::ASSIGN, "variable assignment statement"); return NULL; } //@Err set of assignment operators
-	var_assign->op = op.value();
-	consume();
-
-	Ast_Expr* expr = parse_expr();
-	if (!expr) return NULL;
-	var_assign->expr = expr;
-
-	span_end(var_assign);
-	return var_assign;
-}
-
-Ast_Proc_Call* Parser::parse_proc_call(bool import)
-{
-	Ast_Proc_Call* proc_call = arena_alloc<Ast_Proc_Call>(&this->arena);
-	span_start();
-
-	if (import) { proc_call->unresolved.import = token_to_ident(consume_get()); consume(); }
-	proc_call->unresolved.ident = token_to_ident(consume_get());
-
-	if (!try_consume(TokenType::PAREN_START)) { err_parse(TokenType::PAREN_START, "procedure call"); return NULL; }
-	if (!try_consume(TokenType::PAREN_END))
-	{
-		while (true)
-		{
-			Ast_Expr* expr = parse_sub_expr();
-			if (!expr) return NULL;
-			proc_call->input_exprs.emplace_back(expr);
-			if (!try_consume(TokenType::COMMA)) break;
-		}
-		if (!try_consume(TokenType::PAREN_END)) { err_parse(TokenType::PAREN_END, "procedure call"); return NULL; }
-	}
-
-	Token token = peek();
-	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
-	{
-		Ast_Access* access = parse_access();
-		if (!access) return NULL;
-		proc_call->access = access;
-	}
-
-	span_end(proc_call);
-	return proc_call;
 }
 
 Ast_Expr* Parser::parse_expr()
@@ -992,36 +1014,9 @@ Ast_Consteval_Expr* Parser::parse_consteval_expr(Ast_Expr* expr)
 Ast_Term* Parser::parse_term()
 {
 	Ast_Term* term = arena_alloc<Ast_Term>(&this->arena);
-	Token token = peek();
-
-	switch (token.type)
+	
+	switch (peek().type)
 	{
-	case TokenType::BOOL_LITERAL:
-	case TokenType::FLOAT_LITERAL:
-	case TokenType::INTEGER_LITERAL:
-	case TokenType::STRING_LITERAL:
-	{
-		Ast_Literal* literal = arena_alloc<Ast_Literal>(&this->arena);
-		literal->token = token;
-		term->tag = Ast_Term_Tag::Literal;
-		term->as_literal = literal;
-		consume();
-	} break;
-	case TokenType::DOT:
-	{
-		Ast_Struct_Init* struct_init = parse_struct_init(false, false);
-		if (!struct_init) return NULL;
-		term->tag = Ast_Term_Tag::Struct_Init;
-		term->as_struct_init = struct_init;
-	} break;
-	case TokenType::BLOCK_START:
-	case TokenType::BRACKET_START:
-	{
-		Ast_Array_Init* array_init = parse_array_init();
-		if (!array_init) return NULL;
-		term->tag = Ast_Term_Tag::Array_Init;
-		term->as_array_init = array_init;
-	} break;
 	case TokenType::KEYWORD_CAST:
 	{
 		Ast_Cast* cast = parse_cast();
@@ -1036,179 +1031,69 @@ Ast_Term* Parser::parse_term()
 		term->tag = Ast_Term_Tag::Sizeof;
 		term->as_sizeof = _sizeof;
 	} break;
-	case TokenType::KEYWORD_SELF:
+	case TokenType::BOOL_LITERAL:
+	case TokenType::FLOAT_LITERAL:
+	case TokenType::INTEGER_LITERAL:
+	case TokenType::STRING_LITERAL:
 	{
-		Ast_Var* var = parse_var();
-		if (!var) return NULL;
-		term->tag = Ast_Term_Tag::Var;
-		term->as_var = var;
+		Ast_Literal* literal = arena_alloc<Ast_Literal>(&this->arena);
+		literal->token = consume_get();
+		term->tag = Ast_Term_Tag::Literal;
+		term->as_literal = literal;
 	} break;
-	case TokenType::IDENT:
+	case TokenType::BLOCK_START:
+	case TokenType::BRACKET_START:
 	{
-		Token next = peek(1);
-		Token next_2 = peek(2);
-		Token next_3 = peek(3);
-		bool import_prefix = next.type == TokenType::DOT && next_2.type == TokenType::IDENT;
-		bool import_enum = import_prefix && next_3.type == TokenType::DOUBLE_COLON;
-		bool import_proc_call = import_prefix && next_3.type == TokenType::PAREN_START;
-
-		if (next.type == TokenType::DOUBLE_COLON || import_enum)
-		{
-			Ast_Enum* _enum = parse_enum(import_enum);
-			if (!_enum) return NULL;
-			term->tag = Ast_Term_Tag::Enum;
-			term->as_enum = _enum;
-		}
-		else if (next.type == TokenType::PAREN_START || import_proc_call)
-		{
-			Ast_Proc_Call* proc_call = parse_proc_call(import_proc_call);
-			if (!proc_call) return NULL;
-			term->tag = Ast_Term_Tag::Proc_Call;
-			term->as_proc_call = proc_call;
-		}
-		else
-		{
-			Token next_4 = peek(4);
-			bool si_just_type = next.type == TokenType::DOT && next_2.type == TokenType::BLOCK_START;
-			bool si_with_import = import_prefix && next_3.type == TokenType::DOT && next_4.type == TokenType::BLOCK_START;
-
-			if (si_just_type || si_with_import)
-			{
-				Ast_Struct_Init* struct_init = parse_struct_init(si_with_import, true);
-				if (!struct_init) return NULL;
-				term->tag = Ast_Term_Tag::Struct_Init;
-				term->as_struct_init = struct_init;
-			}
-			else
-			{
-				Ast_Var* var = parse_var();
-				if (!var) return NULL;
-				term->tag = Ast_Term_Tag::Var;
-				term->as_var = var;
-			}
-		}
+		Ast_Array_Init* array_init = parse_array_init();
+		if (!array_init) return NULL;
+		term->tag = Ast_Term_Tag::Array_Init;
+		term->as_array_init = array_init;
 	} break;
 	default:
 	{
-		//@Err set: Expected a valid expression term
-		err_parse(TokenType::IDENT, "expression term");
-		return NULL;
-	}
+		if (peek().type == TokenType::DOT
+			&& peek(1).type != TokenType::BLOCK_START
+			&& peek(2).type != TokenType::BLOCK_START)
+		{
+			Ast_Enum* _enum = parse_enum();
+			if (!_enum) return NULL;
+			term->tag = Ast_Term_Tag::Enum;
+			term->as_enum = _enum;
+			break;
+		}
+
+		//@might be wrong with struct init: some::module::.{1, 2} this is invalid (maybe parse unresolved type?)
+		option<Ast_Module_Access*> module_access = parse_module_access();
+		
+		if ((peek().type == TokenType::DOT && peek(1).type == TokenType::BLOCK_START) 
+		|| (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOT && peek(2).type == TokenType::BLOCK_START))
+		{
+			Ast_Struct_Init* struct_init = parse_struct_init(module_access);
+			if (!struct_init) return NULL;
+			term->tag = Ast_Term_Tag::Struct_Init;
+			term->as_struct_init = struct_init;
+			break;
+		}
+
+		Ast_Something* something = parse_something(module_access);
+		if (!something) return NULL;
+		term->tag = Ast_Term_Tag::Something;
+		term->as_something = something;
+	} break;
 	}
 
 	return term;
 }
 
-Ast_Var* Parser::parse_var()
-{
-	Ast_Var* var = arena_alloc<Ast_Var>(&this->arena);
-
-	if (peek().type == TokenType::KEYWORD_SELF)
-	{
-		var->unresolved.ident = token_to_ident(consume_get());
-	}
-	else
-	{
-		option<Token> ident = try_consume(TokenType::IDENT);
-		if (!ident) { err_parse(TokenType::IDENT, "variable"); return NULL; }
-		var->unresolved.ident = token_to_ident(ident.value());
-	}
-
-	Token token = peek();
-	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
-	{
-		Ast_Access* access = parse_access();
-		if (!access) return NULL;
-		var->access = access;
-	}
-
-	return var;
-}
-
-Ast_Access* Parser::parse_access()
-{
-	Ast_Access* access = arena_alloc<Ast_Access>(&this->arena);
-	Token token = peek();
-
-	if (token.type == TokenType::DOT)
-	{
-		consume();
-		Ast_Access_Var* var_access = parse_access_var(access);
-		if (!var_access) return NULL;
-		access->tag = Ast_Access_Tag::Var;
-		access->as_var = var_access;
-	}
-	else if (token.type == TokenType::BRACKET_START)
-	{
-		consume();
-		Ast_Access_Array* array_access = parse_access_array(access);
-		if (!array_access) return NULL;
-		access->tag = Ast_Access_Tag::Array;
-		access->as_array = array_access;
-	}
-	else
-	{
-		//@Err set dot or bracker start
-		err_parse(TokenType::DOT, "variable access");
-		return NULL;
-	}
-
-	return access;
-}
-
-Ast_Access_Var* Parser::parse_access_var(Ast_Access* target)
-{
-	Ast_Access_Var* var_access = arena_alloc<Ast_Access_Var>(&this->arena);
-
-	option<Token> ident = try_consume(TokenType::IDENT);
-	if (!ident) { err_parse(TokenType::IDENT, "struct field access"); return NULL; }
-	var_access->unresolved.ident = token_to_ident(ident.value());
-
-	Token token = peek();
-	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
-	{
-		Ast_Access* access = parse_access();
-		if (!access) return NULL;
-		target->next = access;
-	}
-
-	return var_access;
-}
-
-Ast_Access_Array* Parser::parse_access_array(Ast_Access* target)
-{
-	Ast_Access_Array* array_access = arena_alloc<Ast_Access_Array>(&this->arena);
-
-	Ast_Expr* expr = parse_sub_expr();
-	if (!expr) return NULL;
-	array_access->index_expr = expr;
-
-	if (!try_consume(TokenType::BRACKET_END)) { err_parse(TokenType::BRACKET_END, "array access"); return NULL; }
-
-	Token token = peek();
-	if (token.type == TokenType::DOT || token.type == TokenType::BRACKET_START)
-	{
-		Ast_Access* access = parse_access();
-		if (!access) return NULL;
-		target->next = access;
-	}
-
-	return array_access;
-}
-
-Ast_Enum* Parser::parse_enum(bool import)
+Ast_Enum* Parser::parse_enum()
 {
 	Ast_Enum* _enum = arena_alloc<Ast_Enum>(&this->arena);
-	if (import) { _enum->unresolved.import = token_to_ident(consume_get()); consume(); }
+
+	if (!try_consume(TokenType::DOT)) { err_parse(TokenType::DOT, "enum literal"); return NULL; }
 
 	option<Token> ident = try_consume(TokenType::IDENT);
-	if (!ident) { err_parse(TokenType::IDENT, "enum type declaration"); return NULL; }
-	_enum->unresolved.ident = token_to_ident(ident.value());
-	consume();
-	
-	option<Token> variant = try_consume(TokenType::IDENT);
-	if (!variant) { err_parse(TokenType::IDENT, "enum variant declaration"); return NULL; }
-	_enum->unresolved.variant = token_to_ident(variant.value());
+	if (!ident) { err_parse(TokenType::IDENT, "enum literal"); return NULL; }
+	_enum->unresolved.variant_ident = token_to_ident(ident.value());
 
 	return _enum;
 }
@@ -1253,14 +1138,15 @@ Ast_Sizeof* Parser::parse_sizeof()
 	return _sizeof;
 }
 
-Ast_Struct_Init* Parser::parse_struct_init(bool import, bool type)
+Ast_Struct_Init* Parser::parse_struct_init(option<Ast_Module_Access*> module_access)
 {
 	Ast_Struct_Init* struct_init = arena_alloc<Ast_Struct_Init>(&this->arena);
+	struct_init->unresolved.module_access = module_access;
 
-	if (import) { struct_init->unresolved.import = token_to_ident(consume_get()); consume(); }
-	if (type) { struct_init->unresolved.ident = token_to_ident(consume_get()); }
-	consume();
-
+	option<Token> token = try_consume(TokenType::IDENT);
+	if (token) struct_init->unresolved.struct_ident = token_to_ident(token.value());
+	if (!try_consume(TokenType::DOT)) { err_parse(TokenType::DOT, "struct initializer"); return NULL; }
+	
 	if (!try_consume(TokenType::BLOCK_START)) { err_parse(TokenType::BLOCK_START, "struct initializer"); return NULL; }
 	if (!try_consume(TokenType::BLOCK_END))
 	{
@@ -1303,86 +1189,122 @@ Ast_Array_Init* Parser::parse_array_init()
 	return array_init;
 }
 
-option<Ast_Module_Access*> Parser::parse_module_access()
+Ast_Something* Parser::parse_something(option<Ast_Module_Access*> module_access)
 {
-	if (peek().type != TokenType::IDENT) return {};
-	if (peek(1).type != TokenType::DOUBLE_COLON) return {};
+	Ast_Something* something = arena_alloc<Ast_Something>(&this->arena);
+	something->module_access = module_access;
+	
+	Ast_Access_Chain* chain_first = parse_access_chain_first();
+	if (!chain_first) return NULL;
+	something->chain_first = chain_first;
 
-	Ast_Module_Access* module_access = arena_alloc<Ast_Module_Access>(&this->arena);
-	module_access->modules.emplace_back(token_to_ident(consume_get()));
-	consume();
+	bool result = parse_access_chain(chain_first);
+	if (!result) return NULL;
 
-	while (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOUBLE_COLON)
-	{
-		module_access->modules.emplace_back(token_to_ident(consume_get()));
-		consume();
-	}
-
-	return module_access;
+	return something;
 }
 
-Ast_Decl_Import_New* Parser::parse_decl_import_new()
+Ast_Access_Chain* Parser::parse_access_chain_first()
 {
-	Ast_Decl_Import_New* decl = arena_alloc<Ast_Decl_Import_New>(&this->arena);
-	if (!try_consume(TokenType::KEYWORD_IMPORT)) { err_parse(TokenType::KEYWORD_IMPORT, "import declaration"); return NULL; }
-	
-	option<Token> first_module = try_consume(TokenType::IDENT);
-	if (!first_module) { err_parse(TokenType::IDENT, "import declaration"); return NULL; }
-	decl->modules.emplace_back(token_to_ident(first_module.value()));
-	
-	if (try_consume(TokenType::SEMICOLON)) return decl;
-	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "import declaration"); return NULL; }
-	
-	while (peek().type == TokenType::IDENT && peek(1).type == TokenType::DOUBLE_COLON)
-	{
-		decl->modules.emplace_back(token_to_ident(consume_get()));
-		consume();
-	}
+	Ast_Access_Chain* chain_first = arena_alloc<Ast_Access_Chain>(&this->arena);
 
-	Ast_Import_Target* target = parse_import_target();
-	if (!target) return NULL;
-	decl->target = target;
+	option<Token> token = try_consume(TokenType::IDENT);
+	if (!token) 
+	{ err_parse(TokenType::IDENT, "access chain"); return NULL; }
+	Ast_Ident ident = token_to_ident(token.value());
 
-	if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "import declaration"); return NULL; }
-	return decl;
-}
+	if (try_consume(TokenType::PAREN_START))
+	{
+		chain_first->tag = Ast_Access_Chain_Tag::Call;
+		chain_first->as_call.ident = ident;
 
-Ast_Import_Target* Parser::parse_import_target()
-{
-	Ast_Import_Target* target = arena_alloc<Ast_Import_Target>(&this->arena);
-
-	switch (peek().type)
-	{
-	case TokenType::TIMES:
-	{
-		target->tag = Ast_Import_Target_Tag::Wildcard;
-		consume();
-	} break;
-	case TokenType::BLOCK_START:
-	{
-		target->tag = Ast_Import_Target_Tag::Symbol_List;
-		consume();
-		if (!try_consume(TokenType::BLOCK_END))
+		if (!try_consume(TokenType::PAREN_END))
 		{
 			while (true)
 			{
-				option<Token> symbol = try_consume(TokenType::IDENT);
-				if (!symbol) return NULL;
-				target->symbol_list.symbols.emplace_back(token_to_ident(symbol.value()));
+				Ast_Expr* expr = parse_sub_expr();
+				if (!expr) return NULL;
+				chain_first->as_call.input_exprs.emplace_back(expr);
+				
 				if (!try_consume(TokenType::COMMA)) break;
 			}
-			if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "import declaration"); return NULL; }
+			if (!try_consume(TokenType::PAREN_END)) { err_parse(TokenType::PAREN_END, "procedure input list"); return NULL; }
 		}
-	} break;
-	case TokenType::IDENT:
+	}
+	else
 	{
-		target->tag = Ast_Import_Target_Tag::Symbol_Or_Module;
-		target->symbol_or_module.ident = token_to_ident(consume_get());
-	} break;
-	default: { err_parse(TokenType::IDENT, "import declaration"); return NULL; } //@err set ident, *, {
+		chain_first->tag = Ast_Access_Chain_Tag::Ident;
+		chain_first->as_ident.ident = ident;
 	}
 
-	return target;
+	return chain_first;
+}
+
+bool Parser::parse_access_chain(Ast_Access_Chain* prev)
+{
+	switch (peek().type)
+	{
+	case TokenType::DOT: break;
+	case TokenType::BRACKET_START: break;
+	default: return true;
+	}
+
+	Ast_Access_Chain* chain = arena_alloc<Ast_Access_Chain>(&this->arena);
+
+	switch (peek().type)
+	{
+	case TokenType::DOT:
+	{
+		consume();
+
+		option<Token> token = try_consume(TokenType::IDENT);
+		if (!token) { err_parse(TokenType::IDENT, "access chain"); return false; }
+		Ast_Ident ident = token_to_ident(token.value());
+
+		if (try_consume(TokenType::PAREN_START))
+		{
+			chain->tag = Ast_Access_Chain_Tag::Call;
+			chain->as_call.ident = ident;
+
+			if (!try_consume(TokenType::PAREN_END))
+			{
+				while (true)
+				{
+					Ast_Expr* expr = parse_sub_expr();
+					if (!expr) return false;
+					chain->as_call.input_exprs.emplace_back(expr);
+
+					if (!try_consume(TokenType::COMMA)) break;
+				}
+				if (!try_consume(TokenType::PAREN_END)) { err_parse(TokenType::PAREN_END, "procedure input list"); return false; }
+			}
+		}
+		else
+		{
+			chain->tag = Ast_Access_Chain_Tag::Ident;
+			chain->as_ident.ident = ident;
+		}
+	} break;
+	case TokenType::BRACKET_START:
+	{
+		chain->tag = Ast_Access_Chain_Tag::Array;
+		consume();
+		
+		Ast_Expr* expr = parse_sub_expr();
+		if (!expr) return false;
+		chain->as_array.index_expr = expr;
+
+		if (!try_consume(TokenType::BRACKET_END)) { err_parse(TokenType::BRACKET_END, "array access"); return false; }
+	} break;
+	default: { err_internal("parse_access_chain: unexpected token type"); return false; }
+	}
+
+	prev->next = chain;
+	
+	bool result = parse_access_chain(chain);
+	if (!result) return false;
+	
+	return true;
 }
 
 Token Parser::peek(u32 offset)

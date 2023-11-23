@@ -99,10 +99,13 @@ void print_type(Ast_Type type)
 	} break;
 	case Ast_Type_Tag::Unresolved:
 	{
-		if (type.as_unresolved->import)
+		if (type.as_unresolved->module_access)
 		{
-			print_str(type.as_unresolved->import.value().str);
-			printf(".");
+			for (Ast_Ident ident : type.as_unresolved->module_access.value()->modules)
+			{
+				print_str(ident.str);
+				printf("::");
+			}
 		}
 		print_str(type.as_unresolved->ident.str);
 	} break;

@@ -1,9 +1,9 @@
 #include "parse_cmd.h"
 
 #include "frontend/parser.h"
-#include "frontend/check.h"
-#include "middlend/llvm_ir_builder.h"
-#include "backend/llvm_backend.h"
+//@todo enable later #include "frontend/check.h"
+//@todo enable later #include "middlend/llvm_ir_builder.h"
+//@todo enable later #include "backend/llvm_backend.h"
 
 #include <filesystem>
 #include <fstream>
@@ -90,8 +90,8 @@ i32 cmd_check()
 	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 	
-	bool check = check_program(program);
-	if (!check) return 1;
+	//@todo enable laterbool check = check_program(program);
+	//@todo enable laterif (!check) return 1;
 
 	printf("Check success\n");
 	return 0;
@@ -103,11 +103,11 @@ i32 cmd_build()
 	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 
-	bool check = check_program(program);
-	if (!check) return 1;
+	//@todo enable later bool check = check_program(program);
+	//@todo enable later if (!check) return 1;
 	
-	LLVMModuleRef mod = build_module(program);
-	backend_build_module(mod);
+	//@todo enable later LLVMModuleRef mod = build_module(program);
+	//@todo enable later backend_build_module(mod);
 
 	printf("Build success\n");
 	return 0;
@@ -119,13 +119,13 @@ i32 cmd_run()
 	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 
-	bool check = check_program(program);
-	if (!check) return 1;
+	//@todo enable later bool check = check_program(program);
+	//@todo enable later if (!check) return 1;
 
-	LLVMModuleRef mod = build_module(program);
-	backend_build_module(mod);
+	//@todo enable later LLVMModuleRef mod = build_module(program);
+	//@todo enable later backend_build_module(mod);
 
-	backend_run();
+	//@todo enable later backend_run();
 
 	printf("Run success\n");
 	return 0;
