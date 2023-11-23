@@ -103,20 +103,6 @@ void check_decls_symbols(Check_Context* cc)
 		decl->import_ast = import_ast.value();
 	}
 
-	for (Ast_Decl_Use* decl : ast->uses)
-	{
-		Ast_Ident ident = decl->alias;
-		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
-		if (symbol)
-		{
-			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
-			err_context(cc, ident.span);
-			err_context(cc, symbol.value().span);
-			continue;
-		}
-		symbol_table.add(ident, hash_ident(ident));
-	}
-
 	for (Ast_Decl_Struct* decl : ast->structs)
 	{
 		Ast_Ident ident = decl->ident;
@@ -196,27 +182,6 @@ void check_decls_symbols(Check_Context* cc)
 void check_decls_consteval(Check_Context* cc)
 {
 	Ast* ast = cc->ast;
-
-	for (Ast_Decl_Use* use_decl : ast->uses)
-	{
-		Ast* import_ast = resolve_import(cc, { use_decl->import });
-		if (import_ast == NULL) continue;
-
-		Ast_Ident alias = use_decl->alias;
-		Ast_Ident symbol = use_decl->symbol;
-		option<Ast_Info_Struct> struct_info = import_ast->struct_table.find(symbol, hash_ident(symbol));
-		if (struct_info) { ast->struct_table.add(alias, struct_info.value(), hash_ident(alias)); continue; }
-		option<Ast_Info_Enum> enum_info = import_ast->enum_table.find(symbol, hash_ident(symbol));
-		if (enum_info) { ast->enum_table.add(alias, enum_info.value(), hash_ident(alias)); continue; }
-		option<Ast_Info_Proc> proc_info = import_ast->proc_table.find(symbol, hash_ident(symbol));
-		if (proc_info) { ast->proc_table.add(alias, proc_info.value(), hash_ident(alias)); continue; }
-		option<Ast_Info_Global> global_info = import_ast->global_table.find(symbol, hash_ident(symbol));
-		if (global_info) { ast->global_table.add(alias, global_info.value(), hash_ident(alias)); continue; }
-
-		err_report(Error::DECL_USE_SYMBOL_NOT_FOUND);
-		err_context(cc, symbol.span);
-	}
-	
 	HashSet<Ast_Ident, u32, match_ident> name_set(64);
 
 	for (Ast_Decl_Struct* struct_decl : ast->structs)

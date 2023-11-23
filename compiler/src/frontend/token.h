@@ -12,7 +12,6 @@ enum class BasicType;
 struct Span;
 struct Token;
 
-TokenType token_str_to_keyword(StringView str);
 constexpr option<UnaryOp> token_to_unary_op(TokenType type);
 constexpr option<BinaryOp> token_to_binary_op(TokenType type);
 constexpr option<AssignOp> token_to_assign_op(TokenType type);
@@ -42,7 +41,6 @@ enum class TokenType
 	KEYWORD_CONTINUE,      // continue
 	KEYWORD_SIZEOF,        // sizeof
 	KEYWORD_IMPORT,        // import
-	KEYWORD_USE,           // use
 	KEYWORD_IMPL,          // impl
 	KEYWORD_SELF,          // self
 

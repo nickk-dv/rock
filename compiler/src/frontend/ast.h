@@ -27,7 +27,6 @@ struct Ast_Type_Procedure;
 struct Ast_Type_Unresolved;
 
 struct Ast_Decl_Impl;
-struct Ast_Decl_Use;
 struct Ast_Decl_Proc;
 struct Ast_Proc_Param;
 struct Ast_Decl_Enum;
@@ -70,6 +69,7 @@ struct Ast_Module_Access;
 struct Ast_Import_Target;
 struct Ast_Something;
 struct Ast_Access_Chain;
+struct Ast_Expr_List;
 
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
@@ -83,7 +83,6 @@ struct Ast
 	std::vector<Span> line_spans;
 
 	std::vector<Ast_Decl_Impl*> impls;
-	std::vector<Ast_Decl_Use*> uses;
 	std::vector<Ast_Decl_Proc*> procs;
 	std::vector<Ast_Decl_Enum*> enums;
 	std::vector<Ast_Decl_Struct*> structs;
@@ -187,13 +186,6 @@ struct Ast_Decl_Impl
 {
 	Ast_Type type;
 	std::vector<Ast_Decl_Proc*> member_procedures;
-};
-
-struct Ast_Decl_Use
-{
-	Ast_Ident alias;
-	Ast_Ident import;
-	Ast_Ident symbol;
 };
 
 struct Ast_Decl_Proc
@@ -541,13 +533,13 @@ struct Ast_Array_Init
 {
 	Ast_Resolve_Tag tag;
 	option<Ast_Type> type;
-	std::vector<Ast_Expr*> input_exprs;
+	Ast_Expr_List* input;
 };
 
 struct Ast_Struct_Init
 {
 	Ast_Resolve_Tag tag;
-	std::vector<Ast_Expr*> input_exprs;
+	Ast_Expr_List* input;
 	
 	union
 	{
@@ -591,7 +583,7 @@ struct Ast_Import_Target
 struct Ast_Something
 {
 	option<Ast_Module_Access*> module_access;
-	Ast_Access_Chain* chain_first;
+	Ast_Access_Chain* chain;
 };
 
 enum class Ast_Access_Chain_Tag
@@ -610,8 +602,13 @@ struct Ast_Access_Chain
 	{
 		struct Ident { Ast_Ident ident; } as_ident;
 		struct Array { Ast_Expr* index_expr; } as_array;
-		struct Call { Ast_Ident ident; std::vector<Ast_Expr*> input_exprs; } as_call;
+		struct Call  { Ast_Ident ident; Ast_Expr_List* input; } as_call;
 	};
+};
+
+struct Ast_Expr_List
+{
+	std::vector<Ast_Expr*> exprs;
 };
 
 #endif

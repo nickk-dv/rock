@@ -27,7 +27,6 @@ private:
 	Ast_Type_Unresolved* parse_type_unresolved();
 
 	Ast_Decl_Impl* parse_decl_impl();
-	Ast_Decl_Use* parse_decl_use();
 	Ast_Decl_Proc* parse_decl_proc(bool in_impl);
 	Ast_Decl_Enum* parse_decl_enum();
 	Ast_Decl_Struct* parse_decl_struct();
@@ -62,8 +61,10 @@ private:
 	Ast_Something* parse_something(option<Ast_Module_Access*> module_access);
 	Ast_Access_Chain* parse_access_chain_first();
 	bool parse_access_chain(Ast_Access_Chain* prev);
+	Ast_Expr_List* parse_expr_list(TokenType start, TokenType end, const char* in);
 
-	Token peek(u32 offset = 0);
+	TokenType peek(u32 offset = 0);
+	Token peek_token(u32 offset = 0);
 	void consume();
 	Token consume_get();
 	option<Token> try_consume(TokenType token_type);

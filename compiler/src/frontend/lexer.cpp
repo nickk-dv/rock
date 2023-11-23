@@ -305,7 +305,6 @@ static const std::unordered_map<u64, TokenType> keyword_map =
 	{ hash_ascii_9("continue"), TokenType::KEYWORD_CONTINUE },
 	{ hash_ascii_9("sizeof"),   TokenType::KEYWORD_SIZEOF },
 	{ hash_ascii_9("import"),   TokenType::KEYWORD_IMPORT },
-	{ hash_ascii_9("use"),      TokenType::KEYWORD_USE },
 	{ hash_ascii_9("impl"),     TokenType::KEYWORD_IMPL },
 	{ hash_ascii_9("self"),     TokenType::KEYWORD_SELF },
 	{ hash_ascii_9("i8"),       TokenType::TYPE_I8 },

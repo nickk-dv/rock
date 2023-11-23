@@ -138,7 +138,6 @@ void print_token_type(TokenType type)
 	case TokenType::KEYWORD_CONTINUE:   printf("continue"); break;
 	case TokenType::KEYWORD_SIZEOF:     printf("sizeof"); break;
 	case TokenType::KEYWORD_IMPORT:     printf("import"); break;
-	case TokenType::KEYWORD_USE:        printf("use"); break;
 	case TokenType::KEYWORD_IMPL:       printf("impl"); break;
 	case TokenType::KEYWORD_SELF:       printf("self"); break;
 
