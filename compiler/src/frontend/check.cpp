@@ -8,6 +8,8 @@ bool check_program(Ast_Program* program)
 	Check_Context cc = {};
 	program->external_proc_table.init(256);
 
+	check_module_tree(&program->root);
+
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
@@ -598,6 +600,48 @@ void check_stmt_var_assign(Check_Context* cc, Ast_Stmt_Var_Assign* var_assign)
 	check_expr_type(cc, var_assign->expr, var_type.value(), Expr_Constness::Normal);
 }
 */
+void check_module_tree(Ast_Module_Tree* node)
+{	
+	return; //@remove ruins the data reword the allocation of the tree, and store pointers to the nodes from arena allocator
+	bool conflict_found;
+	do
+	{
+		conflict_found = false;
+		u32 conflict_index = 0;
+
+		for (u32 i = 0; i < node->submodules.size(); i += 1)
+		{
+			for (u32 k = 0; k < node->submodules.size(); k += 1)
+			{
+				if (i == k) continue;
+				Ast_Module_Tree* module_a = &node->submodules[i];
+				Ast_Module_Tree* module_b = &node->submodules[k];
+				if (match_ident(module_a->ident, module_b->ident))
+				{
+					conflict_found = true;
+					if (module_a->leaf_ast && !module_b->leaf_ast) conflict_index = i;
+					else conflict_index = k;
+					break;
+				}
+			}
+			if (conflict_found) break;
+		}
+
+		if (conflict_found)
+		{
+			err_internal("check_module_tree: conflict modules, only folder or file module can exist in sigle module");
+			err_context(node->submodules[conflict_index].leaf_ast.value()->filepath.c_str());
+			node->submodules.erase(node->submodules.begin() + conflict_index);
+		}
+	}
+	while (conflict_found);
+
+	for (u32 i = 0; i < node->submodules.size(); i += 1)
+	{
+		check_module_tree(&node->submodules[i]);
+	}
+}
+
 Ast* check_module_access(Check_Context* cc, option<Ast_Module_Access*> module_access)
 {
 	if (!module_access) return cc->ast;

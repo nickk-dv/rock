@@ -23,6 +23,7 @@ static void check_stmt_switch(Check_Context* cc, Ast_Stmt_Switch* _switch);
 static void check_stmt_var_decl(Check_Context* cc, Ast_Stmt_Var_Decl* var_decl);
 static void check_stmt_var_assign(Check_Context* cc, Ast_Stmt_Var_Assign* var_assign);
 
+static void check_module_tree(Ast_Module_Tree* node);
 static Ast* check_module_access(Check_Context* cc, option<Ast_Module_Access*> option_module_access);
 static Ast* check_module_list(Check_Context* cc, std::vector<Ast_Ident>& modules);
 static void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl);
