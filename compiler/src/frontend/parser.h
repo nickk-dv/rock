@@ -5,6 +5,9 @@
 #include "lexer.h"
 #include "general/arena.h"
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 struct Parser
 {
 private:
@@ -18,6 +21,7 @@ private:
 
 public:
 	Ast_Program* parse_program();
+	void populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent, fs::path& path, fs::path& src);
 
 private:
 	Ast* parse_ast(StringView source, std::string& filepath);

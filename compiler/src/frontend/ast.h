@@ -9,6 +9,7 @@ struct Ast;
 struct Ast_Program;
 struct Ast_Ident;
 struct Ast_Literal;
+struct Ast_Module_Tree;
 
 struct Ast_Info_Proc;
 struct Ast_Info_Enum;
@@ -96,10 +97,24 @@ struct Ast
 	HashMap<Ast_Ident, Ast_Decl_Import*, u32, match_ident> import_table;
 };
 
+struct Ast_Ident
+{
+	Span span;
+	StringView str;
+};
+
+struct Ast_Module_Tree
+{
+	Ast_Ident ident;
+	std::string name;
+	option<Ast*> leaf_ast;
+	std::vector<Ast_Module_Tree> submodules;
+};
+
 struct Ast_Program
 {
+	Ast_Module_Tree root;
 	std::vector<Ast*> modules;
-	HashMap<std::string, Ast*, u32, match_string> module_map;
 	HashMap<Ast_Ident, Ast_Decl_Proc*, u32, match_ident> external_proc_table;
 	
 	std::vector<Ast_Info_IR_Proc> procs;
@@ -116,12 +131,6 @@ struct Ast_Info_IR_Proc   { Ast_Decl_Proc* proc_decl; LLVMTypeRef proc_type; LLV
 struct Ast_Info_IR_Enum   { Ast_Decl_Enum* enum_decl; LLVMTypeRef enum_type; };
 struct Ast_Info_IR_Struct { Ast_Decl_Struct* struct_decl; LLVMTypeRef struct_type; LLVMValueRef default_value; };
 struct Ast_Info_IR_Global { Ast_Decl_Global* global_decl; LLVMValueRef global_ptr; LLVMValueRef const_value; };
-
-struct Ast_Ident
-{
-	Span span;
-	StringView str;
-};
 
 struct Ast_Literal
 {

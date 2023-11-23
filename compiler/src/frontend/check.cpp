@@ -1,7 +1,7 @@
 #include "check.h"
 
 #include "error_handler.h"
-#include "check_type.h"
+//#include "check_type.h"
 
 bool check_program(Ast_Program* program)
 {
@@ -19,19 +19,19 @@ bool check_program(Ast_Program* program)
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
-		check_decls_consteval(&cc);
+		//@disabled check_decls_consteval(&cc);
 	}
 
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
-		check_decls_finalize(&cc);
+		//@disabled check_decls_finalize(&cc);
 	}
 
 	for (Ast* ast : program->modules)
 	{
 		check_context_init(&cc, ast, program);
-		check_proc_blocks(&cc);
+		//@disabled check_proc_blocks(&cc);
 	}
 
 	return !err_get_status();
@@ -55,6 +55,7 @@ void check_main_entry_point(Ast_Program* program)
 	Check_Context cc = {};
 	check_context_init(&cc, main_ast, program);
 
+	/* @disabled
 	option<Ast_Info_Proc> proc_meta = find_proc(cc.ast, Ast_Ident{ 0, 0, { (u8*)"main", 4} });
 	if (!proc_meta) { err_report(Error::MAIN_PROC_NOT_FOUND); err_context(&cc); return; }
 	Ast_Decl_Proc* proc_decl = proc_meta.value().proc_decl;
@@ -64,6 +65,7 @@ void check_main_entry_point(Ast_Program* program)
 	if (proc_decl->input_params.size() != 0) { err_report(Error::MAIN_NOT_ZERO_PARAMS); err_context(&cc, proc_decl->ident.span); }
 	if (!proc_decl->return_type) { err_report(Error::MAIN_PROC_NO_RETURN_TYPE); err_context(&cc, proc_decl->ident.span); return; }
 	if (!type_match(proc_decl->return_type.value(), type_from_basic(BasicType::I32))) { err_report(Error::MAIN_PROC_WRONG_RETURN_TYPE); err_context(&cc, proc_decl->ident.span); }
+	*/
 }
 
 void check_decls_symbols(Check_Context* cc)
@@ -77,30 +79,10 @@ void check_decls_symbols(Check_Context* cc)
 
 	HashSet<Ast_Ident, u32, match_ident> symbol_table(256);
 	Ast_Program* program = cc->program;
-	
+
 	for (Ast_Decl_Import* decl : ast->imports)
 	{
-		Ast_Ident ident = decl->alias;
-		option<Ast_Ident> symbol = symbol_table.find_key(ident, hash_ident(ident));
-		if (symbol)
-		{ 
-			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED); 
-			err_context(cc, ident.span);
-			err_context(cc, symbol.value().span);
-			continue;
-		}
-		symbol_table.add(ident, hash_ident(ident));
-		ast->import_table.add(ident, decl, hash_ident(ident));
-		
-		char* path = decl->file_path.token.string_literal_value;
-		option<Ast*> import_ast = cc->program->module_map.find(std::string(path), hash_fnv1a_32(string_view_from_string(std::string(path))));
-		if (!import_ast)
-		{
-			err_report(Error::DECL_IMPORT_PATH_NOT_FOUND);
-			err_context(cc, decl->file_path.token.span);
-			continue;
-		}
-		decl->import_ast = import_ast.value();
+		check_decl_import(cc, decl);
 	}
 
 	for (Ast_Decl_Struct* decl : ast->structs)
@@ -178,7 +160,7 @@ void check_decls_symbols(Check_Context* cc)
 		program->globals.emplace_back(Ast_Info_IR_Global { decl });
 	}
 }
-
+/* @disabled
 void check_decls_consteval(Check_Context* cc)
 {
 	Ast* ast = cc->ast;
@@ -614,4 +596,80 @@ void check_stmt_var_assign(Check_Context* cc, Ast_Stmt_Var_Assign* var_assign)
 	}
 
 	check_expr_type(cc, var_assign->expr, var_type.value(), Expr_Constness::Normal);
+}
+*/
+Ast* check_module_access(Check_Context* cc, option<Ast_Module_Access*> module_access)
+{
+	if (!module_access) return cc->ast;
+	return check_module_list(cc, module_access.value()->modules);
+}
+
+Ast* check_module_list(Check_Context* cc, std::vector<Ast_Ident>& modules)
+{
+	if (modules.empty()) return cc->ast;
+
+	Ast_Module_Tree* node = &cc->program->root;
+	Ast_Ident node_ident = {};
+
+	for (Ast_Ident& ident : modules)
+	{
+		bool found = false;
+		for (Ast_Module_Tree& module : node->submodules)
+		{
+			if (match_ident(ident, module.ident))
+			{
+				found = true;
+				node = &module;
+				node_ident = ident;
+				break;
+			}
+		}
+		if (!found)
+		{
+			err_internal("check_module_list: module not found");
+			err_context(cc, ident.span);
+			return NULL;
+		}
+	}
+
+	//@restructure
+	//@this check is valid for module access 
+	//@but in import decl the last identifier might be a module, and this check might need to be delayed
+	if (!node->leaf_ast)
+	{
+		err_internal("check_module_list: module path must end with module with associated file");
+		err_context(cc, node_ident.span);
+		return NULL;
+	}
+
+	return node->leaf_ast.value();
+}
+
+void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl)
+{
+	Ast* ast = check_module_list(cc, import_decl->modules);
+	if (!ast) return;
+	if (!import_decl->target) return;
+
+	Ast_Import_Target* target = import_decl->target.value();
+	switch (target->tag)
+	{
+	case Ast_Import_Target_Tag::Wildcard:
+	{
+		//@todo import wildcard
+		//@maybe check for conflicts
+	} break;
+	case Ast_Import_Target_Tag::Symbol_List:
+	{
+		//@todo check that symbols exist + import
+		//@maybe check for conflicts
+	} break;
+	case Ast_Import_Target_Tag::Symbol_Or_Module:
+	{
+		//@todo resolve symbol or module
+		//@check module & symbol
+		//@maybe check for conflicts
+	} break;
+	default: err_internal("check_decl_import: invalid Ast_Import_Target_Tag"); break;
+	}
 }

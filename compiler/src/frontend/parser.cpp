@@ -31,6 +31,59 @@ private:
 
 namespace fs = std::filesystem;
 
+//@todo same module name within same path shoundt be allowed
+//core::mem (as folder)
+//core::mem (as file) cannot exist at the same time
+void Parser::populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent, fs::path& path, fs::path& src)
+{
+	for (const fs::directory_entry& dir_entry : fs::directory_iterator(path))
+	{
+		parent->submodules.emplace_back(Ast_Module_Tree {});
+		Ast_Module_Tree* module = &parent->submodules[parent->submodules.size() - 1];
+		
+		fs::path entry = dir_entry.path();
+		module->name = entry.lexically_relative(path).replace_extension("").filename().string();
+
+		if (dir_entry.is_directory())
+		{
+			module->leaf_ast = {};
+			populate_module_tree(program, module, entry, src);
+		}
+		else if (fs::is_regular_file(entry))
+		{
+			FILE* file;
+			fopen_s(&file, (const char*)entry.u8string().c_str(), "rb");
+			if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); continue; } //@add context
+			fseek(file, 0, SEEK_END);
+			u64 size = (u64)ftell(file);
+			fseek(file, 0, SEEK_SET);
+
+			u8* data = arena_alloc_buffer<u8>(&this->arena, size);
+			u64 read_size = fread(data, 1, size, file);
+			fclose(file);
+			if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); continue; } //@add context
+
+			StringView source = StringView{ data, size };
+			std::string filepath = entry.lexically_relative(src).replace_extension("").string();
+			Ast* ast = parse_ast(source, filepath);
+			if (ast == NULL) continue;
+
+			module->leaf_ast = ast;
+			program->modules.emplace_back(ast);
+		}
+		else
+		{
+			//@error ?
+		}
+	}
+}
+
+void module_tree_finalize_idents(Ast_Module_Tree* parent)
+{
+	for (Ast_Module_Tree& module : parent->submodules) module.ident = Ast_Ident { .str = string_view_from_string(module.name) };
+	for (Ast_Module_Tree& module : parent->submodules) module_tree_finalize_idents(&module);
+}
+
 Ast_Program* Parser::parse_program()
 {
 	ScopedTimer timer = ScopedTimer("parse files");
@@ -41,8 +94,11 @@ Ast_Program* Parser::parse_program()
 	this->strings.init();
 	arena_init(&this->arena, 4 * 1024 * 1024);
 	Ast_Program* program = arena_alloc<Ast_Program>(&this->arena);
-	program->module_map.init(64);
 
+	populate_module_tree(program, &program->root, src, src);
+	module_tree_finalize_idents(&program->root);
+
+	/*
 	for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(src))
 	{
 		fs::path entry = dir_entry.path();
@@ -63,12 +119,13 @@ Ast_Program* Parser::parse_program()
 		
 		StringView source = StringView { data, size };
 		std::string filepath = entry.lexically_relative(src).replace_extension("").string();
+		printf("parse file: %s\n", filepath.c_str());
 		Ast* ast = parse_ast(source, filepath);
 		if (ast == NULL) return NULL;
 		
 		program->modules.emplace_back(ast);
-		program->module_map.add(filepath, ast, hash_fnv1a_32(string_view_from_string(filepath)));
 	}
+	*/
 
 	if (!fs::exists("build") && !fs::create_directory("build")) 
 	{ err_report(Error::OS_DIR_CREATE_FAILED); return NULL; } //@add context
