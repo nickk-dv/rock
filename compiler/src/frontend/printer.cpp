@@ -131,6 +131,7 @@ void print_token_type(TokenType type)
 	case TokenType::KEYWORD_TRUE:       printf("true"); break;
 	case TokenType::KEYWORD_FALSE:      printf("false"); break;
 	case TokenType::KEYWORD_FOR:        printf("for"); break;
+	case TokenType::KEYWORD_CAST:       printf("cast"); break;
 	case TokenType::KEYWORD_DEFER:      printf("defer"); break;
 	case TokenType::KEYWORD_BREAK:      printf("break"); break;
 	case TokenType::KEYWORD_RETURN:     printf("return"); break;

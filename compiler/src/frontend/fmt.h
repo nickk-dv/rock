@@ -3,31 +3,37 @@
 
 #include "ast.h"
 
-void fmt_endl()
-{
-	printf("\n");
-}
+/*
+@Tasks
+use methods
+decl spacing, impl proc spacing
+short block info not kept
+expr parentesis not kept
+decl_proc variadic not kept
+rework switch syntax
+handle & keep comments
+keep & reduce logical empty lines to 1
+modify file instead of printing
+*/
+Ast* fmt_curr_ast;
 
-void fmt_tab()
-{
-	printf("\t");
-}
+void fmt_tab()   { printf("\t"); }
+void fmt_endl()  { printf("\n"); }
+void fmt_space() { printf(" "); }
 
-void fmt_space()
+void fmt_literal(Ast_Literal* literal)
 {
-	printf(" ");
+	Token token = literal->token;
+	for (u32 i = token.span.start; i <= token.span.end; i += 1)
+	{
+		printf("%c", fmt_curr_ast->source.data[i]);
+	}
 }
 
 void fmt_token(TokenType type)
 {
 	switch (type)
 	{
-	case TokenType::IDENT:              printf("identifier"); break; //@dont print (use token span instead)
-	case TokenType::BOOL_LITERAL:       printf("bool literal"); break; //@dont print (use token span instead)
-	case TokenType::FLOAT_LITERAL:      printf("float literal"); break; //@dont print (use token span instead)
-	case TokenType::INTEGER_LITERAL:    printf("integer literal"); break; //@dont print (use token span instead)
-	case TokenType::STRING_LITERAL:     printf("string literal"); break; //@dont print (use token span instead)
-
 	case TokenType::KEYWORD_STRUCT:     printf("struct"); break;
 	case TokenType::KEYWORD_ENUM:       printf("enum"); break;
 	case TokenType::KEYWORD_IF:         printf("if"); break;
@@ -35,6 +41,7 @@ void fmt_token(TokenType type)
 	case TokenType::KEYWORD_TRUE:       printf("true"); break;
 	case TokenType::KEYWORD_FALSE:      printf("false"); break;
 	case TokenType::KEYWORD_FOR:        printf("for"); break;
+	case TokenType::KEYWORD_CAST:       printf("cast"); break;
 	case TokenType::KEYWORD_DEFER:      printf("defer"); break;
 	case TokenType::KEYWORD_BREAK:      printf("break"); break;
 	case TokenType::KEYWORD_RETURN:     printf("return"); break;
@@ -104,9 +111,6 @@ void fmt_token(TokenType type)
 	case TokenType::BITWISE_NOT:        printf("~"); break;
 	case TokenType::BITSHIFT_LEFT:      printf("<<"); break;
 	case TokenType::BITSHIFT_RIGHT:     printf(">>"); break;
-
-	case TokenType::ERROR:     printf("error token"); break; //@dont print
-	case TokenType::INPUT_END: printf("end of file"); break; //@dont print
 	default: err_internal_enum(type); break;
 	}
 }
@@ -207,13 +211,150 @@ void fmt_module_access(option<Ast_Module_Access*> module_access)
 	}
 }
 
-void fmt_expr(Ast_Expr* expr)
+void fmt_expr(Ast_Expr* expr); //@remove this forward declaration
+void fmt_type(Ast_Type type); //@remove this forward declaration
+void fmt_stmt(Ast_Stmt* stmt, u32 indent); //@remove this forward declaration
+
+void fmt_indent(u32 indent)
 {
-	printf("!EXPR!");
+	for (u32 i = 0; i < indent; i += 1) fmt_tab();
 }
 
-void fmt_block(Ast_Stmt_Block* block)
+void fmt_expr_list(Ast_Expr_List* expr_list)
 {
+	for (u32 i = 0; i < expr_list->exprs.size(); i += 1)
+	{
+		fmt_expr(expr_list->exprs[i]);
+		if (i + 1 != expr_list->exprs.size())
+		{
+			fmt_token(TokenType::COMMA);
+			fmt_space();
+		}
+	}
+}
+
+void fmt_access_chain(Ast_Access_Chain* chain, bool first)
+{
+	switch (chain->tag())
+	{
+	case Ast_Access_Chain::Tag::Ident:
+	{
+		if (!first) fmt_token(TokenType::DOT);
+		fmt_ident(chain->as_ident);
+	} break;
+	case Ast_Access_Chain::Tag::Array:
+	{
+		fmt_token(TokenType::BRACKET_START);
+		fmt_expr(chain->as_array.index_expr);
+		fmt_token(TokenType::BRACKET_END);
+	} break;
+	case Ast_Access_Chain::Tag::Call:
+	{
+		if (!first) fmt_token(TokenType::DOT);
+		fmt_ident(chain->as_call.ident);
+		fmt_token(TokenType::PAREN_START);
+		fmt_expr_list(chain->as_call.input);
+		fmt_token(TokenType::PAREN_END);
+	} break;
+	default: err_internal_enum(chain->tag()); break;
+	}
+}
+
+void fmt_something(Ast_Something* something)
+{
+	fmt_module_access(something->module_access);
+	fmt_access_chain(something->chain, true);
+	option<Ast_Access_Chain*> next = something->chain->next;
+	while (next)
+	{
+		fmt_access_chain(next.value(), false);
+		next = next.value()->next;
+	}
+}
+
+void fmt_term(Ast_Term* term) //@parens lost
+{
+	switch (term->tag())
+	{
+	case Ast_Term::Tag::Enum:
+	{
+		Ast_Enum* _enum = term->as_enum;
+		fmt_token(TokenType::DOT);
+		fmt_ident(_enum->unresolved.variant_ident);
+	} break;
+	case Ast_Term::Tag::Cast:
+	{
+		Ast_Cast* cast = term->as_cast;
+		fmt_token(TokenType::KEYWORD_CAST);
+		fmt_token(TokenType::PAREN_START);
+		fmt_basic_type(cast->basic_type);
+		fmt_token(TokenType::COMMA);
+		fmt_space();
+		fmt_expr(cast->expr);
+		fmt_token(TokenType::PAREN_END);
+	} break;
+	case Ast_Term::Tag::Sizeof:
+	{
+		Ast_Sizeof* size_of = term->as_sizeof;
+		fmt_token(TokenType::KEYWORD_SIZEOF);
+		fmt_token(TokenType::PAREN_START);
+		fmt_type(size_of->type);
+		fmt_token(TokenType::PAREN_END);
+	} break;
+	case Ast_Term::Tag::Literal: fmt_literal(term->as_literal); break;
+	case Ast_Term::Tag::Something: fmt_something(term->as_something); break;
+	case Ast_Term::Tag::Array_Init:
+	{
+		Ast_Array_Init* array_init = term->as_array_init;
+		if (array_init->type) fmt_type(array_init->type.value());
+		fmt_token(TokenType::BLOCK_START);
+		fmt_expr_list(array_init->input);
+		fmt_token(TokenType::BLOCK_END);
+	} break;
+	case Ast_Term::Tag::Struct_Init:
+	{
+		Ast_Struct_Init* struct_init = term->as_struct_init;
+		fmt_module_access(struct_init->unresolved.module_access);
+		fmt_token(TokenType::DOT);
+		fmt_token(TokenType::BLOCK_START);
+		fmt_expr_list(struct_init->input);
+		fmt_token(TokenType::BLOCK_END);
+	} break;
+	default: err_internal_enum(term->tag()); break;
+	}
+}
+
+void fmt_unary(Ast_Unary_Expr* unary_expr) //@parens lost
+{
+	fmt_unary_op(unary_expr->op);
+	fmt_expr(unary_expr->right);
+}
+
+void fmt_binary(Ast_Binary_Expr* binary_expr) //@parens lost
+{
+	fmt_expr(binary_expr->left);
+	fmt_space();
+	fmt_binary_op(binary_expr->op);
+	fmt_space();
+	fmt_expr(binary_expr->right);
+}
+
+void fmt_expr(Ast_Expr* expr)
+{
+	switch (expr->tag())
+	{
+	case Ast_Expr::Tag::Term:   fmt_term(expr->as_term); break;
+	case Ast_Expr::Tag::Unary:  fmt_unary(expr->as_unary_expr); break;
+	case Ast_Expr::Tag::Binary: fmt_binary(expr->as_binary_expr); break;
+	default: err_internal_enum(expr->tag()); break;
+	}
+}
+
+void fmt_block(Ast_Stmt_Block* block, u32 indent, bool attached)
+{
+	if (attached) fmt_space();
+	else fmt_indent(indent);
+	
 	if (block->statements.empty())
 	{
 		fmt_token(TokenType::BLOCK_START);
@@ -223,9 +364,159 @@ void fmt_block(Ast_Stmt_Block* block)
 	{
 		fmt_token(TokenType::BLOCK_START);
 		fmt_endl();
-		fmt_endl();
+		for (Ast_Stmt* stmt : block->statements) fmt_stmt(stmt, indent + 1);
+		fmt_indent(indent);
 		fmt_token(TokenType::BLOCK_END);
 	}
+}
+
+void fmt_stmt_var_decl(Ast_Stmt_Var_Decl* var_decl)
+{
+	fmt_ident(var_decl->ident);
+	fmt_space();
+	fmt_token(TokenType::COLON);
+	if (var_decl->type)
+	{
+		fmt_space();
+		fmt_type(var_decl->type.value());
+	}
+	if (var_decl->expr)
+	{
+		if (var_decl->type) fmt_space();
+		fmt_token(TokenType::ASSIGN);
+		fmt_space();
+		fmt_expr(var_decl->expr.value());
+	}
+}
+
+void fmt_stmt_var_assign(Ast_Stmt_Var_Assign* var_assign)
+{
+	fmt_something(var_assign->something);
+	fmt_space();
+	fmt_assign_op(var_assign->op);
+	fmt_space();
+	fmt_expr(var_assign->expr);
+}
+
+void fmt_stmt(Ast_Stmt* stmt, u32 indent)
+{
+	fmt_indent(indent);
+
+	switch (stmt->tag())
+	{
+	case Ast_Stmt::Tag::If:
+	{
+		Ast_Stmt_If* _if = stmt->as_if;
+		fmt_token(TokenType::KEYWORD_IF);
+		fmt_space();
+		fmt_expr(_if->condition_expr);
+		fmt_block(_if->block, indent, true);
+	} break;
+	case Ast_Stmt::Tag::For:
+	{
+		Ast_Stmt_For* _for = stmt->as_for;
+		fmt_token(TokenType::KEYWORD_FOR);
+		fmt_space();
+		if (_for->var_decl)
+		{
+			fmt_stmt_var_decl(_for->var_decl.value());
+			fmt_token(TokenType::SEMICOLON);
+			fmt_space();
+		}
+		if (_for->condition_expr)
+		{
+			fmt_expr(_for->condition_expr.value());
+		}
+		if (_for->var_assign)
+		{
+			fmt_token(TokenType::SEMICOLON);
+			fmt_space();
+			fmt_stmt_var_assign(_for->var_assign.value());
+			fmt_token(TokenType::SEMICOLON);
+		}
+		fmt_block(_for->block, indent, true);
+	} break;
+	case Ast_Stmt::Tag::Block:
+	{
+		fmt_block(stmt->as_block, indent, false);
+	} break;
+	case Ast_Stmt::Tag::Defer:
+	{
+		Ast_Stmt_Defer* defer = stmt->as_defer;
+		fmt_token(TokenType::KEYWORD_DEFER);
+		fmt_block(defer->block, indent, true);
+	} break;
+	case Ast_Stmt::Tag::Break:
+	{
+		fmt_token(TokenType::KEYWORD_BREAK);
+		fmt_token(TokenType::SEMICOLON);
+	} break;
+	case Ast_Stmt::Tag::Return:
+	{
+		Ast_Stmt_Return* _return = stmt->as_return;
+		fmt_token(TokenType::KEYWORD_RETURN);
+		if (_return->expr)
+		{
+			fmt_space();
+			fmt_expr(_return->expr.value());
+		}
+		fmt_token(TokenType::SEMICOLON);
+	} break;
+	case Ast_Stmt::Tag::Switch:
+	{
+		Ast_Stmt_Switch* _switch = stmt->as_switch;
+		fmt_token(TokenType::KEYWORD_SWITCH);
+		fmt_space();
+		fmt_expr(_switch->expr);
+		
+		fmt_space();
+		fmt_token(TokenType::BLOCK_START);
+		fmt_endl();
+
+		for (Ast_Switch_Case _case : _switch->cases)
+		{
+			fmt_indent(indent + 1);
+			fmt_expr(_case.case_expr);
+			if (_case.block)
+			{
+				fmt_block(_case.block.value(), indent + 1, true);
+			}
+			else
+			{
+				fmt_token(TokenType::COLON);
+			}
+			fmt_endl();
+		}
+		fmt_indent(indent);
+		fmt_token(TokenType::BLOCK_END);
+	} break;
+	case Ast_Stmt::Tag::Continue:
+	{
+		fmt_token(TokenType::KEYWORD_CONTINUE);
+		fmt_token(TokenType::SEMICOLON);
+	} break;
+	case Ast_Stmt::Tag::Var_Decl:
+	{
+		Ast_Stmt_Var_Decl* var_decl = stmt->as_var_decl;
+		fmt_stmt_var_decl(var_decl);
+		fmt_token(TokenType::SEMICOLON);
+	} break;
+	case Ast_Stmt::Tag::Var_Assign:
+	{
+		Ast_Stmt_Var_Assign* var_assign = stmt->as_var_assign;
+		fmt_stmt_var_assign(var_assign);
+		fmt_token(TokenType::SEMICOLON);
+	} break;
+	case Ast_Stmt::Tag::Proc_Call: 
+	{
+		Ast_Stmt_Proc_Call* proc_call = stmt->as_proc_call;
+		fmt_something(proc_call->something);
+		fmt_token(TokenType::SEMICOLON);
+	} break;
+	default: err_internal_enum(stmt->tag()); break;
+	}
+
+	fmt_endl();
 }
 
 void fmt_type(Ast_Type type)
@@ -248,9 +539,29 @@ void fmt_type(Ast_Type type)
 		fmt_token(TokenType::BRACKET_END);
 		fmt_type(type.as_array->element_type);
 	} break;
-	case Ast_Type::Tag::Procedure:
+	case Ast_Type::Tag::Procedure: //@not keeping optional arg names now + share parsing + output with normal proc decl?
 	{
-		printf("!PROC_TYPE!");
+		Ast_Type_Procedure* procedure = type.as_procedure;
+
+		fmt_token(TokenType::PAREN_START);
+		for (u32 i = 0; i < procedure->input_types.size(); i += 1)
+		{
+			fmt_type(procedure->input_types[i]);
+			if (i + 1 != procedure->input_types.size())
+			{
+				fmt_token(TokenType::COMMA);
+				fmt_space();
+			}
+		}
+		fmt_token(TokenType::PAREN_END);
+
+		if (procedure->return_type)
+		{
+			fmt_space();
+			fmt_token(TokenType::ARROW);
+			fmt_space();
+			fmt_type(procedure->return_type.value());
+		}
 	} break;
 	case Ast_Type::Tag::Unresolved:
 	{
@@ -261,8 +572,9 @@ void fmt_type(Ast_Type type)
 	}
 }
 
-void fmt_decl_proc(Ast_Decl_Proc* decl)
+void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 {
+	fmt_indent(indent);
 	fmt_ident(decl->ident);
 	fmt_space();
 	fmt_token(TokenType::DOUBLE_COLON);
@@ -283,20 +595,21 @@ void fmt_decl_proc(Ast_Decl_Proc* decl)
 		}
 	}
 	fmt_token(TokenType::PAREN_END);
-	fmt_space();
 	
 	if (decl->return_type)
 	{
+		fmt_space();
 		fmt_token(TokenType::ARROW);
 		fmt_space();
 		fmt_type(decl->return_type.value());
-		fmt_space();
 	}
+
 	if (decl->is_external)
+	{
+		fmt_space();
 		fmt_token(TokenType::AT);
-	else fmt_block(decl->block);
-	
-	fmt_endl();
+	}
+	else fmt_block(decl->block, indent, true);
 	fmt_endl();
 }
 
@@ -318,12 +631,10 @@ void fmt_decl_impl(Ast_Decl_Impl* decl)
 		fmt_endl();
 		for (Ast_Decl_Proc* member : decl->member_procedures) //@tab indentation offset for all
 		{
-			fmt_decl_proc(member); //@2 endl after proc decl leaves empty line
+			fmt_decl_proc(member, 1); //@2 endl after proc decl leaves empty line
 		}
 		fmt_token(TokenType::BLOCK_END);
 	}
-
-	fmt_endl();
 	fmt_endl();
 }
 
@@ -363,8 +674,6 @@ void fmt_decl_enum(Ast_Decl_Enum* decl)
 		}
 		fmt_token(TokenType::BLOCK_END);
 	}
-	
-	fmt_endl();
 	fmt_endl();
 }
 
@@ -405,8 +714,6 @@ void fmt_decl_struct(Ast_Decl_Struct* decl)
 		}
 		fmt_token(TokenType::BLOCK_END);
 	}
-
-	fmt_endl();
 	fmt_endl();
 }
 
@@ -418,8 +725,6 @@ void fmt_decl_global(Ast_Decl_Global* decl) //@support dense 1 liners?
 	fmt_space();
 	fmt_expr(decl->consteval_expr->expr);
 	fmt_token(TokenType::SEMICOLON);
-	
-	fmt_endl();
 	fmt_endl();
 }
 
@@ -466,20 +771,18 @@ void fmt_decl_import(Ast_Decl_Import* decl) //@support dense 1 liners?
 		}
 	}
 	fmt_token(TokenType::SEMICOLON);
-	
-	fmt_endl();
 	fmt_endl();
 }
 
 void fmt_ast(Ast* ast)
 {
+	fmt_curr_ast = ast;
 	printf("------------------------\n");
-	fmt_endl();
 	for (Ast_Decl* decl : ast->decls)
 	{
 		switch (decl->tag())
 		{
-		case Ast_Decl::Tag::Proc: fmt_decl_proc(decl->as_proc); break;
+		case Ast_Decl::Tag::Proc: fmt_decl_proc(decl->as_proc, 0); break;
 		case Ast_Decl::Tag::Impl: fmt_decl_impl(decl->as_impl); break;
 		case Ast_Decl::Tag::Enum: fmt_decl_enum(decl->as_enum); break;
 		case Ast_Decl::Tag::Struct: fmt_decl_struct(decl->as_struct); break;

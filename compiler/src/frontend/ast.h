@@ -592,9 +592,9 @@ public:
 		Cast,
 		Sizeof,
 		Literal,
+		Something,
 		Array_Init,
 		Struct_Init,
-		Something,
 	};
 
 private:
