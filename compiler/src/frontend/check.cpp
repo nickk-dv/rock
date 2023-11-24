@@ -696,19 +696,19 @@ void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl)
 	if (!import_decl->target) return;
 
 	Ast_Import_Target* target = import_decl->target.value();
-	switch (target->tag)
+	switch (target->tag())
 	{
-	case Ast_Import_Target_Tag::Wildcard:
+	case Ast_Import_Target::Tag::Wildcard:
 	{
 		//@todo import wildcard
 		//@maybe check for conflicts
 	} break;
-	case Ast_Import_Target_Tag::Symbol_List:
+	case Ast_Import_Target::Tag::Symbol_List:
 	{
 		//@todo check that symbols exist + import
 		//@maybe check for conflicts
 	} break;
-	case Ast_Import_Target_Tag::Symbol_Or_Module:
+	case Ast_Import_Target::Tag::Symbol_Or_Module:
 	{
 		//@todo resolve symbol or module
 		//@check module & symbol

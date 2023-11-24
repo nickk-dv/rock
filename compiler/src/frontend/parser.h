@@ -29,7 +29,8 @@ private:
 	Ast_Type_Array* parse_type_array();
 	Ast_Type_Procedure* parse_type_procedure();
 	Ast_Type_Unresolved* parse_type_unresolved();
-
+	
+	Ast_Decl* parse_decl();
 	Ast_Decl_Impl* parse_decl_impl();
 	Ast_Decl_Proc* parse_decl_proc(bool in_impl);
 	Ast_Decl_Enum* parse_decl_enum();

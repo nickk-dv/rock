@@ -69,19 +69,19 @@ void print_type(Ast_Type type)
 {
 	for (u32 i = 0; i < type.pointer_level; i += 1) printf("*");
 	
-	switch (type.tag)
+	switch (type.tag())
 	{
-	case Ast_Type_Tag::Basic: print_basic_type(type.as_basic); break;
-	case Ast_Type_Tag::Enum: print_str(type.as_enum.enum_decl->ident.str); break;
-	case Ast_Type_Tag::Struct: print_str(type.as_struct.struct_decl->ident.str); break;
-	case Ast_Type_Tag::Array:
+	case Ast_Type::Tag::Basic: print_basic_type(type.as_basic); break;
+	case Ast_Type::Tag::Enum: print_str(type.as_enum.enum_decl->ident.str); break;
+	case Ast_Type::Tag::Struct: print_str(type.as_struct.struct_decl->ident.str); break;
+	case Ast_Type::Tag::Array:
 	{
 		Ast_Type_Array* array_type = type.as_array;
-		if (array_type->size_expr->tag != Ast_Expr_Tag::Folded) printf("[size expr]");
+		if (array_type->size_expr->tag() != Ast_Expr::Tag::Folded) printf("[size expr]");
 		else printf("[%llu]", array_type->size_expr->as_folded_expr.as_u64);
 		print_type(array_type->element_type);
 	} break;
-	case Ast_Type_Tag::Procedure:
+	case Ast_Type::Tag::Procedure:
 	{
 		Ast_Type_Procedure* procedure = type.as_procedure;
 		printf("(");
@@ -97,7 +97,7 @@ void print_type(Ast_Type type)
 			print_type(procedure->return_type.value());
 		}
 	} break;
-	case Ast_Type_Tag::Unresolved:
+	case Ast_Type::Tag::Unresolved:
 	{
 		if (type.as_unresolved->module_access)
 		{
@@ -109,7 +109,7 @@ void print_type(Ast_Type type)
 		}
 		print_str(type.as_unresolved->ident.str);
 	} break;
-	case Ast_Type_Tag::Poison: printf("'Poison'"); break;
+	case Ast_Type::Tag::Poison: printf("'Poison'"); break;
 	default: err_internal("print_type: invalid Ast_Type_Tag"); break;
 	}
 }

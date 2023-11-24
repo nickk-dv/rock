@@ -19,6 +19,14 @@ void err_context(Check_Context* cc, Span span);
 void err_context(const char* message);
 void err_internal(const char* message);
 
+#define err_internal_enum(enum_var) \
+{ \
+err_internal("invalid or not implemented enum variant:"); \
+printf("function: %s\n", __FUNCSIG__); \
+printf("line:     %d\n", __LINE__); \
+printf("type:     %s\n", typeid(enum_var).name()); \
+}
+
 static ErrorMessage err_get_message(Error error);
 
 struct Span

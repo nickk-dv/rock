@@ -27,15 +27,17 @@ struct Ast_Type_Struct;
 struct Ast_Type_Procedure;
 struct Ast_Type_Unresolved;
 
-struct Ast_Decl_Impl;
+struct Ast_Decl;
 struct Ast_Decl_Proc;
-struct Ast_Proc_Param;
+struct Ast_Decl_Impl;
 struct Ast_Decl_Enum;
-struct Ast_Enum_Variant;
 struct Ast_Decl_Struct;
-struct Ast_Struct_Field;
 struct Ast_Decl_Global;
 struct Ast_Decl_Import;
+struct Ast_Proc_Param;
+struct Ast_Enum_Variant;
+struct Ast_Struct_Field;
+struct Ast_Import_Target;
 
 struct Ast_Stmt;
 struct Ast_Stmt_If;
@@ -67,7 +69,6 @@ struct Ast_Struct_Init;
 
 //@new syntax
 struct Ast_Module_Access;
-struct Ast_Import_Target;
 struct Ast_Something;
 struct Ast_Access_Chain;
 struct Ast_Expr_List;
@@ -83,6 +84,7 @@ struct Ast
 	std::string filepath;
 	std::vector<Span> line_spans;
 
+	std::vector<Ast_Decl*> decls;
 	std::vector<Ast_Decl_Impl*> impls;
 	std::vector<Ast_Decl_Proc*> procs;
 	std::vector<Ast_Decl_Enum*> enums;
@@ -149,19 +151,26 @@ struct Ast_Type_Struct
 	Ast_Decl_Struct* struct_decl;
 };
 
-enum class Ast_Type_Tag
-{
-	Basic, Enum, Struct,
-	Array, Procedure,
-	Unresolved, Poison,
-};
-
 struct Ast_Type
 {
-	Span span;
-	Ast_Type_Tag tag;
 	u32 pointer_level = 0;
 
+public:
+	enum class Tag
+	{
+		Basic,
+		Enum,
+		Struct,
+		Array,
+		Procedure,
+		Unresolved,
+		Poison,
+	};
+
+private:
+	Tag tg;
+
+public:
 	union
 	{
 		BasicType as_basic;
@@ -171,6 +180,15 @@ struct Ast_Type
 		Ast_Type_Procedure* as_procedure;
 		Ast_Type_Unresolved* as_unresolved;
 	};
+
+	inline Tag tag() { return tg; }
+	inline void set_basic(BasicType type_basic)                      { tg = Tag::Basic;      as_basic = type_basic; }
+	inline void set_enum(Ast_Type_Enum type_enum)                    { tg = Tag::Enum;       as_enum = type_enum; }
+	inline void set_struct(Ast_Type_Struct type_struct)              { tg = Tag::Struct;     as_struct = type_struct; }
+	inline void set_array(Ast_Type_Array* type_array)                { tg = Tag::Array;      as_array = type_array; }
+	inline void set_procedure(Ast_Type_Procedure* type_procedure)    { tg = Tag::Procedure;  as_procedure = type_procedure; }
+	inline void set_unresolved(Ast_Type_Unresolved* type_unresolved) { tg = Tag::Unresolved; as_unresolved = type_unresolved; }
+	inline void set_poison()                                         { tg = Tag::Poison; }
 };
 
 struct Ast_Type_Array
@@ -191,10 +209,40 @@ struct Ast_Type_Unresolved
 	Ast_Ident ident;
 };
 
-struct Ast_Decl_Impl
+struct Ast_Decl
 {
-	Ast_Type type;
-	std::vector<Ast_Decl_Proc*> member_procedures;
+public:
+	enum class Tag
+	{
+		Proc,
+		Impl,
+		Enum,
+		Struct,
+		Global,
+		Import,
+	};
+
+private:
+	Tag tg;
+
+public:
+	union
+	{
+		Ast_Decl_Proc* as_proc;
+		Ast_Decl_Impl* as_impl;
+		Ast_Decl_Enum* as_enum;
+		Ast_Decl_Struct* as_struct;
+		Ast_Decl_Global* as_global;
+		Ast_Decl_Import* as_import;
+	};
+
+	inline Tag tag() { return tg; }
+	inline void set_proc(Ast_Decl_Proc* decl_proc)       { tg = Tag::Proc;   as_proc = decl_proc; }
+	inline void set_impl(Ast_Decl_Impl* decl_impl)       { tg = Tag::Impl;   as_impl = decl_impl; }
+	inline void set_enum(Ast_Decl_Enum* decl_enum)       { tg = Tag::Enum;   as_enum = decl_enum; }
+	inline void set_struct(Ast_Decl_Struct* decl_struct) { tg = Tag::Struct; as_struct = decl_struct; }
+	inline void set_global(Ast_Decl_Global* decl_global) { tg = Tag::Global; as_global = decl_global; }
+	inline void set_import(Ast_Decl_Import* decl_import) { tg = Tag::Import; as_import = decl_import; }
 };
 
 struct Ast_Decl_Proc
@@ -213,7 +261,13 @@ struct Ast_Proc_Param
 {
 	Ast_Ident ident;
 	Ast_Type type;
-	bool self;
+	bool self; //@handle the self in better ways
+};
+
+struct Ast_Decl_Impl
+{
+	Ast_Type type;
+	std::vector<Ast_Decl_Proc*> member_procedures;
 };
 
 struct Ast_Decl_Enum
@@ -260,18 +314,54 @@ struct Ast_Decl_Import
 	option<Ast_Import_Target*> target;
 };
 
-enum class Ast_Stmt_Tag
+struct Ast_Import_Target
 {
-	If, For, Block,
-	Defer, Break, Return,
-	Switch, Continue, Var_Decl,
-	Var_Assign, Proc_Call,
+public:
+	enum class Tag
+	{
+		Wildcard,
+		Symbol_List,
+		Symbol_Or_Module,
+	};
+
+private:
+	Tag tg;
+
+public:
+	union
+	{
+		struct Symbol_List { std::vector<Ast_Ident> symbols; } as_symbol_list;
+		struct Symbol_Or_Module { Ast_Ident ident; } as_symbol_or_module;
+	};
+	
+	inline Tag tag() { return tg; }
+	inline void set_wildcard()                        { tg = Tag::Wildcard; }
+	inline void set_symbol_list()                     { tg = Tag::Symbol_List; }
+	inline void set_symbol_or_module(Ast_Ident ident) { tg = Tag::Symbol_Or_Module; as_symbol_or_module.ident = ident; }
 };
 
 struct Ast_Stmt
 {
-	Ast_Stmt_Tag tag;
+public:
+	enum class Tag
+	{
+		If,
+		For,
+		Block,
+		Defer,
+		Break,
+		Return,
+		Switch,
+		Continue,
+		Var_Decl,
+		Var_Assign,
+		Proc_Call,
+	};
 
+private:
+	Tag tg;
+
+public:
 	union
 	{
 		Ast_Stmt_If* as_if;
@@ -286,6 +376,19 @@ struct Ast_Stmt
 		Ast_Stmt_Var_Assign* as_var_assign;
 		Ast_Stmt_Proc_Call* as_proc_call;
 	};
+
+	inline Tag tag() { return tg; }
+	inline void set_if(Ast_Stmt_If* _if)                        { tg = Tag::If;         as_if = _if; }
+	inline void set_for(Ast_Stmt_For* _for)                     { tg = Tag::For;        as_for = _for; }
+	inline void set_block(Ast_Stmt_Block* block)                { tg = Tag::Block;      as_block = block; }
+	inline void set_defer(Ast_Stmt_Defer* defer)                { tg = Tag::Defer;      as_defer = defer; }
+	inline void set_break(Ast_Stmt_Break* _break)               { tg = Tag::Break;      as_break = _break; }
+	inline void set_return(Ast_Stmt_Return* _return)            { tg = Tag::Return;     as_return = _return; }
+	inline void set_switch(Ast_Stmt_Switch* _switch)            { tg = Tag::Switch;     as_switch = _switch; }
+	inline void set_continue(Ast_Stmt_Continue* _continue)      { tg = Tag::Continue;   as_continue = _continue; }
+	inline void set_var_decl(Ast_Stmt_Var_Decl* var_decl)       { tg = Tag::Var_Decl;   as_var_decl = var_decl; }
+	inline void set_var_assign(Ast_Stmt_Var_Assign* var_assign) { tg = Tag::Var_Assign; as_var_assign = var_assign; }
+	inline void set_proc_call(Ast_Stmt_Proc_Call* proc_call)    { tg = Tag::Proc_Call;  as_proc_call = proc_call; }
 };
 
 struct Ast_Stmt_If
@@ -296,21 +399,30 @@ struct Ast_Stmt_If
 	option<Ast_Else*> _else;
 };
 
-enum class Ast_Else_Tag
-{
-	If, Block
-};
-
 struct Ast_Else
 {
 	Span span;
-	Ast_Else_Tag tag;
 
+public:
+	enum class Tag
+	{
+		If,
+		Block,
+	};
+
+private:
+	Tag tg;
+
+public:
 	union
 	{
 		Ast_Stmt_If* as_if;
 		Ast_Stmt_Block* as_block;
 	};
+
+	inline Tag tag() { return tg; }
+	inline void set_if(Ast_Stmt_If* _if)         { tg = Tag::If;    as_if = _if; }
+	inline void set_block(Ast_Stmt_Block* block) { tg = Tag::Block; as_block = block; }
 };
 
 struct Ast_Stmt_For
@@ -411,20 +523,24 @@ enum Ast_Expr_Flags
 	AST_EXPR_FLAG_BIN_OP_INT_SIGNED       = 1 << 8,
 };
 
-enum class Ast_Expr_Tag
-{
-	Term,
-	Unary,
-	Binary,
-	Folded,
-};
-
 struct Ast_Expr
 {
 	Span span;
-	Ast_Expr_Tag tag;
 	u16 flags;
 
+public:
+	enum class Tag
+	{
+		Term,
+		Unary,
+		Binary,
+		Folded,
+	};
+
+private:
+	Tag tg;
+
+public:
 	union
 	{
 		Ast_Term* as_term;
@@ -432,6 +548,13 @@ struct Ast_Expr
 		Ast_Binary_Expr* as_binary_expr;
 		Ast_Folded_Expr as_folded_expr;
 	};
+
+	inline Tag tag() { return tg; }
+	inline void set_term(Ast_Term* term)                 { tg = Tag::Term;    as_term = term; }
+	inline void set_unary(Ast_Unary_Expr* unary_expr)    { tg = Tag::Unary;   as_unary_expr = unary_expr; }
+	inline void set_binary(Ast_Binary_Expr* binary_expr) { tg = Tag::Binary;  as_binary_expr = binary_expr; }
+	inline void set_folded(Ast_Folded_Expr folded_expr)  { tg = Tag::Folded;  as_folded_expr = folded_expr; }
+	inline void ptr_tag_copy(Ast_Expr* other)            { tg = other->tag(); as_term = other->as_term; }
 };
 
 struct Ast_Unary_Expr
@@ -460,27 +583,43 @@ struct Ast_Consteval_Expr
 	Consteval eval;
 };
 
-enum class Ast_Term_Tag
-{
-	Enum, Cast, Sizeof, Literal,
-	Array_Init, Struct_Init,
-	Something,
-};
-
 struct Ast_Term
 {
-	Ast_Term_Tag tag;
+public:
+	enum class Tag
+	{
+		Enum,
+		Cast,
+		Sizeof,
+		Literal,
+		Array_Init,
+		Struct_Init,
+		Something,
+	};
 
+private:
+	Tag tg;
+
+public:
 	union
 	{
 		Ast_Enum* as_enum;
 		Ast_Cast* as_cast;
 		Ast_Sizeof* as_sizeof;
 		Ast_Literal* as_literal;
+		Ast_Something* as_something;
 		Ast_Array_Init* as_array_init;
 		Ast_Struct_Init* as_struct_init;
-		Ast_Something* as_something;
 	};
+
+	inline Tag tag() { return tg; }
+	inline void set_enum(Ast_Enum* _enum)                     { tg = Tag::Enum;        as_enum = _enum; }
+	inline void set_cast(Ast_Cast* cast)                      { tg = Tag::Cast;        as_cast = cast; }
+	inline void set_sizeof(Ast_Sizeof* size_of)               { tg = Tag::Sizeof;      as_sizeof = size_of; }
+	inline void set_literal(Ast_Literal* literal)             { tg = Tag::Literal;     as_literal = literal; }
+	inline void set_something(Ast_Something* something)       { tg = Tag::Something;   as_something = something; }
+	inline void set_array_init(Ast_Array_Init* array_init)    { tg = Tag::Array_Init;  as_array_init = array_init; }
+	inline void set_struct_init(Ast_Struct_Init* struct_init) { tg = Tag::Struct_Init; as_struct_init = struct_init; }
 };
 
 enum class Ast_Resolve_Tag
@@ -571,48 +710,39 @@ struct Ast_Module_Access
 	std::vector<Ast_Ident> modules;
 };
 
-enum class Ast_Import_Target_Tag
-{
-	Wildcard,
-	Symbol_List,
-	Symbol_Or_Module,
-};
-
-struct Ast_Import_Target
-{
-	Ast_Import_Target_Tag tag;
-
-	union
-	{
-		struct Symbol_List { std::vector<Ast_Ident> symbols; } symbol_list;
-		struct Symbol_Or_Module { Ast_Ident ident; } symbol_or_module;
-	};
-};
-
 struct Ast_Something
 {
 	option<Ast_Module_Access*> module_access;
 	Ast_Access_Chain* chain;
 };
 
-enum class Ast_Access_Chain_Tag
-{
-	Ident,
-	Array,
-	Call,
-};
-
 struct Ast_Access_Chain
 {
-	Ast_Access_Chain_Tag tag;
 	option<Ast_Access_Chain*> next;
 
+public:
+	enum class Tag
+	{
+		Ident,
+		Array,
+		Call,
+	};
+
+private:
+	Tag tg;
+
+public:
 	union
 	{
-		struct Ident { Ast_Ident ident; } as_ident;
+		Ast_Ident as_ident;
 		struct Array { Ast_Expr* index_expr; } as_array;
 		struct Call  { Ast_Ident ident; Ast_Expr_List* input; } as_call;
 	};
+
+	inline Tag tag() { return tg; }
+	inline void set_ident(Ast_Ident ident)                      { tg = Tag::Ident; as_ident = ident; }
+	inline void set_array(Ast_Expr* index_expr)                 { tg = Tag::Array; as_array.index_expr = index_expr; }
+	inline void set_call(Ast_Ident ident, Ast_Expr_List* input) { tg = Tag::Call;  as_call.ident = ident; as_call.input = input; }
 };
 
 struct Ast_Expr_List

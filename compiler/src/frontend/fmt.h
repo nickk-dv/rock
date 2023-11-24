@@ -22,11 +22,11 @@ void fmt_token(TokenType type)
 {
 	switch (type)
 	{
-	case TokenType::IDENT:              printf("identifier"); break;
-	case TokenType::BOOL_LITERAL:       printf("bool literal"); break;
-	case TokenType::FLOAT_LITERAL:      printf("float literal"); break;
-	case TokenType::INTEGER_LITERAL:    printf("integer literal"); break;
-	case TokenType::STRING_LITERAL:     printf("string literal"); break;
+	case TokenType::IDENT:              printf("identifier"); break; //@dont print (use token span instead)
+	case TokenType::BOOL_LITERAL:       printf("bool literal"); break; //@dont print (use token span instead)
+	case TokenType::FLOAT_LITERAL:      printf("float literal"); break; //@dont print (use token span instead)
+	case TokenType::INTEGER_LITERAL:    printf("integer literal"); break; //@dont print (use token span instead)
+	case TokenType::STRING_LITERAL:     printf("string literal"); break; //@dont print (use token span instead)
 
 	case TokenType::KEYWORD_STRUCT:     printf("struct"); break;
 	case TokenType::KEYWORD_ENUM:       printf("enum"); break;
@@ -105,9 +105,9 @@ void fmt_token(TokenType type)
 	case TokenType::BITSHIFT_LEFT:      printf("<<"); break;
 	case TokenType::BITSHIFT_RIGHT:     printf(">>"); break;
 
-	case TokenType::ERROR:     printf("error token"); break;
-	case TokenType::INPUT_END: printf("end of file"); break;
-	default: err_internal("fmt_token: invalid TokenType"); break;
+	case TokenType::ERROR:     printf("error token"); break; //@dont print
+	case TokenType::INPUT_END: printf("end of file"); break; //@dont print
+	default: err_internal_enum(type); break;
 	}
 }
 
@@ -120,7 +120,7 @@ void fmt_unary_op(UnaryOp op)
 	case UnaryOp::BITWISE_NOT: fmt_token(TokenType::BITWISE_NOT); break;
 	case UnaryOp::ADDRESS_OF:  fmt_token(TokenType::TIMES); break;
 	case UnaryOp::DEREFERENCE: fmt_token(TokenType::BITSHIFT_LEFT); break;
-	default: err_internal("fmt_unary_op: invalid UnaryOp"); break;
+	default: err_internal_enum(op); break;
 	}
 }
 
@@ -146,7 +146,7 @@ void fmt_binary_op(BinaryOp op)
 	case BinaryOp::BITWISE_XOR:    fmt_token(TokenType::BITWISE_XOR); break;
 	case BinaryOp::BITSHIFT_LEFT:  fmt_token(TokenType::BITSHIFT_LEFT); break;
 	case BinaryOp::BITSHIFT_RIGHT: fmt_token(TokenType::BITSHIFT_RIGHT); break;
-	default: err_internal("fmt_binary_op: invalid BinaryOp"); break;
+	default: err_internal_enum(op); break;
 	}
 }
 
@@ -165,7 +165,7 @@ void fmt_assign_op(AssignOp op)
 	case AssignOp::BITWISE_XOR:    fmt_token(TokenType::BITWISE_XOR_EQUALS); break;
 	case AssignOp::BITSHIFT_LEFT:  fmt_token(TokenType::BITSHIFT_LEFT_EQUALS); break;
 	case AssignOp::BITSHIFT_RIGHT: fmt_token(TokenType::BITSHIFT_RIGHT_EQUALS); break;
-	default: err_internal("fmt_assign_op: invalid AssignOp"); break;
+	default: err_internal_enum(op); break;
 	}
 }
 
@@ -185,7 +185,7 @@ void fmt_basic_type(BasicType type)
 	case BasicType::F64:    fmt_token(TokenType::TYPE_F64); break;
 	case BasicType::BOOL:   fmt_token(TokenType::TYPE_BOOL); break;
 	case BasicType::STRING: fmt_token(TokenType::TYPE_STRING); break;
-	default: err_internal("fmt_basic_type: invalid BasicType"); break;
+	default: err_internal_enum(type); break;
 	}
 }
 
@@ -235,28 +235,29 @@ void fmt_type(Ast_Type type)
 		fmt_token(TokenType::TIMES);
 	}
 
-	switch (type.tag)
+	switch (type.tag())
 	{
-	case Ast_Type_Tag::Basic:
+	case Ast_Type::Tag::Basic:
 	{
 		fmt_basic_type(type.as_basic);
 	} break;
-	case Ast_Type_Tag::Array:
+	case Ast_Type::Tag::Array:
 	{
 		fmt_token(TokenType::BRACKET_START);
 		fmt_expr(type.as_array->size_expr);
 		fmt_token(TokenType::BRACKET_END);
 		fmt_type(type.as_array->element_type);
 	} break;
-	case Ast_Type_Tag::Procedure:
+	case Ast_Type::Tag::Procedure:
 	{
 		printf("!PROC_TYPE!");
 	} break;
-	case Ast_Type_Tag::Unresolved:
+	case Ast_Type::Tag::Unresolved:
 	{
 		fmt_module_access(type.as_unresolved->module_access);
 		fmt_ident(type.as_unresolved->ident);
 	} break;
+	default: err_internal_enum(type.tag()); break;
 	}
 }
 
@@ -443,16 +444,16 @@ void fmt_decl_import(Ast_Decl_Import* decl) //@support dense 1 liners?
 	if (decl->target)
 	{
 		Ast_Import_Target* target = decl->target.value();
-		switch (target->tag)
+		switch (target->tag())
 		{
-		case Ast_Import_Target_Tag::Wildcard: fmt_token(TokenType::TIMES); break;
-		case Ast_Import_Target_Tag::Symbol_List: //@multiline on large sets, come up with a rule
+		case Ast_Import_Target::Tag::Wildcard: fmt_token(TokenType::TIMES); break;
+		case Ast_Import_Target::Tag::Symbol_List: //@multiline on large sets, come up with a rule
 		{
 			fmt_token(TokenType::BLOCK_START);
-			for (u32 i = 0; i < target->symbol_list.symbols.size(); i += 1)
+			for (u32 i = 0; i < target->as_symbol_list.symbols.size(); i += 1)
 			{
-				fmt_ident(target->symbol_list.symbols[i]);
-				if (i + 1 != target->symbol_list.symbols.size())
+				fmt_ident(target->as_symbol_list.symbols[i]);
+				if (i + 1 != target->as_symbol_list.symbols.size())
 				{
 					fmt_token(TokenType::COMMA);
 					fmt_space();
@@ -460,7 +461,8 @@ void fmt_decl_import(Ast_Decl_Import* decl) //@support dense 1 liners?
 			}
 			fmt_token(TokenType::BLOCK_END);
 		} break;
-		case Ast_Import_Target_Tag::Symbol_Or_Module: fmt_ident(target->symbol_or_module.ident); break;
+		case Ast_Import_Target::Tag::Symbol_Or_Module: fmt_ident(target->as_symbol_or_module.ident); break;
+		default: err_internal_enum(target->tag()); break;
 		}
 	}
 	fmt_token(TokenType::SEMICOLON);
@@ -473,12 +475,19 @@ void fmt_ast(Ast* ast)
 {
 	printf("------------------------\n");
 	fmt_endl();
-	for (Ast_Decl_Impl* decl : ast->impls) fmt_decl_impl(decl);
-	for (Ast_Decl_Proc* decl : ast->procs) fmt_decl_proc(decl);
-	for (Ast_Decl_Enum* decl : ast->enums) fmt_decl_enum(decl);
-	for (Ast_Decl_Struct* decl : ast->structs) fmt_decl_struct(decl);
-	for (Ast_Decl_Global* decl : ast->globals) fmt_decl_global(decl);
-	for (Ast_Decl_Import* decl : ast->imports) fmt_decl_import(decl);
+	for (Ast_Decl* decl : ast->decls)
+	{
+		switch (decl->tag())
+		{
+		case Ast_Decl::Tag::Proc: fmt_decl_proc(decl->as_proc); break;
+		case Ast_Decl::Tag::Impl: fmt_decl_impl(decl->as_impl); break;
+		case Ast_Decl::Tag::Enum: fmt_decl_enum(decl->as_enum); break;
+		case Ast_Decl::Tag::Struct: fmt_decl_struct(decl->as_struct); break;
+		case Ast_Decl::Tag::Global: fmt_decl_global(decl->as_global); break;
+		case Ast_Decl::Tag::Import: fmt_decl_import(decl->as_import); break;
+		default: err_internal_enum(decl->tag()); break;
+		}
+	}
 }
 
 #endif
