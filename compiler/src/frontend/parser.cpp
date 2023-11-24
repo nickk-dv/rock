@@ -284,6 +284,7 @@ Ast_Type_Procedure* Parser::parse_type_procedure()
 	{
 		while (true)
 		{
+			if (peek() == TokenType::IDENT && peek(1) == TokenType::COLON) { consume(); consume(); }
 			option<Ast_Type> type = parse_type();
 			if (!type) return NULL;
 			procedure->input_types.emplace_back(type.value());

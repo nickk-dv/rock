@@ -11,5 +11,6 @@ static i32 cmd_new(char* name);
 static i32 cmd_check();
 static i32 cmd_build();
 static i32 cmd_run();
+static i32 cmd_fmt();
 
 #endif

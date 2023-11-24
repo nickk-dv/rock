@@ -24,6 +24,7 @@ i32 parse_cmd(i32 argc, char** argv)
 		if (match_arg(arg, "check") || match_arg(arg, "c")) return cmd_check();
 		if (match_arg(arg, "build") || match_arg(arg, "b")) return cmd_build();
 		if (match_arg(arg, "run")   || match_arg(arg, "r")) return cmd_run();
+		if (match_arg(arg, "fmt")   || match_arg(arg, "f")) return cmd_fmt();
 	}
 
 	if (argc == 3)
@@ -50,6 +51,7 @@ i32 cmd_help()
 	printf("  check c\n");
 	printf("  build b\n");
 	printf("  run   r\n");
+	printf("  fmt   f\n");
 	return 0;
 }
 
@@ -113,12 +115,19 @@ i32 cmd_build()
 	return 0;
 }
 
+#include "frontend/fmt.h";
+
 i32 cmd_run()
 {
 	Parser parser = {};
 	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 
+	for (Ast* ast : program->modules)
+	{
+		fmt_ast(ast);
+	}
+	
 	bool check = check_program(program);
 	if (!check) return 1;
 
@@ -128,5 +137,10 @@ i32 cmd_run()
 	//@todo enable later backend_run();
 
 	printf("Run success\n");
+	return 0;
+}
+
+i32 cmd_fmt()
+{
 	return 0;
 }
