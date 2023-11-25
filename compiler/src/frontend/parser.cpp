@@ -137,12 +137,13 @@ Ast_Program* Parser::parse_program()
 Ast* Parser::parse_ast(StringView source, std::string& filepath)
 {
 	Ast* ast = arena_alloc<Ast>(&this->arena);
-	ast->source = source;
-	ast->filepath = std::string(filepath);
+	ast->source = arena_alloc<Ast_Source>(&this->arena);
+	ast->source->str = source;
+	ast->source->filepath = std::string(filepath);
 	
 	this->ast = ast;
 	this->peek_index = 0;
-	this->lexer.init(source, &this->strings, &ast->line_spans);
+	this->lexer.init(source, &this->strings, &ast->source->line_spans);
 	this->lexer.lex_token_buffer(this->tokens);
 
 	while (peek() != TokenType::INPUT_END)
@@ -1172,19 +1173,19 @@ Ast_Something* Parser::parse_something(option<Ast_Module_Access*> module_access)
 	Ast_Something* something = arena_alloc<Ast_Something>(&this->arena);
 	something->module_access = module_access;
 	
-	Ast_Access_Chain* chain = parse_access_chain_first();
-	if (!chain) return NULL;
-	something->chain = chain;
+	Ast_Access* access = parse_access_first();
+	if (!access) return NULL;
+	something->access = access;
 
-	bool result = parse_access_chain(chain);
+	bool result = parse_access(access);
 	if (!result) return NULL;
 
 	return something;
 }
 
-Ast_Access_Chain* Parser::parse_access_chain_first()
+Ast_Access* Parser::parse_access_first()
 {
-	Ast_Access_Chain* chain = arena_alloc<Ast_Access_Chain>(&this->arena);
+	Ast_Access* access = arena_alloc<Ast_Access>(&this->arena);
 
 	option<Token> token = try_consume(TokenType::IDENT);
 	if (!token) { err_parse(TokenType::IDENT, "access chain"); return NULL; }
@@ -1194,14 +1195,14 @@ Ast_Access_Chain* Parser::parse_access_chain_first()
 	{
 		Ast_Expr_List* expr_list = parse_expr_list(TokenType::PAREN_START, TokenType::PAREN_END, "procedure call");
 		if (!expr_list) return NULL;
-		chain->set_call(ident, expr_list);
+		access->set_call(ident, expr_list);
 	}
-	else chain->set_ident(ident);
+	else access->set_ident(ident);
 
-	return chain;
+	return access;
 }
 
-bool Parser::parse_access_chain(Ast_Access_Chain* prev)
+bool Parser::parse_access(Ast_Access* prev)
 {
 	switch (peek())
 	{
@@ -1210,7 +1211,7 @@ bool Parser::parse_access_chain(Ast_Access_Chain* prev)
 	default: return true;
 	}
 
-	Ast_Access_Chain* chain = arena_alloc<Ast_Access_Chain>(&this->arena);
+	Ast_Access* access = arena_alloc<Ast_Access>(&this->arena);
 
 	switch (peek())
 	{
@@ -1226,9 +1227,9 @@ bool Parser::parse_access_chain(Ast_Access_Chain* prev)
 		{
 			Ast_Expr_List* expr_list = parse_expr_list(TokenType::PAREN_START, TokenType::PAREN_END, "procedure call");
 			if (!expr_list) return NULL;
-			chain->set_call(ident, expr_list);
+			access->set_call(ident, expr_list);
 		}
-		else chain->set_ident(ident);
+		else access->set_ident(ident);
 	} break;
 	case TokenType::BRACKET_START:
 	{
@@ -1236,16 +1237,16 @@ bool Parser::parse_access_chain(Ast_Access_Chain* prev)
 		
 		Ast_Expr* index_expr = parse_sub_expr();
 		if (!index_expr) return false;
-		chain->set_array(index_expr);
+		access->set_array(index_expr);
 		
 		if (!try_consume(TokenType::BRACKET_END)) { err_parse(TokenType::BRACKET_END, "array access"); return false; }
 	} break;
-	default: { err_internal("parse_access_chain: unexpected token type"); return false; }
+	default: { err_internal("parse_access: unexpected token type"); return false; }
 	}
 
-	prev->next = chain;
+	prev->next = access;
 	
-	bool result = parse_access_chain(chain);
+	bool result = parse_access(access);
 	if (!result) return false;
 	
 	return true;

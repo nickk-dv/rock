@@ -3,7 +3,7 @@
 void print_span_context(Ast* source, Span span)
 {
 	Loc loc = print_loc_from_span(source, span);
-	printf("%s", source->filepath.c_str());
+	printf("%s", source->source->filepath.c_str());
 	printf(" %lu:%lu\n", loc.line, loc.col);
 	
 	u32 bar_offset = 1;
@@ -23,7 +23,7 @@ void print_span_context(Ast* source, Span span)
 	bool has_endl = false;
 	for (u32 i = loc.span.start; i <= loc.span.end; i += 1)
 	{
-		u8 c = source->source.data[i];
+		u8 c = source->source->str.data[i];
 		if (c == '\t') printf(" ");
 		else printf("%c", c);
 		if (c == '\n') has_endl = true;
@@ -40,7 +40,7 @@ void print_span_context(Ast* source, Span span)
 	u32 cursor = span.end;
 	while (cursor != span.start)
 	{
-		u8 c = source->source.data[cursor];
+		u8 c = source->source->str.data[cursor];
 		if (c == ' ' || c == '\r' || c == '\n') width -= 1;
 		else break;
 		cursor -= 1;
@@ -212,7 +212,7 @@ Loc print_loc_from_span(Ast* source, Span span)
 {
 	Loc loc = { 1, 1 };
 
-	for (Span line_span : source->line_spans)
+	for (Span line_span : source->source->line_spans)
 	{
 		if (span.start >= line_span.start && span.start <= line_span.end)
 		{

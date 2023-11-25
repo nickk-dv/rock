@@ -2,23 +2,13 @@
 #define AST_H
 
 #include "token.h"
-#include "general/hashmap.h"
-#include "llvm-c/Types.h"
 
 struct Ast;
+struct Ast_Source;
 struct Ast_Program;
 struct Ast_Ident;
-struct Ast_Literal;
 struct Ast_Module_Tree;
-
-struct Ast_Info_Proc;
-struct Ast_Info_Enum;
-struct Ast_Info_Struct;
-struct Ast_Info_Global;
-struct Ast_Info_IR_Proc;
-struct Ast_Info_IR_Enum;
-struct Ast_Info_IR_Struct;
-struct Ast_Info_IR_Global;
+struct Ast_Module_Access;
 
 struct Ast_Type;
 struct Ast_Type_Enum;
@@ -58,20 +48,18 @@ struct Ast_Expr;
 struct Ast_Unary_Expr;
 struct Ast_Binary_Expr;
 struct Ast_Folded_Expr;
+struct Ast_Expr_List;
 enum class Consteval;
 struct Ast_Consteval_Expr;
 struct Ast_Term;
 struct Ast_Enum;
 struct Ast_Cast;
 struct Ast_Sizeof;
+struct Ast_Literal;
+struct Ast_Something;
+struct Ast_Access;
 struct Ast_Array_Init;
 struct Ast_Struct_Init;
-
-//@new syntax
-struct Ast_Module_Access;
-struct Ast_Something;
-struct Ast_Access_Chain;
-struct Ast_Expr_List;
 
 Ast_Ident token_to_ident(const Token& token);
 u32 hash_ident(Ast_Ident& ident);
@@ -80,23 +68,15 @@ bool match_string(std::string& a, std::string& b);
 
 struct Ast
 {
-	StringView source;
-	std::string filepath;
-	std::vector<Span> line_spans;
-
+	Ast_Source* source;
 	std::vector<Ast_Decl*> decls;
-	std::vector<Ast_Decl_Impl*> impls;
-	std::vector<Ast_Decl_Proc*> procs;
-	std::vector<Ast_Decl_Enum*> enums;
-	std::vector<Ast_Decl_Struct*> structs;
-	std::vector<Ast_Decl_Global*> globals;
-	std::vector<Ast_Decl_Import*> imports;
+};
 
-	HashMap<Ast_Ident, Ast_Info_Proc, u32, match_ident> proc_table;
-	HashMap<Ast_Ident, Ast_Info_Enum, u32, match_ident> enum_table;
-	HashMap<Ast_Ident, Ast_Info_Struct, u32, match_ident> struct_table;
-	HashMap<Ast_Ident, Ast_Info_Global, u32, match_ident> global_table;
-	HashMap<Ast_Ident, Ast_Decl_Import*, u32, match_ident> import_table;
+struct Ast_Source
+{
+	StringView str;
+	std::string filepath; //@use module paths instead?
+	std::vector<Span> line_spans;
 };
 
 struct Ast_Ident
@@ -105,7 +85,7 @@ struct Ast_Ident
 	StringView str;
 };
 
-struct Ast_Module_Tree
+struct Ast_Module_Tree //@use new tree structure
 {
 	Ast_Ident ident;
 	std::string name;
@@ -113,30 +93,29 @@ struct Ast_Module_Tree
 	std::vector<Ast_Module_Tree> submodules;
 };
 
+struct Ast_Module_Access
+{
+	std::vector<Ast_Ident> modules;
+};
+
+/*
+struct Ast_Module_Tree
+{
+	std::vector<Ast_Module*> submodules;
+};
+
+struct Ast_Module
+{
+	Ast_Ident ident;
+	option<Ast*> file_ast;
+	std::vector<Ast_Module*> submodules;
+};
+*/
+
 struct Ast_Program
 {
 	Ast_Module_Tree root;
 	std::vector<Ast*> modules;
-	HashMap<Ast_Ident, Ast_Decl_Proc*, u32, match_ident> external_proc_table;
-	
-	std::vector<Ast_Info_IR_Proc> procs;
-	std::vector<Ast_Info_IR_Enum> enums;
-	std::vector<Ast_Info_IR_Struct> structs;
-	std::vector<Ast_Info_IR_Global> globals;
-};
-
-struct Ast_Info_Proc      { Ast_Decl_Proc* proc_decl; u32 proc_id; };
-struct Ast_Info_Enum      { Ast_Decl_Enum* enum_decl; u32 enum_id; };
-struct Ast_Info_Struct    { Ast_Decl_Struct* struct_decl; u32 struct_id; };
-struct Ast_Info_Global    { Ast_Decl_Global* global_decl; u32 global_id; };
-struct Ast_Info_IR_Proc   { Ast_Decl_Proc* proc_decl; LLVMTypeRef proc_type; LLVMValueRef proc_value; };
-struct Ast_Info_IR_Enum   { Ast_Decl_Enum* enum_decl; LLVMTypeRef enum_type; };
-struct Ast_Info_IR_Struct { Ast_Decl_Struct* struct_decl; LLVMTypeRef struct_type; LLVMValueRef default_value; };
-struct Ast_Info_IR_Global { Ast_Decl_Global* global_decl; LLVMValueRef global_ptr; LLVMValueRef const_value; };
-
-struct Ast_Literal
-{
-	Token token;
 };
 
 struct Ast_Type_Enum
@@ -281,8 +260,6 @@ struct Ast_Enum_Variant
 {
 	Ast_Ident ident;
 	Ast_Consteval_Expr* consteval_expr;
-	//ir builder
-	LLVMValueRef constant;
 };
 
 struct Ast_Decl_Struct
@@ -467,8 +444,6 @@ struct Ast_Switch_Case
 {
 	Ast_Expr* case_expr;
 	option<Ast_Stmt_Block*> block;
-	//ir builder
-	LLVMBasicBlockRef basic_block;
 };
 
 struct Ast_Stmt_Continue
@@ -583,6 +558,11 @@ struct Ast_Consteval_Expr
 	Consteval eval;
 };
 
+struct Ast_Expr_List
+{
+	std::vector<Ast_Expr*> exprs;
+};
+
 struct Ast_Term
 {
 public:
@@ -677,6 +657,46 @@ struct Ast_Sizeof
 	Ast_Type type;
 };
 
+struct Ast_Literal
+{
+	Token token;
+};
+
+struct Ast_Something
+{
+	option<Ast_Module_Access*> module_access;
+	Ast_Access* access;
+};
+
+struct Ast_Access
+{
+	option<Ast_Access*> next;
+
+public:
+	enum class Tag
+	{
+		Ident,
+		Array,
+		Call,
+	};
+
+private:
+	Tag tg;
+
+public:
+	union
+	{
+		Ast_Ident as_ident;
+		struct Array { Ast_Expr* index_expr; } as_array;
+		struct Call { Ast_Ident ident; Ast_Expr_List* input; } as_call;
+	};
+
+	inline Tag tag() { return tg; }
+	inline void set_ident(Ast_Ident ident) { tg = Tag::Ident; as_ident = ident; }
+	inline void set_array(Ast_Expr* index_expr) { tg = Tag::Array; as_array.index_expr = index_expr; }
+	inline void set_call(Ast_Ident ident, Ast_Expr_List* input) { tg = Tag::Call;  as_call.ident = ident; as_call.input = input; }
+};
+
 struct Ast_Array_Init
 {
 	Ast_Resolve_Tag tag;
@@ -702,52 +722,6 @@ struct Ast_Struct_Init
 			option<Ast_Type_Struct> type; 
 		} resolved;
 	};
-};
-
-//@new syntax
-struct Ast_Module_Access
-{
-	std::vector<Ast_Ident> modules;
-};
-
-struct Ast_Something
-{
-	option<Ast_Module_Access*> module_access;
-	Ast_Access_Chain* chain;
-};
-
-struct Ast_Access_Chain
-{
-	option<Ast_Access_Chain*> next;
-
-public:
-	enum class Tag
-	{
-		Ident,
-		Array,
-		Call,
-	};
-
-private:
-	Tag tg;
-
-public:
-	union
-	{
-		Ast_Ident as_ident;
-		struct Array { Ast_Expr* index_expr; } as_array;
-		struct Call  { Ast_Ident ident; Ast_Expr_List* input; } as_call;
-	};
-
-	inline Tag tag() { return tg; }
-	inline void set_ident(Ast_Ident ident)                      { tg = Tag::Ident; as_ident = ident; }
-	inline void set_array(Ast_Expr* index_expr)                 { tg = Tag::Array; as_array.index_expr = index_expr; }
-	inline void set_call(Ast_Ident ident, Ast_Expr_List* input) { tg = Tag::Call;  as_call.ident = ident; as_call.input = input; }
-};
-
-struct Ast_Expr_List
-{
-	std::vector<Ast_Expr*> exprs;
 };
 
 #endif

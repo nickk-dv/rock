@@ -26,7 +26,7 @@ void fmt_literal(Ast_Literal* literal)
 	Token token = literal->token;
 	for (u32 i = token.span.start; i <= token.span.end; i += 1)
 	{
-		printf("%c", fmt_curr_ast->source.data[i]);
+		printf("%c", fmt_curr_ast->source->str.data[i]);
 	}
 }
 
@@ -233,41 +233,41 @@ void fmt_expr_list(Ast_Expr_List* expr_list)
 	}
 }
 
-void fmt_access_chain(Ast_Access_Chain* chain, bool first)
+void fmt_access(Ast_Access* access, bool first)
 {
-	switch (chain->tag())
+	switch (access->tag())
 	{
-	case Ast_Access_Chain::Tag::Ident:
+	case Ast_Access::Tag::Ident:
 	{
 		if (!first) fmt_token(TokenType::DOT);
-		fmt_ident(chain->as_ident);
+		fmt_ident(access->as_ident);
 	} break;
-	case Ast_Access_Chain::Tag::Array:
+	case Ast_Access::Tag::Array:
 	{
 		fmt_token(TokenType::BRACKET_START);
-		fmt_expr(chain->as_array.index_expr);
+		fmt_expr(access->as_array.index_expr);
 		fmt_token(TokenType::BRACKET_END);
 	} break;
-	case Ast_Access_Chain::Tag::Call:
+	case Ast_Access::Tag::Call:
 	{
 		if (!first) fmt_token(TokenType::DOT);
-		fmt_ident(chain->as_call.ident);
+		fmt_ident(access->as_call.ident);
 		fmt_token(TokenType::PAREN_START);
-		fmt_expr_list(chain->as_call.input);
+		fmt_expr_list(access->as_call.input);
 		fmt_token(TokenType::PAREN_END);
 	} break;
-	default: err_internal_enum(chain->tag()); break;
+	default: err_internal_enum(access->tag()); break;
 	}
 }
 
 void fmt_something(Ast_Something* something)
 {
 	fmt_module_access(something->module_access);
-	fmt_access_chain(something->chain, true);
-	option<Ast_Access_Chain*> next = something->chain->next;
+	fmt_access(something->access, true);
+	option<Ast_Access*> next = something->access->next;
 	while (next)
 	{
-		fmt_access_chain(next.value(), false);
+		fmt_access(next.value(), false);
 		next = next.value()->next;
 	}
 }

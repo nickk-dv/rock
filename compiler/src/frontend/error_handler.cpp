@@ -39,7 +39,7 @@ void err_report_parse(Ast* source, TokenType expected, option<const char*> in, T
 	if (in) printf(" in %s\n", in.value());
 	if (token.type == TokenType::INPUT_END)
 	{
-		printf("%s '", source->filepath.c_str());
+		printf("%s '", source->source->filepath.c_str());
 		print_token_type(TokenType::INPUT_END);
 		printf("'\n");
 	}
@@ -48,7 +48,7 @@ void err_report_parse(Ast* source, TokenType expected, option<const char*> in, T
 
 void err_context(Check_Context* cc)
 {
-	printf("%s: ", cc->ast->filepath.c_str());
+	printf("%s: ", cc->ast->source->filepath.c_str());
 }
 
 void err_context(Check_Context* cc, Span span)

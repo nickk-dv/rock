@@ -56,17 +56,17 @@ private:
 	Ast_Expr* parse_expr();
 	Ast_Expr* parse_sub_expr(u32 min_prec = 0);
 	Ast_Expr* parse_primary_expr();
+	Ast_Expr_List* parse_expr_list(TokenType start, TokenType end, const char* in);
 	Ast_Consteval_Expr* parse_consteval_expr(Ast_Expr* expr);
 	Ast_Term* parse_term();
 	Ast_Enum* parse_enum();
 	Ast_Cast* parse_cast();
 	Ast_Sizeof* parse_sizeof();
-	Ast_Struct_Init* parse_struct_init(option<Ast_Module_Access*> module_access);
-	Ast_Array_Init* parse_array_init();
 	Ast_Something* parse_something(option<Ast_Module_Access*> module_access);
-	Ast_Access_Chain* parse_access_chain_first();
-	bool parse_access_chain(Ast_Access_Chain* prev);
-	Ast_Expr_List* parse_expr_list(TokenType start, TokenType end, const char* in);
+	Ast_Array_Init* parse_array_init();
+	Ast_Struct_Init* parse_struct_init(option<Ast_Module_Access*> module_access);
+	Ast_Access* parse_access_first();
+	bool parse_access(Ast_Access* prev);
 
 	TokenType peek(u32 offset = 0);
 	Token peek_token(u32 offset = 0);

@@ -6,7 +6,7 @@
 bool check_program(Ast_Program* program)
 {
 	Check_Context cc = {};
-	program->external_proc_table.init(256);
+	//program->external_proc_table.init(256);
 
 	check_module_tree(&program->root);
 
@@ -45,7 +45,7 @@ void check_main_entry_point(Ast_Program* program)
 
 	for (Ast* ast : program->modules)
 	{
-		if (ast->filepath == "main") main_ast = ast;
+		//if (ast->filepath == "main") main_ast = ast;
 	}
 
 	if (main_ast == NULL) 
@@ -71,7 +71,7 @@ void check_main_entry_point(Ast_Program* program)
 }
 
 void check_decls_symbols(Check_Context* cc)
-{
+{/*
 	Ast* ast = cc->ast;
 	ast->import_table.init(64);
 	ast->struct_table.init(64);
@@ -161,7 +161,7 @@ void check_decls_symbols(Check_Context* cc)
 		ast->global_table.add(ident, Ast_Info_Global { decl, (u32)program->globals.size() }, hash_ident(ident));
 		program->globals.emplace_back(Ast_Info_IR_Global { decl });
 	}
-}
+*/ }
 /* @disabled
 void check_decls_consteval(Check_Context* cc)
 {
@@ -630,7 +630,7 @@ void check_module_tree(Ast_Module_Tree* node)
 		if (conflict_found)
 		{
 			err_internal("check_module_tree: conflict modules, only folder or file module can exist in sigle module");
-			err_context(node->submodules[conflict_index].leaf_ast.value()->filepath.c_str());
+			//err_context(node->submodules[conflict_index].leaf_ast.value()->filepath.c_str());
 			node->submodules.erase(node->submodules.begin() + conflict_index);
 		}
 	}
