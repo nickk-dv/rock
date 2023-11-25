@@ -1,7 +1,10 @@
-#ifndef FMT_H
-#define FMT_H
+export module fmt;
 
-#include "ast.h"
+import general;
+import ast;
+import token;
+import err_handler;
+import <typeinfo>;
 
 /*
 @Tasks
@@ -15,6 +18,16 @@ handle & keep comments
 keep & reduce logical empty lines to 1
 modify file instead of printing
 */
+
+//@macro export isnt supported, cannot be used globally
+#define err_internal_enum(enum_var) \
+{ \
+err_internal("invalid or not implemented enum variant:"); \
+printf("function: %s\n", __FUNCSIG__); \
+printf("line:     %d\n", __LINE__); \
+printf("type:     %s\n", typeid(enum_var).name()); \
+}
+
 Ast* fmt_curr_ast;
 
 void fmt_tab()   { printf("\t"); }
@@ -158,7 +171,7 @@ void fmt_assign_op(AssignOp op)
 {
 	switch (op)
 	{
-	case AssignOp::NONE:           fmt_token(TokenType::ASSIGN); break;
+	case AssignOp::ASSIGN:         fmt_token(TokenType::ASSIGN); break;
 	case AssignOp::PLUS:           fmt_token(TokenType::PLUS_EQUALS); break;
 	case AssignOp::MINUS:          fmt_token(TokenType::MINUS_EQUALS); break;
 	case AssignOp::TIMES:          fmt_token(TokenType::TIMES_EQUALS); break;
@@ -774,7 +787,7 @@ void fmt_decl_import(Ast_Decl_Import* decl) //@support dense 1 liners?
 	fmt_endl();
 }
 
-void fmt_ast(Ast* ast)
+export void fmt_ast(Ast* ast)
 {
 	fmt_curr_ast = ast;
 	printf("------------------------\n");
@@ -792,5 +805,3 @@ void fmt_ast(Ast* ast)
 		}
 	}
 }
-
-#endif

@@ -1,9 +1,8 @@
-#ifndef TREE_H
-#define TREE_H
+export module tree;
 
-#include "arena.h"
+import arena;
 
-template<typename T>
+export template<typename T>
 struct Tree_Node
 {
 	T value;
@@ -12,7 +11,7 @@ struct Tree_Node
 	Tree_Node* next_sibling;
 };
 
-template<typename T>
+export template<typename T>
 struct Tree
 {
 	Arena arena;
@@ -31,7 +30,7 @@ struct Tree
 	~Tree() { arena_deinit(&arena); }
 };
 
-template<typename T>
+export template<typename T>
 Tree_Node<T>* tree_node_add_child(Arena* arena, Tree_Node<T>* parent, T value)
 {
 	Tree_Node<T>* node = arena_alloc<Tree_Node<T>>(arena);
@@ -52,7 +51,7 @@ Tree_Node<T>* tree_node_add_child(Arena* arena, Tree_Node<T>* parent, T value)
 	return node;
 }
 
-template<typename T, typename Match_Proc>
+export template<typename T, typename Match_Proc>
 option<Tree_Node<T>*> tree_node_find_cycle(Tree_Node<T>* node, T match_value, Match_Proc match)
 {
 	while (node->parent != nullptr)
@@ -63,7 +62,7 @@ option<Tree_Node<T>*> tree_node_find_cycle(Tree_Node<T>* node, T match_value, Ma
 	return {};
 }
 
-template<typename T, typename Apply_Proc, typename Context>
+export template<typename T, typename Apply_Proc, typename Context>
 void tree_node_apply_proc_in_reverse_up_to_node(Tree_Node<T>* node, Tree_Node<T>* up_to_node, Context* context, Apply_Proc apply)
 {
 	std::vector<Tree_Node<T>*> nodes;
@@ -81,7 +80,7 @@ void tree_node_apply_proc_in_reverse_up_to_node(Tree_Node<T>* node, Tree_Node<T>
 	}
 }
 
-template<typename T, typename Apply_Proc, typename Context>
+export template<typename T, typename Apply_Proc, typename Context>
 void tree_node_apply_proc_up_to_root(Tree_Node<T>* node, Context* context, Apply_Proc apply)
 {
 	while (node != nullptr)
@@ -90,5 +89,3 @@ void tree_node_apply_proc_up_to_root(Tree_Node<T>* node, Context* context, Apply
 		node = node->parent;
 	}
 }
-
-#endif

@@ -1,13 +1,27 @@
-#include "parse_cmd.h"
+export module parse_cmd;
 
-#include "frontend/parser.h"
-#include "frontend/check.h"
+import general;
+import parser;
+import fmt;
+import ast;
+import err_handler;
+import check;
 //@todo enable later #include "middlend/llvm_ir_builder.h"
 //@todo enable later #include "backend/llvm_backend.h"
-
-#include <filesystem>
-#include <fstream>
+import <fstream>;
+import <filesystem>;
 namespace fs = std::filesystem;
+
+export i32 parse_cmd(int argc, char** argv);
+bool match_arg(char* arg, const char* match);
+i32 cmd_help();
+i32 cmd_new(char* name);
+i32 cmd_check();
+i32 cmd_build();
+i32 cmd_run();
+i32 cmd_fmt();
+
+module : private;
 
 i32 parse_cmd(i32 argc, char** argv)
 {
@@ -114,8 +128,6 @@ i32 cmd_build()
 	printf("Build success\n");
 	return 0;
 }
-
-#include "frontend/fmt.h";
 
 i32 cmd_run()
 {

@@ -1,7 +1,8 @@
-#ifndef HASHMAP_H
-#define HASHMAP_H
+export module hashmap;
 
-template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
+import basic;
+
+export template<typename KeyType, typename ValueType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
 struct HashMap 
 {
 	HashMap() {};
@@ -84,7 +85,7 @@ private:
 	u32 resize_threshold = 0;
 };
 
-template<typename KeyType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
+export template<typename KeyType, typename HashType, bool (*match_proc)(KeyType& a, KeyType& b)>
 struct HashSet 
 {
 	HashSet() {};
@@ -165,5 +166,3 @@ private:
 	u32 slots_filled = 0;
 	u32 resize_threshold = 0;
 };
-
-#endif

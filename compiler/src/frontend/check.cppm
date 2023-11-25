@@ -1,7 +1,37 @@
-#include "check.h"
+export module check;
 
-#include "error_handler.h"
-//#include "check_type.h"
+import general;
+import ast;
+import err_handler;
+import check_context;
+//#include "check_type.h" @later
+
+export bool check_program(Ast_Program* program);
+
+void check_main_entry_point(Ast_Program* program);
+void check_decls_symbols(Check_Context* cc);
+void check_decls_consteval(Check_Context* cc);
+void check_decls_finalize(Check_Context* cc);
+void check_proc_blocks(Check_Context* cc);
+
+Terminator check_cfg_block(Check_Context* cc, Ast_Stmt_Block* block, bool is_loop, bool is_defer);
+void check_cfg_if(Check_Context* cc, Ast_Stmt_If* _if, bool is_loop, bool is_defer);
+void check_cfg_switch(Check_Context* cc, Ast_Stmt_Switch* _switch, bool is_loop, bool is_defer);
+
+void check_stmt_block(Check_Context* cc, Ast_Stmt_Block* block, Checker_Block_Flags flags);
+void check_stmt_if(Check_Context* cc, Ast_Stmt_If* _if);
+void check_stmt_for(Check_Context* cc, Ast_Stmt_For* _for);
+void check_stmt_return(Check_Context* cc, Ast_Stmt_Return* _return);
+void check_stmt_switch(Check_Context* cc, Ast_Stmt_Switch* _switch);
+void check_stmt_var_decl(Check_Context* cc, Ast_Stmt_Var_Decl* var_decl);
+void check_stmt_var_assign(Check_Context* cc, Ast_Stmt_Var_Assign* var_assign);
+
+void check_module_tree(Ast_Module_Tree* node);
+Ast* check_module_access(Check_Context* cc, option<Ast_Module_Access*> option_module_access);
+Ast* check_module_list(Check_Context* cc, std::vector<Ast_Ident>& modules);
+void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl);
+
+module : private;
 
 bool check_program(Ast_Program* program)
 {

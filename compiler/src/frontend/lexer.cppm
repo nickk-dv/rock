@@ -1,4 +1,43 @@
-#include "lexer.h"
+export module lexer;
+
+import general;
+import ast;
+import token;
+import <unordered_map>;
+
+export struct Lexer
+{
+public:
+	static const u64 TOKEN_BUFFER_SIZE = 256;
+	static const u64 TOKEN_LOOKAHEAD = 4;
+
+private:
+	u32 cursor;
+	StringView source;
+	StringStorage* strings;
+	std::vector<Span>* line_spans;
+
+public:
+	void init(StringView source, StringStorage* strings, std::vector<Span>* line_spans);
+	void lex_token_buffer(Token* tokens);
+
+private:
+	Token lex_token();
+	Token lex_char();
+	Token lex_string();
+	Token lex_number();
+	Token lex_ident();
+	Token lex_symbol();
+	TokenType lex_ident_keyword(StringView str);
+	option<TokenType> lex_symbol_1(u8 c);
+	option<TokenType> lex_symbol_2(u8 c, TokenType type);
+	option<TokenType> lex_symbol_3(u8 c, TokenType type);
+	void skip_whitespace();
+	void consume();
+	option<u8> peek(u32 offset = 0);
+};
+
+module : private;
 
 static bool is_number(u8 c)       { return c >= '0' && c <= '9'; }
 static bool is_letter(u8 c)       { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
@@ -286,45 +325,43 @@ Token Lexer::lex_symbol()
 	return token;
 }
 
-#include <unordered_map>
-
 static const std::unordered_map<u64, TokenType> keyword_map =
 {
-	{ hash_ascii_9("struct"),   TokenType::KEYWORD_STRUCT },
-	{ hash_ascii_9("enum"),     TokenType::KEYWORD_ENUM },
-	{ hash_ascii_9("if"),       TokenType::KEYWORD_IF },
-	{ hash_ascii_9("else"),     TokenType::KEYWORD_ELSE },
-	{ hash_ascii_9("true"),     TokenType::KEYWORD_TRUE },
-	{ hash_ascii_9("false"),    TokenType::KEYWORD_FALSE },
-	{ hash_ascii_9("for"),      TokenType::KEYWORD_FOR },
-	{ hash_ascii_9("cast"),     TokenType::KEYWORD_CAST },
-	{ hash_ascii_9("defer"),    TokenType::KEYWORD_DEFER },
-	{ hash_ascii_9("break"),    TokenType::KEYWORD_BREAK },
-	{ hash_ascii_9("return"),   TokenType::KEYWORD_RETURN },
-	{ hash_ascii_9("switch"),   TokenType::KEYWORD_SWITCH },
-	{ hash_ascii_9("continue"), TokenType::KEYWORD_CONTINUE },
-	{ hash_ascii_9("sizeof"),   TokenType::KEYWORD_SIZEOF },
-	{ hash_ascii_9("import"),   TokenType::KEYWORD_IMPORT },
-	{ hash_ascii_9("impl"),     TokenType::KEYWORD_IMPL },
-	{ hash_ascii_9("self"),     TokenType::KEYWORD_SELF },
-	{ hash_ascii_9("i8"),       TokenType::TYPE_I8 },
-	{ hash_ascii_9("u8"),       TokenType::TYPE_U8 },
-	{ hash_ascii_9("i16"),      TokenType::TYPE_I16 },
-	{ hash_ascii_9("u16"),      TokenType::TYPE_U16 },
-	{ hash_ascii_9("i32"),      TokenType::TYPE_I32 },
-	{ hash_ascii_9("u32"),      TokenType::TYPE_U32 },
-	{ hash_ascii_9("i64"),      TokenType::TYPE_I64 },
-	{ hash_ascii_9("u64"),      TokenType::TYPE_U64 },
-	{ hash_ascii_9("f32"),      TokenType::TYPE_F32 },
-	{ hash_ascii_9("f64"),      TokenType::TYPE_F64 },
-	{ hash_ascii_9("bool"),     TokenType::TYPE_BOOL },
-	{ hash_ascii_9("string"),   TokenType::TYPE_STRING },
+	{ hash_cstr_unique_64("struct"),   TokenType::KEYWORD_STRUCT },
+	{ hash_cstr_unique_64("enum"),     TokenType::KEYWORD_ENUM },
+	{ hash_cstr_unique_64("if"),       TokenType::KEYWORD_IF },
+	{ hash_cstr_unique_64("else"),     TokenType::KEYWORD_ELSE },
+	{ hash_cstr_unique_64("true"),     TokenType::KEYWORD_TRUE },
+	{ hash_cstr_unique_64("false"),    TokenType::KEYWORD_FALSE },
+	{ hash_cstr_unique_64("for"),      TokenType::KEYWORD_FOR },
+	{ hash_cstr_unique_64("cast"),     TokenType::KEYWORD_CAST },
+	{ hash_cstr_unique_64("defer"),    TokenType::KEYWORD_DEFER },
+	{ hash_cstr_unique_64("break"),    TokenType::KEYWORD_BREAK },
+	{ hash_cstr_unique_64("return"),   TokenType::KEYWORD_RETURN },
+	{ hash_cstr_unique_64("switch"),   TokenType::KEYWORD_SWITCH },
+	{ hash_cstr_unique_64("continue"), TokenType::KEYWORD_CONTINUE },
+	{ hash_cstr_unique_64("sizeof"),   TokenType::KEYWORD_SIZEOF },
+	{ hash_cstr_unique_64("import"),   TokenType::KEYWORD_IMPORT },
+	{ hash_cstr_unique_64("impl"),     TokenType::KEYWORD_IMPL },
+	{ hash_cstr_unique_64("self"),     TokenType::KEYWORD_SELF },
+	{ hash_cstr_unique_64("i8"),       TokenType::TYPE_I8 },
+	{ hash_cstr_unique_64("u8"),       TokenType::TYPE_U8 },
+	{ hash_cstr_unique_64("i16"),      TokenType::TYPE_I16 },
+	{ hash_cstr_unique_64("u16"),      TokenType::TYPE_U16 },
+	{ hash_cstr_unique_64("i32"),      TokenType::TYPE_I32 },
+	{ hash_cstr_unique_64("u32"),      TokenType::TYPE_U32 },
+	{ hash_cstr_unique_64("i64"),      TokenType::TYPE_I64 },
+	{ hash_cstr_unique_64("u64"),      TokenType::TYPE_U64 },
+	{ hash_cstr_unique_64("f32"),      TokenType::TYPE_F32 },
+	{ hash_cstr_unique_64("f64"),      TokenType::TYPE_F64 },
+	{ hash_cstr_unique_64("bool"),     TokenType::TYPE_BOOL },
+	{ hash_cstr_unique_64("string"),   TokenType::TYPE_STRING },
 };
 
 TokenType Lexer::lex_ident_keyword(StringView str)
 {
 	if (str.count > 8 || str.count < 2) return TokenType::ERROR;
-	u64 hash = hash_str_ascii_9(str);
+	u64 hash = str.hash_unique_64();
 	bool is_keyword = keyword_map.find(hash) != keyword_map.end();
 	return is_keyword ? keyword_map.at(hash) : TokenType::ERROR;
 }

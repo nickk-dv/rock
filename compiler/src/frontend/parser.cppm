@@ -1,8 +1,12 @@
-#include "parser.h"
+export module parser;
 
-#include <filesystem>
-
-#include <chrono>
+import general;
+import ast;
+import token;
+import lexer;
+import err_handler;
+import <chrono>;
+import <filesystem>;
 
 class ScopedTimer {
 public:
@@ -28,6 +32,198 @@ private:
 #define span_start() u32 start = get_span_start()
 #define span_end(node) node->span.start = start; node->span.end = get_span_end()
 #define span_end_dot(node) node.span.start = start; node.span.end = get_span_end()
+
+Ast_Ident token_to_ident(const Token& token)
+{
+	return Ast_Ident{ token.span, token.string_value };
+}
+
+namespace fs = std::filesystem;
+
+export struct Parser
+{
+private:
+	Ast* ast;
+	Arena arena;
+	Lexer lexer;
+	StringStorage strings;
+	u32 peek_index = 0;
+	Token prev_last;
+	Token tokens[Lexer::TOKEN_BUFFER_SIZE];
+
+public:
+	Ast_Program* parse_program();
+	void populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent, fs::path& path, fs::path& src);
+
+private:
+	Ast* parse_ast(StringView source, std::string& filepath);
+	option<Ast_Type> parse_type();
+	Ast_Type_Array* parse_type_array();
+	Ast_Type_Procedure* parse_type_procedure();
+	Ast_Type_Unresolved* parse_type_unresolved();
+
+	Ast_Decl* parse_decl();
+	Ast_Decl_Impl* parse_decl_impl();
+	Ast_Decl_Proc* parse_decl_proc(bool in_impl);
+	Ast_Decl_Enum* parse_decl_enum();
+	Ast_Decl_Struct* parse_decl_struct();
+	Ast_Decl_Global* parse_decl_global();
+	Ast_Decl_Import* parse_decl_import();
+	Ast_Import_Target* parse_import_target();
+	option<Ast_Module_Access*> parse_module_access();
+
+	Ast_Stmt* parse_stmt();
+	Ast_Stmt_If* parse_stmt_if();
+	Ast_Else* parse_else();
+	Ast_Stmt_For* parse_stmt_for();
+	Ast_Stmt_Block* parse_stmt_block();
+	Ast_Stmt_Block* parse_stmt_block_short();
+	Ast_Stmt_Defer* parse_stmt_defer();
+	Ast_Stmt_Break* parse_stmt_break();
+	Ast_Stmt_Return* parse_stmt_return();
+	Ast_Stmt_Switch* parse_stmt_switch();
+	Ast_Stmt_Continue* parse_stmt_continue();
+	Ast_Stmt_Var_Decl* parse_stmt_var_decl();
+
+	Ast_Expr* parse_expr();
+	Ast_Expr* parse_sub_expr(u32 min_prec = 0);
+	Ast_Expr* parse_primary_expr();
+	Ast_Expr_List* parse_expr_list(TokenType start, TokenType end, const char* in);
+	Ast_Consteval_Expr* parse_consteval_expr(Ast_Expr* expr);
+	Ast_Term* parse_term();
+	Ast_Enum* parse_enum();
+	Ast_Cast* parse_cast();
+	Ast_Sizeof* parse_sizeof();
+	Ast_Something* parse_something(option<Ast_Module_Access*> module_access);
+	Ast_Array_Init* parse_array_init();
+	Ast_Struct_Init* parse_struct_init(option<Ast_Module_Access*> module_access);
+	Ast_Access* parse_access_first();
+	bool parse_access(Ast_Access* prev);
+
+	TokenType peek(u32 offset = 0);
+	Token peek_token(u32 offset = 0);
+	void consume();
+	Token consume_get();
+	option<Token> try_consume(TokenType token_type);
+	u32 get_span_start();
+	u32 get_span_end();
+	void err_parse(TokenType expected, option<const char*> in, u32 offset = 0);
+};
+
+constexpr option<UnaryOp> token_to_unary_op(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::MINUS:         return UnaryOp::MINUS;
+	case TokenType::LOGIC_NOT:     return UnaryOp::LOGIC_NOT;
+	case TokenType::BITWISE_NOT:   return UnaryOp::BITWISE_NOT;
+	case TokenType::TIMES:         return UnaryOp::ADDRESS_OF;
+	case TokenType::BITSHIFT_LEFT: return UnaryOp::DEREFERENCE;
+	default: return {};
+	}
+}
+
+constexpr option<BinaryOp> token_to_binary_op(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::LOGIC_AND:      return BinaryOp::LOGIC_AND;
+	case TokenType::LOGIC_OR:       return BinaryOp::LOGIC_OR;
+	case TokenType::LESS:           return BinaryOp::LESS;
+	case TokenType::GREATER:        return BinaryOp::GREATER;
+	case TokenType::LESS_EQUALS:    return BinaryOp::LESS_EQUALS;
+	case TokenType::GREATER_EQUALS: return BinaryOp::GREATER_EQUALS;
+	case TokenType::IS_EQUALS:      return BinaryOp::IS_EQUALS;
+	case TokenType::NOT_EQUALS:     return BinaryOp::NOT_EQUALS;
+	case TokenType::PLUS:           return BinaryOp::PLUS;
+	case TokenType::MINUS:          return BinaryOp::MINUS;
+	case TokenType::TIMES:          return BinaryOp::TIMES;
+	case TokenType::DIV:            return BinaryOp::DIV;
+	case TokenType::MOD:            return BinaryOp::MOD;
+	case TokenType::BITWISE_AND:    return BinaryOp::BITWISE_AND;
+	case TokenType::BITWISE_OR:     return BinaryOp::BITWISE_OR;
+	case TokenType::BITWISE_XOR:    return BinaryOp::BITWISE_XOR;
+	case TokenType::BITSHIFT_LEFT:  return BinaryOp::BITSHIFT_LEFT;
+	case TokenType::BITSHIFT_RIGHT: return BinaryOp::BITSHIFT_RIGHT;
+	default: return {};
+	}
+}
+
+constexpr option<AssignOp> token_to_assign_op(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::ASSIGN:                return AssignOp::ASSIGN;
+	case TokenType::PLUS_EQUALS:           return AssignOp::PLUS;
+	case TokenType::MINUS_EQUALS:          return AssignOp::MINUS;
+	case TokenType::TIMES_EQUALS:          return AssignOp::TIMES;
+	case TokenType::DIV_EQUALS:            return AssignOp::DIV;
+	case TokenType::MOD_EQUALS:            return AssignOp::MOD;
+	case TokenType::BITWISE_AND_EQUALS:    return AssignOp::BITWISE_AND;
+	case TokenType::BITWISE_OR_EQUALS:     return AssignOp::BITWISE_OR;
+	case TokenType::BITWISE_XOR_EQUALS:    return AssignOp::BITWISE_XOR;
+	case TokenType::BITSHIFT_LEFT_EQUALS:  return AssignOp::BITSHIFT_LEFT;
+	case TokenType::BITSHIFT_RIGHT_EQUALS: return AssignOp::BITSHIFT_RIGHT;
+	default: return {};
+	}
+}
+
+constexpr option<BasicType> token_to_basic_type(TokenType type)
+{
+	switch (type)
+	{
+	case TokenType::TYPE_I8:     return BasicType::I8;
+	case TokenType::TYPE_U8:     return BasicType::U8;
+	case TokenType::TYPE_I16:    return BasicType::I16;
+	case TokenType::TYPE_U16:    return BasicType::U16;
+	case TokenType::TYPE_I32:    return BasicType::I32;
+	case TokenType::TYPE_U32:    return BasicType::U32;
+	case TokenType::TYPE_I64:    return BasicType::I64;
+	case TokenType::TYPE_U64:    return BasicType::U64;
+	case TokenType::TYPE_F32:    return BasicType::F32;
+	case TokenType::TYPE_F64:    return BasicType::F64;
+	case TokenType::TYPE_BOOL:   return BasicType::BOOL;
+	case TokenType::TYPE_STRING: return BasicType::STRING;
+	default: return {};
+	}
+}
+
+constexpr u32 token_binary_op_prec(BinaryOp binary_op)
+{
+	switch (binary_op)
+	{
+	case BinaryOp::LOGIC_AND:
+	case BinaryOp::LOGIC_OR:
+		return 0;
+	case BinaryOp::LESS:
+	case BinaryOp::GREATER:
+	case BinaryOp::LESS_EQUALS:
+	case BinaryOp::GREATER_EQUALS:
+	case BinaryOp::IS_EQUALS:
+	case BinaryOp::NOT_EQUALS:
+		return 1;
+	case BinaryOp::PLUS:
+	case BinaryOp::MINUS:
+		return 2;
+	case BinaryOp::TIMES:
+	case BinaryOp::DIV:
+	case BinaryOp::MOD:
+		return 3;
+	case BinaryOp::BITWISE_AND:
+	case BinaryOp::BITWISE_OR:
+	case BinaryOp::BITWISE_XOR:
+		return 4;
+	case BinaryOp::BITSHIFT_LEFT:
+	case BinaryOp::BITSHIFT_RIGHT:
+		return 5;
+	default:
+	{
+		err_report(Error::COMPILER_INTERNAL);
+		err_context("unexpected switch case in token_binary_op_prec");
+		return 0;
+	}
+	}
+}
 
 namespace fs = std::filesystem;
 

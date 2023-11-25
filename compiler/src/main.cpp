@@ -1,4 +1,5 @@
-#include "parse_cmd.h"
+import general;
+import parse_cmd;
 
 i32 main(i32 argc, char** argv)
 {

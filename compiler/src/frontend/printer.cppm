@@ -1,4 +1,27 @@
-#include "printer.h"
+export module printer;
+
+import general;
+import ast;
+import token;
+
+struct Loc;
+
+export void print_span_context(Ast* source, Span span);
+export void print_str(StringView str);
+export void print_type(Ast_Type type);
+export void print_token_type(TokenType type);
+
+Loc print_loc_from_span(Ast* source, Span span);
+void print_basic_type(BasicType type);
+
+module : private;
+
+struct Loc
+{
+	u32 line;
+	u32 col;
+	Span span;
+};
 
 void print_span_context(Ast* source, Span span)
 {
@@ -110,7 +133,7 @@ void print_type(Ast_Type type)
 		print_str(type.as_unresolved->ident.str);
 	} break;
 	case Ast_Type::Tag::Poison: printf("'Poison'"); break;
-	default: err_internal("print_type: invalid Ast_Type_Tag"); break;
+	default: break; //@enum err
 	}
 }
 
@@ -204,7 +227,7 @@ void print_token_type(TokenType type)
 
 	case TokenType::ERROR:     printf("error token"); break;
 	case TokenType::INPUT_END: printf("end of file"); break;
-	default: err_internal("print_token_type: invalid TokenType");
+	default: break; //@enum err
 	}
 }
 
@@ -242,6 +265,6 @@ void print_basic_type(BasicType type)
 	case BasicType::F64: printf("f64"); break;
 	case BasicType::BOOL: printf("bool"); break;
 	case BasicType::STRING: printf("string"); break;
-	default: err_internal("print_basic_type: invalid BasicType"); break;
+	default: break; //@enum err
 	}
 }
