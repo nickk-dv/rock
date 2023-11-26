@@ -61,6 +61,7 @@ void fmt_token(TokenType type)
 	case TokenType::KEYWORD_SWITCH:        printf("switch"); break;
 	case TokenType::KEYWORD_CONTINUE:      printf("continue"); break;
 	
+	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_CAST:          printf("cast"); break;
 	case TokenType::KEYWORD_SIZEOF:        printf("sizeof"); break;
 	case TokenType::KEYWORD_TRUE:          printf("true"); break;
@@ -390,6 +391,11 @@ void fmt_block(Ast_Stmt_Block* block, u32 indent, bool attached)
 
 void fmt_stmt_var_decl(Ast_Stmt_Var_Decl* var_decl)
 {
+	if (var_decl->is_mutable)
+	{
+		fmt_token(TokenType::KEYWORD_MUT);
+		fmt_space();
+	}
 	fmt_ident(var_decl->ident);
 	fmt_space();
 	fmt_token(TokenType::COLON);
@@ -602,6 +608,11 @@ void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 	for (u32 i = 0; i < decl->input_params.size(); i += 1)
 	{
 		Ast_Proc_Param param = decl->input_params[i];
+		if (param.is_mutable)
+		{
+			fmt_token(TokenType::KEYWORD_MUT);
+			fmt_space();
+		}
 		fmt_ident(param.ident);
 		fmt_token(TokenType::COLON);
 		fmt_space();

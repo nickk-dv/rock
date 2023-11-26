@@ -25,6 +25,7 @@ export enum class TokenType
 	KEYWORD_SWITCH,        // switch
 	KEYWORD_CONTINUE,      // continue
 	
+	KEYWORD_MUT,           // mut
 	KEYWORD_CAST,          // cast
 	KEYWORD_SIZEOF,        // sizeof
 	KEYWORD_TRUE,          // true

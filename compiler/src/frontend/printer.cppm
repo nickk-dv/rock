@@ -162,6 +162,7 @@ void print_token_type(TokenType type)
 	case TokenType::KEYWORD_SWITCH:        printf("switch"); break;
 	case TokenType::KEYWORD_CONTINUE:      printf("continue"); break;
 
+	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_CAST:          printf("cast"); break;
 	case TokenType::KEYWORD_SIZEOF:        printf("sizeof"); break;
 	case TokenType::KEYWORD_TRUE:          printf("true"); break;

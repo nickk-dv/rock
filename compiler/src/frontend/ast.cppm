@@ -296,6 +296,7 @@ export struct Ast_Decl_Proc
 
 export struct Ast_Proc_Param
 {
+	bool is_mutable;
 	Ast_Ident ident;
 	Ast_Type type;
 	bool self; //@handle the self in better ways
@@ -434,17 +435,12 @@ export struct Ast_Else
 {
 	Span span;
 
-public:
 	enum class Tag
 	{
 		If,
 		Block,
 	};
 
-private:
-	Tag tg;
-
-public:
 	union
 	{
 		Ast_Stmt_If* as_if;
@@ -454,6 +450,9 @@ public:
 	inline Tag tag() { return tg; }
 	inline void set_if(Ast_Stmt_If* _if)         { tg = Tag::If;    as_if = _if; }
 	inline void set_block(Ast_Stmt_Block* block) { tg = Tag::Block; as_block = block; }
+
+private:
+	Tag tg;
 };
 
 export struct Ast_Stmt_For
@@ -508,6 +507,7 @@ export struct Ast_Stmt_Continue
 export struct Ast_Stmt_Var_Decl
 {
 	Span span;
+	bool is_mutable;
 	Ast_Ident ident;
 	option<Ast_Type> type;
 	option<Ast_Expr*> expr;
@@ -757,8 +757,17 @@ export struct Ast_Access
 	union
 	{
 		Ast_Ident as_ident;
-		struct Array { Ast_Expr* index_expr; } as_array;
-		struct Call { Ast_Ident ident; Ast_Expr_List* input; } as_call;
+
+		struct Array 
+		{ 
+			Ast_Expr* index_expr;
+		} as_array;
+
+		struct Call 
+		{ 
+			Ast_Ident ident;
+			Ast_Expr_List* input; 
+		} as_call;
 	};
 
 	inline Tag tag() { return tg; }

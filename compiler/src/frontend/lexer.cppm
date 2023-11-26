@@ -341,6 +341,7 @@ static const std::unordered_map<u64, TokenType> keyword_map =
 	{ hash_cstr_unique_64("switch"),   TokenType::KEYWORD_SWITCH },
 	{ hash_cstr_unique_64("continue"), TokenType::KEYWORD_CONTINUE },
 	
+	{ hash_cstr_unique_64("mut"),      TokenType::KEYWORD_MUT },
 	{ hash_cstr_unique_64("cast"),     TokenType::KEYWORD_CAST },
 	{ hash_cstr_unique_64("sizeof"),   TokenType::KEYWORD_SIZEOF },
 	{ hash_cstr_unique_64("true"),     TokenType::KEYWORD_TRUE },

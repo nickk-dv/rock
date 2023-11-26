@@ -513,7 +513,7 @@ Ast_Decl* Parser::parse_decl()
 		if (!decl_import) return NULL;
 		decl->set_import(decl_import);
 	} break;
-	default: { err_parse(TokenType::IDENT, "global declaration", 1); return NULL; } //@err set ident or impl or import
+	default: { err_parse(TokenType::IDENT, "global declaration"); return NULL; } //@err set ident or impl or import
 	}
 
 	return decl;
@@ -561,6 +561,8 @@ Ast_Decl_Proc* Parser::parse_decl_proc(bool in_impl)
 		if (try_consume(TokenType::DOUBLE_DOT)) { decl->is_variadic = true; break; }
 
 		Ast_Proc_Param param = {};
+
+		if (try_consume(TokenType::KEYWORD_MUT)) param.is_mutable = true;
 
 		if (peek() == TokenType::KEYWORD_SELF)
 		{
@@ -827,7 +829,7 @@ Ast_Stmt* Parser::parse_stmt()
 	} break;
 	default: 
 	{
-		if (peek() == TokenType::IDENT && peek(1) == TokenType::COLON)
+		if (peek() == TokenType::KEYWORD_MUT || (peek() == TokenType::IDENT && peek(1) == TokenType::COLON))
 		{
 			Ast_Stmt_Var_Decl* var_decl = parse_stmt_var_decl();
 			if (!var_decl) return NULL;
@@ -937,7 +939,7 @@ Ast_Stmt_For* Parser::parse_stmt_for()
 		return _for;
 	}
 
-	if (peek() == TokenType::IDENT && peek(1) == TokenType::COLON)
+	if (peek() == TokenType::KEYWORD_MUT || (peek() == TokenType::IDENT && peek(1) == TokenType::COLON))
 	{
 		Ast_Stmt_Var_Decl* var_decl = parse_stmt_var_decl();
 		if (!var_decl) return NULL;
@@ -1100,11 +1102,13 @@ Ast_Stmt_Var_Decl* Parser::parse_stmt_var_decl()
 {
 	Ast_Stmt_Var_Decl* var_decl = this->arena.alloc<Ast_Stmt_Var_Decl>();
 	span_start();
-	var_decl->ident = token_to_ident(consume_get());
-	consume();
+	if (try_consume(TokenType::KEYWORD_MUT)) var_decl->is_mutable = true;
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) { err_parse(TokenType::IDENT, "variable declaration"); return NULL; }
+	var_decl->ident = token_to_ident(ident.value());
+	if (!try_consume(TokenType::COLON)) { err_parse(TokenType::COLON, "variable declaration"); return NULL; }
 
 	bool infer_type = try_consume(TokenType::ASSIGN).has_value();
-
 	if (!infer_type)
 	{
 		option<Ast_Type> type = parse_type();
