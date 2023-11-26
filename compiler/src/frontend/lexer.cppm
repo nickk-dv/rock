@@ -27,7 +27,7 @@ private:
 	Token lex_number();
 	Token lex_ident();
 	Token lex_symbol();
-	TokenType lex_ident_keyword(StringView str);
+	TokenType lex_ident_to_keyword(StringView str);
 	option<TokenType> lex_symbol_1(u8 c);
 	option<TokenType> lex_symbol_2(u8 c, TokenType type);
 	option<TokenType> lex_symbol_3(u8 c, TokenType type);
@@ -285,16 +285,13 @@ Token Lexer::lex_ident()
 	while (peek().has_value() && is_ident_middle(peek().value())) consume();
 	u32 ident_end = this->cursor;
 	
-	token.type = TokenType::IDENT;
 	token.source_str = StringView { .data = this->source.data + ident_start, .count = ident_end - ident_start };
-
-	TokenType keyword = lex_ident_keyword(token.source_str);
-	switch (keyword)
+	token.type = lex_ident_to_keyword(token.source_str);
+	switch (token.type)
 	{
-	case TokenType::ERROR: break;
 	case TokenType::KEYWORD_TRUE:  { token.type = TokenType::LITERAL_BOOL; token.literal_bool = true; } break;
 	case TokenType::KEYWORD_FALSE: { token.type = TokenType::LITERAL_BOOL; token.literal_bool = false; } break;
-	default: token.type = keyword; break;
+	default: break;
 	}
 
 	return token;
@@ -324,7 +321,23 @@ Token Lexer::lex_symbol()
 	return token;
 }
 
-static const std::unordered_map<u64, TokenType> keyword_map =
+u64 hash_str_unique_64(StringView str)
+{
+	u64 hash = 0;
+	for (u32 i = 0; i < str.count; i++)
+		hash = (hash << 7) | (u64)str.data[i];
+	return hash;
+}
+
+consteval u64 hash_cstr_unique_64(const char* cstr)
+{
+	u64 hash = 0;
+	for (u32 i = 0; i < 9 && cstr[i] != '\0'; i++)
+		hash = (hash << 7) | (u64)cstr[i];
+	return hash;
+}
+
+const std::unordered_map<u64, TokenType> keyword_map =
 {
 	{ hash_cstr_unique_64("pub"),      TokenType::KEYWORD_PUB },
 	{ hash_cstr_unique_64("mut"),      TokenType::KEYWORD_MUT },
@@ -362,12 +375,12 @@ static const std::unordered_map<u64, TokenType> keyword_map =
 	{ hash_cstr_unique_64("string"),   TokenType::KEYWORD_STRING },
 };
 
-TokenType Lexer::lex_ident_keyword(StringView str)
+TokenType Lexer::lex_ident_to_keyword(StringView str)
 {
-	if (str.count > 8 || str.count < 2) return TokenType::ERROR;
-	u64 hash = str.hash_unique_64();
+	if (str.count > 8 || str.count < 2) return TokenType::IDENT;
+	u64 hash = hash_str_unique_64(str);
 	bool is_keyword = keyword_map.find(hash) != keyword_map.end();
-	return is_keyword ? keyword_map.at(hash) : TokenType::ERROR;
+	return is_keyword ? keyword_map.at(hash) : TokenType::IDENT;
 }
 
 option<TokenType> Lexer::lex_symbol_1(u8 c)

@@ -95,7 +95,7 @@ bool check_context_block_contains_var(Check_Context* cc, Ast_Ident ident)
 {
 	for (Var_Info& var : cc->var_stack)
 	{
-		if (match_ident(var.ident, ident)) return true;
+		if (var.ident == ident) return true;
 	}
 	return false;
 }
@@ -104,7 +104,7 @@ option<Ast_Type> check_context_block_find_var_type(Check_Context* cc, Ast_Ident 
 {
 	for (Var_Info& var : cc->var_stack)
 	{
-		if (match_ident(var.ident, ident)) return var.type;
+		if (var.ident == ident) return var.type;
 	}
 	return {};
 }

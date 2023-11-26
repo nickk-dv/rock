@@ -64,8 +64,6 @@ struct Ast_Access;
 struct Ast_Array_Init;
 struct Ast_Struct_Init;
 
-export bool match_ident(Ast_Ident& a, Ast_Ident& b);
-
 export struct Ast
 {
 	Ast_Source* source;
@@ -75,7 +73,11 @@ export struct Ast
 export struct Ast_Ident
 {
 	Span span;
+	u32 hash;
 	StringView str;
+
+	bool operator== (const Ast_Ident& other) const { return this->str == other.str; }
+	bool operator!= (const Ast_Ident& other) const { return !(*this == other); }
 };
 
 export struct Ast_Source
@@ -810,15 +812,3 @@ export struct Ast_Struct_Init
 		} resolved;
 	};
 };
-
-module : private;
-
-bool match_ident(Ast_Ident& a, Ast_Ident& b)
-{
-	return match_string_view(a.str, b.str);
-}
-
-u32 hash_ident(Ast_Ident& ident)
-{
-	return ident.str.hash_fnv1a_32();
-}

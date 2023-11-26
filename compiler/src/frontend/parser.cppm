@@ -33,9 +33,10 @@ private:
 #define span_end(node) node->span.start = start; node->span.end = get_span_end()
 #define span_end_dot(node) node.span.start = start; node.span.end = get_span_end()
 
-Ast_Ident token_to_ident(const Token& token)
+Ast_Ident token_to_ident(Token token)
 {
-	return Ast_Ident{ token.span, token.source_str };
+	u32 hash = token.source_str.hash_fnv1a_32();
+	return Ast_Ident{ token.span, hash, token.source_str };
 }
 
 namespace fs = std::filesystem;
@@ -337,7 +338,8 @@ Ast* Parser::parse_ast(StringView source, std::string& filepath)
 	ast->source = this->arena.alloc<Ast_Source>();
 	ast->source->str = source;
 	ast->source->filepath = std::string(filepath);
-	
+	ast->source->line_spans = {};
+
 	this->ast = ast;
 	this->peek_index = 0;
 	this->lexer.init(source, &this->strings, &ast->source->line_spans);

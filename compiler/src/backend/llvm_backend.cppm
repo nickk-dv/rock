@@ -1,14 +1,20 @@
-#include "llvm_backend.h"
-
+module;
+#include <stdio.h>
 #include "llvm-c/Core.h"
 #include "llvm-c/Analysis.h"
 #include "llvm-c/TargetMachine.h"
-#include <stdio.h>
+
+export module llmv_backend;
+
+export void backend_build_module(LLVMModuleRef module);
+export void backend_run();
+void backend_verify_module(LLVMModuleRef module);
+void backend_run_clang();
 
 void backend_build_module(LLVMModuleRef mod)
 {
 	backend_verify_module(mod);
-
+	
 	//@Todo setup ErrorHandler from ErrorHandling.h to not crash with exit(1)
 	//even during IR building for dev period
 	//@Performance: any benefits of doing only init for one platform?

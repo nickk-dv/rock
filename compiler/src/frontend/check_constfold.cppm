@@ -1,4 +1,61 @@
-#include "check_constfold.h"
+module;
+#include <cstdint>
+export module check_constfold;
+
+import general;
+import ast;
+import check_context;
+import err_handler;
+
+struct Literal;
+enum class Literal_Kind;
+
+enum class Expr_Constness //@copy from check_type
+{
+	Normal,
+	Const,
+};
+
+struct Expr_Context //@copy from check_type
+{
+	option<Ast_Type> expect_type;
+	Expr_Constness constness;
+};
+
+export option<Ast_Type> check_constfold_expr(Check_Context* cc, Expr_Context context, Ast_Expr* expr);
+module : private;
+
+option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr);
+option<Ast_Type> constfold_range_check(Check_Context* cc, Expr_Context context, Ast_Expr* expr, Literal lit);
+option<Literal> constfold_literal_from_folded_expr(Ast_Folded_Expr folded);
+option<Literal> constfold_term_var(Check_Context* cc, Ast_Var* var);
+option<Literal> constfold_term_enum(Ast_Enum* _enum);
+option<Literal> constfold_term_cast(Check_Context* cc, Ast_Cast* cast);
+option<Literal> constfold_term_sizeof(Ast_Sizeof* size_of);
+option<Literal> constfold_term_literal(Ast_Literal* literal);
+option<Literal> constfold_unary_minus(Check_Context* cc, Literal rhs);
+option<Literal> constfold_unary_logic_not(Check_Context* cc, Literal rhs);
+option<Literal> constfold_unary_bitwise_not(Check_Context* cc, Literal rhs);
+option<Literal> constfold_unary_address_of(Check_Context* cc, Literal rhs);
+option<Literal> constfold_unary_dereference(Check_Context* cc, Literal rhs);
+option<Literal> constfold_binary_logic_and(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_logic_or(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_less(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_greater(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_less_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_greater_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_is_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_not_equals(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_plus(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_minus(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_times(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_div(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_mod(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_bitwise_and(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_bitwise_or(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_bitwise_xor(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_bitshift_left(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
+option<Literal> constfold_binary_bitshift_right(Check_Context* cc, Literal lhs, Literal rhs, Literal_Kind kind);
 
 enum class Literal_Kind
 {
@@ -58,22 +115,22 @@ option<Ast_Type> check_constfold_expr(Check_Context* cc, Expr_Context context, A
 
 option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr)
 {
-	switch (expr->tag)
+	switch (expr->tag())
 	{
-	case Ast_Expr_Tag::Term:
+	case Ast_Expr::Tag::Term:
 	{
 		Ast_Term* term = expr->as_term;
-		switch (term->tag)
+		switch (term->tag())
 		{
-		case Ast_Term_Tag::Var:     return constfold_term_var(cc, term->as_var);
-		case Ast_Term_Tag::Enum:    return constfold_term_enum(term->as_enum);
-		case Ast_Term_Tag::Cast:    return constfold_term_cast(cc, term->as_cast);
-		case Ast_Term_Tag::Sizeof:  return constfold_term_sizeof(term->as_sizeof);
-		case Ast_Term_Tag::Literal: return constfold_term_literal(term->as_literal);
+		case Ast_Term::Tag::Var:     return constfold_term_var(cc, term->as_var);
+		case Ast_Term::Tag::Enum:    return constfold_term_enum(term->as_enum);
+		case Ast_Term::Tag::Cast:    return constfold_term_cast(cc, term->as_cast);
+		case Ast_Term::Tag::Sizeof:  return constfold_term_sizeof(term->as_sizeof);
+		case Ast_Term::Tag::Literal: return constfold_term_literal(term->as_literal);
 		default: { err_internal("constfold_literal_from_expr: invalid Ast_Term_Tag"); return {}; }
 		}
 	}
-	case Ast_Expr_Tag::Unary:
+	case Ast_Expr::Tag::Unary:
 	{
 		Ast_Unary_Expr* unary_expr = expr->as_unary_expr;
 		option<Literal> rhs_result = constfold_literal_from_expr(cc, unary_expr->right);
@@ -93,7 +150,7 @@ option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr)
 		default: { err_internal("constfold_literal_from_expr: invalid UnaryOp"); return {}; }
 		}
 	}
-	case Ast_Expr_Tag::Binary:
+	case Ast_Expr::Tag::Binary:
 	{
 		Ast_Binary_Expr* binary_expr = expr->as_binary_expr;
 		option<Literal> lhs_result = constfold_literal_from_expr(cc, binary_expr->left);
@@ -130,7 +187,7 @@ option<Literal> constfold_literal_from_expr(Check_Context* cc, Ast_Expr* expr)
 		default: { err_internal("constfold_literal_from_expr: invalid BinaryOp"); return {}; }
 		}
 	}
-	case Ast_Expr_Tag::Folded:
+	case Ast_Expr::Tag::Folded:
 	{
 		return constfold_literal_from_folded_expr(expr->as_folded_expr);
 	}
@@ -174,7 +231,7 @@ option<Ast_Type> constfold_range_check(Check_Context* cc, Expr_Context context, 
 		if (context.expect_type)
 		{
 			Ast_Type type = context.expect_type.value();
-			if (type.tag == Ast_Type_Tag::Basic)
+			if (type.tag() == Ast_Type::Tag::Basic)
 			{
 				BasicType basic_type = type.as_basic;
 				default_type = false;
@@ -237,7 +294,7 @@ option<Ast_Type> constfold_range_check(Check_Context* cc, Expr_Context context, 
 		if (context.expect_type)
 		{
 			Ast_Type type = context.expect_type.value();
-			if (type.tag == Ast_Type_Tag::Basic)
+			if (type.tag() == Ast_Type::Tag::Basic)
 			{
 				BasicType basic_type = type.as_basic;
 				default_type = false;
@@ -300,10 +357,12 @@ option<Ast_Type> constfold_range_check(Check_Context* cc, Expr_Context context, 
 	} break;
 	default: { err_internal("constfold_range_check: invalid Literal_Kind"); return {}; }
 	}
+
+	expr->set_folded(folded);
 	
-	expr->tag = Ast_Expr_Tag::Folded;
-	expr->as_folded_expr = folded;
-	return type_from_basic(folded.basic_type);
+	Ast_Type type = {};
+	type.set_basic(folded.basic_type);
+	return type;
 }
 
 option<Literal> constfold_literal_from_folded_expr(Ast_Folded_Expr folded)
@@ -378,13 +437,12 @@ option<Literal> constfold_term_sizeof(Ast_Sizeof* size_of)
 
 option<Literal> constfold_term_literal(Ast_Literal* literal)
 {
-	Token token = literal->token;
-	switch (token.type)
+	switch (literal->tag())
 	{
-	case TokenType::BOOL_LITERAL:    return Literal(token.bool_value);
-	case TokenType::FLOAT_LITERAL:   return Literal(token.float64_value);
-	case TokenType::INTEGER_LITERAL: return Literal(token.integer_value);
-	default: { err_internal("constfold_term_literal: invalid TokenType"); return {}; }
+	case Ast_Literal::Tag::Uint: return Literal(literal->as_u64);
+	case Ast_Literal::Tag::Float: return Literal(literal->as_f64);
+	case Ast_Literal::Tag::Bool: return Literal(literal->as_bool);
+	default: { err_internal("constfold_term_literal: invalid Ast_Literal::Tag"); return {}; }
 	}
 }
 

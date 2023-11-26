@@ -33,6 +33,45 @@ void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl);
 
 module : private;
 
+struct Module_Scope
+{
+	Ast* ast;
+	HashMap<Ast_Ident, Ast_Decl*> decl_map;
+};
+
+void module_scope_init(Module_Scope* module_scope, Ast* ast)
+{
+	for (Ast_Decl* decl : ast->decls)
+	{
+		switch (decl->tag())
+		{
+		case Ast_Decl::Tag::Impl: continue;
+		case Ast_Decl::Tag::Import: continue;
+		default: break;
+		}
+
+		Ast_Ident ident = {};
+
+		switch (decl->tag())
+		{
+		case Ast_Decl::Tag::Proc: ident = decl->as_proc->ident; break;
+		case Ast_Decl::Tag::Enum: ident = decl->as_enum->ident; break;
+		case Ast_Decl::Tag::Struct: ident = decl->as_struct->ident; break;
+		case Ast_Decl::Tag::Global: ident = decl->as_global->ident; break;
+		default: break; //@err
+		}
+
+		option<Ast_Decl*> duplicate = module_scope->decl_map.find(ident);
+		if (duplicate)
+		{
+			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
+			continue;
+		}
+
+		module_scope->decl_map.add(ident, decl);
+	}
+}
+
 bool check_program(Ast_Program* program)
 {
 	Check_Context cc = {};
@@ -40,10 +79,15 @@ bool check_program(Ast_Program* program)
 
 	check_module_tree(&program->root);
 
+
 	for (Ast* ast : program->modules)
 	{
-		check_context_init(&cc, ast, program);
-		check_decls_symbols(&cc);
+		//check_context_init(&cc, ast, program);
+		//check_decls_symbols(&cc);
+
+		Module_Scope module_scope = { .ast = ast };
+		module_scope.decl_map.init(256);
+		module_scope_init(&module_scope, ast);
 	}
 	
 	check_main_entry_point(program);
@@ -646,7 +690,7 @@ void check_module_tree(Ast_Module_Tree* node)
 				if (i == k) continue;
 				Ast_Module_Tree* module_a = &node->submodules[i];
 				Ast_Module_Tree* module_b = &node->submodules[k];
-				if (match_ident(module_a->ident, module_b->ident))
+				if (module_a->ident == module_b->ident)
 				{
 					conflict_found = true;
 					if (module_a->leaf_ast && !module_b->leaf_ast) conflict_index = i;
@@ -690,7 +734,7 @@ Ast* check_module_list(Check_Context* cc, std::vector<Ast_Ident>& modules)
 		bool found = false;
 		for (Ast_Module_Tree& module : node->submodules)
 		{
-			if (match_ident(ident, module.ident))
+			if (ident == module.ident)
 			{
 				found = true;
 				node = &module;
