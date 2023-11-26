@@ -19,15 +19,15 @@ struct Tree
 
 	Tree(u64 block_size, T root_value)
 	{
-		arena_init(&arena, block_size);
-		root = arena_alloc<Tree_Node<T>>(&arena);
+		arena.init(block_size);
+		root = arena.alloc<Tree_Node<T>>();
 		root->value = root_value;
 		root->parent = nullptr;
 		root->first_child = nullptr;
 		root->next_sibling = nullptr;
 	}
 
-	~Tree() { arena_deinit(&arena); }
+	~Tree() { arena.deinit(); }
 };
 
 export template<typename T>

@@ -51,7 +51,7 @@ void Arena::deinit()
 template<typename T>
 T* Arena::alloc()
 {
-	return alloc_buffer<T>(arena, 1);
+	return alloc_buffer<T>(1);
 }
 
 template<typename T>

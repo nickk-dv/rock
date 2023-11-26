@@ -1,4 +1,4 @@
-export module parse_cmd;
+export module cmd;
 
 import general;
 import parser;

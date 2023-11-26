@@ -1,7 +1,6 @@
 export module lexer;
 
 import general;
-import ast;
 import token;
 import <unordered_map>;
 
@@ -39,11 +38,11 @@ private:
 
 module : private;
 
-static bool is_number(u8 c)       { return c >= '0' && c <= '9'; }
-static bool is_letter(u8 c)       { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-static bool is_whitespace(u8 c)   { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
-static bool is_ident_start(u8 c)  { return c == '_' || is_letter(c); }
-static bool is_ident_middle(u8 c) { return c == '_' || is_letter(c) || is_number(c); }
+bool is_number(u8 c)       { return c >= '0' && c <= '9'; }
+bool is_letter(u8 c)       { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+bool is_whitespace(u8 c)   { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+bool is_ident_start(u8 c)  { return c == '_' || is_letter(c); }
+bool is_ident_middle(u8 c) { return c == '_' || is_letter(c) || is_number(c); }
 
 enum class Lexeme
 {
@@ -161,8 +160,8 @@ Token Lexer::lex_char()
 	if (peek().value() != '\'') return token; //@err missing '
 	consume();
 	
-	token.type = TokenType::INTEGER_LITERAL;
-	token.integer_value = c; //@ char literal is represented by int literal currently
+	token.type = TokenType::LITERAL_INT;
+	token.literal_u64 = c; //@ char literal is represented by int literal currently
 	return token;
 }
 
@@ -211,8 +210,8 @@ Token Lexer::lex_string()
 	if (peek().value() != '"') return token; //@err missing "
 	consume();
 
-	token.type = TokenType::STRING_LITERAL;
-	token.string_literal_value = this->strings->end_str();
+	token.type = TokenType::LITERAL_STRING;
+	token.literal_string = this->strings->end_str();
 	return token;
 }
 
@@ -252,8 +251,8 @@ Token Lexer::lex_number() //@rework
 
 		if (end != start)
 		{
-			token.type = TokenType::FLOAT_LITERAL;
-			token.float64_value = float64_value;
+			token.type = TokenType::LITERAL_FLOAT;
+			token.literal_f64 = float64_value;
 		}
 	}
 	else
@@ -270,8 +269,8 @@ Token Lexer::lex_number() //@rework
 			integer += c - '0';
 		}
 
-		token.type = TokenType::INTEGER_LITERAL;
-		token.integer_value = integer;
+		token.type = TokenType::LITERAL_INT;
+		token.literal_u64 = integer;
 	}
 
 	return token;
@@ -287,14 +286,14 @@ Token Lexer::lex_ident()
 	u32 ident_end = this->cursor;
 	
 	token.type = TokenType::IDENT;
-	token.string_value = StringView { .data = this->source.data + ident_start, .count = ident_end - ident_start };
+	token.source_str = StringView { .data = this->source.data + ident_start, .count = ident_end - ident_start };
 
-	TokenType keyword = lex_ident_keyword(token.string_value);
+	TokenType keyword = lex_ident_keyword(token.source_str);
 	switch (keyword)
 	{
 	case TokenType::ERROR: break;
-	case TokenType::KEYWORD_TRUE:  { token.type = TokenType::BOOL_LITERAL; token.bool_value = true; } break;
-	case TokenType::KEYWORD_FALSE: { token.type = TokenType::BOOL_LITERAL; token.bool_value = false; } break;
+	case TokenType::KEYWORD_TRUE:  { token.type = TokenType::LITERAL_BOOL; token.literal_bool = true; } break;
+	case TokenType::KEYWORD_FALSE: { token.type = TokenType::LITERAL_BOOL; token.literal_bool = false; } break;
 	default: token.type = keyword; break;
 	}
 
@@ -327,35 +326,38 @@ Token Lexer::lex_symbol()
 
 static const std::unordered_map<u64, TokenType> keyword_map =
 {
-	{ hash_cstr_unique_64("struct"),   TokenType::KEYWORD_STRUCT },
+	{ hash_cstr_unique_64("self"),     TokenType::KEYWORD_SELF },
+	{ hash_cstr_unique_64("impl"),     TokenType::KEYWORD_IMPL },
 	{ hash_cstr_unique_64("enum"),     TokenType::KEYWORD_ENUM },
+	{ hash_cstr_unique_64("struct"),   TokenType::KEYWORD_STRUCT },
+	{ hash_cstr_unique_64("import"),   TokenType::KEYWORD_IMPORT },
+	
 	{ hash_cstr_unique_64("if"),       TokenType::KEYWORD_IF },
 	{ hash_cstr_unique_64("else"),     TokenType::KEYWORD_ELSE },
-	{ hash_cstr_unique_64("true"),     TokenType::KEYWORD_TRUE },
-	{ hash_cstr_unique_64("false"),    TokenType::KEYWORD_FALSE },
 	{ hash_cstr_unique_64("for"),      TokenType::KEYWORD_FOR },
-	{ hash_cstr_unique_64("cast"),     TokenType::KEYWORD_CAST },
 	{ hash_cstr_unique_64("defer"),    TokenType::KEYWORD_DEFER },
 	{ hash_cstr_unique_64("break"),    TokenType::KEYWORD_BREAK },
 	{ hash_cstr_unique_64("return"),   TokenType::KEYWORD_RETURN },
 	{ hash_cstr_unique_64("switch"),   TokenType::KEYWORD_SWITCH },
 	{ hash_cstr_unique_64("continue"), TokenType::KEYWORD_CONTINUE },
+	
+	{ hash_cstr_unique_64("cast"),     TokenType::KEYWORD_CAST },
 	{ hash_cstr_unique_64("sizeof"),   TokenType::KEYWORD_SIZEOF },
-	{ hash_cstr_unique_64("import"),   TokenType::KEYWORD_IMPORT },
-	{ hash_cstr_unique_64("impl"),     TokenType::KEYWORD_IMPL },
-	{ hash_cstr_unique_64("self"),     TokenType::KEYWORD_SELF },
-	{ hash_cstr_unique_64("i8"),       TokenType::TYPE_I8 },
-	{ hash_cstr_unique_64("u8"),       TokenType::TYPE_U8 },
-	{ hash_cstr_unique_64("i16"),      TokenType::TYPE_I16 },
-	{ hash_cstr_unique_64("u16"),      TokenType::TYPE_U16 },
-	{ hash_cstr_unique_64("i32"),      TokenType::TYPE_I32 },
-	{ hash_cstr_unique_64("u32"),      TokenType::TYPE_U32 },
-	{ hash_cstr_unique_64("i64"),      TokenType::TYPE_I64 },
-	{ hash_cstr_unique_64("u64"),      TokenType::TYPE_U64 },
-	{ hash_cstr_unique_64("f32"),      TokenType::TYPE_F32 },
-	{ hash_cstr_unique_64("f64"),      TokenType::TYPE_F64 },
-	{ hash_cstr_unique_64("bool"),     TokenType::TYPE_BOOL },
-	{ hash_cstr_unique_64("string"),   TokenType::TYPE_STRING },
+	{ hash_cstr_unique_64("true"),     TokenType::KEYWORD_TRUE },
+	{ hash_cstr_unique_64("false"),    TokenType::KEYWORD_FALSE },
+
+	{ hash_cstr_unique_64("i8"),       TokenType::KEYWORD_I8 },
+	{ hash_cstr_unique_64("i16"),      TokenType::KEYWORD_I16 },
+	{ hash_cstr_unique_64("i32"),      TokenType::KEYWORD_I32 },
+	{ hash_cstr_unique_64("i64"),      TokenType::KEYWORD_I64 },
+	{ hash_cstr_unique_64("u8"),       TokenType::KEYWORD_U8 },
+	{ hash_cstr_unique_64("u16"),      TokenType::KEYWORD_U16 },
+	{ hash_cstr_unique_64("u32"),      TokenType::KEYWORD_U32 },
+	{ hash_cstr_unique_64("u64"),      TokenType::KEYWORD_U64 },
+	{ hash_cstr_unique_64("f32"),      TokenType::KEYWORD_F32 },
+	{ hash_cstr_unique_64("f64"),      TokenType::KEYWORD_F64 },
+	{ hash_cstr_unique_64("bool"),     TokenType::KEYWORD_BOOL },
+	{ hash_cstr_unique_64("string"),   TokenType::KEYWORD_STRING },
 };
 
 TokenType Lexer::lex_ident_keyword(StringView str)
@@ -370,18 +372,21 @@ option<TokenType> Lexer::lex_symbol_1(u8 c)
 {
 	switch (c)
 	{
+	case '@': return TokenType::AT;
 	case '.': return TokenType::DOT;
 	case ':': return TokenType::COLON;
 	case ',': return TokenType::COMMA;
 	case ';': return TokenType::SEMICOLON;
+	case '(': return TokenType::PAREN_START;
+	case ')': return TokenType::PAREN_END;
 	case '{': return TokenType::BLOCK_START;
 	case '}': return TokenType::BLOCK_END;
 	case '[': return TokenType::BRACKET_START;
 	case ']': return TokenType::BRACKET_END;
-	case '(': return TokenType::PAREN_START;
-	case ')': return TokenType::PAREN_END;
-	case '@': return TokenType::AT;
-	case '=': return TokenType::ASSIGN;
+	case '!': return TokenType::LOGIC_NOT;
+	case '~': return TokenType::BITWISE_NOT;
+	case '<': return TokenType::LESS;
+	case '>': return TokenType::GREATER;
 	case '+': return TokenType::PLUS;
 	case '-': return TokenType::MINUS;
 	case '*': return TokenType::TIMES;
@@ -390,10 +395,7 @@ option<TokenType> Lexer::lex_symbol_1(u8 c)
 	case '&': return TokenType::BITWISE_AND;
 	case '|': return TokenType::BITWISE_OR;
 	case '^': return TokenType::BITWISE_XOR;
-	case '<': return TokenType::LESS;
-	case '>': return TokenType::GREATER;
-	case '!': return TokenType::LOGIC_NOT;
-	case '~': return TokenType::BITWISE_NOT;
+	case '=': return TokenType::ASSIGN;
 	default: return {};
 	}
 }
@@ -411,7 +413,8 @@ option<TokenType> Lexer::lex_symbol_2(u8 c, TokenType type)
 	{
 		switch (type)
 		{
-		case TokenType::MINUS:   return TokenType::ARROW;
+		case TokenType::MINUS:   return TokenType::ARROW_THIN;
+		case TokenType::ASSIGN:  return TokenType::ARROW_WIDE;
 		case TokenType::GREATER: return TokenType::BITSHIFT_RIGHT;
 		default: return {};
 		}

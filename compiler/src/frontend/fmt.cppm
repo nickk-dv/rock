@@ -11,7 +11,7 @@ import <typeinfo>;
 use methods
 decl spacing, impl proc spacing
 short block info not kept
-expr parentesis not kept
+expr parentesis not kept -idea maybe use span if it captures any parens, or change parser to capture parens in expr span
 decl_proc variadic not kept
 rework switch syntax
 handle & keep comments
@@ -36,8 +36,7 @@ void fmt_space() { printf(" "); }
 
 void fmt_literal(Ast_Literal* literal)
 {
-	Token token = literal->token;
-	for (u32 i = token.span.start; i <= token.span.end; i += 1)
+	for (u32 i = literal->span.start; i <= literal->span.end; i += 1)
 	{
 		printf("%c", fmt_curr_ast->source->str.data[i]);
 	}
@@ -47,83 +46,89 @@ void fmt_token(TokenType type)
 {
 	switch (type)
 	{
-	case TokenType::KEYWORD_STRUCT:     printf("struct"); break;
-	case TokenType::KEYWORD_ENUM:       printf("enum"); break;
-	case TokenType::KEYWORD_IF:         printf("if"); break;
-	case TokenType::KEYWORD_ELSE:       printf("else"); break;
-	case TokenType::KEYWORD_TRUE:       printf("true"); break;
-	case TokenType::KEYWORD_FALSE:      printf("false"); break;
-	case TokenType::KEYWORD_FOR:        printf("for"); break;
-	case TokenType::KEYWORD_CAST:       printf("cast"); break;
-	case TokenType::KEYWORD_DEFER:      printf("defer"); break;
-	case TokenType::KEYWORD_BREAK:      printf("break"); break;
-	case TokenType::KEYWORD_RETURN:     printf("return"); break;
-	case TokenType::KEYWORD_SWITCH:     printf("switch"); break;
-	case TokenType::KEYWORD_CONTINUE:   printf("continue"); break;
-	case TokenType::KEYWORD_SIZEOF:     printf("sizeof"); break;
-	case TokenType::KEYWORD_IMPORT:     printf("import"); break;
-	case TokenType::KEYWORD_IMPL:       printf("impl"); break;
-	case TokenType::KEYWORD_SELF:       printf("self"); break;
+	case TokenType::KEYWORD_SELF:          printf("self"); break;
+	case TokenType::KEYWORD_IMPL:          printf("impl"); break;
+	case TokenType::KEYWORD_ENUM:          printf("enum"); break;
+	case TokenType::KEYWORD_STRUCT:        printf("struct"); break;
+	case TokenType::KEYWORD_IMPORT:        printf("import"); break;
+	
+	case TokenType::KEYWORD_IF:            printf("if"); break;
+	case TokenType::KEYWORD_ELSE:          printf("else"); break;
+	case TokenType::KEYWORD_FOR:           printf("for"); break;
+	case TokenType::KEYWORD_DEFER:         printf("defer"); break;
+	case TokenType::KEYWORD_BREAK:         printf("break"); break;
+	case TokenType::KEYWORD_RETURN:        printf("return"); break;
+	case TokenType::KEYWORD_SWITCH:        printf("switch"); break;
+	case TokenType::KEYWORD_CONTINUE:      printf("continue"); break;
+	
+	case TokenType::KEYWORD_CAST:          printf("cast"); break;
+	case TokenType::KEYWORD_SIZEOF:        printf("sizeof"); break;
+	case TokenType::KEYWORD_TRUE:          printf("true"); break;
+	case TokenType::KEYWORD_FALSE:         printf("false"); break;
 
-	case TokenType::TYPE_I8:            printf("i8"); break;
-	case TokenType::TYPE_U8:            printf("u8"); break;
-	case TokenType::TYPE_I16:           printf("i16"); break;
-	case TokenType::TYPE_U16:           printf("u16"); break;
-	case TokenType::TYPE_I32:           printf("i32"); break;
-	case TokenType::TYPE_U32:           printf("u32"); break;
-	case TokenType::TYPE_I64:           printf("i64"); break;
-	case TokenType::TYPE_U64:           printf("u64"); break;
-	case TokenType::TYPE_F32:           printf("f32"); break;
-	case TokenType::TYPE_F64:           printf("f64"); break;
-	case TokenType::TYPE_BOOL:          printf("bool"); break;
-	case TokenType::TYPE_STRING:        printf("string"); break;
+	case TokenType::KEYWORD_I8:            printf("i8"); break;
+	case TokenType::KEYWORD_I16:           printf("i16"); break;
+	case TokenType::KEYWORD_I32:           printf("i32"); break;
+	case TokenType::KEYWORD_I64:           printf("i64"); break;
+	case TokenType::KEYWORD_U8:            printf("u8"); break;
+	case TokenType::KEYWORD_U16:           printf("u16"); break;
+	case TokenType::KEYWORD_U32:           printf("u32"); break;
+	case TokenType::KEYWORD_U64:           printf("u64"); break;
+	case TokenType::KEYWORD_F32:           printf("f32"); break;
+	case TokenType::KEYWORD_F64:           printf("f64"); break;
+	case TokenType::KEYWORD_BOOL:          printf("bool"); break;
+	case TokenType::KEYWORD_STRING:        printf("string"); break;
 
-	case TokenType::DOT:                printf("."); break;
-	case TokenType::COLON:              printf(":"); break;
-	case TokenType::COMMA:              printf(","); break;
-	case TokenType::SEMICOLON:          printf(";"); break;
-	case TokenType::DOUBLE_DOT:         printf(".."); break;
-	case TokenType::DOUBLE_COLON:       printf("::"); break;
-	case TokenType::BLOCK_START:        printf("{"); break;
-	case TokenType::BLOCK_END:          printf("}"); break;
-	case TokenType::BRACKET_START:      printf("["); break;
-	case TokenType::BRACKET_END:        printf("]"); break;
-	case TokenType::PAREN_START:        printf("("); break;
-	case TokenType::PAREN_END:          printf(")"); break;
-	case TokenType::AT:                 printf("@"); break;
-	case TokenType::HASH:               printf("#"); break;
-	case TokenType::QUESTION:           printf("?"); break;
+	case TokenType::AT:                    printf("@"); break;
+	case TokenType::DOT:                   printf("."); break;
+	case TokenType::COLON:                 printf(":"); break;
+	case TokenType::COMMA:                 printf(","); break;
+	case TokenType::SEMICOLON:             printf(";"); break;
+	case TokenType::DOUBLE_DOT:            printf(".."); break;
+	case TokenType::DOUBLE_COLON:          printf("::"); break;
+	case TokenType::ARROW_THIN:            printf("->"); break;
+	case TokenType::ARROW_WIDE:            printf("=>"); break;
+	case TokenType::PAREN_START:           printf("("); break;
+	case TokenType::PAREN_END:             printf(")"); break;
+	case TokenType::BLOCK_START:           printf("{"); break;
+	case TokenType::BLOCK_END:             printf("}"); break;
+	case TokenType::BRACKET_START:         printf("["); break;
+	case TokenType::BRACKET_END:           printf("]"); break;
 
-	case TokenType::ARROW:              printf("->"); break;
-	case TokenType::ASSIGN:             printf("="); break;
-	case TokenType::PLUS:               printf("+"); break;
-	case TokenType::MINUS:              printf("-"); break;
-	case TokenType::TIMES:              printf("*"); break;
-	case TokenType::DIV:                printf("/"); break;
-	case TokenType::MOD:                printf("%%"); break;
-	case TokenType::BITWISE_AND:        printf("&"); break;
-	case TokenType::BITWISE_OR:         printf("|"); break;
-	case TokenType::BITWISE_XOR:        printf("^"); break;
-	case TokenType::LESS:               printf("<"); break;
-	case TokenType::GREATER:            printf(">"); break;
-	case TokenType::LOGIC_NOT:          printf("!"); break;
-	case TokenType::IS_EQUALS:          printf("=="); break;
-	case TokenType::PLUS_EQUALS:        printf("+="); break;
-	case TokenType::MINUS_EQUALS:       printf("-="); break;
-	case TokenType::TIMES_EQUALS:       printf("*="); break;
-	case TokenType::DIV_EQUALS:         printf("/="); break;
-	case TokenType::MOD_EQUALS:         printf("%%="); break;
-	case TokenType::BITWISE_AND_EQUALS: printf("&="); break;
-	case TokenType::BITWISE_OR_EQUALS:  printf("|="); break;
-	case TokenType::BITWISE_XOR_EQUALS: printf("^="); break;
-	case TokenType::LESS_EQUALS:        printf("<="); break;
-	case TokenType::GREATER_EQUALS:     printf(">="); break;
-	case TokenType::NOT_EQUALS:         printf("!="); break;
-	case TokenType::LOGIC_AND:          printf("&&"); break;
-	case TokenType::LOGIC_OR:           printf("||"); break;
-	case TokenType::BITWISE_NOT:        printf("~"); break;
-	case TokenType::BITSHIFT_LEFT:      printf("<<"); break;
-	case TokenType::BITSHIFT_RIGHT:     printf(">>"); break;
+	case TokenType::LOGIC_NOT:             printf("!"); break;
+	case TokenType::BITWISE_NOT:           printf("~"); break;
+	
+	case TokenType::LOGIC_AND:             printf("&&"); break;
+	case TokenType::LOGIC_OR:              printf("||"); break;
+	case TokenType::LESS:                  printf("<"); break;
+	case TokenType::GREATER:               printf(">"); break;
+	case TokenType::LESS_EQUALS:           printf("<="); break;
+	case TokenType::GREATER_EQUALS:        printf(">="); break;
+	case TokenType::IS_EQUALS:             printf("=="); break;
+	case TokenType::NOT_EQUALS:            printf("!="); break;
+	
+	case TokenType::PLUS:                  printf("+"); break;
+	case TokenType::MINUS:                 printf("-"); break;
+	case TokenType::TIMES:                 printf("*"); break;
+	case TokenType::DIV:                   printf("/"); break;
+	case TokenType::MOD:                   printf("%%"); break;
+	case TokenType::BITWISE_AND:           printf("&"); break;
+	case TokenType::BITWISE_OR:            printf("|"); break;
+	case TokenType::BITWISE_XOR:           printf("^"); break;
+	case TokenType::BITSHIFT_LEFT:         printf("<<"); break;
+	case TokenType::BITSHIFT_RIGHT:        printf(">>"); break;
+	
+	case TokenType::ASSIGN:                printf("="); break;
+	case TokenType::PLUS_EQUALS:           printf("+="); break;
+	case TokenType::MINUS_EQUALS:          printf("-="); break;
+	case TokenType::TIMES_EQUALS:          printf("*="); break;
+	case TokenType::DIV_EQUALS:            printf("/="); break;
+	case TokenType::MOD_EQUALS:            printf("%%="); break;
+	case TokenType::BITWISE_AND_EQUALS:    printf("&="); break;
+	case TokenType::BITWISE_OR_EQUALS:     printf("|="); break;
+	case TokenType::BITWISE_XOR_EQUALS:    printf("^="); break;
+	case TokenType::BITSHIFT_LEFT_EQUALS:  printf("^="); break;
+	case TokenType::BITSHIFT_RIGHT_EQUALS: printf("^="); break;
 	default: err_internal_enum(type); break;
 	}
 }
@@ -190,18 +195,18 @@ void fmt_basic_type(BasicType type)
 {
 	switch (type)
 	{
-	case BasicType::I8:     fmt_token(TokenType::TYPE_I8); break;
-	case BasicType::U8:     fmt_token(TokenType::TYPE_U8); break;
-	case BasicType::I16:    fmt_token(TokenType::TYPE_I16); break;
-	case BasicType::U16:    fmt_token(TokenType::TYPE_U16); break;
-	case BasicType::I32:    fmt_token(TokenType::TYPE_I32); break;
-	case BasicType::U32:    fmt_token(TokenType::TYPE_U32); break;
-	case BasicType::I64:    fmt_token(TokenType::TYPE_I64); break;
-	case BasicType::U64:    fmt_token(TokenType::TYPE_U64); break;
-	case BasicType::F32:    fmt_token(TokenType::TYPE_F32); break;
-	case BasicType::F64:    fmt_token(TokenType::TYPE_F64); break;
-	case BasicType::BOOL:   fmt_token(TokenType::TYPE_BOOL); break;
-	case BasicType::STRING: fmt_token(TokenType::TYPE_STRING); break;
+	case BasicType::I8:     fmt_token(TokenType::KEYWORD_I8); break;
+	case BasicType::I16:    fmt_token(TokenType::KEYWORD_I16); break;
+	case BasicType::I32:    fmt_token(TokenType::KEYWORD_I32); break;
+	case BasicType::I64:    fmt_token(TokenType::KEYWORD_I64); break;
+	case BasicType::U8:     fmt_token(TokenType::KEYWORD_U8); break;
+	case BasicType::U16:    fmt_token(TokenType::KEYWORD_U16); break;
+	case BasicType::U32:    fmt_token(TokenType::KEYWORD_U32); break;
+	case BasicType::U64:    fmt_token(TokenType::KEYWORD_U64); break;
+	case BasicType::F32:    fmt_token(TokenType::KEYWORD_F32); break;
+	case BasicType::F64:    fmt_token(TokenType::KEYWORD_F64); break;
+	case BasicType::BOOL:   fmt_token(TokenType::KEYWORD_BOOL); break;
+	case BasicType::STRING: fmt_token(TokenType::KEYWORD_STRING); break;
 	default: err_internal_enum(type); break;
 	}
 }
@@ -571,7 +576,7 @@ void fmt_type(Ast_Type type)
 		if (procedure->return_type)
 		{
 			fmt_space();
-			fmt_token(TokenType::ARROW);
+			fmt_token(TokenType::ARROW_THIN);
 			fmt_space();
 			fmt_type(procedure->return_type.value());
 		}
@@ -612,7 +617,7 @@ void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 	if (decl->return_type)
 	{
 		fmt_space();
-		fmt_token(TokenType::ARROW);
+		fmt_token(TokenType::ARROW_THIN);
 		fmt_space();
 		fmt_type(decl->return_type.value());
 	}

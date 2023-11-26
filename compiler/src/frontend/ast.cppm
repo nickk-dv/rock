@@ -1,7 +1,6 @@
 export module ast;
 
 import general;
-import token; //@temp limit scope of token visibility later
 
 struct Ast;
 struct Ast_Ident;
@@ -168,16 +167,16 @@ export enum class AssignOp
 export enum class BasicType
 {
 	I8,
-	U8,
 	I16,
-	U16,
 	I32,
-	U32,
 	I64,
+	U8,
+	U16,
+	U32,
 	U64,
-	BOOL,
 	F32,
 	F64,
+	BOOL,
 	STRING,
 };
 
@@ -710,7 +709,32 @@ export struct Ast_Sizeof
 
 export struct Ast_Literal
 {
-	Token token;
+	Span span; //@how needed since theres Expr span
+
+	enum class Tag
+	{
+		Uint,
+		Float,
+		Bool,
+		String,
+	};
+
+	union
+	{
+		u64 as_u64;
+		f64 as_f64;
+		bool as_bool;
+		char* as_string;
+	};
+
+	inline Tag tag() { return tg; }
+	inline void set_u64(u64 literal_u64)         { tg = Tag::Uint;   as_u64 = literal_u64; }
+	inline void set_f64(f64 literal_f64)         { tg = Tag::Float;  as_f64 = literal_f64; }
+	inline void set_bool(bool literal_bool)      { tg = Tag::Bool;   as_bool = literal_bool; }
+	inline void set_string(char* literal_string) { tg = Tag::String; as_string = literal_string; }
+
+private:
+	Tag tg;
 };
 
 export struct Ast_Something

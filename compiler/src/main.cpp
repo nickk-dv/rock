@@ -1,5 +1,5 @@
 import general;
-import parse_cmd;
+import cmd;
 
 i32 main(i32 argc, char** argv)
 {
