@@ -147,6 +147,8 @@ void print_token_type(TokenType type)
 	case TokenType::LITERAL_BOOL:          printf("literal bool"); break;
 	case TokenType::LITERAL_STRING:        printf("literal string"); break;
 
+	case TokenType::KEYWORD_PUB:           printf("pub"); break;
+	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_SELF:          printf("self"); break;
 	case TokenType::KEYWORD_IMPL:          printf("impl"); break;
 	case TokenType::KEYWORD_ENUM:          printf("enum"); break;
@@ -162,7 +164,6 @@ void print_token_type(TokenType type)
 	case TokenType::KEYWORD_SWITCH:        printf("switch"); break;
 	case TokenType::KEYWORD_CONTINUE:      printf("continue"); break;
 
-	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_CAST:          printf("cast"); break;
 	case TokenType::KEYWORD_SIZEOF:        printf("sizeof"); break;
 	case TokenType::KEYWORD_TRUE:          printf("true"); break;

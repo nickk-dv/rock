@@ -430,7 +430,7 @@ Ast_Type_Procedure* Parser::parse_type_procedure()
 	{
 		while (true)
 		{
-			if (peek() == TokenType::IDENT && peek(1) == TokenType::COLON) { consume(); consume(); }
+			if (peek() == TokenType::IDENT && peek(1) == TokenType::COLON) { consume(); consume(); } //@mut not specified in proc type
 			option<Ast_Type> type = parse_type();
 			if (!type) return NULL;
 			procedure->input_types.emplace_back(type.value());
@@ -468,38 +468,40 @@ Ast_Decl* Parser::parse_decl()
 	switch (peek())
 	{
 	case TokenType::IDENT:
+	case TokenType::KEYWORD_PUB:
 	{
-		if (peek(1) == TokenType::DOUBLE_COLON)
+		u32 offset = 0;
+		if (peek() == TokenType::KEYWORD_PUB) offset = 1;
+		if (peek(offset) != TokenType::IDENT)            { err_parse(TokenType::IDENT, "global declaration", 1); return NULL; }
+		if (peek(offset + 1) != TokenType::DOUBLE_COLON) { err_parse(TokenType::DOUBLE_COLON, "global declaration", 1); return NULL; }
+
+		switch (peek(offset + 2))
 		{
-			switch (peek(2))
-			{
-			case TokenType::PAREN_START:
-			{
-				Ast_Decl_Proc* decl_proc = parse_decl_proc(false);
-				if (!decl_proc) return NULL;
-				decl->set_proc(decl_proc);
-			} break;
-			case TokenType::KEYWORD_ENUM:
-			{
-				Ast_Decl_Enum* decl_enum = parse_decl_enum();
-				if (!decl_enum) return NULL;
-				decl->set_enum(decl_enum);
-			} break;
-			case TokenType::KEYWORD_STRUCT:
-			{
-				Ast_Decl_Struct* decl_struct = parse_decl_struct();
-				if (!decl_struct) return NULL;
-				decl->set_struct(decl_struct);
-			} break;
-			default:
-			{
-				Ast_Decl_Global* decl_global = parse_decl_global();
-				if (!decl_global) return NULL;
-				decl->set_global(decl_global);
-			} break;
-			}
+		case TokenType::PAREN_START:
+		{
+			Ast_Decl_Proc* decl_proc = parse_decl_proc(false);
+			if (!decl_proc) return NULL;
+			decl->set_proc(decl_proc);
+		} break;
+		case TokenType::KEYWORD_ENUM:
+		{
+			Ast_Decl_Enum* decl_enum = parse_decl_enum();
+			if (!decl_enum) return NULL;
+			decl->set_enum(decl_enum);
+		} break;
+		case TokenType::KEYWORD_STRUCT:
+		{
+			Ast_Decl_Struct* decl_struct = parse_decl_struct();
+			if (!decl_struct) return NULL;
+			decl->set_struct(decl_struct);
+		} break;
+		default:
+		{
+			Ast_Decl_Global* decl_global = parse_decl_global();
+			if (!decl_global) return NULL;
+			decl->set_global(decl_global);
+		} break;
 		}
-		else { err_parse(TokenType::DOUBLE_COLON, "global declaration", 1); return NULL; }
 	} break;
 	case TokenType::KEYWORD_IMPL: //@when using :: style the :: of decl was parsed as part of the type, causing a missing ident error
 	{
@@ -553,10 +555,17 @@ Ast_Decl_Proc* Parser::parse_decl_proc(bool in_impl)
 {
 	Ast_Decl_Proc* decl = this->arena.alloc<Ast_Decl_Proc>();
 	decl->is_member = in_impl;
-	decl->ident = token_to_ident(consume_get());
-	consume(); consume();
+	
+	if (try_consume(TokenType::KEYWORD_PUB)) decl->is_public = true;
 
-	while (true)
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) { err_parse(TokenType::IDENT, "proc declaration"); return NULL; }
+	decl->ident = token_to_ident(ident.value());
+	
+	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "proc declaration"); return NULL; }
+	if (!try_consume(TokenType::PAREN_START))  { err_parse(TokenType::PAREN_START, "proc declaration"); return NULL; }
+
+	while (true) //@rework to be similar to struct field parse & separate out Param parse
 	{
 		if (try_consume(TokenType::DOUBLE_DOT)) { decl->is_variadic = true; break; }
 
@@ -613,35 +622,40 @@ Ast_Decl_Proc* Parser::parse_decl_proc(bool in_impl)
 Ast_Decl_Enum* Parser::parse_decl_enum()
 {
 	Ast_Decl_Enum* decl = this->arena.alloc<Ast_Decl_Enum>();
-	decl->ident = token_to_ident(consume_get());
-	consume(); consume();
 
-	if (try_consume(TokenType::DOUBLE_COLON))
+	if (try_consume(TokenType::KEYWORD_PUB)) decl->is_public = true;
+
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) { err_parse(TokenType::IDENT, "enum declaration"); return NULL; }
+	decl->ident = token_to_ident(ident.value());
+
+	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "enum declaration"); return NULL; }
+	if (!try_consume(TokenType::KEYWORD_ENUM)) { err_parse(TokenType::KEYWORD_ENUM, "enum declaration"); return NULL; }
+
+	option<BasicType> basic_type = token_to_basic_type(peek());
+	if (basic_type)
 	{
-		option<BasicType> basic_type = token_to_basic_type(peek());
-		//@err basic type set
-		if (!basic_type) { err_parse(TokenType::KEYWORD_I8, "enum declaration"); return NULL; }
 		consume();
 		decl->basic_type = basic_type.value();
 	}
-	else decl->basic_type = BasicType::I32;
 
 	if (!try_consume(TokenType::BLOCK_START)) { err_parse(TokenType::BLOCK_START, "enum declaration"); return NULL; }
-	while (true)
+	while (!try_consume(TokenType::BLOCK_END)) //@separate out Variant parse
 	{
-		option<Token> ident = try_consume(TokenType::IDENT);
-		if (!ident) break;
+		Ast_Enum_Variant variant = {};
 
-		//@Todo optional default assignment with just ';'
+		option<Token> variant_ident = try_consume(TokenType::IDENT);
+		if (!variant_ident) { err_parse(TokenType::IDENT, "struct field definition"); return NULL; }
+		variant.ident = token_to_ident(variant_ident.value());
 
 		if (!try_consume(TokenType::ASSIGN)) { err_parse(TokenType::ASSIGN, "enum variant expression"); return NULL; }
 
 		Ast_Expr* expr = parse_expr();
 		if (!expr) return NULL;
-		Ast_Consteval_Expr* const_expr = parse_consteval_expr(expr);
-		decl->variants.emplace_back(Ast_Enum_Variant{ token_to_ident(ident.value()), const_expr });
+		variant.consteval_expr = parse_consteval_expr(expr);
+
+		decl->variants.emplace_back(variant);
 	}
-	if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "enum declaration"); return NULL; }
 
 	return decl;
 }
@@ -649,32 +663,43 @@ Ast_Decl_Enum* Parser::parse_decl_enum()
 Ast_Decl_Struct* Parser::parse_decl_struct()
 {
 	Ast_Decl_Struct* decl = this->arena.alloc<Ast_Decl_Struct>();
-	decl->ident = token_to_ident(consume_get());
-	consume(); consume();
-	
-	if (!try_consume(TokenType::BLOCK_START)) { err_parse(TokenType::BLOCK_START, "struct declaration"); return NULL; }
-	while (true)
-	{
-		option<Token> field = try_consume(TokenType::IDENT);
-		if (!field) break;
-		if (!try_consume(TokenType::COLON)) { err_parse(TokenType::COLON, "struct field type definition"); return NULL; }
 
+	if (try_consume(TokenType::KEYWORD_PUB)) decl->is_public = true;
+	
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) { err_parse(TokenType::IDENT, "struct declaration"); return NULL; }
+	decl->ident = token_to_ident(ident.value());
+
+	if (!try_consume(TokenType::DOUBLE_COLON))   { err_parse(TokenType::DOUBLE_COLON, "struct declaration"); return NULL; }
+	if (!try_consume(TokenType::KEYWORD_STRUCT)) { err_parse(TokenType::KEYWORD_STRUCT, "struct declaration"); return NULL; }
+	if (!try_consume(TokenType::BLOCK_START))    { err_parse(TokenType::BLOCK_START, "struct declaration"); return NULL; }
+	
+	while (!try_consume(TokenType::BLOCK_END)) //@separate out Field parse
+	{
+		Ast_Struct_Field field = {};
+
+		if (try_consume(TokenType::KEYWORD_PUB)) field.is_public = true;
+		
+		option<Token> field_ident = try_consume(TokenType::IDENT);
+		if (!field_ident) { err_parse(TokenType::IDENT, "struct field definition"); return NULL; }
+		field.ident = token_to_ident(field_ident.value());
+
+		if (!try_consume(TokenType::COLON)) { err_parse(TokenType::COLON, "struct field definition"); return NULL; }
+		
 		option<Ast_Type> type = parse_type();
 		if (!type) return NULL;
+		field.type = type.value();
 
 		if (try_consume(TokenType::ASSIGN))
 		{
 			Ast_Expr* expr = parse_expr();
 			if (!expr) return NULL;
-			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), expr });
+			field.default_expr = expr;
 		}
-		else
-		{
-			decl->fields.emplace_back(Ast_Struct_Field { token_to_ident(field.value()), type.value(), {} });
-			if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "struct field declaration"); return NULL; }
-		}
+		else if (!try_consume(TokenType::SEMICOLON)) { err_parse(TokenType::SEMICOLON, "struct field definition"); return NULL; }
+		
+		decl->fields.emplace_back(field);
 	}
-	if (!try_consume(TokenType::BLOCK_END)) { err_parse(TokenType::BLOCK_END, "struct declaration"); return NULL; }
 
 	return decl;
 }
@@ -682,8 +707,14 @@ Ast_Decl_Struct* Parser::parse_decl_struct()
 Ast_Decl_Global* Parser::parse_decl_global()
 {
 	Ast_Decl_Global* decl = this->arena.alloc<Ast_Decl_Global>();
-	decl->ident = token_to_ident(consume_get());
-	consume();
+
+	if (try_consume(TokenType::KEYWORD_PUB)) decl->is_public = true;
+
+	option<Token> ident = try_consume(TokenType::IDENT);
+	if (!ident) { err_parse(TokenType::IDENT, "global declaration"); return NULL; }
+	decl->ident = token_to_ident(ident.value());
+
+	if (!try_consume(TokenType::DOUBLE_COLON)) { err_parse(TokenType::DOUBLE_COLON, "global declaration"); return NULL; }
 
 	Ast_Expr* expr = parse_expr();
 	if (!expr) return NULL;
@@ -695,6 +726,7 @@ Ast_Decl_Global* Parser::parse_decl_global()
 Ast_Decl_Import* Parser::parse_decl_import()
 {
 	Ast_Decl_Import* decl = this->arena.alloc<Ast_Decl_Import>();
+	
 	if (!try_consume(TokenType::KEYWORD_IMPORT)) { err_parse(TokenType::KEYWORD_IMPORT, "import declaration"); return NULL; }
 
 	option<Token> first_module = try_consume(TokenType::IDENT);

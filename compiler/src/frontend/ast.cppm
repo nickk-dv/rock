@@ -284,6 +284,7 @@ private:
 
 export struct Ast_Decl_Proc
 {
+	bool is_public;
 	Ast_Ident ident;
 	std::vector<Ast_Proc_Param> input_params;
 	option<Ast_Type> return_type;
@@ -310,8 +311,9 @@ export struct Ast_Decl_Impl
 
 export struct Ast_Decl_Enum
 {
+	bool is_public;
 	Ast_Ident ident;
-	BasicType basic_type;
+	option<BasicType> basic_type;
 	std::vector<Ast_Enum_Variant> variants;
 };
 
@@ -323,6 +325,7 @@ export struct Ast_Enum_Variant
 
 export struct Ast_Decl_Struct
 {
+	bool is_public;
 	Ast_Ident ident;
 	std::vector<Ast_Struct_Field> fields;
 	Consteval size_eval;
@@ -332,6 +335,7 @@ export struct Ast_Decl_Struct
 
 export struct Ast_Struct_Field
 {
+	bool is_public;
 	Ast_Ident ident;
 	Ast_Type type;
 	option<Ast_Expr*> default_expr;
@@ -339,6 +343,7 @@ export struct Ast_Struct_Field
 
 export struct Ast_Decl_Global
 {
+	bool is_public;
 	Ast_Ident ident;
 	Ast_Consteval_Expr* consteval_expr;
 	option<Ast_Type> type;

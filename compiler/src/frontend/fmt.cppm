@@ -46,6 +46,8 @@ void fmt_token(TokenType type)
 {
 	switch (type)
 	{
+	case TokenType::KEYWORD_PUB:           printf("pub"); break;
+	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_SELF:          printf("self"); break;
 	case TokenType::KEYWORD_IMPL:          printf("impl"); break;
 	case TokenType::KEYWORD_ENUM:          printf("enum"); break;
@@ -61,7 +63,6 @@ void fmt_token(TokenType type)
 	case TokenType::KEYWORD_SWITCH:        printf("switch"); break;
 	case TokenType::KEYWORD_CONTINUE:      printf("continue"); break;
 	
-	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_CAST:          printf("cast"); break;
 	case TokenType::KEYWORD_SIZEOF:        printf("sizeof"); break;
 	case TokenType::KEYWORD_TRUE:          printf("true"); break;
@@ -599,6 +600,11 @@ void fmt_type(Ast_Type type)
 void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 {
 	fmt_indent(indent);
+	if (decl->is_public)
+	{
+		fmt_token(TokenType::KEYWORD_PUB);
+		fmt_space();
+	}
 	fmt_ident(decl->ident);
 	fmt_space();
 	fmt_token(TokenType::DOUBLE_COLON);
@@ -669,6 +675,11 @@ void fmt_decl_impl(Ast_Decl_Impl* decl)
 
 void fmt_decl_enum(Ast_Decl_Enum* decl)
 {
+	if (decl->is_public)
+	{
+		fmt_token(TokenType::KEYWORD_PUB);
+		fmt_space();
+	}
 	fmt_ident(decl->ident);
 	fmt_space();
 	fmt_token(TokenType::DOUBLE_COLON);
@@ -676,10 +687,11 @@ void fmt_decl_enum(Ast_Decl_Enum* decl)
 	fmt_token(TokenType::KEYWORD_ENUM);
 	fmt_space();
 	
-	fmt_token(TokenType::DOUBLE_COLON); //@basic type isnt known to be implicit / explicit
-	fmt_space();
-	fmt_basic_type(decl->basic_type);
-	fmt_space();
+	if (decl->basic_type)
+	{
+		fmt_basic_type(decl->basic_type.value());
+		fmt_space();
+	}
 
 	if (decl->variants.empty())
 	{
@@ -708,6 +720,11 @@ void fmt_decl_enum(Ast_Decl_Enum* decl)
 
 void fmt_decl_struct(Ast_Decl_Struct* decl)
 {
+	if (decl->is_public)
+	{
+		fmt_token(TokenType::KEYWORD_PUB);
+		fmt_space();
+	}
 	fmt_ident(decl->ident);
 	fmt_space();
 	fmt_token(TokenType::DOUBLE_COLON);
@@ -727,6 +744,11 @@ void fmt_decl_struct(Ast_Decl_Struct* decl)
 		for (Ast_Struct_Field& field : decl->fields)
 		{
 			fmt_tab();
+			if (field.is_public)
+			{
+				fmt_token(TokenType::KEYWORD_PUB);
+				fmt_space();
+			}
 			fmt_ident(field.ident);
 			fmt_token(TokenType::COLON);
 			fmt_space();
@@ -748,6 +770,11 @@ void fmt_decl_struct(Ast_Decl_Struct* decl)
 
 void fmt_decl_global(Ast_Decl_Global* decl) //@support dense 1 liners?
 {
+	if (decl->is_public)
+	{
+		fmt_token(TokenType::KEYWORD_PUB);
+		fmt_space();
+	}
 	fmt_ident(decl->ident);
 	fmt_space();
 	fmt_token(TokenType::DOUBLE_COLON);

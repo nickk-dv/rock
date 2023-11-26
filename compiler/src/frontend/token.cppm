@@ -10,6 +10,8 @@ export enum class TokenType
 	LITERAL_BOOL,          // true false
 	LITERAL_STRING,        // "string"
 
+	KEYWORD_PUB,           // pub
+	KEYWORD_MUT,           // mut
 	KEYWORD_SELF,          // self
 	KEYWORD_IMPL,          // impl
 	KEYWORD_ENUM,          // enum
@@ -25,7 +27,6 @@ export enum class TokenType
 	KEYWORD_SWITCH,        // switch
 	KEYWORD_CONTINUE,      // continue
 	
-	KEYWORD_MUT,           // mut
 	KEYWORD_CAST,          // cast
 	KEYWORD_SIZEOF,        // sizeof
 	KEYWORD_TRUE,          // true
