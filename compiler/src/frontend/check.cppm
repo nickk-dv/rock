@@ -39,9 +39,9 @@ struct Module_Scope
 	HashMap<Ast_Ident, Ast_Decl*> decl_map;
 };
 
-void module_scope_init(Module_Scope* module_scope, Ast* ast)
+void module_scope_populate_decl_map(Module_Scope* module_scope)
 {
-	for (Ast_Decl* decl : ast->decls)
+	for (Ast_Decl* decl : module_scope->ast->decls)
 	{
 		switch (decl->tag())
 		{
@@ -58,36 +58,86 @@ void module_scope_init(Module_Scope* module_scope, Ast* ast)
 		case Ast_Decl::Tag::Enum: ident = decl->as_enum->ident; break;
 		case Ast_Decl::Tag::Struct: ident = decl->as_struct->ident; break;
 		case Ast_Decl::Tag::Global: ident = decl->as_global->ident; break;
-		default: break; //@err
+		default: break; //@enum err
 		}
 
 		option<Ast_Decl*> duplicate = module_scope->decl_map.find(ident);
-		if (duplicate)
-		{
-			err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
-			continue;
-		}
+		if (!duplicate) module_scope->decl_map.add(ident, decl);
+		else err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
+	}
+}
 
-		module_scope->decl_map.add(ident, decl);
+void module_scope_process_imports(Module_Scope* module_scope)
+{
+	for (Ast_Decl* decl : module_scope->ast->decls)
+	{
+		if (decl->tag() != Ast_Decl::Tag::Import) continue;
+
+		Ast_Decl_Import* import_decl = decl->as_import;
+
+		//check modules chain to be valid
+
+		if (!import_decl->target) continue;
+		Ast_Import_Target* import_target = import_decl->target.value();
+
+		switch (import_target->tag())
+		{
+		case Ast_Import_Target::Tag::Wildcard:
+		{
+			//must be a file module
+			//add all symbols, with duplicate checks
+		} break;
+		case Ast_Import_Target::Tag::Symbol_List:
+		{
+			//must be a file module
+			//add all symbols, with duplicate checks
+		} break;
+		case Ast_Import_Target::Tag::Symbol_Or_Module:
+		{
+			//determine is it module or symbol
+			//symbol: add, with duplicate checks
+		} break;
+		}
+	}
+}
+
+void module_scope_process_impls(Module_Scope* module_scope)
+{
+	for (Ast_Decl* decl : module_scope->ast->decls)
+	{
+		if (decl->tag() != Ast_Decl::Tag::Impl) continue;
+
+		//@todo
 	}
 }
 
 bool check_program(Ast_Program* program)
 {
+	Arena arena = {};
+	arena.init(1024 * 1024); //@idk size
+
+	std::vector<Module_Scope*> module_scopes = {};
+	for (Ast* ast : program->modules)
+	{
+		Module_Scope* module_scope = arena.alloc<Module_Scope>();
+		module_scope->ast = ast;
+		module_scope->decl_map.init(256);
+	}
+
+	for (Module_Scope* module_scope : module_scopes) module_scope_populate_decl_map(module_scope);
+	for (Module_Scope* module_scope : module_scopes) module_scope_process_imports(module_scope);
+	for (Module_Scope* module_scope : module_scopes) module_scope_process_impls(module_scope);
+	
 	Check_Context cc = {};
 	//program->external_proc_table.init(256);
 
 	check_module_tree(&program->root);
 
-
 	for (Ast* ast : program->modules)
 	{
+
 		//check_context_init(&cc, ast, program);
 		//check_decls_symbols(&cc);
-
-		Module_Scope module_scope = { .ast = ast };
-		module_scope.decl_map.init(256);
-		module_scope_init(&module_scope, ast);
 	}
 	
 	check_main_entry_point(program);
