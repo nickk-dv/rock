@@ -19,9 +19,9 @@ struct ErrorMessage
 
 export bool err_get_status();
 export void err_report(Error error);
-export void err_report_parse(Ast* source, TokenType expected, option<const char*> in, Token token);
-export void err_context(Check_Context* cc);
-export void err_context(Check_Context* cc, Span span);
+export void err_report_parse(Ast_Source* source, TokenType expected, option<const char*> in, Token token);
+export void err_context(Ast_Source* source);
+export void err_context(Ast_Source* source, Span span);
 export void err_context(const char* message);
 export void err_internal(const char* message);
 ErrorMessage err_get_message(Error error);
@@ -151,7 +151,7 @@ void err_report(Error error)
 	printf("hint:  %s\n", message.hint);
 }
 
-void err_report_parse(Ast* source, TokenType expected, option<const char*> in, Token token)
+void err_report_parse(Ast_Source* source, TokenType expected, option<const char*> in, Token token)
 {
 	error_status = true;
 	
@@ -165,21 +165,21 @@ void err_report_parse(Ast* source, TokenType expected, option<const char*> in, T
 	if (in) printf(" in %s\n", in.value());
 	if (token.type == TokenType::INPUT_END)
 	{
-		printf("%s '", source->source->filepath.c_str());
+		printf("%s '", source->filepath.c_str());
 		print_token_type(TokenType::INPUT_END);
 		printf("'\n");
 	}
 	else print_span_context(source, token.span);
 }
 
-void err_context(Check_Context* cc)
+void err_context(Ast_Source* source)
 {
-	printf("%s: ", cc->ast->source->filepath.c_str());
+	printf("%s: ", source->filepath.c_str());
 }
 
-void err_context(Check_Context* cc, Span span)
+void err_context(Ast_Source* source, Span span)
 {
-	print_span_context(cc->ast, span);
+	print_span_context(source, span);
 }
 
 void err_context(const char* message)

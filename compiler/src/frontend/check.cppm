@@ -26,11 +26,6 @@ void check_stmt_switch(Check_Context* cc, Ast_Stmt_Switch* _switch);
 void check_stmt_var_decl(Check_Context* cc, Ast_Stmt_Var_Decl* var_decl);
 void check_stmt_var_assign(Check_Context* cc, Ast_Stmt_Var_Assign* var_assign);
 
-void check_module_tree(Ast_Module_Tree* node);
-Ast* check_module_access(Check_Context* cc, option<Ast_Module_Access*> option_module_access);
-Ast* check_module_list(Check_Context* cc, std::vector<Ast_Ident>& modules);
-void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl);
-
 module : private;
 
 struct Module_Scope
@@ -39,31 +34,31 @@ struct Module_Scope
 	HashMap<Ast_Ident, Ast_Decl*> decl_map;
 };
 
+void module_scope_try_add_symbol(Module_Scope* module_scope, Ast_Decl* decl)
+{
+	Ast_Ident ident;
+	switch (decl->tag())
+	{
+	case Ast_Decl::Tag::Proc: ident = decl->as_proc->ident; break;
+	case Ast_Decl::Tag::Enum: ident = decl->as_enum->ident; break;
+	case Ast_Decl::Tag::Struct: ident = decl->as_struct->ident; break;
+	case Ast_Decl::Tag::Global: ident = decl->as_global->ident; break;
+	default: return;
+	}
+
+	option<Ast_Decl*> duplicate = module_scope->decl_map.find(ident);
+	if (duplicate)
+	{
+		err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
+	}
+	else module_scope->decl_map.add(ident, decl);
+}
+
 void module_scope_populate_decl_map(Module_Scope* module_scope)
 {
 	for (Ast_Decl* decl : module_scope->ast->decls)
 	{
-		switch (decl->tag())
-		{
-		case Ast_Decl::Tag::Impl: continue;
-		case Ast_Decl::Tag::Import: continue;
-		default: break;
-		}
-
-		Ast_Ident ident = {};
-
-		switch (decl->tag())
-		{
-		case Ast_Decl::Tag::Proc: ident = decl->as_proc->ident; break;
-		case Ast_Decl::Tag::Enum: ident = decl->as_enum->ident; break;
-		case Ast_Decl::Tag::Struct: ident = decl->as_struct->ident; break;
-		case Ast_Decl::Tag::Global: ident = decl->as_global->ident; break;
-		default: break; //@enum err
-		}
-
-		option<Ast_Decl*> duplicate = module_scope->decl_map.find(ident);
-		if (!duplicate) module_scope->decl_map.add(ident, decl);
-		else err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
+		module_scope_try_add_symbol(module_scope, decl);
 	}
 }
 
@@ -122,43 +117,46 @@ bool check_program(Ast_Program* program)
 		Module_Scope* module_scope = arena.alloc<Module_Scope>();
 		module_scope->ast = ast;
 		module_scope->decl_map.init(256);
+		module_scopes.emplace_back(module_scope);
 	}
 
 	for (Module_Scope* module_scope : module_scopes) module_scope_populate_decl_map(module_scope);
 	for (Module_Scope* module_scope : module_scopes) module_scope_process_imports(module_scope);
 	for (Module_Scope* module_scope : module_scopes) module_scope_process_impls(module_scope);
 	
-	Check_Context cc = {};
+	//Check_Context cc = {};
 	//program->external_proc_table.init(256);
 
-	check_module_tree(&program->root);
-
-	for (Ast* ast : program->modules)
-	{
-
-		//check_context_init(&cc, ast, program);
-		//check_decls_symbols(&cc);
-	}
-	
-	check_main_entry_point(program);
-
-	for (Ast* ast : program->modules)
-	{
-		check_context_init(&cc, ast, program);
-		//@disabled check_decls_consteval(&cc);
-	}
-
-	for (Ast* ast : program->modules)
-	{
-		check_context_init(&cc, ast, program);
-		//@disabled check_decls_finalize(&cc);
-	}
-
-	for (Ast* ast : program->modules)
-	{
-		check_context_init(&cc, ast, program);
-		//@disabled check_proc_blocks(&cc);
-	}
+	//check_module_tree(&program->root);
+	//
+	//for (Ast* ast : program->modules)
+	//{
+	//
+	//	//check_context_init(&cc, ast, program);
+	//	//check_decls_symbols(&cc);
+	//}
+	//
+	//check_main_entry_point(program);
+	//
+	//for (Ast* ast : program->modules)
+	//{
+	//	check_context_init(&cc, ast, program);
+	//	//@disabled check_decls_consteval(&cc);
+	//}
+	//
+	//for (Ast* ast : program->modules)
+	//{
+	//	check_context_init(&cc, ast, program);
+	//	//@disabled check_decls_finalize(&cc);
+	//}
+	//
+	//for (Ast* ast : program->modules)
+	//{
+	//	check_context_init(&cc, ast, program);
+	//	//@disabled check_proc_blocks(&cc);
+	//}
+	//
+	//return !err_get_status();
 
 	return !err_get_status();
 }
@@ -724,120 +722,3 @@ void check_stmt_var_assign(Check_Context* cc, Ast_Stmt_Var_Assign* var_assign)
 	check_expr_type(cc, var_assign->expr, var_type.value(), Expr_Constness::Normal);
 }
 */
-void check_module_tree(Ast_Module_Tree* node)
-{	
-	return; //@remove ruins the data reword the allocation of the tree, and store pointers to the nodes from arena allocator
-	bool conflict_found;
-	do
-	{
-		conflict_found = false;
-		u32 conflict_index = 0;
-
-		for (u32 i = 0; i < node->submodules.size(); i += 1)
-		{
-			for (u32 k = 0; k < node->submodules.size(); k += 1)
-			{
-				if (i == k) continue;
-				Ast_Module_Tree* module_a = &node->submodules[i];
-				Ast_Module_Tree* module_b = &node->submodules[k];
-				if (module_a->ident == module_b->ident)
-				{
-					conflict_found = true;
-					if (module_a->leaf_ast && !module_b->leaf_ast) conflict_index = i;
-					else conflict_index = k;
-					break;
-				}
-			}
-			if (conflict_found) break;
-		}
-
-		if (conflict_found)
-		{
-			err_internal("check_module_tree: conflict modules, only folder or file module can exist in sigle module");
-			//err_context(node->submodules[conflict_index].leaf_ast.value()->filepath.c_str());
-			node->submodules.erase(node->submodules.begin() + conflict_index);
-		}
-	}
-	while (conflict_found);
-
-	for (u32 i = 0; i < node->submodules.size(); i += 1)
-	{
-		check_module_tree(&node->submodules[i]);
-	}
-}
-
-Ast* check_module_access(Check_Context* cc, option<Ast_Module_Access*> module_access)
-{
-	if (!module_access) return cc->ast;
-	return check_module_list(cc, module_access.value()->modules);
-}
-
-Ast* check_module_list(Check_Context* cc, std::vector<Ast_Ident>& modules)
-{
-	if (modules.empty()) return cc->ast;
-
-	Ast_Module_Tree* node = &cc->program->root;
-	Ast_Ident node_ident = {};
-
-	for (Ast_Ident& ident : modules)
-	{
-		bool found = false;
-		for (Ast_Module_Tree& module : node->submodules)
-		{
-			if (ident == module.ident)
-			{
-				found = true;
-				node = &module;
-				node_ident = ident;
-				break;
-			}
-		}
-		if (!found)
-		{
-			err_internal("check_module_list: module not found");
-			err_context(cc, ident.span);
-			return NULL;
-		}
-	}
-
-	//@restructure
-	//@this check is valid for module access 
-	//@but in import decl the last identifier might be a module, and this check might need to be delayed
-	if (!node->leaf_ast)
-	{
-		err_internal("check_module_list: module path must end with module with associated file");
-		err_context(cc, node_ident.span);
-		return NULL;
-	}
-
-	return node->leaf_ast.value();
-}
-
-void check_decl_import(Check_Context* cc, Ast_Decl_Import* import_decl)
-{
-	Ast* ast = check_module_list(cc, import_decl->modules);
-	if (!ast) return;
-	if (!import_decl->target) return;
-
-	Ast_Import_Target* target = import_decl->target.value();
-	switch (target->tag())
-	{
-	case Ast_Import_Target::Tag::Wildcard:
-	{
-		//@todo import wildcard
-		//@maybe check for conflicts
-	} break;
-	case Ast_Import_Target::Tag::Symbol_List:
-	{
-		//@todo check that symbols exist + import
-		//@maybe check for conflicts
-	} break;
-	case Ast_Import_Target::Tag::Symbol_Or_Module:
-	{
-		//@todo resolve symbol or module
-		//@check module & symbol
-		//@maybe check for conflicts
-	} break;
-	default: err_internal("check_decl_import: invalid Ast_Import_Target_Tag"); break;
-	}
-}

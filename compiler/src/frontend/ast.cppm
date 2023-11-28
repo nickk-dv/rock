@@ -87,6 +87,26 @@ export struct Ast_Source
 	std::vector<Span> line_spans;
 };
 
+export struct Ast_Module
+{
+	Ast_Ident ident;
+	option<Ast*> as_file;
+	std::vector<Ast_Module*> submodules;
+
+	enum class Tag
+	{
+		File,
+		Folder,
+	};
+
+	inline Tag tag() { return tg; }
+	inline void set_file(Ast* ast) { tg = Tag::File; as_file = ast; }
+	inline void set_folder() { tg = Tag::Folder; }
+
+private:
+	Tag tg;
+};
+
 export struct Ast_Module_Tree //@use new tree structure
 {
 	Ast_Ident ident;
@@ -112,6 +132,7 @@ struct Ast_Module
 export struct Ast_Program //@order after Ast_Module_Tree is *
 {
 	Ast_Module_Tree root;
+	Ast_Module* module_src;
 	std::vector<Ast*> modules;
 };
 
@@ -800,8 +821,8 @@ export struct Ast_Struct_Init
 	
 	union
 	{
-		struct Unresolved 
-		{ 
+		struct Unresolved
+		{
 			option<Ast_Module_Access*> module_access;
 			option<Ast_Ident> struct_ident;
 		} unresolved;
