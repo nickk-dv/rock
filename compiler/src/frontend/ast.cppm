@@ -3,10 +3,10 @@ export module ast;
 import general;
 
 struct Ast;
-struct Ast_Ident;
-struct Ast_Source;
 struct Ast_Program;
-struct Ast_Module_Tree;
+struct Ast_Source;
+struct Ast_Ident;
+struct Ast_Module;
 struct Ast_Module_Access;
 
 enum class UnaryOp;
@@ -21,6 +21,7 @@ struct Ast_Type_Procedure;
 struct Ast_Type_Unresolved;
 
 struct Ast_Decl;
+struct Ast_Decl_Mod;
 struct Ast_Decl_Proc;
 struct Ast_Decl_Impl;
 struct Ast_Decl_Enum;
@@ -70,14 +71,10 @@ export struct Ast
 	std::vector<Ast_Decl*> decls;
 };
 
-export struct Ast_Ident
+export struct Ast_Program
 {
-	Span span;
-	u32 hash;
-	StringView str;
-
-	bool operator== (const Ast_Ident& other) const { return this->str == other.str; }
-	bool operator!= (const Ast_Ident& other) const { return !(*this == other); }
+	Ast_Module* module_src;
+	std::vector<Ast*> modules;
 };
 
 export struct Ast_Source
@@ -85,6 +82,16 @@ export struct Ast_Source
 	StringView str;
 	std::string filepath; //@use module paths instead?
 	std::vector<Span> line_spans;
+};
+
+export struct Ast_Ident
+{
+	Span span;
+	StringView str;
+	u32 hash;
+
+	bool operator== (const Ast_Ident& other) const { return this->str == other.str; }
+	bool operator!= (const Ast_Ident& other) const { return !(*this == other); }
 };
 
 export struct Ast_Module
@@ -105,35 +112,6 @@ export struct Ast_Module
 
 private:
 	Tag tg;
-};
-
-export struct Ast_Module_Tree //@use new tree structure
-{
-	Ast_Ident ident;
-	std::string name;
-	option<Ast*> leaf_ast;
-	std::vector<Ast_Module_Tree> submodules;
-};
-
-/*
-struct Ast_Module_Tree
-{
-	std::vector<Ast_Module*> submodules;
-};
-
-struct Ast_Module
-{
-	Ast_Ident ident;
-	option<Ast*> file_ast;
-	std::vector<Ast_Module*> submodules;
-};
-*/
-
-export struct Ast_Program //@order after Ast_Module_Tree is *
-{
-	Ast_Module_Tree root;
-	Ast_Module* module_src;
-	std::vector<Ast*> modules;
 };
 
 export struct Ast_Module_Access
@@ -275,6 +253,7 @@ export struct Ast_Decl
 {
 	enum class Tag
 	{
+		Mod,
 		Proc,
 		Impl,
 		Enum,
@@ -285,6 +264,7 @@ export struct Ast_Decl
 
 	union
 	{
+		Ast_Decl_Mod* as_mod;
 		Ast_Decl_Proc* as_proc;
 		Ast_Decl_Impl* as_impl;
 		Ast_Decl_Enum* as_enum;
@@ -294,6 +274,7 @@ export struct Ast_Decl
 	};
 
 	inline Tag tag() { return tg; }
+	inline void set_mod(Ast_Decl_Mod* decl_mod)          { tg = Tag::Mod;    as_mod = decl_mod; }
 	inline void set_proc(Ast_Decl_Proc* decl_proc)       { tg = Tag::Proc;   as_proc = decl_proc; }
 	inline void set_impl(Ast_Decl_Impl* decl_impl)       { tg = Tag::Impl;   as_impl = decl_impl; }
 	inline void set_enum(Ast_Decl_Enum* decl_enum)       { tg = Tag::Enum;   as_enum = decl_enum; }
@@ -303,6 +284,12 @@ export struct Ast_Decl
 
 private:
 	Tag tg;
+};
+
+export struct Ast_Decl_Mod
+{
+	bool is_public;
+	Ast_Ident ident;
 };
 
 export struct Ast_Decl_Proc
@@ -833,3 +820,61 @@ export struct Ast_Struct_Init
 		} resolved;
 	};
 };
+
+//prevent unintentional node size growth
+static_assert(sizeof(Ast) == 32);
+static_assert(sizeof(Ast_Program) == 32);
+static_assert(sizeof(Ast_Source) == 72);
+static_assert(sizeof(Ast_Ident) == 32);
+static_assert(sizeof(Ast_Module) == 80);
+static_assert(sizeof(Ast_Module_Access) == 24);
+
+static_assert(sizeof(Ast_Type) == 32);
+static_assert(sizeof(Ast_Type_Enum) == 16);
+static_assert(sizeof(Ast_Type_Array) == 40);
+static_assert(sizeof(Ast_Type_Struct) == 16);
+static_assert(sizeof(Ast_Type_Procedure) == 64);
+static_assert(sizeof(Ast_Type_Unresolved) == 48);
+
+static_assert(sizeof(Ast_Decl) == 16);
+static_assert(sizeof(Ast_Decl_Proc) == 120);
+static_assert(sizeof(Ast_Proc_Param) == 80);
+static_assert(sizeof(Ast_Decl_Impl) == 56);
+static_assert(sizeof(Ast_Decl_Enum) == 72);
+static_assert(sizeof(Ast_Enum_Variant) == 40);
+static_assert(sizeof(Ast_Decl_Struct) == 80);
+static_assert(sizeof(Ast_Struct_Field) == 88);
+static_assert(sizeof(Ast_Decl_Global) == 88);
+static_assert(sizeof(Ast_Decl_Import) == 40);
+static_assert(sizeof(Ast_Import_Target) == 40);
+
+static_assert(sizeof(Ast_Stmt) == 16);
+static_assert(sizeof(Ast_Stmt_If) == 40);
+static_assert(sizeof(Ast_Else) == 24);
+static_assert(sizeof(Ast_Stmt_For) == 64);
+static_assert(sizeof(Ast_Stmt_Block) == 24);
+static_assert(sizeof(Ast_Stmt_Defer) == 16);
+static_assert(sizeof(Ast_Stmt_Break) == 8);
+static_assert(sizeof(Ast_Stmt_Return) == 24);
+static_assert(sizeof(Ast_Stmt_Switch) == 40);
+static_assert(sizeof(Ast_Switch_Case) == 24);
+static_assert(sizeof(Ast_Stmt_Continue) == 8);
+static_assert(sizeof(Ast_Stmt_Var_Decl) == 104);
+static_assert(sizeof(Ast_Stmt_Var_Assign) == 32);
+static_assert(sizeof(Ast_Stmt_Proc_Call) == 8);
+
+static_assert(sizeof(Ast_Expr) == 40);
+static_assert(sizeof(Ast_Unary_Expr) == 16);
+static_assert(sizeof(Ast_Binary_Expr) == 24);
+static_assert(sizeof(Ast_Folded_Expr) == 16);
+static_assert(sizeof(Ast_Expr_List) == 24);
+static_assert(sizeof(Ast_Consteval_Expr) == 16);
+static_assert(sizeof(Ast_Term) == 16);
+static_assert(sizeof(Ast_Enum) == 40);
+static_assert(sizeof(Ast_Cast) == 16);
+static_assert(sizeof(Ast_Sizeof) == 40);
+static_assert(sizeof(Ast_Literal) == 24);
+static_assert(sizeof(Ast_Something) == 24);
+static_assert(sizeof(Ast_Access) == 64);
+static_assert(sizeof(Ast_Array_Init) == 56);
+static_assert(sizeof(Ast_Struct_Init) == 72);

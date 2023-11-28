@@ -148,6 +148,7 @@ void print_token_type(TokenType type)
 	case TokenType::LITERAL_STRING:        printf("literal string"); break;
 
 	case TokenType::KEYWORD_PUB:           printf("pub"); break;
+	case TokenType::KEYWORD_MOD:           printf("mod"); break;
 	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_SELF:          printf("self"); break;
 	case TokenType::KEYWORD_IMPL:          printf("impl"); break;

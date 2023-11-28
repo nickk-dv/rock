@@ -11,6 +11,7 @@ export enum class TokenType
 	LITERAL_STRING,        // "string"
 
 	KEYWORD_PUB,           // pub
+	KEYWORD_MOD,           // mod
 	KEYWORD_MUT,           // mut
 	KEYWORD_SELF,          // self
 	KEYWORD_IMPL,          // impl

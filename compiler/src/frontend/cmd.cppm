@@ -135,10 +135,10 @@ i32 cmd_run()
 	Ast_Program* program = parser.parse_program();
 	if (program == NULL) return 1;
 
-	//for (Ast* ast : program->modules)
-	//{
-	//	fmt_ast(ast);
-	//}
+	for (Ast* ast : program->modules)
+	{
+		fmt_ast(ast);
+	}
 	
 	bool check = check_program(program);
 	if (!check) return 1;

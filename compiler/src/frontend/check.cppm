@@ -30,6 +30,7 @@ module : private;
 
 struct Module_Scope
 {
+	Ast_Program* program;
 	Ast* ast;
 	HashMap<Ast_Ident, Ast_Decl*> decl_map;
 };
@@ -62,6 +63,16 @@ void module_scope_populate_decl_map(Module_Scope* module_scope)
 	}
 }
 
+option<Ast_Module*> module_list_traverse_from_root(const std::vector<Ast_Ident>& modules)
+{
+	for (const Ast_Ident& module : modules)
+	{
+
+	}
+	
+	return {};
+}
+
 void module_scope_process_imports(Module_Scope* module_scope)
 {
 	for (Ast_Decl* decl : module_scope->ast->decls)
@@ -69,7 +80,7 @@ void module_scope_process_imports(Module_Scope* module_scope)
 		if (decl->tag() != Ast_Decl::Tag::Import) continue;
 
 		Ast_Decl_Import* import_decl = decl->as_import;
-
+		
 		//check modules chain to be valid
 
 		if (!import_decl->target) continue;

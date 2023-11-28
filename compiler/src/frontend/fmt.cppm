@@ -47,6 +47,7 @@ void fmt_token(TokenType type)
 	switch (type)
 	{
 	case TokenType::KEYWORD_PUB:           printf("pub"); break;
+	case TokenType::KEYWORD_MOD:           printf("mod"); break;
 	case TokenType::KEYWORD_MUT:           printf("mut"); break;
 	case TokenType::KEYWORD_SELF:          printf("self"); break;
 	case TokenType::KEYWORD_IMPL:          printf("impl"); break;
@@ -597,6 +598,20 @@ void fmt_type(Ast_Type type)
 	}
 }
 
+void fmt_decl_mod(Ast_Decl_Mod* decl)
+{
+	if (decl->is_public)
+	{
+		fmt_token(TokenType::KEYWORD_PUB);
+		fmt_space();
+	}
+	fmt_token(TokenType::KEYWORD_MOD);
+	fmt_space();
+	fmt_ident(decl->ident);
+	fmt_token(TokenType::SEMICOLON);
+	fmt_endl();
+}
+
 void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 {
 	fmt_indent(indent);
@@ -838,6 +853,7 @@ export void fmt_ast(Ast* ast)
 	{
 		switch (decl->tag())
 		{
+		case Ast_Decl::Tag::Mod: fmt_decl_mod(decl->as_mod); break;
 		case Ast_Decl::Tag::Proc: fmt_decl_proc(decl->as_proc, 0); break;
 		case Ast_Decl::Tag::Impl: fmt_decl_impl(decl->as_impl); break;
 		case Ast_Decl::Tag::Enum: fmt_decl_enum(decl->as_enum); break;

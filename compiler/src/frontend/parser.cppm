@@ -54,16 +54,17 @@ private:
 
 public:
 	Ast_Program* parse_program();
-	void populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent, fs::path& path, fs::path& src);
+	void populate_module_tree(Ast_Program* program, Ast_Module* parent, fs::path& path, fs::path& src);
 
 private:
-	Ast* parse_ast(StringView source, std::string& filepath);
+	Ast* parse_ast(StringView source, const std::string& filepath);
 	option<Ast_Type> parse_type();
 	Ast_Type_Array* parse_type_array();
 	Ast_Type_Procedure* parse_type_procedure();
 	Ast_Type_Unresolved* parse_type_unresolved();
 
 	Ast_Decl* parse_decl();
+	Ast_Decl_Mod* parse_decl_mod();
 	Ast_Decl_Proc* parse_decl_proc(bool in_impl);
 	option<Ast_Proc_Param> parse_proc_param();
 	Ast_Decl_Impl* parse_decl_impl();
@@ -123,7 +124,7 @@ private:
 Ast_Ident token_to_ident(Token token)
 {
 	u32 hash = token.source_str.hash_fnv1a_32();
-	return Ast_Ident{ token.span, hash, token.source_str };
+	return Ast_Ident{ token.span, token.source_str, hash };
 }
 
 option<UnaryOp> token_to_unary_op(TokenType type)
@@ -241,19 +242,24 @@ namespace fs = std::filesystem;
 //@todo same module name within same path shoundt be allowed
 //core::mem (as folder)
 //core::mem (as file) cannot exist at the same time
-void Parser::populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent, fs::path& path, fs::path& src)
+void Parser::populate_module_tree(Ast_Program* program, Ast_Module* parent, fs::path& path, fs::path& src)
 {
 	for (const fs::directory_entry& dir_entry : fs::directory_iterator(path))
 	{
-		parent->submodules.emplace_back(Ast_Module_Tree {});
-		Ast_Module_Tree* module = &parent->submodules[parent->submodules.size() - 1];
+		Ast_Module* module = this->arena.alloc<Ast_Module>();
+		parent->submodules.emplace_back(module);
 		
 		fs::path entry = dir_entry.path();
-		module->name = entry.lexically_relative(path).replace_extension("").filename().string();
+		std::string name = entry.lexically_relative(path).replace_extension("").filename().string();
+		
+		u8* copy = this->arena.alloc_buffer<u8>(name.size());
+		for (u32 i = 0; i < name.size(); i += 1) copy[i] = name.at(i);
+		StringView name_str = StringView{ .data = copy, .count = name.size() };
+		module->ident = Ast_Ident{ .str = name_str, .hash = name_str.hash_fnv1a_32() };
 
 		if (dir_entry.is_directory())
 		{
-			module->leaf_ast = {};
+			module->set_folder();
 			populate_module_tree(program, module, entry, src);
 		}
 		else if (fs::is_regular_file(entry))
@@ -275,7 +281,7 @@ void Parser::populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent,
 			Ast* ast = parse_ast(source, filepath);
 			if (ast == NULL) continue;
 
-			module->leaf_ast = ast;
+			module->set_file(ast);
 			program->modules.emplace_back(ast);
 		}
 		else
@@ -285,23 +291,71 @@ void Parser::populate_module_tree(Ast_Program* program, Ast_Module_Tree* parent,
 	}
 }
 
-void module_tree_finalize_idents(Ast_Module_Tree* parent)
+struct Parse_Task
 {
-	for (Ast_Module_Tree& module : parent->submodules) module.ident = Ast_Ident { .str = string_view_from_string(module.name) };
-	for (Ast_Module_Tree& module : parent->submodules) module_tree_finalize_idents(&module);
-}
+	fs::path path;
+	Ast_Module** module;
+};
 
 Ast_Program* Parser::parse_program()
 {
+	//@require manifest to determine lib or bin package kind
+	//@after look for   src/main - src/lib
+
 	fs::path src = fs::path("src");
 	if (!fs::exists(src)) { err_report(Error::PARSE_SRC_DIR_NOT_FOUND); return NULL; }
-	
+
 	this->strings.init();
 	this->arena.init(4 * 1024 * 1024);
+	
 	Ast_Program* program = this->arena.alloc<Ast_Program>();
+	//program->module_src = this->arena.alloc<Ast_Module>();
+	//populate_module_tree(program, program->module_src, src, src);
 
-	populate_module_tree(program, &program->root, src, src);
-	module_tree_finalize_idents(&program->root);
+	std::vector<Parse_Task> task_stack = {};
+	task_stack.emplace_back(Parse_Task{ .path = fs::path("src\\main.txt"), .module = &program->module_src });
+
+	while (!task_stack.empty())
+	{
+		Parse_Task task = task_stack.back();
+		task_stack.pop_back();
+
+		FILE* file;
+		fopen_s(&file, (const char*)task.path.u8string().c_str(), "rb");
+		if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); return NULL; } //@add context
+		fseek(file, 0, SEEK_END);
+		u64 size = (u64)ftell(file);
+		fseek(file, 0, SEEK_SET);
+
+		u8* data = this->arena.alloc_buffer<u8>(size);
+		u64 read_size = fread(data, 1, size, file);
+		fclose(file);
+		if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); return NULL; } //@add context
+
+		printf("parsing file: %s\n", task.path.u8string().c_str());
+
+		StringView source = StringView{ data, size };
+		Ast* ast = parse_ast(source, task.path.string());
+		
+		Ast_Module* module = this->arena.alloc<Ast_Module>();
+		module->set_file(ast);
+		*task.module = module;
+
+		for (Ast_Decl* decl : ast->decls)
+		{
+			if (decl->tag() == Ast_Decl::Tag::Mod)
+			{
+				Ast_Decl_Mod* decl_mod = decl->as_mod;
+				//decl_mod->ident
+				//@concat ident to current task path
+				//to try finding the declared module
+				
+				//@need to look for both module_name/module_name.ext
+				//and for                module_name.ext
+				//if both exist report error dont parse any of them
+			}
+		}
+	}
 
 	/*
 	for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(src))
@@ -336,10 +390,11 @@ Ast_Program* Parser::parse_program()
 	{ err_report(Error::OS_DIR_CREATE_FAILED); return NULL; } //@add context
 	fs::current_path("build");
 
-	return program;
+	return NULL;
+	//return program;
 }
 
-Ast* Parser::parse_ast(StringView source, std::string& filepath)
+Ast* Parser::parse_ast(StringView source, const std::string& filepath)
 {
 	Ast* ast = this->arena.alloc<Ast>();
 	ast->source = this->arena.alloc<Ast_Source>();
@@ -464,6 +519,13 @@ Ast_Decl* Parser::parse_decl()
 	case TokenType::IDENT:
 	case TokenType::KEYWORD_PUB:
 	{
+		if (peek(1) == TokenType::KEYWORD_MOD)
+		{
+			parse_or_return(decl_mod, parse_decl_mod());
+			decl->set_mod(decl_mod);
+			break;
+		}
+
 		u32 offset = 0;
 		if (peek() == TokenType::KEYWORD_PUB) offset = 1;
 		if (peek(offset) != TokenType::IDENT)            { err_parse(TokenType::IDENT, "global declaration", 1); return NULL; }
@@ -477,11 +539,28 @@ Ast_Decl* Parser::parse_decl()
 		default:                        { parse_or_return(decl_global, parse_decl_global());  decl->set_global(decl_global); } break;
 		}
 	} break;
+	case TokenType::KEYWORD_MOD:    { parse_or_return(decl_mod, parse_decl_mod());       decl->set_mod(decl_mod); } break;
 	case TokenType::KEYWORD_IMPL:   { parse_or_return(decl_impl, parse_decl_impl());     decl->set_impl(decl_impl); } break;
 	case TokenType::KEYWORD_IMPORT: { parse_or_return(decl_import, parse_decl_import()); decl->set_import(decl_import);} break;
 	default: { err_parse(TokenType::IDENT, "global declaration"); return NULL; } //@err set ident or impl or import
 	}
 
+	return decl;
+}
+
+Ast_Decl_Mod* Parser::parse_decl_mod()
+{
+	const char* context = "mod declaration";
+	Ast_Decl_Mod* decl = this->arena.alloc<Ast_Decl_Mod>();
+
+	if (try_consume(TokenType::KEYWORD_PUB)) decl->is_public = true;
+	require_token(TokenType::KEYWORD_MOD);
+	
+	option<Ast_Ident> ident = try_consume_ident();
+	if (!ident) { err_parse(TokenType::IDENT, context); return NULL; }
+	decl->ident = ident.value();
+
+	require_token(TokenType::SEMICOLON);
 	return decl;
 }
 

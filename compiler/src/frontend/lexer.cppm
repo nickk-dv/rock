@@ -340,6 +340,7 @@ consteval u64 hash_cstr_unique_64(const char* cstr)
 const std::unordered_map<u64, TokenType> keyword_map =
 {
 	{ hash_cstr_unique_64("pub"),      TokenType::KEYWORD_PUB },
+	{ hash_cstr_unique_64("mod"),      TokenType::KEYWORD_MOD },
 	{ hash_cstr_unique_64("mut"),      TokenType::KEYWORD_MUT },
 	{ hash_cstr_unique_64("self"),     TokenType::KEYWORD_SELF },
 	{ hash_cstr_unique_64("impl"),     TokenType::KEYWORD_IMPL },
