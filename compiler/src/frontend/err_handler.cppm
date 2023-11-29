@@ -40,6 +40,9 @@ export enum class Error
 	CMD_NEW_GIT_NOT_INSTALLED,
 	CMD_NEW_GIT_INIT_FAILED,
 	PARSE_SRC_DIR_NOT_FOUND,
+	PARSE_MOD_CYCLE,
+	PARSE_MOD_NOT_FOUND,
+	PARSE_MOD_AMBIGUITY,
 
 	MAIN_FILE_NOT_FOUND,
 	MAIN_PROC_NOT_FOUND,
@@ -209,7 +212,10 @@ ErrorMessage err_get_message(Error error)
 	case Error::CMD_NEW_GIT_NOT_INSTALLED:      return { "Git is not installed, install git to create a new project", "Failed to run 'git version' command" };
 	case Error::CMD_NEW_GIT_INIT_FAILED:        return { "Git init failed while creating a new project", "Failed to run 'git init' command" };
 	case Error::PARSE_SRC_DIR_NOT_FOUND:        return { "Failed to find 'src' folder during parsing", "Make sure that current directory is set to the project root directory" };
-	
+	case Error::PARSE_MOD_CYCLE:                return { "Module forms a cycle", "Review and remove cyclic module dependencies" };
+	case Error::PARSE_MOD_NOT_FOUND:            return { "Failed to find a module", "" };
+	case Error::PARSE_MOD_AMBIGUITY:            return { "File for module found at both possible paths", "Delete or remove one of them to remove ambiguity" };
+
 	case Error::MAIN_FILE_NOT_FOUND:            return { "Main file not found", "Make sure src/main file exists" };
 	case Error::MAIN_PROC_NOT_FOUND:            return { "Main procedure is not found", "Make sure src/main has main :: () :: i32 { ... }" };
 	case Error::MAIN_PROC_EXTERNAL:             return { "Main procedure cannot be external", "Remove '@' from main declaration" };

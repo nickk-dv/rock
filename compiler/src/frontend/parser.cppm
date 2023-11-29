@@ -287,26 +287,55 @@ Ast* Parser::parse_ast()
 			bool same_level_exists = fs::exists(path_same_level);
 			bool dir_level_exists = fs::exists(path_dir_level);
 
-			if (same_level_exists && dir_level_exists) //@create err report for this
+			if (!same_level_exists && !dir_level_exists) //@create err report for this
 			{
-				err_internal("module with name exists on both levels, remove or rename one of them to make it not ambigiuos");
+				err_report(Error::PARSE_MOD_NOT_FOUND);
 				err_context(module->source, name.span);
 				printf("expected path: %s\n", (char*)path_same_level.u8string().c_str());
 				printf("or path:       %s\n", (char*)path_dir_level.u8string().c_str());
 				continue;
 			}
-			else if (!same_level_exists && !dir_level_exists) //@create err report for this
+			else if (same_level_exists && dir_level_exists) //@create err report for this
 			{
-				err_internal("module with name isnt found, expected module to have one of those paths:");
+				err_report(Error::PARSE_MOD_AMBIGUITY);
 				err_context(module->source, name.span);
 				printf("expected path: %s\n", (char*)path_same_level.u8string().c_str());
 				printf("or path:       %s\n", (char*)path_dir_level.u8string().c_str());
 				continue;
 			}
 
-			if (same_level_exists)
-				task_stack.emplace_back(Parse_Task{ .path = path_same_level, .parent = module });
-			else task_stack.emplace_back(Parse_Task{ .path = path_dir_level, .parent = module });
+			Parse_Task new_task = same_level_exists ? 
+			Parse_Task{ .path = path_same_level, .parent = module } :
+			Parse_Task{ .path = path_dir_level, .parent = module };
+
+			option<Ast_Module*> parent = new_task.parent; //@bad err no context of Mod_Decl* move into decl iteration?
+			std::vector<std::string> cycle_paths = {};
+			bool cycle = false;
+			while (parent)
+			{
+				cycle_paths.emplace_back(parent.value()->source->filepath);
+				if (new_task.path == parent.value()->source->filepath)
+				{
+					cycle = true;
+					break;
+				}
+				parent = parent.value()->parent;
+			}
+			if (cycle)
+			{
+				err_report(Error::PARSE_MOD_CYCLE);
+				err_context(module->source, decl_mod->ident.span);
+				err_context("affected modules:");
+				for (auto iter = cycle_paths.rbegin(); iter != cycle_paths.rend(); ++iter) {
+					const std::string& filepath = *iter;
+					printf("- %s ->\n", filepath.c_str());
+					// Your code using printf(filepath.c_str());
+				}
+				printf("- %s (cycle)\n", cycle_paths.back().c_str());
+				continue;
+			}
+
+			task_stack.emplace_back(new_task);
 		}
 	}
 
@@ -357,7 +386,7 @@ Ast_Module* Parser::parse_module(option<Ast_Module*> parent, fs::path& path)
 		parse_or_return(decl, parse_decl());
 		module->decls.emplace_back(decl);
 	}
-	
+	printf("parsed file: %s\n", source->filepath.c_str());
 	module->parent = parent;
 	if (parent) parent.value()->submodules.emplace_back(module);
 	return module;
