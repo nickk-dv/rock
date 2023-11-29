@@ -271,12 +271,26 @@ Ast* Parser::parse_ast()
 			root_assigned = true;
 		}
 
+		HashMap<Ast_Ident, Ast_Decl_Mod*> module_map = {};
+		module_map.init(32);
+
 		for (Ast_Decl* decl : module->decls)
 		{
 			if (decl->tag() != Ast_Decl::Tag::Mod) continue;
 			
-			Ast_Decl_Mod* decl_mod = decl->as_mod;
-			Ast_Ident name = decl_mod->ident;
+			Ast_Decl_Mod* mod_decl = decl->as_mod;
+			option<Ast_Decl_Mod*> existing_mod = module_map.find(mod_decl->ident);
+			if (existing_mod)
+			{
+				err_report(Error::PARSE_MOD_DECL_DUPLICATE);
+				err_context(module->source, mod_decl->ident.span);
+				err_context("previous declaration:");
+				err_context(module->source, existing_mod.value()->ident.span);
+				continue;
+			}
+			module_map.add(mod_decl->ident, mod_decl);
+
+			Ast_Ident name = mod_decl->ident;
 			std::string module_name((char*)name.str.data, name.str.count);
 			std::string module_name_ext = module_name;
 			module_name_ext.append(".txt"); //@replace ext
@@ -324,7 +338,7 @@ Ast* Parser::parse_ast()
 			if (cycle)
 			{
 				err_report(Error::PARSE_MOD_CYCLE);
-				err_context(module->source, decl_mod->ident.span);
+				err_context(module->source, mod_decl->ident.span);
 				err_context("affected modules:");
 				for (auto iter = cycle_paths.rbegin(); iter != cycle_paths.rend(); ++iter) {
 					const std::string& filepath = *iter;
@@ -368,6 +382,7 @@ Ast_Module* Parser::parse_module(option<Ast_Module*> parent, fs::path& path)
 	source->line_spans = {};
 	
 	Ast_Module* module = this->arena.alloc<Ast_Module>();
+	module->scope = this->arena.alloc<Module_Scope>();
 	module->source = source;
 	
 	std::string name = path.replace_extension("").filename().string();
@@ -386,7 +401,7 @@ Ast_Module* Parser::parse_module(option<Ast_Module*> parent, fs::path& path)
 		parse_or_return(decl, parse_decl());
 		module->decls.emplace_back(decl);
 	}
-	printf("parsed file: %s\n", source->filepath.c_str());
+
 	module->parent = parent;
 	if (parent) parent.value()->submodules.emplace_back(module);
 	return module;

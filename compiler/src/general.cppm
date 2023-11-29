@@ -213,7 +213,7 @@ private:
 	u32 resize_threshold;
 };
 
-export template<typename KeyType, typename ValueType>
+export template<typename KeyType>
 struct HashSet
 {
 	void init(u32 table_size) { alloc_table(table_size); }

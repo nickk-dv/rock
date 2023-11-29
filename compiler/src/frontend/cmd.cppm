@@ -2,10 +2,9 @@ export module cmd;
 
 import general;
 import parser;
+import checker;
 import fmt;
-import ast;
 import err_handler;
-//import check;
 //@todo enable later #include "middlend/llvm_ir_builder.h"
 //@todo enable later #include "backend/llvm_backend.h"
 import <fstream>;
@@ -135,8 +134,8 @@ i32 cmd_run()
 	Ast* ast = parser.parse_ast();
 	if (ast == NULL) return 1;
 
-	//bool check = check_program(program);
-	//if (!check) return 1;
+	bool check = check_ast(ast);
+	if (!check) return 1;
 
 	//@todo enable later LLVMModuleRef mod = build_module(program);
 	//@todo enable later backend_build_module(mod);

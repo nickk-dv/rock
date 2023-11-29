@@ -79,6 +79,11 @@ export struct Ast_Ident
 	bool operator!= (const Ast_Ident& other) const { return !(*this == other); }
 };
 
+export struct Module_Scope
+{
+	HashMap<Ast_Ident, Ast_Decl*> decl_map;
+};
+
 export struct Ast_Module
 {
 	Ast_Ident name;
@@ -86,6 +91,8 @@ export struct Ast_Module
 	std::vector<Ast_Decl*> decls;
 	option<Ast_Module*> parent;
 	std::vector<Ast_Module*> submodules;
+	//check
+	Module_Scope* scope;
 };
 
 export struct Ast_Source
@@ -805,7 +812,7 @@ export struct Ast_Struct_Init
 //prevent unintentional node size growth
 static_assert(sizeof(Ast) == 8);
 static_assert(sizeof(Ast_Ident) == 32);
-static_assert(sizeof(Ast_Module) == 104);
+static_assert(sizeof(Ast_Module) == 112);
 static_assert(sizeof(Ast_Source) == 72);
 static_assert(sizeof(Ast_Module_Access) == 24);
 

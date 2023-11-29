@@ -40,6 +40,7 @@ export enum class Error
 	CMD_NEW_GIT_NOT_INSTALLED,
 	CMD_NEW_GIT_INIT_FAILED,
 	PARSE_SRC_DIR_NOT_FOUND,
+	PARSE_MOD_DECL_DUPLICATE,
 	PARSE_MOD_CYCLE,
 	PARSE_MOD_NOT_FOUND,
 	PARSE_MOD_AMBIGUITY,
@@ -211,7 +212,9 @@ ErrorMessage err_get_message(Error error)
 	case Error::CMD_NEW_DIR_ALREADY_EXIST:      return { "Directory with the same name already exists", "" };
 	case Error::CMD_NEW_GIT_NOT_INSTALLED:      return { "Git is not installed, install git to create a new project", "Failed to run 'git version' command" };
 	case Error::CMD_NEW_GIT_INIT_FAILED:        return { "Git init failed while creating a new project", "Failed to run 'git init' command" };
+	
 	case Error::PARSE_SRC_DIR_NOT_FOUND:        return { "Failed to find 'src' folder during parsing", "Make sure that current directory is set to the project root directory" };
+	case Error::PARSE_MOD_DECL_DUPLICATE:       return { "Module redeclaration", "Remove duplicate mod declratation" };
 	case Error::PARSE_MOD_CYCLE:                return { "Module forms a cycle", "Review and remove cyclic module dependencies" };
 	case Error::PARSE_MOD_NOT_FOUND:            return { "Failed to find a module", "" };
 	case Error::PARSE_MOD_AMBIGUITY:            return { "File for module found at both possible paths", "Delete or remove one of them to remove ambiguity" };
