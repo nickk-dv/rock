@@ -28,7 +28,7 @@ printf("line:     %d\n", __LINE__); \
 printf("type:     %s\n", typeid(enum_var).name()); \
 }
 
-Ast* fmt_curr_ast;
+Ast_Module* fmt_curr_module;
 
 void fmt_tab()   { printf("\t"); }
 void fmt_endl()  { printf("\n"); }
@@ -38,7 +38,7 @@ void fmt_literal(Ast_Literal* literal)
 {
 	for (u32 i = literal->span.start; i <= literal->span.end; i += 1)
 	{
-		printf("%c", fmt_curr_ast->source->str.data[i]);
+		printf("%c", fmt_curr_module->source->str.data[i]);
 	}
 }
 
@@ -845,11 +845,11 @@ void fmt_decl_import(Ast_Decl_Import* decl) //@support dense 1 liners?
 	fmt_endl();
 }
 
-export void fmt_ast(Ast* ast)
+export void fmt_module(Ast_Module* module)
 {
-	fmt_curr_ast = ast;
+	fmt_curr_module = module;
 	printf("------------------------\n");
-	for (Ast_Decl* decl : ast->decls)
+	for (Ast_Decl* decl : module->decls)
 	{
 		switch (decl->tag())
 		{

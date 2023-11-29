@@ -44,7 +44,7 @@ u32 binary_op_prec(BinaryOp op);
 export struct Parser
 {
 private:
-	Ast* ast;
+	Ast_Module* curr_module;
 	Arena arena;
 	Lexer lexer;
 	StringStorage strings;
@@ -53,11 +53,10 @@ private:
 	Token tokens[Lexer::TOKEN_BUFFER_SIZE];
 
 public:
-	Ast_Program* parse_program();
-	void populate_module_tree(Ast_Program* program, Ast_Module* parent, fs::path& path, fs::path& src);
+	Ast* parse_ast();
 
 private:
-	Ast* parse_ast(StringView source, const std::string& filepath);
+	Ast_Module* parse_module(option<Ast_Module*> parent, fs::path& path);
 	option<Ast_Type> parse_type();
 	Ast_Type_Array* parse_type_array();
 	Ast_Type_Procedure* parse_type_procedure();
@@ -237,183 +236,131 @@ u32 binary_op_prec(BinaryOp binary_op)
 	}
 }
 
-namespace fs = std::filesystem;
-
-//@todo same module name within same path shoundt be allowed
-//core::mem (as folder)
-//core::mem (as file) cannot exist at the same time
-void Parser::populate_module_tree(Ast_Program* program, Ast_Module* parent, fs::path& path, fs::path& src)
-{
-	for (const fs::directory_entry& dir_entry : fs::directory_iterator(path))
-	{
-		Ast_Module* module = this->arena.alloc<Ast_Module>();
-		parent->submodules.emplace_back(module);
-		
-		fs::path entry = dir_entry.path();
-		std::string name = entry.lexically_relative(path).replace_extension("").filename().string();
-		
-		u8* copy = this->arena.alloc_buffer<u8>(name.size());
-		for (u32 i = 0; i < name.size(); i += 1) copy[i] = name.at(i);
-		StringView name_str = StringView{ .data = copy, .count = name.size() };
-		module->ident = Ast_Ident{ .str = name_str, .hash = name_str.hash_fnv1a_32() };
-
-		if (dir_entry.is_directory())
-		{
-			module->set_folder();
-			populate_module_tree(program, module, entry, src);
-		}
-		else if (fs::is_regular_file(entry))
-		{
-			FILE* file;
-			fopen_s(&file, (const char*)entry.u8string().c_str(), "rb");
-			if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); continue; } //@add context
-			fseek(file, 0, SEEK_END);
-			u64 size = (u64)ftell(file);
-			fseek(file, 0, SEEK_SET);
-
-			u8* data = this->arena.alloc_buffer<u8>(size);
-			u64 read_size = fread(data, 1, size, file);
-			fclose(file);
-			if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); continue; } //@add context
-
-			StringView source = StringView{ data, size };
-			std::string filepath = entry.lexically_relative(src).replace_extension("").string();
-			Ast* ast = parse_ast(source, filepath);
-			if (ast == NULL) continue;
-
-			module->set_file(ast);
-			program->modules.emplace_back(ast);
-		}
-		else
-		{
-			//@error ?
-		}
-	}
-}
-
 struct Parse_Task
 {
 	fs::path path;
-	Ast_Module** module;
+	option<Ast_Module*> parent;
 };
 
-Ast_Program* Parser::parse_program()
+Ast* Parser::parse_ast()
 {
 	//@require manifest to determine lib or bin package kind
 	//@after look for   src/main - src/lib
+	//@now only src/main is the target
 
 	fs::path src = fs::path("src");
 	if (!fs::exists(src)) { err_report(Error::PARSE_SRC_DIR_NOT_FOUND); return NULL; }
-
+	
 	this->strings.init();
 	this->arena.init(4 * 1024 * 1024);
-	
-	Ast_Program* program = this->arena.alloc<Ast_Program>();
-	//program->module_src = this->arena.alloc<Ast_Module>();
-	//populate_module_tree(program, program->module_src, src, src);
-
+	Ast* ast = this->arena.alloc<Ast>();
+	bool root_assigned = false;
 	std::vector<Parse_Task> task_stack = {};
-	task_stack.emplace_back(Parse_Task{ .path = fs::path("src\\main.txt"), .module = &program->module_src });
+	task_stack.emplace_back(Parse_Task{ .path = src / "main.txt", .parent = {} }); //@replace ext
 
 	while (!task_stack.empty())
 	{
 		Parse_Task task = task_stack.back();
 		task_stack.pop_back();
 
-		FILE* file;
-		fopen_s(&file, (const char*)task.path.u8string().c_str(), "rb");
-		if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); return NULL; } //@add context
-		fseek(file, 0, SEEK_END);
-		u64 size = (u64)ftell(file);
-		fseek(file, 0, SEEK_SET);
-
-		u8* data = this->arena.alloc_buffer<u8>(size);
-		u64 read_size = fread(data, 1, size, file);
-		fclose(file);
-		if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); return NULL; } //@add context
-
-		printf("parsing file: %s\n", task.path.u8string().c_str());
-
-		StringView source = StringView{ data, size };
-		Ast* ast = parse_ast(source, task.path.string());
-		
-		Ast_Module* module = this->arena.alloc<Ast_Module>();
-		module->set_file(ast);
-		*task.module = module;
-
-		for (Ast_Decl* decl : ast->decls)
+		Ast_Module* module = parse_module(task.parent, task.path);
+		if (!module) continue;
+		if (!root_assigned)
 		{
-			if (decl->tag() == Ast_Decl::Tag::Mod)
+			ast->root = module;
+			root_assigned = true;
+		}
+
+		for (Ast_Decl* decl : module->decls)
+		{
+			if (decl->tag() != Ast_Decl::Tag::Mod) continue;
+			
+			Ast_Decl_Mod* decl_mod = decl->as_mod;
+			Ast_Ident name = decl_mod->ident;
+			std::string module_name((char*)name.str.data, name.str.count);
+			std::string module_name_ext = module_name;
+			module_name_ext.append(".txt"); //@replace ext
+
+			fs::path parent_path = fs::path(module->source->filepath).parent_path();
+			fs::path path_same_level = fs::path(parent_path / module_name_ext);
+			fs::path path_dir_level = fs::path(parent_path / module_name / module_name_ext);
+			bool same_level_exists = fs::exists(path_same_level);
+			bool dir_level_exists = fs::exists(path_dir_level);
+
+			if (same_level_exists && dir_level_exists) //@create err report for this
 			{
-				Ast_Decl_Mod* decl_mod = decl->as_mod;
-				//decl_mod->ident
-				//@concat ident to current task path
-				//to try finding the declared module
-				
-				//@need to look for both module_name/module_name.ext
-				//and for                module_name.ext
-				//if both exist report error dont parse any of them
+				err_internal("module with name exists on both levels, remove or rename one of them to make it not ambigiuos");
+				err_context(module->source, name.span);
+				printf("expected path: %s\n", (char*)path_same_level.u8string().c_str());
+				printf("or path:       %s\n", (char*)path_dir_level.u8string().c_str());
+				continue;
 			}
+			else if (!same_level_exists && !dir_level_exists) //@create err report for this
+			{
+				err_internal("module with name isnt found, expected module to have one of those paths:");
+				err_context(module->source, name.span);
+				printf("expected path: %s\n", (char*)path_same_level.u8string().c_str());
+				printf("or path:       %s\n", (char*)path_dir_level.u8string().c_str());
+				continue;
+			}
+
+			if (same_level_exists)
+				task_stack.emplace_back(Parse_Task{ .path = path_same_level, .parent = module });
+			else task_stack.emplace_back(Parse_Task{ .path = path_dir_level, .parent = module });
 		}
 	}
-
-	/*
-	for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(src))
-	{
-		fs::path entry = dir_entry.path();
-		if (!fs::is_regular_file(entry)) continue;
-		//if (entry.extension() != ".txt") continue; //@Branding check extension
-		
-		FILE* file;
-		fopen_s(&file, (const char*)entry.u8string().c_str(), "rb");
-		if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); return NULL; } //@add context
-		fseek(file, 0, SEEK_END);
-		u64 size = (u64)ftell(file);
-		fseek(file, 0, SEEK_SET);
-		
-		u8* data = arena_alloc_buffer<u8>(&this->arena, size);
-		u64 read_size = fread(data, 1, size, file);
-		fclose(file);
-		if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); return NULL; } //@add context
-		
-		StringView source = StringView { data, size };
-		std::string filepath = entry.lexically_relative(src).replace_extension("").string();
-		printf("parse file: %s\n", filepath.c_str());
-		Ast* ast = parse_ast(source, filepath);
-		if (ast == NULL) return NULL;
-		
-		program->modules.emplace_back(ast);
-	}
-	*/
 
 	if (!fs::exists("build") && !fs::create_directory("build")) 
 	{ err_report(Error::OS_DIR_CREATE_FAILED); return NULL; } //@add context
 	fs::current_path("build");
 
-	return NULL;
-	//return program;
+	if (err_get_status()) return NULL;
+	return ast;
 }
 
-Ast* Parser::parse_ast(StringView source, const std::string& filepath)
+Ast_Module* Parser::parse_module(option<Ast_Module*> parent, fs::path& path)
 {
-	Ast* ast = this->arena.alloc<Ast>();
-	ast->source = this->arena.alloc<Ast_Source>();
-	ast->source->str = source;
-	ast->source->filepath = std::string(filepath);
-	ast->source->line_spans = {};
+	FILE* file;
+	fopen_s(&file, (const char*)path.u8string().c_str(), "rb");
+	if (!file) { err_report(Error::OS_FILE_OPEN_FAILED); printf("filepath: %s\n", (char*)path.u8string().c_str()); return NULL; } //@add context
+	fseek(file, 0, SEEK_END);
+	u64 size = (u64)ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+	u8* data = this->arena.alloc_buffer<u8>(size);
+	u64 read_size = fread(data, 1, size, file);
+	fclose(file);
+	if (read_size != size) { err_report(Error::OS_FILE_READ_FAILED); return NULL; } //@add context
+	StringView str = StringView{ data, size };
+
+	Ast_Source* source = this->arena.alloc<Ast_Source>();
+	source->str = str;
+	source->filepath = path.string();
+	source->line_spans = {};
 	
-	this->ast = ast;
+	Ast_Module* module = this->arena.alloc<Ast_Module>();
+	module->source = source;
+	
+	std::string name = path.replace_extension("").filename().string();
+	u8* copy = this->arena.alloc_buffer<u8>(name.size());
+	for (u32 i = 0; i < name.size(); i += 1) copy[i] = name.at(i);
+	StringView name_str = StringView{ .data = copy, .count = name.size() };
+	module->name = Ast_Ident{ .str = name_str, .hash = name_str.hash_fnv1a_32() };
+
+	this->curr_module = module;
 	this->peek_index = 0;
-	this->lexer.init(source, &this->strings, &ast->source->line_spans);
+	this->lexer.init(str, &this->strings, &module->source->line_spans);
 	this->lexer.lex_token_buffer(this->tokens);
 
 	while (peek() != TokenType::INPUT_END)
 	{
 		parse_or_return(decl, parse_decl());
-		ast->decls.emplace_back(decl);
+		module->decls.emplace_back(decl);
 	}
-
-	return ast;
+	
+	module->parent = parent;
+	if (parent) parent.value()->submodules.emplace_back(module);
+	return module;
 }
 
 option<Ast_Type> Parser::parse_type()
@@ -1573,5 +1520,5 @@ u32 Parser::get_span_end()
 
 void Parser::err_parse(TokenType expected, option<const char*> in, u32 offset)
 {
-	err_report_parse(this->ast->source, expected, in, peek_token(offset));
+	err_report_parse(this->curr_module->source, expected, in, peek_token(offset));
 }

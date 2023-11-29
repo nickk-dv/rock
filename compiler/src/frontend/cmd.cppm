@@ -5,7 +5,7 @@ import parser;
 import fmt;
 import ast;
 import err_handler;
-import check;
+//import check;
 //@todo enable later #include "middlend/llvm_ir_builder.h"
 //@todo enable later #include "backend/llvm_backend.h"
 import <fstream>;
@@ -103,11 +103,11 @@ i32 cmd_new(char* name)
 i32 cmd_check()
 {
 	Parser parser = {};
-	Ast_Program* program = parser.parse_program();
-	if (program == NULL) return 1;
+	Ast* ast = parser.parse_ast();
+	if (ast == NULL) return 1;
 	
-	bool check = check_program(program);
-	if (!check) return 1;
+	//bool check = check_program(program);
+	//if (!check) return 1;
 
 	printf("Check success\n");
 	return 0;
@@ -116,11 +116,11 @@ i32 cmd_check()
 i32 cmd_build()
 {
 	Parser parser = {};
-	Ast_Program* program = parser.parse_program();
-	if (program == NULL) return 1;
+	Ast* ast = parser.parse_ast();
+	if (ast == NULL) return 1;
 
-	bool check = check_program(program);
-	if (!check) return 1;
+	//bool check = check_program(program);
+	//if (!check) return 1;
 	
 	//@todo enable later LLVMModuleRef mod = build_module(program);
 	//@todo enable later backend_build_module(mod);
@@ -132,16 +132,11 @@ i32 cmd_build()
 i32 cmd_run()
 {
 	Parser parser = {};
-	Ast_Program* program = parser.parse_program();
-	if (program == NULL) return 1;
+	Ast* ast = parser.parse_ast();
+	if (ast == NULL) return 1;
 
-	for (Ast* ast : program->modules)
-	{
-		fmt_ast(ast);
-	}
-	
-	bool check = check_program(program);
-	if (!check) return 1;
+	//bool check = check_program(program);
+	//if (!check) return 1;
 
 	//@todo enable later LLVMModuleRef mod = build_module(program);
 	//@todo enable later backend_build_module(mod);

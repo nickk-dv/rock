@@ -7,7 +7,6 @@ import general;
 import ast;
 import token;
 import printer;
-import check_context;
 
 enum class Error;
 

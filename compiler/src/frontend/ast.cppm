@@ -3,10 +3,9 @@ export module ast;
 import general;
 
 struct Ast;
-struct Ast_Program;
-struct Ast_Source;
 struct Ast_Ident;
 struct Ast_Module;
+struct Ast_Source;
 struct Ast_Module_Access;
 
 enum class UnaryOp;
@@ -67,21 +66,7 @@ struct Ast_Struct_Init;
 
 export struct Ast
 {
-	Ast_Source* source;
-	std::vector<Ast_Decl*> decls;
-};
-
-export struct Ast_Program
-{
-	Ast_Module* module_src;
-	std::vector<Ast*> modules;
-};
-
-export struct Ast_Source
-{
-	StringView str;
-	std::string filepath; //@use module paths instead?
-	std::vector<Span> line_spans;
+	Ast_Module* root;
 };
 
 export struct Ast_Ident
@@ -96,22 +81,18 @@ export struct Ast_Ident
 
 export struct Ast_Module
 {
-	Ast_Ident ident;
-	option<Ast*> as_file;
+	Ast_Ident name;
+	Ast_Source* source;
+	std::vector<Ast_Decl*> decls;
+	option<Ast_Module*> parent;
 	std::vector<Ast_Module*> submodules;
+};
 
-	enum class Tag
-	{
-		File,
-		Folder,
-	};
-
-	inline Tag tag() { return tg; }
-	inline void set_file(Ast* ast) { tg = Tag::File; as_file = ast; }
-	inline void set_folder() { tg = Tag::Folder; }
-
-private:
-	Tag tg;
+export struct Ast_Source
+{
+	StringView str;
+	std::string filepath;
+	std::vector<Span> line_spans;
 };
 
 export struct Ast_Module_Access
@@ -822,11 +803,10 @@ export struct Ast_Struct_Init
 };
 
 //prevent unintentional node size growth
-static_assert(sizeof(Ast) == 32);
-static_assert(sizeof(Ast_Program) == 32);
-static_assert(sizeof(Ast_Source) == 72);
+static_assert(sizeof(Ast) == 8);
 static_assert(sizeof(Ast_Ident) == 32);
-static_assert(sizeof(Ast_Module) == 80);
+static_assert(sizeof(Ast_Module) == 104);
+static_assert(sizeof(Ast_Source) == 72);
 static_assert(sizeof(Ast_Module_Access) == 24);
 
 static_assert(sizeof(Ast_Type) == 32);
