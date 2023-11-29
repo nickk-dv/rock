@@ -142,6 +142,13 @@ struct HashMap
 {
 	void init(u32 table_size) { alloc_table(table_size); }
 	~HashMap() { free(this->array); }
+	
+	void zero_reset()
+	{
+		this->slots_filled = 0;
+		this->resize_threshold = this->size - this->size / 4;
+		memset(array, 0, sizeof(Slot) * size);
+	}
 
 	void add(const KeyType& key, const ValueType& value)
 	{
@@ -219,6 +226,13 @@ struct HashSet
 	void init(u32 table_size) { alloc_table(table_size); }
 	~HashSet() { free(this->array); }
 
+	void zero_reset()
+	{
+		this->slots_filled = 0;
+		this->resize_threshold = this->size - this->size / 4;
+		memset(array, 0, sizeof(Slot) * size);
+	}
+
 	void add(const KeyType& key)
 	{
 		u32 slot = key.hash % this->size;
@@ -230,6 +244,13 @@ struct HashSet
 	bool contains(const KeyType& key)
 	{
 		return find_key_slot(key).has_value();
+	}
+
+	option<KeyType> find(const KeyType& key)
+	{
+		option<u32> slot = find_key_slot(key);
+		if (!slot) return {};
+		return this->array[slot.value()].key;
 	}
 
 private:

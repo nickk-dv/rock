@@ -576,7 +576,7 @@ Ast_Decl_Proc* Parser::parse_decl_proc(bool in_impl)
 			if (try_consume(TokenType::DOUBLE_DOT)) { decl->is_variadic = true; break; }
 			option<Ast_Proc_Param> param = parse_proc_param();
 			if (!param) return NULL;
-			decl->input_params.emplace_back(param.value());
+			decl->params.emplace_back(param.value());
 			if (!try_consume(TokenType::COMMA)) break;
 		}
 		if (!try_consume(TokenType::PAREN_END)) { err_parse(TokenType::PAREN_END, "procedure declaration"); return NULL; }

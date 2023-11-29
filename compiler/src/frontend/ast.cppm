@@ -284,7 +284,7 @@ export struct Ast_Decl_Proc
 {
 	bool is_public;
 	Ast_Ident ident;
-	std::vector<Ast_Proc_Param> input_params;
+	std::vector<Ast_Proc_Param> params;
 	option<Ast_Type> return_type;
 	Ast_Stmt_Block* block;
 	bool is_member;

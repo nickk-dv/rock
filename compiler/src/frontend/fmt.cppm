@@ -626,9 +626,9 @@ void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 	fmt_space();
 
 	fmt_token(TokenType::PAREN_START);
-	for (u32 i = 0; i < decl->input_params.size(); i += 1)
+	for (u32 i = 0; i < decl->params.size(); i += 1)
 	{
-		Ast_Proc_Param param = decl->input_params[i];
+		Ast_Proc_Param param = decl->params[i];
 		if (param.is_mutable)
 		{
 			fmt_token(TokenType::KEYWORD_MUT);
@@ -638,7 +638,7 @@ void fmt_decl_proc(Ast_Decl_Proc* decl, u32 indent)
 		fmt_token(TokenType::COLON);
 		fmt_space();
 		fmt_type(param.type);
-		if (i + 1 != decl->input_params.size())
+		if (i + 1 != decl->params.size())
 		{
 			fmt_token(TokenType::COMMA);
 			fmt_space();
