@@ -5,28 +5,36 @@ import err_handler;
 
 export bool check_ast(Ast* ast);
 
+void init_global_scope(Global_Scope* scope);
 template<typename Pass_Proc>
-void module_pass(Ast_Module* module, Pass_Proc pass);
-void module_pass_add_decl_symbols(Ast_Module* module);
-void module_pass_import_symbols(Ast_Module* module);
-void module_pass_resolve_impl(Ast_Module* module);
-void module_pass_remove_duplicates(Ast_Module* module);
+void module_pass(Ast* ast, Ast_Module* module, Pass_Proc pass);
+void module_pass_add_decl_symbols(Ast* ast, Ast_Module* module);
+void module_pass_external_proc_duplicates(Ast* ast, Ast_Module* module);
+void module_pass_import_symbols(Ast* ast, Ast_Module* module);
+void module_pass_resolve_impl(Ast* ast, Ast_Module* module);
+void module_pass_remove_duplicates(Ast* ast, Ast_Module* module);
 
 module : private;
 
 bool check_ast(Ast* ast) {
-	module_pass(ast->root, module_pass_add_decl_symbols);
-	module_pass(ast->root, module_pass_import_symbols);
-	module_pass(ast->root, module_pass_resolve_impl);
-	module_pass(ast->root, module_pass_remove_duplicates);
+	init_global_scope(ast->scope);
+	module_pass(ast, ast->root, module_pass_add_decl_symbols);
+	module_pass(ast, ast->root, module_pass_external_proc_duplicates);
+	module_pass(ast, ast->root, module_pass_import_symbols);
+	module_pass(ast, ast->root, module_pass_resolve_impl);
+	module_pass(ast, ast->root, module_pass_remove_duplicates);
 	return !err_get_status();
 }
 
+void init_global_scope(Global_Scope* scope) {
+	scope->external_proc_map.init(256);
+}
+
 template<typename Pass_Proc>
-void module_pass(Ast_Module* module, Pass_Proc pass) {
-	pass(module);
+void module_pass(Ast* ast, Ast_Module* module, Pass_Proc pass) {
+	pass(ast, module);
 	for (Ast_Module* submodule : module->submodules) {
-		pass(submodule);
+		pass(ast, submodule);
 	}
 }
 
@@ -47,29 +55,46 @@ void module_scope_try_add_symbol(Ast_Module* module, Ast_Decl* decl) {
 	if (existing) {
 		err_report(Error::DECL_SYMBOL_ALREADY_DECLARED);
 		err_context(module->source, ident.value().span);
-		err_context("previous declaration:");
+		err_context("already declared at:");
 		err_context(module->source, ident_from_decl(existing.value()).value().span);
 	} else module->scope->decl_map.add(ident.value(), decl);
 }
 
-void module_pass_add_decl_symbols(Ast_Module* module) {
+void module_pass_add_decl_symbols(Ast* ast, Ast_Module* module) {
 	module->scope->decl_map.init(256);
 	for (Ast_Decl* decl : module->decls) {
 		module_scope_try_add_symbol(module, decl);
 	}
 }
 
-void module_pass_import_symbols(Ast_Module* module) {
+void module_pass_external_proc_duplicates(Ast* ast, Ast_Module* module) {
+	for (Ast_Decl* decl : module->decls) {
+		if (decl->tag() != Ast_Decl::Tag::Proc) continue;
+		Ast_Decl_Proc* proc_decl = decl->as_proc;
+		if (!proc_decl->is_external) continue;
+
+		option<Ast_Decl*> existing = ast->scope->external_proc_map.find(proc_decl->ident);
+		if (existing) {
+			err_report(Error::DECL_PROC_DUPLICATE_EXTERNAL);
+			err_context(module->source, proc_decl->ident.span);
+			err_context("already declared at:");
+			//@todo decl doesnt have associated module or source to report it
+		}
+		else ast->scope->external_proc_map.add(proc_decl->ident, decl);
+	}
+}
+
+void module_pass_import_symbols(Ast* ast, Ast_Module* module) {
 	//resolve import decls
 	//import symbols -> add to module scope
 }
 
-void module_pass_resolve_impl(Ast_Module* module) {
+void module_pass_resolve_impl(Ast* ast, Ast_Module* module) {
 	//resolve impl types
 	//check duplicate impl methods -> add to impl scope
 }
 
-void module_pass_remove_duplicates(Ast_Module* module) {
+void module_pass_remove_duplicates(Ast* ast, Ast_Module* module) {
 	std::vector<u32> ids_to_remove = {};
 	HashSet<Ast_Ident> name_set = {};
 	name_set.init(64);

@@ -64,9 +64,16 @@ struct Ast_Access;
 struct Ast_Array_Init;
 struct Ast_Struct_Init;
 
+export struct Global_Scope
+{
+	HashMap<Ast_Ident, Ast_Decl*> external_proc_map;
+};
+
 export struct Ast
 {
 	Ast_Module* root;
+	//check
+	Global_Scope* scope;
 };
 
 export struct Ast_Ident
@@ -810,7 +817,7 @@ export struct Ast_Struct_Init
 };
 
 //prevent unintentional node size growth
-static_assert(sizeof(Ast) == 8);
+static_assert(sizeof(Ast) == 16);
 static_assert(sizeof(Ast_Ident) == 32);
 static_assert(sizeof(Ast_Module) == 112);
 static_assert(sizeof(Ast_Source) == 72);

@@ -254,6 +254,8 @@ Ast* Parser::parse_ast()
 	this->strings.init();
 	this->arena.init(4 * 1024 * 1024);
 	Ast* ast = this->arena.alloc<Ast>();
+	ast->scope = this->arena.alloc<Global_Scope>();
+
 	bool root_assigned = false;
 	std::vector<Parse_Task> task_stack = {};
 	task_stack.emplace_back(Parse_Task{ .path = src / "main.txt", .parent = {} }); //@replace ext
@@ -284,7 +286,7 @@ Ast* Parser::parse_ast()
 			{
 				err_report(Error::PARSE_MOD_DECL_DUPLICATE);
 				err_context(module->source, mod_decl->ident.span);
-				err_context("previous declaration:");
+				err_context("already declared at:");
 				err_context(module->source, existing_mod.value()->ident.span);
 				continue;
 			}
