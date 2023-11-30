@@ -64,6 +64,11 @@ export enum class Error
 	DECL_PROC_DUPLICATE_PARAM,
 	DECL_PROC_DUPLICATE_EXTERNAL,
 
+	IMPORT_SYMBOL_NOT_FOUND,
+	IMPORT_SYMBOL_NOT_PUB,
+	IMPORT_SYMBOL_ALREADY_DEFINED,
+	IMPORT_SYMBOL_ALREADY_IMPORTED,
+
 	RESOLVE_IMPORT_NOT_FOUND,
 	RESOLVE_TYPE_NOT_FOUND,
 	RESOLVE_TYPE_ARRAY_ZERO_SIZE,
@@ -237,6 +242,11 @@ ErrorMessage err_get_message(Error error)
 	case Error::DECL_ENUM_DUPLICATE_VARIANT:    return { "Enum has duplicate variant identifiers", "" };
 	case Error::DECL_PROC_DUPLICATE_PARAM:      return { "Procedure has duplicate input parameters", "" };
 	case Error::DECL_PROC_DUPLICATE_EXTERNAL:   return { "External procedure with same identifier is already defined", "Import and use existing procedure, its redefiniton will cause linker errors" };
+
+	case Error::IMPORT_SYMBOL_NOT_FOUND:        return { "Imported symbol isnt found in referenced module", "" };
+	case Error::IMPORT_SYMBOL_NOT_PUB:          return { "Imported symbol is not public", "" };
+	case Error::IMPORT_SYMBOL_ALREADY_DEFINED:  return { "Imported symbol is already defined in current module", "" };
+	case Error::IMPORT_SYMBOL_ALREADY_IMPORTED: return { "Imported symbol is already imported", "Remove unnecessary import" };
 
 	case Error::RESOLVE_IMPORT_NOT_FOUND:       return { "Import module is not found", "" };
 	case Error::RESOLVE_TYPE_NOT_FOUND:         return { "Custom type is not found", "" };

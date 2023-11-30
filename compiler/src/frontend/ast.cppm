@@ -89,6 +89,7 @@ export struct Ast_Ident
 export struct Module_Scope
 {
 	HashMap<Ast_Ident, Ast_Decl*> decl_map;
+	HashMap<Ast_Ident, Ast_Decl*> imported_decl_map;
 };
 
 export struct Ast_Module
