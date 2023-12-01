@@ -3,30 +3,6 @@ export module check_context;
 import general;
 import ast;
 
-struct Check_Context;
-struct Block_Info;
-struct Var_Info;
-enum class Terminator;
-enum class Checker_Block_Flags;
-enum class Checker_Proc_Call_Flags;
-
-export void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program);
-export void check_context_block_reset(Check_Context* cc, Ast_Decl_Proc* curr_proc);
-export void check_context_block_add(Check_Context* cc);
-export void check_context_block_pop_back(Check_Context* cc);
-export void check_context_block_add_var(Check_Context* cc, Ast_Ident ident, Ast_Type type);
-export bool check_context_block_contains_var(Check_Context* cc, Ast_Ident ident);
-export option<Ast_Type> check_context_block_find_var_type(Check_Context* cc, Ast_Ident ident);
-
-export struct Check_Context
-{
-	Ast* ast;
-	Ast_Program* program;
-	Ast_Decl_Proc* curr_proc;
-	std::vector<Block_Info> blocks;
-	std::vector<Var_Info> var_stack; //@Perf try hashmap with reset() on larger files
-};
-
 export struct Block_Info
 {
 	u32 var_cout;
@@ -36,6 +12,15 @@ export struct Var_Info
 {
 	Ast_Ident ident;
 	Ast_Type type;
+};
+
+export struct Check_Context
+{
+	Ast* program;
+	Ast_Module* ast;
+	Ast_Decl_Proc* curr_proc;
+	std::vector<Block_Info> blocks;
+	std::vector<Var_Info> var_stack; //@Perf try hashmap with reset() on larger files
 };
 
 export enum class Terminator
@@ -58,9 +43,17 @@ export enum class Checker_Proc_Call_Flags
 	In_Statement,
 };
 
+export void check_context_init(Check_Context* cc, Ast_Module* ast, Ast* program);
+export void check_context_block_reset(Check_Context* cc, Ast_Decl_Proc* curr_proc);
+export void check_context_block_add(Check_Context* cc);
+export void check_context_block_pop_back(Check_Context* cc);
+export void check_context_block_add_var(Check_Context* cc, Ast_Ident ident, Ast_Type type);
+export bool check_context_block_contains_var(Check_Context* cc, Ast_Ident ident);
+export option<Ast_Type> check_context_block_find_var_type(Check_Context* cc, Ast_Ident ident);
+
 module : private;
 
-void check_context_init(Check_Context* cc, Ast* ast, Ast_Program* program)
+void check_context_init(Check_Context* cc, Ast_Module* ast, Ast* program)
 {
 	cc->ast = ast,
 	cc->program = program;
