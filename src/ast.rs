@@ -3,6 +3,8 @@ use decl::Decl;
 use expr::{Expr, ExprList};
 use tt::Type;
 
+type SourceID = u32;
+
 #[derive(Copy, Clone)]
 pub struct Span {
     pub start: u32,
@@ -21,7 +23,7 @@ pub struct Package {
 
 #[derive(Copy, Clone)]
 pub struct Module {
-    //pub name: String, @represent name
+    pub source: SourceID,
     pub parent: P<Module>,
     pub submodules: List<P<Module>>,
     pub decls: List<P<Decl>>,

@@ -1,34 +1,43 @@
 use super::token::*;
 
+struct TokenBuffer {
+    pub tokens: [Token; Self::SIZE],
+}
+
+impl TokenBuffer {
+    pub const SIZE: usize = 256;
+    pub const LOOKAHEAD: usize = 4;
+}
+
 struct Lexer {}
 
 impl Lexer {
     fn symbol_to_token_glue(c: char) -> Option<TokenKind> {
         match c {
-            '(' => Some(TokenKind::Delim(Delim::OpenParen)),
-            '{' => Some(TokenKind::Delim(Delim::OpenBlock)),
-            '[' => Some(TokenKind::Delim(Delim::OpenBracket)),
-            ')' => Some(TokenKind::Delim(Delim::CloseParen)),
-            ']' => Some(TokenKind::Delim(Delim::CloseBlock)),
-            '}' => Some(TokenKind::Delim(Delim::CloseBracket)),
-            '@' => Some(TokenKind::Symbol(Symbol::At)),
-            '.' => Some(TokenKind::Symbol(Symbol::Dot)),
-            ':' => Some(TokenKind::Symbol(Symbol::Colon)),
-            ',' => Some(TokenKind::Symbol(Symbol::Comma)),
-            ';' => Some(TokenKind::Symbol(Symbol::Semicolon)),
-            '!' => Some(TokenKind::Symbol(Symbol::LogicNot)),
-            '~' => Some(TokenKind::Symbol(Symbol::BitwiseNot)),
-            '<' => Some(TokenKind::Symbol(Symbol::Less)),
-            '>' => Some(TokenKind::Symbol(Symbol::Greater)),
-            '+' => Some(TokenKind::Symbol(Symbol::Plus)),
-            '-' => Some(TokenKind::Symbol(Symbol::Minus)),
-            '*' => Some(TokenKind::Symbol(Symbol::Times)),
-            '/' => Some(TokenKind::Symbol(Symbol::Div)),
-            '%' => Some(TokenKind::Symbol(Symbol::Mod)),
-            '&' => Some(TokenKind::Symbol(Symbol::BitAnd)),
-            '|' => Some(TokenKind::Symbol(Symbol::BitOr)),
-            '^' => Some(TokenKind::Symbol(Symbol::BitXor)),
-            '=' => Some(TokenKind::Symbol(Symbol::Assign)),
+            '(' => Some(TokenKind::OpenParen),
+            '{' => Some(TokenKind::OpenBlock),
+            '[' => Some(TokenKind::OpenBracket),
+            ')' => Some(TokenKind::CloseParen),
+            ']' => Some(TokenKind::CloseBlock),
+            '}' => Some(TokenKind::CloseBracket),
+            '@' => Some(TokenKind::At),
+            '.' => Some(TokenKind::Dot),
+            ':' => Some(TokenKind::Colon),
+            ',' => Some(TokenKind::Comma),
+            ';' => Some(TokenKind::Semicolon),
+            '!' => Some(TokenKind::LogicNot),
+            '~' => Some(TokenKind::BitNot),
+            '<' => Some(TokenKind::Less),
+            '>' => Some(TokenKind::Greater),
+            '+' => Some(TokenKind::Plus),
+            '-' => Some(TokenKind::Minus),
+            '*' => Some(TokenKind::Times),
+            '/' => Some(TokenKind::Div),
+            '%' => Some(TokenKind::Mod),
+            '&' => Some(TokenKind::BitAnd),
+            '|' => Some(TokenKind::BitOr),
+            '^' => Some(TokenKind::BitXor),
+            '=' => Some(TokenKind::Assign),
             _ => None,
         }
     }
@@ -36,44 +45,44 @@ impl Lexer {
     fn symbol_token_glue_2(c: char, kind: TokenKind) -> Option<TokenKind> {
         match c {
             '.' => match kind {
-                TokenKind::Symbol(Symbol::Dot) => Some(TokenKind::Symbol(Symbol::DotDot)),
+                TokenKind::Dot => Some(TokenKind::DotDot),
                 _ => None,
             },
             ':' => match kind {
-                TokenKind::Symbol(Symbol::Colon) => Some(TokenKind::Symbol(Symbol::ColonColon)),
+                TokenKind::Colon => Some(TokenKind::ColonColon),
                 _ => None,
             },
             '&' => match kind {
-                TokenKind::Symbol(Symbol::BitAnd) => Some(TokenKind::Symbol(Symbol::LogicAnd)),
+                TokenKind::BitAnd => Some(TokenKind::LogicAnd),
                 _ => None,
             },
             '|' => match kind {
-                TokenKind::Symbol(Symbol::BitOr) => Some(TokenKind::Symbol(Symbol::LogicOr)),
+                TokenKind::BitOr => Some(TokenKind::LogicOr),
                 _ => None,
             },
             '<' => match kind {
-                TokenKind::Symbol(Symbol::Less) => Some(TokenKind::Symbol(Symbol::Shl)),
+                TokenKind::Less => Some(TokenKind::Shl),
                 _ => None,
             },
             '>' => match kind {
-                TokenKind::Symbol(Symbol::Minus) => Some(TokenKind::Symbol(Symbol::ArrowThin)),
-                TokenKind::Symbol(Symbol::Assign) => Some(TokenKind::Symbol(Symbol::ArrowWide)),
-                TokenKind::Symbol(Symbol::Greater) => Some(TokenKind::Symbol(Symbol::Shr)),
+                TokenKind::Minus => Some(TokenKind::ArrowThin),
+                TokenKind::Assign => Some(TokenKind::ArrowWide),
+                TokenKind::Greater => Some(TokenKind::Shr),
                 _ => None,
             },
             '=' => match kind {
-                TokenKind::Symbol(Symbol::Less) => Some(TokenKind::Symbol(Symbol::LessEq)),
-                TokenKind::Symbol(Symbol::Greater) => Some(TokenKind::Symbol(Symbol::GreaterEq)),
-                TokenKind::Symbol(Symbol::LogicNot) => Some(TokenKind::Symbol(Symbol::NotEq)),
-                TokenKind::Symbol(Symbol::Assign) => Some(TokenKind::Symbol(Symbol::IsEq)),
-                TokenKind::Symbol(Symbol::Plus) => Some(TokenKind::Symbol(Symbol::PlusEq)),
-                TokenKind::Symbol(Symbol::Minus) => Some(TokenKind::Symbol(Symbol::MinusEq)),
-                TokenKind::Symbol(Symbol::Times) => Some(TokenKind::Symbol(Symbol::TimesEq)),
-                TokenKind::Symbol(Symbol::Div) => Some(TokenKind::Symbol(Symbol::DivEq)),
-                TokenKind::Symbol(Symbol::Mod) => Some(TokenKind::Symbol(Symbol::ModEq)),
-                TokenKind::Symbol(Symbol::BitAnd) => Some(TokenKind::Symbol(Symbol::BitAndEq)),
-                TokenKind::Symbol(Symbol::BitOr) => Some(TokenKind::Symbol(Symbol::BitOrEq)),
-                TokenKind::Symbol(Symbol::BitXor) => Some(TokenKind::Symbol(Symbol::BitXorEq)),
+                TokenKind::Less => Some(TokenKind::LessEq),
+                TokenKind::Greater => Some(TokenKind::GreaterEq),
+                TokenKind::LogicNot => Some(TokenKind::NotEq),
+                TokenKind::Assign => Some(TokenKind::IsEq),
+                TokenKind::Plus => Some(TokenKind::PlusEq),
+                TokenKind::Minus => Some(TokenKind::MinusEq),
+                TokenKind::Times => Some(TokenKind::TimesEq),
+                TokenKind::Div => Some(TokenKind::DivEq),
+                TokenKind::Mod => Some(TokenKind::ModEq),
+                TokenKind::BitAnd => Some(TokenKind::BitAndEq),
+                TokenKind::BitOr => Some(TokenKind::BitOrEq),
+                TokenKind::BitXor => Some(TokenKind::BitXorEq),
                 _ => None,
             },
             _ => None,
@@ -83,8 +92,8 @@ impl Lexer {
     fn symbol_token_glue_3(c: char, kind: TokenKind) -> Option<TokenKind> {
         match c {
             '=' => match kind {
-                TokenKind::Symbol(Symbol::Shl) => Some(TokenKind::Symbol(Symbol::ShlEq)),
-                TokenKind::Symbol(Symbol::Shr) => Some(TokenKind::Symbol(Symbol::ShrEq)),
+                TokenKind::Shl => Some(TokenKind::ShlEq),
+                TokenKind::Shr => Some(TokenKind::ShrEq),
                 _ => None,
             },
             _ => None,
