@@ -2,11 +2,11 @@ use std::ops::{Deref, DerefMut};
 use std::{alloc, ptr};
 
 #[derive(Copy, Clone)]
-pub struct P<T> {
+pub struct P<T: Copy> {
     ptr: *mut T,
 }
 
-impl<T> P<T> {
+impl<T: Copy> P<T> {
     pub fn new(ptr: *mut T) -> Self {
         P { ptr }
     }
@@ -16,9 +16,13 @@ impl<T> P<T> {
             ptr: ptr::null_mut() as *mut T,
         }
     }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
 }
 
-impl<T> Deref for P<T> {
+impl<T: Copy> Deref for P<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -26,9 +30,60 @@ impl<T> Deref for P<T> {
     }
 }
 
-impl<T> DerefMut for P<T> {
+impl<T: Copy> DerefMut for P<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.ptr }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct List<T: Copy> {
+    first: P<Node<T>>,
+    last: P<Node<T>>,
+}
+
+#[derive(Copy, Clone)]
+struct Node<T: Copy> {
+    val: T,
+    next: P<Node<T>>,
+}
+
+impl<T: Copy> List<T> {
+    pub fn add(&mut self, arena: &mut Arena, val: T) {
+        let mut node = arena.alloc::<Node<T>>();
+        node.val = val;
+        node.next = P::null();
+
+        if self.first.is_null() {
+            self.first = node;
+            self.last = self.first;
+        } else {
+            self.last.next = node;
+            self.last = node;
+        }
+    }
+}
+
+pub struct ListIterator<T: Copy> {
+    curr: P<Node<T>>,
+}
+
+impl<T: Copy> List<T> {
+    pub fn iter(self) -> ListIterator<T> {
+        ListIterator { curr: self.first }
+    }
+}
+
+impl<T: Copy> Iterator for ListIterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr.is_null() {
+            return None;
+        }
+        let val = self.curr.val;
+        self.curr = self.curr.next;
+        return Some(val);
     }
 }
 
@@ -68,7 +123,7 @@ impl Arena {
         return arena;
     }
 
-    pub fn alloc<T>(&mut self) -> P<T> {
+    pub fn alloc<T: Copy>(&mut self) -> P<T> {
         let size = std::mem::size_of::<T>();
         if self.offset + size > self.block_size {
             self.alloc_block();
