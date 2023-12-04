@@ -1,14 +1,16 @@
+#[derive(Debug)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
 }
 
+#[derive(Debug)]
 pub struct Token {
     pub span: Span,
     pub kind: TokenKind,
 }
 
-#[derive(PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum TokenKind {
     Ident,
     // Literals
@@ -16,8 +18,9 @@ pub enum TokenKind {
     LitFloat(f64),
     LitBool(bool),
     LitString,
-    // Eof
-    EndOfFile,
+    // Special
+    Error,
+    Eof,
     // Keywords
     KwPub,
     KwMod,
@@ -108,6 +111,19 @@ pub enum TokenKind {
     ShrEq,
 }
 
+impl Token {
+    pub fn new(start: u32, end: u32, kind: TokenKind) -> Self {
+        Self {
+            span: Span { start, end },
+            kind,
+        }
+    }
+
+    pub fn eof() -> Self {
+        Self::new(0, 0, TokenKind::Eof)
+    }
+}
+
 impl TokenKind {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -116,7 +132,8 @@ impl TokenKind {
             TokenKind::LitFloat(..) => "float literal",
             TokenKind::LitBool(..) => "bool literal",
             TokenKind::LitString => "string literal",
-            TokenKind::EndOfFile => "end of file",
+            TokenKind::Error => "error token",
+            TokenKind::Eof => "end of file token",
             TokenKind::KwPub => "pub",
             TokenKind::KwMod => "mod",
             TokenKind::KwMut => "mut",

@@ -1,14 +1,8 @@
-use crate::ast::expr::Unary;
 use crate::ast::*;
+use crate::lexer::*;
 use crate::token::*;
 use std::io;
 use std::path::PathBuf;
-
-use crate::lexer;
-
-struct Parser {
-    tokens: [Token; 100],
-}
 
 pub fn parse() -> io::Result<()> {
     let mut path = PathBuf::new();
@@ -17,8 +11,13 @@ pub fn parse() -> io::Result<()> {
     println!("path: {}\n", path.display());
 
     let string = std::fs::read_to_string(&path)?;
-    // Print the file content
     println!("File content:\n{}", string);
+
+    let mut lexer = Lexer::new(&string);
+    let tokens = lexer.lex();
+    for tok in tokens.iter() {
+        dbg!(tok.kind); //@temp
+    }
 
     Ok(())
 }
