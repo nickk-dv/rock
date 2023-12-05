@@ -16,7 +16,10 @@ pub fn parse() -> io::Result<()> {
     let mut lexer = Lexer::new(&string);
     let tokens = lexer.lex();
     for tok in tokens.iter() {
-        dbg!(tok.kind); //@temp
+        if tok.kind == TokenKind::Error {
+            dbg!(tok); //@temp
+            lexer.print_substring(tok.span.start, tok.span.end);
+        }
     }
 
     Ok(())
