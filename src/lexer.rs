@@ -1,5 +1,3 @@
-use crate::token;
-
 use super::token::*;
 use std::{iter::Peekable, str::CharIndices};
 
@@ -129,7 +127,6 @@ impl<'src> Lexer<'src> {
             "defer" => TokenKind::KwDefer,
             "break" => TokenKind::KwBreak,
             "return" => TokenKind::KwReturn,
-            "switch" => TokenKind::KwSwitch,
             "continue" => TokenKind::KwContinue,
             "cast" => TokenKind::KwCast,
             "sizeof" => TokenKind::KwSizeof,

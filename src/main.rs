@@ -6,10 +6,12 @@ mod token;
 
 fn main() {
     println!("Hello, world!");
-    let result = parser::parse();
+
+    let mut parser = parser::Parser::new();
+    let result = parser.parse_package();
     match result {
-        Err(e) => println!("File open error: {}", e),
-        Ok(()) => {}
+        Ok(_) => println!("Parse success"),
+        Err(()) => print!("Parse failed"),
     }
 
     println!("Press Enter to exit...");

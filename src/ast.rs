@@ -1,15 +1,11 @@
 use crate::ptr::*;
+use crate::token::Span;
 use decl::Decl;
-use expr::{Expr, ExprList};
+use expr::Expr;
+use stmt::Block;
 use tt::Type;
 
 type SourceID = u32;
-
-#[derive(Copy, Clone)]
-pub struct Span {
-    pub start: u32,
-    pub end: u32,
-}
 
 #[derive(Copy, Clone)]
 pub struct Ident {
@@ -24,9 +20,9 @@ pub struct Package {
 #[derive(Copy, Clone)]
 pub struct Module {
     pub source: SourceID,
-    pub parent: P<Module>,
+    pub parent: Option<P<Module>>,
     pub submodules: List<P<Module>>,
-    pub decls: List<P<Decl>>,
+    pub decls: List<Decl>,
 }
 
 #[derive(Copy, Clone)]
@@ -56,14 +52,20 @@ pub enum AccessKind {
 #[derive(Copy, Clone)]
 pub struct AccessCall {
     pub name: Ident,
-    pub input: P<ExprList>,
+    pub input: List<P<Expr>>,
 }
 
 pub mod tt {
     use super::*;
 
     #[derive(Copy, Clone)]
-    pub enum Type {
+    pub struct Type {
+        pub pointer_level: u32,
+        pub kind: TypeKind,
+    }
+
+    #[derive(Copy, Clone)]
+    pub enum TypeKind {
         Basic(BasicType),
         Custom(P<Custom>),
         StaticArray(P<StaticArray>),
@@ -129,12 +131,23 @@ pub mod decl {
         pub is_variadic: bool,
         pub return_type: Option<Type>,
         pub is_external: bool,
+        pub block: P<Block>,
     }
 
     #[derive(Copy, Clone)]
     pub struct ProcParam {
         pub is_mut: bool,
-        pub is_self: bool,
+        pub kind: ParamKind,
+    }
+
+    #[derive(Copy, Clone)]
+    pub enum ParamKind {
+        SelfParam(Ident),
+        Normal(ParamNormal),
+    }
+
+    #[derive(Copy, Clone)]
+    pub struct ParamNormal {
         pub name: Ident,
         pub tt: Type,
     }
@@ -176,7 +189,7 @@ pub mod decl {
     }
 }
 
-mod stmt {
+pub mod stmt {
     use super::*;
 
     #[derive(Copy, Clone)]
@@ -184,14 +197,13 @@ mod stmt {
         If(P<If>),
         For(P<For>),
         Block(P<Block>),
-        Defer(P<Defer>),
+        Defer(P<Block>),
         Break,
         Return(P<Return>),
-        Switch(P<Switch>),
         Continue,
         VarDecl(P<VarDecl>),
         VarAssign(P<VarAssign>),
-        ProcCall(P<ProcCall>),
+        ProcCall(P<Something>),
     }
 
     #[derive(Copy, Clone)]
@@ -217,29 +229,13 @@ mod stmt {
 
     #[derive(Copy, Clone)]
     pub struct Block {
-        pub stmts: List<P<Stmt>>,
-    }
-
-    #[derive(Copy, Clone)]
-    pub struct Defer {
-        pub block: P<Block>,
+        pub is_short: bool,
+        pub stmts: List<Stmt>,
     }
 
     #[derive(Copy, Clone)]
     pub struct Return {
         pub expr: Option<P<Expr>>,
-    }
-
-    #[derive(Copy, Clone)]
-    pub struct Switch {
-        pub expr: P<Expr>,
-        pub cases: List<SwitchCase>,
-    }
-
-    #[derive(Copy, Clone)]
-    pub struct SwitchCase {
-        pub expr: P<Expr>,
-        pub block: Option<P<Block>>,
     }
 
     #[derive(Copy, Clone)]
@@ -256,11 +252,6 @@ mod stmt {
         pub op: AssignOp,
         pub expr: P<Expr>,
     }
-
-    #[derive(Copy, Clone)]
-    pub struct ProcCall {
-        pub something: P<Something>,
-    }
 }
 
 pub mod expr {
@@ -268,18 +259,8 @@ pub mod expr {
 
     #[derive(Copy, Clone)]
     pub enum Expr {
-        Term(P<Term>),
         Unary(P<Unary>),
         Binary(P<Binary>),
-    }
-
-    #[derive(Copy, Clone)]
-    pub struct ExprList {
-        pub exprs: List<P<Expr>>,
-    }
-
-    #[derive(Copy, Clone)]
-    pub enum Term {
         Enum(Enum),
         Cast(P<Cast>),
         Sizeof(P<Sizeof>),
@@ -328,14 +309,14 @@ pub mod expr {
     #[derive(Copy, Clone)]
     pub struct ArrayInit {
         pub tt: Option<Type>,
-        pub input: P<ExprList>,
+        pub input: List<P<Expr>>,
     }
 
     #[derive(Copy, Clone)]
     pub struct StructInit {
         pub module_access: Option<P<ModuleAccess>>,
         pub struct_name: Option<Ident>,
-        pub input: P<ExprList>,
+        pub input: List<P<Expr>>,
     }
 }
 

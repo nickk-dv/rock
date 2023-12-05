@@ -125,11 +125,13 @@ impl Arena {
 
     pub fn alloc<T: Copy>(&mut self) -> P<T> {
         let size = std::mem::size_of::<T>();
-        if self.offset + size > self.block_size {
+        let aligned_size = (size + 7) & !7;
+
+        if self.offset + aligned_size > self.block_size {
             self.alloc_block();
         }
         let ptr = unsafe { self.data.add(self.offset) };
-        self.offset += size;
+        self.offset += aligned_size;
         return P::new(ptr as *mut T);
     }
 

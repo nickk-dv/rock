@@ -1,10 +1,10 @@
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Token {
     pub span: Span,
     pub kind: TokenKind,
@@ -37,7 +37,6 @@ pub enum TokenKind {
     KwDefer,
     KwBreak,
     KwReturn,
-    KwSwitch,
     KwContinue,
     // Expr
     KwCast,
@@ -148,7 +147,6 @@ impl TokenKind {
             TokenKind::KwDefer => "defer",
             TokenKind::KwBreak => "break",
             TokenKind::KwReturn => "return",
-            TokenKind::KwSwitch => "switch",
             TokenKind::KwContinue => "continue",
             TokenKind::KwCast => "cast",
             TokenKind::KwSizeof => "sizeof",
