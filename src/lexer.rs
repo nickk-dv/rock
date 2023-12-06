@@ -52,6 +52,14 @@ impl<'src> Lexer<'src> {
             tokens.push(self.lex_token());
         }
         tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
+        tokens.push(Token::eof());
         return tokens;
     }
 
@@ -259,11 +267,11 @@ impl<'src> Lexer<'src> {
     fn lex_symbol_glue(c: char) -> Option<TokenKind> {
         match c {
             '(' => Some(TokenKind::OpenParen),
-            '{' => Some(TokenKind::OpenBlock),
-            '[' => Some(TokenKind::OpenBracket),
             ')' => Some(TokenKind::CloseParen),
-            ']' => Some(TokenKind::CloseBlock),
-            '}' => Some(TokenKind::CloseBracket),
+            '{' => Some(TokenKind::OpenBlock),
+            '}' => Some(TokenKind::CloseBlock),
+            '[' => Some(TokenKind::OpenBracket),
+            ']' => Some(TokenKind::CloseBracket),
             '@' => Some(TokenKind::At),
             '.' => Some(TokenKind::Dot),
             ':' => Some(TokenKind::Colon),

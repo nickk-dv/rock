@@ -32,7 +32,7 @@ pub struct ModuleAccess {
 
 #[derive(Copy, Clone)]
 pub struct Something {
-    pub module_access: P<ModuleAccess>,
+    pub module_access: Option<P<ModuleAccess>>,
     pub access: P<Access>,
 }
 
@@ -264,7 +264,7 @@ pub mod expr {
         Enum(Enum),
         Cast(P<Cast>),
         Sizeof(P<Sizeof>),
-        Literal(Literal),
+        Literal(P<Literal>),
         ArrayInit(P<ArrayInit>),
         StructInit(P<StructInit>),
         Something(P<Something>),
@@ -304,6 +304,7 @@ pub mod expr {
         Uint(u64),
         Float(f64),
         Bool(bool),
+        String,
     }
 
     #[derive(Copy, Clone)]

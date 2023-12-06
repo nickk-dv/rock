@@ -42,6 +42,14 @@ impl Parser {
 
     fn err(&self, expected_kind: TokenKind) -> Result<(), ()> {
         println!("error expected: {}", expected_kind.as_str());
+        let token = self.peek_token();
+        if let Some(last_source) = self.sources.last() {
+            if let Some(substring) =
+                last_source.get((token.span.start - 20) as usize..(token.span.end + 20) as usize)
+            {
+                println!("source location: {}", substring);
+            }
+        }
         Err(())
     }
 
@@ -58,6 +66,12 @@ impl Parser {
     }
 
     fn consume(&mut self) {
+        dbg!(self.tokens[self.peek_index].kind);
+        println!(
+            "consume: peek_index = {} token count = {}",
+            self.peek_index,
+            self.tokens.len()
+        );
         self.peek_index += 1;
     }
 
@@ -70,19 +84,19 @@ impl Parser {
     }
 
     fn try_consume_unary_op(&mut self) -> Option<UnaryOp> {
-        self.peek().as_unary_op()
-    }
-
-    fn try_consume_binary_op(&mut self) -> Option<BinaryOp> {
-        self.peek().as_binary_op()
-    }
-
-    fn try_consume_assign_op(&mut self) -> Option<AssignOp> {
-        self.peek().as_assign_op()
+        let unary_op = self.peek().as_unary_op();
+        if unary_op.is_some() {
+            self.consume();
+        }
+        unary_op
     }
 
     fn try_consume_basic_type(&mut self) -> Option<BasicType> {
-        self.peek().as_basic_type()
+        let basic_type = self.peek().as_basic_type();
+        if basic_type.is_some() {
+            self.consume();
+        }
+        basic_type
     }
 
     fn expect_consume(&mut self, kind: TokenKind) -> Result<(), ()> {
@@ -95,6 +109,7 @@ impl Parser {
 
     fn expect_consume_basic_type(&mut self) -> Result<BasicType, ()> {
         if let Some(basic_type) = self.peek().as_basic_type() {
+            self.consume();
             return Ok(basic_type);
         }
         println!("expected 'basic type'");
@@ -107,7 +122,15 @@ impl Parser {
             self.consume();
             return Ok(Ident { span: token.span });
         }
-        println!("expected 'identifier'");
+        println!("error expected: identifier");
+        let token = self.peek_token();
+        if let Some(last_source) = self.sources.last() {
+            if let Some(substring) =
+                last_source.get((token.span.start - 20) as usize..(token.span.end + 20) as usize)
+            {
+                println!("source location: {}", substring);
+            }
+        }
         Err(())
     }
 
@@ -121,7 +144,6 @@ impl Parser {
 
         while self.peek() != TokenKind::Eof {
             let decl = self.parse_decl()?;
-            println!("decl parsed");
             module.decls.add(&mut self.arena, decl);
         }
         Ok(module)
@@ -134,6 +156,7 @@ impl Parser {
         let mut module_access = self.arena.alloc::<ModuleAccess>();
         while self.peek() == TokenKind::Ident && self.peek_next(1) == TokenKind::ColonColon {
             let name = unsafe { self.parse_ident().unwrap_unchecked() };
+            self.consume();
             module_access.names.add(&mut self.arena, name);
         }
         Some(module_access)
@@ -176,7 +199,7 @@ impl Parser {
     fn parse_type_static_array(&mut self) -> Result<P<tt::StaticArray>, ()> {
         let mut static_array = self.arena.alloc::<tt::StaticArray>();
         self.expect_consume(TokenKind::OpenBracket)?;
-        static_array.constexpr_size = self.parse_expr()?;
+        static_array.constexpr_size = self.parse_sub_expr(0)?;
         self.expect_consume(TokenKind::CloseBracket)?;
         static_array.element = self.parse_type()?;
         Ok(static_array)
@@ -188,7 +211,7 @@ impl Parser {
             TokenKind::KwImpl => Ok(decl::Decl::Impl(self.parse_decl_impl()?)),
             TokenKind::KwImport => Ok(decl::Decl::Import(self.parse_decl_import()?)),
             TokenKind::Ident | TokenKind::KwPub => {
-                if (self.peek_next(1) == TokenKind::KwMod) {
+                if self.peek_next(1) == TokenKind::KwMod {
                     return Ok(decl::Decl::Mod(self.parse_decl_mod()?));
                 }
 
@@ -304,7 +327,10 @@ impl Parser {
     }
 
     fn parse_enum_variant(&mut self) -> Result<decl::EnumVariant, ()> {
-        todo!();
+        let name = self.parse_ident()?;
+        self.expect_consume(TokenKind::Assign)?;
+        let constexpr = self.parse_expr()?;
+        Ok(decl::EnumVariant { name, constexpr })
     }
 
     fn parse_decl_struct(&mut self) -> Result<P<decl::Struct>, ()> {
@@ -322,11 +348,31 @@ impl Parser {
     }
 
     fn parse_struct_field(&mut self) -> Result<decl::StructField, ()> {
-        todo!();
+        let is_pub = self.try_consume(TokenKind::KwPub);
+        let name = self.parse_ident()?;
+        self.expect_consume(TokenKind::Colon)?;
+        let tt = self.parse_type()?;
+        let mut default_expr = None;
+        if self.try_consume(TokenKind::Assign) {
+            default_expr = Some(self.parse_expr()?);
+        } else {
+            self.expect_consume(TokenKind::Semicolon)?;
+        }
+        Ok(decl::StructField {
+            is_pub,
+            name,
+            tt,
+            default_expr,
+        })
     }
 
     fn parse_decl_global(&mut self) -> Result<P<decl::Global>, ()> {
-        todo!();
+        let mut global_decl = self.arena.alloc::<decl::Global>();
+        global_decl.is_pub = self.try_consume(TokenKind::KwPub);
+        global_decl.name = self.parse_ident()?;
+        self.expect_consume(TokenKind::ColonColon)?;
+        global_decl.constexpr = self.parse_expr()?;
+        Ok(global_decl)
     }
 
     fn parse_stmt(&mut self) -> Result<stmt::Stmt, ()> {
@@ -345,8 +391,24 @@ impl Parser {
                 Ok(stmt::Stmt::Continue)
             }
             _ => {
-                println!("invalid token while parsing a statement");
-                Err(())
+                if self.peek() == TokenKind::KwMut
+                    || (self.peek() == TokenKind::Ident && self.peek_next(1) == TokenKind::Colon)
+                {
+                    return Ok(stmt::Stmt::VarDecl(self.parse_stmt_var_decl()?));
+                }
+
+                let module_access = self.parse_module_access();
+                let something = self.parse_expr_something(module_access)?;
+
+                if self.try_consume(TokenKind::Semicolon) {
+                    return Ok(stmt::Stmt::ProcCall(something));
+                } else {
+                    let mut var_assign = self.arena.alloc::<stmt::VarAssign>();
+                    var_assign.something = something;
+                    self.expect_consume(TokenKind::Assign)?; //support assign ops
+                    var_assign.expr = self.parse_expr()?;
+                    return Ok(stmt::Stmt::VarAssign(var_assign));
+                }
             }
         }
     }
@@ -414,10 +476,12 @@ impl Parser {
         let mut return_stmt = self.arena.alloc::<stmt::Return>();
         self.expect_consume(TokenKind::KwReturn)?;
         return_stmt.expr = match self.peek() {
-            TokenKind::Semicolon => None,
+            TokenKind::Semicolon => {
+                self.consume();
+                None
+            }
             _ => Some(self.parse_expr()?),
         };
-        self.expect_consume(TokenKind::Semicolon)?;
         Ok(return_stmt)
     }
 
@@ -428,7 +492,20 @@ impl Parser {
     }
 
     fn parse_stmt_var_decl(&mut self) -> Result<P<stmt::VarDecl>, ()> {
-        todo!()
+        let mut var_decl = self.arena.alloc::<stmt::VarDecl>();
+        var_decl.is_mut = self.try_consume(TokenKind::KwMut);
+        var_decl.name = self.parse_ident()?;
+        self.expect_consume(TokenKind::Colon)?;
+        let infer_type = self.try_consume(TokenKind::Assign);
+        if !infer_type {
+            var_decl.tt = Some(self.parse_type()?);
+            if self.try_consume(TokenKind::Semicolon) {
+                return Ok(var_decl);
+            }
+            self.expect_consume(TokenKind::Assign)?;
+        }
+        var_decl.expr = Some(self.parse_expr()?);
+        Ok(var_decl)
     }
 
     fn parse_stmt_var_assign(&mut self) -> Result<P<stmt::VarAssign>, ()> {
@@ -440,7 +517,122 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<P<expr::Expr>, ()> {
-        todo!()
+        let expr = self.parse_sub_expr(0)?;
+        self.expect_consume(TokenKind::Semicolon)?;
+        Ok(expr)
+    }
+
+    fn parse_sub_expr(&mut self, min_prec: u32) -> Result<P<expr::Expr>, ()> {
+        println!("parse_sub_expr");
+        let expr_lhs = self.parse_primary_expr()?;
+        loop {
+            println!("parse_sub_expr loop");
+            let mut prec: u32;
+            let binary_op: BinaryOp;
+            if let Some(op) = self.peek().as_binary_op() {
+                binary_op = op;
+                prec = op.precedence();
+                if prec < min_prec {
+                    break;
+                }
+                self.consume();
+            } else {
+                break;
+            }
+            let expr_rhs = self.parse_sub_expr(prec + 1)?;
+            let mut expr_lhs_copy = self.arena.alloc::<expr::Expr>();
+            *expr_lhs_copy = *expr_lhs;
+
+            let mut bin_expr = self.arena.alloc::<expr::Binary>();
+            bin_expr.op = binary_op;
+            bin_expr.lhs = expr_lhs_copy;
+            bin_expr.rhs = expr_rhs;
+        }
+        Ok(expr_lhs)
+    }
+
+    fn parse_primary_expr(&mut self) -> Result<P<expr::Expr>, ()> {
+        println!("parse_primary_expr");
+        if self.try_consume(TokenKind::OpenParen) {
+            let expr = self.parse_sub_expr(0)?;
+            self.expect_consume(TokenKind::CloseParen)?;
+            return Ok(expr);
+        }
+
+        if let Some(unary_op) = self.try_consume_unary_op() {
+            let rhs = self.parse_primary_expr()?;
+            let mut unary_expr = self.arena.alloc::<expr::Unary>();
+            unary_expr.op = unary_op;
+            unary_expr.rhs = rhs;
+
+            let mut expr = self.arena.alloc::<expr::Expr>();
+            *expr = expr::Expr::Unary(unary_expr);
+            return Ok(expr);
+        }
+
+        let mut expr = self.arena.alloc::<expr::Expr>();
+        match self.peek() {
+            TokenKind::KwCast => {
+                *expr = expr::Expr::Cast(self.parse_expr_cast()?);
+            }
+            TokenKind::KwSizeof => {
+                *expr = expr::Expr::Sizeof(self.parse_expr_sizeof()?);
+            }
+            TokenKind::LitInt(..)
+            | TokenKind::LitFloat(..)
+            | TokenKind::LitBool(..)
+            | TokenKind::LitString => {
+                *expr = expr::Expr::Literal(self.parse_expr_literal()?);
+            }
+            TokenKind::OpenBlock | TokenKind::OpenBracket => {
+                *expr = expr::Expr::ArrayInit(self.parse_expr_array_init()?);
+            }
+            _ => {
+                if self.peek() == TokenKind::Dot
+                    && self.peek_next(1) != TokenKind::OpenBlock
+                    && self.peek_next(2) != TokenKind::OpenBlock
+                {
+                    *expr = expr::Expr::Enum(self.parse_expr_enum()?);
+                    return Ok(expr);
+                }
+
+                let module_access = self.parse_module_access();
+                if (self.peek() == TokenKind::Dot && self.peek_next(1) == TokenKind::OpenBlock)
+                    || (self.peek() == TokenKind::Ident
+                        && self.peek_next(1) == TokenKind::Dot
+                        && self.peek_next(2) == TokenKind::OpenBlock)
+                {
+                    *expr = expr::Expr::StructInit(self.parse_expr_struct_init(module_access)?);
+                    return Ok(expr);
+                }
+
+                *expr = expr::Expr::Something(self.parse_expr_something(module_access)?);
+                return Ok(expr);
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_expr_list(
+        &mut self,
+        start: TokenKind,
+        end: TokenKind,
+    ) -> Result<List<P<expr::Expr>>, ()> {
+        println!("parse_expr_list");
+        let mut expr_list = List::new();
+        self.expect_consume(start)?;
+        if self.try_consume(end) {
+            return Ok(expr_list);
+        }
+        loop {
+            let expr = self.parse_sub_expr(0)?;
+            expr_list.add(&mut self.arena, expr);
+            if !self.try_consume(TokenKind::Comma) {
+                break;
+            }
+        }
+        self.expect_consume(end)?;
+        Ok(expr_list)
     }
 
     fn parse_expr_enum(&mut self) -> Result<expr::Enum, ()> {
@@ -455,7 +647,7 @@ impl Parser {
         self.expect_consume(TokenKind::OpenParen)?;
         cast_expr.into = self.expect_consume_basic_type()?;
         self.expect_consume(TokenKind::Comma)?;
-        cast_expr.expr = self.parse_expr()?;
+        cast_expr.expr = self.parse_sub_expr(0)?;
         self.expect_consume(TokenKind::CloseParen)?;
         Ok(cast_expr)
     }
@@ -470,22 +662,135 @@ impl Parser {
     }
 
     fn parse_expr_literal(&mut self) -> Result<P<expr::Literal>, ()> {
-        todo!()
+        let mut literal_expr = self.arena.alloc::<expr::Literal>();
+        match self.peek() {
+            TokenKind::LitInt(u) => {
+                *literal_expr = expr::Literal::Uint(u);
+            }
+            TokenKind::LitFloat(f) => {
+                *literal_expr = expr::Literal::Float(f);
+            }
+            TokenKind::LitBool(b) => {
+                *literal_expr = expr::Literal::Bool(b);
+            }
+            TokenKind::LitString => {
+                *literal_expr = expr::Literal::String;
+            }
+            _ => {
+                println!("expected int, float, bool or string literal in expression");
+                return Err(());
+            }
+        }
+        self.consume();
+        Ok(literal_expr)
     }
 
     fn parse_expr_array_init(&mut self) -> Result<P<expr::ArrayInit>, ()> {
-        todo!()
+        let mut array_init = self.arena.alloc::<expr::ArrayInit>();
+        if self.peek() == TokenKind::OpenBracket {
+            array_init.tt = Some(self.parse_type()?);
+        }
+        array_init.input = self.parse_expr_list(TokenKind::OpenBlock, TokenKind::CloseBlock)?;
+        Ok(array_init)
     }
 
-    fn parse_expr_struct_init(&mut self) -> Result<P<expr::StructInit>, ()> {
-        todo!()
+    fn parse_expr_struct_init(
+        &mut self,
+        module_access: Option<P<ModuleAccess>>,
+    ) -> Result<P<expr::StructInit>, ()> {
+        let mut struct_init = self.arena.alloc::<expr::StructInit>();
+        struct_init.module_access = module_access;
+        if self.peek() == TokenKind::Ident {
+            struct_init.struct_name = Some(self.parse_ident()?);
+        }
+        self.expect_consume(TokenKind::Dot)?;
+        struct_init.input = self.parse_expr_list(TokenKind::OpenBlock, TokenKind::CloseBlock)?;
+        Ok(struct_init)
     }
 
-    fn parse_expr_something(&mut self) -> Result<P<Something>, ()> {
-        todo!()
+    fn parse_expr_something(
+        &mut self,
+        module_access: Option<P<ModuleAccess>>,
+    ) -> Result<P<Something>, ()> {
+        let mut something = self.arena.alloc::<Something>();
+        something.module_access = module_access;
+        something.access = self.parse_access_first()?;
+        self.parse_access(something.access)?;
+        Ok(something)
+    }
+
+    fn parse_access_first(&mut self) -> Result<P<Access>, ()> {
+        println!("parse_access_first");
+        let mut access = self.arena.alloc::<Access>();
+        let ident = self.parse_ident()?;
+        if self.peek() == TokenKind::OpenParen {
+            let input = self.parse_expr_list(TokenKind::OpenParen, TokenKind::CloseParen)?;
+            let mut access_call = self.arena.alloc::<AccessCall>();
+            access_call.name = ident;
+            access_call.input = input;
+            access.kind = AccessKind::Call(access_call);
+        } else {
+            access.kind = AccessKind::Ident(ident);
+        }
+        Ok(access)
+    }
+
+    fn parse_access(&mut self, mut prev: P<Access>) -> Result<(), ()> {
+        println!("parse access");
+        match self.peek() {
+            TokenKind::Dot | TokenKind::OpenBracket => {}
+            _ => {
+                return Ok(());
+            }
+        }
+        let mut access = self.arena.alloc::<Access>();
+
+        match self.peek() {
+            TokenKind::Dot => {
+                self.consume();
+                let ident = self.parse_ident()?;
+                if self.peek() == TokenKind::OpenParen {
+                    let input =
+                        self.parse_expr_list(TokenKind::OpenParen, TokenKind::CloseParen)?;
+                    let mut access_call = self.arena.alloc::<AccessCall>();
+                    access_call.name = ident;
+                    access_call.input = input;
+                    access.kind = AccessKind::Call(access_call);
+                } else {
+                    access.kind = AccessKind::Ident(ident);
+                }
+            }
+            TokenKind::OpenBracket => {
+                self.consume();
+                let index_expr = self.parse_sub_expr(0)?;
+                access.kind = AccessKind::Array(index_expr);
+                self.expect_consume(TokenKind::CloseBracket)?;
+            }
+            _ => {}
+        }
+        prev.next = Some(access);
+        self.parse_access(access)?;
+        Ok(())
     }
 }
 
+impl BinaryOp {
+    pub fn precedence(&self) -> u32 {
+        match self {
+            BinaryOp::LogicAnd | BinaryOp::LogicOr => 0,
+            BinaryOp::Less
+            | BinaryOp::Greater
+            | BinaryOp::LessEq
+            | BinaryOp::GreaterEq
+            | BinaryOp::IsEq
+            | BinaryOp::NotEq => 1,
+            BinaryOp::Plus | BinaryOp::Minus => 2,
+            BinaryOp::Times | BinaryOp::Div | BinaryOp::Mod => 3,
+            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => 4,
+            BinaryOp::Shl | BinaryOp::Shr => 5,
+        }
+    }
+}
 impl TokenKind {
     fn as_unary_op(&self) -> Option<UnaryOp> {
         match self {

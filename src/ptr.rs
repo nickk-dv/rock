@@ -49,6 +49,13 @@ struct Node<T: Copy> {
 }
 
 impl<T: Copy> List<T> {
+    pub fn new() -> Self {
+        Self {
+            first: P::null(),
+            last: P::null(),
+        }
+    }
+
     pub fn add(&mut self, arena: &mut Arena, val: T) {
         let mut node = arena.alloc::<Node<T>>();
         node.val = val;
