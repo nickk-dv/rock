@@ -524,10 +524,10 @@ impl Parser {
 
     fn parse_sub_expr(&mut self, min_prec: u32) -> Result<P<expr::Expr>, ()> {
         println!("parse_sub_expr");
-        let expr_lhs = self.parse_primary_expr()?;
+        let mut expr_lhs = self.parse_primary_expr()?;
         loop {
             println!("parse_sub_expr loop");
-            let mut prec: u32;
+            let prec: u32;
             let binary_op: BinaryOp;
             if let Some(op) = self.peek().as_binary_op() {
                 binary_op = op;
@@ -547,6 +547,8 @@ impl Parser {
             bin_expr.op = binary_op;
             bin_expr.lhs = expr_lhs_copy;
             bin_expr.rhs = expr_rhs;
+
+            *expr_lhs = expr::Expr::Binary(bin_expr);
         }
         Ok(expr_lhs)
     }
@@ -664,6 +666,9 @@ impl Parser {
     fn parse_expr_literal(&mut self) -> Result<P<expr::Literal>, ()> {
         let mut literal_expr = self.arena.alloc::<expr::Literal>();
         match self.peek() {
+            TokenKind::LitNull => {
+                *literal_expr = expr::Literal::Null;
+            }
             TokenKind::LitInt(u) => {
                 *literal_expr = expr::Literal::Uint(u);
             }
@@ -846,18 +851,20 @@ impl TokenKind {
 
     fn as_basic_type(&self) -> Option<BasicType> {
         match self {
+            TokenKind::KwBool => Some(BasicType::Bool),
             TokenKind::KwS8 => Some(BasicType::S8),
             TokenKind::KwS16 => Some(BasicType::S16),
             TokenKind::KwS32 => Some(BasicType::S32),
             TokenKind::KwS64 => Some(BasicType::S64),
+            TokenKind::KwSsize => Some(BasicType::Ssize),
             TokenKind::KwU8 => Some(BasicType::U8),
             TokenKind::KwU16 => Some(BasicType::U16),
             TokenKind::KwU32 => Some(BasicType::U32),
             TokenKind::KwU64 => Some(BasicType::U64),
+            TokenKind::KwUsize => Some(BasicType::Usize),
             TokenKind::KwF32 => Some(BasicType::F32),
             TokenKind::KwF64 => Some(BasicType::F64),
-            TokenKind::KwBool => Some(BasicType::Bool),
-            TokenKind::KwString => Some(BasicType::String),
+            TokenKind::KwChar => Some(BasicType::Char),
             _ => None,
         }
     }

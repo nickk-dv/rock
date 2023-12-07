@@ -301,9 +301,10 @@ pub mod expr {
 
     #[derive(Copy, Clone)]
     pub enum Literal {
+        Null,
+        Bool(bool),
         Uint(u64),
         Float(f64),
-        Bool(bool),
         String,
     }
 
@@ -369,16 +370,18 @@ pub enum AssignOp {
 
 #[derive(Copy, Clone)]
 pub enum BasicType {
+    Bool,
     S8,
     S16,
     S32,
     S64,
+    Ssize,
     U8,
     U16,
     U32,
     U64,
+    Usize,
     F32,
     F64,
-    Bool,
-    String,
+    Char,
 }

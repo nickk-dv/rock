@@ -120,7 +120,10 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        let mut kind = match &self.str[self.span.start as usize..self.span.end as usize] {
+        let kind = match &self.str[self.span.start as usize..self.span.end as usize] {
+            "null" => TokenKind::LitNull,
+            "true" => TokenKind::LitBool(true),
+            "false" => TokenKind::LitBool(false),
             "pub" => TokenKind::KwPub,
             "mod" => TokenKind::KwMod,
             "mut" => TokenKind::KwMut,
@@ -138,27 +141,21 @@ impl<'src> Lexer<'src> {
             "continue" => TokenKind::KwContinue,
             "cast" => TokenKind::KwCast,
             "sizeof" => TokenKind::KwSizeof,
-            "true" => TokenKind::KwTrue,
-            "false" => TokenKind::KwFalse,
+            "bool" => TokenKind::KwBool,
             "s8" => TokenKind::KwS8,
             "s16" => TokenKind::KwS16,
             "s32" => TokenKind::KwS32,
             "s64" => TokenKind::KwS64,
+            "ssize" => TokenKind::KwSsize,
             "u8" => TokenKind::KwU8,
             "u16" => TokenKind::KwU16,
             "u32" => TokenKind::KwU32,
             "u64" => TokenKind::KwU64,
+            "usize" => TokenKind::KwUsize,
             "f32" => TokenKind::KwF32,
             "f64" => TokenKind::KwF64,
-            "bool" => TokenKind::KwBool,
-            "string" => TokenKind::KwString,
+            "char" => TokenKind::KwChar,
             _ => TokenKind::Ident,
-        };
-
-        kind = match kind {
-            TokenKind::KwTrue => TokenKind::LitBool(true),
-            TokenKind::KwFalse => TokenKind::LitBool(false),
-            _ => kind,
         };
 
         return self.token_spanned(kind);
