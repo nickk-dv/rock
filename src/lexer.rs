@@ -120,41 +120,9 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        let kind = match &self.str[self.span.start as usize..self.span.end as usize] {
-            "null" => TokenKind::LitNull,
-            "true" => TokenKind::LitBool(true),
-            "false" => TokenKind::LitBool(false),
-            "pub" => TokenKind::KwPub,
-            "mod" => TokenKind::KwMod,
-            "mut" => TokenKind::KwMut,
-            "self" => TokenKind::KwSelf,
-            "impl" => TokenKind::KwImpl,
-            "enum" => TokenKind::KwEnum,
-            "struct" => TokenKind::KwStruct,
-            "import" => TokenKind::KwImport,
-            "if" => TokenKind::KwIf,
-            "else" => TokenKind::KwElse,
-            "for" => TokenKind::KwFor,
-            "defer" => TokenKind::KwDefer,
-            "break" => TokenKind::KwBreak,
-            "return" => TokenKind::KwReturn,
-            "continue" => TokenKind::KwContinue,
-            "cast" => TokenKind::KwCast,
-            "sizeof" => TokenKind::KwSizeof,
-            "bool" => TokenKind::KwBool,
-            "s8" => TokenKind::KwS8,
-            "s16" => TokenKind::KwS16,
-            "s32" => TokenKind::KwS32,
-            "s64" => TokenKind::KwS64,
-            "ssize" => TokenKind::KwSsize,
-            "u8" => TokenKind::KwU8,
-            "u16" => TokenKind::KwU16,
-            "u32" => TokenKind::KwU32,
-            "u64" => TokenKind::KwU64,
-            "usize" => TokenKind::KwUsize,
-            "f32" => TokenKind::KwF32,
-            "f64" => TokenKind::KwF64,
-            "char" => TokenKind::KwChar,
+        let str = &self.str[self.span.start as usize..self.span.end as usize];
+        let kind = match TokenKind::keyword_from_str(str) {
+            Some(kind) => kind,
             _ => TokenKind::Ident,
         };
 
@@ -221,7 +189,7 @@ impl<'src> Lexer<'src> {
         self.consume(self.fc);
         let mut kind = TokenKind::Error;
 
-        match Self::lex_symbol_glue(self.fc) {
+        match TokenKind::glue(self.fc) {
             Some(sym) => {
                 kind = sym;
             }
@@ -231,7 +199,7 @@ impl<'src> Lexer<'src> {
         }
 
         if let Some(c) = self.peek() {
-            match Self::lex_symbol_glue2(c, kind) {
+            match TokenKind::glue2(c, kind) {
                 Some(sym) => {
                     self.consume(c);
                     kind = sym;
@@ -245,7 +213,7 @@ impl<'src> Lexer<'src> {
         }
 
         if let Some(c) = self.peek() {
-            match Self::lex_symbol_glue3(c, kind) {
+            match TokenKind::glue3(c, kind) {
                 Some(sym) => {
                     self.consume(c);
                     kind = sym;
@@ -259,93 +227,5 @@ impl<'src> Lexer<'src> {
         }
 
         return self.token_spanned(kind);
-    }
-
-    fn lex_symbol_glue(c: char) -> Option<TokenKind> {
-        match c {
-            '(' => Some(TokenKind::OpenParen),
-            ')' => Some(TokenKind::CloseParen),
-            '{' => Some(TokenKind::OpenBlock),
-            '}' => Some(TokenKind::CloseBlock),
-            '[' => Some(TokenKind::OpenBracket),
-            ']' => Some(TokenKind::CloseBracket),
-            '@' => Some(TokenKind::At),
-            '.' => Some(TokenKind::Dot),
-            ':' => Some(TokenKind::Colon),
-            ',' => Some(TokenKind::Comma),
-            ';' => Some(TokenKind::Semicolon),
-            '!' => Some(TokenKind::LogicNot),
-            '~' => Some(TokenKind::BitNot),
-            '<' => Some(TokenKind::Less),
-            '>' => Some(TokenKind::Greater),
-            '+' => Some(TokenKind::Plus),
-            '-' => Some(TokenKind::Minus),
-            '*' => Some(TokenKind::Times),
-            '/' => Some(TokenKind::Div),
-            '%' => Some(TokenKind::Mod),
-            '&' => Some(TokenKind::BitAnd),
-            '|' => Some(TokenKind::BitOr),
-            '^' => Some(TokenKind::BitXor),
-            '=' => Some(TokenKind::Assign),
-            _ => None,
-        }
-    }
-
-    fn lex_symbol_glue2(c: char, kind: TokenKind) -> Option<TokenKind> {
-        match c {
-            '.' => match kind {
-                TokenKind::Dot => Some(TokenKind::DotDot),
-                _ => None,
-            },
-            ':' => match kind {
-                TokenKind::Colon => Some(TokenKind::ColonColon),
-                _ => None,
-            },
-            '&' => match kind {
-                TokenKind::BitAnd => Some(TokenKind::LogicAnd),
-                _ => None,
-            },
-            '|' => match kind {
-                TokenKind::BitOr => Some(TokenKind::LogicOr),
-                _ => None,
-            },
-            '<' => match kind {
-                TokenKind::Less => Some(TokenKind::Shl),
-                _ => None,
-            },
-            '>' => match kind {
-                TokenKind::Minus => Some(TokenKind::ArrowThin),
-                TokenKind::Assign => Some(TokenKind::ArrowWide),
-                TokenKind::Greater => Some(TokenKind::Shr),
-                _ => None,
-            },
-            '=' => match kind {
-                TokenKind::Less => Some(TokenKind::LessEq),
-                TokenKind::Greater => Some(TokenKind::GreaterEq),
-                TokenKind::LogicNot => Some(TokenKind::NotEq),
-                TokenKind::Assign => Some(TokenKind::IsEq),
-                TokenKind::Plus => Some(TokenKind::PlusEq),
-                TokenKind::Minus => Some(TokenKind::MinusEq),
-                TokenKind::Times => Some(TokenKind::TimesEq),
-                TokenKind::Div => Some(TokenKind::DivEq),
-                TokenKind::Mod => Some(TokenKind::ModEq),
-                TokenKind::BitAnd => Some(TokenKind::BitAndEq),
-                TokenKind::BitOr => Some(TokenKind::BitOrEq),
-                TokenKind::BitXor => Some(TokenKind::BitXorEq),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    fn lex_symbol_glue3(c: char, kind: TokenKind) -> Option<TokenKind> {
-        match c {
-            '=' => match kind {
-                TokenKind::Shl => Some(TokenKind::ShlEq),
-                TokenKind::Shr => Some(TokenKind::ShrEq),
-                _ => None,
-            },
-            _ => None,
-        }
     }
 }

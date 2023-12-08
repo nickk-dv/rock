@@ -125,8 +125,8 @@ impl Token {
 }
 
 impl TokenKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
+    pub fn as_str(kind: TokenKind) -> &'static str {
+        match kind {
             TokenKind::Ident => "ident",
             TokenKind::LitNull => "null",
             TokenKind::LitBool(..) => "bool literal",
@@ -212,6 +212,134 @@ impl TokenKind {
             TokenKind::BitXorEq => "^=",
             TokenKind::ShlEq => "<<=",
             TokenKind::ShrEq => ">>=",
+        }
+    }
+
+    pub fn keyword_from_str(str: &str) -> Option<TokenKind> {
+        match str {
+            "null" => Some(TokenKind::LitNull),
+            "true" => Some(TokenKind::LitBool(true)),
+            "false" => Some(TokenKind::LitBool(false)),
+            "pub" => Some(TokenKind::KwPub),
+            "mod" => Some(TokenKind::KwMod),
+            "mut" => Some(TokenKind::KwMut),
+            "self" => Some(TokenKind::KwSelf),
+            "impl" => Some(TokenKind::KwImpl),
+            "enum" => Some(TokenKind::KwEnum),
+            "struct" => Some(TokenKind::KwStruct),
+            "import" => Some(TokenKind::KwImport),
+            "if" => Some(TokenKind::KwIf),
+            "else" => Some(TokenKind::KwElse),
+            "for" => Some(TokenKind::KwFor),
+            "defer" => Some(TokenKind::KwDefer),
+            "break" => Some(TokenKind::KwBreak),
+            "return" => Some(TokenKind::KwReturn),
+            "continue" => Some(TokenKind::KwContinue),
+            "cast" => Some(TokenKind::KwCast),
+            "sizeof" => Some(TokenKind::KwSizeof),
+            "bool" => Some(TokenKind::KwBool),
+            "s8" => Some(TokenKind::KwS8),
+            "s16" => Some(TokenKind::KwS16),
+            "s32" => Some(TokenKind::KwS32),
+            "s64" => Some(TokenKind::KwS64),
+            "ssize" => Some(TokenKind::KwSsize),
+            "u8" => Some(TokenKind::KwU8),
+            "u16" => Some(TokenKind::KwU16),
+            "u32" => Some(TokenKind::KwU32),
+            "u64" => Some(TokenKind::KwU64),
+            "usize" => Some(TokenKind::KwUsize),
+            "f32" => Some(TokenKind::KwF32),
+            "f64" => Some(TokenKind::KwF64),
+            "char" => Some(TokenKind::KwChar),
+            _ => None,
+        }
+    }
+
+    pub fn glue(c: char) -> Option<TokenKind> {
+        match c {
+            '(' => Some(TokenKind::OpenParen),
+            ')' => Some(TokenKind::CloseParen),
+            '{' => Some(TokenKind::OpenBlock),
+            '}' => Some(TokenKind::CloseBlock),
+            '[' => Some(TokenKind::OpenBracket),
+            ']' => Some(TokenKind::CloseBracket),
+            '@' => Some(TokenKind::At),
+            '.' => Some(TokenKind::Dot),
+            ':' => Some(TokenKind::Colon),
+            ',' => Some(TokenKind::Comma),
+            ';' => Some(TokenKind::Semicolon),
+            '!' => Some(TokenKind::LogicNot),
+            '~' => Some(TokenKind::BitNot),
+            '<' => Some(TokenKind::Less),
+            '>' => Some(TokenKind::Greater),
+            '+' => Some(TokenKind::Plus),
+            '-' => Some(TokenKind::Minus),
+            '*' => Some(TokenKind::Times),
+            '/' => Some(TokenKind::Div),
+            '%' => Some(TokenKind::Mod),
+            '&' => Some(TokenKind::BitAnd),
+            '|' => Some(TokenKind::BitOr),
+            '^' => Some(TokenKind::BitXor),
+            '=' => Some(TokenKind::Assign),
+            _ => None,
+        }
+    }
+
+    pub fn glue2(c: char, kind: TokenKind) -> Option<TokenKind> {
+        match c {
+            '.' => match kind {
+                TokenKind::Dot => Some(TokenKind::DotDot),
+                _ => None,
+            },
+            ':' => match kind {
+                TokenKind::Colon => Some(TokenKind::ColonColon),
+                _ => None,
+            },
+            '&' => match kind {
+                TokenKind::BitAnd => Some(TokenKind::LogicAnd),
+                _ => None,
+            },
+            '|' => match kind {
+                TokenKind::BitOr => Some(TokenKind::LogicOr),
+                _ => None,
+            },
+            '<' => match kind {
+                TokenKind::Less => Some(TokenKind::Shl),
+                _ => None,
+            },
+            '>' => match kind {
+                TokenKind::Minus => Some(TokenKind::ArrowThin),
+                TokenKind::Assign => Some(TokenKind::ArrowWide),
+                TokenKind::Greater => Some(TokenKind::Shr),
+                _ => None,
+            },
+            '=' => match kind {
+                TokenKind::Less => Some(TokenKind::LessEq),
+                TokenKind::Greater => Some(TokenKind::GreaterEq),
+                TokenKind::LogicNot => Some(TokenKind::NotEq),
+                TokenKind::Assign => Some(TokenKind::IsEq),
+                TokenKind::Plus => Some(TokenKind::PlusEq),
+                TokenKind::Minus => Some(TokenKind::MinusEq),
+                TokenKind::Times => Some(TokenKind::TimesEq),
+                TokenKind::Div => Some(TokenKind::DivEq),
+                TokenKind::Mod => Some(TokenKind::ModEq),
+                TokenKind::BitAnd => Some(TokenKind::BitAndEq),
+                TokenKind::BitOr => Some(TokenKind::BitOrEq),
+                TokenKind::BitXor => Some(TokenKind::BitXorEq),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn glue3(c: char, kind: TokenKind) -> Option<TokenKind> {
+        match c {
+            '=' => match kind {
+                TokenKind::Shl => Some(TokenKind::ShlEq),
+                TokenKind::Shr => Some(TokenKind::ShrEq),
+                _ => None,
+            },
+            _ => None,
         }
     }
 }

@@ -41,7 +41,7 @@ impl Parser {
     }
 
     fn err(&self, expected_kind: TokenKind) -> Result<(), ()> {
-        println!("error expected: {}", expected_kind.as_str());
+        println!("error expected: {}", TokenKind::as_str(expected_kind));
         let token = self.peek_token();
         if let Some(last_source) = self.sources.last() {
             if let Some(substring) =
