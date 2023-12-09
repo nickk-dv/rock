@@ -42,8 +42,8 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub fn lex(&mut self) -> Vec<Token> {
-        let mut tokens: Vec<Token> = Vec::new();
+    pub fn lex(&mut self) -> Vec<TokenSpan> {
+        let mut tokens = Vec::new();
         while self.iter.peek().is_some() {
             self.skip_whitespace();
             if !self.expect_token() {
@@ -51,15 +51,15 @@ impl<'src> Lexer<'src> {
             }
             tokens.push(self.lex_token());
         }
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
-        tokens.push(Token::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
+        tokens.push(TokenSpan::eof());
         return tokens;
     }
 
@@ -97,11 +97,11 @@ impl<'src> Lexer<'src> {
         self.span.end += c.len_utf8() as u32;
     }
 
-    fn token_spanned(&self, kind: TokenKind) -> Token {
-        Token::new(self.span.start, self.span.end, kind)
+    fn token_spanned(&self, token: Token) -> TokenSpan {
+        TokenSpan::new(self.span, token)
     }
 
-    fn lex_token(&mut self) -> Token {
+    fn lex_token(&mut self) -> TokenSpan {
         match Lexeme::from_char(self.fc) {
             Lexeme::Ident => self.lex_ident(),
             Lexeme::Number => self.lex_number(),
@@ -110,7 +110,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn lex_ident(&mut self) -> Token {
+    fn lex_ident(&mut self) -> TokenSpan {
         self.consume(self.fc);
         while let Some(c) = self.peek() {
             if c.is_alphanumeric() || c == '_' {
@@ -121,9 +121,9 @@ impl<'src> Lexer<'src> {
         }
 
         let str = &self.str[self.span.start as usize..self.span.end as usize];
-        let kind = match TokenKind::keyword_from_str(str) {
+        let kind = match Token::keyword_from_str(str) {
             Some(kind) => kind,
-            _ => TokenKind::Ident,
+            _ => Token::Ident,
         };
 
         return self.token_spanned(kind);
@@ -144,7 +144,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn lex_number(&mut self) -> Token {
+    fn lex_number(&mut self) -> TokenSpan {
         //@todo float detection & parsing
 
         self.consume(self.fc);
@@ -158,14 +158,14 @@ impl<'src> Lexer<'src> {
 
         let int_result = self.str[self.span.start as usize..self.span.end as usize].parse::<u64>();
         let kind = match int_result {
-            Ok(int) => TokenKind::LitInt(int),
-            Err(_) => TokenKind::Error,
+            Ok(int) => Token::LitInt(int),
+            Err(_) => Token::Error,
         };
 
         return self.token_spanned(kind);
     }
 
-    fn lex_string(&mut self) -> Token {
+    fn lex_string(&mut self) -> TokenSpan {
         //@todo terminator missing err
         //@todo escape sequences
         //@todo saving the strings
@@ -182,14 +182,14 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        return self.token_spanned(TokenKind::LitString);
+        return self.token_spanned(Token::LitString);
     }
 
-    fn lex_symbol(&mut self) -> Token {
+    fn lex_symbol(&mut self) -> TokenSpan {
         self.consume(self.fc);
-        let mut kind = TokenKind::Error;
+        let mut kind = Token::Error;
 
-        match TokenKind::glue(self.fc) {
+        match Token::glue(self.fc) {
             Some(sym) => {
                 kind = sym;
             }
@@ -199,7 +199,7 @@ impl<'src> Lexer<'src> {
         }
 
         if let Some(c) = self.peek() {
-            match TokenKind::glue2(c, kind) {
+            match Token::glue2(c, kind) {
                 Some(sym) => {
                     self.consume(c);
                     kind = sym;
@@ -213,7 +213,7 @@ impl<'src> Lexer<'src> {
         }
 
         if let Some(c) = self.peek() {
-            match TokenKind::glue3(c, kind) {
+            match Token::glue3(c, kind) {
                 Some(sym) => {
                     self.consume(c);
                     kind = sym;

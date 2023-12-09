@@ -1,13 +1,10 @@
 mod ast;
-mod lexer;
-mod parser;
-mod ptr;
-mod token;
+mod mem;
 
 fn main() {
     println!("Hello, world!");
 
-    let mut parser = parser::Parser::new();
+    let mut parser = ast::Parser::new();
     let result = parser.parse_package();
     match result {
         Ok(_) => println!("Parse success"),

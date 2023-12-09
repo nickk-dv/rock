@@ -1,5 +1,5 @@
-use crate::ptr::*;
-use crate::token::Span;
+use super::*;
+use crate::mem::*;
 use decl::Decl;
 use expr::Expr;
 use stmt::Block;
