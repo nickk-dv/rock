@@ -28,7 +28,7 @@ pub struct ModuleAccess {
 
 #[derive(Copy, Clone)]
 pub struct GenericDeclaration {
-    pub typenames: List<Ident>,
+    pub names: List<Ident>,
 }
 
 #[derive(Copy, Clone)]
@@ -83,7 +83,7 @@ pub struct ArraySliceType {
 
 #[derive(Copy, Clone)]
 pub struct ArrayStaticType {
-    pub size_expr: P<Expr>,
+    pub size: Expr,
     pub element: Type,
 }
 
@@ -163,7 +163,7 @@ pub struct EnumDecl {
 #[derive(Copy, Clone)]
 pub struct EnumVariant {
     pub name: Ident,
-    pub expr: P<Expr>,
+    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -179,14 +179,14 @@ pub struct StructField {
     pub visibility: Visibility,
     pub name: Ident,
     pub tt: Type,
-    pub default: Option<P<Expr>>,
+    pub default: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct GlobalDecl {
     pub visibility: Visibility,
     pub name: Ident,
-    pub expr: P<Expr>,
+    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -211,20 +211,20 @@ pub enum Stmt {
     Continue,
     VarDecl(P<VarDecl>),
     VarAssign(P<VarAssign>),
-    Expression(P<Expr>),
+    Expression(Expr),
 }
 
 #[derive(Copy, Clone)]
 pub struct For {
     pub var_decl: Option<P<VarDecl>>,
-    pub condition: Option<P<Expr>>,
+    pub condition: Option<Expr>,
     pub var_assign: Option<P<VarAssign>>,
     pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Return {
-    pub expr: Option<P<Expr>>,
+    pub expr: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]
@@ -232,14 +232,14 @@ pub struct VarDecl {
     pub mutability: Mutability,
     pub name: Ident,
     pub tt: Option<Type>,
-    pub expr: Option<P<Expr>>,
+    pub expr: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct VarAssign {
     pub access: P<AccessChain>,
     pub op: AssignOp,
-    pub expr: P<Expr>,
+    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -266,7 +266,7 @@ pub enum Expr {
 
 #[derive(Copy, Clone)]
 pub struct If {
-    pub condition: P<Expr>,
+    pub condition: Expr,
     pub block: P<Block>,
     pub else_: Option<Else>,
 }
@@ -287,11 +287,12 @@ pub struct Enum {
 pub enum EnumDestructure {
     Ignore,
     Access(Ident),
+    ExprPass(Expr),
 }
 
 #[derive(Copy, Clone)]
 pub struct Cast {
-    pub expr: P<Expr>,
+    pub expr: Expr,
     pub into: BasicType,
 }
 
@@ -303,13 +304,13 @@ pub struct Block {
 
 #[derive(Copy, Clone)]
 pub struct Match {
-    pub expr: P<Expr>,
+    pub expr: Expr,
     pub arms: List<MatchArm>,
 }
 
 #[derive(Copy, Clone)]
 pub struct MatchArm {
-    pub expr: P<Expr>,
+    pub expr: Expr,
     pub block: P<Block>,
 }
 
@@ -330,14 +331,14 @@ pub enum Literal {
 #[derive(Copy, Clone)]
 pub struct ArrayInit {
     pub tt: Option<Type>,
-    pub input: List<P<Expr>>,
+    pub input: List<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct StructInit {
     pub module_access: Option<ModuleAccess>,
     pub struct_name: Option<Ident>,
-    pub input: List<P<Expr>>,
+    pub input: List<Expr>,
 }
 
 #[derive(Copy, Clone)]
@@ -355,7 +356,7 @@ pub struct Access {
 #[derive(Copy, Clone)]
 pub enum AccessKind {
     Ident(Ident),
-    Array(P<Expr>),
+    Array(Expr),
     Call(P<AccessCall>),
 }
 
@@ -363,13 +364,13 @@ pub enum AccessKind {
 pub struct AccessCall {
     pub name: Ident,
     pub generic: Option<GenericSpecialization>,
-    pub input: List<P<Expr>>,
+    pub input: List<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct UnaryExpr {
     pub op: UnaryOp,
-    pub rhs: P<Expr>,
+    pub rhs: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -384,8 +385,8 @@ pub enum UnaryOp {
 #[derive(Copy, Clone)]
 pub struct BinaryExpr {
     pub op: BinaryOp,
-    pub lhs: P<Expr>,
-    pub rhs: P<Expr>,
+    pub lhs: Expr,
+    pub rhs: Expr,
 }
 
 #[derive(Copy, Clone)]
