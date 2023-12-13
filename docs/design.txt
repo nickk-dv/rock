@@ -1,0 +1,114 @@
+
+// Literals & Lexical elements (see in .md docs)
+
+2 4096            // integer
+2.0 100.45        // float
+null              // null pointer
+true, false       // boolean constants
+
+'c'               // char
+"hello world"     // string
+#"multi-line      // multi-line string
+string \n"
+
+`home\new\dir`    // raw string
+#`multi-line      // multi-line raw string
+raw string`
+
+// Declarations:
+
+everything may have visiblity specifier: pub
+
+mod submodule;                 // declare submodule
+
+import somemod;                // module
+import somemod::inner;         // module
+import somemod::inner::Point;  // symbol or module
+import somemod::{Point, Kind}; // symbols
+import somemod::*;             // everything
+
+// default field values can be specified
+// empty structs will be 0 bytes, instead of 1 byte in "C"
+
+Point :: struct {
+	x: f32;
+	y: f32 = 2.0;
+}
+
+// type can be specified or will be chosen as min-sized int fitting set of integers
+// if no expr specified they are +1 of previous, starts at 0
+// default directive specifies which field will be chosed for default initialization
+// if no enum variants exit then this and each type containing it cannot be default initialized and no constants exist for it
+
+Kind :: enum s32 {
+	First; #default
+	Second = 200;
+}
+
+procedure :: (arg: Point, arg2: Kind) -> bool {
+
+}
+
+external_proc :: () -> s32 #c_call
+
+// globals are constant and cannot be modified at runtime
+// (not sure how to achieve this const lock yet)
+// cannot take pointer to them? they are just const values
+// ideally constants of float / integer types are "untyped" 
+// before usage to be flexible and not require explicit downcasts
+// support both untyped and typed constants (good for specific bitwise ops and "C" bindings)
+
+GLOBAL :: 100;
+GLOBAL2 :: [?]s32{1, 2, -10, 3};
+GLOBAL3 : s16 : 100;
+
+// BasicTypes:
+
+bool                  // 1 byte bool
+s8 s16 s32 s64 ssize  // sint
+u8 u16 u32 u64 usize  // uint
+f32 f64               // floats
+char                  // 32bit utf8 char
+str                   // string slice should be immutable
+rawptr                // pointer to any type (void*)
+
+// Other types:
+
+Ident                 // user defined
+*i32                  // pointer to type
+[10]s32               // static array
+[]s32                 // array slice (pointer + len)
+
+// Expressions:
+
+enum                  // Kind.First              type is optional: .First
+literal               // int, float, bool, char, str, null(is rawptr can be converted to any pointer or remain a rawptr type)
+variable              // variable.field[100]
+proc_call             // proc_call().field[100]
+array_init            // [?]s32{1, 2, 3}         type is optional: {1, 2, 3}
+struct_init           // Point.{x: 1.0, y: 2.0}; type is optional: .{x: 1.0, y: 2.0}
+unary
+binary
+
+access // on variable or proc_call
+- field
+- array access
+
+// Built-in expressions:
+
+cast(f32, some_var);
+sizeof([10]usize);
+
+// Statements:
+
+if
+for
+block
+defer
+break
+switch
+return
+continue
+proc_call
+var_decl
+var_assign
