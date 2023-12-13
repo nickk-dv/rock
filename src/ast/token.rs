@@ -54,6 +54,8 @@ pub enum Token {
     KwF64,
     KwChar,
     KwRawptr,
+    // Directives
+    Dir_c_call,
     // Delimeter
     OpenParen,
     OpenBlock,
@@ -159,6 +161,7 @@ impl Token {
             Token::KwF64 => "f64",
             Token::KwChar => "char",
             Token::KwRawptr => "rawptr",
+            Token::Dir_c_call => "c_call",
             Token::OpenParen => "(",
             Token::OpenBlock => "{",
             Token::OpenBracket => "[",
@@ -242,6 +245,7 @@ impl Token {
             "f64" => Some(Token::KwF64),
             "char" => Some(Token::KwChar),
             "rawptr" => Some(Token::KwRawptr),
+            "c_call" => Some(Token::Dir_c_call),
             _ => None,
         }
     }

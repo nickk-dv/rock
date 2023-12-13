@@ -35,7 +35,7 @@ pub struct Type {
 #[derive(Copy, Clone)]
 pub enum TypeKind {
     Basic(BasicType),
-    Custom(P<CustomType>),
+    Custom(CustomType),
     ArraySlice(P<ArraySliceType>),
     ArrayStatic(P<ArrayStaticType>),
 }
@@ -152,15 +152,15 @@ pub struct GlobalDecl {
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub module_names: List<Ident>,
+    pub module_access: Option<ModuleAccess>,
     pub target: ImportTarget,
 }
 
 #[derive(Copy, Clone)]
 pub enum ImportTarget {
-    Wildcard,
+    AllSymbols,
+    Module(Ident),
     SymbolList(List<Ident>),
-    SymbolOrModule(Ident),
 }
 
 #[derive(Copy, Clone)]
@@ -201,7 +201,6 @@ pub struct For {
 
 #[derive(Copy, Clone)]
 pub struct Block {
-    pub is_short: bool,
     pub stmts: List<Stmt>,
 }
 
@@ -214,7 +213,7 @@ pub struct Switch {
 #[derive(Copy, Clone)]
 pub struct SwitchCase {
     pub expr: Expr,
-    pub block: Option<P<Block>>,
+    pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
@@ -244,7 +243,7 @@ pub enum AssignOp {
 
 #[derive(Copy, Clone)]
 pub enum Expr {
-    If(P<Var>),
+    Var(P<Var>),
     Enum(P<Enum>),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
@@ -258,8 +257,9 @@ pub enum Expr {
 
 #[derive(Copy, Clone)]
 pub struct Var {
+    pub module_access: Option<ModuleAccess>,
     pub name: Ident,
-    pub access: Option<Access>,
+    pub access: Option<P<Access>>,
 }
 
 #[derive(Copy, Clone)]
@@ -281,8 +281,8 @@ pub struct Enum {
 
 #[derive(Copy, Clone)]
 pub struct Cast {
+    pub tt: Type,
     pub expr: Expr,
-    pub into: BasicType,
 }
 
 #[derive(Copy, Clone)]
@@ -304,7 +304,7 @@ pub struct ProcCall {
     pub module_access: Option<ModuleAccess>,
     pub name: Ident,
     pub input: List<Expr>,
-    pub access: Option<Access>,
+    pub access: Option<P<Access>>,
 }
 
 #[derive(Copy, Clone)]
