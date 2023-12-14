@@ -27,13 +27,61 @@ impl Parser {
             Ok(string) => {
                 let mut package = self.arena.alloc::<Package>();
                 self.set_source_file(string);
-                package.root = self.parse_module()?;
+                match self.parse_module() {
+                    Ok(module) => package.root = module,
+                    Err(()) => {
+                        println!(
+                            "parse error at: {} token_id: {}",
+                            token::Token::as_str(self.peek()),
+                            self.peek_index
+                        );
+                        let span = self.peek_span();
+                        self.print_substring(span.start, span.end);
+                        return Err(());
+                    }
+                }
                 Ok(package)
             }
             Err(err) => {
                 println!("file open error: {} path: {}", err, path.display());
                 Err(())
             }
+        }
+    }
+
+    pub fn print_substring(&self, start: u32, end: u32) {
+        //@use for error reporting
+        if let Some(substring) = self
+            .sources
+            .last()
+            .unwrap()
+            .get(start as usize..end as usize)
+        {
+            println!("Substring: {}", substring);
+        } else {
+            println!("Invalid range for substring");
+        }
+
+        if let Some(substring) = self
+            .sources
+            .last()
+            .unwrap()
+            .get((start - 10) as usize..(end + 10) as usize)
+        {
+            println!("Substring semi expanded: {}", substring);
+        } else {
+            println!("Invalid range for semi expanded substring");
+        }
+
+        if let Some(substring) = self
+            .sources
+            .last()
+            .unwrap()
+            .get((start - 20) as usize..(end + 20) as usize)
+        {
+            println!("Substring expanded: {}", substring);
+        } else {
+            println!("Invalid range for expanded substring");
         }
     }
 
@@ -338,8 +386,10 @@ impl Parser {
                     return Ok(Stmt::VarDecl(self.parse_var_decl()?));
                 }
                 let module_access = self.parse_module_access();
-                if self.peek() == Token::Ident && self.peek() == Token::OpenParen {
-                    return Ok(Stmt::ProcCall(self.parse_proc_call(module_access)?));
+                if self.peek() == Token::Ident && self.peek_next(1) == Token::OpenParen {
+                    let stmt = Stmt::ProcCall(self.parse_proc_call(module_access)?);
+                    self.expect_token(Token::Semicolon)?;
+                    Ok(stmt)
                 } else {
                     return Ok(Stmt::VarAssign(self.parse_var_assign(module_access)?));
                 }
@@ -367,7 +417,27 @@ impl Parser {
 
     fn parse_for(&mut self) -> Result<P<For>, ()> {
         let mut for_ = self.arena.alloc::<For>();
-        todo!();
+        self.expect_token(Token::KwFor)?;
+
+        if self.peek() == Token::OpenBlock {
+            for_.block = self.parse_block()?;
+            return Ok(for_);
+        }
+
+        for_.var_decl = if self.peek() == Token::Ident && self.peek_next(1) == Token::Colon {
+            Some(self.parse_var_decl()?)
+        } else {
+            None
+        };
+        for_.condition = Some(self.parse_expr()?);
+        for_.var_assign = if self.peek_next(-1) == Token::Semicolon {
+            let module_access = self.parse_module_access();
+            Some(self.parse_var_assign(module_access)?)
+        } else {
+            None
+        };
+
+        for_.block = self.parse_block()?;
         Ok(for_)
     }
 
@@ -463,24 +533,114 @@ impl Parser {
         self.parse_sub_expr(0)
     }
 
-    fn parse_sub_expr(&mut self, prec: u32) -> Result<Expr, ()> {
-        todo!()
+    fn parse_sub_expr(&mut self, min_prec: u32) -> Result<Expr, ()> {
+        let mut expr_lhs = self.parse_primary_expr()?;
+        loop {
+            let prec: u32;
+            let binary_op: BinaryOp;
+            if let Some(op) = self.peek().as_binary_op() {
+                binary_op = op;
+                prec = op.prec();
+                if prec < min_prec {
+                    break;
+                }
+                self.consume();
+            } else {
+                break;
+            }
+            let mut bin_expr = self.arena.alloc::<BinaryExpr>();
+            bin_expr.op = binary_op;
+            bin_expr.lhs = expr_lhs;
+            bin_expr.rhs = self.parse_sub_expr(prec + 1)?;
+            expr_lhs = Expr::BinaryExpr(bin_expr);
+        }
+        Ok(expr_lhs)
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr, ()> {
-        todo!()
+        if self.try_consume(Token::OpenParen) {
+            let expr = self.parse_sub_expr(0)?;
+            self.expect_token(Token::CloseParen)?;
+            return Ok(expr);
+        }
+
+        if let Some(unary_op) = self.try_consume_unary_op() {
+            let mut unary_expr = self.arena.alloc::<UnaryExpr>();
+            unary_expr.op = unary_op;
+            unary_expr.rhs = self.parse_primary_expr()?;
+            return Ok(Expr::UnaryExpr(unary_expr));
+        }
+
+        match self.peek() {
+            Token::Dot => match self.peek_next(1) {
+                Token::OpenBlock => Ok(Expr::StructInit(self.parse_struct_init(None)?)),
+                _ => Ok(Expr::Enum(self.parse_enum()?)),
+            },
+            Token::KwCast => Ok(Expr::Cast(self.parse_cast()?)),
+            Token::KwSizeof => Ok(Expr::Sizeof(self.parse_sizeof()?)),
+            Token::LitNull
+            | Token::LitBool(..)
+            | Token::LitInt(..)
+            | Token::LitFloat(..)
+            | Token::LitChar(..)
+            | Token::LitString => Ok(Expr::Literal(self.parse_literal()?)),
+            Token::OpenBracket | Token::OpenBlock => Ok(Expr::ArrayInit(self.parse_array_init()?)),
+            Token::Ident => {
+                let module_access = self.parse_module_access();
+                if self.peek() != Token::Ident {
+                    return Err(());
+                }
+                if self.peek_next(1) == Token::OpenParen {
+                    Ok(Expr::ProcCall(self.parse_proc_call(module_access)?))
+                } else if self.peek_next(1) == Token::Dot {
+                    Ok(Expr::StructInit(self.parse_struct_init(module_access)?))
+                } else {
+                    Ok(Expr::Var(self.parse_var(module_access)?))
+                }
+            }
+            _ => Err(()),
+        }
     }
 
     fn parse_var(&mut self, module_access: Option<ModuleAccess>) -> Result<P<Var>, ()> {
         let mut var = self.arena.alloc::<Var>();
         var.module_access = module_access;
         var.name = self.parse_ident()?;
-        var.access = self.parse_access()?;
+        var.access = self.parse_access_chain()?;
         Ok(var)
     }
 
-    fn parse_access(&mut self) -> Result<Option<P<Access>>, ()> {
-        todo!()
+    fn parse_access_chain(&mut self) -> Result<Option<P<Access>>, ()> {
+        match self.peek() {
+            Token::Dot | Token::OpenBracket => {}
+            _ => return Ok(None),
+        }
+        let access = self.parse_access()?;
+        let mut access_last = access;
+        while self.peek() == Token::Dot || self.peek() == Token::OpenBracket {
+            let access_next = self.parse_access()?;
+            access_last.next = Some(access_next);
+            access_last = access_next;
+        }
+        Ok(Some(access))
+    }
+
+    fn parse_access(&mut self) -> Result<P<Access>, ()> {
+        let mut access = self.arena.alloc::<Access>();
+        match self.peek() {
+            Token::Dot => {
+                self.consume();
+                access.kind = AccessKind::Ident(self.parse_ident()?);
+                Ok(access)
+            }
+            Token::OpenBracket => {
+                self.consume();
+                access.kind = AccessKind::Array(self.parse_expr()?);
+                self.expect_token(Token::CloseBracket)?;
+                Ok(access)
+            }
+            _ => Err(()),
+        }
     }
 
     fn parse_enum(&mut self) -> Result<P<Enum>, ()> {
@@ -520,6 +680,7 @@ impl Parser {
             Token::LitChar(v) => *literal = Literal::Char(v),
             _ => return Err(()),
         }
+        self.consume();
         Ok(literal)
     }
 
@@ -528,7 +689,7 @@ impl Parser {
         proc_call.module_access = module_access;
         proc_call.name = self.parse_ident()?;
         proc_call.input = self.parse_expr_list(Token::OpenParen, Token::CloseParen)?;
-        proc_call.access = self.parse_access()?;
+        proc_call.access = self.parse_access_chain()?;
         Ok(proc_call)
     }
 
@@ -580,8 +741,12 @@ impl Parser {
         unsafe { self.tokens.get_unchecked(self.peek_index).token }
     }
 
-    fn peek_next(&self, offset: usize) -> Token {
-        unsafe { self.tokens.get_unchecked(self.peek_index + offset).token }
+    fn peek_next(&self, offset: isize) -> Token {
+        unsafe {
+            self.tokens
+                .get_unchecked(self.peek_index + offset as usize)
+                .token
+        }
     }
 
     fn peek_span(&self) -> Span {
@@ -610,16 +775,6 @@ impl Parser {
         }
     }
 
-    fn try_consume_binary_op(&mut self) -> Option<BinaryOp> {
-        match self.peek().as_binary_op() {
-            Some(op) => {
-                self.consume();
-                Some(op)
-            }
-            None => None,
-        }
-    }
-
     fn try_consume_basic_type(&mut self) -> Option<BasicType> {
         match self.peek().as_basic_type() {
             Some(op) => {
@@ -635,6 +790,11 @@ impl Parser {
             self.consume();
             return Ok(());
         }
+        println!(
+            "expected: {} got: {}",
+            token::Token::as_str(token),
+            token::Token::as_str(self.peek())
+        );
         Err(())
     }
 
@@ -645,6 +805,24 @@ impl Parser {
                 Ok(op)
             }
             None => Err(()),
+        }
+    }
+}
+
+impl BinaryOp {
+    pub fn prec(&self) -> u32 {
+        match self {
+            BinaryOp::LogicAnd | BinaryOp::LogicOr => 0,
+            BinaryOp::Less
+            | BinaryOp::Greater
+            | BinaryOp::LessEq
+            | BinaryOp::GreaterEq
+            | BinaryOp::IsEq
+            | BinaryOp::NotEq => 1,
+            BinaryOp::Plus | BinaryOp::Minus => 2,
+            BinaryOp::Times | BinaryOp::Div | BinaryOp::Mod => 3,
+            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => 4,
+            BinaryOp::Shl | BinaryOp::Shr => 5,
         }
     }
 }
