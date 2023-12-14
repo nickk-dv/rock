@@ -122,7 +122,7 @@ impl TokenSpan {
 impl Token {
     pub fn as_str(kind: Token) -> &'static str {
         match kind {
-            Token::Ident => "ident",
+            Token::Ident => "identifier",
             Token::LitNull => "null",
             Token::LitBool(..) => "bool literal",
             Token::LitInt(..) => "integer literal",

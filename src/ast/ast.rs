@@ -297,6 +297,7 @@ pub enum Literal {
     Uint(u64),
     Float(f64),
     Char(char),
+    String,
 }
 
 #[derive(Copy, Clone)]
