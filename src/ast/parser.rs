@@ -7,6 +7,7 @@ pub struct Parser {
     peek_index: usize,
     tokens: Vec<TokenSpan>,
     sources: Vec<String>,
+    intern_pool: InternPool,
 }
 
 pub struct ParseError {
@@ -127,6 +128,7 @@ impl Parser {
             peek_index: 0,
             tokens: Vec::new(),
             sources: Vec::new(),
+            intern_pool: InternPool::new(),
         }
     }
 
@@ -143,7 +145,7 @@ impl Parser {
 
     pub fn parse_package(&mut self) -> Result<P<Package>, ()> {
         let mut path = PathBuf::new();
-        path.push("main.txt");
+        path.push("target/main.txt");
 
         match std::fs::read_to_string(&path) {
             Ok(string) => {
@@ -222,8 +224,13 @@ impl Parser {
     fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParseError> {
         if self.peek() == Token::Ident {
             let span = self.peek_span();
-            self.consume();
-            return Ok(Ident { span });
+            unsafe {
+                let bytes = self.sources.last().unwrap_unchecked().as_bytes();
+                let slice = &bytes[span.start as usize..span.end as usize];
+                let id = self.intern_pool.intern(slice);
+                self.consume();
+                return Ok(Ident { span, id });
+            }
         }
         Err(self.error(context, vec![Token::Ident]))
     }

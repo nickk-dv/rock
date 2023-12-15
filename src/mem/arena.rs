@@ -32,6 +32,17 @@ impl Arena {
         return P::new(ptr as *mut T);
     }
 
+    pub fn debug_memory_usage(&self) {
+        let mut len = 1;
+        for _ in self.blocks.iter() {
+            len += 1;
+        }
+        let mut size = len * self.layout.size();
+        size += self.offset;
+        size -= self.layout.size();
+        println!("arena blocks: {} memory: {} used bytes", len, size);
+    }
+
     fn alloc_block(&mut self) {
         self.data = unsafe { alloc::alloc_zeroed(self.layout) };
         self.offset = 0;

@@ -19,6 +19,7 @@ pub struct Module {
 #[derive(Copy, Clone)]
 pub struct Ident {
     pub span: Span,
+    pub id: InternID,
 }
 
 #[derive(Copy, Clone)]
