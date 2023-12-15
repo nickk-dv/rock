@@ -1,2 +1,2 @@
 # lang
- small compiler for a programming language
+work in progress compiler

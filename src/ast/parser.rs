@@ -145,7 +145,7 @@ impl Parser {
 
     pub fn parse_package(&mut self) -> Result<P<Package>, ()> {
         let mut path = PathBuf::new();
-        path.push("target/main.txt");
+        path.push("test/main.txt");
 
         match std::fs::read_to_string(&path) {
             Ok(string) => {
