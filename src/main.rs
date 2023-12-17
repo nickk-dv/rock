@@ -15,7 +15,9 @@ fn test_llvm_version() {
             &mut patch as *mut u32,
         );
     }
-
+    println!("LLVM Is threaded {}", unsafe {
+        llvm::core::LLVMIsMultithreaded()
+    });
     println!("LLVM Version {}.{}.{}", major, minor, patch);
 }
 
