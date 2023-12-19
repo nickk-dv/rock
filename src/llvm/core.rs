@@ -27,6 +27,7 @@ extern "C" {
     pub fn LLVMCloneModule(M: LLVMModuleRef) -> LLVMModuleRef;
     pub fn LLVMDisposeModule(M: LLVMModuleRef);
     pub fn LLVMGetModuleContext(M: LLVMModuleRef) -> LLVMContextRef;
+    pub fn LLVMDumpModule(M: LLVMModuleRef);
     pub fn LLVMAddFunction(
         M: LLVMModuleRef,
         Name: *const c_char,

@@ -14,7 +14,7 @@ fn main() {
 enum OS {
     Windows,
     Linux,
-    Mac,
+    Macos,
 }
 
 fn get_os() -> OS {
@@ -24,7 +24,7 @@ fn get_os() -> OS {
     } else if target.contains("linux") {
         OS::Linux
     } else if target.contains("macos") {
-        OS::Mac
+        OS::Macos
     } else {
         panic!("Unknown build target.");
     }
