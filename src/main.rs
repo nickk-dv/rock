@@ -4,6 +4,5 @@ mod mem;
 mod tools;
 
 fn main() -> Result<(), ()> {
-    tools::cmd::cmd_parse()?;
-    Ok(())
+    tools::cmd::cmd_parse()
 }

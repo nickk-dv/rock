@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub fn parse() -> Result<Package, ()> {
     let mut parser = Parser::new();
+    //@todo maybe move to parser + report err here like in cmd_parser
     return parser.parse_package();
 }
 
@@ -158,13 +159,19 @@ impl Parser {
                     root: P::null(),
                     files: Vec::new(),
                 };
+
+                // storing strings in 2 locations, cant store String in P<>
+                // since it doesnt impl Copy which is required to copy the *mut T for some reason
                 self.peek_index = 0;
+                self.sources.push(string.clone());
                 let mut lexer = Lexer::new(&string);
                 self.tokens = lexer.lex();
                 package.files.push(SourceFile { path, file: string });
 
                 match self.parse_module() {
-                    Ok(module) => package.root = module,
+                    Ok(module) => {
+                        package.root = module;
+                    }
                     Err(error) => {
                         error.print_temp();
                         return Err(());
