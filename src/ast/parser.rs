@@ -151,7 +151,7 @@ impl Parser {
 
     fn parse_package(&mut self) -> Result<Package, ()> {
         let mut path = PathBuf::new();
-        path.push("test/main.txt");
+        path.push("test/main.lang"); //@change lang name + consider lib / exe project type
 
         match std::fs::read_to_string(&path) {
             Ok(string) => {

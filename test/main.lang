@@ -3,7 +3,7 @@ mod game_of_life;
 mod array;
 
 mod core;
-mod test_global_copy_and_access;
+mod test_global_copy_and_access
 
 mod test_globals;
 mod test_impl_blocks;
