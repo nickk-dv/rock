@@ -2,7 +2,12 @@ use super::*;
 use crate::mem::*;
 use std::path::PathBuf;
 
-pub struct Parser {
+pub fn parse() -> Result<Package, ()> {
+    let mut parser = Parser::new();
+    return parser.parse_package();
+}
+
+struct Parser {
     arena: Arena,
     peek_index: usize,
     tokens: Vec<TokenSpan>,
@@ -10,14 +15,14 @@ pub struct Parser {
     intern_pool: InternPool,
 }
 
-pub struct ParseError {
+struct ParseError {
     context: ParseContext,
     expected: Vec<Token>,
     got_token: TokenSpan,
 }
 
 #[derive(Copy, Clone)]
-pub enum ParseContext {
+enum ParseContext {
     ModuleAccess,
     Type,
     CustomType,
@@ -59,7 +64,7 @@ pub enum ParseContext {
 }
 
 impl ParseError {
-    pub fn print_temp(&self) {
+    fn print_temp(&self) {
         print!("parse error: expected: ");
         for token in self.expected.iter() {
             print!("'{}' ", token::Token::as_str(*token))
@@ -122,7 +127,7 @@ impl ParseContext {
 }
 
 impl Parser {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             arena: Arena::new(1024 * 1024 * 4),
             peek_index: 0,
@@ -143,20 +148,25 @@ impl Parser {
         }
     }
 
-    pub fn parse_package(&mut self) -> Result<P<Package>, ()> {
+    fn parse_package(&mut self) -> Result<Package, ()> {
         let mut path = PathBuf::new();
         path.push("test/main.txt");
 
         match std::fs::read_to_string(&path) {
             Ok(string) => {
-                let mut package = self.arena.alloc::<Package>();
-                self.set_source_file(string);
+                let mut package = Package {
+                    root: P::null(),
+                    files: Vec::new(),
+                };
+                self.peek_index = 0;
+                let mut lexer = Lexer::new(&string);
+                self.tokens = lexer.lex();
+                package.files.push(SourceFile { path, file: string });
+
                 match self.parse_module() {
                     Ok(module) => package.root = module,
                     Err(error) => {
                         error.print_temp();
-                        let span = self.peek_span();
-                        self.print_substring(span.start, span.end);
                         return Err(());
                     }
                 }
@@ -167,49 +177,6 @@ impl Parser {
                 Err(())
             }
         }
-    }
-
-    pub fn print_substring(&self, start: u32, end: u32) {
-        //@use for error reporting
-        if let Some(substring) = self
-            .sources
-            .last()
-            .unwrap()
-            .get(start as usize..end as usize)
-        {
-            println!("Substring: {}", substring);
-        } else {
-            println!("Invalid range for substring");
-        }
-
-        if let Some(substring) = self
-            .sources
-            .last()
-            .unwrap()
-            .get((start - 10) as usize..(end + 10) as usize)
-        {
-            println!("Substring semi expanded: {}", substring);
-        } else {
-            println!("Invalid range for semi expanded substring");
-        }
-
-        if let Some(substring) = self
-            .sources
-            .last()
-            .unwrap()
-            .get((start - 20) as usize..(end + 20) as usize)
-        {
-            println!("Substring expanded: {}", substring);
-        } else {
-            println!("Invalid range for expanded substring");
-        }
-    }
-
-    fn set_source_file(&mut self, string: String) {
-        self.peek_index = 0;
-        let mut lexer = Lexer::new(&string);
-        self.tokens = lexer.lex();
-        self.sources.push(string);
     }
 
     fn parse_module(&mut self) -> Result<P<Module>, ParseError> {

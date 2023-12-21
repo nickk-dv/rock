@@ -55,11 +55,6 @@ impl<'src> Lexer<'src> {
         tokens.push(TokenSpan::eof());
         tokens.push(TokenSpan::eof());
         tokens.push(TokenSpan::eof());
-        tokens.push(TokenSpan::eof());
-        tokens.push(TokenSpan::eof());
-        tokens.push(TokenSpan::eof());
-        tokens.push(TokenSpan::eof());
-        tokens.push(TokenSpan::eof());
         return tokens;
     }
 

@@ -1,11 +1,16 @@
 use super::token::Span;
 use crate::mem::*;
+use std::path::PathBuf;
 
-type SourceID = u32;
-
-#[derive(Copy, Clone)]
 pub struct Package {
     pub root: P<Module>,
+    pub files: Vec<SourceFile>,
+}
+
+type SourceID = u32;
+pub struct SourceFile {
+    pub path: PathBuf,
+    pub file: String,
 }
 
 #[derive(Copy, Clone)]
