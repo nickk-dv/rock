@@ -1,4 +1,5 @@
 use super::*;
+use crate::err::report;
 use crate::mem::*;
 use std::path::PathBuf;
 
@@ -179,6 +180,11 @@ impl Parser {
                     }
                     Err(error) => {
                         error.print_temp();
+                        report::err(
+                            &package,
+                            package.files.len() as u32 - 1,
+                            error.got_token.span,
+                        );
                         return Err(());
                     }
                 }

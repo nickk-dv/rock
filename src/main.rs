@@ -1,4 +1,5 @@
 mod ast;
+mod err;
 mod llvm;
 mod mem;
 mod tools;

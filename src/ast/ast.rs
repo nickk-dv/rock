@@ -7,7 +7,7 @@ pub struct Package {
     pub files: Vec<SourceFile>,
 }
 
-type SourceID = u32;
+pub type SourceID = u32;
 pub struct SourceFile {
     pub path: PathBuf,
     pub file: String,
