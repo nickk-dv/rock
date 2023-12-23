@@ -166,7 +166,12 @@ impl Parser {
                 self.sources.push(string.clone());
                 let mut lexer = Lexer::new(&string);
                 self.tokens = lexer.lex();
-                package.files.push(SourceFile { path, file: string });
+                let line_spans = lexer.lex_line_spans();
+                package.files.push(SourceFile {
+                    path,
+                    file: string,
+                    line_spans,
+                });
 
                 match self.parse_module() {
                     Ok(module) => {

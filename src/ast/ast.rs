@@ -1,4 +1,4 @@
-use super::token::Span;
+use super::span::Span;
 use crate::mem::*;
 use std::path::PathBuf;
 
@@ -11,6 +11,7 @@ type SourceID = u32;
 pub struct SourceFile {
     pub path: PathBuf,
     pub file: String,
+    pub line_spans: Vec<Span>,
 }
 
 #[derive(Copy, Clone)]

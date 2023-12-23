@@ -1,16 +1,12 @@
-#[derive(Copy, Clone, Debug)]
-pub struct Span {
-    pub start: u32,
-    pub end: u32,
-}
+use super::span::Span;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct TokenSpan {
     pub span: Span,
     pub token: Token,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Token {
     Ident,
     // Literal

@@ -1,11 +1,13 @@
+use super::span::Span;
 use super::token::*;
-use std::{iter::Peekable, str::CharIndices};
+use std::{iter::Peekable, str::Chars};
 
 pub struct Lexer<'src> {
     str: &'src str,
-    iter: Peekable<CharIndices<'src>>,
+    iter: Peekable<Chars<'src>>,
     fc: char,
-    span: Span,
+    cursor_start: u32,
+    cursor_end: u32,
 }
 
 enum Lexeme {
@@ -36,21 +38,24 @@ impl<'src> Lexer<'src> {
     pub fn new(str: &'src str) -> Self {
         Self {
             str,
-            iter: str.char_indices().peekable(),
+            iter: str.chars().peekable(),
             fc: ' ',
-            span: Span { start: 0, end: 0 },
+            cursor_start: 0,
+            cursor_end: 0,
         }
     }
 
     pub fn lex(&mut self) -> Vec<TokenSpan> {
         let mut tokens = Vec::new();
-        while self.iter.peek().is_some() {
+
+        while self.peek().is_some() {
             self.skip_whitespace();
             if !self.expect_token() {
                 break;
             }
             tokens.push(self.lex_token());
         }
+
         tokens.push(TokenSpan::eof());
         tokens.push(TokenSpan::eof());
         tokens.push(TokenSpan::eof());
@@ -61,7 +66,7 @@ impl<'src> Lexer<'src> {
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek() {
             if c.is_ascii_whitespace() {
-                self.iter.next();
+                self.consume(c);
             } else {
                 break;
             }
@@ -69,31 +74,14 @@ impl<'src> Lexer<'src> {
     }
 
     fn expect_token(&mut self) -> bool {
-        match self.iter.peek() {
-            Some((start, c)) => {
-                self.fc = *c;
-                self.span.start = *start as u32;
-                self.span.end = self.span.start;
+        match self.peek() {
+            Some(c) => {
+                self.fc = c;
+                self.cursor_start = self.cursor_end;
                 true
             }
             None => false,
         }
-    }
-
-    fn peek(&mut self) -> Option<char> {
-        match self.iter.peek() {
-            Some((_, c)) => Some(*c),
-            None => None,
-        }
-    }
-
-    fn consume(&mut self, c: char) {
-        self.iter.next();
-        self.span.end += c.len_utf8() as u32;
-    }
-
-    fn token_spanned(&self, token: Token) -> TokenSpan {
-        TokenSpan::new(self.span, token)
     }
 
     fn lex_token(&mut self) -> TokenSpan {
@@ -115,28 +103,13 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        let str = &self.str[self.span.start as usize..self.span.end as usize];
+        let str = &self.str[self.cursor_start as usize..self.cursor_end as usize];
         let kind = match Token::keyword_from_str(str) {
             Some(kind) => kind,
             _ => Token::Ident,
         };
 
         return self.token_spanned(kind);
-    }
-
-    pub fn print_substring(&self, start: u32, end: u32) {
-        //@use for error reporting
-        if let Some(substring) = self.str.get(start as usize..end as usize) {
-            println!("Substring: {}", substring);
-        } else {
-            println!("Invalid range for substring");
-        }
-
-        if let Some(substring) = self.str.get((start - 10) as usize..(end + 10) as usize) {
-            println!("Substring expanded: {}", substring);
-        } else {
-            println!("Invalid range for expanded substring");
-        }
     }
 
     fn lex_number(&mut self) -> TokenSpan {
@@ -151,7 +124,8 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        let int_result = self.str[self.span.start as usize..self.span.end as usize].parse::<u64>();
+        let int_result =
+            self.str[self.cursor_start as usize..self.cursor_end as usize].parse::<u64>();
         let kind = match int_result {
             Ok(int) => Token::LitInt(int),
             Err(_) => Token::Error,
@@ -222,5 +196,42 @@ impl<'src> Lexer<'src> {
         }
 
         return self.token_spanned(kind);
+    }
+
+    pub fn lex_line_spans(&mut self) -> Vec<Span> {
+        let mut line_spans = Vec::new();
+        let mut line_start = 0;
+
+        self.cursor_end = 0;
+        self.iter = self.str.chars().peekable();
+
+        while let Some(c) = self.peek() {
+            self.consume(c);
+            if c == '\n' {
+                line_spans.push(Span::new(line_start, self.cursor_end - 1));
+                line_start = self.cursor_end;
+            }
+        }
+
+        if line_start < self.str.len() as u32 {
+            line_spans.push(Span::new(line_start, self.cursor_end));
+        }
+        return line_spans;
+    }
+
+    fn peek(&mut self) -> Option<char> {
+        match self.iter.peek() {
+            Some(c) => Some(*c),
+            None => None,
+        }
+    }
+
+    fn consume(&mut self, c: char) {
+        self.iter.next();
+        self.cursor_end += c.len_utf8() as u32;
+    }
+
+    fn token_spanned(&mut self, token: Token) -> TokenSpan {
+        TokenSpan::new(Span::new(self.cursor_start, self.cursor_end), token)
     }
 }
