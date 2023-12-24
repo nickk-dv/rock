@@ -1,153 +1,42 @@
 use super::*;
+use crate::err::parse_err::*;
 use crate::err::report;
 use crate::mem::*;
 use std::path::PathBuf;
 
 pub fn parse() -> Result<Package, ()> {
     let mut parser = Parser::new();
-    //@todo maybe move to parser + report err here like in cmd_parser
     return parser.parse_package();
 }
 
 struct Parser {
     arena: Arena,
-    peek_index: usize,
+    cursor: usize,
     tokens: Vec<TokenSpan>,
-    sources: Vec<String>,
     intern_pool: InternPool,
-}
-
-struct ParseError {
-    context: ParseContext,
-    expected: Vec<Token>,
-    got_token: TokenSpan,
-}
-
-#[derive(Copy, Clone)]
-enum ParseContext {
-    ModuleAccess,
-    Type,
-    CustomType,
-    ArraySliceType,
-    ArrayStaticType,
-    Decl,
-    ModDecl,
-    ProcDecl,
-    ProcParam,
-    EnumDecl,
-    EnumVariant,
-    StructDecl,
-    StructField,
-    GlobalDecl,
-    ImportDecl,
-    Stmt,
-    If,
-    For,
-    Block,
-    Defer,
-    Break,
-    Switch,
-    SwitchCase,
-    Return,
-    Continue,
-    VarDecl,
-    VarAssign,
-    Expr,
-    Var,
-    Access,
-    ArrayAccess,
-    Enum,
-    Cast,
-    Sizeof,
-    Literal,
-    ProcCall,
-    ArrayInit,
-    StructInit,
-}
-
-impl ParseError {
-    fn print_temp(&self) {
-        print!("parse error: expected: ");
-        for token in self.expected.iter() {
-            print!("'{}' ", token::Token::as_str(*token))
-        }
-        println!(
-            "\nin {} got: {}",
-            self.context.as_str(),
-            token::Token::as_str(self.got_token.token)
-        );
-        println!(
-            "span: {} - {}",
-            self.got_token.span.start, self.got_token.span.end
-        );
-    }
-}
-
-impl ParseContext {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ParseContext::ModuleAccess => "module access",
-            ParseContext::Type => "type",
-            ParseContext::CustomType => "custom type",
-            ParseContext::ArraySliceType => "array slice type",
-            ParseContext::ArrayStaticType => "static array type",
-            ParseContext::Decl => "declaration",
-            ParseContext::ModDecl => "module declaration",
-            ParseContext::ProcDecl => "procedure declaration",
-            ParseContext::ProcParam => "procedure parameter",
-            ParseContext::EnumDecl => "enum declaration",
-            ParseContext::EnumVariant => "enum variant",
-            ParseContext::StructDecl => "struct declaration",
-            ParseContext::StructField => "struct field",
-            ParseContext::GlobalDecl => "global declaration",
-            ParseContext::ImportDecl => "import declaration",
-            ParseContext::Stmt => "statement",
-            ParseContext::If => "if statement",
-            ParseContext::For => "for loop statement",
-            ParseContext::Block => "statement block",
-            ParseContext::Defer => "defer statement",
-            ParseContext::Break => "break statement",
-            ParseContext::Switch => "switch statement",
-            ParseContext::SwitchCase => "switch cast",
-            ParseContext::Return => "return statement",
-            ParseContext::Continue => "continue statement",
-            ParseContext::VarDecl => "variable declaration",
-            ParseContext::VarAssign => "variable assignment",
-            ParseContext::Expr => "expression",
-            ParseContext::Var => "variable",
-            ParseContext::Access => "access chain",
-            ParseContext::ArrayAccess => "array access",
-            ParseContext::Enum => "enum expression",
-            ParseContext::Cast => "cast expression",
-            ParseContext::Sizeof => "sizeof expression",
-            ParseContext::Literal => "literal",
-            ParseContext::ProcCall => "procedure call",
-            ParseContext::ArrayInit => "array initializer",
-            ParseContext::StructInit => "struct initializer",
-        }
-    }
+    current_file: String,
 }
 
 impl Parser {
     fn new() -> Self {
         Self {
             arena: Arena::new(1024 * 1024 * 4),
-            peek_index: 0,
+            cursor: 0,
             tokens: Vec::new(),
-            sources: Vec::new(),
             intern_pool: InternPool::new(),
+            current_file: String::new(),
         }
     }
 
     fn error(&self, context: ParseContext, expected: Vec<Token>) -> ParseError {
-        ParseError {
+        ParseError::new(
             context,
             expected,
-            got_token: TokenSpan {
+            TokenSpan {
                 token: self.peek(),
                 span: self.peek_span(),
             },
-        }
+        )
     }
 
     fn parse_package(&mut self) -> Result<Package, ()> {
@@ -163,15 +52,14 @@ impl Parser {
 
                 // storing strings in 2 locations, cant store String in P<>
                 // since it doesnt impl Copy which is required to copy the *mut T for some reason
-                self.peek_index = 0;
-                self.sources.push(string.clone());
-                let mut lexer = Lexer::new(&string);
-                self.tokens = lexer.lex();
-                let line_spans = lexer.lex_line_spans();
+                self.cursor = 0;
+                let lex = lexer::lex(string.as_str());
+                self.tokens = lex.tokens;
+                self.current_file = string.clone();
                 package.files.push(SourceFile {
                     path,
                     file: string,
-                    line_spans,
+                    line_spans: lex.line_spans,
                 });
 
                 match self.parse_module() {
@@ -208,14 +96,15 @@ impl Parser {
 
     fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParseError> {
         if self.peek() == Token::Ident {
+            // @intern pool needs to be redesigned to hash and work with utf8 chars,
+            // instead of idividual bytes, to avoid potential issues.
+            // especially relevant to string literal interning
             let span = self.peek_span();
-            unsafe {
-                let bytes = self.sources.last().unwrap_unchecked().as_bytes();
-                let slice = &bytes[span.start as usize..span.end as usize];
-                let id = self.intern_pool.intern(slice);
-                self.consume();
-                return Ok(Ident { span, id });
-            }
+            let bytes = self.current_file.as_bytes();
+            let slice = &bytes[span.start as usize..span.end as usize];
+            let id = self.intern_pool.intern(slice);
+            self.consume();
+            return Ok(Ident { span, id });
         }
         Err(self.error(context, vec![Token::Ident]))
     }
@@ -897,23 +786,23 @@ impl Parser {
     }
 
     fn peek(&self) -> Token {
-        unsafe { self.tokens.get_unchecked(self.peek_index).token }
+        unsafe { self.tokens.get_unchecked(self.cursor).token }
     }
 
     fn peek_next(&self, offset: isize) -> Token {
         unsafe {
             self.tokens
-                .get_unchecked(self.peek_index + offset as usize)
+                .get_unchecked(self.cursor + offset as usize)
                 .token
         }
     }
 
     fn peek_span(&self) -> Span {
-        unsafe { self.tokens.get_unchecked(self.peek_index).span }
+        unsafe { self.tokens.get_unchecked(self.cursor).span }
     }
 
     fn consume(&mut self) {
-        self.peek_index += 1;
+        self.cursor += 1;
     }
 
     fn try_consume(&mut self, token: Token) -> bool {

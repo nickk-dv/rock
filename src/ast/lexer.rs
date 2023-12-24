@@ -2,7 +2,20 @@ use super::span::Span;
 use super::token::*;
 use std::{iter::Peekable, str::Chars};
 
-pub struct Lexer<'src> {
+pub struct LexResult {
+    pub tokens: Vec<TokenSpan>,
+    pub line_spans: Vec<Span>,
+}
+
+pub fn lex(str: &str) -> LexResult {
+    let mut lexer = Lexer::new(str);
+    LexResult {
+        tokens: lexer.lex(),
+        line_spans: lexer.lex_line_spans(),
+    }
+}
+
+struct Lexer<'src> {
     str: &'src str,
     iter: Peekable<Chars<'src>>,
     fc: char,
@@ -18,7 +31,7 @@ enum Lexeme {
 }
 
 impl Lexeme {
-    pub fn from_char(c: char) -> Self {
+    fn from_char(c: char) -> Self {
         match c {
             '"' => Lexeme::String,
             _ => {
@@ -35,7 +48,7 @@ impl Lexeme {
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(str: &'src str) -> Self {
+    fn new(str: &'src str) -> Self {
         Self {
             str,
             iter: str.chars().peekable(),
@@ -45,7 +58,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub fn lex(&mut self) -> Vec<TokenSpan> {
+    fn lex(&mut self) -> Vec<TokenSpan> {
         let mut tokens = Vec::new();
 
         while self.peek().is_some() {
