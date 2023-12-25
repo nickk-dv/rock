@@ -6,32 +6,18 @@ pub struct ParseError {
     pub got_token: TokenSpan,
 }
 
-impl ParseError {
-    pub fn new(context: ParseContext, expected: Vec<Token>, got_token: TokenSpan) -> Self {
-        Self {
-            context,
-            expected,
-            got_token,
-        }
-    }
-}
-
-impl ParseError {
-    pub fn print_temp(&self) {
-        print!("parse error: expected: ");
-        for token in self.expected.iter() {
-            print!("'{}' ", Token::as_str(*token))
-        }
-        println!(
-            "\nin {} got: {}",
-            self.context.as_str(),
-            Token::as_str(self.got_token.token)
-        );
-        println!(
-            "span: {} - {}",
-            self.got_token.span.start, self.got_token.span.end
-        );
-    }
+pub enum ParserError {
+    Ident(ParseContext),
+    TypeMatch,
+    DeclMatch,
+    ImportTargetMatch,
+    StmtMatch,
+    PrimaryExprIdent,
+    PrimaryExprMatch,
+    AccessMatch,
+    LiteralMatch,
+    ExpectToken(ParseContext, Token),
+    ExpectAssignOp(ParseContext),
 }
 
 #[derive(Copy, Clone)]
@@ -76,11 +62,116 @@ pub enum ParseContext {
     StructInit,
 }
 
+impl ParseError {
+    fn new(got_token: TokenSpan, context: ParseContext, expected: Vec<Token>) -> Self {
+        Self {
+            context,
+            expected,
+            got_token,
+        }
+    }
+}
+
+impl ParserError {
+    pub fn to_parse_error(&self, token: TokenSpan) -> ParseError {
+        match self {
+            ParserError::Ident(context) => ParseError::new(token, *context, vec![Token::Ident]),
+            ParserError::TypeMatch => ParseError::new(
+                token,
+                ParseContext::Type,
+                vec![Token::Ident, Token::OpenBracket],
+            ),
+            ParserError::DeclMatch => ParseError::new(
+                token,
+                ParseContext::Decl,
+                vec![Token::Ident, Token::KwPub, Token::KwImport],
+            ),
+            ParserError::ImportTargetMatch => ParseError::new(
+                token,
+                ParseContext::ImportDecl,
+                vec![Token::Ident, Token::Times, Token::OpenBracket],
+            ),
+            ParserError::StmtMatch => ParseError::new(
+                token,
+                ParseContext::Stmt,
+                vec![
+                    Token::KwIf,
+                    Token::KwFor,
+                    Token::OpenBlock,
+                    Token::KwDefer,
+                    Token::KwBreak,
+                    Token::KwSwitch,
+                    Token::KwReturn,
+                    Token::KwContinue,
+                    Token::Ident,
+                ],
+            ),
+            ParserError::PrimaryExprIdent => {
+                ParseError::new(token, ParseContext::Expr, vec![Token::Ident])
+            }
+            ParserError::PrimaryExprMatch => {
+                let mut expected = vec![
+                    Token::Ident,
+                    Token::Dot,
+                    Token::OpenBracket,
+                    Token::OpenBlock,
+                    Token::KwCast,
+                    Token::KwSizeof,
+                ];
+                expected.extend(ParserError::all_literal_tokens());
+                ParseError::new(token, ParseContext::Expr, expected)
+            }
+            ParserError::AccessMatch => ParseError::new(
+                token,
+                ParseContext::Access,
+                vec![Token::Dot, Token::OpenBracket],
+            ),
+            ParserError::LiteralMatch => ParseError::new(
+                token,
+                ParseContext::Literal,
+                ParserError::all_literal_tokens(),
+            ),
+            ParserError::ExpectToken(context, expected) => {
+                ParseError::new(token, *context, vec![*expected])
+            }
+            ParserError::ExpectAssignOp(context) => {
+                ParseError::new(token, *context, ParserError::all_assign_op_tokens())
+            }
+        }
+    }
+
+    fn all_literal_tokens() -> Vec<Token> {
+        vec![
+            Token::LitNull,
+            Token::LitInt(u64::default()),
+            Token::LitFloat(f64::default()),
+            Token::LitChar(char::default()),
+            Token::LitString,
+        ]
+    }
+
+    fn all_assign_op_tokens() -> Vec<Token> {
+        vec![
+            Token::Assign,
+            Token::PlusEq,
+            Token::MinusEq,
+            Token::TimesEq,
+            Token::DivEq,
+            Token::ModEq,
+            Token::BitAndEq,
+            Token::BitOrEq,
+            Token::BitXorEq,
+            Token::ShlEq,
+            Token::ShrEq,
+        ]
+    }
+}
+
 impl ParseContext {
     pub fn as_str(&self) -> &'static str {
         match self {
             ParseContext::ModuleAccess => "module access",
-            ParseContext::Type => "type",
+            ParseContext::Type => "type signature",
             ParseContext::CustomType => "custom type",
             ParseContext::ArraySliceType => "array slice type",
             ParseContext::ArrayStaticType => "static array type",

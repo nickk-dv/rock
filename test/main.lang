@@ -1,18 +1,18 @@
-mod game_of_life;
+game_of_life :: mod;
 
-mod array;
+array :: mod;
 
-mod core;
-mod test_global_copy_and_access;
+core :: mod;
+test_global_copy_and_access :: mod;
 
-mod test_globals;
-mod test_impl_blocks;
-mod test_mut;
-mod test_new_import;
-mod test_proc_access;
-mod test_procedure_type;
-mod test_struct_self_storage;
-mod test_switch;
+test_globals :: mod;
+test_impl_blocks :: mod;
+test_mut :: mod;
+test_new_import :: mod;
+test_proc_access :: mod;
+test_procedure_type :: mod;
+test_struct_self_storage :: mod;
+test_switch :: mod;
 
 auto_cast_test :: () {
 	var :u32 = 0;

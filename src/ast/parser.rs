@@ -28,17 +28,6 @@ impl Parser {
         }
     }
 
-    fn error(&self, context: ParseContext, expected: Vec<Token>) -> ParseError {
-        ParseError::new(
-            context,
-            expected,
-            TokenSpan {
-                token: self.peek(),
-                span: self.peek_span(),
-            },
-        )
-    }
-
     fn parse_package(&mut self) -> Result<Package, ()> {
         let mut path = PathBuf::new();
         path.push("test/main.lang"); //@change lang name + consider lib / exe project type
@@ -50,8 +39,9 @@ impl Parser {
                     files: Vec::new(),
                 };
 
-                // storing strings in 2 locations, cant store String in P<>
+                // @storing strings in 2 locations, cant store String in P<>
                 // since it doesnt impl Copy which is required to copy the *mut T for some reason
+                // and package gets returned as value and not P<Package> for that reason
                 self.cursor = 0;
                 let lex = lexer::lex(string.as_str());
                 self.tokens = lex.tokens;
@@ -67,11 +57,14 @@ impl Parser {
                         package.root = module;
                     }
                     Err(error) => {
-                        error.print_temp();
-                        report::err(
+                        let unexpected_token = TokenSpan {
+                            span: self.peek_span(),
+                            token: self.peek(),
+                        };
+                        report::parse_err(
                             &package,
                             package.files.len() as u32 - 1,
-                            error.got_token.span,
+                            error.to_parse_error(unexpected_token),
                         );
                         return Err(());
                     }
@@ -85,7 +78,7 @@ impl Parser {
         }
     }
 
-    fn parse_module(&mut self) -> Result<P<Module>, ParseError> {
+    fn parse_module(&mut self) -> Result<P<Module>, ParserError> {
         let mut module = self.arena.alloc::<Module>();
         while self.peek() != Token::Eof {
             let decl = self.parse_decl()?;
@@ -94,7 +87,7 @@ impl Parser {
         Ok(module)
     }
 
-    fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParseError> {
+    fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParserError> {
         if self.peek() == Token::Ident {
             // @intern pool needs to be redesigned to hash and work with utf8 chars,
             // instead of idividual bytes, to avoid potential issues.
@@ -106,7 +99,7 @@ impl Parser {
             self.consume();
             return Ok(Ident { span, id });
         }
-        Err(self.error(context, vec![Token::Ident]))
+        Err(ParserError::Ident(context))
     }
 
     fn parse_module_access(&mut self) -> Option<ModuleAccess> {
@@ -125,7 +118,7 @@ impl Parser {
         Some(module_access)
     }
 
-    fn parse_type(&mut self) -> Result<Type, ParseError> {
+    fn parse_type(&mut self) -> Result<Type, ParserError> {
         let mut tt = Type {
             pointer_level: 0,
             kind: TypeKind::Basic(BasicType::Bool),
@@ -149,11 +142,11 @@ impl Parser {
                 };
                 Ok(tt)
             }
-            _ => Err(self.error(ParseContext::Type, vec![Token::Ident, Token::OpenBracket])),
+            _ => Err(ParserError::TypeMatch),
         }
     }
 
-    fn parse_custom_type(&mut self) -> Result<CustomType, ParseError> {
+    fn parse_custom_type(&mut self) -> Result<CustomType, ParserError> {
         let module_access = self.parse_module_access();
         let name = self.parse_ident(ParseContext::CustomType)?;
         Ok(CustomType {
@@ -162,7 +155,7 @@ impl Parser {
         })
     }
 
-    fn parse_array_slice_type(&mut self) -> Result<P<ArraySliceType>, ParseError> {
+    fn parse_array_slice_type(&mut self) -> Result<P<ArraySliceType>, ParserError> {
         let mut array_slice_type = self.arena.alloc::<ArraySliceType>();
         self.expect_token(Token::OpenBracket, ParseContext::ArraySliceType)?;
         self.expect_token(Token::CloseBracket, ParseContext::ArraySliceType)?;
@@ -170,7 +163,7 @@ impl Parser {
         Ok(array_slice_type)
     }
 
-    fn parse_array_static_type(&mut self) -> Result<P<ArrayStaticType>, ParseError> {
+    fn parse_array_static_type(&mut self) -> Result<P<ArrayStaticType>, ParserError> {
         let mut array_static_type = self.arena.alloc::<ArrayStaticType>();
         self.expect_token(Token::OpenBracket, ParseContext::ArrayStaticType)?;
         array_static_type.size = self.parse_expr()?;
@@ -186,52 +179,46 @@ impl Parser {
         }
     }
 
-    fn parse_decl(&mut self) -> Result<Decl, ParseError> {
+    fn parse_decl(&mut self) -> Result<Decl, ParserError> {
         match self.peek() {
-            Token::KwMod => Ok(Decl::Mod(self.parse_mod_decl()?)),
             Token::KwImport => Ok(Decl::Import(self.parse_import_decl()?)),
             Token::Ident | Token::KwPub => {
-                if self.peek_next(1) == Token::KwMod {
-                    return Ok(Decl::Mod(self.parse_mod_decl()?));
-                }
-                let mut offset = 0;
-                if self.peek() == Token::KwPub {
-                    offset += 1;
-                }
-                if self.peek_next(offset) != Token::Ident {
-                    return Err(self.error(ParseContext::Decl, vec![Token::Ident]));
-                }
-                if self.peek_next(offset + 1) != Token::ColonColon {
-                    return Err(self.error(ParseContext::Decl, vec![Token::ColonColon]));
-                }
-                match self.peek_next(offset + 2) {
-                    Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl()?)),
-                    Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl()?)),
-                    Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl()?)),
-                    _ => Ok(Decl::Global(self.parse_global_decl()?)),
+                let visibility = self.parse_visibility();
+                let name = self.parse_ident(ParseContext::Decl)?;
+                self.expect_token(Token::ColonColon, ParseContext::Decl)?;
+                match self.peek() {
+                    Token::KwMod => Ok(Decl::Mod(self.parse_mod_decl(visibility, name)?)),
+                    Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl(visibility, name)?)),
+                    Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(visibility, name)?)),
+                    Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(visibility, name)?)),
+                    _ => Ok(Decl::Global(self.parse_global_decl(visibility, name)?)), //@review the global and :: requirement
                 }
             }
-            _ => Err(self.error(
-                ParseContext::Decl,
-                vec![Token::Ident, Token::KwPub, Token::KwMod, Token::KwImport],
-            )),
+            _ => Err(ParserError::DeclMatch),
         }
     }
 
-    fn parse_mod_decl(&mut self) -> Result<P<ModDecl>, ParseError> {
+    fn parse_mod_decl(
+        &mut self,
+        visibility: Visibility,
+        name: Ident,
+    ) -> Result<P<ModDecl>, ParserError> {
         let mut mod_decl = self.arena.alloc::<ModDecl>();
-        mod_decl.visibility = self.parse_visibility();
+        mod_decl.visibility = visibility;
+        mod_decl.name = name;
         self.expect_token(Token::KwMod, ParseContext::ModDecl)?;
-        mod_decl.name = self.parse_ident(ParseContext::ModDecl)?;
         self.expect_token(Token::Semicolon, ParseContext::ModDecl)?;
         Ok(mod_decl)
     }
 
-    fn parse_proc_decl(&mut self) -> Result<P<ProcDecl>, ParseError> {
+    fn parse_proc_decl(
+        &mut self,
+        visibility: Visibility,
+        name: Ident,
+    ) -> Result<P<ProcDecl>, ParserError> {
         let mut proc_decl = self.arena.alloc::<ProcDecl>();
-        proc_decl.visibility = self.parse_visibility();
-        proc_decl.name = self.parse_ident(ParseContext::ProcDecl)?;
-        self.expect_token(Token::ColonColon, ParseContext::ProcDecl)?;
+        proc_decl.visibility = visibility;
+        proc_decl.name = name;
         self.expect_token(Token::OpenParen, ParseContext::ProcDecl)?;
         if !self.try_consume(Token::CloseParen) {
             loop {
@@ -252,7 +239,7 @@ impl Parser {
         } else {
             None
         };
-        proc_decl.block = if !self.try_consume(Token::Dir_c_call) {
+        proc_decl.block = if !self.try_consume(Token::DirCCall) {
             Some(self.parse_block()?)
         } else {
             None
@@ -260,18 +247,21 @@ impl Parser {
         Ok(proc_decl)
     }
 
-    fn parse_proc_param(&mut self) -> Result<ProcParam, ParseError> {
+    fn parse_proc_param(&mut self) -> Result<ProcParam, ParserError> {
         let name = self.parse_ident(ParseContext::ProcParam)?;
         self.expect_token(Token::Colon, ParseContext::ProcParam)?;
         let tt = self.parse_type()?;
         Ok(ProcParam { name, tt })
     }
 
-    fn parse_enum_decl(&mut self) -> Result<P<EnumDecl>, ParseError> {
+    fn parse_enum_decl(
+        &mut self,
+        visibility: Visibility,
+        name: Ident,
+    ) -> Result<P<EnumDecl>, ParserError> {
         let mut enum_decl = self.arena.alloc::<EnumDecl>();
-        enum_decl.visibility = self.parse_visibility();
-        enum_decl.name = self.parse_ident(ParseContext::EnumDecl)?;
-        self.expect_token(Token::ColonColon, ParseContext::EnumDecl)?;
+        enum_decl.visibility = visibility;
+        enum_decl.name = name;
         self.expect_token(Token::KwEnum, ParseContext::EnumDecl)?;
         enum_decl.basic_type = self.try_consume_basic_type();
         self.expect_token(Token::OpenBlock, ParseContext::EnumDecl)?;
@@ -282,7 +272,7 @@ impl Parser {
         Ok(enum_decl)
     }
 
-    fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
+    fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParserError> {
         let name = self.parse_ident(ParseContext::EnumVariant)?;
         let expr = if self.try_consume(Token::Assign) {
             Some(self.parse_expr()?)
@@ -293,11 +283,14 @@ impl Parser {
         Ok(EnumVariant { name, expr })
     }
 
-    fn parse_struct_decl(&mut self) -> Result<P<StructDecl>, ParseError> {
+    fn parse_struct_decl(
+        &mut self,
+        visibility: Visibility,
+        name: Ident,
+    ) -> Result<P<StructDecl>, ParserError> {
         let mut struct_decl = self.arena.alloc::<StructDecl>();
-        struct_decl.visibility = self.parse_visibility();
-        struct_decl.name = self.parse_ident(ParseContext::StructDecl)?;
-        self.expect_token(Token::ColonColon, ParseContext::StructDecl)?;
+        struct_decl.visibility = visibility;
+        struct_decl.name = name;
         self.expect_token(Token::KwStruct, ParseContext::StructDecl)?;
         self.expect_token(Token::OpenBlock, ParseContext::StructDecl)?;
         while !self.try_consume(Token::CloseBlock) {
@@ -307,7 +300,7 @@ impl Parser {
         Ok(struct_decl)
     }
 
-    fn parse_struct_field(&mut self) -> Result<StructField, ParseError> {
+    fn parse_struct_field(&mut self) -> Result<StructField, ParserError> {
         let name = self.parse_ident(ParseContext::StructField)?;
         self.expect_token(Token::Colon, ParseContext::StructField)?;
         let tt = self.parse_type()?;
@@ -320,13 +313,18 @@ impl Parser {
         Ok(StructField { name, tt, default })
     }
 
-    fn parse_global_decl(&mut self) -> Result<P<GlobalDecl>, ParseError> {
+    fn parse_global_decl(
+        &mut self,
+        visibility: Visibility,
+        name: Ident,
+    ) -> Result<P<GlobalDecl>, ParserError> {
         let mut global_decl = self.arena.alloc::<GlobalDecl>();
-        global_decl.visibility = self.parse_visibility();
-        global_decl.name = self.parse_ident(ParseContext::GlobalDecl)?;
+        global_decl.visibility = visibility;
+        global_decl.name = name;
         if self.try_consume(Token::Colon) {
+            // @the :: is expected in declaration, this wont work
             global_decl.tt = Some(self.parse_type()?);
-            self.expect_token(Token::Colon, ParseContext::GlobalDecl)?;
+            self.expect_token(Token::Colon, ParseContext::GlobalDecl)?; //wrong its already consumed
         } else {
             global_decl.tt = None;
             self.expect_token(Token::ColonColon, ParseContext::GlobalDecl)?;
@@ -336,7 +334,7 @@ impl Parser {
         Ok(global_decl)
     }
 
-    fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParseError> {
+    fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParserError> {
         let mut import_decl = self.arena.alloc::<ImportDecl>();
         self.expect_token(Token::KwImport, ParseContext::ImportDecl)?;
         import_decl.module_access = self.parse_module_access();
@@ -344,7 +342,7 @@ impl Parser {
         Ok(import_decl)
     }
 
-    fn parse_import_target(&mut self) -> Result<ImportTarget, ParseError> {
+    fn parse_import_target(&mut self) -> Result<ImportTarget, ParserError> {
         match self.peek() {
             Token::Ident => {
                 let name = self.parse_ident(ParseContext::ImportDecl)?;
@@ -372,14 +370,11 @@ impl Parser {
                 self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;
                 Ok(ImportTarget::SymbolList(symbols))
             }
-            _ => Err(self.error(
-                ParseContext::ImportDecl,
-                vec![Token::Ident, Token::Times, Token::OpenBracket],
-            )),
+            _ => Err(ParserError::ImportTargetMatch),
         }
     }
 
-    fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
+    fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
         match self.peek() {
             Token::KwIf => Ok(Stmt::If(self.parse_if()?)),
             Token::KwFor => Ok(Stmt::For(self.parse_for()?)),
@@ -402,24 +397,11 @@ impl Parser {
                     return Ok(Stmt::VarAssign(self.parse_var_assign(module_access)?));
                 }
             }
-            _ => Err(self.error(
-                ParseContext::Stmt,
-                vec![
-                    Token::KwIf,
-                    Token::KwFor,
-                    Token::OpenBlock,
-                    Token::KwDefer,
-                    Token::KwBreak,
-                    Token::KwSwitch,
-                    Token::KwReturn,
-                    Token::KwContinue,
-                    Token::Ident,
-                ],
-            )),
+            _ => Err(ParserError::StmtMatch),
         }
     }
 
-    fn parse_if(&mut self) -> Result<P<If>, ParseError> {
+    fn parse_if(&mut self) -> Result<P<If>, ParserError> {
         let mut if_ = self.arena.alloc::<If>();
         self.expect_token(Token::KwIf, ParseContext::If)?;
         if_.condition = self.parse_expr()?;
@@ -428,7 +410,7 @@ impl Parser {
         Ok(if_)
     }
 
-    fn parse_else(&mut self) -> Result<Option<Else>, ParseError> {
+    fn parse_else(&mut self) -> Result<Option<Else>, ParserError> {
         match self.peek() {
             Token::KwIf => Ok(Some(Else::If(self.parse_if()?))),
             Token::OpenBlock => Ok(Some(Else::Block(self.parse_block()?))),
@@ -436,7 +418,7 @@ impl Parser {
         }
     }
 
-    fn parse_for(&mut self) -> Result<P<For>, ParseError> {
+    fn parse_for(&mut self) -> Result<P<For>, ParserError> {
         let mut for_ = self.arena.alloc::<For>();
         self.expect_token(Token::KwFor, ParseContext::For)?;
 
@@ -462,7 +444,7 @@ impl Parser {
         Ok(for_)
     }
 
-    fn parse_block(&mut self) -> Result<P<Block>, ParseError> {
+    fn parse_block(&mut self) -> Result<P<Block>, ParserError> {
         let mut block = self.arena.alloc::<Block>();
         self.expect_token(Token::OpenBlock, ParseContext::Block)?;
         while !self.try_consume(Token::CloseBlock) {
@@ -472,18 +454,18 @@ impl Parser {
         Ok(block)
     }
 
-    fn parse_defer(&mut self) -> Result<P<Block>, ParseError> {
+    fn parse_defer(&mut self) -> Result<P<Block>, ParserError> {
         self.expect_token(Token::KwDefer, ParseContext::Defer)?;
         Ok(self.parse_block()?)
     }
 
-    fn parse_break(&mut self) -> Result<Stmt, ParseError> {
+    fn parse_break(&mut self) -> Result<Stmt, ParserError> {
         self.expect_token(Token::KwBreak, ParseContext::Break)?;
         self.expect_token(Token::Semicolon, ParseContext::Break)?;
         Ok(Stmt::Break)
     }
 
-    fn parse_switch(&mut self) -> Result<P<Switch>, ParseError> {
+    fn parse_switch(&mut self) -> Result<P<Switch>, ParserError> {
         let mut switch = self.arena.alloc::<Switch>();
         switch.expr = self.parse_expr()?;
         self.expect_token(Token::OpenBlock, ParseContext::Switch)?;
@@ -494,14 +476,14 @@ impl Parser {
         Ok(switch)
     }
 
-    fn parse_switch_case(&mut self) -> Result<SwitchCase, ParseError> {
+    fn parse_switch_case(&mut self) -> Result<SwitchCase, ParserError> {
         let expr = self.parse_expr()?;
         self.expect_token(Token::ArrowWide, ParseContext::SwitchCase)?;
         let block = self.parse_block()?;
         Ok(SwitchCase { expr, block })
     }
 
-    fn parse_return(&mut self) -> Result<P<Return>, ParseError> {
+    fn parse_return(&mut self) -> Result<P<Return>, ParserError> {
         let mut return_ = self.arena.alloc::<Return>();
         self.expect_token(Token::KwReturn, ParseContext::Return)?;
         return_.expr = if !self.try_consume(Token::Semicolon) {
@@ -514,13 +496,13 @@ impl Parser {
         Ok(return_)
     }
 
-    fn parse_continue(&mut self) -> Result<Stmt, ParseError> {
+    fn parse_continue(&mut self) -> Result<Stmt, ParserError> {
         self.expect_token(Token::KwContinue, ParseContext::Continue)?;
         self.expect_token(Token::Semicolon, ParseContext::Continue)?;
         Ok(Stmt::Continue)
     }
 
-    fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
+    fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParserError> {
         let mut var_decl = self.arena.alloc::<VarDecl>();
         var_decl.name = self.parse_ident(ParseContext::VarDecl)?;
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
@@ -542,7 +524,7 @@ impl Parser {
     fn parse_var_assign(
         &mut self,
         module_access: Option<ModuleAccess>,
-    ) -> Result<P<VarAssign>, ParseError> {
+    ) -> Result<P<VarAssign>, ParserError> {
         let mut var_assign = self.arena.alloc::<VarAssign>();
         var_assign.var = self.parse_var(module_access)?;
         var_assign.op = self.expect_assign_op(ParseContext::VarAssign)?;
@@ -551,11 +533,11 @@ impl Parser {
         Ok(var_assign)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ParseError> {
+    fn parse_expr(&mut self) -> Result<Expr, ParserError> {
         self.parse_sub_expr(0)
     }
 
-    fn parse_sub_expr(&mut self, min_prec: u32) -> Result<Expr, ParseError> {
+    fn parse_sub_expr(&mut self, min_prec: u32) -> Result<Expr, ParserError> {
         let mut expr_lhs = self.parse_primary_expr()?;
         loop {
             let prec: u32;
@@ -579,7 +561,7 @@ impl Parser {
         Ok(expr_lhs)
     }
 
-    fn parse_primary_expr(&mut self) -> Result<Expr, ParseError> {
+    fn parse_primary_expr(&mut self) -> Result<Expr, ParserError> {
         if self.try_consume(Token::OpenParen) {
             let expr = self.parse_sub_expr(0)?;
             self.expect_token(Token::CloseParen, ParseContext::Expr)?;
@@ -610,7 +592,7 @@ impl Parser {
             Token::Ident => {
                 let module_access = self.parse_module_access();
                 if self.peek() != Token::Ident {
-                    return Err(self.error(ParseContext::Expr, vec![Token::Ident]));
+                    return Err(ParserError::PrimaryExprIdent);
                 }
                 if self.peek_next(1) == Token::OpenParen {
                     Ok(Expr::ProcCall(self.parse_proc_call(module_access)?))
@@ -620,22 +602,11 @@ impl Parser {
                     Ok(Expr::Var(self.parse_var(module_access)?))
                 }
             }
-            _ => Err(self.error(
-                ParseContext::Expr,
-                vec![
-                    Token::Ident,
-                    Token::Dot,
-                    Token::KwCast,
-                    Token::KwSizeof,
-                    Token::LitNull, // todo all literals
-                    Token::OpenBracket,
-                    Token::OpenBlock,
-                ],
-            )),
+            _ => Err(ParserError::PrimaryExprMatch),
         }
     }
 
-    fn parse_var(&mut self, module_access: Option<ModuleAccess>) -> Result<P<Var>, ParseError> {
+    fn parse_var(&mut self, module_access: Option<ModuleAccess>) -> Result<P<Var>, ParserError> {
         let mut var = self.arena.alloc::<Var>();
         var.module_access = module_access;
         var.name = self.parse_ident(ParseContext::Var)?;
@@ -643,7 +614,7 @@ impl Parser {
         Ok(var)
     }
 
-    fn parse_access_chain(&mut self) -> Result<Option<P<Access>>, ParseError> {
+    fn parse_access_chain(&mut self) -> Result<Option<P<Access>>, ParserError> {
         match self.peek() {
             Token::Dot | Token::OpenBracket => {}
             _ => return Ok(None),
@@ -658,7 +629,7 @@ impl Parser {
         Ok(Some(access))
     }
 
-    fn parse_access(&mut self) -> Result<P<Access>, ParseError> {
+    fn parse_access(&mut self) -> Result<P<Access>, ParserError> {
         let mut access = self.arena.alloc::<Access>();
         match self.peek() {
             Token::Dot => {
@@ -672,18 +643,18 @@ impl Parser {
                 self.expect_token(Token::CloseBracket, ParseContext::ArrayAccess)?;
                 Ok(access)
             }
-            _ => Err(self.error(ParseContext::Access, vec![Token::Dot, Token::OpenBracket])),
+            _ => Err(ParserError::AccessMatch),
         }
     }
 
-    fn parse_enum(&mut self) -> Result<P<Enum>, ParseError> {
+    fn parse_enum(&mut self) -> Result<P<Enum>, ParserError> {
         let mut enum_ = self.arena.alloc::<Enum>();
         self.expect_token(Token::Dot, ParseContext::Enum)?;
         enum_.variant = self.parse_ident(ParseContext::Enum)?;
         Ok(enum_)
     }
 
-    fn parse_cast(&mut self) -> Result<P<Cast>, ParseError> {
+    fn parse_cast(&mut self) -> Result<P<Cast>, ParserError> {
         let mut cast = self.arena.alloc::<Cast>();
         self.expect_token(Token::KwCast, ParseContext::Cast)?;
         self.expect_token(Token::OpenParen, ParseContext::Cast)?;
@@ -694,7 +665,7 @@ impl Parser {
         Ok(cast)
     }
 
-    fn parse_sizeof(&mut self) -> Result<P<Sizeof>, ParseError> {
+    fn parse_sizeof(&mut self) -> Result<P<Sizeof>, ParserError> {
         let mut sizeof = self.arena.alloc::<Sizeof>();
         self.expect_token(Token::KwSizeof, ParseContext::Sizeof)?;
         self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
@@ -703,7 +674,7 @@ impl Parser {
         Ok(sizeof)
     }
 
-    fn parse_literal(&mut self) -> Result<P<Literal>, ParseError> {
+    fn parse_literal(&mut self) -> Result<P<Literal>, ParserError> {
         let mut literal = self.arena.alloc::<Literal>();
         match self.peek() {
             Token::LitNull => *literal = Literal::Null,
@@ -712,7 +683,7 @@ impl Parser {
             Token::LitFloat(v) => *literal = Literal::Float(v),
             Token::LitChar(v) => *literal = Literal::Char(v),
             Token::LitString => *literal = Literal::String,
-            _ => return Err(self.error(ParseContext::Literal, vec![Token::LitNull])), // any literal
+            _ => return Err(ParserError::LiteralMatch),
         }
         self.consume();
         Ok(literal)
@@ -721,7 +692,7 @@ impl Parser {
     fn parse_proc_call(
         &mut self,
         module_access: Option<ModuleAccess>,
-    ) -> Result<P<ProcCall>, ParseError> {
+    ) -> Result<P<ProcCall>, ParserError> {
         let mut proc_call = self.arena.alloc::<ProcCall>();
         proc_call.module_access = module_access;
         proc_call.name = self.parse_ident(ParseContext::ProcCall)?;
@@ -731,7 +702,7 @@ impl Parser {
         Ok(proc_call)
     }
 
-    fn parse_array_init(&mut self) -> Result<P<ArrayInit>, ParseError> {
+    fn parse_array_init(&mut self) -> Result<P<ArrayInit>, ParserError> {
         let mut array_init = self.arena.alloc::<ArrayInit>();
         array_init.tt = if self.peek() == Token::OpenBracket {
             Some(self.parse_type()?)
@@ -746,7 +717,7 @@ impl Parser {
     fn parse_struct_init(
         &mut self,
         module_access: Option<ModuleAccess>,
-    ) -> Result<P<StructInit>, ParseError> {
+    ) -> Result<P<StructInit>, ParserError> {
         let mut struct_init = self.arena.alloc::<StructInit>();
         struct_init.module_access = module_access;
         let has_name = self.peek() == Token::Ident || module_access.is_some();
@@ -769,7 +740,7 @@ impl Parser {
         start: Token,
         end: Token,
         context: ParseContext,
-    ) -> Result<List<Expr>, ParseError> {
+    ) -> Result<List<Expr>, ParserError> {
         let mut expr_list = List::<Expr>::new();
         self.expect_token(start, context)?;
         if !self.try_consume(end) {
@@ -833,21 +804,21 @@ impl Parser {
         }
     }
 
-    fn expect_token(&mut self, token: Token, context: ParseContext) -> Result<(), ParseError> {
+    fn expect_token(&mut self, token: Token, context: ParseContext) -> Result<(), ParserError> {
         if token == self.peek() {
             self.consume();
             return Ok(());
         }
-        Err(self.error(context, vec![token]))
+        Err(ParserError::ExpectToken(context, token))
     }
 
-    fn expect_assign_op(&mut self, context: ParseContext) -> Result<AssignOp, ParseError> {
+    fn expect_assign_op(&mut self, context: ParseContext) -> Result<AssignOp, ParserError> {
         match self.peek().as_assign_op() {
             Some(op) => {
                 self.consume();
                 Ok(op)
             }
-            None => Err(self.error(context, vec![Token::Assign])), //todo any assign op
+            None => Err(ParserError::ExpectAssignOp(context)),
         }
     }
 }
