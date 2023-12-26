@@ -1,30 +1,14 @@
-use crate::ast::ast::BasicType;
-use crate::mem::{Array, InternID};
+use crate::ast::ast::{AssignOp, BasicType, BinaryOp, UnaryOp};
+use crate::mem::{Array, InternID, P};
 
 pub type ProcID = u32;
 pub type StructID = u32;
-pub type ArrayTypeID = u32; //@might be changed to global type ids
-pub type IfID = u32;
-pub type ForID = u32;
-pub type BlockID = u32;
-pub type SwitchID = u32;
-pub type ReturnID = u32;
-pub type VarDeclID = u32;
-pub type VarAssignID = u32;
-pub type ProcCallID = u32;
+pub type ConstValueID = u32;
 
 pub struct Hir {
     procs: Vec<ProcDecl>,
     structs: Vec<StructDecl>,
-    array_types: Vec<Type>,
-    if_stmts: Vec<If>,
-    for_stmts: Vec<For>,
-    block_stmts: Vec<Block>,
-    switch_stmts: Vec<Switch>,
-    return_stmts: Vec<Return>,
-    var_decl_stmts: Vec<VarDecl>,
-    var_assign_stmts: Vec<VarAssign>,
-    proc_call_stmts: Vec<ProcCall>,
+    const_values: Vec<ConstValue>,
 }
 
 #[derive(Copy, Clone)]
@@ -42,71 +26,71 @@ pub struct Type {
 pub enum TypeKind {
     Basic(BasicType),
     Struct(StructID),
-    ArraySlice,
-    ArrayStatic(ArrayTypeID),
+    ArraySlice(P<ArraySliceType>),
+    ArrayStatic(P<ArrayStaticType>),
+}
+
+#[derive(Copy, Clone)]
+pub struct ArraySliceType {
+    pub element: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayStaticType {
+    pub size: ConstValueID,
+    pub element: Type,
 }
 
 #[derive(Copy, Clone)]
 pub struct ProcDecl {
     pub name: Ident,
-    pub params: Array<ProcParam>,
+    pub params: Array<Type>,
     pub is_variadic: bool,
     pub return_type: Option<Type>,
-    pub block: BlockID,
-}
-
-#[derive(Copy, Clone)]
-pub struct ProcParam {
-    pub name: Ident,
-    pub tt: Type,
+    pub block: Option<P<Block>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct StructDecl {
     pub name: Ident,
-}
-
-#[derive(Copy, Clone)]
-pub struct StructField {
-    pub name: Ident,
-    pub tt: Type,
-    //@default expr, use const value id ?
+    pub fields: Array<Type>,
+    pub default: ConstValueID,
 }
 
 #[derive(Copy, Clone)]
 pub enum Stmt {
-    If(IfID),
-    For(ForID),
-    Block(BlockID),
-    Defer(BlockID),
+    If(P<If>),
+    For(P<For>),
+    Block(P<Block>),
+    Defer(P<Block>),
     Break,
-    Switch(SwitchID),
-    Return(ReturnID),
+    Switch(P<Switch>),
+    Return(P<Return>),
     Continue,
-    VarDecl(VarDeclID),
-    VarAssign(VarAssignID),
-    ProcCall(ProcCallID),
+    VarDecl(P<VarDecl>),
+    VarAssign(P<VarAssign>),
+    ProcCall(P<ProcCall>),
 }
 
 #[derive(Copy, Clone)]
 pub struct If {
     pub condition: Expr,
-    pub block: BlockID,
+    pub block: P<Block>,
     pub else_: Option<Else>,
 }
 
 #[derive(Copy, Clone)]
 pub enum Else {
-    If(IfID),
-    Block(BlockID),
+    If(P<If>),
+    Block(P<Block>),
 }
 
 #[derive(Copy, Clone)]
 pub struct For {
-    pub var_decl: Option<VarDeclID>,
+    pub var_decl: Option<P<VarDecl>>,
     pub condition: Option<Expr>,
-    pub var_assign: Option<VarAssign>,
-    pub block: BlockID,
+    pub var_assign: Option<P<VarAssign>>,
+    pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
@@ -123,7 +107,7 @@ pub struct Switch {
 #[derive(Copy, Clone)]
 pub struct SwitchCase {
     pub expr: Expr,
-    pub block: BlockID,
+    pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
@@ -140,15 +124,105 @@ pub struct VarDecl {
 
 #[derive(Copy, Clone)]
 pub struct VarAssign {
-    //@todo var + access
+    pub var: P<Var>,
+    pub op: AssignOp,
+    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
-pub struct Expr {} //@todo
+pub struct Expr {
+    //@todo flags
+    kind: ExprKind,
+}
+
+#[derive(Copy, Clone)]
+pub enum ExprKind {
+    Var(P<Var>),
+    Cast(P<Cast>),
+    ProcCall(P<ProcCall>),
+    ArrayInit(P<ArrayInit>),
+    StructInit(P<StructInit>),
+    ConstValue(ConstValueID),
+    UnaryExpr(P<UnaryExpr>),
+    BinaryExpr(P<BinaryExpr>),
+}
+
+#[derive(Copy, Clone)]
+pub struct Var {
+    pub name: Ident,
+    pub access: Option<P<Access>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Access {
+    pub kind: AccessKind,
+    pub next: Option<P<Access>>,
+}
+
+#[derive(Copy, Clone)]
+pub enum AccessKind {
+    Field(u32),
+    Array(Expr),
+}
+
+#[derive(Copy, Clone)]
+pub struct Cast {
+    pub tt: Type,
+    pub expr: Expr,
+}
 
 #[derive(Copy, Clone)]
 pub struct ProcCall {
     pub proc: ProcID,
     pub input: Array<Expr>,
-    //@todo access
+    pub access: Option<P<Access>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayInit {
+    pub tt: Type,
+    pub input: Array<Expr>,
+}
+
+#[derive(Copy, Clone)]
+pub struct StructInit {
+    pub tt: StructID,
+    pub input: Array<Expr>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ConstValue {
+    Bool(bool),
+    Int(i64), // @is signed int needed?
+    Uint(u64),
+    Float(f64),
+    Char(char),
+    NullPtr,
+    Array(P<ConstArray>),
+    Struct(P<ConstStruct>),
+}
+
+#[derive(Copy, Clone)]
+pub struct ConstArray {
+    pub tt: Type,
+    pub values: Array<ConstValueID>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ConstStruct {
+    pub tt: Type,
+    pub values: Array<ConstValueID>,
+}
+
+#[derive(Copy, Clone)]
+pub struct UnaryExpr {
+    pub op: UnaryOp,
+    pub rhs: Expr,
+}
+
+#[derive(Copy, Clone)]
+pub struct BinaryExpr {
+    pub op: BinaryOp,
+    pub lhs: Expr,
+    pub rhs: Expr,
 }

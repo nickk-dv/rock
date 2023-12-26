@@ -1,5 +1,5 @@
 use super::span::Span;
-use crate::mem::*;
+use crate::mem::{InternID, List, P};
 use std::path::PathBuf;
 
 pub type SourceID = u32;
@@ -43,7 +43,7 @@ pub struct Type {
 #[derive(Copy, Clone)]
 pub enum TypeKind {
     Basic(BasicType),
-    Custom(CustomType),
+    Custom(P<CustomType>),
     ArraySlice(P<ArraySliceType>),
     ArrayStatic(P<ArrayStaticType>),
 }
@@ -277,7 +277,7 @@ pub struct Access {
 
 #[derive(Copy, Clone)]
 pub enum AccessKind {
-    Ident(Ident),
+    Field(Ident),
     Array(Expr),
 }
 

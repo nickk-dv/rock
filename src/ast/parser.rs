@@ -148,13 +148,11 @@ impl Parser {
         }
     }
 
-    fn parse_custom_type(&mut self) -> Result<CustomType, ParserError> {
-        let module_access = self.parse_module_access();
-        let name = self.parse_ident(ParseContext::CustomType)?;
-        Ok(CustomType {
-            module_access,
-            name,
-        })
+    fn parse_custom_type(&mut self) -> Result<P<CustomType>, ParserError> {
+        let mut custom_type = self.arena.alloc::<CustomType>();
+        custom_type.module_access = self.parse_module_access();
+        custom_type.name = self.parse_ident(ParseContext::CustomType)?;
+        Ok(custom_type)
     }
 
     fn parse_array_slice_type(&mut self) -> Result<P<ArraySliceType>, ParserError> {
@@ -628,7 +626,7 @@ impl Parser {
         match self.peek() {
             Token::Dot => {
                 self.consume();
-                access.kind = AccessKind::Ident(self.parse_ident(ParseContext::Access)?);
+                access.kind = AccessKind::Field(self.parse_ident(ParseContext::Access)?);
                 Ok(access)
             }
             Token::OpenBracket => {
