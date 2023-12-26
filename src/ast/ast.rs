@@ -2,15 +2,16 @@ use super::span::Span;
 use crate::mem::*;
 use std::path::PathBuf;
 
+pub type SourceID = u32;
+
 pub struct Package {
     pub root: P<Module>,
     pub files: Vec<SourceFile>,
 }
 
-pub type SourceID = u32;
 pub struct SourceFile {
     pub path: PathBuf,
-    pub file: String,
+    pub source: String,
     pub line_spans: Vec<Span>,
 }
 
@@ -153,7 +154,6 @@ pub struct StructField {
 pub struct GlobalDecl {
     pub visibility: Visibility,
     pub name: Ident,
-    pub tt: Option<Type>,
     pub expr: Expr,
 }
 

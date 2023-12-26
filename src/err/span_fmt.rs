@@ -1,6 +1,6 @@
 use super::ansi::{self, Color};
+use crate::ast::ast::SourceFile;
 use crate::ast::span::*;
-use crate::ast::SourceFile;
 
 pub fn print(source: &SourceFile, span: Span, marker: Option<&str>) {
     let format = SpanFormat::new(source, span);
@@ -15,7 +15,7 @@ struct Loc {
 }
 
 struct SpanFormat<'a> {
-    source: &'a SourceFile,
+    file: &'a SourceFile,
     loc: Loc,
     line: String,
     line_num: String,
@@ -26,15 +26,15 @@ struct SpanFormat<'a> {
 }
 
 impl<'a> SpanFormat<'a> {
-    fn new(source: &'a SourceFile, span: Span) -> Self {
-        let loc = find_loc(&source.line_spans, span);
+    fn new(file: &'a SourceFile, span: Span) -> Self {
+        let loc = find_loc(&file.line_spans, span);
         let is_multi_line;
 
-        let line = loc.span.str(&source.file);
+        let line = loc.span.str(&file.source);
         let line = normalize_tab(line);
-        let line_prefix = Span::str_range(loc.span.start, span.start, &source.file);
+        let line_prefix = Span::str_range(loc.span.start, span.start, &file.source);
         let line_prefix = normalize_tab(line_prefix);
-        let line_span = span.str(&source.file);
+        let line_span = span.str(&file.source);
         let line_span = if line_span.contains('\n') {
             is_multi_line = true;
             line_span.lines().next().unwrap_or("").trim_end()
@@ -45,7 +45,7 @@ impl<'a> SpanFormat<'a> {
         let line_span = normalize_tab(line_span);
 
         Self {
-            source,
+            file,
             loc,
             line,
             line_num: loc.line.to_string(),
@@ -60,7 +60,7 @@ impl<'a> SpanFormat<'a> {
         self.print_arrow();
         println!(
             "{}:{}:{}",
-            self.source.path.to_string_lossy(),
+            self.file.path.to_string_lossy(),
             self.loc.line,
             self.loc.col
         );

@@ -1,8 +1,9 @@
 use super::ansi::{self, Color};
 use super::parse_err::*;
 use super::span_fmt;
-use crate::ast::{span::*, Token};
-use crate::ast::{Package, SourceID};
+use crate::ast::ast::{Package, SourceID};
+use crate::ast::span::*;
+use crate::ast::token::Token;
 
 pub fn err(package: &Package, id: SourceID, span: Span) {
     let source = package.files.get(id as usize).unwrap(); //@err internal?

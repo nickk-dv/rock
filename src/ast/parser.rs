@@ -1,4 +1,7 @@
-use super::*;
+use super::ast::*;
+use super::lexer;
+use super::span::*;
+use super::token::*;
 use crate::err::parse_err::*;
 use crate::err::report;
 use crate::mem::*;
@@ -33,22 +36,21 @@ impl Parser {
         path.push("test/main.lang"); //@change lang name + consider lib / exe project type
 
         match std::fs::read_to_string(&path) {
-            Ok(string) => {
+            Ok(source) => {
                 let mut package = Package {
                     root: P::null(),
                     files: Vec::new(),
                 };
-
                 // @storing strings in 2 locations, cant store String in P<>
                 // since it doesnt impl Copy which is required to copy the *mut T for some reason
                 // and package gets returned as value and not P<Package> for that reason
                 self.cursor = 0;
-                let lex = lexer::lex(string.as_str());
+                let lex = lexer::lex(source.as_str());
                 self.tokens = lex.tokens;
-                self.current_file = string.clone();
+                self.current_file = source.clone();
                 package.files.push(SourceFile {
                     path,
-                    file: string,
+                    source,
                     line_spans: lex.line_spans,
                 });
 
@@ -321,14 +323,6 @@ impl Parser {
         let mut global_decl = self.arena.alloc::<GlobalDecl>();
         global_decl.visibility = visibility;
         global_decl.name = name;
-        if self.try_consume(Token::Colon) {
-            // @the :: is expected in declaration, this wont work
-            global_decl.tt = Some(self.parse_type()?);
-            self.expect_token(Token::Colon, ParseContext::GlobalDecl)?; //wrong its already consumed
-        } else {
-            global_decl.tt = None;
-            self.expect_token(Token::ColonColon, ParseContext::GlobalDecl)?;
-        }
         global_decl.expr = self.parse_expr()?;
         self.expect_token(Token::Semicolon, ParseContext::GlobalDecl)?;
         Ok(global_decl)
