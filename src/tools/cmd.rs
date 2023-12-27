@@ -1,4 +1,5 @@
 use crate::ast::parser;
+use crate::hir::check;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -48,17 +49,20 @@ fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let _ = parser::parse()?;
+    let ast = parser::parse()?;
+    check::check(&ast);
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let _ = parser::parse()?;
+    let ast = parser::parse()?;
+    check::check(&ast);
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let _ = parser::parse()?;
+    let ast = parser::parse()?;
+    check::check(&ast);
     Ok(())
 }
 

@@ -1,12 +1,12 @@
 use super::ansi::{self, Color};
 use super::parse_err::*;
 use super::span_fmt;
-use crate::ast::ast::{Package, SourceID};
+use crate::ast::ast::{Ast, SourceID};
 use crate::ast::span::*;
 use crate::ast::token::Token;
 
-pub fn err(package: &Package, id: SourceID, span: Span) {
-    let source = package.files.get(id as usize).unwrap(); //@err internal?
+pub fn err(ast: &Ast, id: SourceID, span: Span) {
+    let source = ast.files.get(id as usize).unwrap(); //@err internal?
 
     ansi::set_color(Color::Red);
     println!("error: ");
@@ -14,8 +14,8 @@ pub fn err(package: &Package, id: SourceID, span: Span) {
     span_fmt::print(source, span, Some("unexpected token"));
 }
 
-pub fn parse_err(package: &Package, id: SourceID, err: ParseError) {
-    let source = package.files.get(id as usize).unwrap(); //@err internal?
+pub fn parse_err(ast: &Ast, id: SourceID, err: ParseError) {
+    let source = ast.files.get(id as usize).unwrap(); //@err internal?
 
     ansi::set_color(Color::Red);
     print!("parse error: ");

@@ -7,48 +7,48 @@ use crate::err::report;
 use crate::mem::*;
 use std::path::PathBuf;
 
-pub fn parse() -> Result<Package, ()> {
-    let mut parser = Parser::new();
-    return parser.parse_package();
+pub fn parse() -> Result<Ast, ()> {
+    let mut ast = Ast {
+        arena: Arena::new(1024 * 1024 * 4),
+        files: Vec::new(),
+        package: P::null(),
+        intern_pool: InternPool::new(),
+    };
+    let mut parser = Parser {
+        cursor: 0,
+        source: String::new(),
+        tokens: Vec::new(),
+        ast: &mut ast,
+    };
+    ast.package = parser.parse_package()?;
+    Ok(ast)
 }
 
-struct Parser {
-    arena: Arena,
+struct Parser<'ast> {
     cursor: usize,
+    source: String,
     tokens: Vec<TokenSpan>,
-    intern_pool: InternPool,
-    current_file: String,
+    ast: &'ast mut Ast,
 }
 
-impl Parser {
-    fn new() -> Self {
-        Self {
-            arena: Arena::new(1024 * 1024 * 4),
-            cursor: 0,
-            tokens: Vec::new(),
-            intern_pool: InternPool::new(),
-            current_file: String::new(),
-        }
-    }
-
-    fn parse_package(&mut self) -> Result<Package, ()> {
+impl<'ast> Parser<'ast> {
+    fn parse_package(&mut self) -> Result<P<Package>, ()> {
         let mut path = PathBuf::new();
         path.push("test/main.lang"); //@change lang name + consider lib / exe project type
 
+        let mut package = self.alloc::<Package>();
+        package.root = P::null();
+
         match std::fs::read_to_string(&path) {
             Ok(source) => {
-                let mut package = Package {
-                    root: P::null(),
-                    files: Vec::new(),
-                };
                 // @storing strings in 2 locations, cant store String in P<>
                 // since it doesnt impl Copy which is required to copy the *mut T for some reason
                 // and package gets returned as value and not P<Package> for that reason
                 self.cursor = 0;
                 let lex = lexer::lex(source.as_str());
                 self.tokens = lex.tokens;
-                self.current_file = source.clone();
-                package.files.push(SourceFile {
+                self.source = source.clone();
+                self.ast.files.push(SourceFile {
                     path,
                     source,
                     line_spans: lex.line_spans,
@@ -64,8 +64,8 @@ impl Parser {
                             token: self.peek(),
                         };
                         report::parse_err(
-                            &package,
-                            package.files.len() as u32 - 1,
+                            self.ast,
+                            self.ast.files.len() as u32 - 1,
                             error.to_parse_error(unexpected_token),
                         );
                         return Err(());
@@ -81,10 +81,10 @@ impl Parser {
     }
 
     fn parse_module(&mut self) -> Result<P<Module>, ParserError> {
-        let mut module = self.arena.alloc::<Module>();
+        let mut module = self.alloc::<Module>();
         while self.peek() != Token::Eof {
             let decl = self.parse_decl()?;
-            module.decls.add(&mut self.arena, decl);
+            module.decls.add(&mut self.ast.arena, decl);
         }
         Ok(module)
     }
@@ -95,9 +95,9 @@ impl Parser {
             // instead of idividual bytes, to avoid potential issues.
             // especially relevant to string literal interning
             let span = self.peek_span();
-            let bytes = self.current_file.as_bytes();
+            let bytes = self.source.as_bytes();
             let slice = &bytes[span.start as usize..span.end as usize];
-            let id = self.intern_pool.intern(slice);
+            let id = self.ast.intern_pool.intern(slice);
             self.consume();
             return Ok(Ident { span, id });
         }
@@ -115,7 +115,7 @@ impl Parser {
                     .unwrap_unchecked()
             };
             self.consume();
-            module_access.names.add(&mut self.arena, name);
+            module_access.names.add(&mut self.ast.arena, name);
         }
         Some(module_access)
     }
@@ -149,14 +149,14 @@ impl Parser {
     }
 
     fn parse_custom_type(&mut self) -> Result<P<CustomType>, ParserError> {
-        let mut custom_type = self.arena.alloc::<CustomType>();
+        let mut custom_type = self.alloc::<CustomType>();
         custom_type.module_access = self.parse_module_access();
         custom_type.name = self.parse_ident(ParseContext::CustomType)?;
         Ok(custom_type)
     }
 
     fn parse_array_slice_type(&mut self) -> Result<P<ArraySliceType>, ParserError> {
-        let mut array_slice_type = self.arena.alloc::<ArraySliceType>();
+        let mut array_slice_type = self.alloc::<ArraySliceType>();
         self.expect_token(Token::OpenBracket, ParseContext::ArraySliceType)?;
         self.expect_token(Token::CloseBracket, ParseContext::ArraySliceType)?;
         array_slice_type.element = self.parse_type()?;
@@ -164,7 +164,7 @@ impl Parser {
     }
 
     fn parse_array_static_type(&mut self) -> Result<P<ArrayStaticType>, ParserError> {
-        let mut array_static_type = self.arena.alloc::<ArrayStaticType>();
+        let mut array_static_type = self.alloc::<ArrayStaticType>();
         self.expect_token(Token::OpenBracket, ParseContext::ArrayStaticType)?;
         array_static_type.size = self.parse_expr()?;
         self.expect_token(Token::CloseBracket, ParseContext::ArrayStaticType)?;
@@ -203,7 +203,7 @@ impl Parser {
         visibility: Visibility,
         name: Ident,
     ) -> Result<P<ModDecl>, ParserError> {
-        let mut mod_decl = self.arena.alloc::<ModDecl>();
+        let mut mod_decl = self.alloc::<ModDecl>();
         mod_decl.visibility = visibility;
         mod_decl.name = name;
         self.expect_token(Token::KwMod, ParseContext::ModDecl)?;
@@ -216,7 +216,7 @@ impl Parser {
         visibility: Visibility,
         name: Ident,
     ) -> Result<P<ProcDecl>, ParserError> {
-        let mut proc_decl = self.arena.alloc::<ProcDecl>();
+        let mut proc_decl = self.alloc::<ProcDecl>();
         proc_decl.visibility = visibility;
         proc_decl.name = name;
         self.expect_token(Token::OpenParen, ParseContext::ProcDecl)?;
@@ -227,7 +227,7 @@ impl Parser {
                     break;
                 }
                 let param = self.parse_proc_param()?;
-                proc_decl.params.add(&mut self.arena, param);
+                proc_decl.params.add(&mut self.ast.arena, param);
                 if !self.try_consume(Token::Comma) {
                     break;
                 }
@@ -259,7 +259,7 @@ impl Parser {
         visibility: Visibility,
         name: Ident,
     ) -> Result<P<EnumDecl>, ParserError> {
-        let mut enum_decl = self.arena.alloc::<EnumDecl>();
+        let mut enum_decl = self.alloc::<EnumDecl>();
         enum_decl.visibility = visibility;
         enum_decl.name = name;
         self.expect_token(Token::KwEnum, ParseContext::EnumDecl)?;
@@ -267,7 +267,7 @@ impl Parser {
         self.expect_token(Token::OpenBlock, ParseContext::EnumDecl)?;
         while !self.try_consume(Token::CloseBlock) {
             let variant = self.parse_enum_variant()?;
-            enum_decl.variants.add(&mut self.arena, variant);
+            enum_decl.variants.add(&mut self.ast.arena, variant);
         }
         Ok(enum_decl)
     }
@@ -288,14 +288,14 @@ impl Parser {
         visibility: Visibility,
         name: Ident,
     ) -> Result<P<StructDecl>, ParserError> {
-        let mut struct_decl = self.arena.alloc::<StructDecl>();
+        let mut struct_decl = self.alloc::<StructDecl>();
         struct_decl.visibility = visibility;
         struct_decl.name = name;
         self.expect_token(Token::KwStruct, ParseContext::StructDecl)?;
         self.expect_token(Token::OpenBlock, ParseContext::StructDecl)?;
         while !self.try_consume(Token::CloseBlock) {
             let field = self.parse_struct_field()?;
-            struct_decl.fields.add(&mut self.arena, field);
+            struct_decl.fields.add(&mut self.ast.arena, field);
         }
         Ok(struct_decl)
     }
@@ -318,7 +318,7 @@ impl Parser {
         visibility: Visibility,
         name: Ident,
     ) -> Result<P<GlobalDecl>, ParserError> {
-        let mut global_decl = self.arena.alloc::<GlobalDecl>();
+        let mut global_decl = self.alloc::<GlobalDecl>();
         global_decl.visibility = visibility;
         global_decl.name = name;
         global_decl.expr = self.parse_expr()?;
@@ -327,7 +327,7 @@ impl Parser {
     }
 
     fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParserError> {
-        let mut import_decl = self.arena.alloc::<ImportDecl>();
+        let mut import_decl = self.alloc::<ImportDecl>();
         self.expect_token(Token::KwImport, ParseContext::ImportDecl)?;
         import_decl.module_access = self.parse_module_access();
         import_decl.target = self.parse_import_target()?;
@@ -352,7 +352,7 @@ impl Parser {
                 if !self.try_consume(Token::CloseBracket) {
                     loop {
                         let name = self.parse_ident(ParseContext::ImportDecl)?;
-                        symbols.add(&mut self.arena, name);
+                        symbols.add(&mut self.ast.arena, name);
                         if !self.try_consume(Token::Comma) {
                             break;
                         }
@@ -394,7 +394,7 @@ impl Parser {
     }
 
     fn parse_if(&mut self) -> Result<P<If>, ParserError> {
-        let mut if_ = self.arena.alloc::<If>();
+        let mut if_ = self.alloc::<If>();
         self.expect_token(Token::KwIf, ParseContext::If)?;
         if_.condition = self.parse_expr()?;
         if_.block = self.parse_block()?;
@@ -411,7 +411,7 @@ impl Parser {
     }
 
     fn parse_for(&mut self) -> Result<P<For>, ParserError> {
-        let mut for_ = self.arena.alloc::<For>();
+        let mut for_ = self.alloc::<For>();
         self.expect_token(Token::KwFor, ParseContext::For)?;
 
         if self.peek() == Token::OpenBlock {
@@ -437,11 +437,11 @@ impl Parser {
     }
 
     fn parse_block(&mut self) -> Result<P<Block>, ParserError> {
-        let mut block = self.arena.alloc::<Block>();
+        let mut block = self.alloc::<Block>();
         self.expect_token(Token::OpenBlock, ParseContext::Block)?;
         while !self.try_consume(Token::CloseBlock) {
             let stmt = self.parse_stmt()?;
-            block.stmts.add(&mut self.arena, stmt);
+            block.stmts.add(&mut self.ast.arena, stmt);
         }
         Ok(block)
     }
@@ -458,12 +458,12 @@ impl Parser {
     }
 
     fn parse_switch(&mut self) -> Result<P<Switch>, ParserError> {
-        let mut switch = self.arena.alloc::<Switch>();
+        let mut switch = self.alloc::<Switch>();
         switch.expr = self.parse_expr()?;
         self.expect_token(Token::OpenBlock, ParseContext::Switch)?;
         while !self.try_consume(Token::CloseBlock) {
             let case = self.parse_switch_case()?;
-            switch.cases.add(&mut self.arena, case);
+            switch.cases.add(&mut self.ast.arena, case);
         }
         Ok(switch)
     }
@@ -476,7 +476,7 @@ impl Parser {
     }
 
     fn parse_return(&mut self) -> Result<P<Return>, ParserError> {
-        let mut return_ = self.arena.alloc::<Return>();
+        let mut return_ = self.alloc::<Return>();
         self.expect_token(Token::KwReturn, ParseContext::Return)?;
         return_.expr = if !self.try_consume(Token::Semicolon) {
             let expr = self.parse_expr()?;
@@ -495,7 +495,7 @@ impl Parser {
     }
 
     fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParserError> {
-        let mut var_decl = self.arena.alloc::<VarDecl>();
+        let mut var_decl = self.alloc::<VarDecl>();
         var_decl.name = self.parse_ident(ParseContext::VarDecl)?;
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
         if self.try_consume(Token::Assign) {
@@ -517,7 +517,7 @@ impl Parser {
         &mut self,
         module_access: Option<ModuleAccess>,
     ) -> Result<P<VarAssign>, ParserError> {
-        let mut var_assign = self.arena.alloc::<VarAssign>();
+        let mut var_assign = self.alloc::<VarAssign>();
         var_assign.var = self.parse_var(module_access)?;
         var_assign.op = self.expect_assign_op(ParseContext::VarAssign)?;
         var_assign.expr = self.parse_expr()?;
@@ -544,7 +544,7 @@ impl Parser {
             } else {
                 break;
             }
-            let mut bin_expr = self.arena.alloc::<BinaryExpr>();
+            let mut bin_expr = self.alloc::<BinaryExpr>();
             bin_expr.op = binary_op;
             bin_expr.lhs = expr_lhs;
             bin_expr.rhs = self.parse_sub_expr(prec + 1)?;
@@ -561,7 +561,7 @@ impl Parser {
         }
 
         if let Some(unary_op) = self.try_consume_unary_op() {
-            let mut unary_expr = self.arena.alloc::<UnaryExpr>();
+            let mut unary_expr = self.alloc::<UnaryExpr>();
             unary_expr.op = unary_op;
             unary_expr.rhs = self.parse_primary_expr()?;
             return Ok(Expr::UnaryExpr(unary_expr));
@@ -599,7 +599,7 @@ impl Parser {
     }
 
     fn parse_var(&mut self, module_access: Option<ModuleAccess>) -> Result<P<Var>, ParserError> {
-        let mut var = self.arena.alloc::<Var>();
+        let mut var = self.alloc::<Var>();
         var.module_access = module_access;
         var.name = self.parse_ident(ParseContext::Var)?;
         var.access = self.parse_access_chain()?;
@@ -622,7 +622,7 @@ impl Parser {
     }
 
     fn parse_access(&mut self) -> Result<P<Access>, ParserError> {
-        let mut access = self.arena.alloc::<Access>();
+        let mut access = self.alloc::<Access>();
         match self.peek() {
             Token::Dot => {
                 self.consume();
@@ -640,14 +640,14 @@ impl Parser {
     }
 
     fn parse_enum(&mut self) -> Result<P<Enum>, ParserError> {
-        let mut enum_ = self.arena.alloc::<Enum>();
+        let mut enum_ = self.alloc::<Enum>();
         self.expect_token(Token::Dot, ParseContext::Enum)?;
         enum_.variant = self.parse_ident(ParseContext::Enum)?;
         Ok(enum_)
     }
 
     fn parse_cast(&mut self) -> Result<P<Cast>, ParserError> {
-        let mut cast = self.arena.alloc::<Cast>();
+        let mut cast = self.alloc::<Cast>();
         self.expect_token(Token::KwCast, ParseContext::Cast)?;
         self.expect_token(Token::OpenParen, ParseContext::Cast)?;
         cast.tt = self.parse_type()?;
@@ -658,7 +658,7 @@ impl Parser {
     }
 
     fn parse_sizeof(&mut self) -> Result<P<Sizeof>, ParserError> {
-        let mut sizeof = self.arena.alloc::<Sizeof>();
+        let mut sizeof = self.alloc::<Sizeof>();
         self.expect_token(Token::KwSizeof, ParseContext::Sizeof)?;
         self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
         sizeof.tt = self.parse_type()?;
@@ -667,7 +667,7 @@ impl Parser {
     }
 
     fn parse_literal(&mut self) -> Result<P<Literal>, ParserError> {
-        let mut literal = self.arena.alloc::<Literal>();
+        let mut literal = self.alloc::<Literal>();
         match self.peek() {
             Token::LitNull => *literal = Literal::Null,
             Token::LitBool(v) => *literal = Literal::Bool(v),
@@ -685,7 +685,7 @@ impl Parser {
         &mut self,
         module_access: Option<ModuleAccess>,
     ) -> Result<P<ProcCall>, ParserError> {
-        let mut proc_call = self.arena.alloc::<ProcCall>();
+        let mut proc_call = self.alloc::<ProcCall>();
         proc_call.module_access = module_access;
         proc_call.name = self.parse_ident(ParseContext::ProcCall)?;
         proc_call.input =
@@ -695,7 +695,7 @@ impl Parser {
     }
 
     fn parse_array_init(&mut self) -> Result<P<ArrayInit>, ParserError> {
-        let mut array_init = self.arena.alloc::<ArrayInit>();
+        let mut array_init = self.alloc::<ArrayInit>();
         array_init.tt = if self.peek() == Token::OpenBracket {
             Some(self.parse_type()?)
         } else {
@@ -710,7 +710,7 @@ impl Parser {
         &mut self,
         module_access: Option<ModuleAccess>,
     ) -> Result<P<StructInit>, ParserError> {
-        let mut struct_init = self.arena.alloc::<StructInit>();
+        let mut struct_init = self.alloc::<StructInit>();
         struct_init.module_access = module_access;
         let has_name = self.peek() == Token::Ident || module_access.is_some();
         struct_init.struct_name = if has_name {
@@ -738,7 +738,7 @@ impl Parser {
         if !self.try_consume(end) {
             loop {
                 let expr = self.parse_expr()?;
-                expr_list.add(&mut self.arena, expr);
+                expr_list.add(&mut self.ast.arena, expr);
                 if !self.try_consume(Token::Comma) {
                     break;
                 }
@@ -746,6 +746,10 @@ impl Parser {
             self.expect_token(end, context)?;
         }
         Ok(expr_list)
+    }
+
+    fn alloc<T: Copy>(&mut self) -> P<T> {
+        self.ast.arena.alloc::<T>()
     }
 
     fn peek(&self) -> Token {

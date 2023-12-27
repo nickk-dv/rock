@@ -1,18 +1,24 @@
 use super::span::Span;
-use crate::mem::{InternID, List, P};
+use crate::mem::*;
 use std::path::PathBuf;
 
-pub type SourceID = u32;
-
-pub struct Package {
-    pub root: P<Module>,
+pub struct Ast {
+    pub arena: Arena,
     pub files: Vec<SourceFile>,
+    pub package: P<Package>,
+    pub intern_pool: InternPool,
 }
 
+pub type SourceID = u32;
 pub struct SourceFile {
     pub path: PathBuf,
     pub source: String,
     pub line_spans: Vec<Span>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Package {
+    pub root: P<Module>,
 }
 
 #[derive(Copy, Clone)]
