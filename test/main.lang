@@ -24,13 +24,19 @@ glob_test :: () {
 
 }
 
+glob_test :: (arg: bool, arg: ssize) {
+
+}
+
 Geometry :: enum s32 {
 	Line = 10;
 	Triange = 5;
+	Line = 100;
 }
 
 NoFielder :: struct {
 	x: s32;
+	x: f32;
 }
 
 Box :: struct {

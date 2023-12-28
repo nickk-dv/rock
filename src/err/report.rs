@@ -9,7 +9,7 @@ pub fn err(ast: &Ast, id: SourceID, span: Span) {
     let source = ast.files.get(id as usize).unwrap(); //@err internal?
 
     ansi::set_color(Color::Red);
-    println!("error: some message");
+    println!("\nerror: some message");
     ansi::reset();
     span_fmt::print(source, span, Some("some optional marker"));
 }
@@ -18,7 +18,7 @@ pub fn parse_err(ast: &Ast, id: SourceID, err: ParseError) {
     let source = ast.files.get(id as usize).unwrap(); //@err internal?
 
     ansi::set_color(Color::Red);
-    print!("parse error: ");
+    print!("\nparse error: ");
     ansi::reset();
     println!("in {}", err.context.as_str());
     print!("expected: ");
