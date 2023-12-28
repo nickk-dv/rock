@@ -49,20 +49,20 @@ fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let ast = parser::parse()?;
-    check::check(&ast);
+    let mut ast = parser::parse()?;
+    check::check(&mut ast)?;
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let ast = parser::parse()?;
-    check::check(&ast);
+    let mut ast = parser::parse()?;
+    check::check(&mut ast)?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let ast = parser::parse()?;
-    check::check(&ast);
+    let mut ast = parser::parse()?;
+    check::check(&mut ast)?;
     Ok(())
 }
 
