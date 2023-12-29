@@ -37,7 +37,15 @@ pub struct Ident {
 
 #[derive(Copy, Clone)]
 pub struct ModuleAccess {
+    pub modifier: ModuleAccessModifier,
     pub names: List<Ident>,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum ModuleAccessModifier {
+    None,
+    Super,
+    Package,
 }
 
 #[derive(Copy, Clone)]
@@ -75,7 +83,7 @@ pub enum BasicType {
 
 #[derive(Copy, Clone)]
 pub struct CustomType {
-    pub module_access: Option<ModuleAccess>,
+    pub module_access: ModuleAccess,
     pub name: Ident,
 }
 
@@ -165,7 +173,7 @@ pub struct GlobalDecl {
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub module_access: Option<ModuleAccess>,
+    pub module_access: ModuleAccess,
     pub target: ImportTarget,
 }
 
@@ -270,7 +278,7 @@ pub enum Expr {
 
 #[derive(Copy, Clone)]
 pub struct Var {
-    pub module_access: Option<ModuleAccess>,
+    pub module_access: ModuleAccess,
     pub name: Ident,
     pub access: Option<P<Access>>,
 }
@@ -315,7 +323,7 @@ pub enum Literal {
 
 #[derive(Copy, Clone)]
 pub struct ProcCall {
-    pub module_access: Option<ModuleAccess>,
+    pub module_access: ModuleAccess,
     pub name: Ident,
     pub input: List<Expr>,
     pub access: Option<P<Access>>,
@@ -329,7 +337,7 @@ pub struct ArrayInit {
 
 #[derive(Copy, Clone)]
 pub struct StructInit {
-    pub module_access: Option<ModuleAccess>,
+    pub module_access: ModuleAccess,
     pub struct_name: Option<Ident>,
     pub input: List<Expr>,
 }

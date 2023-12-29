@@ -33,6 +33,10 @@ impl<T: Copy> List<T> {
             self.last = node;
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.first.is_null()
+    }
 }
 
 pub struct ListIterator<T: Copy> {

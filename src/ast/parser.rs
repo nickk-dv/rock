@@ -104,20 +104,26 @@ impl<'ast> Parser<'ast> {
         Err(ParserError::Ident(context))
     }
 
-    fn parse_module_access(&mut self) -> Option<ModuleAccess> {
-        if self.peek() != Token::Ident && self.peek_next(1) != Token::ColonColon {
-            return None;
+    fn parse_module_access(&mut self) -> Result<ModuleAccess, ParserError> {
+        let modifier = match self.peek() {
+            Token::KwSuper => ModuleAccessModifier::Super,
+            Token::KwPackage => ModuleAccessModifier::Package,
+            _ => ModuleAccessModifier::None,
+        };
+        if modifier != ModuleAccessModifier::None {
+            self.consume();
+            self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
         }
-        let mut module_access = ModuleAccess { names: List::new() };
+        let mut module_access = ModuleAccess {
+            modifier,
+            names: List::new(),
+        };
         while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
-            let name = unsafe {
-                self.parse_ident(ParseContext::ModuleAccess)
-                    .unwrap_unchecked()
-            };
+            let name = self.parse_ident(ParseContext::ModuleAccess)?;
             self.consume();
             module_access.names.add(&mut self.ast.arena, name);
         }
-        Some(module_access)
+        Ok(module_access)
     }
 
     fn parse_type(&mut self) -> Result<Type, ParserError> {
@@ -150,7 +156,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_custom_type(&mut self) -> Result<P<CustomType>, ParserError> {
         let mut custom_type = self.alloc::<CustomType>();
-        custom_type.module_access = self.parse_module_access();
+        custom_type.module_access = self.parse_module_access()?;
         custom_type.name = self.parse_ident(ParseContext::CustomType)?;
         Ok(custom_type)
     }
@@ -329,7 +335,7 @@ impl<'ast> Parser<'ast> {
     fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParserError> {
         let mut import_decl = self.alloc::<ImportDecl>();
         self.expect_token(Token::KwImport, ParseContext::ImportDecl)?;
-        import_decl.module_access = self.parse_module_access();
+        import_decl.module_access = self.parse_module_access()?;
         import_decl.target = self.parse_import_target()?;
         Ok(import_decl)
     }
@@ -380,7 +386,7 @@ impl<'ast> Parser<'ast> {
                 if self.peek_next(1) == Token::Colon {
                     return Ok(Stmt::VarDecl(self.parse_var_decl()?));
                 }
-                let module_access = self.parse_module_access();
+                let module_access = self.parse_module_access()?;
                 if self.peek() == Token::Ident && self.peek_next(1) == Token::OpenParen {
                     let stmt = Stmt::ProcCall(self.parse_proc_call(module_access)?);
                     self.expect_token(Token::Semicolon, ParseContext::ProcCall)?;
@@ -426,7 +432,7 @@ impl<'ast> Parser<'ast> {
         };
         for_.condition = Some(self.parse_expr()?);
         for_.var_assign = if self.peek_next(-1) == Token::Semicolon {
-            let module_access = self.parse_module_access();
+            let module_access = self.parse_module_access()?;
             Some(self.parse_var_assign(module_access)?)
         } else {
             None
@@ -515,7 +521,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_var_assign(
         &mut self,
-        module_access: Option<ModuleAccess>,
+        module_access: ModuleAccess,
     ) -> Result<P<VarAssign>, ParserError> {
         let mut var_assign = self.alloc::<VarAssign>();
         var_assign.var = self.parse_var(module_access)?;
@@ -569,7 +575,14 @@ impl<'ast> Parser<'ast> {
 
         match self.peek() {
             Token::Dot => match self.peek_next(1) {
-                Token::OpenBlock => Ok(Expr::StructInit(self.parse_struct_init(None)?)),
+                Token::OpenBlock => {
+                    let module_access = ModuleAccess {
+                        modifier: ModuleAccessModifier::None,
+                        names: List::new(),
+                    };
+                    let struct_init = self.parse_struct_init(module_access)?;
+                    Ok(Expr::StructInit(struct_init))
+                }
                 _ => Ok(Expr::Enum(self.parse_enum()?)),
             },
             Token::KwCast => Ok(Expr::Cast(self.parse_cast()?)),
@@ -581,8 +594,8 @@ impl<'ast> Parser<'ast> {
             | Token::LitChar(..)
             | Token::LitString => Ok(Expr::Literal(self.parse_literal()?)),
             Token::OpenBracket | Token::OpenBlock => Ok(Expr::ArrayInit(self.parse_array_init()?)),
-            Token::Ident => {
-                let module_access = self.parse_module_access();
+            Token::Ident | Token::KwSuper | Token::KwPackage => {
+                let module_access = self.parse_module_access()?;
                 if self.peek() != Token::Ident {
                     return Err(ParserError::PrimaryExprIdent);
                 }
@@ -598,7 +611,7 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn parse_var(&mut self, module_access: Option<ModuleAccess>) -> Result<P<Var>, ParserError> {
+    fn parse_var(&mut self, module_access: ModuleAccess) -> Result<P<Var>, ParserError> {
         let mut var = self.alloc::<Var>();
         var.module_access = module_access;
         var.name = self.parse_ident(ParseContext::Var)?;
@@ -681,10 +694,7 @@ impl<'ast> Parser<'ast> {
         Ok(literal)
     }
 
-    fn parse_proc_call(
-        &mut self,
-        module_access: Option<ModuleAccess>,
-    ) -> Result<P<ProcCall>, ParserError> {
+    fn parse_proc_call(&mut self, module_access: ModuleAccess) -> Result<P<ProcCall>, ParserError> {
         let mut proc_call = self.alloc::<ProcCall>();
         proc_call.module_access = module_access;
         proc_call.name = self.parse_ident(ParseContext::ProcCall)?;
@@ -708,11 +718,14 @@ impl<'ast> Parser<'ast> {
 
     fn parse_struct_init(
         &mut self,
-        module_access: Option<ModuleAccess>,
+        module_access: ModuleAccess,
     ) -> Result<P<StructInit>, ParserError> {
         let mut struct_init = self.alloc::<StructInit>();
         struct_init.module_access = module_access;
-        let has_name = self.peek() == Token::Ident || module_access.is_some();
+
+        let has_access =
+            module_access.modifier != ModuleAccessModifier::None || !module_access.names.is_empty();
+        let has_name = self.peek() == Token::Ident || has_access;
         struct_init.struct_name = if has_name {
             Some(self.parse_ident(ParseContext::StructInit)?)
         } else {

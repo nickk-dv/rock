@@ -112,6 +112,8 @@ impl ParserError {
             ParserError::PrimaryExprMatch => {
                 let mut expected = vec![
                     Token::Ident,
+                    Token::KwSuper,
+                    Token::KwPackage,
                     Token::Dot,
                     Token::OpenBracket,
                     Token::OpenBlock,
