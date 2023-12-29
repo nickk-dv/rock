@@ -31,6 +31,16 @@ impl InternPool {
         return &self.string_bytes[intern_str.start as usize..intern_str.end as usize];
     }
 
+    pub fn get_id_if_exists(&mut self, bytes: &[u8]) -> Option<InternID> {
+        let hash = Self::hash_fnva1(bytes);
+        if let Some(intern_str) = self.string_map.get(&hash) {
+            if self.compare(intern_str, bytes) {
+                return Some(intern_str.id);
+            }
+        }
+        None
+    }
+
     pub fn intern(&mut self, bytes: &[u8]) -> InternID {
         let hash = Self::hash_fnva1(bytes);
         if let Some(intern_str) = self.string_map.get(&hash) {

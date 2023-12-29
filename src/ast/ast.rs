@@ -54,7 +54,7 @@ pub enum TypeKind {
     ArrayStatic(P<ArrayStaticType>),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum BasicType {
     Bool,
     S8,

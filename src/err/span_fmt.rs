@@ -58,19 +58,21 @@ impl<'a> SpanFormat<'a> {
 
     fn print(&self, marker: Option<&str>) {
         self.print_arrow();
+        ansi::set_color(Color::Cyan);
         println!(
             "{}:{}:{}",
             self.file.path.to_string_lossy(),
             self.loc.line,
             self.loc.col
         );
+        ansi::reset();
 
         self.print_bar(true);
         self.print_line_bar();
         println!("{}", self.line);
         self.print_bar(false);
 
-        ansi::set_color(Color::Red);
+        ansi::set_color(Color::BoldRed);
         match marker {
             Some(message) => println!("{}{} {}", self.marker_pad, self.marker, message),
             None => println!("{}{}", self.marker_pad, self.marker),
