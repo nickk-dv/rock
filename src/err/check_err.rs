@@ -1,5 +1,10 @@
 #[derive(Copy, Clone)]
 pub enum CheckError {
+    ParseSrcDirMissing,
+    ParseLibFileMissing,
+    ParseMainFileMissing,
+    ParseModRedefinition,
+
     SymbolRedefinition,
     ExternalProcRedefinition,
     ProcParamRedefinition,
@@ -26,6 +31,11 @@ impl CheckErrorData {
 impl CheckError {
     pub fn get_data(&self) -> CheckErrorData {
         match self {
+            CheckError::ParseSrcDirMissing => CheckErrorData::new("missing `src` directory", Some("make sure that current directory is set to the project directory")),
+            CheckError::ParseLibFileMissing => CheckErrorData::new("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
+            CheckError::ParseMainFileMissing => CheckErrorData::new("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
+            CheckError::ParseModRedefinition => CheckErrorData::new("module redefinition", None),
+            
             CheckError::SymbolRedefinition => CheckErrorData::new("symbol redefinition", None),
             CheckError::ExternalProcRedefinition => CheckErrorData::new("external procedure with redefinition", Some("import and use one of existing procedures, redefinition will cause linker errors")),
             CheckError::ProcParamRedefinition => CheckErrorData::new("procedure parameter redefinition", None),

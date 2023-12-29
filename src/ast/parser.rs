@@ -2,9 +2,11 @@ use super::ast::*;
 use super::lexer;
 use super::span::*;
 use super::token::*;
+use crate::err::check_err::*;
 use crate::err::parse_err::*;
 use crate::err::report;
 use crate::mem::*;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub fn parse() -> Result<Ast, ()> {
@@ -31,15 +33,82 @@ struct Parser<'ast> {
     ast: &'ast mut Ast,
 }
 
+struct ParseTask {
+    path: PathBuf,
+    parent: Option<P<Module>>,
+}
+
 impl<'ast> Parser<'ast> {
     fn parse_package(&mut self) -> Result<P<Package>, ()> {
         let mut path = PathBuf::new();
-        path.push("test/main.lang"); //@change lang name + consider lib / exe project type
+        path.push("test"); //@change to src when proper testing is possible
+        if !path.is_dir() {
+            report::err(
+                &self.ast,
+                CheckError::ParseSrcDirMissing,
+                true,
+                0,
+                Span::new(0, 0),
+            );
+            return Err(());
+        }
+
+        path.push("main.lang"); //@change lang name + consider lib / exe project type
+        if !path.is_file() {
+            report::err(
+                &self.ast,
+                CheckError::ParseMainFileMissing,
+                true,
+                0,
+                Span::new(0, 0),
+            );
+            return Err(());
+        }
 
         let mut package = self.alloc::<Package>();
-        package.root = P::null();
+        let mut task_queue = vec![ParseTask { path, parent: None }];
 
-        match std::fs::read_to_string(&path) {
+        while let Some(task) = task_queue.pop() {
+            let result = self.parse_task_execute(task);
+            if result.is_err() {
+                continue;
+            }
+            let module = result.unwrap();
+            if package.root.is_null() {
+                package.root = module;
+            }
+
+            let mut mod_decls = HashMap::<InternID, P<ModDecl>>::new();
+            for decl in module.decls.iter() {
+                if let Decl::Mod(mod_decl) = decl {
+                    if mod_decls.contains_key(&mod_decl.name.id) {
+                        report::err(
+                            self.ast,
+                            CheckError::ParseModRedefinition,
+                            false,
+                            module.source,
+                            mod_decl.name.span,
+                        );
+                    } else {
+                        mod_decls.insert(mod_decl.name.id, mod_decl);
+                    }
+
+                    // @get string name from module intern id
+                    // @check possible paths
+                    // @report on ambiguity or missing module file
+                    // @check for cycles
+                    // @add task to task_queue
+                }
+            }
+        }
+
+        //@ on any error dont return the Ok result
+        //currently no way to detect if errors occured
+        Ok(package)
+    }
+
+    fn parse_task_execute(&mut self, task: ParseTask) -> Result<P<Module>, ()> {
+        match std::fs::read_to_string(&task.path) {
             Ok(source) => {
                 // @storing strings in 2 locations, cant store String in P<>
                 // since it doesnt impl Copy which is required to copy the *mut T for some reason
@@ -49,42 +118,48 @@ impl<'ast> Parser<'ast> {
                 self.tokens = lex.tokens;
                 self.source = source.clone();
                 self.ast.files.push(SourceFile {
-                    path,
+                    path: task.path,
                     source,
                     line_spans: lex.line_spans,
                 });
-
-                match self.parse_module() {
-                    Ok(module) => {
-                        package.root = module;
-                    }
-                    Err(error) => {
-                        let unexpected_token = TokenSpan {
-                            span: self.peek_span(),
-                            token: self.peek(),
-                        };
-                        report::parse_err(
-                            self.ast,
-                            self.ast.files.len() as u32 - 1,
-                            error.to_parse_error(unexpected_token),
-                        );
-                        return Err(());
-                    }
-                }
-                Ok(package)
             }
             Err(err) => {
-                println!("file open error: {} path: {}", err, path.display());
+                println!("file open error: {} path: {}", err, task.path.display());
+                return Err(());
+            }
+        }
+
+        let result = self.parse_module(task.parent);
+
+        match result {
+            Ok(module) => Ok(module),
+            Err(error) => {
+                let unexpected_token = TokenSpan {
+                    span: self.peek_span(),
+                    token: self.peek(),
+                };
+                report::parse_err(
+                    self.ast,
+                    self.ast.files.len() as u32 - 1,
+                    error.to_parse_error(unexpected_token),
+                );
                 Err(())
             }
         }
     }
 
-    fn parse_module(&mut self) -> Result<P<Module>, ParserError> {
+    fn parse_module(&mut self, parent: Option<P<Module>>) -> Result<P<Module>, ParserError> {
         let mut module = self.alloc::<Module>();
+        module.source = self.ast.files.len() as u32 - 1;
+        module.parent = parent;
+
         while self.peek() != Token::Eof {
             let decl = self.parse_decl()?;
             module.decls.add(&mut self.ast.arena, decl);
+        }
+
+        if let Some(mut p) = parent {
+            p.submodules.add(&mut self.ast.arena, module);
         }
         Ok(module)
     }

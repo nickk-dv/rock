@@ -14,6 +14,7 @@ pub fn check(ast: &mut Ast) -> Result<(), ()> {
     context.pass_0_populate_scopes();
     context.pass_1_check_decls();
     context.pass_2_check_main_proc();
+    context.pass_3_import_symbols();
 
     if context.errors.is_empty() {
         Ok(())
@@ -88,41 +89,36 @@ impl<'ast> Context<'ast> {
 
         for decl in module.decls.iter() {
             let symbol = match decl {
+                Decl::Mod(mod_decl) => Some(mod_decl.name),
                 Decl::Proc(proc_decl) => Some(proc_decl.name),
                 Decl::Enum(enum_decl) => Some(enum_decl.name),
                 Decl::Struct(struct_decl) => Some(struct_decl.name),
                 Decl::Global(global_decl) => Some(global_decl.name),
                 _ => None,
             };
-            match symbol {
-                Some(name) => {
-                    if declared_symbols.contains_key(&name.id) {
-                        self.errors.push(Error::new(
-                            CheckError::SymbolRedefinition,
-                            module.source,
-                            name.span,
-                        ));
-                    } else {
-                        declared_symbols.insert(name.id, decl);
+            if let Some(name) = symbol {
+                if declared_symbols.contains_key(&name.id) {
+                    self.errors.push(Error::new(
+                        CheckError::SymbolRedefinition,
+                        module.source,
+                        name.span,
+                    ));
+                } else {
+                    declared_symbols.insert(name.id, decl);
 
-                        match decl {
-                            Decl::Proc(proc_decl) => {
-                                if self.external_procs.contains_key(&name.id) {
-                                    self.errors.push(Error::new(
-                                        CheckError::ExternalProcRedefinition,
-                                        module.source,
-                                        name.span,
-                                    ));
-                                } else {
-                                    self.external_procs.insert(name.id, proc_decl);
-                                }
+                    if let Decl::Proc(proc_decl) = decl {
+                        if proc_decl.block.is_none() {
+                            if self.external_procs.contains_key(&name.id) {
+                                self.errors.push(Error::new(
+                                    CheckError::ExternalProcRedefinition,
+                                    module.source,
+                                    name.span,
+                                ));
+                            } else {
+                                self.external_procs.insert(name.id, proc_decl);
                             }
-                            _ => {}
                         }
                     }
-                }
-                None => {
-                    continue;
                 }
             }
         }
@@ -252,6 +248,15 @@ impl<'ast> Context<'ast> {
         } else {
             self.errors
                 .push(Error::new_no_context(CheckError::MainProcMissing));
+        }
+    }
+
+    fn pass_3_import_symbols(&mut self) {
+        for scope in self.module_scopes.iter_mut() {
+            let module = scope.module;
+            for decl in module.decls.iter() {
+                if let Decl::Import(import_decl) = decl {}
+            }
         }
     }
 }
