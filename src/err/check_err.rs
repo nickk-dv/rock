@@ -4,6 +4,9 @@ pub enum CheckError {
     ParseLibFileMissing,
     ParseMainFileMissing,
     ParseModRedefinition,
+    ParseModBothPathsExist,
+    ParseModBothPathsMissing,
+    ParseModCycle,
 
     SymbolRedefinition,
     ExternalProcRedefinition,
@@ -35,6 +38,9 @@ impl CheckError {
             CheckError::ParseLibFileMissing => CheckErrorData::new("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
             CheckError::ParseMainFileMissing => CheckErrorData::new("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
             CheckError::ParseModRedefinition => CheckErrorData::new("module redefinition", None),
+            CheckError::ParseModBothPathsExist => CheckErrorData::new("both module filepaths exist", Some("only one filepath may exist:")),
+            CheckError::ParseModBothPathsMissing => CheckErrorData::new("both module filepaths are missing", Some("at least one filepath must exist:")),
+            CheckError::ParseModCycle => CheckErrorData::new("module definition results in a cycle", Some("module paths that form a cycle:")),
             
             CheckError::SymbolRedefinition => CheckErrorData::new("symbol redefinition", None),
             CheckError::ExternalProcRedefinition => CheckErrorData::new("external procedure with redefinition", Some("import and use one of existing procedures, redefinition will cause linker errors")),

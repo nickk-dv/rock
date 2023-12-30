@@ -69,11 +69,11 @@ impl<'ast> Parser<'ast> {
         let mut task_queue = vec![ParseTask { path, parent: None }];
 
         while let Some(task) = task_queue.pop() {
-            let result = self.parse_task_execute(task);
-            if result.is_err() {
+            let task_result = self.parse_task_execute(&task);
+            if task_result.is_none() {
                 continue;
             }
-            let module = result.unwrap();
+            let module = task_result.unwrap();
             if package.root.is_null() {
                 package.root = module;
             }
@@ -89,25 +89,94 @@ impl<'ast> Parser<'ast> {
                             module.source,
                             mod_decl.name.span,
                         );
+                        continue;
                     } else {
                         mod_decls.insert(mod_decl.name.id, mod_decl);
                     }
 
-                    // @get string name from module intern id
-                    // @check possible paths
-                    // @report on ambiguity or missing module file
-                    // @check for cycles
-                    // @add task to task_queue
+                    let module_name = self.ast.intern_pool.get_string(mod_decl.name.id);
+                    let module_filename = module_name.clone() + ".lang"; //@ext
+                    let mut module_dir = task.path.clone();
+                    module_dir.pop();
+
+                    let mut same_dir_path = module_dir.clone();
+                    let mut inner_dir_path = module_dir.clone();
+                    same_dir_path.push(module_filename.clone());
+                    inner_dir_path.push(module_name);
+                    inner_dir_path.push("mod.lang"); //@ext
+
+                    let same_dir_exists = same_dir_path.is_file();
+                    let inner_dir_exists = inner_dir_path.is_file();
+                    let both_exist = same_dir_exists && inner_dir_exists;
+                    let both_missing = !same_dir_exists && !inner_dir_exists;
+
+                    if both_exist || both_missing {
+                        let error = if both_exist {
+                            CheckError::ParseModBothPathsExist
+                        } else {
+                            CheckError::ParseModBothPathsMissing
+                        };
+                        report::err(self.ast, error, false, module.source, mod_decl.name.span);
+                        println!("{}", same_dir_path.to_string_lossy());
+                        println!("{}", inner_dir_path.to_string_lossy());
+                        continue;
+                    }
+
+                    let new_task = ParseTask {
+                        parent: Some(module),
+                        path: if same_dir_exists {
+                            same_dir_path
+                        } else {
+                            inner_dir_path
+                        },
+                    };
+
+                    let mut parent = new_task.parent;
+                    let mut parent_paths = Vec::<PathBuf>::new();
+                    let mut found_cycle = false;
+
+                    while let Some(p) = parent {
+                        let file = self.ast.files.get(p.source as usize).unwrap();
+                        parent_paths.push(file.path.clone());
+                        if new_task.path == file.path {
+                            found_cycle = true;
+                            break;
+                        }
+                        parent = p.parent;
+                    }
+
+                    if found_cycle {
+                        report::err(
+                            self.ast,
+                            CheckError::ParseModCycle,
+                            false,
+                            module.source,
+                            mod_decl.name.span,
+                        );
+                        for path in parent_paths.iter().rev() {
+                            println!("{}", path.to_string_lossy());
+                        }
+                        for path in parent_paths.iter().rev() {
+                            println!("{}", path.to_string_lossy());
+                            break;
+                        }
+                        continue;
+                    }
+
+                    task_queue.push(new_task);
                 }
             }
         }
 
-        //@ on any error dont return the Ok result
-        //currently no way to detect if errors occured
-        Ok(package)
+        if report::did_error() {
+            println!(); //@hack since errors are not accumulated, this /n is inserted after last
+            Err(())
+        } else {
+            Ok(package)
+        }
     }
 
-    fn parse_task_execute(&mut self, task: ParseTask) -> Result<P<Module>, ()> {
+    fn parse_task_execute(&mut self, task: &ParseTask) -> Option<P<Module>> {
         match std::fs::read_to_string(&task.path) {
             Ok(source) => {
                 // @storing strings in 2 locations, cant store String in P<>
@@ -118,50 +187,47 @@ impl<'ast> Parser<'ast> {
                 self.tokens = lex.tokens;
                 self.source = source.clone();
                 self.ast.files.push(SourceFile {
-                    path: task.path,
+                    path: task.path.clone(),
                     source,
                     line_spans: lex.line_spans,
                 });
             }
             Err(err) => {
                 println!("file open error: {} path: {}", err, task.path.display());
-                return Err(());
+                return None;
             }
         }
-
-        let result = self.parse_module(task.parent);
-
-        match result {
-            Ok(module) => Ok(module),
-            Err(error) => {
-                let unexpected_token = TokenSpan {
-                    span: self.peek_span(),
-                    token: self.peek(),
-                };
-                report::parse_err(
-                    self.ast,
-                    self.ast.files.len() as u32 - 1,
-                    error.to_parse_error(unexpected_token),
-                );
-                Err(())
-            }
-        }
+        Some(self.parse_module(task.parent))
     }
 
-    fn parse_module(&mut self, parent: Option<P<Module>>) -> Result<P<Module>, ParserError> {
+    fn parse_module(&mut self, parent: Option<P<Module>>) -> P<Module> {
         let mut module = self.alloc::<Module>();
         module.source = self.ast.files.len() as u32 - 1;
         module.parent = parent;
-
-        while self.peek() != Token::Eof {
-            let decl = self.parse_decl()?;
-            module.decls.add(&mut self.ast.arena, decl);
-        }
-
         if let Some(mut p) = parent {
             p.submodules.add(&mut self.ast.arena, module);
         }
-        Ok(module)
+
+        while self.peek() != Token::Eof {
+            match self.parse_decl() {
+                Ok(decl) => {
+                    module.decls.add(&mut self.ast.arena, decl);
+                }
+                Err(err) => {
+                    let unexpected_token = TokenSpan {
+                        span: self.peek_span(),
+                        token: self.peek(),
+                    };
+                    report::parse_err(
+                        self.ast,
+                        self.ast.files.len() as u32 - 1,
+                        err.to_parse_error(unexpected_token),
+                    );
+                    return module;
+                }
+            }
+        }
+        module
     }
 
     fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParserError> {
@@ -254,9 +320,10 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_visibility(&mut self) -> Visibility {
-        match self.peek() {
-            Token::KwPub => Visibility::Public,
-            _ => Visibility::Private,
+        if self.try_consume(Token::KwPub) {
+            Visibility::Public
+        } else {
+            Visibility::Private
         }
     }
 

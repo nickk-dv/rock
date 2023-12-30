@@ -26,9 +26,17 @@ impl InternPool {
         }
     }
 
-    pub fn get_slice(&self, id: InternID) -> &[u8] {
+    pub fn get_byte_slice(&self, id: InternID) -> &[u8] {
         let intern_str = unsafe { self.strings.get_unchecked(id as usize) };
         return &self.string_bytes[intern_str.start as usize..intern_str.end as usize];
+    }
+
+    pub fn get_string(&self, id: InternID) -> String {
+        let byte_slice = self.get_byte_slice(id);
+        unsafe {
+            let str = std::str::from_utf8_unchecked(byte_slice);
+            str.to_string()
+        }
     }
 
     pub fn get_id_if_exists(&mut self, bytes: &[u8]) -> Option<InternID> {
