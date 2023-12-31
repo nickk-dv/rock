@@ -98,7 +98,7 @@ pub struct ArrayStaticType {
     pub element: Type,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Visibility {
     Public,
     Private,
@@ -118,6 +118,7 @@ pub enum Decl {
 pub struct ModDecl {
     pub visibility: Visibility,
     pub name: Ident,
+    pub source: SourceID,
 }
 
 #[derive(Copy, Clone)]
@@ -173,6 +174,7 @@ pub struct GlobalDecl {
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
+    pub span: Span,
     pub module_access: ModuleAccess,
     pub target: ImportTarget,
 }

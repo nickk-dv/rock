@@ -1,28 +1,25 @@
-game_of_life :: mod;
-
-array :: mod;
 
 core :: mod;
-test_global_copy_and_access :: mod;
 
-test_globals :: mod;
-test_impl_blocks :: mod;
-test_mut :: mod;
-test_new_import :: mod;
-test_proc_access :: mod;
-test_procedure_type :: mod;
-test_struct_self_storage :: mod;
-test_switch :: mod;
+import *;
+
+import super::*;
+import super::Symbol;
 
 import package::*;
-import super::*;
 import package::Symbol;
-import super::Symbol;
+
+import package::core::{Sym1, core_proc};
+import package::core::sym2;
 
 auto_cast_test :: () {
 	var :u32 = 0;
 	var2 :s64 = 0;
 	var2 = cast(s64, var);
+}
+
+pub core_proc :: () -> s32 {
+    return 2 + 2;
 }
 
 glob_test :: () {

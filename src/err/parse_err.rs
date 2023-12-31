@@ -89,7 +89,7 @@ impl ParserError {
             ParserError::ImportTargetMatch => ParseError::new(
                 token,
                 ParseContext::ImportDecl,
-                vec![Token::Ident, Token::Times, Token::OpenBracket],
+                vec![Token::Ident, Token::Times, Token::OpenBlock],
             ),
             ParserError::StmtMatch => ParseError::new(
                 token,

@@ -18,6 +18,17 @@ pub enum CheckError {
     MainProcVariadic,
     MainProcExternal,
     MainProcWrongRetType,
+
+    ImportModuleAccessMissing,
+    SuperUsedFromRootModule,
+    ModuleNotDefined,
+    ModuleIsPrivate,
+    ImportFromItself,
+    ImportItself,
+    ImportSymbolNotDefined,
+    ImportSymbolIsPrivate,
+    ImportSymbolAlreadyDefined,
+    ImporySymbolAlreadyImported,
 }
 
 pub struct CheckErrorData {
@@ -52,6 +63,17 @@ impl CheckError {
             CheckError::MainProcVariadic => CheckErrorData::new("main procedure cannot be variadic", Some("remove `..` from input parameters")),
             CheckError::MainProcExternal => CheckErrorData::new("main procedure cannot be external", Some("remove `c_call` directive")), //@unstable directive name
             CheckError::MainProcWrongRetType => CheckErrorData::new("main procedure must return s32", Some("change return type to: `-> s32`")),
+            
+            CheckError::ImportModuleAccessMissing => CheckErrorData::new("import missing module access path", Some("specify module access path before the import target")),
+            CheckError::SuperUsedFromRootModule => CheckErrorData::new("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),
+            CheckError::ModuleNotDefined => CheckErrorData::new("module is not defined", None),
+            CheckError::ModuleIsPrivate => CheckErrorData::new("module is private", None),
+            CheckError::ImportFromItself => CheckErrorData::new("unnecessary import from itself", Some("remove this import declaration")),
+            CheckError::ImportItself => CheckErrorData::new("cannot import module into itself", Some("remove this import declaration")),
+            CheckError::ImportSymbolNotDefined => CheckErrorData::new("imported symbol is not defined in target module", None),
+            CheckError::ImportSymbolIsPrivate => CheckErrorData::new("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
+            CheckError::ImportSymbolAlreadyDefined => CheckErrorData::new("imported symbol is already defined", None),
+            CheckError::ImporySymbolAlreadyImported => CheckErrorData::new("imported symbol was already imported", None),
         }
     }
 }

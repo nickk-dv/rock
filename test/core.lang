@@ -1,0 +1,9 @@
+
+import package::core::Something;
+import package::core;
+
+import package::{core, glob_test};
+
+pub core_proc :: () -> s32 {
+    return 2 + 2;
+}

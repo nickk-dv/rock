@@ -36,6 +36,7 @@ struct Parser<'ast> {
 struct ParseTask {
     path: PathBuf,
     parent: Option<P<Module>>,
+    origin: Option<P<ModDecl>>,
 }
 
 impl<'ast> Parser<'ast> {
@@ -66,7 +67,11 @@ impl<'ast> Parser<'ast> {
         }
 
         let mut package = self.alloc::<Package>();
-        let mut task_queue = vec![ParseTask { path, parent: None }];
+        let mut task_queue = vec![ParseTask {
+            path,
+            parent: None,
+            origin: None,
+        }];
 
         while let Some(task) = task_queue.pop() {
             let task_result = self.parse_task_execute(&task);
@@ -129,6 +134,7 @@ impl<'ast> Parser<'ast> {
                         } else {
                             inner_dir_path
                         },
+                        origin: Some(mod_decl),
                     };
 
                     let mut parent = new_task.parent;
@@ -197,12 +203,19 @@ impl<'ast> Parser<'ast> {
                 return None;
             }
         }
+        if let Some(mut origin_mod_decl) = task.origin {
+            origin_mod_decl.source = (self.ast.files.len() - 1) as SourceID;
+            println!(
+                "Setting the mod_decl source_id to: {}",
+                origin_mod_decl.source
+            );
+        }
         Some(self.parse_module(task.parent))
     }
 
     fn parse_module(&mut self, parent: Option<P<Module>>) -> P<Module> {
         let mut module = self.alloc::<Module>();
-        module.source = self.ast.files.len() as u32 - 1;
+        module.source = (self.ast.files.len() - 1) as SourceID;
         module.parent = parent;
         if let Some(mut p) = parent {
             p.submodules.add(&mut self.ast.arena, module);
@@ -476,9 +489,12 @@ impl<'ast> Parser<'ast> {
 
     fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParserError> {
         let mut import_decl = self.alloc::<ImportDecl>();
+        import_decl.span.start = self.peek_span_start();
         self.expect_token(Token::KwImport, ParseContext::ImportDecl)?;
         import_decl.module_access = self.parse_module_access()?;
         import_decl.target = self.parse_import_target()?;
+        import_decl.span.end = self.peek_span_end();
+        self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;
         Ok(import_decl)
     }
 
@@ -486,18 +502,16 @@ impl<'ast> Parser<'ast> {
         match self.peek() {
             Token::Ident => {
                 let name = self.parse_ident(ParseContext::ImportDecl)?;
-                self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;
                 Ok(ImportTarget::Module(name))
             }
             Token::Times => {
                 self.consume();
-                self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;
                 Ok(ImportTarget::AllSymbols)
             }
-            Token::OpenBracket => {
+            Token::OpenBlock => {
                 self.consume();
                 let mut symbols = List::<Ident>::new();
-                if !self.try_consume(Token::CloseBracket) {
+                if !self.try_consume(Token::CloseBlock) {
                     loop {
                         let name = self.parse_ident(ParseContext::ImportDecl)?;
                         symbols.add(&mut self.ast.arena, name);
@@ -505,9 +519,8 @@ impl<'ast> Parser<'ast> {
                             break;
                         }
                     }
-                    self.expect_token(Token::CloseBracket, ParseContext::ImportDecl)?;
+                    self.expect_token(Token::CloseBlock, ParseContext::ImportDecl)?;
                 }
-                self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;
                 Ok(ImportTarget::SymbolList(symbols))
             }
             _ => Err(ParserError::ImportTargetMatch),
@@ -921,6 +934,14 @@ impl<'ast> Parser<'ast> {
 
     fn peek_span(&self) -> Span {
         unsafe { self.tokens.get_unchecked(self.cursor).span }
+    }
+
+    fn peek_span_start(&self) -> u32 {
+        unsafe { self.tokens.get_unchecked(self.cursor).span.start }
+    }
+
+    fn peek_span_end(&self) -> u32 {
+        unsafe { self.tokens.get_unchecked(self.cursor - 1).span.end }
     }
 
     fn consume(&mut self) {
