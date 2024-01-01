@@ -201,7 +201,7 @@ SomeStruct :: struct {
 Bom :: SomeStruct.{ .{ 50 }};
 GArray :: [2][3]i32{ {11,21,31}, {11,21,31} };
 
-main :: () -> s32 {
+main :: (some: T, ..) {
 	char_lit := 32;
 	vvv: Vec22;
 	g : [5]Baazzz;

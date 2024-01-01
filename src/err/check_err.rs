@@ -17,6 +17,7 @@ pub enum CheckError {
     MainProcMissing,
     MainProcVariadic,
     MainProcExternal,
+    MainProcHasParams,
     MainProcWrongRetType,
 
     ImportModuleAccessMissing,
@@ -59,10 +60,11 @@ impl CheckError {
             CheckError::EnumVariantRedefinition => CheckErrorData::new("enum variant redefinition", None),
             CheckError::StructFieldRedefinition => CheckErrorData::new("struct field redefinition", None),
             
-            CheckError::MainProcMissing => CheckErrorData::new("main procedure is not found in src/main.lang", Some("define the entry point: `main :: () -> s32 { return 0; }`")), //@unstable file ext .lang
+            CheckError::MainProcMissing => CheckErrorData::new("main procedure is not found in src/main.lang", Some("define the entry point `main :: () -> s32 { return 0; }`")), //@unstable file ext .lang
             CheckError::MainProcVariadic => CheckErrorData::new("main procedure cannot be variadic", Some("remove `..` from input parameters")),
             CheckError::MainProcExternal => CheckErrorData::new("main procedure cannot be external", Some("remove `c_call` directive")), //@unstable directive name
-            CheckError::MainProcWrongRetType => CheckErrorData::new("main procedure must return s32", Some("change return type to: `-> s32`")),
+            CheckError::MainProcHasParams => CheckErrorData::new("main procedure cannot have input parameters", Some("remove input parameters")),
+            CheckError::MainProcWrongRetType => CheckErrorData::new("main procedure must return `s32`", Some("change return type to `-> s32`")),
             
             CheckError::ImportModuleAccessMissing => CheckErrorData::new("import missing module access path", Some("specify module access path before the import target")),
             CheckError::SuperUsedFromRootModule => CheckErrorData::new("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),

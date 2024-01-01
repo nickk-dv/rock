@@ -205,10 +205,6 @@ impl<'ast> Parser<'ast> {
         }
         if let Some(mut origin_mod_decl) = task.origin {
             origin_mod_decl.source = (self.ast.files.len() - 1) as SourceID;
-            println!(
-                "Setting the mod_decl source_id to: {}",
-                origin_mod_decl.source
-            );
         }
         Some(self.parse_module(task.parent))
     }

@@ -1,5 +1,5 @@
 use crate::ast::parser;
-use crate::hir::check;
+use crate::hir::{check, check_again};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -50,7 +50,7 @@ fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
 
 fn cmd_check() -> Result<(), ()> {
     let mut ast = parser::parse()?;
-    check::check(&mut ast)?;
+    check_again::check(&mut ast)?;
     Ok(())
 }
 

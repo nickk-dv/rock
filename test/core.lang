@@ -7,3 +7,7 @@ import package::{core, glob_test};
 pub core_proc :: () -> s32 {
     return 2 + 2;
 }
+
+main :: () -> s32 {
+    return 5;
+}
