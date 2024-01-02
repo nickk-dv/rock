@@ -1,14 +1,14 @@
 
-import package::core::Something;
 import package::core;
-import super::core::*;
 
-import package::{core, glob_test};
-
-core_proc :: () -> s32 {
+pub core_proc :: () -> s32 {
     return 2 + 2;
 }
 
-main :: () -> s32 {
+pub func :: () -> s32 {
     return 5;
+}
+
+PrivateDefined :: struct {
+
 }

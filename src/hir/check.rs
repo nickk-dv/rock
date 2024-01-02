@@ -1,93 +1,439 @@
 use crate::ast::{ast::*, span::Span};
 use crate::err::check_err::CheckError;
 use crate::mem::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+
+//@note external proc uniqueness check will be delayed to after hir creation
 
 pub fn check(ast: &mut Ast) -> Result<(), ()> {
-    let mut context = Context {
-        ast,
-        errors: Vec::new(),
-        module_scopes: Vec::new(),
-        external_procs: HashMap::new(),
-    };
-
-    context.pass_0_populate_scopes();
-    context.pass_1_check_decls();
+    let mut context = Context::new(ast);
+    context.pass_0_create_scopes();
+    context.pass_1_add_declared_symbols();
     context.pass_2_check_main_proc();
-    context.pass_3_import_symbols();
-
-    if context.errors.is_empty() {
-        Ok(())
-    } else {
-        context.report_errors();
-        Err(())
-    }
+    context.pass_3_check_decl_namesets();
+    context.pass_4_import_symbols();
+    context.report_errors()
 }
 
 struct Context<'ast> {
     ast: &'ast mut Ast,
     errors: Vec<Error>,
-    module_scopes: Vec<Scope>,
-    external_procs: HashMap<InternID, P<ProcDecl>>,
-}
-
-fn decl_is_private(decl: Decl) -> bool {
-    // @mod decls always return false, this is valid for same package, but not for dependencies
-    match decl {
-        Decl::Mod(mod_decl) => false,
-        Decl::Proc(proc_decl) => proc_decl.visibility == Visibility::Private,
-        Decl::Enum(enum_decl) => enum_decl.visibility == Visibility::Private,
-        Decl::Struct(struct_decl) => struct_decl.visibility == Visibility::Private,
-        Decl::Global(global_decl) => global_decl.visibility == Visibility::Private,
-        Decl::Import(..) => false,
-    }
-}
-
-fn decl_get_span(decl: Decl) -> Span {
-    match decl {
-        Decl::Mod(mod_decl) => mod_decl.name.span,
-        Decl::Proc(proc_decl) => proc_decl.name.span,
-        Decl::Enum(enum_decl) => enum_decl.name.span,
-        Decl::Struct(struct_decl) => struct_decl.name.span,
-        Decl::Global(global_decl) => global_decl.name.span,
-        Decl::Import(import_decl) => import_decl.span,
-    }
+    scopes: Vec<Scope>,
 }
 
 struct Scope {
     module: P<Module>,
+    errors: Vec<Error>,
     declared_symbols: HashMap<InternID, Decl>,
     imported_symbols: HashMap<InternID, Decl>,
 }
 
-impl Scope {
-    fn find_declared_module(&self, id: InternID) -> Option<P<ModDecl>> {
-        match self.declared_symbols.get(&id) {
-            Some(Decl::Mod(mod_decl)) => Some(*mod_decl),
-            _ => None,
+struct Error {
+    error: CheckError,
+    no_context: bool,
+    source: SourceID,
+    span: Span,
+}
+
+struct ImportTask {
+    import: P<ImportDecl>,
+    status: ImportTaskStatus,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+enum ImportTaskStatus {
+    Unresolved,
+    SourceNotFound,
+    Resolved,
+}
+
+impl<'ast> Context<'ast> {
+    fn new(ast: &'ast mut Ast) -> Self {
+        Self {
+            ast,
+            errors: Vec::new(),
+            scopes: Vec::new(),
         }
     }
 
-    fn find_declared_symbol(&self, id: InternID) -> Option<Decl> {
-        match self.declared_symbols.get(&id) {
-            Some(decl) => Some(*decl),
-            _ => None,
+    fn err(&mut self, error: CheckError) {
+        self.errors.push(Error::new_no_context(error));
+    }
+
+    fn report_errors(&self) -> Result<(), ()> {
+        for err in self.errors.iter() {
+            crate::err::report::err(self.ast, err.error, err.no_context, err.source, err.span);
+        }
+        for scope in self.scopes.iter() {
+            for err in scope.errors.iter() {
+                crate::err::report::err(self.ast, err.error, err.no_context, err.source, err.span);
+            }
+        }
+        if crate::err::report::did_error() {
+            println!("");
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn get_scope(&self, scope_id: SourceID) -> &Scope {
+        unsafe { self.scopes.get_unchecked(scope_id as usize) }
+    }
+
+    fn get_scope_mut(&mut self, scope_id: SourceID) -> &mut Scope {
+        unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
+    }
+
+    fn pass_0_create_scopes(&mut self) {
+        self.create_scopes(self.ast.package.root);
+    }
+
+    fn create_scopes(&mut self, module: P<Module>) {
+        self.scopes.push(Scope::new(module));
+        for submodule in module.submodules.iter() {
+            self.create_scopes(submodule);
+        }
+    }
+
+    fn pass_1_add_declared_symbols(&mut self) {
+        for scope_id in 0..self.scopes.len() as SourceID {
+            self.scope_add_declared_symbol(scope_id);
+        }
+    }
+
+    fn scope_add_declared_symbol(&mut self, scope_id: SourceID) {
+        let scope = self.get_scope_mut(scope_id);
+        for decl in scope.module.decls.iter() {
+            if let Some(name) = decl.get_name() {
+                if let Some(existing) = scope.get_declared(name.id) {
+                    scope.err(CheckError::SymbolRedefinition, name.span);
+                } else {
+                    scope.declared_symbols.insert(name.id, decl);
+                }
+            }
+        }
+    }
+
+    //@ lib / exe package type is not considered, main is always required
+    // root has id = 0 currently, id scheme might change with
+    // dependencies in ast or module tree repr. changes
+    fn pass_2_check_main_proc(&mut self) {
+        if let Some(main_id) = self.ast.intern_pool.get_id_if_exists("main".as_bytes()) {
+            let root_scope = self.get_scope(0);
+            if let Some(main_proc) = root_scope.find_declared_proc(main_id) {
+                self.scope_check_main_proc(0, main_proc);
+            } else {
+                self.err(CheckError::MainProcMissing);
+            }
+        } else {
+            self.err(CheckError::MainProcMissing);
+        }
+    }
+
+    fn scope_check_main_proc(&mut self, scope_id: SourceID, main_proc: P<ProcDecl>) {
+        let scope = self.get_scope_mut(scope_id);
+        if main_proc.is_variadic {
+            scope.err(CheckError::MainProcVariadic, main_proc.name.span);
+        }
+        if main_proc.block.is_none() {
+            scope.err(CheckError::MainProcExternal, main_proc.name.span);
+        }
+        if !main_proc.params.is_empty() {
+            scope.err(CheckError::MainProcHasParams, main_proc.name.span);
+        }
+        let mut ret_type_valid = false;
+        if let Some(tt) = main_proc.return_type {
+            if tt.pointer_level == 0 {
+                if let TypeKind::Basic(BasicType::S32) = tt.kind {
+                    ret_type_valid = true;
+                }
+            }
+        }
+        if !ret_type_valid {
+            scope.err(CheckError::MainProcWrongRetType, main_proc.name.span);
+        }
+    }
+
+    fn pass_3_check_decl_namesets(&mut self) {
+        for scope_id in 0..self.scopes.len() as SourceID {
+            self.scope_check_decl_namesets(scope_id);
+        }
+    }
+
+    fn scope_check_decl_namesets(&mut self, scope_id: SourceID) {
+        let scope = self.get_scope_mut(scope_id);
+        for decl in scope.module.decls.iter() {
+            match decl {
+                Decl::Proc(proc_decl) => {
+                    let mut name_set = HashMap::<InternID, Ident>::new();
+                    for param in proc_decl.params.iter() {
+                        if let Some(existing) = name_set.get(&param.name.id) {
+                            scope.err(CheckError::ProcParamRedefinition, param.name.span);
+                        } else {
+                            name_set.insert(param.name.id, param.name);
+                        }
+                    }
+                }
+                Decl::Enum(enum_decl) => {
+                    let mut name_set = HashMap::<InternID, Ident>::new();
+                    for variant in enum_decl.variants.iter() {
+                        if let Some(existing) = name_set.get(&variant.name.id) {
+                            scope.err(CheckError::EnumVariantRedefinition, variant.name.span);
+                        } else {
+                            name_set.insert(variant.name.id, variant.name);
+                        }
+                    }
+                }
+                Decl::Struct(struct_decl) => {
+                    let mut name_set = HashMap::<InternID, Ident>::new();
+                    for field in struct_decl.fields.iter() {
+                        if let Some(existing) = name_set.get(&field.name.id) {
+                            scope.err(CheckError::StructFieldRedefinition, field.name.span);
+                        } else {
+                            name_set.insert(field.name.id, field.name);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn pass_4_import_symbols(&mut self) {
+        for scope_id in 0..self.scopes.len() as SourceID {
+            self.scope_import_symbols(scope_id);
+        }
+    }
+
+    fn scope_create_import_tasks(&mut self, scope_id: SourceID) -> Vec<ImportTask> {
+        let scope = self.get_scope_mut(scope_id);
+        let mut import_tasks = Vec::new();
+
+        for decl in scope.module.decls.iter() {
+            if let Decl::Import(import) = decl {
+                if import.module_access.names.is_empty()
+                    && import.module_access.modifier == ModuleAccessModifier::None
+                {
+                    scope.err(CheckError::ImportModuleAccessMissing, import.span);
+                    continue;
+                }
+
+                if import.module_access.modifier == ModuleAccessModifier::Super
+                    && scope.module.parent.is_none()
+                {
+                    scope.err(CheckError::SuperUsedFromRootModule, import.span);
+                    continue;
+                }
+
+                import_tasks.push(ImportTask {
+                    import,
+                    status: ImportTaskStatus::Unresolved,
+                });
+            }
+        }
+        import_tasks
+    }
+
+    fn scope_import_symbols(&mut self, scope_id: SourceID) {
+        let mut import_tasks = self.scope_create_import_tasks(scope_id);
+        let mut resolved_count = 0;
+
+        while import_tasks
+            .iter()
+            .any(|task| task.status != ImportTaskStatus::Resolved)
+        {
+            for task in import_tasks.iter_mut() {
+                if task.status == ImportTaskStatus::Resolved {
+                    continue;
+                }
+
+                let mut from_id = 0;
+
+                if task.import.module_access.modifier == ModuleAccessModifier::None {
+                    let first_name = task.import.module_access.names.first().unwrap();
+                    if let Some(id) = self.get_scope(scope_id).find_module(first_name.id) {
+                        from_id = id;
+                    } else {
+                        task.status = ImportTaskStatus::SourceNotFound;
+                        continue;
+                    }
+                }
+
+                task.status = ImportTaskStatus::Resolved;
+
+                from_id = match task.import.module_access.modifier {
+                    ModuleAccessModifier::None => from_id,
+                    ModuleAccessModifier::Super => {
+                        self.get_scope(scope_id).module.parent.unwrap().source
+                    }
+                    ModuleAccessModifier::Package => 0,
+                };
+
+                let mut skip_first =
+                    task.import.module_access.modifier == ModuleAccessModifier::None;
+
+                let mut success = true;
+                for name in task.import.module_access.names.iter() {
+                    if skip_first {
+                        skip_first = false;
+                        continue;
+                    }
+
+                    let from_scope = self.get_scope(from_id);
+                    match from_scope.find_declared_module(name.id) {
+                        Some(id) => from_id = id,
+                        None => {
+                            self.get_scope_mut(scope_id)
+                                .err(CheckError::ModuleNotDeclaredInPath, name.span);
+                            success = false;
+                            break;
+                        }
+                    }
+                }
+                if !success {
+                    continue;
+                }
+
+                if from_id == scope_id {
+                    self.get_scope_mut(scope_id)
+                        .err(CheckError::ImportFromItself, task.import.span);
+                    continue;
+                }
+
+                match task.import.target {
+                    ImportTarget::AllSymbols => {
+                        //@decide how are ::* stored
+                        // Vec of SourceID can be used to store all wildcard imports
+                    }
+                    ImportTarget::Module(symbol) => {
+                        self.scope_import_a_symbol(symbol, scope_id, from_id);
+                    }
+                    ImportTarget::SymbolList(symbol_list) => {
+                        for symbol in symbol_list.iter() {
+                            self.scope_import_a_symbol(symbol, scope_id, from_id);
+                        }
+                    }
+                }
+            }
+
+            let resolved_total = import_tasks
+                .iter()
+                .filter(|task| task.status == ImportTaskStatus::Resolved)
+                .count();
+
+            if resolved_total <= resolved_count {
+                let scope = self.get_scope_mut(scope_id);
+                for task in import_tasks.iter_mut() {
+                    if task.status == ImportTaskStatus::SourceNotFound {
+                        scope.err(
+                            CheckError::ModuleNotFoundInScope,
+                            task.import.module_access.names.first().unwrap().span,
+                        );
+                        task.status = ImportTaskStatus::Resolved;
+                    }
+                }
+            } else {
+                resolved_count = resolved_total;
+            }
+        }
+    }
+
+    fn scope_import_a_symbol(&mut self, symbol: Ident, scope_id: SourceID, from_id: SourceID) {
+        match self.get_scope(from_id).get_declared(symbol.id) {
+            None => {
+                let scope = self.get_scope_mut(scope_id);
+                scope.err(CheckError::ImportSymbolNotDefined, symbol.span);
+            }
+            Some(decl) => {
+                let scope = self.get_scope_mut(scope_id);
+
+                if let Decl::Mod(mod_decl) = decl {
+                    if mod_decl.source == scope_id {
+                        scope.err(CheckError::ImportItself, symbol.span);
+                        return;
+                    }
+                }
+                if decl.is_private() {
+                    scope.err(CheckError::ImportSymbolIsPrivate, symbol.span);
+                    return;
+                }
+                if let Some(existing) = scope.get_declared(symbol.id) {
+                    scope.err(CheckError::ImportSymbolAlreadyDefined, symbol.span);
+                    return;
+                }
+                if let Some(existing) = scope.get_imported(symbol.id) {
+                    scope.err(CheckError::ImporySymbolAlreadyImported, symbol.span);
+                    return;
+                }
+                scope.imported_symbols.insert(symbol.id, decl);
+            }
         }
     }
 }
 
-struct Error {
-    error: CheckError,
-    no_souce: bool,
-    source: SourceID,
-    span: Span,
+impl Scope {
+    fn new(module: P<Module>) -> Self {
+        Self {
+            module,
+            errors: Vec::new(),
+            declared_symbols: HashMap::new(),
+            imported_symbols: HashMap::new(),
+        }
+    }
+
+    fn get_declared(&self, id: InternID) -> Option<Decl> {
+        match self.declared_symbols.get(&id) {
+            Some(decl) => Some(*decl),
+            None => None,
+        }
+    }
+
+    fn get_imported(&self, id: InternID) -> Option<Decl> {
+        match self.imported_symbols.get(&id) {
+            Some(decl) => Some(*decl),
+            None => None,
+        }
+    }
+
+    fn err(&mut self, error: CheckError, span: Span) {
+        self.errors
+            .push(Error::new(error, self.module.source, span));
+    }
+
+    fn find_declared_proc(&self, id: InternID) -> Option<P<ProcDecl>> {
+        match self.get_declared(id) {
+            Some(Decl::Proc(proc_decl)) => Some(proc_decl),
+            _ => None,
+        }
+    }
+
+    fn find_declared_module(&self, id: InternID) -> Option<SourceID> {
+        match self.get_declared(id) {
+            Some(Decl::Mod(mod_decl)) => return Some(mod_decl.source),
+            _ => None,
+        }
+    }
+
+    fn find_module(&self, id: InternID) -> Option<SourceID> {
+        match self.get_declared(id) {
+            Some(Decl::Mod(mod_decl)) => return Some(mod_decl.source),
+            _ => {}
+        }
+        match self.get_imported(id) {
+            Some(Decl::Mod(mod_decl)) => Some(mod_decl.source),
+            _ => None,
+        }
+        //@todo also find in ::* imports
+        // and report if conflit exists?
+    }
 }
 
 impl Error {
     pub fn new(error: CheckError, source: SourceID, span: Span) -> Self {
         Self {
             error,
-            no_souce: false,
+            no_context: false,
             source,
             span,
         }
@@ -96,383 +442,34 @@ impl Error {
     pub fn new_no_context(error: CheckError) -> Self {
         Self {
             error,
-            no_souce: true,
+            no_context: true,
             source: 0,
             span: Span::new(1, 1),
         }
     }
 }
 
-impl<'ast> Context<'ast> {
-    fn report_errors(&self) {
-        for err in self.errors.iter() {
-            crate::err::report::err(self.ast, err.error, err.no_souce, err.source, err.span);
-        }
-        println!("");
-    }
-
-    fn pass_0_populate_scopes(&mut self) {
-        self.add_module_scope(self.ast.package.root);
-    }
-
-    fn add_module_scope(&mut self, module: P<Module>) {
-        let scope = self.create_scope_from_module(module);
-        self.module_scopes.push(scope);
-        for submodule in module.submodules.iter() {
-            self.add_module_scope(submodule);
+impl Decl {
+    fn get_name(&self) -> Option<Ident> {
+        match self {
+            Decl::Mod(mod_decl) => Some(mod_decl.name),
+            Decl::Proc(proc_decl) => Some(proc_decl.name),
+            Decl::Enum(enum_decl) => Some(enum_decl.name),
+            Decl::Struct(struct_decl) => Some(struct_decl.name),
+            Decl::Global(global_decl) => Some(global_decl.name),
+            _ => None,
         }
     }
 
-    fn create_scope_from_module(&mut self, module: P<Module>) -> Scope {
-        let mut declared_symbols = HashMap::new();
-
-        for decl in module.decls.iter() {
-            let symbol = match decl {
-                Decl::Mod(mod_decl) => Some(mod_decl.name),
-                Decl::Proc(proc_decl) => Some(proc_decl.name),
-                Decl::Enum(enum_decl) => Some(enum_decl.name),
-                Decl::Struct(struct_decl) => Some(struct_decl.name),
-                Decl::Global(global_decl) => Some(global_decl.name),
-                _ => None,
-            };
-            if let Some(name) = symbol {
-                if declared_symbols.contains_key(&name.id) {
-                    self.errors.push(Error::new(
-                        CheckError::SymbolRedefinition,
-                        module.source,
-                        name.span,
-                    ));
-                } else {
-                    declared_symbols.insert(name.id, decl);
-
-                    if let Decl::Proc(proc_decl) = decl {
-                        if proc_decl.block.is_none() {
-                            if self.external_procs.contains_key(&name.id) {
-                                self.errors.push(Error::new(
-                                    CheckError::ExternalProcRedefinition,
-                                    module.source,
-                                    name.span,
-                                ));
-                            } else {
-                                self.external_procs.insert(name.id, proc_decl);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Scope {
-            module,
-            declared_symbols,
-            imported_symbols: HashMap::new(),
-        }
-    }
-
-    fn pass_1_check_decls(&mut self) {
-        for scope in self.module_scopes.iter() {
-            let module = scope.module;
-            for decl in module.decls.iter() {
-                match decl {
-                    Decl::Proc(proc_decl) => {
-                        let mut name_set = HashSet::new();
-                        for param in proc_decl.params.iter() {
-                            if name_set.contains(&param.name.id) {
-                                self.errors.push(Error::new(
-                                    CheckError::ProcParamRedefinition,
-                                    module.source,
-                                    param.name.span,
-                                ));
-                            } else {
-                                name_set.insert(param.name.id);
-                            }
-                        }
-                    }
-                    Decl::Enum(enum_decl) => {
-                        let mut name_set = HashSet::new();
-                        for variant in enum_decl.variants.iter() {
-                            if name_set.contains(&variant.name.id) {
-                                self.errors.push(Error::new(
-                                    CheckError::EnumVariantRedefinition,
-                                    module.source,
-                                    variant.name.span,
-                                ));
-                            } else {
-                                name_set.insert(variant.name.id);
-                            }
-                        }
-                    }
-                    Decl::Struct(struct_decl) => {
-                        let mut name_set = HashSet::new();
-                        for field in struct_decl.fields.iter() {
-                            if name_set.contains(&field.name.id) {
-                                self.errors.push(Error::new(
-                                    CheckError::StructFieldRedefinition,
-                                    module.source,
-                                    field.name.span,
-                                ));
-                            } else {
-                                name_set.insert(field.name.id);
-                            }
-                        }
-                    }
-                    _ => {}
-                };
-            }
-        }
-    }
-
-    fn pass_2_check_main_proc(&mut self) {
-        let main_id = self.ast.intern_pool.get_id_if_exists("main".as_bytes());
-        let root_id: SourceID = 0;
-        let root = self.module_scopes.get(root_id as usize).unwrap(); //@err internal?
-
-        if let Some(id) = main_id {
-            if root.declared_symbols.contains_key(&id) {
-                let main_decl = root.declared_symbols.get(&id);
-                match main_decl {
-                    Some(decl) => match decl {
-                        Decl::Proc(proc_decl) => {
-                            //@check 0 input args
-                            if proc_decl.is_variadic {
-                                self.errors.push(Error::new(
-                                    CheckError::MainProcVariadic,
-                                    root_id,
-                                    proc_decl.name.span,
-                                ));
-                            }
-                            if proc_decl.block.is_none() {
-                                self.errors.push(Error::new(
-                                    CheckError::MainProcExternal,
-                                    root_id,
-                                    proc_decl.name.span,
-                                ));
-                            }
-                            match proc_decl.return_type {
-                                Some(tt) => match tt.kind {
-                                    TypeKind::Basic(basic) => {
-                                        if basic != BasicType::S32 {
-                                            self.errors.push(Error::new(
-                                                CheckError::MainProcWrongRetType,
-                                                root_id,
-                                                proc_decl.name.span,
-                                            ));
-                                        }
-                                    }
-                                    _ => {
-                                        self.errors.push(Error::new(
-                                            CheckError::MainProcWrongRetType,
-                                            root_id,
-                                            proc_decl.name.span,
-                                        ));
-                                    }
-                                },
-                                None => {
-                                    self.errors.push(Error::new(
-                                        CheckError::MainProcWrongRetType,
-                                        root_id,
-                                        proc_decl.name.span,
-                                    ));
-                                }
-                            }
-                        }
-                        _ => {}
-                    },
-                    None => {}
-                }
-            } else {
-                self.errors
-                    .push(Error::new_no_context(CheckError::MainProcMissing));
-            }
-        } else {
-            self.errors
-                .push(Error::new_no_context(CheckError::MainProcMissing));
-        }
-    }
-
-    fn pass_3_import_symbols(&mut self) {
-        for scope in self.module_scopes.iter() {
-            let module = scope.module;
-            let mut imports = Vec::new();
-
-            for decl in module.decls.iter() {
-                if let Decl::Import(import_decl) = decl {
-                    if import_decl.module_access.names.is_empty()
-                        && import_decl.module_access.modifier == ModuleAccessModifier::None
-                    {
-                        self.errors.push(Error::new(
-                            CheckError::ImportModuleAccessMissing,
-                            module.source,
-                            import_decl.span,
-                        ));
-                    } else {
-                        imports.push(import_decl);
-                    }
-                }
-            }
-
-            let mut i = 0;
-            while i < imports.len() {
-                let import = unsafe { *imports.get_unchecked(i) };
-                if import.module_access.modifier == ModuleAccessModifier::None {
-                    i += 1;
-                    continue;
-                } else {
-                    imports.remove(i);
-                }
-
-                if import.module_access.modifier == ModuleAccessModifier::Super {
-                    if module.parent.is_none() {
-                        self.errors.push(Error::new(
-                            CheckError::SuperUsedFromRootModule,
-                            module.source,
-                            import.span,
-                        ));
-                        continue;
-                    }
-                }
-
-                let mut import_scope =
-                    if import.module_access.modifier == ModuleAccessModifier::Super {
-                        &self.module_scopes[scope.module.parent.unwrap().source as usize]
-                    } else {
-                        &self.module_scopes[0]
-                    };
-
-                for name in import.module_access.names.iter() {
-                    match import_scope.find_declared_module(name.id) {
-                        Some(mod_decl) => {
-                            println!("core has this id: {}", mod_decl.source);
-                            import_scope = &self.module_scopes[mod_decl.source as usize];
-                        }
-                        None => {
-                            self.errors.push(Error::new(
-                                CheckError::ModuleNotDefined,
-                                module.source,
-                                name.span,
-                            ));
-                            continue;
-                        }
-                    }
-                }
-
-                if import_scope.module.source == scope.module.source {
-                    self.errors.push(Error::new(
-                        CheckError::ImportFromItself,
-                        module.source,
-                        import.span,
-                    ));
-                    continue;
-                }
-
-                match import.target {
-                    ImportTarget::AllSymbols => todo!(),
-                    ImportTarget::Module(symbol) => {
-                        match import_scope.find_declared_symbol(symbol.id) {
-                            Some(decl) => {
-                                if let Decl::Mod(mod_decl) = decl {
-                                    if mod_decl.source == module.source {
-                                        self.errors.push(Error::new(
-                                            CheckError::ImportItself,
-                                            module.source,
-                                            symbol.span,
-                                        ));
-                                    }
-                                    //@need to exit here and not check visibility etc
-                                }
-
-                                if decl_is_private(decl) {
-                                    self.errors.push(Error::new(
-                                        CheckError::ImportSymbolIsPrivate,
-                                        module.source,
-                                        symbol.span,
-                                    ));
-                                    //@support another span with cyan underline and optional marker text
-                                    //self.errors.push(Error::new(
-                                    //    CheckError::ImportSymbolIsPrivate,
-                                    //    import_scope.module.source,
-                                    //    decl_get_span(decl),
-                                    //));
-                                } else {
-                                    match scope.declared_symbols.get(&symbol.id) {
-                                        Some(sym) => {
-                                            self.errors.push(Error::new(
-                                                CheckError::ImportSymbolAlreadyDefined,
-                                                module.source,
-                                                symbol.span,
-                                            ));
-                                        }
-                                        None => {
-                                            //@borrow checker scope.declared_symbols.insert(symbol.id, decl);
-                                        }
-                                    }
-                                }
-                            }
-                            None => {
-                                self.errors.push(Error::new(
-                                    CheckError::ImportSymbolNotDefined,
-                                    module.source,
-                                    symbol.span,
-                                ));
-                            }
-                        }
-                    }
-                    ImportTarget::SymbolList(symbols) => {
-                        for symbol in symbols.iter() {
-                            match import_scope.find_declared_symbol(symbol.id) {
-                                Some(decl) => {
-                                    if let Decl::Mod(mod_decl) = decl {
-                                        if mod_decl.source == module.source {
-                                            self.errors.push(Error::new(
-                                                CheckError::ImportItself,
-                                                module.source,
-                                                symbol.span,
-                                            ));
-                                            continue;
-                                        }
-                                    }
-
-                                    if decl_is_private(decl) {
-                                        self.errors.push(Error::new(
-                                            CheckError::ImportSymbolIsPrivate,
-                                            module.source,
-                                            symbol.span,
-                                        ));
-                                        //@support another span with cyan underline and optional marker text
-                                        //self.errors.push(Error::new(
-                                        //    CheckError::ImportSymbolIsPrivate,
-                                        //    import_scope.module.source,
-                                        //    decl_get_span(decl),
-                                        //));
-                                    } else {
-                                        match scope.declared_symbols.get(&symbol.id) {
-                                            Some(sym) => {
-                                                self.errors.push(Error::new(
-                                                    CheckError::ImportSymbolAlreadyDefined,
-                                                    module.source,
-                                                    symbol.span,
-                                                ));
-                                            }
-                                            None => {
-                                                //@borrow checker scope.declared_symbols.insert(symbol.id, decl);
-                                            }
-                                        }
-                                    }
-                                }
-                                None => {
-                                    self.errors.push(Error::new(
-                                        CheckError::ImportSymbolNotDefined,
-                                        module.source,
-                                        symbol.span,
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            //process all imports
+    fn is_private(&self) -> bool {
+        // @mod decls always return false, this is valid for same package, but not for dependencies
+        match self {
+            Decl::Mod(mod_decl) => false,
+            Decl::Proc(proc_decl) => proc_decl.visibility == Visibility::Private,
+            Decl::Enum(enum_decl) => enum_decl.visibility == Visibility::Private,
+            Decl::Struct(struct_decl) => struct_decl.visibility == Visibility::Private,
+            Decl::Global(global_decl) => global_decl.visibility == Visibility::Private,
+            Decl::Import(..) => false,
         }
     }
 }

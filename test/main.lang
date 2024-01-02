@@ -2,20 +2,15 @@
 core :: mod;
 
 import *;
-
 import super::*;
-import super::Symbol;
-
-import package::*;
-import package::Symbol;
-
-import package::core::{Sym1, core_proc};
-import package::core::sym2;
-
-import package::something::Sym;
+import mem::List;
+import core::mem::List;
+import package::core;
+import core::NotDefined;
+import core::PrivateDefined;
 import package::core::core_proc;
-
-import something::Sym;
+import package::core::func;
+import package::core::func;
 
 auto_cast_test :: () {
 	var :u32 = 0;
