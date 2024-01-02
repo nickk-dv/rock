@@ -306,11 +306,17 @@ impl<'ast> Context<'ast> {
                 match task.import.target {
                     ImportTarget::AllSymbols => {}
                     ImportTarget::Module(symbol) => {
-                        match self
+                        let maybe_decl = self
                             .get_scope(from_source_id)
                             .declared_symbols
-                            .get(&symbol.id)
-                        {
+                            .get(&symbol.id);
+
+                        let maybe_value = match maybe_decl {
+                            Some(vv) => Some(*vv),
+                            None => None,
+                        };
+
+                        match maybe_value {
                             None => {
                                 self.get_scope_mut(scope_id)
                                     .err(CheckError::ImportSymbolNotDefined, symbol.span);
@@ -337,18 +343,15 @@ impl<'ast> Context<'ast> {
                                     continue;
                                 }
 
-                                if let Some(existing) = self
-                                    .get_scope_mut(scope_id)
-                                    .imported_symbols
-                                    .get(&symbol.id)
+                                if let Some(existing) =
+                                    self.get_scope(scope_id).imported_symbols.get(&symbol.id)
                                 {
                                     self.get_scope_mut(scope_id)
-                                        .err(CheckError::ImportSymbolAlreadyDefined, symbol.span);
+                                        .err(CheckError::ImporySymbolAlreadyImported, symbol.span);
                                     continue;
                                 }
 
-                                self.get_scope_mut(from_source_id)
-                                    .add_imported(symbol.id, *decl);
+                                self.get_scope_mut(scope_id).add_imported(symbol.id, decl);
                             }
                         }
                     }
