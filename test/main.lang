@@ -12,6 +12,11 @@ import package::Symbol;
 import package::core::{Sym1, core_proc};
 import package::core::sym2;
 
+import package::something::Sym;
+import package::core::core_proc;
+
+import something::Sym;
+
 auto_cast_test :: () {
 	var :u32 = 0;
 	var2 :s64 = 0;

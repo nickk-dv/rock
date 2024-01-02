@@ -37,6 +37,13 @@ impl<T: Copy> List<T> {
     pub fn is_empty(&self) -> bool {
         self.first.is_null()
     }
+
+    pub fn first(&self) -> Option<T> {
+        if !self.first.is_null() {
+            return Some(self.first.val);
+        }
+        None
+    }
 }
 
 pub struct ListIterator<T: Copy> {
