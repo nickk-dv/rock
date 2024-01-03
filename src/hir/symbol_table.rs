@@ -120,6 +120,39 @@ impl SymbolTable {
         }
     }
 
+    pub fn get_conflit(&self, symbol: &Symbol) -> Option<Symbol> {
+        match symbol {
+            Symbol::Mod(mod_decl) => {
+                if let Some(existing) = self.get_mod(mod_decl.0.name.id) {
+                    Some(Symbol::Mod(existing))
+                } else {
+                    None
+                }
+            }
+            Symbol::Proc(proc_decl) => {
+                if let Some(existing) = self.get_proc(proc_decl.0.name.id) {
+                    Some(Symbol::Proc(existing))
+                } else {
+                    None
+                }
+            }
+            Symbol::Type(type_decl) => {
+                if let Some(existing) = self.get_type(type_decl.0.name().id) {
+                    Some(Symbol::Type(existing))
+                } else {
+                    None
+                }
+            }
+            Symbol::Global(global_decl) => {
+                if let Some(existing) = self.get_global(global_decl.0.name.id) {
+                    Some(Symbol::Global(existing))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     pub fn get_public_unique(&self, id: InternID) -> Result<Option<Symbol>, Vec<Symbol>> {
         let mut unique = None;
         let mut conflits = Vec::new();
@@ -160,6 +193,9 @@ impl SymbolTable {
         if conflits.is_empty() {
             Ok(unique)
         } else {
+            if let Some(symbol) = unique {
+                conflits.push(symbol);
+            }
             Err(conflits)
         }
     }

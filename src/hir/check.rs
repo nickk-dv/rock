@@ -416,6 +416,16 @@ impl<'ast> Context<'ast> {
             }
         };
 
+        let scope = self.get_scope_mut(scope_id);
+        if let Some(conflit) = scope.declared.get_conflit(&symbol) {
+            scope.err(CheckError::ImportSymbolAlreadyDefined, name.span);
+            scope.err_info(conflit.name().span, "already defined here");
+        }
+        if let Some(conflit) = scope.imported.get_conflit(&symbol) {
+            scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
+            scope.err_info(conflit.name().span, "already imported here");
+        }
+
         //match self.get_scope(from_id).get_declared(symbol.id) {
         //    None => {
         //        let scope = self.get_scope_mut(scope_id);
