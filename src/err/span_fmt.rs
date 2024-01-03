@@ -2,9 +2,9 @@ use super::ansi::{self, Color};
 use crate::ast::ast::SourceFile;
 use crate::ast::span::*;
 
-pub fn print(source: &SourceFile, span: Span, marker: Option<&str>) {
+pub fn print(source: &SourceFile, span: Span, marker: Option<&str>, is_info: bool) {
     let format = SpanFormat::new(source, span);
-    format.print(marker);
+    format.print(marker, is_info);
 }
 
 #[derive(Copy, Clone)]
@@ -21,8 +21,8 @@ struct SpanFormat<'a> {
     line_num: String,
     left_pad: String,
     is_multi_line: bool,
-    marker: String,
-    marker_pad: String,
+    marker_len: usize,
+    marker_pad_len: usize,
 }
 
 impl<'a> SpanFormat<'a> {
@@ -51,12 +51,12 @@ impl<'a> SpanFormat<'a> {
             line_num: loc.line.to_string(),
             left_pad: replace_all(loc.line.to_string().as_str(), ' '),
             is_multi_line,
-            marker: replace_all(line_span.as_str(), '^'),
-            marker_pad: replace_all(line_prefix.as_str(), ' '),
+            marker_len: line_span.len(),
+            marker_pad_len: line_prefix.len(),
         }
     }
 
-    fn print(&self, marker: Option<&str>) {
+    fn print(&self, marker_msg: Option<&str>, is_info: bool) {
         self.print_arrow();
         ansi::set_color(Color::Cyan);
         println!(
@@ -72,10 +72,25 @@ impl<'a> SpanFormat<'a> {
         println!("{}", self.line);
         self.print_bar(false);
 
-        ansi::set_color(Color::BoldRed);
-        match marker {
-            Some(message) => println!("{}{} {}", self.marker_pad, self.marker, message),
-            None => println!("{}{}", self.marker_pad, self.marker),
+        let marker_pad = " ".repeat(self.marker_pad_len);
+        if is_info {
+            ansi::set_color(Color::BoldGreen);
+            let marker = "-".repeat(self.marker_len);
+            match marker_msg {
+                Some(message) => {
+                    print!("{}{}", marker_pad, marker);
+                    ansi::set_color(Color::Green);
+                    println!(" {}", message);
+                }
+                None => println!("{}{}", marker_pad, marker),
+            }
+        } else {
+            ansi::set_color(Color::BoldRed);
+            let marker = "^".repeat(self.marker_len);
+            match marker_msg {
+                Some(message) => println!("{}{} {}", marker_pad, marker, message),
+                None => println!("{}{}", marker_pad, marker),
+            }
         }
         ansi::reset();
 

@@ -1,5 +1,5 @@
 use super::ansi::{self, Color};
-use super::check_err::CheckError;
+use super::check_err::*;
 use super::parse_err::*;
 use super::span_fmt;
 use crate::ast::ast::{Ast, SourceID};
@@ -18,18 +18,37 @@ pub fn did_error() -> bool {
     unsafe { ERR_COUNT > 0 }
 }
 
-pub fn err(ast: &Ast, error: CheckError, no_context: bool, id: SourceID, span: Span) {
+pub fn err_no_context(error: CheckError) {
     increment_err_count();
-    let error_data = error.get_data();
 
+    let error_data = error.get_data();
     ansi::set_color(Color::BoldRed);
     print!("\nerror: ");
     ansi::reset();
     println!("{}", error_data.message);
 
-    if !no_context {
-        let source = ast.files.get(id as usize).unwrap(); //@err internal?
-        span_fmt::print(source, span, None);
+    if let Some(help) = error_data.help {
+        ansi::set_color(Color::Cyan);
+        print!("help: ");
+        ansi::reset();
+        println!("{}", help);
+    }
+}
+
+pub fn err(ast: &Ast, error: &Error) {
+    increment_err_count();
+
+    let error_data = error.error.get_data();
+    ansi::set_color(Color::BoldRed);
+    print!("\nerror: ");
+    ansi::reset();
+    println!("{}", error_data.message);
+
+    let source = ast.files.get(error.source as usize).unwrap(); //@err internal?
+    span_fmt::print(source, error.span, None, false);
+
+    for info in error.info.iter() {
+        span_fmt::print(source, info.span, Some(info.marker), true)
     }
 
     if let Some(help) = error_data.help {
@@ -57,5 +76,5 @@ pub fn parse_err(ast: &Ast, id: SourceID, err: ParseError) {
             println!("`{}`", Token::as_str(*token));
         }
     }
-    span_fmt::print(source, err.got_token.span, Some("unexpected token"));
+    span_fmt::print(source, err.got_token.span, Some("unexpected token"), false);
 }

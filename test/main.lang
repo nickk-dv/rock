@@ -25,13 +25,15 @@ pub core_proc :: () -> s32 {
     return 2 + 2;
 }
 
-glob_test :: () {
 
-}
-
-glob_test :: (arg: bool, arg: ssize) {
-
-}
+glob_test :: () {}
+glob_test :: (arg: bool, arg: ssize) {}
+E :: enum {}
+E :: enum {}
+A :: struct {}
+A :: struct {}
+GLOBAL :: 2;
+GLOBAL :: 3;
 
 Geometry :: enum s32 {
 	Line = 10;

@@ -1,14 +1,38 @@
+use crate::ast::ast::SourceID;
+use crate::ast::span::Span;
+
+pub struct Error {
+    pub error: CheckError,
+    pub source: SourceID,
+    pub span: Span,
+    pub info: Vec<ErrorInfo>,
+}
+
+pub struct ErrorInfo {
+    pub source: SourceID,
+    pub span: Span,
+    pub marker: &'static str,
+}
+
+pub struct CheckErrorData {
+    pub message: &'static str,
+    pub help: Option<&'static str>,
+}
+
 #[derive(Copy, Clone)]
 pub enum CheckError {
     ParseSrcDirMissing,
     ParseLibFileMissing,
     ParseMainFileMissing,
-    ParseModRedefinition,
     ParseModBothPathsExist,
     ParseModBothPathsMissing,
     ParseModCycle,
 
     SymbolRedefinition,
+    ModRedefinition,
+    ProcRedefinition,
+    TypeRedefinition,
+    GlobalRedefinition,
     ExternalProcRedefinition,
     ProcParamRedefinition,
     EnumVariantRedefinition,
@@ -34,9 +58,15 @@ pub enum CheckError {
     ImporySymbolAlreadyImported,
 }
 
-pub struct CheckErrorData {
-    pub message: &'static str,
-    pub help: Option<&'static str>,
+impl Error {
+    pub fn new(error: CheckError, source: SourceID, span: Span) -> Self {
+        Self {
+            error,
+            source,
+            span,
+            info: Vec::new(),
+        }
+    }
 }
 
 impl CheckErrorData {
@@ -51,12 +81,15 @@ impl CheckError {
             CheckError::ParseSrcDirMissing =>          CheckErrorData::new("missing `src` directory", Some("make sure that current directory is set to the project directory before running compiler commands")),
             CheckError::ParseLibFileMissing =>         CheckErrorData::new("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
             CheckError::ParseMainFileMissing =>        CheckErrorData::new("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
-            CheckError::ParseModRedefinition =>        CheckErrorData::new("module redefinition", None),
             CheckError::ParseModBothPathsExist =>      CheckErrorData::new("both module filepaths exist", Some("only one filepath may exist:")),
             CheckError::ParseModBothPathsMissing =>    CheckErrorData::new("both module filepaths are missing", Some("at least one filepath must exist:")),
             CheckError::ParseModCycle =>               CheckErrorData::new("module definition results in a cycle", Some("module paths that form a cycle:")),
             
             CheckError::SymbolRedefinition =>          CheckErrorData::new("symbol redefinition", None),
+            CheckError::ModRedefinition =>             CheckErrorData::new("module redefinition", None),
+            CheckError::ProcRedefinition =>            CheckErrorData::new("procedure redefinition", None),
+            CheckError::TypeRedefinition =>            CheckErrorData::new("type redefinition", None),
+            CheckError::GlobalRedefinition =>          CheckErrorData::new("global variable redefinition", None),
             CheckError::ExternalProcRedefinition =>    CheckErrorData::new("external procedure with redefinition", Some("import and use one of existing procedures, redefinition will cause linker errors")),
             CheckError::ProcParamRedefinition =>       CheckErrorData::new("procedure parameter redefinition", None),
             CheckError::EnumVariantRedefinition =>     CheckErrorData::new("enum variant redefinition", None),
@@ -75,7 +108,7 @@ impl CheckError {
             CheckError::ModuleNotDeclaredInPath =>     CheckErrorData::new("module is not declared in referenced module path", None),
             CheckError::ImportFromItself =>            CheckErrorData::new("importing from itself is redundant", Some("remove this import")),
             CheckError::ImportItself =>                CheckErrorData::new("importing module into itself is redundant", Some("remove this import")),
-            CheckError::ImportWildcardExists =>        CheckErrorData::new("wildcard import from this module already exists", None),
+            CheckError::ImportWildcardExists =>        CheckErrorData::new("wildcard import of module already exists", Some("remove this import")),
             CheckError::ImportSymbolNotDefined =>      CheckErrorData::new("imported symbol is not defined in target module", None),
             CheckError::ImportSymbolIsPrivate =>       CheckErrorData::new("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
             CheckError::ImportSymbolAlreadyDefined =>  CheckErrorData::new("imported symbol is already defined", None),

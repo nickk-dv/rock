@@ -44,25 +44,13 @@ impl<'ast> Parser<'ast> {
         let mut path = PathBuf::new();
         path.push("test"); //@change to src when proper testing is possible
         if !path.is_dir() {
-            report::err(
-                &self.ast,
-                CheckError::ParseSrcDirMissing,
-                true,
-                0,
-                Span::new(0, 0),
-            );
+            report::err_no_context(CheckError::ParseSrcDirMissing);
             return Err(());
         }
 
         path.push("main.lang"); //@change lang name + consider lib / exe project type
         if !path.is_file() {
-            report::err(
-                &self.ast,
-                CheckError::ParseMainFileMissing,
-                true,
-                0,
-                Span::new(0, 0),
-            );
+            report::err_no_context(CheckError::ParseMainFileMissing);
             return Err(());
         }
 
@@ -89,10 +77,11 @@ impl<'ast> Parser<'ast> {
                     if mod_decls.contains_key(&mod_decl.name.id) {
                         report::err(
                             self.ast,
-                            CheckError::ParseModRedefinition,
-                            false,
-                            module.source,
-                            mod_decl.name.span,
+                            &Error::new(
+                                CheckError::ModRedefinition,
+                                module.source,
+                                mod_decl.name.span,
+                            ),
                         );
                         continue;
                     } else {
@@ -121,7 +110,10 @@ impl<'ast> Parser<'ast> {
                         } else {
                             CheckError::ParseModBothPathsMissing
                         };
-                        report::err(self.ast, error, false, module.source, mod_decl.name.span);
+                        report::err(
+                            self.ast,
+                            &Error::new(error, module.source, mod_decl.name.span),
+                        );
                         println!("{}", same_dir_path.to_string_lossy());
                         println!("{}", inner_dir_path.to_string_lossy());
                         continue;
@@ -154,10 +146,11 @@ impl<'ast> Parser<'ast> {
                     if found_cycle {
                         report::err(
                             self.ast,
-                            CheckError::ParseModCycle,
-                            false,
-                            module.source,
-                            mod_decl.name.span,
+                            &Error::new(
+                                CheckError::ParseModCycle,
+                                module.source,
+                                mod_decl.name.span,
+                            ),
                         );
                         for path in parent_paths.iter().rev() {
                             println!("{}", path.to_string_lossy());

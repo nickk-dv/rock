@@ -55,10 +55,10 @@ impl SymbolTable {
 
     pub fn add_mod(
         &mut self,
-        id: InternID,
         mod_decl: P<ModDecl>,
         source: SourceID,
     ) -> Result<(), (P<ModDecl>, SourceID)> {
+        let id = mod_decl.name.id;
         match self.get_mod(id) {
             Some(v) => Err(v),
             None => {
@@ -70,10 +70,10 @@ impl SymbolTable {
 
     pub fn add_proc(
         &mut self,
-        id: InternID,
         proc_decl: P<ProcDecl>,
         source: SourceID,
     ) -> Result<(), (P<ProcDecl>, SourceID)> {
+        let id = proc_decl.name.id;
         match self.get_proc(id) {
             Some(v) => Err(v),
             None => {
@@ -85,10 +85,10 @@ impl SymbolTable {
 
     pub fn add_type(
         &mut self,
-        id: InternID,
         tt: TypeSymbol,
         source: SourceID,
     ) -> Result<(), (TypeSymbol, SourceID)> {
+        let id = tt.name().id;
         match self.get_type(id) {
             Some(v) => Err(v),
             None => {
@@ -100,10 +100,10 @@ impl SymbolTable {
 
     pub fn add_global(
         &mut self,
-        id: InternID,
         global_decl: P<GlobalDecl>,
         source: SourceID,
     ) -> Result<(), (P<GlobalDecl>, SourceID)> {
+        let id = global_decl.name.id;
         match self.get_global(id) {
             Some(v) => Err(v),
             None => {
@@ -130,11 +130,10 @@ impl SymbolTable {
 }
 
 impl TypeSymbol {
-    pub fn from_enum(enum_decl: P<EnumDecl>) -> Self {
-        Self::Enum(enum_decl)
-    }
-
-    pub fn from_struct(struct_decl: P<StructDecl>) -> Self {
-        Self::Struct(struct_decl)
+    pub fn name(&self) -> Ident {
+        match self {
+            TypeSymbol::Enum(enum_decl) => enum_decl.name,
+            TypeSymbol::Struct(struct_decl) => struct_decl.name,
+        }
     }
 }

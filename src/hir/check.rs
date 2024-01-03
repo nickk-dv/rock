@@ -1,6 +1,6 @@
 use super::symbol_table::*;
 use crate::ast::{ast::*, span::Span};
-use crate::err::check_err::CheckError;
+use crate::err::check_err::*;
 use crate::mem::*;
 use std::collections::HashMap;
 
@@ -32,8 +32,8 @@ pub fn check(ast: &mut Ast) -> Result<(), ()> {
 
 struct Context<'ast> {
     ast: &'ast mut Ast,
-    errors: Vec<Error>,
     scopes: Vec<Scope>,
+    errors: Vec<CheckError>,
 }
 
 struct Scope {
@@ -49,13 +49,6 @@ struct Scope {
 struct WildcardImport {
     from_id: SourceID,
     import_span: Span,
-}
-
-struct Error {
-    error: CheckError,
-    no_context: bool,
-    source: SourceID,
-    span: Span,
 }
 
 struct ImportTask {
@@ -74,22 +67,22 @@ impl<'ast> Context<'ast> {
     fn new(ast: &'ast mut Ast) -> Self {
         Self {
             ast,
-            errors: Vec::new(),
             scopes: Vec::new(),
+            errors: Vec::new(),
         }
     }
 
     fn err(&mut self, error: CheckError) {
-        self.errors.push(Error::new_no_context(error));
+        self.errors.push(error);
     }
 
     fn report_errors(&self) -> Result<(), ()> {
         for err in self.errors.iter() {
-            crate::err::report::err(self.ast, err.error, err.no_context, err.source, err.span);
+            crate::err::report::err_no_context(*err);
         }
         for scope in self.scopes.iter() {
             for err in scope.errors.iter() {
-                crate::err::report::err(self.ast, err.error, err.no_context, err.source, err.span);
+                crate::err::report::err(self.ast, err);
             }
         }
         if crate::err::report::did_error() {
@@ -130,10 +123,49 @@ impl<'ast> Context<'ast> {
         for decl in scope.module.decls.iter() {
             if let Some(name) = decl.get_name() {
                 if let Some(existing) = scope.get_declared(name.id) {
-                    scope.err(CheckError::SymbolRedefinition, name.span);
+                    //scope.err(CheckError::SymbolRedefinition, name.span);
                 } else {
                     scope.declared_symbols.insert(name.id, decl);
                 }
+            }
+            match decl {
+                Decl::Mod(mod_decl) => {
+                    if let Err(existing) = scope.symbols.add_mod(mod_decl, scope.id()) {
+                        scope.err(CheckError::ModRedefinition, mod_decl.name.span);
+                        scope.err_info(existing.0.name.span, "already defined here");
+                    }
+                }
+                Decl::Proc(proc_decl) => {
+                    if let Err(existing) = scope.symbols.add_proc(proc_decl, scope.id()) {
+                        scope.err(CheckError::ProcRedefinition, proc_decl.name.span);
+                        scope.err_info(existing.0.name.span, "already defined here");
+                    }
+                }
+                Decl::Enum(enum_decl) => {
+                    if let Err(existing) = scope
+                        .symbols
+                        .add_type(TypeSymbol::Enum(enum_decl), scope.id())
+                    {
+                        scope.err(CheckError::TypeRedefinition, enum_decl.name.span);
+                        scope.err_info(existing.0.name().span, "already defined here");
+                    }
+                }
+                Decl::Struct(struct_decl) => {
+                    if let Err(existing) = scope
+                        .symbols
+                        .add_type(TypeSymbol::Struct(struct_decl), scope.id())
+                    {
+                        scope.err(CheckError::TypeRedefinition, struct_decl.name.span);
+                        scope.err_info(existing.0.name().span, "already defined here");
+                    }
+                }
+                Decl::Global(global_decl) => {
+                    if let Err(existing) = scope.symbols.add_global(global_decl, scope.id()) {
+                        scope.err(CheckError::GlobalRedefinition, global_decl.name.span);
+                        scope.err_info(existing.0.name.span, "already defined here");
+                    }
+                }
+                Decl::Import(..) => {}
             }
         }
     }
@@ -193,6 +225,7 @@ impl<'ast> Context<'ast> {
                     for param in proc_decl.params.iter() {
                         if let Some(existing) = name_set.get(&param.name.id) {
                             scope.err(CheckError::ProcParamRedefinition, param.name.span);
+                            scope.err_info(existing.span, "already defined here");
                         } else {
                             name_set.insert(param.name.id, param.name);
                         }
@@ -203,6 +236,7 @@ impl<'ast> Context<'ast> {
                     for variant in enum_decl.variants.iter() {
                         if let Some(existing) = name_set.get(&variant.name.id) {
                             scope.err(CheckError::EnumVariantRedefinition, variant.name.span);
+                            scope.err_info(existing.span, "already defined here");
                         } else {
                             name_set.insert(variant.name.id, variant.name);
                         }
@@ -213,6 +247,7 @@ impl<'ast> Context<'ast> {
                     for field in struct_decl.fields.iter() {
                         if let Some(existing) = name_set.get(&field.name.id) {
                             scope.err(CheckError::StructFieldRedefinition, field.name.span);
+                            scope.err_info(existing.span, "already defined here");
                         } else {
                             name_set.insert(field.name.id, field.name);
                         }
@@ -337,8 +372,7 @@ impl<'ast> Context<'ast> {
                         match duplicate {
                             Some(existing) => {
                                 scope.err(CheckError::ImportWildcardExists, task.import.span);
-                                //@context spans not supported yet, emitting 2nd err for context
-                                scope.err(CheckError::ImportWildcardExists, existing.import_span);
+                                scope.err_info(existing.import_span, "existing import");
                             }
                             None => {
                                 scope.wildcard_imports.push(WildcardImport {
@@ -426,6 +460,10 @@ impl Scope {
         }
     }
 
+    fn id(&self) -> SourceID {
+        self.module.source
+    }
+
     fn get_declared(&self, id: InternID) -> Option<Decl> {
         match self.declared_symbols.get(&id) {
             Some(decl) => Some(*decl),
@@ -441,8 +479,18 @@ impl Scope {
     }
 
     fn err(&mut self, error: CheckError, span: Span) {
-        self.errors
-            .push(Error::new(error, self.module.source, span));
+        self.errors.push(Error::new(error, self.id(), span));
+    }
+
+    fn err_info(&mut self, span: Span, marker: &'static str) {
+        let info = ErrorInfo {
+            source: self.id(),
+            span,
+            marker,
+        };
+        unsafe {
+            self.errors.last_mut().unwrap_unchecked().info.push(info);
+        }
     }
 
     fn find_declared_proc(&self, id: InternID) -> Option<P<ProcDecl>> {
@@ -470,26 +518,6 @@ impl Scope {
         }
         //@todo also find in ::* imports
         // and report if conflit exists?
-    }
-}
-
-impl Error {
-    pub fn new(error: CheckError, source: SourceID, span: Span) -> Self {
-        Self {
-            error,
-            no_context: false,
-            source,
-            span,
-        }
-    }
-
-    pub fn new_no_context(error: CheckError) -> Self {
-        Self {
-            error,
-            no_context: true,
-            source: 0,
-            span: Span::new(1, 1),
-        }
     }
 }
 
