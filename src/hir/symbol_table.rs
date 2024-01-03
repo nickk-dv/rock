@@ -3,252 +3,124 @@ use crate::mem::{InternID, P};
 use std::collections::HashMap;
 
 pub struct SymbolTable {
-    mods: HashMap<InternID, (P<ModDecl>, SourceID)>,
-    procs: HashMap<InternID, (P<ProcDecl>, SourceID)>,
-    types: HashMap<InternID, (TypeSymbol, SourceID)>,
-    globals: HashMap<InternID, (P<GlobalDecl>, SourceID)>,
+    table: HashMap<InternID, Symbol>,
+}
+
+#[derive(Copy, Clone)]
+pub enum Symbol {
+    Mod((P<ModDecl>, SourceID)),
+    Proc((P<ProcDecl>, SourceID)),
+    Enum((P<EnumDecl>, SourceID)),
+    Struct((P<StructDecl>, SourceID)),
+    Global((P<GlobalDecl>, SourceID)),
 }
 
 #[derive(Copy, Clone)]
 pub enum TypeSymbol {
-    Enum(P<EnumDecl>),
-    Struct(P<StructDecl>),
-}
-
-pub enum Symbol {
-    Mod((P<ModDecl>, SourceID)),
-    Proc((P<ProcDecl>, SourceID)),
-    Type((TypeSymbol, SourceID)),
-    Global((P<GlobalDecl>, SourceID)),
+    Enum((P<EnumDecl>, SourceID)),
+    Struct((P<StructDecl>, SourceID)),
 }
 
 impl SymbolTable {
     pub fn new() -> Self {
         Self {
-            mods: HashMap::new(),
-            procs: HashMap::new(),
-            types: HashMap::new(),
-            globals: HashMap::new(),
+            table: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, symbol: Symbol) -> Result<(), Symbol> {
+        let id = symbol.name().id;
+        match self.get(id) {
+            Some(v) => Err(v),
+            None => {
+                self.table.insert(id, symbol);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn get(&self, id: InternID) -> Option<Symbol> {
+        match self.table.get(&id) {
+            Some(v) => Some(*v),
+            None => None,
         }
     }
 
     pub fn get_mod(&self, id: InternID) -> Option<(P<ModDecl>, SourceID)> {
-        match self.mods.get(&id) {
-            Some(v) => Some(*v),
-            None => None,
+        match self.table.get(&id) {
+            Some(Symbol::Mod(v)) => Some(*v),
+            _ => None,
         }
     }
 
     pub fn get_proc(&self, id: InternID) -> Option<(P<ProcDecl>, SourceID)> {
-        match self.procs.get(&id) {
-            Some(v) => Some(*v),
-            None => None,
+        match self.table.get(&id) {
+            Some(Symbol::Proc(v)) => Some(*v),
+            _ => None,
         }
     }
 
-    pub fn get_type(&self, id: InternID) -> Option<(TypeSymbol, SourceID)> {
-        match self.types.get(&id) {
-            Some(v) => Some(*v),
-            None => None,
+    pub fn get_type(&self, id: InternID) -> Option<TypeSymbol> {
+        match self.table.get(&id) {
+            Some(Symbol::Enum(v)) => Some(TypeSymbol::Enum(*v)),
+            Some(Symbol::Struct(v)) => Some(TypeSymbol::Struct(*v)),
+            _ => None,
         }
     }
 
     pub fn get_global(&self, id: InternID) -> Option<(P<GlobalDecl>, SourceID)> {
-        match self.globals.get(&id) {
-            Some(v) => Some(*v),
-            None => None,
+        match self.table.get(&id) {
+            Some(Symbol::Global(v)) => Some(*v),
+            _ => None,
+        }
+    }
+}
+
+impl Symbol {
+    pub fn from_decl(decl: Decl, source_id: SourceID) -> Option<Self> {
+        match decl {
+            Decl::Mod(mod_decl) => Some(Symbol::Mod((mod_decl, source_id))),
+            Decl::Proc(proc_decl) => Some(Symbol::Proc((proc_decl, source_id))),
+            Decl::Enum(enum_decl) => Some(Symbol::Enum((enum_decl, source_id))),
+            Decl::Struct(struct_decl) => Some(Symbol::Struct((struct_decl, source_id))),
+            Decl::Global(global_decl) => Some(Symbol::Global((global_decl, source_id))),
+            Decl::Import(..) => None,
         }
     }
 
-    pub fn add_mod(
-        &mut self,
-        mod_decl: P<ModDecl>,
-        source: SourceID,
-    ) -> Result<(), (P<ModDecl>, SourceID)> {
-        let id = mod_decl.name.id;
-        match self.get_mod(id) {
-            Some(v) => Err(v),
-            None => {
-                self.mods.insert(id, (mod_decl, source));
-                Ok(())
-            }
+    pub fn name(&self) -> Ident {
+        match self {
+            Symbol::Mod(mod_decl) => mod_decl.0.name,
+            Symbol::Proc(proc_decl) => proc_decl.0.name,
+            Symbol::Enum(enum_decl) => enum_decl.0.name,
+            Symbol::Struct(struct_decl) => struct_decl.0.name,
+            Symbol::Global(global_decl) => global_decl.0.name,
         }
     }
 
-    pub fn add_proc(
-        &mut self,
-        proc_decl: P<ProcDecl>,
-        source: SourceID,
-    ) -> Result<(), (P<ProcDecl>, SourceID)> {
-        let id = proc_decl.name.id;
-        match self.get_proc(id) {
-            Some(v) => Err(v),
-            None => {
-                self.procs.insert(id, (proc_decl, source));
-                Ok(())
-            }
+    pub fn visibility(&self) -> Visibility {
+        match self {
+            Symbol::Mod(mod_decl) => mod_decl.0.visibility,
+            Symbol::Proc(proc_decl) => proc_decl.0.visibility,
+            Symbol::Enum(enum_decl) => enum_decl.0.visibility,
+            Symbol::Struct(struct_decl) => struct_decl.0.visibility,
+            Symbol::Global(global_decl) => global_decl.0.visibility,
         }
-    }
-
-    pub fn add_type(
-        &mut self,
-        tt: TypeSymbol,
-        source: SourceID,
-    ) -> Result<(), (TypeSymbol, SourceID)> {
-        let id = tt.name().id;
-        match self.get_type(id) {
-            Some(v) => Err(v),
-            None => {
-                self.types.insert(id, (tt, source));
-                Ok(())
-            }
-        }
-    }
-
-    pub fn add_global(
-        &mut self,
-        global_decl: P<GlobalDecl>,
-        source: SourceID,
-    ) -> Result<(), (P<GlobalDecl>, SourceID)> {
-        let id = global_decl.name.id;
-        match self.get_global(id) {
-            Some(v) => Err(v),
-            None => {
-                self.globals.insert(id, (global_decl, source));
-                Ok(())
-            }
-        }
-    }
-
-    pub fn get_conflit(&self, symbol: &Symbol) -> Option<Symbol> {
-        match symbol {
-            Symbol::Mod(mod_decl) => {
-                if let Some(existing) = self.get_mod(mod_decl.0.name.id) {
-                    Some(Symbol::Mod(existing))
-                } else {
-                    None
-                }
-            }
-            Symbol::Proc(proc_decl) => {
-                if let Some(existing) = self.get_proc(proc_decl.0.name.id) {
-                    Some(Symbol::Proc(existing))
-                } else {
-                    None
-                }
-            }
-            Symbol::Type(type_decl) => {
-                if let Some(existing) = self.get_type(type_decl.0.name().id) {
-                    Some(Symbol::Type(existing))
-                } else {
-                    None
-                }
-            }
-            Symbol::Global(global_decl) => {
-                if let Some(existing) = self.get_global(global_decl.0.name.id) {
-                    Some(Symbol::Global(existing))
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
-    pub fn get_public_unique(&self, id: InternID) -> Result<Option<Symbol>, Vec<Symbol>> {
-        let mut unique = None;
-        let mut conflits = Vec::new();
-
-        if let Some(mod_decl) = self.get_mod(id) {
-            if mod_decl.0.visibility == Visibility::Public {
-                let symbol = Symbol::Mod(mod_decl);
-                unique = Some(symbol);
-            }
-        }
-        if let Some(proc_decl) = self.get_proc(id) {
-            if proc_decl.0.visibility == Visibility::Public {
-                let symbol = Symbol::Proc(proc_decl);
-                match unique {
-                    Some(..) => conflits.push(symbol),
-                    None => unique = Some(symbol),
-                }
-            }
-        }
-        if let Some(type_decl) = self.get_type(id) {
-            if type_decl.0.visibility() == Visibility::Public {
-                let symbol = Symbol::Type(type_decl);
-                match unique {
-                    Some(..) => conflits.push(symbol),
-                    None => unique = Some(symbol),
-                }
-            }
-        }
-        if let Some(global_decl) = self.get_global(id) {
-            if global_decl.0.visibility == Visibility::Public {
-                let symbol = Symbol::Global(global_decl);
-                match unique {
-                    Some(..) => conflits.push(symbol),
-                    None => unique = Some(symbol),
-                }
-            }
-        }
-        if conflits.is_empty() {
-            Ok(unique)
-        } else {
-            if let Some(symbol) = unique {
-                conflits.push(symbol);
-            }
-            Err(conflits)
-        }
-    }
-
-    pub fn get_all_private(&self, id: InternID) -> Vec<Symbol> {
-        let mut private_symbols = Vec::new();
-        if let Some(mod_decl) = self.get_mod(id) {
-            if mod_decl.0.visibility == Visibility::Private {
-                private_symbols.push(Symbol::Mod(mod_decl));
-            }
-        }
-        if let Some(proc_decl) = self.get_proc(id) {
-            if proc_decl.0.visibility == Visibility::Public {
-                private_symbols.push(Symbol::Proc(proc_decl));
-            }
-        }
-        if let Some(type_decl) = self.get_type(id) {
-            if type_decl.0.visibility() == Visibility::Public {
-                private_symbols.push(Symbol::Type(type_decl));
-            }
-        }
-        if let Some(global_decl) = self.get_global(id) {
-            if global_decl.0.visibility == Visibility::Public {
-                private_symbols.push(Symbol::Global(global_decl));
-            }
-        }
-        private_symbols
     }
 }
 
 impl TypeSymbol {
     pub fn name(&self) -> Ident {
         match self {
-            TypeSymbol::Enum(enum_decl) => enum_decl.name,
-            TypeSymbol::Struct(struct_decl) => struct_decl.name,
+            TypeSymbol::Enum(enum_decl) => enum_decl.0.name,
+            TypeSymbol::Struct(struct_decl) => struct_decl.0.name,
         }
     }
 
     pub fn visibility(&self) -> Visibility {
         match self {
-            TypeSymbol::Enum(enum_decl) => enum_decl.visibility,
-            TypeSymbol::Struct(struct_decl) => struct_decl.visibility,
-        }
-    }
-}
-
-impl Symbol {
-    pub fn name(&self) -> Ident {
-        match self {
-            Symbol::Mod(mod_decl) => mod_decl.0.name,
-            Symbol::Proc(proc_decl) => proc_decl.0.name,
-            Symbol::Type(type_decl) => type_decl.0.name(),
-            Symbol::Global(global_decl) => global_decl.0.name,
+            TypeSymbol::Enum(enum_decl) => enum_decl.0.visibility,
+            TypeSymbol::Struct(struct_decl) => struct_decl.0.visibility,
         }
     }
 }

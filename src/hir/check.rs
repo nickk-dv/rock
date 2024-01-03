@@ -1,5 +1,6 @@
+use super::scope::*;
 use super::symbol_table::*;
-use crate::ast::{ast::*, span::Span};
+use crate::ast::ast::*;
 use crate::err::check_err::*;
 use crate::mem::*;
 use std::collections::HashMap;
@@ -34,20 +35,6 @@ struct Context<'ast> {
     ast: &'ast mut Ast,
     scopes: Vec<Scope>,
     errors: Vec<CheckError>,
-}
-
-struct Scope {
-    module: P<Module>,
-    errors: Vec<Error>,
-    declared: SymbolTable,
-    imported: SymbolTable,
-    wildcards: Vec<WildcardImport>,
-}
-
-#[derive(Copy, Clone)]
-struct WildcardImport {
-    from_id: SourceID,
-    import_span: Span,
 }
 
 struct ImportTask {
@@ -118,40 +105,11 @@ impl<'ast> Context<'ast> {
     fn pass_1_process_declarations(&mut self) {
         for scope in self.scopes.iter_mut() {
             for decl in scope.module.decls.iter() {
-                match decl {
-                    Decl::Mod(mod_decl) => {
-                        if let Err(existing) = scope.declared.add_mod(mod_decl, scope.id()) {
-                            scope.err(CheckError::ModRedefinition, mod_decl.name.span);
-                            scope.err_info(existing.0.name.span, "already defined here");
-                        }
+                if let Some(symbol) = Symbol::from_decl(decl, scope.id()) {
+                    if let Err(existing) = scope.declared.add(symbol) {
+                        scope.err(CheckError::SymbolRedefinition, symbol.name().span);
+                        scope.err_info(existing.name().span, "already defined here");
                     }
-                    Decl::Proc(proc_decl) => {
-                        if let Err(existing) = scope.declared.add_proc(proc_decl, scope.id()) {
-                            scope.err(CheckError::ProcRedefinition, proc_decl.name.span);
-                            scope.err_info(existing.0.name.span, "already defined here");
-                        }
-                    }
-                    Decl::Enum(enum_decl) => {
-                        let tt = TypeSymbol::Enum(enum_decl);
-                        if let Err(existing) = scope.declared.add_type(tt, scope.id()) {
-                            scope.err(CheckError::TypeRedefinition, enum_decl.name.span);
-                            scope.err_info(existing.0.name().span, "already defined here");
-                        }
-                    }
-                    Decl::Struct(struct_decl) => {
-                        let tt = TypeSymbol::Struct(struct_decl);
-                        if let Err(existing) = scope.declared.add_type(tt, scope.id()) {
-                            scope.err(CheckError::TypeRedefinition, struct_decl.name.span);
-                            scope.err_info(existing.0.name().span, "already defined here");
-                        }
-                    }
-                    Decl::Global(global_decl) => {
-                        if let Err(existing) = scope.declared.add_global(global_decl, scope.id()) {
-                            scope.err(CheckError::GlobalRedefinition, global_decl.name.span);
-                            scope.err_info(existing.0.name.span, "already defined here");
-                        }
-                    }
-                    Decl::Import(..) => {}
                 }
             }
         }
@@ -303,22 +261,18 @@ impl<'ast> Context<'ast> {
             return;
         }
 
-        let mut from_id = 0;
-
-        if task.import.module_access.modifier == ModuleAccessModifier::None {
-            let first_name = task.import.module_access.names.first().unwrap();
-            //@mod publicity not considered (fine for same package access)
-            //@origin might conflit with any wilcard imported / imported module
-            if let Some(mod_decl) = self.get_scope(scope_id).declared.get_mod(first_name.id) {
-                from_id = mod_decl.0.source;
-            } else {
-                task.status = ImportTaskStatus::SourceNotFound;
-                return;
+        let mut from_id = match task.import.module_access.modifier {
+            ModuleAccessModifier::None => {
+                //@mod publicity not considered (fine for same package access)
+                // find and check conflits in declared / import / wildcards instead of just declared
+                let first_name = task.import.module_access.names.first().unwrap();
+                if let Some(mod_decl) = self.get_scope(scope_id).declared.get_mod(first_name.id) {
+                    mod_decl.0.source
+                } else {
+                    task.status = ImportTaskStatus::SourceNotFound;
+                    return;
+                }
             }
-        }
-
-        from_id = match task.import.module_access.modifier {
-            ModuleAccessModifier::None => from_id,
             ModuleAccessModifier::Super => self.get_scope(scope_id).module.parent.unwrap().source,
             ModuleAccessModifier::Package => 0,
         };
@@ -331,9 +285,7 @@ impl<'ast> Context<'ast> {
                 skip_first = false;
                 continue;
             }
-
             //@mod publicity not considered (fine for same package access)
-            //@non first modules taken from declared table without any possible conflits
             match self.get_scope(from_id).declared.get_mod(name.id) {
                 Some(mod_decl) => from_id = mod_decl.0.source,
                 None => {
@@ -353,11 +305,11 @@ impl<'ast> Context<'ast> {
         match task.import.target {
             ImportTarget::AllSymbols => {
                 let scope = self.get_scope_mut(scope_id);
-                let mut duplicate: Option<WildcardImport> = None;
+                let mut duplicate = None;
                 for wildcard in scope.wildcards.iter() {
                     if wildcard.from_id == from_id {
                         duplicate = Some(*wildcard);
-                        continue;
+                        break;
                     }
                 }
                 match duplicate {
@@ -388,138 +340,33 @@ impl<'ast> Context<'ast> {
         //symbol being imported must be public + uniquely defined in source module, else its ambiguous
         //conflit might arise from symbol thats already defined or imported or wilcard public declared from same group
 
-        let from_scope = self.get_scope(from_id);
-        let symbol = match from_scope.declared.get_public_unique(name.id) {
-            Ok(symbol_option) => match symbol_option {
-                Some(symbol) => symbol,
-                None => {
-                    let all_private = from_scope.declared.get_all_private(name.id);
-                    let scope = self.get_scope_mut(scope_id);
-                    scope.err(CheckError::ImportPublicSymbolNotFound, name.span);
-                    for private in all_private.iter() {
-                        scope.err_info_external(
-                            private.name().span,
-                            from_id,
-                            "found this private symbol",
-                        );
+        match self.get_scope(from_id).declared.get(name.id) {
+            None => {
+                let scope = self.get_scope_mut(scope_id);
+                scope.err(CheckError::ImportSymbolNotDefined, name.span);
+            }
+            Some(symbol) => {
+                let scope = self.get_scope_mut(scope_id);
+                if let Symbol::Mod(mod_decl) = symbol {
+                    if mod_decl.0.source == scope_id {
+                        scope.err(CheckError::ImportItself, name.span);
+                        return;
                     }
+                }
+                if symbol.visibility() == Visibility::Private {
+                    scope.err(CheckError::ImportSymbolIsPrivate, name.span);
+                    scope.err_info_external(symbol.name().span, from_id, "this private symbol");
                     return;
                 }
-            },
-            Err(conflits) => {
-                let scope = self.get_scope_mut(scope_id);
-                scope.err(CheckError::ImportPublicSymbolsConflit, name.span);
-                for conflit in conflits.iter() {
-                    scope.err_info_external(conflit.name().span, from_id, "confliting symbol");
+                if let Some(existing) = scope.declared.get(name.id) {
+                    scope.err(CheckError::ImportSymbolAlreadyDefined, name.span);
+                    scope.err_info(existing.name().span, "already defined here");
+                    return;
                 }
-                return;
+                if let Err(existing) = scope.imported.add(symbol) {
+                    scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
+                }
             }
-        };
-
-        let scope = self.get_scope_mut(scope_id);
-        if let Some(conflit) = scope.declared.get_conflit(&symbol) {
-            scope.err(CheckError::ImportSymbolAlreadyDefined, name.span);
-            scope.err_info(conflit.name().span, "already defined here");
-        }
-        if let Some(conflit) = scope.imported.get_conflit(&symbol) {
-            scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
-            scope.err_info(conflit.name().span, "already imported here");
-        }
-
-        //match self.get_scope(from_id).get_declared(symbol.id) {
-        //    None => {
-        //        let scope = self.get_scope_mut(scope_id);
-        //        scope.err(CheckError::ImportSymbolNotDefined, symbol.span);
-        //    }
-        //    Some(decl) => {
-        //        let scope = self.get_scope_mut(scope_id);
-
-        //        if let Decl::Mod(mod_decl) = decl {
-        //            if mod_decl.source == scope_id {
-        //                scope.err(CheckError::ImportItself, symbol.span);
-        //                return;
-        //            }
-        //        }
-        //        if decl.is_private() {
-        //            scope.err(CheckError::ImportSymbolIsPrivate, symbol.span);
-        //            return;
-        //        }
-        //        if let Some(existing) = scope.get_declared(symbol.id) {
-        //            scope.err(CheckError::ImportSymbolAlreadyDefined, symbol.span);
-        //            return;
-        //        }
-        //        if let Some(existing) = scope.get_imported(symbol.id) {
-        //            scope.err(CheckError::ImporySymbolAlreadyImported, symbol.span);
-        //            return;
-        //        }
-        //        scope.imported_symbols.insert(symbol.id, decl);
-        //    }
-    }
-}
-
-impl Scope {
-    fn new(module: P<Module>) -> Self {
-        Self {
-            module,
-            errors: Vec::new(),
-            declared: SymbolTable::new(),
-            imported: SymbolTable::new(),
-            wildcards: Vec::new(),
-        }
-    }
-
-    fn id(&self) -> SourceID {
-        self.module.source
-    }
-
-    fn err(&mut self, error: CheckError, span: Span) {
-        self.errors.push(Error::new(error, self.id(), span));
-    }
-
-    fn err_info(&mut self, span: Span, marker: &'static str) {
-        let info = ErrorInfo {
-            source: self.id(),
-            span,
-            marker,
-        };
-        unsafe {
-            self.errors.last_mut().unwrap_unchecked().info.push(info);
-        }
-    }
-
-    fn err_info_external(&mut self, span: Span, source: SourceID, marker: &'static str) {
-        let info = ErrorInfo {
-            source,
-            span,
-            marker,
-        };
-        unsafe {
-            self.errors.last_mut().unwrap_unchecked().info.push(info);
-        }
-    }
-}
-
-impl Decl {
-    fn get_name(&self) -> Option<Ident> {
-        match self {
-            Decl::Mod(mod_decl) => Some(mod_decl.name),
-            Decl::Proc(proc_decl) => Some(proc_decl.name),
-            Decl::Enum(enum_decl) => Some(enum_decl.name),
-            Decl::Struct(struct_decl) => Some(struct_decl.name),
-            Decl::Global(global_decl) => Some(global_decl.name),
-            _ => None,
-        }
-    }
-
-    fn is_private(&self) -> bool {
-        // @mod decls always return false, this is valid for same package, but not for dependencies
-        match self {
-            Decl::Mod(..) => false,
-            Decl::Proc(proc_decl) => proc_decl.visibility == Visibility::Private,
-            Decl::Enum(enum_decl) => enum_decl.visibility == Visibility::Private,
-            Decl::Struct(struct_decl) => struct_decl.visibility == Visibility::Private,
-            Decl::Global(global_decl) => global_decl.visibility == Visibility::Private,
-            Decl::Import(..) => false,
         }
     }
 }

@@ -28,12 +28,8 @@ pub enum CheckError {
     ParseModBothPathsMissing,
     ParseModCycle,
 
-    SymbolRedefinition,
     ModRedefinition,
-    ProcRedefinition,
-    TypeRedefinition,
-    GlobalRedefinition,
-    ExternalProcRedefinition,
+    SymbolRedefinition,
     ProcParamRedefinition,
     EnumVariantRedefinition,
     StructFieldRedefinition,
@@ -56,8 +52,6 @@ pub enum CheckError {
     ImportSymbolIsPrivate,
     ImportSymbolAlreadyDefined,
     ImporySymbolAlreadyImported,
-    ImportPublicSymbolNotFound,
-    ImportPublicSymbolsConflit,
 }
 
 impl Error {
@@ -87,12 +81,8 @@ impl CheckError {
             CheckError::ParseModBothPathsMissing =>    CheckErrorData::new("both module filepaths are missing", Some("at least one filepath must exist:")),
             CheckError::ParseModCycle =>               CheckErrorData::new("module definition results in a cycle", Some("module paths that form a cycle:")),
             
-            CheckError::SymbolRedefinition =>          CheckErrorData::new("symbol redefinition", None),
             CheckError::ModRedefinition =>             CheckErrorData::new("module redefinition", None),
-            CheckError::ProcRedefinition =>            CheckErrorData::new("procedure redefinition", None),
-            CheckError::TypeRedefinition =>            CheckErrorData::new("type redefinition", None),
-            CheckError::GlobalRedefinition =>          CheckErrorData::new("global variable redefinition", None),
-            CheckError::ExternalProcRedefinition =>    CheckErrorData::new("external procedure with redefinition", Some("import and use one of existing procedures, redefinition will cause linker errors")),
+            CheckError::SymbolRedefinition =>          CheckErrorData::new("symbol redefinition", None),
             CheckError::ProcParamRedefinition =>       CheckErrorData::new("procedure parameter redefinition", None),
             CheckError::EnumVariantRedefinition =>     CheckErrorData::new("enum variant redefinition", None),
             CheckError::StructFieldRedefinition =>     CheckErrorData::new("struct field redefinition", None),
@@ -114,10 +104,7 @@ impl CheckError {
             CheckError::ImportSymbolNotDefined =>      CheckErrorData::new("imported symbol is not defined in target module", None),
             CheckError::ImportSymbolIsPrivate =>       CheckErrorData::new("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
             CheckError::ImportSymbolAlreadyDefined =>  CheckErrorData::new("imported symbol is already defined", None),
-            CheckError::ImporySymbolAlreadyImported => CheckErrorData::new("imported symbol is already imported", None),
-
-            CheckError::ImportPublicSymbolNotFound =>  CheckErrorData::new("no public symbols are found", None),
-            CheckError::ImportPublicSymbolsConflit =>  CheckErrorData::new("confliting public symbols are found", None),
+            CheckError::ImporySymbolAlreadyImported => CheckErrorData::new("imported symbol is already imported", Some("remove this symbol import")),
         }
     }
 }
