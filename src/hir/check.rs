@@ -5,6 +5,20 @@ use std::collections::HashMap;
 
 //@note external proc uniqueness check will be delayed to after hir creation
 
+//@note resolve symbol based on 4 classes: Mod / Proc / Type / GlobalVar
+// one unique symbol per that class must exist in scope
+// meaning: declared, imported and public wilcard imported symbols
+
+//@note query for GlobalVar in scope to prevent local vars shadowing them
+
+/*
+@design ideas testing:
+- have per symbol kind tables in scope
+: issue: how will importing symbols work then?
+: solution: find symbol in each table, report if its ambiguous
+- need separate imported tables to carry the source information to be able to know the source
+*/
+
 pub fn check(ast: &mut Ast) -> Result<(), ()> {
     let mut context = Context::new(ast);
     context.pass_0_create_scopes();
@@ -24,8 +38,15 @@ struct Context<'ast> {
 struct Scope {
     module: P<Module>,
     errors: Vec<Error>,
+    wildcard_imports: Vec<WildcardImport>,
     declared_symbols: HashMap<InternID, Decl>,
     imported_symbols: HashMap<InternID, Decl>,
+}
+
+#[derive(Copy, Clone)]
+struct WildcardImport {
+    from_id: SourceID,
+    import_span: Span,
 }
 
 struct Error {
@@ -303,8 +324,27 @@ impl<'ast> Context<'ast> {
 
                 match task.import.target {
                     ImportTarget::AllSymbols => {
-                        //@decide how are ::* stored
-                        // Vec of SourceID can be used to store all wildcard imports
+                        let scope = self.get_scope_mut(scope_id);
+                        let mut duplicate: Option<WildcardImport> = None;
+                        for wildcard in scope.wildcard_imports.iter() {
+                            if wildcard.from_id == from_id {
+                                duplicate = Some(*wildcard);
+                                continue;
+                            }
+                        }
+                        match duplicate {
+                            Some(existing) => {
+                                scope.err(CheckError::ImportWildcardExists, task.import.span);
+                                //@context spans not supported yet, emitting 2nd err for context
+                                scope.err(CheckError::ImportWildcardExists, existing.import_span);
+                            }
+                            None => {
+                                scope.wildcard_imports.push(WildcardImport {
+                                    from_id,
+                                    import_span: task.import.span,
+                                });
+                            }
+                        }
                     }
                     ImportTarget::Module(symbol) => {
                         self.scope_import_a_symbol(symbol, scope_id, from_id);
@@ -377,6 +417,7 @@ impl Scope {
         Self {
             module,
             errors: Vec::new(),
+            wildcard_imports: Vec::new(),
             declared_symbols: HashMap::new(),
             imported_symbols: HashMap::new(),
         }
@@ -464,7 +505,7 @@ impl Decl {
     fn is_private(&self) -> bool {
         // @mod decls always return false, this is valid for same package, but not for dependencies
         match self {
-            Decl::Mod(mod_decl) => false,
+            Decl::Mod(..) => false,
             Decl::Proc(proc_decl) => proc_decl.visibility == Visibility::Private,
             Decl::Enum(enum_decl) => enum_decl.visibility == Visibility::Private,
             Decl::Struct(struct_decl) => struct_decl.visibility == Visibility::Private,

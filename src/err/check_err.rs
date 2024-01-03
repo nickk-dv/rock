@@ -27,6 +27,7 @@ pub enum CheckError {
     ModuleNotDeclaredInPath,
     ImportFromItself,
     ImportItself,
+    ImportWildcardExists,
     ImportSymbolNotDefined,
     ImportSymbolIsPrivate,
     ImportSymbolAlreadyDefined,
@@ -72,12 +73,13 @@ impl CheckError {
             CheckError::ModuleIsPrivate =>             CheckErrorData::new("module is private", None),
             CheckError::ModuleNotFoundInScope =>       CheckErrorData::new("module is not found in this scope", None),
             CheckError::ModuleNotDeclaredInPath =>     CheckErrorData::new("module is not declared in referenced module path", None),
-            CheckError::ImportFromItself =>            CheckErrorData::new("unnecessary import from itself", Some("remove this import declaration")),
-            CheckError::ImportItself =>                CheckErrorData::new("cannot import module into itself", Some("remove this import declaration")),
+            CheckError::ImportFromItself =>            CheckErrorData::new("importing from itself is redundant", Some("remove this import")),
+            CheckError::ImportItself =>                CheckErrorData::new("importing module into itself is redundant", Some("remove this import")),
+            CheckError::ImportWildcardExists =>        CheckErrorData::new("wildcard import from this module already exists", None),
             CheckError::ImportSymbolNotDefined =>      CheckErrorData::new("imported symbol is not defined in target module", None),
             CheckError::ImportSymbolIsPrivate =>       CheckErrorData::new("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
             CheckError::ImportSymbolAlreadyDefined =>  CheckErrorData::new("imported symbol is already defined", None),
-            CheckError::ImporySymbolAlreadyImported => CheckErrorData::new("imported symbol was already imported", None),
+            CheckError::ImporySymbolAlreadyImported => CheckErrorData::new("imported symbol is already imported", None),
         }
     }
 }

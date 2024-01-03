@@ -12,6 +12,9 @@ import package::core::core_proc;
 import package::core::func;
 import package::core::func;
 
+import core::*;
+import package::core::*;
+
 auto_cast_test :: () {
 	var :u32 = 0;
 	var2 :s64 = 0;
