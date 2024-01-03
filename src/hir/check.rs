@@ -1,3 +1,4 @@
+use super::symbol_table::*;
 use crate::ast::{ast::*, span::Span};
 use crate::err::check_err::CheckError;
 use crate::mem::*;
@@ -41,6 +42,7 @@ struct Scope {
     wildcard_imports: Vec<WildcardImport>,
     declared_symbols: HashMap<InternID, Decl>,
     imported_symbols: HashMap<InternID, Decl>,
+    symbols: SymbolTable,
 }
 
 #[derive(Copy, Clone)]
@@ -420,6 +422,7 @@ impl Scope {
             wildcard_imports: Vec::new(),
             declared_symbols: HashMap::new(),
             imported_symbols: HashMap::new(),
+            symbols: SymbolTable::new(),
         }
     }
 
