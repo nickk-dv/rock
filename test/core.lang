@@ -9,6 +9,9 @@ pub func :: () -> s32 {
     return 5;
 }
 
+pub func :: struct {}
+pub func :: 2;
+
 PrivateDefined :: struct {
 
 }

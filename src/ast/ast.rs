@@ -182,7 +182,7 @@ pub struct ImportDecl {
 #[derive(Copy, Clone)]
 pub enum ImportTarget {
     AllSymbols,
-    Module(Ident),
+    Symbol(Ident),
     SymbolList(List<Ident>),
 }
 

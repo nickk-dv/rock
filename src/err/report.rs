@@ -48,7 +48,8 @@ pub fn err(ast: &Ast, error: &Error) {
     span_fmt::print(source, error.span, None, false);
 
     for info in error.info.iter() {
-        span_fmt::print(source, info.span, Some(info.marker), true)
+        let info_source = ast.files.get(info.source as usize).unwrap();
+        span_fmt::print(info_source, info.span, Some(info.marker), true)
     }
 
     if let Some(help) = error_data.help {

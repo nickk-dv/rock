@@ -15,6 +15,13 @@ pub enum TypeSymbol {
     Struct(P<StructDecl>),
 }
 
+pub enum Symbol {
+    Mod((P<ModDecl>, SourceID)),
+    Proc((P<ProcDecl>, SourceID)),
+    Type((TypeSymbol, SourceID)),
+    Global((P<GlobalDecl>, SourceID)),
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         Self {
@@ -113,19 +120,73 @@ impl SymbolTable {
         }
     }
 
-    pub fn merge(&mut self, mut other: SymbolTable) {
-        for (id, (v, source)) in other.mods.drain() {
-            self.mods.entry(id).or_insert((v, source));
+    pub fn get_public_unique(&self, id: InternID) -> Result<Option<Symbol>, Vec<Symbol>> {
+        let mut unique = None;
+        let mut conflits = Vec::new();
+
+        if let Some(mod_decl) = self.get_mod(id) {
+            if mod_decl.0.visibility == Visibility::Public {
+                let symbol = Symbol::Mod(mod_decl);
+                unique = Some(symbol);
+            }
         }
-        for (id, (v, source)) in other.procs.drain() {
-            self.procs.entry(id).or_insert((v, source));
+        if let Some(proc_decl) = self.get_proc(id) {
+            if proc_decl.0.visibility == Visibility::Public {
+                let symbol = Symbol::Proc(proc_decl);
+                match unique {
+                    Some(..) => conflits.push(symbol),
+                    None => unique = Some(symbol),
+                }
+            }
         }
-        for (id, (v, source)) in other.types.drain() {
-            self.types.entry(id).or_insert((v, source));
+        if let Some(type_decl) = self.get_type(id) {
+            if type_decl.0.visibility() == Visibility::Public {
+                let symbol = Symbol::Type(type_decl);
+                match unique {
+                    Some(..) => conflits.push(symbol),
+                    None => unique = Some(symbol),
+                }
+            }
         }
-        for (id, (v, source)) in other.globals.drain() {
-            self.globals.entry(id).or_insert((v, source));
+        if let Some(global_decl) = self.get_global(id) {
+            if global_decl.0.visibility == Visibility::Public {
+                let symbol = Symbol::Global(global_decl);
+                match unique {
+                    Some(..) => conflits.push(symbol),
+                    None => unique = Some(symbol),
+                }
+            }
         }
+        if conflits.is_empty() {
+            Ok(unique)
+        } else {
+            Err(conflits)
+        }
+    }
+
+    pub fn get_all_private(&self, id: InternID) -> Vec<Symbol> {
+        let mut private_symbols = Vec::new();
+        if let Some(mod_decl) = self.get_mod(id) {
+            if mod_decl.0.visibility == Visibility::Private {
+                private_symbols.push(Symbol::Mod(mod_decl));
+            }
+        }
+        if let Some(proc_decl) = self.get_proc(id) {
+            if proc_decl.0.visibility == Visibility::Public {
+                private_symbols.push(Symbol::Proc(proc_decl));
+            }
+        }
+        if let Some(type_decl) = self.get_type(id) {
+            if type_decl.0.visibility() == Visibility::Public {
+                private_symbols.push(Symbol::Type(type_decl));
+            }
+        }
+        if let Some(global_decl) = self.get_global(id) {
+            if global_decl.0.visibility == Visibility::Public {
+                private_symbols.push(Symbol::Global(global_decl));
+            }
+        }
+        private_symbols
     }
 }
 
@@ -134,6 +195,24 @@ impl TypeSymbol {
         match self {
             TypeSymbol::Enum(enum_decl) => enum_decl.name,
             TypeSymbol::Struct(struct_decl) => struct_decl.name,
+        }
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        match self {
+            TypeSymbol::Enum(enum_decl) => enum_decl.visibility,
+            TypeSymbol::Struct(struct_decl) => struct_decl.visibility,
+        }
+    }
+}
+
+impl Symbol {
+    pub fn name(&self) -> Ident {
+        match self {
+            Symbol::Mod(mod_decl) => mod_decl.0.name,
+            Symbol::Proc(proc_decl) => proc_decl.0.name,
+            Symbol::Type(type_decl) => type_decl.0.name(),
+            Symbol::Global(global_decl) => global_decl.0.name,
         }
     }
 }

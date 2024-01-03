@@ -491,7 +491,7 @@ impl<'ast> Parser<'ast> {
         match self.peek() {
             Token::Ident => {
                 let name = self.parse_ident(ParseContext::ImportDecl)?;
-                Ok(ImportTarget::Module(name))
+                Ok(ImportTarget::Symbol(name))
             }
             Token::Times => {
                 self.consume();
