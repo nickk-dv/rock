@@ -30,8 +30,8 @@ impl SymbolTable {
 
     pub fn add(&mut self, symbol: Symbol) -> Result<(), Symbol> {
         let id = symbol.name().id;
-        match self.get(id) {
-            Some(v) => Err(v),
+        match self.table.get(&id) {
+            Some(v) => Err(*v),
             None => {
                 self.table.insert(id, symbol);
                 Ok(())

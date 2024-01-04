@@ -1,6 +1,7 @@
 use super::scope::*;
 use super::symbol_table::*;
 use crate::ast::ast::*;
+use crate::ast::span::Span;
 use crate::err::check_err::*;
 use crate::mem::*;
 use std::collections::HashMap;
@@ -28,6 +29,7 @@ pub fn check(ast: &mut Ast) -> Result<(), ()> {
     context.pass_2_check_main_proc();
     context.pass_3_check_decl_namesets();
     context.pass_4_process_imports();
+    context.pass_5_testing();
     context.report_errors()
 }
 
@@ -367,6 +369,93 @@ impl<'ast> Context<'ast> {
                     scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
                 }
             }
+        }
+    }
+
+    fn pass_5_testing(&mut self) {
+        for scope_id in 0..self.scopes.len() as SourceID {
+            for decl in self.get_scope(scope_id).module.decls.iter() {
+                let proc_decl = if let Decl::Proc(proc_decl) = decl {
+                    proc_decl
+                } else {
+                    continue;
+                };
+                for param in proc_decl.params.iter() {
+                    let tt = param.tt;
+                    match tt.kind {
+                        TypeKind::Basic(_) => {}
+                        TypeKind::Custom(custom) => {
+                            if !custom.module_access.names.is_empty() {
+                                let val = self.scope_get_in_scope_mod(
+                                    custom.module_access.names.first().unwrap(),
+                                    0,
+                                );
+                            }
+                        }
+                        TypeKind::ArraySlice(_) => {}
+                        TypeKind::ArrayStatic(_) => {}
+                    }
+                }
+            }
+        }
+    }
+
+    fn scope_get_in_scope_mod(
+        &mut self,
+        name: Ident,
+        scope_id: SourceID,
+    ) -> Result<(P<ModDecl>, SourceID), ()> {
+        let mut unique = self.get_scope(scope_id).declared.get_mod(name.id);
+        let mut conflits = Vec::new();
+
+        if let Some(mod_decl) = self.get_scope(scope_id).imported.get_mod(name.id) {
+            if let Some(..) = unique {
+                conflits.push((mod_decl.0, mod_decl.1, None));
+            } else {
+                unique = Some(mod_decl);
+            }
+        }
+
+        for wildcard in self.get_scope(scope_id).wildcards.iter() {
+            if let Some(mod_decl) = self.get_scope(wildcard.from_id).declared.get_mod(name.id) {
+                if mod_decl.0.visibility == Visibility::Private {
+                    continue;
+                }
+                if let Some(..) = unique {
+                    conflits.push((mod_decl.0, mod_decl.1, Some(wildcard.import_span)));
+                } else {
+                    unique = Some(mod_decl);
+                }
+            }
+        }
+
+        if conflits.is_empty() {
+            if let Some(mod_decl) = unique {
+                Ok(mod_decl)
+            } else {
+                let scope = self.get_scope_mut(scope_id);
+                scope.err(CheckError::ModuleNotFoundInScope, name.span);
+                Err(())
+            }
+        } else {
+            let scope = self.get_scope_mut(scope_id);
+            scope.err(CheckError::ModuleSymbolConflit, name.span);
+            for conflit in conflits.iter() {
+                match conflit.2 {
+                    Some(import_span) => {
+                        scope.err_info(import_span, "from this import");
+                        scope.err_info_external(conflit.0.name.span, conflit.1, "this symbol");
+                    }
+                    None => {
+                        scope.err_info_external(
+                            conflit.0.name.span,
+                            conflit.1,
+                            "this symbol is imported",
+                        );
+                    }
+                }
+            }
+            Err(())
         }
     }
 }

@@ -52,6 +52,8 @@ pub enum CheckError {
     ImportSymbolIsPrivate,
     ImportSymbolAlreadyDefined,
     ImporySymbolAlreadyImported,
+
+    ModuleSymbolConflit,
 }
 
 impl Error {
@@ -105,6 +107,8 @@ impl CheckError {
             CheckError::ImportSymbolIsPrivate =>       CheckErrorData::new("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
             CheckError::ImportSymbolAlreadyDefined =>  CheckErrorData::new("imported symbol is already defined", None),
             CheckError::ImporySymbolAlreadyImported => CheckErrorData::new("imported symbol is already imported", Some("remove this symbol import")),
+
+            CheckError::ModuleSymbolConflit => CheckErrorData::new("this module name conflits with others in scope", None),
         }
     }
 }

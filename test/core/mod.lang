@@ -1,4 +1,6 @@
 
+pub some :: mod;
+
 import package::core;
 
 pub core_proc :: () -> s32 {
