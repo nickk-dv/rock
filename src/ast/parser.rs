@@ -39,6 +39,27 @@ struct ParseTask {
     origin: Option<P<ModDecl>>,
 }
 
+fn collect_lang_files(dir_path: &PathBuf) -> Vec<PathBuf> {
+    let mut lang_files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(extension) = path.extension() {
+                    if extension == "lang" {
+                        lang_files.push(path.clone());
+                    }
+                }
+            } else if path.is_dir() {
+                lang_files.extend(collect_lang_files(&path));
+            }
+        }
+    }
+
+    lang_files
+}
+
 impl<'ast> Parser<'ast> {
     fn parse_package(&mut self) -> Result<P<Package>, ()> {
         let mut path = PathBuf::new();
@@ -46,6 +67,11 @@ impl<'ast> Parser<'ast> {
         if !path.is_dir() {
             report::err_no_context(CheckError::ParseSrcDirMissing);
             return Err(());
+        }
+
+        let source_files = collect_lang_files(&path);
+        for file in source_files.iter() {
+            println!("source file: {}", file.to_string_lossy());
         }
 
         path.push("main.lang"); //@change lang name + consider lib / exe project type
