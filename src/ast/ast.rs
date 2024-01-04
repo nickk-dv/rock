@@ -7,6 +7,9 @@ pub struct Ast {
     pub files: Vec<SourceFile>,
     pub package: P<Package>,
     pub intern_pool: InternPool,
+
+    pub arenas: Vec<Arena>,
+    pub modules: Vec<P<Module>>,
 }
 
 pub type SourceID = u32;

@@ -1,11 +1,14 @@
 use super::*;
 use std::{alloc, ptr};
 
+type Rawptr = usize;
+
+#[derive(Copy, Clone)]
 pub struct Arena {
-    data: *mut u8,
+    data: Rawptr,
     offset: usize,
     layout: alloc::Layout,
-    blocks: List<*mut u8>,
+    blocks: List<Rawptr>,
 }
 
 impl Arena {
@@ -13,7 +16,7 @@ impl Arena {
 
     pub fn new(block_size: usize) -> Self {
         let mut arena = Arena {
-            data: ptr::null_mut(),
+            data: 0,
             offset: 0,
             layout: alloc::Layout::from_size_align(block_size, Self::PAGE_SIZE).unwrap(),
             blocks: List::new(),
@@ -27,25 +30,23 @@ impl Arena {
         if self.offset + size > self.layout.size() {
             self.alloc_block();
         }
-        let ptr = unsafe { self.data.add(self.offset) };
+        let ptr = unsafe { (self.data as *mut u8).add(self.offset) };
         self.offset += size;
-        return P::new(ptr as *mut T);
+        return P::new(ptr as Rawptr);
     }
 
     fn alloc_block(&mut self) {
-        self.data = unsafe { alloc::alloc_zeroed(self.layout) };
+        self.data = unsafe { alloc::alloc_zeroed(self.layout) as Rawptr };
         self.offset = 0;
         let mut blocks = self.blocks;
         blocks.add(self, self.data);
         self.blocks = blocks;
     }
-}
 
-impl Drop for Arena {
-    fn drop(&mut self) {
+    fn manual_drop(&mut self) {
         for block in self.blocks.iter() {
             unsafe {
-                alloc::dealloc(block, self.layout);
+                alloc::dealloc(block as *mut u8, self.layout);
             }
         }
     }

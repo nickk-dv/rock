@@ -1,5 +1,7 @@
 use super::*;
 
+type Rawptr = usize;
+
 #[derive(Copy, Clone)]
 pub struct List<T: Copy> {
     first: P<Node<T>>,

@@ -8,6 +8,7 @@ use crate::err::report;
 use crate::mem::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::id;
 
 pub fn parse() -> Result<Ast, ()> {
     let mut ast = Ast {
@@ -15,6 +16,8 @@ pub fn parse() -> Result<Ast, ()> {
         files: Vec::new(),
         package: P::null(),
         intern_pool: InternPool::new(),
+        arenas: Vec::new(),
+        modules: Vec::new(),
     };
     let mut parser = Parser {
         cursor: 0,
@@ -39,39 +42,94 @@ struct ParseTask {
     origin: Option<P<ModDecl>>,
 }
 
-fn collect_lang_files(dir_path: &PathBuf) -> Vec<PathBuf> {
-    let mut lang_files = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(dir_path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    if extension == "lang" {
-                        lang_files.push(path.clone());
+//@change ext
+fn collect_filepaths(dir_path: &PathBuf, filepaths: &mut Vec<PathBuf>) {
+    match std::fs::read_dir(dir_path) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(extension) = path.extension() {
+                        if extension == "lang" {
+                            filepaths.push(path);
+                        }
                     }
+                } else if path.is_dir() {
+                    collect_filepaths(&path, filepaths);
                 }
-            } else if path.is_dir() {
-                lang_files.extend(collect_lang_files(&path));
             }
         }
+        Err(err) => {
+            //@os err
+            println!("error: {}", err);
+            println!("path:  {:?}", dir_path);
+        }
     }
+}
 
-    lang_files
+fn parse_task(source: String, arena: &mut Arena) -> Rawptr {
+    let _ = arena.alloc::<ModDecl>();
+    let mut modp = arena.alloc::<Module>();
+    modp.source = source.chars().count() as u32;
+    for _ in 0..source.chars().count() / 50 {
+        let p = arena.alloc::<ModDecl>();
+    }
+    modp.raw()
+}
+
+fn task_res() -> Arena {
+    Arena::new(1024 * 1024)
 }
 
 impl<'ast> Parser<'ast> {
+    fn parse_package_2(&mut self) -> Result<P<Package>, ()> {
+        let mut path = PathBuf::new();
+        path.push("test"); //@change to src
+
+        let mut filepaths = Vec::new();
+        collect_filepaths(&path, &mut filepaths);
+
+        for file in filepaths.iter() {
+            println!("source file: {:?}", file);
+        }
+
+        let mut sources = Vec::new();
+        for path in filepaths.iter() {
+            match std::fs::read_to_string(path) {
+                Ok(source) => {
+                    sources.push(source);
+                }
+                Err(err) => {
+                    //@os err
+                    println!("error: {}", err);
+                    println!("path:  {:?}", path);
+                }
+            }
+        }
+
+        let results = crate::tools::threads::parallel_task::<String, usize, Arena>(
+            sources, parse_task, task_res,
+        );
+
+        for r in results.0 {
+            println!(
+                "Got rawptr address: {} reading source field (char count) {}",
+                r,
+                P::<Module>::new(r).source
+            );
+        }
+
+        Err(())
+    }
+
     fn parse_package(&mut self) -> Result<P<Package>, ()> {
+        let v = self.parse_package_2()?;
+
         let mut path = PathBuf::new();
         path.push("test"); //@change to src when proper testing is possible
         if !path.is_dir() {
             report::err_no_context(CheckError::ParseSrcDirMissing);
             return Err(());
-        }
-
-        let source_files = collect_lang_files(&path);
-        for file in source_files.iter() {
-            println!("source file: {}", file.to_string_lossy());
         }
 
         path.push("main.lang"); //@change lang name + consider lib / exe project type
