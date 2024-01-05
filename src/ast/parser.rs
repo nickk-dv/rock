@@ -2,6 +2,7 @@ use super::ast::*;
 use super::lexer;
 use super::span::*;
 use super::token::*;
+use crate::err::check_err::CheckError;
 use crate::err::parse_err::*;
 use crate::err::report;
 use crate::mem::*;
@@ -20,36 +21,36 @@ pub fn parse() -> Result<Ast, ()> {
     dir_path.push("test");
     collect_filepaths(dir_path, &mut filepaths);
 
-    //@imporant still add modules to lisk for error reporing usage even when err detected
-    let result = parallel_task(filepaths, parse_task, task_res);
-    for res in result.0 {
+    let thread_pool = ThreadPool::new(parse_task, task_res);
+    let output = thread_pool.execute(filepaths);
+
+    for res in output.1 {
+        ast.arenas.push(res);
+    }
+
+    for res in output.0 {
         match res {
-            Ok(parse_res) => match parse_res {
-                Ok(module) => {
-                    ast.modules.push(module);
+            Ok(result) => {
+                let module_id = result.0.id;
+                ast.modules.push(result.0);
+                if let Some(error) = result.1 {
+                    report::parse_err(&ast, module_id, error);
                 }
-                Err(err) => {
-                    if let Some(error) = err {
-                        report::parse_err(&ast, 0, error); //@no task id available in result
-                    }
-                }
-            },
-            Err(..) => {
-                println!("Didnt get result from thread");
-                //task result join err
+            }
+            Err(err) => {
+                //@err report fetches from ast.modules
+                // need to add null to maintain correct ids
+                ast.modules.push(P::null());
+                report::err_no_context(err);
             }
         }
     }
-    for res in result.1 {
-        ast.arenas.push(res);
-    }
-    Ok(ast)
-}
 
-struct Parser<'ast> {
-    cursor: usize,
-    tokens: Vec<TokenSpan>,
-    arena: &'ast mut Arena,
+    if report::did_error() {
+        Err(())
+    } else {
+        Ok(ast)
+    }
 }
 
 //@change ext
@@ -77,24 +78,16 @@ fn collect_filepaths(dir_path: PathBuf, filepaths: &mut Vec<PathBuf>) {
     }
 }
 
-use crate::err::ansi;
-
 fn parse_task(
     path: PathBuf,
     task_id: TaskID,
     arena: &mut Arena,
-) -> Result<P<Module>, Option<ParseError>> {
-    ansi::set_color(ansi::Color::Cyan);
-    println!("Got Parsing task: {} path: {:?}", task_id, &path);
-    ansi::reset();
-
+) -> Result<(P<Module>, Option<ParseError>), CheckError> {
     let source = match std::fs::read_to_string(&path) {
         Ok(source) => source,
-        Err(err) => {
-            //@os err
-            println!("error: {}", err);
-            println!("path:  {:?}", path);
-            return Err(None);
+        Err(..) => {
+            //@err placeholder no err message info passed
+            return Err(CheckError::InternalPlaceholder);
         }
     };
 
@@ -113,12 +106,17 @@ fn parse_task(
     };
 
     let res = parser.parse_module(file, task_id);
-    println!("Parsing task: {} parsing done...", task_id);
-    res
+    Ok(res)
 }
 
 fn task_res() -> Arena {
     Arena::new(1024 * 1024)
+}
+
+struct Parser<'ast> {
+    cursor: usize,
+    tokens: Vec<TokenSpan>,
+    arena: &'ast mut Arena,
 }
 
 impl<'ast> Parser<'ast> {
@@ -126,7 +124,7 @@ impl<'ast> Parser<'ast> {
         &mut self,
         file: SourceFile,
         task_id: TaskID,
-    ) -> Result<P<Module>, Option<ParseError>> {
+    ) -> (P<Module>, Option<ParseError>) {
         let mut module = self.alloc::<Module>();
         module.id = task_id;
         module.file = file;
@@ -143,12 +141,11 @@ impl<'ast> Parser<'ast> {
                         span: self.peek_span(),
                         token: self.peek(),
                     };
-                    return Err(Some(err.to_parse_error(unexpected_token)));
+                    return (module, Some(err.to_parse_error(unexpected_token)));
                 }
             }
         }
-
-        Ok(module)
+        (module, None)
     }
 
     fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParserError> {

@@ -21,6 +21,7 @@ pub struct CheckErrorData {
 
 #[derive(Copy, Clone)]
 pub enum CheckError {
+    InternalPlaceholder,
     ParseSrcDirMissing,
     ParseLibFileMissing,
     ParseMainFileMissing,
@@ -76,6 +77,7 @@ impl CheckErrorData {
 impl CheckError {
     pub fn get_data(&self) -> CheckErrorData {
         match self {
+            CheckError::InternalPlaceholder =>         CheckErrorData::new("internal error placeholder", None),
             CheckError::ParseSrcDirMissing =>          CheckErrorData::new("missing `src` directory", Some("make sure that current directory is set to the project directory before running compiler commands")),
             CheckError::ParseLibFileMissing =>         CheckErrorData::new("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
             CheckError::ParseMainFileMissing =>        CheckErrorData::new("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
