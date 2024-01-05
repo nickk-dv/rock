@@ -1,15 +1,15 @@
-use crate::ast::ast::SourceID;
+use crate::ast::ast::ModuleID;
 use crate::ast::span::Span;
 
 pub struct Error {
     pub error: CheckError,
-    pub source: SourceID,
+    pub source: ModuleID,
     pub span: Span,
     pub info: Vec<ErrorInfo>,
 }
 
 pub struct ErrorInfo {
-    pub source: SourceID,
+    pub source: ModuleID,
     pub span: Span,
     pub marker: &'static str,
 }
@@ -57,7 +57,7 @@ pub enum CheckError {
 }
 
 impl Error {
-    pub fn new(error: CheckError, source: SourceID, span: Span) -> Self {
+    pub fn new(error: CheckError, source: ModuleID, span: Span) -> Self {
         Self {
             error,
             source,

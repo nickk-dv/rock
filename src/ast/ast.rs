@@ -2,34 +2,25 @@ use super::span::Span;
 use crate::mem::*;
 use std::path::PathBuf;
 
-pub struct Ast {
-    pub arena: Arena,
-    pub files: Vec<SourceFile>,
-    pub package: P<Package>,
-    pub intern_pool: InternPool,
+pub type ModuleID = u32;
 
+pub struct Ast {
     pub arenas: Vec<Arena>,
     pub modules: Vec<P<Module>>,
+    pub intern_pool: InternPool,
 }
 
-pub type SourceID = u32;
+pub struct Module {
+    pub id: ModuleID,
+    pub file: SourceFile,
+    pub decls: List<Decl>,
+    pub parent: Option<ModuleID>,
+}
+
 pub struct SourceFile {
     pub path: PathBuf,
     pub source: String,
     pub line_spans: Vec<Span>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Package {
-    pub root: P<Module>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Module {
-    pub source: SourceID,
-    pub parent: Option<P<Module>>,
-    pub submodules: List<P<Module>>,
-    pub decls: List<Decl>,
 }
 
 #[derive(Copy, Clone)]
@@ -121,7 +112,7 @@ pub enum Decl {
 pub struct ModDecl {
     pub visibility: Visibility,
     pub name: Ident,
-    pub source: SourceID,
+    pub source: ModuleID,
 }
 
 #[derive(Copy, Clone)]

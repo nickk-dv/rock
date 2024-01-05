@@ -2,8 +2,7 @@ use super::ansi::{self, Color};
 use super::check_err::*;
 use super::parse_err::*;
 use super::span_fmt;
-use crate::ast::ast::{Ast, SourceID};
-use crate::ast::span::*;
+use crate::ast::ast::{Ast, ModuleID};
 use crate::ast::token::Token;
 
 static mut ERR_COUNT: u32 = 0;
@@ -44,11 +43,11 @@ pub fn err(ast: &Ast, error: &Error) {
     ansi::reset();
     println!("{}", error_data.message);
 
-    let source = ast.files.get(error.source as usize).unwrap(); //@err internal?
+    let source = &ast.modules.get(error.source as usize).unwrap().file; //@err internal?
     span_fmt::print(source, error.span, None, false);
 
     for info in error.info.iter() {
-        let info_source = ast.files.get(info.source as usize).unwrap();
+        let info_source = &ast.modules.get(info.source as usize).unwrap().file;
         span_fmt::print(info_source, info.span, Some(info.marker), true)
     }
 
@@ -60,9 +59,9 @@ pub fn err(ast: &Ast, error: &Error) {
     }
 }
 
-pub fn parse_err(ast: &Ast, id: SourceID, err: ParseError) {
+pub fn parse_err(ast: &Ast, id: ModuleID, err: ParseError) {
     increment_err_count();
-    let source = ast.files.get(id as usize).unwrap(); //@err internal?
+    let source = &ast.modules.get(id as usize).unwrap().file; //@err internal?
 
     ansi::set_color(Color::BoldRed);
     print!("\nparse error: ");

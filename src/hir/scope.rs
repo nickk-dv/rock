@@ -14,7 +14,7 @@ pub struct Scope {
 
 #[derive(Copy, Clone)]
 pub struct WildcardImport {
-    pub from_id: SourceID,
+    pub from_id: ModuleID,
     pub import_span: Span,
 }
 
@@ -29,8 +29,8 @@ impl Scope {
         }
     }
 
-    pub fn id(&self) -> SourceID {
-        self.module.source
+    pub fn id(&self) -> ModuleID {
+        self.module.id
     }
 
     pub fn err(&mut self, error: CheckError, span: Span) {
@@ -48,7 +48,7 @@ impl Scope {
         }
     }
 
-    pub fn err_info_external(&mut self, span: Span, source: SourceID, marker: &'static str) {
+    pub fn err_info_external(&mut self, span: Span, source: ModuleID, marker: &'static str) {
         let info = ErrorInfo {
             source,
             span,

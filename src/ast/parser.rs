@@ -2,48 +2,59 @@ use super::ast::*;
 use super::lexer;
 use super::span::*;
 use super::token::*;
-use crate::err::check_err::*;
 use crate::err::parse_err::*;
 use crate::err::report;
 use crate::mem::*;
-use std::collections::HashMap;
+use crate::tools::threads::*;
 use std::path::PathBuf;
 
 pub fn parse() -> Result<Ast, ()> {
     let mut ast = Ast {
-        arena: Arena::new(1024 * 1024 * 4),
-        files: Vec::new(),
-        package: P::null(),
-        intern_pool: InternPool::new(),
         arenas: Vec::new(),
         modules: Vec::new(),
+        intern_pool: InternPool::new(),
     };
-    let mut parser = Parser {
-        cursor: 0,
-        source: String::new(),
-        tokens: Vec::new(),
-        ast: &mut ast,
-    };
-    ast.package = parser.parse_package()?;
+
+    let mut filepaths = Vec::new();
+    let mut dir_path = PathBuf::new();
+    dir_path.push("test");
+    collect_filepaths(dir_path, &mut filepaths);
+
+    //@imporant still add modules to lisk for error reporing usage even when err detected
+    let result = parallel_task(filepaths, parse_task, task_res);
+    for res in result.0 {
+        match res {
+            Ok(parse_res) => match parse_res {
+                Ok(module) => {
+                    ast.modules.push(module);
+                }
+                Err(err) => {
+                    if let Some(error) = err {
+                        report::parse_err(&ast, 0, error); //@no task id available in result
+                    }
+                }
+            },
+            Err(..) => {
+                println!("Didnt get result from thread");
+                //task result join err
+            }
+        }
+    }
+    for res in result.1 {
+        ast.arenas.push(res);
+    }
     Ok(ast)
 }
 
 struct Parser<'ast> {
     cursor: usize,
-    source: String,
     tokens: Vec<TokenSpan>,
-    ast: &'ast mut Ast,
-}
-
-struct ParseTask {
-    path: PathBuf,
-    parent: Option<P<Module>>,
-    origin: Option<P<ModDecl>>,
+    arena: &'ast mut Arena,
 }
 
 //@change ext
-fn collect_filepaths(dir_path: &PathBuf, filepaths: &mut Vec<PathBuf>) {
-    match std::fs::read_dir(dir_path) {
+fn collect_filepaths(dir_path: PathBuf, filepaths: &mut Vec<PathBuf>) {
+    match std::fs::read_dir(&dir_path) {
         Ok(entries) => {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -54,7 +65,7 @@ fn collect_filepaths(dir_path: &PathBuf, filepaths: &mut Vec<PathBuf>) {
                         }
                     }
                 } else if path.is_dir() {
-                    collect_filepaths(&path, filepaths);
+                    collect_filepaths(path, filepaths);
                 }
             }
         }
@@ -66,14 +77,44 @@ fn collect_filepaths(dir_path: &PathBuf, filepaths: &mut Vec<PathBuf>) {
     }
 }
 
-fn parse_task(source: String, arena: &mut Arena) -> Rawptr {
-    let _ = arena.alloc::<ModDecl>();
-    let mut modp = arena.alloc::<Module>();
-    modp.source = source.chars().count() as u32;
-    for _ in 0..source.chars().count() / 50 {
-        let p = arena.alloc::<ModDecl>();
-    }
-    modp.as_raw()
+use crate::err::ansi;
+
+fn parse_task(
+    path: PathBuf,
+    task_id: TaskID,
+    arena: &mut Arena,
+) -> Result<P<Module>, Option<ParseError>> {
+    ansi::set_color(ansi::Color::Cyan);
+    println!("Got Parsing task: {} path: {:?}", task_id, &path);
+    ansi::reset();
+
+    let source = match std::fs::read_to_string(&path) {
+        Ok(source) => source,
+        Err(err) => {
+            //@os err
+            println!("error: {}", err);
+            println!("path:  {:?}", path);
+            return Err(None);
+        }
+    };
+
+    let lex_result = lexer::lex(&source);
+
+    let mut parser = Parser {
+        cursor: 0,
+        tokens: lex_result.tokens,
+        arena,
+    };
+
+    let file = SourceFile {
+        path,
+        source: source,
+        line_spans: lex_result.line_spans,
+    };
+
+    let res = parser.parse_module(file, task_id);
+    println!("Parsing task: {} parsing done...", task_id);
+    res
 }
 
 fn task_res() -> Arena {
@@ -81,251 +122,40 @@ fn task_res() -> Arena {
 }
 
 impl<'ast> Parser<'ast> {
-    fn parse_package_2(&mut self) -> Result<P<Package>, ()> {
-        let mut path = PathBuf::new();
-        path.push("test"); //@change to src
-
-        let mut filepaths = Vec::new();
-        collect_filepaths(&path, &mut filepaths);
-
-        for file in filepaths.iter() {
-            println!("source file: {:?}", file);
-        }
-
-        let mut sources = Vec::new();
-        for path in filepaths.iter() {
-            match std::fs::read_to_string(path) {
-                Ok(source) => {
-                    sources.push(source);
-                }
-                Err(err) => {
-                    //@os err
-                    println!("error: {}", err);
-                    println!("path:  {:?}", path);
-                }
-            }
-        }
-
-        let results = crate::tools::threads::parallel_task::<String, usize, Arena>(
-            sources, parse_task, task_res,
-        );
-
-        for r in results.0 {
-            println!(
-                "Got rawptr address: {} reading source field (char count) {}",
-                r,
-                P::<Module>::new(r).source
-            );
-        }
-
-        Err(())
-    }
-
-    fn parse_package(&mut self) -> Result<P<Package>, ()> {
-        //let v = self.parse_package_2()?;
-
-        let mut path = PathBuf::new();
-        path.push("test"); //@change to src when proper testing is possible
-        if !path.is_dir() {
-            report::err_no_context(CheckError::ParseSrcDirMissing);
-            return Err(());
-        }
-
-        path.push("main.lang"); //@change lang name + consider lib / exe project type
-        if !path.is_file() {
-            report::err_no_context(CheckError::ParseMainFileMissing);
-            return Err(());
-        }
-
-        let mut package = self.alloc::<Package>();
-        let mut task_queue = vec![ParseTask {
-            path,
-            parent: None,
-            origin: None,
-        }];
-
-        while let Some(task) = task_queue.pop() {
-            let task_result = self.parse_task_execute(&task);
-            if task_result.is_none() {
-                continue;
-            }
-            let module = task_result.unwrap();
-            if package.root.is_null() {
-                package.root = module;
-            }
-
-            let mut mod_decls = HashMap::<InternID, P<ModDecl>>::new();
-            for decl in module.decls.iter() {
-                if let Decl::Mod(mod_decl) = decl {
-                    if mod_decls.contains_key(&mod_decl.name.id) {
-                        report::err(
-                            self.ast,
-                            &Error::new(
-                                CheckError::ModRedefinition,
-                                module.source,
-                                mod_decl.name.span,
-                            ),
-                        );
-                        continue;
-                    } else {
-                        mod_decls.insert(mod_decl.name.id, mod_decl);
-                    }
-
-                    let module_name = self.ast.intern_pool.get_string(mod_decl.name.id);
-                    let module_filename = module_name.clone() + ".lang"; //@ext
-                    let mut module_dir = task.path.clone();
-                    module_dir.pop();
-
-                    let mut same_dir_path = module_dir.clone();
-                    let mut inner_dir_path = module_dir.clone();
-                    same_dir_path.push(module_filename.clone());
-                    inner_dir_path.push(module_name);
-                    inner_dir_path.push("mod.lang"); //@ext
-
-                    let same_dir_exists = same_dir_path.is_file();
-                    let inner_dir_exists = inner_dir_path.is_file();
-                    let both_exist = same_dir_exists && inner_dir_exists;
-                    let both_missing = !same_dir_exists && !inner_dir_exists;
-
-                    if both_exist || both_missing {
-                        let error = if both_exist {
-                            CheckError::ParseModBothPathsExist
-                        } else {
-                            CheckError::ParseModBothPathsMissing
-                        };
-                        report::err(
-                            self.ast,
-                            &Error::new(error, module.source, mod_decl.name.span),
-                        );
-                        println!("{}", same_dir_path.to_string_lossy());
-                        println!("{}", inner_dir_path.to_string_lossy());
-                        continue;
-                    }
-
-                    let new_task = ParseTask {
-                        parent: Some(module),
-                        path: if same_dir_exists {
-                            same_dir_path
-                        } else {
-                            inner_dir_path
-                        },
-                        origin: Some(mod_decl),
-                    };
-
-                    let mut parent = new_task.parent;
-                    let mut parent_paths = Vec::<PathBuf>::new();
-                    let mut found_cycle = false;
-
-                    while let Some(p) = parent {
-                        let file = self.ast.files.get(p.source as usize).unwrap();
-                        parent_paths.push(file.path.clone());
-                        if new_task.path == file.path {
-                            found_cycle = true;
-                            break;
-                        }
-                        parent = p.parent;
-                    }
-
-                    if found_cycle {
-                        report::err(
-                            self.ast,
-                            &Error::new(
-                                CheckError::ParseModCycle,
-                                module.source,
-                                mod_decl.name.span,
-                            ),
-                        );
-                        for path in parent_paths.iter().rev() {
-                            println!("{}", path.to_string_lossy());
-                        }
-                        for path in parent_paths.iter().rev() {
-                            println!("{}", path.to_string_lossy());
-                            break;
-                        }
-                        continue;
-                    }
-
-                    task_queue.push(new_task);
-                }
-            }
-        }
-
-        if report::did_error() {
-            println!(); //@hack since errors are not accumulated, this /n is inserted after last
-            Err(())
-        } else {
-            Ok(package)
-        }
-    }
-
-    fn parse_task_execute(&mut self, task: &ParseTask) -> Option<P<Module>> {
-        match std::fs::read_to_string(&task.path) {
-            Ok(source) => {
-                // @storing strings in 2 locations, cant store String in P<>
-                // since it doesnt impl Copy which is required to copy the *mut T for some reason
-                // and package gets returned as value and not P<Package> for that reason
-                self.cursor = 0;
-                let lex = lexer::lex(source.as_str());
-                self.tokens = lex.tokens;
-                self.source = source.clone();
-                self.ast.files.push(SourceFile {
-                    path: task.path.clone(),
-                    source,
-                    line_spans: lex.line_spans,
-                });
-            }
-            Err(err) => {
-                println!("file open error: {} path: {}", err, task.path.display());
-                return None;
-            }
-        }
-        if let Some(mut origin_mod_decl) = task.origin {
-            origin_mod_decl.source = (self.ast.files.len() - 1) as SourceID;
-        }
-        Some(self.parse_module(task.parent))
-    }
-
-    fn parse_module(&mut self, parent: Option<P<Module>>) -> P<Module> {
+    fn parse_module(
+        &mut self,
+        file: SourceFile,
+        task_id: TaskID,
+    ) -> Result<P<Module>, Option<ParseError>> {
         let mut module = self.alloc::<Module>();
-        module.source = (self.ast.files.len() - 1) as SourceID;
-        module.parent = parent;
-        if let Some(mut p) = parent {
-            p.submodules.add(&mut self.ast.arena, module);
-        }
+        module.id = task_id;
+        module.file = file;
+        module.decls = List::new();
+        module.parent = None;
 
         while self.peek() != Token::Eof {
             match self.parse_decl() {
                 Ok(decl) => {
-                    module.decls.add(&mut self.ast.arena, decl);
+                    module.decls.add(&mut self.arena, decl);
                 }
                 Err(err) => {
                     let unexpected_token = TokenSpan {
                         span: self.peek_span(),
                         token: self.peek(),
                     };
-                    report::parse_err(
-                        self.ast,
-                        self.ast.files.len() as u32 - 1,
-                        err.to_parse_error(unexpected_token),
-                    );
-                    return module;
+                    return Err(Some(err.to_parse_error(unexpected_token)));
                 }
             }
         }
-        module
+
+        Ok(module)
     }
 
     fn parse_ident(&mut self, context: ParseContext) -> Result<Ident, ParserError> {
         if self.peek() == Token::Ident {
-            // @intern pool needs to be redesigned to hash and work with utf8 chars,
-            // instead of idividual bytes, to avoid potential issues.
-            // especially relevant to string literal interning
             let span = self.peek_span();
-            let bytes = self.source.as_bytes();
-            let slice = &bytes[span.start as usize..span.end as usize];
-            let id = self.ast.intern_pool.intern(slice);
             self.consume();
-            return Ok(Ident { span, id });
+            return Ok(Ident { span, id: 0 });
         }
         Err(ParserError::Ident(context))
     }
@@ -347,7 +177,7 @@ impl<'ast> Parser<'ast> {
         while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
             let name = self.parse_ident(ParseContext::ModuleAccess)?;
             self.consume();
-            module_access.names.add(&mut self.ast.arena, name);
+            module_access.names.add(&mut self.arena, name);
         }
         Ok(module_access)
     }
@@ -460,7 +290,7 @@ impl<'ast> Parser<'ast> {
                     break;
                 }
                 let param = self.parse_proc_param()?;
-                proc_decl.params.add(&mut self.ast.arena, param);
+                proc_decl.params.add(&mut self.arena, param);
                 if !self.try_consume(Token::Comma) {
                     break;
                 }
@@ -500,7 +330,7 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::OpenBlock, ParseContext::EnumDecl)?;
         while !self.try_consume(Token::CloseBlock) {
             let variant = self.parse_enum_variant()?;
-            enum_decl.variants.add(&mut self.ast.arena, variant);
+            enum_decl.variants.add(&mut self.arena, variant);
         }
         Ok(enum_decl)
     }
@@ -528,7 +358,7 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::OpenBlock, ParseContext::StructDecl)?;
         while !self.try_consume(Token::CloseBlock) {
             let field = self.parse_struct_field()?;
-            struct_decl.fields.add(&mut self.ast.arena, field);
+            struct_decl.fields.add(&mut self.arena, field);
         }
         Ok(struct_decl)
     }
@@ -586,7 +416,7 @@ impl<'ast> Parser<'ast> {
                 if !self.try_consume(Token::CloseBlock) {
                     loop {
                         let name = self.parse_ident(ParseContext::ImportDecl)?;
-                        symbols.add(&mut self.ast.arena, name);
+                        symbols.add(&mut self.arena, name);
                         if !self.try_consume(Token::Comma) {
                             break;
                         }
@@ -674,7 +504,7 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::OpenBlock, ParseContext::Block)?;
         while !self.try_consume(Token::CloseBlock) {
             let stmt = self.parse_stmt()?;
-            block.stmts.add(&mut self.ast.arena, stmt);
+            block.stmts.add(&mut self.arena, stmt);
         }
         Ok(block)
     }
@@ -696,7 +526,7 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::OpenBlock, ParseContext::Switch)?;
         while !self.try_consume(Token::CloseBlock) {
             let case = self.parse_switch_case()?;
-            switch.cases.add(&mut self.ast.arena, case);
+            switch.cases.add(&mut self.arena, case);
         }
         Ok(switch)
     }
@@ -978,7 +808,7 @@ impl<'ast> Parser<'ast> {
         if !self.try_consume(end) {
             loop {
                 let expr = self.parse_expr()?;
-                expr_list.add(&mut self.ast.arena, expr);
+                expr_list.add(&mut self.arena, expr);
                 if !self.try_consume(Token::Comma) {
                     break;
                 }
@@ -989,7 +819,7 @@ impl<'ast> Parser<'ast> {
     }
 
     fn alloc<T>(&mut self) -> P<T> {
-        self.ast.arena.alloc::<T>()
+        self.arena.alloc::<T>()
     }
 
     fn peek(&self) -> Token {

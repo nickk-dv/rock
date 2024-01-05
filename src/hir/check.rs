@@ -1,7 +1,6 @@
 use super::scope::*;
 use super::symbol_table::*;
 use crate::ast::ast::*;
-use crate::ast::span::Span;
 use crate::err::check_err::*;
 use crate::mem::*;
 use std::collections::HashMap;
@@ -81,11 +80,11 @@ impl<'ast> Context<'ast> {
         }
     }
 
-    fn get_scope(&self, scope_id: SourceID) -> &Scope {
+    fn get_scope(&self, scope_id: ModuleID) -> &Scope {
         unsafe { self.scopes.get_unchecked(scope_id as usize) }
     }
 
-    fn get_scope_mut(&mut self, scope_id: SourceID) -> &mut Scope {
+    fn get_scope_mut(&mut self, scope_id: ModuleID) -> &mut Scope {
         unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
     }
 
@@ -93,14 +92,14 @@ impl<'ast> Context<'ast> {
     // which will streamline the work with scopes and prevent any possible
     // issues with current module tree representation
     fn pass_0_create_scopes(&mut self) {
-        self.create_scopes(self.ast.package.root);
+        //self.create_scopes(self.ast.package.root);
     }
 
     fn create_scopes(&mut self, module: P<Module>) {
-        self.scopes.push(Scope::new(module));
-        for submodule in module.submodules.iter() {
-            self.create_scopes(submodule);
-        }
+        //self.scopes.push(Scope::new(module));
+        //for submodule in module.submodules.iter() {
+        //    self.create_scopes(submodule);
+        //}
     }
 
     //@note if later stages will operate on list of decls duplicates must be removed from those checks
@@ -198,7 +197,7 @@ impl<'ast> Context<'ast> {
     }
 
     fn pass_4_process_imports(&mut self) {
-        for scope_id in 0..self.scopes.len() as SourceID {
+        for scope_id in 0..self.scopes.len() as ModuleID {
             let mut import_tasks = self.scope_import_task_collect(scope_id);
             let mut were_resolved = 0;
 
@@ -231,7 +230,7 @@ impl<'ast> Context<'ast> {
         }
     }
 
-    fn scope_import_task_collect(&mut self, scope_id: SourceID) -> Vec<ImportTask> {
+    fn scope_import_task_collect(&mut self, scope_id: ModuleID) -> Vec<ImportTask> {
         let scope = self.get_scope_mut(scope_id);
         let mut import_tasks = Vec::new();
 
@@ -258,7 +257,7 @@ impl<'ast> Context<'ast> {
         import_tasks
     }
 
-    fn scope_import_task_run(&mut self, scope_id: SourceID, task: &mut ImportTask) {
+    fn scope_import_task_run(&mut self, scope_id: ModuleID, task: &mut ImportTask) {
         if task.status == ImportTaskStatus::Resolved {
             return;
         }
@@ -275,7 +274,7 @@ impl<'ast> Context<'ast> {
                     return;
                 }
             }
-            ModuleAccessModifier::Super => self.get_scope(scope_id).module.parent.unwrap().source,
+            ModuleAccessModifier::Super => self.get_scope(scope_id).module.parent.unwrap(),
             ModuleAccessModifier::Package => 0,
         };
 
@@ -338,7 +337,7 @@ impl<'ast> Context<'ast> {
         }
     }
 
-    fn scope_import_symbol(&mut self, scope_id: SourceID, from_id: SourceID, name: Ident) {
+    fn scope_import_symbol(&mut self, scope_id: ModuleID, from_id: ModuleID, name: Ident) {
         //symbol being imported must be public + uniquely defined in source module, else its ambiguous
         //conflit might arise from symbol thats already defined or imported or wilcard public declared from same group
 
@@ -373,7 +372,7 @@ impl<'ast> Context<'ast> {
     }
 
     fn pass_5_testing(&mut self) {
-        for scope_id in 0..self.scopes.len() as SourceID {
+        for scope_id in 0..self.scopes.len() as ModuleID {
             for decl in self.get_scope(scope_id).module.decls.iter() {
                 let proc_decl = if let Decl::Proc(proc_decl) = decl {
                     proc_decl
@@ -403,8 +402,8 @@ impl<'ast> Context<'ast> {
     fn scope_get_in_scope_mod(
         &mut self,
         name: Ident,
-        scope_id: SourceID,
-    ) -> Result<(P<ModDecl>, SourceID), ()> {
+        scope_id: ModuleID,
+    ) -> Result<(P<ModDecl>, ModuleID), ()> {
         let mut unique = self.get_scope(scope_id).declared.get_mod(name.id);
         let mut conflits = Vec::new();
 

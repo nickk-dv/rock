@@ -1,14 +1,16 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+pub type TaskID = u32;
+
 pub fn parallel_task<Task, TaskResult, TaskResource>(
     tasks: Vec<Task>,
-    task_proc: fn(Task, &mut TaskResource) -> TaskResult,
+    task_proc: fn(Task, TaskID, &mut TaskResource) -> TaskResult,
     task_resource: fn() -> TaskResource,
-) -> (Vec<TaskResult>, Vec<TaskResource>)
+) -> (Vec<Result<TaskResult, ()>>, Vec<TaskResource>)
 where
     Task: Send + 'static,
-    TaskResult: Send + Default + 'static,
+    TaskResult: Send + 'static,
     TaskResource: Send + 'static,
 {
     let task_count = tasks.len();
@@ -29,14 +31,14 @@ where
                         None => break,
                     }
                 };
-                results.push((task_proc(task, &mut resource), id));
+                results.push((task_proc(task, id as u32, &mut resource), id));
             }
             (results, resource)
         }));
     }
 
-    let mut results = Vec::new();
-    results.resize_with(task_count, || TaskResult::default());
+    let mut results = Vec::<Result<TaskResult, ()>>::new();
+    results.resize_with(task_count, || Err(()));
     let mut resources = Vec::new();
 
     for handle in handles {
@@ -44,7 +46,7 @@ where
             Ok((result, res)) => {
                 resources.push(res);
                 for (r, id) in result {
-                    results[id] = r;
+                    results[id] = Ok(r);
                 }
             }
             Err(err) => {
