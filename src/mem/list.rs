@@ -1,7 +1,5 @@
 use super::*;
 
-type Rawptr = usize;
-
 #[derive(Copy, Clone)]
 pub struct List<T: Copy> {
     first: P<Node<T>>,
@@ -29,7 +27,7 @@ impl<T: Copy> List<T> {
 
         if self.first.is_null() {
             self.first = node;
-            self.last = self.first;
+            self.last = node;
         } else {
             self.last.next = node;
             self.last = node;
@@ -40,22 +38,24 @@ impl<T: Copy> List<T> {
         self.first.is_null()
     }
 
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+
     pub fn first(&self) -> Option<T> {
         if !self.first.is_null() {
             return Some(self.first.val);
         }
         None
     }
+
+    pub fn iter(&self) -> ListIterator<T> {
+        ListIterator { curr: self.first }
+    }
 }
 
 pub struct ListIterator<T: Copy> {
     curr: P<Node<T>>,
-}
-
-impl<T: Copy> List<T> {
-    pub fn iter(self) -> ListIterator<T> {
-        ListIterator { curr: self.first }
-    }
 }
 
 impl<T: Copy> Iterator for ListIterator<T> {

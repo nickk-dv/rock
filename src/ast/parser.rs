@@ -8,7 +8,6 @@ use crate::err::report;
 use crate::mem::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::id;
 
 pub fn parse() -> Result<Ast, ()> {
     let mut ast = Ast {
@@ -74,7 +73,7 @@ fn parse_task(source: String, arena: &mut Arena) -> Rawptr {
     for _ in 0..source.chars().count() / 50 {
         let p = arena.alloc::<ModDecl>();
     }
-    modp.raw()
+    modp.as_raw()
 }
 
 fn task_res() -> Arena {
@@ -123,7 +122,7 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_package(&mut self) -> Result<P<Package>, ()> {
-        let v = self.parse_package_2()?;
+        //let v = self.parse_package_2()?;
 
         let mut path = PathBuf::new();
         path.push("test"); //@change to src when proper testing is possible
@@ -989,7 +988,7 @@ impl<'ast> Parser<'ast> {
         Ok(expr_list)
     }
 
-    fn alloc<T: Copy>(&mut self) -> P<T> {
+    fn alloc<T>(&mut self) -> P<T> {
         self.ast.arena.alloc::<T>()
     }
 

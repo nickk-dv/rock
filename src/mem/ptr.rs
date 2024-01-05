@@ -1,13 +1,14 @@
 use std::marker::PhantomData;
+
 pub type Rawptr = usize;
 
 #[derive(Copy, Clone)]
-pub struct P<T: Copy> {
+pub struct P<T> {
     ptr: Rawptr,
     phantom: PhantomData<T>,
 }
 
-impl<T: Copy> P<T> {
+impl<T> P<T> {
     pub fn new(ptr: Rawptr) -> Self {
         P {
             ptr,
@@ -26,12 +27,21 @@ impl<T: Copy> P<T> {
         self.ptr == 0
     }
 
-    pub fn raw(&self) -> Rawptr {
+    pub fn as_raw(&self) -> Rawptr {
         self.ptr
+    }
+
+    pub fn as_mut(&self) -> *mut T {
+        self.ptr as *mut T
+    }
+
+    pub fn add(&self, count: usize) -> P<T> {
+        let offset = unsafe { self.as_mut().add(count) };
+        P::new(offset as Rawptr)
     }
 }
 
-impl<T: Copy> std::ops::Deref for P<T> {
+impl<T> std::ops::Deref for P<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -39,7 +49,7 @@ impl<T: Copy> std::ops::Deref for P<T> {
     }
 }
 
-impl<T: Copy> std::ops::DerefMut for P<T> {
+impl<T> std::ops::DerefMut for P<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *(self.ptr as *mut T) }
     }

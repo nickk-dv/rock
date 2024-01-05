@@ -9,7 +9,7 @@ pub fn parallel_task<Task, TaskResult, TaskResource>(
 where
     Task: Send + 'static,
     TaskResult: Send + Default + 'static,
-    TaskResource: Send + Copy + 'static,
+    TaskResource: Send + 'static,
 {
     let task_count = tasks.len();
     let workers = get_thread_count().clamp(0, task_count);
