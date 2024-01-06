@@ -35,6 +35,10 @@ impl<T> P<T> {
         self.ptr as *mut T
     }
 
+    pub fn copy(&self) -> P<T> {
+        P::new(self.as_raw())
+    }
+
     pub fn add(&self, count: usize) -> P<T> {
         let offset = unsafe { self.as_mut().add(count) };
         P::new(offset as Rawptr)
