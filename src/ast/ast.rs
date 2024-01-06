@@ -25,8 +25,8 @@ pub struct SourceFile {
 
 #[derive(Copy, Clone)]
 pub struct Ident {
-    pub span: Span,
     pub id: InternID,
+    pub span: Span,
 }
 
 #[derive(Copy, Clone)]
@@ -112,7 +112,7 @@ pub enum Decl {
 pub struct ModDecl {
     pub visibility: Visibility,
     pub name: Ident,
-    pub source: ModuleID,
+    pub id: ModuleID,
 }
 
 #[derive(Copy, Clone)]
@@ -334,7 +334,7 @@ pub struct ArrayInit {
 #[derive(Copy, Clone)]
 pub struct StructInit {
     pub module_access: ModuleAccess,
-    pub struct_name: Option<Ident>,
+    pub name: Option<Ident>,
     pub input: List<Expr>,
 }
 

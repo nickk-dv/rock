@@ -22,10 +22,11 @@ use std::collections::HashMap;
 */
 
 pub fn check(ast: &mut Ast) -> Result<(), ()> {
+    return Ok(());
     let mut context = Context::new(ast);
     context.pass_0_create_scopes();
     context.pass_1_process_declarations();
-    context.pass_2_check_main_proc();
+    //@broken (no scopes added 0 doesnt exist) context.pass_2_check_main_proc();
     context.pass_3_check_decl_namesets();
     context.pass_4_process_imports();
     context.pass_5_testing();
@@ -81,11 +82,13 @@ impl<'ast> Context<'ast> {
     }
 
     fn get_scope(&self, scope_id: ModuleID) -> &Scope {
-        unsafe { self.scopes.get_unchecked(scope_id as usize) }
+        //@unsafe { self.scopes.get_unchecked(scope_id as usize) }
+        self.scopes.get(scope_id as usize).unwrap()
     }
 
     fn get_scope_mut(&mut self, scope_id: ModuleID) -> &mut Scope {
-        unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
+        //@unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
+        self.scopes.get_mut(scope_id as usize).unwrap()
     }
 
     //@its possible to have parser output already linear vector of modules
@@ -105,7 +108,7 @@ impl<'ast> Context<'ast> {
     //@note if later stages will operate on list of decls duplicates must be removed from those checks
     fn pass_1_process_declarations(&mut self) {
         for scope in self.scopes.iter_mut() {
-            for decl in scope.module.decls.iter() {
+            for decl in scope.module.decls {
                 if let Some(symbol) = Symbol::from_decl(decl, scope.id()) {
                     if let Err(existing) = scope.declared.add(symbol) {
                         scope.err(CheckError::SymbolRedefinition, symbol.name().span);
@@ -155,7 +158,7 @@ impl<'ast> Context<'ast> {
     // needs to be properly measured on big codebases, if this step is performance issue
     fn pass_3_check_decl_namesets(&mut self) {
         for scope in self.scopes.iter_mut() {
-            for decl in scope.module.decls.iter() {
+            for decl in scope.module.decls {
                 match decl {
                     Decl::Proc(proc_decl) => {
                         let mut name_set = HashMap::<InternID, Ident>::new();
@@ -234,7 +237,7 @@ impl<'ast> Context<'ast> {
         let scope = self.get_scope_mut(scope_id);
         let mut import_tasks = Vec::new();
 
-        for decl in scope.module.decls.iter() {
+        for decl in scope.module.decls {
             if let Decl::Import(import) = decl {
                 if import.module_access.names.is_empty()
                     && import.module_access.modifier == ModuleAccessModifier::None
@@ -268,7 +271,7 @@ impl<'ast> Context<'ast> {
                 // find and check conflits in declared / import / wildcards instead of just declared
                 let first_name = task.import.module_access.names.first().unwrap();
                 if let Some(mod_decl) = self.get_scope(scope_id).declared.get_mod(first_name.id) {
-                    mod_decl.0.source
+                    mod_decl.0.id
                 } else {
                     task.status = ImportTaskStatus::SourceNotFound;
                     return;
@@ -281,14 +284,14 @@ impl<'ast> Context<'ast> {
         task.status = ImportTaskStatus::Resolved;
         let mut skip_first = task.import.module_access.modifier == ModuleAccessModifier::None;
 
-        for name in task.import.module_access.names.iter() {
+        for name in task.import.module_access.names {
             if skip_first {
                 skip_first = false;
                 continue;
             }
             //@mod publicity not considered (fine for same package access)
             match self.get_scope(from_id).declared.get_mod(name.id) {
-                Some(mod_decl) => from_id = mod_decl.0.source,
+                Some(mod_decl) => from_id = mod_decl.0.id,
                 None => {
                     self.get_scope_mut(scope_id)
                         .err(CheckError::ModuleNotDeclaredInPath, name.span);
@@ -330,7 +333,7 @@ impl<'ast> Context<'ast> {
                 self.scope_import_symbol(scope_id, from_id, name);
             }
             ImportTarget::SymbolList(symbol_list) => {
-                for name in symbol_list.iter() {
+                for name in symbol_list {
                     self.scope_import_symbol(scope_id, from_id, name);
                 }
             }
@@ -349,7 +352,7 @@ impl<'ast> Context<'ast> {
             Some(symbol) => {
                 let scope = self.get_scope_mut(scope_id);
                 if let Symbol::Mod(mod_decl) = symbol {
-                    if mod_decl.0.source == scope_id {
+                    if mod_decl.0.id == scope_id {
                         scope.err(CheckError::ImportItself, name.span);
                         return;
                     }
@@ -373,7 +376,7 @@ impl<'ast> Context<'ast> {
 
     fn pass_5_testing(&mut self) {
         for scope_id in 0..self.scopes.len() as ModuleID {
-            for decl in self.get_scope(scope_id).module.decls.iter() {
+            for decl in self.get_scope(scope_id).module.decls {
                 let proc_decl = if let Decl::Proc(proc_decl) = decl {
                     proc_decl
                 } else {

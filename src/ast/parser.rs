@@ -9,7 +9,30 @@ use crate::mem::*;
 use crate::tools::threads::*;
 use std::path::PathBuf;
 
+use std::time::Instant;
+
+struct Timer {
+    start_time: Instant,
+}
+
+impl Timer {
+    fn new() -> Self {
+        Timer {
+            start_time: Instant::now(),
+        }
+    }
+
+    fn elapsed_ms(self, message: &'static str) {
+        let elapsed = self.start_time.elapsed();
+        let sec_ms = elapsed.as_secs_f64() * 1000.0;
+        let ms = sec_ms + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
+        println!("{}: {:.3} ms", message, ms);
+    }
+}
+
 pub fn parse() -> Result<Ast, ()> {
+    let parse_timer = Timer::new();
+
     let mut ast = Ast {
         arenas: Vec::new(),
         modules: Vec::new(),
@@ -45,6 +68,11 @@ pub fn parse() -> Result<Ast, ()> {
             }
         }
     }
+    parse_timer.elapsed_ms("parsed all files");
+
+    let intern_timer = Timer::new();
+    intern_ast(&mut ast);
+    intern_timer.elapsed_ms("intern idents");
 
     if report::did_error() {
         Err(())
@@ -111,6 +139,319 @@ fn parse_task(
 
 fn task_res() -> Arena {
     Arena::new(1024 * 1024)
+}
+
+struct InternData<'intern> {
+    intern_pool: &'intern mut InternPool,
+    source: &'intern String,
+}
+
+fn intern_ast(ast: &mut Ast) {
+    for module in ast.modules.iter() {
+        let mut intern_data = InternData {
+            intern_pool: &mut ast.intern_pool,
+            source: &module.file.source,
+        };
+        let intern = &mut intern_data;
+        for decl in module.decls {
+            intern_decl(intern, decl);
+        }
+    }
+}
+
+fn intern_ident(intern: &mut InternData, ident: &mut Ident) {
+    let bytes = ident.span.str(intern.source).as_bytes();
+    let id = intern.intern_pool.intern(bytes);
+    ident.id = id;
+}
+
+fn intern_module_access(intern: &mut InternData, module_access: &mut ModuleAccess) {
+    for name in module_access.names.iter_mut() {
+        intern_ident(intern, name);
+    }
+}
+
+fn intern_type(intern: &mut InternData, tt: &mut Type) {
+    match tt.kind {
+        TypeKind::Basic(..) => {}
+        TypeKind::Custom(custom_type) => intern_custom_type(intern, custom_type),
+        TypeKind::ArraySlice(array_slice_type) => intern_array_slice_type(intern, array_slice_type),
+        TypeKind::ArrayStatic(array_static_type) => {
+            intern_array_static_type(intern, array_static_type)
+        }
+    }
+}
+
+fn intern_custom_type(intern: &mut InternData, mut custom_type: P<CustomType>) {
+    intern_module_access(intern, &mut custom_type.module_access);
+    intern_ident(intern, &mut custom_type.name);
+}
+
+fn intern_array_slice_type(intern: &mut InternData, mut array_slice_type: P<ArraySliceType>) {
+    intern_type(intern, &mut array_slice_type.element);
+}
+
+fn intern_array_static_type(intern: &mut InternData, mut array_static_type: P<ArrayStaticType>) {
+    intern_type(intern, &mut array_static_type.element);
+    intern_expr(intern, array_static_type.size);
+}
+
+fn intern_decl(intern: &mut InternData, decl: Decl) {
+    match decl {
+        Decl::Mod(mod_decl) => intern_mod_decl(intern, mod_decl),
+        Decl::Proc(proc_decl) => intern_proc_decl(intern, proc_decl),
+        Decl::Enum(enum_decl) => intern_enum_decl(intern, enum_decl),
+        Decl::Struct(struct_decl) => intern_struct_decl(intern, struct_decl),
+        Decl::Global(global_decl) => intern_global_decl(intern, global_decl),
+        Decl::Import(import_decl) => intern_import_decl(intern, import_decl),
+    }
+}
+
+fn intern_mod_decl(intern: &mut InternData, mut mod_decl: P<ModDecl>) {
+    intern_ident(intern, &mut mod_decl.name);
+}
+
+fn intern_proc_decl(intern: &mut InternData, mut proc_decl: P<ProcDecl>) {
+    intern_ident(intern, &mut proc_decl.name);
+    for param in proc_decl.params.iter_mut() {
+        intern_proc_param(intern, param);
+    }
+    if let Some(ref mut tt) = proc_decl.return_type {
+        intern_type(intern, tt);
+    }
+    if let Some(block) = proc_decl.block {
+        intern_block(intern, block);
+    }
+}
+
+fn intern_proc_param(intern: &mut InternData, param: &mut ProcParam) {
+    intern_ident(intern, &mut param.name);
+    intern_type(intern, &mut param.tt);
+}
+
+fn intern_enum_decl(intern: &mut InternData, mut enum_decl: P<EnumDecl>) {
+    intern_ident(intern, &mut enum_decl.name);
+    for variant in enum_decl.variants.iter_mut() {
+        intern_enum_variant(intern, variant);
+    }
+}
+
+fn intern_enum_variant(intern: &mut InternData, variant: &mut EnumVariant) {
+    intern_ident(intern, &mut variant.name);
+    if let Some(expr) = variant.expr {
+        intern_expr(intern, expr);
+    }
+}
+
+fn intern_struct_decl(intern: &mut InternData, mut struct_decl: P<StructDecl>) {
+    intern_ident(intern, &mut struct_decl.name);
+    for field in struct_decl.fields.iter_mut() {
+        intern_struct_field(intern, field);
+    }
+}
+
+fn intern_struct_field(intern: &mut InternData, field: &mut StructField) {
+    intern_ident(intern, &mut field.name);
+    intern_type(intern, &mut field.tt);
+    if let Some(expr) = field.default {
+        intern_expr(intern, expr);
+    }
+}
+
+fn intern_global_decl(intern: &mut InternData, mut global_decl: P<GlobalDecl>) {
+    intern_ident(intern, &mut global_decl.name);
+    intern_expr(intern, global_decl.expr);
+}
+
+fn intern_import_decl(intern: &mut InternData, mut import_decl: P<ImportDecl>) {
+    intern_module_access(intern, &mut import_decl.module_access);
+    intern_import_target(intern, &mut import_decl.target);
+}
+
+fn intern_import_target(intern: &mut InternData, target: &mut ImportTarget) {
+    match target {
+        ImportTarget::AllSymbols => {}
+        ImportTarget::Symbol(name) => {
+            intern_ident(intern, name);
+        }
+        ImportTarget::SymbolList(name_list) => {
+            for name in name_list.iter_mut() {
+                intern_ident(intern, name);
+            }
+        }
+    }
+}
+
+fn intern_stmt(intern: &mut InternData, stmt: Stmt) {
+    match stmt {
+        Stmt::If(if_) => intern_if(intern, if_),
+        Stmt::For(for_) => intern_for(intern, for_),
+        Stmt::Block(block) => intern_block(intern, block),
+        Stmt::Defer(block) => intern_block(intern, block),
+        Stmt::Break => {}
+        Stmt::Switch(switch) => intern_switch(intern, switch),
+        Stmt::Return(return_) => intern_return(intern, return_),
+        Stmt::Continue => {}
+        Stmt::VarDecl(var_decl) => intern_var_decl(intern, var_decl),
+        Stmt::VarAssign(var_assign) => intern_var_assign(intern, var_assign),
+        Stmt::ProcCall(proc_call) => intern_proc_call(intern, proc_call),
+    }
+}
+
+fn intern_if(intern: &mut InternData, if_: P<If>) {
+    intern_expr(intern, if_.condition);
+    intern_block(intern, if_.block);
+    if let Some(else_) = if_.else_ {
+        intern_else(intern, else_);
+    }
+}
+
+fn intern_else(intern: &mut InternData, else_: Else) {
+    match else_ {
+        Else::If(if_) => intern_if(intern, if_),
+        Else::Block(block) => intern_block(intern, block),
+    }
+}
+
+fn intern_for(intern: &mut InternData, for_: P<For>) {
+    if let Some(var_decl) = for_.var_decl {
+        intern_var_decl(intern, var_decl);
+    }
+    if let Some(condition) = for_.condition {
+        intern_expr(intern, condition);
+    }
+    if let Some(var_assign) = for_.var_assign {
+        intern_var_assign(intern, var_assign);
+    }
+    intern_block(intern, for_.block);
+}
+
+fn intern_block(intern: &mut InternData, block: P<Block>) {
+    for stmt in block.stmts {
+        intern_stmt(intern, stmt);
+    }
+}
+
+fn intern_switch(intern: &mut InternData, switch: P<Switch>) {
+    intern_expr(intern, switch.expr);
+    for case in switch.cases.iter_mut() {
+        intern_switch_case(intern, case);
+    }
+}
+
+fn intern_switch_case(intern: &mut InternData, switch_case: &mut SwitchCase) {
+    intern_expr(intern, switch_case.expr);
+    intern_block(intern, switch_case.block);
+}
+
+fn intern_return(intern: &mut InternData, return_: P<Return>) {
+    if let Some(expr) = return_.expr {
+        intern_expr(intern, expr);
+    }
+}
+
+fn intern_var_decl(intern: &mut InternData, mut var_decl: P<VarDecl>) {
+    intern_ident(intern, &mut var_decl.name);
+    if let Some(ref mut tt) = var_decl.tt {
+        intern_type(intern, tt);
+    }
+    if let Some(expr) = var_decl.expr {
+        intern_expr(intern, expr);
+    }
+}
+
+fn intern_var_assign(intern: &mut InternData, var_assign: P<VarAssign>) {
+    intern_var(intern, var_assign.var);
+    intern_expr(intern, var_assign.expr);
+}
+
+fn intern_expr(intern: &mut InternData, expr: Expr) {
+    match expr {
+        Expr::Var(var) => intern_var(intern, var),
+        Expr::Enum(enum_) => intern_enum(intern, enum_),
+        Expr::Cast(cast) => intern_cast(intern, cast),
+        Expr::Sizeof(sizeof) => intern_sizeof(intern, sizeof),
+        Expr::Literal(literal) => intern_literal(intern, literal),
+        Expr::ProcCall(proc_call) => intern_proc_call(intern, proc_call),
+        Expr::ArrayInit(array_init) => intern_array_init(intern, array_init),
+        Expr::StructInit(struct_init) => intern_struct_init(intern, struct_init),
+        Expr::UnaryExpr(unary_expr) => intern_unary_expr(intern, unary_expr),
+        Expr::BinaryExpr(binary_expr) => intern_binary_expr(intern, binary_expr),
+    }
+}
+
+fn intern_var(intern: &mut InternData, mut var: P<Var>) {
+    intern_module_access(intern, &mut var.module_access);
+    intern_ident(intern, &mut var.name);
+    if let Some(access) = var.access {
+        intern_access(intern, access);
+    }
+}
+
+fn intern_access(intern: &mut InternData, mut access: P<Access>) {
+    match access.kind {
+        AccessKind::Field(ref mut name) => intern_ident(intern, name),
+        AccessKind::Array(expr) => intern_expr(intern, expr),
+    }
+    if let Some(access) = access.next {
+        intern_access(intern, access);
+    }
+}
+
+fn intern_enum(intern: &mut InternData, mut enum_: P<Enum>) {
+    intern_ident(intern, &mut enum_.variant);
+}
+
+fn intern_cast(intern: &mut InternData, mut cast: P<Cast>) {
+    intern_type(intern, &mut cast.tt);
+    intern_expr(intern, cast.expr);
+}
+
+fn intern_sizeof(intern: &mut InternData, mut sizeof: P<Sizeof>) {
+    intern_type(intern, &mut sizeof.tt);
+}
+
+fn intern_literal(intern: &mut InternData, literal: P<Literal>) {
+    //@todo string literal interning + store id into ast literal
+}
+
+fn intern_proc_call(intern: &mut InternData, mut proc_call: P<ProcCall>) {
+    intern_module_access(intern, &mut proc_call.module_access);
+    intern_ident(intern, &mut proc_call.name);
+    for expr in proc_call.input {
+        intern_expr(intern, expr);
+    }
+    if let Some(access) = proc_call.access {
+        intern_access(intern, access);
+    }
+}
+
+fn intern_array_init(intern: &mut InternData, mut array_init: P<ArrayInit>) {
+    if let Some(ref mut tt) = array_init.tt {
+        intern_type(intern, tt);
+    }
+    for expr in array_init.input {
+        intern_expr(intern, expr);
+    }
+}
+
+fn intern_struct_init(intern: &mut InternData, mut struct_init: P<StructInit>) {
+    intern_module_access(intern, &mut struct_init.module_access);
+    if let Some(ref mut name) = struct_init.name {
+        intern_ident(intern, name);
+    }
+    for expr in struct_init.input {
+        intern_expr(intern, expr);
+    }
+}
+
+fn intern_unary_expr(intern: &mut InternData, unary_expr: P<UnaryExpr>) {
+    intern_expr(intern, unary_expr.rhs);
+}
+
+fn intern_binary_expr(intern: &mut InternData, binary_expr: P<BinaryExpr>) {
+    intern_expr(intern, binary_expr.lhs);
+    intern_expr(intern, binary_expr.rhs);
 }
 
 struct Parser<'ast> {
@@ -780,7 +1121,7 @@ impl<'ast> Parser<'ast> {
         let has_access =
             module_access.modifier != ModuleAccessModifier::None || !module_access.names.is_empty();
         let has_name = self.peek() == Token::Ident || has_access;
-        struct_init.struct_name = if has_name {
+        struct_init.name = if has_name {
             Some(self.parse_ident(ParseContext::StructInit)?)
         } else {
             None
