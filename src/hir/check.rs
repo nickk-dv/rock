@@ -4,6 +4,30 @@ use crate::ast::ast::*;
 use crate::err::check_err::*;
 use crate::mem::*;
 use std::collections::HashMap;
+use std::path::PathBuf;
+
+pub fn check_ast(mut ast: Ast) -> Result<(), ()> {
+    let mut file_map = HashMap::new();
+    for module in ast.modules.iter() {
+        if let Some(existing) = file_map.insert(module.file.path.clone(), module.copy()) {
+            println!("Multiple modules share same file! {:?}", existing.file.path);
+        }
+    }
+
+    let mut context = Context::new(&mut ast);
+    let mut root_path = PathBuf::new();
+    root_path.push("test"); //@src
+    root_path.push("main.lang"); //@or lib.lang
+
+    if let Some(existing) = file_map.get(&root_path) {
+        let root_module = existing.copy();
+    } else {
+        context.err(CheckError::ParseMainFileMissing);
+        return context.report_errors();
+    }
+
+    return context.report_errors();
+}
 
 //@note external proc uniqueness check will be delayed to after hir creation
 
@@ -322,7 +346,7 @@ impl<'ast> Context<'ast> {
                         scope.err_info(existing.import_span, "existing import");
                     }
                     None => {
-                        scope.wildcards.push(WildcardImport {
+                        scope.wildcards.push(Wildcard {
                             from_id,
                             import_span: task.import.span,
                         });

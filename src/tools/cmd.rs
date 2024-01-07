@@ -49,8 +49,8 @@ fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let mut ast = parser::parse()?;
-    check::check(&mut ast)?;
+    let ast = parser::parse()?;
+    check::check_ast(ast)?;
     Ok(())
 }
 

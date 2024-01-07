@@ -6,14 +6,14 @@ use crate::mem::P;
 
 pub struct Scope {
     pub module: P<Module>,
-    pub errors: Vec<Error>,
     pub declared: SymbolTable,
     pub imported: SymbolTable,
-    pub wildcards: Vec<WildcardImport>,
+    pub wildcards: Vec<Wildcard>,
+    pub errors: Vec<Error>,
 }
 
 #[derive(Copy, Clone)]
-pub struct WildcardImport {
+pub struct Wildcard {
     pub from_id: ModuleID,
     pub import_span: Span,
 }
@@ -22,10 +22,10 @@ impl Scope {
     pub fn new(module: P<Module>) -> Self {
         Self {
             module,
-            errors: Vec::new(),
             declared: SymbolTable::new(),
             imported: SymbolTable::new(),
             wildcards: Vec::new(),
+            errors: Vec::new(),
         }
     }
 

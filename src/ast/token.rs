@@ -1,6 +1,5 @@
 use super::span::Span;
 
-#[derive(Copy, Clone)]
 pub struct TokenSpan {
     pub span: Span,
     pub token: Token,
