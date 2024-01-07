@@ -1,7 +1,8 @@
 use super::scope::*;
 use super::symbol_table::*;
 use crate::ast::ast::*;
-use crate::err::check_err::*;
+use crate::err::error::CheckError;
+use crate::err::error::Error;
 use crate::mem::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,7 +23,7 @@ pub fn check_ast(mut ast: Ast) -> Result<(), ()> {
     if let Some(existing) = file_map.get(&root_path) {
         let root_module = existing.copy();
     } else {
-        context.err(CheckError::ParseMainFileMissing);
+        context.err(Error::check_no_src(CheckError::ParseMainFileMissing));
         return context.report_errors();
     }
 
@@ -60,7 +61,7 @@ pub fn check(ast: &mut Ast) -> Result<(), ()> {
 struct Context<'ast> {
     ast: &'ast mut Ast,
     scopes: Vec<Scope>,
-    errors: Vec<CheckError>,
+    errors: Vec<Error>,
 }
 
 struct ImportTask {
@@ -84,17 +85,17 @@ impl<'ast> Context<'ast> {
         }
     }
 
-    fn err(&mut self, error: CheckError) {
+    fn err(&mut self, error: Error) {
         self.errors.push(error);
     }
 
-    fn report_errors(&self) -> Result<(), ()> {
-        for err in self.errors.iter() {
-            crate::err::report::err_no_context(*err);
+    fn report_errors(self) -> Result<(), ()> {
+        for err in self.errors {
+            crate::err::report::report(err);
         }
-        for scope in self.scopes.iter() {
-            for err in scope.errors.iter() {
-                crate::err::report::err(self.ast, err);
+        for scope in self.scopes {
+            for err in scope.errors {
+                crate::err::report::report(err);
             }
         }
         if crate::err::report::did_error() {
@@ -149,7 +150,7 @@ impl<'ast> Context<'ast> {
         let main_id = match self.ast.intern_pool.get_id_if_exists("main".as_bytes()) {
             Some(id) => id,
             None => {
-                self.err(CheckError::MainProcMissing);
+                self.err(Error::check_no_src(CheckError::MainProcMissing));
                 return;
             }
         };
@@ -157,7 +158,7 @@ impl<'ast> Context<'ast> {
         let main_proc = match scope.declared.get_proc(main_id) {
             Some(proc_decl) => proc_decl.0,
             None => {
-                self.err(CheckError::MainProcMissing);
+                self.err(Error::check_no_src(CheckError::MainProcMissing));
                 return;
             }
         };

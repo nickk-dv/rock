@@ -7,7 +7,7 @@ use crate::{
     mem::P,
 };
 
-enum Error {
+pub enum Error {
     Parse(ParseErrorData),
     Check(CheckErrorData),
     FileIO(FileIOErrorData),
@@ -15,19 +15,23 @@ enum Error {
 }
 
 impl Error {
-    fn parse(error: ParseError, source: P<Module>, got_token: TokenSpan) -> Self {
+    pub fn parse(error: ParseError, source: P<Module>, got_token: TokenSpan) -> Self {
         Self::Parse(ParseErrorData::new(error, source, got_token))
     }
 
-    fn check(error: CheckError, source: P<Module>, span: Span) -> CheckErrorData {
-        CheckErrorData::new(error, source, span)
+    pub fn check(error: CheckError, source: P<Module>, span: Span) -> CheckErrorData {
+        CheckErrorData::new(error, false, source, span)
     }
 
-    fn file_io(error: FileIOError) -> Self {
+    pub fn check_no_src(error: CheckError) -> Self {
+        Self::Check(CheckErrorData::new(error, true, P::null(), Span::new(0, 0)))
+    }
+
+    pub fn file_io(error: FileIOError) -> Self {
         Self::FileIO(FileIOErrorData::from(error))
     }
 
-    fn internal(error: InternalError) -> Self {
+    pub fn internal(error: InternalError) -> Self {
         Self::Internal(InternalErrorData::from(error))
     }
 }
@@ -121,7 +125,7 @@ impl ParseErrorData {
 }
 
 #[derive(Copy, Clone)]
-enum ParseError {
+pub enum ParseError {
     Ident(ParseContext),
     TypeMatch,
     DeclMatch,
@@ -136,7 +140,7 @@ enum ParseError {
 }
 
 #[derive(Copy, Clone)]
-enum ParseContext {
+pub enum ParseContext {
     ModuleAccess,
     Type,
     CustomType,
@@ -222,47 +226,75 @@ impl ParseContext {
     }
 }
 
-enum CheckError {
+pub enum CheckError {
+    ParseSrcDirMissing,
+    ParseLibFileMissing,
+    ParseMainFileMissing,
+    ParseModBothPathsExist,
+    ParseModBothPathsMissing,
+    ParseModCycle,
+
+    ModRedefinition,
     SymbolRedefinition,
     ProcParamRedefinition,
     EnumVariantRedefinition,
     StructFieldRedefinition,
+
+    MainProcMissing,
+    MainProcVariadic,
+    MainProcExternal,
+    MainProcHasParams,
+    MainProcWrongRetType,
+
+    ImportModuleAccessMissing,
+    SuperUsedFromRootModule,
+    ModuleIsPrivate,
+    ModuleNotFoundInScope,
+    ModuleNotDeclaredInPath,
+    ImportFromItself,
+    ImportItself,
+    ImportWildcardExists,
+    ImportSymbolNotDefined,
+    ImportSymbolIsPrivate,
+    ImportSymbolAlreadyDefined,
+    ImporySymbolAlreadyImported,
+
+    ModuleSymbolConflit,
 }
 
-struct ParseErrorData {
-    source: P<Module>,
-    context: ParseContext,
-    expected: Vec<Token>,
-    got_token: TokenSpan,
+pub(super) struct ParseErrorData {
+    pub(super) source: P<Module>,
+    pub(super) context: ParseContext,
+    pub(super) expected: Vec<Token>,
+    pub(super) got_token: TokenSpan,
 }
 
-struct CheckErrorData {
-    message: &'static str,
-    help: Option<&'static str>,
-    source: P<Module>,
-    span: Span,
-    info: Vec<CheckErrorInfoData>,
+pub(super) struct CheckErrorData {
+    pub(super) message: &'static str,
+    pub(super) help: Option<&'static str>,
+    pub(super) no_source: bool,
+    pub(super) source: P<Module>,
+    pub(super) span: Span,
+    pub(super) info: Vec<CheckErrorInfoData>,
 }
 
-struct CheckErrorInfoData {
-    source: P<Module>,
-    span: Span,
-    marker: &'static str,
+pub(super) struct CheckErrorInfoData {
+    pub(super) source: P<Module>,
+    pub(super) span: Span,
+    pub(super) marker: &'static str,
 }
 
-struct FileIOErrorData {
-    message: &'static str,
-    help: Option<&'static str>,
+pub(super) struct FileIOErrorData {
+    pub(super) message: &'static str,
+    pub(super) help: Option<&'static str>,
 }
 
-struct InternalErrorData {
-    message: &'static str,
-    help: Option<&'static str>,
+pub(super) struct InternalErrorData {
+    pub(super) message: &'static str,
+    pub(super) help: Option<&'static str>,
 }
 
-impl ParseErrorData {}
-
-enum FileIOError {
+pub enum FileIOError {
     DirRead,
     DirCreate,
     FileRead,
@@ -277,16 +309,15 @@ impl FileIOErrorData {
 
     fn from(error: FileIOError) -> Self {
         match error {
-            FileIOError::DirRead => Self::new("file io error", None),
-            FileIOError::DirCreate => Self::new("file io error", None),
-            FileIOError::FileRead => Self::new("file io error", None),
+            FileIOError::DirRead    => Self::new("file io error", None),
+            FileIOError::DirCreate  => Self::new("file io error", None),
+            FileIOError::FileRead   => Self::new("file io error", None),
             FileIOError::FileCreate => Self::new("file io error", None),
-            FileIOError::FileWrite => Self::new("file io error", None),
+            FileIOError::FileWrite  => Self::new("file io error", None),
         }
     }
 }
-
-enum InternalError {
+pub enum InternalError {
     Internal,
 }
 
@@ -303,11 +334,12 @@ impl InternalErrorData {
 }
 
 impl CheckErrorData {
-    fn new(error: CheckError, source: P<Module>, span: Span) -> Self {
+    fn new(error: CheckError, no_source: bool, source: P<Module>, span: Span) -> Self {
         let message = Self::message(error);
         CheckErrorData {
             message: message.0,
             help: message.1,
+            no_source,
             source,
             span,
             info: Vec::new(),
@@ -323,16 +355,45 @@ impl CheckErrorData {
         self
     }
 
-    fn to_err(self) -> Error {
+    pub fn to_err(self) -> Error {
         Error::Check(self)
     }
 
     fn message(error: CheckError) -> (&'static str, Option<&'static str>) {
         match error {
-            CheckError::SymbolRedefinition => ("error", None),
-            CheckError::ProcParamRedefinition => ("error", None),
-            CheckError::EnumVariantRedefinition => ("error", None),
-            CheckError::StructFieldRedefinition => ("error", None),
+            CheckError::ParseSrcDirMissing =>          ("missing `src` directory", Some("make sure that current directory is set to the project directory before running compiler commands")),
+            CheckError::ParseLibFileMissing =>         ("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
+            CheckError::ParseMainFileMissing =>        ("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
+            CheckError::ParseModBothPathsExist =>      ("both module filepaths exist", Some("only one filepath may exist:")),
+            CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", Some("at least one filepath must exist:")),
+            CheckError::ParseModCycle =>               ("module definition results in a cycle", Some("module paths that form a cycle:")),
+
+            CheckError::ModRedefinition =>             ("module redefinition", None),
+            CheckError::SymbolRedefinition =>          ("symbol redefinition", None),
+            CheckError::ProcParamRedefinition =>       ("procedure parameter redefinition", None),
+            CheckError::EnumVariantRedefinition =>     ("enum variant redefinition", None),
+            CheckError::StructFieldRedefinition =>     ("struct field redefinition", None),
+            
+            CheckError::MainProcMissing =>             ("main procedure is not found in src/main.lang", Some("define the entry point `main :: () -> s32 { return 0; }`")), //@unstable file ext .lang
+            CheckError::MainProcVariadic =>            ("main procedure cannot be variadic", Some("remove `..` from input parameters")),
+            CheckError::MainProcExternal =>            ("main procedure cannot be external", Some("remove `c_call` directive")), //@unstable directive name
+            CheckError::MainProcHasParams =>           ("main procedure cannot have input parameters", Some("remove input parameters")),
+            CheckError::MainProcWrongRetType =>        ("main procedure must return `s32`", Some("change return type to `-> s32`")),
+            
+            CheckError::ImportModuleAccessMissing =>   ("import missing module access path", Some("specify module access path before the import target")),
+            CheckError::SuperUsedFromRootModule =>     ("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),
+            CheckError::ModuleIsPrivate =>             ("module is private", None),
+            CheckError::ModuleNotFoundInScope =>       ("module is not found in this scope", None),
+            CheckError::ModuleNotDeclaredInPath =>     ("module is not declared in referenced module path", None),
+            CheckError::ImportFromItself =>            ("importing from itself is redundant", Some("remove this import")),
+            CheckError::ImportItself =>                ("importing module into itself is redundant", Some("remove this import")),
+            CheckError::ImportWildcardExists =>        ("wildcard import of module already exists", Some("remove this import")),
+            CheckError::ImportSymbolNotDefined =>      ("imported symbol is not defined in target module", None),
+            CheckError::ImportSymbolIsPrivate =>       ("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
+            CheckError::ImportSymbolAlreadyDefined =>  ("imported symbol is already defined", None),
+            CheckError::ImporySymbolAlreadyImported => ("imported symbol is already imported", Some("remove this symbol import")),
+
+            CheckError::ModuleSymbolConflit =>         ("this module name conflits with others in scope", None), 
         }
     }
 }
