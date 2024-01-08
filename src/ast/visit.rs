@@ -1,17 +1,13 @@
 use super::ast::*;
 use crate::mem::*;
 
-pub fn visit_ast_with<T: MutVisit>(vis: &mut T, ast: &mut Ast) {
+pub fn visit_with<T: MutVisit>(vis: &mut T, ast: P<Ast>) {
     visit_ast(vis, ast);
-}
-
-pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
-    visit_module(vis, module);
 }
 
 #[allow(unused)]
 pub trait MutVisit: Sized {
-    fn visit_ast(&mut self, ast: &mut Ast) {}
+    fn visit_ast(&mut self, ast: P<Ast>) {}
     fn visit_module(&mut self, module: P<Module>) {}
     fn visit_ident(&mut self, ident: &mut Ident) {}
     fn visit_module_access(&mut self, module_access: &mut ModuleAccess) {}
@@ -59,8 +55,8 @@ pub trait MutVisit: Sized {
     fn visit_binary_expr(&mut self, binary_expr: P<BinaryExpr>) {}
 }
 
-fn visit_ast<T: MutVisit>(vis: &mut T, ast: &mut Ast) {
-    vis.visit_ast(ast);
+fn visit_ast<T: MutVisit>(vis: &mut T, ast: P<Ast>) {
+    vis.visit_ast(ast.copy());
     for module in ast.modules.iter() {
         visit_module(vis, module.copy());
     }

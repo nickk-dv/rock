@@ -8,17 +8,17 @@ pub struct SymbolTable {
 
 #[derive(Copy, Clone)]
 pub enum Symbol {
-    Mod((P<ModDecl>, ModuleID)),
-    Proc((P<ProcDecl>, ModuleID)),
-    Enum((P<EnumDecl>, ModuleID)),
-    Struct((P<StructDecl>, ModuleID)),
-    Global((P<GlobalDecl>, ModuleID)),
+    Mod((P<ModDecl>, ScopeID)),
+    Proc((P<ProcDecl>, ScopeID)),
+    Enum((P<EnumDecl>, ScopeID)),
+    Struct((P<StructDecl>, ScopeID)),
+    Global((P<GlobalDecl>, ScopeID)),
 }
 
 #[derive(Copy, Clone)]
 pub enum TypeSymbol {
-    Enum((P<EnumDecl>, ModuleID)),
-    Struct((P<StructDecl>, ModuleID)),
+    Enum((P<EnumDecl>, ScopeID)),
+    Struct((P<StructDecl>, ScopeID)),
 }
 
 impl SymbolTable {
@@ -46,14 +46,14 @@ impl SymbolTable {
         }
     }
 
-    pub fn get_mod(&self, id: InternID) -> Option<(P<ModDecl>, ModuleID)> {
+    pub fn get_mod(&self, id: InternID) -> Option<(P<ModDecl>, ScopeID)> {
         match self.table.get(&id) {
             Some(Symbol::Mod(v)) => Some(*v),
             _ => None,
         }
     }
 
-    pub fn get_proc(&self, id: InternID) -> Option<(P<ProcDecl>, ModuleID)> {
+    pub fn get_proc(&self, id: InternID) -> Option<(P<ProcDecl>, ScopeID)> {
         match self.table.get(&id) {
             Some(Symbol::Proc(v)) => Some(*v),
             _ => None,
@@ -68,7 +68,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn get_global(&self, id: InternID) -> Option<(P<GlobalDecl>, ModuleID)> {
+    pub fn get_global(&self, id: InternID) -> Option<(P<GlobalDecl>, ScopeID)> {
         match self.table.get(&id) {
             Some(Symbol::Global(v)) => Some(*v),
             _ => None,
@@ -77,7 +77,7 @@ impl SymbolTable {
 }
 
 impl Symbol {
-    pub fn from_decl(decl: Decl, source_id: ModuleID) -> Option<Self> {
+    pub fn from_decl(decl: Decl, source_id: ScopeID) -> Option<Self> {
         match decl {
             Decl::Mod(mod_decl) => Some(Symbol::Mod((mod_decl, source_id))),
             Decl::Proc(proc_decl) => Some(Symbol::Proc((proc_decl, source_id))),

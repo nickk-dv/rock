@@ -1,5 +1,5 @@
-use crate::ast::ast::{AssignOp, BasicType, BinaryOp, UnaryOp};
-use crate::mem::{Array, InternID, P};
+use crate::ast::ast::*;
+use crate::mem::*;
 
 pub type ProcID = u32;
 pub type StructID = u32;
@@ -9,6 +9,7 @@ pub struct Hir {
     procs: Vec<ProcDecl>,
     structs: Vec<StructDecl>,
     const_values: Vec<ConstValue>,
+    intern_pool: P<InternPool>,
 }
 
 #[derive(Copy, Clone)]

@@ -6,7 +6,7 @@ use crate::mem::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub fn check_ast(mut ast: Ast) -> Result<(), ()> {
+pub fn check_ast(ast: P<Ast>) -> Result<(), ()> {
     let mut file_map = HashMap::new();
     for module in ast.modules.iter() {
         if let Some(existing) = file_map.insert(module.file.path.clone(), module.copy()) {
@@ -14,7 +14,7 @@ pub fn check_ast(mut ast: Ast) -> Result<(), ()> {
         }
     }
 
-    let mut context = Context::new(&mut ast);
+    let mut context = Context::new(ast);
     let mut root_path = PathBuf::new();
     root_path.push("test"); //@src
     root_path.push("main.lang"); //@or lib.lang
@@ -45,7 +45,7 @@ pub fn check_ast(mut ast: Ast) -> Result<(), ()> {
 - need separate imported tables to carry the source information to be able to know the source
 */
 
-pub fn check(ast: &mut Ast) -> Result<(), ()> {
+pub fn check(ast: P<Ast>) -> Result<(), ()> {
     return Ok(());
     let mut context = Context::new(ast);
     context.pass_0_create_scopes();
@@ -57,8 +57,8 @@ pub fn check(ast: &mut Ast) -> Result<(), ()> {
     context.report_errors()
 }
 
-struct Context<'ast> {
-    ast: &'ast mut Ast,
+struct Context {
+    ast: P<Ast>,
     scopes: Vec<Scope>,
     errors: Vec<Error>,
 }
@@ -75,8 +75,8 @@ enum ImportTaskStatus {
     Resolved,
 }
 
-impl<'ast> Context<'ast> {
-    fn new(ast: &'ast mut Ast) -> Self {
+impl Context {
+    fn new(ast: P<Ast>) -> Self {
         Self {
             ast,
             scopes: Vec::new(),
@@ -101,12 +101,12 @@ impl<'ast> Context<'ast> {
         report::err_status(())
     }
 
-    fn get_scope(&self, scope_id: ModuleID) -> &Scope {
+    fn get_scope(&self, scope_id: ScopeID) -> &Scope {
         //@unsafe { self.scopes.get_unchecked(scope_id as usize) }
         self.scopes.get(scope_id as usize).unwrap()
     }
 
-    fn get_scope_mut(&mut self, scope_id: ModuleID) -> &mut Scope {
+    fn get_scope_mut(&mut self, scope_id: ScopeID) -> &mut Scope {
         //@unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
         self.scopes.get_mut(scope_id as usize).unwrap()
     }
@@ -129,7 +129,7 @@ impl<'ast> Context<'ast> {
     fn pass_1_process_declarations(&mut self) {
         for scope in self.scopes.iter_mut() {
             for decl in scope.module.decls {
-                if let Some(symbol) = Symbol::from_decl(decl, scope.id()) {
+                if let Some(symbol) = Symbol::from_decl(decl, scope.id) {
                     if let Err(existing) = scope.declared.add(symbol) {
                         scope.error(
                             Error::check(
@@ -252,7 +252,7 @@ impl<'ast> Context<'ast> {
     }
 
     fn pass_4_process_imports(&mut self) {
-        for scope_id in 0..self.scopes.len() as ModuleID {
+        for scope_id in 0..self.scopes.len() as ScopeID {
             let mut import_tasks = self.scope_import_task_collect(scope_id);
             let mut were_resolved = 0;
 
@@ -285,7 +285,7 @@ impl<'ast> Context<'ast> {
         }
     }
 
-    fn scope_import_task_collect(&mut self, scope_id: ModuleID) -> Vec<ImportTask> {
+    fn scope_import_task_collect(&mut self, scope_id: ScopeID) -> Vec<ImportTask> {
         let scope = self.get_scope_mut(scope_id);
         let mut import_tasks = Vec::new();
 
@@ -298,7 +298,7 @@ impl<'ast> Context<'ast> {
                     continue;
                 }
                 if import.module_access.modifier == ModuleAccessModifier::Super
-                    && scope.module.parent.is_none()
+                    && scope.parent.is_none()
                 {
                     scope.err(CheckError::SuperUsedFromRootModule, import.span);
                     continue;
@@ -312,7 +312,7 @@ impl<'ast> Context<'ast> {
         import_tasks
     }
 
-    fn scope_import_task_run(&mut self, scope_id: ModuleID, task: &mut ImportTask) {
+    fn scope_import_task_run(&mut self, scope_id: ScopeID, task: &mut ImportTask) {
         if task.status == ImportTaskStatus::Resolved {
             return;
         }
@@ -329,7 +329,7 @@ impl<'ast> Context<'ast> {
                     return;
                 }
             }
-            ModuleAccessModifier::Super => self.get_scope(scope_id).module.parent.unwrap(),
+            ModuleAccessModifier::Super => self.get_scope(scope_id).parent.unwrap(),
             ModuleAccessModifier::Package => 0,
         };
 
@@ -392,7 +392,7 @@ impl<'ast> Context<'ast> {
         }
     }
 
-    fn scope_import_symbol(&mut self, scope_id: ModuleID, from_id: ModuleID, name: Ident) {
+    fn scope_import_symbol(&mut self, scope_id: ScopeID, from_id: ScopeID, name: Ident) {
         //symbol being imported must be public + uniquely defined in source module, else its ambiguous
         //conflit might arise from symbol thats already defined or imported or wilcard public declared from same group
 
@@ -427,7 +427,7 @@ impl<'ast> Context<'ast> {
     }
 
     fn pass_5_testing(&mut self) {
-        for scope_id in 0..self.scopes.len() as ModuleID {
+        for scope_id in 0..self.scopes.len() as ScopeID {
             for decl in self.get_scope(scope_id).module.decls {
                 let proc_decl = if let Decl::Proc(proc_decl) = decl {
                     proc_decl
@@ -457,8 +457,8 @@ impl<'ast> Context<'ast> {
     fn scope_get_in_scope_mod(
         &mut self,
         name: Ident,
-        scope_id: ModuleID,
-    ) -> Result<(P<ModDecl>, ModuleID), ()> {
+        scope_id: ScopeID,
+    ) -> Result<(P<ModDecl>, ScopeID), ()> {
         let mut unique = self.get_scope(scope_id).declared.get_mod(name.id);
         let mut conflits = Vec::new();
 

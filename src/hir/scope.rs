@@ -5,7 +5,9 @@ use crate::err::error::*;
 use crate::mem::P;
 
 pub struct Scope {
+    pub id: ScopeID,
     pub module: P<Module>,
+    pub parent: Option<ScopeID>,
     pub declared: SymbolTable,
     pub imported: SymbolTable,
     pub wildcards: Vec<Wildcard>,
@@ -14,23 +16,21 @@ pub struct Scope {
 
 #[derive(Copy, Clone)]
 pub struct Wildcard {
-    pub from_id: ModuleID,
+    pub from_id: ScopeID,
     pub import_span: Span,
 }
 
 impl Scope {
     pub fn new(module: P<Module>) -> Self {
         Self {
+            id: 0, //@todo
             module,
+            parent: None, //@todo
             declared: SymbolTable::new(),
             imported: SymbolTable::new(),
             wildcards: Vec::new(),
             errors: Vec::new(),
         }
-    }
-
-    pub fn id(&self) -> ModuleID {
-        self.module.id
     }
 
     pub fn md(&self) -> P<Module> {

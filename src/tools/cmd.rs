@@ -55,14 +55,14 @@ fn cmd_check() -> Result<(), ()> {
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let mut ast = parser::parse()?;
-    check::check(&mut ast)?;
+    let ast = parser::parse()?;
+    check::check_ast(ast)?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let mut ast = parser::parse()?;
-    check::check(&mut ast)?;
+    let ast = parser::parse()?;
+    check::check_ast(ast)?;
     Ok(())
 }
 

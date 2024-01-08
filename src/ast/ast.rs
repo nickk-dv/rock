@@ -2,19 +2,17 @@ use super::span::Span;
 use crate::mem::*;
 use std::path::PathBuf;
 
-pub type ModuleID = u32;
+pub type ScopeID = u32;
 
 pub struct Ast {
     pub arenas: Vec<Arena>,
     pub modules: Vec<P<Module>>,
-    pub intern_pool: InternPool,
+    pub intern_pool: P<InternPool>,
 }
 
 pub struct Module {
-    pub id: ModuleID,
     pub file: SourceFile,
     pub decls: List<Decl>,
-    pub parent: Option<ModuleID>,
 }
 
 pub struct SourceFile {
@@ -112,7 +110,7 @@ pub enum Decl {
 pub struct ModDecl {
     pub visibility: Visibility,
     pub name: Ident,
-    pub id: ModuleID,
+    pub id: ScopeID,
 }
 
 #[derive(Copy, Clone)]

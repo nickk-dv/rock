@@ -6,7 +6,7 @@ use super::visit;
 use crate::err::error::*;
 use crate::err::report;
 use crate::mem::*;
-use crate::tools::threads::*;
+use crate::tools::threads;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -29,21 +29,23 @@ impl Timer {
     }
 }
 
-pub fn parse() -> Result<Ast, ()> {
+pub fn parse() -> Result<P<Ast>, ()> {
     let parse_timer = Timer::new();
 
-    let mut ast = Ast {
-        arenas: Vec::new(),
-        modules: Vec::new(),
-        intern_pool: InternPool::new(),
-    };
+    let mut arena = Arena::new(4096);
+    let mut ast = arena.alloc::<Ast>();
+    ast.arenas = Vec::new();
+    ast.modules = Vec::new();
+    ast.intern_pool = arena.alloc();
+    *ast.intern_pool = InternPool::new();
+    ast.arenas.push(arena);
 
     let mut filepaths = Vec::new();
     let mut dir_path = PathBuf::new();
     dir_path.push("test");
     collect_filepaths(dir_path, &mut filepaths);
 
-    let thread_pool = ThreadPool::new(parse_task, task_res);
+    let thread_pool = threads::ThreadPool::new(parse_task, task_res);
     let output = thread_pool.execute(filepaths);
 
     for res in output.1 {
@@ -66,26 +68,32 @@ pub fn parse() -> Result<Ast, ()> {
     parse_timer.elapsed_ms("parsed all files");
 
     let intern_timer = Timer::new();
-    for module in ast.modules.iter() {
-        let mut intern_data = InternData {
-            intern_pool: &mut ast.intern_pool,
-            source: &module.file.source,
-        };
-        visit::visit_module_with(&mut intern_data, module.copy());
-    }
+    let mut interner = Interner {
+        module: P::null(),
+        intern_pool: P::null(),
+    };
+    super::visit::visit_with(&mut interner, ast.copy());
     intern_timer.elapsed_ms("intern idents");
 
     report::err_status(ast)
 }
 
-struct InternData<'intern> {
-    intern_pool: &'intern mut InternPool,
-    source: &'intern String,
+struct Interner {
+    module: P<Module>,
+    intern_pool: P<InternPool>,
 }
 
-impl<'intern> visit::MutVisit for InternData<'intern> {
+impl visit::MutVisit for Interner {
+    fn visit_ast(&mut self, ast: P<Ast>) {
+        self.intern_pool = ast.intern_pool.copy();
+    }
+
+    fn visit_module(&mut self, module: P<Module>) {
+        self.module = module;
+    }
+
     fn visit_ident(&mut self, ident: &mut Ident) {
-        let bytes = ident.span.str(self.source).as_bytes();
+        let bytes = ident.span.str(&self.module.file.source).as_bytes();
         ident.id = self.intern_pool.intern(bytes);
     }
 }
@@ -117,7 +125,7 @@ fn collect_filepaths(dir_path: PathBuf, filepaths: &mut Vec<PathBuf>) {
 
 fn parse_task(
     path: PathBuf,
-    task_id: TaskID,
+    _: threads::TaskID,
     arena: &mut Arena,
 ) -> Result<(P<Module>, Option<Error>), Error> {
     let source = match std::fs::read_to_string(&path) {
@@ -141,7 +149,7 @@ fn parse_task(
         line_spans: lex_result.line_spans,
     };
 
-    let res = parser.parse_module(file, task_id);
+    let res = parser.parse_module(file);
     Ok(res)
 }
 
@@ -156,12 +164,10 @@ struct Parser<'ast> {
 }
 
 impl<'ast> Parser<'ast> {
-    fn parse_module(&mut self, file: SourceFile, task_id: TaskID) -> (P<Module>, Option<Error>) {
+    fn parse_module(&mut self, file: SourceFile) -> (P<Module>, Option<Error>) {
         let mut module = self.alloc::<Module>();
-        module.id = task_id;
         module.file = file;
         module.decls = List::new();
-        module.parent = None;
 
         while self.peek() != Token::Eof {
             match self.parse_decl() {
