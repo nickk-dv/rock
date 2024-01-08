@@ -5,8 +5,12 @@ use crate::ast::token::Token;
 
 static mut ERR_COUNT: u32 = 0;
 
-pub fn did_error() -> bool {
-    unsafe { ERR_COUNT > 0 }
+pub fn err_status<T>(ok: T) -> Result<T, ()> {
+    if unsafe { ERR_COUNT > 0 } {
+        Err(())
+    } else {
+        Ok(ok)
+    }
 }
 
 pub fn report(error: Error) {
@@ -32,24 +36,24 @@ pub fn report(error: Error) {
         }
         Error::Check(err) => {
             print_error("error");
-            println!("{}", err.message);
-            print_help(err.help);
+            println!("{}", err.message.0);
             if !err.no_source {
                 span_fmt::print(&err.source.file, err.span, None, false);
                 for info in err.info.iter() {
                     span_fmt::print(&info.source.file, info.span, Some(info.marker), true);
                 }
             }
+            print_help(err.message.1);
         }
         Error::FileIO(err) => {
             print_error("file io error");
-            println!("{}", err.message);
-            print_help(err.help);
+            println!("{}", err.message.0);
+            print_help(err.message.1);
         }
         Error::Internal(err) => {
             print_error("error [internal]");
-            println!("{}", err.message);
-            print_help(err.help);
+            println!("{}", err.message.0);
+            print_help(err.message.1);
         }
     }
 }

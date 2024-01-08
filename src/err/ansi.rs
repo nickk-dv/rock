@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub fn set_color(color: Color) {
     print!("{}", Color::as_ansi_str(color));
 }

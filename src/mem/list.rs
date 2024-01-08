@@ -1,6 +1,5 @@
-use std::{marker::PhantomData, ops::DerefMut};
-
 use super::*;
+use std::marker::PhantomData;
 
 #[derive(Copy, Clone)]
 pub struct List<T: Copy> {

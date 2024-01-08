@@ -1,7 +1,7 @@
 use super::symbol_table::*;
 use crate::ast::ast::*;
 use crate::ast::span::Span;
-use crate::err::error::{CheckError, Error};
+use crate::err::error::*;
 use crate::mem::P;
 
 pub struct Scope {
@@ -33,7 +33,16 @@ impl Scope {
         self.module.id
     }
 
-    pub fn err(&mut self, error: CheckError, span: Span) {}
-    pub fn err_info(&mut self, span: Span, marker: &'static str) {}
-    pub fn err_info_external(&mut self, span: Span, source: ModuleID, marker: &'static str) {}
+    pub fn md(&self) -> P<Module> {
+        self.module.copy()
+    }
+
+    pub fn err(&mut self, error: CheckError, span: Span) {
+        self.errors
+            .push(Error::check(error, self.md(), span).into());
+    }
+
+    pub fn error(&mut self, error: Error) {
+        self.errors.push(error);
+    }
 }

@@ -1,8 +1,7 @@
 use super::scope::*;
 use super::symbol_table::*;
 use crate::ast::ast::*;
-use crate::err::error::CheckError;
-use crate::err::error::Error;
+use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -90,20 +89,16 @@ impl<'ast> Context<'ast> {
     }
 
     fn report_errors(self) -> Result<(), ()> {
+        use crate::err::report;
         for err in self.errors {
-            crate::err::report::report(err);
+            report::report(err);
         }
         for scope in self.scopes {
             for err in scope.errors {
-                crate::err::report::report(err);
+                report::report(err);
             }
         }
-        if crate::err::report::did_error() {
-            println!("");
-            Err(())
-        } else {
-            Ok(())
-        }
+        report::err_status(())
     }
 
     fn get_scope(&self, scope_id: ModuleID) -> &Scope {
@@ -136,8 +131,15 @@ impl<'ast> Context<'ast> {
             for decl in scope.module.decls {
                 if let Some(symbol) = Symbol::from_decl(decl, scope.id()) {
                     if let Err(existing) = scope.declared.add(symbol) {
-                        scope.err(CheckError::SymbolRedefinition, symbol.name().span);
-                        scope.err_info(existing.name().span, "already defined here");
+                        scope.error(
+                            Error::check(
+                                CheckError::SymbolRedefinition,
+                                scope.md(),
+                                symbol.name().span,
+                            )
+                            .info(scope.md(), existing.name().span, "already defined here")
+                            .into(),
+                        );
                     }
                 }
             }
@@ -189,8 +191,15 @@ impl<'ast> Context<'ast> {
                         let mut name_set = HashMap::<InternID, Ident>::new();
                         for param in proc_decl.params.iter() {
                             if let Some(existing) = name_set.get(&param.name.id) {
-                                scope.err(CheckError::ProcParamRedefinition, param.name.span);
-                                scope.err_info(existing.span, "already defined here");
+                                scope.error(
+                                    Error::check(
+                                        CheckError::ProcParamRedefinition,
+                                        scope.md(),
+                                        param.name.span,
+                                    )
+                                    .info(scope.md(), existing.span, "already defined here")
+                                    .into(),
+                                );
                             } else {
                                 name_set.insert(param.name.id, param.name);
                             }
@@ -200,8 +209,15 @@ impl<'ast> Context<'ast> {
                         let mut name_set = HashMap::<InternID, Ident>::new();
                         for variant in enum_decl.variants.iter() {
                             if let Some(existing) = name_set.get(&variant.name.id) {
-                                scope.err(CheckError::EnumVariantRedefinition, variant.name.span);
-                                scope.err_info(existing.span, "already defined here");
+                                scope.error(
+                                    Error::check(
+                                        CheckError::EnumVariantRedefinition,
+                                        scope.md(),
+                                        variant.name.span,
+                                    )
+                                    .info(scope.md(), existing.span, "already defined here")
+                                    .into(),
+                                );
                             } else {
                                 name_set.insert(variant.name.id, variant.name);
                             }
@@ -211,8 +227,19 @@ impl<'ast> Context<'ast> {
                         let mut name_set = HashMap::<InternID, Ident>::new();
                         for field in struct_decl.fields.iter() {
                             if let Some(existing) = name_set.get(&field.name.id) {
-                                scope.err(CheckError::StructFieldRedefinition, field.name.span);
-                                scope.err_info(existing.span, "already defined here");
+                                scope.error(
+                                    Error::check(
+                                        CheckError::StructFieldRedefinition,
+                                        scope.module.copy(),
+                                        field.name.span,
+                                    )
+                                    .info(
+                                        scope.module.copy(),
+                                        existing.span,
+                                        "already defined here",
+                                    )
+                                    .into(),
+                                );
                             } else {
                                 name_set.insert(field.name.id, field.name);
                             }
@@ -343,8 +370,8 @@ impl<'ast> Context<'ast> {
                 }
                 match duplicate {
                     Some(existing) => {
-                        scope.err(CheckError::ImportWildcardExists, task.import.span);
-                        scope.err_info(existing.import_span, "existing import");
+                        //@scope.err(CheckError::ImportWildcardExists, task.import.span);
+                        //scope.err_info(existing.import_span, "existing import");
                     }
                     None => {
                         scope.wildcards.push(Wildcard {
@@ -384,12 +411,12 @@ impl<'ast> Context<'ast> {
                 }
                 if symbol.visibility() == Visibility::Private {
                     scope.err(CheckError::ImportSymbolIsPrivate, name.span);
-                    scope.err_info_external(symbol.name().span, from_id, "this private symbol");
+                    //@scope.err_info_external(symbol.name().span, from_id, "this private symbol");
                     return;
                 }
                 if let Some(existing) = scope.declared.get(name.id) {
                     scope.err(CheckError::ImportSymbolAlreadyDefined, name.span);
-                    scope.err_info(existing.name().span, "already defined here");
+                    //@scope.err_info(existing.name().span, "already defined here");
                     return;
                 }
                 if let Err(existing) = scope.imported.add(symbol) {
@@ -470,15 +497,15 @@ impl<'ast> Context<'ast> {
             for conflit in conflits.iter() {
                 match conflit.2 {
                     Some(import_span) => {
-                        scope.err_info(import_span, "from this import");
-                        scope.err_info_external(conflit.0.name.span, conflit.1, "this symbol");
+                        //@scope.err_info(import_span, "from this import");
+                        //@scope.err_info_external(conflit.0.name.span, conflit.1, "this symbol");
                     }
                     None => {
-                        scope.err_info_external(
+                        /*@scope.err_info_external(
                             conflit.0.name.span,
                             conflit.1,
                             "this symbol is imported",
-                        );
+                        );*/
                     }
                 }
             }

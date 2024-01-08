@@ -75,12 +75,7 @@ pub fn parse() -> Result<Ast, ()> {
     }
     intern_timer.elapsed_ms("intern idents");
 
-    if report::did_error() {
-        println!();
-        Err(())
-    } else {
-        Ok(ast)
-    }
+    report::err_status(ast)
 }
 
 struct InternData<'intern> {
