@@ -2,9 +2,9 @@ use super::scope::*;
 use super::symbol_table::*;
 use crate::ast::ast::*;
 use crate::err::error::*;
-use crate::err::report;
 use crate::mem::*;
 use std::collections::HashMap;
+use std::path;
 use std::path::PathBuf;
 
 struct ScopeTreeTask {
@@ -14,9 +14,6 @@ struct ScopeTreeTask {
 }
 
 pub fn check_ast(ast: P<Ast>) -> Result<(), ()> {
-    //@accumulate instead of report errors immediately
-    //@allow formatted strings to build into all types of error info
-
     let mut context = Context::new(ast.copy());
     let mut tasks = Vec::new();
     let mut file_module_map = HashMap::new();
@@ -24,8 +21,11 @@ pub fn check_ast(ast: P<Ast>) -> Result<(), ()> {
 
     for module in ast.modules.iter() {
         if let Some(existing) = file_module_map.insert(&module.file.path, module.copy()) {
-            //@internal err?
-            println!("Multiple modules share same file! {:?}", existing.file.path);
+            context.err(
+                Error::internal(InternalError::DuplicateModuleFiles)
+                    .info(format!("path: {:?}", existing.file.path))
+                    .into(),
+            );
         }
     }
 
@@ -63,46 +63,44 @@ pub fn check_ast(ast: P<Ast>) -> Result<(), ()> {
 
         let module = match (file_module_map.get(&path_1), file_module_map.get(&path_2)) {
             (None, None) => {
-                report::report(
+                context.err(
                     Error::check(
                         CheckError::ParseModBothPathsMissing,
                         task.parent,
                         task.mod_decl.name.span,
                     )
+                    .info(format!("{:?}", path_1))
+                    .info(format!("{:?}", path_2))
                     .into(),
                 );
-                println!("{:?}", path_1);
-                println!("{:?}", path_2);
                 continue;
             }
             (Some(..), Some(..)) => {
-                report::report(
+                context.err(
                     Error::check(
                         CheckError::ParseModBothPathsExist,
                         task.parent,
                         task.mod_decl.name.span,
                     )
+                    .info(format!("{:?}", path_1))
+                    .info(format!("{:?}", path_2))
                     .into(),
                 );
-                println!("{:?}", path_1);
-                println!("{:?}", path_2);
                 continue;
             }
             (Some(module), None) => match file_scope_map.get(&path_1) {
                 Some(existing) => {
                     //@store where this path was declared? mod_decl + scope_id
                     //@change err message
-                    report::report(
+                    context.err(
                         Error::check(
                             CheckError::ParseModCycle,
                             task.parent,
                             task.mod_decl.name.span,
                         )
+                        .info(format!("{:?}", path_1))
                         .into(),
                     );
-                    let scope = context.get_scope(*existing);
-                    println!("{:?}", scope.module.file.path);
-                    println!("{:?}", path_1);
                     continue;
                 }
                 None => module.copy(),
@@ -111,17 +109,15 @@ pub fn check_ast(ast: P<Ast>) -> Result<(), ()> {
                 Some(existing) => {
                     //@store where this path was declared? mod_decl + scope_id
                     //@change err message
-                    report::report(
+                    context.err(
                         Error::check(
                             CheckError::ParseModCycle,
                             task.parent,
                             task.mod_decl.name.span,
                         )
+                        .info(format!("{:?}", path_2))
                         .into(),
                     );
-                    let scope = context.get_scope(*existing);
-                    println!("{:?}", scope.module.file.path);
-                    println!("{:?}", path_2);
                     continue;
                 }
                 None => module.copy(),
@@ -167,7 +163,7 @@ fn create_scope(
                         scope.md(),
                         symbol.name().span,
                     )
-                    .info(scope.md(), existing.name().span, "already defined here")
+                    .context(scope.md(), existing.name().span, "already defined here")
                     .into(),
                 );
             } else if let Decl::Mod(mod_decl) = decl {
@@ -242,6 +238,7 @@ impl Context {
     }
 
     fn report_errors(self) -> Result<(), ()> {
+        use crate::err::report;
         for err in self.errors {
             report::report(err);
         }
@@ -289,7 +286,7 @@ impl Context {
                                 scope.md(),
                                 symbol.name().span,
                             )
-                            .info(scope.md(), existing.name().span, "already defined here")
+                            .context(scope.md(), existing.name().span, "already defined here")
                             .into(),
                         );
                     }
@@ -349,7 +346,7 @@ impl Context {
                                         scope.md(),
                                         param.name.span,
                                     )
-                                    .info(scope.md(), existing.span, "already defined here")
+                                    .context(scope.md(), existing.span, "already defined here")
                                     .into(),
                                 );
                             } else {
@@ -367,7 +364,7 @@ impl Context {
                                         scope.md(),
                                         variant.name.span,
                                     )
-                                    .info(scope.md(), existing.span, "already defined here")
+                                    .context(scope.md(), existing.span, "already defined here")
                                     .into(),
                                 );
                             } else {
@@ -385,7 +382,7 @@ impl Context {
                                         scope.module.copy(),
                                         field.name.span,
                                     )
-                                    .info(
+                                    .context(
                                         scope.module.copy(),
                                         existing.span,
                                         "already defined here",

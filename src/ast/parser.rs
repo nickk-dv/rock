@@ -131,7 +131,9 @@ fn parse_task(
     let source = match std::fs::read_to_string(&path) {
         Ok(source) => source,
         Err(..) => {
-            return Err(Error::file_io(FileIOError::FileRead));
+            return Err(Error::file_io(FileIOError::FileRead)
+                .info(format!("path: {:?}", path))
+                .into());
         }
     };
 

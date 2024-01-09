@@ -8,9 +8,9 @@ impl Into<Message> for CheckError {
             CheckError::ParseSrcDirMissing =>          ("missing `src` directory", Some("make sure that current directory is set to the project directory before running compiler commands")),
             CheckError::ParseLibFileMissing =>         ("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
             CheckError::ParseMainFileMissing =>        ("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
-            CheckError::ParseModBothPathsExist =>      ("both module filepaths exist", Some("only one filepath may exist:")),
-            CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", Some("at least one filepath must exist:")),
-            CheckError::ParseModCycle =>               ("module definition results in a cycle", Some("module paths that form a cycle:")),
+            CheckError::ParseModBothPathsExist =>      ("both module filepaths exist", None),
+            CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", None),
+            CheckError::ParseModCycle =>               ("module definition results in a cycle", None),
 
             CheckError::ModRedefinition =>             ("module redefinition", None),
             CheckError::SymbolRedefinition =>          ("symbol redefinition", None),
@@ -57,7 +57,7 @@ impl Into<Message> for FileIOError {
 impl Into<Message> for InternalError {
     fn into(self) -> Message {
         match self {
-            InternalError::Internal => ("internal error", None),
+            InternalError::DuplicateModuleFiles => ("module with same filepath was already inserted", None),
         }
     }
 }

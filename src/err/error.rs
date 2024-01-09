@@ -24,21 +24,28 @@ pub struct CheckErrorData {
     pub(super) no_source: bool,
     pub(super) source: P<Module>,
     pub(super) span: Span,
-    pub(super) info: Vec<CheckErrorInfoData>,
+    pub(super) info: Vec<CheckErrorInfo>,
 }
 
-pub(super) struct CheckErrorInfoData {
+pub(super) enum CheckErrorInfo {
+    InfoString(String),
+    Context(CheckErrorContext),
+}
+
+pub(super) struct CheckErrorContext {
     pub(super) source: P<Module>,
     pub(super) span: Span,
     pub(super) marker: &'static str,
 }
 
-pub(super) struct FileIOErrorData {
+pub struct FileIOErrorData {
     pub(super) message: Message,
+    pub(super) info: Vec<String>,
 }
 
-pub(super) struct InternalErrorData {
+pub struct InternalErrorData {
     pub(super) message: Message,
+    pub(super) info: Vec<String>,
 }
 
 #[derive(Copy, Clone)]
@@ -143,7 +150,7 @@ pub enum FileIOError {
 }
 
 pub enum InternalError {
-    Internal,
+    DuplicateModuleFiles,
 }
 
 impl Error {
@@ -159,12 +166,12 @@ impl Error {
         Self::Check(CheckErrorData::new(error, true, P::null(), Span::new(0, 0)))
     }
 
-    pub fn file_io(error: FileIOError) -> Self {
-        Self::FileIO(FileIOErrorData::new(error))
+    pub fn file_io(error: FileIOError) -> FileIOErrorData {
+        FileIOErrorData::new(error)
     }
 
-    pub fn internal(error: InternalError) -> Self {
-        Self::Internal(InternalErrorData::new(error))
+    pub fn internal(error: InternalError) -> InternalErrorData {
+        InternalErrorData::new(error)
     }
 }
 
@@ -312,12 +319,17 @@ impl CheckErrorData {
         }
     }
 
-    pub fn info(mut self, source: P<Module>, span: Span, marker: &'static str) -> Self {
-        self.info.push(CheckErrorInfoData {
+    pub fn context(mut self, source: P<Module>, span: Span, marker: &'static str) -> Self {
+        self.info.push(CheckErrorInfo::Context(CheckErrorContext {
             source,
             span,
             marker,
-        });
+        }));
+        self
+    }
+
+    pub fn info(mut self, info: String) -> Self {
+        self.info.push(CheckErrorInfo::InfoString(info));
         self
     }
 }
@@ -328,11 +340,29 @@ impl Into<Error> for CheckErrorData {
     }
 }
 
+impl Into<Error> for FileIOErrorData {
+    fn into(self) -> Error {
+        Error::FileIO(self)
+    }
+}
+
+impl Into<Error> for InternalErrorData {
+    fn into(self) -> Error {
+        Error::Internal(self)
+    }
+}
+
 impl FileIOErrorData {
     fn new(error: FileIOError) -> Self {
         Self {
             message: error.into(),
+            info: Vec::new(),
         }
+    }
+
+    pub fn info(mut self, info: String) -> Self {
+        self.info.push(info);
+        self
     }
 }
 
@@ -340,6 +370,12 @@ impl InternalErrorData {
     fn new(error: InternalError) -> Self {
         Self {
             message: error.into(),
+            info: Vec::new(),
         }
+    }
+
+    pub fn info(mut self, info: String) -> Self {
+        self.info.push(info);
+        self
     }
 }

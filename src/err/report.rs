@@ -1,5 +1,5 @@
 use super::ansi::{self, Color};
-use super::error::Error;
+use super::error::*;
 use super::span_fmt;
 use crate::ast::token::Token;
 
@@ -39,20 +39,38 @@ pub fn report(error: Error) {
             println!("{}", err.message.0);
             if !err.no_source {
                 span_fmt::print(&err.source.file, err.span, None, false);
-                for info in err.info.iter() {
-                    span_fmt::print(&info.source.file, info.span, Some(info.marker), true);
+                for info in err.info {
+                    match info {
+                        CheckErrorInfo::InfoString(info) => {
+                            println!("{}", info);
+                        }
+                        CheckErrorInfo::Context(context) => {
+                            span_fmt::print(
+                                &context.source.file,
+                                context.span,
+                                Some(context.marker),
+                                true,
+                            );
+                        }
+                    }
                 }
             }
             print_help(err.message.1);
         }
         Error::FileIO(err) => {
-            print_error("file io error");
+            print_error("file-io error");
             println!("{}", err.message.0);
+            for info in err.info {
+                println!("{}", info);
+            }
             print_help(err.message.1);
         }
         Error::Internal(err) => {
             print_error("error [internal]");
             println!("{}", err.message.0);
+            for info in err.info {
+                println!("{}", info);
+            }
             print_help(err.message.1);
         }
     }
