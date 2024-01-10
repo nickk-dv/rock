@@ -56,8 +56,8 @@ impl Into<Message> for FileIOError {
 
 impl Into<Message> for InternalError {
     fn into(self) -> Message {
-        match self {
-            InternalError::DuplicateModuleFiles => ("module with same filepath was already inserted", None),
-        }
+        //match self {
+        //}
+        ("internal", None)
     }
 }

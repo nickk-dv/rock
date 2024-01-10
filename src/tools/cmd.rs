@@ -50,19 +50,19 @@ fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
 
 fn cmd_check() -> Result<(), ()> {
     let ast = parser::parse()?;
-    check::check_ast(ast)?;
+    check::check(ast)?;
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
     let ast = parser::parse()?;
-    check::check_ast(ast)?;
+    check::check(ast)?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
     let ast = parser::parse()?;
-    check::check_ast(ast)?;
+    check::check(ast)?;
     Ok(())
 }
 

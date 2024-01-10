@@ -149,9 +149,7 @@ pub enum FileIOError {
     FileWrite,
 }
 
-pub enum InternalError {
-    DuplicateModuleFiles,
-}
+pub enum InternalError {}
 
 impl Error {
     pub fn parse(error: ParseError, source: P<Module>, got_token: TokenSpan) -> Self {

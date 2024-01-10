@@ -13,7 +13,7 @@ pub fn err_status<T>(ok: T) -> Result<T, ()> {
     }
 }
 
-pub fn report(error: Error) {
+pub fn report(error: &Error) {
     unsafe { ERR_COUNT += 1 }
     match error {
         Error::Parse(err) => {
@@ -39,7 +39,7 @@ pub fn report(error: Error) {
             println!("{}", err.message.0);
             if !err.no_source {
                 span_fmt::print(&err.source.file, err.span, None, false);
-                for info in err.info {
+                for info in err.info.iter() {
                     match info {
                         CheckErrorInfo::InfoString(info) => {
                             println!("{}", info);
@@ -60,7 +60,7 @@ pub fn report(error: Error) {
         Error::FileIO(err) => {
             print_error("file-io error");
             println!("{}", err.message.0);
-            for info in err.info {
+            for info in err.info.iter() {
                 println!("{}", info);
             }
             print_help(err.message.1);
@@ -68,7 +68,7 @@ pub fn report(error: Error) {
         Error::Internal(err) => {
             print_error("error [internal]");
             println!("{}", err.message.0);
-            for info in err.info {
+            for info in err.info.iter() {
                 println!("{}", info);
             }
             print_help(err.message.1);

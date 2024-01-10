@@ -4,205 +4,13 @@ use crate::ast::ast::*;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
-use std::path;
-use std::path::PathBuf;
-
-struct ScopeTreeTask {
-    parent: P<Module>,
-    parent_id: ScopeID,
-    mod_decl: P<ModDecl>,
-}
-
-pub fn check_ast(ast: P<Ast>) -> Result<(), ()> {
-    let mut context = Context::new(ast.copy());
-    let mut tasks = Vec::new();
-    let mut file_module_map = HashMap::new();
-    let mut file_scope_map = HashMap::new();
-
-    for module in ast.modules.iter() {
-        if let Some(existing) = file_module_map.insert(&module.file.path, module.copy()) {
-            context.err(
-                Error::internal(InternalError::DuplicateModuleFiles)
-                    .info(format!("path: {:?}", existing.file.path))
-                    .into(),
-            );
-        }
-    }
-
-    let mut root_path = PathBuf::new();
-    root_path.push("test"); //@src
-    root_path.push("main.lang"); //@lib.lang, without main req.
-
-    match file_module_map.get(&root_path) {
-        Some(module) => {
-            let scope = create_scope(
-                context.scopes.len() as ScopeID,
-                module.copy(),
-                None,
-                &mut tasks,
-            );
-            file_scope_map.insert(scope.module.file.path.clone(), scope.id);
-            context.scopes.push(scope);
-        }
-        None => {
-            context.err(Error::check_no_src(CheckError::ParseMainFileMissing));
-            return context.report_errors();
-        }
-    }
-
-    while let Some(mut task) = tasks.pop() {
-        let source = &task.parent.file.source;
-        let mod_name = task.mod_decl.name.span.str(source);
-        let mut path_1 = task.parent.file.path.clone();
-        let mut path_2 = task.parent.file.path.clone();
-        path_1.pop();
-        path_1.push(format!("{}.lang", mod_name));
-        path_2.pop();
-        path_2.push(mod_name);
-        path_2.push("mod.lang");
-
-        let module = match (file_module_map.get(&path_1), file_module_map.get(&path_2)) {
-            (None, None) => {
-                context.err(
-                    Error::check(
-                        CheckError::ParseModBothPathsMissing,
-                        task.parent,
-                        task.mod_decl.name.span,
-                    )
-                    .info(format!("{:?}", path_1))
-                    .info(format!("{:?}", path_2))
-                    .into(),
-                );
-                continue;
-            }
-            (Some(..), Some(..)) => {
-                context.err(
-                    Error::check(
-                        CheckError::ParseModBothPathsExist,
-                        task.parent,
-                        task.mod_decl.name.span,
-                    )
-                    .info(format!("{:?}", path_1))
-                    .info(format!("{:?}", path_2))
-                    .into(),
-                );
-                continue;
-            }
-            (Some(module), None) => match file_scope_map.get(&path_1) {
-                Some(existing) => {
-                    //@store where this path was declared? mod_decl + scope_id
-                    //@change err message
-                    context.err(
-                        Error::check(
-                            CheckError::ParseModCycle,
-                            task.parent,
-                            task.mod_decl.name.span,
-                        )
-                        .info(format!("{:?}", path_1))
-                        .into(),
-                    );
-                    continue;
-                }
-                None => module.copy(),
-            },
-            (None, Some(module)) => match file_scope_map.get(&path_2) {
-                Some(existing) => {
-                    //@store where this path was declared? mod_decl + scope_id
-                    //@change err message
-                    context.err(
-                        Error::check(
-                            CheckError::ParseModCycle,
-                            task.parent,
-                            task.mod_decl.name.span,
-                        )
-                        .info(format!("{:?}", path_2))
-                        .into(),
-                    );
-                    continue;
-                }
-                None => module.copy(),
-            },
-        };
-
-        let scope = create_scope(
-            context.scopes.len() as ScopeID,
-            module,
-            Some(task.parent_id),
-            &mut tasks,
-        );
-        task.mod_decl.id = scope.id;
-        file_scope_map.insert(scope.module.file.path.clone(), scope.id);
-        context.scopes.push(scope);
-    }
-
-    return context.report_errors();
-}
-
-fn create_scope(
-    id: ScopeID,
-    module: P<Module>,
-    parent: Option<ScopeID>,
-    tasks: &mut Vec<ScopeTreeTask>,
-) -> Scope {
-    let mut scope = Scope {
-        id,
-        module: module.copy(),
-        parent,
-        declared: SymbolTable::new(),
-        imported: SymbolTable::new(),
-        wildcards: Vec::new(),
-        errors: Vec::new(),
-    };
-
-    for decl in scope.module.decls {
-        if let Some(symbol) = Symbol::from_decl(decl, scope.id) {
-            if let Err(existing) = scope.declared.add(symbol) {
-                scope.error(
-                    Error::check(
-                        CheckError::SymbolRedefinition,
-                        scope.md(),
-                        symbol.name().span,
-                    )
-                    .context(scope.md(), existing.name().span, "already defined here")
-                    .into(),
-                );
-            } else if let Decl::Mod(mod_decl) = decl {
-                tasks.push(ScopeTreeTask {
-                    parent: module.copy(),
-                    parent_id: scope.id,
-                    mod_decl,
-                });
-            }
-        }
-    }
-
-    scope
-}
-//@note external proc uniqueness check will be delayed to after hir creation
-
-//@note resolve symbol based on 4 classes: Mod / Proc / Type / GlobalVar
-// one unique symbol per that class must exist in scope
-// meaning: declared, imported and public wilcard imported symbols
-
-//@note query for GlobalVar in scope to prevent local vars shadowing them
-
-/*
-@design ideas testing:
-- have per symbol kind tables in scope
-: issue: how will importing symbols work then?
-: solution: find symbol in each table, report if its ambiguous
-- need separate imported tables to carry the source information to be able to know the source
-*/
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
-    return Ok(());
     let mut context = Context::new(ast);
-    context.pass_0_create_scopes();
-    context.pass_1_process_declarations();
-    //@broken (no scopes added 0 doesnt exist) context.pass_2_check_main_proc();
-    context.pass_3_check_decl_namesets();
-    context.pass_4_process_imports();
-    context.pass_5_testing();
+    context.pass_0_create_scopes()?;
+    context.pass_1_check_main_proc();
+    context.pass_2_check_decl_namesets(); //@duplicates not removed
+    context.pass_3_process_imports();
     context.report_errors()
 }
 
@@ -210,6 +18,12 @@ struct Context {
     ast: P<Ast>,
     scopes: Vec<Scope>,
     errors: Vec<Error>,
+}
+
+struct ScopeTreeTask {
+    parent: P<Module>,
+    parent_id: ScopeID,
+    mod_decl: P<ModDecl>,
 }
 
 struct ImportTask {
@@ -237,67 +51,189 @@ impl Context {
         self.errors.push(error);
     }
 
-    fn report_errors(self) -> Result<(), ()> {
+    fn report_errors(&self) -> Result<(), ()> {
         use crate::err::report;
-        for err in self.errors {
+        for err in self.errors.iter() {
             report::report(err);
         }
-        for scope in self.scopes {
-            for err in scope.errors {
+        for scope in self.scopes.iter() {
+            for err in scope.errors.iter() {
                 report::report(err);
             }
         }
         report::err_status(())
     }
 
-    fn get_scope(&self, scope_id: ScopeID) -> &Scope {
+    fn get_scope(&self, id: ScopeID) -> &Scope {
         //@unsafe { self.scopes.get_unchecked(scope_id as usize) }
-        self.scopes.get(scope_id as usize).unwrap()
+        self.scopes.get(id as usize).unwrap()
     }
 
-    fn get_scope_mut(&mut self, scope_id: ScopeID) -> &mut Scope {
+    fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope {
         //@unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
-        self.scopes.get_mut(scope_id as usize).unwrap()
+        self.scopes.get_mut(id as usize).unwrap()
     }
 
-    //@its possible to have parser output already linear vector of modules
-    // which will streamline the work with scopes and prevent any possible
-    // issues with current module tree representation
-    fn pass_0_create_scopes(&mut self) {
-        //self.create_scopes(self.ast.package.root);
-    }
+    fn pass_0_create_scopes(&mut self) -> Result<(), ()> {
+        let mut tasks = Vec::new();
+        let mut file_module_map = HashMap::new();
+        let mut file_scope_map = HashMap::new();
 
-    fn create_scopes(&mut self, module: P<Module>) {
-        //self.scopes.push(Scope::new(module));
-        //for submodule in module.submodules.iter() {
-        //    self.create_scopes(submodule);
-        //}
-    }
+        for module in self.ast.modules.iter() {
+            file_module_map.insert(module.file.path.clone(), module.copy());
+        }
 
-    //@note if later stages will operate on list of decls duplicates must be removed from those checks
-    fn pass_1_process_declarations(&mut self) {
-        for scope in self.scopes.iter_mut() {
-            for decl in scope.module.decls {
-                if let Some(symbol) = Symbol::from_decl(decl, scope.id) {
-                    if let Err(existing) = scope.declared.add(symbol) {
-                        scope.error(
+        let mut root_path = std::path::PathBuf::new();
+        root_path.push("test"); //@src
+        root_path.push("main.lang"); //@lib.lang, without main req.
+
+        match file_module_map.get(&root_path) {
+            Some(module) => {
+                let scope = Self::create_scope(
+                    self.scopes.len() as ScopeID,
+                    module.copy(),
+                    None,
+                    &mut tasks,
+                );
+                file_scope_map.insert(scope.module.file.path.clone(), scope.id);
+                self.scopes.push(scope);
+            }
+            None => {
+                self.err(Error::check_no_src(CheckError::ParseMainFileMissing));
+                return self.report_errors();
+            }
+        }
+
+        while let Some(mut task) = tasks.pop() {
+            let source = &task.parent.file.source;
+            let mod_name = task.mod_decl.name.span.str(source);
+            let mut path_1 = task.parent.file.path.clone();
+            let mut path_2 = task.parent.file.path.clone();
+            path_1.pop();
+            path_1.push(format!("{}.lang", mod_name));
+            path_2.pop();
+            path_2.push(mod_name);
+            path_2.push("mod.lang");
+
+            let module = match (file_module_map.get(&path_1), file_module_map.get(&path_2)) {
+                (None, None) => {
+                    self.err(
+                        Error::check(
+                            CheckError::ParseModBothPathsMissing,
+                            task.parent,
+                            task.mod_decl.name.span,
+                        )
+                        .info(format!("{:?}", path_1))
+                        .info(format!("{:?}", path_2))
+                        .into(),
+                    );
+                    continue;
+                }
+                (Some(..), Some(..)) => {
+                    self.err(
+                        Error::check(
+                            CheckError::ParseModBothPathsExist,
+                            task.parent,
+                            task.mod_decl.name.span,
+                        )
+                        .info(format!("{:?}", path_1))
+                        .info(format!("{:?}", path_2))
+                        .into(),
+                    );
+                    continue;
+                }
+                (Some(module), None) => match file_scope_map.get(&path_1) {
+                    Some(..) => {
+                        //@store where this path was declared? mod_decl + scope_id
+                        //@change err message
+                        self.err(
                             Error::check(
-                                CheckError::SymbolRedefinition,
-                                scope.md(),
-                                symbol.name().span,
+                                CheckError::ParseModCycle,
+                                task.parent,
+                                task.mod_decl.name.span,
                             )
-                            .context(scope.md(), existing.name().span, "already defined here")
+                            .info(format!("{:?}", path_1))
                             .into(),
                         );
+                        continue;
                     }
+                    None => module.copy(),
+                },
+                (None, Some(module)) => match file_scope_map.get(&path_2) {
+                    Some(..) => {
+                        //@store where this path was declared? mod_decl + scope_id
+                        //@change err message
+                        self.err(
+                            Error::check(
+                                CheckError::ParseModCycle,
+                                task.parent,
+                                task.mod_decl.name.span,
+                            )
+                            .info(format!("{:?}", path_2))
+                            .into(),
+                        );
+                        continue;
+                    }
+                    None => module.copy(),
+                },
+            };
+
+            let scope = Self::create_scope(
+                self.scopes.len() as ScopeID,
+                module,
+                Some(task.parent_id),
+                &mut tasks,
+            );
+            task.mod_decl.id = scope.id;
+            file_scope_map.insert(scope.module.file.path.clone(), scope.id);
+            self.scopes.push(scope);
+        }
+
+        Ok(())
+    }
+
+    fn create_scope(
+        id: ScopeID,
+        module: P<Module>,
+        parent: Option<ScopeID>,
+        tasks: &mut Vec<ScopeTreeTask>,
+    ) -> Scope {
+        let mut scope = Scope {
+            id,
+            module: module.copy(),
+            parent,
+            declared: SymbolTable::new(),
+            imported: SymbolTable::new(),
+            wildcards: Vec::new(),
+            errors: Vec::new(),
+        };
+
+        for decl in scope.module.decls {
+            if let Some(symbol) = Symbol::from_decl(decl, scope.id) {
+                if let Err(existing) = scope.declared.add(symbol) {
+                    scope.error(
+                        Error::check(
+                            CheckError::SymbolRedefinition,
+                            scope.md(),
+                            symbol.name().span,
+                        )
+                        .context(scope.md(), existing.name().span, "already defined here")
+                        .into(),
+                    );
+                } else if let Decl::Mod(mod_decl) = decl {
+                    tasks.push(ScopeTreeTask {
+                        parent: module.copy(),
+                        parent_id: scope.id,
+                        mod_decl,
+                    });
                 }
             }
         }
+
+        scope
     }
 
-    //@note lib / exe package type is not considered, main is always required to exist
-    // root id = 0
-    fn pass_2_check_main_proc(&mut self) {
+    fn pass_1_check_main_proc(&mut self) {
         let main_id = match self.ast.intern_pool.get_id_if_exists("main".as_bytes()) {
             Some(id) => id,
             None => {
@@ -330,9 +266,7 @@ impl Context {
         scope.err(CheckError::MainProcWrongRetType, main_proc.name.span);
     }
 
-    //@perf creating map might not be ideal, clearing big maps can cause issues too
-    // needs to be properly measured on big codebases, if this step is performance issue
-    fn pass_3_check_decl_namesets(&mut self) {
+    fn pass_2_check_decl_namesets(&mut self) {
         for scope in self.scopes.iter_mut() {
             for decl in scope.module.decls {
                 match decl {
@@ -400,7 +334,7 @@ impl Context {
         }
     }
 
-    fn pass_4_process_imports(&mut self) {
+    fn pass_3_process_imports(&mut self) {
         for scope_id in 0..self.scopes.len() as ScopeID {
             let mut import_tasks = self.scope_import_task_collect(scope_id);
             let mut were_resolved = 0;

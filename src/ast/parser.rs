@@ -56,11 +56,11 @@ pub fn parse() -> Result<P<Ast>, ()> {
         match res {
             Ok(result) => {
                 ast.modules.push(result.0);
-                if let Some(error) = result.1 {
+                if let Some(ref error) = result.1 {
                     report::report(error);
                 }
             }
-            Err(error) => {
+            Err(ref error) => {
                 report::report(error);
             }
         }
