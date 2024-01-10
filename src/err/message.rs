@@ -3,16 +3,15 @@ use super::error::*;
 pub(super) type Message = (&'static str, Option<&'static str>);
 
 impl Into<Message> for CheckError {
+    #[rustfmt::skip]
     fn into(self) -> Message {
         match self {
-            CheckError::ParseSrcDirMissing =>          ("missing `src` directory", Some("make sure that current directory is set to the project directory before running compiler commands")),
             CheckError::ParseLibFileMissing =>         ("missing `src/lib.lang` file", Some("the root module `lib.lang` of library package must exist")), //@unstable file ext .lang
             CheckError::ParseMainFileMissing =>        ("missing `src/main.lang` file", Some("the root module `main.lang` of executable package must exist")), //@unstable file ext .lang
             CheckError::ParseModBothPathsExist =>      ("both module filepaths exist", None),
             CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", None),
             CheckError::ParseModCycle =>               ("module definition results in a cycle", None),
 
-            CheckError::ModRedefinition =>             ("module redefinition", None),
             CheckError::SymbolRedefinition =>          ("symbol redefinition", None),
             CheckError::ProcParamRedefinition =>       ("procedure parameter redefinition", None),
             CheckError::EnumVariantRedefinition =>     ("enum variant redefinition", None),
@@ -43,6 +42,7 @@ impl Into<Message> for CheckError {
 }
 
 impl Into<Message> for FileIOError {
+    #[rustfmt::skip]
     fn into(self) -> Message {
         match self {
             FileIOError::DirRead =>    ("directory read failed", None),
@@ -55,6 +55,7 @@ impl Into<Message> for FileIOError {
 }
 
 impl Into<Message> for InternalError {
+    #[rustfmt::skip]
     fn into(self) -> Message {
         //match self {
         //}

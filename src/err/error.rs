@@ -106,14 +106,12 @@ pub enum ParseContext {
 }
 
 pub enum CheckError {
-    ParseSrcDirMissing,
     ParseLibFileMissing,
     ParseMainFileMissing,
     ParseModBothPathsExist,
     ParseModBothPathsMissing,
     ParseModCycle,
 
-    ModRedefinition,
     SymbolRedefinition,
     ProcParamRedefinition,
     EnumVariantRedefinition,

@@ -338,10 +338,19 @@ impl Context {
     }
 
     fn pass_3_process_imports(&mut self) {
-        return; //@temp disabled
         for scope_id in 0..self.scopes.len() as ScopeID {
-            let mut import_tasks = self.scope_import_task_collect(scope_id);
+            let mut import_tasks = Vec::new();
             let mut were_resolved = 0;
+
+            let scope = self.get_scope(scope_id);
+            for decl in scope.module.decls {
+                if let Decl::Import(import) = decl {
+                    import_tasks.push(ImportTask {
+                        import,
+                        status: ImportTaskStatus::Unresolved,
+                    });
+                }
+            }
 
             while import_tasks
                 .iter()
@@ -362,9 +371,9 @@ impl Context {
                                 CheckError::ModuleNotFoundInScope,
                                 task.import.module_access.names.first().unwrap().span,
                             );
-                            task.status = ImportTaskStatus::Resolved;
                         }
                     }
+                    break;
                 } else {
                     were_resolved = resolved_count;
                 }
@@ -372,94 +381,53 @@ impl Context {
         }
     }
 
-    fn scope_import_task_collect(&mut self, scope_id: ScopeID) -> Vec<ImportTask> {
-        let scope = self.get_scope_mut(scope_id);
-        let mut import_tasks = Vec::new();
-
-        for decl in scope.module.decls {
-            if let Decl::Import(import) = decl {
-                if import.module_access.modifier == ModuleAccessModifier::Super
-                    && scope.parent.is_none()
-                {
-                    scope.err(CheckError::SuperUsedFromRootModule, import.span);
-                    continue;
-                }
-                import_tasks.push(ImportTask {
-                    import,
-                    status: ImportTaskStatus::Unresolved,
-                });
-            }
-        }
-        import_tasks
-    }
-
     fn scope_import_task_run(&mut self, scope_id: ScopeID, task: &mut ImportTask) {
         if task.status == ImportTaskStatus::Resolved {
             return;
         }
 
-        let mut from_id = match task.import.module_access.modifier {
-            ModuleAccessModifier::None => {
-                //@mod publicity not considered (fine for same package access)
-                // find and check conflits in declared / import / wildcards instead of just declared
-                let first_name = task.import.module_access.names.first().unwrap();
-                if let Some(mod_decl) = self.get_scope(scope_id).declared.get_mod(first_name.id) {
-                    mod_decl.0.id.unwrap() //@temp unwrap added
-                } else {
-                    task.status = ImportTaskStatus::SourceNotFound;
-                    return;
-                }
-            }
-            ModuleAccessModifier::Super => self.get_scope(scope_id).parent.unwrap(),
-            ModuleAccessModifier::Package => 0,
-        };
-
-        task.status = ImportTaskStatus::Resolved;
-        let mut skip_first = task.import.module_access.modifier == ModuleAccessModifier::None;
-
-        for name in task.import.module_access.names {
-            if skip_first {
-                skip_first = false;
-                continue;
-            }
-            //@mod publicity not considered (fine for same package access)
-            match self.get_scope(from_id).declared.get_mod(name.id) {
-                Some(mod_decl) => from_id = mod_decl.0.id.unwrap(), //@temp unwrap
-                None => {
-                    self.get_scope_mut(scope_id)
-                        .err(CheckError::ModuleNotDeclaredInPath, name.span);
-                    return;
-                }
+        if task.import.module_access.modifier == ModuleAccessModifier::None {
+            let first = task.import.module_access.names.first().unwrap();
+            if !self.scope_in_scope_mod_exists(scope_id, first) {
+                task.status = ImportTaskStatus::SourceNotFound;
+                return;
             }
         }
+        task.status = ImportTaskStatus::Resolved;
+
+        let from_id = match self.scope_resolve_module_access(scope_id, task.import.module_access) {
+            Some(id) => id,
+            None => return,
+        };
 
         if from_id == scope_id {
-            self.get_scope_mut(scope_id)
-                .err(CheckError::ImportFromItself, task.import.span);
+            let scope = self.get_scope_mut(scope_id);
+            scope.err(CheckError::ImportFromItself, task.import.span);
             return;
         }
 
         match task.import.target {
             ImportTarget::AllSymbols => {
                 let scope = self.get_scope_mut(scope_id);
-                let mut duplicate = None;
-                for wildcard in scope.wildcards.iter() {
-                    if wildcard.from_id == from_id {
-                        duplicate = Some(*wildcard);
-                        break;
-                    }
-                }
+                let duplicate = scope
+                    .wildcards
+                    .iter()
+                    .find(|wildcard| wildcard.from_id == from_id)
+                    .copied();
                 match duplicate {
-                    Some(existing) => {
-                        //@scope.err(CheckError::ImportWildcardExists, task.import.span);
-                        //scope.err_info(existing.import_span, "existing import");
-                    }
-                    None => {
-                        scope.wildcards.push(Wildcard {
-                            from_id,
-                            import_span: task.import.span,
-                        });
-                    }
+                    Some(existing) => scope.error(
+                        Error::check(
+                            CheckError::ImportWildcardExists,
+                            scope.md(),
+                            task.import.span,
+                        )
+                        .context(scope.md(), existing.import_span, "existing import")
+                        .into(),
+                    ),
+                    None => scope.wildcards.push(Wildcard {
+                        from_id,
+                        import_span: task.import.span,
+                    }),
                 }
             }
             ImportTarget::Symbol(name) => {
@@ -474,66 +442,53 @@ impl Context {
     }
 
     fn scope_import_symbol(&mut self, scope_id: ScopeID, from_id: ScopeID, name: Ident) {
-        //symbol being imported must be public + uniquely defined in source module, else its ambiguous
-        //conflit might arise from symbol thats already defined or imported or wilcard public declared from same group
-
-        match self.get_scope(from_id).declared.get(name.id) {
+        let from_scope = self.get_scope_mut(from_id);
+        let symbol = match from_scope.declared.get(name.id) {
+            Some(symbol) => symbol,
             None => {
                 let scope = self.get_scope_mut(scope_id);
                 scope.err(CheckError::ImportSymbolNotDefined, name.span);
+                return;
             }
-            Some(symbol) => {
-                let scope = self.get_scope_mut(scope_id);
-                if let Symbol::Mod(mod_decl) = symbol {
-                    if let Some(id) = mod_decl.0.id {
-                        if id == scope_id {
-                            scope.err(CheckError::ImportItself, name.span);
-                            return;
-                        }
-                    }
-                }
-                if symbol.visibility() == Visibility::Private {
-                    scope.err(CheckError::ImportSymbolIsPrivate, name.span);
-                    //@scope.err_info_external(symbol.name().span, from_id, "this private symbol");
+        };
+
+        let scope = self.get_scope_mut(scope_id);
+        if let Symbol::Mod(mod_decl) = symbol {
+            if let Some(id) = mod_decl.0.id {
+                if id == scope_id {
+                    scope.err(CheckError::ImportItself, name.span);
                     return;
-                }
-                if let Some(existing) = scope.declared.get(name.id) {
-                    scope.err(CheckError::ImportSymbolAlreadyDefined, name.span);
-                    //@scope.err_info(existing.name().span, "already defined here");
-                    return;
-                }
-                if let Err(existing) = scope.imported.add(symbol) {
-                    scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
                 }
             }
         }
-    }
 
-    fn pass_5_testing(&mut self) {
-        for scope_id in 0..self.scopes.len() as ScopeID {
-            for decl in self.get_scope(scope_id).module.decls {
-                let proc_decl = if let Decl::Proc(proc_decl) = decl {
-                    proc_decl
-                } else {
-                    continue;
-                };
-                for param in proc_decl.params.iter() {
-                    let tt = param.tt;
-                    match tt.kind {
-                        TypeKind::Basic(_) => {}
-                        TypeKind::Custom(custom) => {
-                            if !custom.module_access.names.is_empty() {
-                                let val = self.scope_get_in_scope_mod(
-                                    custom.module_access.names.first().unwrap(),
-                                    0,
-                                );
-                            }
-                        }
-                        TypeKind::ArraySlice(_) => {}
-                        TypeKind::ArrayStatic(_) => {}
-                    }
-                }
-            }
+        if symbol.visibility() == Visibility::Private && from_id != ROOT_ID {
+            let error: Error =
+                Error::check(CheckError::ImportSymbolIsPrivate, scope.md(), name.span)
+                    .context(
+                        self.get_scope(from_id).md(),
+                        symbol.name().span,
+                        "this private symbol",
+                    )
+                    .into();
+            self.get_scope_mut(scope_id).error(error);
+            return;
+        }
+
+        if let Some(existing) = scope.declared.get(name.id) {
+            scope.error(
+                Error::check(
+                    CheckError::ImportSymbolAlreadyDefined,
+                    scope.md(),
+                    name.span,
+                )
+                .context(scope.md(), existing.name().span, "already defined here")
+                .into(),
+            );
+            return;
+        }
+        if let Err(..) = scope.imported.add(symbol) {
+            scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
         }
     }
 
@@ -544,12 +499,21 @@ impl Context {
     ) -> Option<ScopeID> {
         let target_id = match module_access.modifier {
             ModuleAccessModifier::None => {
-                if let Some(name) = module_access.names.first() {
-                    let target = self.scope_get_in_scope_mod(name, scope_id);
-                    //@todo in scope module extract + err handle
-                    0
-                } else {
-                    return Some(scope_id);
+                let first = match module_access.names.first() {
+                    Some(name) => name,
+                    None => return None,
+                };
+                let mod_decl = match self.scope_get_in_scope_mod(first, scope_id) {
+                    Some(mod_decl) => mod_decl,
+                    None => return None,
+                };
+                match mod_decl.id {
+                    Some(id) => id,
+                    None => {
+                        let scope = self.get_scope_mut(scope_id);
+                        scope.err(CheckError::ModuleFileReportedMissing, first.span);
+                        return None;
+                    }
                 }
             }
             ModuleAccessModifier::Super => {
@@ -565,7 +529,13 @@ impl Context {
         };
 
         let mut target = self.get_scope(target_id);
+        let mut skip_first = module_access.modifier == ModuleAccessModifier::None;
+
         for name in module_access.names {
+            if skip_first {
+                skip_first = false;
+                continue;
+            }
             let mod_decl = match target.declared.get_mod(name.id) {
                 Some(mod_decl) => mod_decl,
                 None => {
@@ -592,11 +562,24 @@ impl Context {
         Some(target.id)
     }
 
-    fn scope_get_in_scope_mod(
-        &mut self,
-        name: Ident,
-        scope_id: ScopeID,
-    ) -> Result<(P<ModDecl>, ScopeID), ()> {
+    fn scope_in_scope_mod_exists(&self, scope_id: ScopeID, name: Ident) -> bool {
+        let scope = self.get_scope(scope_id);
+        if scope.declared.get_mod(name.id).is_some() {
+            return true;
+        }
+        if scope.imported.get_mod(name.id).is_some() {
+            return true;
+        }
+        for wildcard in scope.wildcards.iter() {
+            let from_scope = self.get_scope(wildcard.from_id);
+            if from_scope.declared.get_mod(name.id).is_some() {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn scope_get_in_scope_mod(&mut self, name: Ident, scope_id: ScopeID) -> Option<P<ModDecl>> {
         let mut unique = self.get_scope(scope_id).declared.get_mod(name.id);
         let mut conflits = Vec::new();
 
@@ -610,6 +593,7 @@ impl Context {
 
         for wildcard in self.get_scope(scope_id).wildcards.iter() {
             if let Some(mod_decl) = self.get_scope(wildcard.from_id).declared.get_mod(name.id) {
+                //@rule of root being allowed also applies?
                 if mod_decl.0.visibility == Visibility::Private {
                     continue;
                 }
@@ -623,18 +607,19 @@ impl Context {
 
         if conflits.is_empty() {
             if let Some(mod_decl) = unique {
-                Ok(mod_decl)
+                Some(mod_decl.0)
             } else {
                 let scope = self.get_scope_mut(scope_id);
                 scope.err(CheckError::ModuleNotFoundInScope, name.span);
-                Err(())
+                None
             }
         } else {
             let scope = self.get_scope_mut(scope_id);
             scope.err(CheckError::ModuleSymbolConflit, name.span);
             for conflit in conflits.iter() {
                 match conflit.2 {
-                    Some(import_span) => {
+                    Some(..) => {
+                        //@todo good conflit messages
                         //@scope.err_info(import_span, "from this import");
                         //@scope.err_info_external(conflit.0.name.span, conflit.1, "this symbol");
                     }
@@ -647,7 +632,7 @@ impl Context {
                     }
                 }
             }
-            Err(())
+            None
         }
     }
 }
