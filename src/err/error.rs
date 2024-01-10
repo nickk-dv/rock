@@ -127,6 +127,7 @@ pub enum CheckError {
 
     ImportModuleAccessMissing,
     SuperUsedFromRootModule,
+    ModuleFileReportedMissing,
     ModuleIsPrivate,
     ModuleNotFoundInScope,
     ModuleNotDeclaredInPath,

@@ -26,6 +26,7 @@ impl Into<Message> for CheckError {
             
             CheckError::ImportModuleAccessMissing =>   ("import missing module access path", Some("specify module access path before the import target")),
             CheckError::SuperUsedFromRootModule =>     ("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),
+            CheckError::ModuleFileReportedMissing =>   ("this module is missing a source file, as reported earlier", None),
             CheckError::ModuleIsPrivate =>             ("module is private", None),
             CheckError::ModuleNotFoundInScope =>       ("module is not found in this scope", None),
             CheckError::ModuleNotDeclaredInPath =>     ("module is not declared in referenced module path", None),

@@ -1,9 +1,12 @@
 use super::scope::*;
 use super::symbol_table::*;
 use crate::ast::ast::*;
+use crate::ast::span::Span;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
+
+const ROOT_ID: ScopeID = 0;
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let mut context = Context::new(ast);
@@ -184,7 +187,7 @@ impl Context {
                 Some(task.parent_id),
                 &mut tasks,
             );
-            task.mod_decl.id = scope.id;
+            task.mod_decl.id = Some(scope.id);
             file_scope_map.insert(scope.module.file.path.clone(), scope.id);
             self.scopes.push(scope);
         }
@@ -241,7 +244,7 @@ impl Context {
                 return;
             }
         };
-        let scope = self.get_scope_mut(0);
+        let scope = self.get_scope_mut(ROOT_ID);
         let main_proc = match scope.declared.get_proc(main_id) {
             Some(proc_decl) => proc_decl.0,
             None => {
@@ -487,9 +490,11 @@ impl Context {
             Some(symbol) => {
                 let scope = self.get_scope_mut(scope_id);
                 if let Symbol::Mod(mod_decl) = symbol {
-                    if mod_decl.0.id == scope_id {
-                        scope.err(CheckError::ImportItself, name.span);
-                        return;
+                    if let Some(id) = mod_decl.0.id {
+                        if id == scope_id {
+                            scope.err(CheckError::ImportItself, name.span);
+                            return;
+                        }
                     }
                 }
                 if symbol.visibility() == Visibility::Private {
@@ -535,6 +540,61 @@ impl Context {
                 }
             }
         }
+    }
+
+    fn scope_resolve_module_access(
+        &mut self,
+        scope_id: ScopeID,
+        module_access: ModuleAccess,
+    ) -> Option<ScopeID> {
+        let target_id = match module_access.modifier {
+            ModuleAccessModifier::None => {
+                if let Some(name) = module_access.names.first() {
+                    let target = self.scope_get_in_scope_mod(name, scope_id);
+                    //@todo in scope module extract + err handle
+                    0
+                } else {
+                    return Some(scope_id);
+                }
+            }
+            ModuleAccessModifier::Super => {
+                let scope = self.get_scope_mut(scope_id);
+                if let Some(parent) = scope.parent {
+                    parent
+                } else {
+                    scope.err(CheckError::SuperUsedFromRootModule, Span::new(0, 0)); //@no modifier span is available
+                    return None;
+                }
+            }
+            ModuleAccessModifier::Package => ROOT_ID,
+        };
+
+        let mut target = self.get_scope(target_id);
+        for name in module_access.names {
+            let mod_decl = match target.declared.get_mod(name.id) {
+                Some(mod_decl) => mod_decl,
+                None => {
+                    let scope = self.get_scope_mut(scope_id);
+                    scope.err(CheckError::ModuleNotDeclaredInPath, name.span);
+                    return None;
+                }
+            };
+            if mod_decl.0.visibility == Visibility::Private && target.id != ROOT_ID {
+                let scope = self.get_scope_mut(scope_id);
+                scope.err(CheckError::ModuleIsPrivate, name.span);
+                return None;
+            }
+            target = match mod_decl.0.id {
+                Some(id) => self.get_scope_mut(id),
+                None => {
+                    let scope = self.get_scope_mut(scope_id);
+                    scope.err(CheckError::ModuleFileReportedMissing, name.span);
+                    return None;
+                }
+            }
+        }
+
+        Some(target.id)
     }
 
     fn scope_get_in_scope_mod(

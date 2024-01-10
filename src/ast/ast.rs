@@ -110,7 +110,7 @@ pub enum Decl {
 pub struct ModDecl {
     pub visibility: Visibility,
     pub name: Ident,
-    pub id: ScopeID,
+    pub id: Option<ScopeID>,
 }
 
 #[derive(Copy, Clone)]
