@@ -125,7 +125,6 @@ pub enum CheckError {
     MainProcHasParams,
     MainProcWrongRetType,
 
-    ImportModuleAccessMissing,
     SuperUsedFromRootModule,
     ModuleFileReportedMissing,
     ModuleIsPrivate,

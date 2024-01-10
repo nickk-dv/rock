@@ -198,6 +198,36 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_module_access(&mut self) -> Result<ModuleAccess, ParseError> {
+        let modifier = self.parse_module_access_modifier()?;
+        let mut names = List::new();
+
+        while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
+            let name = self.parse_ident(ParseContext::ModuleAccess)?;
+            self.consume();
+            names.add(&mut self.arena, name);
+        }
+        Ok(ModuleAccess { modifier, names })
+    }
+
+    fn parse_module_access_required(&mut self) -> Result<ModuleAccess, ParseError> {
+        let modifier = self.parse_module_access_modifier()?;
+        let mut names = List::new();
+
+        if modifier == ModuleAccessModifier::None {
+            let first = self.parse_ident(ParseContext::ModuleAccess)?;
+            names.add(&mut self.arena, first);
+            self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
+        }
+
+        while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
+            let name = self.parse_ident(ParseContext::ModuleAccess)?;
+            self.consume();
+            names.add(&mut self.arena, name);
+        }
+        Ok(ModuleAccess { modifier, names })
+    }
+
+    fn parse_module_access_modifier(&mut self) -> Result<ModuleAccessModifier, ParseError> {
         let modifier = match self.peek() {
             Token::KwSuper => ModuleAccessModifier::Super,
             Token::KwPackage => ModuleAccessModifier::Package,
@@ -207,16 +237,7 @@ impl<'ast> Parser<'ast> {
             self.consume();
             self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
         }
-        let mut module_access = ModuleAccess {
-            modifier,
-            names: List::new(),
-        };
-        while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
-            let name = self.parse_ident(ParseContext::ModuleAccess)?;
-            self.consume();
-            module_access.names.add(&mut self.arena, name);
-        }
-        Ok(module_access)
+        Ok(modifier)
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
@@ -430,7 +451,7 @@ impl<'ast> Parser<'ast> {
         let mut import_decl = self.alloc::<ImportDecl>();
         import_decl.span.start = self.peek_span_start();
         self.expect_token(Token::KwImport, ParseContext::ImportDecl)?;
-        import_decl.module_access = self.parse_module_access()?;
+        import_decl.module_access = self.parse_module_access_required()?;
         import_decl.target = self.parse_import_target()?;
         import_decl.span.end = self.peek_span_end();
         self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;

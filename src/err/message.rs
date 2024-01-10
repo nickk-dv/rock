@@ -24,7 +24,6 @@ impl Into<Message> for CheckError {
             CheckError::MainProcHasParams =>           ("main procedure cannot have input parameters", Some("remove input parameters")),
             CheckError::MainProcWrongRetType =>        ("main procedure must return `s32`", Some("change return type to `-> s32`")),
             
-            CheckError::ImportModuleAccessMissing =>   ("import missing module access path", Some("specify module access path before the import target")),
             CheckError::SuperUsedFromRootModule =>     ("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),
             CheckError::ModuleFileReportedMissing =>   ("this module is missing a source file, as reported earlier", None),
             CheckError::ModuleIsPrivate =>             ("module is private", None),

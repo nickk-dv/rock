@@ -338,6 +338,7 @@ impl Context {
     }
 
     fn pass_3_process_imports(&mut self) {
+        return; //@temp disabled
         for scope_id in 0..self.scopes.len() as ScopeID {
             let mut import_tasks = self.scope_import_task_collect(scope_id);
             let mut were_resolved = 0;
@@ -377,12 +378,6 @@ impl Context {
 
         for decl in scope.module.decls {
             if let Decl::Import(import) = decl {
-                if import.module_access.names.is_empty()
-                    && import.module_access.modifier == ModuleAccessModifier::None
-                {
-                    scope.err(CheckError::ImportModuleAccessMissing, import.span);
-                    continue;
-                }
                 if import.module_access.modifier == ModuleAccessModifier::Super
                     && scope.parent.is_none()
                 {
@@ -409,7 +404,7 @@ impl Context {
                 // find and check conflits in declared / import / wildcards instead of just declared
                 let first_name = task.import.module_access.names.first().unwrap();
                 if let Some(mod_decl) = self.get_scope(scope_id).declared.get_mod(first_name.id) {
-                    mod_decl.0.id
+                    mod_decl.0.id.unwrap() //@temp unwrap added
                 } else {
                     task.status = ImportTaskStatus::SourceNotFound;
                     return;
@@ -429,7 +424,7 @@ impl Context {
             }
             //@mod publicity not considered (fine for same package access)
             match self.get_scope(from_id).declared.get_mod(name.id) {
-                Some(mod_decl) => from_id = mod_decl.0.id,
+                Some(mod_decl) => from_id = mod_decl.0.id.unwrap(), //@temp unwrap
                 None => {
                     self.get_scope_mut(scope_id)
                         .err(CheckError::ModuleNotDeclaredInPath, name.span);
@@ -591,7 +586,7 @@ impl Context {
                     scope.err(CheckError::ModuleFileReportedMissing, name.span);
                     return None;
                 }
-            }
+            };
         }
 
         Some(target.id)
