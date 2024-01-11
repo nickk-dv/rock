@@ -45,11 +45,13 @@ impl Into<Message> for FileIOError {
     #[rustfmt::skip]
     fn into(self) -> Message {
         match self {
-            FileIOError::DirRead =>    ("directory read failed", None),
-            FileIOError::DirCreate =>  ("directory create failed", None),
-            FileIOError::FileRead =>   ("file read failed", None),
-            FileIOError::FileCreate => ("file create failed", None),
-            FileIOError::FileWrite =>  ("file write failed", None),
+            FileIOError::DirRead =>       ("directory read failed", None),
+            FileIOError::DirCreate =>     ("directory create failed", None),
+            FileIOError::FileRead =>      ("file read failed", None),
+            FileIOError::FileCreate =>    ("file create failed", None),
+            FileIOError::FileWrite =>     ("file write failed", None),
+            FileIOError::EnvCommand =>    ("failed to execute the command", None),
+            FileIOError::EnvCurrentDir => ("failed to set working directory", None),
         }
     }
 }

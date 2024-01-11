@@ -58,7 +58,7 @@ pub fn report(error: &Error) {
             print_help(err.message.1);
         }
         Error::FileIO(err) => {
-            print_error("file-io error");
+            print_error("env error");
             println!("{}", err.message.0);
             for info in err.info.iter() {
                 println!("{}", info);

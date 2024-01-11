@@ -1,4 +1,6 @@
 use crate::ast::parser;
+use crate::err::error::*;
+use crate::err::report;
 use crate::hir::check;
 use std::fs;
 use std::io::Write;
@@ -15,36 +17,107 @@ pub fn cmd_parse() -> Result<(), ()> {
 }
 
 fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
-    let mut path = PathBuf::new();
-    path.push(cmd.args.get(0).unwrap());
-    fs::create_dir(path.clone());
-
-    let main_file = r#"main :: () -> i32 {
+    const MAIN_FILE: &str = r#"
+main :: () -> s32 {
     return 0;
 }
 "#;
-    let lib_file = r#"
-// library project
+    const GITIGNORE_FILE: &str = r#"build/
 "#;
-    let gitignore_file = r#"build/
-"#;
-    path.push("src");
-    fs::create_dir(path.clone());
-    path.push("main.lang");
-    let mut file = fs::File::create(path.clone()).unwrap();
-    file.write_all(main_file.as_bytes());
 
-    path.pop();
-    path.pop();
-    path.push(".gitignore");
-    let mut file_git = fs::File::create(path).unwrap();
-    file_git.write_all(gitignore_file.as_bytes());
+    //@temp unwrap, no cmd validation or err handing is done
+    let package_name = cmd.args.get(0).unwrap();
+    let proj_dir = PathBuf::new().join(package_name);
+    let src_path = proj_dir.join("src");
+    let main_path = src_path.join("main.lang");
+    let gitignore_path = proj_dir.join(".gitignore");
 
-    let git_init = std::process::Command::new("git")
-        .arg("init")
-        .status()
-        .expect("Failed to execute command")
-        .success();
+    if let Err(err) = fs::create_dir(&proj_dir) {
+        report::report(
+            &Error::file_io(FileIOError::DirCreate)
+                .info(err.to_string())
+                .info(format!("path: {:?}", proj_dir))
+                .into(),
+        );
+        return Err(());
+    }
+
+    if let Err(err) = fs::create_dir(&src_path) {
+        report::report(
+            &Error::file_io(FileIOError::DirCreate)
+                .info(err.to_string())
+                .info(format!("path: {:?}", src_path))
+                .into(),
+        );
+        return Err(());
+    }
+
+    let mut main_file = match fs::File::create(&main_path) {
+        Ok(file) => file,
+        Err(err) => {
+            report::report(
+                &Error::file_io(FileIOError::FileCreate)
+                    .info(err.to_string())
+                    .info(format!("path: {:?}", main_path))
+                    .into(),
+            );
+            return Err(());
+        }
+    };
+
+    let mut gitignore_file = match fs::File::create(&gitignore_path) {
+        Ok(file) => file,
+        Err(err) => {
+            report::report(
+                &Error::file_io(FileIOError::FileCreate)
+                    .info(err.to_string())
+                    .info(format!("path: {:?}", gitignore_path))
+                    .into(),
+            );
+            return Err(());
+        }
+    };
+
+    if let Err(err) = main_file.write_all(MAIN_FILE.as_bytes()) {
+        report::report(
+            &Error::file_io(FileIOError::FileWrite)
+                .info(err.to_string())
+                .info(format!("path: {:?}", main_path))
+                .into(),
+        );
+        return Err(());
+    }
+
+    if let Err(err) = gitignore_file.write_all(GITIGNORE_FILE.as_bytes()) {
+        report::report(
+            &Error::file_io(FileIOError::FileWrite)
+                .info(err.to_string())
+                .info(format!("path: {:?}", gitignore_path))
+                .into(),
+        );
+        return Err(());
+    }
+
+    if let Err(err) = std::env::set_current_dir(&proj_dir) {
+        report::report(
+            &Error::file_io(FileIOError::EnvCurrentDir)
+                .info(err.to_string())
+                .info(format!("path: {:?}", proj_dir))
+                .into(),
+        );
+        return Err(());
+    }
+
+    if let Err(err) = std::process::Command::new("git").arg("init").status() {
+        report::report(
+            &Error::file_io(FileIOError::EnvCommand)
+                .info(format!("command: `git init`, reason:{}", err.to_string()))
+                .info("make sure git is installed, or use -no_git option".to_string())
+                .into(),
+        );
+        return Err(());
+    }
+
     Ok(())
 }
 

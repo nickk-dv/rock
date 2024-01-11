@@ -145,6 +145,8 @@ pub enum FileIOError {
     FileRead,
     FileCreate,
     FileWrite,
+    EnvCommand,
+    EnvCurrentDir,
 }
 
 pub enum InternalError {}
