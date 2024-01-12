@@ -583,18 +583,21 @@ impl Context {
         let mut unique = self.get_scope(scope_id).declared.get_mod(name.id);
         let mut conflits = Vec::new();
 
+        //@declared and imported cannot conflit in practice, since its already checked on import resolution
+        //this step can be simplified
         if let Some(mod_decl) = self.get_scope(scope_id).imported.get_mod(name.id) {
             if let Some(..) = unique {
-                conflits.push((mod_decl.0, mod_decl.1, None));
+                conflits.push((mod_decl.0, mod_decl.1, None)); //@imported span info doesnt exist
             } else {
                 unique = Some(mod_decl);
             }
         }
 
+        //@another issue unique doesnt retain wildcard span
+        //once its added to conflits this info is lost
         for wildcard in self.get_scope(scope_id).wildcards.iter() {
             if let Some(mod_decl) = self.get_scope(wildcard.from_id).declared.get_mod(name.id) {
-                //@rule of root being allowed also applies?
-                if mod_decl.0.visibility == Visibility::Private {
+                if mod_decl.0.visibility == Visibility::Private && wildcard.from_id != ROOT_ID {
                     continue;
                 }
                 if let Some(..) = unique {
@@ -607,32 +610,47 @@ impl Context {
 
         if conflits.is_empty() {
             if let Some(mod_decl) = unique {
-                Some(mod_decl.0)
+                return Some(mod_decl.0);
             } else {
                 let scope = self.get_scope_mut(scope_id);
                 scope.err(CheckError::ModuleNotFoundInScope, name.span);
-                None
+                return None;
             }
         } else {
-            let scope = self.get_scope_mut(scope_id);
-            scope.err(CheckError::ModuleSymbolConflit, name.span);
+            let source = self.get_scope(scope_id).md();
+            let mut error = Error::check(CheckError::ModuleSymbolConflit, source.copy(), name.span);
+
+            //@span info lost as mentioned earlier
+            if let Some(mod_decl) = unique {
+                conflits.push((mod_decl.0, mod_decl.1, None));
+            }
+
             for conflit in conflits.iter() {
                 match conflit.2 {
-                    Some(..) => {
-                        //@todo good conflit messages
-                        //@scope.err_info(import_span, "from this import");
-                        //@scope.err_info_external(conflit.0.name.span, conflit.1, "this symbol");
+                    Some(import_span) => {
+                        //@those with span assumed to come from wildcard imports
+                        error = error
+                            .context(
+                                self.get_scope(conflit.1).md(),
+                                conflit.0.name.span,
+                                "conflits with this module",
+                            )
+                            .context(source.copy(), import_span, "from this import")
                     }
                     None => {
-                        /*@scope.err_info_external(
+                        //@no import source
+                        //@no distinct marker for declared / imported
+                        error = error.context(
+                            self.get_scope(conflit.1).md(),
                             conflit.0.name.span,
-                            conflit.1,
-                            "this symbol is imported",
-                        );*/
+                            "conflits with this declared / imported module",
+                        );
                     }
                 }
             }
-            None
+            let scope = self.get_scope_mut(scope_id);
+            scope.error(error.into());
+            return None;
         }
     }
 }
