@@ -17,7 +17,6 @@ impl Into<Message> for CheckError {
             CheckError::RedefinitionType =>            ("type redefinition", None),
             CheckError::RedefinitionGlobal =>          ("global constant redefinition", None),
 
-            CheckError::SymbolRedefinition =>          ("symbol redefinition", None),
             CheckError::ProcParamRedefinition =>       ("procedure parameter redefinition", None),
             CheckError::EnumVariantRedefinition =>     ("enum variant redefinition", None),
             CheckError::StructFieldRedefinition =>     ("struct field redefinition", None),
@@ -29,19 +28,23 @@ impl Into<Message> for CheckError {
             CheckError::MainProcWrongRetType =>        ("main procedure must return `s32`", Some("change return type to `-> s32`")),
             
             CheckError::SuperUsedFromRootModule =>     ("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),
-            CheckError::ModuleFileReportedMissing =>   ("this module is missing a source file, as reported earlier", None),
+            CheckError::ModuleFileReportedMissing =>   ("module is missing a source file, as reported earlier", None),
             CheckError::ModuleIsPrivate =>             ("module is private", None),
-            CheckError::ModuleNotFoundInScope =>       ("module is not found in this scope", None),
             CheckError::ModuleNotDeclaredInPath =>     ("module is not declared in referenced module path", None),
             CheckError::ImportFromItself =>            ("importing from itself is redundant", Some("remove this import")),
             CheckError::ImportItself =>                ("importing module into itself is redundant", Some("remove this import")),
             CheckError::ImportWildcardExists =>        ("wildcard import of module already exists", Some("remove this import")),
             CheckError::ImportSymbolNotDefined =>      ("imported symbol is not defined in target module", None),
-            CheckError::ImportSymbolIsPrivate =>       ("imported symbol is private", Some("cannot import symbols declared without `pub` keyword")),
-            CheckError::ImportSymbolAlreadyDefined =>  ("imported symbol is already defined", None),
-            CheckError::ImporySymbolAlreadyImported => ("imported symbol is already imported", Some("remove this symbol import")),
-
-            CheckError::ModuleSymbolConflit =>         ("this module name conflits with others in scope", None), 
+            CheckError::ImportSymbolAlreadyImported => ("imported symbol is already imported", Some("remove this symbol import")),
+            
+            CheckError::ModuleNotFoundInScope =>       ("module is not found in scope", None),
+            CheckError::ProcNotFoundInScope =>         ("procedure is not found in scope", None),
+            CheckError::TypeNotFoundInScope =>         ("type is not found in scope", None),
+            CheckError::GlobalNotFoundInScope =>       ("global constant is not found in scope", None),
+            CheckError::ModuleSymbolConflict =>        ("module name conflits with others in scope", None),
+            CheckError::ProcSymbolConflict =>          ("procedure name conflits with others in scope", None),
+            CheckError::TypeSymbolConflict =>          ("type name conflits with others in scope", None),
+            CheckError::GlobalSymbolConflict =>        ("global constant name conflits with others in scope", None),
         }
     }
 }

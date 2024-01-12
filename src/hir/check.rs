@@ -486,59 +486,69 @@ impl Context {
     }
 
     fn scope_import_symbol(&mut self, scope_id: ScopeID, from_id: ScopeID, name: Ident) {
-        return;
-        /*
-        let from_scope = self.get_scope_mut(from_id);
-        let symbol = match from_scope.declared.get(name.id) {
-            Some(symbol) => symbol,
-            None => {
-                let scope = self.get_scope_mut(scope_id);
-                scope.err(CheckError::ImportSymbolNotDefined, name.span);
-                return;
+        let scope = self.get_scope(scope_id);
+        let from_scope = self.get_scope(from_id);
+
+        let mut some_exists = false;
+        let mut private_symbols = Vec::new();
+
+        if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
+            if mod_decl.visibility == Visibility::Public || from_id == ROOT_ID {
+                some_exists = true;
+            } else {
+                private_symbols.push(mod_decl.name);
             }
-        };
+        } else if let Some(data) = from_scope.declared.get_proc(name.id) {
+            if data.decl.visibility == Visibility::Public || from_id == ROOT_ID {
+                some_exists = true;
+            } else {
+                private_symbols.push(data.decl.name);
+            }
+        } else if let Some(data) = from_scope.declared.get_type(name.id) {
+            if data.visibility() == Visibility::Public || from_id == ROOT_ID {
+                some_exists = true;
+            } else {
+                private_symbols.push(data.name());
+            }
+        } else if let Some(data) = from_scope.declared.get_global(name.id) {
+            if data.decl.visibility == Visibility::Public || from_id == ROOT_ID {
+                some_exists = true;
+            } else {
+                private_symbols.push(data.decl.name);
+            }
+        }
+
+        if !some_exists {
+            let mut error = Error::check(CheckError::ImportSymbolNotDefined, scope.md(), name.span);
+            for name in private_symbols {
+                error = error.context(from_scope.md(), name.span, "found this private symbol");
+            }
+            let scope = self.get_scope_mut(scope_id);
+            scope.error(error.into());
+            return;
+        }
+
+        if let Some(existing) = scope.symbol_imports.get(&name.id) {
+            let error = Error::check(
+                CheckError::ImportSymbolAlreadyImported,
+                scope.md(),
+                name.span,
+            )
+            .context(scope.md(), existing.name.span, "existing symbol import")
+            .into();
+            let scope = self.get_scope_mut(scope_id);
+            scope.error(error);
+            return;
+        }
 
         let scope = self.get_scope_mut(scope_id);
-        if let Symbol::Mod(mod_decl) = symbol {
-            if let Some(id) = mod_decl.0.id {
-                if id == scope_id {
-                    scope.err(CheckError::ImportItself, name.span);
-                    return;
-                }
-            }
-        }
-
-        if symbol.visibility() == Visibility::Private && from_id != ROOT_ID {
-            let error: Error =
-                Error::check(CheckError::ImportSymbolIsPrivate, scope.md(), name.span)
-                    .context(
-                        self.get_scope(from_id).md(),
-                        symbol.name().span,
-                        "this private symbol",
-                    )
-                    .into();
-            self.get_scope_mut(scope_id).error(error);
-            return;
-        }
-
-        if let Some(existing) = scope.declared.get(name.id) {
-            scope.error(
-                Error::check(
-                    CheckError::ImportSymbolAlreadyDefined,
-                    scope.md(),
-                    name.span,
-                )
-                .context(scope.md(), existing.name().span, "already defined here")
-                .into(),
-            );
-            return;
-        }
-        if let Err(..) = scope.imported.add(symbol) {
-            scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
-        }
-        */
+        scope
+            .symbol_imports
+            .insert(name.id, SymbolImport { from_id, name });
     }
 
+    //@report usages of self id module path as redundant
+    //maybe still return a valid result after
     fn scope_resolve_module_access(
         &mut self,
         scope_id: ScopeID,
@@ -548,7 +558,7 @@ impl Context {
             ModuleAccessModifier::None => {
                 let first = match module_access.names.first() {
                     Some(name) => name,
-                    None => return None,
+                    None => return Some(scope_id),
                 };
                 let mod_decl = match self.scope_get_in_scope_mod(scope_id, first) {
                     Some(mod_decl) => mod_decl,
@@ -614,8 +624,11 @@ impl Context {
         if scope.declared.get_mod(name.id).is_some() {
             return true;
         }
-        if scope.symbol_imports.get(&name.id).is_some() {
-            return true;
+        if let Some(import) = scope.symbol_imports.get(&name.id) {
+            let from_scope = self.get_scope(import.from_id);
+            if from_scope.declared.get_mod(name.id).is_some() {
+                return true;
+            }
         }
         for glob_import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(glob_import.from_id);
@@ -676,15 +689,15 @@ impl Context {
             };
         }
         if let Some(conflict) = unique {
-            conflicts.push(conflict);
+            conflicts.insert(0, conflict);
         }
 
-        let mut error = Error::check(CheckError::ModuleSymbolConflit, scope.md(), name.span);
+        let mut error = Error::check(CheckError::ModuleSymbolConflict, scope.md(), name.span);
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
                 let from_scope = self.get_scope(conflict.from_id);
                 error = error
-                    .context(scope.md(), import_span, "from this import")
+                    .context(scope.md(), import_span, "from this import:")
                     .context(
                         from_scope.md(),
                         conflict.data.name.span,
@@ -695,6 +708,162 @@ impl Context {
                     scope.md(),
                     conflict.data.name.span,
                     "conflict with this declared module",
+                );
+            }
+        }
+
+        let scope = self.get_scope_mut(scope_id);
+        scope.error(error.into());
+        None
+    }
+
+    fn scope_get_in_scope_proc(&mut self, scope_id: ScopeID, name: Ident) -> Option<ProcData> {
+        let scope = self.get_scope(scope_id);
+        let mut unique = None;
+        let mut conflicts = Vec::<Conflit<ProcData>>::new();
+
+        if let Some(data) = scope.declared.get_proc(name.id) {
+            unique = Some(Conflit::new(data, scope_id, None));
+        }
+
+        if let Some(import) = scope.symbol_imports.get(&name.id) {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(data) = from_scope.declared.get_proc(name.id) {
+                if data.decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
+                } else {
+                    let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+        }
+
+        for import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(data) = from_scope.declared.get_proc(name.id) {
+                if data.decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
+                } else {
+                    let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+        }
+
+        if conflicts.is_empty() {
+            return match unique {
+                Some(conflict) => Some(conflict.data),
+                None => {
+                    let scope = self.get_scope_mut(scope_id);
+                    scope.err(CheckError::ProcNotFoundInScope, name.span);
+                    None
+                }
+            };
+        }
+        if let Some(conflict) = unique {
+            conflicts.insert(0, conflict);
+        }
+
+        let mut error = Error::check(CheckError::ProcSymbolConflict, scope.md(), name.span);
+        for conflict in conflicts.iter() {
+            if let Some(import_span) = conflict.import_span {
+                let from_scope = self.get_scope(conflict.from_id);
+                error = error
+                    .context(scope.md(), import_span, "from this import:")
+                    .context(
+                        from_scope.md(),
+                        conflict.data.decl.name.span,
+                        "conflict with this procedure",
+                    )
+            } else {
+                error = error.context(
+                    scope.md(),
+                    conflict.data.decl.name.span,
+                    "conflict with this declared procedure",
+                );
+            }
+        }
+
+        let scope = self.get_scope_mut(scope_id);
+        scope.error(error.into());
+        None
+    }
+
+    fn scope_get_in_scope_type(&mut self, scope_id: ScopeID, name: Ident) -> Option<TypeData> {
+        let scope = self.get_scope(scope_id);
+        let mut unique = None;
+        let mut conflicts = Vec::<Conflit<TypeData>>::new();
+
+        if let Some(data) = scope.declared.get_type(name.id) {
+            unique = Some(Conflit::new(data, scope_id, None));
+        }
+
+        if let Some(import) = scope.symbol_imports.get(&name.id) {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(data) = from_scope.declared.get_type(name.id) {
+                if data.visibility() == Visibility::Private && import.from_id != ROOT_ID {
+                } else {
+                    let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+        }
+
+        for import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(data) = from_scope.declared.get_type(name.id) {
+                if data.visibility() == Visibility::Private && import.from_id != ROOT_ID {
+                } else {
+                    let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+        }
+
+        if conflicts.is_empty() {
+            return match unique {
+                Some(conflict) => Some(conflict.data),
+                None => {
+                    let scope = self.get_scope_mut(scope_id);
+                    scope.err(CheckError::TypeNotFoundInScope, name.span);
+                    None
+                }
+            };
+        }
+        if let Some(conflict) = unique {
+            conflicts.insert(0, conflict);
+        }
+
+        let mut error = Error::check(CheckError::TypeSymbolConflict, scope.md(), name.span);
+        for conflict in conflicts.iter() {
+            if let Some(import_span) = conflict.import_span {
+                let from_scope = self.get_scope(conflict.from_id);
+                error = error
+                    .context(scope.md(), import_span, "from this import:")
+                    .context(
+                        from_scope.md(),
+                        conflict.data.name().span,
+                        "conflict with this type name",
+                    )
+            } else {
+                error = error.context(
+                    scope.md(),
+                    conflict.data.name().span,
+                    "conflict with this declared type name",
                 );
             }
         }

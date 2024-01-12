@@ -117,7 +117,6 @@ pub enum CheckError {
     RedefinitionType,
     RedefinitionGlobal,
 
-    SymbolRedefinition,
     ProcParamRedefinition,
     EnumVariantRedefinition,
     StructFieldRedefinition,
@@ -131,17 +130,21 @@ pub enum CheckError {
     SuperUsedFromRootModule,
     ModuleFileReportedMissing,
     ModuleIsPrivate,
-    ModuleNotFoundInScope,
     ModuleNotDeclaredInPath,
     ImportFromItself,
     ImportItself,
     ImportWildcardExists,
     ImportSymbolNotDefined,
-    ImportSymbolIsPrivate,
-    ImportSymbolAlreadyDefined,
-    ImporySymbolAlreadyImported,
+    ImportSymbolAlreadyImported,
 
-    ModuleSymbolConflit,
+    ModuleNotFoundInScope,
+    ProcNotFoundInScope,
+    TypeNotFoundInScope,
+    GlobalNotFoundInScope,
+    ModuleSymbolConflict,
+    ProcSymbolConflict,
+    TypeSymbolConflict,
+    GlobalSymbolConflict,
 }
 
 pub enum FileIOError {

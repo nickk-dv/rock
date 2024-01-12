@@ -44,6 +44,13 @@ impl TypeData {
             TypeData::Struct(data) => data.decl.name,
         }
     }
+
+    pub fn visibility(&self) -> Visibility {
+        match self {
+            TypeData::Enum(data) => data.decl.visibility,
+            TypeData::Struct(data) => data.decl.visibility,
+        }
+    }
 }
 
 pub struct SymbolTable {
