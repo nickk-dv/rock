@@ -12,7 +12,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let mut context = Context::new(ast);
     context.pass_0_create_scopes()?;
     context.pass_1_check_main_proc();
-    context.pass_2_check_decl_namesets(); //@duplicates not removed
+    context.pass_2_check_namesets(); //@duplicates are not removed from lists
     context.pass_3_process_imports();
     context.report_errors()
 }
@@ -209,27 +209,85 @@ impl Context {
             imported: SymbolTable::new(),
             wildcards: Vec::new(),
             errors: Vec::new(),
+            declared2: SymbolTable2::new(),
         };
 
         for decl in scope.module.decls {
-            if let Some(symbol) = Symbol::from_decl(decl, scope.id) {
-                if let Err(existing) = scope.declared.add(symbol) {
-                    scope.error(
-                        Error::check(
-                            CheckError::SymbolRedefinition,
-                            scope.md(),
-                            symbol.name().span,
-                        )
-                        .context(scope.md(), existing.name().span, "already defined here")
-                        .into(),
-                    );
-                } else if let Decl::Mod(mod_decl) = decl {
-                    tasks.push(ScopeTreeTask {
-                        parent: module.copy(),
-                        parent_id: scope.id,
-                        mod_decl,
-                    });
+            match decl {
+                Decl::Mod(mod_decl) => {
+                    if let Some(existing) = scope.declared2.add_mod(mod_decl) {
+                        scope.error(
+                            Error::check(
+                                CheckError::RedefinitionMod,
+                                scope.md(),
+                                mod_decl.name.span,
+                            )
+                            .context(scope.md(), existing.decl.name.span, "already defined here")
+                            .into(),
+                        );
+                    } else {
+                        tasks.push(ScopeTreeTask {
+                            parent: module.copy(),
+                            parent_id: scope.id,
+                            mod_decl,
+                        });
+                    }
                 }
+                Decl::Proc(proc_decl) => {
+                    //@temp 0 id
+                    if let Some(existing) = scope.declared2.add_proc(proc_decl, 0) {
+                        scope.error(
+                            Error::check(
+                                CheckError::RedefinitionProc,
+                                scope.md(),
+                                proc_decl.name.span,
+                            )
+                            .context(scope.md(), existing.decl.name.span, "already defined here")
+                            .into(),
+                        );
+                    }
+                }
+                Decl::Enum(enum_decl) => {
+                    if let Some(existing) = scope.declared2.add_enum(enum_decl) {
+                        scope.error(
+                            Error::check(
+                                CheckError::RedefinitionType,
+                                scope.md(),
+                                enum_decl.name.span,
+                            )
+                            .context(scope.md(), existing.name().span, "already defined here")
+                            .into(),
+                        );
+                    }
+                }
+                Decl::Struct(struct_decl) => {
+                    //@temp 0 id
+                    if let Some(existing) = scope.declared2.add_struct(struct_decl, 0) {
+                        scope.error(
+                            Error::check(
+                                CheckError::RedefinitionType,
+                                scope.md(),
+                                struct_decl.name.span,
+                            )
+                            .context(scope.md(), existing.name().span, "already defined here")
+                            .into(),
+                        );
+                    }
+                }
+                Decl::Global(global_decl) => {
+                    if let Some(existing) = scope.declared2.add_global(global_decl) {
+                        scope.error(
+                            Error::check(
+                                CheckError::RedefinitionGlobal,
+                                scope.md(),
+                                global_decl.name.span,
+                            )
+                            .context(scope.md(), existing.decl.name.span, "already defined here")
+                            .into(),
+                        );
+                    }
+                }
+                Decl::Import(..) => {}
             }
         }
 
@@ -269,69 +327,65 @@ impl Context {
         scope.err(CheckError::MainProcWrongRetType, main_proc.name.span);
     }
 
-    fn pass_2_check_decl_namesets(&mut self) {
+    fn pass_2_check_namesets(&mut self) {
         for scope in self.scopes.iter_mut() {
-            for decl in scope.module.decls {
-                match decl {
-                    Decl::Proc(proc_decl) => {
-                        let mut name_set = HashMap::<InternID, Ident>::new();
-                        for param in proc_decl.params.iter() {
-                            if let Some(existing) = name_set.get(&param.name.id) {
-                                scope.error(
-                                    Error::check(
-                                        CheckError::ProcParamRedefinition,
-                                        scope.md(),
-                                        param.name.span,
-                                    )
-                                    .context(scope.md(), existing.span, "already defined here")
-                                    .into(),
-                                );
-                            } else {
-                                name_set.insert(param.name.id, param.name);
-                            }
-                        }
+            let md = scope.md();
+            let errors = &mut scope.errors; //@this resolved borrowing issues of calling error() on scope
+
+            for data in scope.declared2.proc_values() {
+                let mut name_set = HashMap::<InternID, Ident>::new();
+                for param in data.decl.params.iter() {
+                    if let Some(existing) = name_set.get(&param.name.id) {
+                        errors.push(
+                            Error::check(
+                                CheckError::ProcParamRedefinition,
+                                md.copy(),
+                                param.name.span,
+                            )
+                            .context(md.copy(), existing.span, "already defined here")
+                            .into(),
+                        );
+                    } else {
+                        name_set.insert(param.name.id, param.name);
                     }
-                    Decl::Enum(enum_decl) => {
-                        let mut name_set = HashMap::<InternID, Ident>::new();
-                        for variant in enum_decl.variants.iter() {
-                            if let Some(existing) = name_set.get(&variant.name.id) {
-                                scope.error(
-                                    Error::check(
-                                        CheckError::EnumVariantRedefinition,
-                                        scope.md(),
-                                        variant.name.span,
-                                    )
-                                    .context(scope.md(), existing.span, "already defined here")
-                                    .into(),
-                                );
-                            } else {
-                                name_set.insert(variant.name.id, variant.name);
-                            }
-                        }
+                }
+            }
+
+            for data in scope.declared2.enum_values() {
+                let mut name_set = HashMap::<InternID, Ident>::new();
+                for variant in data.decl.variants.iter() {
+                    if let Some(existing) = name_set.get(&variant.name.id) {
+                        errors.push(
+                            Error::check(
+                                CheckError::EnumVariantRedefinition,
+                                md.copy(),
+                                variant.name.span,
+                            )
+                            .context(md.copy(), existing.span, "already defined here")
+                            .into(),
+                        );
+                    } else {
+                        name_set.insert(variant.name.id, variant.name);
                     }
-                    Decl::Struct(struct_decl) => {
-                        let mut name_set = HashMap::<InternID, Ident>::new();
-                        for field in struct_decl.fields.iter() {
-                            if let Some(existing) = name_set.get(&field.name.id) {
-                                scope.error(
-                                    Error::check(
-                                        CheckError::StructFieldRedefinition,
-                                        scope.module.copy(),
-                                        field.name.span,
-                                    )
-                                    .context(
-                                        scope.module.copy(),
-                                        existing.span,
-                                        "already defined here",
-                                    )
-                                    .into(),
-                                );
-                            } else {
-                                name_set.insert(field.name.id, field.name);
-                            }
-                        }
+                }
+            }
+
+            for data in scope.declared2.struct_values() {
+                let mut name_set = HashMap::<InternID, Ident>::new();
+                for field in data.decl.fields.iter() {
+                    if let Some(existing) = name_set.get(&field.name.id) {
+                        errors.push(
+                            Error::check(
+                                CheckError::StructFieldRedefinition,
+                                md.copy(),
+                                field.name.span,
+                            )
+                            .context(md.copy(), existing.span, "already defined here")
+                            .into(),
+                        );
+                    } else {
+                        name_set.insert(field.name.id, field.name);
                     }
-                    _ => {}
                 }
             }
         }

@@ -12,6 +12,11 @@ impl Into<Message> for CheckError {
             CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", None),
             CheckError::ParseModCycle =>               ("module definition results in a cycle", None),
 
+            CheckError::RedefinitionMod =>             ("module redefinition", None),
+            CheckError::RedefinitionProc =>            ("procedure redefinition", None),
+            CheckError::RedefinitionType =>            ("type redefinition", None),
+            CheckError::RedefinitionGlobal =>          ("global constant redefinition", None),
+
             CheckError::SymbolRedefinition =>          ("symbol redefinition", None),
             CheckError::ProcParamRedefinition =>       ("procedure parameter redefinition", None),
             CheckError::EnumVariantRedefinition =>     ("enum variant redefinition", None),

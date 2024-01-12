@@ -1,6 +1,114 @@
+use super::hir;
 use crate::ast::ast::*;
 use crate::mem::{InternID, P};
+use std::collections::hash_map;
 use std::collections::HashMap;
+
+#[derive(Copy, Clone)]
+pub struct ModData {
+    pub decl: P<ModDecl>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcData {
+    pub decl: P<ProcDecl>,
+    pub id: hir::ProcID,
+}
+
+#[derive(Copy, Clone)]
+pub struct EnumData {
+    pub decl: P<EnumDecl>,
+}
+
+#[derive(Copy, Clone)]
+pub struct StructData {
+    pub decl: P<StructDecl>,
+    pub id: hir::StructID,
+}
+
+#[derive(Copy, Clone)]
+pub struct GlobalData {
+    pub decl: P<GlobalDecl>,
+}
+
+#[derive(Copy, Clone)]
+pub enum TypeData {
+    Enum(EnumData),
+    Struct(StructData),
+}
+
+impl TypeData {
+    pub fn name(&self) -> Ident {
+        match self {
+            TypeData::Enum(data) => data.decl.name,
+            TypeData::Struct(data) => data.decl.name,
+        }
+    }
+}
+
+pub struct SymbolTable2 {
+    mods: HashMap<InternID, ModData>,
+    procs: HashMap<InternID, ProcData>,
+    enums: HashMap<InternID, EnumData>,
+    structs: HashMap<InternID, StructData>,
+    globals: HashMap<InternID, GlobalData>,
+}
+
+impl SymbolTable2 {
+    pub fn new() -> Self {
+        Self {
+            mods: HashMap::new(),
+            procs: HashMap::new(),
+            enums: HashMap::new(),
+            structs: HashMap::new(),
+            globals: HashMap::new(),
+        }
+    }
+
+    pub fn add_mod(&mut self, decl: P<ModDecl>) -> Option<ModData> {
+        self.mods.insert(decl.name.id, ModData { decl })
+    }
+
+    pub fn add_proc(&mut self, decl: P<ProcDecl>, id: hir::ProcID) -> Option<ProcData> {
+        self.procs.insert(decl.name.id, ProcData { decl, id })
+    }
+
+    pub fn add_enum(&mut self, decl: P<EnumDecl>) -> Option<TypeData> {
+        if let Some(existing) = self.structs.get(&decl.name.id) {
+            return Some(TypeData::Struct(*existing));
+        }
+        if let Some(existing) = self.enums.insert(decl.name.id, EnumData { decl }) {
+            return Some(TypeData::Enum(existing));
+        }
+        None
+    }
+
+    pub fn add_struct(&mut self, decl: P<StructDecl>, id: hir::StructID) -> Option<TypeData> {
+        if let Some(existing) = self.enums.get(&decl.name.id) {
+            return Some(TypeData::Enum(*existing));
+        }
+        if let Some(existing) = self.structs.insert(decl.name.id, StructData { decl, id }) {
+            return Some(TypeData::Struct(existing));
+        }
+        None
+    }
+
+    pub fn add_global(&mut self, decl: P<GlobalDecl>) -> Option<GlobalData> {
+        self.globals.insert(decl.name.id, GlobalData { decl })
+    }
+
+    pub fn proc_values(&self) -> hash_map::Values<'_, InternID, ProcData> {
+        self.procs.values()
+    }
+
+    pub fn enum_values(&self) -> hash_map::Values<'_, InternID, EnumData> {
+        self.enums.values()
+    }
+
+    pub fn struct_values(&self) -> hash_map::Values<'_, InternID, StructData> {
+        self.structs.values()
+    }
+}
 
 pub struct SymbolTable {
     table: HashMap<InternID, Symbol>,

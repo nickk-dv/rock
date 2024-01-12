@@ -174,7 +174,7 @@ pub struct Cast {
 
 #[derive(Copy, Clone)]
 pub struct ProcCall {
-    pub proc: ProcID,
+    pub id: ProcID,
     pub input: Array<Expr>,
     pub access: Option<P<Access>>,
 }

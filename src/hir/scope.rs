@@ -12,6 +12,7 @@ pub struct Scope {
     pub imported: SymbolTable,
     pub wildcards: Vec<Wildcard>,
     pub errors: Vec<Error>,
+    pub declared2: SymbolTable2,
 }
 
 #[derive(Copy, Clone)]
@@ -21,18 +22,6 @@ pub struct Wildcard {
 }
 
 impl Scope {
-    pub fn new(module: P<Module>) -> Self {
-        Self {
-            id: 0, //@todo
-            module,
-            parent: None, //@todo
-            declared: SymbolTable::new(),
-            imported: SymbolTable::new(),
-            wildcards: Vec::new(),
-            errors: Vec::new(),
-        }
-    }
-
     pub fn md(&self) -> P<Module> {
         self.module.copy()
     }

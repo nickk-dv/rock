@@ -112,6 +112,11 @@ pub enum CheckError {
     ParseModBothPathsMissing,
     ParseModCycle,
 
+    RedefinitionMod,
+    RedefinitionProc,
+    RedefinitionType,
+    RedefinitionGlobal,
+
     SymbolRedefinition,
     ProcParamRedefinition,
     EnumVariantRedefinition,
