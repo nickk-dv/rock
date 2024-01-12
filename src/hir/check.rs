@@ -201,28 +201,19 @@ impl Context {
         parent: Option<ScopeID>,
         tasks: &mut Vec<ScopeTreeTask>,
     ) -> Scope {
-        let mut scope = Scope {
-            id,
-            module: module.copy(),
-            parent,
-            declared: SymbolTable::new(),
-            imported: SymbolTable::new(),
-            wildcards: Vec::new(),
-            errors: Vec::new(),
-            declared2: SymbolTable2::new(),
-        };
+        let mut scope = Scope::new(id, module.copy(), parent);
 
         for decl in scope.module.decls {
             match decl {
                 Decl::Mod(mod_decl) => {
-                    if let Some(existing) = scope.declared2.add_mod(mod_decl) {
+                    if let Some(existing) = scope.declared.add_mod(mod_decl) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionMod,
                                 scope.md(),
                                 mod_decl.name.span,
                             )
-                            .context(scope.md(), existing.decl.name.span, "already defined here")
+                            .context(scope.md(), existing.name.span, "already defined here")
                             .into(),
                         );
                     } else {
@@ -235,7 +226,7 @@ impl Context {
                 }
                 Decl::Proc(proc_decl) => {
                     //@temp 0 id
-                    if let Some(existing) = scope.declared2.add_proc(proc_decl, 0) {
+                    if let Some(existing) = scope.declared.add_proc(proc_decl, 0) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionProc,
@@ -248,7 +239,7 @@ impl Context {
                     }
                 }
                 Decl::Enum(enum_decl) => {
-                    if let Some(existing) = scope.declared2.add_enum(enum_decl) {
+                    if let Some(existing) = scope.declared.add_enum(enum_decl) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionType,
@@ -262,7 +253,7 @@ impl Context {
                 }
                 Decl::Struct(struct_decl) => {
                     //@temp 0 id
-                    if let Some(existing) = scope.declared2.add_struct(struct_decl, 0) {
+                    if let Some(existing) = scope.declared.add_struct(struct_decl, 0) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionType,
@@ -275,7 +266,7 @@ impl Context {
                     }
                 }
                 Decl::Global(global_decl) => {
-                    if let Some(existing) = scope.declared2.add_global(global_decl) {
+                    if let Some(existing) = scope.declared.add_global(global_decl) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionGlobal,
@@ -304,7 +295,7 @@ impl Context {
         };
         let scope = self.get_scope_mut(ROOT_ID);
         let main_proc = match scope.declared.get_proc(main_id) {
-            Some(proc_decl) => proc_decl.0,
+            Some(data) => data.decl,
             None => {
                 self.err(Error::check_no_src(CheckError::MainProcMissing));
                 return;
@@ -332,7 +323,7 @@ impl Context {
             let md = scope.md();
             let errors = &mut scope.errors; //@this resolved borrowing issues of calling error() on scope
 
-            for data in scope.declared2.proc_values() {
+            for data in scope.declared.proc_values() {
                 let mut name_set = HashMap::<InternID, Ident>::new();
                 for param in data.decl.params.iter() {
                     if let Some(existing) = name_set.get(&param.name.id) {
@@ -351,7 +342,7 @@ impl Context {
                 }
             }
 
-            for data in scope.declared2.enum_values() {
+            for data in scope.declared.enum_values() {
                 let mut name_set = HashMap::<InternID, Ident>::new();
                 for variant in data.decl.variants.iter() {
                     if let Some(existing) = name_set.get(&variant.name.id) {
@@ -370,7 +361,7 @@ impl Context {
                 }
             }
 
-            for data in scope.declared2.struct_values() {
+            for data in scope.declared.struct_values() {
                 let mut name_set = HashMap::<InternID, Ident>::new();
                 for field in data.decl.fields.iter() {
                     if let Some(existing) = name_set.get(&field.name.id) {
@@ -464,10 +455,9 @@ impl Context {
             ImportTarget::AllSymbols => {
                 let scope = self.get_scope_mut(scope_id);
                 let duplicate = scope
-                    .wildcards
+                    .glob_imports
                     .iter()
-                    .find(|wildcard| wildcard.from_id == from_id)
-                    .copied();
+                    .find(|wildcard| wildcard.from_id == from_id);
                 match duplicate {
                     Some(existing) => scope.error(
                         Error::check(
@@ -478,7 +468,7 @@ impl Context {
                         .context(scope.md(), existing.import_span, "existing import")
                         .into(),
                     ),
-                    None => scope.wildcards.push(Wildcard {
+                    None => scope.glob_imports.push(GlobImport {
                         from_id,
                         import_span: task.import.span,
                     }),
@@ -496,6 +486,8 @@ impl Context {
     }
 
     fn scope_import_symbol(&mut self, scope_id: ScopeID, from_id: ScopeID, name: Ident) {
+        return;
+        /*
         let from_scope = self.get_scope_mut(from_id);
         let symbol = match from_scope.declared.get(name.id) {
             Some(symbol) => symbol,
@@ -544,6 +536,7 @@ impl Context {
         if let Err(..) = scope.imported.add(symbol) {
             scope.err(CheckError::ImporySymbolAlreadyImported, name.span);
         }
+        */
     }
 
     fn scope_resolve_module_access(
@@ -557,7 +550,7 @@ impl Context {
                     Some(name) => name,
                     None => return None,
                 };
-                let mod_decl = match self.scope_get_in_scope_mod(first, scope_id) {
+                let mod_decl = match self.scope_get_in_scope_mod(scope_id, first) {
                     Some(mod_decl) => mod_decl,
                     None => return None,
                 };
@@ -598,12 +591,12 @@ impl Context {
                     return None;
                 }
             };
-            if mod_decl.0.visibility == Visibility::Private && target.id != ROOT_ID {
+            if mod_decl.visibility == Visibility::Private && target.id != ROOT_ID {
                 let scope = self.get_scope_mut(scope_id);
                 scope.err(CheckError::ModuleIsPrivate, name.span);
                 return None;
             }
-            target = match mod_decl.0.id {
+            target = match mod_decl.id {
                 Some(id) => self.get_scope_mut(id),
                 None => {
                     let scope = self.get_scope_mut(scope_id);
@@ -621,11 +614,11 @@ impl Context {
         if scope.declared.get_mod(name.id).is_some() {
             return true;
         }
-        if scope.imported.get_mod(name.id).is_some() {
+        if scope.symbol_imports.get(&name.id).is_some() {
             return true;
         }
-        for wildcard in scope.wildcards.iter() {
-            let from_scope = self.get_scope(wildcard.from_id);
+        for glob_import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(glob_import.from_id);
             if from_scope.declared.get_mod(name.id).is_some() {
                 return true;
             }
@@ -633,78 +626,97 @@ impl Context {
         return false;
     }
 
-    fn scope_get_in_scope_mod(&mut self, name: Ident, scope_id: ScopeID) -> Option<P<ModDecl>> {
-        let mut unique = self.get_scope(scope_id).declared.get_mod(name.id);
-        let mut conflits = Vec::new();
+    fn scope_get_in_scope_mod(&mut self, scope_id: ScopeID, name: Ident) -> Option<P<ModDecl>> {
+        let scope = self.get_scope(scope_id);
+        let mut unique = None;
+        let mut conflicts = Vec::<Conflit<P<ModDecl>>>::new();
 
-        //@declared and imported cannot conflit in practice, since its already checked on import resolution
-        //this step can be simplified
-        if let Some(mod_decl) = self.get_scope(scope_id).imported.get_mod(name.id) {
-            if let Some(..) = unique {
-                conflits.push((mod_decl.0, mod_decl.1, None)); //@imported span info doesnt exist
-            } else {
-                unique = Some(mod_decl);
-            }
+        if let Some(data) = scope.declared.get_mod(name.id) {
+            unique = Some(Conflit::new(data, scope_id, None));
         }
 
-        //@another issue unique doesnt retain wildcard span
-        //once its added to conflits this info is lost
-        for wildcard in self.get_scope(scope_id).wildcards.iter() {
-            if let Some(mod_decl) = self.get_scope(wildcard.from_id).declared.get_mod(name.id) {
-                if mod_decl.0.visibility == Visibility::Private && wildcard.from_id != ROOT_ID {
-                    continue;
-                }
-                if let Some(..) = unique {
-                    conflits.push((mod_decl.0, mod_decl.1, Some(wildcard.import_span)));
+        if let Some(import) = scope.symbol_imports.get(&name.id) {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
+                if mod_decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
                 } else {
-                    unique = Some(mod_decl);
+                    let conflict = Conflit::new(mod_decl, import.from_id, Some(import.name.span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
                 }
             }
         }
 
-        if conflits.is_empty() {
-            if let Some(mod_decl) = unique {
-                return Some(mod_decl.0);
-            } else {
-                let scope = self.get_scope_mut(scope_id);
-                scope.err(CheckError::ModuleNotFoundInScope, name.span);
-                return None;
-            }
-        } else {
-            let source = self.get_scope(scope_id).md();
-            let mut error = Error::check(CheckError::ModuleSymbolConflit, source.copy(), name.span);
-
-            //@span info lost as mentioned earlier
-            if let Some(mod_decl) = unique {
-                conflits.push((mod_decl.0, mod_decl.1, None));
-            }
-
-            for conflit in conflits.iter() {
-                match conflit.2 {
-                    Some(import_span) => {
-                        //@those with span assumed to come from wildcard imports
-                        error = error
-                            .context(
-                                self.get_scope(conflit.1).md(),
-                                conflit.0.name.span,
-                                "conflits with this module",
-                            )
-                            .context(source.copy(), import_span, "from this import")
-                    }
-                    None => {
-                        //@no import source
-                        //@no distinct marker for declared / imported
-                        error = error.context(
-                            self.get_scope(conflit.1).md(),
-                            conflit.0.name.span,
-                            "conflits with this declared / imported module",
-                        );
+        for import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
+                if mod_decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
+                } else {
+                    let conflict = Conflit::new(mod_decl, import.from_id, Some(import.import_span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
                     }
                 }
             }
-            let scope = self.get_scope_mut(scope_id);
-            scope.error(error.into());
-            return None;
+        }
+
+        if conflicts.is_empty() {
+            return match unique {
+                Some(conflict) => Some(conflict.data),
+                None => {
+                    let scope = self.get_scope_mut(scope_id);
+                    scope.err(CheckError::ModuleNotFoundInScope, name.span);
+                    None
+                }
+            };
+        }
+        if let Some(conflict) = unique {
+            conflicts.push(conflict);
+        }
+
+        let mut error = Error::check(CheckError::ModuleSymbolConflit, scope.md(), name.span);
+        for conflict in conflicts.iter() {
+            if let Some(import_span) = conflict.import_span {
+                let from_scope = self.get_scope(conflict.from_id);
+                error = error
+                    .context(scope.md(), import_span, "from this import")
+                    .context(
+                        from_scope.md(),
+                        conflict.data.name.span,
+                        "conflict with this module",
+                    )
+            } else {
+                error = error.context(
+                    scope.md(),
+                    conflict.data.name.span,
+                    "conflict with this declared module",
+                );
+            }
+        }
+
+        let scope = self.get_scope_mut(scope_id);
+        scope.error(error.into());
+        None
+    }
+}
+
+struct Conflit<T> {
+    data: T,
+    from_id: ScopeID,
+    import_span: Option<Span>,
+}
+
+impl<T> Conflit<T> {
+    fn new(data: T, from_id: ScopeID, import_span: Option<Span>) -> Self {
+        Self {
+            data,
+            from_id,
+            import_span,
         }
     }
 }
