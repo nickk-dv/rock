@@ -199,7 +199,7 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_module_access(&mut self) -> Result<ModuleAccess, ParseError> {
-        let modifier = self.parse_module_access_modifier()?;
+        let md = self.parse_module_access_modifier()?;
         let mut names = List::new();
 
         while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
@@ -207,14 +207,18 @@ impl<'ast> Parser<'ast> {
             self.consume();
             names.add(&mut self.arena, name);
         }
-        Ok(ModuleAccess { modifier, names })
+        Ok(ModuleAccess {
+            modifier: md.0,
+            modifier_span: md.1,
+            names,
+        })
     }
 
     fn parse_module_access_required(&mut self) -> Result<ModuleAccess, ParseError> {
-        let modifier = self.parse_module_access_modifier()?;
+        let md = self.parse_module_access_modifier()?;
         let mut names = List::new();
 
-        if modifier == ModuleAccessModifier::None {
+        if md.0 == ModuleAccessModifier::None {
             let first = self.parse_ident(ParseContext::ModuleAccess)?;
             names.add(&mut self.arena, first);
             self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
@@ -225,20 +229,27 @@ impl<'ast> Parser<'ast> {
             self.consume();
             names.add(&mut self.arena, name);
         }
-        Ok(ModuleAccess { modifier, names })
+        Ok(ModuleAccess {
+            modifier: md.0,
+            modifier_span: md.1,
+            names,
+        })
     }
 
-    fn parse_module_access_modifier(&mut self) -> Result<ModuleAccessModifier, ParseError> {
+    fn parse_module_access_modifier(&mut self) -> Result<(ModuleAccessModifier, Span), ParseError> {
         let modifier = match self.peek() {
             Token::KwSuper => ModuleAccessModifier::Super,
             Token::KwPackage => ModuleAccessModifier::Package,
             _ => ModuleAccessModifier::None,
         };
+        let start = self.peek_span_start();
+        let mut span = Span::new(start, start);
         if modifier != ModuleAccessModifier::None {
             self.consume();
+            span.end = self.peek_span_end();
             self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
         }
-        Ok(modifier)
+        Ok((modifier, span))
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
@@ -692,10 +703,7 @@ impl<'ast> Parser<'ast> {
         match self.peek() {
             Token::Dot => match self.peek_next(1) {
                 Token::OpenBlock => {
-                    let module_access = ModuleAccess {
-                        modifier: ModuleAccessModifier::None,
-                        names: List::new(),
-                    };
+                    let module_access = self.parse_module_access()?;
                     let struct_init = self.parse_struct_init(module_access)?;
                     Ok(Expr::StructInit(struct_init))
                 }

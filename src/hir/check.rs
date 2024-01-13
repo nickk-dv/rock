@@ -6,7 +6,7 @@ use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
 
-const ROOT_ID: ScopeID = 0;
+pub const ROOT_ID: ScopeID = 0;
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let mut context = Context::new(ast);
@@ -17,7 +17,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.report_errors()
 }
 
-struct Context {
+pub(super) struct Context {
     ast: P<Ast>,
     scopes: Vec<Scope>,
     errors: Vec<Error>,
@@ -39,6 +39,30 @@ enum ImportTaskStatus {
     Unresolved,
     SourceNotFound,
     Resolved,
+}
+
+struct Conflit<T> {
+    data: T,
+    from_id: ScopeID,
+    import_span: Option<Span>,
+}
+
+impl<T> Conflit<T> {
+    fn new(data: T, from_id: ScopeID, import_span: Option<Span>) -> Self {
+        Self {
+            data,
+            from_id,
+            import_span,
+        }
+    }
+}
+
+fn visibily_private(visibility: Visibility, scope_id: ScopeID) -> bool {
+    visibility == Visibility::Private && scope_id != ROOT_ID
+}
+
+fn visibily_public(visibility: Visibility, scope_id: ScopeID) -> bool {
+    visibility == Visibility::Public || scope_id == ROOT_ID
 }
 
 impl Context {
@@ -67,12 +91,12 @@ impl Context {
         report::err_status(())
     }
 
-    fn get_scope(&self, id: ScopeID) -> &Scope {
+    pub fn get_scope(&self, id: ScopeID) -> &Scope {
         //@unsafe { self.scopes.get_unchecked(scope_id as usize) }
         self.scopes.get(id as usize).unwrap()
     }
 
-    fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope {
+    pub fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope {
         //@unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
         self.scopes.get_mut(id as usize).unwrap()
     }
@@ -485,6 +509,26 @@ impl Context {
         }
     }
 
+    fn scope_in_scope_mod_exists(&self, scope_id: ScopeID, name: Ident) -> bool {
+        let scope = self.get_scope(scope_id);
+        if scope.declared.get_mod(name.id).is_some() {
+            return true;
+        }
+        if let Some(import) = scope.symbol_imports.get(&name.id) {
+            let from_scope = self.get_scope(import.from_id);
+            if from_scope.declared.get_mod(name.id).is_some() {
+                return true;
+            }
+        }
+        for glob_import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(glob_import.from_id);
+            if from_scope.declared.get_mod(name.id).is_some() {
+                return true;
+            }
+        }
+        return false;
+    }
+
     fn scope_import_symbol(&mut self, scope_id: ScopeID, from_id: ScopeID, name: Ident) {
         let scope = self.get_scope(scope_id);
         let from_scope = self.get_scope(from_id);
@@ -493,28 +537,28 @@ impl Context {
         let mut private_symbols = Vec::new();
 
         if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
-            if mod_decl.visibility == Visibility::Public || from_id == ROOT_ID {
-                some_exists = true;
-            } else {
+            if visibily_private(mod_decl.visibility, from_id) {
                 private_symbols.push(mod_decl.name);
+            } else {
+                some_exists = true;
             }
         } else if let Some(data) = from_scope.declared.get_proc(name.id) {
-            if data.decl.visibility == Visibility::Public || from_id == ROOT_ID {
-                some_exists = true;
-            } else {
+            if visibily_private(data.decl.visibility, from_id) {
                 private_symbols.push(data.decl.name);
+            } else {
+                some_exists = true;
             }
         } else if let Some(data) = from_scope.declared.get_type(name.id) {
-            if data.visibility() == Visibility::Public || from_id == ROOT_ID {
-                some_exists = true;
-            } else {
+            if visibily_private(data.visibility(), from_id) {
                 private_symbols.push(data.name());
+            } else {
+                some_exists = true;
             }
         } else if let Some(data) = from_scope.declared.get_global(name.id) {
-            if data.decl.visibility == Visibility::Public || from_id == ROOT_ID {
-                some_exists = true;
-            } else {
+            if visibily_private(data.decl.visibility, from_id) {
                 private_symbols.push(data.decl.name);
+            } else {
+                some_exists = true;
             }
         }
 
@@ -545,6 +589,50 @@ impl Context {
         scope
             .symbol_imports
             .insert(name.id, SymbolImport { from_id, name });
+    }
+
+    fn scope_find_proc(
+        &mut self,
+        scope_id: ScopeID,
+        module_access: ModuleAccess,
+        name: Ident,
+    ) -> Option<ProcData> {
+        if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
+            return self.scope_get_in_scope_proc(scope_id, name);
+        }
+        let from_scope = match self.scope_resolve_module_access(scope_id, module_access) {
+            Some(id) => self.get_scope(id),
+            None => return None,
+        };
+        if let Some(data) = from_scope.declared.get_proc(name.id) {
+            Some(data)
+        } else {
+            let scope = self.get_scope_mut(scope_id);
+            scope.err(CheckError::ProcNotDeclaredInPath, name.span);
+            None
+        }
+    }
+
+    fn scope_find_type(
+        &mut self,
+        scope_id: ScopeID,
+        module_access: ModuleAccess,
+        name: Ident,
+    ) -> Option<TypeData> {
+        if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
+            return self.scope_get_in_scope_type(scope_id, name);
+        }
+        let from_scope = match self.scope_resolve_module_access(scope_id, module_access) {
+            Some(id) => self.get_scope(id),
+            None => return None,
+        };
+        if let Some(data) = from_scope.declared.get_type(name.id) {
+            Some(data)
+        } else {
+            let scope = self.get_scope_mut(scope_id);
+            scope.err(CheckError::TypeNotDeclaredInPath, name.span);
+            None
+        }
     }
 
     //@report usages of self id module path as redundant
@@ -578,7 +666,10 @@ impl Context {
                 if let Some(parent) = scope.parent {
                     parent
                 } else {
-                    scope.err(CheckError::SuperUsedFromRootModule, Span::new(0, 0)); //@no modifier span is available
+                    scope.err(
+                        CheckError::SuperUsedFromRootModule,
+                        module_access.modifier_span,
+                    );
                     return None;
                 }
             }
@@ -601,7 +692,7 @@ impl Context {
                     return None;
                 }
             };
-            if mod_decl.visibility == Visibility::Private && target.id != ROOT_ID {
+            if visibily_private(mod_decl.visibility, target.id) {
                 let scope = self.get_scope_mut(scope_id);
                 scope.err(CheckError::ModuleIsPrivate, name.span);
                 return None;
@@ -619,26 +710,6 @@ impl Context {
         Some(target.id)
     }
 
-    fn scope_in_scope_mod_exists(&self, scope_id: ScopeID, name: Ident) -> bool {
-        let scope = self.get_scope(scope_id);
-        if scope.declared.get_mod(name.id).is_some() {
-            return true;
-        }
-        if let Some(import) = scope.symbol_imports.get(&name.id) {
-            let from_scope = self.get_scope(import.from_id);
-            if from_scope.declared.get_mod(name.id).is_some() {
-                return true;
-            }
-        }
-        for glob_import in scope.glob_imports.iter() {
-            let from_scope = self.get_scope(glob_import.from_id);
-            if from_scope.declared.get_mod(name.id).is_some() {
-                return true;
-            }
-        }
-        return false;
-    }
-
     fn scope_get_in_scope_mod(&mut self, scope_id: ScopeID, name: Ident) -> Option<P<ModDecl>> {
         let scope = self.get_scope(scope_id);
         let mut unique = None;
@@ -651,8 +722,7 @@ impl Context {
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
-                if mod_decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
-                } else {
+                if visibily_public(mod_decl.visibility, import.from_id) {
                     let conflict = Conflit::new(mod_decl, import.from_id, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -666,8 +736,7 @@ impl Context {
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
             if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
-                if mod_decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
-                } else {
+                if visibily_public(mod_decl.visibility, import.from_id) {
                     let conflict = Conflit::new(mod_decl, import.from_id, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -729,8 +798,7 @@ impl Context {
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_proc(name.id) {
-                if data.decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
-                } else {
+                if visibily_public(data.decl.visibility, import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -744,8 +812,7 @@ impl Context {
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_proc(name.id) {
-                if data.decl.visibility == Visibility::Private && import.from_id != ROOT_ID {
-                } else {
+                if visibily_public(data.decl.visibility, import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -807,8 +874,7 @@ impl Context {
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_type(name.id) {
-                if data.visibility() == Visibility::Private && import.from_id != ROOT_ID {
-                } else {
+                if visibily_public(data.visibility(), import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -822,8 +888,7 @@ impl Context {
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_type(name.id) {
-                if data.visibility() == Visibility::Private && import.from_id != ROOT_ID {
-                } else {
+                if visibily_public(data.visibility(), import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -871,21 +936,5 @@ impl Context {
         let scope = self.get_scope_mut(scope_id);
         scope.error(error.into());
         None
-    }
-}
-
-struct Conflit<T> {
-    data: T,
-    from_id: ScopeID,
-    import_span: Option<Span>,
-}
-
-impl<T> Conflit<T> {
-    fn new(data: T, from_id: ScopeID, import_span: Option<Span>) -> Self {
-        Self {
-            data,
-            from_id,
-            import_span,
-        }
     }
 }

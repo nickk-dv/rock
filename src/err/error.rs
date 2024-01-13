@@ -130,12 +130,15 @@ pub enum CheckError {
     SuperUsedFromRootModule,
     ModuleFileReportedMissing,
     ModuleIsPrivate,
-    ModuleNotDeclaredInPath,
     ImportFromItself,
     ImportItself,
     ImportWildcardExists,
     ImportSymbolNotDefined,
     ImportSymbolAlreadyImported,
+
+    ModuleNotDeclaredInPath,
+    ProcNotDeclaredInPath,
+    TypeNotDeclaredInPath,
 
     ModuleNotFoundInScope,
     ProcNotFoundInScope,

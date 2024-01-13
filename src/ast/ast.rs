@@ -30,6 +30,7 @@ pub struct Ident {
 #[derive(Copy, Clone)]
 pub struct ModuleAccess {
     pub modifier: ModuleAccessModifier,
+    pub modifier_span: Span,
     pub names: List<Ident>,
 }
 
