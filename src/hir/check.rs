@@ -14,7 +14,22 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_1_check_main_proc();
     context.pass_2_check_namesets(); //@duplicates are not removed from lists
     context.pass_3_process_imports();
+    context.test_constfold(); //@temp test
     context.report_errors()
+}
+
+impl Context {
+    fn test_constfold(&self) {
+        use super::constfold;
+
+        let scope = self.get_scope(ROOT_ID);
+        for decl in scope.module.decls {
+            if let Decl::Global(global_decl) = decl {
+                println!("constevaluating...");
+                let v = constfold::consteval(global_decl.expr);
+            }
+        }
+    }
 }
 
 pub(super) struct Context {
