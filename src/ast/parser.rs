@@ -805,16 +805,69 @@ impl<'ast> Parser<'ast> {
 
     fn parse_literal(&mut self) -> Result<P<Literal>, ParseError> {
         let mut literal = self.alloc::<Literal>();
-        match self.peek() {
-            Token::LitNull => *literal = Literal::Null,
-            Token::LitBool(v) => *literal = Literal::Bool(v),
-            Token::LitInt(v) => *literal = Literal::Uint(v),
-            Token::LitFloat(v) => *literal = Literal::Float(v),
-            Token::LitChar(v) => *literal = Literal::Char(v),
-            Token::LitString => *literal = Literal::String,
+        *literal = match self.peek() {
+            Token::LitNull => {
+                self.consume();
+                Literal::Null
+            }
+            Token::LitBool(v) => {
+                self.consume();
+                Literal::Bool(v)
+            }
+            Token::LitInt(v) => {
+                self.consume();
+                let basic_option = self.peek().as_basic_type();
+                let basic = match basic_option {
+                    Some(b) => {
+                        if matches!(
+                            b,
+                            BasicType::S8
+                                | BasicType::S16
+                                | BasicType::S32
+                                | BasicType::S64
+                                | BasicType::Ssize
+                                | BasicType::U8
+                                | BasicType::U16
+                                | BasicType::U32
+                                | BasicType::U64
+                                | BasicType::Usize
+                        ) {
+                            self.consume();
+                            Some(b)
+                        } else {
+                            return Err(ParseError::LiteralInteger);
+                        }
+                    }
+                    _ => None,
+                };
+                Literal::Uint(v, basic)
+            }
+            Token::LitFloat(v) => {
+                self.consume();
+                let basic_option = self.peek().as_basic_type();
+                let basic = match basic_option {
+                    Some(b) => {
+                        if matches!(b, BasicType::F32 | BasicType::F64) {
+                            self.consume();
+                            Some(b)
+                        } else {
+                            return Err(ParseError::LiteralFloat);
+                        }
+                    }
+                    _ => None,
+                };
+                Literal::Float(v, basic)
+            }
+            Token::LitChar(v) => {
+                self.consume();
+                Literal::Char(v)
+            }
+            Token::LitString => {
+                self.consume();
+                Literal::String
+            }
             _ => return Err(ParseError::LiteralMatch),
-        }
-        self.consume();
+        };
         Ok(literal)
     }
 

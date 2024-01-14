@@ -310,8 +310,8 @@ pub struct Sizeof {
 pub enum Literal {
     Null,
     Bool(bool),
-    Uint(u64),
-    Float(f64),
+    Uint(u64, Option<BasicType>),
+    Float(f64, Option<BasicType>),
     Char(char),
     String,
 }

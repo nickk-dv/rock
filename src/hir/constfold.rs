@@ -25,8 +25,8 @@ pub fn consteval(expr: Expr) -> Option<ConstValue> {
         Expr::Literal(lit) => match *lit {
             Literal::Null => Some(ConstValue::NullPtr),
             Literal::Bool(v) => Some(ConstValue::Bool(v)),
-            Literal::Uint(v) => Some(ConstValue::Uint(v)),
-            Literal::Float(v) => Some(ConstValue::Float(v)),
+            Literal::Uint(v, ..) => Some(ConstValue::Uint(v)),
+            Literal::Float(v, ..) => Some(ConstValue::Float(v)),
             Literal::Char(v) => Some(ConstValue::Char(v)),
             Literal::String => None,
         },
