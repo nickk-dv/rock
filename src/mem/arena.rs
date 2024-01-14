@@ -48,11 +48,25 @@ impl Arena {
         self.blocks = blocks;
     }
 
-    fn manual_drop(&mut self) {
+    pub fn manual_drop(&mut self) {
         for block in self.blocks.iter() {
             unsafe {
                 alloc::dealloc(block.as_mut(), self.layout);
             }
         }
+    }
+
+    pub fn report_memory_usage(&self) {
+        let mut bytes_used = 0;
+        for block in self.blocks {
+            bytes_used += self.layout.size();
+        }
+        bytes_used -= self.layout.size();
+        bytes_used += self.offset;
+        println!(
+            "arena bytes used: {}, block size: {}",
+            bytes_used,
+            self.layout.size()
+        );
     }
 }

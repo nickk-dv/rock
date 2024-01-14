@@ -5,16 +5,41 @@ use crate::ast::span::Span;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
+use std::time::Instant;
 
 pub const ROOT_ID: ScopeID = 0;
 
+struct Timer {
+    start_time: Instant,
+}
+
+impl Timer {
+    fn new() -> Self {
+        Timer {
+            start_time: Instant::now(),
+        }
+    }
+
+    fn elapsed_ms(self, message: &'static str) {
+        let elapsed = self.start_time.elapsed();
+        let sec_ms = elapsed.as_secs_f64() * 1000.0;
+        let ms = sec_ms + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
+        println!("{}: {:.3} ms", message, ms);
+    }
+}
+
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
+    for arena in ast.arenas.iter() {
+        arena.report_memory_usage();
+    }
+    let check_timer = Timer::new();
     let mut context = Context::new(ast);
     context.pass_0_create_scopes()?;
     context.pass_1_check_main_proc();
     context.pass_2_check_namesets(); //@duplicates are not removed from lists
     context.pass_3_process_imports();
-    context.test_constfold(); //@temp test
+    //context.test_constfold(); //@temp test
+    check_timer.elapsed_ms("check");
     context.report_errors()
 }
 
