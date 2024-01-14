@@ -162,6 +162,7 @@ pub struct StructField {
 pub struct GlobalDecl {
     pub visibility: Visibility,
     pub name: Ident,
+    pub tt: Option<Type>,
     pub expr: Expr,
 }
 

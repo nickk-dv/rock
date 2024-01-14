@@ -318,13 +318,16 @@ impl<'ast> Parser<'ast> {
             Token::Ident | Token::KwPub => {
                 let visibility = self.parse_visibility();
                 let name = self.parse_ident(ParseContext::Decl)?;
+                if self.peek() == Token::Colon {
+                    return Ok(Decl::Global(self.parse_global_decl(visibility, name)?));
+                }
                 self.expect_token(Token::ColonColon, ParseContext::Decl)?;
                 match self.peek() {
                     Token::KwMod => Ok(Decl::Mod(self.parse_mod_decl(visibility, name)?)),
                     Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl(visibility, name)?)),
                     Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(visibility, name)?)),
                     Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(visibility, name)?)),
-                    _ => Ok(Decl::Global(self.parse_global_decl(visibility, name)?)), //@review the global and :: requirement
+                    _ => Ok(Decl::Global(self.parse_global_decl(visibility, name)?)),
                 }
             }
             _ => Err(ParseError::DeclMatch),
@@ -454,6 +457,13 @@ impl<'ast> Parser<'ast> {
         let mut global_decl = self.alloc::<GlobalDecl>();
         global_decl.visibility = visibility;
         global_decl.name = name;
+        global_decl.tt = if self.try_consume(Token::Colon) {
+            let tt = self.parse_type()?;
+            self.expect_token(Token::Colon, ParseContext::GlobalDecl)?;
+            Some(tt)
+        } else {
+            None
+        };
         global_decl.expr = self.parse_expr()?;
         self.expect_token(Token::Semicolon, ParseContext::GlobalDecl)?;
         Ok(global_decl)
