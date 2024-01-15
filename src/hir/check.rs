@@ -51,7 +51,12 @@ impl MutVisit for Visitor {
     }
 }
 
+use super::ir;
+
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
+    ir::test();
+    return Ok(());
+
     for arena in ast.arenas.iter() {
         arena.report_memory_usage();
     }
