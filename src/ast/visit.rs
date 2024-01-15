@@ -199,18 +199,18 @@ fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {
 
 fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
     vis.visit_stmt(stmt);
-    match stmt {
-        Stmt::If(if_) => visit_if(vis, if_),
-        Stmt::For(for_) => visit_for(vis, for_),
-        Stmt::Block(block) => visit_block(vis, block),
-        Stmt::Defer(block) => visit_defer(vis, block),
-        Stmt::Break => visit_break(vis),
-        Stmt::Switch(switch_stmt) => visit_switch(vis, switch_stmt),
-        Stmt::Return(return_stmt) => visit_return(vis, return_stmt),
-        Stmt::Continue => visit_continue(vis),
-        Stmt::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
-        Stmt::VarAssign(var_assign) => visit_var_assign(vis, var_assign),
-        Stmt::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
+    match stmt.kind {
+        StmtKind::If(if_) => visit_if(vis, if_),
+        StmtKind::For(for_) => visit_for(vis, for_),
+        StmtKind::Block(block) => visit_block(vis, block),
+        StmtKind::Defer(block) => visit_defer(vis, block),
+        StmtKind::Break => visit_break(vis),
+        StmtKind::Switch(switch_stmt) => visit_switch(vis, switch_stmt),
+        StmtKind::Return(return_stmt) => visit_return(vis, return_stmt),
+        StmtKind::Continue => visit_continue(vis),
+        StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
+        StmtKind::VarAssign(var_assign) => visit_var_assign(vis, var_assign),
+        StmtKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
     }
 }
 
@@ -305,17 +305,17 @@ fn visit_var_assign<T: MutVisit>(vis: &mut T, var_assign: P<VarAssign>) {
 
 fn visit_expr<T: MutVisit>(vis: &mut T, expr: Expr) {
     vis.visit_expr(expr);
-    match expr {
-        Expr::Var(var) => visit_var(vis, var),
-        Expr::Enum(enum_) => visit_enum(vis, enum_),
-        Expr::Cast(cast) => visit_cast(vis, cast),
-        Expr::Sizeof(sizeof) => visit_sizeof(vis, sizeof),
-        Expr::Literal(literal) => visit_literal(vis, literal),
-        Expr::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
-        Expr::ArrayInit(array_init) => visit_array_init(vis, array_init),
-        Expr::StructInit(struct_init) => visit_struct_init(vis, struct_init),
-        Expr::UnaryExpr(unary_expr) => visit_unary_expr(vis, unary_expr),
-        Expr::BinaryExpr(binary_expr) => visit_binary_expr(vis, binary_expr),
+    match expr.kind {
+        ExprKind::Var(var) => visit_var(vis, var),
+        ExprKind::Enum(enum_) => visit_enum(vis, enum_),
+        ExprKind::Cast(cast) => visit_cast(vis, cast),
+        ExprKind::Sizeof(sizeof) => visit_sizeof(vis, sizeof),
+        ExprKind::Literal(literal) => visit_literal(vis, literal),
+        ExprKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
+        ExprKind::ArrayInit(array_init) => visit_array_init(vis, array_init),
+        ExprKind::StructInit(struct_init) => visit_struct_init(vis, struct_init),
+        ExprKind::UnaryExpr(unary_expr) => visit_unary_expr(vis, unary_expr),
+        ExprKind::BinaryExpr(binary_expr) => visit_binary_expr(vis, binary_expr),
     }
 }
 

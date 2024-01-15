@@ -28,10 +28,40 @@ impl Timer {
     }
 }
 
+use crate::ast::visit::*;
+
+struct Visitor {
+    module: P<Module>,
+    stop: bool,
+}
+
+impl MutVisit for Visitor {
+    fn visit_module(&mut self, module: P<Module>) {
+        if self.module.is_null() == false {
+            self.stop = true;
+        }
+        self.module = module;
+    }
+
+    fn visit_expr(&mut self, expr: Expr) {
+        if self.stop {
+            return;
+        }
+        crate::err::span_fmt::print(&self.module.file, expr.span, None, true);
+    }
+}
+
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
     for arena in ast.arenas.iter() {
         arena.report_memory_usage();
     }
+    let mut vis = Visitor {
+        module: P::null(),
+        stop: false,
+    };
+    visit_with(&mut vis, ast.copy());
+    return Ok(());
+
     let check_timer = Timer::new();
     let mut context = Context::new(ast);
     context.pass_0_create_scopes()?;
@@ -97,12 +127,12 @@ impl<T> Conflit<T> {
     }
 }
 
-fn visibily_private(visibility: Visibility, scope_id: ScopeID) -> bool {
-    visibility == Visibility::Private && scope_id != ROOT_ID
+fn visibility_private(vis: Visibility, scope_id: ScopeID) -> bool {
+    vis == Visibility::Private && scope_id != ROOT_ID
 }
 
-fn visibily_public(visibility: Visibility, scope_id: ScopeID) -> bool {
-    visibility == Visibility::Public || scope_id == ROOT_ID
+fn visibility_public(vis: Visibility, scope_id: ScopeID) -> bool {
+    vis == Visibility::Public || scope_id == ROOT_ID
 }
 
 impl Context {
@@ -577,25 +607,25 @@ impl Context {
         let mut private_symbols = Vec::new();
 
         if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
-            if visibily_private(mod_decl.visibility, from_id) {
+            if visibility_private(mod_decl.vis, from_id) {
                 private_symbols.push(mod_decl.name);
             } else {
                 some_exists = true;
             }
         } else if let Some(data) = from_scope.declared.get_proc(name.id) {
-            if visibily_private(data.decl.visibility, from_id) {
+            if visibility_private(data.decl.vis, from_id) {
                 private_symbols.push(data.decl.name);
             } else {
                 some_exists = true;
             }
         } else if let Some(data) = from_scope.declared.get_type(name.id) {
-            if visibily_private(data.visibility(), from_id) {
+            if visibility_private(data.vis(), from_id) {
                 private_symbols.push(data.name());
             } else {
                 some_exists = true;
             }
         } else if let Some(data) = from_scope.declared.get_global(name.id) {
-            if visibily_private(data.decl.visibility, from_id) {
+            if visibility_private(data.decl.vis, from_id) {
                 private_symbols.push(data.decl.name);
             } else {
                 some_exists = true;
@@ -732,7 +762,7 @@ impl Context {
                     return None;
                 }
             };
-            if visibily_private(mod_decl.visibility, target.id) {
+            if visibility_private(mod_decl.vis, target.id) {
                 let scope = self.get_scope_mut(scope_id);
                 scope.err(CheckError::ModuleIsPrivate, name.span);
                 return None;
@@ -762,7 +792,7 @@ impl Context {
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
-                if visibily_public(mod_decl.visibility, import.from_id) {
+                if visibility_public(mod_decl.vis, import.from_id) {
                     let conflict = Conflit::new(mod_decl, import.from_id, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -776,7 +806,7 @@ impl Context {
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
             if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
-                if visibily_public(mod_decl.visibility, import.from_id) {
+                if visibility_public(mod_decl.vis, import.from_id) {
                     let conflict = Conflit::new(mod_decl, import.from_id, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -838,7 +868,7 @@ impl Context {
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_proc(name.id) {
-                if visibily_public(data.decl.visibility, import.from_id) {
+                if visibility_public(data.decl.vis, import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -852,7 +882,7 @@ impl Context {
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_proc(name.id) {
-                if visibily_public(data.decl.visibility, import.from_id) {
+                if visibility_public(data.decl.vis, import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -914,7 +944,7 @@ impl Context {
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_type(name.id) {
-                if visibily_public(data.visibility(), import.from_id) {
+                if visibility_public(data.vis(), import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
@@ -928,7 +958,7 @@ impl Context {
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.declared.get_type(name.id) {
-                if visibily_public(data.visibility(), import.from_id) {
+                if visibility_public(data.vis(), import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);

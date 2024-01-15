@@ -316,44 +316,36 @@ impl<'ast> Parser<'ast> {
         match self.peek() {
             Token::KwImport => Ok(Decl::Import(self.parse_import_decl()?)),
             Token::Ident | Token::KwPub => {
-                let visibility = self.parse_visibility();
+                let vis = self.parse_visibility();
                 let name = self.parse_ident(ParseContext::Decl)?;
                 if self.peek() == Token::Colon {
-                    return Ok(Decl::Global(self.parse_global_decl(visibility, name)?));
+                    return Ok(Decl::Global(self.parse_global_decl(vis, name)?));
                 }
                 self.expect_token(Token::ColonColon, ParseContext::Decl)?;
                 match self.peek() {
-                    Token::KwMod => Ok(Decl::Mod(self.parse_mod_decl(visibility, name)?)),
-                    Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl(visibility, name)?)),
-                    Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(visibility, name)?)),
-                    Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(visibility, name)?)),
-                    _ => Ok(Decl::Global(self.parse_global_decl(visibility, name)?)),
+                    Token::KwMod => Ok(Decl::Mod(self.parse_mod_decl(vis, name)?)),
+                    Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl(vis, name)?)),
+                    Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(vis, name)?)),
+                    Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(vis, name)?)),
+                    _ => Ok(Decl::Global(self.parse_global_decl(vis, name)?)),
                 }
             }
             _ => Err(ParseError::DeclMatch),
         }
     }
 
-    fn parse_mod_decl(
-        &mut self,
-        visibility: Visibility,
-        name: Ident,
-    ) -> Result<P<ModDecl>, ParseError> {
+    fn parse_mod_decl(&mut self, vis: Visibility, name: Ident) -> Result<P<ModDecl>, ParseError> {
         let mut mod_decl = self.alloc::<ModDecl>();
-        mod_decl.visibility = visibility;
+        mod_decl.vis = vis;
         mod_decl.name = name;
         self.expect_token(Token::KwMod, ParseContext::ModDecl)?;
         self.expect_token(Token::Semicolon, ParseContext::ModDecl)?;
         Ok(mod_decl)
     }
 
-    fn parse_proc_decl(
-        &mut self,
-        visibility: Visibility,
-        name: Ident,
-    ) -> Result<P<ProcDecl>, ParseError> {
+    fn parse_proc_decl(&mut self, vis: Visibility, name: Ident) -> Result<P<ProcDecl>, ParseError> {
         let mut proc_decl = self.alloc::<ProcDecl>();
-        proc_decl.visibility = visibility;
+        proc_decl.vis = vis;
         proc_decl.name = name;
         self.expect_token(Token::OpenParen, ParseContext::ProcDecl)?;
         if !self.try_consume(Token::CloseParen) {
@@ -390,13 +382,9 @@ impl<'ast> Parser<'ast> {
         Ok(ProcParam { name, tt })
     }
 
-    fn parse_enum_decl(
-        &mut self,
-        visibility: Visibility,
-        name: Ident,
-    ) -> Result<P<EnumDecl>, ParseError> {
+    fn parse_enum_decl(&mut self, vis: Visibility, name: Ident) -> Result<P<EnumDecl>, ParseError> {
         let mut enum_decl = self.alloc::<EnumDecl>();
-        enum_decl.visibility = visibility;
+        enum_decl.vis = vis;
         enum_decl.name = name;
         self.expect_token(Token::KwEnum, ParseContext::EnumDecl)?;
         enum_decl.basic_type = self.try_consume_basic_type();
@@ -421,11 +409,11 @@ impl<'ast> Parser<'ast> {
 
     fn parse_struct_decl(
         &mut self,
-        visibility: Visibility,
+        vis: Visibility,
         name: Ident,
     ) -> Result<P<StructDecl>, ParseError> {
         let mut struct_decl = self.alloc::<StructDecl>();
-        struct_decl.visibility = visibility;
+        struct_decl.vis = vis;
         struct_decl.name = name;
         self.expect_token(Token::KwStruct, ParseContext::StructDecl)?;
         self.expect_token(Token::OpenBlock, ParseContext::StructDecl)?;
@@ -451,11 +439,11 @@ impl<'ast> Parser<'ast> {
 
     fn parse_global_decl(
         &mut self,
-        visibility: Visibility,
+        vis: Visibility,
         name: Ident,
     ) -> Result<P<GlobalDecl>, ParseError> {
         let mut global_decl = self.alloc::<GlobalDecl>();
-        global_decl.visibility = visibility;
+        global_decl.vis = vis;
         global_decl.name = name;
         global_decl.tt = if self.try_consume(Token::Colon) {
             let tt = self.parse_type()?;
@@ -510,30 +498,37 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
-        match self.peek() {
-            Token::KwIf => Ok(Stmt::If(self.parse_if()?)),
-            Token::KwFor => Ok(Stmt::For(self.parse_for()?)),
-            Token::OpenBlock => Ok(Stmt::Block(self.parse_block()?)),
-            Token::KwDefer => Ok(Stmt::Defer(self.parse_defer()?)),
-            Token::KwBreak => Ok(self.parse_break()?),
-            Token::KwSwitch => Ok(Stmt::Switch(self.parse_switch()?)),
-            Token::KwReturn => Ok(Stmt::Return(self.parse_return()?)),
-            Token::KwContinue => Ok(self.parse_continue()?),
+        let span_start = self.peek_span_start();
+        let kind = match self.peek() {
+            Token::KwIf => StmtKind::If(self.parse_if()?),
+            Token::KwFor => StmtKind::For(self.parse_for()?),
+            Token::OpenBlock => StmtKind::Block(self.parse_block()?),
+            Token::KwDefer => StmtKind::Defer(self.parse_defer()?),
+            Token::KwBreak => self.parse_break()?,
+            Token::KwSwitch => StmtKind::Switch(self.parse_switch()?),
+            Token::KwReturn => StmtKind::Return(self.parse_return()?),
+            Token::KwContinue => self.parse_continue()?,
             Token::Ident => {
                 if self.peek_next(1) == Token::Colon {
-                    return Ok(Stmt::VarDecl(self.parse_var_decl()?));
-                }
-                let module_access = self.parse_module_access()?;
-                if self.peek() == Token::Ident && self.peek_next(1) == Token::OpenParen {
-                    let stmt = Stmt::ProcCall(self.parse_proc_call(module_access)?);
-                    self.expect_token(Token::Semicolon, ParseContext::ProcCall)?;
-                    Ok(stmt)
+                    StmtKind::VarDecl(self.parse_var_decl()?)
                 } else {
-                    return Ok(Stmt::VarAssign(self.parse_var_assign(module_access)?));
+                    let module_access = self.parse_module_access()?;
+                    if self.peek() == Token::Ident && self.peek_next(1) == Token::OpenParen {
+                        let proc_call = StmtKind::ProcCall(self.parse_proc_call(module_access)?);
+                        self.expect_token(Token::Semicolon, ParseContext::ProcCall)?;
+                        proc_call
+                    } else {
+                        StmtKind::VarAssign(self.parse_var_assign(module_access)?)
+                    }
                 }
             }
-            _ => Err(ParseError::StmtMatch),
-        }
+            _ => return Err(ParseError::StmtMatch),
+        };
+        let span_end = self.peek_span_end();
+        Ok(Stmt {
+            kind,
+            span: Span::new(span_start, span_end),
+        })
     }
 
     fn parse_if(&mut self) -> Result<P<If>, ParseError> {
@@ -594,10 +589,10 @@ impl<'ast> Parser<'ast> {
         Ok(self.parse_block()?)
     }
 
-    fn parse_break(&mut self) -> Result<Stmt, ParseError> {
+    fn parse_break(&mut self) -> Result<StmtKind, ParseError> {
         self.expect_token(Token::KwBreak, ParseContext::Break)?;
         self.expect_token(Token::Semicolon, ParseContext::Break)?;
-        Ok(Stmt::Break)
+        Ok(StmtKind::Break)
     }
 
     fn parse_switch(&mut self) -> Result<P<Switch>, ParseError> {
@@ -631,10 +626,10 @@ impl<'ast> Parser<'ast> {
         Ok(return_)
     }
 
-    fn parse_continue(&mut self) -> Result<Stmt, ParseError> {
+    fn parse_continue(&mut self) -> Result<StmtKind, ParseError> {
         self.expect_token(Token::KwContinue, ParseContext::Continue)?;
         self.expect_token(Token::Semicolon, ParseContext::Continue)?;
-        Ok(Stmt::Continue)
+        Ok(StmtKind::Continue)
     }
 
     fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
@@ -691,7 +686,10 @@ impl<'ast> Parser<'ast> {
             bin_expr.op = binary_op;
             bin_expr.lhs = expr_lhs;
             bin_expr.rhs = self.parse_sub_expr(prec + 1)?;
-            expr_lhs = Expr::BinaryExpr(bin_expr);
+            expr_lhs = Expr {
+                span: Span::new(bin_expr.lhs.span.start, bin_expr.rhs.span.end),
+                kind: ExprKind::BinaryExpr(bin_expr),
+            }
         }
         Ok(expr_lhs)
     }
@@ -703,46 +701,56 @@ impl<'ast> Parser<'ast> {
             return Ok(expr);
         }
 
+        let span_start = self.peek_span_start();
+
         if let Some(unary_op) = self.try_consume_unary_op() {
             let mut unary_expr = self.alloc::<UnaryExpr>();
             unary_expr.op = unary_op;
             unary_expr.rhs = self.parse_primary_expr()?;
-            return Ok(Expr::UnaryExpr(unary_expr));
+            let span_end = self.peek_span_end();
+            return Ok(Expr {
+                span: Span::new(span_start, span_end),
+                kind: ExprKind::UnaryExpr(unary_expr),
+            });
         }
 
-        match self.peek() {
+        let kind = match self.peek() {
             Token::Dot => match self.peek_next(1) {
                 Token::OpenBlock => {
                     let module_access = self.parse_module_access()?;
-                    let struct_init = self.parse_struct_init(module_access)?;
-                    Ok(Expr::StructInit(struct_init))
+                    ExprKind::StructInit(self.parse_struct_init(module_access)?)
                 }
-                _ => Ok(Expr::Enum(self.parse_enum()?)),
+                _ => ExprKind::Enum(self.parse_enum()?),
             },
-            Token::KwCast => Ok(Expr::Cast(self.parse_cast()?)),
-            Token::KwSizeof => Ok(Expr::Sizeof(self.parse_sizeof()?)),
+            Token::KwCast => ExprKind::Cast(self.parse_cast()?),
+            Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::LitNull
             | Token::LitBool(..)
             | Token::LitInt(..)
             | Token::LitFloat(..)
             | Token::LitChar(..)
-            | Token::LitString => Ok(Expr::Literal(self.parse_literal()?)),
-            Token::OpenBracket | Token::OpenBlock => Ok(Expr::ArrayInit(self.parse_array_init()?)),
+            | Token::LitString => ExprKind::Literal(self.parse_literal()?),
+            Token::OpenBracket | Token::OpenBlock => ExprKind::ArrayInit(self.parse_array_init()?),
             Token::Ident | Token::KwSuper | Token::KwPackage => {
                 let module_access = self.parse_module_access()?;
                 if self.peek() != Token::Ident {
                     return Err(ParseError::PrimaryExprIdent);
                 }
                 if self.peek_next(1) == Token::OpenParen {
-                    Ok(Expr::ProcCall(self.parse_proc_call(module_access)?))
+                    ExprKind::ProcCall(self.parse_proc_call(module_access)?)
                 } else if self.peek_next(1) == Token::Dot && self.peek_next(2) == Token::OpenBlock {
-                    Ok(Expr::StructInit(self.parse_struct_init(module_access)?))
+                    ExprKind::StructInit(self.parse_struct_init(module_access)?)
                 } else {
-                    Ok(Expr::Var(self.parse_var(module_access)?))
+                    ExprKind::Var(self.parse_var(module_access)?)
                 }
             }
-            _ => Err(ParseError::PrimaryExprMatch),
-        }
+            _ => return Err(ParseError::PrimaryExprMatch),
+        };
+        let span_end = self.peek_span_end();
+        Ok(Expr {
+            kind,
+            span: Span::new(span_start, span_end),
+        })
     }
 
     fn parse_var(&mut self, module_access: ModuleAccess) -> Result<P<Var>, ParseError> {

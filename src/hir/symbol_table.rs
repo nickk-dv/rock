@@ -45,10 +45,10 @@ impl TypeData {
         }
     }
 
-    pub fn visibility(&self) -> Visibility {
+    pub fn vis(&self) -> Visibility {
         match self {
-            TypeData::Enum(data) => data.decl.visibility,
-            TypeData::Struct(data) => data.decl.visibility,
+            TypeData::Enum(data) => data.decl.vis,
+            TypeData::Struct(data) => data.decl.vis,
         }
     }
 }

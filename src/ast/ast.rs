@@ -109,14 +109,14 @@ pub enum Decl {
 
 #[derive(Copy, Clone)]
 pub struct ModDecl {
-    pub visibility: Visibility,
+    pub vis: Visibility,
     pub name: Ident,
     pub id: Option<ScopeID>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ProcDecl {
-    pub visibility: Visibility,
+    pub vis: Visibility,
     pub name: Ident,
     pub params: List<ProcParam>,
     pub is_variadic: bool,
@@ -132,7 +132,7 @@ pub struct ProcParam {
 
 #[derive(Copy, Clone)]
 pub struct EnumDecl {
-    pub visibility: Visibility,
+    pub vis: Visibility,
     pub name: Ident,
     pub basic_type: Option<BasicType>,
     pub variants: List<EnumVariant>,
@@ -146,7 +146,7 @@ pub struct EnumVariant {
 
 #[derive(Copy, Clone)]
 pub struct StructDecl {
-    pub visibility: Visibility,
+    pub vis: Visibility,
     pub name: Ident,
     pub fields: List<StructField>,
 }
@@ -160,7 +160,7 @@ pub struct StructField {
 
 #[derive(Copy, Clone)]
 pub struct GlobalDecl {
-    pub visibility: Visibility,
+    pub vis: Visibility,
     pub name: Ident,
     pub tt: Option<Type>,
     pub expr: Expr,
@@ -168,9 +168,9 @@ pub struct GlobalDecl {
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub span: Span,
     pub module_access: ModuleAccess,
     pub target: ImportTarget,
+    pub span: Span,
 }
 
 #[derive(Copy, Clone)]
@@ -181,7 +181,13 @@ pub enum ImportTarget {
 }
 
 #[derive(Copy, Clone)]
-pub enum Stmt {
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub enum StmtKind {
     If(P<If>),
     For(P<For>),
     Block(P<Block>),
@@ -259,7 +265,13 @@ pub enum AssignOp {
 }
 
 #[derive(Copy, Clone)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub enum ExprKind {
     Var(P<Var>),
     Enum(P<Enum>),
     Cast(P<Cast>),

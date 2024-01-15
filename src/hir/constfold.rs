@@ -2,17 +2,17 @@ use super::hir::ConstValue;
 use crate::{ast::ast::*, mem::P};
 
 fn is_consteval(expr: Expr) -> bool {
-    match expr {
-        Expr::Var(..) => false,
-        Expr::Enum(..) => false,
-        Expr::Cast(..) => false,
-        Expr::Sizeof(..) => false,
-        Expr::Literal(..) => true,
-        Expr::ProcCall(..) => false,
-        Expr::ArrayInit(..) => false,
-        Expr::StructInit(..) => false,
-        Expr::UnaryExpr(un) => is_consteval(un.rhs),
-        Expr::BinaryExpr(bin) => is_consteval(bin.lhs) && is_consteval(bin.rhs),
+    match expr.kind {
+        ExprKind::Var(..) => false,
+        ExprKind::Enum(..) => false,
+        ExprKind::Cast(..) => false,
+        ExprKind::Sizeof(..) => false,
+        ExprKind::Literal(..) => true,
+        ExprKind::ProcCall(..) => false,
+        ExprKind::ArrayInit(..) => false,
+        ExprKind::StructInit(..) => false,
+        ExprKind::UnaryExpr(un) => is_consteval(un.rhs),
+        ExprKind::BinaryExpr(bin) => is_consteval(bin.lhs) && is_consteval(bin.rhs),
     }
 }
 
@@ -21,8 +21,8 @@ pub fn consteval(expr: Expr) -> Option<ConstValue> {
         return None;
     }
 
-    match expr {
-        Expr::Literal(lit) => match *lit {
+    match expr.kind {
+        ExprKind::Literal(lit) => match *lit {
             Literal::Null => Some(ConstValue::NullPtr),
             Literal::Bool(v) => Some(ConstValue::Bool(v)),
             Literal::Uint(v, ..) => Some(ConstValue::Uint(v)),
@@ -30,8 +30,8 @@ pub fn consteval(expr: Expr) -> Option<ConstValue> {
             Literal::Char(v) => Some(ConstValue::Char(v)),
             Literal::String => None,
         },
-        Expr::UnaryExpr(un) => consteval_unary(un),
-        Expr::BinaryExpr(bin) => consteval_binary(bin),
+        ExprKind::UnaryExpr(un) => consteval_unary(un),
+        ExprKind::BinaryExpr(bin) => consteval_binary(bin),
         _ => None,
     }
 }
