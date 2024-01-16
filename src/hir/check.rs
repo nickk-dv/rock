@@ -7,6 +7,9 @@ use crate::mem::*;
 use std::collections::HashMap;
 use std::time::Instant;
 
+//@conflits in scope can be wrong if symbol / glob reference the same symbol
+//@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
+
 pub const ROOT_ID: ScopeID = 0;
 
 struct Timer {
@@ -71,6 +74,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     for arena in ast.arenas.iter() {
         arena.report_memory_usage();
     }
+
     let mut vis = Visitor {
         module: P::null(),
         stop: false,

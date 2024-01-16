@@ -518,7 +518,7 @@ impl<'ast> Parser<'ast> {
                         self.expect_token(Token::Semicolon, ParseContext::ProcCall)?;
                         proc_call
                     } else {
-                        StmtKind::VarAssign(self.parse_var_assign(module_access)?)
+                        StmtKind::VarAssign(self.parse_var_assign(module_access, true)?)
                     }
                 }
             }
@@ -553,6 +553,8 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::KwFor, ParseContext::For)?;
 
         if self.peek() == Token::OpenBlock {
+            for_.var_decl = None;
+            for_.var_assign = None;
             for_.block = self.parse_block()?;
             return Ok(for_);
         }
@@ -563,9 +565,9 @@ impl<'ast> Parser<'ast> {
             None
         };
         for_.condition = Some(self.parse_expr()?);
-        for_.var_assign = if self.peek_next(-1) == Token::Semicolon {
+        for_.var_assign = if self.try_consume(Token::Semicolon) {
             let module_access = self.parse_module_access()?;
-            Some(self.parse_var_assign(module_access)?)
+            Some(self.parse_var_assign(module_access, false)?)
         } else {
             None
         };
@@ -654,12 +656,15 @@ impl<'ast> Parser<'ast> {
     fn parse_var_assign(
         &mut self,
         module_access: ModuleAccess,
+        require_semi: bool,
     ) -> Result<P<VarAssign>, ParseError> {
         let mut var_assign = self.alloc::<VarAssign>();
         var_assign.var = self.parse_var(module_access)?;
         var_assign.op = self.expect_assign_op(ParseContext::VarAssign)?;
         var_assign.expr = self.parse_expr()?;
-        self.expect_token(Token::Semicolon, ParseContext::VarAssign)?;
+        if require_semi {
+            self.expect_token(Token::Semicolon, ParseContext::VarAssign)?;
+        }
         Ok(var_assign)
     }
 
