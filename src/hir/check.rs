@@ -28,14 +28,14 @@ impl Timer {
     }
 }
 
-use crate::ast::visit::*;
+use crate::ast::visit;
 
 struct Visitor {
     module: P<Module>,
     stop: bool,
 }
 
-impl MutVisit for Visitor {
+impl visit::MutVisit for Visitor {
     fn visit_module(&mut self, module: P<Module>) {
         if self.module.is_null() == false {
             self.stop = true;
@@ -51,12 +51,23 @@ impl MutVisit for Visitor {
     }
 }
 
-use super::ir;
+impl visit::MutVisit for Context {
+    fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
+        let tt = self.scope_find_type(self.curr_scope, custom_type.module_access, custom_type.name);
+    }
+
+    fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
+        if let Some(name) = struct_init.name {
+            let tt = self.scope_find_type(self.curr_scope, struct_init.module_access, name);
+        }
+    }
+
+    fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
+        self.scope_find_proc(self.curr_scope, proc_call.module_access, proc_call.name);
+    }
+}
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
-    ir::test();
-    return Ok(());
-
     for arena in ast.arenas.iter() {
         arena.report_memory_usage();
     }
@@ -64,8 +75,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
         module: P::null(),
         stop: false,
     };
-    visit_with(&mut vis, ast.copy());
-    return Ok(());
+    //visit_with(&mut vis, ast.copy());
 
     let check_timer = Timer::new();
     let mut context = Context::new(ast);
@@ -73,6 +83,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_1_check_main_proc();
     context.pass_2_check_namesets(); //@duplicates are not removed from lists
     context.pass_3_process_imports();
+    context.pass_4_type_resolve();
     //context.test_constfold(); //@temp test
     check_timer.elapsed_ms("check");
     context.report_errors()
@@ -96,6 +107,7 @@ pub(super) struct Context {
     ast: P<Ast>,
     scopes: Vec<Scope>,
     errors: Vec<Error>,
+    curr_scope: ScopeID,
 }
 
 struct ScopeTreeTask {
@@ -146,6 +158,7 @@ impl Context {
             ast,
             scopes: Vec::new(),
             errors: Vec::new(),
+            curr_scope: 0,
         }
     }
 
@@ -666,6 +679,14 @@ impl Context {
             .insert(name.id, SymbolImport { from_id, name });
     }
 
+    fn pass_4_type_resolve(&mut self) {
+        for scope_id in 0..self.scopes.len() as ScopeID {
+            self.curr_scope = scope_id;
+            let module = self.get_scope(scope_id).module.copy();
+            visit::visit_module_with(self, module);
+        }
+    }
+
     fn scope_find_proc(
         &mut self,
         scope_id: ScopeID,
@@ -675,17 +696,28 @@ impl Context {
         if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
             return self.scope_get_in_scope_proc(scope_id, name);
         }
-        let from_scope = match self.scope_resolve_module_access(scope_id, module_access) {
-            Some(id) => self.get_scope(id),
+        let from_id = match self.scope_resolve_module_access(scope_id, module_access) {
+            Some(id) => id,
             None => return None,
         };
-        if let Some(data) = from_scope.declared.get_proc(name.id) {
-            Some(data)
-        } else {
+        let data = match self.get_scope(from_id).declared.get_proc(name.id) {
+            Some(data) => data,
+            None => {
+                let scope = self.get_scope_mut(scope_id);
+                scope.err(CheckError::ProcNotDeclaredInPath, name.span);
+                return None;
+            }
+        };
+        if visibility_private(data.decl.vis, from_id) {
+            let from_md = self.get_scope(from_id).md();
             let scope = self.get_scope_mut(scope_id);
-            scope.err(CheckError::ProcNotDeclaredInPath, name.span);
-            None
+            scope.error(
+                Error::check(CheckError::ProcIsPrivate, scope.md(), name.span)
+                    .context(from_md, data.decl.name.span, "defined here")
+                    .into(),
+            );
         }
+        Some(data)
     }
 
     fn scope_find_type(
@@ -697,17 +729,28 @@ impl Context {
         if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
             return self.scope_get_in_scope_type(scope_id, name);
         }
-        let from_scope = match self.scope_resolve_module_access(scope_id, module_access) {
-            Some(id) => self.get_scope(id),
+        let from_id = match self.scope_resolve_module_access(scope_id, module_access) {
+            Some(id) => id,
             None => return None,
         };
-        if let Some(data) = from_scope.declared.get_type(name.id) {
-            Some(data)
-        } else {
+        let data = match self.get_scope(from_id).declared.get_type(name.id) {
+            Some(data) => data,
+            None => {
+                let scope = self.get_scope_mut(scope_id);
+                scope.err(CheckError::TypeNotDeclaredInPath, name.span);
+                return None;
+            }
+        };
+        if visibility_private(data.vis(), from_id) {
+            let from_md = self.get_scope(from_id).md();
             let scope = self.get_scope_mut(scope_id);
-            scope.err(CheckError::TypeNotDeclaredInPath, name.span);
-            None
+            scope.error(
+                Error::check(CheckError::TypeIsPrivate, scope.md(), name.span)
+                    .context(from_md, data.name().span, "defined here")
+                    .into(),
+            );
         }
+        Some(data)
     }
 
     //@report usages of self id module path as redundant
@@ -768,8 +811,13 @@ impl Context {
                 }
             };
             if visibility_private(mod_decl.vis, target.id) {
+                let target_md = target.md(); //@borrow checker...
                 let scope = self.get_scope_mut(scope_id);
-                scope.err(CheckError::ModuleIsPrivate, name.span);
+                scope.error(
+                    Error::check(CheckError::ModuleIsPrivate, scope.md(), name.span)
+                        .context(target_md, mod_decl.name.span, "defined here")
+                        .into(),
+                );
                 return None;
             }
             target = match mod_decl.id {

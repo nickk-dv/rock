@@ -29,7 +29,6 @@ impl Into<Message> for CheckError {
             
             CheckError::SuperUsedFromRootModule =>     ("using `super` in the root module", Some("`super` refers to the parent module, which doesnt exist for the root module")),
             CheckError::ModuleFileReportedMissing =>   ("module is missing a source file, as reported earlier", None),
-            CheckError::ModuleIsPrivate =>             ("module is private", None),
             CheckError::ImportFromItself =>            ("importing from itself is redundant", Some("remove this import")),
             CheckError::ImportItself =>                ("importing module into itself is redundant", Some("remove this import")),
             CheckError::ImportWildcardExists =>        ("wildcard import of module already exists", Some("remove this import")),
@@ -40,6 +39,10 @@ impl Into<Message> for CheckError {
             CheckError::ProcNotDeclaredInPath =>       ("procedure is not declared in referenced module path", None),
             CheckError::TypeNotDeclaredInPath =>       ("type name is not declared in referenced module path", None),
             
+            CheckError::ModuleIsPrivate =>             ("module is private", None),
+            CheckError::ProcIsPrivate =>               ("procedure is private", None),
+            CheckError::TypeIsPrivate =>               ("type is private", None),
+
             CheckError::ModuleNotFoundInScope =>       ("module is not found in scope", None),
             CheckError::ProcNotFoundInScope =>         ("procedure is not found in scope", None),
             CheckError::TypeNotFoundInScope =>         ("type name is not found in scope", None),

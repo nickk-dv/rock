@@ -5,6 +5,10 @@ pub fn visit_with<T: MutVisit>(vis: &mut T, ast: P<Ast>) {
     visit_ast(vis, ast);
 }
 
+pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
+    visit_module(vis, module);
+}
+
 #[allow(unused)]
 pub trait MutVisit: Sized {
     fn visit_ast(&mut self, ast: P<Ast>) {}
@@ -180,6 +184,9 @@ fn visit_struct_field<T: MutVisit>(vis: &mut T, field: &mut StructField) {
 fn visit_global_decl<T: MutVisit>(vis: &mut T, mut global_decl: P<GlobalDecl>) {
     vis.visit_global_decl(global_decl);
     visit_ident(vis, &mut global_decl.name);
+    if let Some(ref mut tt) = global_decl.tt {
+        visit_type(vis, tt);
+    }
     visit_expr(vis, global_decl.expr);
 }
 
