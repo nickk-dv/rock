@@ -112,11 +112,12 @@ impl<T: Copy> Iterator for ListIterVal<T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.curr.is_null() {
-            return None;
+            None
+        } else {
+            let val = self.curr.val;
+            self.curr = self.curr.next;
+            Some(val)
         }
-        let val = self.curr.val;
-        self.curr = self.curr.next;
-        return Some(val);
     }
 }
 

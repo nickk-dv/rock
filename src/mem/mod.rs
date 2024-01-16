@@ -9,3 +9,7 @@ pub use array::*;
 pub use intern::*;
 pub use list::*;
 pub use ptr::*;
+
+pub trait ManualDrop: Sized {
+    fn manual_drop(self) {}
+}

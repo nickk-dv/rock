@@ -5,6 +5,7 @@ use crate::ast::span::Span;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
+use std::mem::ManuallyDrop;
 use std::time::Instant;
 
 //@conflits in scope can be wrong if symbol / glob reference the same symbol
@@ -70,6 +71,8 @@ impl visit::MutVisit for Context {
     }
 }
 
+const v: usize = std::mem::size_of::<Scope>();
+
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
     for arena in ast.arenas.iter() {
         arena.report_memory_usage();
@@ -80,17 +83,26 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
         stop: false,
     };
     //visit_with(&mut vis, ast.copy());
-
     let check_timer = Timer::new();
-    let mut context = Context::new(ast);
+
+    let est_scope_count = ast.modules.len();
+    let block_size = std::mem::size_of::<Scope>() * est_scope_count;
+    let mut arena = Arena::new(block_size);
+    let mut context = arena.alloc::<Context>();
+    *context = Context::new(ast, arena);
+
     context.pass_0_create_scopes()?;
     context.pass_1_check_main_proc();
     context.pass_2_check_namesets(); //@duplicates are not removed from lists
     context.pass_3_process_imports();
     context.pass_4_type_resolve();
+
     //context.test_constfold(); //@temp test
     check_timer.elapsed_ms("check");
-    context.report_errors()
+
+    let res = context.report_errors();
+    context.manual_drop();
+    res
 }
 
 impl Context {
@@ -101,17 +113,26 @@ impl Context {
         for decl in scope.module.decls {
             if let Decl::Global(global_decl) = decl {
                 println!("constevaluating...");
-                let v = constfold::consteval(global_decl.expr);
+                let vv = constfold::consteval(global_decl.expr);
             }
         }
     }
 }
 
+impl ManualDrop for P<Context> {
+    fn manual_drop(mut self) {
+        unsafe { ManuallyDrop::drop(&mut self.scopes) };
+        unsafe { ManuallyDrop::drop(&mut self.errors) };
+        self.arena.manual_drop();
+    }
+}
+
 pub(super) struct Context {
     ast: P<Ast>,
-    scopes: Vec<Scope>,
-    errors: Vec<Error>,
-    curr_scope: ScopeID,
+    arena: Arena,
+    scopes: ManuallyDrop<Vec<Scope>>,
+    errors: ManuallyDrop<Vec<Error>>,
+    curr_scope: ScopeID, //@hack related to visitor
 }
 
 struct ScopeTreeTask {
@@ -157,11 +178,12 @@ fn visibility_public(vis: Visibility, scope_id: ScopeID) -> bool {
 }
 
 impl Context {
-    fn new(ast: P<Ast>) -> Self {
+    fn new(ast: P<Ast>, arena: Arena) -> Self {
         Self {
             ast,
-            scopes: Vec::new(),
-            errors: Vec::new(),
+            arena,
+            scopes: ManuallyDrop::new(Vec::new()),
+            errors: ManuallyDrop::new(Vec::new()),
             curr_scope: 0,
         }
     }
@@ -1065,3 +1087,4 @@ impl Context {
         None
     }
 }
+//@1068 loc, need to reduce the complexity / duplication here
