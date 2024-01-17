@@ -1,11 +1,9 @@
 use super::scope::*;
-use super::symbol_table::*;
 use crate::ast::ast::*;
 use crate::ast::span::Span;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
-use std::mem::ManuallyDrop;
 use std::time::Instant;
 
 //@conflits in scope can be wrong if symbol / glob reference the same symbol
@@ -121,8 +119,10 @@ impl Context {
 
 impl ManualDrop for P<Context> {
     fn manual_drop(mut self) {
-        unsafe { ManuallyDrop::drop(&mut self.scopes) };
-        unsafe { ManuallyDrop::drop(&mut self.errors) };
+        unsafe {
+            Drop::drop(&mut self.scopes);
+            Drop::drop(&mut self.errors);
+        }
         self.arena.manual_drop();
     }
 }
@@ -130,8 +130,8 @@ impl ManualDrop for P<Context> {
 pub(super) struct Context {
     ast: P<Ast>,
     arena: Arena,
-    scopes: ManuallyDrop<Vec<Scope>>,
-    errors: ManuallyDrop<Vec<Error>>,
+    scopes: Drop<Vec<Scope>>,
+    errors: Drop<Vec<Error>>,
     curr_scope: ScopeID, //@hack related to visitor
 }
 
@@ -182,8 +182,8 @@ impl Context {
         Self {
             ast,
             arena,
-            scopes: ManuallyDrop::new(Vec::new()),
-            errors: ManuallyDrop::new(Vec::new()),
+            scopes: Drop::new(Vec::new()),
+            errors: Drop::new(Vec::new()),
             curr_scope: 0,
         }
     }
@@ -344,7 +344,7 @@ impl Context {
         for decl in scope.module.decls {
             match decl {
                 Decl::Mod(mod_decl) => {
-                    if let Some(existing) = scope.declared.add_mod(mod_decl) {
+                    if let Err(existing) = scope.add_mod(mod_decl) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionMod,
@@ -364,7 +364,7 @@ impl Context {
                 }
                 Decl::Proc(proc_decl) => {
                     //@temp 0 id
-                    if let Some(existing) = scope.declared.add_proc(proc_decl, 0) {
+                    if let Err(existing) = scope.add_proc(proc_decl, 0) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionProc,
@@ -377,7 +377,8 @@ impl Context {
                     }
                 }
                 Decl::Enum(enum_decl) => {
-                    if let Some(existing) = scope.declared.add_enum(enum_decl) {
+                    //@temp 0 id
+                    if let Err(existing) = scope.add_enum(enum_decl, 0) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionType,
@@ -391,7 +392,7 @@ impl Context {
                 }
                 Decl::Struct(struct_decl) => {
                     //@temp 0 id
-                    if let Some(existing) = scope.declared.add_struct(struct_decl, 0) {
+                    if let Err(existing) = scope.add_struct(struct_decl, 0) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionType,
@@ -404,7 +405,8 @@ impl Context {
                     }
                 }
                 Decl::Global(global_decl) => {
-                    if let Some(existing) = scope.declared.add_global(global_decl) {
+                    //@temp 0 id
+                    if let Err(existing) = scope.add_global(global_decl, 0) {
                         scope.error(
                             Error::check(
                                 CheckError::RedefinitionGlobal,
@@ -432,7 +434,7 @@ impl Context {
             }
         };
         let scope = self.get_scope_mut(ROOT_ID);
-        let main_proc = match scope.declared.get_proc(main_id) {
+        let main_proc = match scope.get_proc(main_id) {
             Some(data) => data.decl,
             None => {
                 self.err(Error::check_no_src(CheckError::MainProcMissing));
@@ -458,10 +460,11 @@ impl Context {
 
     fn pass_2_check_namesets(&mut self) {
         for scope in self.scopes.iter_mut() {
-            let md = scope.md();
+            let md = scope.md(); //@hacks
             let errors = &mut scope.errors; //@this resolved borrowing issues of calling error() on scope
 
-            for data in scope.declared.proc_values() {
+            /*
+            for data in scope.proc_values() {
                 let mut name_set = HashMap::<InternID, Ident>::new();
                 for param in data.decl.params.iter() {
                     if let Some(existing) = name_set.get(&param.name.id) {
@@ -480,7 +483,7 @@ impl Context {
                 }
             }
 
-            for data in scope.declared.enum_values() {
+            for data in scope.enum_values() {
                 let mut name_set = HashMap::<InternID, Ident>::new();
                 for variant in data.decl.variants.iter() {
                     if let Some(existing) = name_set.get(&variant.name.id) {
@@ -499,7 +502,7 @@ impl Context {
                 }
             }
 
-            for data in scope.declared.struct_values() {
+            for data in scope.struct_values() {
                 let mut name_set = HashMap::<InternID, Ident>::new();
                 for field in data.decl.fields.iter() {
                     if let Some(existing) = name_set.get(&field.name.id) {
@@ -517,6 +520,7 @@ impl Context {
                     }
                 }
             }
+            */
         }
     }
 
@@ -592,12 +596,12 @@ impl Context {
         match task.import.target {
             ImportTarget::AllSymbols => {
                 let scope = self.get_scope_mut(scope_id);
-                let duplicate = scope
-                    .glob_imports
-                    .iter()
-                    .find(|wildcard| wildcard.from_id == from_id);
-                match duplicate {
-                    Some(existing) => scope.error(
+                let import = GlobImport {
+                    from_id,
+                    import_span: task.import.span,
+                };
+                if let Err(existing) = scope.add_glob_import(import) {
+                    scope.error(
                         Error::check(
                             CheckError::ImportWildcardExists,
                             scope.md(),
@@ -605,11 +609,7 @@ impl Context {
                         )
                         .context(scope.md(), existing.import_span, "existing import")
                         .into(),
-                    ),
-                    None => scope.glob_imports.push(GlobImport {
-                        from_id,
-                        import_span: task.import.span,
-                    }),
+                    );
                 }
             }
             ImportTarget::Symbol(name) => {
@@ -625,18 +625,18 @@ impl Context {
 
     fn scope_in_scope_mod_exists(&self, scope_id: ScopeID, name: Ident) -> bool {
         let scope = self.get_scope(scope_id);
-        if scope.declared.get_mod(name.id).is_some() {
+        if scope.get_mod(name.id).is_some() {
             return true;
         }
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
-            if from_scope.declared.get_mod(name.id).is_some() {
+            if from_scope.get_mod(name.id).is_some() {
                 return true;
             }
         }
         for glob_import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(glob_import.from_id);
-            if from_scope.declared.get_mod(name.id).is_some() {
+            if from_scope.get_mod(name.id).is_some() {
                 return true;
             }
         }
@@ -650,25 +650,25 @@ impl Context {
         let mut some_exists = false;
         let mut private_symbols = Vec::new();
 
-        if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
+        if let Some(mod_decl) = from_scope.get_mod(name.id) {
             if visibility_private(mod_decl.vis, from_id) {
                 private_symbols.push(mod_decl.name);
             } else {
                 some_exists = true;
             }
-        } else if let Some(data) = from_scope.declared.get_proc(name.id) {
+        } else if let Some(data) = from_scope.get_proc(name.id) {
             if visibility_private(data.decl.vis, from_id) {
                 private_symbols.push(data.decl.name);
             } else {
                 some_exists = true;
             }
-        } else if let Some(data) = from_scope.declared.get_type(name.id) {
+        } else if let Some(data) = from_scope.get_type(name.id) {
             if visibility_private(data.vis(), from_id) {
                 private_symbols.push(data.name());
             } else {
                 some_exists = true;
             }
-        } else if let Some(data) = from_scope.declared.get_global(name.id) {
+        } else if let Some(data) = from_scope.get_global(name.id) {
             if visibility_private(data.decl.vis, from_id) {
                 private_symbols.push(data.decl.name);
             } else {
@@ -686,23 +686,19 @@ impl Context {
             return;
         }
 
-        if let Some(existing) = scope.symbol_imports.get(&name.id) {
-            let error = Error::check(
-                CheckError::ImportSymbolAlreadyImported,
-                scope.md(),
-                name.span,
-            )
-            .context(scope.md(), existing.name.span, "existing symbol import")
-            .into();
-            let scope = self.get_scope_mut(scope_id);
-            scope.error(error);
-            return;
-        }
-
         let scope = self.get_scope_mut(scope_id);
-        scope
-            .symbol_imports
-            .insert(name.id, SymbolImport { from_id, name });
+        let import = SymbolImport { from_id, name };
+        if let Err(existing) = scope.add_symbol_import(import) {
+            scope.error(
+                Error::check(
+                    CheckError::ImportSymbolAlreadyImported,
+                    scope.md(),
+                    name.span,
+                )
+                .context(scope.md(), existing.name.span, "existing symbol import")
+                .into(),
+            );
+        }
     }
 
     fn pass_4_type_resolve(&mut self) {
@@ -726,7 +722,7 @@ impl Context {
             Some(id) => id,
             None => return None,
         };
-        let data = match self.get_scope(from_id).declared.get_proc(name.id) {
+        let data = match self.get_scope(from_id).get_proc(name.id) {
             Some(data) => data,
             None => {
                 let scope = self.get_scope_mut(scope_id);
@@ -759,7 +755,7 @@ impl Context {
             Some(id) => id,
             None => return None,
         };
-        let data = match self.get_scope(from_id).declared.get_type(name.id) {
+        let data = match self.get_scope(from_id).get_type(name.id) {
             Some(data) => data,
             None => {
                 let scope = self.get_scope_mut(scope_id);
@@ -828,7 +824,7 @@ impl Context {
                 skip_first = false;
                 continue;
             }
-            let mod_decl = match target.declared.get_mod(name.id) {
+            let mod_decl = match target.get_mod(name.id) {
                 Some(mod_decl) => mod_decl,
                 None => {
                     let scope = self.get_scope_mut(scope_id);
@@ -864,13 +860,13 @@ impl Context {
         let mut unique = None;
         let mut conflicts = Vec::<Conflit<P<ModDecl>>>::new();
 
-        if let Some(data) = scope.declared.get_mod(name.id) {
+        if let Some(data) = scope.get_mod(name.id) {
             unique = Some(Conflit::new(data, scope_id, None));
         }
 
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
-            if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
+            if let Some(mod_decl) = from_scope.get_mod(name.id) {
                 if visibility_public(mod_decl.vis, import.from_id) {
                     let conflict = Conflit::new(mod_decl, import.from_id, Some(import.name.span));
                     if unique.is_none() {
@@ -884,7 +880,7 @@ impl Context {
 
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
-            if let Some(mod_decl) = from_scope.declared.get_mod(name.id) {
+            if let Some(mod_decl) = from_scope.get_mod(name.id) {
                 if visibility_public(mod_decl.vis, import.from_id) {
                     let conflict = Conflit::new(mod_decl, import.from_id, Some(import.import_span));
                     if unique.is_none() {
@@ -940,13 +936,13 @@ impl Context {
         let mut unique = None;
         let mut conflicts = Vec::<Conflit<ProcData>>::new();
 
-        if let Some(data) = scope.declared.get_proc(name.id) {
+        if let Some(data) = scope.get_proc(name.id) {
             unique = Some(Conflit::new(data, scope_id, None));
         }
 
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
-            if let Some(data) = from_scope.declared.get_proc(name.id) {
+            if let Some(data) = from_scope.get_proc(name.id) {
                 if visibility_public(data.decl.vis, import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
                     if unique.is_none() {
@@ -960,7 +956,7 @@ impl Context {
 
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
-            if let Some(data) = from_scope.declared.get_proc(name.id) {
+            if let Some(data) = from_scope.get_proc(name.id) {
                 if visibility_public(data.decl.vis, import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
                     if unique.is_none() {
@@ -1016,13 +1012,13 @@ impl Context {
         let mut unique = None;
         let mut conflicts = Vec::<Conflit<TypeData>>::new();
 
-        if let Some(data) = scope.declared.get_type(name.id) {
+        if let Some(data) = scope.get_type(name.id) {
             unique = Some(Conflit::new(data, scope_id, None));
         }
 
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
-            if let Some(data) = from_scope.declared.get_type(name.id) {
+            if let Some(data) = from_scope.get_type(name.id) {
                 if visibility_public(data.vis(), import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
                     if unique.is_none() {
@@ -1036,7 +1032,7 @@ impl Context {
 
         for import in scope.glob_imports.iter() {
             let from_scope = self.get_scope(import.from_id);
-            if let Some(data) = from_scope.declared.get_type(name.id) {
+            if let Some(data) = from_scope.get_type(name.id) {
                 if visibility_public(data.vis(), import.from_id) {
                     let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
                     if unique.is_none() {

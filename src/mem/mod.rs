@@ -10,6 +10,8 @@ pub use intern::*;
 pub use list::*;
 pub use ptr::*;
 
+pub type Drop<T> = std::mem::ManuallyDrop<T>;
+
 pub trait ManualDrop: Sized {
     fn manual_drop(self) {}
 }
