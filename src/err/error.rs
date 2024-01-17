@@ -33,9 +33,9 @@ pub(super) enum CheckErrorInfo {
 }
 
 pub(super) struct CheckErrorContext {
+    pub(super) marker: &'static str,
     pub(super) source: P<Module>,
     pub(super) span: Span,
-    pub(super) marker: &'static str,
 }
 
 pub struct FileIOErrorData {
@@ -136,7 +136,7 @@ pub enum CheckError {
     ModuleIsPrivate,
     ImportFromItself,
     ImportItself,
-    ImportWildcardExists,
+    ImportGlobExists,
     ImportSymbolNotDefined,
     ImportSymbolAlreadyImported,
 
@@ -360,11 +360,11 @@ impl CheckErrorData {
         }
     }
 
-    pub fn context(mut self, source: P<Module>, span: Span, marker: &'static str) -> Self {
+    pub fn context(mut self, marker: &'static str, source: P<Module>, span: Span) -> Self {
         self.info.push(CheckErrorInfo::Context(CheckErrorContext {
+            marker,
             source,
             span,
-            marker,
         }));
         self
     }

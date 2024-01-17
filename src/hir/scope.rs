@@ -2,7 +2,7 @@ use crate::ast::ast::*;
 use crate::ast::span::Span;
 use crate::err::error::*;
 use crate::mem::*;
-use std::collections::{hash_map, HashMap};
+use std::collections::HashMap;
 
 pub struct Scope {
     pub id: ScopeID,
@@ -119,13 +119,9 @@ impl Scope {
         self.module.copy()
     }
 
-    pub fn err(&mut self, error: CheckError, span: Span) {
+    pub fn error(&mut self, error: CheckError, span: Span) {
         let md = self.md();
         self.errors.push(Error::check(error, md, span).into());
-    }
-
-    pub fn error(&mut self, error: Error) {
-        self.errors.push(error);
     }
 
     pub fn add_mod(&mut self, decl: P<ModDecl>) -> Result<(), P<ModDecl>> {
@@ -221,21 +217,5 @@ impl Scope {
             Some(v) => Some(*v),
             None => None,
         }
-    }
-
-    pub fn proc_values(&self) -> hash_map::Values<'_, InternID, ProcData> {
-        self.procs.values()
-    }
-
-    pub fn enum_values(&self) -> hash_map::Values<'_, InternID, EnumData> {
-        self.enums.values()
-    }
-
-    pub fn struct_values(&self) -> hash_map::Values<'_, InternID, StructData> {
-        self.structs.values()
-    }
-
-    pub fn global_values(&self) -> hash_map::Values<'_, InternID, GlobalData> {
-        self.globals.values()
     }
 }

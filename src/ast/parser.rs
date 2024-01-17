@@ -116,9 +116,12 @@ fn collect_filepaths(dir_path: PathBuf, filepaths: &mut Vec<PathBuf>) {
             }
         }
         Err(err) => {
-            //@os err
-            println!("error: {}", err);
-            println!("path:  {:?}", dir_path);
+            report::report(
+                &Error::file_io(FileIOError::DirRead)
+                    .info(err.to_string())
+                    .info(format!("path: {:?}", dir_path))
+                    .into(),
+            );
         }
     }
 }

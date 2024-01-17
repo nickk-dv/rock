@@ -1,88 +1,16 @@
 use super::scope::*;
 use crate::ast::ast::*;
 use crate::ast::span::Span;
+use crate::ast::visit;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
-use std::time::Instant;
 
 //@conflits in scope can be wrong if symbol / glob reference the same symbol
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
-
-pub const ROOT_ID: ScopeID = 0;
-
-struct Timer {
-    start_time: Instant,
-}
-
-impl Timer {
-    fn new() -> Self {
-        Timer {
-            start_time: Instant::now(),
-        }
-    }
-
-    fn elapsed_ms(self, message: &'static str) {
-        let elapsed = self.start_time.elapsed();
-        let sec_ms = elapsed.as_secs_f64() * 1000.0;
-        let ms = sec_ms + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
-        println!("{}: {:.3} ms", message, ms);
-    }
-}
-
-use crate::ast::visit;
-
-struct Visitor {
-    module: P<Module>,
-    stop: bool,
-}
-
-impl visit::MutVisit for Visitor {
-    fn visit_module(&mut self, module: P<Module>) {
-        if self.module.is_null() == false {
-            self.stop = true;
-        }
-        self.module = module;
-    }
-
-    fn visit_expr(&mut self, expr: Expr) {
-        if self.stop {
-            return;
-        }
-        crate::err::span_fmt::print(&self.module.file, expr.span, None, true);
-    }
-}
-
-impl visit::MutVisit for Context {
-    fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
-        let tt = self.scope_find_type(self.curr_scope, custom_type.module_access, custom_type.name);
-    }
-
-    fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
-        if let Some(name) = struct_init.name {
-            let tt = self.scope_find_type(self.curr_scope, struct_init.module_access, name);
-        }
-    }
-
-    fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
-        self.scope_find_proc(self.curr_scope, proc_call.module_access, proc_call.name);
-    }
-}
-
-const v: usize = std::mem::size_of::<Scope>();
+//@report usages of self id module path as redundant?
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
-    for arena in ast.arenas.iter() {
-        arena.report_memory_usage();
-    }
-
-    let mut vis = Visitor {
-        module: P::null(),
-        stop: false,
-    };
-    //visit_with(&mut vis, ast.copy());
-    let check_timer = Timer::new();
-
     let est_scope_count = ast.modules.len();
     let block_size = std::mem::size_of::<Scope>() * est_scope_count;
     let mut arena = Arena::new(block_size);
@@ -91,48 +19,75 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
 
     context.pass_0_create_scopes()?;
     context.pass_1_check_main_proc();
-    context.pass_2_check_namesets(); //@duplicates are not removed from lists
+    context.pass_2_check_namesets();
     context.pass_3_process_imports();
     context.pass_4_type_resolve();
 
-    //context.test_constfold(); //@temp test
-    check_timer.elapsed_ms("check");
-
-    let res = context.report_errors();
+    let result = context.report_errors();
     context.manual_drop();
-    res
+    return result;
 }
 
-impl Context {
-    fn test_constfold(&self) {
-        use super::constfold;
-
-        let scope = self.get_scope(ROOT_ID);
-        for decl in scope.module.decls {
-            if let Decl::Global(global_decl) = decl {
-                println!("constevaluating...");
-                let vv = constfold::consteval(global_decl.expr);
-            }
-        }
-    }
+pub struct Context {
+    ast: P<Ast>,
+    arena: Arena,
+    errors: Drop<Vec<Error>>,
+    scopes: Drop<Vec<P<Scope>>>,
+    curr_scope: P<Scope>, //@hack for visitor
+    procs: Drop<Vec<ProcData>>,
+    enums: Drop<Vec<EnumData>>,
+    structs: Drop<Vec<StructData>>,
+    globals: Drop<Vec<GlobalData>>,
 }
 
 impl ManualDrop for P<Context> {
     fn manual_drop(mut self) {
         unsafe {
-            Drop::drop(&mut self.scopes);
+            for scope in self.scopes.iter() {
+                scope.copy().manual_drop();
+            }
             Drop::drop(&mut self.errors);
+            Drop::drop(&mut self.scopes);
+            Drop::drop(&mut self.procs);
+            Drop::drop(&mut self.enums);
+            Drop::drop(&mut self.structs);
+            Drop::drop(&mut self.globals);
+            self.arena.manual_drop();
         }
-        self.arena.manual_drop();
     }
 }
 
-pub(super) struct Context {
-    ast: P<Ast>,
-    arena: Arena,
-    scopes: Drop<Vec<Scope>>,
-    errors: Drop<Vec<Error>>,
-    curr_scope: ScopeID, //@hack related to visitor
+impl Context {
+    fn new(ast: P<Ast>, arena: Arena) -> Self {
+        Self {
+            ast,
+            arena,
+            errors: Drop::new(Vec::new()),
+            scopes: Drop::new(Vec::new()),
+            curr_scope: P::null(),
+            procs: Drop::new(Vec::new()),
+            enums: Drop::new(Vec::new()),
+            structs: Drop::new(Vec::new()),
+            globals: Drop::new(Vec::new()),
+        }
+    }
+}
+
+pub const ROOT_ID: ScopeID = 0;
+
+macro_rules! scope_error {
+    ($scope:expr, $error:expr) => {
+        let mut scope_copy = $scope.copy();
+        scope_copy.errors.push($error.into());
+    };
+}
+
+fn visibility_private(vis: Visibility, scope_id: ScopeID) -> bool {
+    vis == Visibility::Private && scope_id != ROOT_ID
+}
+
+fn visibility_public(vis: Visibility, scope_id: ScopeID) -> bool {
+    vis == Visibility::Public || scope_id == ROOT_ID
 }
 
 struct ScopeTreeTask {
@@ -146,7 +101,7 @@ struct ImportTask {
     status: ImportTaskStatus,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(PartialEq)]
 enum ImportTaskStatus {
     Unresolved,
     SourceNotFound,
@@ -155,40 +110,46 @@ enum ImportTaskStatus {
 
 struct Conflit<T> {
     data: T,
-    from_id: ScopeID,
+    from_scope: P<Scope>,
     import_span: Option<Span>,
 }
 
 impl<T> Conflit<T> {
-    fn new(data: T, from_id: ScopeID, import_span: Option<Span>) -> Self {
+    fn new(data: T, from_scope: P<Scope>, import_span: Option<Span>) -> Self {
         Self {
             data,
-            from_id,
+            from_scope,
             import_span,
         }
     }
 }
 
-fn visibility_private(vis: Visibility, scope_id: ScopeID) -> bool {
-    vis == Visibility::Private && scope_id != ROOT_ID
-}
+impl visit::MutVisit for Context {
+    fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
+        let tt = self.scope_find_type(
+            self.curr_scope.copy(),
+            custom_type.module_access,
+            custom_type.name,
+        );
+    }
 
-fn visibility_public(vis: Visibility, scope_id: ScopeID) -> bool {
-    vis == Visibility::Public || scope_id == ROOT_ID
-}
-
-impl Context {
-    fn new(ast: P<Ast>, arena: Arena) -> Self {
-        Self {
-            ast,
-            arena,
-            scopes: Drop::new(Vec::new()),
-            errors: Drop::new(Vec::new()),
-            curr_scope: 0,
+    fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
+        if let Some(name) = struct_init.name {
+            let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.module_access, name);
         }
     }
 
-    fn err(&mut self, error: Error) {
+    fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
+        self.scope_find_proc(
+            self.curr_scope.copy(),
+            proc_call.module_access,
+            proc_call.name,
+        );
+    }
+}
+
+impl Context {
+    fn error(&mut self, error: Error) {
         self.errors.push(error);
     }
 
@@ -205,14 +166,8 @@ impl Context {
         report::err_status(())
     }
 
-    pub fn get_scope(&self, id: ScopeID) -> &Scope {
-        //@unsafe { self.scopes.get_unchecked(scope_id as usize) }
-        self.scopes.get(id as usize).unwrap()
-    }
-
-    pub fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope {
-        //@unsafe { self.scopes.get_unchecked_mut(scope_id as usize) }
-        self.scopes.get_mut(id as usize).unwrap()
+    pub fn get_scope(&self, id: ScopeID) -> P<Scope> {
+        self.scopes.get(id as usize).unwrap().copy()
     }
 
     fn pass_0_create_scopes(&mut self) -> Result<(), ()> {
@@ -230,7 +185,7 @@ impl Context {
 
         match file_module_map.get(&root_path) {
             Some(module) => {
-                let scope = Self::create_scope(
+                let scope = self.create_scope(
                     self.scopes.len() as ScopeID,
                     module.copy(),
                     None,
@@ -240,7 +195,7 @@ impl Context {
                 self.scopes.push(scope);
             }
             None => {
-                self.err(Error::check_no_src(CheckError::ParseMainFileMissing));
+                self.error(Error::check_no_src(CheckError::ParseMainFileMissing));
                 return self.report_errors();
             }
         }
@@ -258,7 +213,7 @@ impl Context {
 
             let module = match (file_module_map.get(&path_1), file_module_map.get(&path_2)) {
                 (None, None) => {
-                    self.err(
+                    self.error(
                         Error::check(
                             CheckError::ParseModBothPathsMissing,
                             task.parent,
@@ -271,7 +226,7 @@ impl Context {
                     continue;
                 }
                 (Some(..), Some(..)) => {
-                    self.err(
+                    self.error(
                         Error::check(
                             CheckError::ParseModBothPathsExist,
                             task.parent,
@@ -287,7 +242,7 @@ impl Context {
                     Some(..) => {
                         //@store where this path was declared? mod_decl + scope_id
                         //@change err message
-                        self.err(
+                        self.error(
                             Error::check(
                                 CheckError::ParseModCycle,
                                 task.parent,
@@ -304,7 +259,7 @@ impl Context {
                     Some(..) => {
                         //@store where this path was declared? mod_decl + scope_id
                         //@change err message
-                        self.err(
+                        self.error(
                             Error::check(
                                 CheckError::ParseModCycle,
                                 task.parent,
@@ -319,7 +274,7 @@ impl Context {
                 },
             };
 
-            let scope = Self::create_scope(
+            let scope = self.create_scope(
                 self.scopes.len() as ScopeID,
                 module,
                 Some(task.parent_id),
@@ -334,25 +289,36 @@ impl Context {
     }
 
     fn create_scope(
+        &mut self,
         id: ScopeID,
         module: P<Module>,
         parent: Option<ScopeID>,
         tasks: &mut Vec<ScopeTreeTask>,
-    ) -> Scope {
-        let mut scope = Scope::new(id, module.copy(), parent);
+    ) -> P<Scope> {
+        let mut scope = self.arena.alloc::<Scope>();
+        *scope = Scope::new(id, module.copy(), parent);
+
+        macro_rules! redefinition_error {
+            ($check_error:expr, $span:expr, $existing_span:expr) => {
+                scope_error!(
+                    scope,
+                    Error::check($check_error, scope.md(), $span).context(
+                        "already defined here",
+                        scope.md(),
+                        $existing_span
+                    )
+                );
+            };
+        }
 
         for decl in scope.module.decls {
             match decl {
                 Decl::Mod(mod_decl) => {
                     if let Err(existing) = scope.add_mod(mod_decl) {
-                        scope.error(
-                            Error::check(
-                                CheckError::RedefinitionMod,
-                                scope.md(),
-                                mod_decl.name.span,
-                            )
-                            .context(scope.md(), existing.name.span, "already defined here")
-                            .into(),
+                        redefinition_error!(
+                            CheckError::RedefinitionMod,
+                            mod_decl.name.span,
+                            existing.name.span
                         );
                     } else {
                         tasks.push(ScopeTreeTask {
@@ -363,58 +329,38 @@ impl Context {
                     }
                 }
                 Decl::Proc(proc_decl) => {
-                    //@temp 0 id
                     if let Err(existing) = scope.add_proc(proc_decl, 0) {
-                        scope.error(
-                            Error::check(
-                                CheckError::RedefinitionProc,
-                                scope.md(),
-                                proc_decl.name.span,
-                            )
-                            .context(scope.md(), existing.decl.name.span, "already defined here")
-                            .into(),
+                        redefinition_error!(
+                            CheckError::RedefinitionProc,
+                            proc_decl.name.span,
+                            existing.decl.name.span
                         );
                     }
                 }
                 Decl::Enum(enum_decl) => {
-                    //@temp 0 id
                     if let Err(existing) = scope.add_enum(enum_decl, 0) {
-                        scope.error(
-                            Error::check(
-                                CheckError::RedefinitionType,
-                                scope.md(),
-                                enum_decl.name.span,
-                            )
-                            .context(scope.md(), existing.name().span, "already defined here")
-                            .into(),
+                        redefinition_error!(
+                            CheckError::RedefinitionProc,
+                            enum_decl.name.span,
+                            existing.name().span
                         );
                     }
                 }
                 Decl::Struct(struct_decl) => {
-                    //@temp 0 id
                     if let Err(existing) = scope.add_struct(struct_decl, 0) {
-                        scope.error(
-                            Error::check(
-                                CheckError::RedefinitionType,
-                                scope.md(),
-                                struct_decl.name.span,
-                            )
-                            .context(scope.md(), existing.name().span, "already defined here")
-                            .into(),
+                        redefinition_error!(
+                            CheckError::RedefinitionType,
+                            struct_decl.name.span,
+                            existing.name().span
                         );
                     }
                 }
                 Decl::Global(global_decl) => {
-                    //@temp 0 id
                     if let Err(existing) = scope.add_global(global_decl, 0) {
-                        scope.error(
-                            Error::check(
-                                CheckError::RedefinitionGlobal,
-                                scope.md(),
-                                global_decl.name.span,
-                            )
-                            .context(scope.md(), existing.decl.name.span, "already defined here")
-                            .into(),
+                        redefinition_error!(
+                            CheckError::RedefinitionGlobal,
+                            global_decl.name.span,
+                            existing.decl.name.span
                         );
                     }
                 }
@@ -422,114 +368,99 @@ impl Context {
             }
         }
 
-        scope
+        return scope;
     }
 
     fn pass_1_check_main_proc(&mut self) {
         let main_id = match self.ast.intern_pool.get_id_if_exists("main".as_bytes()) {
             Some(id) => id,
             None => {
-                self.err(Error::check_no_src(CheckError::MainProcMissing));
+                self.error(Error::check_no_src(CheckError::MainProcMissing));
                 return;
             }
         };
-        let scope = self.get_scope_mut(ROOT_ID);
-        let main_proc = match scope.get_proc(main_id) {
+        let mut scope = self.get_scope(ROOT_ID);
+        let main = match scope.get_proc(main_id) {
             Some(data) => data.decl,
             None => {
-                self.err(Error::check_no_src(CheckError::MainProcMissing));
+                self.error(Error::check_no_src(CheckError::MainProcMissing));
                 return;
             }
         };
-        if main_proc.is_variadic {
-            scope.err(CheckError::MainProcVariadic, main_proc.name.span);
+        if main.is_variadic {
+            scope.error(CheckError::MainProcVariadic, main.name.span);
         }
-        if main_proc.block.is_none() {
-            scope.err(CheckError::MainProcExternal, main_proc.name.span);
+        if main.block.is_none() {
+            scope.error(CheckError::MainProcExternal, main.name.span);
         }
-        if !main_proc.params.is_empty() {
-            scope.err(CheckError::MainProcHasParams, main_proc.name.span);
+        if !main.params.is_empty() {
+            scope.error(CheckError::MainProcHasParams, main.name.span);
         }
-        if let Some(tt) = main_proc.return_type {
+        if let Some(tt) = main.return_type {
             if tt.pointer_level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
                 return;
             }
         }
-        scope.err(CheckError::MainProcWrongRetType, main_proc.name.span);
+        scope.error(CheckError::MainProcWrongRetType, main.name.span);
     }
 
-    fn pass_2_check_namesets(&mut self) {
-        for scope in self.scopes.iter_mut() {
-            let md = scope.md(); //@hacks
-            let errors = &mut scope.errors; //@this resolved borrowing issues of calling error() on scope
+    //@duplicates are not removed
+    fn pass_2_check_namesets(&self) {
+        for scope in self.scopes.iter() {
+            let scope = scope.copy();
+            let mut name_set = HashMap::<InternID, Span>::new();
 
-            /*
-            for data in scope.proc_values() {
-                let mut name_set = HashMap::<InternID, Ident>::new();
-                for param in data.decl.params.iter() {
-                    if let Some(existing) = name_set.get(&param.name.id) {
-                        errors.push(
-                            Error::check(
-                                CheckError::ProcParamRedefinition,
-                                md.copy(),
-                                param.name.span,
-                            )
-                            .context(md.copy(), existing.span, "already defined here")
-                            .into(),
-                        );
-                    } else {
-                        name_set.insert(param.name.id, param.name);
+            macro_rules! redefinition_check {
+                ($element_list:expr, $check_error:expr) => {
+                    if $element_list.is_empty() {
+                        continue;
                     }
-                }
+                    name_set.clear();
+                    for element in $element_list.iter() {
+                        if let Some(existing) = name_set.get(&element.name.id) {
+                            scope_error!(
+                                scope,
+                                Error::check($check_error, scope.md(), element.name.span).context(
+                                    "already defined here",
+                                    scope.md(),
+                                    *existing
+                                )
+                            );
+                        } else {
+                            name_set.insert(element.name.id, element.name.span);
+                        }
+                    }
+                };
             }
 
-            for data in scope.enum_values() {
-                let mut name_set = HashMap::<InternID, Ident>::new();
-                for variant in data.decl.variants.iter() {
-                    if let Some(existing) = name_set.get(&variant.name.id) {
-                        errors.push(
-                            Error::check(
-                                CheckError::EnumVariantRedefinition,
-                                md.copy(),
-                                variant.name.span,
-                            )
-                            .context(md.copy(), existing.span, "already defined here")
-                            .into(),
-                        );
-                    } else {
-                        name_set.insert(variant.name.id, variant.name);
+            for decl in scope.module.decls {
+                match decl {
+                    Decl::Proc(proc_decl) => {
+                        redefinition_check!(proc_decl.params, CheckError::ProcParamRedefinition);
                     }
+                    Decl::Enum(enum_decl) => {
+                        redefinition_check!(
+                            enum_decl.variants,
+                            CheckError::EnumVariantRedefinition
+                        );
+                    }
+                    Decl::Struct(struct_decl) => {
+                        redefinition_check!(
+                            struct_decl.fields,
+                            CheckError::StructFieldRedefinition
+                        );
+                    }
+                    _ => {}
                 }
             }
-
-            for data in scope.struct_values() {
-                let mut name_set = HashMap::<InternID, Ident>::new();
-                for field in data.decl.fields.iter() {
-                    if let Some(existing) = name_set.get(&field.name.id) {
-                        errors.push(
-                            Error::check(
-                                CheckError::StructFieldRedefinition,
-                                md.copy(),
-                                field.name.span,
-                            )
-                            .context(md.copy(), existing.span, "already defined here")
-                            .into(),
-                        );
-                    } else {
-                        name_set.insert(field.name.id, field.name);
-                    }
-                }
-            }
-            */
         }
     }
 
-    fn pass_3_process_imports(&mut self) {
-        for scope_id in 0..self.scopes.len() as ScopeID {
+    fn pass_3_process_imports(&self) {
+        for scope in self.scopes.iter() {
             let mut import_tasks = Vec::new();
             let mut were_resolved = 0;
 
-            let scope = self.get_scope(scope_id);
             for decl in scope.module.decls {
                 if let Decl::Import(import) = decl {
                     import_tasks.push(ImportTask {
@@ -544,7 +475,7 @@ impl Context {
                 .any(|task| task.status != ImportTaskStatus::Resolved)
             {
                 for task in import_tasks.iter_mut() {
-                    self.scope_import_task_run(scope_id, task);
+                    self.import_task_run(scope.copy(), task);
                 }
 
                 let resolved_count = import_tasks
@@ -554,9 +485,13 @@ impl Context {
                 if resolved_count <= were_resolved {
                     for task in import_tasks.iter_mut() {
                         if task.status == ImportTaskStatus::SourceNotFound {
-                            self.get_scope_mut(scope_id).err(
-                                CheckError::ModuleNotFoundInScope,
-                                task.import.module_access.names.first().unwrap().span,
+                            scope_error!(
+                                scope,
+                                Error::check(
+                                    CheckError::ModuleNotFoundInScope,
+                                    scope.md(),
+                                    task.import.module_access.names.first().unwrap().span,
+                                )
                             );
                         }
                     }
@@ -568,63 +503,57 @@ impl Context {
         }
     }
 
-    fn scope_import_task_run(&mut self, scope_id: ScopeID, task: &mut ImportTask) {
+    fn import_task_run(&self, mut scope: P<Scope>, task: &mut ImportTask) {
         if task.status == ImportTaskStatus::Resolved {
             return;
         }
 
         if task.import.module_access.modifier == ModuleAccessModifier::None {
             let first = task.import.module_access.names.first().unwrap();
-            if !self.scope_in_scope_mod_exists(scope_id, first) {
+            if !self.scope_in_scope_mod_exists(scope.copy(), first) {
                 task.status = ImportTaskStatus::SourceNotFound;
                 return;
             }
         }
         task.status = ImportTaskStatus::Resolved;
 
-        let from_id = match self.scope_resolve_module_access(scope_id, task.import.module_access) {
-            Some(id) => id,
-            None => return,
-        };
+        let from_scope =
+            match self.scope_resolve_module_access(scope.copy(), task.import.module_access) {
+                Some(from_scope) => from_scope,
+                None => return,
+            };
 
-        if from_id == scope_id {
-            let scope = self.get_scope_mut(scope_id);
-            scope.err(CheckError::ImportFromItself, task.import.span);
+        if from_scope.id == scope.id {
+            scope.error(CheckError::ImportFromItself, task.import.span);
             return;
         }
 
         match task.import.target {
             ImportTarget::AllSymbols => {
-                let scope = self.get_scope_mut(scope_id);
                 let import = GlobImport {
-                    from_id,
+                    from_id: from_scope.id,
                     import_span: task.import.span,
                 };
                 if let Err(existing) = scope.add_glob_import(import) {
-                    scope.error(
-                        Error::check(
-                            CheckError::ImportWildcardExists,
-                            scope.md(),
-                            task.import.span,
-                        )
-                        .context(scope.md(), existing.import_span, "existing import")
-                        .into(),
+                    scope_error!(
+                        scope,
+                        Error::check(CheckError::ImportGlobExists, scope.md(), task.import.span,)
+                            .context("existing import", scope.md(), existing.import_span)
                     );
                 }
             }
             ImportTarget::Symbol(name) => {
-                self.scope_import_symbol(scope_id, from_id, name);
+                self.scope_import_symbol(scope, from_scope, name);
             }
             ImportTarget::SymbolList(symbol_list) => {
                 for name in symbol_list {
-                    self.scope_import_symbol(scope_id, from_id, name);
+                    self.scope_import_symbol(scope.copy(), from_scope.copy(), name);
                 }
             }
         }
     }
 
-    fn scope_in_scope_mod_exists(&self, scope_id: ScopeID, name: Ident) -> bool {
-        let scope = self.get_scope(scope_id);
+    fn scope_in_scope_mod_exists(&self, scope: P<Scope>, name: Ident) -> bool {
         if scope.get_mod(name.id).is_some() {
             return true;
         }
@@ -634,8 +563,8 @@ impl Context {
                 return true;
             }
         }
-        for glob_import in scope.glob_imports.iter() {
-            let from_scope = self.get_scope(glob_import.from_id);
+        for import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(import.from_id);
             if from_scope.get_mod(name.id).is_some() {
                 return true;
             }
@@ -643,33 +572,30 @@ impl Context {
         return false;
     }
 
-    fn scope_import_symbol(&mut self, scope_id: ScopeID, from_id: ScopeID, name: Ident) {
-        let scope = self.get_scope(scope_id);
-        let from_scope = self.get_scope(from_id);
-
+    fn scope_import_symbol(&self, mut scope: P<Scope>, from_scope: P<Scope>, name: Ident) {
         let mut some_exists = false;
         let mut private_symbols = Vec::new();
 
         if let Some(mod_decl) = from_scope.get_mod(name.id) {
-            if visibility_private(mod_decl.vis, from_id) {
+            if visibility_private(mod_decl.vis, from_scope.id) {
                 private_symbols.push(mod_decl.name);
             } else {
                 some_exists = true;
             }
         } else if let Some(data) = from_scope.get_proc(name.id) {
-            if visibility_private(data.decl.vis, from_id) {
+            if visibility_private(data.decl.vis, from_scope.id) {
                 private_symbols.push(data.decl.name);
             } else {
                 some_exists = true;
             }
         } else if let Some(data) = from_scope.get_type(name.id) {
-            if visibility_private(data.vis(), from_id) {
+            if visibility_private(data.vis(), from_scope.id) {
                 private_symbols.push(data.name());
             } else {
                 some_exists = true;
             }
         } else if let Some(data) = from_scope.get_global(name.id) {
-            if visibility_private(data.decl.vis, from_id) {
+            if visibility_private(data.decl.vis, from_scope.id) {
                 private_symbols.push(data.decl.name);
             } else {
                 some_exists = true;
@@ -679,146 +605,143 @@ impl Context {
         if !some_exists {
             let mut error = Error::check(CheckError::ImportSymbolNotDefined, scope.md(), name.span);
             for name in private_symbols {
-                error = error.context(from_scope.md(), name.span, "found this private symbol");
+                error = error.context("found this private symbol", from_scope.md(), name.span);
             }
-            let scope = self.get_scope_mut(scope_id);
-            scope.error(error.into());
+            scope_error!(scope, error);
             return;
         }
 
-        let scope = self.get_scope_mut(scope_id);
-        let import = SymbolImport { from_id, name };
+        let import = SymbolImport {
+            from_id: from_scope.id,
+            name,
+        };
         if let Err(existing) = scope.add_symbol_import(import) {
-            scope.error(
+            scope_error!(
+                scope,
                 Error::check(
                     CheckError::ImportSymbolAlreadyImported,
                     scope.md(),
                     name.span,
                 )
-                .context(scope.md(), existing.name.span, "existing symbol import")
-                .into(),
+                .context("existing symbol import", scope.md(), existing.name.span)
             );
         }
     }
 
     fn pass_4_type_resolve(&mut self) {
         for scope_id in 0..self.scopes.len() as ScopeID {
-            self.curr_scope = scope_id;
-            let module = self.get_scope(scope_id).module.copy();
+            self.curr_scope = self.get_scope(scope_id);
+            let module = self.curr_scope.module.copy();
             visit::visit_module_with(self, module);
         }
     }
 
     fn scope_find_proc(
         &mut self,
-        scope_id: ScopeID,
+        mut scope: P<Scope>,
         module_access: ModuleAccess,
         name: Ident,
     ) -> Option<ProcData> {
         if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
-            return self.scope_get_in_scope_proc(scope_id, name);
+            return self.scope_get_in_scope_proc(scope, name);
         }
-        let from_id = match self.scope_resolve_module_access(scope_id, module_access) {
-            Some(id) => id,
+        let from_scope = match self.scope_resolve_module_access(scope.copy(), module_access) {
+            Some(from_scope) => from_scope,
             None => return None,
         };
-        let data = match self.get_scope(from_id).get_proc(name.id) {
+        let data = match from_scope.get_proc(name.id) {
             Some(data) => data,
             None => {
-                let scope = self.get_scope_mut(scope_id);
-                scope.err(CheckError::ProcNotDeclaredInPath, name.span);
+                scope.error(CheckError::ProcNotDeclaredInPath, name.span);
                 return None;
             }
         };
-        if visibility_private(data.decl.vis, from_id) {
-            let from_md = self.get_scope(from_id).md();
-            let scope = self.get_scope_mut(scope_id);
-            scope.error(
-                Error::check(CheckError::ProcIsPrivate, scope.md(), name.span)
-                    .context(from_md, data.decl.name.span, "defined here")
-                    .into(),
+        if visibility_private(data.decl.vis, from_scope.id) {
+            scope_error!(
+                scope,
+                Error::check(CheckError::ProcIsPrivate, scope.md(), name.span).context(
+                    "defined here",
+                    from_scope.md(),
+                    data.decl.name.span
+                )
             );
+            return None;
         }
-        Some(data)
+        return Some(data);
     }
 
     fn scope_find_type(
         &mut self,
-        scope_id: ScopeID,
+        mut scope: P<Scope>,
         module_access: ModuleAccess,
         name: Ident,
     ) -> Option<TypeData> {
         if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
-            return self.scope_get_in_scope_type(scope_id, name);
+            return self.scope_get_in_scope_type(scope, name);
         }
-        let from_id = match self.scope_resolve_module_access(scope_id, module_access) {
-            Some(id) => id,
+        let from_scope = match self.scope_resolve_module_access(scope.copy(), module_access) {
+            Some(from_scope) => from_scope,
             None => return None,
         };
-        let data = match self.get_scope(from_id).get_type(name.id) {
+        let data = match from_scope.get_type(name.id) {
             Some(data) => data,
             None => {
-                let scope = self.get_scope_mut(scope_id);
-                scope.err(CheckError::TypeNotDeclaredInPath, name.span);
+                scope.error(CheckError::TypeNotDeclaredInPath, name.span);
                 return None;
             }
         };
-        if visibility_private(data.vis(), from_id) {
-            let from_md = self.get_scope(from_id).md();
-            let scope = self.get_scope_mut(scope_id);
-            scope.error(
-                Error::check(CheckError::TypeIsPrivate, scope.md(), name.span)
-                    .context(from_md, data.name().span, "defined here")
-                    .into(),
+        if visibility_private(data.vis(), from_scope.id) {
+            scope_error!(
+                scope,
+                Error::check(CheckError::TypeIsPrivate, scope.md(), name.span).context(
+                    "defined here",
+                    from_scope.md(),
+                    data.name().span
+                )
             );
+            return None;
         }
-        Some(data)
+        return Some(data);
     }
 
-    //@report usages of self id module path as redundant
-    //maybe still return a valid result after
     fn scope_resolve_module_access(
-        &mut self,
-        scope_id: ScopeID,
+        &self,
+        mut scope: P<Scope>,
         module_access: ModuleAccess,
-    ) -> Option<ScopeID> {
-        let target_id = match module_access.modifier {
+    ) -> Option<P<Scope>> {
+        let mut target = match module_access.modifier {
             ModuleAccessModifier::None => {
                 let first = match module_access.names.first() {
                     Some(name) => name,
-                    None => return Some(scope_id),
+                    None => return Some(scope),
                 };
-                let mod_decl = match self.scope_get_in_scope_mod(scope_id, first) {
+                let mod_decl = match self.scope_get_in_scope_mod(scope.copy(), first) {
                     Some(mod_decl) => mod_decl,
                     None => return None,
                 };
                 match mod_decl.id {
-                    Some(id) => id,
+                    Some(id) => self.get_scope(id),
                     None => {
-                        let scope = self.get_scope_mut(scope_id);
-                        scope.err(CheckError::ModuleFileReportedMissing, first.span);
+                        scope.error(CheckError::ModuleFileReportedMissing, first.span);
                         return None;
                     }
                 }
             }
             ModuleAccessModifier::Super => {
-                let scope = self.get_scope_mut(scope_id);
                 if let Some(parent) = scope.parent {
-                    parent
+                    self.get_scope(parent)
                 } else {
-                    scope.err(
+                    scope.error(
                         CheckError::SuperUsedFromRootModule,
                         module_access.modifier_span,
                     );
                     return None;
                 }
             }
-            ModuleAccessModifier::Package => ROOT_ID,
+            ModuleAccessModifier::Package => self.get_scope(ROOT_ID),
         };
 
-        let mut target = self.get_scope(target_id);
         let mut skip_first = module_access.modifier == ModuleAccessModifier::None;
-
         for name in module_access.names {
             if skip_first {
                 skip_first = false;
@@ -827,48 +750,46 @@ impl Context {
             let mod_decl = match target.get_mod(name.id) {
                 Some(mod_decl) => mod_decl,
                 None => {
-                    let scope = self.get_scope_mut(scope_id);
-                    scope.err(CheckError::ModuleNotDeclaredInPath, name.span);
+                    scope.error(CheckError::ModuleNotDeclaredInPath, name.span);
                     return None;
                 }
             };
             if visibility_private(mod_decl.vis, target.id) {
-                let target_md = target.md(); //@borrow checker...
-                let scope = self.get_scope_mut(scope_id);
-                scope.error(
-                    Error::check(CheckError::ModuleIsPrivate, scope.md(), name.span)
-                        .context(target_md, mod_decl.name.span, "defined here")
-                        .into(),
+                scope_error!(
+                    scope,
+                    Error::check(CheckError::ModuleIsPrivate, scope.md(), name.span).context(
+                        "defined here",
+                        target.md(),
+                        mod_decl.name.span
+                    )
                 );
                 return None;
             }
             target = match mod_decl.id {
-                Some(id) => self.get_scope_mut(id),
+                Some(id) => self.get_scope(id),
                 None => {
-                    let scope = self.get_scope_mut(scope_id);
-                    scope.err(CheckError::ModuleFileReportedMissing, name.span);
+                    scope.error(CheckError::ModuleFileReportedMissing, name.span);
                     return None;
                 }
             };
         }
 
-        Some(target.id)
+        return Some(target);
     }
 
-    fn scope_get_in_scope_mod(&mut self, scope_id: ScopeID, name: Ident) -> Option<P<ModDecl>> {
-        let scope = self.get_scope(scope_id);
+    fn scope_get_in_scope_mod(&self, mut scope: P<Scope>, name: Ident) -> Option<P<ModDecl>> {
         let mut unique = None;
         let mut conflicts = Vec::<Conflit<P<ModDecl>>>::new();
 
         if let Some(data) = scope.get_mod(name.id) {
-            unique = Some(Conflit::new(data, scope_id, None));
+            unique = Some(Conflit::new(data, scope.copy(), None));
         }
 
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(mod_decl) = from_scope.get_mod(name.id) {
                 if visibility_public(mod_decl.vis, import.from_id) {
-                    let conflict = Conflit::new(mod_decl, import.from_id, Some(import.name.span));
+                    let conflict = Conflit::new(mod_decl, from_scope, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
                     } else {
@@ -882,7 +803,7 @@ impl Context {
             let from_scope = self.get_scope(import.from_id);
             if let Some(mod_decl) = from_scope.get_mod(name.id) {
                 if visibility_public(mod_decl.vis, import.from_id) {
-                    let conflict = Conflit::new(mod_decl, import.from_id, Some(import.import_span));
+                    let conflict = Conflit::new(mod_decl, from_scope, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
                     } else {
@@ -896,8 +817,7 @@ impl Context {
             return match unique {
                 Some(conflict) => Some(conflict.data),
                 None => {
-                    let scope = self.get_scope_mut(scope_id);
-                    scope.err(CheckError::ModuleNotFoundInScope, name.span);
+                    scope.error(CheckError::ModuleNotFoundInScope, name.span);
                     None
                 }
             };
@@ -909,42 +829,38 @@ impl Context {
         let mut error = Error::check(CheckError::ModuleSymbolConflict, scope.md(), name.span);
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
-                let from_scope = self.get_scope(conflict.from_id);
                 error = error
-                    .context(scope.md(), import_span, "from this import:")
+                    .context("from this import:", scope.md(), import_span)
                     .context(
-                        from_scope.md(),
-                        conflict.data.name.span,
                         "conflict with this module",
+                        conflict.from_scope.md(),
+                        conflict.data.name.span,
                     )
             } else {
                 error = error.context(
+                    "conflict with this declared module",
                     scope.md(),
                     conflict.data.name.span,
-                    "conflict with this declared module",
                 );
             }
         }
-
-        let scope = self.get_scope_mut(scope_id);
-        scope.error(error.into());
-        None
+        scope_error!(scope, error);
+        return None;
     }
 
-    fn scope_get_in_scope_proc(&mut self, scope_id: ScopeID, name: Ident) -> Option<ProcData> {
-        let scope = self.get_scope(scope_id);
+    fn scope_get_in_scope_proc(&mut self, mut scope: P<Scope>, name: Ident) -> Option<ProcData> {
         let mut unique = None;
         let mut conflicts = Vec::<Conflit<ProcData>>::new();
 
         if let Some(data) = scope.get_proc(name.id) {
-            unique = Some(Conflit::new(data, scope_id, None));
+            unique = Some(Conflit::new(data, scope.copy(), None));
         }
 
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.get_proc(name.id) {
                 if visibility_public(data.decl.vis, import.from_id) {
-                    let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
+                    let conflict = Conflit::new(data, from_scope, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
                     } else {
@@ -958,7 +874,7 @@ impl Context {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.get_proc(name.id) {
                 if visibility_public(data.decl.vis, import.from_id) {
-                    let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
+                    let conflict = Conflit::new(data, from_scope, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
                     } else {
@@ -972,8 +888,7 @@ impl Context {
             return match unique {
                 Some(conflict) => Some(conflict.data),
                 None => {
-                    let scope = self.get_scope_mut(scope_id);
-                    scope.err(CheckError::ProcNotFoundInScope, name.span);
+                    scope.error(CheckError::ProcNotFoundInScope, name.span);
                     None
                 }
             };
@@ -985,42 +900,38 @@ impl Context {
         let mut error = Error::check(CheckError::ProcSymbolConflict, scope.md(), name.span);
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
-                let from_scope = self.get_scope(conflict.from_id);
                 error = error
-                    .context(scope.md(), import_span, "from this import:")
+                    .context("from this import:", scope.md(), import_span)
                     .context(
-                        from_scope.md(),
-                        conflict.data.decl.name.span,
                         "conflict with this procedure",
+                        conflict.from_scope.md(),
+                        conflict.data.decl.name.span,
                     )
             } else {
                 error = error.context(
+                    "conflict with this declared procedure",
                     scope.md(),
                     conflict.data.decl.name.span,
-                    "conflict with this declared procedure",
                 );
             }
         }
-
-        let scope = self.get_scope_mut(scope_id);
-        scope.error(error.into());
-        None
+        scope.errors.push(error.into());
+        return None;
     }
 
-    fn scope_get_in_scope_type(&mut self, scope_id: ScopeID, name: Ident) -> Option<TypeData> {
-        let scope = self.get_scope(scope_id);
+    fn scope_get_in_scope_type(&mut self, mut scope: P<Scope>, name: Ident) -> Option<TypeData> {
         let mut unique = None;
         let mut conflicts = Vec::<Conflit<TypeData>>::new();
 
         if let Some(data) = scope.get_type(name.id) {
-            unique = Some(Conflit::new(data, scope_id, None));
+            unique = Some(Conflit::new(data, scope.copy(), None));
         }
 
         if let Some(import) = scope.symbol_imports.get(&name.id) {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.get_type(name.id) {
                 if visibility_public(data.vis(), import.from_id) {
-                    let conflict = Conflit::new(data, import.from_id, Some(import.name.span));
+                    let conflict = Conflit::new(data, from_scope, Some(import.name.span));
                     if unique.is_none() {
                         unique = Some(conflict);
                     } else {
@@ -1034,7 +945,7 @@ impl Context {
             let from_scope = self.get_scope(import.from_id);
             if let Some(data) = from_scope.get_type(name.id) {
                 if visibility_public(data.vis(), import.from_id) {
-                    let conflict = Conflit::new(data, import.from_id, Some(import.import_span));
+                    let conflict = Conflit::new(data, from_scope, Some(import.import_span));
                     if unique.is_none() {
                         unique = Some(conflict);
                     } else {
@@ -1048,8 +959,7 @@ impl Context {
             return match unique {
                 Some(conflict) => Some(conflict.data),
                 None => {
-                    let scope = self.get_scope_mut(scope_id);
-                    scope.err(CheckError::TypeNotFoundInScope, name.span);
+                    scope.error(CheckError::TypeNotFoundInScope, name.span);
                     None
                 }
             };
@@ -1061,26 +971,22 @@ impl Context {
         let mut error = Error::check(CheckError::TypeSymbolConflict, scope.md(), name.span);
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
-                let from_scope = self.get_scope(conflict.from_id);
                 error = error
-                    .context(scope.md(), import_span, "from this import:")
+                    .context("from this import:", scope.md(), import_span)
                     .context(
-                        from_scope.md(),
-                        conflict.data.name().span,
                         "conflict with this type name",
+                        conflict.from_scope.md(),
+                        conflict.data.name().span,
                     )
             } else {
                 error = error.context(
+                    "conflict with this declared type name",
                     scope.md(),
                     conflict.data.name().span,
-                    "conflict with this declared type name",
                 );
             }
         }
-
-        let scope = self.get_scope_mut(scope_id);
-        scope.error(error.into());
-        None
+        scope.errors.push(error.into());
+        return None;
     }
 }
-//@1068 loc, need to reduce the complexity / duplication here

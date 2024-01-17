@@ -31,10 +31,10 @@ impl Into<Message> for CheckError {
             CheckError::ModuleFileReportedMissing =>   ("module is missing a source file, as reported earlier", None),
             CheckError::ImportFromItself =>            ("importing from itself is redundant", Some("remove this import")),
             CheckError::ImportItself =>                ("importing module into itself is redundant", Some("remove this import")),
-            CheckError::ImportWildcardExists =>        ("wildcard import of module already exists", Some("remove this import")),
-            CheckError::ImportSymbolNotDefined =>      ("imported symbol is not defined in target module", None),
-            CheckError::ImportSymbolAlreadyImported => ("imported symbol is already imported", Some("remove this symbol import")),
-            
+            CheckError::ImportGlobExists =>            ("glob import of module already exists", Some("remove this import")),
+            CheckError::ImportSymbolNotDefined =>      ("imported symbol is not found", None),
+            CheckError::ImportSymbolAlreadyImported => ("symbol is already imported", Some("same name cannot be imported multiple times")),
+
             CheckError::ModuleNotDeclaredInPath =>     ("module is not declared in referenced module path", None),
             CheckError::ProcNotDeclaredInPath =>       ("procedure is not declared in referenced module path", None),
             CheckError::TypeNotDeclaredInPath =>       ("type name is not declared in referenced module path", None),

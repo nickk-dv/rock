@@ -58,7 +58,7 @@ impl Arena {
 
     pub fn report_memory_usage(&self) {
         let mut bytes_used = 0;
-        for block in self.blocks {
+        for _ in self.blocks {
             bytes_used += self.layout.size();
         }
         bytes_used -= self.layout.size();

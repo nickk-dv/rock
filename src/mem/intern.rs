@@ -39,7 +39,7 @@ impl InternPool {
         }
     }
 
-    pub fn get_id_if_exists(&mut self, bytes: &[u8]) -> Option<InternID> {
+    pub fn get_id_if_exists(&self, bytes: &[u8]) -> Option<InternID> {
         let hash = Self::hash_fnva1(bytes);
         if let Some(intern_str) = self.string_map.get(&hash) {
             if self.compare(intern_str, bytes) {
