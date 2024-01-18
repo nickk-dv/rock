@@ -14,11 +14,12 @@ pub trait MutVisit: Sized {
     fn visit_ast(&mut self, ast: P<Ast>) {}
     fn visit_module(&mut self, module: P<Module>) {}
     fn visit_ident(&mut self, ident: &mut Ident) {}
-    fn visit_module_access(&mut self, module_access: &mut ModuleAccess) {}
-    fn visit_type(&mut self, tt: &mut Type) {}
+    fn visit_module_path(&mut self, module_path: &mut ModulePath) {}
+    fn visit_type(&mut self, ty: &mut Type) {}
     fn visit_custom_type(&mut self, custom_type: P<CustomType>) {}
-    fn visit_array_slice_type(&mut self, array_slice_type: P<ArraySliceType>) {}
-    fn visit_array_static_type(&mut self, array_static_type: P<ArrayStaticType>) {}
+    fn visit_array_slice(&mut self, array_slice: P<ArraySlice>) {}
+    fn visit_array_static(&mut self, array_static: P<ArrayStatic>) {}
+    fn visit_array_dynamic(&mut self, array_dynamic: P<ArrayDynamic>) {}
 
     fn visit_decl(&mut self, decl: Decl) {}
     fn visit_mod_decl(&mut self, mod_decl: P<ModDecl>) {}
@@ -77,38 +78,44 @@ fn visit_ident<T: MutVisit>(vis: &mut T, ident: &mut Ident) {
     vis.visit_ident(ident);
 }
 
-fn visit_module_access<T: MutVisit>(vis: &mut T, module_access: &mut ModuleAccess) {
-    vis.visit_module_access(module_access);
-    for name in module_access.names.iter_mut() {
+fn visit_module_path<T: MutVisit>(vis: &mut T, module_path: &mut ModulePath) {
+    vis.visit_module_path(module_path);
+    for name in module_path.names.iter_mut() {
         visit_ident(vis, name);
     }
 }
 
-fn visit_type<T: MutVisit>(vis: &mut T, tt: &mut Type) {
-    vis.visit_type(tt);
-    match tt.kind {
+fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
+    vis.visit_type(ty);
+    match ty.kind {
         TypeKind::Basic(..) => {}
         TypeKind::Custom(custom_type) => visit_custom_type(vis, custom_type),
-        TypeKind::ArraySlice(array_slice_type) => visit_array_slice_type(vis, array_slice_type),
-        TypeKind::ArrayStatic(array_static_type) => visit_array_static_type(vis, array_static_type),
+        TypeKind::ArraySlice(array_slice) => visit_array_slice(vis, array_slice),
+        TypeKind::ArrayStatic(array_static) => visit_array_static(vis, array_static),
+        TypeKind::ArrayDynamic(array_dynamic) => visit_array_dynamic(vis, array_dynamic),
     }
 }
 
 fn visit_custom_type<T: MutVisit>(vis: &mut T, mut custom_type: P<CustomType>) {
     vis.visit_custom_type(custom_type);
-    visit_module_access(vis, &mut custom_type.module_access);
+    visit_module_path(vis, &mut custom_type.module_path);
     visit_ident(vis, &mut custom_type.name);
 }
 
-fn visit_array_slice_type<T: MutVisit>(vis: &mut T, mut array_slice_type: P<ArraySliceType>) {
-    vis.visit_array_slice_type(array_slice_type);
-    visit_type(vis, &mut array_slice_type.element);
+fn visit_array_slice<T: MutVisit>(vis: &mut T, mut array_slice: P<ArraySlice>) {
+    vis.visit_array_slice(array_slice);
+    visit_type(vis, &mut array_slice.element);
 }
 
-fn visit_array_static_type<T: MutVisit>(vis: &mut T, mut array_static_type: P<ArrayStaticType>) {
-    vis.visit_array_static_type(array_static_type);
-    visit_expr(vis, array_static_type.size);
-    visit_type(vis, &mut array_static_type.element);
+fn visit_array_static<T: MutVisit>(vis: &mut T, mut array_static: P<ArrayStatic>) {
+    vis.visit_array_static(array_static);
+    visit_expr(vis, array_static.size);
+    visit_type(vis, &mut array_static.element);
+}
+
+fn visit_array_dynamic<T: MutVisit>(vis: &mut T, mut array_dynamic: P<ArrayDynamic>) {
+    vis.visit_array_dynamic(array_dynamic);
+    visit_type(vis, &mut array_dynamic.element);
 }
 
 fn visit_decl<T: MutVisit>(vis: &mut T, decl: Decl) {
@@ -134,8 +141,8 @@ fn visit_proc_decl<T: MutVisit>(vis: &mut T, mut proc_decl: P<ProcDecl>) {
     for param in proc_decl.params.iter_mut() {
         visit_proc_param(vis, param);
     }
-    if let Some(ref mut tt) = proc_decl.return_type {
-        visit_type(vis, tt);
+    if let Some(ref mut ty) = proc_decl.return_type {
+        visit_type(vis, ty);
     }
     if let Some(block) = proc_decl.block {
         visit_block(vis, block);
@@ -145,7 +152,7 @@ fn visit_proc_decl<T: MutVisit>(vis: &mut T, mut proc_decl: P<ProcDecl>) {
 fn visit_proc_param<T: MutVisit>(vis: &mut T, param: &mut ProcParam) {
     vis.visit_proc_param(param);
     visit_ident(vis, &mut param.name);
-    visit_type(vis, &mut param.tt);
+    visit_type(vis, &mut param.ty);
 }
 
 fn visit_enum_decl<T: MutVisit>(vis: &mut T, mut enum_decl: P<EnumDecl>) {
@@ -175,7 +182,7 @@ fn visit_struct_decl<T: MutVisit>(vis: &mut T, mut struct_decl: P<StructDecl>) {
 fn visit_struct_field<T: MutVisit>(vis: &mut T, field: &mut StructField) {
     vis.visit_struct_field(field);
     visit_ident(vis, &mut field.name);
-    visit_type(vis, &mut field.tt);
+    visit_type(vis, &mut field.ty);
     if let Some(expr) = field.default {
         visit_expr(vis, expr);
     }
@@ -184,15 +191,15 @@ fn visit_struct_field<T: MutVisit>(vis: &mut T, field: &mut StructField) {
 fn visit_global_decl<T: MutVisit>(vis: &mut T, mut global_decl: P<GlobalDecl>) {
     vis.visit_global_decl(global_decl);
     visit_ident(vis, &mut global_decl.name);
-    if let Some(ref mut tt) = global_decl.tt {
-        visit_type(vis, tt);
+    if let Some(ref mut ty) = global_decl.ty {
+        visit_type(vis, ty);
     }
     visit_expr(vis, global_decl.expr);
 }
 
 fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {
     vis.visit_import_decl(import_decl);
-    visit_module_access(vis, &mut import_decl.module_access);
+    visit_module_path(vis, &mut import_decl.module_path);
     match import_decl.target {
         ImportTarget::AllSymbols => {}
         ImportTarget::Symbol(ref mut name) => visit_ident(vis, name),
@@ -296,8 +303,8 @@ fn visit_continue<T: MutVisit>(vis: &mut T) {
 fn visit_var_decl<T: MutVisit>(vis: &mut T, mut var_decl: P<VarDecl>) {
     vis.visit_var_decl(var_decl);
     visit_ident(vis, &mut var_decl.name);
-    if let Some(ref mut tt) = var_decl.tt {
-        visit_type(vis, tt);
+    if let Some(ref mut ty) = var_decl.ty {
+        visit_type(vis, ty);
     }
     if let Some(expr) = var_decl.expr {
         visit_expr(vis, expr);
@@ -328,7 +335,7 @@ fn visit_expr<T: MutVisit>(vis: &mut T, expr: Expr) {
 
 fn visit_var<T: MutVisit>(vis: &mut T, mut var: P<Var>) {
     vis.visit_var(var);
-    visit_module_access(vis, &mut var.module_access);
+    visit_module_path(vis, &mut var.module_path);
     visit_ident(vis, &mut var.name);
     if let Some(access) = var.access {
         visit_access(vis, access);
@@ -353,13 +360,13 @@ fn visit_enum<T: MutVisit>(vis: &mut T, mut enum_: P<Enum>) {
 
 fn visit_cast<T: MutVisit>(vis: &mut T, mut cast: P<Cast>) {
     vis.visit_cast(cast);
-    visit_type(vis, &mut cast.tt);
+    visit_type(vis, &mut cast.ty);
     visit_expr(vis, cast.expr);
 }
 
 fn visit_sizeof<T: MutVisit>(vis: &mut T, mut sizeof: P<Sizeof>) {
     vis.visit_sizeof(sizeof);
-    visit_type(vis, &mut sizeof.tt);
+    visit_type(vis, &mut sizeof.ty);
 }
 
 fn visit_literal<T: MutVisit>(vis: &mut T, literal: P<Literal>) {
@@ -368,7 +375,7 @@ fn visit_literal<T: MutVisit>(vis: &mut T, literal: P<Literal>) {
 
 fn visit_proc_call<T: MutVisit>(vis: &mut T, mut proc_call: P<ProcCall>) {
     vis.visit_proc_call(proc_call);
-    visit_module_access(vis, &mut proc_call.module_access);
+    visit_module_path(vis, &mut proc_call.module_path);
     visit_ident(vis, &mut proc_call.name);
     for expr in proc_call.input {
         visit_expr(vis, expr);
@@ -380,8 +387,8 @@ fn visit_proc_call<T: MutVisit>(vis: &mut T, mut proc_call: P<ProcCall>) {
 
 fn visit_array_init<T: MutVisit>(vis: &mut T, mut array_init: P<ArrayInit>) {
     vis.visit_array_init(array_init);
-    if let Some(ref mut tt) = array_init.tt {
-        visit_type(vis, tt);
+    if let Some(ref mut ty) = array_init.ty {
+        visit_type(vis, ty);
     }
     for expr in array_init.input {
         visit_expr(vis, expr);
@@ -390,7 +397,7 @@ fn visit_array_init<T: MutVisit>(vis: &mut T, mut array_init: P<ArrayInit>) {
 
 fn visit_struct_init<T: MutVisit>(vis: &mut T, mut struct_init: P<StructInit>) {
     vis.visit_struct_init(struct_init);
-    visit_module_access(vis, &mut struct_init.module_access);
+    visit_module_path(vis, &mut struct_init.module_path);
     if let Some(ref mut name) = struct_init.name {
         visit_ident(vis, name);
     }

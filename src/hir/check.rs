@@ -130,21 +130,21 @@ impl visit::MutVisit for Context {
     fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
         let tt = self.scope_find_type(
             self.curr_scope.copy(),
-            custom_type.module_access,
+            custom_type.module_path,
             custom_type.name,
         );
     }
 
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
         if let Some(name) = struct_init.name {
-            let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.module_access, name);
+            let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.module_path, name);
         }
     }
 
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
         self.scope_find_proc(
             self.curr_scope.copy(),
-            proc_call.module_access,
+            proc_call.module_path,
             proc_call.name,
         );
     }
@@ -492,7 +492,7 @@ impl Context {
                                 Error::check(
                                     CheckError::ModuleNotFoundInScope,
                                     scope.md(),
-                                    task.import.module_access.names.first().unwrap().span,
+                                    task.import.module_path.names.first().unwrap().span,
                                 )
                             );
                         }
@@ -510,8 +510,8 @@ impl Context {
             return;
         }
 
-        if task.import.module_access.modifier == ModuleAccessModifier::None {
-            let first = task.import.module_access.names.first().unwrap();
+        if task.import.module_path.kind == ModulePathKind::None {
+            let first = task.import.module_path.names.first().unwrap();
             if !self.scope_in_scope_mod_exists(scope.copy(), first) {
                 task.status = ImportTaskStatus::SourceNotFound;
                 return;
@@ -519,11 +519,11 @@ impl Context {
         }
         task.status = ImportTaskStatus::Resolved;
 
-        let from_scope =
-            match self.scope_resolve_module_access(scope.copy(), task.import.module_access) {
-                Some(from_scope) => from_scope,
-                None => return,
-            };
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), task.import.module_path)
+        {
+            Some(from_scope) => from_scope,
+            None => return,
+        };
 
         if from_scope.id == scope.id {
             scope.error(CheckError::ImportFromItself, task.import.span);
@@ -641,13 +641,13 @@ impl Context {
     fn scope_find_proc(
         &mut self,
         mut scope: P<Scope>,
-        module_access: ModuleAccess,
+        module_path: ModulePath,
         name: Ident,
     ) -> Option<ProcData> {
-        if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
+        if module_path.kind == ModulePathKind::None && module_path.names.is_empty() {
             return self.scope_get_in_scope_proc(scope, name);
         }
-        let from_scope = match self.scope_resolve_module_access(scope.copy(), module_access) {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), module_path) {
             Some(from_scope) => from_scope,
             None => return None,
         };
@@ -675,13 +675,13 @@ impl Context {
     fn scope_find_type(
         &mut self,
         mut scope: P<Scope>,
-        module_access: ModuleAccess,
+        module_path: ModulePath,
         name: Ident,
     ) -> Option<TypeData> {
-        if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
+        if module_path.kind == ModulePathKind::None && module_path.names.is_empty() {
             return self.scope_get_in_scope_type(scope, name);
         }
-        let from_scope = match self.scope_resolve_module_access(scope.copy(), module_access) {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), module_path) {
             Some(from_scope) => from_scope,
             None => return None,
         };
@@ -709,13 +709,13 @@ impl Context {
     fn scope_find_global(
         &mut self,
         mut scope: P<Scope>,
-        module_access: ModuleAccess,
+        module_path: ModulePath,
         name: Ident,
     ) -> Option<GlobalData> {
-        if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
+        if module_path.kind == ModulePathKind::None && module_path.names.is_empty() {
             return self.scope_get_in_scope_global(scope, name);
         }
-        let from_scope = match self.scope_resolve_module_access(scope.copy(), module_access) {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), module_path) {
             Some(from_scope) => from_scope,
             None => return None,
         };
@@ -740,14 +740,14 @@ impl Context {
         return Some(data);
     }
 
-    fn scope_resolve_module_access(
+    fn scope_resolve_module_path(
         &self,
         mut scope: P<Scope>,
-        module_access: ModuleAccess,
+        module_path: ModulePath,
     ) -> Option<P<Scope>> {
-        let mut target = match module_access.modifier {
-            ModuleAccessModifier::None => {
-                let first = match module_access.names.first() {
+        let mut target = match module_path.kind {
+            ModulePathKind::None => {
+                let first = match module_path.names.first() {
                     Some(name) => name,
                     None => return Some(scope),
                 };
@@ -763,22 +763,19 @@ impl Context {
                     }
                 }
             }
-            ModuleAccessModifier::Super => {
+            ModulePathKind::Super => {
                 if let Some(parent) = scope.parent {
                     self.get_scope(parent)
                 } else {
-                    scope.error(
-                        CheckError::SuperUsedFromRootModule,
-                        module_access.modifier_span,
-                    );
+                    scope.error(CheckError::SuperUsedFromRootModule, module_path.kind_span);
                     return None;
                 }
             }
-            ModuleAccessModifier::Package => self.get_scope(ROOT_ID),
+            ModulePathKind::Package => self.get_scope(ROOT_ID),
         };
 
-        let mut skip_first = module_access.modifier == ModuleAccessModifier::None;
-        for name in module_access.names {
+        let mut skip_first = module_path.kind == ModulePathKind::None;
+        for name in module_path.names {
             if skip_first {
                 skip_first = false;
                 continue;
@@ -1117,7 +1114,7 @@ impl Context {
         match expr.kind {
             ExprKind::Var(var) => {
                 //access not walked
-                let global = self.scope_find_global(scope, var.module_access, var.name);
+                let global = self.scope_find_global(scope, var.module_path, var.name);
             }
             ExprKind::Enum(..) => {}   //todo
             ExprKind::Cast(..) => {}   //todo

@@ -28,14 +28,14 @@ pub struct Ident {
 }
 
 #[derive(Copy, Clone)]
-pub struct ModuleAccess {
-    pub modifier: ModuleAccessModifier,
-    pub modifier_span: Span,
+pub struct ModulePath {
+    pub kind: ModulePathKind,
+    pub kind_span: Span,
     pub names: List<Ident>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum ModuleAccessModifier {
+pub enum ModulePathKind {
     None,
     Super,
     Package,
@@ -51,8 +51,9 @@ pub struct Type {
 pub enum TypeKind {
     Basic(BasicType),
     Custom(P<CustomType>),
-    ArraySlice(P<ArraySliceType>),
-    ArrayStatic(P<ArrayStaticType>),
+    ArraySlice(P<ArraySlice>),
+    ArrayStatic(P<ArrayStatic>),
+    ArrayDynamic(P<ArrayDynamic>),
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -76,18 +77,23 @@ pub enum BasicType {
 
 #[derive(Copy, Clone)]
 pub struct CustomType {
-    pub module_access: ModuleAccess,
+    pub module_path: ModulePath,
     pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
-pub struct ArraySliceType {
+pub struct ArraySlice {
     pub element: Type,
 }
 
 #[derive(Copy, Clone)]
-pub struct ArrayStaticType {
+pub struct ArrayStatic {
     pub size: Expr,
+    pub element: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayDynamic {
     pub element: Type,
 }
 
@@ -127,7 +133,7 @@ pub struct ProcDecl {
 #[derive(Copy, Clone)]
 pub struct ProcParam {
     pub name: Ident,
-    pub tt: Type,
+    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
@@ -154,7 +160,7 @@ pub struct StructDecl {
 #[derive(Copy, Clone)]
 pub struct StructField {
     pub name: Ident,
-    pub tt: Type,
+    pub ty: Type,
     pub default: Option<Expr>,
 }
 
@@ -162,13 +168,13 @@ pub struct StructField {
 pub struct GlobalDecl {
     pub vis: Visibility,
     pub name: Ident,
-    pub tt: Option<Type>,
+    pub ty: Option<Type>,
     pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub module_access: ModuleAccess,
+    pub module_path: ModulePath,
     pub target: ImportTarget,
     pub span: Span,
 }
@@ -247,7 +253,7 @@ pub struct Return {
 #[derive(Copy, Clone)]
 pub struct VarDecl {
     pub name: Ident,
-    pub tt: Option<Type>,
+    pub ty: Option<Type>,
     pub expr: Option<Expr>,
 }
 
@@ -286,7 +292,7 @@ pub enum ExprKind {
 
 #[derive(Copy, Clone)]
 pub struct Var {
-    pub module_access: ModuleAccess,
+    pub module_path: ModulePath,
     pub name: Ident,
     pub access: Option<P<Access>>,
 }
@@ -310,13 +316,13 @@ pub struct Enum {
 
 #[derive(Copy, Clone)]
 pub struct Cast {
-    pub tt: Type,
+    pub ty: Type,
     pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
 pub struct Sizeof {
-    pub tt: Type,
+    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
@@ -331,7 +337,7 @@ pub enum Literal {
 
 #[derive(Copy, Clone)]
 pub struct ProcCall {
-    pub module_access: ModuleAccess,
+    pub module_path: ModulePath,
     pub name: Ident,
     pub input: List<Expr>,
     pub access: Option<P<Access>>,
@@ -339,13 +345,13 @@ pub struct ProcCall {
 
 #[derive(Copy, Clone)]
 pub struct ArrayInit {
-    pub tt: Option<Type>,
+    pub ty: Option<Type>,
     pub input: List<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct StructInit {
-    pub module_access: ModuleAccess,
+    pub module_path: ModulePath,
     pub name: Option<Ident>,
     pub input: List<Expr>,
 }

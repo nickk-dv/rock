@@ -68,11 +68,12 @@ pub enum ParseError {
 
 #[derive(Copy, Clone)]
 pub enum ParseContext {
-    ModuleAccess,
+    ModulePath,
     Type,
     CustomType,
-    ArraySliceType,
-    ArrayStaticType,
+    ArraySlice,
+    ArrayStatic,
+    ArrayDynamic,
     Decl,
     ModDecl,
     ProcDecl,
@@ -316,11 +317,12 @@ impl ParseErrorData {
 impl ParseContext {
     pub(super) fn as_str(&self) -> &'static str {
         match self {
-            ParseContext::ModuleAccess => "module access",
+            ParseContext::ModulePath => "module path",
             ParseContext::Type => "type signature",
             ParseContext::CustomType => "custom type",
-            ParseContext::ArraySliceType => "array slice type",
-            ParseContext::ArrayStaticType => "static array type",
+            ParseContext::ArraySlice => "array slice type",
+            ParseContext::ArrayStatic => "static array type",
+            ParseContext::ArrayDynamic => "dynamic array type",
             ParseContext::Decl => "declaration",
             ParseContext::ModDecl => "module declaration",
             ParseContext::ProcDecl => "procedure declaration",

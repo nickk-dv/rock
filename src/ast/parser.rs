@@ -201,83 +201,84 @@ impl<'ast> Parser<'ast> {
         Err(ParseError::Ident(context))
     }
 
-    fn parse_module_access(&mut self) -> Result<ModuleAccess, ParseError> {
-        let md = self.parse_module_access_modifier()?;
+    fn parse_module_path(&mut self) -> Result<ModulePath, ParseError> {
+        let kind = self.parse_module_path_kind()?;
         let mut names = List::new();
 
         while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
-            let name = self.parse_ident(ParseContext::ModuleAccess)?;
+            let name = self.parse_ident(ParseContext::ModulePath)?;
             self.consume();
             names.add(&mut self.arena, name);
         }
-        Ok(ModuleAccess {
-            modifier: md.0,
-            modifier_span: md.1,
+        Ok(ModulePath {
+            kind: kind.0,
+            kind_span: kind.1,
             names,
         })
     }
 
-    fn parse_module_access_required(&mut self) -> Result<ModuleAccess, ParseError> {
-        let md = self.parse_module_access_modifier()?;
+    fn parse_module_path_required(&mut self) -> Result<ModulePath, ParseError> {
+        let kind = self.parse_module_path_kind()?;
         let mut names = List::new();
 
-        if md.0 == ModuleAccessModifier::None {
-            let first = self.parse_ident(ParseContext::ModuleAccess)?;
+        if kind.0 == ModulePathKind::None {
+            let first = self.parse_ident(ParseContext::ModulePath)?;
             names.add(&mut self.arena, first);
-            self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
+            self.expect_token(Token::ColonColon, ParseContext::ModulePath)?;
         }
 
         while self.peek() == Token::Ident && self.peek_next(1) == Token::ColonColon {
-            let name = self.parse_ident(ParseContext::ModuleAccess)?;
+            let name = self.parse_ident(ParseContext::ModulePath)?;
             self.consume();
             names.add(&mut self.arena, name);
         }
-        Ok(ModuleAccess {
-            modifier: md.0,
-            modifier_span: md.1,
+        Ok(ModulePath {
+            kind: kind.0,
+            kind_span: kind.1,
             names,
         })
     }
 
-    fn parse_module_access_modifier(&mut self) -> Result<(ModuleAccessModifier, Span), ParseError> {
-        let modifier = match self.peek() {
-            Token::KwSuper => ModuleAccessModifier::Super,
-            Token::KwPackage => ModuleAccessModifier::Package,
-            _ => ModuleAccessModifier::None,
+    fn parse_module_path_kind(&mut self) -> Result<(ModulePathKind, Span), ParseError> {
+        let kind = match self.peek() {
+            Token::KwSuper => ModulePathKind::Super,
+            Token::KwPackage => ModulePathKind::Package,
+            _ => ModulePathKind::None,
         };
         let start = self.peek_span_start();
         let mut span = Span::new(start, start);
-        if modifier != ModuleAccessModifier::None {
+        if kind != ModulePathKind::None {
             self.consume();
             span.end = self.peek_span_end();
-            self.expect_token(Token::ColonColon, ParseContext::ModuleAccess)?;
+            self.expect_token(Token::ColonColon, ParseContext::ModulePath)?;
         }
-        Ok((modifier, span))
+        Ok((kind, span))
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
-        let mut tt = Type {
+        let mut ty = Type {
             pointer_level: 0,
             kind: TypeKind::Basic(BasicType::Bool),
         };
         while self.try_consume(Token::Times) {
-            tt.pointer_level += 1;
+            ty.pointer_level += 1;
         }
-        if let Some(basic_type) = self.try_consume_basic_type() {
-            tt.kind = TypeKind::Basic(basic_type);
-            return Ok(tt);
+        if let Some(basic) = self.try_consume_basic_type() {
+            ty.kind = TypeKind::Basic(basic);
+            return Ok(ty);
         }
         match self.peek() {
             Token::Ident => {
-                tt.kind = TypeKind::Custom(self.parse_custom_type()?);
-                Ok(tt)
+                ty.kind = TypeKind::Custom(self.parse_custom_type()?);
+                Ok(ty)
             }
             Token::OpenBracket => {
-                tt.kind = match self.peek_next(1) {
-                    Token::CloseBracket => TypeKind::ArraySlice(self.parse_array_slice_type()?),
-                    _ => TypeKind::ArrayStatic(self.parse_array_static_type()?),
+                ty.kind = match self.peek_next(1) {
+                    Token::CloseBracket => TypeKind::ArraySlice(self.parse_array_slice()?),
+                    Token::DotDot => TypeKind::ArrayDynamic(self.parse_array_dynamic()?),
+                    _ => TypeKind::ArrayStatic(self.parse_array_static()?),
                 };
-                Ok(tt)
+                Ok(ty)
             }
             _ => Err(ParseError::TypeMatch),
         }
@@ -285,26 +286,35 @@ impl<'ast> Parser<'ast> {
 
     fn parse_custom_type(&mut self) -> Result<P<CustomType>, ParseError> {
         let mut custom_type = self.alloc::<CustomType>();
-        custom_type.module_access = self.parse_module_access()?;
+        custom_type.module_path = self.parse_module_path()?;
         custom_type.name = self.parse_ident(ParseContext::CustomType)?;
         Ok(custom_type)
     }
 
-    fn parse_array_slice_type(&mut self) -> Result<P<ArraySliceType>, ParseError> {
-        let mut array_slice_type = self.alloc::<ArraySliceType>();
-        self.expect_token(Token::OpenBracket, ParseContext::ArraySliceType)?;
-        self.expect_token(Token::CloseBracket, ParseContext::ArraySliceType)?;
-        array_slice_type.element = self.parse_type()?;
-        Ok(array_slice_type)
+    fn parse_array_slice(&mut self) -> Result<P<ArraySlice>, ParseError> {
+        let mut array_slice = self.alloc::<ArraySlice>();
+        self.expect_token(Token::OpenBracket, ParseContext::ArraySlice)?;
+        self.expect_token(Token::CloseBracket, ParseContext::ArraySlice)?;
+        array_slice.element = self.parse_type()?;
+        Ok(array_slice)
     }
 
-    fn parse_array_static_type(&mut self) -> Result<P<ArrayStaticType>, ParseError> {
-        let mut array_static_type = self.alloc::<ArrayStaticType>();
-        self.expect_token(Token::OpenBracket, ParseContext::ArrayStaticType)?;
-        array_static_type.size = self.parse_expr()?;
-        self.expect_token(Token::CloseBracket, ParseContext::ArrayStaticType)?;
-        array_static_type.element = self.parse_type()?;
-        Ok(array_static_type)
+    fn parse_array_static(&mut self) -> Result<P<ArrayStatic>, ParseError> {
+        let mut array_static = self.alloc::<ArrayStatic>();
+        self.expect_token(Token::OpenBracket, ParseContext::ArrayStatic)?;
+        array_static.size = self.parse_expr()?;
+        self.expect_token(Token::CloseBracket, ParseContext::ArrayStatic)?;
+        array_static.element = self.parse_type()?;
+        Ok(array_static)
+    }
+
+    fn parse_array_dynamic(&mut self) -> Result<P<ArrayDynamic>, ParseError> {
+        let mut array_dynamic = self.alloc::<ArrayDynamic>();
+        self.expect_token(Token::OpenBracket, ParseContext::ArrayDynamic)?;
+        self.expect_token(Token::DotDot, ParseContext::ArrayDynamic)?;
+        self.expect_token(Token::CloseBracket, ParseContext::ArrayDynamic)?;
+        array_dynamic.element = self.parse_type()?;
+        Ok(array_dynamic)
     }
 
     fn parse_visibility(&mut self) -> Visibility {
@@ -381,8 +391,8 @@ impl<'ast> Parser<'ast> {
     fn parse_proc_param(&mut self) -> Result<ProcParam, ParseError> {
         let name = self.parse_ident(ParseContext::ProcParam)?;
         self.expect_token(Token::Colon, ParseContext::ProcParam)?;
-        let tt = self.parse_type()?;
-        Ok(ProcParam { name, tt })
+        let ty = self.parse_type()?;
+        Ok(ProcParam { name, ty })
     }
 
     fn parse_enum_decl(&mut self, vis: Visibility, name: Ident) -> Result<P<EnumDecl>, ParseError> {
@@ -430,14 +440,14 @@ impl<'ast> Parser<'ast> {
     fn parse_struct_field(&mut self) -> Result<StructField, ParseError> {
         let name = self.parse_ident(ParseContext::StructField)?;
         self.expect_token(Token::Colon, ParseContext::StructField)?;
-        let tt = self.parse_type()?;
+        let ty = self.parse_type()?;
         let default = if self.try_consume(Token::Assign) {
             Some(self.parse_expr()?)
         } else {
             None
         };
         self.expect_token(Token::Semicolon, ParseContext::StructField)?;
-        Ok(StructField { name, tt, default })
+        Ok(StructField { name, ty, default })
     }
 
     fn parse_global_decl(
@@ -448,10 +458,10 @@ impl<'ast> Parser<'ast> {
         let mut global_decl = self.alloc::<GlobalDecl>();
         global_decl.vis = vis;
         global_decl.name = name;
-        global_decl.tt = if self.try_consume(Token::Colon) {
-            let tt = self.parse_type()?;
+        global_decl.ty = if self.try_consume(Token::Colon) {
+            let ty = self.parse_type()?;
             self.expect_token(Token::Colon, ParseContext::GlobalDecl)?;
-            Some(tt)
+            Some(ty)
         } else {
             None
         };
@@ -464,7 +474,7 @@ impl<'ast> Parser<'ast> {
         let mut import_decl = self.alloc::<ImportDecl>();
         import_decl.span.start = self.peek_span_start();
         self.expect_token(Token::KwImport, ParseContext::ImportDecl)?;
-        import_decl.module_access = self.parse_module_access_required()?;
+        import_decl.module_path = self.parse_module_path_required()?;
         import_decl.target = self.parse_import_target()?;
         import_decl.span.end = self.peek_span_end();
         self.expect_token(Token::Semicolon, ParseContext::ImportDecl)?;
@@ -515,13 +525,13 @@ impl<'ast> Parser<'ast> {
                 if self.peek_next(1) == Token::Colon {
                     StmtKind::VarDecl(self.parse_var_decl()?)
                 } else {
-                    let module_access = self.parse_module_access()?;
+                    let module_path = self.parse_module_path()?;
                     if self.peek() == Token::Ident && self.peek_next(1) == Token::OpenParen {
-                        let proc_call = StmtKind::ProcCall(self.parse_proc_call(module_access)?);
+                        let proc_call = StmtKind::ProcCall(self.parse_proc_call(module_path)?);
                         self.expect_token(Token::Semicolon, ParseContext::ProcCall)?;
                         proc_call
                     } else {
-                        StmtKind::VarAssign(self.parse_var_assign(module_access, true)?)
+                        StmtKind::VarAssign(self.parse_var_assign(module_path, true)?)
                     }
                 }
             }
@@ -573,8 +583,8 @@ impl<'ast> Parser<'ast> {
         };
         for_.condition = Some(self.parse_expr()?);
         for_.var_assign = if self.try_consume(Token::Semicolon) {
-            let module_access = self.parse_module_access()?;
-            Some(self.parse_var_assign(module_access, false)?)
+            let module_path = self.parse_module_path()?;
+            Some(self.parse_var_assign(module_path, false)?)
         } else {
             None
         };
@@ -646,10 +656,10 @@ impl<'ast> Parser<'ast> {
         var_decl.name = self.parse_ident(ParseContext::VarDecl)?;
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
         if self.try_consume(Token::Assign) {
-            var_decl.tt = None;
+            var_decl.ty = None;
             var_decl.expr = Some(self.parse_expr()?);
         } else {
-            var_decl.tt = Some(self.parse_type()?);
+            var_decl.ty = Some(self.parse_type()?);
             var_decl.expr = if self.try_consume(Token::Assign) {
                 Some(self.parse_expr()?)
             } else {
@@ -662,11 +672,11 @@ impl<'ast> Parser<'ast> {
 
     fn parse_var_assign(
         &mut self,
-        module_access: ModuleAccess,
+        module_path: ModulePath,
         require_semi: bool,
     ) -> Result<P<VarAssign>, ParseError> {
         let mut var_assign = self.alloc::<VarAssign>();
-        var_assign.var = self.parse_var(module_access)?;
+        var_assign.var = self.parse_var(module_path)?;
         var_assign.op = self.expect_assign_op(ParseContext::VarAssign)?;
         var_assign.expr = self.parse_expr()?;
         if require_semi {
@@ -729,8 +739,8 @@ impl<'ast> Parser<'ast> {
         let kind = match self.peek() {
             Token::Dot => match self.peek_next(1) {
                 Token::OpenBlock => {
-                    let module_access = self.parse_module_access()?;
-                    ExprKind::StructInit(self.parse_struct_init(module_access)?)
+                    let module_path = self.parse_module_path()?;
+                    ExprKind::StructInit(self.parse_struct_init(module_path)?)
                 }
                 _ => ExprKind::Enum(self.parse_enum()?),
             },
@@ -744,16 +754,16 @@ impl<'ast> Parser<'ast> {
             | Token::LitString => ExprKind::Literal(self.parse_literal()?),
             Token::OpenBracket | Token::OpenBlock => ExprKind::ArrayInit(self.parse_array_init()?),
             Token::Ident | Token::KwSuper | Token::KwPackage => {
-                let module_access = self.parse_module_access()?;
+                let module_path = self.parse_module_path()?;
                 if self.peek() != Token::Ident {
                     return Err(ParseError::PrimaryExprIdent);
                 }
                 if self.peek_next(1) == Token::OpenParen {
-                    ExprKind::ProcCall(self.parse_proc_call(module_access)?)
+                    ExprKind::ProcCall(self.parse_proc_call(module_path)?)
                 } else if self.peek_next(1) == Token::Dot && self.peek_next(2) == Token::OpenBlock {
-                    ExprKind::StructInit(self.parse_struct_init(module_access)?)
+                    ExprKind::StructInit(self.parse_struct_init(module_path)?)
                 } else {
-                    ExprKind::Var(self.parse_var(module_access)?)
+                    ExprKind::Var(self.parse_var(module_path)?)
                 }
             }
             _ => return Err(ParseError::PrimaryExprMatch),
@@ -765,9 +775,9 @@ impl<'ast> Parser<'ast> {
         })
     }
 
-    fn parse_var(&mut self, module_access: ModuleAccess) -> Result<P<Var>, ParseError> {
+    fn parse_var(&mut self, module_path: ModulePath) -> Result<P<Var>, ParseError> {
         let mut var = self.alloc::<Var>();
-        var.module_access = module_access;
+        var.module_path = module_path;
         var.name = self.parse_ident(ParseContext::Var)?;
         var.access = self.parse_access_chain()?;
         Ok(var)
@@ -817,7 +827,7 @@ impl<'ast> Parser<'ast> {
         let mut cast = self.alloc::<Cast>();
         self.expect_token(Token::KwCast, ParseContext::Cast)?;
         self.expect_token(Token::OpenParen, ParseContext::Cast)?;
-        cast.tt = self.parse_type()?;
+        cast.ty = self.parse_type()?;
         self.expect_token(Token::Comma, ParseContext::Cast)?;
         cast.expr = self.parse_expr()?;
         self.expect_token(Token::CloseParen, ParseContext::Cast)?;
@@ -828,7 +838,7 @@ impl<'ast> Parser<'ast> {
         let mut sizeof = self.alloc::<Sizeof>();
         self.expect_token(Token::KwSizeof, ParseContext::Sizeof)?;
         self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
-        sizeof.tt = self.parse_type()?;
+        sizeof.ty = self.parse_type()?;
         self.expect_token(Token::CloseParen, ParseContext::Sizeof)?;
         Ok(sizeof)
     }
@@ -901,9 +911,9 @@ impl<'ast> Parser<'ast> {
         Ok(literal)
     }
 
-    fn parse_proc_call(&mut self, module_access: ModuleAccess) -> Result<P<ProcCall>, ParseError> {
+    fn parse_proc_call(&mut self, module_path: ModulePath) -> Result<P<ProcCall>, ParseError> {
         let mut proc_call = self.alloc::<ProcCall>();
-        proc_call.module_access = module_access;
+        proc_call.module_path = module_path;
         proc_call.name = self.parse_ident(ParseContext::ProcCall)?;
         proc_call.input =
             self.parse_expr_list(Token::OpenParen, Token::CloseParen, ParseContext::ProcCall)?;
@@ -913,7 +923,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_array_init(&mut self) -> Result<P<ArrayInit>, ParseError> {
         let mut array_init = self.alloc::<ArrayInit>();
-        array_init.tt = if self.peek() == Token::OpenBracket {
+        array_init.ty = if self.peek() == Token::OpenBracket {
             Some(self.parse_type()?)
         } else {
             None
@@ -923,15 +933,11 @@ impl<'ast> Parser<'ast> {
         Ok(array_init)
     }
 
-    fn parse_struct_init(
-        &mut self,
-        module_access: ModuleAccess,
-    ) -> Result<P<StructInit>, ParseError> {
+    fn parse_struct_init(&mut self, module_path: ModulePath) -> Result<P<StructInit>, ParseError> {
         let mut struct_init = self.alloc::<StructInit>();
-        struct_init.module_access = module_access;
+        struct_init.module_path = module_path;
 
-        let has_access =
-            module_access.modifier != ModuleAccessModifier::None || !module_access.names.is_empty();
+        let has_access = module_path.kind != ModulePathKind::None || !module_path.names.is_empty();
         let has_name = self.peek() == Token::Ident || has_access;
         struct_init.name = if has_name {
             Some(self.parse_ident(ParseContext::StructInit)?)
