@@ -11,7 +11,7 @@ impl Into<Message> for CheckError {
             CheckError::ParseModBothPathsExist =>      ("both module filepaths exist", None),
             CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", None),
             CheckError::ParseModCycle =>               ("module definition results in a cycle", None),
-
+            
             CheckError::RedefinitionMod =>             ("module redefinition", None),
             CheckError::RedefinitionProc =>            ("procedure redefinition", None),
             CheckError::RedefinitionType =>            ("type redefinition", None),
@@ -38,10 +38,12 @@ impl Into<Message> for CheckError {
             CheckError::ModuleNotDeclaredInPath =>     ("module is not declared in referenced module path", None),
             CheckError::ProcNotDeclaredInPath =>       ("procedure is not declared in referenced module path", None),
             CheckError::TypeNotDeclaredInPath =>       ("type name is not declared in referenced module path", None),
-            
+            CheckError::GlobalNotDeclaredInPath =>     ("global constant is not declared in referenced module path", None),
+
             CheckError::ModuleIsPrivate =>             ("module is private", None),
             CheckError::ProcIsPrivate =>               ("procedure is private", None),
             CheckError::TypeIsPrivate =>               ("type is private", None),
+            CheckError::GlobalIsPrivate =>             ("global constant is private", None),
 
             CheckError::ModuleNotFoundInScope =>       ("module is not found in scope", None),
             CheckError::ProcNotFoundInScope =>         ("procedure is not found in scope", None),

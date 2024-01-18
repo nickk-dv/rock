@@ -22,6 +22,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_2_check_namesets();
     context.pass_3_process_imports();
     context.pass_4_type_resolve();
+    context.pass_5_check_globals();
 
     let result = context.report_errors();
     context.manual_drop();
@@ -704,6 +705,40 @@ impl Context {
         return Some(data);
     }
 
+    fn scope_find_global(
+        &mut self,
+        mut scope: P<Scope>,
+        module_access: ModuleAccess,
+        name: Ident,
+    ) -> Option<GlobalData> {
+        if module_access.modifier == ModuleAccessModifier::None && module_access.names.is_empty() {
+            return self.scope_get_in_scope_global(scope, name);
+        }
+        let from_scope = match self.scope_resolve_module_access(scope.copy(), module_access) {
+            Some(from_scope) => from_scope,
+            None => return None,
+        };
+        let data = match from_scope.get_global(name.id) {
+            Some(data) => data,
+            None => {
+                scope.error(CheckError::GlobalNotDeclaredInPath, name.span);
+                return None;
+            }
+        };
+        if visibility_private(data.decl.vis, from_scope.id) {
+            scope_error!(
+                scope,
+                Error::check(CheckError::GlobalIsPrivate, scope.md(), name.span).context(
+                    "defined here",
+                    from_scope.md(),
+                    data.decl.name.span
+                )
+            );
+            return None;
+        }
+        return Some(data);
+    }
+
     fn scope_resolve_module_access(
         &self,
         mut scope: P<Scope>,
@@ -988,5 +1023,125 @@ impl Context {
         }
         scope.errors.push(error.into());
         return None;
+    }
+
+    fn scope_get_in_scope_global(
+        &mut self,
+        mut scope: P<Scope>,
+        name: Ident,
+    ) -> Option<GlobalData> {
+        let mut unique = None;
+        let mut conflicts = Vec::<Conflit<GlobalData>>::new();
+
+        if let Some(data) = scope.get_global(name.id) {
+            unique = Some(Conflit::new(data, scope.copy(), None));
+        }
+
+        if let Some(import) = scope.symbol_imports.get(&name.id) {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(data) = from_scope.get_global(name.id) {
+                if visibility_public(data.decl.vis, import.from_id) {
+                    let conflict = Conflit::new(data, from_scope, Some(import.name.span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+        }
+
+        for import in scope.glob_imports.iter() {
+            let from_scope = self.get_scope(import.from_id);
+            if let Some(data) = from_scope.get_global(name.id) {
+                if visibility_public(data.decl.vis, import.from_id) {
+                    let conflict = Conflit::new(data, from_scope, Some(import.import_span));
+                    if unique.is_none() {
+                        unique = Some(conflict);
+                    } else {
+                        conflicts.push(conflict);
+                    }
+                }
+            }
+        }
+
+        if conflicts.is_empty() {
+            return match unique {
+                Some(conflict) => Some(conflict.data),
+                None => {
+                    scope.error(CheckError::GlobalNotFoundInScope, name.span);
+                    None
+                }
+            };
+        }
+        if let Some(conflict) = unique {
+            conflicts.insert(0, conflict);
+        }
+
+        let mut error = Error::check(CheckError::GlobalSymbolConflict, scope.md(), name.span);
+        for conflict in conflicts.iter() {
+            if let Some(import_span) = conflict.import_span {
+                error = error
+                    .context("from this import:", scope.md(), import_span)
+                    .context(
+                        "conflict with this global constant",
+                        conflict.from_scope.md(),
+                        conflict.data.decl.name.span,
+                    )
+            } else {
+                error = error.context(
+                    "conflict with this declared global constant",
+                    scope.md(),
+                    conflict.data.decl.name.span,
+                );
+            }
+        }
+        scope.errors.push(error.into());
+        return None;
+    }
+
+    fn pass_5_check_globals(&mut self) {
+        //@duplicate decls are still checked here
+        for scope_id in 0..self.scopes.len() as ScopeID {
+            let scope = self.get_scope(scope_id);
+            for decl in scope.module.decls {
+                if let Decl::Global(global) = decl {
+                    self.scope_check_global_expr(scope.copy(), global.expr);
+                }
+            }
+        }
+    }
+
+    fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
+        match expr.kind {
+            ExprKind::Var(var) => {
+                //access not walked
+                let global = self.scope_find_global(scope, var.module_access, var.name);
+            }
+            ExprKind::Enum(..) => {}   //todo
+            ExprKind::Cast(..) => {}   //todo
+            ExprKind::Sizeof(..) => {} //todo
+            ExprKind::Literal(..) => {}
+            ExprKind::ProcCall(proc_call) => {
+                for expr in proc_call.input {
+                    self.scope_check_global_expr(scope.copy(), expr);
+                }
+            }
+            ExprKind::ArrayInit(array_init) => {
+                for expr in array_init.input {
+                    self.scope_check_global_expr(scope.copy(), expr);
+                }
+            }
+            ExprKind::StructInit(struct_init) => {
+                for expr in struct_init.input {
+                    self.scope_check_global_expr(scope.copy(), expr);
+                }
+            }
+            ExprKind::UnaryExpr(un) => self.scope_check_global_expr(scope.copy(), un.rhs),
+            ExprKind::BinaryExpr(bin) => {
+                self.scope_check_global_expr(scope.copy(), bin.lhs);
+                self.scope_check_global_expr(scope, bin.rhs);
+            }
+        }
     }
 }

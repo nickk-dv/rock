@@ -143,9 +143,11 @@ pub enum CheckError {
     ModuleNotDeclaredInPath,
     ProcNotDeclaredInPath,
     TypeNotDeclaredInPath,
+    GlobalNotDeclaredInPath,
 
     ProcIsPrivate,
     TypeIsPrivate,
+    GlobalIsPrivate,
 
     ModuleNotFoundInScope,
     ProcNotFoundInScope,
