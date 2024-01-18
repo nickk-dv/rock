@@ -55,6 +55,7 @@ pub enum ParseError {
     DeclMatch,
     ImportTargetMatch,
     StmtMatch,
+    ElseMatch,
     PrimaryExprIdent,
     PrimaryExprMatch,
     AccessMatch,
@@ -84,6 +85,7 @@ pub enum ParseContext {
     ImportDecl,
     Stmt,
     If,
+    Else,
     For,
     Block,
     Defer,
@@ -157,6 +159,11 @@ pub enum CheckError {
     ProcSymbolConflict,
     TypeSymbolConflict,
     GlobalSymbolConflict,
+
+    DeferNested,
+    BreakOutsideLoop,
+    ContinueOutsideLoop,
+    UnreachableStatement,
 }
 
 pub enum FileIOError {
@@ -210,6 +217,7 @@ impl ParseErrorData {
             ParseError::DeclMatch => ParseContext::Decl,
             ParseError::ImportTargetMatch => ParseContext::ImportDecl,
             ParseError::StmtMatch => ParseContext::Stmt,
+            ParseError::ElseMatch => ParseContext::Else,
             ParseError::PrimaryExprIdent => ParseContext::Expr,
             ParseError::PrimaryExprMatch => ParseContext::Expr,
             ParseError::AccessMatch => ParseContext::Access,
@@ -238,6 +246,7 @@ impl ParseErrorData {
                 Token::KwContinue,
                 Token::Ident,
             ],
+            ParseError::ElseMatch => vec![Token::KwIf, Token::OpenBlock],
             ParseError::PrimaryExprIdent => vec![Token::Ident],
             ParseError::PrimaryExprMatch => {
                 let mut expected = vec![
@@ -324,6 +333,7 @@ impl ParseContext {
             ParseContext::ImportDecl => "import declaration",
             ParseContext::Stmt => "statement",
             ParseContext::If => "if statement",
+            ParseContext::Else => "else statement",
             ParseContext::For => "for loop statement",
             ParseContext::Block => "statement block",
             ParseContext::Defer => "defer statement",

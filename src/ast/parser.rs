@@ -544,10 +544,14 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_else(&mut self) -> Result<Option<Else>, ParseError> {
-        match self.peek() {
-            Token::KwIf => Ok(Some(Else::If(self.parse_if()?))),
-            Token::OpenBlock => Ok(Some(Else::Block(self.parse_block()?))),
-            _ => Ok(None),
+        if !self.try_consume(Token::KwElse) {
+            Ok(None)
+        } else {
+            match self.peek() {
+                Token::KwIf => Ok(Some(Else::If(self.parse_if()?))),
+                Token::OpenBlock => Ok(Some(Else::Block(self.parse_block()?))),
+                _ => Err(ParseError::ElseMatch),
+            }
         }
     }
 

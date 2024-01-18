@@ -23,6 +23,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_3_process_imports();
     context.pass_4_type_resolve();
     context.pass_5_check_globals();
+    context.pass_6_check_control_flow();
 
     let result = context.report_errors();
     context.manual_drop();
@@ -1141,6 +1142,141 @@ impl Context {
             ExprKind::BinaryExpr(bin) => {
                 self.scope_check_global_expr(scope.copy(), bin.lhs);
                 self.scope_check_global_expr(scope, bin.rhs);
+            }
+        }
+    }
+
+    fn pass_6_check_control_flow(&mut self) {
+        for scope_id in 0..self.scopes.len() as ScopeID {
+            let scope = self.get_scope(scope_id);
+            for decl in scope.module.decls {
+                if let Decl::Proc(proc_decl) = decl {
+                    if let Some(block) = proc_decl.block {
+                        self.scope_check_control_flow(scope.copy(), block, false, false, false);
+                    }
+                }
+            }
+        }
+    }
+
+    fn scope_check_control_flow(
+        &mut self,
+        mut scope: P<Scope>,
+        block: P<Block>,
+        in_loop: bool,
+        in_defer: bool,
+        mut is_unreachable: bool,
+    ) {
+        //@todo very bloated code
+        //@todo ban continue / break in defer blocks for outside loops
+        //@todo ban return in defer blocks
+        let mut terminated = false;
+        let mut term_span: Span = Span::new(0, 0);
+        let mut term_errored = is_unreachable;
+        for stmt in block.stmts {
+            if terminated && !term_errored {
+                term_errored = true;
+                scope_error!(
+                    scope,
+                    Error::check(CheckError::UnreachableStatement, scope.md(), stmt.span).context(
+                        "any code following this statement is unreachable",
+                        scope.md(),
+                        term_span
+                    )
+                );
+            }
+            match stmt.kind {
+                StmtKind::If(if_) => {
+                    self.scope_check_control_flow(
+                        scope.copy(),
+                        if_.block,
+                        in_loop,
+                        in_defer,
+                        is_unreachable,
+                    );
+                    let mut curr_else = if_.else_;
+                    while let Some(else_) = curr_else {
+                        match else_ {
+                            Else::If(if_) => {
+                                self.scope_check_control_flow(
+                                    scope.copy(),
+                                    if_.block,
+                                    in_loop,
+                                    in_defer,
+                                    is_unreachable,
+                                );
+                                curr_else = if_.else_;
+                            }
+                            Else::Block(block) => {
+                                self.scope_check_control_flow(
+                                    scope.copy(),
+                                    block,
+                                    in_loop,
+                                    in_defer,
+                                    is_unreachable,
+                                );
+                                curr_else = None;
+                            }
+                        }
+                    }
+                }
+                StmtKind::For(for_) => {
+                    self.scope_check_control_flow(
+                        scope.copy(),
+                        for_.block,
+                        true,
+                        in_defer,
+                        is_unreachable,
+                    );
+                }
+                StmtKind::Block(block) => {
+                    self.scope_check_control_flow(
+                        scope.copy(),
+                        block,
+                        in_loop,
+                        in_defer,
+                        is_unreachable,
+                    );
+                }
+                StmtKind::Defer(defer) => {
+                    if in_defer {
+                        scope.error(CheckError::DeferNested, stmt.span);
+                    }
+                    self.scope_check_control_flow(
+                        scope.copy(),
+                        defer,
+                        in_loop,
+                        true,
+                        is_unreachable,
+                    );
+                }
+                StmtKind::Break => {
+                    if !in_loop {
+                        scope.error(CheckError::BreakOutsideLoop, stmt.span);
+                    } else {
+                        terminated = true;
+                        term_span = stmt.span;
+                        is_unreachable = true;
+                    }
+                }
+                StmtKind::Switch(..) => {}
+                StmtKind::Return(..) => {
+                    terminated = true;
+                    term_span = stmt.span;
+                    is_unreachable = true;
+                }
+                StmtKind::Continue => {
+                    if !in_loop {
+                        scope.error(CheckError::ContinueOutsideLoop, stmt.span);
+                    } else {
+                        terminated = true;
+                        term_span = stmt.span;
+                        is_unreachable = true;
+                    }
+                }
+                StmtKind::VarDecl(..) => {}
+                StmtKind::VarAssign(..) => {}
+                StmtKind::ProcCall(..) => {}
             }
         }
     }

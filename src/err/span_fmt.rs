@@ -97,7 +97,7 @@ impl<'a> SpanFormat<'a> {
         if self.is_multi_line {
             self.print_bar(false);
             ansi::set_color(Color::Cyan);
-            print!("...");
+            println!("...");
             ansi::reset();
         }
     }

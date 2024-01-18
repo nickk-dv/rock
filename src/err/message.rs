@@ -11,7 +11,7 @@ impl Into<Message> for CheckError {
             CheckError::ParseModBothPathsExist =>      ("both module filepaths exist", None),
             CheckError::ParseModBothPathsMissing =>    ("both module filepaths are missing", None),
             CheckError::ParseModCycle =>               ("module definition results in a cycle", None),
-            
+
             CheckError::RedefinitionMod =>             ("module redefinition", None),
             CheckError::RedefinitionProc =>            ("procedure redefinition", None),
             CheckError::RedefinitionType =>            ("type redefinition", None),
@@ -53,6 +53,11 @@ impl Into<Message> for CheckError {
             CheckError::ProcSymbolConflict =>          ("procedure name conflits with others in scope", None),
             CheckError::TypeSymbolConflict =>          ("type name conflits with others in scope", None),
             CheckError::GlobalSymbolConflict =>        ("global constant name conflits with others in scope", None),
+
+            CheckError::DeferNested =>                 ("defer cannot be nested", None),
+            CheckError::BreakOutsideLoop =>            ("break outside of loop", Some("remove this statement")),
+            CheckError::ContinueOutsideLoop =>         ("continue outside of loop", Some("remove this statement")),
+            CheckError::UnreachableStatement =>        ("unreachable statement", None),
         }
     }
 }
