@@ -265,7 +265,11 @@ impl ParseErrorData {
             }
             ParseError::AccessMatch => vec![Token::Dot, Token::OpenBracket],
             ParseError::LiteralMatch => Self::all_literal_tokens(),
-            ParseError::LiteralInteger => Self::all_integer_literal_types(),
+            ParseError::LiteralInteger => {
+                let mut expected = Self::all_integer_literal_types();
+                expected.extend(Self::all_float_literal_types());
+                expected
+            }
             ParseError::LiteralFloat => Self::all_float_literal_types(),
             ParseError::ExpectToken(.., t) => vec![t],
             ParseError::ExpectAssignOp(..) => vec![

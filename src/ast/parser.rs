@@ -616,6 +616,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_switch(&mut self) -> Result<P<Switch>, ParseError> {
         let mut switch = self.alloc::<Switch>();
+        self.expect_token(Token::KwSwitch, ParseContext::Switch)?;
         switch.expr = self.parse_expr()?;
         self.expect_token(Token::OpenBlock, ParseContext::Switch)?;
         while !self.try_consume(Token::CloseBlock) {
@@ -856,31 +857,30 @@ impl<'ast> Parser<'ast> {
             }
             Token::LitInt(v) => {
                 self.consume();
-                let basic_option = self.peek().as_basic_type();
-                let basic = match basic_option {
-                    Some(b) => {
-                        if matches!(
-                            b,
-                            BasicType::S8
-                                | BasicType::S16
-                                | BasicType::S32
-                                | BasicType::S64
-                                | BasicType::Ssize
-                                | BasicType::U8
-                                | BasicType::U16
-                                | BasicType::U32
-                                | BasicType::U64
-                                | BasicType::Usize
-                        ) {
+                if let Some(basic) = self.peek().as_basic_type() {
+                    match basic {
+                        BasicType::S8
+                        | BasicType::S16
+                        | BasicType::S32
+                        | BasicType::S64
+                        | BasicType::Ssize
+                        | BasicType::U8
+                        | BasicType::U16
+                        | BasicType::U32
+                        | BasicType::U64
+                        | BasicType::Usize => {
                             self.consume();
-                            Some(b)
-                        } else {
-                            return Err(ParseError::LiteralInteger);
+                            Literal::Uint(v, Some(basic))
                         }
+                        BasicType::F32 | BasicType::F64 => {
+                            self.consume();
+                            Literal::Float(v as f64, Some(basic))
+                        }
+                        _ => return Err(ParseError::LiteralInteger),
                     }
-                    _ => None,
-                };
-                Literal::Uint(v, basic)
+                } else {
+                    Literal::Uint(v, None)
+                }
             }
             Token::LitFloat(v) => {
                 self.consume();
