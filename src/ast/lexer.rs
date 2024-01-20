@@ -24,16 +24,20 @@ struct Lexer<'src> {
 }
 
 enum Lexeme {
+    Char,
+    String { multiline: bool },
+    RawString { multiline: bool },
     Ident,
     Number,
-    String,
     Symbol,
 }
 
 impl Lexeme {
     fn from_char(c: char) -> Self {
         match c {
-            '"' => Lexeme::String,
+            '\'' => Lexeme::Char,
+            '"' => Lexeme::String { multiline: false },
+            '`' => Lexeme::RawString { multiline: false },
             _ => {
                 if c.is_ascii_alphabetic() || c == '_' {
                     return Lexeme::Ident;
@@ -52,7 +56,7 @@ impl<'src> Lexer<'src> {
         Self {
             str,
             iter: str.chars().peekable(),
-            fc: ' ',
+            fc: '?',
             cursor_start: 0,
             cursor_end: 0,
         }
@@ -99,15 +103,154 @@ impl<'src> Lexer<'src> {
 
     fn lex_token(&mut self) -> TokenSpan {
         match Lexeme::from_char(self.fc) {
+            Lexeme::Char => self.lex_char(),
+            Lexeme::String { multiline } => self.lex_string(),
+            Lexeme::RawString { multiline } => self.lex_raw_string(),
             Lexeme::Ident => self.lex_ident(),
             Lexeme::Number => self.lex_number(),
-            Lexeme::String => self.lex_string(),
             Lexeme::Symbol => self.lex_symbol(),
         }
     }
 
+    fn lex_escape(&mut self) -> Result<char, bool> {
+        if let Some(c) = self.peek() {
+            self.consume(c);
+            match c {
+                'n' => Ok('\n'),
+                't' => Ok('\t'),
+                'r' => Ok('\r'),
+                '0' => Ok('\0'),
+                '\\' => Ok('\\'),
+                '\'' => Ok('\''),
+                '\"' => Ok('\"'),
+                _ => Err(true),
+            }
+        } else {
+            Err(false)
+        }
+    }
+
+    fn lex_char(&mut self) -> TokenSpan {
+        self.consume(self.fc);
+
+        let fc = match self.peek() {
+            Some(c) => {
+                self.consume(c);
+                c
+            }
+            None => panic!("missing char lit character"),
+        };
+
+        let mut char_quote = false;
+        let char = match fc {
+            '\\' => match self.lex_escape() {
+                Ok(char) => char,
+                Err(invalid) => {
+                    if invalid {
+                        panic!("char lit invalid escape sequence");
+                    }
+                    panic!("char lit incomplete escape sequence");
+                }
+            },
+            '\'' => {
+                char_quote = true;
+                fc
+            }
+            _ => fc,
+        };
+
+        let has_escape = matches!(self.peek(), Some('\''));
+        if has_escape {
+            self.consume('\'');
+        }
+
+        if char_quote && !has_escape {
+            // example [ '' ]
+            panic!("char lit cannot be empty");
+        }
+        if char_quote && has_escape {
+            // example [ ''' ]
+            panic!("char lit ' must be escaped: '\\''");
+        }
+        if !char_quote && !has_escape {
+            // example [ 'x ]
+            panic!("char lit not terminated, missing closing `'`");
+        }
+        return self.token_spanned(Token::LitChar(char));
+    }
+
+    fn lex_string(&mut self) -> TokenSpan {
+        self.consume(self.fc);
+
+        //@speed not the fastest way to do it...
+        let mut string = String::new();
+        let mut terminated = false;
+
+        while let Some(c) = self.peek() {
+            match c {
+                '\n' => break,
+                '\"' => {
+                    self.consume(c);
+                    terminated = true;
+                    break;
+                }
+                '\\' => {
+                    self.consume(c);
+                    let char = match self.lex_escape() {
+                        Ok(char) => char,
+                        Err(invalid) => {
+                            if invalid {
+                                panic!("string lit invalid escape sequence");
+                            }
+                            panic!("string lit incomplete escape sequence");
+                        }
+                    };
+                    string.push(char);
+                }
+                _ => {
+                    self.consume(c);
+                    string.push(c);
+                }
+            }
+        }
+
+        if !terminated {
+            panic!("string lit not terminated, missing closing `\"`");
+        }
+        return self.token_spanned(Token::LitString);
+    }
+
+    fn lex_raw_string(&mut self) -> TokenSpan {
+        self.consume(self.fc);
+
+        //@speed not the fastest way to do it...
+        let mut string = String::new();
+        let mut terminated = false;
+
+        while let Some(c) = self.peek() {
+            match c {
+                '\n' => break,
+                '`' => {
+                    self.consume(c);
+                    terminated = true;
+                    break;
+                }
+                _ => {
+                    self.consume(c);
+                    string.push(c);
+                }
+            }
+        }
+
+        if !terminated {
+            panic!("raw string lit not terminated, missing closing `");
+        }
+        return self.token_spanned(Token::LitString);
+    }
+
     fn lex_ident(&mut self) -> TokenSpan {
         self.consume(self.fc);
+
         while let Some(c) = self.peek() {
             if c.is_alphanumeric() || c == '_' {
                 self.consume(c);
@@ -147,26 +290,6 @@ impl<'src> Lexer<'src> {
         return self.token_spanned(kind);
     }
 
-    fn lex_string(&mut self) -> TokenSpan {
-        //@todo terminator missing err
-        //@todo escape sequences
-        //@todo saving the strings
-
-        self.consume(self.fc);
-        while let Some(c) = self.peek() {
-            match c {
-                '\n' => break,
-                '"' => {
-                    self.consume(c);
-                    break;
-                }
-                _ => self.consume(c),
-            }
-        }
-
-        return self.token_spanned(Token::LitString);
-    }
-
     fn lex_symbol(&mut self) -> TokenSpan {
         self.consume(self.fc);
         let mut kind = Token::Error;
@@ -176,6 +299,7 @@ impl<'src> Lexer<'src> {
                 kind = sym;
             }
             None => {
+                //@emit error on invalid token?
                 return self.token_spanned(kind);
             }
         }
