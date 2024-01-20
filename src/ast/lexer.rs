@@ -84,6 +84,41 @@ impl<'src> Lexer<'src> {
         while let Some(c) = self.peek() {
             if c.is_ascii_whitespace() {
                 self.consume(c);
+            } else if c == '/' {
+                let mut iter_copy = self.iter.clone();
+                iter_copy.next();
+                if matches!(iter_copy.peek(), Some('/')) {
+                    self.consume(c);
+                    self.consume(c);
+
+                    while let Some(cm) = self.peek() {
+                        if cm == '\n' {
+                            break;
+                        }
+                        self.consume(cm);
+                    }
+                } else if matches!(iter_copy.peek(), Some('*')) {
+                    self.consume(c);
+                    self.consume(c);
+
+                    let mut depth = 1;
+                    while let Some(cm) = self.peek() {
+                        self.consume(cm);
+                        if cm == '/' && self.try_consume('*') {
+                            depth += 1;
+                        } else if cm == '*' && self.try_consume('/') {
+                            depth -= 1;
+                        }
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    if depth != 0 {
+                        panic!("missing block comment terminators: {}", depth);
+                    }
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
@@ -366,6 +401,16 @@ impl<'src> Lexer<'src> {
     fn consume(&mut self, c: char) {
         self.iter.next();
         self.cursor_end += c.len_utf8() as u32;
+    }
+
+    fn try_consume(&mut self, c: char) -> bool {
+        match self.iter.next_if_eq(&c) {
+            Some(..) => {
+                self.cursor_end += c.len_utf8() as u32;
+                true
+            }
+            None => false,
+        }
     }
 
     fn token_spanned(&mut self, token: Token) -> TokenSpan {
