@@ -27,6 +27,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
 
     let result = context.report_errors();
     context.manual_drop();
+    super::ir::test_ir(); //@testing
     return result;
 }
 

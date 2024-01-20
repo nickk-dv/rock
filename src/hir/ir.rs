@@ -1,115 +1,238 @@
-// Prototype for untyped IR
-// goals:
-// resolve names
-// resolve module acceses
-// resolve all visibility rules
-// transform to basic blocks
-// deconstruct for loops + break / continue / defer blocks
-// allow for complex semantic analysis
-// and control flow analysis
+use crate::ast::{ast::BasicType, span::Span};
 
-/*
-@entry:
-%0 icmp 2 3
-condbr %0 @cond, @else
-@cond:
-ret 5
-@else:
-ret 10
-*/
-
-use crate::ast::ast::{BasicType, Ident};
+pub type InstID = u32;
 
 pub enum Inst {
     BB(u32),
-    Br(Label),
-    CondBr(InstID, Label, Label),
+    Label(InstID),
+    Br,
+    CondBr,
     Ret,
-    RetVal(InstID),
-    GetFieldPtr(InstID, InstID),
-    GetArrayPtr(InstID, InstID),
-    NameIdent(Ident),
+    RetVal,
+    Value(u32),
+    DbgSpan(Span),
+
     Null,
     Bool(bool),
-    Int(u64, Option<BasicType>),
+    UInt(u64, Option<BasicType>),
     Float(f64, Option<BasicType>),
     Char(char),
-    Neg(Un),
-    BitNot(Un),
-    BoolNot(Un),
-    Addr(Un),
-    Deref(Un),
-    BoolAnd(Bin),
-    BoolOr(Bin),
-    CmpLT(Bin),
-    CmpGT(Bin),
-    CmpLEQ(Bin),
-    CmpGEQ(Bin),
-    CmpEQ(Bin),
-    CmpNEQ(Bin),
-    Add(Bin),
-    Sub(Bin),
-    Mul(Bin),
-    Div(Bin),
-    Rem(Bin),
-    BitAnd(Bin),
-    BitOr(Bin),
-    BitXor(Bin),
-    Shl(Bin),
-    Shr(Bin),
+
+    Neg,
+    BitNot,
+    LogicNot,
+    Addr,
+    Deref,
+
+    LogicAnd,
+    LogicOr,
+    CmpLT,
+    CmpGT,
+    CmpLEQ,
+    CmpGEQ,
+    CmpEQ,
+    CmpNEQ,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
-pub type InstID = u32;
-pub type Label = InstID;
+/*
+src:
 
-struct Un {
-    rhs: InstID,
+x := -10 + 50;
+
+ir: (each expr covered with <dbg span>)
+
+%0 = 10         + <dbg span>
+%1 = neg %0     + <dbg span>
+%2 = 50         + <dbg span>
+%3 = add %1 %2  + <dbg span>
+%x = %3         + <dbg span>
+
+*/
+
+pub fn test_ir() {
+    let ir_buf = vec![
+        Inst::BB(69),
+        Inst::Br,
+        Inst::Label(0),
+        Inst::CondBr,
+        Inst::Label(0),
+        Inst::Label(0),
+        Inst::Value(0),
+        Inst::UInt(10, None),
+        Inst::Value(1),
+        Inst::Neg,
+        Inst::Value(0),
+        Inst::Value(2),
+        Inst::UInt(50, None),
+        Inst::Value(3),
+        Inst::Add,
+        Inst::Value(1),
+        Inst::Value(2),
+        Inst::Value(4),
+        Inst::Value(3),
+        Inst::RetVal,
+        Inst::Value(4),
+    ];
+    pretty_print(ir_buf);
 }
 
-struct Bin {
-    lhs: InstID,
-    rhs: InstID,
+fn print_inst(inst: &Inst) {
+    match inst {
+        Inst::BB(v) => print!("@block.{}", v),
+        Inst::Label(..) => {}
+        Inst::Br => print!("br     "),
+        Inst::CondBr => print!("condbr "),
+        Inst::Ret => print!("ret"),
+        Inst::RetVal => print!("ret_val"),
+        Inst::Value(v) => print!("%{}", v),
+        Inst::DbgSpan(_) => print!("<dbg span>"),
+        Inst::Null => print!("null"),
+        Inst::Bool(v) => print!("{}", v),
+        Inst::UInt(v, _) => print!("{}", v),
+        Inst::Float(v, _) => print!("{}", v),
+        Inst::Char(v) => print!("'{}'", v),
+        Inst::Neg => print!("neg"),
+        Inst::BitNot => print!("bitnot"),
+        Inst::LogicNot => print!("logicnot"),
+        Inst::Addr => print!("addr"),
+        Inst::Deref => print!("deref"),
+        Inst::LogicAnd => print!("logic-and"),
+        Inst::LogicOr => print!("logic-or"),
+        Inst::CmpLT => print!("cmplt"),
+        Inst::CmpGT => print!("cmpgt"),
+        Inst::CmpLEQ => print!("cmpleq"),
+        Inst::CmpGEQ => print!("cmpgeq"),
+        Inst::CmpEQ => print!("cmpeq"),
+        Inst::CmpNEQ => print!("cmpneq"),
+        Inst::Add => print!("add"),
+        Inst::Sub => print!("sub"),
+        Inst::Mul => print!("mul"),
+        Inst::Div => print!("div"),
+        Inst::Rem => print!("rem"),
+        Inst::BitAnd => print!("bit-and"),
+        Inst::BitOr => print!("bit-or"),
+        Inst::BitXor => print!("bit-xor"),
+        Inst::Shl => print!("shl"),
+        Inst::Shr => print!("shr"),
+    }
 }
 
-pub fn test() {
-    let inst_stream = vec![Inst::BB(0), Inst::Int(5, None), Inst::RetVal(1)];
-    pretty_print(inst_stream);
-}
+fn pretty_print(ir_buf: Vec<Inst>) {
+    let mut id = 0;
+    let len = ir_buf.len();
+    while id < len {
+        let inst = unsafe { ir_buf.get_unchecked(id) };
+        id += 1;
+        print_inst(inst);
 
-pub fn pretty_print(inst_stream: Vec<Inst>) {
-    for inst in inst_stream.iter() {
         match inst {
-            Inst::BB(id) => println!("@{}:", id),
-            Inst::Br(bb) => {
-                let bb_id = if let Inst::BB(id) = *inst_stream.get(*bb as usize).unwrap() {
-                    id
-                } else {
-                    0
-                };
-                println!("br @{}", bb_id);
+            Inst::BB(..) | Inst::Ret => {
+                println!();
+                continue;
             }
-            Inst::CondBr(id, bb_t, bb_f) => {
-                let bb_t_id = if let Inst::BB(id) = *inst_stream.get(*bb_t as usize).unwrap() {
-                    id
-                } else {
-                    0
-                };
-                let bb_f_id = if let Inst::BB(id) = *inst_stream.get(*bb_f as usize).unwrap() {
-                    id
-                } else {
-                    0
-                };
-                println!("condbr ? @{} @{}", bb_t_id, bb_f_id);
+            Inst::RetVal => {
+                print!(" ");
             }
-            Inst::RetVal(id) => {
-                let val = inst_stream.get(*id as usize).unwrap();
-                match val {
-                    Inst::Int(v, _) => println!("ret {}", v),
-                    _ => println!("ret ?"),
-                }
+            Inst::Br => {
+                id += 1;
+                println!("@label");
+                continue;
             }
-            Inst::Int(..) => {}
-            _ => {}
+            Inst::CondBr => {
+                id += 1;
+                id += 1;
+                println!("@label @label");
+                continue;
+            }
+            Inst::Value(..) => {
+                print!(" = ");
+            }
+            Inst::DbgSpan(..) => {
+                continue;
+            }
+            _ => panic!("invalid starting ir inst"),
         }
+
+        let inst = unsafe { ir_buf.get_unchecked(id) };
+        id += 1;
+        print_inst(inst);
+
+        match inst {
+            Inst::Value(..)
+            | Inst::Null
+            | Inst::Bool(..)
+            | Inst::UInt(.., _)
+            | Inst::Float(.., _)
+            | Inst::Char(..) => {
+                println!();
+                continue;
+            }
+            Inst::Neg | Inst::BitNot | Inst::LogicNot | Inst::Addr | Inst::Deref => {
+                print!(" ");
+                let inst = unsafe { ir_buf.get_unchecked(id) };
+                id += 1;
+                print_inst(inst);
+                println!();
+                continue;
+            }
+            Inst::LogicAnd
+            | Inst::LogicOr
+            | Inst::CmpLT
+            | Inst::CmpGT
+            | Inst::CmpLEQ
+            | Inst::CmpGEQ
+            | Inst::CmpEQ
+            | Inst::CmpNEQ
+            | Inst::Add
+            | Inst::Sub
+            | Inst::Mul
+            | Inst::Div
+            | Inst::Rem
+            | Inst::BitAnd
+            | Inst::BitOr
+            | Inst::BitXor
+            | Inst::Shl
+            | Inst::Shr => {
+                print!(" ");
+                let inst = unsafe { ir_buf.get_unchecked(id) };
+                id += 1;
+                print_inst(inst);
+                print!(" ");
+                let inst = unsafe { ir_buf.get_unchecked(id) };
+                id += 1;
+                print_inst(inst);
+                println!();
+                continue;
+            }
+            _ => panic!("invalid second ir inst"),
+        }
+    }
+}
+
+fn space() {
+    print!(" ");
+}
+
+fn print_label(ir_buf: &Vec<Inst>, i: usize, offset: usize) {
+    if let Inst::Label(bb_index) = unsafe { ir_buf.get_unchecked(i + offset) } {
+        if let Inst::BB(v) = unsafe { ir_buf.get_unchecked(*bb_index as usize) } {
+            print!("goto @block.{}", v);
+        }
+    }
+}
+
+fn print_value(ir_buf: &Vec<Inst>, i: usize, offset: usize) {
+    if let Inst::Value(v) = unsafe { ir_buf.get_unchecked(i + offset) } {
+        print!("%{}", v);
     }
 }
