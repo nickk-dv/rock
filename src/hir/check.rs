@@ -2,9 +2,10 @@ use super::scope::*;
 use crate::ast::ast::*;
 use crate::ast::span::Span;
 use crate::ast::visit;
-use crate::err::{error::*, span_fmt};
+use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
+use std::fs;
 
 //@conflits in scope can be wrong if symbol / glob reference the same symbol
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
@@ -24,12 +25,13 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_4_type_resolve();
     context.pass_5_check_globals();
     context.pass_6_check_control_flow();
-    context.emit_ir();
 
-    let result = context.report_errors();
+    let mut ir_gen = IRGen::new(context.copy());
+    ir_gen.emit_ir();
+
+    //let result = context.report_errors();
     context.manual_drop();
-    super::ir::test_ir(); //@testing
-    return result;
+    return Err(());
 }
 
 pub struct Context {
@@ -1295,17 +1297,166 @@ impl Context {
 
 use super::ir::*;
 
-impl Context {
-    fn emit_ir(&mut self) {
-        let mut ir_buf = Vec::<Inst>::new();
+struct IRGen {
+    context: P<Context>,
+    ir_buf: Vec<Inst>,
+    val_count: u32,
+}
 
-        for proc in self.procs.iter() {
-            span_fmt::print(
-                &proc.0.file,
-                proc.1.decl.name.span,
-                Some("turning proc into ir"),
-                false,
-            )
+impl IRGen {
+    fn new(context: P<Context>) -> Self {
+        Self {
+            context,
+            ir_buf: Vec::new(),
+            val_count: 0,
         }
+    }
+
+    fn add_inst(&mut self, inst: Inst) {
+        self.ir_buf.push(inst);
+    }
+
+    fn emit_val(&mut self) -> u32 {
+        let id = self.val_count;
+        self.val_count += 1;
+        self.add_inst(Inst::Value(id));
+        return id;
+    }
+
+    fn emit_ir(&mut self) {
+        for v in self.context.copy().globals.iter() {
+            self.emit_global_decl(v.decl);
+        }
+        pretty_print(&self.ir_buf);
+    }
+
+    fn emit_global_decl(&mut self, global_decl: P<GlobalDecl>) {
+        self.emit_expr(global_decl.expr);
+    }
+
+    fn emit_proc_decl(&mut self, proc_decl: P<ProcDecl>) {}
+
+    fn emit_expr(&mut self, expr: Expr) -> u32 {
+        match expr.kind {
+            ExprKind::Var(_) => todo!(),
+            ExprKind::Enum(_) => todo!(),
+            ExprKind::Cast(_) => todo!(),
+            ExprKind::Sizeof(_) => todo!(),
+            ExprKind::Literal(lit) => self.emit_literal(lit),
+            ExprKind::ProcCall(proc_call) => self.emit_proc_call(proc_call),
+            ExprKind::ArrayInit(array_init) => self.emit_array_init(array_init),
+            ExprKind::StructInit(struct_init) => self.emit_struct_init(struct_init),
+            ExprKind::UnaryExpr(un) => self.emit_un_expr(un),
+            ExprKind::BinaryExpr(bin) => self.emit_bin_expr(bin),
+        }
+    }
+
+    fn emit_literal(&mut self, lit: P<Literal>) -> u32 {
+        let val = self.emit_val();
+        let inst = match *lit {
+            Literal::Null => Inst::Null,
+            Literal::Bool(v) => Inst::Bool(v),
+            Literal::Uint(v, t) => Inst::UInt(v, t),
+            Literal::Float(v, t) => Inst::Float(v, t),
+            Literal::Char(v) => Inst::Char(v),
+            Literal::String => todo!("string lit inst not implemented"),
+        };
+        self.add_inst(inst);
+        return val;
+    }
+
+    fn emit_proc_call(&mut self, proc_call: P<ProcCall>) -> u32 {
+        let mut input = Vec::new();
+        for expr in proc_call.input {
+            input.push(self.emit_expr(expr));
+        }
+
+        let val = self.emit_val();
+        self.add_inst(Inst::Call {
+            argc: input.len() as u32,
+            id: None, //@id is not stored in ast
+        });
+        for val in input {
+            self.add_inst(Inst::Value(val))
+        }
+        return val;
+    }
+
+    fn emit_array_init(&mut self, array_init: P<ArrayInit>) -> u32 {
+        let mut input = Vec::new();
+        for expr in array_init.input {
+            input.push(self.emit_expr(expr));
+        }
+
+        let val = self.emit_val();
+        self.add_inst(Inst::ArrayInit {
+            argc: input.len() as u32,
+        });
+        for val in input {
+            self.add_inst(Inst::Value(val))
+        }
+        return val;
+    }
+
+    fn emit_struct_init(&mut self, struct_init: P<StructInit>) -> u32 {
+        let mut input = Vec::new();
+        for expr in struct_init.input {
+            input.push(self.emit_expr(expr));
+        }
+
+        let val = self.emit_val();
+        self.add_inst(Inst::StructInit {
+            argc: input.len() as u32,
+            id: None, //@id is not stored in ast
+        });
+        for val in input {
+            self.add_inst(Inst::Value(val))
+        }
+        return val;
+    }
+
+    fn emit_un_expr(&mut self, un: P<UnaryExpr>) -> u32 {
+        let val_rhs = self.emit_expr(un.rhs);
+        let val = self.emit_val();
+        let inst = match un.op {
+            UnaryOp::Minus => Inst::Neg,
+            UnaryOp::BitNot => Inst::BitNot,
+            UnaryOp::LogicNot => Inst::LogicNot,
+            UnaryOp::AddressOf => Inst::Addr,
+            UnaryOp::Dereference => Inst::Deref,
+        };
+        self.add_inst(inst);
+        self.add_inst(Inst::Value(val_rhs));
+        return val;
+    }
+
+    fn emit_bin_expr(&mut self, bin: P<BinaryExpr>) -> u32 {
+        let val_lhs = self.emit_expr(bin.lhs);
+        let val_rhs = self.emit_expr(bin.rhs);
+        let val = self.emit_val();
+        let inst = match bin.op {
+            BinaryOp::LogicAnd => Inst::LogicAnd,
+            BinaryOp::LogicOr => Inst::LogicOr,
+            BinaryOp::Less => Inst::CmpLT,
+            BinaryOp::Greater => Inst::CmpGT,
+            BinaryOp::LessEq => Inst::CmpLEQ,
+            BinaryOp::GreaterEq => Inst::CmpGEQ,
+            BinaryOp::IsEq => Inst::CmpEQ,
+            BinaryOp::NotEq => Inst::CmpNEQ,
+            BinaryOp::Plus => Inst::Add,
+            BinaryOp::Minus => Inst::Sub,
+            BinaryOp::Times => Inst::Mul,
+            BinaryOp::Div => Inst::Div,
+            BinaryOp::Mod => Inst::Rem,
+            BinaryOp::BitAnd => Inst::BitAnd,
+            BinaryOp::BitOr => Inst::BitOr,
+            BinaryOp::BitXor => Inst::BitXor,
+            BinaryOp::Shl => Inst::Shl,
+            BinaryOp::Shr => Inst::Shr,
+        };
+        self.add_inst(inst);
+        self.add_inst(Inst::Value(val_lhs));
+        self.add_inst(Inst::Value(val_rhs));
+        return val;
     }
 }

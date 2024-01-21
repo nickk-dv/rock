@@ -1,3 +1,4 @@
+use super::scope::{ProcID, StructID};
 use crate::ast::{ast::BasicType, span::Span};
 
 pub type InstID = u32;
@@ -9,7 +10,10 @@ pub enum Inst {
     CondBr,
     Ret,
     RetVal,
-    Value(u32),
+    Value(u32), //@no type information
+    Call { argc: u32, id: Option<ProcID> },
+    ArrayInit { argc: u32 }, //@no type information
+    StructInit { argc: u32, id: Option<StructID> },
     DbgSpan(Span),
 
     Null,
@@ -42,49 +46,6 @@ pub enum Inst {
     BitXor,
     Shl,
     Shr,
-}
-
-/*
-src:
-
-x := -10 + 50;
-
-ir: (each expr covered with <dbg span>)
-
-%0 = 10         + <dbg span>
-%1 = neg %0     + <dbg span>
-%2 = 50         + <dbg span>
-%3 = add %1 %2  + <dbg span>
-%x = %3         + <dbg span>
-
-*/
-
-pub fn test_ir() {
-    let ir_buf = vec![
-        Inst::BB(69),
-        Inst::Br,
-        Inst::Label(0),
-        Inst::CondBr,
-        Inst::Bool(true),
-        Inst::Label(0),
-        Inst::Label(0),
-        Inst::Value(0),
-        Inst::UInt(10, None),
-        Inst::Value(1),
-        Inst::Neg,
-        Inst::Value(0),
-        Inst::Value(2),
-        Inst::UInt(50, None),
-        Inst::Value(3),
-        Inst::Add,
-        Inst::Value(1),
-        Inst::Value(2),
-        Inst::Value(4),
-        Inst::Value(3),
-        Inst::RetVal,
-        Inst::Value(4),
-    ];
-    pretty_print(ir_buf);
 }
 
 pub fn print_inst(inst: &Inst) {
@@ -120,6 +81,25 @@ pub fn print_inst(inst: &Inst) {
             print!("%{}", v);
             ansi::reset();
         }
+        Inst::Call { argc, id } => {
+            print!("call.{} ", argc);
+            if let Some(id) = id {
+                print!(" <{}> ", id);
+            } else {
+                print!(" <no id> ");
+            }
+        }
+        Inst::ArrayInit { argc } => {
+            print!("array_init.{} ", argc);
+        }
+        Inst::StructInit { argc, id } => {
+            print!("struct_init.{}", argc);
+            if let Some(id) = id {
+                print!(" <{}> ", id);
+            } else {
+                print!(" <infer> ");
+            }
+        }
         Inst::DbgSpan(_) => print!("<dbg span>"),
         Inst::Null => print!("null"),
         Inst::Bool(v) => print!("{}", v),
@@ -152,7 +132,7 @@ pub fn print_inst(inst: &Inst) {
     }
 }
 
-fn pretty_print(ir_buf: Vec<Inst>) {
+pub fn pretty_print(ir_buf: &Vec<Inst>) {
     let mut id = 0;
     let len = ir_buf.len();
     while id < len {
@@ -198,7 +178,6 @@ fn pretty_print(ir_buf: Vec<Inst>) {
         let inst = unsafe { ir_buf.get_unchecked(id) };
         id += 1;
         print_inst(inst);
-
         match inst {
             Inst::Value(..)
             | Inst::Null
@@ -206,6 +185,36 @@ fn pretty_print(ir_buf: Vec<Inst>) {
             | Inst::UInt(.., _)
             | Inst::Float(.., _)
             | Inst::Char(..) => {
+                println!();
+                continue;
+            }
+            Inst::Call { argc, .. } => {
+                for _ in 0..*argc {
+                    let inst = unsafe { ir_buf.get_unchecked(id) };
+                    id += 1;
+                    print_inst(inst);
+                    print!(" ");
+                }
+                println!();
+                continue;
+            }
+            Inst::ArrayInit { argc } => {
+                for _ in 0..*argc {
+                    let inst = unsafe { ir_buf.get_unchecked(id) };
+                    id += 1;
+                    print_inst(inst);
+                    print!(" ");
+                }
+                println!();
+                continue;
+            }
+            Inst::StructInit { argc, .. } => {
+                for _ in 0..*argc {
+                    let inst = unsafe { ir_buf.get_unchecked(id) };
+                    id += 1;
+                    print_inst(inst);
+                    print!(" ");
+                }
                 println!();
                 continue;
             }
