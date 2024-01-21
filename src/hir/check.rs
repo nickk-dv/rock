@@ -2,7 +2,7 @@ use super::scope::*;
 use crate::ast::ast::*;
 use crate::ast::span::Span;
 use crate::ast::visit;
-use crate::err::error::*;
+use crate::err::{error::*, span_fmt};
 use crate::mem::*;
 use std::collections::HashMap;
 
@@ -24,6 +24,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_4_type_resolve();
     context.pass_5_check_globals();
     context.pass_6_check_control_flow();
+    context.emit_ir();
 
     let result = context.report_errors();
     context.manual_drop();
@@ -37,7 +38,7 @@ pub struct Context {
     errors: Drop<Vec<Error>>,
     scopes: Drop<Vec<P<Scope>>>,
     curr_scope: P<Scope>, //@hack for visitor
-    procs: Drop<Vec<ProcData>>,
+    procs: Drop<Vec<(P<Module>, ProcData)>>,
     enums: Drop<Vec<EnumData>>,
     structs: Drop<Vec<StructData>>,
     globals: Drop<Vec<GlobalData>>,
@@ -331,40 +332,52 @@ impl Context {
                         });
                     }
                 }
-                Decl::Proc(proc_decl) => {
-                    if let Err(existing) = scope.add_proc(proc_decl, 0) {
+                Decl::Proc(decl) => {
+                    let id = self.procs.len() as ProcID;
+                    if let Err(existing) = scope.add_proc(decl, 0) {
                         redefinition_error!(
                             CheckError::RedefinitionProc,
-                            proc_decl.name.span,
+                            decl.name.span,
                             existing.decl.name.span
                         );
+                    } else {
+                        self.procs.push((scope.md(), ProcData { decl, id }));
                     }
                 }
-                Decl::Enum(enum_decl) => {
-                    if let Err(existing) = scope.add_enum(enum_decl, 0) {
+                Decl::Enum(decl) => {
+                    let id = self.enums.len() as EnumID;
+                    if let Err(existing) = scope.add_enum(decl, id) {
                         redefinition_error!(
                             CheckError::RedefinitionProc,
-                            enum_decl.name.span,
+                            decl.name.span,
                             existing.name().span
                         );
+                    } else {
+                        self.enums.push(EnumData { decl, id });
                     }
                 }
-                Decl::Struct(struct_decl) => {
-                    if let Err(existing) = scope.add_struct(struct_decl, 0) {
+                Decl::Struct(decl) => {
+                    let id = self.structs.len() as StructID;
+                    if let Err(existing) = scope.add_struct(decl, 0) {
                         redefinition_error!(
                             CheckError::RedefinitionType,
-                            struct_decl.name.span,
+                            decl.name.span,
                             existing.name().span
                         );
+                    } else {
+                        self.structs.push(StructData { decl, id });
                     }
                 }
-                Decl::Global(global_decl) => {
-                    if let Err(existing) = scope.add_global(global_decl, 0) {
+                Decl::Global(decl) => {
+                    let id = self.globals.len() as GlobalID;
+                    if let Err(existing) = scope.add_global(decl, 0) {
                         redefinition_error!(
                             CheckError::RedefinitionGlobal,
-                            global_decl.name.span,
+                            decl.name.span,
                             existing.decl.name.span
                         );
+                    } else {
+                        self.globals.push(GlobalData { decl, id });
                     }
                 }
                 Decl::Import(..) => {}
@@ -1276,6 +1289,23 @@ impl Context {
                 StmtKind::VarAssign(..) => {}
                 StmtKind::ProcCall(..) => {}
             }
+        }
+    }
+}
+
+use super::ir::*;
+
+impl Context {
+    fn emit_ir(&mut self) {
+        let mut ir_buf = Vec::<Inst>::new();
+
+        for proc in self.procs.iter() {
+            span_fmt::print(
+                &proc.0.file,
+                proc.1.decl.name.span,
+                Some("turning proc into ir"),
+                false,
+            )
         }
     }
 }

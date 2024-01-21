@@ -51,10 +51,10 @@ impl Scope {
     }
 }
 
-type ProcID = u32;
-type EnumID = u32;
-type StructID = u32;
-type GlobalID = u32;
+pub type ProcID = u32;
+pub type EnumID = u32;
+pub type StructID = u32;
+pub type GlobalID = u32;
 
 #[derive(Copy, Clone)]
 pub struct ProcData {

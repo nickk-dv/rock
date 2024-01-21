@@ -87,7 +87,7 @@ pub fn test_ir() {
     pretty_print(ir_buf);
 }
 
-fn print_inst(inst: &Inst) {
+pub fn print_inst(inst: &Inst) {
     match inst {
         Inst::BB(v) => {
             ansi::set_color(ansi::Color::Green);
