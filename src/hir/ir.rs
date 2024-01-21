@@ -65,6 +65,7 @@ pub fn test_ir() {
         Inst::Br,
         Inst::Label(0),
         Inst::CondBr,
+        Inst::Bool(true),
         Inst::Label(0),
         Inst::Label(0),
         Inst::Value(0),
@@ -88,13 +89,37 @@ pub fn test_ir() {
 
 fn print_inst(inst: &Inst) {
     match inst {
-        Inst::BB(v) => print!("@block.{}", v),
+        Inst::BB(v) => {
+            ansi::set_color(ansi::Color::Green);
+            print!("@block.{}", v);
+            ansi::reset();
+        }
         Inst::Label(..) => {}
-        Inst::Br => print!("br     "),
-        Inst::CondBr => print!("condbr "),
-        Inst::Ret => print!("ret"),
-        Inst::RetVal => print!("ret_val"),
-        Inst::Value(v) => print!("%{}", v),
+        Inst::Br => {
+            ansi::set_color(ansi::Color::Yellow);
+            print!("br ");
+            ansi::reset();
+        }
+        Inst::CondBr => {
+            ansi::set_color(ansi::Color::Yellow);
+            print!("if ");
+            ansi::reset();
+        }
+        Inst::Ret => {
+            ansi::set_color(ansi::Color::Yellow);
+            print!("ret");
+            ansi::reset();
+        }
+        Inst::RetVal => {
+            ansi::set_color(ansi::Color::Yellow);
+            print!("ret_val");
+            ansi::reset();
+        }
+        Inst::Value(v) => {
+            ansi::set_color(ansi::Color::Cyan);
+            print!("%{}", v);
+            ansi::reset();
+        }
         Inst::DbgSpan(_) => print!("<dbg span>"),
         Inst::Null => print!("null"),
         Inst::Bool(v) => print!("{}", v),
@@ -144,14 +169,21 @@ fn pretty_print(ir_buf: Vec<Inst>) {
                 print!(" ");
             }
             Inst::Br => {
+                print_label(&ir_buf, id, 0);
                 id += 1;
-                println!("@label");
+                println!();
                 continue;
             }
             Inst::CondBr => {
+                let inst = unsafe { ir_buf.get_unchecked(id) };
                 id += 1;
-                id += 1;
-                println!("@label @label");
+                print_inst(inst);
+                print!(" ");
+                print_label(&ir_buf, id, 0);
+                print!(" else ");
+                print_label(&ir_buf, id, 1);
+                id += 2;
+                println!();
                 continue;
             }
             Inst::Value(..) => {
@@ -219,15 +251,17 @@ fn pretty_print(ir_buf: Vec<Inst>) {
     }
 }
 
+use crate::err::ansi;
+
 fn space() {
     print!(" ");
 }
 
 fn print_label(ir_buf: &Vec<Inst>, i: usize, offset: usize) {
     if let Inst::Label(bb_index) = unsafe { ir_buf.get_unchecked(i + offset) } {
-        if let Inst::BB(v) = unsafe { ir_buf.get_unchecked(*bb_index as usize) } {
-            print!("goto @block.{}", v);
-        }
+        let inst = unsafe { ir_buf.get_unchecked(*bb_index as usize) };
+        print!("goto ");
+        print_inst(inst);
     }
 }
 
