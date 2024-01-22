@@ -52,7 +52,7 @@ pub trait MutVisit: Sized {
     fn visit_enum(&mut self, enum_: P<Enum>) {}
     fn visit_cast(&mut self, cast: P<Cast>) {}
     fn visit_sizeof(&mut self, sizeof: P<Sizeof>) {}
-    fn visit_literal(&mut self, literal: P<Literal>) {}
+    fn visit_literal(&mut self, literal: &mut Literal) {}
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
     fn visit_array_init(&mut self, array_init: P<ArrayInit>) {}
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {}
@@ -318,14 +318,14 @@ fn visit_var_assign<T: MutVisit>(vis: &mut T, var_assign: P<VarAssign>) {
     visit_expr(vis, var_assign.expr);
 }
 
-fn visit_expr<T: MutVisit>(vis: &mut T, expr: Expr) {
+fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
     vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Var(var) => visit_var(vis, var),
         ExprKind::Enum(enum_) => visit_enum(vis, enum_),
         ExprKind::Cast(cast) => visit_cast(vis, cast),
         ExprKind::Sizeof(sizeof) => visit_sizeof(vis, sizeof),
-        ExprKind::Literal(literal) => visit_literal(vis, literal),
+        ExprKind::Literal(ref mut literal) => visit_literal(vis, literal),
         ExprKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
         ExprKind::ArrayInit(array_init) => visit_array_init(vis, array_init),
         ExprKind::StructInit(struct_init) => visit_struct_init(vis, struct_init),
@@ -370,7 +370,7 @@ fn visit_sizeof<T: MutVisit>(vis: &mut T, mut sizeof: P<Sizeof>) {
     visit_type(vis, &mut sizeof.ty);
 }
 
-fn visit_literal<T: MutVisit>(vis: &mut T, literal: P<Literal>) {
+fn visit_literal<T: MutVisit>(vis: &mut T, literal: &mut Literal) {
     vis.visit_literal(literal);
 }
 

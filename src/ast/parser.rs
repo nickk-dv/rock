@@ -861,16 +861,15 @@ impl<'ast> Parser<'ast> {
         Ok(sizeof)
     }
 
-    fn parse_literal(&mut self) -> Result<P<Literal>, ParseError> {
-        let mut literal = self.alloc::<Literal>();
-        *literal = match self.peek() {
+    fn parse_literal(&mut self) -> Result<Literal, ParseError> {
+        match self.peek() {
             Token::LitNull => {
                 self.consume();
-                Literal::Null
+                Ok(Literal::Null)
             }
             Token::LitBool(v) => {
                 self.consume();
-                Literal::Bool(v)
+                Ok(Literal::Bool(v))
             }
             Token::LitInt(v) => {
                 self.consume();
@@ -887,45 +886,43 @@ impl<'ast> Parser<'ast> {
                         | BasicType::U64
                         | BasicType::Usize => {
                             self.consume();
-                            Literal::Uint(v, Some(basic))
+                            Ok(Literal::Uint(v, Some(basic)))
                         }
                         BasicType::F32 | BasicType::F64 => {
                             self.consume();
-                            Literal::Float(v as f64, Some(basic))
+                            //@some values cant be represented
+                            Ok(Literal::Float(v as f64, Some(basic)))
                         }
-                        _ => return Err(ParseError::LiteralInteger),
+                        _ => Err(ParseError::LiteralInteger),
                     }
                 } else {
-                    Literal::Uint(v, None)
+                    Ok(Literal::Uint(v, None))
                 }
             }
             Token::LitFloat(v) => {
                 self.consume();
-                let basic_option = self.peek().as_basic_type();
-                let basic = match basic_option {
-                    Some(b) => {
-                        if matches!(b, BasicType::F32 | BasicType::F64) {
+                if let Some(basic) = self.peek().as_basic_type() {
+                    match basic {
+                        BasicType::F32 | BasicType::F64 => {
                             self.consume();
-                            Some(b)
-                        } else {
-                            return Err(ParseError::LiteralFloat);
+                            Ok(Literal::Float(v, Some(basic)))
                         }
+                        _ => Err(ParseError::LiteralFloat),
                     }
-                    _ => None,
-                };
-                Literal::Float(v, basic)
+                } else {
+                    Ok(Literal::Float(v, None))
+                }
             }
             Token::LitChar(v) => {
                 self.consume();
-                Literal::Char(v)
+                Ok(Literal::Char(v))
             }
             Token::LitString => {
                 self.consume();
-                Literal::String
+                Ok(Literal::String)
             }
-            _ => return Err(ParseError::LiteralMatch),
-        };
-        Ok(literal)
+            _ => Err(ParseError::LiteralMatch),
+        }
     }
 
     fn parse_proc_call(&mut self, module_path: ModulePath) -> Result<P<ProcCall>, ParseError> {

@@ -289,7 +289,7 @@ pub enum ExprKind {
     Enum(P<Enum>),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
-    Literal(P<Literal>),
+    Literal(Literal),
     ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
     StructInit(P<StructInit>),

@@ -1351,9 +1351,9 @@ impl IRGen {
         }
     }
 
-    fn emit_literal(&mut self, lit: P<Literal>) -> u32 {
+    fn emit_literal(&mut self, lit: Literal) -> u32 {
         let val = self.emit_val();
-        let inst = match *lit {
+        let inst = match lit {
             Literal::Null => Inst::Null,
             Literal::Bool(v) => Inst::Bool(v),
             Literal::Uint(v, t) => Inst::UInt(v, t),

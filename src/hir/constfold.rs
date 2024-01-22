@@ -22,7 +22,7 @@ pub fn consteval(expr: Expr) -> Option<ConstValue> {
     }
 
     match expr.kind {
-        ExprKind::Literal(lit) => match *lit {
+        ExprKind::Literal(lit) => match lit {
             Literal::Null => Some(ConstValue::NullPtr),
             Literal::Bool(v) => Some(ConstValue::Bool(v)),
             Literal::Uint(v, ..) => Some(ConstValue::Uint(v)),
