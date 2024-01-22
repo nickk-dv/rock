@@ -21,6 +21,7 @@ pub enum Token {
     // Keyword
     KwPub,
     KwMod,
+    KwImpl,
     KwEnum,
     KwStruct,
     KwImport,
@@ -130,6 +131,7 @@ impl Token {
             Token::Eof => "end of file token",
             Token::KwPub => "pub",
             Token::KwMod => "mod",
+            Token::KwImpl => "impl",
             Token::KwEnum => "enum",
             Token::KwStruct => "struct",
             Token::KwImport => "import",
@@ -216,6 +218,7 @@ impl Token {
             "false" => Some(Token::LitBool(false)),
             "pub" => Some(Token::KwPub),
             "mod" => Some(Token::KwMod),
+            "impl" => Some(Token::KwImpl),
             "enum" => Some(Token::KwEnum),
             "struct" => Some(Token::KwStruct),
             "import" => Some(Token::KwImport),

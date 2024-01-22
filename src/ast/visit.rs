@@ -123,6 +123,7 @@ fn visit_decl<T: MutVisit>(vis: &mut T, decl: Decl) {
     match decl {
         Decl::Mod(mod_decl) => visit_mod_decl(vis, mod_decl),
         Decl::Proc(proc_decl) => visit_proc_decl(vis, proc_decl),
+        Decl::Impl(impl_decl) => {} //@todo
         Decl::Enum(enum_decl) => visit_enum_decl(vis, enum_decl),
         Decl::Struct(struct_decl) => visit_struct_decl(vis, struct_decl),
         Decl::Global(global_decl) => visit_global_decl(vis, global_decl),

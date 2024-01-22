@@ -107,6 +107,7 @@ pub enum Visibility {
 pub enum Decl {
     Mod(P<ModDecl>),
     Proc(P<ProcDecl>),
+    Impl(P<ImplDecl>),
     Enum(P<EnumDecl>),
     Struct(P<StructDecl>),
     Global(P<GlobalDecl>),
@@ -134,6 +135,12 @@ pub struct ProcDecl {
 pub struct ProcParam {
     pub name: Ident,
     pub ty: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct ImplDecl {
+    pub name: Ident,
+    pub procs: List<P<ProcDecl>>,
 }
 
 #[derive(Copy, Clone)]
@@ -309,8 +316,11 @@ pub enum AccessKind {
     Array(Expr),
 }
 
+//@will get parsed as 'variable'
 #[derive(Copy, Clone)]
 pub struct Enum {
+    pub module_path: ModulePath,
+    pub name: Ident,
     pub variant: Ident,
 }
 

@@ -5,7 +5,6 @@ use crate::ast::visit;
 use crate::err::error::*;
 use crate::mem::*;
 use std::collections::HashMap;
-use std::fs;
 
 //@conflits in scope can be wrong if symbol / glob reference the same symbol
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
@@ -383,6 +382,7 @@ impl Context {
                     }
                 }
                 Decl::Import(..) => {}
+                Decl::Impl(..) => {}
             }
         }
 

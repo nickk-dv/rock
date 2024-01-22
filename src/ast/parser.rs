@@ -338,6 +338,7 @@ impl<'ast> Parser<'ast> {
                 match self.peek() {
                     Token::KwMod => Ok(Decl::Mod(self.parse_mod_decl(vis, name)?)),
                     Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl(vis, name)?)),
+                    Token::KwImpl => Ok(Decl::Impl(self.parse_impl_decl(name)?)),
                     Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(vis, name)?)),
                     Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(vis, name)?)),
                     _ => Ok(Decl::Global(self.parse_global_decl(vis, name)?)),
@@ -393,6 +394,22 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::Colon, ParseContext::ProcParam)?;
         let ty = self.parse_type()?;
         Ok(ProcParam { name, ty })
+    }
+
+    fn parse_impl_decl(&mut self, name: Ident) -> Result<P<ImplDecl>, ParseError> {
+        let mut impl_decl = self.alloc::<ImplDecl>();
+        impl_decl.name = name;
+        impl_decl.procs = List::new();
+        self.expect_token(Token::KwImpl, ParseContext::ImplDecl)?;
+        self.expect_token(Token::OpenBlock, ParseContext::ImplDecl)?;
+        while !self.try_consume(Token::CloseBlock) {
+            let vis = self.parse_visibility();
+            let name = self.parse_ident(ParseContext::ProcDecl)?;
+            self.expect_token(Token::ColonColon, ParseContext::ProcDecl)?;
+            let proc_decl = self.parse_proc_decl(vis, name)?;
+            impl_decl.procs.add(&mut self.arena, proc_decl);
+        }
+        Ok(impl_decl)
     }
 
     fn parse_enum_decl(&mut self, vis: Visibility, name: Ident) -> Result<P<EnumDecl>, ParseError> {
