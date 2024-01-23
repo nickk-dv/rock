@@ -9,6 +9,8 @@ pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
     visit_module(vis, module);
 }
 
+// @re think and fix / validate visitor after major syntax changes are finished
+
 #[allow(unused)]
 pub trait MutVisit: Sized {
     fn visit_ast(&mut self, ast: P<Ast>) {}
@@ -109,7 +111,7 @@ fn visit_array_slice<T: MutVisit>(vis: &mut T, mut array_slice: P<ArraySlice>) {
 
 fn visit_array_static<T: MutVisit>(vis: &mut T, mut array_static: P<ArrayStatic>) {
     vis.visit_array_static(array_static);
-    visit_expr(vis, array_static.size);
+    visit_expr(vis, array_static.size.0);
     visit_type(vis, &mut array_static.element);
 }
 
@@ -168,7 +170,7 @@ fn visit_enum_variant<T: MutVisit>(vis: &mut T, variant: &mut EnumVariant) {
     vis.visit_enum_variant(variant);
     visit_ident(vis, &mut variant.name);
     if let Some(expr) = variant.expr {
-        visit_expr(vis, expr);
+        visit_expr(vis, expr.0);
     }
 }
 
@@ -185,7 +187,7 @@ fn visit_struct_field<T: MutVisit>(vis: &mut T, field: &mut StructField) {
     visit_ident(vis, &mut field.name);
     visit_type(vis, &mut field.ty);
     if let Some(expr) = field.default {
-        visit_expr(vis, expr);
+        visit_expr(vis, expr.0);
     }
 }
 
@@ -195,7 +197,7 @@ fn visit_global_decl<T: MutVisit>(vis: &mut T, mut global_decl: P<GlobalDecl>) {
     if let Some(ref mut ty) = global_decl.ty {
         visit_type(vis, ty);
     }
-    visit_expr(vis, global_decl.expr);
+    visit_expr(vis, global_decl.expr.0);
 }
 
 fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {

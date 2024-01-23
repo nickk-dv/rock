@@ -1120,7 +1120,7 @@ impl Context {
             let scope = self.get_scope(scope_id);
             for decl in scope.module.decls {
                 if let Decl::Global(global) = decl {
-                    self.scope_check_global_expr(scope.copy(), global.expr);
+                    self.scope_check_global_expr(scope.copy(), global.expr.0);
                 }
             }
         }
@@ -1331,7 +1331,7 @@ impl IRGen {
     }
 
     fn emit_global_decl(&mut self, global_decl: P<GlobalDecl>) {
-        self.emit_expr(global_decl.expr);
+        self.emit_expr(global_decl.expr.0);
     }
 
     fn emit_proc_decl(&mut self, proc_decl: P<ProcDecl>) {}

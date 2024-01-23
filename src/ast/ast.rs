@@ -100,7 +100,7 @@ pub struct ArraySlice {
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic {
-    pub size: Expr,
+    pub size: ConstExpr,
     pub element: Type,
 }
 
@@ -170,7 +170,7 @@ pub struct EnumDecl {
 #[derive(Copy, Clone)]
 pub struct EnumVariant {
     pub name: Ident,
-    pub expr: Option<Expr>,
+    pub expr: Option<ConstExpr>,
 }
 
 #[derive(Copy, Clone)]
@@ -185,7 +185,7 @@ pub struct StructDecl {
 pub struct StructField {
     pub name: Ident,
     pub ty: Type,
-    pub default: Option<Expr>,
+    pub default: Option<ConstExpr>,
 }
 
 #[derive(Copy, Clone)]
@@ -193,7 +193,7 @@ pub struct GlobalDecl {
     pub vis: Visibility,
     pub name: Ident,
     pub ty: Option<Type>,
-    pub expr: Expr,
+    pub expr: ConstExpr,
 }
 
 #[derive(Copy, Clone)]
@@ -293,6 +293,9 @@ pub enum AssignOp {
     Assign,
     BinaryOp(BinaryOp),
 }
+
+#[derive(Copy, Clone)]
+pub struct ConstExpr(pub Expr);
 
 #[derive(Copy, Clone)]
 pub struct Expr {

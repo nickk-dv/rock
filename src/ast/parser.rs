@@ -340,7 +340,7 @@ impl<'ast> Parser<'ast> {
     fn parse_array_static(&mut self) -> Result<P<ArrayStatic>, ParseError> {
         let mut array_static = self.alloc::<ArrayStatic>();
         self.expect_token(Token::OpenBracket, ParseContext::ArrayStatic)?;
-        array_static.size = self.parse_expr()?;
+        array_static.size = ConstExpr(self.parse_expr()?);
         self.expect_token(Token::CloseBracket, ParseContext::ArrayStatic)?;
         array_static.element = self.parse_type()?;
         Ok(array_static)
@@ -514,7 +514,7 @@ impl<'ast> Parser<'ast> {
     fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
         let name = self.parse_ident(ParseContext::EnumVariant)?;
         let expr = if self.try_consume(Token::Assign) {
-            Some(self.parse_expr()?)
+            Some(ConstExpr(self.parse_expr()?))
         } else {
             None
         };
@@ -546,7 +546,7 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::Colon, ParseContext::StructField)?;
         let ty = self.parse_type()?;
         let default = if self.try_consume(Token::Assign) {
-            Some(self.parse_expr()?)
+            Some(ConstExpr(self.parse_expr()?))
         } else {
             None
         };
@@ -565,11 +565,11 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::Colon, ParseContext::GlobalDecl)?;
         if self.try_consume(Token::Assign) {
             global_decl.ty = None;
-            global_decl.expr = self.parse_expr()?;
+            global_decl.expr = ConstExpr(self.parse_expr()?);
         } else {
             global_decl.ty = Some(self.parse_type()?);
             self.expect_token(Token::Assign, ParseContext::GlobalDecl)?;
-            global_decl.expr = self.parse_expr()?;
+            global_decl.expr = ConstExpr(self.parse_expr()?);
         }
         self.expect_token(Token::Semicolon, ParseContext::GlobalDecl)?;
         Ok(global_decl)
