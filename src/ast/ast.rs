@@ -42,6 +42,18 @@ pub enum ModulePathKind {
 }
 
 #[derive(Copy, Clone)]
+pub struct GenericArgs {
+    pub types: List<Type>,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub struct GenericParams {
+    pub names: List<Ident>,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
 pub struct Type {
     pub pointer_level: u32,
     pub kind: TypeKind,
@@ -125,6 +137,7 @@ pub struct ModDecl {
 pub struct ProcDecl {
     pub vis: Visibility,
     pub name: Ident,
+    pub generic_params: Option<GenericParams>,
     pub params: List<ProcParam>,
     pub is_variadic: bool,
     pub return_type: Option<Type>,
@@ -139,7 +152,9 @@ pub struct ProcParam {
 
 #[derive(Copy, Clone)]
 pub struct ImplDecl {
+    pub vis_span: Option<Span>,
     pub name: Ident,
+    pub generic_params: Option<GenericParams>,
     pub procs: List<P<ProcDecl>>,
 }
 
@@ -147,6 +162,7 @@ pub struct ImplDecl {
 pub struct EnumDecl {
     pub vis: Visibility,
     pub name: Ident,
+    pub generic_params: Option<GenericParams>,
     pub basic_type: Option<BasicType>,
     pub variants: List<EnumVariant>,
 }
@@ -161,6 +177,7 @@ pub struct EnumVariant {
 pub struct StructDecl {
     pub vis: Visibility,
     pub name: Ident,
+    pub generic_params: Option<GenericParams>,
     pub fields: List<StructField>,
 }
 

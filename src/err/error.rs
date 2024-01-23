@@ -69,6 +69,8 @@ pub enum ParseError {
 #[derive(Copy, Clone)]
 pub enum ParseContext {
     ModulePath,
+    GenericArgs,
+    GenericParams,
     Type,
     CustomType,
     ArraySlice,
@@ -323,6 +325,8 @@ impl ParseContext {
     pub(super) fn as_str(&self) -> &'static str {
         match self {
             ParseContext::ModulePath => "module path",
+            ParseContext::GenericArgs => "generic arguments",
+            ParseContext::GenericParams => "generic parameters",
             ParseContext::Type => "type signature",
             ParseContext::CustomType => "custom type",
             ParseContext::ArraySlice => "array slice type",
