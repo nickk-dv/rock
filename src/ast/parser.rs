@@ -296,9 +296,11 @@ impl<'ast> Parser<'ast> {
     fn parse_type(&mut self) -> Result<Type, ParseError> {
         let mut ty = Type {
             pointer_level: 0,
+            mutability: Mutability::Immutable, //@change how mutability is stored
             kind: TypeKind::Basic(BasicType::Bool),
         };
         while self.try_consume(Token::Times) {
+            let mutability = self.parse_mutability(); //@not stored per each ptr indirection
             ty.pointer_level += 1;
         }
         if let Some(basic) = self.try_consume_basic_type() {
@@ -325,6 +327,7 @@ impl<'ast> Parser<'ast> {
         let mut custom_type = self.alloc::<CustomType>();
         custom_type.module_path = self.parse_module_path()?;
         custom_type.name = self.parse_ident(ParseContext::CustomType)?;
+        custom_type.generic_args = self.parse_generic_args()?;
         Ok(custom_type)
     }
 
@@ -350,6 +353,14 @@ impl<'ast> Parser<'ast> {
             Visibility::Public
         } else {
             Visibility::Private
+        }
+    }
+
+    fn parse_mutability(&mut self) -> Mutability {
+        if self.try_consume(Token::KwMut) {
+            Mutability::Mutable
+        } else {
+            Mutability::Immutable
         }
     }
 
@@ -450,10 +461,15 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_proc_param(&mut self) -> Result<ProcParam, ParseError> {
+        let mutability = self.parse_mutability();
         let name = self.parse_ident(ParseContext::ProcParam)?;
         self.expect_token(Token::Colon, ParseContext::ProcParam)?;
         let ty = self.parse_type()?;
-        Ok(ProcParam { name, ty })
+        Ok(ProcParam {
+            mutability,
+            name,
+            ty,
+        })
     }
 
     fn parse_impl_decl(
@@ -749,6 +765,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
         let mut var_decl = self.alloc::<VarDecl>();
+        var_decl.mutability = self.parse_mutability();
         var_decl.name = self.parse_ident(ParseContext::VarDecl)?;
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
         if self.try_consume(Token::Assign) {
@@ -833,21 +850,14 @@ impl<'ast> Parser<'ast> {
         }
 
         let kind = match self.peek() {
-            Token::Dot => match self.peek_next(1) {
-                Token::OpenBlock => {
-                    let module_path = self.parse_module_path()?;
-                    ExprKind::StructInit(self.parse_struct_init(module_path)?)
-                }
-                _ => ExprKind::Enum(self.parse_enum()?),
-            },
-            Token::KwCast => ExprKind::Cast(self.parse_cast()?),
-            Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::LitNull
             | Token::LitBool(..)
             | Token::LitInt(..)
             | Token::LitFloat(..)
             | Token::LitChar(..)
-            | Token::LitString => ExprKind::Literal(self.parse_literal()?),
+            | Token::LitString => ExprKind::Lit(self.parse_lit()?),
+            Token::KwCast => ExprKind::Cast(self.parse_cast()?),
+            Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::OpenBracket | Token::OpenBlock => ExprKind::ArrayInit(self.parse_array_init()?),
             Token::Ident | Token::KwSuper | Token::KwPackage => {
                 let module_path = self.parse_module_path()?;
@@ -912,13 +922,6 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn parse_enum(&mut self) -> Result<P<Enum>, ParseError> {
-        let mut enum_ = self.alloc::<Enum>();
-        self.expect_token(Token::Dot, ParseContext::Enum)?;
-        enum_.variant = self.parse_ident(ParseContext::Enum)?;
-        Ok(enum_)
-    }
-
     fn parse_cast(&mut self) -> Result<P<Cast>, ParseError> {
         let mut cast = self.alloc::<Cast>();
         self.expect_token(Token::KwCast, ParseContext::Cast)?;
@@ -939,15 +942,15 @@ impl<'ast> Parser<'ast> {
         Ok(sizeof)
     }
 
-    fn parse_literal(&mut self) -> Result<Literal, ParseError> {
+    fn parse_lit(&mut self) -> Result<Lit, ParseError> {
         match self.peek() {
             Token::LitNull => {
                 self.consume();
-                Ok(Literal::Null)
+                Ok(Lit::Null)
             }
             Token::LitBool(v) => {
                 self.consume();
-                Ok(Literal::Bool(v))
+                Ok(Lit::Bool(v))
             }
             Token::LitInt(v) => {
                 self.consume();
@@ -964,17 +967,17 @@ impl<'ast> Parser<'ast> {
                         | BasicType::U64
                         | BasicType::Usize => {
                             self.consume();
-                            Ok(Literal::Uint(v, Some(basic)))
+                            Ok(Lit::Uint(v, Some(basic)))
                         }
                         BasicType::F32 | BasicType::F64 => {
                             self.consume();
                             //@some values cant be represented
-                            Ok(Literal::Float(v as f64, Some(basic)))
+                            Ok(Lit::Float(v as f64, Some(basic)))
                         }
                         _ => Err(ParseError::LiteralInteger),
                     }
                 } else {
-                    Ok(Literal::Uint(v, None))
+                    Ok(Lit::Uint(v, None))
                 }
             }
             Token::LitFloat(v) => {
@@ -983,21 +986,21 @@ impl<'ast> Parser<'ast> {
                     match basic {
                         BasicType::F32 | BasicType::F64 => {
                             self.consume();
-                            Ok(Literal::Float(v, Some(basic)))
+                            Ok(Lit::Float(v, Some(basic)))
                         }
                         _ => Err(ParseError::LiteralFloat),
                     }
                 } else {
-                    Ok(Literal::Float(v, None))
+                    Ok(Lit::Float(v, None))
                 }
             }
             Token::LitChar(v) => {
                 self.consume();
-                Ok(Literal::Char(v))
+                Ok(Lit::Char(v))
             }
             Token::LitString => {
                 self.consume();
-                Ok(Literal::String)
+                Ok(Lit::String)
             }
             _ => Err(ParseError::LiteralMatch),
         }
@@ -1108,8 +1111,14 @@ impl<'ast> Parser<'ast> {
 
     fn try_consume_unary_op(&mut self) -> Option<UnaryOp> {
         match self.peek().as_unary_op() {
-            Some(op) => {
+            Some(mut op) => {
                 self.consume();
+                match &mut op {
+                    UnaryOp::AddressOf(mutt) => {
+                        *mutt = self.parse_mutability();
+                    }
+                    _ => {}
+                }
                 Some(op)
             }
             None => None,
@@ -1169,7 +1178,7 @@ impl Token {
             Token::Minus => Some(UnaryOp::Minus),
             Token::BitNot => Some(UnaryOp::BitNot),
             Token::LogicNot => Some(UnaryOp::LogicNot),
-            Token::Times => Some(UnaryOp::AddressOf),
+            Token::Times => Some(UnaryOp::AddressOf(Mutability::Immutable)),
             Token::Shl => Some(UnaryOp::Dereference),
             _ => None,
         }

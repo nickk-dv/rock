@@ -52,12 +52,11 @@ pub trait MutVisit: Sized {
 
     fn visit_expr(&mut self, expr: Expr) {}
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
+    fn visit_lit(&mut self, lit: &mut Lit) {}
     fn visit_var(&mut self, var: P<Var>) {}
     fn visit_access(&mut self, access: P<Access>) {}
-    fn visit_enum(&mut self, enum_: P<Enum>) {}
     fn visit_cast(&mut self, cast: P<Cast>) {}
     fn visit_sizeof(&mut self, sizeof: P<Sizeof>) {}
-    fn visit_literal(&mut self, literal: &mut Literal) {}
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
     fn visit_array_init(&mut self, array_init: P<ArrayInit>) {}
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {}
@@ -118,6 +117,9 @@ fn visit_custom_type<T: MutVisit>(vis: &mut T, mut custom_type: P<CustomType>) {
     vis.visit_custom_type(custom_type);
     visit_module_path(vis, &mut custom_type.module_path);
     visit_ident(vis, &mut custom_type.name);
+    if let Some(ref mut generic_args) = custom_type.generic_args {
+        visit_generic_args(vis, generic_args);
+    }
 }
 
 fn visit_array_slice<T: MutVisit>(vis: &mut T, mut array_slice: P<ArraySlice>) {
@@ -355,17 +357,20 @@ fn visit_const_expr<T: MutVisit>(vis: &mut T, expr: ConstExpr) {
 fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
     vis.visit_expr(expr);
     match expr.kind {
+        ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
         ExprKind::Var(var) => visit_var(vis, var),
-        ExprKind::Enum(enum_) => visit_enum(vis, enum_),
         ExprKind::Cast(cast) => visit_cast(vis, cast),
         ExprKind::Sizeof(sizeof) => visit_sizeof(vis, sizeof),
-        ExprKind::Literal(ref mut literal) => visit_literal(vis, literal),
         ExprKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
         ExprKind::ArrayInit(array_init) => visit_array_init(vis, array_init),
         ExprKind::StructInit(struct_init) => visit_struct_init(vis, struct_init),
         ExprKind::UnaryExpr(unary_expr) => visit_unary_expr(vis, unary_expr),
         ExprKind::BinaryExpr(binary_expr) => visit_binary_expr(vis, binary_expr),
     }
+}
+
+fn visit_lit<T: MutVisit>(vis: &mut T, lit: &mut Lit) {
+    vis.visit_lit(lit);
 }
 
 fn visit_var<T: MutVisit>(vis: &mut T, mut var: P<Var>) {
@@ -388,11 +393,6 @@ fn visit_access<T: MutVisit>(vis: &mut T, mut access: P<Access>) {
     }
 }
 
-fn visit_enum<T: MutVisit>(vis: &mut T, mut enum_: P<Enum>) {
-    vis.visit_enum(enum_);
-    visit_ident(vis, &mut enum_.variant);
-}
-
 fn visit_cast<T: MutVisit>(vis: &mut T, mut cast: P<Cast>) {
     vis.visit_cast(cast);
     visit_type(vis, &mut cast.ty);
@@ -404,14 +404,13 @@ fn visit_sizeof<T: MutVisit>(vis: &mut T, mut sizeof: P<Sizeof>) {
     visit_type(vis, &mut sizeof.ty);
 }
 
-fn visit_literal<T: MutVisit>(vis: &mut T, literal: &mut Literal) {
-    vis.visit_literal(literal);
-}
-
 fn visit_proc_call<T: MutVisit>(vis: &mut T, mut proc_call: P<ProcCall>) {
     vis.visit_proc_call(proc_call);
     visit_module_path(vis, &mut proc_call.module_path);
     visit_ident(vis, &mut proc_call.name);
+    if let Some(ref mut generic_args) = proc_call.generic_args {
+        visit_generic_args(vis, generic_args);
+    }
     for expr in proc_call.input {
         visit_expr(vis, expr);
     }

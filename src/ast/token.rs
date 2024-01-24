@@ -20,6 +20,7 @@ pub enum Token {
     Eof,
     // Keyword
     KwPub,
+    KwMut,
     KwMod,
     KwImpl,
     KwEnum,
@@ -130,6 +131,7 @@ impl Token {
             Token::Error => "error token",
             Token::Eof => "end of file token",
             Token::KwPub => "pub",
+            Token::KwMut => "mut",
             Token::KwMod => "mod",
             Token::KwImpl => "impl",
             Token::KwEnum => "enum",
@@ -217,6 +219,7 @@ impl Token {
             "true" => Some(Token::LitBool(true)),
             "false" => Some(Token::LitBool(false)),
             "pub" => Some(Token::KwPub),
+            "mut" => Some(Token::KwMut),
             "mod" => Some(Token::KwMod),
             "impl" => Some(Token::KwImpl),
             "enum" => Some(Token::KwEnum),

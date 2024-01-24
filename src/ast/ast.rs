@@ -56,6 +56,7 @@ pub struct GenericParams {
 #[derive(Copy, Clone)]
 pub struct Type {
     pub pointer_level: u32,
+    pub mutability: Mutability,
     pub kind: TypeKind,
 }
 
@@ -90,6 +91,7 @@ pub enum BasicType {
 pub struct CustomType {
     pub module_path: ModulePath,
     pub name: Ident,
+    pub generic_args: Option<GenericArgs>,
 }
 
 #[derive(Copy, Clone)]
@@ -107,6 +109,12 @@ pub struct ArrayStatic {
 pub enum Visibility {
     Public,
     Private,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Mutability {
+    Mutable,
+    Immutable,
 }
 
 #[derive(Copy, Clone)]
@@ -140,6 +148,7 @@ pub struct ProcDecl {
 
 #[derive(Copy, Clone)]
 pub struct ProcParam {
+    pub mutability: Mutability,
     pub name: Ident,
     pub ty: Type,
 }
@@ -270,6 +279,7 @@ pub struct Return {
 
 #[derive(Copy, Clone)]
 pub struct VarDecl {
+    pub mutability: Mutability,
     pub name: Ident,
     pub ty: Option<Type>,
     pub expr: Option<Expr>,
@@ -299,16 +309,25 @@ pub struct Expr {
 
 #[derive(Copy, Clone)]
 pub enum ExprKind {
+    Lit(Lit),
     Var(P<Var>),
-    Enum(P<Enum>),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
-    Literal(Literal),
     ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
     StructInit(P<StructInit>),
     UnaryExpr(P<UnaryExpr>),
     BinaryExpr(P<BinaryExpr>),
+}
+
+#[derive(Copy, Clone)]
+pub enum Lit {
+    Null,
+    Bool(bool),
+    Uint(u64, Option<BasicType>),
+    Float(f64, Option<BasicType>),
+    Char(char),
+    String,
 }
 
 #[derive(Copy, Clone)]
@@ -330,14 +349,6 @@ pub enum AccessKind {
     Array(Expr),
 }
 
-//@will get parsed as 'variable'
-#[derive(Copy, Clone)]
-pub struct Enum {
-    pub module_path: ModulePath,
-    pub name: Ident,
-    pub variant: Ident,
-}
-
 #[derive(Copy, Clone)]
 pub struct Cast {
     pub ty: Type,
@@ -350,19 +361,10 @@ pub struct Sizeof {
 }
 
 #[derive(Copy, Clone)]
-pub enum Literal {
-    Null,
-    Bool(bool),
-    Uint(u64, Option<BasicType>),
-    Float(f64, Option<BasicType>),
-    Char(char),
-    String,
-}
-
-#[derive(Copy, Clone)]
 pub struct ProcCall {
     pub module_path: ModulePath,
     pub name: Ident,
+    pub generic_args: Option<GenericArgs>,
     pub input: List<Expr>,
     pub access: Option<P<Access>>,
 }
@@ -377,6 +379,7 @@ pub struct ArrayInit {
 pub struct StructInit {
     pub module_path: ModulePath,
     pub name: Option<Ident>,
+    pub custom_type: P<CustomType>,
     pub input: List<Expr>,
 }
 
@@ -391,7 +394,7 @@ pub enum UnaryOp {
     Minus,
     BitNot,
     LogicNot,
-    AddressOf,
+    AddressOf(Mutability),
     Dereference,
 }
 

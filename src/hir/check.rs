@@ -28,9 +28,9 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let mut ir_gen = IRGen::new(context.copy());
     ir_gen.emit_ir();
 
-    //let result = context.report_errors();
+    let result = context.report_errors();
     context.manual_drop();
-    return Err(());
+    return result;
 }
 
 pub struct Context {
@@ -1128,14 +1128,13 @@ impl Context {
 
     fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
         match expr.kind {
+            ExprKind::Lit(..) => {}
             ExprKind::Var(var) => {
                 //access not walked
                 let global = self.scope_find_global(scope, var.module_path, var.name);
             }
-            ExprKind::Enum(..) => {}   //todo
             ExprKind::Cast(..) => {}   //todo
             ExprKind::Sizeof(..) => {} //todo
-            ExprKind::Literal(..) => {}
             ExprKind::ProcCall(proc_call) => {
                 for expr in proc_call.input {
                     self.scope_check_global_expr(scope.copy(), expr);
@@ -1338,11 +1337,10 @@ impl IRGen {
 
     fn emit_expr(&mut self, expr: Expr) -> u32 {
         match expr.kind {
+            ExprKind::Lit(lit) => self.emit_lit(lit),
             ExprKind::Var(_) => todo!(),
-            ExprKind::Enum(_) => todo!(),
             ExprKind::Cast(_) => todo!(),
             ExprKind::Sizeof(_) => todo!(),
-            ExprKind::Literal(lit) => self.emit_literal(lit),
             ExprKind::ProcCall(proc_call) => self.emit_proc_call(proc_call),
             ExprKind::ArrayInit(array_init) => self.emit_array_init(array_init),
             ExprKind::StructInit(struct_init) => self.emit_struct_init(struct_init),
@@ -1351,15 +1349,15 @@ impl IRGen {
         }
     }
 
-    fn emit_literal(&mut self, lit: Literal) -> u32 {
+    fn emit_lit(&mut self, lit: Lit) -> u32 {
         let val = self.emit_val();
         let inst = match lit {
-            Literal::Null => Inst::Null,
-            Literal::Bool(v) => Inst::Bool(v),
-            Literal::Uint(v, t) => Inst::UInt(v, t),
-            Literal::Float(v, t) => Inst::Float(v, t),
-            Literal::Char(v) => Inst::Char(v),
-            Literal::String => todo!("string lit inst not implemented"),
+            Lit::Null => Inst::Null,
+            Lit::Bool(v) => Inst::Bool(v),
+            Lit::Uint(v, t) => Inst::UInt(v, t),
+            Lit::Float(v, t) => Inst::Float(v, t),
+            Lit::Char(v) => Inst::Char(v),
+            Lit::String => todo!("string lit inst not implemented"),
         };
         self.add_inst(inst);
         return val;
@@ -1422,7 +1420,7 @@ impl IRGen {
             UnaryOp::Minus => Inst::Neg,
             UnaryOp::BitNot => Inst::BitNot,
             UnaryOp::LogicNot => Inst::LogicNot,
-            UnaryOp::AddressOf => Inst::Addr,
+            UnaryOp::AddressOf { .. } => Inst::Addr,
             UnaryOp::Dereference => Inst::Deref,
         };
         self.add_inst(inst);
