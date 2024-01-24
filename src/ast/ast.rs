@@ -391,11 +391,11 @@ pub struct UnaryExpr {
 
 #[derive(Copy, Clone)]
 pub enum UnaryOp {
-    Minus,
+    Neg,
     BitNot,
     LogicNot,
-    AddressOf(Mutability),
-    Dereference,
+    Addr(Mutability),
+    Deref,
 }
 
 #[derive(Copy, Clone)]
@@ -407,6 +407,7 @@ pub struct BinaryExpr {
 
 #[derive(Copy, Clone)]
 pub enum BinaryOp {
+    Deref,
     LogicAnd,
     LogicOr,
     Less,
@@ -416,10 +417,10 @@ pub enum BinaryOp {
     IsEq,
     NotEq,
     Plus,
-    Minus,
-    Times,
+    Sub,
+    Mul,
     Div,
-    Mod,
+    Rem,
     BitAnd,
     BitOr,
     BitXor,

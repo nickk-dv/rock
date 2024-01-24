@@ -1417,11 +1417,11 @@ impl IRGen {
         let val_rhs = self.emit_expr(un.rhs);
         let val = self.emit_val();
         let inst = match un.op {
-            UnaryOp::Minus => Inst::Neg,
+            UnaryOp::Neg => Inst::Neg,
             UnaryOp::BitNot => Inst::BitNot,
             UnaryOp::LogicNot => Inst::LogicNot,
-            UnaryOp::AddressOf { .. } => Inst::Addr,
-            UnaryOp::Dereference => Inst::Deref,
+            UnaryOp::Addr(..) => Inst::Addr,
+            UnaryOp::Deref => Inst::Deref,
         };
         self.add_inst(inst);
         self.add_inst(Inst::Value(val_rhs));
@@ -1442,15 +1442,16 @@ impl IRGen {
             BinaryOp::IsEq => Inst::CmpEQ,
             BinaryOp::NotEq => Inst::CmpNEQ,
             BinaryOp::Plus => Inst::Add,
-            BinaryOp::Minus => Inst::Sub,
-            BinaryOp::Times => Inst::Mul,
+            BinaryOp::Sub => Inst::Sub,
+            BinaryOp::Mul => Inst::Mul,
             BinaryOp::Div => Inst::Div,
-            BinaryOp::Mod => Inst::Rem,
+            BinaryOp::Rem => Inst::Rem,
             BinaryOp::BitAnd => Inst::BitAnd,
             BinaryOp::BitOr => Inst::BitOr,
             BinaryOp::BitXor => Inst::BitXor,
             BinaryOp::Shl => Inst::Shl,
             BinaryOp::Shr => Inst::Shr,
+            BinaryOp::Deref => todo!("binary deref is not inst"), //@deref itself is not an inst
         };
         self.add_inst(inst);
         self.add_inst(Inst::Value(val_lhs));

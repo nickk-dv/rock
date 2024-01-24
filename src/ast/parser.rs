@@ -299,7 +299,7 @@ impl<'ast> Parser<'ast> {
             mutability: Mutability::Immutable, //@change how mutability is stored
             kind: TypeKind::Basic(BasicType::Bool),
         };
-        while self.try_consume(Token::Times) {
+        while self.try_consume(Token::Star) {
             let mutability = self.parse_mutability(); //@not stored per each ptr indirection
             ty.pointer_level += 1;
         }
@@ -598,7 +598,7 @@ impl<'ast> Parser<'ast> {
                 let name = self.parse_ident(ParseContext::ImportDecl)?;
                 Ok(ImportTarget::Symbol(name))
             }
-            Token::Times => {
+            Token::Star => {
                 self.consume();
                 Ok(ImportTarget::AllSymbols)
             }
@@ -1114,7 +1114,7 @@ impl<'ast> Parser<'ast> {
             Some(mut op) => {
                 self.consume();
                 match &mut op {
-                    UnaryOp::AddressOf(mutt) => {
+                    UnaryOp::Addr(mutt) => {
                         *mutt = self.parse_mutability();
                     }
                     _ => {}
@@ -1157,17 +1157,18 @@ impl<'ast> Parser<'ast> {
 impl BinaryOp {
     pub fn prec(&self) -> u32 {
         match self {
-            BinaryOp::LogicAnd | BinaryOp::LogicOr => 0,
+            BinaryOp::Deref => 0,
+            BinaryOp::LogicAnd | BinaryOp::LogicOr => 1,
             BinaryOp::Less
             | BinaryOp::Greater
             | BinaryOp::LessEq
             | BinaryOp::GreaterEq
             | BinaryOp::IsEq
-            | BinaryOp::NotEq => 1,
-            BinaryOp::Plus | BinaryOp::Minus => 2,
-            BinaryOp::Times | BinaryOp::Div | BinaryOp::Mod => 3,
-            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => 4,
-            BinaryOp::Shl | BinaryOp::Shr => 5,
+            | BinaryOp::NotEq => 2,
+            BinaryOp::Plus | BinaryOp::Sub => 3,
+            BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => 4,
+            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => 5,
+            BinaryOp::Shl | BinaryOp::Shr => 6,
         }
     }
 }
@@ -1175,17 +1176,18 @@ impl BinaryOp {
 impl Token {
     fn as_unary_op(&self) -> Option<UnaryOp> {
         match self {
-            Token::Minus => Some(UnaryOp::Minus),
+            Token::Minus => Some(UnaryOp::Neg),
             Token::BitNot => Some(UnaryOp::BitNot),
             Token::LogicNot => Some(UnaryOp::LogicNot),
-            Token::Times => Some(UnaryOp::AddressOf(Mutability::Immutable)),
-            Token::Shl => Some(UnaryOp::Dereference),
+            Token::Star => Some(UnaryOp::Addr(Mutability::Immutable)),
+            Token::Shl => Some(UnaryOp::Deref),
             _ => None,
         }
     }
 
     fn as_binary_op(&self) -> Option<BinaryOp> {
         match self {
+            Token::Dot => Some(BinaryOp::Deref),
             Token::LogicAnd => Some(BinaryOp::LogicAnd),
             Token::LogicOr => Some(BinaryOp::LogicOr),
             Token::Less => Some(BinaryOp::Less),
@@ -1195,10 +1197,10 @@ impl Token {
             Token::IsEq => Some(BinaryOp::IsEq),
             Token::NotEq => Some(BinaryOp::NotEq),
             Token::Plus => Some(BinaryOp::Plus),
-            Token::Minus => Some(BinaryOp::Minus),
-            Token::Times => Some(BinaryOp::Times),
+            Token::Minus => Some(BinaryOp::Sub),
+            Token::Star => Some(BinaryOp::Mul),
             Token::Div => Some(BinaryOp::Div),
-            Token::Mod => Some(BinaryOp::Mod),
+            Token::Mod => Some(BinaryOp::Rem),
             Token::BitAnd => Some(BinaryOp::BitAnd),
             Token::BitOr => Some(BinaryOp::BitOr),
             Token::BitXor => Some(BinaryOp::BitXor),
@@ -1212,10 +1214,10 @@ impl Token {
         match self {
             Token::Assign => Some(AssignOp::Assign),
             Token::PlusEq => Some(AssignOp::BinaryOp(BinaryOp::Plus)),
-            Token::MinusEq => Some(AssignOp::BinaryOp(BinaryOp::Minus)),
-            Token::TimesEq => Some(AssignOp::BinaryOp(BinaryOp::Times)),
+            Token::MinusEq => Some(AssignOp::BinaryOp(BinaryOp::Sub)),
+            Token::TimesEq => Some(AssignOp::BinaryOp(BinaryOp::Mul)),
             Token::DivEq => Some(AssignOp::BinaryOp(BinaryOp::Div)),
-            Token::ModEq => Some(AssignOp::BinaryOp(BinaryOp::Mod)),
+            Token::ModEq => Some(AssignOp::BinaryOp(BinaryOp::Rem)),
             Token::BitAndEq => Some(AssignOp::BinaryOp(BinaryOp::BitAnd)),
             Token::BitOrEq => Some(AssignOp::BinaryOp(BinaryOp::BitOr)),
             Token::BitXorEq => Some(AssignOp::BinaryOp(BinaryOp::BitXor)),

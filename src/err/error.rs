@@ -237,7 +237,7 @@ impl ParseErrorData {
             ParseError::Ident(..) => vec![Token::Ident],
             ParseError::TypeMatch => vec![Token::Ident, Token::OpenBracket],
             ParseError::DeclMatch => vec![Token::Ident, Token::KwPub, Token::KwImport],
-            ParseError::ImportTargetMatch => vec![Token::Ident, Token::Times, Token::OpenBlock],
+            ParseError::ImportTargetMatch => vec![Token::Ident, Token::Star, Token::OpenBlock],
             ParseError::StmtMatch => vec![
                 Token::KwIf,
                 Token::KwFor,
