@@ -2,6 +2,11 @@ use super::span::Span;
 use super::token::*;
 use std::{iter::Peekable, str::Chars};
 
+// @Todo:
+// multiline strings lit / raw
+// proper lexer error reporting
+// lexer / parser interaction in case of errors
+
 pub struct LexResult {
     pub tokens: Vec<TokenSpan>,
     pub line_spans: Vec<Span>,
@@ -25,8 +30,8 @@ struct Lexer<'src> {
 
 enum Lexeme {
     Char,
-    String { multiline: bool },
-    RawString { multiline: bool },
+    String,
+    RawString,
     Ident,
     Number,
     Symbol,
@@ -36,8 +41,8 @@ impl Lexeme {
     fn from_char(c: char) -> Self {
         match c {
             '\'' => Lexeme::Char,
-            '"' => Lexeme::String { multiline: false },
-            '`' => Lexeme::RawString { multiline: false },
+            '"' => Lexeme::String,
+            '`' => Lexeme::RawString,
             _ => {
                 if c.is_ascii_alphabetic() || c == '_' {
                     return Lexeme::Ident;
@@ -139,8 +144,8 @@ impl<'src> Lexer<'src> {
     fn lex_token(&mut self) -> TokenSpan {
         match Lexeme::from_char(self.fc) {
             Lexeme::Char => self.lex_char(),
-            Lexeme::String { multiline } => self.lex_string(),
-            Lexeme::RawString { multiline } => self.lex_raw_string(),
+            Lexeme::String => self.lex_string(),
+            Lexeme::RawString => self.lex_raw_string(),
             Lexeme::Ident => self.lex_ident(),
             Lexeme::Number => self.lex_number(),
             Lexeme::Symbol => self.lex_symbol(),

@@ -313,7 +313,6 @@ impl<'ast> Parser<'ast> {
             Token::OpenBracket => {
                 ty.kind = match self.peek_next(1) {
                     Token::CloseBracket => TypeKind::ArraySlice(self.parse_array_slice()?),
-                    Token::DotDot => TypeKind::ArrayDynamic(self.parse_array_dynamic()?),
                     _ => TypeKind::ArrayStatic(self.parse_array_static()?),
                 };
                 Ok(ty)
@@ -344,15 +343,6 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::CloseBracket, ParseContext::ArrayStatic)?;
         array_static.element = self.parse_type()?;
         Ok(array_static)
-    }
-
-    fn parse_array_dynamic(&mut self) -> Result<P<ArrayDynamic>, ParseError> {
-        let mut array_dynamic = self.alloc::<ArrayDynamic>();
-        self.expect_token(Token::OpenBracket, ParseContext::ArrayDynamic)?;
-        self.expect_token(Token::DotDot, ParseContext::ArrayDynamic)?;
-        self.expect_token(Token::CloseBracket, ParseContext::ArrayDynamic)?;
-        array_dynamic.element = self.parse_type()?;
-        Ok(array_dynamic)
     }
 
     fn parse_visibility(&mut self) -> Visibility {

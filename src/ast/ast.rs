@@ -65,7 +65,6 @@ pub enum TypeKind {
     Custom(P<CustomType>),
     ArraySlice(P<ArraySlice>),
     ArrayStatic(P<ArrayStatic>),
-    ArrayDynamic(P<ArrayDynamic>),
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -101,11 +100,6 @@ pub struct ArraySlice {
 #[derive(Copy, Clone)]
 pub struct ArrayStatic {
     pub size: ConstExpr,
-    pub element: Type,
-}
-
-#[derive(Copy, Clone)]
-pub struct ArrayDynamic {
     pub element: Type,
 }
 
