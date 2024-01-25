@@ -54,7 +54,6 @@ pub trait MutVisit: Sized {
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
     fn visit_lit(&mut self, lit: &mut Lit) {}
     fn visit_var(&mut self, var: P<Var>) {}
-    fn visit_access(&mut self, access: P<Access>) {}
     fn visit_cast(&mut self, cast: P<Cast>) {}
     fn visit_sizeof(&mut self, sizeof: P<Sizeof>) {}
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
@@ -358,7 +357,8 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
     vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
-        ExprKind::DotAccess(dot_access) => {}
+        ExprKind::DotAccess(name) => {}
+        ExprKind::DotCall(call) => {}
         ExprKind::Index(index) => {}
         ExprKind::Var(var) => visit_var(vis, var),
         ExprKind::Cast(cast) => visit_cast(vis, cast),
@@ -379,20 +379,6 @@ fn visit_var<T: MutVisit>(vis: &mut T, mut var: P<Var>) {
     vis.visit_var(var);
     visit_module_path(vis, &mut var.module_path);
     visit_ident(vis, &mut var.name);
-    if let Some(access) = var.access {
-        visit_access(vis, access);
-    }
-}
-
-fn visit_access<T: MutVisit>(vis: &mut T, mut access: P<Access>) {
-    vis.visit_access(access);
-    match access.kind {
-        AccessKind::Field(ref mut name) => visit_ident(vis, name),
-        AccessKind::Array(expr) => visit_expr(vis, expr),
-    }
-    if let Some(access) = access.next {
-        visit_access(vis, access);
-    }
 }
 
 fn visit_cast<T: MutVisit>(vis: &mut T, mut cast: P<Cast>) {
@@ -415,9 +401,6 @@ fn visit_proc_call<T: MutVisit>(vis: &mut T, mut proc_call: P<ProcCall>) {
     }
     for expr in proc_call.input {
         visit_expr(vis, expr);
-    }
-    if let Some(access) = proc_call.access {
-        visit_access(vis, access);
     }
 }
 

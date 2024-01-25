@@ -1145,6 +1145,7 @@ impl Context {
     fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
         match expr.kind {
             ExprKind::DotAccess(name) => {}
+            ExprKind::DotCall(call) => {}
             ExprKind::Index(index) => {}
             ExprKind::Lit(lit) => {}
             ExprKind::Var(var) => {
@@ -1356,6 +1357,7 @@ impl IRGen {
     fn emit_expr(&mut self, expr: Expr) -> u32 {
         match expr.kind {
             ExprKind::DotAccess(name) => todo!(),
+            ExprKind::DotCall(call) => todo!(),
             ExprKind::Index(index) => todo!(),
             ExprKind::Lit(lit) => self.emit_lit(lit),
             ExprKind::Var(_) => todo!(),

@@ -210,6 +210,7 @@ impl<'ast> Parser<'ast> {
             self.consume();
             names.add(&mut self.arena, name);
         }
+
         Ok(ModulePath {
             kind: kind.0,
             kind_span: kind.1,
@@ -842,7 +843,10 @@ impl<'ast> Parser<'ast> {
         let kind = match tail {
             BinaryOp::Deref => {
                 let name = self.parse_ident(ParseContext::Expr)?; //context
-                ExprKind::DotAccess(name)
+                match self.peek() {
+                    Token::OpenParen | Token::Less => ExprKind::DotCall(self.parse_dot_call(name)?),
+                    _ => ExprKind::DotAccess(name),
+                }
             }
             BinaryOp::Index => {
                 let mut index = self.alloc::<Index>();
@@ -853,9 +857,8 @@ impl<'ast> Parser<'ast> {
             _ => return Err(ParseError::PrimaryExprMatch), //@temp error
         };
 
-        let span_end = self.peek_span_end();
         return Ok(Expr {
-            span: Span::new(span_start, span_end),
+            span: Span::new(span_start, self.peek_span_end()),
             kind,
         });
     }
@@ -874,9 +877,8 @@ impl<'ast> Parser<'ast> {
             unary_expr.op = unary_op;
             unary_expr.rhs = self.parse_primary_expr()?;
 
-            let span_end = self.peek_span_end();
             return Ok(Expr {
-                span: Span::new(span_start, span_end),
+                span: Span::new(span_start, self.peek_span_end()),
                 kind: ExprKind::UnaryExpr(unary_expr),
             });
         }
@@ -892,6 +894,12 @@ impl<'ast> Parser<'ast> {
             Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::OpenBracket | Token::OpenBlock => ExprKind::ArrayInit(self.parse_array_init()?),
             Token::Ident | Token::KwSuper | Token::KwPackage => {
+                // items that can be in front:
+
+                // ?path::? + call + ?<T>? + (    // calls
+                // ?path::? + type + ?<T>? .{     // struct init
+                // ?path::? + var_or_type + ?<T>? // vars or types
+
                 let module_path = self.parse_module_path()?;
                 if self.peek() != Token::Ident {
                     return Err(ParseError::PrimaryExprIdent);
@@ -907,10 +915,9 @@ impl<'ast> Parser<'ast> {
             _ => return Err(ParseError::PrimaryExprMatch),
         };
 
-        let span_end = self.peek_span_end();
         Ok(Expr {
             kind,
-            span: Span::new(span_start, span_end),
+            span: Span::new(span_start, self.peek_span_end()),
         })
     }
 
@@ -918,41 +925,17 @@ impl<'ast> Parser<'ast> {
         let mut var = self.alloc::<Var>();
         var.module_path = module_path;
         var.name = self.parse_ident(ParseContext::Var)?;
-        var.access = self.parse_access_chain()?;
         Ok(var)
     }
 
-    fn parse_access_chain(&mut self) -> Result<Option<P<Access>>, ParseError> {
-        match self.peek() {
-            Token::Dot | Token::OpenBracket => {}
-            _ => return Ok(None),
-        }
-        let access = self.parse_access()?;
-        let mut access_last = access;
-        while self.peek() == Token::Dot || self.peek() == Token::OpenBracket {
-            let access_next = self.parse_access()?;
-            access_last.next = Some(access_next);
-            access_last = access_next;
-        }
-        Ok(Some(access))
-    }
-
-    fn parse_access(&mut self) -> Result<P<Access>, ParseError> {
-        let mut access = self.alloc::<Access>();
-        match self.peek() {
-            Token::Dot => {
-                self.consume();
-                access.kind = AccessKind::Field(self.parse_ident(ParseContext::Access)?);
-                Ok(access)
-            }
-            Token::OpenBracket => {
-                self.consume();
-                access.kind = AccessKind::Array(self.parse_expr()?);
-                self.expect_token(Token::CloseBracket, ParseContext::ArrayAccess)?;
-                Ok(access)
-            }
-            _ => Err(ParseError::AccessMatch),
-        }
+    fn parse_dot_call(&mut self, name: Ident) -> Result<P<Call>, ParseError> {
+        let mut call = self.alloc::<Call>();
+        call.name = name;
+        call.generic_args = self.parse_generic_args()?;
+        //@temp context
+        call.input =
+            self.parse_expr_list(Token::OpenParen, Token::CloseParen, ParseContext::Expr)?;
+        Ok(call)
     }
 
     fn parse_cast(&mut self) -> Result<P<Cast>, ParseError> {
@@ -1045,7 +1028,6 @@ impl<'ast> Parser<'ast> {
         proc_call.name = self.parse_ident(ParseContext::ProcCall)?;
         proc_call.input =
             self.parse_expr_list(Token::OpenParen, Token::CloseParen, ParseContext::ProcCall)?;
-        proc_call.access = self.parse_access_chain()?;
         Ok(proc_call)
     }
 

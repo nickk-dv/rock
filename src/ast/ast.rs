@@ -312,6 +312,7 @@ pub enum ExprKind {
     Lit(Lit),
     Var(P<Var>),
     DotAccess(Ident),
+    DotCall(P<Call>),
     Index(P<Index>),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
@@ -328,6 +329,13 @@ pub struct Index {
 }
 
 #[derive(Copy, Clone)]
+pub struct Call {
+    pub name: Ident,
+    pub generic_args: Option<GenericArgs>,
+    pub input: List<Expr>,
+}
+
+#[derive(Copy, Clone)]
 pub enum Lit {
     Null,
     Bool(bool),
@@ -341,19 +349,6 @@ pub enum Lit {
 pub struct Var {
     pub module_path: ModulePath,
     pub name: Ident,
-    pub access: Option<P<Access>>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Access {
-    pub kind: AccessKind,
-    pub next: Option<P<Access>>,
-}
-
-#[derive(Copy, Clone)]
-pub enum AccessKind {
-    Field(Ident),
-    Array(Expr),
 }
 
 #[derive(Copy, Clone)]
@@ -373,7 +368,6 @@ pub struct ProcCall {
     pub name: Ident,
     pub generic_args: Option<GenericArgs>,
     pub input: List<Expr>,
-    pub access: Option<P<Access>>,
 }
 
 #[derive(Copy, Clone)]
@@ -386,7 +380,6 @@ pub struct ArrayInit {
 pub struct StructInit {
     pub module_path: ModulePath,
     pub name: Option<Ident>,
-    pub custom_type: P<CustomType>,
     pub input: List<Expr>,
 }
 
