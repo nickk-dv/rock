@@ -813,20 +813,51 @@ impl<'ast> Parser<'ast> {
                 if prec < min_prec {
                     break;
                 }
-                self.consume();
+                match binary_op {
+                    BinaryOp::Deref | BinaryOp::Index => {}
+                    _ => self.consume(),
+                }
             } else {
                 break;
             }
             let mut bin_expr = self.alloc::<BinaryExpr>();
             bin_expr.op = binary_op;
             bin_expr.lhs = expr_lhs;
-            bin_expr.rhs = self.parse_sub_expr(prec + 1)?;
+            bin_expr.rhs = match binary_op {
+                BinaryOp::Deref | BinaryOp::Index => self.parse_tail_expr(binary_op)?,
+                _ => self.parse_sub_expr(prec + 1)?,
+            };
             expr_lhs = Expr {
                 span: Span::new(bin_expr.lhs.span.start, bin_expr.rhs.span.end),
                 kind: ExprKind::BinaryExpr(bin_expr),
             }
         }
         Ok(expr_lhs)
+    }
+
+    fn parse_tail_expr(&mut self, tail: BinaryOp) -> Result<Expr, ParseError> {
+        let span_start = self.peek_span_start();
+        self.consume();
+
+        let kind = match tail {
+            BinaryOp::Deref => {
+                let name = self.parse_ident(ParseContext::Expr)?; //context
+                ExprKind::DotAccess(name)
+            }
+            BinaryOp::Index => {
+                let mut index = self.alloc::<Index>();
+                index.expr = self.parse_expr()?;
+                self.expect_token(Token::CloseBracket, ParseContext::Expr)?; //context
+                ExprKind::Index(index)
+            }
+            _ => return Err(ParseError::PrimaryExprMatch), //@temp error
+        };
+
+        let span_end = self.peek_span_end();
+        return Ok(Expr {
+            span: Span::new(span_start, span_end),
+            kind,
+        });
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr, ParseError> {
@@ -842,6 +873,7 @@ impl<'ast> Parser<'ast> {
             let mut unary_expr = self.alloc::<UnaryExpr>();
             unary_expr.op = unary_op;
             unary_expr.rhs = self.parse_primary_expr()?;
+
             let span_end = self.peek_span_end();
             return Ok(Expr {
                 span: Span::new(span_start, span_end),
@@ -874,6 +906,7 @@ impl<'ast> Parser<'ast> {
             }
             _ => return Err(ParseError::PrimaryExprMatch),
         };
+
         let span_end = self.peek_span_end();
         Ok(Expr {
             kind,
@@ -1157,7 +1190,7 @@ impl<'ast> Parser<'ast> {
 impl BinaryOp {
     pub fn prec(&self) -> u32 {
         match self {
-            BinaryOp::Deref => 0,
+            BinaryOp::Deref | BinaryOp::Index => 0,
             BinaryOp::LogicAnd | BinaryOp::LogicOr => 1,
             BinaryOp::Less
             | BinaryOp::Greater
@@ -1188,6 +1221,7 @@ impl Token {
     fn as_binary_op(&self) -> Option<BinaryOp> {
         match self {
             Token::Dot => Some(BinaryOp::Deref),
+            Token::OpenBracket => Some(BinaryOp::Index),
             Token::LogicAnd => Some(BinaryOp::LogicAnd),
             Token::LogicOr => Some(BinaryOp::LogicOr),
             Token::Less => Some(BinaryOp::Less),

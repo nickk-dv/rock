@@ -311,6 +311,8 @@ pub struct Expr {
 pub enum ExprKind {
     Lit(Lit),
     Var(P<Var>),
+    DotAccess(Ident),
+    Index(P<Index>),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
     ProcCall(P<ProcCall>),
@@ -318,6 +320,11 @@ pub enum ExprKind {
     StructInit(P<StructInit>),
     UnaryExpr(P<UnaryExpr>),
     BinaryExpr(P<BinaryExpr>),
+}
+
+#[derive(Copy, Clone)]
+pub struct Index {
+    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -405,9 +412,10 @@ pub struct BinaryExpr {
     pub rhs: Expr,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum BinaryOp {
     Deref,
+    Index,
     LogicAnd,
     LogicOr,
     Less,

@@ -10,6 +10,16 @@ use std::collections::HashMap;
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
 //@report usages of self id module path as redundant?
 
+struct ExprPrinter {
+    scope: P<Scope>,
+}
+
+impl visit::MutVisit for ExprPrinter {
+    fn visit_expr(&mut self, expr: Expr) {
+        crate::err::span_fmt::print(&self.scope.module.file, expr.span, None, true);
+    }
+}
+
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let est_scope_count = ast.modules.len();
     let block_size = std::mem::size_of::<Scope>() * est_scope_count;
@@ -28,9 +38,15 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let mut ir_gen = IRGen::new(context.copy());
     ir_gen.emit_ir();
 
-    let result = context.report_errors();
+    let mut pr = ExprPrinter {
+        scope: context.get_scope(1),
+    };
+    let md = pr.scope.module.copy();
+    visit::visit_module_with(&mut pr, md);
+
+    //let result = context.report_errors();
     context.manual_drop();
-    return result;
+    return Ok(());
 }
 
 pub struct Context {
@@ -1128,7 +1144,9 @@ impl Context {
 
     fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
         match expr.kind {
-            ExprKind::Lit(..) => {}
+            ExprKind::DotAccess(name) => {}
+            ExprKind::Index(index) => {}
+            ExprKind::Lit(lit) => {}
             ExprKind::Var(var) => {
                 //access not walked
                 let global = self.scope_find_global(scope, var.module_path, var.name);
@@ -1337,6 +1355,8 @@ impl IRGen {
 
     fn emit_expr(&mut self, expr: Expr) -> u32 {
         match expr.kind {
+            ExprKind::DotAccess(name) => todo!(),
+            ExprKind::Index(index) => todo!(),
             ExprKind::Lit(lit) => self.emit_lit(lit),
             ExprKind::Var(_) => todo!(),
             ExprKind::Cast(_) => todo!(),
@@ -1433,6 +1453,8 @@ impl IRGen {
         let val_rhs = self.emit_expr(bin.rhs);
         let val = self.emit_val();
         let inst = match bin.op {
+            BinaryOp::Deref => todo!("binary deref is not inst"), //@not implemented
+            BinaryOp::Index => todo!("binary index is not inst"), //@not implemented
             BinaryOp::LogicAnd => Inst::LogicAnd,
             BinaryOp::LogicOr => Inst::LogicOr,
             BinaryOp::Less => Inst::CmpLT,
@@ -1451,7 +1473,6 @@ impl IRGen {
             BinaryOp::BitXor => Inst::BitXor,
             BinaryOp::Shl => Inst::Shl,
             BinaryOp::Shr => Inst::Shr,
-            BinaryOp::Deref => todo!("binary deref is not inst"), //@deref itself is not an inst
         };
         self.add_inst(inst);
         self.add_inst(Inst::Value(val_lhs));

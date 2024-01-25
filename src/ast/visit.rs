@@ -358,6 +358,8 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
     vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
+        ExprKind::DotAccess(dot_access) => {}
+        ExprKind::Index(index) => {}
         ExprKind::Var(var) => visit_var(vis, var),
         ExprKind::Cast(cast) => visit_cast(vis, cast),
         ExprKind::Sizeof(sizeof) => visit_sizeof(vis, sizeof),
