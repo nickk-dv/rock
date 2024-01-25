@@ -1305,9 +1305,7 @@ impl Context {
                         is_unreachable = true;
                     }
                 }
-                StmtKind::VarDecl(..) => {}
-                StmtKind::VarAssign(..) => {}
-                StmtKind::ProcCall(..) => {}
+                _ => {} //@rejecting all others
             }
         }
     }

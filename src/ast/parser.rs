@@ -233,6 +233,7 @@ impl<'ast> Parser<'ast> {
             self.consume();
             names.add(&mut self.arena, name);
         }
+
         Ok(ModulePath {
             kind: kind.0,
             kind_span: kind.1,
@@ -633,27 +634,45 @@ impl<'ast> Parser<'ast> {
             Token::KwSwitch => StmtKind::Switch(self.parse_switch()?),
             Token::KwReturn => StmtKind::Return(self.parse_return()?),
             Token::KwContinue => self.parse_continue()?,
-            Token::Ident => {
-                if self.peek_next(1) == Token::Colon {
+            _ => {
+                if self.peek() == Token::Ident && self.peek_next(1) == Token::Colon {
                     StmtKind::VarDecl(self.parse_var_decl()?)
                 } else {
-                    let module_path = self.parse_module_path()?;
-                    if self.peek() == Token::Ident && self.peek_next(1) == Token::OpenParen {
-                        let proc_call = StmtKind::ProcCall(self.parse_proc_call(module_path)?);
-                        self.expect_token(Token::Semicolon, ParseContext::ProcCall)?;
-                        proc_call
-                    } else {
-                        StmtKind::VarAssign(self.parse_var_assign(module_path, true)?)
+                    let expr = self.parse_expr()?;
+                    match self.peek() {
+                        Token::Semicolon | Token::CloseBlock => {
+                            let has_semi = self.try_consume(Token::Semicolon);
+                            let mut expr_stmt = self.alloc::<ExprStmt>();
+                            *expr_stmt = ExprStmt { expr, has_semi };
+                            StmtKind::ExprStmt(expr_stmt)
+                        }
+                        _ => {
+                            //@would be nice to check for assignment ops
+                            // and else emit an error of expecting ops | ; | }
+                            // currently trying to parse assignment as a fallback
+                            let mut assignment = self.alloc::<Assignment>();
+                            assignment.lhs = expr;
+                            assignment.op = self.expect_assign_op(ParseContext::VarAssign)?; //@context
+                            assignment.rhs = self.parse_expr()?;
+                            self.expect_token(Token::Semicolon, ParseContext::Stmt)?; //@context
+                            StmtKind::Assignment(assignment)
+                        }
                     }
                 }
             }
-            _ => return Err(ParseError::StmtMatch),
         };
-        let span_end = self.peek_span_end();
         Ok(Stmt {
             kind,
-            span: Span::new(span_start, span_end),
+            span: Span::new(span_start, self.peek_span_end()),
         })
+    }
+
+    fn parse_assignment(&mut self) -> Result<P<Assignment>, ParseError> {
+        let mut assignment = self.alloc::<Assignment>();
+        assignment.lhs = self.parse_expr()?;
+        assignment.op = self.expect_assign_op(ParseContext::VarAssign)?; //@context
+        assignment.rhs = self.parse_expr()?;
+        Ok(assignment)
     }
 
     fn parse_if(&mut self) -> Result<P<If>, ParseError> {

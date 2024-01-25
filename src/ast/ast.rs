@@ -229,9 +229,24 @@ pub enum StmtKind {
     Switch(P<Switch>),
     Return(P<Return>),
     Continue,
+    ExprStmt(P<ExprStmt>),
+    Assignment(P<Assignment>),
     VarDecl(P<VarDecl>),
     VarAssign(P<VarAssign>),
     ProcCall(P<ProcCall>),
+}
+
+#[derive(Copy, Clone)]
+pub struct ExprStmt {
+    pub expr: Expr,
+    pub has_semi: bool,
+}
+
+#[derive(Copy, Clone)]
+pub struct Assignment {
+    pub lhs: Expr,
+    pub op: AssignOp,
+    pub rhs: Expr,
 }
 
 #[derive(Copy, Clone)]

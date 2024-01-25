@@ -245,6 +245,8 @@ fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {
 fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
     vis.visit_stmt(stmt);
     match stmt.kind {
+        StmtKind::Assignment(assignment) => {}
+        StmtKind::ExprStmt(expr_stmt) => {}
         StmtKind::If(if_) => visit_if(vis, if_),
         StmtKind::For(for_) => visit_for(vis, for_),
         StmtKind::Block(block) => visit_block(vis, block),
