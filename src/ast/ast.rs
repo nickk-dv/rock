@@ -27,18 +27,16 @@ pub struct Ident {
     pub span: Span,
 }
 
-#[derive(Copy, Clone)]
-pub struct ModulePath {
-    pub kind: ModulePathKind,
-    pub kind_span: Span,
-    pub names: List<Ident>,
+#[derive(Copy, Clone, PartialEq)]
+pub enum Visibility {
+    Public,
+    Private,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum ModulePathKind {
-    None,
-    Super,
-    Package,
+pub enum Mutability {
+    Mutable,
+    Immutable,
 }
 
 #[derive(Copy, Clone)]
@@ -54,9 +52,23 @@ pub struct GenericParams {
 }
 
 #[derive(Copy, Clone)]
+pub struct ModulePath {
+    pub kind: ModulePathKind,
+    pub kind_span: Span,
+    pub names: List<Ident>,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum ModulePathKind {
+    None,
+    Super,
+    Package,
+}
+
+#[derive(Copy, Clone)]
 pub struct Type {
     pub pointer_level: u32,
-    pub mutability: Mutability,
+    pub mutt: Mutability,
     pub kind: TypeKind,
 }
 
@@ -96,6 +108,7 @@ pub struct CustomType {
 
 #[derive(Copy, Clone)]
 pub struct ArraySlice {
+    pub mutt: Mutability,
     pub element: Type,
 }
 
@@ -103,18 +116,6 @@ pub struct ArraySlice {
 pub struct ArrayStatic {
     pub size: ConstExpr,
     pub element: Type,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Visibility {
-    Public,
-    Private,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Mutability {
-    Mutable,
-    Immutable,
 }
 
 #[derive(Copy, Clone)]
@@ -148,7 +149,7 @@ pub struct ProcDecl {
 
 #[derive(Copy, Clone)]
 pub struct ProcParam {
-    pub mutability: Mutability,
+    pub mutt: Mutability,
     pub name: Ident,
     pub ty: Type,
 }
@@ -292,7 +293,7 @@ pub struct Return {
 
 #[derive(Copy, Clone)]
 pub struct VarDecl {
-    pub mutability: Mutability,
+    pub mutt: Mutability,
     pub name: Ident,
     pub ty: Option<Type>,
     pub expr: Option<Expr>,
@@ -314,12 +315,6 @@ pub enum AssignOp {
 #[derive(Copy, Clone)]
 pub struct ConstExpr(pub Expr);
 
-// all are valid
-// type{ }   // array inits with optional type prefix
-// type.{ }  // struct inits
-// type.call // var calls / type assoc calls
-// type.name // var + field or enum + access
-
 #[derive(Copy, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
@@ -333,11 +328,12 @@ pub enum ExprKind {
     Index(P<Index>),
     DotName(Ident),
     DotCall(P<Call>),
+    Type(Type),
     Cast(P<Cast>),
     Match(P<Match>),
     Block(P<Block>),
     Sizeof(P<Sizeof>),
-    ProcCall(P<ProcCall>), // @old node
+    ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
     StructInit(P<StructInit>),
     UnaryExpr(P<UnaryExpr>),
@@ -385,9 +381,7 @@ pub struct Sizeof {
 
 #[derive(Copy, Clone)]
 pub struct ProcCall {
-    pub module_path: ModulePath,
-    pub name: Ident,
-    pub generic_args: Option<GenericArgs>,
+    pub ty: Type,
     pub input: List<Expr>,
 }
 
@@ -399,9 +393,14 @@ pub struct ArrayInit {
 
 #[derive(Copy, Clone)]
 pub struct StructInit {
-    pub module_path: ModulePath,
-    pub name: Option<Ident>,
-    pub input: List<Expr>,
+    pub ty: Type,
+    pub input: List<FieldInit>,
+}
+
+#[derive(Copy, Clone)]
+pub struct FieldInit {
+    pub name: Ident,
+    pub expr: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]

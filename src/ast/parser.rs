@@ -298,11 +298,11 @@ impl<'ast> Parser<'ast> {
     fn parse_type(&mut self) -> Result<Type, ParseError> {
         let mut ty = Type {
             pointer_level: 0,
-            mutability: Mutability::Immutable, //@change how mutability is stored
+            mutt: Mutability::Immutable, //@change how mutability is stored
             kind: TypeKind::Basic(BasicType::Bool),
         };
         while self.try_consume(Token::Star) {
-            let mutability = self.parse_mutability(); //@not stored per each ptr indirection
+            let mutability = self.parse_mut(); //@not stored per each ptr indirection
             ty.pointer_level += 1;
         }
         if let Some(basic) = self.try_consume_basic_type() {
@@ -310,13 +310,15 @@ impl<'ast> Parser<'ast> {
             return Ok(ty);
         }
         match self.peek() {
-            Token::Ident => {
+            Token::Ident | Token::KwSuper | Token::KwPackage => {
                 ty.kind = TypeKind::Custom(self.parse_custom_type()?);
                 Ok(ty)
             }
             Token::OpenBracket => {
                 ty.kind = match self.peek_next(1) {
-                    Token::CloseBracket => TypeKind::ArraySlice(self.parse_array_slice()?),
+                    Token::KwMut | Token::CloseBracket => {
+                        TypeKind::ArraySlice(self.parse_array_slice()?)
+                    }
                     _ => TypeKind::ArrayStatic(self.parse_array_static()?),
                 };
                 Ok(ty)
@@ -336,6 +338,7 @@ impl<'ast> Parser<'ast> {
     fn parse_array_slice(&mut self) -> Result<P<ArraySlice>, ParseError> {
         let mut array_slice = self.alloc::<ArraySlice>();
         self.expect_token(Token::OpenBracket, ParseContext::ArraySlice)?;
+        array_slice.mutt = self.parse_mut();
         self.expect_token(Token::CloseBracket, ParseContext::ArraySlice)?;
         array_slice.element = self.parse_type()?;
         Ok(array_slice)
@@ -350,7 +353,7 @@ impl<'ast> Parser<'ast> {
         Ok(array_static)
     }
 
-    fn parse_visibility(&mut self) -> Visibility {
+    fn parse_vis(&mut self) -> Visibility {
         if self.try_consume(Token::KwPub) {
             Visibility::Public
         } else {
@@ -358,7 +361,7 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn parse_mutability(&mut self) -> Mutability {
+    fn parse_mut(&mut self) -> Mutability {
         if self.try_consume(Token::KwMut) {
             Mutability::Mutable
         } else {
@@ -371,7 +374,7 @@ impl<'ast> Parser<'ast> {
             Token::KwImport => Ok(Decl::Import(self.parse_import_decl()?)),
             Token::Ident | Token::KwPub => {
                 let vis_span = self.peek_span();
-                let vis = self.parse_visibility();
+                let vis = self.parse_vis();
                 let vis_span = match vis {
                     Visibility::Public => Some(vis_span),
                     Visibility::Private => None,
@@ -463,15 +466,11 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_proc_param(&mut self) -> Result<ProcParam, ParseError> {
-        let mutability = self.parse_mutability();
+        let mutt = self.parse_mut();
         let name = self.parse_ident(ParseContext::ProcParam)?;
         self.expect_token(Token::Colon, ParseContext::ProcParam)?;
         let ty = self.parse_type()?;
-        Ok(ProcParam {
-            mutability,
-            name,
-            ty,
-        })
+        Ok(ProcParam { mutt, name, ty })
     }
 
     fn parse_impl_decl(
@@ -489,7 +488,7 @@ impl<'ast> Parser<'ast> {
         self.expect_token(Token::OpenBlock, ParseContext::ImplDecl)?;
         while !self.try_consume(Token::CloseBlock) {
             //@ 4 duplicated pre parsing of proc decl
-            let vis = self.parse_visibility();
+            let vis = self.parse_vis();
             let name = self.parse_ident(ParseContext::ProcDecl)?;
             let generic_params = self.parse_generic_params()?;
             self.expect_token(Token::ColonColon, ParseContext::ProcDecl)?;
@@ -784,7 +783,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
         let mut var_decl = self.alloc::<VarDecl>();
-        var_decl.mutability = self.parse_mutability();
+        var_decl.mutt = self.parse_mut();
         var_decl.name = self.parse_ident(ParseContext::VarDecl)?;
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
         if self.try_consume(Token::Assign) {
@@ -912,27 +911,75 @@ impl<'ast> Parser<'ast> {
             Token::KwMatch => ExprKind::Match(self.parse_match()?),
             Token::KwCast => ExprKind::Cast(self.parse_cast()?),
             Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
-            Token::OpenBracket | Token::OpenBlock => ExprKind::ArrayInit(self.parse_array_init()?),
-            Token::Ident | Token::KwSuper | Token::KwPackage => {
-                // items that can be in front:
+            _ => {
+                /*
+                Type
+                <prefix>      *<mut> *?
+                basic:        basic_type
+                custom:       <path>name<generic_args>
+                slice:        []<type>
+                slice mut:    [mut]<type>
+                array static: [expr]<type>
 
-                // ?path::? + call + ?<T>? + (    // calls
-                // ?path::? + type + ?<T>? .{     // struct init
-                // ?path::? + var_or_type + ?<T>? // vars or types
+                captured:
+                global / local vars
+                enum + parsed later:  . variant
+                type + parsed later:  . assoc call
+                type + .{ -> struct init
 
-                let module_path = self.parse_module_path()?;
-                if self.peek() != Token::Ident {
-                    return Err(ParseError::PrimaryExprIdent);
-                }
-                if self.peek_next(1) == Token::OpenParen {
-                    ExprKind::ProcCall(self.parse_proc_call(module_path)?)
-                } else if self.peek_next(1) == Token::Dot && self.peek_next(2) == Token::OpenBlock {
-                    ExprKind::StructInit(self.parse_struct_init(module_path)?)
-                } else {
-                    ExprKind::Var(self.parse_var(module_path)?)
+                array_init issues:
+                typeless { expr, expr } can we interpreted like a block expr
+                use [expr] [expr, expr] syntax?
+                */
+
+                // only parse CustomType?
+                // depends on interfaces and impl semantics
+                // can we call methods like []Type.call(*thing);
+                // if interface can be defined on slices then yes.
+                let ty = self.parse_type()?;
+
+                match [self.peek(), self.peek_next(1)] {
+                    [Token::OpenParen, ..] => {
+                        let mut proc_call = self.alloc::<ProcCall>();
+                        proc_call.ty = ty;
+                        proc_call.input = self.parse_expr_list(
+                            Token::OpenParen,
+                            Token::CloseParen,
+                            ParseContext::ProcCall,
+                        )?;
+                        ExprKind::ProcCall(proc_call)
+                    }
+                    [Token::Dot, Token::OpenBlock] => {
+                        let mut struct_init = self.alloc::<StructInit>();
+                        struct_init.ty = ty;
+                        struct_init.input = List::<FieldInit>::new();
+                        self.consume();
+                        self.consume();
+                        if !self.try_consume(Token::CloseBlock) {
+                            loop {
+                                let name = self.parse_ident(ParseContext::StructInit)?;
+                                let expr = match self.peek() {
+                                    Token::Colon => {
+                                        self.consume();
+                                        Some(self.parse_expr()?)
+                                    }
+                                    Token::Comma | Token::CloseBlock => None,
+                                    _ => return Err(ParseError::FieldInit),
+                                };
+                                struct_init
+                                    .input
+                                    .add(&mut self.arena, FieldInit { name, expr });
+                                if !self.try_consume(Token::Comma) {
+                                    break;
+                                }
+                            }
+                            self.expect_token(Token::CloseBlock, ParseContext::StructInit)?;
+                        }
+                        ExprKind::StructInit(struct_init)
+                    }
+                    _ => ExprKind::Type(ty),
                 }
             }
-            _ => return Err(ParseError::PrimaryExprMatch),
         };
 
         Ok(Expr {
@@ -1042,15 +1089,6 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn parse_proc_call(&mut self, module_path: ModulePath) -> Result<P<ProcCall>, ParseError> {
-        let mut proc_call = self.alloc::<ProcCall>();
-        proc_call.module_path = module_path;
-        proc_call.name = self.parse_ident(ParseContext::ProcCall)?;
-        proc_call.input =
-            self.parse_expr_list(Token::OpenParen, Token::CloseParen, ParseContext::ProcCall)?;
-        Ok(proc_call)
-    }
-
     fn parse_array_init(&mut self) -> Result<P<ArrayInit>, ParseError> {
         let mut array_init = self.alloc::<ArrayInit>();
         array_init.ty = if self.peek() == Token::OpenBracket {
@@ -1061,26 +1099,6 @@ impl<'ast> Parser<'ast> {
         array_init.input =
             self.parse_expr_list(Token::OpenBlock, Token::CloseBlock, ParseContext::ArrayInit)?;
         Ok(array_init)
-    }
-
-    fn parse_struct_init(&mut self, module_path: ModulePath) -> Result<P<StructInit>, ParseError> {
-        let mut struct_init = self.alloc::<StructInit>();
-        struct_init.module_path = module_path;
-
-        let has_access = module_path.kind != ModulePathKind::None || !module_path.names.is_empty();
-        let has_name = self.peek() == Token::Ident || has_access;
-        struct_init.name = if has_name {
-            Some(self.parse_ident(ParseContext::StructInit)?)
-        } else {
-            None
-        };
-        self.expect_token(Token::Dot, ParseContext::StructInit)?;
-        struct_init.input = self.parse_expr_list(
-            Token::OpenBlock,
-            Token::CloseBlock,
-            ParseContext::StructInit,
-        )?;
-        Ok(struct_init)
     }
 
     fn parse_expr_list(
@@ -1150,7 +1168,7 @@ impl<'ast> Parser<'ast> {
                 self.consume();
                 match &mut op {
                     UnaryOp::Addr(mutt) => {
-                        *mutt = self.parse_mutability();
+                        *mutt = self.parse_mut();
                     }
                     _ => {}
                 }

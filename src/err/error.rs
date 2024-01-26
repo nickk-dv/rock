@@ -62,6 +62,7 @@ pub enum ParseError {
     LiteralMatch,
     LiteralInteger,
     LiteralFloat,
+    FieldInit,
     ExpectToken(ParseContext, Token),
     ExpectAssignOp(ParseContext),
 }
@@ -227,6 +228,7 @@ impl ParseErrorData {
             ParseError::LiteralMatch => ParseContext::Literal,
             ParseError::LiteralInteger => ParseContext::LiteralInteger,
             ParseError::LiteralFloat => ParseContext::LiteralFloat,
+            ParseError::FieldInit => ParseContext::StructInit,
             ParseError::ExpectToken(c, ..) => c,
             ParseError::ExpectAssignOp(c) => c,
         }
@@ -235,7 +237,12 @@ impl ParseErrorData {
     fn error_expected(error: ParseError) -> Vec<Token> {
         match error {
             ParseError::Ident(..) => vec![Token::Ident],
-            ParseError::TypeMatch => vec![Token::Ident, Token::OpenBracket],
+            ParseError::TypeMatch => vec![
+                Token::Ident,
+                Token::KwSuper,
+                Token::KwPackage,
+                Token::OpenBracket,
+            ],
             ParseError::DeclMatch => vec![Token::Ident, Token::KwPub, Token::KwImport],
             ParseError::ImportTargetMatch => vec![Token::Ident, Token::Star, Token::OpenBlock],
             ParseError::StmtMatch => vec![
@@ -273,6 +280,7 @@ impl ParseErrorData {
                 expected
             }
             ParseError::LiteralFloat => Self::all_float_literal_types(),
+            ParseError::FieldInit => vec![Token::Colon, Token::Comma, Token::CloseBlock],
             ParseError::ExpectToken(.., t) => vec![t],
             ParseError::ExpectAssignOp(..) => vec![
                 Token::Assign,

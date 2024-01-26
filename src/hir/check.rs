@@ -155,17 +155,17 @@ impl visit::MutVisit for Context {
     }
 
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
-        if let Some(name) = struct_init.name {
-            let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.module_path, name);
-        }
+        //@if let Some(name) = struct_init.name {
+        //    let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.module_path, name);
+        //}
     }
 
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
-        self.scope_find_proc(
-            self.curr_scope.copy(),
-            proc_call.module_path,
-            proc_call.name,
-        );
+        //@self.scope_find_proc(
+        //    self.curr_scope.copy(),
+        //    proc_call.module_path,
+        //    proc_call.name,
+        //);
     }
 }
 
@@ -1165,9 +1165,9 @@ impl Context {
                 }
             }
             ExprKind::StructInit(struct_init) => {
-                for expr in struct_init.input {
-                    self.scope_check_global_expr(scope.copy(), expr);
-                }
+                //@for expr in struct_init.input {
+                //    self.scope_check_global_expr(scope.copy(), expr);
+                //}
             }
             ExprKind::UnaryExpr(un) => self.scope_check_global_expr(scope.copy(), un.rhs),
             ExprKind::BinaryExpr(bin) => {
@@ -1410,10 +1410,9 @@ impl IRGen {
 
     fn emit_struct_init(&mut self, struct_init: P<StructInit>) -> u32 {
         let mut input = Vec::new();
-        for expr in struct_init.input {
-            input.push(self.emit_expr(expr));
-        }
-
+        //@for expr in struct_init.input {
+        //    input.push(self.emit_expr(expr));
+        //}
         let val = self.emit_val();
         self.add_inst(Inst::StructInit {
             argc: input.len() as u32,

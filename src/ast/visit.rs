@@ -395,11 +395,7 @@ fn visit_sizeof<T: MutVisit>(vis: &mut T, mut sizeof: P<Sizeof>) {
 
 fn visit_proc_call<T: MutVisit>(vis: &mut T, mut proc_call: P<ProcCall>) {
     vis.visit_proc_call(proc_call);
-    visit_module_path(vis, &mut proc_call.module_path);
-    visit_ident(vis, &mut proc_call.name);
-    if let Some(ref mut generic_args) = proc_call.generic_args {
-        visit_generic_args(vis, generic_args);
-    }
+    visit_type(vis, &mut proc_call.ty);
     for expr in proc_call.input {
         visit_expr(vis, expr);
     }
@@ -417,12 +413,12 @@ fn visit_array_init<T: MutVisit>(vis: &mut T, mut array_init: P<ArrayInit>) {
 
 fn visit_struct_init<T: MutVisit>(vis: &mut T, mut struct_init: P<StructInit>) {
     vis.visit_struct_init(struct_init);
-    visit_module_path(vis, &mut struct_init.module_path);
-    if let Some(ref mut name) = struct_init.name {
-        visit_ident(vis, name);
-    }
-    for expr in struct_init.input {
-        visit_expr(vis, expr);
+    visit_type(vis, &mut struct_init.ty);
+    for field in struct_init.input.iter_mut() {
+        visit_ident(vis, &mut field.name);
+        if let Some(expr) = field.expr {
+            visit_expr(vis, expr);
+        }
     }
 }
 
