@@ -1144,7 +1144,7 @@ impl Context {
 
     fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
         match expr.kind {
-            ExprKind::DotAccess(name) => {}
+            ExprKind::DotName(name) => {}
             ExprKind::DotCall(call) => {}
             ExprKind::Index(index) => {}
             ExprKind::Lit(lit) => {}
@@ -1174,6 +1174,7 @@ impl Context {
                 self.scope_check_global_expr(scope.copy(), bin.lhs);
                 self.scope_check_global_expr(scope, bin.rhs);
             }
+            _ => {} //@tmp
         }
     }
 
@@ -1260,15 +1261,6 @@ impl Context {
                         is_unreachable,
                     );
                 }
-                StmtKind::Block(block) => {
-                    self.scope_check_control_flow(
-                        scope.copy(),
-                        block,
-                        in_loop,
-                        in_defer,
-                        is_unreachable,
-                    );
-                }
                 StmtKind::Defer(defer) => {
                     if in_defer {
                         scope.error(CheckError::DeferNested, stmt.span);
@@ -1290,7 +1282,6 @@ impl Context {
                         is_unreachable = true;
                     }
                 }
-                StmtKind::Switch(..) => {}
                 StmtKind::Return(..) => {
                     terminated = true;
                     term_span = stmt.span;
@@ -1354,7 +1345,7 @@ impl IRGen {
 
     fn emit_expr(&mut self, expr: Expr) -> u32 {
         match expr.kind {
-            ExprKind::DotAccess(name) => todo!(),
+            ExprKind::DotName(name) => todo!(),
             ExprKind::DotCall(call) => todo!(),
             ExprKind::Index(index) => todo!(),
             ExprKind::Lit(lit) => self.emit_lit(lit),
@@ -1366,6 +1357,7 @@ impl IRGen {
             ExprKind::StructInit(struct_init) => self.emit_struct_init(struct_init),
             ExprKind::UnaryExpr(un) => self.emit_un_expr(un),
             ExprKind::BinaryExpr(bin) => self.emit_bin_expr(bin),
+            _ => 0, //@tmp
         }
     }
 

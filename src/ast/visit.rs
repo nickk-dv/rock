@@ -43,8 +43,8 @@ pub trait MutVisit: Sized {
     fn visit_block(&mut self, block: P<Block>) {}
     fn visit_defer(&mut self, block: P<Block>) {}
     fn visit_break(&mut self) {}
-    fn visit_switch(&mut self, switch: P<Switch>) {}
-    fn visit_switch_case(&mut self, case: &mut SwitchCase) {}
+    fn visit_match(&mut self, switch: P<Match>) {}
+    fn visit_match_arm(&mut self, arm: &mut MatchArm) {}
     fn visit_return(&mut self, return_: P<Return>) {}
     fn visit_continue(&mut self) {}
     fn visit_var_decl(&mut self, var_decl: P<VarDecl>) {}
@@ -249,10 +249,8 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
         StmtKind::ExprStmt(expr_stmt) => {}
         StmtKind::If(if_) => visit_if(vis, if_),
         StmtKind::For(for_) => visit_for(vis, for_),
-        StmtKind::Block(block) => visit_block(vis, block),
         StmtKind::Defer(block) => visit_defer(vis, block),
         StmtKind::Break => visit_break(vis),
-        StmtKind::Switch(switch_stmt) => visit_switch(vis, switch_stmt),
         StmtKind::Return(return_stmt) => visit_return(vis, return_stmt),
         StmtKind::Continue => visit_continue(vis),
         StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
@@ -308,18 +306,18 @@ fn visit_break<T: MutVisit>(vis: &mut T) {
     vis.visit_break();
 }
 
-fn visit_switch<T: MutVisit>(vis: &mut T, switch: P<Switch>) {
-    vis.visit_switch(switch);
-    visit_expr(vis, switch.expr);
-    for case in switch.cases.iter_mut() {
-        visit_switch_case(vis, case);
+fn visit_match<T: MutVisit>(vis: &mut T, match_: P<Match>) {
+    vis.visit_match(match_);
+    visit_expr(vis, match_.expr);
+    for case in match_.arms.iter_mut() {
+        visit_match_arm(vis, case);
     }
 }
 
-fn visit_switch_case<T: MutVisit>(vis: &mut T, case: &mut SwitchCase) {
-    vis.visit_switch_case(case);
+fn visit_match_arm<T: MutVisit>(vis: &mut T, case: &mut MatchArm) {
+    vis.visit_match_arm(case);
+    visit_expr(vis, case.pattern);
     visit_expr(vis, case.expr);
-    visit_block(vis, case.block);
 }
 
 fn visit_return<T: MutVisit>(vis: &mut T, return_: P<Return>) {
@@ -359,7 +357,7 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
     vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
-        ExprKind::DotAccess(name) => {}
+        ExprKind::DotName(name) => {}
         ExprKind::DotCall(call) => {}
         ExprKind::Index(index) => {}
         ExprKind::Var(var) => visit_var(vis, var),
@@ -370,6 +368,7 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
         ExprKind::StructInit(struct_init) => visit_struct_init(vis, struct_init),
         ExprKind::UnaryExpr(unary_expr) => visit_unary_expr(vis, unary_expr),
         ExprKind::BinaryExpr(binary_expr) => visit_binary_expr(vis, binary_expr),
+        _ => {} //@tmp
     }
 }
 

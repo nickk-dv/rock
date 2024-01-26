@@ -628,10 +628,8 @@ impl<'ast> Parser<'ast> {
         let kind = match self.peek() {
             Token::KwIf => StmtKind::If(self.parse_if()?),
             Token::KwFor => StmtKind::For(self.parse_for()?),
-            Token::OpenBlock => StmtKind::Block(self.parse_block()?),
             Token::KwDefer => StmtKind::Defer(self.parse_defer()?),
             Token::KwBreak => self.parse_break()?,
-            Token::KwSwitch => StmtKind::Switch(self.parse_switch()?),
             Token::KwReturn => StmtKind::Return(self.parse_return()?),
             Token::KwContinue => self.parse_continue()?,
             _ => {
@@ -745,23 +743,24 @@ impl<'ast> Parser<'ast> {
         Ok(StmtKind::Break)
     }
 
-    fn parse_switch(&mut self) -> Result<P<Switch>, ParseError> {
-        let mut switch = self.alloc::<Switch>();
-        self.expect_token(Token::KwSwitch, ParseContext::Switch)?;
-        switch.expr = self.parse_expr()?;
-        self.expect_token(Token::OpenBlock, ParseContext::Switch)?;
+    fn parse_match(&mut self) -> Result<P<Match>, ParseError> {
+        let mut match_ = self.alloc::<Match>();
+        self.expect_token(Token::KwMatch, ParseContext::Match)?;
+        match_.expr = self.parse_expr()?;
+        self.expect_token(Token::OpenBlock, ParseContext::Match)?;
         while !self.try_consume(Token::CloseBlock) {
-            let case = self.parse_switch_case()?;
-            switch.cases.add(&mut self.arena, case);
+            let arm = self.parse_match_arm()?;
+            match_.arms.add(&mut self.arena, arm);
         }
-        Ok(switch)
+        Ok(match_)
     }
 
-    fn parse_switch_case(&mut self) -> Result<SwitchCase, ParseError> {
+    fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
+        //@expr would be a subset of patterns, later on when we add sum types
+        let pattern = self.parse_expr()?;
+        self.expect_token(Token::ArrowWide, ParseContext::MatchArm)?;
         let expr = self.parse_expr()?;
-        self.expect_token(Token::ArrowWide, ParseContext::SwitchCase)?;
-        let block = self.parse_block()?;
-        Ok(SwitchCase { expr, block })
+        Ok(MatchArm { pattern, expr })
     }
 
     fn parse_return(&mut self) -> Result<P<Return>, ParseError> {
@@ -864,7 +863,7 @@ impl<'ast> Parser<'ast> {
                 let name = self.parse_ident(ParseContext::Expr)?; //context
                 match self.peek() {
                     Token::OpenParen | Token::Less => ExprKind::DotCall(self.parse_dot_call(name)?),
-                    _ => ExprKind::DotAccess(name),
+                    _ => ExprKind::DotName(name),
                 }
             }
             BinaryOp::Index => {
@@ -909,6 +908,8 @@ impl<'ast> Parser<'ast> {
             | Token::LitFloat(..)
             | Token::LitChar(..)
             | Token::LitString => ExprKind::Lit(self.parse_lit()?),
+            Token::OpenBlock => ExprKind::Block(self.parse_block()?),
+            Token::KwMatch => ExprKind::Match(self.parse_match()?),
             Token::KwCast => ExprKind::Cast(self.parse_cast()?),
             Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::OpenBracket | Token::OpenBlock => ExprKind::ArrayInit(self.parse_array_init()?),

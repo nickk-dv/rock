@@ -223,10 +223,8 @@ pub struct Stmt {
 pub enum StmtKind {
     If(P<If>),
     For(P<For>),
-    Block(P<Block>),
     Defer(P<Block>),
     Break,
-    Switch(P<Switch>),
     Return(P<Return>),
     Continue,
     ExprStmt(P<ExprStmt>),
@@ -276,15 +274,15 @@ pub struct Block {
 }
 
 #[derive(Copy, Clone)]
-pub struct Switch {
+pub struct Match {
     pub expr: Expr,
-    pub cases: List<SwitchCase>,
+    pub arms: List<MatchArm>,
 }
 
 #[derive(Copy, Clone)]
-pub struct SwitchCase {
+pub struct MatchArm {
+    pub pattern: Expr, //@pattern
     pub expr: Expr,
-    pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
@@ -316,6 +314,12 @@ pub enum AssignOp {
 #[derive(Copy, Clone)]
 pub struct ConstExpr(pub Expr);
 
+// all are valid
+// type{ }   // array inits with optional type prefix
+// type.{ }  // struct inits
+// type.call // var calls / type assoc calls
+// type.name // var + field or enum + access
+
 #[derive(Copy, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
@@ -325,13 +329,15 @@ pub struct Expr {
 #[derive(Copy, Clone)]
 pub enum ExprKind {
     Lit(Lit),
-    Var(P<Var>),
-    DotAccess(Ident),
-    DotCall(P<Call>),
+    Var(P<Var>), // @old node
     Index(P<Index>),
+    DotName(Ident),
+    DotCall(P<Call>),
     Cast(P<Cast>),
+    Match(P<Match>),
+    Block(P<Block>),
     Sizeof(P<Sizeof>),
-    ProcCall(P<ProcCall>),
+    ProcCall(P<ProcCall>), // @old node
     ArrayInit(P<ArrayInit>),
     StructInit(P<StructInit>),
     UnaryExpr(P<UnaryExpr>),
