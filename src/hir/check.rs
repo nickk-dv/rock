@@ -35,14 +35,14 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_5_check_globals();
     context.pass_6_check_control_flow();
 
-    let mut ir_gen = IRGen::new(context.copy());
-    ir_gen.emit_ir();
+    //let mut ir_gen = IRGen::new(context.copy());
+    //ir_gen.emit_ir();
 
-    let mut pr = ExprPrinter {
-        scope: context.get_scope(1),
-    };
-    let md = pr.scope.module.copy();
-    visit::visit_module_with(&mut pr, md);
+    //let mut pr = ExprPrinter {
+    //    scope: context.get_scope(1),
+    //};
+    //let md = pr.scope.module.copy();
+    //visit::visit_module_with(&mut pr, md);
 
     //let result = context.report_errors();
     context.manual_drop();
@@ -1148,10 +1148,6 @@ impl Context {
             ExprKind::DotCall(call) => {}
             ExprKind::Index(index) => {}
             ExprKind::Lit(lit) => {}
-            ExprKind::Var(var) => {
-                //access not walked
-                let global = self.scope_find_global(scope, var.module_path, var.name);
-            }
             ExprKind::Cast(..) => {}   //todo
             ExprKind::Sizeof(..) => {} //todo
             ExprKind::ProcCall(proc_call) => {
@@ -1218,7 +1214,7 @@ impl Context {
                 );
             }
             match stmt.kind {
-                StmtKind::If(if_) => {
+                /* @is expr StmtKind::If(if_) => {
                     self.scope_check_control_flow(
                         scope.copy(),
                         if_.block,
@@ -1251,7 +1247,7 @@ impl Context {
                             }
                         }
                     }
-                }
+                }*/
                 StmtKind::For(for_) => {
                     self.scope_check_control_flow(
                         scope.copy(),
@@ -1349,7 +1345,6 @@ impl IRGen {
             ExprKind::DotCall(call) => todo!(),
             ExprKind::Index(index) => todo!(),
             ExprKind::Lit(lit) => self.emit_lit(lit),
-            ExprKind::Var(_) => todo!(),
             ExprKind::Cast(_) => todo!(),
             ExprKind::Sizeof(_) => todo!(),
             ExprKind::ProcCall(proc_call) => self.emit_proc_call(proc_call),

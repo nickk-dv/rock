@@ -48,12 +48,10 @@ pub trait MutVisit: Sized {
     fn visit_return(&mut self, return_: P<Return>) {}
     fn visit_continue(&mut self) {}
     fn visit_var_decl(&mut self, var_decl: P<VarDecl>) {}
-    fn visit_var_assign(&mut self, var_assign: P<VarAssign>) {}
 
     fn visit_expr(&mut self, expr: Expr) {}
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
     fn visit_lit(&mut self, lit: &mut Lit) {}
-    fn visit_var(&mut self, var: P<Var>) {}
     fn visit_cast(&mut self, cast: P<Cast>) {}
     fn visit_sizeof(&mut self, sizeof: P<Sizeof>) {}
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
@@ -247,14 +245,12 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
     match stmt.kind {
         StmtKind::Assignment(assignment) => {}
         StmtKind::ExprStmt(expr_stmt) => {}
-        StmtKind::If(if_) => visit_if(vis, if_),
         StmtKind::For(for_) => visit_for(vis, for_),
         StmtKind::Defer(block) => visit_defer(vis, block),
         StmtKind::Break => visit_break(vis),
         StmtKind::Return(return_stmt) => visit_return(vis, return_stmt),
         StmtKind::Continue => visit_continue(vis),
         StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
-        StmtKind::VarAssign(var_assign) => visit_var_assign(vis, var_assign),
         StmtKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
     }
 }
@@ -278,15 +274,6 @@ fn visit_else<T: MutVisit>(vis: &mut T, else_: Else) {
 
 fn visit_for<T: MutVisit>(vis: &mut T, for_: P<For>) {
     vis.visit_for(for_);
-    if let Some(var_decl) = for_.var_decl {
-        visit_var_decl(vis, var_decl);
-    }
-    if let Some(condition) = for_.condition {
-        visit_expr(vis, condition);
-    }
-    if let Some(var_assign) = for_.var_assign {
-        visit_var_assign(vis, var_assign);
-    }
     visit_block(vis, for_.block);
 }
 
@@ -333,19 +320,13 @@ fn visit_continue<T: MutVisit>(vis: &mut T) {
 
 fn visit_var_decl<T: MutVisit>(vis: &mut T, mut var_decl: P<VarDecl>) {
     vis.visit_var_decl(var_decl);
-    visit_ident(vis, &mut var_decl.name);
+    //@ident is optional now, visit it
     if let Some(ref mut ty) = var_decl.ty {
         visit_type(vis, ty);
     }
     if let Some(expr) = var_decl.expr {
         visit_expr(vis, expr);
     }
-}
-
-fn visit_var_assign<T: MutVisit>(vis: &mut T, var_assign: P<VarAssign>) {
-    vis.visit_var_assign(var_assign);
-    visit_var(vis, var_assign.var);
-    visit_expr(vis, var_assign.expr);
 }
 
 fn visit_const_expr<T: MutVisit>(vis: &mut T, expr: ConstExpr) {
@@ -356,11 +337,11 @@ fn visit_const_expr<T: MutVisit>(vis: &mut T, expr: ConstExpr) {
 fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
     vis.visit_expr(expr);
     match expr.kind {
+        ExprKind::If(if_) => visit_if(vis, if_),
         ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
         ExprKind::DotName(name) => {}
         ExprKind::DotCall(call) => {}
         ExprKind::Index(index) => {}
-        ExprKind::Var(var) => visit_var(vis, var),
         ExprKind::Cast(cast) => visit_cast(vis, cast),
         ExprKind::Sizeof(sizeof) => visit_sizeof(vis, sizeof),
         ExprKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
@@ -374,12 +355,6 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
 
 fn visit_lit<T: MutVisit>(vis: &mut T, lit: &mut Lit) {
     vis.visit_lit(lit);
-}
-
-fn visit_var<T: MutVisit>(vis: &mut T, mut var: P<Var>) {
-    vis.visit_var(var);
-    visit_module_path(vis, &mut var.module_path);
-    visit_ident(vis, &mut var.name);
 }
 
 fn visit_cast<T: MutVisit>(vis: &mut T, mut cast: P<Cast>) {

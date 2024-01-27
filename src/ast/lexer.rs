@@ -157,8 +157,8 @@ impl<'src> Lexer<'src> {
             self.consume(c);
             match c {
                 'n' => Ok('\n'),
-                't' => Ok('\t'),
                 'r' => Ok('\r'),
+                't' => Ok('\t'),
                 '0' => Ok('\0'),
                 '\\' => Ok('\\'),
                 '\'' => Ok('\''),

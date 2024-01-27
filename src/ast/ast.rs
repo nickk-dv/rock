@@ -222,7 +222,6 @@ pub struct Stmt {
 
 #[derive(Copy, Clone)]
 pub enum StmtKind {
-    If(P<If>),
     For(P<For>),
     Defer(P<Block>),
     Break,
@@ -231,7 +230,6 @@ pub enum StmtKind {
     ExprStmt(P<ExprStmt>),
     Assignment(P<Assignment>),
     VarDecl(P<VarDecl>),
-    VarAssign(P<VarAssign>),
     ProcCall(P<ProcCall>),
 }
 
@@ -263,11 +261,36 @@ pub enum Else {
 
 #[derive(Copy, Clone)]
 pub struct For {
-    pub var_decl: Option<P<VarDecl>>,
-    pub condition: Option<Expr>,
-    pub var_assign: Option<P<VarAssign>>,
+    pub kind: ForKind,
     pub block: P<Block>,
 }
+
+//@mem usage, move to expr as pointer vs as value
+#[derive(Copy, Clone)]
+pub enum ForKind {
+    Loop,
+    While(Expr),
+    Iter(Option<Ident>, Expr),
+    Range(Option<Ident>, Range),
+}
+
+#[derive(Copy, Clone)]
+pub struct Range {
+    pub lhs: Expr,
+    pub rhs: Expr,
+    pub kind: RangeKind,
+}
+
+#[derive(Copy, Clone)]
+pub enum RangeKind {
+    DotDot,
+    DotDotEq,
+}
+
+//10..=0
+//0..=10
+//10..0
+//0..10
 
 #[derive(Copy, Clone)]
 pub struct Block {
@@ -294,16 +317,9 @@ pub struct Return {
 #[derive(Copy, Clone)]
 pub struct VarDecl {
     pub mutt: Mutability,
-    pub name: Ident,
+    pub name: Option<Ident>,
     pub ty: Option<Type>,
     pub expr: Option<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct VarAssign {
-    pub var: P<Var>,
-    pub op: AssignOp,
-    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -323,15 +339,16 @@ pub struct Expr {
 
 #[derive(Copy, Clone)]
 pub enum ExprKind {
+    Discard,
     Lit(Lit),
-    Var(P<Var>), // @old node
+    If(P<If>),
+    Block(P<Block>),
+    Match(P<Match>),
     Index(P<Index>),
     DotName(Ident),
     DotCall(P<Call>),
-    Type(Type),
+    Item(Type),
     Cast(P<Cast>),
-    Match(P<Match>),
-    Block(P<Block>),
     Sizeof(P<Sizeof>),
     ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
@@ -360,12 +377,6 @@ pub enum Lit {
     Float(f64, Option<BasicType>),
     Char(char),
     String,
-}
-
-#[derive(Copy, Clone)]
-pub struct Var {
-    pub module_path: ModulePath,
-    pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
@@ -427,8 +438,6 @@ pub struct BinaryExpr {
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum BinaryOp {
-    Deref,
-    Index,
     LogicAnd,
     LogicOr,
     Less,
@@ -447,4 +456,6 @@ pub enum BinaryOp {
     BitXor,
     Shl,
     Shr,
+    Deref,
+    Index,
 }

@@ -56,6 +56,7 @@ pub enum ParseError {
     ImportTargetMatch,
     StmtMatch,
     ElseMatch,
+    VarDeclName,
     PrimaryExprIdent,
     PrimaryExprMatch,
     AccessMatch,
@@ -222,6 +223,7 @@ impl ParseErrorData {
             ParseError::ImportTargetMatch => ParseContext::ImportDecl,
             ParseError::StmtMatch => ParseContext::Stmt,
             ParseError::ElseMatch => ParseContext::Else,
+            ParseError::VarDeclName => ParseContext::VarDecl,
             ParseError::PrimaryExprIdent => ParseContext::Expr,
             ParseError::PrimaryExprMatch => ParseContext::Expr,
             ParseError::AccessMatch => ParseContext::Access,
@@ -257,6 +259,7 @@ impl ParseErrorData {
                 Token::Ident,
             ],
             ParseError::ElseMatch => vec![Token::KwIf, Token::OpenBlock],
+            ParseError::VarDeclName => vec![Token::Ident, Token::Underscore],
             ParseError::PrimaryExprIdent => vec![Token::Ident],
             ParseError::PrimaryExprMatch => {
                 let mut expected = vec![
