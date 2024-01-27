@@ -44,9 +44,9 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     //let md = pr.scope.module.copy();
     //visit::visit_module_with(&mut pr, md);
 
-    //let result = context.report_errors();
+    let result = context.report_errors();
     context.manual_drop();
-    return Ok(());
+    return result;
 }
 
 pub struct Context {

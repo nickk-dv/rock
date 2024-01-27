@@ -123,7 +123,8 @@ main :: () -> s32 {
 
 fn cmd_check() -> Result<(), ()> {
     let ast = parser::parse()?;
-    check::check(ast)?;
+    check::check(ast.copy())?;
+    crate::hir::c_out::c_out(ast);
     Ok(())
 }
 
