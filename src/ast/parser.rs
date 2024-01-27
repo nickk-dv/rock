@@ -409,6 +409,11 @@ impl<'ast> Parser<'ast> {
                         name,
                         generic_params,
                     )?)),
+                    Token::KwUnion => Ok(Decl::Union(self.parse_union_decl(
+                        vis,
+                        name,
+                        generic_params,
+                    )?)),
                     Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(
                         vis,
                         name,
@@ -523,13 +528,48 @@ impl<'ast> Parser<'ast> {
 
     fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
         let name = self.parse_ident(ParseContext::EnumVariant)?;
-        let expr = if self.try_consume(Token::Assign) {
-            Some(ConstExpr(self.parse_expr()?))
-        } else {
-            None
+        let kind = match self.peek() {
+            Token::Colon => {
+                self.consume();
+                VariantKind::Typed(self.parse_type()?)
+            }
+            Token::Assign => {
+                self.consume();
+                let constexpr = ConstExpr(self.parse_expr()?);
+                VariantKind::Normal(Some(constexpr))
+            }
+            Token::Semicolon => VariantKind::Normal(None),
+            _ => return Err(ParseError::EnumVariantMatch),
         };
         self.expect_token(Token::Semicolon, ParseContext::EnumVariant)?;
-        Ok(EnumVariant { name, expr })
+        Ok(EnumVariant { name, kind })
+    }
+
+    fn parse_union_decl(
+        &mut self,
+        vis: Visibility,
+        name: Ident,
+        generic_params: Option<GenericParams>,
+    ) -> Result<P<UnionDecl>, ParseError> {
+        let mut union_decl = self.alloc::<UnionDecl>();
+        union_decl.vis = vis;
+        union_decl.name = name;
+        union_decl.generic_params = generic_params;
+        self.expect_token(Token::KwUnion, ParseContext::UnionDecl)?;
+        self.expect_token(Token::OpenBlock, ParseContext::UnionDecl)?;
+        while !self.try_consume(Token::CloseBlock) {
+            let member = self.parse_union_member()?;
+            union_decl.members.add(&mut self.arena, member);
+        }
+        Ok(union_decl)
+    }
+
+    fn parse_union_member(&mut self) -> Result<UnionMember, ParseError> {
+        let name = self.parse_ident(ParseContext::UnionMember)?;
+        self.expect_token(Token::Colon, ParseContext::UnionMember)?;
+        let ty = self.parse_type()?;
+        self.expect_token(Token::Semicolon, ParseContext::UnionMember)?;
+        Ok(UnionMember { name, ty })
     }
 
     fn parse_struct_decl(

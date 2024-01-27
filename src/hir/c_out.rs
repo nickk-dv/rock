@@ -97,6 +97,7 @@ impl Cout {
             Decl::Proc(proc_decl) => self.emit_proc_decl(proc_decl),
             Decl::Impl(_) => {}
             Decl::Enum(_) => {}
+            Decl::Union(_) => {}
             Decl::Struct(struct_decl) => self.emit_struct_decl(struct_decl),
             Decl::Global(_) => {}
             Decl::Import(_) => {}

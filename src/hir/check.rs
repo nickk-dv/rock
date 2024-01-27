@@ -373,6 +373,9 @@ impl Context {
                         self.enums.push(EnumData { decl, id });
                     }
                 }
+                Decl::Union(decl) => {
+                    //@todo
+                }
                 Decl::Struct(decl) => {
                     let id = self.structs.len() as StructID;
                     if let Err(existing) = scope.add_struct(decl, 0) {

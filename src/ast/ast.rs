@@ -124,9 +124,24 @@ pub enum Decl {
     Proc(P<ProcDecl>),
     Impl(P<ImplDecl>),
     Enum(P<EnumDecl>),
+    Union(P<UnionDecl>),
     Struct(P<StructDecl>),
     Global(P<GlobalDecl>),
     Import(P<ImportDecl>),
+}
+
+#[derive(Copy, Clone)]
+pub struct UnionDecl {
+    pub vis: Visibility,
+    pub name: Ident,
+    pub generic_params: Option<GenericParams>,
+    pub members: List<UnionMember>,
+}
+
+#[derive(Copy, Clone)]
+pub struct UnionMember {
+    pub name: Ident,
+    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
@@ -174,7 +189,13 @@ pub struct EnumDecl {
 #[derive(Copy, Clone)]
 pub struct EnumVariant {
     pub name: Ident,
-    pub expr: Option<ConstExpr>,
+    pub kind: VariantKind,
+}
+
+#[derive(Copy, Clone)]
+pub enum VariantKind {
+    Typed(Type),
+    Normal(Option<ConstExpr>),
 }
 
 #[derive(Copy, Clone)]

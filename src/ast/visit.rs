@@ -137,6 +137,7 @@ fn visit_decl<T: MutVisit>(vis: &mut T, decl: Decl) {
         Decl::Proc(proc_decl) => visit_proc_decl(vis, proc_decl),
         Decl::Impl(impl_decl) => visit_impl_decl(vis, impl_decl),
         Decl::Enum(enum_decl) => visit_enum_decl(vis, enum_decl),
+        Decl::Union(union_decl) => {} //@
         Decl::Struct(struct_decl) => visit_struct_decl(vis, struct_decl),
         Decl::Global(global_decl) => visit_global_decl(vis, global_decl),
         Decl::Import(import_decl) => visit_import_decl(vis, import_decl),
@@ -192,9 +193,7 @@ fn visit_enum_decl<T: MutVisit>(vis: &mut T, mut enum_decl: P<EnumDecl>) {
 fn visit_enum_variant<T: MutVisit>(vis: &mut T, variant: &mut EnumVariant) {
     vis.visit_enum_variant(variant);
     visit_ident(vis, &mut variant.name);
-    if let Some(expr) = variant.expr {
-        visit_const_expr(vis, expr);
-    }
+    //@not visited
 }
 
 fn visit_struct_decl<T: MutVisit>(vis: &mut T, mut struct_decl: P<StructDecl>) {
