@@ -10,6 +10,8 @@ use crate::tools::threads;
 use std::path::PathBuf;
 use std::time::Instant;
 
+//@empty error tokens produce invalid span diagnostic
+
 struct Timer {
     start_time: Instant,
 }
@@ -299,14 +301,15 @@ impl<'ast> Parser<'ast> {
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
         let mut ty = Type {
-            pointer_level: 0,
-            mutt: Mutability::Immutable, //@change how mutability is stored
+            ptr_level: PtrLevel::new(),
             kind: TypeKind::Basic(BasicType::Bool),
         };
         while self.try_consume(Token::Star) {
-            // @not finished repr for *<mut> *?
-            let mutt = self.parse_mut(); //@not stored per each ptr indirection
-            ty.pointer_level += 1;
+            let mutt = self.parse_mut();
+            if let Err(..) = ty.ptr_level.add_level(mutt) {
+                //@silently ignore extra pointer indir
+                //current error capturing doesnt support this limitation
+            }
         }
         if let Some(basic) = self.try_consume_basic_type() {
             ty.kind = TypeKind::Basic(basic);
@@ -595,13 +598,8 @@ impl<'ast> Parser<'ast> {
         let name = self.parse_ident(ParseContext::StructField)?;
         self.expect_token(Token::Colon, ParseContext::StructField)?;
         let ty = self.parse_type()?;
-        let default = if self.try_consume(Token::Assign) {
-            Some(ConstExpr(self.parse_expr()?))
-        } else {
-            None
-        };
         self.expect_token(Token::Semicolon, ParseContext::StructField)?;
-        Ok(StructField { name, ty, default })
+        Ok(StructField { name, ty })
     }
 
     fn parse_global_decl(
@@ -701,8 +699,8 @@ impl<'ast> Parser<'ast> {
             }
             _ => {
                 if (self.peek() == Token::KwMut)
-                    || (self.peek() == Token::Ident || self.peek() == Token::Underscore)
-                        && self.peek_next(1) == Token::Colon
+                    || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
+                        && self.peek_next(1) == Token::Colon)
                 {
                     StmtKind::VarDecl(self.parse_var_decl()?)
                 } else {

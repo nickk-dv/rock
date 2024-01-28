@@ -1,6 +1,6 @@
 use super::span::Span;
 use crate::mem::*;
-use std::path::PathBuf;
+use std::{ops::BitOr, path::PathBuf};
 
 pub type ScopeID = u32;
 
@@ -66,9 +66,14 @@ pub enum ModulePathKind {
 }
 
 #[derive(Copy, Clone)]
+pub struct PtrLevel {
+    ptr_lvl: u8,
+    mut_bits: u8,
+}
+
+#[derive(Copy, Clone)]
 pub struct Type {
-    pub pointer_level: u32,
-    pub mutt: Mutability,
+    pub ptr_level: PtrLevel,
     pub kind: TypeKind,
 }
 
@@ -210,7 +215,6 @@ pub struct StructDecl {
 pub struct StructField {
     pub name: Ident,
     pub ty: Type,
-    pub default: Option<ConstExpr>,
 }
 
 #[derive(Copy, Clone)]
@@ -479,4 +483,31 @@ pub enum BinaryOp {
     Shr,
     Deref,
     Index,
+}
+
+impl PtrLevel {
+    const MAX_LEVEL: u8 = 8;
+
+    pub fn new() -> Self {
+        Self {
+            ptr_lvl: 0,
+            mut_bits: 0,
+        }
+    }
+
+    pub fn add_level(&mut self, mutt: Mutability) -> Result<(), ()> {
+        if self.ptr_lvl >= Self::MAX_LEVEL {
+            return Err(());
+        }
+
+        let mut_bit = 1u8 << (self.ptr_lvl);
+        if mutt == Mutability::Mutable {
+            self.mut_bits |= mut_bit;
+        } else {
+            self.mut_bits &= !mut_bit;
+        }
+
+        self.ptr_lvl += 1;
+        Ok(())
+    }
 }

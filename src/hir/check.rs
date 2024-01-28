@@ -434,9 +434,10 @@ impl Context {
             scope.error(CheckError::MainProcHasParams, main.name.span);
         }
         if let Some(tt) = main.return_type {
-            if tt.pointer_level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
-                return;
-            }
+            //@changed pointer lvl api
+            //if tt.pointer_level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
+            //    return;
+            //}
         }
         scope.error(CheckError::MainProcWrongRetType, main.name.span);
     }

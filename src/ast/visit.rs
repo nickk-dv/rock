@@ -211,9 +211,6 @@ fn visit_struct_field<T: MutVisit>(vis: &mut T, field: &mut StructField) {
     vis.visit_struct_field(field);
     visit_ident(vis, &mut field.name);
     visit_type(vis, &mut field.ty);
-    if let Some(expr) = field.default {
-        visit_const_expr(vis, expr);
-    }
 }
 
 fn visit_global_decl<T: MutVisit>(vis: &mut T, mut global_decl: P<GlobalDecl>) {
