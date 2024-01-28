@@ -666,15 +666,23 @@ impl<'ast> Parser<'ast> {
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span_start = self.peek_span_start();
         let kind = match self.peek() {
-            Token::KwFor => StmtKind::For(self.parse_for()?),
-            Token::KwDefer => {
-                self.consume();
-                StmtKind::Defer(self.parse_block()?)
-            }
             Token::KwBreak => {
                 self.consume();
                 self.expect_token(Token::Semicolon, ParseContext::Break)?;
                 StmtKind::Break
+            }
+            Token::KwContinue => {
+                self.consume();
+                self.expect_token(Token::Semicolon, ParseContext::Continue)?;
+                StmtKind::Continue
+            }
+            Token::KwFor => {
+                self.consume();
+                StmtKind::For(self.parse_for()?)
+            }
+            Token::KwDefer => {
+                self.consume();
+                StmtKind::Defer(self.parse_block()?)
             }
             Token::KwReturn => {
                 self.consume();
@@ -692,38 +700,7 @@ impl<'ast> Parser<'ast> {
                 };
                 StmtKind::Return(return_)
             }
-            Token::KwContinue => {
-                self.consume();
-                self.expect_token(Token::Semicolon, ParseContext::Continue)?;
-                StmtKind::Break
-            }
-            _ => {
-                if (self.peek() == Token::KwMut)
-                    || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
-                        && self.peek_next(1) == Token::Colon)
-                {
-                    StmtKind::VarDecl(self.parse_var_decl()?)
-                } else {
-                    let expr = self.parse_expr()?;
-                    match self.peek().as_assign_op() {
-                        Some(op) => {
-                            self.consume();
-                            let mut assignment = self.alloc::<Assignment>();
-                            assignment.lhs = expr;
-                            assignment.op = op;
-                            assignment.rhs = self.parse_expr()?;
-                            self.expect_token(Token::Semicolon, ParseContext::Stmt)?; //@context
-                            StmtKind::Assignment(assignment)
-                        }
-                        None => {
-                            let has_semi = self.try_consume(Token::Semicolon);
-                            let mut expr_stmt = self.alloc::<ExprStmt>();
-                            *expr_stmt = ExprStmt { expr, has_semi };
-                            StmtKind::ExprStmt(expr_stmt)
-                        }
-                    }
-                }
-            }
+            _ => self.parse_stmt_no_keyword()?,
         };
         Ok(Stmt {
             kind,
@@ -731,50 +708,14 @@ impl<'ast> Parser<'ast> {
         })
     }
 
-    fn parse_if(&mut self) -> Result<P<If>, ParseError> {
-        let if_ = self.parse_if_single()?;
-        let mut if_prev = if_;
-        while self.try_consume(Token::KwElse) {
-            match self.peek() {
-                Token::KwIf => {
-                    let else_if = self.parse_if_single()?;
-                    if_prev.else_ = Some(Else::If(else_if));
-                    if_prev = else_if;
-                }
-                Token::OpenBlock => {
-                    let block = self.parse_block()?;
-                    if_prev.else_ = Some(Else::Block(block));
-                }
-                _ => return Err(ParseError::ElseMatch),
-            }
-        }
-        Ok(if_)
-    }
-
-    fn parse_if_single(&mut self) -> Result<P<If>, ParseError> {
-        self.consume();
-        let mut if_ = self.alloc::<If>();
-        if_.condition = self.parse_expr()?;
-        if_.block = self.parse_block()?;
-        if_.else_ = None;
-        Ok(if_)
-    }
-
     fn parse_for(&mut self) -> Result<P<For>, ParseError> {
         let mut for_ = self.alloc::<For>();
-        self.expect_token(Token::KwFor, ParseContext::For)?;
-        for_.kind = if self.peek() == Token::OpenBlock {
-            ForKind::Loop
-        } else {
-            match [self.peek(), self.peek_next(1)] {
-                [Token::Ident | Token::Underscore, Token::KwIn] => {
-                    let name = if self.try_consume(Token::Underscore) {
-                        None
-                    } else {
-                        Some(self.parse_ident(ParseContext::For)?)
-                    };
-                    self.expect_token(Token::KwIn, ParseContext::For)?;
 
+        for_.kind = match self.peek() {
+            Token::OpenBlock => ForKind::Loop,
+            _ => {
+                let var_bind = self.parse_var_binding(Token::KwIn, ParseContext::For)?;
+                if let Some(var_bind) = var_bind {
                     let lhs = self.parse_expr()?;
                     let range_kind = if self.try_consume(Token::DotDot) {
                         if self.try_consume(Token::Assign) {
@@ -785,83 +726,72 @@ impl<'ast> Parser<'ast> {
                     } else {
                         None
                     };
-
                     match range_kind {
                         Some(kind) => {
                             let rhs = self.parse_expr()?;
-                            ForKind::Range(name, Range { lhs, rhs, kind })
+                            ForKind::Range(var_bind, Range { lhs, rhs, kind })
                         }
-                        None => ForKind::Iter(name, lhs),
+                        None => ForKind::Iter(var_bind, lhs),
                     }
+                } else {
+                    ForKind::While(self.parse_expr()?)
                 }
-                _ => ForKind::While(self.parse_expr()?),
             }
         };
         for_.block = self.parse_block()?;
         Ok(for_)
     }
 
-    fn parse_block(&mut self) -> Result<P<Block>, ParseError> {
-        let mut block = self.alloc::<Block>();
-        self.expect_token(Token::OpenBlock, ParseContext::Block)?;
-        while !self.try_consume(Token::CloseBlock) {
-            let stmt = self.parse_stmt()?;
-            block.stmts.add(&mut self.arena, stmt);
-        }
-        Ok(block)
-    }
-
-    fn parse_match(&mut self) -> Result<P<Match>, ParseError> {
-        let mut match_ = self.alloc::<Match>();
-        self.expect_token(Token::KwMatch, ParseContext::Match)?;
-        match_.expr = self.parse_expr()?;
-        self.expect_token(Token::OpenBlock, ParseContext::Match)?;
-        while !self.try_consume(Token::CloseBlock) {
-            let arm = self.parse_match_arm()?;
-            match_.arms.add(&mut self.arena, arm);
-        }
-        Ok(match_)
-    }
-
-    fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
-        //@expr would be a subset of patterns, later on when we add sum types
-        let pattern = self.parse_expr()?;
-        self.expect_token(Token::ArrowWide, ParseContext::MatchArm)?;
-        let expr = self.parse_expr()?;
-        Ok(MatchArm { pattern, expr })
-    }
-
-    fn parse_return(&mut self) -> Result<P<Return>, ParseError> {
-        let mut return_ = self.alloc::<Return>();
-        self.expect_token(Token::KwReturn, ParseContext::Return)?;
-        return_.expr = if !self.try_consume(Token::Semicolon) {
-            let expr = self.parse_expr()?;
-            self.expect_token(Token::Semicolon, ParseContext::Return)?;
-            Some(expr)
+    fn parse_stmt_no_keyword(&mut self) -> Result<StmtKind, ParseError> {
+        let var_bind = self.parse_var_binding(Token::Colon, ParseContext::VarDecl)?;
+        if let Some(var_bind) = var_bind {
+            Ok(StmtKind::VarDecl(self.parse_var_decl(var_bind)?))
         } else {
-            None
-        };
-        Ok(return_)
-    }
-
-    fn parse_continue(&mut self) -> Result<StmtKind, ParseError> {
-        self.expect_token(Token::KwContinue, ParseContext::Continue)?;
-        self.expect_token(Token::Semicolon, ParseContext::Continue)?;
-        Ok(StmtKind::Continue)
-    }
-
-    fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
-        let mut var_decl = self.alloc::<VarDecl>();
-        var_decl.mutt = self.parse_mut();
-        var_decl.name = match self.peek() {
-            Token::Ident => Some(self.parse_ident(ParseContext::VarDecl)?),
-            Token::Underscore => {
-                self.consume();
-                None
+            let expr = self.parse_expr()?;
+            match self.peek().as_assign_op() {
+                None => {
+                    let has_semi = self.try_consume(Token::Semicolon);
+                    let mut expr_stmt = self.alloc::<ExprStmt>();
+                    *expr_stmt = ExprStmt { expr, has_semi };
+                    Ok(StmtKind::ExprStmt(expr_stmt))
+                }
+                Some(op) => {
+                    self.consume();
+                    let mut assignment = self.alloc::<Assignment>();
+                    assignment.lhs = expr;
+                    assignment.op = op;
+                    assignment.rhs = self.parse_expr()?;
+                    self.expect_token(Token::Semicolon, ParseContext::Stmt)?; //@context
+                    Ok(StmtKind::Assignment(assignment))
+                }
             }
-            _ => return Err(ParseError::VarDeclName),
+        }
+    }
+
+    fn parse_var_binding(
+        &mut self,
+        with_token: Token,
+        context: ParseContext,
+    ) -> Result<Option<VarBinding>, ParseError> {
+        let expect = (self.peek() == Token::KwMut)
+            || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
+                && self.peek_next(1) == with_token);
+        if !expect {
+            return Ok(None);
+        }
+        let mutt = self.parse_mut();
+        let name = if self.peek() == Token::Underscore {
+            None
+        } else {
+            Some(self.parse_ident(context)?)
         };
-        self.expect_token(Token::Colon, ParseContext::VarDecl)?;
+        self.expect_token(with_token, context)?;
+        Ok(Some(VarBinding { mutt, name }))
+    }
+
+    fn parse_var_decl(&mut self, var_bind: VarBinding) -> Result<P<VarDecl>, ParseError> {
+        let mut var_decl = self.alloc::<VarDecl>();
+        var_decl.bind = var_bind;
         if self.try_consume(Token::Assign) {
             var_decl.ty = None;
             var_decl.expr = Some(self.parse_expr()?);
@@ -1065,6 +995,65 @@ impl<'ast> Parser<'ast> {
         call.input =
             self.parse_expr_list(Token::OpenParen, Token::CloseParen, ParseContext::Expr)?;
         Ok(call)
+    }
+
+    fn parse_if(&mut self) -> Result<P<If>, ParseError> {
+        let if_ = self.parse_if_branch()?;
+        let mut if_prev = if_;
+        while self.try_consume(Token::KwElse) {
+            match self.peek() {
+                Token::KwIf => {
+                    let else_if = self.parse_if_branch()?;
+                    if_prev.else_ = Some(Else::If(else_if));
+                    if_prev = else_if;
+                }
+                Token::OpenBlock => {
+                    let block = self.parse_block()?;
+                    if_prev.else_ = Some(Else::Block(block));
+                }
+                _ => return Err(ParseError::ElseMatch),
+            }
+        }
+        Ok(if_)
+    }
+
+    fn parse_if_branch(&mut self) -> Result<P<If>, ParseError> {
+        self.consume();
+        let mut if_ = self.alloc::<If>();
+        if_.condition = self.parse_expr()?;
+        if_.block = self.parse_block()?;
+        if_.else_ = None;
+        Ok(if_)
+    }
+
+    fn parse_block(&mut self) -> Result<P<Block>, ParseError> {
+        let mut block = self.alloc::<Block>();
+        self.expect_token(Token::OpenBlock, ParseContext::Block)?;
+        while !self.try_consume(Token::CloseBlock) {
+            let stmt = self.parse_stmt()?;
+            block.stmts.add(&mut self.arena, stmt);
+        }
+        Ok(block)
+    }
+
+    fn parse_match(&mut self) -> Result<P<Match>, ParseError> {
+        let mut match_ = self.alloc::<Match>();
+        self.expect_token(Token::KwMatch, ParseContext::Match)?;
+        match_.expr = self.parse_expr()?;
+        self.expect_token(Token::OpenBlock, ParseContext::Match)?;
+        while !self.try_consume(Token::CloseBlock) {
+            let arm = self.parse_match_arm()?;
+            match_.arms.add(&mut self.arena, arm);
+        }
+        Ok(match_)
+    }
+
+    fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
+        //@expr would be a subset of patterns, later on when we add sum types
+        let pattern = self.parse_expr()?;
+        self.expect_token(Token::ArrowWide, ParseContext::MatchArm)?;
+        let expr = self.parse_expr()?;
+        Ok(MatchArm { pattern, expr })
     }
 
     fn parse_cast(&mut self) -> Result<P<Cast>, ParseError> {

@@ -247,15 +247,55 @@ pub struct Stmt {
 
 #[derive(Copy, Clone)]
 pub enum StmtKind {
+    Break,
+    Continue,
     For(P<For>),
     Defer(P<Block>),
-    Break,
     Return(P<Return>),
-    Continue,
+    VarDecl(P<VarDecl>),
     ExprStmt(P<ExprStmt>),
     Assignment(P<Assignment>),
-    VarDecl(P<VarDecl>),
-    ProcCall(P<ProcCall>),
+}
+
+#[derive(Copy, Clone)]
+pub struct For {
+    pub kind: ForKind,
+    pub block: P<Block>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ForKind {
+    Loop,
+    While(Expr),
+    Iter(VarBinding, Expr),
+    Range(VarBinding, Range),
+}
+
+//@promote ranges to expression
+#[derive(Copy, Clone)]
+pub struct Range {
+    pub lhs: Expr,
+    pub rhs: Expr,
+    pub kind: RangeKind,
+}
+
+#[derive(Copy, Clone)]
+pub enum RangeKind {
+    DotDot,
+    DotDotEq,
+}
+
+#[derive(Copy, Clone)]
+pub struct VarDecl {
+    pub bind: VarBinding,
+    pub ty: Option<Type>,
+    pub expr: Option<Expr>,
+}
+
+#[derive(Copy, Clone)]
+pub struct VarBinding {
+    pub mutt: Mutability,
+    pub name: Option<Ident>,
 }
 
 #[derive(Copy, Clone)]
@@ -272,6 +312,12 @@ pub struct Assignment {
 }
 
 #[derive(Copy, Clone)]
+pub enum AssignOp {
+    Assign,
+    BinaryOp(BinaryOp),
+}
+
+#[derive(Copy, Clone)]
 pub struct If {
     pub condition: Expr,
     pub block: P<Block>,
@@ -282,34 +328,6 @@ pub struct If {
 pub enum Else {
     If(P<If>),
     Block(P<Block>),
-}
-
-#[derive(Copy, Clone)]
-pub struct For {
-    pub kind: ForKind,
-    pub block: P<Block>,
-}
-
-//@mem usage, move to expr as pointer vs as value
-#[derive(Copy, Clone)]
-pub enum ForKind {
-    Loop,
-    While(Expr),
-    Iter(Option<Ident>, Expr),
-    Range(Option<Ident>, Range),
-}
-
-#[derive(Copy, Clone)]
-pub struct Range {
-    pub lhs: Expr,
-    pub rhs: Expr,
-    pub kind: RangeKind,
-}
-
-#[derive(Copy, Clone)]
-pub enum RangeKind {
-    DotDot,
-    DotDotEq,
 }
 
 //10..=0
@@ -337,20 +355,6 @@ pub struct MatchArm {
 #[derive(Copy, Clone)]
 pub struct Return {
     pub expr: Option<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct VarDecl {
-    pub mutt: Mutability,
-    pub name: Option<Ident>,
-    pub ty: Option<Type>,
-    pub expr: Option<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub enum AssignOp {
-    Assign,
-    BinaryOp(BinaryOp),
 }
 
 #[derive(Copy, Clone)]

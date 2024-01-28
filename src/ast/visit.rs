@@ -247,7 +247,6 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
         StmtKind::Return(return_stmt) => visit_return(vis, return_stmt),
         StmtKind::Continue => visit_continue(vis),
         StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
-        StmtKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
     }
 }
 
