@@ -267,8 +267,8 @@ pub struct For {
 pub enum ForKind {
     Loop,
     While(Expr),
-    Iter(VarBinding, Expr),
-    Range(VarBinding, Range),
+    Iter(VarBind, Expr),
+    Range(VarBind, Range),
 }
 
 //@promote ranges to expression
@@ -287,13 +287,13 @@ pub enum RangeKind {
 
 #[derive(Copy, Clone)]
 pub struct VarDecl {
-    pub bind: VarBinding,
+    pub bind: VarBind,
     pub ty: Option<Type>,
     pub expr: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]
-pub struct VarBinding {
+pub struct VarBind {
     pub mutt: Mutability,
     pub name: Option<Ident>,
 }
@@ -376,6 +376,7 @@ pub enum ExprKind {
     Index(P<Index>),
     DotName(Ident),
     DotCall(P<Call>),
+    Range(P<Range>),
     Item(Type),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),

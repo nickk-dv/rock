@@ -772,7 +772,7 @@ impl<'ast> Parser<'ast> {
         &mut self,
         with_token: Token,
         context: ParseContext,
-    ) -> Result<Option<VarBinding>, ParseError> {
+    ) -> Result<Option<VarBind>, ParseError> {
         let expect = (self.peek() == Token::KwMut)
             || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
                 && self.peek_next(1) == with_token);
@@ -786,10 +786,10 @@ impl<'ast> Parser<'ast> {
             Some(self.parse_ident(context)?)
         };
         self.expect_token(with_token, context)?;
-        Ok(Some(VarBinding { mutt, name }))
+        Ok(Some(VarBind { mutt, name }))
     }
 
-    fn parse_var_decl(&mut self, var_bind: VarBinding) -> Result<P<VarDecl>, ParseError> {
+    fn parse_var_decl(&mut self, var_bind: VarBind) -> Result<P<VarDecl>, ParseError> {
         let mut var_decl = self.alloc::<VarDecl>();
         var_decl.bind = var_bind;
         if self.try_consume(Token::Assign) {
@@ -937,8 +937,8 @@ impl<'ast> Parser<'ast> {
                 // if interface can be defined on slices then yes.
                 let ty = self.parse_type()?;
 
-                match [self.peek(), self.peek_next(1)] {
-                    [Token::OpenParen, ..] => {
+                match (self.peek(), self.peek_next(1)) {
+                    (Token::OpenParen, ..) => {
                         let mut proc_call = self.alloc::<ProcCall>();
                         proc_call.ty = ty;
                         proc_call.input = self.parse_expr_list(
@@ -948,7 +948,7 @@ impl<'ast> Parser<'ast> {
                         )?;
                         ExprKind::ProcCall(proc_call)
                     }
-                    [Token::Dot, Token::OpenBlock] => {
+                    (Token::Dot, Token::OpenBlock) => {
                         let mut struct_init = self.alloc::<StructInit>();
                         struct_init.ty = ty;
                         struct_init.input = List::<FieldInit>::new();
