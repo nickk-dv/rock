@@ -272,13 +272,13 @@ pub struct ExprStmt {
 }
 
 #[derive(Copy, Clone)]
-pub struct ConstExpr(pub Expr);
-
-#[derive(Copy, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
 }
+
+#[derive(Copy, Clone)]
+pub struct ConstExpr(pub Expr);
 
 #[derive(Copy, Clone)]
 pub enum ExprKind {
