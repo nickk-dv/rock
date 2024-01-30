@@ -1,11 +1,12 @@
 #![allow(unused)]
+use std::io::{BufWriter, Stderr, Write};
 
-pub fn set_color(color: Color) {
-    print!("{}", Color::as_ansi_str(color));
+pub fn set_color(handle: &mut BufWriter<Stderr>, color: Color) {
+    write!(handle, "{}", Color::as_ansi_str(color));
 }
 
-pub fn reset() {
-    print!("\x1B[0m");
+pub fn reset(handle: &mut BufWriter<Stderr>) {
+    write!(handle, "\x1B[0m");
 }
 
 pub enum Color {

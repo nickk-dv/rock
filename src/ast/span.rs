@@ -9,11 +9,12 @@ impl Span {
         Self { start, end }
     }
 
-    pub fn str<'a>(&'a self, string: &'a String) -> &str {
-        Self::str_range(self.start, self.end, string)
-    }
-
-    pub fn str_range(start: u32, end: u32, string: &String) -> &str {
-        &string[start as usize..end as usize]
+    pub fn slice<'a>(&self, source: &'a String) -> &'a str {
+        let range = self.start as usize..self.end as usize;
+        if let Some(slice) = source.as_str().get(range) {
+            slice
+        } else {
+            "INVALID SPAN"
+        }
     }
 }

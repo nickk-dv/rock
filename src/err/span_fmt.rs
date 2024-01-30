@@ -1,10 +1,17 @@
 use super::ansi::{self, Color};
 use crate::ast::ast::SourceFile;
 use crate::ast::span::*;
+use std::io::{BufWriter, Stderr, Write};
 
-pub fn print(source: &SourceFile, span: Span, marker: Option<&str>, is_info: bool) {
+pub fn print(
+    handle: &mut BufWriter<Stderr>,
+    source: &SourceFile,
+    span: Span,
+    marker: Option<&str>,
+    is_info: bool,
+) {
     let format = SpanFormat::new(source, span);
-    format.print(marker, is_info);
+    format.print(handle, marker, is_info);
 }
 
 #[derive(Copy, Clone)]
@@ -30,11 +37,14 @@ impl<'a> SpanFormat<'a> {
         let loc = find_loc(&file.line_spans, span);
         let is_multi_line;
 
-        let line = loc.span.str(&file.source);
+        let line = loc.span.slice(&file.source);
         let line = normalize_tab(line);
-        let line_prefix = Span::str_range(loc.span.start, span.start, &file.source);
+
+        let prefix_span = Span::new(loc.span.start, span.start);
+        let line_prefix = prefix_span.slice(&file.source);
         let line_prefix = normalize_tab(line_prefix);
-        let line_span = span.str(&file.source);
+
+        let line_span = span.slice(&file.source);
         let line_span = if line_span.contains('\n') {
             is_multi_line = true;
             line_span.lines().next().unwrap_or("").trim_end()
@@ -56,72 +66,79 @@ impl<'a> SpanFormat<'a> {
         }
     }
 
-    fn print(&self, marker_msg: Option<&str>, is_info: bool) {
-        self.print_arrow();
-        ansi::set_color(Color::Cyan);
-        println!(
+    fn print(&self, handle: &mut BufWriter<Stderr>, marker_msg: Option<&str>, is_info: bool) {
+        self.print_arrow(handle);
+        ansi::set_color(handle, Color::Cyan);
+        let _ = writeln!(
+            handle,
             "{}:{}:{}",
             self.file.path.to_string_lossy(),
             self.loc.line,
             self.loc.col
         );
-        ansi::reset();
+        ansi::reset(handle);
 
-        self.print_bar(true);
-        self.print_line_bar();
-        println!("{}", self.line);
-        self.print_bar(false);
+        self.print_bar(handle, true);
+        self.print_line_bar(handle);
+        let _ = writeln!(handle, "{}", self.line);
+        self.print_bar(handle, false);
 
         let marker_pad = " ".repeat(self.marker_pad_len);
         if is_info {
-            ansi::set_color(Color::BoldGreen);
+            ansi::set_color(handle, Color::BoldGreen);
             let marker = "-".repeat(self.marker_len);
             match marker_msg {
                 Some(message) => {
-                    print!("{}{}", marker_pad, marker);
-                    ansi::set_color(Color::Green);
-                    println!(" {}", message);
+                    let _ = write!(handle, "{}{}", marker_pad, marker);
+                    ansi::set_color(handle, Color::Green);
+                    let _ = writeln!(handle, " {}", message);
                 }
-                None => println!("{}{}", marker_pad, marker),
+                None => {
+                    let _ = writeln!(handle, "{}{}", marker_pad, marker);
+                }
             }
         } else {
-            ansi::set_color(Color::BoldRed);
+            ansi::set_color(handle, Color::BoldRed);
             let marker = "^".repeat(self.marker_len);
             match marker_msg {
-                Some(message) => println!("{}{} {}", marker_pad, marker, message),
-                None => println!("{}{}", marker_pad, marker),
+                Some(message) => {
+                    let _ = writeln!(handle, "{}{} {}", marker_pad, marker, message);
+                }
+                None => {
+                    let _ = writeln!(handle, "{}{}", marker_pad, marker);
+                }
             }
         }
-        ansi::reset();
+        ansi::reset(handle);
 
         if self.is_multi_line {
-            self.print_bar(false);
-            ansi::set_color(Color::Cyan);
-            println!("...");
-            ansi::reset();
+            self.print_bar(handle, false);
+            ansi::set_color(handle, Color::Cyan);
+            let _ = writeln!(handle, "...");
+            ansi::reset(handle);
         }
     }
 
-    fn print_arrow(&self) {
-        ansi::set_color(Color::Cyan);
-        print!("{}--> ", self.left_pad);
-        ansi::reset();
+    fn print_arrow(&self, handle: &mut BufWriter<Stderr>) {
+        ansi::set_color(handle, Color::Cyan);
+        let _ = write!(handle, "{}--> ", self.left_pad);
+        ansi::reset(handle);
     }
 
-    fn print_bar(&self, endl: bool) {
-        ansi::set_color(Color::Cyan);
+    fn print_bar(&self, handle: &mut BufWriter<Stderr>, endl: bool) {
+        ansi::set_color(handle, Color::Cyan);
         if endl {
-            println!("{} |", self.left_pad);
+            let _ = writeln!(handle, "{} |", self.left_pad);
         } else {
-            print!("{} | ", self.left_pad);
+            let _ = write!(handle, "{} | ", self.left_pad);
         }
-        ansi::reset();
+        ansi::reset(handle);
     }
 
-    fn print_line_bar(&self) {
-        ansi::set_color(Color::Cyan);
-        print!("{} | ", self.line_num);
-        ansi::reset();
+    fn print_line_bar(&self, handle: &mut BufWriter<Stderr>) {
+        ansi::set_color(handle, Color::Cyan);
+        let _ = write!(handle, "{} | ", self.line_num);
+        ansi::reset(handle);
     }
 }
 

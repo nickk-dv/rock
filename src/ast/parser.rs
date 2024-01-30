@@ -54,16 +54,18 @@ pub fn parse() -> Result<P<Ast>, ()> {
         ast.arenas.push(res);
     }
 
+    let handle = &mut std::io::BufWriter::new(std::io::stderr());
+
     for res in output.0 {
         match res {
             Ok(result) => {
                 ast.modules.push(result.0);
                 if let Some(ref error) = result.1 {
-                    report::report(error);
+                    report::report(handle, error);
                 }
             }
             Err(ref error) => {
-                report::report(error);
+                report::report(handle, error);
             }
         }
     }
@@ -95,7 +97,7 @@ impl visit::MutVisit for Interner {
     }
 
     fn visit_ident(&mut self, ident: &mut Ident) {
-        let bytes = ident.span.str(&self.module.file.source).as_bytes();
+        let bytes = ident.span.slice(&self.module.file.source).as_bytes();
         ident.id = self.intern_pool.intern(bytes);
     }
 }
@@ -118,7 +120,9 @@ fn collect_filepaths(dir_path: PathBuf, filepaths: &mut Vec<PathBuf>) {
             }
         }
         Err(err) => {
+            let handle = &mut std::io::BufWriter::new(std::io::stderr());
             report::report(
+                handle,
                 &Error::file_io(FileIOError::DirRead)
                     .info(err.to_string())
                     .info(format!("path: {:?}", dir_path))
@@ -293,18 +297,11 @@ impl<'ast> Parser<'ast> {
         match self.peek() {
             Token::KwImport => Ok(Decl::Import(self.parse_import_decl()?)),
             Token::Ident | Token::KwPub => {
-                let vis_span = self.peek_span();
                 let vis = self.parse_vis();
-                let vis_span = match vis {
-                    Vis::Public => Some(vis_span),
-                    Vis::Private => None,
-                };
                 let name = self.parse_ident(ParseContext::Decl)?;
-
                 if self.peek() == Token::Colon {
                     return Ok(Decl::Global(self.parse_global_decl(vis, name)?));
                 }
-
                 self.expect_token(Token::ColonColon, ParseContext::Decl)?;
                 match self.peek() {
                     Token::KwMod => Ok(Decl::Module(self.parse_module_decl(vis, name)?)),
@@ -703,14 +700,10 @@ impl<'ast> Parser<'ast> {
             Token::KwCast => ExprKind::Cast(self.parse_cast()?),
             Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::OpenBracket => {
-                self.consume();
+                self.consume(); // `[`
                 let mut array_init = self.alloc::<ArrayInit>();
-                array_init.input = self.parse_expr_list(
-                    Token::OpenBracket,
-                    Token::CloseBracket,
-                    ParseContext::ArrayInit,
-                )?;
-                self.expect_token(Token::CloseBracket, ParseContext::ArrayInit)?;
+                array_init.input =
+                    self.parse_expr_list(Token::CloseBracket, ParseContext::ArrayInit)?;
                 ExprKind::ArrayInit(array_init)
             }
             _ => {
@@ -719,20 +712,17 @@ impl<'ast> Parser<'ast> {
 
                 match (self.peek(), self.peek_next(1)) {
                     (Token::OpenParen, ..) => {
-                        self.consume();
+                        self.consume(); // `(`
                         let mut proc_call = self.alloc::<ProcCall>();
                         proc_call.path = path;
                         proc_call.name = name;
-                        proc_call.input = self.parse_expr_list(
-                            Token::OpenParen,
-                            Token::CloseParen,
-                            ParseContext::ProcCall,
-                        )?;
+                        proc_call.input =
+                            self.parse_expr_list(Token::CloseParen, ParseContext::ProcCall)?;
                         ExprKind::ProcCall(proc_call)
                     }
                     (Token::Dot, Token::OpenBlock) => {
-                        self.consume();
-                        self.consume();
+                        self.consume(); // `.`
+                        self.consume(); // `{`
                         let mut struct_init = self.alloc::<StructInit>();
                         struct_init.path = path;
                         struct_init.name = name;
@@ -919,7 +909,6 @@ impl<'ast> Parser<'ast> {
 
     fn parse_expr_list(
         &mut self,
-        start: Token,
         end: Token,
         context: ParseContext,
     ) -> Result<List<Expr>, ParseError> {
@@ -1009,16 +998,6 @@ impl<'ast> Parser<'ast> {
             return Ok(());
         }
         Err(ParseError::ExpectToken(context, token))
-    }
-
-    fn expect_assign_op(&mut self, context: ParseContext) -> Result<AssignOp, ParseError> {
-        match self.peek().as_assign_op() {
-            Some(op) => {
-                self.consume();
-                Ok(op)
-            }
-            None => Err(ParseError::ExpectAssignOp(context)),
-        }
     }
 }
 

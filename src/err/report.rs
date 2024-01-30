@@ -2,6 +2,7 @@ use super::ansi::{self, Color};
 use super::error::*;
 use super::span_fmt;
 use crate::ast::token::Token;
+use std::io::{BufWriter, Stderr, Write};
 
 static mut ERR_COUNT: u32 = 0;
 
@@ -13,21 +14,22 @@ pub fn err_status<T>(ok: T) -> Result<T, ()> {
     }
 }
 
-pub fn report(error: &Error) {
+pub fn report(handle: &mut BufWriter<Stderr>, error: &Error) {
     unsafe { ERR_COUNT += 1 }
     match error {
         Error::Parse(err) => {
-            print_error("parse error");
-            println!("in {}", err.context.as_str());
-            print!("expected: ");
+            print_error(handle, "parse error");
+            let _ = writeln!(handle, "in {}", err.context.as_str());
+            let _ = write!(handle, "expected: ");
             for (index, token) in err.expected.iter().enumerate() {
                 if index < err.expected.len() - 1 {
-                    print!("`{}`, ", Token::as_str(*token));
+                    let _ = writeln!(handle, "`{}`, ", Token::as_str(*token));
                 } else {
-                    println!("`{}`", Token::as_str(*token));
+                    let _ = writeln!(handle, "`{}`", Token::as_str(*token));
                 }
             }
             span_fmt::print(
+                handle,
                 &err.source.file,
                 err.got_token.span,
                 Some("unexpected token"),
@@ -35,17 +37,18 @@ pub fn report(error: &Error) {
             );
         }
         Error::Check(err) => {
-            print_error("error");
-            println!("{}", err.message.0);
+            print_error(handle, "error");
+            let _ = writeln!(handle, "{}", err.message.0);
             if !err.no_source {
-                span_fmt::print(&err.source.file, err.span, None, false);
+                span_fmt::print(handle, &err.source.file, err.span, None, false);
                 for info in err.info.iter() {
                     match info {
                         CheckErrorInfo::InfoString(info) => {
-                            println!("{}", info);
+                            let _ = writeln!(handle, "{}", info);
                         }
                         CheckErrorInfo::Context(context) => {
                             span_fmt::print(
+                                handle,
                                 &context.source.file,
                                 context.span,
                                 Some(context.marker),
@@ -55,38 +58,38 @@ pub fn report(error: &Error) {
                     }
                 }
             }
-            print_help(err.message.1);
+            print_help(handle, err.message.1);
         }
         Error::FileIO(err) => {
-            print_error("env error");
-            println!("{}", err.message.0);
+            print_error(handle, "env error");
+            let _ = writeln!(handle, "{}", err.message.0);
             for info in err.info.iter() {
-                println!("{}", info);
+                let _ = writeln!(handle, "{}", info);
             }
-            print_help(err.message.1);
+            print_help(handle, err.message.1);
         }
         Error::Internal(err) => {
-            print_error("error [internal]");
-            println!("{}", err.message.0);
+            print_error(handle, "error [internal]");
+            let _ = writeln!(handle, "{}", err.message.0);
             for info in err.info.iter() {
-                println!("{}", info);
+                let _ = writeln!(handle, "{}", info);
             }
-            print_help(err.message.1);
+            print_help(handle, err.message.1);
         }
     }
 }
 
-fn print_error(error_name: &'static str) {
-    ansi::set_color(Color::BoldRed);
-    print!("\n{}: ", error_name);
-    ansi::reset();
+fn print_error(handle: &mut BufWriter<Stderr>, error_name: &'static str) {
+    ansi::set_color(handle, Color::BoldRed);
+    let _ = write!(handle, "\n{}: ", error_name);
+    ansi::reset(handle);
 }
 
-fn print_help(help: Option<&'static str>) {
+fn print_help(handle: &mut BufWriter<Stderr>, help: Option<&'static str>) {
     if let Some(str) = help {
-        ansi::set_color(Color::Cyan);
-        print!("help: ");
-        ansi::reset();
-        println!("{}", str);
+        ansi::set_color(handle, Color::Cyan);
+        let _ = write!(handle, "help: ");
+        ansi::reset(handle);
+        let _ = writeln!(handle, "{}", str);
     }
 }

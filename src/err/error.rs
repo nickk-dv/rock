@@ -54,27 +54,19 @@ pub enum ParseError {
     TypeMatch,
     DeclMatch,
     DeclMatchKw,
-    EnumVariantMatch,
     ImportTargetMatch,
-    StmtMatch,
     ElseMatch,
-    VarDeclName,
-    PrimaryExprIdent,
     PrimaryExprMatch,
-    AccessMatch,
     LiteralMatch,
     LiteralInteger,
     LiteralFloat,
     FieldInit,
     ExpectToken(ParseContext, Token),
-    ExpectAssignOp(ParseContext),
 }
 
 #[derive(Copy, Clone)]
 pub enum ParseContext {
     ModulePath,
-    GenericArgs,
-    GenericParams,
     Type,
     CustomType,
     ArraySlice,
@@ -83,7 +75,6 @@ pub enum ParseContext {
     ModDecl,
     ProcDecl,
     ProcParam,
-    ImplDecl,
     EnumDecl,
     EnumVariant,
     UnionDecl,
@@ -225,20 +216,14 @@ impl ParseErrorData {
             ParseError::TypeMatch => ParseContext::Type,
             ParseError::DeclMatch => ParseContext::Decl,
             ParseError::DeclMatchKw => ParseContext::Decl,
-            ParseError::EnumVariantMatch => ParseContext::EnumVariant,
             ParseError::ImportTargetMatch => ParseContext::ImportDecl,
-            ParseError::StmtMatch => ParseContext::Stmt,
             ParseError::ElseMatch => ParseContext::Else,
-            ParseError::VarDeclName => ParseContext::VarDecl,
-            ParseError::PrimaryExprIdent => ParseContext::Expr,
             ParseError::PrimaryExprMatch => ParseContext::Expr,
-            ParseError::AccessMatch => ParseContext::Access,
             ParseError::LiteralMatch => ParseContext::Literal,
             ParseError::LiteralInteger => ParseContext::LiteralInteger,
             ParseError::LiteralFloat => ParseContext::LiteralFloat,
             ParseError::FieldInit => ParseContext::StructInit,
             ParseError::ExpectToken(c, ..) => c,
-            ParseError::ExpectAssignOp(c) => c,
         }
     }
 
@@ -261,22 +246,8 @@ impl ParseErrorData {
                     Token::KwStruct,
                 ]
             }
-            ParseError::EnumVariantMatch => vec![Token::Colon, Token::Assign, Token::Semicolon],
             ParseError::ImportTargetMatch => vec![Token::Ident, Token::Star, Token::OpenBlock],
-            ParseError::StmtMatch => vec![
-                Token::KwIf,
-                Token::KwFor,
-                Token::OpenBlock,
-                Token::KwDefer,
-                Token::KwBreak,
-                Token::KwMatch,
-                Token::KwReturn,
-                Token::KwContinue,
-                Token::Ident,
-            ],
             ParseError::ElseMatch => vec![Token::KwIf, Token::OpenBlock],
-            ParseError::VarDeclName => vec![Token::Ident, Token::Underscore],
-            ParseError::PrimaryExprIdent => vec![Token::Ident],
             ParseError::PrimaryExprMatch => {
                 let mut expected = vec![
                     Token::Ident,
@@ -291,7 +262,6 @@ impl ParseErrorData {
                 expected.extend(Self::all_literal_tokens());
                 expected
             }
-            ParseError::AccessMatch => vec![Token::Dot, Token::OpenBracket],
             ParseError::LiteralMatch => Self::all_literal_tokens(),
             ParseError::LiteralInteger => {
                 let mut expected = Self::all_integer_literal_types();
@@ -301,19 +271,6 @@ impl ParseErrorData {
             ParseError::LiteralFloat => Self::all_float_literal_types(),
             ParseError::FieldInit => vec![Token::Colon, Token::Comma, Token::CloseBlock],
             ParseError::ExpectToken(.., t) => vec![t],
-            ParseError::ExpectAssignOp(..) => vec![
-                Token::Assign,
-                Token::PlusEq,
-                Token::MinusEq,
-                Token::TimesEq,
-                Token::DivEq,
-                Token::ModEq,
-                Token::BitAndEq,
-                Token::BitOrEq,
-                Token::BitXorEq,
-                Token::ShlEq,
-                Token::ShrEq,
-            ],
         }
     }
 
@@ -351,8 +308,6 @@ impl ParseContext {
     pub(super) fn as_str(&self) -> &'static str {
         match self {
             ParseContext::ModulePath => "module path",
-            ParseContext::GenericArgs => "generic arguments",
-            ParseContext::GenericParams => "generic parameters",
             ParseContext::Type => "type signature",
             ParseContext::CustomType => "custom type",
             ParseContext::ArraySlice => "array slice type",
@@ -361,7 +316,6 @@ impl ParseContext {
             ParseContext::ModDecl => "module declaration",
             ParseContext::ProcDecl => "procedure declaration",
             ParseContext::ProcParam => "procedure parameter",
-            ParseContext::ImplDecl => "impl block",
             ParseContext::EnumDecl => "enum declaration",
             ParseContext::EnumVariant => "enum variant",
             ParseContext::UnionDecl => "union declaration",

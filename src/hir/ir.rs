@@ -51,35 +51,23 @@ pub enum Inst {
 pub fn print_inst(inst: &Inst) {
     match inst {
         Inst::BB(v) => {
-            ansi::set_color(ansi::Color::Green);
             print!("@block.{}", v);
-            ansi::reset();
         }
         Inst::Label(..) => {}
         Inst::Br => {
-            ansi::set_color(ansi::Color::Yellow);
             print!("br ");
-            ansi::reset();
         }
         Inst::CondBr => {
-            ansi::set_color(ansi::Color::Yellow);
             print!("if ");
-            ansi::reset();
         }
         Inst::Ret => {
-            ansi::set_color(ansi::Color::Yellow);
             print!("ret");
-            ansi::reset();
         }
         Inst::RetVal => {
-            ansi::set_color(ansi::Color::Yellow);
             print!("ret_val");
-            ansi::reset();
         }
         Inst::Value(v) => {
-            ansi::set_color(ansi::Color::Cyan);
             print!("%{}", v);
-            ansi::reset();
         }
         Inst::Call { argc, id } => {
             print!("call.{} ", argc);

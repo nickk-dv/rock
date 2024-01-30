@@ -10,16 +10,6 @@ use std::collections::HashMap;
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
 //@report usages of self id module path as redundant?
 
-struct ExprPrinter {
-    scope: P<Scope>,
-}
-
-impl visit::MutVisit for ExprPrinter {
-    fn visit_expr(&mut self, expr: Expr) {
-        crate::err::span_fmt::print(&self.scope.module.file, expr.span, None, true);
-    }
-}
-
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let est_scope_count = ast.modules.len();
     let block_size = std::mem::size_of::<Scope>() * est_scope_count;
@@ -35,16 +25,15 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_5_check_globals();
     context.pass_6_check_control_flow();
 
-    //let mut ir_gen = IRGen::new(context.copy());
-    //ir_gen.emit_ir();
-
-    //let mut pr = ExprPrinter {
-    //    scope: context.get_scope(1),
-    //};
-    //let md = pr.scope.module.copy();
-    //visit::visit_module_with(&mut pr, md);
+    // 1300 ms
+    use std::time::Instant;
+    let start_time = Instant::now();
 
     let result = context.report_errors();
+
+    let end_time = Instant::now();
+    let elapsed_time = end_time - start_time;
+    println!("Elapsed time: {} ms", elapsed_time.as_millis());
     context.manual_drop();
     return result;
 }
@@ -171,13 +160,14 @@ impl Context {
     }
 
     fn report_errors(&self) -> Result<(), ()> {
+        let handle = &mut std::io::BufWriter::new(std::io::stderr());
         use crate::err::report;
         for err in self.errors.iter() {
-            report::report(err);
+            report::report(handle, err);
         }
         for scope in self.scopes.iter() {
             for err in scope.errors.iter() {
-                report::report(err);
+                report::report(handle, err);
             }
         }
         report::err_status(())
@@ -219,7 +209,7 @@ impl Context {
 
         while let Some(mut task) = tasks.pop() {
             let source = &task.parent.file.source;
-            let mod_name = task.mod_decl.name.span.str(source);
+            let mod_name = task.mod_decl.name.span.slice(source);
             let mut path_1 = task.parent.file.path.clone();
             let mut path_2 = task.parent.file.path.clone();
             path_1.pop();

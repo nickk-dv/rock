@@ -31,9 +31,11 @@ main :: () -> s32 {
     let src_path = proj_dir.join("src");
     let main_path = src_path.join("main.lang");
     let gitignore_path = proj_dir.join(".gitignore");
+    let handle = &mut std::io::BufWriter::new(std::io::stderr());
 
     if let Err(err) = fs::create_dir(&proj_dir) {
         report::report(
+            handle,
             &Error::file_io(FileIOError::DirCreate)
                 .info(err.to_string())
                 .info(format!("path: {:?}", proj_dir))
@@ -44,6 +46,7 @@ main :: () -> s32 {
 
     if let Err(err) = fs::create_dir(&src_path) {
         report::report(
+            handle,
             &Error::file_io(FileIOError::DirCreate)
                 .info(err.to_string())
                 .info(format!("path: {:?}", src_path))
@@ -56,6 +59,7 @@ main :: () -> s32 {
         Ok(file) => file,
         Err(err) => {
             report::report(
+                handle,
                 &Error::file_io(FileIOError::FileCreate)
                     .info(err.to_string())
                     .info(format!("path: {:?}", main_path))
@@ -69,6 +73,7 @@ main :: () -> s32 {
         Ok(file) => file,
         Err(err) => {
             report::report(
+                handle,
                 &Error::file_io(FileIOError::FileCreate)
                     .info(err.to_string())
                     .info(format!("path: {:?}", gitignore_path))
@@ -80,6 +85,7 @@ main :: () -> s32 {
 
     if let Err(err) = main_file.write_all(MAIN_FILE.as_bytes()) {
         report::report(
+            handle,
             &Error::file_io(FileIOError::FileWrite)
                 .info(err.to_string())
                 .info(format!("path: {:?}", main_path))
@@ -90,6 +96,7 @@ main :: () -> s32 {
 
     if let Err(err) = gitignore_file.write_all(GITIGNORE_FILE.as_bytes()) {
         report::report(
+            handle,
             &Error::file_io(FileIOError::FileWrite)
                 .info(err.to_string())
                 .info(format!("path: {:?}", gitignore_path))
@@ -100,6 +107,7 @@ main :: () -> s32 {
 
     if let Err(err) = std::env::set_current_dir(&proj_dir) {
         report::report(
+            handle,
             &Error::file_io(FileIOError::EnvCurrentDir)
                 .info(err.to_string())
                 .info(format!("path: {:?}", proj_dir))
@@ -110,6 +118,7 @@ main :: () -> s32 {
 
     if let Err(err) = std::process::Command::new("git").arg("init").status() {
         report::report(
+            handle,
             &Error::file_io(FileIOError::EnvCommand)
                 .info(format!("command: `git init`, reason:{}", err.to_string()))
                 .info("make sure git is installed, or use -no_git option".to_string())
