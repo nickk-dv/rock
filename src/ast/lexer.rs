@@ -214,6 +214,7 @@ impl<'src> Lexer<'src> {
         }
         if !char_quote && !has_escape {
             // example [ 'x ]
+            println!("{}", self.str);
             panic!("char lit not terminated, missing closing `'`");
         }
         return self.token_spanned(Token::LitChar(char));

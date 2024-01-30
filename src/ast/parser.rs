@@ -165,22 +165,6 @@ fn task_res() -> Arena {
     Arena::new(1024 * 1024)
 }
 
-macro_rules! parse_list {
-    ($list_ty:tt, $item_fn:item, $close_token:expr, $context:expr) => {
-        let mut list = List::<$list_ty>::new();
-        if !self.try_consume($close_token) {
-            loop {
-                let item = $item_fn($context)?; //assept function
-                list.add(&mut self.arena, item);
-                if !self.try_consume(Token::Comma) {
-                    break;
-                }
-            }
-            self.expect_token($close_token, $context)?;
-        }
-    };
-}
-
 struct Parser<'ast> {
     cursor: usize,
     tokens: Vec<TokenSpan>,
@@ -718,37 +702,27 @@ impl<'ast> Parser<'ast> {
             Token::KwMatch => ExprKind::Match(self.parse_match()?),
             Token::KwCast => ExprKind::Cast(self.parse_cast()?),
             Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
+            Token::OpenBracket => {
+                self.consume();
+                let mut array_init = self.alloc::<ArrayInit>();
+                array_init.input = self.parse_expr_list(
+                    Token::OpenBracket,
+                    Token::CloseBracket,
+                    ParseContext::ArrayInit,
+                )?;
+                self.expect_token(Token::CloseBracket, ParseContext::ArrayInit)?;
+                ExprKind::ArrayInit(array_init)
+            }
             _ => {
-                /*
-                Type
-                <prefix>      *<mut> *?
-                basic:        basic_type
-                custom:       <path>name<generic_args>
-                slice:        []<type>
-                slice mut:    [mut]<type>
-                array static: [expr]<type>
-
-                captured:
-                global / local vars
-                enum + parsed later:  . variant
-                type + parsed later:  . assoc call
-                type + .{ -> struct init
-
-                array_init issues:
-                typeless { expr, expr } can we interpreted like a block expr
-                use [expr] [expr, expr] syntax?
-                */
-
-                // only parse CustomType?
-                // depends on interfaces and impl semantics
-                // can we call methods like []Type.call(*thing);
-                // if interface can be defined on slices then yes.
-                let ty = self.parse_type()?;
+                let path = self.parse_path()?;
+                let name = self.parse_ident(ParseContext::Expr)?;
 
                 match (self.peek(), self.peek_next(1)) {
                     (Token::OpenParen, ..) => {
+                        self.consume();
                         let mut proc_call = self.alloc::<ProcCall>();
-                        proc_call.ty = ty;
+                        proc_call.path = path;
+                        proc_call.name = name;
                         proc_call.input = self.parse_expr_list(
                             Token::OpenParen,
                             Token::CloseParen,
@@ -757,11 +731,12 @@ impl<'ast> Parser<'ast> {
                         ExprKind::ProcCall(proc_call)
                     }
                     (Token::Dot, Token::OpenBlock) => {
+                        self.consume();
+                        self.consume();
                         let mut struct_init = self.alloc::<StructInit>();
-                        struct_init.ty = ty;
+                        struct_init.path = path;
+                        struct_init.name = name;
                         struct_init.input = List::<FieldInit>::new();
-                        self.consume();
-                        self.consume();
                         if !self.try_consume(Token::CloseBlock) {
                             loop {
                                 let name = self.parse_ident(ParseContext::StructInit)?;
@@ -784,7 +759,12 @@ impl<'ast> Parser<'ast> {
                         }
                         ExprKind::StructInit(struct_init)
                     }
-                    _ => ExprKind::Item(ty),
+                    _ => {
+                        let mut item = self.alloc::<Item>();
+                        item.path = path;
+                        item.name = name;
+                        ExprKind::Item(item)
+                    }
                 }
             }
         };
@@ -793,16 +773,6 @@ impl<'ast> Parser<'ast> {
             kind,
             span: Span::new(span_start, self.peek_span_end()),
         })
-    }
-
-    fn parse_dot_call(&mut self, name: Ident) -> Result<P<Call>, ParseError> {
-        let mut call = self.alloc::<Call>();
-        call.name = name;
-        call.generic_args = self.parse_generic_args()?;
-        //@temp context
-        call.input =
-            self.parse_expr_list(Token::OpenParen, Token::CloseParen, ParseContext::Expr)?;
-        Ok(call)
     }
 
     fn parse_if(&mut self) -> Result<P<If>, ParseError> {
@@ -828,7 +798,7 @@ impl<'ast> Parser<'ast> {
     fn parse_if_branch(&mut self) -> Result<P<If>, ParseError> {
         self.consume();
         let mut if_ = self.alloc::<If>();
-        if_.condition = self.parse_expr()?;
+        if_.cond = self.parse_expr()?;
         if_.block = self.parse_block()?;
         if_.else_ = None;
         Ok(if_)
@@ -845,8 +815,8 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_match(&mut self) -> Result<P<Match>, ParseError> {
+        self.consume(); // `match`
         let mut match_ = self.alloc::<Match>();
-        self.expect_token(Token::KwMatch, ParseContext::Match)?;
         match_.expr = self.parse_expr()?;
         self.expect_token(Token::OpenBlock, ParseContext::Match)?;
         while !self.try_consume(Token::CloseBlock) {
@@ -857,16 +827,15 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
-        //@expr would be a subset of patterns, later on when we add sum types
-        let pattern = self.parse_expr()?;
+        let pat = self.parse_expr()?;
         self.expect_token(Token::ArrowWide, ParseContext::MatchArm)?;
         let expr = self.parse_expr()?;
-        Ok(MatchArm { pattern, expr })
+        Ok(MatchArm { pat, expr })
     }
 
     fn parse_cast(&mut self) -> Result<P<Cast>, ParseError> {
+        self.consume(); // `cast`
         let mut cast = self.alloc::<Cast>();
-        self.expect_token(Token::KwCast, ParseContext::Cast)?;
         self.expect_token(Token::OpenParen, ParseContext::Cast)?;
         cast.ty = self.parse_type()?;
         self.expect_token(Token::Comma, ParseContext::Cast)?;
@@ -876,8 +845,8 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_sizeof(&mut self) -> Result<P<Sizeof>, ParseError> {
+        self.consume(); // `sizeof`
         let mut sizeof = self.alloc::<Sizeof>();
-        self.expect_token(Token::KwSizeof, ParseContext::Sizeof)?;
         self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
         sizeof.ty = self.parse_type()?;
         self.expect_token(Token::CloseParen, ParseContext::Sizeof)?;
@@ -948,18 +917,6 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn parse_array_init(&mut self) -> Result<P<ArrayInit>, ParseError> {
-        let mut array_init = self.alloc::<ArrayInit>();
-        array_init.ty = if self.peek() == Token::OpenBracket {
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-        array_init.input =
-            self.parse_expr_list(Token::OpenBlock, Token::CloseBlock, ParseContext::ArrayInit)?;
-        Ok(array_init)
-    }
-
     fn parse_expr_list(
         &mut self,
         start: Token,
@@ -967,7 +924,6 @@ impl<'ast> Parser<'ast> {
         context: ParseContext,
     ) -> Result<List<Expr>, ParseError> {
         let mut expr_list = List::<Expr>::new();
-        self.expect_token(start, context)?;
         if !self.try_consume(end) {
             loop {
                 let expr = self.parse_expr()?;
@@ -1091,7 +1047,7 @@ impl Token {
             Token::Minus => Some(UnaryOp::Neg),
             Token::BitNot => Some(UnaryOp::BitNot),
             Token::LogicNot => Some(UnaryOp::LogicNot),
-            Token::Star => Some(UnaryOp::Addr(Mutability::Immutable)),
+            Token::Star => Some(UnaryOp::Addr(Mut::Immutable)),
             Token::Shl => Some(UnaryOp::Deref),
             _ => None,
         }

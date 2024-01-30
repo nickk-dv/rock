@@ -9,7 +9,7 @@ pub struct Scope {
     pub module: P<Module>,
     pub parent: Option<ScopeID>,
     pub errors: Drop<Vec<Error>>,
-    mods: Drop<HashMap<InternID, P<ModDecl>>>,
+    mods: Drop<HashMap<InternID, P<ModuleDecl>>>,
     procs: Drop<HashMap<InternID, ProcData>>,
     enums: Drop<HashMap<InternID, EnumData>>,
     structs: Drop<HashMap<InternID, StructData>>,
@@ -106,7 +106,7 @@ impl TypeData {
         }
     }
 
-    pub fn vis(&self) -> Visibility {
+    pub fn vis(&self) -> Vis {
         match self {
             TypeData::Enum(data) => data.decl.vis,
             TypeData::Struct(data) => data.decl.vis,
@@ -124,7 +124,7 @@ impl Scope {
         self.errors.push(Error::check(error, md, span).into());
     }
 
-    pub fn add_mod(&mut self, decl: P<ModDecl>) -> Result<(), P<ModDecl>> {
+    pub fn add_mod(&mut self, decl: P<ModuleDecl>) -> Result<(), P<ModuleDecl>> {
         if let Some(existing) = self.mods.get(&decl.name.id) {
             return Err(*existing);
         }
@@ -188,7 +188,7 @@ impl Scope {
         Ok(())
     }
 
-    pub fn get_mod(&self, id: InternID) -> Option<P<ModDecl>> {
+    pub fn get_mod(&self, id: InternID) -> Option<P<ModuleDecl>> {
         match self.mods.get(&id) {
             Some(v) => Some(*v),
             None => None,

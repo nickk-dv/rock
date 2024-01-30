@@ -224,6 +224,7 @@ impl ParseErrorData {
             ParseError::Ident(c) => c,
             ParseError::TypeMatch => ParseContext::Type,
             ParseError::DeclMatch => ParseContext::Decl,
+            ParseError::DeclMatchKw => ParseContext::Decl,
             ParseError::EnumVariantMatch => ParseContext::EnumVariant,
             ParseError::ImportTargetMatch => ParseContext::ImportDecl,
             ParseError::StmtMatch => ParseContext::Stmt,
@@ -251,6 +252,15 @@ impl ParseErrorData {
                 Token::OpenBracket,
             ],
             ParseError::DeclMatch => vec![Token::Ident, Token::KwPub, Token::KwImport],
+            ParseError::DeclMatchKw => {
+                vec![
+                    Token::KwMod,
+                    Token::OpenParen,
+                    Token::KwEnum,
+                    Token::KwUnion,
+                    Token::KwStruct,
+                ]
+            }
             ParseError::EnumVariantMatch => vec![Token::Colon, Token::Assign, Token::Semicolon],
             ParseError::ImportTargetMatch => vec![Token::Ident, Token::Star, Token::OpenBlock],
             ParseError::StmtMatch => vec![

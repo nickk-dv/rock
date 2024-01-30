@@ -103,18 +103,18 @@ macro_rules! scope_error {
     };
 }
 
-fn visibility_private(vis: Visibility, scope_id: ScopeID) -> bool {
-    vis == Visibility::Private && scope_id != ROOT_ID
+fn visibility_private(vis: Vis, scope_id: ScopeID) -> bool {
+    vis == Vis::Private && scope_id != ROOT_ID
 }
 
-fn visibility_public(vis: Visibility, scope_id: ScopeID) -> bool {
-    vis == Visibility::Public || scope_id == ROOT_ID
+fn visibility_public(vis: Vis, scope_id: ScopeID) -> bool {
+    vis == Vis::Public || scope_id == ROOT_ID
 }
 
 struct ScopeTreeTask {
     parent: P<Module>,
     parent_id: ScopeID,
-    mod_decl: P<ModDecl>,
+    mod_decl: P<ModuleDecl>,
 }
 
 struct ImportTask {
@@ -147,11 +147,7 @@ impl<T> Conflit<T> {
 
 impl visit::MutVisit for Context {
     fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
-        let tt = self.scope_find_type(
-            self.curr_scope.copy(),
-            custom_type.module_path,
-            custom_type.name,
-        );
+        let tt = self.scope_find_type(self.curr_scope.copy(), custom_type.path, custom_type.name);
     }
 
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
@@ -334,7 +330,7 @@ impl Context {
 
         for decl in scope.module.decls {
             match decl {
-                Decl::Mod(mod_decl) => {
+                Decl::Module(mod_decl) => {
                     if let Err(existing) = scope.add_mod(mod_decl) {
                         redefinition_error!(
                             CheckError::RedefinitionMod,
@@ -401,7 +397,6 @@ impl Context {
                     }
                 }
                 Decl::Import(..) => {}
-                Decl::Impl(..) => {}
             }
         }
 
@@ -433,7 +428,7 @@ impl Context {
         if !main.params.is_empty() {
             scope.error(CheckError::MainProcHasParams, main.name.span);
         }
-        if let Some(tt) = main.return_type {
+        if let Some(tt) = main.return_ty {
             //@changed pointer lvl api
             //if tt.pointer_level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
             //    return;
@@ -528,7 +523,7 @@ impl Context {
                                 Error::check(
                                     CheckError::ModuleNotFoundInScope,
                                     scope.md(),
-                                    task.import.module_path.names.first().unwrap().span,
+                                    task.import.path.names.first().unwrap().span,
                                 )
                             );
                         }
@@ -546,8 +541,14 @@ impl Context {
             return;
         }
 
-        if task.import.module_path.kind == ModulePathKind::None {
-            let first = task.import.module_path.names.first().unwrap();
+        //@emit good error for empty paths
+        if task.import.path.names.is_empty() {
+            task.status = ImportTaskStatus::Resolved;
+            return;
+        }
+
+        if task.import.path.kind == PathKind::None {
+            let first = task.import.path.names.first().unwrap();
             if !self.scope_in_scope_mod_exists(scope.copy(), first) {
                 task.status = ImportTaskStatus::SourceNotFound;
                 return;
@@ -555,8 +556,7 @@ impl Context {
         }
         task.status = ImportTaskStatus::Resolved;
 
-        let from_scope = match self.scope_resolve_module_path(scope.copy(), task.import.module_path)
-        {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), task.import.path) {
             Some(from_scope) => from_scope,
             None => return,
         };
@@ -567,7 +567,7 @@ impl Context {
         }
 
         match task.import.target {
-            ImportTarget::AllSymbols => {
+            ImportTarget::GlobAll => {
                 let import = GlobImport {
                     from_id: from_scope.id,
                     import_span: task.import.span,
@@ -677,13 +677,13 @@ impl Context {
     fn scope_find_proc(
         &mut self,
         mut scope: P<Scope>,
-        module_path: ModulePath,
+        path: Path,
         name: Ident,
     ) -> Option<ProcData> {
-        if module_path.kind == ModulePathKind::None && module_path.names.is_empty() {
+        if path.kind == PathKind::None && path.names.is_empty() {
             return self.scope_get_in_scope_proc(scope, name);
         }
-        let from_scope = match self.scope_resolve_module_path(scope.copy(), module_path) {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), path) {
             Some(from_scope) => from_scope,
             None => return None,
         };
@@ -711,13 +711,13 @@ impl Context {
     fn scope_find_type(
         &mut self,
         mut scope: P<Scope>,
-        module_path: ModulePath,
+        path: Path,
         name: Ident,
     ) -> Option<TypeData> {
-        if module_path.kind == ModulePathKind::None && module_path.names.is_empty() {
+        if path.kind == PathKind::None && path.names.is_empty() {
             return self.scope_get_in_scope_type(scope, name);
         }
-        let from_scope = match self.scope_resolve_module_path(scope.copy(), module_path) {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), path) {
             Some(from_scope) => from_scope,
             None => return None,
         };
@@ -745,13 +745,13 @@ impl Context {
     fn scope_find_global(
         &mut self,
         mut scope: P<Scope>,
-        module_path: ModulePath,
+        path: Path,
         name: Ident,
     ) -> Option<GlobalData> {
-        if module_path.kind == ModulePathKind::None && module_path.names.is_empty() {
+        if path.kind == PathKind::None && path.names.is_empty() {
             return self.scope_get_in_scope_global(scope, name);
         }
-        let from_scope = match self.scope_resolve_module_path(scope.copy(), module_path) {
+        let from_scope = match self.scope_resolve_module_path(scope.copy(), path) {
             Some(from_scope) => from_scope,
             None => return None,
         };
@@ -776,14 +776,10 @@ impl Context {
         return Some(data);
     }
 
-    fn scope_resolve_module_path(
-        &self,
-        mut scope: P<Scope>,
-        module_path: ModulePath,
-    ) -> Option<P<Scope>> {
-        let mut target = match module_path.kind {
-            ModulePathKind::None => {
-                let first = match module_path.names.first() {
+    fn scope_resolve_module_path(&self, mut scope: P<Scope>, path: Path) -> Option<P<Scope>> {
+        let mut target = match path.kind {
+            PathKind::None => {
+                let first = match path.names.first() {
                     Some(name) => name,
                     None => return Some(scope),
                 };
@@ -799,19 +795,19 @@ impl Context {
                     }
                 }
             }
-            ModulePathKind::Super => {
+            PathKind::Super => {
                 if let Some(parent) = scope.parent {
                     self.get_scope(parent)
                 } else {
-                    scope.error(CheckError::SuperUsedFromRootModule, module_path.kind_span);
+                    scope.error(CheckError::SuperUsedFromRootModule, path.kind_span);
                     return None;
                 }
             }
-            ModulePathKind::Package => self.get_scope(ROOT_ID),
+            PathKind::Package => self.get_scope(ROOT_ID),
         };
 
-        let mut skip_first = module_path.kind == ModulePathKind::None;
-        for name in module_path.names {
+        let mut skip_first = path.kind == PathKind::None;
+        for name in path.names {
             if skip_first {
                 skip_first = false;
                 continue;
@@ -846,9 +842,9 @@ impl Context {
         return Some(target);
     }
 
-    fn scope_get_in_scope_mod(&self, mut scope: P<Scope>, name: Ident) -> Option<P<ModDecl>> {
+    fn scope_get_in_scope_mod(&self, mut scope: P<Scope>, name: Ident) -> Option<P<ModuleDecl>> {
         let mut unique = None;
-        let mut conflicts = Vec::<Conflit<P<ModDecl>>>::new();
+        let mut conflicts = Vec::<Conflit<P<ModuleDecl>>>::new();
 
         if let Some(data) = scope.get_mod(name.id) {
             unique = Some(Conflit::new(data, scope.copy(), None));
@@ -1140,7 +1136,7 @@ impl Context {
             let scope = self.get_scope(scope_id);
             for decl in scope.module.decls {
                 if let Decl::Global(global) = decl {
-                    self.scope_check_global_expr(scope.copy(), global.expr.0);
+                    self.scope_check_global_expr(scope.copy(), global.value.0);
                 }
             }
         }
@@ -1149,7 +1145,6 @@ impl Context {
     fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
         match expr.kind {
             ExprKind::DotName(name) => {}
-            ExprKind::DotCall(call) => {}
             ExprKind::Index(index) => {}
             ExprKind::Lit(lit) => {}
             ExprKind::Cast(..) => {}   //todo
@@ -1338,7 +1333,7 @@ impl IRGen {
     }
 
     fn emit_global_decl(&mut self, global_decl: P<GlobalDecl>) {
-        self.emit_expr(global_decl.expr.0);
+        self.emit_expr(global_decl.value.0);
     }
 
     fn emit_proc_decl(&mut self, proc_decl: P<ProcDecl>) {}
@@ -1346,7 +1341,6 @@ impl IRGen {
     fn emit_expr(&mut self, expr: Expr) -> u32 {
         match expr.kind {
             ExprKind::DotName(name) => todo!(),
-            ExprKind::DotCall(call) => todo!(),
             ExprKind::Index(index) => todo!(),
             ExprKind::Lit(lit) => self.emit_lit(lit),
             ExprKind::Cast(_) => todo!(),
