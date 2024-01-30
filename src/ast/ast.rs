@@ -1,6 +1,6 @@
 use super::span::Span;
 use crate::mem::*;
-use std::{ops::BitOr, path::PathBuf};
+use std::path::PathBuf;
 
 pub type ScopeID = u32;
 
@@ -18,7 +18,7 @@ pub struct Module {
 pub struct SourceFile {
     pub path: PathBuf,
     pub source: String,
-    pub line_spans: Vec<Span>,
+    pub line_spans: Vec<Span>, //@not always required, could be generated on demand
 }
 
 #[derive(Copy, Clone)]
@@ -28,53 +28,41 @@ pub struct Ident {
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum Visibility {
+pub enum Vis {
     Public,
     Private,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum Mutability {
+pub enum Mut {
     Mutable,
     Immutable,
 }
 
 #[derive(Copy, Clone)]
-pub struct GenericArgs {
-    pub types: List<Type>,
-    pub span: Span,
-}
-
-#[derive(Copy, Clone)]
-pub struct GenericParams {
-    pub names: List<Ident>,
-    pub span: Span,
-}
-
-#[derive(Copy, Clone)]
-pub struct ModulePath {
-    pub kind: ModulePathKind,
+pub struct Path {
+    pub kind: PathKind,
     pub kind_span: Span,
     pub names: List<Ident>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum ModulePathKind {
+pub enum PathKind {
     None,
     Super,
     Package,
 }
 
 #[derive(Copy, Clone)]
-pub struct PtrLevel {
-    ptr_lvl: u8,
-    mut_bits: u8,
+pub struct Type {
+    pub ptr: PtrLevel,
+    pub kind: TypeKind,
 }
 
 #[derive(Copy, Clone)]
-pub struct Type {
-    pub ptr_level: PtrLevel,
-    pub kind: TypeKind,
+pub struct PtrLevel {
+    pub level: u8,
+    mut_mask: u8,
 }
 
 #[derive(Copy, Clone)]
@@ -106,40 +94,97 @@ pub enum BasicType {
 
 #[derive(Copy, Clone)]
 pub struct CustomType {
-    pub module_path: ModulePath,
+    pub path: Path,
     pub name: Ident,
-    pub generic_args: Option<GenericArgs>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ArraySlice {
-    pub mutt: Mutability,
-    pub element: Type,
+    pub mutt: Mut,
+    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic {
     pub size: ConstExpr,
-    pub element: Type,
+    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
 pub enum Decl {
-    Mod(P<ModDecl>),
+    Module(P<ModuleDecl>),
+    Import(P<ImportDecl>),
+    Global(P<GlobalDecl>),
     Proc(P<ProcDecl>),
-    Impl(P<ImplDecl>),
     Enum(P<EnumDecl>),
     Union(P<UnionDecl>),
     Struct(P<StructDecl>),
-    Global(P<GlobalDecl>),
-    Import(P<ImportDecl>),
+}
+
+#[derive(Copy, Clone)]
+pub struct ModuleDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub id: Option<ScopeID>, //@ move into "mod_data" when checking?
+}
+
+#[derive(Copy, Clone)]
+pub struct ImportDecl {
+    pub path: Path,
+    pub target: ImportTarget,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub enum ImportTarget {
+    GlobAll,
+    Symbol(Ident),
+    SymbolList(List<Ident>),
+}
+
+#[derive(Copy, Clone)]
+pub struct GlobalDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub ty: Option<Type>,
+    pub value: ConstExpr,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub params: List<ProcParam>,
+    pub is_variadic: bool,
+    pub return_ty: Option<Type>,
+    pub block: Option<P<Block>>, //@ None acts like external c_call
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcParam {
+    pub mutt: Mut,
+    pub name: Ident,
+    pub ty: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct EnumDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub basic_ty: Option<BasicType>,
+    pub variants: List<EnumVariant>,
+}
+
+#[derive(Copy, Clone)]
+pub struct EnumVariant {
+    pub name: Ident,
+    pub value: Option<ConstExpr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct UnionDecl {
-    pub vis: Visibility,
+    pub vis: Vis,
     pub name: Ident,
-    pub generic_params: Option<GenericParams>,
     pub members: List<UnionMember>,
 }
 
@@ -150,64 +195,9 @@ pub struct UnionMember {
 }
 
 #[derive(Copy, Clone)]
-pub struct ModDecl {
-    pub vis: Visibility,
-    pub name: Ident,
-    pub id: Option<ScopeID>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ProcDecl {
-    pub vis: Visibility,
-    pub name: Ident,
-    pub generic_params: Option<GenericParams>,
-    pub params: List<ProcParam>,
-    pub is_variadic: bool,
-    pub return_type: Option<Type>,
-    pub block: Option<P<Block>>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ProcParam {
-    pub mutt: Mutability,
-    pub name: Ident,
-    pub ty: Type,
-}
-
-#[derive(Copy, Clone)]
-pub struct ImplDecl {
-    pub vis_span: Option<Span>,
-    pub name: Ident,
-    pub generic_params: Option<GenericParams>,
-    pub procs: List<P<ProcDecl>>,
-}
-
-#[derive(Copy, Clone)]
-pub struct EnumDecl {
-    pub vis: Visibility,
-    pub name: Ident,
-    pub generic_params: Option<GenericParams>,
-    pub basic_type: Option<BasicType>,
-    pub variants: List<EnumVariant>,
-}
-
-#[derive(Copy, Clone)]
-pub struct EnumVariant {
-    pub name: Ident,
-    pub kind: VariantKind,
-}
-
-#[derive(Copy, Clone)]
-pub enum VariantKind {
-    Typed(Type),
-    Normal(Option<ConstExpr>),
-}
-
-#[derive(Copy, Clone)]
 pub struct StructDecl {
-    pub vis: Visibility,
+    pub vis: Vis,
     pub name: Ident,
-    pub generic_params: Option<GenericParams>,
     pub fields: List<StructField>,
 }
 
@@ -215,28 +205,6 @@ pub struct StructDecl {
 pub struct StructField {
     pub name: Ident,
     pub ty: Type,
-}
-
-#[derive(Copy, Clone)]
-pub struct GlobalDecl {
-    pub vis: Visibility,
-    pub name: Ident,
-    pub ty: Option<Type>,
-    pub expr: ConstExpr,
-}
-
-#[derive(Copy, Clone)]
-pub struct ImportDecl {
-    pub module_path: ModulePath,
-    pub target: ImportTarget,
-    pub span: Span,
-}
-
-#[derive(Copy, Clone)]
-pub enum ImportTarget {
-    AllSymbols,
-    Symbol(Ident),
-    SymbolList(List<Ident>),
 }
 
 #[derive(Copy, Clone)]
@@ -253,62 +221,36 @@ pub enum StmtKind {
     Defer(P<Block>),
     Return(P<Return>),
     VarDecl(P<VarDecl>),
+    VarAssign(P<VarAssign>),
     ExprStmt(P<ExprStmt>),
-    Assignment(P<Assignment>),
 }
 
 #[derive(Copy, Clone)]
 pub struct For {
-    pub kind: ForKind,
+    pub var_decl: Option<P<VarDecl>>,
+    pub cond: Option<Expr>,
+    pub var_assign: Option<P<VarAssign>>,
     pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
-pub enum ForKind {
-    Loop,
-    While(Expr),
-    Iter(VarBind, Expr),
-    Range(VarBind, Range),
-}
-
-//@promote ranges to expression
-#[derive(Copy, Clone)]
-pub struct Range {
-    pub lhs: Expr,
-    pub rhs: Expr,
-    pub kind: RangeKind,
-}
-
-#[derive(Copy, Clone)]
-pub enum RangeKind {
-    DotDot,
-    DotDotEq,
+pub struct Return {
+    pub expr: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct VarDecl {
-    pub bind: VarBind,
+    pub mutt: Mut,
+    pub name: Option<Ident>,
     pub ty: Option<Type>,
     pub expr: Option<Expr>,
 }
 
 #[derive(Copy, Clone)]
-pub struct VarBind {
-    pub mutt: Mutability,
-    pub name: Option<Ident>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ExprStmt {
-    pub expr: Expr,
-    pub has_semi: bool,
-}
-
-#[derive(Copy, Clone)]
-pub struct Assignment {
+pub struct VarAssign {
     pub lhs: Expr,
-    pub op: AssignOp,
     pub rhs: Expr,
+    pub op: AssignOp,
 }
 
 #[derive(Copy, Clone)]
@@ -318,43 +260,9 @@ pub enum AssignOp {
 }
 
 #[derive(Copy, Clone)]
-pub struct If {
-    pub condition: Expr,
-    pub block: P<Block>,
-    pub else_: Option<Else>,
-}
-
-#[derive(Copy, Clone)]
-pub enum Else {
-    If(P<If>),
-    Block(P<Block>),
-}
-
-//10..=0
-//0..=10
-//10..0
-//0..10
-
-#[derive(Copy, Clone)]
-pub struct Block {
-    pub stmts: List<Stmt>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Match {
+pub struct ExprStmt {
     pub expr: Expr,
-    pub arms: List<MatchArm>,
-}
-
-#[derive(Copy, Clone)]
-pub struct MatchArm {
-    pub pattern: Expr, //@pattern
-    pub expr: Expr,
-}
-
-#[derive(Copy, Clone)]
-pub struct Return {
-    pub expr: Option<Expr>,
+    pub has_semi: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -375,9 +283,6 @@ pub enum ExprKind {
     Match(P<Match>),
     Index(P<Index>),
     DotName(Ident),
-    DotCall(P<Call>),
-    Range(P<Range>),
-    Item(Type),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
     ProcCall(P<ProcCall>),
@@ -388,18 +293,6 @@ pub enum ExprKind {
 }
 
 #[derive(Copy, Clone)]
-pub struct Index {
-    pub expr: Expr,
-}
-
-#[derive(Copy, Clone)]
-pub struct Call {
-    pub name: Ident,
-    pub generic_args: Option<GenericArgs>,
-    pub input: List<Expr>,
-}
-
-#[derive(Copy, Clone)]
 pub enum Lit {
     Null,
     Bool(bool),
@@ -407,6 +300,41 @@ pub enum Lit {
     Float(f64, Option<BasicType>),
     Char(char),
     String,
+}
+
+#[derive(Copy, Clone)]
+pub struct If {
+    pub cond: Expr,
+    pub block: P<Block>,
+    pub else_: Option<Else>,
+}
+
+#[derive(Copy, Clone)]
+pub enum Else {
+    If(P<If>),
+    Block(P<Block>),
+}
+
+#[derive(Copy, Clone)]
+pub struct Block {
+    pub stmts: List<Stmt>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Match {
+    pub expr: Expr,
+    pub arms: List<MatchArm>,
+}
+
+#[derive(Copy, Clone)]
+pub struct MatchArm {
+    pub pat: Expr,
+    pub expr: Expr,
+}
+
+#[derive(Copy, Clone)]
+pub struct Index {
+    pub expr: Expr,
 }
 
 #[derive(Copy, Clone)]
@@ -422,19 +350,20 @@ pub struct Sizeof {
 
 #[derive(Copy, Clone)]
 pub struct ProcCall {
-    pub ty: Type,
+    pub path: Path,
+    pub name: Ident,
     pub input: List<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ArrayInit {
-    pub ty: Option<Type>,
     pub input: List<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct StructInit {
-    pub ty: Type,
+    pub path: Path,
+    pub name: Ident,
     pub input: List<FieldInit>,
 }
 
@@ -455,7 +384,7 @@ pub enum UnaryOp {
     Neg,
     BitNot,
     LogicNot,
-    Addr(Mutability),
+    Addr(Mut),
     Deref,
 }
 
@@ -495,24 +424,24 @@ impl PtrLevel {
 
     pub fn new() -> Self {
         Self {
-            ptr_lvl: 0,
-            mut_bits: 0,
+            level: 0,
+            mut_mask: 0,
         }
     }
 
-    pub fn add_level(&mut self, mutt: Mutability) -> Result<(), ()> {
-        if self.ptr_lvl >= Self::MAX_LEVEL {
+    pub fn add_level(&mut self, mutt: Mut) -> Result<(), ()> {
+        if self.level >= Self::MAX_LEVEL {
             return Err(());
         }
 
-        let mut_bit = 1u8 << (self.ptr_lvl);
-        if mutt == Mutability::Mutable {
-            self.mut_bits |= mut_bit;
+        let mut_bit = 1u8 << (self.level);
+        if mutt == Mut::Mutable {
+            self.mut_mask |= mut_bit;
         } else {
-            self.mut_bits &= !mut_bit;
+            self.mut_mask &= !mut_bit;
         }
 
-        self.ptr_lvl += 1;
+        self.level += 1;
         Ok(())
     }
 }
