@@ -53,6 +53,7 @@ pub enum ParseError {
     Ident(ParseContext),
     TypeMatch,
     DeclMatch,
+    DeclMatchKw,
     EnumVariantMatch,
     ImportTargetMatch,
     StmtMatch,

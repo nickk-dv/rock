@@ -2,6 +2,11 @@ use super::span::Span;
 use crate::mem::*;
 use std::path::PathBuf;
 
+//@look into parsing .name into the
+// ExprKind with (P<Expr> Ident) instead of binary op approach
+// same for casts + look into using "as" since its easier syntax
+// compared to cast(<type>, <expr>)
+
 pub type ScopeID = u32;
 
 pub struct Ast {
@@ -125,6 +130,7 @@ pub enum Decl {
 pub struct ModuleDecl {
     pub vis: Vis,
     pub name: Ident,
+    pub span: Span,
     pub id: Option<ScopeID>, //@ move into "mod_data" when checking?
 }
 
@@ -285,6 +291,7 @@ pub enum ExprKind {
     DotName(Ident),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
+    Item(P<Item>),
     ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
     StructInit(P<StructInit>),
@@ -346,6 +353,12 @@ pub struct Cast {
 #[derive(Copy, Clone)]
 pub struct Sizeof {
     pub ty: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct Item {
+    pub path: Path,
+    pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
