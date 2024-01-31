@@ -10,6 +10,7 @@ use std::{iter::Peekable, str::Chars};
 pub struct LexResult {
     pub tokens: Vec<TokenSpan>,
     pub line_spans: Vec<Span>,
+    pub lex_strings: Vec<String>,
 }
 
 pub fn lex(str: &str) -> LexResult {
@@ -17,12 +18,14 @@ pub fn lex(str: &str) -> LexResult {
     LexResult {
         tokens: lexer.lex(),
         line_spans: lexer.lex_line_spans(),
+        lex_strings: lexer.lex_strings,
     }
 }
 
 struct Lexer<'src> {
     str: &'src str,
     iter: Peekable<Chars<'src>>,
+    lex_strings: Vec<String>,
     fc: char,
     cursor_start: u32,
     cursor_end: u32,
@@ -61,6 +64,7 @@ impl<'src> Lexer<'src> {
         Self {
             str,
             iter: str.chars().peekable(),
+            lex_strings: Vec::new(),
             fc: '?',
             cursor_start: 0,
             cursor_end: 0,
@@ -258,7 +262,10 @@ impl<'src> Lexer<'src> {
         if !terminated {
             panic!("string lit not terminated, missing closing `\"`");
         }
-        return self.token_spanned(Token::LitString);
+
+        let id = self.lex_strings.len();
+        self.lex_strings.push(string);
+        return self.token_spanned(Token::LitString(id as u32));
     }
 
     fn lex_raw_string(&mut self) -> TokenSpan {
@@ -286,7 +293,10 @@ impl<'src> Lexer<'src> {
         if !terminated {
             panic!("raw string lit not terminated, missing closing `");
         }
-        return self.token_spanned(Token::LitString);
+
+        let id = self.lex_strings.len();
+        self.lex_strings.push(string);
+        return self.token_spanned(Token::LitString(id as u32));
     }
 
     fn lex_ident(&mut self) -> TokenSpan {

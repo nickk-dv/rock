@@ -41,7 +41,6 @@ impl InternPool {
         let id = self.next;
         self.intern_map.insert(hash, id);
         self.next = self.next.wrapping_add(1);
-        println!("interned: {} : {}", id, string);
         return id;
     }
 

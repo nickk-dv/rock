@@ -11,7 +11,10 @@ pub struct Arena {
 impl Arena {
     const PAGE_SIZE: usize = 4096;
 
-    pub fn new(block_size: usize) -> Self {
+    pub fn new(mut block_size: usize) -> Self {
+        if block_size < Self::PAGE_SIZE {
+            block_size = Self::PAGE_SIZE;
+        }
         let mut arena = Arena {
             data: P::null(),
             offset: 0,

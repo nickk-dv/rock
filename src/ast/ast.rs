@@ -24,6 +24,7 @@ pub struct SourceFile {
     pub path: PathBuf,
     pub source: String,
     pub line_spans: Vec<Span>, //@not always required, could be generated on demand
+    pub lex_strings: Vec<String>,
 }
 
 #[derive(Copy, Clone)]

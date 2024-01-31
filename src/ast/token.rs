@@ -14,7 +14,7 @@ pub enum Token {
     LitInt(u64),
     LitFloat(f64),
     LitChar(char),
-    LitString,
+    LitString(u32),
     // Special
     Error,
     Eof,
@@ -128,7 +128,7 @@ impl Token {
             Token::LitInt(..) => "integer literal",
             Token::LitFloat(..) => "float literal",
             Token::LitChar(..) => "char literal",
-            Token::LitString => "string literal",
+            Token::LitString(..) => "string literal",
             Token::Error => "error token",
             Token::Eof => "end of file token",
             Token::KwPub => "pub",

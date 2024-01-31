@@ -106,8 +106,7 @@ impl visit::MutVisit for Interner {
     fn visit_expr(&mut self, mut expr: Expr) {
         if let ExprKind::Lit(Lit::String(ref mut id)) = expr.kind {
             //@escapes dont get correctly interned
-            let inner = Span::new(expr.span.start + 1, expr.span.end - 1);
-            let string = inner.slice(&self.module.file.source);
+            let string = unsafe { self.module.file.lex_strings.get_unchecked(*id as usize) };
             *id = self.intern_pool.intern(string);
         }
     }
@@ -168,8 +167,9 @@ fn parse_task(
 
     let file = SourceFile {
         path,
-        source: source,
+        source,
         line_spans: lex_result.line_spans,
+        lex_strings: lex_result.lex_strings,
     };
 
     let res = parser.parse_module(file);
@@ -708,7 +708,7 @@ impl<'ast> Parser<'ast> {
             | Token::LitInt(..)
             | Token::LitFloat(..)
             | Token::LitChar(..)
-            | Token::LitString => ExprKind::Lit(self.parse_lit()?),
+            | Token::LitString(..) => ExprKind::Lit(self.parse_lit()?),
             Token::OpenBlock => ExprKind::Block(self.parse_block()?),
             Token::KwMatch => ExprKind::Match(self.parse_match()?),
             Token::KwCast => ExprKind::Cast(self.parse_cast()?),
@@ -913,9 +913,9 @@ impl<'ast> Parser<'ast> {
                 self.consume();
                 Ok(Lit::Char(v))
             }
-            Token::LitString => {
+            Token::LitString(id) => {
                 self.consume();
-                Ok(Lit::String(INTERN_DUMMY_ID))
+                Ok(Lit::String(id))
             }
             _ => Err(ParseError::LiteralMatch),
         }

@@ -280,7 +280,7 @@ impl ParseErrorData {
             Token::LitInt(u64::default()),
             Token::LitFloat(f64::default()),
             Token::LitChar(char::default()),
-            Token::LitString,
+            Token::LitString(0),
         ]
     }
 
