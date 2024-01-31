@@ -2,10 +2,10 @@ use super::span::Span;
 use super::token::*;
 use std::{iter::Peekable, str::Chars};
 
-// @Todo:
-// multiline strings lit / raw
-// proper lexer error reporting
-// lexer / parser interaction in case of errors
+//@proper lexer error reports (panics currently)
+//@multiline strings
+//@directive parsing curr using c_call token
+//@floats not parsed
 
 pub struct LexResult {
     pub tokens: Vec<TokenSpan>,

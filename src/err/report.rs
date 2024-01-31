@@ -23,7 +23,7 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error) {
             let _ = write!(handle, "expected: ");
             for (index, token) in err.expected.iter().enumerate() {
                 if index < err.expected.len() - 1 {
-                    let _ = writeln!(handle, "`{}`, ", Token::as_str(*token));
+                    let _ = write!(handle, "`{}`, ", Token::as_str(*token));
                 } else {
                     let _ = writeln!(handle, "`{}`", Token::as_str(*token));
                 }

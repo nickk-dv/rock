@@ -11,6 +11,11 @@ use std::collections::HashMap;
 //@report usages of self id module path as redundant?
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
+    //@memory prof
+    for arena in ast.arenas.iter() {
+        arena.report_memory_usage();
+    }
+
     let est_scope_count = ast.modules.len();
     let block_size = std::mem::size_of::<Scope>() * est_scope_count;
     let mut arena = Arena::new(block_size);
@@ -25,17 +30,9 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     context.pass_5_check_globals();
     context.pass_6_check_control_flow();
 
-    // 1300 ms
-    use std::time::Instant;
-    let start_time = Instant::now();
-
-    //let result = context.report_errors();
-
-    let end_time = Instant::now();
-    let elapsed_time = end_time - start_time;
-    println!("Elapsed time: {} ms", elapsed_time.as_millis());
+    let result = context.report_errors();
     context.manual_drop();
-    return Ok(());
+    return result;
 }
 
 pub struct Context {
@@ -137,20 +134,17 @@ impl<T> Conflit<T> {
 impl visit::MutVisit for Context {
     fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
         let tt = self.scope_find_type(self.curr_scope.copy(), custom_type.path, custom_type.name);
+        //@not doing anything when found
     }
 
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
-        //@if let Some(name) = struct_init.name {
-        //    let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.module_path, name);
-        //}
+        let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.path, struct_init.name);
+        //@not doing anything when found
     }
 
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
-        //@self.scope_find_proc(
-        //    self.curr_scope.copy(),
-        //    proc_call.module_path,
-        //    proc_call.name,
-        //);
+        self.scope_find_proc(self.curr_scope.copy(), proc_call.path, proc_call.name);
+        //@not doing anything when found
     }
 }
 
@@ -419,10 +413,9 @@ impl Context {
             scope.error(CheckError::MainProcHasParams, main.name.span);
         }
         if let Some(tt) = main.return_ty {
-            //@changed pointer lvl api
-            //if tt.pointer_level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
-            //    return;
-            //}
+            if tt.ptr.level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
+                return;
+            }
         }
         scope.error(CheckError::MainProcWrongRetType, main.name.span);
     }
