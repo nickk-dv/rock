@@ -14,20 +14,10 @@ pub fn print(
     format.print(handle, marker, is_info);
 }
 
-#[derive(Copy, Clone)]
-struct Loc {
-    line: u32,
-    col: u32,
-    span: Span,
-}
-
 struct SpanFormat<'a> {
-    file: &'a SourceFile,
     loc: Loc,
+    file: &'a SourceFile,
     line: String,
-    line_num: String,
-    left_pad: String,
-    is_multi_line: bool,
     marker_len: usize,
     marker_pad_len: usize,
 }
@@ -35,40 +25,37 @@ struct SpanFormat<'a> {
 impl<'a> SpanFormat<'a> {
     fn new(file: &'a SourceFile, span: Span) -> Self {
         let loc = find_loc(&file.line_spans, span);
-        let is_multi_line;
+        let prefix = Span::new(loc.span.start, span.start);
+        let marker_pad = prefix.slice(&file.source);
 
-        let line = loc.span.slice(&file.source);
-        let line = normalize_tab(line);
-
-        let prefix_span = Span::new(loc.span.start, span.start);
-        let line_prefix = prefix_span.slice(&file.source);
-        let line_prefix = normalize_tab(line_prefix);
-
-        let line_span = span.slice(&file.source);
-        let line_span = if line_span.contains('\n') {
-            is_multi_line = true;
-            line_span.lines().next().unwrap_or("").trim_end()
+        let marker_str = span.slice(&file.source);
+        let marker_str = if marker_str.contains('\n') {
+            marker_str.lines().next().unwrap_or("").trim_end()
         } else {
-            is_multi_line = false;
-            line_span.trim_end()
+            marker_str.trim_end()
         };
-        let line_span = normalize_tab(line_span);
 
         Self {
-            file,
             loc,
-            line,
-            line_num: loc.line.to_string(),
-            left_pad: replace_all(loc.line.to_string().as_str(), ' '),
-            is_multi_line,
-            marker_len: line_span.len(),
-            marker_pad_len: line_prefix.len(),
+            file,
+            line: normalize_tab(loc.span.slice(&file.source)),
+            marker_len: normalize_tab_len(marker_str),
+            marker_pad_len: normalize_tab_len(marker_pad),
         }
     }
 
     fn print(&self, handle: &mut BufWriter<Stderr>, marker_msg: Option<&str>, is_info: bool) {
-        self.print_arrow(handle);
+        let line_num = self.loc.line.to_string();
+        let left_pad = marker_space_slice(line_num.len());
+        let marker_pad = marker_space_slice(self.marker_pad_len);
+        let marker = if is_info {
+            marker_info_slice(self.marker_len)
+        } else {
+            marker_error_slice(self.marker_len)
+        };
+
         ansi::set_color(handle, Color::Cyan);
+        let _ = write!(handle, "{}--> ", left_pad);
         let _ = writeln!(
             handle,
             "{}:{}:{}",
@@ -76,79 +63,48 @@ impl<'a> SpanFormat<'a> {
             self.loc.line,
             self.loc.col
         );
+
+        let _ = handle.write(left_pad.as_bytes());
+        let _ = handle.write(" |\n".as_bytes());
+
+        let _ = handle.write(line_num.as_bytes());
+        let _ = handle.write(" | ".as_bytes());
+        ansi::reset(handle);
+        let _ = handle.write(self.line.as_bytes());
+        let _ = handle.write("\n".as_bytes());
+
+        ansi::set_color(handle, Color::Cyan);
+        let _ = handle.write(left_pad.as_bytes());
+        let _ = handle.write(" | ".as_bytes());
         ansi::reset(handle);
 
-        self.print_bar(handle, true);
-        self.print_line_bar(handle);
-        let _ = writeln!(handle, "{}", self.line);
-        self.print_bar(handle, false);
-
-        let marker_pad = " ".repeat(self.marker_pad_len);
         if is_info {
-            ansi::set_color(handle, Color::BoldGreen);
-            let marker = "-".repeat(self.marker_len);
-            match marker_msg {
-                Some(message) => {
-                    let _ = write!(handle, "{}{}", marker_pad, marker);
-                    ansi::set_color(handle, Color::Green);
-                    let _ = writeln!(handle, " {}", message);
-                }
-                None => {
-                    let _ = writeln!(handle, "{}{}", marker_pad, marker);
-                }
-            }
+            ansi::set_color(handle, Color::BoldGreen)
         } else {
-            ansi::set_color(handle, Color::BoldRed);
-            let marker = "^".repeat(self.marker_len);
-            match marker_msg {
-                Some(message) => {
-                    let _ = writeln!(handle, "{}{} {}", marker_pad, marker, message);
-                }
-                None => {
-                    let _ = writeln!(handle, "{}{}", marker_pad, marker);
-                }
+            ansi::set_color(handle, Color::BoldRed)
+        }
+        let _ = handle.write(marker_pad.as_bytes());
+        let _ = handle.write(marker.as_bytes());
+        let _ = handle.write(" ".as_bytes());
+
+        if let Some(msg) = marker_msg {
+            if is_info {
+                ansi::set_color(handle, Color::Green)
+            } else {
+                ansi::set_color(handle, Color::Red)
             }
+            let _ = handle.write(msg.as_bytes());
         }
-        ansi::reset(handle);
-
-        if self.is_multi_line {
-            self.print_bar(handle, false);
-            ansi::set_color(handle, Color::Cyan);
-            let _ = writeln!(handle, "...");
-            ansi::reset(handle);
-        }
-    }
-
-    fn print_arrow(&self, handle: &mut BufWriter<Stderr>) {
-        ansi::set_color(handle, Color::Cyan);
-        let _ = write!(handle, "{}--> ", self.left_pad);
-        ansi::reset(handle);
-    }
-
-    fn print_bar(&self, handle: &mut BufWriter<Stderr>, endl: bool) {
-        ansi::set_color(handle, Color::Cyan);
-        if endl {
-            let _ = writeln!(handle, "{} |", self.left_pad);
-        } else {
-            let _ = write!(handle, "{} | ", self.left_pad);
-        }
-        ansi::reset(handle);
-    }
-
-    fn print_line_bar(&self, handle: &mut BufWriter<Stderr>) {
-        ansi::set_color(handle, Color::Cyan);
-        let _ = write!(handle, "{} | ", self.line_num);
+        let _ = handle.write("\n".as_bytes());
         ansi::reset(handle);
     }
 }
 
-fn replace_all(str: &str, c: char) -> String {
-    std::iter::repeat(c).take(str.chars().count()).collect()
-}
-
-fn normalize_tab(str: &str) -> String {
-    const TAB: &'static str = "  ";
-    str.replace('\t', TAB)
+#[derive(Copy, Clone)]
+struct Loc {
+    line: u32,
+    col: u32,
+    span: Span,
 }
 
 fn find_loc(line_spans: &Vec<Span>, span: Span) -> Loc {
@@ -165,6 +121,36 @@ fn find_loc(line_spans: &Vec<Span>, span: Span) -> Loc {
             return loc;
         }
     }
-    //@err internal?
     return loc;
+}
+
+fn marker_space_slice(size: usize) -> &'static str {
+    const MARKER_SPACE: &'static str = "                                                                                                                                ";
+    let size = size.clamp(0, MARKER_SPACE.len());
+    unsafe { MARKER_SPACE.get_unchecked(0..size) }
+}
+
+fn marker_error_slice(size: usize) -> &'static str {
+    const MARKER_ERROR: &'static str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+    let size = size.clamp(0, MARKER_ERROR.len());
+    unsafe { MARKER_ERROR.get_unchecked(0..size) }
+}
+
+fn marker_info_slice(size: usize) -> &'static str {
+    const MARKER_INFO: &'static str =  "--------------------------------------------------------------------------------------------------------------------------------";
+    let size = size.clamp(0, MARKER_INFO.len());
+    unsafe { MARKER_INFO.get_unchecked(0..size) }
+}
+
+fn normalize_tab(str: &str) -> String {
+    const TAB: &'static str = "  ";
+    str.replace('\t', TAB)
+}
+
+fn normalize_tab_len(str: &str) -> usize {
+    let mut len = 0;
+    for c in str.chars() {
+        len += if c == '\t' { 2 } else { 1 }
+    }
+    len
 }
