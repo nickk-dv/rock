@@ -306,7 +306,7 @@ pub enum Lit {
     Uint(u64, Option<BasicType>),
     Float(f64, Option<BasicType>),
     Char(char),
-    String,
+    String(InternID),
 }
 
 #[derive(Copy, Clone)]

@@ -29,13 +29,13 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     use std::time::Instant;
     let start_time = Instant::now();
 
-    let result = context.report_errors();
+    //let result = context.report_errors();
 
     let end_time = Instant::now();
     let elapsed_time = end_time - start_time;
     println!("Elapsed time: {} ms", elapsed_time.as_millis());
     context.manual_drop();
-    return result;
+    return Ok(());
 }
 
 pub struct Context {
@@ -394,7 +394,7 @@ impl Context {
     }
 
     fn pass_1_check_main_proc(&mut self) {
-        let main_id = match self.ast.intern_pool.get_id_if_exists("main".as_bytes()) {
+        let main_id = match self.ast.intern_pool.try_get_str_id("main") {
             Some(id) => id,
             None => {
                 self.error(Error::check_no_src(CheckError::MainProcMissing));
@@ -1352,7 +1352,7 @@ impl IRGen {
             Lit::Uint(v, t) => Inst::UInt(v, t),
             Lit::Float(v, t) => Inst::Float(v, t),
             Lit::Char(v) => Inst::Char(v),
-            Lit::String => todo!("string lit inst not implemented"),
+            Lit::String(v) => todo!("string lit inst not implemented"),
         };
         self.add_inst(inst);
         return val;

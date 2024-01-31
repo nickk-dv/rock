@@ -1,97 +1,76 @@
 use std::collections::HashMap;
 
 pub type InternID = u32;
+pub const INTERN_DUMMY_ID: InternID = u32::MAX;
 
 pub struct InternPool {
-    current_id: InternID,
-    string_bytes: Vec<u8>,
-    string_map: HashMap<u32, InternString>,
+    next: InternID,
+    bytes: Vec<u8>,
     strings: Vec<InternString>,
+    intern_map: HashMap<u32, InternID>,
 }
 
-#[derive(Copy, Clone)]
 pub struct InternString {
-    pub id: InternID,
-    pub start: u32,
-    pub end: u32,
+    start: u32,
+    end: u32,
 }
 
 impl InternPool {
     pub fn new() -> Self {
         Self {
-            current_id: 0,
-            string_bytes: Vec::new(),
-            string_map: HashMap::new(),
+            next: 0,
+            bytes: Vec::new(),
             strings: Vec::new(),
+            intern_map: HashMap::new(),
         }
     }
 
-    pub fn get_byte_slice(&self, id: InternID) -> &[u8] {
-        let intern_str = unsafe { self.strings.get_unchecked(id as usize) };
-        return &self.string_bytes[intern_str.start as usize..intern_str.end as usize];
-    }
-
-    pub fn get_string(&self, id: InternID) -> String {
-        let byte_slice = self.get_byte_slice(id);
-        unsafe {
-            let str = std::str::from_utf8_unchecked(byte_slice);
-            str.to_string()
-        }
-    }
-
-    pub fn get_id_if_exists(&self, bytes: &[u8]) -> Option<InternID> {
-        let hash = Self::hash_fnva1(bytes);
-        if let Some(intern_str) = self.string_map.get(&hash) {
-            if self.compare(intern_str, bytes) {
-                return Some(intern_str.id);
+    pub fn intern(&mut self, string: &str) -> InternID {
+        let hash = Self::hash_djb2(string);
+        if let Some(id) = self.intern_map.get(&hash).cloned() {
+            if self.string_compare(id, string) {
+                return id;
             }
-        }
+        };
+
+        let start = self.bytes.len() as u32;
+        self.bytes.extend_from_slice(string.as_bytes());
+        let end = self.bytes.len() as u32;
+        self.strings.push(InternString { start, end });
+
+        let id = self.next;
+        self.intern_map.insert(hash, id);
+        self.next = self.next.wrapping_add(1);
+        println!("interned: {} : {}", id, string);
+        return id;
+    }
+
+    pub fn get_bytes(&self, id: InternID) -> &[u8] {
+        let is = unsafe { self.strings.get_unchecked(id as usize) };
+        unsafe { self.bytes.get_unchecked(is.start as usize..is.end as usize) }
+    }
+
+    pub fn try_get_str_id(&self, string: &str) -> Option<InternID> {
+        let hash = Self::hash_djb2(string);
+        if let Some(id) = self.intern_map.get(&hash).cloned() {
+            if self.string_compare(id, string) {
+                return Some(id);
+            }
+        };
         None
     }
 
-    pub fn intern(&mut self, bytes: &[u8]) -> InternID {
-        let hash = Self::hash_fnva1(bytes);
-        if let Some(intern_str) = self.string_map.get(&hash) {
-            if self.compare(intern_str, bytes) {
-                return intern_str.id;
-            }
-        }
-        let start = self.string_bytes.len();
-        self.string_bytes.extend_from_slice(bytes);
-        let end = self.string_bytes.len();
-        let intern_str = InternString {
-            id: self.current_id,
-            start: start as u32,
-            end: end as u32,
-        };
-        self.string_map.insert(hash, intern_str);
-        self.strings.push(intern_str);
-        self.current_id += 1;
-        return self.current_id - 1;
+    fn string_compare(&self, id: InternID, string: &str) -> bool {
+        let bytes = self.get_bytes(id);
+        let str_slice = unsafe { std::str::from_utf8_unchecked(bytes) };
+        string.chars().eq(str_slice.chars())
     }
 
-    fn hash_fnva1(bytes: &[u8]) -> u32 {
-        const FNV_OFFSET: u32 = 0x811c_9dc5;
-        const FNV_PRIME: u32 = 0x0100_0193;
-
-        let mut hash: u32 = FNV_OFFSET;
-        for &byte in bytes {
-            hash ^= byte as u32;
-            hash = hash.wrapping_mul(FNV_PRIME);
+    fn hash_djb2(str: &str) -> u32 {
+        let mut hash: u32 = 5381;
+        for c in str.chars() {
+            hash = ((hash << 5).wrapping_add(hash)) ^ c as u32;
         }
-        return hash;
-    }
-
-    fn compare(&self, intern_str: &InternString, bytes: &[u8]) -> bool {
-        let len = intern_str.end - intern_str.start;
-        if len as usize != bytes.len() {
-            return false;
-        }
-        for i in 0..len {
-            if self.string_bytes[intern_str.start as usize + i as usize] != bytes[i as usize] {
-                return false;
-            }
-        }
-        true
+        hash
     }
 }

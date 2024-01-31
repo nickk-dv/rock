@@ -87,6 +87,8 @@ struct Interner {
     intern_pool: P<InternPool>,
 }
 
+//@even modules outside the tree get interned
+// not an issue
 impl visit::MutVisit for Interner {
     fn visit_ast(&mut self, ast: P<Ast>) {
         self.intern_pool = ast.intern_pool.copy();
@@ -97,8 +99,17 @@ impl visit::MutVisit for Interner {
     }
 
     fn visit_ident(&mut self, ident: &mut Ident) {
-        let bytes = ident.span.slice(&self.module.file.source).as_bytes();
-        ident.id = self.intern_pool.intern(bytes);
+        let string = ident.span.slice(&self.module.file.source);
+        ident.id = self.intern_pool.intern(string);
+    }
+
+    fn visit_expr(&mut self, mut expr: Expr) {
+        if let ExprKind::Lit(Lit::String(ref mut id)) = expr.kind {
+            //@escapes dont get correctly interned
+            let inner = Span::new(expr.span.start + 1, expr.span.end - 1);
+            let string = inner.slice(&self.module.file.source);
+            *id = self.intern_pool.intern(string);
+        }
     }
 }
 
@@ -202,7 +213,10 @@ impl<'ast> Parser<'ast> {
         if self.peek() == Token::Ident {
             let span = self.peek_span();
             self.consume();
-            return Ok(Ident { span, id: 0 });
+            return Ok(Ident {
+                span,
+                id: INTERN_DUMMY_ID,
+            });
         }
         Err(ParseError::Ident(context))
     }
@@ -901,7 +915,7 @@ impl<'ast> Parser<'ast> {
             }
             Token::LitString => {
                 self.consume();
-                Ok(Lit::String)
+                Ok(Lit::String(INTERN_DUMMY_ID))
             }
             _ => Err(ParseError::LiteralMatch),
         }
