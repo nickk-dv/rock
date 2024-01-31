@@ -43,6 +43,7 @@ pub struct Context {
     curr_scope: P<Scope>, //@hack for visitor
     procs: Drop<Vec<(P<Module>, ProcData)>>,
     enums: Drop<Vec<EnumData>>,
+    unions: Drop<Vec<UnionData>>,
     structs: Drop<Vec<StructData>>,
     globals: Drop<Vec<GlobalData>>,
 }
@@ -57,6 +58,7 @@ impl ManualDrop for P<Context> {
             Drop::drop(&mut self.scopes);
             Drop::drop(&mut self.procs);
             Drop::drop(&mut self.enums);
+            Drop::drop(&mut self.unions);
             Drop::drop(&mut self.structs);
             Drop::drop(&mut self.globals);
             self.arena.manual_drop();
@@ -74,6 +76,7 @@ impl Context {
             curr_scope: P::null(),
             procs: Drop::new(Vec::new()),
             enums: Drop::new(Vec::new()),
+            unions: Drop::new(Vec::new()),
             structs: Drop::new(Vec::new()),
             globals: Drop::new(Vec::new()),
         }
@@ -132,19 +135,61 @@ impl<T> Conflit<T> {
 }
 
 impl visit::MutVisit for Context {
-    fn visit_custom_type(&mut self, custom_type: P<CustomType>) {
+    fn visit_type(&mut self, ty: &mut Type) {
+        let custom_type = if let TypeKind::Custom(custom) = ty.kind {
+            custom
+        } else {
+            return;
+        };
+
         let tt = self.scope_find_type(self.curr_scope.copy(), custom_type.path, custom_type.name);
-        //@not doing anything when found
+        match tt {
+            Some(TypeData::Enum(data)) => {
+                ty.kind = TypeKind::Enum(data.id);
+                println!("custom resolved to enum id:   {}", data.id);
+            }
+            Some(TypeData::Union(data)) => {
+                ty.kind = TypeKind::Union(data.id);
+                println!("custom resolved to union id:  {}", data.id);
+            }
+            Some(TypeData::Struct(data)) => {
+                ty.kind = TypeKind::Struct(data.id);
+                println!("custom resolved to struct id: {}", data.id);
+            }
+            None => ty.kind = TypeKind::Poison,
+        }
     }
 
-    fn visit_struct_init(&mut self, struct_init: P<StructInit>) {
+    fn visit_struct_init(&mut self, mut struct_init: P<StructInit>) {
         let tt = self.scope_find_type(self.curr_scope.copy(), struct_init.path, struct_init.name);
-        //@not doing anything when found
+        match tt {
+            Some(TypeData::Enum(..)) => {
+                //@no source id available after find_type is complete
+                // add context when scopes / finding symbols is changed
+                self.curr_scope
+                    .error(CheckError::StructInitGotEnumType, struct_init.name.span);
+            }
+            Some(TypeData::Union(data)) => {
+                struct_init.ty = StructInitResolved::Union(data.id);
+                println!("struct_init resolved to union id:  {}", data.id);
+            }
+            Some(TypeData::Struct(data)) => {
+                struct_init.ty = StructInitResolved::Struct(data.id);
+                println!("struct_init resolved to struct id: {}", data.id);
+            }
+            None => struct_init.ty = StructInitResolved::Poison,
+        }
     }
 
-    fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {
-        self.scope_find_proc(self.curr_scope.copy(), proc_call.path, proc_call.name);
-        //@not doing anything when found
+    fn visit_proc_call(&mut self, mut proc_call: P<ProcCall>) {
+        let data = self.scope_find_proc(self.curr_scope.copy(), proc_call.path, proc_call.name);
+        println!("finding proc with intern id = {}", proc_call.name.id);
+        if let Some(data) = data {
+            proc_call.id = Some(data.id);
+            println!("proc_call resolved to proc id: {}", data.id);
+        } else {
+            proc_call.id = None;
+        }
     }
 }
 
@@ -331,7 +376,7 @@ impl Context {
                 }
                 Decl::Proc(decl) => {
                     let id = self.procs.len() as ProcID;
-                    if let Err(existing) = scope.add_proc(decl, 0) {
+                    if let Err(existing) = scope.add_proc(decl, id) {
                         redefinition_error!(
                             CheckError::RedefinitionProc,
                             decl.name.span,
@@ -345,7 +390,7 @@ impl Context {
                     let id = self.enums.len() as EnumID;
                     if let Err(existing) = scope.add_enum(decl, id) {
                         redefinition_error!(
-                            CheckError::RedefinitionProc,
+                            CheckError::RedefinitionType,
                             decl.name.span,
                             existing.name().span
                         );
@@ -354,11 +399,20 @@ impl Context {
                     }
                 }
                 Decl::Union(decl) => {
-                    //@todo
+                    let id = self.unions.len() as UnionID;
+                    if let Err(existing) = scope.add_union(decl, id) {
+                        redefinition_error!(
+                            CheckError::RedefinitionType,
+                            decl.name.span,
+                            existing.name().span
+                        );
+                    } else {
+                        self.unions.push(UnionData { decl, id });
+                    }
                 }
                 Decl::Struct(decl) => {
                     let id = self.structs.len() as StructID;
-                    if let Err(existing) = scope.add_struct(decl, 0) {
+                    if let Err(existing) = scope.add_struct(decl, id) {
                         redefinition_error!(
                             CheckError::RedefinitionType,
                             decl.name.span,
@@ -370,7 +424,7 @@ impl Context {
                 }
                 Decl::Global(decl) => {
                     let id = self.globals.len() as GlobalID;
-                    if let Err(existing) = scope.add_global(decl, 0) {
+                    if let Err(existing) = scope.add_global(decl, id) {
                         redefinition_error!(
                             CheckError::RedefinitionGlobal,
                             decl.name.span,

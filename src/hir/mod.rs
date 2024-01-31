@@ -1,3 +1,3 @@
 pub mod check;
 mod ir;
-mod scope;
+pub mod scope;

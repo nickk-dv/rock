@@ -12,6 +12,7 @@ pub struct Scope {
     mods: Drop<HashMap<InternID, P<ModuleDecl>>>,
     procs: Drop<HashMap<InternID, ProcData>>,
     enums: Drop<HashMap<InternID, EnumData>>,
+    unions: Drop<HashMap<InternID, UnionData>>,
     structs: Drop<HashMap<InternID, StructData>>,
     globals: Drop<HashMap<InternID, GlobalData>>,
     pub glob_imports: Drop<Vec<GlobImport>>,
@@ -25,6 +26,7 @@ impl ManualDrop for P<Scope> {
             Drop::drop(&mut self.mods);
             Drop::drop(&mut self.procs);
             Drop::drop(&mut self.enums);
+            Drop::drop(&mut self.unions);
             Drop::drop(&mut self.structs);
             Drop::drop(&mut self.globals);
             Drop::drop(&mut self.glob_imports);
@@ -43,6 +45,7 @@ impl Scope {
             mods: Drop::new(HashMap::new()),
             procs: Drop::new(HashMap::new()),
             enums: Drop::new(HashMap::new()),
+            unions: Drop::new(HashMap::new()),
             structs: Drop::new(HashMap::new()),
             globals: Drop::new(HashMap::new()),
             glob_imports: Drop::new(Vec::new()),
@@ -51,10 +54,11 @@ impl Scope {
     }
 }
 
+pub type GlobalID = u32;
 pub type ProcID = u32;
 pub type EnumID = u32;
+pub type UnionID = u32;
 pub type StructID = u32;
-pub type GlobalID = u32;
 
 #[derive(Copy, Clone)]
 pub struct ProcData {
@@ -66,6 +70,12 @@ pub struct ProcData {
 pub struct EnumData {
     pub decl: P<EnumDecl>,
     pub id: EnumID,
+}
+
+#[derive(Copy, Clone)]
+pub struct UnionData {
+    pub decl: P<UnionDecl>,
+    pub id: UnionID,
 }
 
 #[derive(Copy, Clone)]
@@ -83,6 +93,7 @@ pub struct GlobalData {
 #[derive(Copy, Clone)]
 pub enum TypeData {
     Enum(EnumData),
+    Union(UnionData),
     Struct(StructData),
 }
 
@@ -102,6 +113,7 @@ impl TypeData {
     pub fn name(&self) -> Ident {
         match self {
             TypeData::Enum(data) => data.decl.name,
+            TypeData::Union(data) => data.decl.name,
             TypeData::Struct(data) => data.decl.name,
         }
     }
@@ -109,6 +121,7 @@ impl TypeData {
     pub fn vis(&self) -> Vis {
         match self {
             TypeData::Enum(data) => data.decl.vis,
+            TypeData::Union(data) => data.decl.vis,
             TypeData::Struct(data) => data.decl.vis,
         }
     }
@@ -144,6 +157,9 @@ impl Scope {
         if let Some(existing) = self.enums.get(&decl.name.id) {
             return Err(TypeData::Enum(*existing));
         }
+        if let Some(existing) = self.unions.get(&decl.name.id) {
+            return Err(TypeData::Union(*existing));
+        }
         if let Some(existing) = self.structs.get(&decl.name.id) {
             return Err(TypeData::Struct(*existing));
         }
@@ -151,9 +167,26 @@ impl Scope {
         Ok(())
     }
 
+    pub fn add_union(&mut self, decl: P<UnionDecl>, id: UnionID) -> Result<(), TypeData> {
+        if let Some(existing) = self.enums.get(&decl.name.id) {
+            return Err(TypeData::Enum(*existing));
+        }
+        if let Some(existing) = self.unions.get(&decl.name.id) {
+            return Err(TypeData::Union(*existing));
+        }
+        if let Some(existing) = self.structs.get(&decl.name.id) {
+            return Err(TypeData::Struct(*existing));
+        }
+        self.unions.insert(decl.name.id, UnionData { decl, id });
+        Ok(())
+    }
+
     pub fn add_struct(&mut self, decl: P<StructDecl>, id: StructID) -> Result<(), TypeData> {
         if let Some(existing) = self.enums.get(&decl.name.id) {
             return Err(TypeData::Enum(*existing));
+        }
+        if let Some(existing) = self.unions.get(&decl.name.id) {
+            return Err(TypeData::Union(*existing));
         }
         if let Some(existing) = self.structs.get(&decl.name.id) {
             return Err(TypeData::Struct(*existing));
@@ -203,11 +236,14 @@ impl Scope {
     }
 
     pub fn get_type(&self, id: InternID) -> Option<TypeData> {
-        if let Some(v) = self.structs.get(&id) {
-            return Some(TypeData::Struct(*v));
-        }
         if let Some(v) = self.enums.get(&id) {
             return Some(TypeData::Enum(*v));
+        }
+        if let Some(v) = self.unions.get(&id) {
+            return Some(TypeData::Union(*v));
+        }
+        if let Some(v) = self.structs.get(&id) {
+            return Some(TypeData::Struct(*v));
         }
         None
     }

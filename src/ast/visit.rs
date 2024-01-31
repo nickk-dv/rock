@@ -89,6 +89,10 @@ fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
         TypeKind::Custom(custom_type) => visit_custom_type(vis, custom_type),
         TypeKind::ArraySlice(array_slice) => visit_array_slice(vis, array_slice),
         TypeKind::ArrayStatic(array_static) => visit_array_static(vis, array_static),
+        TypeKind::Enum(..) => {}
+        TypeKind::Union(..) => {}
+        TypeKind::Struct(..) => {}
+        TypeKind::Poison => {}
     }
 }
 

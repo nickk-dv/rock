@@ -160,6 +160,8 @@ pub enum CheckError {
     TypeSymbolConflict,
     GlobalSymbolConflict,
 
+    StructInitGotEnumType,
+
     DeferNested,
     BreakOutsideLoop,
     ContinueOutsideLoop,

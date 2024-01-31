@@ -54,6 +54,8 @@ impl Into<Message> for CheckError {
             CheckError::TypeSymbolConflict =>          ("type name conflits with others in scope", None),
             CheckError::GlobalSymbolConflict =>        ("global constant name conflits with others in scope", None),
 
+            CheckError::StructInitGotEnumType =>       ("enum type cannot be used in structure initializer", None),
+
             CheckError::DeferNested =>                 ("defer cannot be nested", None),
             CheckError::BreakOutsideLoop =>            ("break outside of loop", Some("remove this statement")),
             CheckError::ContinueOutsideLoop =>         ("continue outside of loop", Some("remove this statement")),

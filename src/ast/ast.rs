@@ -1,4 +1,5 @@
 use super::span::Span;
+use crate::hir::scope::{EnumID, ProcID, StructID, UnionID};
 use crate::mem::*;
 use std::path::PathBuf;
 
@@ -77,6 +78,10 @@ pub enum TypeKind {
     Custom(P<CustomType>),
     ArraySlice(P<ArraySlice>),
     ArrayStatic(P<ArrayStatic>),
+    Enum(EnumID),     //check
+    Union(UnionID),   //check
+    Struct(StructID), //check
+    Poison,           //check
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -367,6 +372,7 @@ pub struct ProcCall {
     pub path: Path,
     pub name: Ident,
     pub input: List<Expr>,
+    pub id: Option<ProcID>, //check
 }
 
 #[derive(Copy, Clone)]
@@ -379,6 +385,14 @@ pub struct StructInit {
     pub path: Path,
     pub name: Ident,
     pub input: List<FieldInit>,
+    pub ty: StructInitResolved, //check
+}
+
+#[derive(Copy, Clone)]
+pub enum StructInitResolved {
+    Union(UnionID),
+    Struct(StructID),
+    Poison,
 }
 
 #[derive(Copy, Clone)]
