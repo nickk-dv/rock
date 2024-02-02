@@ -31,7 +31,7 @@ pub trait MutVisit: Sized {
     fn visit_var_assign(&mut self, var_assign: P<VarAssign>) {}
     fn visit_expr_stmt(&mut self, expr_stmt: P<ExprStmt>) {}
 
-    fn visit_expr(&mut self, expr: Expr) {}
+    fn visit_expr(&mut self, expr: P<Expr>) {}
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
     fn visit_lit(&mut self, lit: &mut Lit) {}
     fn visit_if(&mut self, if_: P<If>) {}
@@ -44,6 +44,7 @@ pub trait MutVisit: Sized {
     fn visit_item(&mut self, item: P<Item>) {}
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
     fn visit_array_init(&mut self, array_init: P<ArrayInit>) {}
+    fn visit_array_repeat(&mut self, array_repeat: P<ArrayRepeat>) {}
     fn visit_struct_init(&mut self, struct_init: P<StructInit>) {}
     fn visit_unary_expr(&mut self, unary_expr: P<UnaryExpr>) {}
     fn visit_binary_expr(&mut self, binary_expr: P<BinaryExpr>) {}
@@ -270,7 +271,7 @@ fn visit_expr_stmt<T: MutVisit>(vis: &mut T, expr_stmt: P<ExprStmt>) {
     visit_expr(vis, expr_stmt.expr);
 }
 
-fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
+fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
     vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Discard => {}
@@ -285,6 +286,7 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: Expr) {
         ExprKind::Item(item) => visit_item(vis, item),
         ExprKind::ProcCall(proc_call) => visit_proc_call(vis, proc_call),
         ExprKind::ArrayInit(array_init) => visit_array_init(vis, array_init),
+        ExprKind::ArrayRepeat(array_repeat) => visit_array_repeat(vis, array_repeat),
         ExprKind::StructInit(struct_init) => visit_struct_init(vis, struct_init),
         ExprKind::UnaryExpr(unary_expr) => visit_unary_expr(vis, unary_expr),
         ExprKind::BinaryExpr(binary_expr) => visit_binary_expr(vis, binary_expr),
@@ -368,6 +370,12 @@ fn visit_array_init<T: MutVisit>(vis: &mut T, array_init: P<ArrayInit>) {
     for expr in array_init.input {
         visit_expr(vis, expr);
     }
+}
+
+fn visit_array_repeat<T: MutVisit>(vis: &mut T, array_repeat: P<ArrayRepeat>) {
+    vis.visit_array_repeat(array_repeat);
+    visit_expr(vis, array_repeat.expr);
+    visit_const_expr(vis, array_repeat.size);
 }
 
 fn visit_struct_init<T: MutVisit>(vis: &mut T, mut struct_init: P<StructInit>) {

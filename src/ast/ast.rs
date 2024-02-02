@@ -240,14 +240,14 @@ pub enum StmtKind {
 #[derive(Copy, Clone)]
 pub struct For {
     pub var_decl: Option<P<VarDecl>>,
-    pub cond: Option<Expr>,
+    pub cond: Option<P<Expr>>,
     pub var_assign: Option<P<VarAssign>>,
     pub block: P<Block>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Return {
-    pub expr: Option<Expr>,
+    pub expr: Option<P<Expr>>,
 }
 
 #[derive(Copy, Clone)]
@@ -255,13 +255,13 @@ pub struct VarDecl {
     pub mutt: Mut,
     pub name: Option<Ident>,
     pub ty: Option<Type>,
-    pub expr: Option<Expr>,
+    pub expr: Option<P<Expr>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct VarAssign {
-    pub lhs: Expr,
-    pub rhs: Expr,
+    pub lhs: P<Expr>,
+    pub rhs: P<Expr>,
     pub op: AssignOp,
 }
 
@@ -273,7 +273,7 @@ pub enum AssignOp {
 
 #[derive(Copy, Clone)]
 pub struct ExprStmt {
-    pub expr: Expr,
+    pub expr: P<Expr>,
     pub has_semi: bool,
 }
 
@@ -284,7 +284,7 @@ pub struct Expr {
 }
 
 #[derive(Copy, Clone)]
-pub struct ConstExpr(pub Expr);
+pub struct ConstExpr(pub P<Expr>);
 
 #[derive(Copy, Clone)]
 pub enum ExprKind {
@@ -300,6 +300,7 @@ pub enum ExprKind {
     Item(P<Item>),
     ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
+    ArrayRepeat(P<ArrayRepeat>),
     StructInit(P<StructInit>),
     UnaryExpr(P<UnaryExpr>),
     BinaryExpr(P<BinaryExpr>),
@@ -317,7 +318,7 @@ pub enum Lit {
 
 #[derive(Copy, Clone)]
 pub struct If {
-    pub cond: Expr,
+    pub cond: P<Expr>,
     pub block: P<Block>,
     pub else_: Option<Else>,
 }
@@ -335,25 +336,25 @@ pub struct Block {
 
 #[derive(Copy, Clone)]
 pub struct Match {
-    pub expr: Expr,
+    pub expr: P<Expr>,
     pub arms: List<MatchArm>,
 }
 
 #[derive(Copy, Clone)]
 pub struct MatchArm {
-    pub pat: Expr,
-    pub expr: Expr,
+    pub pat: P<Expr>,
+    pub expr: P<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Index {
-    pub expr: Expr,
+    pub expr: P<Expr>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Cast {
     pub ty: Type,
-    pub expr: Expr,
+    pub expr: P<Expr>,
 }
 
 #[derive(Copy, Clone)]
@@ -371,13 +372,19 @@ pub struct Item {
 pub struct ProcCall {
     pub path: Path,
     pub name: Ident,
-    pub input: List<Expr>,
+    pub input: List<P<Expr>>,
     pub id: Option<ProcID>, //check
 }
 
 #[derive(Copy, Clone)]
 pub struct ArrayInit {
-    pub input: List<Expr>,
+    pub input: List<P<Expr>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayRepeat {
+    pub expr: P<Expr>,
+    pub size: ConstExpr,
 }
 
 #[derive(Copy, Clone)]
@@ -398,13 +405,13 @@ pub enum StructInitResolved {
 #[derive(Copy, Clone)]
 pub struct FieldInit {
     pub name: Ident,
-    pub expr: Option<Expr>,
+    pub expr: Option<P<Expr>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct UnaryExpr {
     pub op: UnaryOp,
-    pub rhs: Expr,
+    pub rhs: P<Expr>,
 }
 
 #[derive(Copy, Clone)]
@@ -419,8 +426,8 @@ pub enum UnaryOp {
 #[derive(Copy, Clone)]
 pub struct BinaryExpr {
     pub op: BinaryOp,
-    pub lhs: Expr,
-    pub rhs: Expr,
+    pub lhs: P<Expr>,
+    pub rhs: P<Expr>,
 }
 
 #[derive(Copy, Clone, PartialEq)]

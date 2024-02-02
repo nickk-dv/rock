@@ -11,6 +11,9 @@ use std::collections::HashMap;
 //@report usages of self id module path as redundant?
 
 pub fn check(ast: P<Ast>) -> Result<(), ()> {
+    // 14192 original ast size
+    // 14632 // 440 / 8 = 55 extra indir after moving Expr -> P<Expr>
+
     //@memory prof
     let mut memory_usage = 0;
     for arena in ast.arenas.iter() {
@@ -1181,7 +1184,7 @@ impl Context {
         }
     }
 
-    fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: Expr) {
+    fn scope_check_global_expr(&mut self, scope: P<Scope>, expr: P<Expr>) {
         match expr.kind {
             ExprKind::DotName(name) => {}
             ExprKind::Index(index) => {}
