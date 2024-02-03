@@ -86,6 +86,7 @@ fn visit_path<T: MutVisit>(vis: &mut T, path: &mut Path) {
 fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
     vis.visit_type(ty);
     match ty.kind {
+        TypeKind::Unit => {}
         TypeKind::Basic(..) => {}
         TypeKind::Custom(custom_type) => visit_custom_type(vis, custom_type),
         TypeKind::ArraySlice(array_slice) => visit_array_slice(vis, array_slice),
@@ -274,6 +275,7 @@ fn visit_expr_stmt<T: MutVisit>(vis: &mut T, expr_stmt: P<ExprStmt>) {
 fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
     vis.visit_expr(expr);
     match expr.kind {
+        ExprKind::Unit => {}
         ExprKind::Discard => {}
         ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
         ExprKind::If(if_) => visit_if(vis, if_),

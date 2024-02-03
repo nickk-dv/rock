@@ -217,6 +217,7 @@ impl Token {
 
     pub fn keyword_from_str(str: &str) -> Option<Token> {
         match str {
+            "_" => Some(Token::Underscore),
             "null" => Some(Token::LitNull),
             "true" => Some(Token::LitBool(true)),
             "false" => Some(Token::LitBool(false)),

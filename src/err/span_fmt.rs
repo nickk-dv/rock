@@ -25,7 +25,7 @@ struct SpanFormat<'a> {
 impl<'a> SpanFormat<'a> {
     fn new(file: &'a File, span: Span) -> Self {
         let mut lex = crate::ast::lexer::Lexer::new(&file.source);
-        let line_spans = lex.lex_line_spans();
+        let line_spans = lex.lex_line_spans(); //@temp getting all line spans, since they are no longer stored in ast
 
         let loc = find_loc(&line_spans, span);
         let prefix = Span::new(loc.span.start, span.start);

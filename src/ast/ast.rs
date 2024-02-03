@@ -62,6 +62,7 @@ pub struct PtrLevel {
 
 #[derive(Copy, Clone)]
 pub enum TypeKind {
+    Unit,
     Basic(BasicType),
     Custom(P<CustomType>),
     ArraySlice(P<ArraySlice>),
@@ -276,6 +277,7 @@ pub struct ConstExpr(pub P<Expr>);
 
 #[derive(Copy, Clone)]
 pub enum ExprKind {
+    Unit,
     Discard,
     Lit(Lit),
     If(P<If>),

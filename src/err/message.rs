@@ -60,6 +60,8 @@ impl Into<Message> for CheckError {
             CheckError::BreakOutsideLoop =>            ("break outside of loop", Some("remove this statement")),
             CheckError::ContinueOutsideLoop =>         ("continue outside of loop", Some("remove this statement")),
             CheckError::UnreachableStatement =>        ("unreachable statement", None),
+
+            CheckError::VarLocalAlreadyDeclared =>     ("variable is already declared", Some("cannot shadow existing local variable")),
         }
     }
 }

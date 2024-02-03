@@ -311,6 +311,11 @@ impl<'ast> Parser<'ast> {
             return Ok(ty);
         }
         ty.kind = match self.peek() {
+            Token::OpenParen => {
+                self.consume();
+                self.expect_token(Token::CloseParen, ParseContext::UnitType)?;
+                TypeKind::Unit
+            }
             Token::Ident | Token::KwSuper | Token::KwPackage => {
                 let mut custom_type = self.alloc::<CustomType>();
                 custom_type.path = self.parse_path()?;
@@ -627,10 +632,10 @@ impl<'ast> Parser<'ast> {
     fn parse_var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
         let mut var_decl = self.alloc::<VarDecl>();
         var_decl.mutt = self.parse_mut();
-        var_decl.name = if self.peek() != Token::Underscore {
-            Some(self.parse_ident(ParseContext::VarDecl)?)
-        } else {
+        var_decl.name = if self.try_consume(Token::Underscore) {
             None
+        } else {
+            Some(self.parse_ident(ParseContext::VarDecl)?)
         };
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
 
@@ -712,14 +717,21 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<P<Expr>, ParseError> {
+        let span_start = self.peek_span_start();
+
         if self.try_consume(Token::OpenParen) {
+            if self.try_consume(Token::CloseParen) {
+                let mut expr = self.alloc::<Expr>();
+                expr.kind = ExprKind::Unit;
+                expr.span = Span::new(span_start, self.peek_span_end());
+                return Ok(expr);
+            }
             let expr = self.parse_sub_expr(0)?;
             self.expect_token(Token::CloseParen, ParseContext::Expr)?;
             return Ok(expr);
         }
 
         let mut expr = self.alloc::<Expr>();
-        let span_start = self.peek_span_start();
 
         if let Some(unary_op) = self.try_consume_unary_op() {
             let mut unary_expr = self.alloc::<UnaryExpr>();

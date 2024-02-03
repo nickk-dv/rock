@@ -68,6 +68,7 @@ pub enum ParseError {
 pub enum ParseContext {
     ModulePath,
     Type,
+    UnitType,
     CustomType,
     ArraySlice,
     ArrayStatic,
@@ -166,6 +167,8 @@ pub enum CheckError {
     BreakOutsideLoop,
     ContinueOutsideLoop,
     UnreachableStatement,
+
+    VarLocalAlreadyDeclared,
 }
 
 pub enum FileIOError {
@@ -311,6 +314,7 @@ impl ParseContext {
         match self {
             ParseContext::ModulePath => "module path",
             ParseContext::Type => "type signature",
+            ParseContext::UnitType => "unit type",
             ParseContext::CustomType => "custom type",
             ParseContext::ArraySlice => "array slice type",
             ParseContext::ArrayStatic => "static array type",

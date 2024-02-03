@@ -32,6 +32,7 @@ pub fn check(mut ast: Ast, ctx: &CompCtx) -> Result<(), ()> {
     context.pass_4_type_resolve();
     context.pass_5_check_globals();
     context.pass_6_check_control_flow();
+    context.pass_7_check_proc();
 
     let result = context.report_errors();
     context.manual_drop();
@@ -1367,5 +1368,90 @@ impl<'a> Context<'a> {
                 _ => {} //@rejecting all others
             }
         }
+    }
+
+    fn pass_7_check_proc(&mut self) {
+        for scope_id in 0..self.scopes.len() as ScopeID {
+            for decl in self.get_scope(scope_id).module.decls {
+                if let Decl::Proc(proc_decl) = decl {
+                    self.scope_check_proc(self.get_scope(scope_id), proc_decl);
+                }
+            }
+        }
+    }
+
+    fn scope_check_proc(&mut self, scope: P<Scope>, proc_decl: P<ProcDecl>) {
+        let mut proc_scope = ProcScope { vars: Vec::new() };
+        if let Some(block) = proc_decl.block {
+            self.check_block(scope, &mut proc_scope, block);
+        }
+    }
+
+    fn check_block(&mut self, scope: P<Scope>, proc_scope: &mut ProcScope, block: P<Block>) {
+        for stmt in block.stmts {
+            self.check_stmt(scope.copy(), proc_scope, stmt);
+        }
+    }
+
+    fn check_stmt(&mut self, scope: P<Scope>, proc_scope: &mut ProcScope, stmt: Stmt) {
+        match stmt.kind {
+            StmtKind::Break => {}
+            StmtKind::Continue => {}
+            StmtKind::For(for_) => {
+                self.check_block(scope, proc_scope, for_.block);
+            }
+            StmtKind::Defer(block) => self.check_block(scope, proc_scope, block),
+            StmtKind::Return(_) => {}
+            StmtKind::VarDecl(var_decl) => self.check_var_decl(scope, proc_scope, var_decl),
+            StmtKind::VarAssign(_) => {}
+            StmtKind::ExprStmt(_) => {}
+        }
+    }
+
+    fn check_var_decl(
+        &mut self,
+        scope: P<Scope>,
+        proc_scope: &mut ProcScope,
+        var_decl: P<VarDecl>,
+    ) {
+        if let Some(name) = var_decl.name {
+            match proc_scope.find_var_decl(name.id) {
+                Some(existing) => {
+                    scope_error!(
+                        scope,
+                        Error::check(
+                            CheckError::VarLocalAlreadyDeclared,
+                            scope.md().file_id,
+                            name.span
+                        )
+                        .context(
+                            "already declared here",
+                            scope.md().file_id,
+                            existing.name.unwrap().span //@name exists to get a duplicate
+                        )
+                    );
+                }
+                None => {
+                    proc_scope.vars.push(var_decl);
+                }
+            }
+        }
+    }
+}
+
+struct ProcScope {
+    vars: Vec<P<VarDecl>>,
+}
+
+impl ProcScope {
+    fn find_var_decl(&self, id: InternID) -> Option<P<VarDecl>> {
+        for var in self.vars.iter() {
+            if let Some(name) = var.name {
+                if name.id == id {
+                    return Some(*var);
+                }
+            }
+        }
+        None
     }
 }
