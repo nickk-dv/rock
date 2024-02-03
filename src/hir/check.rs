@@ -1,6 +1,7 @@
 use super::scope::*;
 use crate::ast::ast::*;
 use crate::ast::intern::*;
+use crate::ast::parser::CompCtx;
 use crate::ast::span::Span;
 use crate::ast::visit;
 use crate::err::error::*;
@@ -11,22 +12,18 @@ use std::collections::HashMap;
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
 //@report usages of self id module path as redundant?
 
-pub fn check(ast: P<Ast>, intern: &InternPool) -> Result<(), ()> {
+pub fn check(mut ast: Ast, ctx: &CompCtx) -> Result<(), ()> {
     // 14192 original ast size
     // 14632 // 440 / 8 = 55 extra indir after moving Expr -> P<Expr>
 
     //@memory prof
-    let mut memory_usage = 0;
-    for arena in ast.arenas.iter() {
-        memory_usage += arena.memory_usage();
-    }
-    eprintln!("ast arenas mem-usage: {}", memory_usage);
+    eprintln!("ast arenas mem-usage: {}", ast.arena.memory_usage());
 
     let est_scope_count = ast.modules.len();
     let block_size = std::mem::size_of::<Scope>() * est_scope_count;
     let mut arena = Arena::new(block_size);
     let mut context = arena.alloc::<Context>();
-    *context = Context::new(ast, arena, intern);
+    *context = Context::new(&mut ast, arena, ctx);
 
     context.pass_0_create_scopes()?;
     context.pass_1_check_main_proc();
@@ -42,8 +39,8 @@ pub fn check(ast: P<Ast>, intern: &InternPool) -> Result<(), ()> {
 }
 
 pub struct Context<'a> {
-    intern: &'a InternPool,
-    ast: P<Ast>,
+    ast: &'a mut Ast,
+    ctx: &'a CompCtx,
     arena: Arena,
     errors: Drop<Vec<Error>>,
     scopes: Drop<Vec<P<Scope>>>,
@@ -74,10 +71,10 @@ impl<'a> ManualDrop for P<Context<'a>> {
 }
 
 impl<'a> Context<'a> {
-    fn new(ast: P<Ast>, arena: Arena, intern: &'a InternPool) -> Self {
+    fn new(ast: &'a mut Ast, arena: Arena, ctx: &'a CompCtx) -> Self {
         Self {
-            intern,
             ast,
+            ctx,
             arena,
             errors: Drop::new(Vec::new()),
             scopes: Drop::new(Vec::new()),
@@ -206,11 +203,11 @@ impl<'a> Context<'a> {
         let handle = &mut std::io::BufWriter::new(std::io::stderr());
         use crate::err::report;
         for err in self.errors.iter() {
-            report::report(handle, err);
+            report::report(handle, err, self.ctx);
         }
         for scope in self.scopes.iter() {
             for err in scope.errors.iter() {
-                report::report(handle, err);
+                report::report(handle, err, self.ctx);
             }
         }
         report::err_status(())
@@ -226,7 +223,7 @@ impl<'a> Context<'a> {
         let mut file_scope_map = HashMap::new();
 
         for module in self.ast.modules.iter() {
-            file_module_map.insert(module.file.path.clone(), module.copy());
+            file_module_map.insert(self.ctx.file(module.file_id).path.clone(), module.copy());
         }
 
         let mut root_path = std::path::PathBuf::new();
@@ -241,7 +238,7 @@ impl<'a> Context<'a> {
                     None,
                     &mut tasks,
                 );
-                file_scope_map.insert(scope.module.file.path.clone(), scope.id);
+                file_scope_map.insert(self.ctx.file(scope.module.file_id).path.clone(), scope.id);
                 self.scopes.push(scope);
             }
             None => {
@@ -251,10 +248,10 @@ impl<'a> Context<'a> {
         }
 
         while let Some(mut task) = tasks.pop() {
-            let source = &task.parent.file.source;
+            let source = &self.ctx.file(task.parent.file_id).source;
             let mod_name = task.mod_decl.name.span.slice(source);
-            let mut path_1 = task.parent.file.path.clone();
-            let mut path_2 = task.parent.file.path.clone();
+            let mut path_1 = self.ctx.file(task.parent.file_id).path.clone();
+            let mut path_2 = self.ctx.file(task.parent.file_id).path.clone();
             path_1.pop();
             path_1.push(format!("{}.lang", mod_name));
             path_2.pop();
@@ -266,7 +263,7 @@ impl<'a> Context<'a> {
                     self.error(
                         Error::check(
                             CheckError::ParseModBothPathsMissing,
-                            task.parent,
+                            task.parent.file_id,
                             task.mod_decl.name.span,
                         )
                         .info(format!("{:?}", path_1))
@@ -279,7 +276,7 @@ impl<'a> Context<'a> {
                     self.error(
                         Error::check(
                             CheckError::ParseModBothPathsExist,
-                            task.parent,
+                            task.parent.file_id,
                             task.mod_decl.name.span,
                         )
                         .info(format!("{:?}", path_1))
@@ -295,7 +292,7 @@ impl<'a> Context<'a> {
                         self.error(
                             Error::check(
                                 CheckError::ParseModCycle,
-                                task.parent,
+                                task.parent.file_id,
                                 task.mod_decl.name.span,
                             )
                             .info(format!("{:?}", path_1))
@@ -312,7 +309,7 @@ impl<'a> Context<'a> {
                         self.error(
                             Error::check(
                                 CheckError::ParseModCycle,
-                                task.parent,
+                                task.parent.file_id,
                                 task.mod_decl.name.span,
                             )
                             .info(format!("{:?}", path_2))
@@ -331,7 +328,7 @@ impl<'a> Context<'a> {
                 &mut tasks,
             );
             task.mod_decl.id = Some(scope.id);
-            file_scope_map.insert(scope.module.file.path.clone(), scope.id);
+            file_scope_map.insert(self.ctx.file(scope.module.file_id).path.clone(), scope.id);
             self.scopes.push(scope);
         }
 
@@ -352,9 +349,9 @@ impl<'a> Context<'a> {
             ($check_error:expr, $span:expr, $existing_span:expr) => {
                 scope_error!(
                     scope,
-                    Error::check($check_error, scope.md(), $span).context(
+                    Error::check($check_error, scope.md().file_id, $span).context(
                         "already defined here",
-                        scope.md(),
+                        scope.md().file_id,
                         $existing_span
                     )
                 );
@@ -446,7 +443,7 @@ impl<'a> Context<'a> {
     }
 
     fn pass_1_check_main_proc(&mut self) {
-        let main_id = match self.intern.try_get_str_id("main") {
+        let main_id = match self.ctx.intern().try_get_str_id("main") {
             Some(id) => id,
             None => {
                 self.error(Error::check_no_src(CheckError::MainProcMissing));
@@ -494,11 +491,8 @@ impl<'a> Context<'a> {
                         if let Some(existing) = name_set.get(&element.name.id) {
                             scope_error!(
                                 scope,
-                                Error::check($check_error, scope.md(), element.name.span).context(
-                                    "already defined here",
-                                    scope.md(),
-                                    *existing
-                                )
+                                Error::check($check_error, scope.md().file_id, element.name.span)
+                                    .context("already defined here", scope.md().file_id, *existing)
                             );
                         } else {
                             name_set.insert(element.name.id, element.name.span);
@@ -563,7 +557,7 @@ impl<'a> Context<'a> {
                                 scope,
                                 Error::check(
                                     CheckError::ModuleNotFoundInScope,
-                                    scope.md(),
+                                    scope.md().file_id,
                                     task.import.path.names.first().unwrap().span,
                                 )
                             );
@@ -616,8 +610,16 @@ impl<'a> Context<'a> {
                 if let Err(existing) = scope.add_glob_import(import) {
                     scope_error!(
                         scope,
-                        Error::check(CheckError::ImportGlobExists, scope.md(), task.import.span,)
-                            .context("existing import", scope.md(), existing.import_span)
+                        Error::check(
+                            CheckError::ImportGlobExists,
+                            scope.md().file_id,
+                            task.import.span,
+                        )
+                        .context(
+                            "existing import",
+                            scope.md().file_id,
+                            existing.import_span
+                        )
                     );
                 }
             }
@@ -682,9 +684,17 @@ impl<'a> Context<'a> {
         }
 
         if !some_exists {
-            let mut error = Error::check(CheckError::ImportSymbolNotDefined, scope.md(), name.span);
+            let mut error = Error::check(
+                CheckError::ImportSymbolNotDefined,
+                scope.md().file_id,
+                name.span,
+            );
             for name in private_symbols {
-                error = error.context("found this private symbol", from_scope.md(), name.span);
+                error = error.context(
+                    "found this private symbol",
+                    from_scope.md().file_id,
+                    name.span,
+                );
             }
             scope_error!(scope, error);
             return;
@@ -699,10 +709,14 @@ impl<'a> Context<'a> {
                 scope,
                 Error::check(
                     CheckError::ImportSymbolAlreadyImported,
-                    scope.md(),
+                    scope.md().file_id,
                     name.span,
                 )
-                .context("existing symbol import", scope.md(), existing.name.span)
+                .context(
+                    "existing symbol import",
+                    scope.md().file_id,
+                    existing.name.span
+                )
             );
         }
     }
@@ -738,9 +752,9 @@ impl<'a> Context<'a> {
         if visibility_private(data.decl.vis, from_scope.id) {
             scope_error!(
                 scope,
-                Error::check(CheckError::ProcIsPrivate, scope.md(), name.span).context(
+                Error::check(CheckError::ProcIsPrivate, scope.md().file_id, name.span).context(
                     "defined here",
-                    from_scope.md(),
+                    from_scope.md().file_id,
                     data.decl.name.span
                 )
             );
@@ -772,9 +786,9 @@ impl<'a> Context<'a> {
         if visibility_private(data.vis(), from_scope.id) {
             scope_error!(
                 scope,
-                Error::check(CheckError::TypeIsPrivate, scope.md(), name.span).context(
+                Error::check(CheckError::TypeIsPrivate, scope.md().file_id, name.span).context(
                     "defined here",
-                    from_scope.md(),
+                    from_scope.md().file_id,
                     data.name().span
                 )
             );
@@ -806,9 +820,9 @@ impl<'a> Context<'a> {
         if visibility_private(data.decl.vis, from_scope.id) {
             scope_error!(
                 scope,
-                Error::check(CheckError::GlobalIsPrivate, scope.md(), name.span).context(
+                Error::check(CheckError::GlobalIsPrivate, scope.md().file_id, name.span).context(
                     "defined here",
-                    from_scope.md(),
+                    from_scope.md().file_id,
                     data.decl.name.span
                 )
             );
@@ -863,11 +877,8 @@ impl<'a> Context<'a> {
             if visibility_private(mod_decl.vis, target.id) {
                 scope_error!(
                     scope,
-                    Error::check(CheckError::ModuleIsPrivate, scope.md(), name.span).context(
-                        "defined here",
-                        target.md(),
-                        mod_decl.name.span
-                    )
+                    Error::check(CheckError::ModuleIsPrivate, scope.md().file_id, name.span)
+                        .context("defined here", target.md().file_id, mod_decl.name.span)
                 );
                 return None;
             }
@@ -932,20 +943,24 @@ impl<'a> Context<'a> {
             conflicts.insert(0, conflict);
         }
 
-        let mut error = Error::check(CheckError::ModuleSymbolConflict, scope.md(), name.span);
+        let mut error = Error::check(
+            CheckError::ModuleSymbolConflict,
+            scope.md().file_id,
+            name.span,
+        );
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
                 error = error
-                    .context("from this import:", scope.md(), import_span)
+                    .context("from this import:", scope.md().file_id, import_span)
                     .context(
                         "conflict with this module",
-                        conflict.from_scope.md(),
+                        conflict.from_scope.md().file_id,
                         conflict.data.name.span,
                     )
             } else {
                 error = error.context(
                     "conflict with this declared module",
-                    scope.md(),
+                    scope.md().file_id,
                     conflict.data.name.span,
                 );
             }
@@ -1003,20 +1018,24 @@ impl<'a> Context<'a> {
             conflicts.insert(0, conflict);
         }
 
-        let mut error = Error::check(CheckError::ProcSymbolConflict, scope.md(), name.span);
+        let mut error = Error::check(
+            CheckError::ProcSymbolConflict,
+            scope.md().file_id,
+            name.span,
+        );
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
                 error = error
-                    .context("from this import:", scope.md(), import_span)
+                    .context("from this import:", scope.md().file_id, import_span)
                     .context(
                         "conflict with this procedure",
-                        conflict.from_scope.md(),
+                        conflict.from_scope.md().file_id,
                         conflict.data.decl.name.span,
                     )
             } else {
                 error = error.context(
                     "conflict with this declared procedure",
-                    scope.md(),
+                    scope.md().file_id,
                     conflict.data.decl.name.span,
                 );
             }
@@ -1074,20 +1093,24 @@ impl<'a> Context<'a> {
             conflicts.insert(0, conflict);
         }
 
-        let mut error = Error::check(CheckError::TypeSymbolConflict, scope.md(), name.span);
+        let mut error = Error::check(
+            CheckError::TypeSymbolConflict,
+            scope.md().file_id,
+            name.span,
+        );
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
                 error = error
-                    .context("from this import:", scope.md(), import_span)
+                    .context("from this import:", scope.md().file_id, import_span)
                     .context(
                         "conflict with this type name",
-                        conflict.from_scope.md(),
+                        conflict.from_scope.md().file_id,
                         conflict.data.name().span,
                     )
             } else {
                 error = error.context(
                     "conflict with this declared type name",
-                    scope.md(),
+                    scope.md().file_id,
                     conflict.data.name().span,
                 );
             }
@@ -1149,20 +1172,24 @@ impl<'a> Context<'a> {
             conflicts.insert(0, conflict);
         }
 
-        let mut error = Error::check(CheckError::GlobalSymbolConflict, scope.md(), name.span);
+        let mut error = Error::check(
+            CheckError::GlobalSymbolConflict,
+            scope.md().file_id,
+            name.span,
+        );
         for conflict in conflicts.iter() {
             if let Some(import_span) = conflict.import_span {
                 error = error
-                    .context("from this import:", scope.md(), import_span)
+                    .context("from this import:", scope.md().file_id, import_span)
                     .context(
                         "conflict with this global constant",
-                        conflict.from_scope.md(),
+                        conflict.from_scope.md().file_id,
                         conflict.data.decl.name.span,
                     )
             } else {
                 error = error.context(
                     "conflict with this declared global constant",
-                    scope.md(),
+                    scope.md().file_id,
                     conflict.data.decl.name.span,
                 );
             }
@@ -1246,9 +1273,14 @@ impl<'a> Context<'a> {
                 term_errored = true;
                 scope_error!(
                     scope,
-                    Error::check(CheckError::UnreachableStatement, scope.md(), stmt.span).context(
+                    Error::check(
+                        CheckError::UnreachableStatement,
+                        scope.md().file_id,
+                        stmt.span
+                    )
+                    .context(
                         "any code following this statement is unreachable",
-                        scope.md(),
+                        scope.md().file_id,
                         term_span
                     )
                 );

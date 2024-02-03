@@ -22,7 +22,7 @@ pub fn lex(str: &str) -> LexResult {
     }
 }
 
-struct Lexer<'src> {
+pub struct Lexer<'src> {
     str: &'src str,
     iter: Peekable<Chars<'src>>,
     lex_strings: Vec<String>,
@@ -60,7 +60,7 @@ impl Lexeme {
 }
 
 impl<'src> Lexer<'src> {
-    fn new(str: &'src str) -> Self {
+    pub fn new(str: &'src str) -> Self {
         Self {
             str,
             iter: str.chars().peekable(),

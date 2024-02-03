@@ -1,30 +1,33 @@
 use super::ansi::{self, Color};
-use crate::ast::ast::SourceFile;
+use crate::ast::parser::File;
 use crate::ast::span::*;
 use std::io::{BufWriter, Stderr, Write};
 
 pub fn print(
     handle: &mut BufWriter<Stderr>,
-    source: &SourceFile,
+    file: &File,
     span: Span,
     marker: Option<&str>,
     is_info: bool,
 ) {
-    let format = SpanFormat::new(source, span);
+    let format = SpanFormat::new(file, span);
     format.print(handle, marker, is_info);
 }
 
 struct SpanFormat<'a> {
     loc: Loc,
-    file: &'a SourceFile,
+    file: &'a File,
     line: String,
     marker_len: usize,
     marker_pad_len: usize,
 }
 
 impl<'a> SpanFormat<'a> {
-    fn new(file: &'a SourceFile, span: Span) -> Self {
-        let loc = find_loc(&file.line_spans, span);
+    fn new(file: &'a File, span: Span) -> Self {
+        let mut lex = crate::ast::lexer::Lexer::new(&file.source);
+        let line_spans = lex.lex_line_spans();
+
+        let loc = find_loc(&line_spans, span);
         let prefix = Span::new(loc.span.start, span.start);
         let marker_pad = prefix.slice(&file.source);
 

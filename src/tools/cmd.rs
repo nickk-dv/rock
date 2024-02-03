@@ -33,6 +33,8 @@ main :: () -> s32 {
     let gitignore_path = proj_dir.join(".gitignore");
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
 
+    let ctx = parser::CompCtx::new(); //@all errors require ctx (rework later)
+
     if let Err(err) = fs::create_dir(&proj_dir) {
         report::report(
             handle,
@@ -40,6 +42,7 @@ main :: () -> s32 {
                 .info(err.to_string())
                 .info(format!("path: {:?}", proj_dir))
                 .into(),
+            &ctx,
         );
         return Err(());
     }
@@ -51,6 +54,7 @@ main :: () -> s32 {
                 .info(err.to_string())
                 .info(format!("path: {:?}", src_path))
                 .into(),
+            &ctx,
         );
         return Err(());
     }
@@ -64,6 +68,7 @@ main :: () -> s32 {
                     .info(err.to_string())
                     .info(format!("path: {:?}", main_path))
                     .into(),
+                &ctx,
             );
             return Err(());
         }
@@ -78,6 +83,7 @@ main :: () -> s32 {
                     .info(err.to_string())
                     .info(format!("path: {:?}", gitignore_path))
                     .into(),
+                &ctx,
             );
             return Err(());
         }
@@ -90,6 +96,7 @@ main :: () -> s32 {
                 .info(err.to_string())
                 .info(format!("path: {:?}", main_path))
                 .into(),
+            &ctx,
         );
         return Err(());
     }
@@ -101,6 +108,7 @@ main :: () -> s32 {
                 .info(err.to_string())
                 .info(format!("path: {:?}", gitignore_path))
                 .into(),
+            &ctx,
         );
         return Err(());
     }
@@ -112,6 +120,7 @@ main :: () -> s32 {
                 .info(err.to_string())
                 .info(format!("path: {:?}", proj_dir))
                 .into(),
+            &ctx,
         );
         return Err(());
     }
@@ -123,6 +132,7 @@ main :: () -> s32 {
                 .info(format!("command: `git init`, reason:{}", err.to_string()))
                 .info("make sure git is installed, or use -no_git option".to_string())
                 .into(),
+            &ctx,
         );
         return Err(());
     }
@@ -132,19 +142,19 @@ main :: () -> s32 {
 
 fn cmd_check() -> Result<(), ()> {
     let res = parser::parse()?;
-    check::check(res.ast, &res.intern_pool)?;
+    check::check(res.1, &res.0)?;
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
     let res = parser::parse()?;
-    check::check(res.ast, &res.intern_pool)?;
+    check::check(res.1, &res.0)?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
     let res = parser::parse()?;
-    check::check(res.ast, &res.intern_pool)?;
+    check::check(res.1, &res.0)?;
     Ok(())
 }
 

@@ -7,11 +7,66 @@ use super::visit;
 use crate::err::error::*;
 use crate::err::report;
 use crate::mem::*;
-use crate::tools::threads;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
 //@empty error tokens produce invalid span diagnostic
+
+/// Persistant data across a compilation
+pub struct CompCtx {
+    files: Vec<File>,
+    intern: InternPool,
+}
+
+pub struct File {
+    pub path: PathBuf,
+    pub source: String,
+}
+
+#[derive(Clone, Copy)]
+pub struct FileID(pub u32);
+
+impl CompCtx {
+    pub fn new() -> CompCtx {
+        CompCtx {
+            files: Vec::new(),
+            intern: InternPool::new(),
+        }
+    }
+
+    pub fn file(&self, file_id: FileID) -> &File {
+        if let Some(file) = self.files.get(file_id.raw_index()) {
+            return file;
+        }
+        //@internal error
+        panic!("getting file using an invalid ID {}", file_id.raw())
+    }
+
+    pub fn intern(&self) -> &InternPool {
+        &self.intern
+    }
+
+    pub fn intern_mut(&mut self) -> &mut InternPool {
+        &mut self.intern
+    }
+
+    pub fn add_file(&mut self, path: PathBuf, source: String) -> FileID {
+        let id = self.files.len();
+        self.files.push(File { path, source });
+        FileID(id as u32)
+    }
+}
+
+impl FileID {
+    fn raw(&self) -> u32 {
+        self.0
+    }
+
+    fn raw_index(&self) -> usize {
+        self.0 as usize
+    }
+}
 
 struct Timer {
     start_time: Instant,
@@ -28,161 +83,134 @@ impl Timer {
         let elapsed = self.start_time.elapsed();
         let sec_ms = elapsed.as_secs_f64() * 1000.0;
         let ms = sec_ms + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
-        println!("{}: {:.3} ms", message, ms);
+        eprintln!("{}: {:.3} ms", message, ms);
     }
 }
 
-pub struct ParseResult {
-    pub ast: P<Ast>,
-    pub intern_pool: InternPool,
+pub fn parse() -> Result<(CompCtx, Ast), ()> {
+    let timer = Timer::new();
+    let mut ctx = CompCtx::new();
+    let mut ast = Ast {
+        arena: Arena::new(1024 * 1024),
+        modules: Vec::new(),
+    };
+    timer.elapsed_ms("parse arena created");
+
+    let timer = Timer::new();
+    let files = collect_files(&mut ctx);
+    timer.elapsed_ms("collect files");
+
+    let timer = Timer::new();
+    let handle = &mut std::io::BufWriter::new(std::io::stderr());
+    for id in files {
+        let lex_res = lexer::lex(&ctx.file(id).source);
+        let mut parser = Parser {
+            cursor: 0,
+            tokens: lex_res.tokens,
+            arena: &mut ast.arena,
+        };
+
+        let res = parser.parse_module(id);
+        ast.modules.push(res.0.copy());
+        if let Some(error) = res.1 {
+            report::report(handle, &error, &ctx);
+        } else {
+            //@cloning entire source text, since &File + &mut InternPool violates borrow checker
+            let mut interner = ModuleInterner {
+                file: ctx.file(id).source.clone(),
+                intern_pool: ctx.intern_mut(),
+                lex_strings: lex_res.lex_strings,
+            };
+            visit::visit_module_with(&mut interner, res.0);
+        }
+    }
+    let _ = handle.flush();
+    timer.elapsed_ms("parsed all files");
+
+    report::err_status((ctx, ast))
 }
 
-pub fn parse() -> Result<ParseResult, ()> {
-    let pool_make_timer = Timer::new();
-    let mut intern_pool = InternPool::new();
-    pool_make_timer.elapsed_ms("make pool");
-
-    let parse_timer = Timer::new();
-
-    let mut arena = Arena::new(4096);
-    let mut ast = arena.alloc::<Ast>();
-    ast.arenas = Vec::new();
-    ast.modules = Vec::new();
-    ast.arenas.push(arena);
-
-    let mut filepaths = Vec::new();
-    let mut dir_path = PathBuf::new();
-    dir_path.push("test");
-    collect_filepaths(dir_path, &mut filepaths);
-
-    let thread_pool = threads::ThreadPool::new(parse_task, task_res);
-    let output = thread_pool.execute(filepaths);
-
-    for res in output.1 {
-        ast.arenas.push(res);
-    }
+#[must_use]
+fn collect_files(ctx: &mut CompCtx) -> Vec<FileID> {
+    //relative 'root' path of the project being compiled
+    //@hardcoded to 'test' for faster testing
+    let mut dir_paths = Vec::new();
+    dir_paths.push(PathBuf::from("test"));
 
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
+    let mut filepaths = Vec::new();
 
-    for res in output.0 {
-        match res {
-            Ok(result) => {
-                ast.modules.push(result.0);
-                if let Some(ref error) = result.1 {
-                    report::report(handle, error);
+    while let Some(dir_path) = dir_paths.pop() {
+        match std::fs::read_dir(&dir_path) {
+            Ok(dir) => {
+                for entry in dir.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(extension) = path.extension() {
+                            if extension == "lang" {
+                                filepaths.push(path);
+                            }
+                        }
+                    } else if path.is_dir() {
+                        dir_paths.push(path);
+                    }
                 }
             }
-            Err(ref error) => {
-                report::report(handle, error);
+            Err(err) => {
+                report::report(
+                    handle,
+                    &Error::file_io(FileIOError::DirRead)
+                        .info(err.to_string())
+                        .info(format!("path: {:?}", dir_path))
+                        .into(),
+                    &ctx,
+                );
             }
         }
     }
-    parse_timer.elapsed_ms("parsed all files");
 
-    let intern_timer = Timer::new();
-    let mut interner = Interner {
-        module: P::null(),
-        intern_pool: &mut intern_pool,
-    };
-    super::visit::visit_with(&mut interner, ast.copy());
-    intern_timer.elapsed_ms("intern idents");
+    let mut files = Vec::new();
 
-    let result = ParseResult { ast, intern_pool };
-    report::err_status(result)
-}
-
-struct Interner<'a> {
-    module: P<Module>,
-    intern_pool: &'a mut InternPool,
-}
-
-//@even modules outside the tree get interned
-// not an issue
-impl<'a> visit::MutVisit for Interner<'a> {
-    fn visit_module(&mut self, module: P<Module>) {
-        self.module = module;
+    for path in filepaths {
+        match std::fs::read_to_string(&path) {
+            Ok(source) => {
+                let id = ctx.add_file(path, source);
+                files.push(id);
+            }
+            Err(err) => {
+                report::report(
+                    handle,
+                    &Error::file_io(FileIOError::FileRead)
+                        .info(err.to_string())
+                        .info(format!("path: {:?}", path))
+                        .into(),
+                    &ctx,
+                );
+            }
+        };
     }
 
+    files
+}
+
+struct ModuleInterner<'a> {
+    file: String,
+    intern_pool: &'a mut InternPool,
+    lex_strings: Vec<String>,
+}
+
+impl<'a> visit::MutVisit for ModuleInterner<'a> {
     fn visit_ident(&mut self, ident: &mut Ident) {
-        let string = ident.span.slice(&self.module.file.source);
+        let string = ident.span.slice(&self.file);
         ident.id = self.intern_pool.intern(string);
     }
 
     fn visit_expr(&mut self, mut expr: P<Expr>) {
         if let ExprKind::Lit(Lit::String(ref mut id)) = expr.kind {
-            //@escapes dont get correctly interned
-            let string = unsafe { self.module.file.lex_strings.get_unchecked(id.0 as usize) };
+            let string = unsafe { self.lex_strings.get_unchecked(id.0 as usize) };
             *id = self.intern_pool.intern(string);
         }
     }
-}
-
-//@change ext
-fn collect_filepaths(dir_path: PathBuf, filepaths: &mut Vec<PathBuf>) {
-    match std::fs::read_dir(&dir_path) {
-        Ok(entries) => {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(extension) = path.extension() {
-                        if extension == "lang" {
-                            filepaths.push(path);
-                        }
-                    }
-                } else if path.is_dir() {
-                    collect_filepaths(path, filepaths);
-                }
-            }
-        }
-        Err(err) => {
-            let handle = &mut std::io::BufWriter::new(std::io::stderr());
-            report::report(
-                handle,
-                &Error::file_io(FileIOError::DirRead)
-                    .info(err.to_string())
-                    .info(format!("path: {:?}", dir_path))
-                    .into(),
-            );
-        }
-    }
-}
-
-fn parse_task(
-    path: PathBuf,
-    _: threads::TaskID,
-    arena: &mut Arena,
-) -> Result<(P<Module>, Option<Error>), Error> {
-    let source = match std::fs::read_to_string(&path) {
-        Ok(source) => source,
-        Err(err) => {
-            return Err(Error::file_io(FileIOError::FileRead)
-                .info(err.to_string())
-                .info(format!("path: {:?}", path))
-                .into());
-        }
-    };
-
-    let lex_result = lexer::lex(&source);
-
-    let mut parser = Parser {
-        cursor: 0,
-        tokens: lex_result.tokens,
-        arena,
-    };
-
-    let file = SourceFile {
-        path,
-        source,
-        line_spans: lex_result.line_spans,
-        lex_strings: lex_result.lex_strings,
-    };
-
-    let res = parser.parse_module(file);
-    Ok(res)
-}
-
-fn task_res() -> Arena {
-    Arena::new(1024 * 1024)
 }
 
 struct Parser<'ast> {
@@ -192,9 +220,9 @@ struct Parser<'ast> {
 }
 
 impl<'ast> Parser<'ast> {
-    fn parse_module(&mut self, file: SourceFile) -> (P<Module>, Option<Error>) {
+    fn parse_module(&mut self, file_id: FileID) -> (P<Module>, Option<Error>) {
         let mut module = self.alloc::<Module>();
-        module.file = file;
+        module.file_id = file_id;
         module.decls = List::new();
 
         while self.peek() != Token::Eof {
@@ -207,7 +235,7 @@ impl<'ast> Parser<'ast> {
                         span: self.peek_span(),
                         token: self.peek(),
                     };
-                    return (module.copy(), Some(Error::parse(err, module, got_token)));
+                    return (module.copy(), Some(Error::parse(err, file_id, got_token)));
                 }
             }
         }

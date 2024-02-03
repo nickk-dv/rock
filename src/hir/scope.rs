@@ -135,7 +135,8 @@ impl Scope {
 
     pub fn error(&mut self, error: CheckError, span: Span) {
         let md = self.md();
-        self.errors.push(Error::check(error, md, span).into());
+        self.errors
+            .push(Error::check(error, md.file_id, span).into());
     }
 
     pub fn add_mod(&mut self, decl: P<ModuleDecl>) -> Result<(), P<ModuleDecl>> {

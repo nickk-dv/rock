@@ -1,31 +1,19 @@
 use super::intern::*;
+use super::parser::FileID;
 use super::span::Span;
 use crate::hir::scope::{EnumID, ProcID, StructID, UnionID};
 use crate::mem::*;
-use std::path::PathBuf;
-
-//@look into parsing .name into the
-// ExprKind with (P<Expr> Ident) instead of binary op approach
-// same for casts + look into using "as" since its easier syntax
-// compared to cast(<type>, <expr>)
 
 pub type ScopeID = u32;
 
 pub struct Ast {
-    pub arenas: Vec<Arena>,
+    pub arena: Arena,
     pub modules: Vec<P<Module>>,
 }
 
 pub struct Module {
-    pub file: SourceFile,
+    pub file_id: FileID,
     pub decls: List<Decl>,
-}
-
-pub struct SourceFile {
-    pub path: PathBuf,
-    pub source: String,
-    pub line_spans: Vec<Span>, //@not always required, could be generated on demand
-    pub lex_strings: Vec<String>, //@never freeing strings after they get interned
 }
 
 #[derive(Copy, Clone)]

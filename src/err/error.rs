@@ -1,5 +1,5 @@
 use super::message::Message;
-use crate::ast::ast::Module;
+use crate::ast::parser::FileID;
 use crate::ast::span::*;
 use crate::ast::token::*;
 use crate::mem::P;
@@ -13,7 +13,7 @@ pub enum Error {
 }
 
 pub(super) struct ParseErrorData {
-    pub(super) source: P<Module>,
+    pub(super) file_id: FileID,
     pub(super) context: ParseContext,
     pub(super) expected: Vec<Token>,
     pub(super) got_token: TokenSpan,
@@ -22,7 +22,7 @@ pub(super) struct ParseErrorData {
 pub struct CheckErrorData {
     pub(super) message: Message,
     pub(super) no_source: bool,
-    pub(super) source: P<Module>,
+    pub(super) file_id: FileID,
     pub(super) span: Span,
     pub(super) info: Vec<CheckErrorInfo>,
 }
@@ -34,7 +34,7 @@ pub(super) enum CheckErrorInfo {
 
 pub(super) struct CheckErrorContext {
     pub(super) marker: &'static str,
-    pub(super) source: P<Module>,
+    pub(super) file_id: FileID,
     pub(super) span: Span,
 }
 
@@ -181,16 +181,16 @@ pub enum FileIOError {
 pub enum InternalError {}
 
 impl Error {
-    pub fn parse(error: ParseError, source: P<Module>, got_token: TokenSpan) -> Self {
-        Self::Parse(ParseErrorData::new(error, source, got_token))
+    pub fn parse(error: ParseError, file_id: FileID, got_token: TokenSpan) -> Self {
+        Self::Parse(ParseErrorData::new(error, file_id, got_token))
     }
 
-    pub fn check(error: CheckError, source: P<Module>, span: Span) -> CheckErrorData {
-        CheckErrorData::new(error, false, source, span)
+    pub fn check(error: CheckError, file_id: FileID, span: Span) -> CheckErrorData {
+        CheckErrorData::new(error, false, file_id, span)
     }
 
     pub fn check_no_src(error: CheckError) -> Self {
-        Self::Check(CheckErrorData::new(error, true, P::null(), Span::new(0, 0)))
+        Self::Check(CheckErrorData::new(error, true, FileID(0), Span::new(0, 0)))
     }
 
     pub fn file_io(error: FileIOError) -> FileIOErrorData {
@@ -203,9 +203,9 @@ impl Error {
 }
 
 impl ParseErrorData {
-    fn new(error: ParseError, source: P<Module>, got_token: TokenSpan) -> Self {
+    fn new(error: ParseError, file_id: FileID, got_token: TokenSpan) -> Self {
         Self {
-            source,
+            file_id,
             context: Self::error_context(error),
             expected: Self::error_expected(error),
             got_token,
@@ -357,20 +357,20 @@ impl ParseContext {
 }
 
 impl CheckErrorData {
-    fn new(error: CheckError, no_source: bool, source: P<Module>, span: Span) -> Self {
+    fn new(error: CheckError, no_source: bool, file_id: FileID, span: Span) -> Self {
         CheckErrorData {
             message: error.into(),
             no_source,
-            source,
+            file_id,
             span,
             info: Vec::new(),
         }
     }
 
-    pub fn context(mut self, marker: &'static str, source: P<Module>, span: Span) -> Self {
+    pub fn context(mut self, marker: &'static str, file_id: FileID, span: Span) -> Self {
         self.info.push(CheckErrorInfo::Context(CheckErrorContext {
             marker,
-            source,
+            file_id,
             span,
         }));
         self

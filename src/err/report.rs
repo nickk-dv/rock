@@ -1,6 +1,7 @@
 use super::ansi::{self, Color};
 use super::error::*;
 use super::span_fmt;
+use crate::ast::parser::CompCtx;
 use crate::ast::token::Token;
 use std::io::{BufWriter, Stderr, Write};
 
@@ -14,7 +15,7 @@ pub fn err_status<T>(ok: T) -> Result<T, ()> {
     }
 }
 
-pub fn report(handle: &mut BufWriter<Stderr>, error: &Error) {
+pub fn report(handle: &mut BufWriter<Stderr>, error: &Error, ctx: &CompCtx) {
     unsafe { ERR_COUNT += 1 }
     match error {
         Error::Parse(err) => {
@@ -30,7 +31,7 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error) {
             }
             span_fmt::print(
                 handle,
-                &err.source.file,
+                ctx.file(err.file_id),
                 err.got_token.span,
                 Some("unexpected token"),
                 false,
@@ -40,7 +41,7 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error) {
             print_error(handle, "error");
             let _ = writeln!(handle, "{}", err.message.0);
             if !err.no_source {
-                span_fmt::print(handle, &err.source.file, err.span, None, false);
+                span_fmt::print(handle, ctx.file(err.file_id), err.span, None, false);
                 for info in err.info.iter() {
                     match info {
                         CheckErrorInfo::InfoString(info) => {
@@ -49,7 +50,7 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error) {
                         CheckErrorInfo::Context(context) => {
                             span_fmt::print(
                                 handle,
-                                &context.source.file,
+                                ctx.file(context.file_id),
                                 context.span,
                                 Some(context.marker),
                                 true,
