@@ -131,20 +131,20 @@ main :: () -> s32 {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let ast = parser::parse()?;
-    check::check(ast.copy())?;
+    let res = parser::parse()?;
+    check::check(res.ast, &res.intern_pool)?;
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let ast = parser::parse()?;
-    check::check(ast)?;
+    let res = parser::parse()?;
+    check::check(res.ast, &res.intern_pool)?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let ast = parser::parse()?;
-    check::check(ast)?;
+    let res = parser::parse()?;
+    check::check(res.ast, &res.intern_pool)?;
     Ok(())
 }
 

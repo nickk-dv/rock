@@ -1,3 +1,4 @@
+use super::intern::*;
 use super::span::Span;
 use crate::hir::scope::{EnumID, ProcID, StructID, UnionID};
 use crate::mem::*;
@@ -13,7 +14,6 @@ pub type ScopeID = u32;
 pub struct Ast {
     pub arenas: Vec<Arena>,
     pub modules: Vec<P<Module>>,
-    pub intern_pool: P<InternPool>,
 }
 
 pub struct Module {

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-pub type InternID = u32;
-pub const INTERN_DUMMY_ID: InternID = u32::MAX;
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub struct InternID(pub u32);
+pub const INTERN_DUMMY_ID: InternID = InternID(u32::MAX);
 
 pub struct InternPool {
     next: InternID,
@@ -10,7 +11,7 @@ pub struct InternPool {
     intern_map: HashMap<u32, InternID>,
 }
 
-pub struct InternString {
+struct InternString {
     start: u32,
     end: u32,
 }
@@ -18,7 +19,7 @@ pub struct InternString {
 impl InternPool {
     pub fn new() -> Self {
         Self {
-            next: 0,
+            next: InternID(0),
             bytes: Vec::new(),
             strings: Vec::new(),
             intern_map: HashMap::new(),
@@ -40,12 +41,12 @@ impl InternPool {
 
         let id = self.next;
         self.intern_map.insert(hash, id);
-        self.next = self.next.wrapping_add(1);
+        self.next = InternID(self.next.0.wrapping_add(1));
         return id;
     }
 
     pub fn get_bytes(&self, id: InternID) -> &[u8] {
-        let is = unsafe { self.strings.get_unchecked(id as usize) };
+        let is = unsafe { self.strings.get_unchecked(id.0 as usize) };
         unsafe { self.bytes.get_unchecked(is.start as usize..is.end as usize) }
     }
 

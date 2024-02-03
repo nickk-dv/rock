@@ -1,5 +1,6 @@
 use super::scope::*;
 use crate::ast::ast::*;
+use crate::ast::intern::*;
 use crate::ast::span::Span;
 use crate::ast::visit;
 use crate::err::error::*;
@@ -10,7 +11,7 @@ use std::collections::HashMap;
 //@warn or hard error on access that points to self, how would that behave with imports (import from self error), can it be generalized?
 //@report usages of self id module path as redundant?
 
-pub fn check(ast: P<Ast>) -> Result<(), ()> {
+pub fn check(ast: P<Ast>, intern: &InternPool) -> Result<(), ()> {
     // 14192 original ast size
     // 14632 // 440 / 8 = 55 extra indir after moving Expr -> P<Expr>
 
@@ -25,7 +26,7 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     let block_size = std::mem::size_of::<Scope>() * est_scope_count;
     let mut arena = Arena::new(block_size);
     let mut context = arena.alloc::<Context>();
-    *context = Context::new(ast, arena);
+    *context = Context::new(ast, arena, intern);
 
     context.pass_0_create_scopes()?;
     context.pass_1_check_main_proc();
@@ -40,7 +41,8 @@ pub fn check(ast: P<Ast>) -> Result<(), ()> {
     return result;
 }
 
-pub struct Context {
+pub struct Context<'a> {
+    intern: &'a InternPool,
     ast: P<Ast>,
     arena: Arena,
     errors: Drop<Vec<Error>>,
@@ -53,7 +55,7 @@ pub struct Context {
     globals: Drop<Vec<GlobalData>>,
 }
 
-impl ManualDrop for P<Context> {
+impl<'a> ManualDrop for P<Context<'a>> {
     fn manual_drop(mut self) {
         unsafe {
             for scope in self.scopes.iter() {
@@ -71,9 +73,10 @@ impl ManualDrop for P<Context> {
     }
 }
 
-impl Context {
-    fn new(ast: P<Ast>, arena: Arena) -> Self {
+impl<'a> Context<'a> {
+    fn new(ast: P<Ast>, arena: Arena, intern: &'a InternPool) -> Self {
         Self {
+            intern,
             ast,
             arena,
             errors: Drop::new(Vec::new()),
@@ -139,7 +142,7 @@ impl<T> Conflit<T> {
     }
 }
 
-impl visit::MutVisit for Context {
+impl<'a> visit::MutVisit for Context<'a> {
     fn visit_type(&mut self, ty: &mut Type) {
         let custom_type = if let TypeKind::Custom(custom) = ty.kind {
             custom
@@ -151,15 +154,12 @@ impl visit::MutVisit for Context {
         match tt {
             Some(TypeData::Enum(data)) => {
                 ty.kind = TypeKind::Enum(data.id);
-                println!("custom resolved to enum id:   {}", data.id);
             }
             Some(TypeData::Union(data)) => {
                 ty.kind = TypeKind::Union(data.id);
-                println!("custom resolved to union id:  {}", data.id);
             }
             Some(TypeData::Struct(data)) => {
                 ty.kind = TypeKind::Struct(data.id);
-                println!("custom resolved to struct id: {}", data.id);
             }
             None => ty.kind = TypeKind::Poison,
         }
@@ -171,16 +171,15 @@ impl visit::MutVisit for Context {
             Some(TypeData::Enum(..)) => {
                 //@no source id available after find_type is complete
                 // add context when scopes / finding symbols is changed
+                struct_init.ty = StructInitResolved::Poison;
                 self.curr_scope
                     .error(CheckError::StructInitGotEnumType, struct_init.name.span);
             }
             Some(TypeData::Union(data)) => {
                 struct_init.ty = StructInitResolved::Union(data.id);
-                println!("struct_init resolved to union id:  {}", data.id);
             }
             Some(TypeData::Struct(data)) => {
                 struct_init.ty = StructInitResolved::Struct(data.id);
-                println!("struct_init resolved to struct id: {}", data.id);
             }
             None => struct_init.ty = StructInitResolved::Poison,
         }
@@ -188,7 +187,7 @@ impl visit::MutVisit for Context {
 
     fn visit_proc_call(&mut self, mut proc_call: P<ProcCall>) {
         let data = self.scope_find_proc(self.curr_scope.copy(), proc_call.path, proc_call.name);
-        println!("finding proc with intern id = {}", proc_call.name.id);
+        println!("finding proc with intern id = {}", proc_call.name.id.0);
         if let Some(data) = data {
             proc_call.id = Some(data.id);
             println!("proc_call resolved to proc id: {}", data.id);
@@ -198,7 +197,7 @@ impl visit::MutVisit for Context {
     }
 }
 
-impl Context {
+impl<'a> Context<'a> {
     fn error(&mut self, error: Error) {
         self.errors.push(error);
     }
@@ -447,7 +446,7 @@ impl Context {
     }
 
     fn pass_1_check_main_proc(&mut self) {
-        let main_id = match self.ast.intern_pool.try_get_str_id("main") {
+        let main_id = match self.intern.try_get_str_id("main") {
             Some(id) => id,
             None => {
                 self.error(Error::check_no_src(CheckError::MainProcMissing));

@@ -33,7 +33,7 @@ pub enum Token {
     KwFor,
     KwDefer,
     KwBreak,
-    KwMatch, //@order later
+    KwMatch,
     KwReturn,
     KwContinue,
     KwCast,

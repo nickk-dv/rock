@@ -1,4 +1,5 @@
 use crate::ast::ast::*;
+use crate::ast::intern::*;
 use crate::ast::span::Span;
 use crate::err::error::*;
 use crate::mem::*;

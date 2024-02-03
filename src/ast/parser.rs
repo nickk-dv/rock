@@ -1,4 +1,5 @@
 use super::ast::*;
+use super::intern::*;
 use super::lexer;
 use super::span::*;
 use super::token::*;
@@ -31,15 +32,22 @@ impl Timer {
     }
 }
 
-pub fn parse() -> Result<P<Ast>, ()> {
+pub struct ParseResult {
+    pub ast: P<Ast>,
+    pub intern_pool: InternPool,
+}
+
+pub fn parse() -> Result<ParseResult, ()> {
+    let pool_make_timer = Timer::new();
+    let mut intern_pool = InternPool::new();
+    pool_make_timer.elapsed_ms("make pool");
+
     let parse_timer = Timer::new();
 
     let mut arena = Arena::new(4096);
     let mut ast = arena.alloc::<Ast>();
     ast.arenas = Vec::new();
     ast.modules = Vec::new();
-    ast.intern_pool = arena.alloc();
-    *ast.intern_pool = InternPool::new();
     ast.arenas.push(arena);
 
     let mut filepaths = Vec::new();
@@ -74,26 +82,23 @@ pub fn parse() -> Result<P<Ast>, ()> {
     let intern_timer = Timer::new();
     let mut interner = Interner {
         module: P::null(),
-        intern_pool: P::null(),
+        intern_pool: &mut intern_pool,
     };
     super::visit::visit_with(&mut interner, ast.copy());
     intern_timer.elapsed_ms("intern idents");
 
-    report::err_status(ast)
+    let result = ParseResult { ast, intern_pool };
+    report::err_status(result)
 }
 
-struct Interner {
+struct Interner<'a> {
     module: P<Module>,
-    intern_pool: P<InternPool>,
+    intern_pool: &'a mut InternPool,
 }
 
 //@even modules outside the tree get interned
 // not an issue
-impl visit::MutVisit for Interner {
-    fn visit_ast(&mut self, ast: P<Ast>) {
-        self.intern_pool = ast.intern_pool.copy();
-    }
-
+impl<'a> visit::MutVisit for Interner<'a> {
     fn visit_module(&mut self, module: P<Module>) {
         self.module = module;
     }
@@ -106,7 +111,7 @@ impl visit::MutVisit for Interner {
     fn visit_expr(&mut self, mut expr: P<Expr>) {
         if let ExprKind::Lit(Lit::String(ref mut id)) = expr.kind {
             //@escapes dont get correctly interned
-            let string = unsafe { self.module.file.lex_strings.get_unchecked(*id as usize) };
+            let string = unsafe { self.module.file.lex_strings.get_unchecked(id.0 as usize) };
             *id = self.intern_pool.intern(string);
         }
     }
@@ -939,7 +944,7 @@ impl<'ast> Parser<'ast> {
             }
             Token::LitString(id) => {
                 self.consume();
-                Ok(Lit::String(id))
+                Ok(Lit::String(InternID(id)))
             }
             _ => Err(ParseError::LiteralMatch),
         }
