@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod intern;
 pub mod lexer;
+pub mod lexer2;
 pub mod parser;
 pub mod span;
 pub mod token;

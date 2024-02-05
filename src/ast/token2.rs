@@ -1,8 +1,8 @@
 use super::span::*;
 
 pub struct TokenList {
-    tokens: Vec<Token>,
-    spans: Vec<Span>,
+    pub tokens: Vec<Token>, //@make private
+    pub spans: Vec<Span>,   //@make private
 }
 
 impl TokenList {
