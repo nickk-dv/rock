@@ -107,9 +107,10 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
         let lexer = super::lexer2::Lexer::new(&ctx.file(id).source);
         let tokens = lexer.lex();
         println!(
-            "lexer 2 mem usage: {} capacity: {}",
-            tokens.tokens.len() * 9,
-            tokens.tokens.capacity()
+            "lexer 2 mem usage: {} len: {} capacity: {}",
+            tokens.len() * 9,
+            tokens.len(),
+            tokens.cap()
         );
 
         let mut parser = Parser {

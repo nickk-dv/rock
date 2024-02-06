@@ -62,13 +62,13 @@ impl InternPool {
 
     fn string_compare(&self, id: InternID, string: &str) -> bool {
         let bytes = self.get_bytes(id);
-        let str_slice = unsafe { std::str::from_utf8_unchecked(bytes) };
-        string.chars().eq(str_slice.chars())
+        let slice = unsafe { std::str::from_utf8_unchecked(bytes) };
+        string.chars().eq(slice.chars())
     }
 
-    fn hash_djb2(str: &str) -> u32 {
+    fn hash_djb2(string: &str) -> u32 {
         let mut hash: u32 = 5381;
-        for c in str.chars() {
+        for c in string.chars() {
             hash = ((hash << 5).wrapping_add(hash)) ^ c as u32;
         }
         hash

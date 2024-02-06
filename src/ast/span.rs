@@ -9,12 +9,12 @@ impl Span {
         Self { start, end }
     }
 
-    pub fn slice<'a>(&self, source: &'a str) -> &'a str {
+    pub fn slice<'src>(&self, source: &'src str) -> &'src str {
         let range = self.start as usize..self.end as usize;
         if let Some(slice) = source.get(range) {
             slice
         } else {
-            "INVALID SPAN"
+            "INVALID SPAN SLICE"
         }
     }
 }

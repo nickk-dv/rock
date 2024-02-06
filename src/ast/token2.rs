@@ -1,8 +1,9 @@
 use super::span::*;
 
+/// Token List uses 9 bytes per Token
 pub struct TokenList {
-    pub tokens: Vec<Token>, //@make private
-    pub spans: Vec<Span>,   //@make private
+    tokens: Vec<Token>,
+    spans: Vec<Span>,
 }
 
 impl TokenList {
@@ -12,58 +13,57 @@ impl TokenList {
             spans: Vec::with_capacity(cap),
         }
     }
-
     pub fn add(&mut self, token: Token, span: Span) {
         self.tokens.push(token);
         self.spans.push(span);
     }
-
     pub fn token(&self, index: usize) -> Token {
         unsafe { *self.tokens.get_unchecked(index) }
     }
-
     pub fn span(&self, index: usize) -> Span {
         unsafe { *self.spans.get_unchecked(index) }
     }
+    pub fn len(&self) -> usize {
+        self.tokens.len()
+    }
+    pub fn cap(&self) -> usize {
+        self.tokens.capacity()
+    }
 }
 
-macro_rules! token_gen {
-    ($($variant_name:ident as $string_lit:expr ; $($kw:ident)? ,)+) => {
+/// Auto generate enum and &str conversions
+macro_rules! token_impl {
+    ($($variant:ident as $string_lit:expr ; $($kw:ident)? ,)+) => {
         #[derive(Copy, Clone, PartialEq)]
         pub enum Token {
-            $($variant_name),+
+            $($variant),+
         }
-
         impl Token {
             pub fn to_str(token: Token) -> &'static str {
                 token.as_str()
             }
-
             pub fn as_str(&self) -> &'static str {
                 match *self {
-                    $(Token::$variant_name => $string_lit,)+
+                    $(Token::$variant => $string_lit,)+
                 }
             }
-
-            pub fn keyword_from_str(s: &str) -> Option<Token> {
-                match s {
-                    $($string_lit => token_kw_arm!($variant_name $($kw)?),)+
+            pub fn keyword_from_str(source: &str) -> Option<Token> {
+                match source {
+                    $($string_lit => token_impl!(@KW_ARM $variant $($kw)?),)+
                     _ => None,
                 }
             }
         }
     };
-}
-
-macro_rules! token_kw_arm {
-    ($variant_name:ident $kw:ident) => {
-        Some(Token::$variant_name)
+    (@KW_ARM $variant:ident $kw:ident) => {
+        Some(Token::$variant)
     };
-    ($variant_name:ident) => {
+    (@KW_ARM $variant:ident) => {
         None
     };
 }
 
+/// Token glue for creating 1 character tokens
 macro_rules! token_glue {
     ($name:ident, $($to:ident as $ch:expr,)+) => {
         impl Token {
@@ -77,6 +77,7 @@ macro_rules! token_glue {
     };
 }
 
+/// Token glue for extending 1-2 character tokens
 macro_rules! token_glue_double {
     ($name:ident, $( ($ch:expr) $($from:ident => $to:ident,)+ )+ ) => {
         impl Token {
@@ -95,7 +96,7 @@ macro_rules! token_glue_double {
     };
 }
 
-token_gen! {
+token_impl! {
     Eof          as "end of file"   ;,
     Error        as "error token"   ;,
     IntLit       as "int literal"   ;,

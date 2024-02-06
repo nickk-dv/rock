@@ -2,7 +2,6 @@ use super::message::Message;
 use crate::ast::parser::FileID;
 use crate::ast::span::*;
 use crate::ast::token::*;
-use crate::mem::P;
 
 #[allow(private_interfaces)]
 pub enum Error {
@@ -358,6 +357,15 @@ impl ParseContext {
             ParseContext::StructInit => "struct initializer",
         }
     }
+}
+
+#[macro_export]
+macro_rules! error_check {
+    ($err:expr, $span:expr, $file_id:expr $(=> $marker:expr, $span_ctx:expr, $file_id_ctx:expr)* ) => {{
+        let check_error: Error = CheckErrorData::new($err, false, $file_id, $span)
+        $(.context($marker, $file_id_ctx, $span_ctx))* .into();
+        check_error
+    }};
 }
 
 impl CheckErrorData {

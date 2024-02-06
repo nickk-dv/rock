@@ -5,22 +5,22 @@ use std::{iter::Peekable, str::Chars};
 pub struct Lexer<'src> {
     span_start: u32,
     span_end: u32,
-    str: &'src str,
+    source: &'src str,
     chars: Peekable<Chars<'src>>,
 }
 
-impl<'str> Lexer<'str> {
-    pub fn new(str: &'str str) -> Self {
+impl<'src> Lexer<'src> {
+    pub fn new(source: &'src str) -> Self {
         Self {
-            str,
-            chars: str.chars().peekable(),
+            source,
+            chars: source.chars().peekable(),
             span_start: 0,
             span_end: 0,
         }
     }
 
     pub fn lex(mut self) -> TokenList {
-        let init_cap = self.str.len() / 8;
+        let init_cap = self.source.len() / 8;
         let mut tokens = TokenList::new(init_cap);
 
         while self.peek().is_some() {
@@ -100,7 +100,7 @@ impl<'str> Lexer<'str> {
         }
 
         let range = self.span_start as usize..self.span_end as usize;
-        let slice = unsafe { self.str.get_unchecked(range) };
+        let slice = unsafe { self.source.get_unchecked(range) };
 
         match Token::keyword_from_str(slice) {
             Some(token) => (token, self.span()),
@@ -135,7 +135,6 @@ impl<'str> Lexer<'str> {
             },
             None => return (token, self.span()),
         }
-
         (token, self.span())
     }
 }
