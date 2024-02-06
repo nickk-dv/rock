@@ -102,7 +102,7 @@ impl<'src> Lexer<'src> {
         let range = self.span_start as usize..self.span_end as usize;
         let slice = unsafe { self.source.get_unchecked(range) };
 
-        match Token::keyword_from_str(slice) {
+        match Token::as_keyword(slice) {
             Some(token) => (token, self.span()),
             None => (Token::Ident, self.span()),
         }
