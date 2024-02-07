@@ -1,4 +1,5 @@
 mod arena;
+pub mod arena_id;
 mod array;
 mod list;
 mod ptr;

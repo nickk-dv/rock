@@ -1,5 +1,6 @@
 use super::span::*;
 use super::{ast::BasicType, intern::InternID};
+use crate::mem::arena_id::{Arena, Id};
 
 /*
 possible design:
@@ -50,50 +51,65 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
-struct ExprRef(u32);
+#[derive(Clone, Copy)]
+pub enum Stmt {}
 
-enum Expr {
+#[derive(Clone, Copy)]
+pub struct MatchArm {
+    pat: Id<Expr>,
+    expr: Id<Expr>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Block {
+    stmts: List<Stmt>,
+}
+
+#[rustfmt::skip]
+#[derive(Clone, Copy)]
+pub enum Expr {
     Unit,
     Discard,
     LitNull,
-    LitBool {
-        v: bool,
-    },
-    LitUint {
-        v: u64,
-        ty: Option<BasicType>,
-    },
-    LitFloat {
-        v: f64,
-        ty: Option<BasicType>,
-    },
-    LitChar {
-        v: char,
-    },
-    LitString {
-        id: InternID,
-    },
-    // if    => ...
-    // else  => ...
-    // block => list<stmt>
-    // match => expr list<arm>
+    LitBool   { val: bool },
+    LitUint   { val: u64, ty: Option<BasicType> },
+    LitFloat  { val: f64, ty: Option<BasicType> },
+    LitChar   { val: char },
+    LitString { id: InternID },
+    Block     { block: Id<Block> },
+    Match     { expr: Id<Expr>, arms: List<MatchArm> },
+    If        { if_: Id<If>, else_: Option<Else> },
     // .name => expr ident
     // cast  => expr as ty
     // item  => path::name
     // call  => ...
-    // array => [expr, expr, ...]
     // struct => ...
-    ArrayRepeat {
-        expr: ExprRef,
-        size: ExprRef,
-    },
-    UnExpr {
-        op: UnOp,
-        rhs: ExprRef,
-    },
-    BinExpr {
-        op: BinOp,
-        lhs: ExprRef,
-        rhs: ExprRef,
-    },
+    ArrayInit   { input: List<Expr> },
+    ArrayRepeat { expr: Id<Expr>, size: Id<Expr>, },
+    UnExpr      { op: UnOp, rhs: Id<Expr> },
+    BinExpr     { op: BinOp, lhs: Id<Expr>, rhs: Id<Expr> },
+}
+
+#[derive(Clone, Copy)]
+pub struct If {
+    cond: Id<Expr>,
+    block: Id<Block>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Else {
+    If(Id<If>),
+    Block(Id<Block>),
+}
+
+#[derive(Clone, Copy)]
+pub struct List<T: Copy> {
+    first: Id<Node<T>>,
+    last: Id<Node<T>>,
+}
+
+#[derive(Copy, Clone)]
+struct Node<T: Copy> {
+    value: T,
+    next: Option<Id<T>>,
 }
