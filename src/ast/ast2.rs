@@ -1,15 +1,326 @@
-use super::span::*;
-use super::{ast::BasicType, intern::InternID};
-use crate::mem::arena_id::{Arena, Id};
+use super::intern::InternID;
+use super::parser::FileID;
+use super::span::Span;
+use super::token2::TokenIndex;
+use crate::mem::arena_id::Id;
 
-/*
-possible design:
-immutable ast
-create scopes      (module tree, maps to decl ids)
-checked decl lists (duplicate remove / name resolution, item usage counts)
-per function typed ir (const propagation + global resolution?)
-llvm ir
-*/
+#[derive(Clone, Copy)]
+pub struct List<T: Copy> {
+    first: Id<Node<T>>,
+    last: Id<Node<T>>,
+}
+
+#[derive(Copy, Clone)]
+struct Node<T: Copy> {
+    value: T,
+    next: Option<Id<T>>,
+}
+
+pub struct Ast {
+    pub modules: Vec<Module>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Module {
+    pub file_id: FileID,
+    pub decls: List<Decl>,
+}
+
+// General:
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Vis {
+    Public,
+    Private,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Mut {
+    Mutable,
+    Immutable,
+}
+
+#[derive(Clone, Copy)]
+pub struct Ident {
+    pub id: InternID,
+    pub index: TokenIndex,
+}
+
+#[derive(Clone, Copy)]
+pub struct Path {
+    pub kind: PathKind,
+    pub kind_index: TokenIndex,
+    pub segments: List<Ident>,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum PathKind {
+    None,
+    Super,
+    Package,
+}
+
+// Types:
+
+#[derive(Clone, Copy)]
+pub struct Type {
+    pub ptr: PtrLevel,
+    pub kind: TypeKind,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub struct PtrLevel {
+    level: u8,
+    mut_mask: u8,
+}
+
+#[rustfmt::skip] 
+#[derive(Clone, Copy)]
+pub enum TypeKind {
+    Basic  { ty: BasicType },
+    Custom { item: Id<ItemName> },
+    Slice  { mutt: Mut, ty: Id<Type> },
+    Array  { size: ConstExpr, ty: Id<Type> },
+}
+
+// Declarations:
+
+#[derive(Copy, Clone)]
+pub enum Decl {
+    Module(Id<ModuleDecl>),
+    Import(Id<ImportDecl>),
+    Global(Id<GlobalDecl>),
+    Proc(Id<ProcDecl>),
+    Enum(Id<EnumDecl>),
+    Union(Id<UnionDecl>),
+    Struct(Id<StructDecl>),
+}
+
+#[derive(Copy, Clone)]
+pub struct ModuleDecl {
+    pub vis: Vis,
+    pub name: Ident,
+}
+
+#[derive(Copy, Clone)]
+pub struct ImportDecl {
+    pub path: Path,
+    pub target: ImportTarget,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub enum ImportTarget {
+    GlobAll,
+    Symbol(Ident),
+    SymbolList(List<Ident>),
+}
+
+#[derive(Copy, Clone)]
+pub struct GlobalDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub ty: Option<Id<Type>>,
+    pub value: ConstExpr,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub params: List<ProcParam>,
+    pub is_variadic: bool,
+    pub return_ty: Option<Id<Type>>,
+    pub block: Option<Id<Block>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcParam {
+    pub mutt: Mut,
+    pub name: Ident,
+    pub ty: Id<Type>,
+}
+
+#[derive(Copy, Clone)]
+pub struct EnumDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub basic_ty: Option<BasicType>,
+    pub variants: List<EnumVariant>,
+}
+
+#[derive(Copy, Clone)]
+pub struct EnumVariant {
+    pub name: Ident,
+    pub value: Option<ConstExpr>,
+}
+
+#[derive(Copy, Clone)]
+pub struct UnionDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub members: List<UnionMember>,
+}
+
+#[derive(Copy, Clone)]
+pub struct UnionMember {
+    pub name: Ident,
+    pub ty: Id<Type>,
+}
+
+#[derive(Copy, Clone)]
+pub struct StructDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub fields: List<StructField>,
+}
+
+#[derive(Copy, Clone)]
+pub struct StructField {
+    pub vis: Vis,
+    pub name: Ident,
+    pub ty: Id<Type>,
+}
+
+// Statements:
+
+#[derive(Clone, Copy)]
+pub struct Stmt {
+    span: Span,
+    kind: StmtKind,
+}
+
+#[derive(Clone, Copy)]
+pub enum StmtKind {
+    Break,
+    Continue,
+    For(Id<For>),
+    Defer(Id<Block>),
+    Return(Option<Id<Expr>>),
+    VarDecl(Id<VarDecl>),
+    VarAssign(Id<VarAssign>),
+    ExprSemi(Id<Expr>),
+    ExprTail(Id<Expr>),
+}
+
+#[derive(Copy, Clone)]
+pub struct For {
+    pub var_decl: Option<Id<VarDecl>>,
+    pub cond: Option<Id<Expr>>,
+    pub var_assign: Option<Id<VarAssign>>,
+    pub block: Id<Block>,
+}
+
+#[derive(Copy, Clone)]
+pub struct VarDecl {
+    pub mutt: Mut,
+    pub name: Option<Ident>,
+    pub ty: Option<Id<Type>>,
+    pub expr: Option<Id<Expr>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct VarAssign {
+    pub op: AssignOp,
+    pub lhs: Id<Expr>,
+    pub rhs: Id<Expr>,
+}
+
+// Expressions:
+
+#[derive(Clone, Copy)]
+pub struct Expr {
+    pub span: Span,
+    pub kind: ExprKind,
+}
+
+#[derive(Clone, Copy)]
+pub struct ConstExpr(pub Id<Expr>);
+
+#[rustfmt::skip] 
+#[derive(Clone, Copy)]
+pub enum ExprKind {
+    Unit,
+    Discard,
+    LitNull,
+    LitBool     { val: bool },
+    LitUint     { val: u64, ty: Option<BasicType> },
+    LitFloat    { val: f64, ty: Option<BasicType> },
+    LitChar     { val: char },
+    LitString   { id: InternID },
+    If          { if_: Id<If>, else_: Option<Else> },
+    Block       { block: Id<Block> },
+    Match       { expr: Id<Expr>, arms: List<MatchArm> },
+    Field       { target: Id<Expr>, name: Ident },
+    Index       { target: Id<Expr>, index: Id<Expr> },
+    Cast        { target: Id<Expr>, ty: Id<Type> },
+    Sizeof      { ty: Id<Type> },
+    Item        { item: Id<ItemName> },
+    ProcCall    { item: Id<ItemName>, input: List<Expr> },
+    StructInit  { item: Id<ItemName>, input: List<FieldInit> },
+    ArrayInit   { input: List<Expr> },
+    ArrayRepeat { expr: Id<Expr>, size: ConstExpr, },
+    UnaryExpr   { op: UnOp, rhs: Id<Expr> },
+    BinaryExpr  { op: BinOp, lhs: Id<Expr>, rhs: Id<Expr> },
+}
+
+#[derive(Clone, Copy)]
+pub struct If {
+    pub cond: Id<Expr>,
+    pub block: Id<Block>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Else {
+    If(Id<If>),
+    Block(Id<Block>),
+}
+
+#[derive(Clone, Copy)]
+pub struct Block {
+    pub stmts: List<Stmt>,
+}
+
+#[derive(Clone, Copy)]
+pub struct MatchArm {
+    pub pat: Id<Expr>,
+    pub expr: Id<Expr>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ItemName {
+    pub path: Option<Id<Path>>,
+    pub name: Ident,
+}
+
+#[derive(Clone, Copy)]
+pub struct FieldInit {
+    pub name: Ident,
+    pub expr: Id<Expr>,
+}
+
+// BasicType & Operators:
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum BasicType {
+    Unit,
+    Bool,
+    S8,
+    S16,
+    S32,
+    S64,
+    Ssize,
+    U8,
+    U16,
+    U32,
+    U64,
+    Usize,
+    F32,
+    F64,
+    Char,
+    Rawptr,
+}
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum UnOp {
@@ -51,65 +362,90 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
-#[derive(Clone, Copy)]
-pub enum Stmt {}
+impl PtrLevel {
+    const MAX_LEVEL: u8 = 8;
 
-#[derive(Clone, Copy)]
-pub struct MatchArm {
-    pat: Id<Expr>,
-    expr: Id<Expr>,
+    pub fn new() -> Self {
+        Self {
+            level: 0,
+            mut_mask: 0,
+        }
+    }
+
+    pub fn level(&self) -> u8 {
+        self.level
+    }
+
+    pub fn add_level(&mut self, mutt: Mut) -> Result<(), ()> {
+        if self.level >= Self::MAX_LEVEL {
+            return Err(());
+        }
+        let mut_bit = 1u8 << (self.level);
+        if mutt == Mut::Mutable {
+            self.mut_mask |= mut_bit;
+        } else {
+            self.mut_mask &= !mut_bit;
+        }
+        self.level += 1;
+        Ok(())
+    }
 }
 
-#[derive(Clone, Copy)]
-pub struct Block {
-    stmts: List<Stmt>,
-}
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+mod size_assert {
+    use super::*;
 
-#[rustfmt::skip]
-#[derive(Clone, Copy)]
-pub enum Expr {
-    Unit,
-    Discard,
-    LitNull,
-    LitBool   { val: bool },
-    LitUint   { val: u64, ty: Option<BasicType> },
-    LitFloat  { val: f64, ty: Option<BasicType> },
-    LitChar   { val: char },
-    LitString { id: InternID },
-    Block     { block: Id<Block> },
-    Match     { expr: Id<Expr>, arms: List<MatchArm> },
-    If        { if_: Id<If>, else_: Option<Else> },
-    // .name => expr ident
-    // cast  => expr as ty
-    // item  => path::name
-    // call  => ...
-    // struct => ...
-    ArrayInit   { input: List<Expr> },
-    ArrayRepeat { expr: Id<Expr>, size: Id<Expr>, },
-    UnExpr      { op: UnOp, rhs: Id<Expr> },
-    BinExpr     { op: BinOp, lhs: Id<Expr>, rhs: Id<Expr> },
-}
+    macro_rules! size_assert {
+        ($size:expr, $ty:ty) => {
+            const _: [(); $size] = [(); ::std::mem::size_of::<$ty>()];
+        };
+    }
 
-#[derive(Clone, Copy)]
-pub struct If {
-    cond: Id<Expr>,
-    block: Id<Block>,
-}
+    size_assert!(24, Ast);
+    size_assert!(12, Module);
 
-#[derive(Clone, Copy)]
-pub enum Else {
-    If(Id<If>),
-    Block(Id<Block>),
-}
+    size_assert!(1, Vis);
+    size_assert!(1, Mut);
+    size_assert!(8, Ident);
+    size_assert!(16, Path);
+    size_assert!(1, PathKind);
 
-#[derive(Clone, Copy)]
-pub struct List<T: Copy> {
-    first: Id<Node<T>>,
-    last: Id<Node<T>>,
-}
+    size_assert!(24, Type);
+    size_assert!(2, PtrLevel);
+    size_assert!(12, TypeKind);
 
-#[derive(Copy, Clone)]
-struct Node<T: Copy> {
-    value: T,
-    next: Option<Id<T>>,
+    size_assert!(8, Decl);
+    size_assert!(12, ModuleDecl);
+    size_assert!(36, ImportDecl);
+    size_assert!(12, ImportTarget);
+    size_assert!(24, GlobalDecl);
+    size_assert!(36, ProcDecl);
+    size_assert!(16, ProcParam);
+    size_assert!(20, EnumDecl);
+    size_assert!(16, EnumVariant);
+    size_assert!(20, UnionDecl);
+    size_assert!(12, UnionMember);
+    size_assert!(20, StructDecl);
+    size_assert!(16, StructField);
+
+    size_assert!(16, Stmt);
+    size_assert!(8, StmtKind);
+    size_assert!(28, For);
+    size_assert!(32, VarDecl);
+    size_assert!(12, VarAssign);
+
+    size_assert!(24, Expr);
+    size_assert!(4, ConstExpr);
+    size_assert!(16, ExprKind);
+    size_assert!(8, If);
+    size_assert!(8, Else);
+    size_assert!(8, Block);
+    size_assert!(8, MatchArm);
+    size_assert!(16, ItemName);
+    size_assert!(12, FieldInit);
+
+    size_assert!(1, BasicType);
+    size_assert!(1, UnOp);
+    size_assert!(1, BinOp);
+    size_assert!(1, AssignOp);
 }
