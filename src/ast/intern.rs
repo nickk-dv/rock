@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InternID(pub u32);
 pub const INTERN_DUMMY_ID: InternID = InternID(u32::MAX);
 

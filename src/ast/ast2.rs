@@ -2,21 +2,11 @@ use super::intern::InternID;
 use super::parser::FileID;
 use super::span::Span;
 use super::token2::TokenIndex;
-use crate::mem::arena_id::Id;
-
-#[derive(Clone, Copy)]
-pub struct List<T: Copy> {
-    first: Id<Node<T>>,
-    last: Id<Node<T>>,
-}
-
-#[derive(Copy, Clone)]
-struct Node<T: Copy> {
-    value: T,
-    next: Option<Id<T>>,
-}
+use crate::mem::arena_id::*;
+use crate::mem::list_id::*;
 
 pub struct Ast {
+    pub arena: Arena,
     pub modules: Vec<Module>,
 }
 
@@ -25,8 +15,6 @@ pub struct Module {
     pub file_id: FileID,
     pub decls: List<Decl>,
 }
-
-// General:
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Vis {
@@ -60,8 +48,6 @@ pub enum PathKind {
     Package,
 }
 
-// Types:
-
 #[derive(Clone, Copy)]
 pub struct Type {
     pub ptr: PtrLevel,
@@ -83,8 +69,6 @@ pub enum TypeKind {
     Slice  { mutt: Mut, ty: Id<Type> },
     Array  { size: ConstExpr, ty: Id<Type> },
 }
-
-// Declarations:
 
 #[derive(Copy, Clone)]
 pub enum Decl {
@@ -183,8 +167,6 @@ pub struct StructField {
     pub ty: Id<Type>,
 }
 
-// Statements:
-
 #[derive(Clone, Copy)]
 pub struct Stmt {
     span: Span,
@@ -226,8 +208,6 @@ pub struct VarAssign {
     pub lhs: Id<Expr>,
     pub rhs: Id<Expr>,
 }
-
-// Expressions:
 
 #[derive(Clone, Copy)]
 pub struct Expr {
@@ -299,8 +279,6 @@ pub struct FieldInit {
     pub name: Ident,
     pub expr: Id<Expr>,
 }
-
-// BasicType & Operators:
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum BasicType {
@@ -401,7 +379,7 @@ mod size_assert {
         };
     }
 
-    size_assert!(24, Ast);
+    size_assert!(56, Ast);
     size_assert!(12, Module);
 
     size_assert!(1, Vis);
