@@ -61,6 +61,7 @@ pub enum ParseError {
     LiteralFloat,
     FieldInit,
     ExpectToken(ParseContext, Token),
+    ExpectToken2(ParseContext, crate::ast::token2::Token),
 }
 
 #[derive(Copy, Clone)]
@@ -228,6 +229,7 @@ impl ParseErrorData {
             ParseError::LiteralFloat => ParseContext::LiteralFloat,
             ParseError::FieldInit => ParseContext::StructInit,
             ParseError::ExpectToken(c, ..) => c,
+            ParseError::ExpectToken2(c, ..) => c,
         }
     }
 
@@ -275,6 +277,7 @@ impl ParseErrorData {
             ParseError::LiteralFloat => Self::all_float_literal_types(),
             ParseError::FieldInit => vec![Token::Colon, Token::Comma, Token::CloseBlock],
             ParseError::ExpectToken(.., t) => vec![t],
+            ParseError::ExpectToken2(.., t) => vec![], //@not emitting tokens of new type
         }
     }
 

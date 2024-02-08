@@ -170,6 +170,7 @@ token_impl! {
     KwChar       as "char"     => KW.
 
     KwPub        as "pub"      => KW.
+    KwMut        as "mut"      => KW.
     KwMod        as "mod"      => KW.
     KwImport     as "import"   => KW.
     KwSuper      as "super"    => KW.

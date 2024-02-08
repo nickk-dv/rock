@@ -89,7 +89,7 @@ pub struct ModuleDecl {
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub path: Path,
+    pub path: Option<Id<Path>>,
     pub target: ImportTarget,
     pub span: Span,
 }
@@ -394,7 +394,7 @@ mod size_assert {
 
     size_assert!(8, Decl);
     size_assert!(12, ModuleDecl);
-    size_assert!(36, ImportDecl);
+    size_assert!(28, ImportDecl);
     size_assert!(12, ImportTarget);
     size_assert!(24, GlobalDecl);
     size_assert!(36, ProcDecl);
