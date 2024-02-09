@@ -9,31 +9,15 @@ pub struct Scope {
     pub id: ScopeID,
     pub module: P<Module>,
     pub parent: Option<ScopeID>,
-    pub errors: Drop<Vec<Error>>,
-    mods: Drop<HashMap<InternID, P<ModuleDecl>>>,
-    procs: Drop<HashMap<InternID, ProcData>>,
-    enums: Drop<HashMap<InternID, EnumData>>,
-    unions: Drop<HashMap<InternID, UnionData>>,
-    structs: Drop<HashMap<InternID, StructData>>,
-    globals: Drop<HashMap<InternID, GlobalData>>,
-    pub glob_imports: Drop<Vec<GlobImport>>,
-    pub symbol_imports: Drop<HashMap<InternID, SymbolImport>>,
-}
-
-impl ManualDrop for P<Scope> {
-    fn manual_drop(mut self) {
-        unsafe {
-            Drop::drop(&mut self.errors);
-            Drop::drop(&mut self.mods);
-            Drop::drop(&mut self.procs);
-            Drop::drop(&mut self.enums);
-            Drop::drop(&mut self.unions);
-            Drop::drop(&mut self.structs);
-            Drop::drop(&mut self.globals);
-            Drop::drop(&mut self.glob_imports);
-            Drop::drop(&mut self.symbol_imports);
-        }
-    }
+    pub errors: Vec<Error>,
+    mods: HashMap<InternID, P<ModuleDecl>>,
+    procs: HashMap<InternID, ProcData>,
+    enums: HashMap<InternID, EnumData>,
+    unions: HashMap<InternID, UnionData>,
+    structs: HashMap<InternID, StructData>,
+    globals: HashMap<InternID, GlobalData>,
+    pub glob_imports: Vec<GlobImport>,
+    pub symbol_imports: HashMap<InternID, SymbolImport>,
 }
 
 impl Scope {
@@ -42,15 +26,15 @@ impl Scope {
             id,
             module,
             parent,
-            errors: Drop::new(Vec::new()),
-            mods: Drop::new(HashMap::new()),
-            procs: Drop::new(HashMap::new()),
-            enums: Drop::new(HashMap::new()),
-            unions: Drop::new(HashMap::new()),
-            structs: Drop::new(HashMap::new()),
-            globals: Drop::new(HashMap::new()),
-            glob_imports: Drop::new(Vec::new()),
-            symbol_imports: Drop::new(HashMap::new()),
+            errors: Vec::new(),
+            mods: HashMap::new(),
+            procs: HashMap::new(),
+            enums: HashMap::new(),
+            unions: HashMap::new(),
+            structs: HashMap::new(),
+            globals: HashMap::new(),
+            glob_imports: Vec::new(),
+            symbol_imports: HashMap::new(),
         }
     }
 }

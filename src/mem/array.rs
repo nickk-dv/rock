@@ -2,12 +2,12 @@ use super::*;
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone)]
-pub struct Array<T> {
+pub struct Array<T: Copy> {
     ptr: P<T>,
     size: u32,
 }
 
-impl<T> Array<T> {
+impl<T: Copy> Array<T> {
     pub fn new(ptr: P<T>, size: u32) -> Self {
         Array { ptr, size }
     }

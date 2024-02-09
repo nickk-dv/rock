@@ -25,15 +25,15 @@ impl Arena {
         return arena;
     }
 
-    pub fn alloc<T>(&mut self) -> P<T> {
+    pub fn alloc<T: Copy>(&mut self) -> P<T> {
         self.alloc_buffer(1)
     }
 
-    pub fn alloc_array<T>(&mut self, len: usize) -> Array<T> {
+    pub fn alloc_array<T: Copy>(&mut self, len: usize) -> Array<T> {
         Array::new(self.alloc_buffer(len), len as u32)
     }
 
-    fn alloc_buffer<T>(&mut self, len: usize) -> P<T> {
+    fn alloc_buffer<T: Copy>(&mut self, len: usize) -> P<T> {
         let size = (len * std::mem::size_of::<T>() + 7) & !7;
         if self.offset + size > self.layout.size() {
             self.alloc_block();

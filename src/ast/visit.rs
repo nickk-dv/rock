@@ -3,7 +3,6 @@ use crate::mem::*;
 
 #[allow(unused_variables)]
 pub trait MutVisit: Sized {
-    fn visit_ast(&mut self, ast: P<Ast>) {}
     fn visit_module(&mut self, module: P<Module>) {}
     fn visit_ident(&mut self, ident: &mut Ident) {}
     fn visit_path(&mut self, path: &mut Path) {}
@@ -50,19 +49,8 @@ pub trait MutVisit: Sized {
     fn visit_binary_expr(&mut self, binary_expr: P<BinaryExpr>) {}
 }
 
-pub fn visit_with<T: MutVisit>(vis: &mut T, ast: P<Ast>) {
-    visit_ast(vis, ast);
-}
-
 pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
     visit_module(vis, module);
-}
-
-fn visit_ast<T: MutVisit>(vis: &mut T, ast: P<Ast>) {
-    vis.visit_ast(ast.copy());
-    for module in ast.modules.iter() {
-        visit_module(vis, module.copy());
-    }
 }
 
 fn visit_module<T: MutVisit>(vis: &mut T, module: P<Module>) {

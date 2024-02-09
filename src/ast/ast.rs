@@ -11,6 +11,7 @@ pub struct Ast {
     pub modules: Vec<P<Module>>,
 }
 
+#[derive(Copy, Clone)]
 pub struct Module {
     pub file_id: FileID,
     pub decls: List<Decl>,
