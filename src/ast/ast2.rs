@@ -1,7 +1,7 @@
 use super::intern::InternID;
 use super::parser::FileID;
 use super::span::Span;
-use super::token2::TokenIndex;
+use super::token_list::TokenIndex;
 use crate::mem::arena_id::*;
 use crate::mem::list_id::*;
 

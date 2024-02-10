@@ -104,6 +104,14 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
     for id in files {
         let lex_res = lexer::lex(&ctx.file(id).source);
+        let lexer2 = super::lexer2::Lexer::new(&ctx.file(id).source);
+        let tokens = lexer2.lex();
+        eprintln!(
+            "lex2 tokens len vs capacity {} / {}",
+            tokens.len(),
+            tokens.cap()
+        );
+        assert_eq!(tokens.len(), lex_res.tokens.len());
         let mut parser = Parser {
             cursor: 0,
             tokens: lex_res.tokens,

@@ -1,7 +1,8 @@
 use super::ast2::*;
 use super::intern::INTERN_DUMMY_ID;
 use super::parser::FileID;
-use super::token2::*;
+use super::token2::Token;
+use super::token_list::*;
 use crate::err::error::{ParseContext, ParseError};
 use crate::mem::arena_id::*;
 use crate::mem::list_id::*;
