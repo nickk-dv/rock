@@ -142,7 +142,10 @@ main :: () -> s32 {
 
 fn cmd_check() -> Result<(), ()> {
     let res = parser::parse()?;
-    check::check(res.1, &res.0)?;
+    // 50520 mem usage
+    eprintln!("ast arenas mem-usage: {}", res.1.arena.memory_usage());
+    //@disabled checking stage for now
+    //check::check(res.1, &res.0)?;
     Ok(())
 }
 

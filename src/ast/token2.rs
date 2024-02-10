@@ -88,30 +88,14 @@ macro_rules! token_impl {
             }
         }
     };
-    (@KW_ARM $variant:ident => KW $mark:tt) => {
-        Some(Token::$variant)
-    };
-    (@KW_ARM $variant:ident) => {
-        None
-    };
-    (@UN_ARM => UN $un:expr) => {
-        Some($un)
-    };
-    (@UN_ARM) => {
-        None
-    };
-    (@BIN_ARM => BIN $bin:expr) => {
-        Some($bin)
-    };
-    (@BIN_ARM) => {
-        None
-    };
-    (@ASSIGN_ARM => ASSIGN $assign:expr) => {
-        Some($assign)
-    };
-    (@ASSIGN_ARM) => {
-        None
-    };
+    (@KW_ARM $variant:ident => KW $mark:tt) => { Some(Token::$variant) };
+    (@KW_ARM $variant:ident) => { None };
+    (@UN_ARM => UN $un:expr) => { Some($un) };
+    (@UN_ARM) => { None };
+    (@BIN_ARM => BIN $bin:expr) => { Some($bin) };
+    (@BIN_ARM) => { None };
+    (@ASSIGN_ARM => ASSIGN $assign:expr) => { Some($assign) };
+    (@ASSIGN_ARM) => { None };
 }
 
 /// Token glue for creating 1 character tokens

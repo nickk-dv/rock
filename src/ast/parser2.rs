@@ -1,7 +1,6 @@
 use super::ast2::*;
 use super::intern::INTERN_DUMMY_ID;
 use super::parser::FileID;
-use super::span::Span;
 use super::token2::*;
 use crate::err::error::{ParseContext, ParseError};
 use crate::mem::arena_id::*;
@@ -11,9 +10,19 @@ struct Parser<'ast> {
     cursor: usize,
     tokens: TokenList,
     arena: &'ast mut Arena,
+    source: &'ast str,
 }
 
 impl<'ast> Parser<'ast> {
+    fn new(tokens: TokenList, arena: &'ast mut Arena, source: &'ast str) -> Self {
+        Self {
+            cursor: 0,
+            tokens,
+            arena,
+            source,
+        }
+    }
+
     fn peek(&self) -> Token {
         self.tokens.token(self.cursor)
     }
@@ -110,74 +119,64 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    //fn type_(&mut self) -> Result<P<Type>, ParseError> {}
-}
+    //@testing parsing of numbers
+    pub fn number_parse_test(&mut self) -> Result<(), ()> {
+        while self.peek() != Token::Eof {
+            match self.peek() {
+                Token::IntLit => {
+                    if let Ok(value) = self.int() {
+                        eprintln!("int:   {}", value);
+                    }
+                }
+                Token::FloatLit => {
+                    if let Ok(value) = self.float() {
+                        eprintln!("float: {}", value);
+                    }
+                }
+                _ => {
+                    self.eat();
+                }
+            }
+        }
+        Ok(())
+    }
 
-fn test() {
-    let mut a = Arena::new(1024);
-    let expr_id = a.alloc(Expr {
-        span: Span::new(1, 2),
-        kind: ExprKind::Discard,
-    });
-    let expr = a.get_mut(expr_id);
-    match expr.kind {
-        ExprKind::Unit => todo!(),
-        ExprKind::Discard => todo!(),
-        ExprKind::LitNull => todo!(),
-        ExprKind::LitBool { val } => todo!(),
-        ExprKind::LitUint { val, ty } => todo!(),
-        ExprKind::LitFloat { val, ty } => todo!(),
-        ExprKind::LitChar { val } => todo!(),
-        ExprKind::LitString { id } => todo!(),
-        ExprKind::If { if_, else_ } => todo!(),
-        ExprKind::Block { block } => todo!(),
-        ExprKind::Match { expr, arms } => todo!(),
-        ExprKind::Field { target, name } => todo!(),
-        ExprKind::Index { target, index } => todo!(),
-        ExprKind::Cast { target, ty } => todo!(),
-        ExprKind::Sizeof { ty } => todo!(),
-        ExprKind::Item { item } => todo!(),
-        ExprKind::ProcCall { item, input } => todo!(),
-        ExprKind::StructInit { item, input } => todo!(),
-        ExprKind::ArrayInit { input } => todo!(),
-        ExprKind::ArrayRepeat { expr, size } => todo!(),
-        ExprKind::UnaryExpr { op, rhs } => todo!(),
-        ExprKind::BinaryExpr { op, lhs, rhs } => todo!(),
+    fn int(&mut self) -> Result<u64, ()> {
+        let span = self.tokens.span(self.cursor);
+        self.eat();
+        let str = span.slice(self.source);
+        match str.parse::<u64>() {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                eprint!("parse int error: {}", error.to_string());
+                Err(())
+            }
+        }
+    }
+
+    fn float(&mut self) -> Result<f64, ()> {
+        let span = self.tokens.span(self.cursor);
+        self.eat();
+        let str = span.slice(self.source);
+        match str.parse::<f64>() {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                eprintln!("parse float error: {}", error.to_string());
+                Err(())
+            }
+        }
     }
 }
 
-struct Evaluator<'a> {
-    arena: &'a mut Arena,
-}
-
-impl<'a> Evaluator<'a> {
-    fn eval_expr(&self, expr: &Expr) -> () {
-        match expr.kind {
-            ExprKind::Unit => todo!(),
-            ExprKind::Discard => todo!(),
-            ExprKind::LitNull => todo!(),
-            ExprKind::LitBool { val } => todo!(),
-            ExprKind::LitUint { val, ty } => todo!(),
-            ExprKind::LitFloat { val, ty } => todo!(),
-            ExprKind::LitChar { val } => todo!(),
-            ExprKind::LitString { id } => todo!(),
-            ExprKind::If { if_, else_ } => todo!(),
-            ExprKind::Block { block } => todo!(),
-            ExprKind::Match { expr, arms } => todo!(),
-            ExprKind::Field { target, name } => todo!(),
-            ExprKind::Index { target, index } => todo!(),
-            ExprKind::Cast { target, ty } => todo!(),
-            ExprKind::Sizeof { ty } => todo!(),
-            ExprKind::Item { item } => todo!(),
-            ExprKind::ProcCall { item, input } => todo!(),
-            ExprKind::StructInit { item, input } => todo!(),
-            ExprKind::ArrayInit { input } => todo!(),
-            ExprKind::ArrayRepeat { expr, size } => todo!(),
-            ExprKind::UnaryExpr { op, rhs } => todo!(),
-            ExprKind::BinaryExpr { op, lhs, rhs } => {
-                let v_lhs = self.eval_expr(self.arena.get(rhs));
-                let v_rhs = self.eval_expr(self.arena.get(rhs));
-            }
-        }
+#[test]
+fn test_number_parsing() {
+    let source = " 1024   500  3.14  0.123  49494 002  0000.1  2.14596 2323.0";
+    let lexer = super::lexer2::Lexer::new(&source);
+    let tokens = lexer.lex();
+    let mut arena = Arena::new(1024);
+    let mut parser = Parser::new(tokens, &mut arena, source);
+    match parser.number_parse_test() {
+        Ok(_) => todo!(),
+        Err(_) => todo!(),
     }
 }
