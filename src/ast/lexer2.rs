@@ -19,20 +19,6 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub fn lex(mut self) -> TokenList {
-        let init_cap = self.source.len() / 8;
-        let mut tokens = TokenList::new(init_cap);
-
-        while self.peek().is_some() {
-            self.skip_whitespace();
-            if let Some(c) = self.peek() {
-                let token = self.lex_token(c);
-                tokens.add(token.0, token.1);
-            }
-        }
-        return tokens;
-    }
-
     fn peek(&mut self) -> Option<char> {
         self.chars.peek().cloned()
     }
@@ -44,6 +30,24 @@ impl<'src> Lexer<'src> {
 
     fn span(&self) -> Span {
         Span::new(self.span_start, self.span_end)
+    }
+
+    pub fn lex(mut self) -> TokenList {
+        let init_cap = self.source.len() / 8;
+        let mut tokens = TokenList::new(init_cap);
+
+        while self.peek().is_some() {
+            self.skip_whitespace();
+            if let Some(c) = self.peek() {
+                let token = self.lex_token(c);
+                tokens.add(token.0, token.1);
+            }
+        }
+        tokens.add(Token::Eof, Span::new(u32::MAX, u32::MAX));
+        tokens.add(Token::Eof, Span::new(u32::MAX, u32::MAX));
+        tokens.add(Token::Eof, Span::new(u32::MAX, u32::MAX));
+        tokens.add(Token::Eof, Span::new(u32::MAX, u32::MAX));
+        return tokens;
     }
 
     fn skip_whitespace(&mut self) {
@@ -58,12 +62,36 @@ impl<'src> Lexer<'src> {
 
     fn lex_token(&mut self, fc: char) -> (Token, Span) {
         self.span_start = self.span_end;
-        if fc.is_ascii_digit() {
+        if fc == '\"' {
+            self.lex_string(fc)
+        } else if fc.is_ascii_digit() {
             self.lex_number(fc)
         } else if fc == '_' || fc.is_alphabetic() {
             self.lex_ident(fc)
         } else {
             self.lex_symbol(fc)
+        }
+    }
+
+    fn lex_string(&mut self, fc: char) -> (Token, Span) {
+        self.eat(fc);
+
+        let mut terminated = false;
+        while let Some(c) = self.peek() {
+            match c {
+                '\r' | '\n' => break,
+                '\"' => {
+                    self.eat(c);
+                    terminated = true;
+                }
+                _ => self.eat(c),
+            }
+        }
+
+        if terminated {
+            (Token::StringLit, self.span())
+        } else {
+            (Token::Error, self.span())
         }
     }
 

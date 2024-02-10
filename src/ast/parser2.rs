@@ -125,12 +125,22 @@ impl<'ast> Parser<'ast> {
             match self.peek() {
                 Token::IntLit => {
                     if let Ok(value) = self.int() {
-                        eprintln!("int:   {}", value);
+                        eprintln!("int:    {}", value);
                     }
                 }
                 Token::FloatLit => {
                     if let Ok(value) = self.float() {
-                        eprintln!("float: {}", value);
+                        eprintln!("float:  {}", value);
+                    }
+                }
+                Token::Quote => {
+                    if let Ok(value) = self.char() {
+                        eprintln!("char:   {}", value);
+                    }
+                }
+                Token::Quote2 => {
+                    if let Ok(value) = self.string() {
+                        eprintln!("string: {}", value);
                     }
                 }
                 _ => {
@@ -166,11 +176,23 @@ impl<'ast> Parser<'ast> {
             }
         }
     }
+
+    fn char(&mut self) -> Result<char, ()> {
+        self.eat(); // '
+        eprintln!("parse char failed");
+        Err(())
+    }
+
+    fn string(&mut self) -> Result<String, ()> {
+        self.eat(); // "
+        eprintln!("parse string failed");
+        Err(())
+    }
 }
 
 #[test]
 fn test_number_parsing() {
-    let source = " 1024   500  3.14  0.123  49494 002  0000.1  2.14596 2323.0";
+    let source = " 1024  ' 500  \" 3.14  0.123  49494 002  0000.1  2.14596 2323.0";
     let lexer = super::lexer2::Lexer::new(&source);
     let tokens = lexer.lex();
     let mut arena = Arena::new(1024);
