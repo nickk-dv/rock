@@ -1,349 +1,274 @@
-use super::span::Span;
+use super::ast::{AssignOp, BasicType, BinOp, UnOp};
 
-pub struct TokenSpan {
-    pub span: Span,
-    pub token: Token,
+/// Token enum and conversions
+macro_rules! token_impl {
+    ($(
+        $variant:ident as $string:expr
+        $(=> KW $mark:tt)?
+        $(=> UN $un:expr)?
+        $(=> BIN $bin:expr)?
+        $(=> ASSIGN $assign:expr)?
+        $(=> BASIC_TYPE $basic_type:expr)?
+    )+) => {
+        #[derive(Copy, Clone, PartialEq)]
+        pub enum Token {
+            $($variant),+
+        }
+        impl Token {
+            pub fn to_str(token: Token) -> &'static str {
+                token.as_str()
+            }
+            pub fn as_str(&self) -> &'static str {
+                match *self {
+                    $(Token::$variant => $string,)+
+                }
+            }
+            pub fn as_keyword(source: &str) -> Option<Token> {
+                match source {
+                    $($string => token_impl!(@KW_ARM $variant $(=> KW $mark)?), )+
+                    _ => None,
+                }
+            }
+            pub fn as_un_op(&self) -> Option<UnOp> {
+                match *self {
+                    $(Token::$variant => token_impl!(@UN_ARM $(=> UN $un)?), )+
+                }
+            }
+            pub fn as_bin_op(&self) -> Option<BinOp> {
+                match *self {
+                    $(Token::$variant => token_impl!(@BIN_ARM $(=> BIN $bin)?), )+
+                }
+            }
+            pub fn as_assign_op(&self) -> Option<AssignOp> {
+                match *self {
+                    $(Token::$variant => token_impl!(@ASSIGN_ARM $(=> ASSIGN $assign)?), )+
+                }
+            }
+            pub fn as_basic_type(&self) -> Option<BasicType> {
+                match *self {
+                    $(Token::$variant => token_impl!(@BASIC_TYPE_ARM $(=> BASIC_TYPE $basic_type)?), )+
+                }
+            }
+        }
+    };
+    (@KW_ARM $variant:ident => KW $mark:tt) => { Some(Token::$variant) };
+    (@KW_ARM $variant:ident) => { None };
+    (@UN_ARM => UN $un:expr) => { Some($un) };
+    (@UN_ARM) => { None };
+    (@BIN_ARM => BIN $bin:expr) => { Some($bin) };
+    (@BIN_ARM) => { None };
+    (@ASSIGN_ARM => ASSIGN $assign:expr) => { Some($assign) };
+    (@ASSIGN_ARM) => { None };
+    (@BASIC_TYPE_ARM => BASIC_TYPE $basic_type:expr) => { Some($basic_type) };
+    (@BASIC_TYPE_ARM) => { None };
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum Token {
-    Ident,
-    // Literal
-    LitNull,
-    LitBool(bool),
-    LitInt(u64),
-    LitFloat(f64),
-    LitChar(char),
-    LitString(u32),
-    // Special
-    Error,
-    Eof,
-    // Keyword
-    KwPub,
-    KwMut,
-    KwMod,
-    KwEnum,
-    KwUnion,
-    KwStruct,
-    KwImport,
-    KwSuper,
-    KwPackage,
-    KwIf,
-    KwElse,
-    KwFor,
-    KwDefer,
-    KwBreak,
-    KwMatch,
-    KwReturn,
-    KwContinue,
-    KwCast,
-    KwSizeof,
-    KwBool,
-    KwS8,
-    KwS16,
-    KwS32,
-    KwS64,
-    KwSsize,
-    KwU8,
-    KwU16,
-    KwU32,
-    KwU64,
-    KwUsize,
-    KwF32,
-    KwF64,
-    KwChar,
-    KwRawptr,
-    // Directives
-    DirCCall,
-    // Delimeter
-    OpenParen,
-    OpenBlock,
-    OpenBracket,
-    CloseParen,
-    CloseBlock,
-    CloseBracket,
-    // Separator
-    Dot,
-    Colon,
-    Comma,
-    Semicolon,
-    Underscore,
-    DotDot,
-    ColonColon,
-    ArrowThin,
-    ArrowWide,
-    /// Unary op
-    LogicNot,
-    BitNot,
-    // Binary cmp
-    LogicAnd,
-    LogicOr,
-    Less,
-    Greater,
-    LessEq,
-    GreaterEq,
-    IsEq,
-    NotEq,
-    // Binary op
-    Plus,
-    Minus,
-    Star,
-    Div,
-    Mod,
-    BitAnd,
-    BitOr,
-    BitXor,
-    Shl,
-    Shr,
-    // Assign op
-    Assign,
-    PlusEq,
-    MinusEq,
-    TimesEq,
-    DivEq,
-    ModEq,
-    BitAndEq,
-    BitOrEq,
-    BitXorEq,
-    ShlEq,
-    ShrEq,
+/// Token glue for creating 1 character tokens
+macro_rules! token_glue {
+    ($name:ident, $($to:ident as $ch:expr)+) => {
+        impl Token {
+            pub fn $name(c: char) -> Option<Token> {
+                match c {
+                    $($ch => Some(Token::$to),)+
+                    _ => None,
+                }
+            }
+        }
+    };
 }
 
-impl TokenSpan {
-    pub fn new(span: Span, token: Token) -> Self {
-        Self { span, token }
-    }
-
-    pub fn eof() -> Self {
-        Self::new(Span { start: 0, end: 0 }, Token::Eof)
-    }
+/// Token glue for extending 1-2 character tokens
+macro_rules! token_glue_extend {
+    ($name:ident, $( ($ch:expr) $($from:ident => $to:ident,)+ )+ ) => {
+        impl Token {
+            pub fn $name(c: char, token: Token) -> Option<Token> {
+                match c {
+                    $(
+                        $ch => match token {
+                            $(Token::$from => Some(Token::$to),)+
+                            _ => None,
+                        },
+                    )+
+                    _ => None,
+                }
+            }
+        }
+    };
 }
 
-impl Token {
-    pub fn as_str(kind: Token) -> &'static str {
-        match kind {
-            Token::Ident => "identifier",
-            Token::LitNull => "null",
-            Token::LitBool(..) => "bool literal",
-            Token::LitInt(..) => "integer literal",
-            Token::LitFloat(..) => "float literal",
-            Token::LitChar(..) => "char literal",
-            Token::LitString(..) => "string literal",
-            Token::Error => "error token",
-            Token::Eof => "end of file token",
-            Token::KwPub => "pub",
-            Token::KwMut => "mut",
-            Token::KwMod => "mod",
-            Token::KwEnum => "enum",
-            Token::KwUnion => "union",
-            Token::KwStruct => "struct",
-            Token::KwImport => "import",
-            Token::KwSuper => "super",
-            Token::KwPackage => "package",
-            Token::KwIf => "if",
-            Token::KwElse => "else",
-            Token::KwFor => "for",
-            Token::KwDefer => "defer",
-            Token::KwBreak => "break",
-            Token::KwMatch => "match",
-            Token::KwReturn => "return",
-            Token::KwContinue => "continue",
-            Token::KwCast => "cast",
-            Token::KwSizeof => "sizeof",
-            Token::KwBool => "bool",
-            Token::KwS8 => "s8",
-            Token::KwS16 => "s16",
-            Token::KwS32 => "s32",
-            Token::KwS64 => "s64",
-            Token::KwSsize => "ssize",
-            Token::KwU8 => "u8",
-            Token::KwU16 => "u16",
-            Token::KwU32 => "u32",
-            Token::KwU64 => "u64",
-            Token::KwUsize => "usize",
-            Token::KwF32 => "f32",
-            Token::KwF64 => "f64",
-            Token::KwChar => "char",
-            Token::KwRawptr => "rawptr",
-            Token::DirCCall => "c_call",
-            Token::OpenParen => "(",
-            Token::OpenBlock => "{",
-            Token::OpenBracket => "[",
-            Token::CloseParen => ")",
-            Token::CloseBlock => "}",
-            Token::CloseBracket => "]",
-            Token::Dot => ".",
-            Token::Colon => ":",
-            Token::Comma => ",",
-            Token::Semicolon => ";",
-            Token::Underscore => "_",
-            Token::DotDot => "..",
-            Token::ColonColon => "::",
-            Token::ArrowThin => "->",
-            Token::ArrowWide => "=>",
-            Token::LogicNot => "!",
-            Token::BitNot => "~",
-            Token::LogicAnd => "&&",
-            Token::LogicOr => "||",
-            Token::Less => "<",
-            Token::Greater => ">",
-            Token::LessEq => "<=",
-            Token::GreaterEq => ">=",
-            Token::IsEq => "==",
-            Token::NotEq => "!=",
-            Token::Plus => "+",
-            Token::Minus => "-",
-            Token::Star => "*",
-            Token::Div => "/",
-            Token::Mod => "%",
-            Token::BitAnd => "&",
-            Token::BitOr => "|",
-            Token::BitXor => "^",
-            Token::Shl => "<<",
-            Token::Shr => ">>",
-            Token::Assign => "=",
-            Token::PlusEq => "+=",
-            Token::MinusEq => "-=",
-            Token::TimesEq => "*=",
-            Token::DivEq => "/=",
-            Token::ModEq => "%=",
-            Token::BitAndEq => "&=",
-            Token::BitOrEq => "|=",
-            Token::BitXorEq => "^=",
-            Token::ShlEq => "<<=",
-            Token::ShrEq => ">>=",
-        }
-    }
+token_impl! {
+    Eof          as "end of file"
+    Error        as "error token"
+    Ident        as "identifier"
+    IntLit       as "int literal"
+    FloatLit     as "float literal"
+    CharLit      as "char literal"
+    StringLit    as "string literal"
 
-    pub fn keyword_from_str(str: &str) -> Option<Token> {
-        match str {
-            "_" => Some(Token::Underscore),
-            "null" => Some(Token::LitNull),
-            "true" => Some(Token::LitBool(true)),
-            "false" => Some(Token::LitBool(false)),
-            "pub" => Some(Token::KwPub),
-            "mut" => Some(Token::KwMut),
-            "mod" => Some(Token::KwMod),
-            "enum" => Some(Token::KwEnum),
-            "union" => Some(Token::KwUnion),
-            "struct" => Some(Token::KwStruct),
-            "import" => Some(Token::KwImport),
-            "super" => Some(Token::KwSuper),
-            "package" => Some(Token::KwPackage),
-            "if" => Some(Token::KwIf),
-            "else" => Some(Token::KwElse),
-            "for" => Some(Token::KwFor),
-            "defer" => Some(Token::KwDefer),
-            "break" => Some(Token::KwBreak),
-            "match" => Some(Token::KwMatch),
-            "return" => Some(Token::KwReturn),
-            "continue" => Some(Token::KwContinue),
-            "cast" => Some(Token::KwCast),
-            "sizeof" => Some(Token::KwSizeof),
-            "bool" => Some(Token::KwBool),
-            "s8" => Some(Token::KwS8),
-            "s16" => Some(Token::KwS16),
-            "s32" => Some(Token::KwS32),
-            "s64" => Some(Token::KwS64),
-            "ssize" => Some(Token::KwSsize),
-            "u8" => Some(Token::KwU8),
-            "u16" => Some(Token::KwU16),
-            "u32" => Some(Token::KwU32),
-            "u64" => Some(Token::KwU64),
-            "usize" => Some(Token::KwUsize),
-            "f32" => Some(Token::KwF32),
-            "f64" => Some(Token::KwF64),
-            "char" => Some(Token::KwChar),
-            "rawptr" => Some(Token::KwRawptr),
-            "c_call" => Some(Token::DirCCall),
-            _ => None,
-        }
-    }
+    KwBool       as "bool"     => KW. => BASIC_TYPE BasicType::Bool
+    KwS8         as "s8"       => KW. => BASIC_TYPE BasicType::S8
+    KwS16        as "s16"      => KW. => BASIC_TYPE BasicType::S16
+    KwS32        as "s32"      => KW. => BASIC_TYPE BasicType::S32
+    KwS64        as "s64"      => KW. => BASIC_TYPE BasicType::S64
+    KwSsize      as "ssize"    => KW. => BASIC_TYPE BasicType::Ssize
+    KwU8         as "u8"       => KW. => BASIC_TYPE BasicType::U8
+    KwU16        as "u16"      => KW. => BASIC_TYPE BasicType::U16
+    KwU32        as "u32"      => KW. => BASIC_TYPE BasicType::U32
+    KwU64        as "u64"      => KW. => BASIC_TYPE BasicType::U64
+    KwUsize      as "usize"    => KW. => BASIC_TYPE BasicType::Usize
+    KwF32        as "f32"      => KW. => BASIC_TYPE BasicType::F32
+    KwF64        as "f64"      => KW. => BASIC_TYPE BasicType::F64
+    KwChar       as "char"     => KW. => BASIC_TYPE BasicType::Char
 
-    pub fn glue(c: char) -> Option<Token> {
-        match c {
-            '(' => Some(Token::OpenParen),
-            ')' => Some(Token::CloseParen),
-            '{' => Some(Token::OpenBlock),
-            '}' => Some(Token::CloseBlock),
-            '[' => Some(Token::OpenBracket),
-            ']' => Some(Token::CloseBracket),
-            '.' => Some(Token::Dot),
-            ':' => Some(Token::Colon),
-            ',' => Some(Token::Comma),
-            ';' => Some(Token::Semicolon),
-            '!' => Some(Token::LogicNot),
-            '~' => Some(Token::BitNot),
-            '<' => Some(Token::Less),
-            '>' => Some(Token::Greater),
-            '+' => Some(Token::Plus),
-            '-' => Some(Token::Minus),
-            '*' => Some(Token::Star),
-            '/' => Some(Token::Div),
-            '%' => Some(Token::Mod),
-            '&' => Some(Token::BitAnd),
-            '|' => Some(Token::BitOr),
-            '^' => Some(Token::BitXor),
-            '=' => Some(Token::Assign),
-            _ => None,
-        }
-    }
+    KwPub        as "pub"      => KW.
+    KwMut        as "mut"      => KW.
+    KwMod        as "mod"      => KW.
+    KwImport     as "import"   => KW.
+    KwSuper      as "super"    => KW.
+    KwPackage    as "package"  => KW.
+    KwEnum       as "enum"     => KW.
+    KwUnion      as "union"    => KW.
+    KwStruct     as "struct"   => KW.
 
-    pub fn glue2(c: char, kind: Token) -> Option<Token> {
-        match c {
-            '.' => match kind {
-                Token::Dot => Some(Token::DotDot),
-                _ => None,
-            },
-            ':' => match kind {
-                Token::Colon => Some(Token::ColonColon),
-                _ => None,
-            },
-            '&' => match kind {
-                Token::BitAnd => Some(Token::LogicAnd),
-                _ => None,
-            },
-            '|' => match kind {
-                Token::BitOr => Some(Token::LogicOr),
-                _ => None,
-            },
-            '<' => match kind {
-                Token::Less => Some(Token::Shl),
-                _ => None,
-            },
-            '>' => match kind {
-                Token::Minus => Some(Token::ArrowThin),
-                Token::Assign => Some(Token::ArrowWide),
-                Token::Greater => Some(Token::Shr),
-                _ => None,
-            },
-            '=' => match kind {
-                Token::Less => Some(Token::LessEq),
-                Token::Greater => Some(Token::GreaterEq),
-                Token::LogicNot => Some(Token::NotEq),
-                Token::Assign => Some(Token::IsEq),
-                Token::Plus => Some(Token::PlusEq),
-                Token::Minus => Some(Token::MinusEq),
-                Token::Star => Some(Token::TimesEq),
-                Token::Div => Some(Token::DivEq),
-                Token::Mod => Some(Token::ModEq),
-                Token::BitAnd => Some(Token::BitAndEq),
-                Token::BitOr => Some(Token::BitOrEq),
-                Token::BitXor => Some(Token::BitXorEq),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
+    KwFor        as "for"      => KW.
+    KwDefer      as "defer"    => KW.
+    KwBreak      as "break"    => KW.
+    KwContinue   as "continue" => KW.
+    KwReturn     as "return"   => KW.
 
-    pub fn glue3(c: char, kind: Token) -> Option<Token> {
-        match c {
-            '=' => match kind {
-                Token::Shl => Some(Token::ShlEq),
-                Token::Shr => Some(Token::ShrEq),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
+    KwAs         as "as"       => KW.
+    KwIf         as "if"       => KW.
+    KwElse       as "else"     => KW.
+    KwMatch      as "match"    => KW.
+    KwSizeof     as "sizeof"   => KW.
+    KwNull       as "null"     => KW.
+    KwTrue       as "true"     => KW.
+    KwFalse      as "false"    => KW.
+    DirCCall     as "c_call"   => KW.
+
+    Bang         as "!"  => UN UnOp::LogicNot
+    Quote2       as "\""
+    Hash         as "#"
+    Dollar       as "$"
+    Percent      as "%"  => BIN BinOp::Rem
+    Ampersand    as "&"  => UN UnOp::Addr => BIN BinOp::BitAnd
+    Quote        as "\'"
+    OpenParen    as "("
+    CloseParen   as ")"
+    Star         as "*"  => UN UnOp::Deref => BIN BinOp::Mul
+    Plus         as "+"  => BIN BinOp::Add
+    Comma        as ","
+    Minus        as "-"  => UN UnOp::Neg => BIN BinOp::Sub
+    Dot          as "."  => BIN BinOp::Deref
+    ForwSlash    as "/"  => BIN BinOp::Div
+    Colon        as ":"
+    Semicolon    as ";"
+    Less         as "<"  => BIN BinOp::Less
+    Equals       as "="  => ASSIGN AssignOp::Assign
+    Greater      as ">"  => BIN BinOp::Greater
+    Question     as "?"
+    At           as "@"
+    OpenBracket  as "["  => BIN BinOp::Index
+    BackSlash    as "/"
+    CloseBracket as "]"
+    Caret        as "^"  => BIN BinOp::BitXor
+    Underscore   as "_"  => KW.
+    Backtick     as "`"
+    OpenBlock    as "{"
+    Pipe         as "|"  => BIN BinOp::BitOr
+    CloseBlock   as "}"
+    Tilde        as "~"  => UN UnOp::BitNot
+
+    DotDot       as ".."
+    ColonColon   as "::"
+    ArrowThin    as "->"
+    ArrowWide    as "=>"
+
+    BinShl       as "<<" => BIN BinOp::Shl
+    BinShr       as ">>" => BIN BinOp::Shr
+    BinIsEq      as "==" => BIN BinOp::IsEq
+    BinNotEq     as "!=" => BIN BinOp::NotEq
+    BinLessEq    as "<=" => BIN BinOp::LessEq
+    BinGreaterEq as ">=" => BIN BinOp::GreaterEq
+    BinLogicAnd  as "&&" => BIN BinOp::LogicAnd
+    BinLogicOr   as "||" => BIN BinOp::LogicOr
+
+    AssignAdd    as "+="  => ASSIGN AssignOp::Bin(BinOp::Add)
+    AssignSub    as "-="  => ASSIGN AssignOp::Bin(BinOp::Sub)
+    AssignMul    as "*="  => ASSIGN AssignOp::Bin(BinOp::Mul)
+    AssignDiv    as "/="  => ASSIGN AssignOp::Bin(BinOp::Div)
+    AssignRem    as "%="  => ASSIGN AssignOp::Bin(BinOp::Rem)
+    AssignBitAnd as "&="  => ASSIGN AssignOp::Bin(BinOp::BitAnd)
+    AssignBitOr  as "|="  => ASSIGN AssignOp::Bin(BinOp::BitOr)
+    AssignBitXor as "^="  => ASSIGN AssignOp::Bin(BinOp::BitXor)
+    AssignShl    as "<<=" => ASSIGN AssignOp::Bin(BinOp::Shl)
+    AssignShr    as ">>=" => ASSIGN AssignOp::Bin(BinOp::Shr)
+}
+
+token_glue! {
+    glue,
+    Bang         as '!'
+    Quote2       as '\"'
+    Hash         as '#'
+    Dollar       as '$'
+    Percent      as '%'
+    Ampersand    as '&'
+    Quote        as '\''
+    OpenParen    as '('
+    CloseParen   as ')'
+    Star         as '*'
+    Plus         as '+'
+    Comma        as ','
+    Minus        as '-'
+    Dot          as '.'
+    ForwSlash    as '/'
+    Colon        as ':'
+    Semicolon    as ';'
+    Less         as '<'
+    Equals       as '='
+    Greater      as '>'
+    Question     as '?'
+    At           as '@'
+    OpenBracket  as '['
+    BackSlash    as '/'
+    CloseBracket as ']'
+    Caret        as '^'
+    Underscore   as '_'
+    Backtick     as '`'
+    OpenBlock    as '{'
+    Pipe         as '|'
+    CloseBlock   as '}'
+    Tilde        as '~'
+}
+
+token_glue_extend! {
+    glue2,
+    ('.') Dot => DotDot,
+    (':') Colon => ColonColon,
+    ('<') Less => BinShl,
+    ('&') Ampersand => BinLogicAnd,
+    ('|') Pipe => BinLogicOr,
+    ('>')
+    Minus => ArrowThin,
+    Equals => ArrowWide,
+    Greater => BinShr,
+    ('=')
+    Equals => BinIsEq,
+    Bang => BinNotEq,
+    Less => BinLessEq,
+    Greater => BinGreaterEq,
+    Plus => AssignAdd,
+    Minus => AssignSub,
+    Star => AssignMul,
+    ForwSlash => AssignDiv,
+    Percent => AssignRem,
+    Ampersand => AssignBitAnd,
+    Pipe => AssignBitOr,
+    Caret => AssignBitXor,
+}
+
+token_glue_extend! {
+    glue3,
+    ('=') BinShl => AssignShl,
+    ('=') BinShr => AssignShr,
 }

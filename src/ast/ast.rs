@@ -74,25 +74,6 @@ pub enum TypeKind {
     Poison,           //check
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum BasicType {
-    Bool,
-    S8,
-    S16,
-    S32,
-    S64,
-    Ssize,
-    U8,
-    U16,
-    U32,
-    U64,
-    Usize,
-    F32,
-    F64,
-    Char,
-    Rawptr,
-}
-
 #[derive(Copy, Clone)]
 pub struct CustomType {
     pub path: Path,
@@ -256,12 +237,6 @@ pub struct VarAssign {
 }
 
 #[derive(Copy, Clone)]
-pub enum AssignOp {
-    Assign,
-    BinaryOp(BinaryOp),
-}
-
-#[derive(Copy, Clone)]
 pub struct ExprStmt {
     pub expr: P<Expr>,
     pub has_semi: bool,
@@ -401,48 +376,77 @@ pub struct FieldInit {
 
 #[derive(Copy, Clone)]
 pub struct UnaryExpr {
-    pub op: UnaryOp,
+    pub op: UnOp,
     pub rhs: P<Expr>,
 }
 
 #[derive(Copy, Clone)]
-pub enum UnaryOp {
-    Neg,
-    BitNot,
-    LogicNot,
-    Addr(Mut),
-    Deref,
-}
-
-#[derive(Copy, Clone)]
 pub struct BinaryExpr {
-    pub op: BinaryOp,
+    pub op: BinOp,
     pub lhs: P<Expr>,
     pub rhs: P<Expr>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum BinaryOp {
-    LogicAnd,
-    LogicOr,
-    Less,
-    Greater,
-    LessEq,
-    GreaterEq,
-    IsEq,
-    NotEq,
-    Plus,
+pub enum BasicType {
+    Unit,
+    Bool,
+    S8,
+    S16,
+    S32,
+    S64,
+    Ssize,
+    U8,
+    U16,
+    U32,
+    U64,
+    Usize,
+    F32,
+    F64,
+    Char,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum UnOp {
+    Neg,
+    BitNot,
+    LogicNot,
+    Addr,
+    Deref,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum BinOp {
+    Add,
     Sub,
     Mul,
     Div,
     Rem,
+
     BitAnd,
     BitOr,
     BitXor,
     Shl,
     Shr,
-    Deref,
-    Index,
+
+    IsEq,
+    NotEq,
+    Less,
+    LessEq,
+    Greater,
+    GreaterEq,
+
+    LogicAnd,
+    LogicOr,
+
+    Deref, //@remove from bin ops
+    Index, //@remove from bin ops
+}
+
+#[derive(Copy, Clone)]
+pub enum AssignOp {
+    Assign,
+    Bin(BinOp),
 }
 
 impl PtrLevel {

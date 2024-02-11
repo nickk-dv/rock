@@ -1,5 +1,5 @@
 use super::span::*;
-use super::token2::*;
+use super::token::*;
 
 pub struct TokenList {
     tokens: Vec<Token>,

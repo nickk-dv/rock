@@ -1,8 +1,8 @@
 use super::ast::*;
 use super::intern::*;
-use super::lexer;
 use super::span::*;
 use super::token::*;
+use super::token_list::TokenList;
 use super::visit;
 use crate::err::error::*;
 use crate::err::report;
@@ -100,22 +100,21 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
     let files = collect_files(&mut ctx);
     timer.elapsed_ms("collect files");
 
+    // 0.610 ms, 50520 arena bytes
+    // 0.450 ms, 50616 arena bytes
+
     let timer = Timer::new();
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
     for id in files {
-        let lex_res = lexer::lex(&ctx.file(id).source);
-        let lexer2 = super::lexer2::Lexer::new(&ctx.file(id).source);
+        let lexer2 = super::lexer::Lexer::new(&ctx.file(id).source);
         let tokens = lexer2.lex();
-        eprintln!(
-            "lex2 tokens len vs capacity {} / {}",
-            tokens.len(),
-            tokens.cap()
-        );
-        assert_eq!(tokens.len(), lex_res.tokens.len());
         let mut parser = Parser {
             cursor: 0,
-            tokens: lex_res.tokens,
+            tokens: &tokens,
             arena: &mut ast.arena,
+            source: &ctx.file(id).source,
+            char_id: 0,
+            string_id: 0,
         };
 
         let res = parser.parse_module(id);
@@ -127,7 +126,7 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
             let mut interner = ModuleInterner {
                 file: ctx.file(id).source.clone(),
                 intern_pool: ctx.intern_mut(),
-                lex_strings: lex_res.lex_strings,
+                tokens,
             };
             visit::visit_module_with(&mut interner, res.0);
         }
@@ -204,7 +203,7 @@ fn collect_files(ctx: &mut CompCtx) -> Vec<FileID> {
 struct ModuleInterner<'a> {
     file: String,
     intern_pool: &'a mut InternPool,
-    lex_strings: Vec<String>,
+    tokens: TokenList,
 }
 
 impl<'a> visit::MutVisit for ModuleInterner<'a> {
@@ -215,16 +214,21 @@ impl<'a> visit::MutVisit for ModuleInterner<'a> {
 
     fn visit_expr(&mut self, mut expr: P<Expr>) {
         if let ExprKind::Lit(Lit::String(ref mut id)) = expr.kind {
-            let string = unsafe { self.lex_strings.get_unchecked(id.0 as usize) };
+            let string = unsafe { self.tokens.string(id.0 as usize) };
             *id = self.intern_pool.intern(string);
         }
     }
 }
 
+//@sequential ids of chars / strings
+// might not be always correct when dealing with bin op precedence
 struct Parser<'ast> {
     cursor: usize,
-    tokens: Vec<TokenSpan>,
+    tokens: &'ast TokenList,
     arena: &'ast mut Arena,
+    source: &'ast str,
+    char_id: u32,
+    string_id: u32,
 }
 
 impl<'ast> Parser<'ast> {
@@ -239,10 +243,7 @@ impl<'ast> Parser<'ast> {
                     module.decls.add(&mut self.arena, decl);
                 }
                 Err(err) => {
-                    let got_token = TokenSpan {
-                        span: self.peek_span(),
-                        token: self.peek(),
-                    };
+                    let got_token = (self.peek(), self.peek_span());
                     return (module.copy(), Some(Error::parse(err, file_id, got_token)));
                 }
             }
@@ -438,12 +439,12 @@ impl<'ast> Parser<'ast> {
         global_decl.vis = vis;
         global_decl.name = name;
 
-        if self.try_consume(Token::Assign) {
+        if self.try_consume(Token::Equals) {
             global_decl.ty = None;
             global_decl.value = ConstExpr(self.parse_expr()?);
         } else {
             global_decl.ty = Some(self.parse_type()?);
-            self.expect_token(Token::Assign, ParseContext::GlobalDecl)?;
+            self.expect_token(Token::Equals, ParseContext::GlobalDecl)?;
             global_decl.value = ConstExpr(self.parse_expr()?);
         }
         self.expect_token(Token::Semicolon, ParseContext::GlobalDecl)?;
@@ -509,7 +510,7 @@ impl<'ast> Parser<'ast> {
 
     fn parse_enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
         let name = self.parse_ident(ParseContext::EnumVariant)?;
-        let value = if self.try_consume(Token::Assign) {
+        let value = if self.try_consume(Token::Equals) {
             Some(ConstExpr(self.parse_expr()?))
         } else {
             None
@@ -647,12 +648,12 @@ impl<'ast> Parser<'ast> {
         };
         self.expect_token(Token::Colon, ParseContext::VarDecl)?;
 
-        if self.try_consume(Token::Assign) {
+        if self.try_consume(Token::Equals) {
             var_decl.ty = None;
             var_decl.expr = Some(self.parse_expr()?);
         } else {
             var_decl.ty = Some(self.parse_type()?);
-            var_decl.expr = if self.try_consume(Token::Assign) {
+            var_decl.expr = if self.try_consume(Token::Equals) {
                 Some(self.parse_expr()?)
             } else {
                 None
@@ -670,15 +671,15 @@ impl<'ast> Parser<'ast> {
         let mut expr_lhs = self.parse_primary_expr()?;
         loop {
             let prec: u32;
-            let binary_op: BinaryOp;
-            if let Some(op) = self.peek().as_binary_op() {
+            let binary_op: BinOp;
+            if let Some(op) = self.peek().as_bin_op() {
                 binary_op = op;
                 prec = op.prec();
                 if prec < min_prec {
                     break;
                 }
                 match binary_op {
-                    BinaryOp::Deref | BinaryOp::Index => {}
+                    BinOp::Deref | BinOp::Index => {}
                     _ => self.consume(),
                 }
             } else {
@@ -690,7 +691,7 @@ impl<'ast> Parser<'ast> {
             bin_expr.op = binary_op;
             bin_expr.lhs = expr_lhs;
             bin_expr.rhs = match binary_op {
-                BinaryOp::Deref | BinaryOp::Index => self.parse_tail_expr(binary_op)?,
+                BinOp::Deref | BinOp::Index => self.parse_tail_expr(binary_op)?,
                 _ => self.parse_sub_expr(prec + 1)?,
             };
 
@@ -701,17 +702,17 @@ impl<'ast> Parser<'ast> {
         Ok(expr_lhs)
     }
 
-    fn parse_tail_expr(&mut self, op: BinaryOp) -> Result<P<Expr>, ParseError> {
+    fn parse_tail_expr(&mut self, op: BinOp) -> Result<P<Expr>, ParseError> {
         let mut expr = self.alloc::<Expr>();
         let span_start = self.peek_span_start();
         self.consume();
 
         expr.kind = match op {
-            BinaryOp::Deref => {
+            BinOp::Deref => {
                 let name = self.parse_ident(ParseContext::Expr)?; //@context
                 ExprKind::DotName(name)
             }
-            BinaryOp::Index => {
+            BinOp::Index => {
                 let mut index = self.alloc::<Index>();
                 index.expr = self.parse_expr()?;
                 self.expect_token(Token::CloseBracket, ParseContext::Expr)?; //@context
@@ -757,15 +758,16 @@ impl<'ast> Parser<'ast> {
                 ExprKind::Discard
             }
             Token::KwIf => ExprKind::If(self.parse_if()?),
-            Token::LitNull
-            | Token::LitBool(..)
-            | Token::LitInt(..)
-            | Token::LitFloat(..)
-            | Token::LitChar(..)
-            | Token::LitString(..) => ExprKind::Lit(self.parse_lit()?),
+            Token::KwNull
+            | Token::KwTrue
+            | Token::KwFalse
+            | Token::IntLit
+            | Token::FloatLit
+            | Token::CharLit
+            | Token::StringLit => ExprKind::Lit(self.parse_lit()?),
             Token::OpenBlock => ExprKind::Block(self.parse_block()?),
             Token::KwMatch => ExprKind::Match(self.parse_match()?),
-            Token::KwCast => ExprKind::Cast(self.parse_cast()?),
+            Token::KwAs => ExprKind::Cast(self.parse_cast()?),
             Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
             Token::OpenBracket => {
                 self.consume(); // `[`
@@ -936,16 +938,28 @@ impl<'ast> Parser<'ast> {
 
     fn parse_lit(&mut self) -> Result<Lit, ParseError> {
         match self.peek() {
-            Token::LitNull => {
+            Token::KwNull => {
                 self.consume();
                 Ok(Lit::Null)
             }
-            Token::LitBool(v) => {
+            Token::KwTrue => {
                 self.consume();
-                Ok(Lit::Bool(v))
+                Ok(Lit::Bool(true))
             }
-            Token::LitInt(v) => {
+            Token::KwFalse => {
                 self.consume();
+                Ok(Lit::Bool(false))
+            }
+            Token::IntLit => {
+                let span = self.peek_span();
+                self.consume();
+                let str = span.slice(self.source);
+                let v = match str.parse::<u64>() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        panic!("parse int error: {}", error.to_string());
+                    }
+                };
                 if let Some(basic) = self.peek().as_basic_type() {
                     match basic {
                         BasicType::S8
@@ -972,8 +986,16 @@ impl<'ast> Parser<'ast> {
                     Ok(Lit::Uint(v, None))
                 }
             }
-            Token::LitFloat(v) => {
+            Token::FloatLit => {
+                let span = self.peek_span();
                 self.consume();
+                let str = span.slice(self.source);
+                let v = match str.parse::<f64>() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        panic!("parse float error: {}", error.to_string());
+                    }
+                };
                 if let Some(basic) = self.peek().as_basic_type() {
                     match basic {
                         BasicType::F32 | BasicType::F64 => {
@@ -986,12 +1008,16 @@ impl<'ast> Parser<'ast> {
                     Ok(Lit::Float(v, None))
                 }
             }
-            Token::LitChar(v) => {
+            Token::CharLit => {
                 self.consume();
+                let v = self.tokens.char(self.char_id as usize);
+                self.char_id += 1;
                 Ok(Lit::Char(v))
             }
-            Token::LitString(id) => {
+            Token::StringLit => {
                 self.consume();
+                let id = self.string_id;
+                self.string_id += 1;
                 Ok(Lit::String(InternID(id)))
             }
             _ => Err(ParseError::LiteralMatch),
@@ -1022,27 +1048,23 @@ impl<'ast> Parser<'ast> {
     }
 
     fn peek(&self) -> Token {
-        unsafe { self.tokens.get_unchecked(self.cursor).token }
+        unsafe { self.tokens.token(self.cursor) }
     }
 
     fn peek_next(&self, offset: isize) -> Token {
-        unsafe {
-            self.tokens
-                .get_unchecked(self.cursor + offset as usize)
-                .token
-        }
+        unsafe { self.tokens.token(self.cursor + offset as usize) }
     }
 
     fn peek_span(&self) -> Span {
-        unsafe { self.tokens.get_unchecked(self.cursor).span }
+        unsafe { self.tokens.span(self.cursor) }
     }
 
     fn peek_span_start(&self) -> u32 {
-        unsafe { self.tokens.get_unchecked(self.cursor).span.start }
+        unsafe { self.tokens.span(self.cursor).start }
     }
 
     fn peek_span_end(&self) -> u32 {
-        unsafe { self.tokens.get_unchecked(self.cursor - 1).span.end }
+        unsafe { self.tokens.span(self.cursor - 1).end }
     }
 
     fn consume(&mut self) {
@@ -1057,16 +1079,12 @@ impl<'ast> Parser<'ast> {
         false
     }
 
-    fn try_consume_unary_op(&mut self) -> Option<UnaryOp> {
-        match self.peek().as_unary_op() {
+    fn try_consume_unary_op(&mut self) -> Option<UnOp> {
+        match self.peek().as_un_op() {
             Some(mut op) => {
                 self.consume();
-                match &mut op {
-                    UnaryOp::Addr(mutt) => {
-                        *mutt = self.parse_mut();
-                    }
-                    _ => {}
-                }
+                //@not storing mutability
+                let mutt = self.parse_mut();
                 Some(op)
             }
             None => None,
@@ -1092,98 +1110,21 @@ impl<'ast> Parser<'ast> {
     }
 }
 
-impl BinaryOp {
+impl BinOp {
     pub fn prec(&self) -> u32 {
         match self {
-            BinaryOp::LogicAnd | BinaryOp::LogicOr => 1,
-            BinaryOp::Less
-            | BinaryOp::Greater
-            | BinaryOp::LessEq
-            | BinaryOp::GreaterEq
-            | BinaryOp::IsEq
-            | BinaryOp::NotEq => 2,
-            BinaryOp::Plus | BinaryOp::Sub => 3,
-            BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => 4,
-            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => 5,
-            BinaryOp::Shl | BinaryOp::Shr => 6,
-            BinaryOp::Deref | BinaryOp::Index => 7,
-        }
-    }
-}
-
-impl Token {
-    fn as_unary_op(&self) -> Option<UnaryOp> {
-        match self {
-            Token::Minus => Some(UnaryOp::Neg),
-            Token::BitNot => Some(UnaryOp::BitNot),
-            Token::LogicNot => Some(UnaryOp::LogicNot),
-            Token::Star => Some(UnaryOp::Addr(Mut::Immutable)),
-            Token::Shl => Some(UnaryOp::Deref),
-            _ => None,
-        }
-    }
-
-    fn as_binary_op(&self) -> Option<BinaryOp> {
-        match self {
-            Token::Dot => Some(BinaryOp::Deref),
-            Token::OpenBracket => Some(BinaryOp::Index),
-            Token::LogicAnd => Some(BinaryOp::LogicAnd),
-            Token::LogicOr => Some(BinaryOp::LogicOr),
-            Token::Less => Some(BinaryOp::Less),
-            Token::Greater => Some(BinaryOp::Greater),
-            Token::LessEq => Some(BinaryOp::LessEq),
-            Token::GreaterEq => Some(BinaryOp::GreaterEq),
-            Token::IsEq => Some(BinaryOp::IsEq),
-            Token::NotEq => Some(BinaryOp::NotEq),
-            Token::Plus => Some(BinaryOp::Plus),
-            Token::Minus => Some(BinaryOp::Sub),
-            Token::Star => Some(BinaryOp::Mul),
-            Token::Div => Some(BinaryOp::Div),
-            Token::Mod => Some(BinaryOp::Rem),
-            Token::BitAnd => Some(BinaryOp::BitAnd),
-            Token::BitOr => Some(BinaryOp::BitOr),
-            Token::BitXor => Some(BinaryOp::BitXor),
-            Token::Shl => Some(BinaryOp::Shl),
-            Token::Shr => Some(BinaryOp::Shr),
-            _ => None,
-        }
-    }
-
-    fn as_assign_op(&self) -> Option<AssignOp> {
-        match self {
-            Token::Assign => Some(AssignOp::Assign),
-            Token::PlusEq => Some(AssignOp::BinaryOp(BinaryOp::Plus)),
-            Token::MinusEq => Some(AssignOp::BinaryOp(BinaryOp::Sub)),
-            Token::TimesEq => Some(AssignOp::BinaryOp(BinaryOp::Mul)),
-            Token::DivEq => Some(AssignOp::BinaryOp(BinaryOp::Div)),
-            Token::ModEq => Some(AssignOp::BinaryOp(BinaryOp::Rem)),
-            Token::BitAndEq => Some(AssignOp::BinaryOp(BinaryOp::BitAnd)),
-            Token::BitOrEq => Some(AssignOp::BinaryOp(BinaryOp::BitOr)),
-            Token::BitXorEq => Some(AssignOp::BinaryOp(BinaryOp::BitXor)),
-            Token::ShlEq => Some(AssignOp::BinaryOp(BinaryOp::Shl)),
-            Token::ShrEq => Some(AssignOp::BinaryOp(BinaryOp::Shr)),
-            _ => None,
-        }
-    }
-
-    fn as_basic_type(&self) -> Option<BasicType> {
-        match self {
-            Token::KwBool => Some(BasicType::Bool),
-            Token::KwS8 => Some(BasicType::S8),
-            Token::KwS16 => Some(BasicType::S16),
-            Token::KwS32 => Some(BasicType::S32),
-            Token::KwS64 => Some(BasicType::S64),
-            Token::KwSsize => Some(BasicType::Ssize),
-            Token::KwU8 => Some(BasicType::U8),
-            Token::KwU16 => Some(BasicType::U16),
-            Token::KwU32 => Some(BasicType::U32),
-            Token::KwU64 => Some(BasicType::U64),
-            Token::KwUsize => Some(BasicType::Usize),
-            Token::KwF32 => Some(BasicType::F32),
-            Token::KwF64 => Some(BasicType::F64),
-            Token::KwChar => Some(BasicType::Char),
-            Token::KwRawptr => Some(BasicType::Rawptr),
-            _ => None,
+            BinOp::LogicAnd | BinOp::LogicOr => 1,
+            BinOp::Less
+            | BinOp::Greater
+            | BinOp::LessEq
+            | BinOp::GreaterEq
+            | BinOp::IsEq
+            | BinOp::NotEq => 2,
+            BinOp::Add | BinOp::Sub => 3,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 4,
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
+            BinOp::Shl | BinOp::Shr => 6,
+            BinOp::Deref | BinOp::Index => 7,
         }
     }
 }

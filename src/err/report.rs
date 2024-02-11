@@ -2,7 +2,6 @@ use super::ansi::{self, Color};
 use super::error::*;
 use super::span_fmt;
 use crate::ast::parser::CompCtx;
-use crate::ast::token::Token;
 use std::io::{BufWriter, Stderr, Write};
 
 static mut ERR_COUNT: u32 = 0;
@@ -24,15 +23,15 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error, ctx: &CompCtx) {
             let _ = write!(handle, "expected: ");
             for (index, token) in err.expected.iter().enumerate() {
                 if index < err.expected.len() - 1 {
-                    let _ = write!(handle, "`{}`, ", Token::as_str(*token));
+                    let _ = write!(handle, "`{}`, ", token.as_str());
                 } else {
-                    let _ = writeln!(handle, "`{}`", Token::as_str(*token));
+                    let _ = writeln!(handle, "`{}`", token.as_str());
                 }
             }
             span_fmt::print(
                 handle,
                 ctx.file(err.file_id),
-                err.got_token.span,
+                err.got_token.1,
                 Some("unexpected token"),
                 false,
             );

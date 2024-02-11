@@ -15,7 +15,7 @@ pub(super) struct ParseErrorData {
     pub(super) file_id: FileID,
     pub(super) context: ParseContext,
     pub(super) expected: Vec<Token>,
-    pub(super) got_token: TokenSpan,
+    pub(super) got_token: (Token, Span),
 }
 
 pub struct CheckErrorData {
@@ -61,7 +61,6 @@ pub enum ParseError {
     LiteralFloat,
     FieldInit,
     ExpectToken(ParseContext, Token),
-    ExpectToken2(ParseContext, crate::ast::token2::Token),
 }
 
 #[derive(Copy, Clone)]
@@ -184,7 +183,7 @@ pub enum FileIOError {
 pub enum InternalError {}
 
 impl Error {
-    pub fn parse(error: ParseError, file_id: FileID, got_token: TokenSpan) -> Self {
+    pub fn parse(error: ParseError, file_id: FileID, got_token: (Token, Span)) -> Self {
         Self::Parse(ParseErrorData::new(error, file_id, got_token))
     }
 
@@ -206,7 +205,7 @@ impl Error {
 }
 
 impl ParseErrorData {
-    fn new(error: ParseError, file_id: FileID, got_token: TokenSpan) -> Self {
+    fn new(error: ParseError, file_id: FileID, got_token: (Token, Span)) -> Self {
         Self {
             file_id,
             context: Self::error_context(error),
@@ -229,7 +228,6 @@ impl ParseErrorData {
             ParseError::LiteralFloat => ParseContext::LiteralFloat,
             ParseError::FieldInit => ParseContext::StructInit,
             ParseError::ExpectToken(c, ..) => c,
-            ParseError::ExpectToken2(c, ..) => c,
         }
     }
 
@@ -262,7 +260,7 @@ impl ParseErrorData {
                     Token::Dot,
                     Token::OpenBracket,
                     Token::OpenBlock,
-                    Token::KwCast,
+                    Token::KwAs,
                     Token::KwSizeof,
                 ];
                 expected.extend(Self::all_literal_tokens());
@@ -277,17 +275,18 @@ impl ParseErrorData {
             ParseError::LiteralFloat => Self::all_float_literal_types(),
             ParseError::FieldInit => vec![Token::Colon, Token::Comma, Token::CloseBlock],
             ParseError::ExpectToken(.., t) => vec![t],
-            ParseError::ExpectToken2(.., t) => vec![], //@not emitting tokens of new type
         }
     }
 
     fn all_literal_tokens() -> Vec<Token> {
         vec![
-            Token::LitNull,
-            Token::LitInt(u64::default()),
-            Token::LitFloat(f64::default()),
-            Token::LitChar(char::default()),
-            Token::LitString(0),
+            Token::KwNull,
+            Token::KwTrue,
+            Token::KwFalse,
+            Token::IntLit,
+            Token::FloatLit,
+            Token::CharLit,
+            Token::StringLit,
         ]
     }
 
