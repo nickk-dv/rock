@@ -163,9 +163,9 @@ token_impl! {
     ForwSlash    as "/"  => BIN BinOp::Div
     Colon        as ":"
     Semicolon    as ";"
-    Less         as "<"  => BIN BinOp::Less
+    Less         as "<"  => BIN BinOp::CmpLt
     Equals       as "="  => ASSIGN AssignOp::Assign
-    Greater      as ">"  => BIN BinOp::Greater
+    Greater      as ">"  => BIN BinOp::CmpGt
     Question     as "?"
     At           as "@"
     OpenBracket  as "["
@@ -184,12 +184,12 @@ token_impl! {
     ArrowThin    as "->"
     ArrowWide    as "=>"
 
-    BinShl       as "<<" => BIN BinOp::Shl
-    BinShr       as ">>" => BIN BinOp::Shr
-    BinIsEq      as "==" => BIN BinOp::IsEq
-    BinNotEq     as "!=" => BIN BinOp::NotEq
-    BinLessEq    as "<=" => BIN BinOp::LessEq
-    BinGreaterEq as ">=" => BIN BinOp::GreaterEq
+    BinShl       as "<<" => BIN BinOp::BitShl
+    BinShr       as ">>" => BIN BinOp::BitShr
+    BinIsEq      as "==" => BIN BinOp::CmpIsEq
+    BinNotEq     as "!=" => BIN BinOp::CmpNotEq
+    BinLessEq    as "<=" => BIN BinOp::CmpLtEq
+    BinGreaterEq as ">=" => BIN BinOp::CmpGtEq
     BinLogicAnd  as "&&" => BIN BinOp::LogicAnd
     BinLogicOr   as "||" => BIN BinOp::LogicOr
 
@@ -201,8 +201,8 @@ token_impl! {
     AssignBitAnd as "&="  => ASSIGN AssignOp::Bin(BinOp::BitAnd)
     AssignBitOr  as "|="  => ASSIGN AssignOp::Bin(BinOp::BitOr)
     AssignBitXor as "^="  => ASSIGN AssignOp::Bin(BinOp::BitXor)
-    AssignShl    as "<<=" => ASSIGN AssignOp::Bin(BinOp::Shl)
-    AssignShr    as ">>=" => ASSIGN AssignOp::Bin(BinOp::Shr)
+    AssignShl    as "<<=" => ASSIGN AssignOp::Bin(BinOp::BitShl)
+    AssignShr    as ">>=" => ASSIGN AssignOp::Bin(BinOp::BitShr)
 }
 
 token_glue! {

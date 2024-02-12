@@ -135,36 +135,36 @@ impl<'a> visit::MutVisit for Context<'a> {
         }
     }
 
-    fn visit_struct_init(&mut self, mut struct_init: P<StructInit>) {
-        let tt = self.scope_find_type(self.curr_scope, struct_init.path, struct_init.name);
-        match tt {
-            Some(TypeData::Enum(..)) => {
-                //@no source id available after find_type is complete
-                // add context when scopes / finding symbols is changed
-                struct_init.ty = StructInitResolved::Poison;
-                self.get_scope_mut(self.curr_scope)
-                    .error(CheckError::StructInitGotEnumType, struct_init.name.span);
-            }
-            Some(TypeData::Union(data)) => {
-                struct_init.ty = StructInitResolved::Union(data.id);
-            }
-            Some(TypeData::Struct(data)) => {
-                struct_init.ty = StructInitResolved::Struct(data.id);
-            }
-            None => struct_init.ty = StructInitResolved::Poison,
-        }
-    }
+    //fn visit_struct_init(&mut self, mut struct_init: P<StructInit>) {
+    //    let tt = self.scope_find_type(self.curr_scope, struct_init.path, struct_init.name);
+    //    match tt {
+    //        Some(TypeData::Enum(..)) => {
+    //            //@no source id available after find_type is complete
+    //            // add context when scopes / finding symbols is changed
+    //            struct_init.ty = StructInitResolved::Poison;
+    //            self.get_scope_mut(self.curr_scope)
+    //                .error(CheckError::StructInitGotEnumType, struct_init.name.span);
+    //        }
+    //        Some(TypeData::Union(data)) => {
+    //            struct_init.ty = StructInitResolved::Union(data.id);
+    //        }
+    //        Some(TypeData::Struct(data)) => {
+    //            struct_init.ty = StructInitResolved::Struct(data.id);
+    //        }
+    //        None => struct_init.ty = StructInitResolved::Poison,
+    //    }
+    //}
 
-    fn visit_proc_call(&mut self, mut proc_call: P<ProcCall>) {
-        println!("finding proc with intern id = {}", proc_call.name.id.0);
-        let data = self.scope_find_proc(self.curr_scope, proc_call.path, proc_call.name);
-        if let Some(data) = data {
-            proc_call.id = Some(data.id);
-            println!("proc_call resolved to proc id: {}", data.id);
-        } else {
-            proc_call.id = None;
-        }
-    }
+    //fn visit_proc_call(&mut self, mut proc_call: P<ProcCall>) {
+    //    println!("finding proc with intern id = {}", proc_call.name.id.0);
+    //    let data = self.scope_find_proc(self.curr_scope, proc_call.path, proc_call.name);
+    //    if let Some(data) = data {
+    //        proc_call.id = Some(data.id);
+    //        println!("proc_call resolved to proc id: {}", data.id);
+    //    } else {
+    //        proc_call.id = None;
+    //    }
+    //}
 }
 
 impl<'a> Context<'a> {

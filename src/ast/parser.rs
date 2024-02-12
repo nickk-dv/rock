@@ -213,7 +213,7 @@ impl<'a> visit::MutVisit for ModuleInterner<'a> {
     }
 
     fn visit_expr(&mut self, mut expr: P<Expr>) {
-        if let ExprKind::Lit(Lit::String(ref mut id)) = expr.kind {
+        if let ExprKind::LitString { ref mut id } = expr.kind {
             let string = unsafe { self.tokens.string(id.0 as usize) };
             *id = self.intern_pool.intern(string);
         }
@@ -382,15 +382,12 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_module_decl(&mut self, vis: Vis, name: Ident) -> Result<P<ModuleDecl>, ParseError> {
-        let span_start = self.peek_span_start();
         self.consume(); // `mod`
-
+        self.expect_token(Token::Semicolon, ParseContext::ModDecl)?;
         let mut module_decl = self.alloc::<ModuleDecl>();
         module_decl.vis = vis;
         module_decl.name = name;
         module_decl.id = None;
-        self.expect_token(Token::Semicolon, ParseContext::ModDecl)?;
-
         Ok(module_decl)
     }
 
@@ -709,7 +706,7 @@ impl<'ast> Parser<'ast> {
             }
             let expr = self.parse_sub_expr(0)?;
             self.expect_token(Token::CloseParen, ParseContext::Expr)?;
-            return Ok(expr);
+            return self.parse_tail_expr(expr);
         }
 
         let mut expr = self.alloc::<Expr>();
@@ -728,15 +725,19 @@ impl<'ast> Parser<'ast> {
                 self.consume();
                 ExprKind::Discard
             }
-            Token::KwIf => ExprKind::If(self.parse_if()?),
+            Token::KwIf => ExprKind::If {
+                if_: self.parse_if()?,
+            },
             Token::KwNull
             | Token::KwTrue
             | Token::KwFalse
             | Token::IntLit
             | Token::FloatLit
             | Token::CharLit
-            | Token::StringLit => ExprKind::Lit(self.parse_lit()?),
-            Token::OpenBlock => ExprKind::Block(self.parse_block()?),
+            | Token::StringLit => self.parse_lit()?,
+            Token::OpenBlock => ExprKind::Block {
+                block: self.parse_block()?,
+            },
             Token::KwMatch => {
                 self.consume();
                 let expr = self.parse_expr()?;
@@ -748,7 +749,6 @@ impl<'ast> Parser<'ast> {
                 }
                 ExprKind::Match { expr, arms }
             }
-            Token::KwAs => ExprKind::Cast(self.parse_cast()?),
             Token::KwSizeof => {
                 self.consume();
                 self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
@@ -757,35 +757,30 @@ impl<'ast> Parser<'ast> {
                 ExprKind::Sizeof { ty }
             }
             Token::OpenBracket => {
-                self.consume(); // `[`
+                self.consume();
                 if self.try_consume(Token::CloseBracket) {
-                    let mut array_init = self.alloc::<ArrayInit>();
-                    array_init.input = List::new();
-                    ExprKind::ArrayInit(array_init)
+                    ExprKind::ArrayInit { input: List::new() }
                 } else {
                     let expr = self.parse_expr()?;
                     if self.try_consume(Token::Semicolon) {
-                        let mut array_repeat = self.alloc::<ArrayRepeat>();
-                        array_repeat.expr = expr;
-                        array_repeat.size = ConstExpr(self.parse_expr()?);
+                        let size = ConstExpr(self.parse_expr()?);
                         self.expect_token(Token::CloseBracket, ParseContext::ArrayInit)?;
-                        ExprKind::ArrayRepeat(array_repeat)
+                        ExprKind::ArrayRepeat { expr, size }
                     } else {
-                        let mut array_init = self.alloc::<ArrayInit>();
-                        array_init.input = List::new();
-                        array_init.input.add(&mut self.arena, expr);
+                        let mut input = List::new();
+                        input.add(&mut self.arena, expr);
                         if !self.try_consume(Token::CloseBracket) {
                             self.expect_token(Token::Comma, ParseContext::ArrayInit)?;
                             loop {
                                 let expr = self.parse_expr()?;
-                                array_init.input.add(&mut self.arena, expr);
+                                input.add(&mut self.arena, expr);
                                 if !self.try_consume(Token::Comma) {
                                     break;
                                 }
                             }
                             self.expect_token(Token::CloseBracket, ParseContext::ArrayInit)?;
                         }
-                        ExprKind::ArrayInit(array_init)
+                        ExprKind::ArrayInit { input }
                     }
                 }
             }
@@ -828,28 +823,46 @@ impl<'ast> Parser<'ast> {
             }
         };
         expr.span = Span::new(span_start, self.peek_span_end());
+        return self.parse_tail_expr(expr);
+    }
 
+    fn parse_tail_expr(&mut self, expr: P<Expr>) -> Result<P<Expr>, ParseError> {
         let mut target = expr;
+        let mut last_cast = false;
+        let span_start = expr.span.start;
         loop {
             match self.peek() {
                 Token::Dot => {
+                    if last_cast {
+                        return Ok(target);
+                    }
                     self.consume();
-                    let span_start = self.peek_span_start();
                     let mut expr_field = self.alloc::<Expr>();
                     let name = self.parse_ident(ParseContext::Expr)?; //@ctx expr field
-                    expr_field.kind = ExprKind::DotName { target, name };
+                    expr_field.kind = ExprKind::Field { target, name };
                     expr_field.span = Span::new(span_start, self.peek_span_end());
                     target = expr_field;
                 }
                 Token::OpenBracket => {
+                    if last_cast {
+                        return Ok(target);
+                    }
                     self.consume();
-                    let span_start = self.peek_span_start();
                     let mut expr_index = self.alloc::<Expr>();
                     let index = self.parse_expr()?;
                     self.expect_token(Token::CloseBracket, ParseContext::Expr)?; //@ctx expr index
                     expr_index.kind = ExprKind::Index { target, index };
                     expr_index.span = Span::new(span_start, self.peek_span_end());
                     target = expr_index;
+                }
+                Token::KwAs => {
+                    self.consume();
+                    let mut expr_cast = self.alloc::<Expr>();
+                    let ty = self.parse_type()?;
+                    expr_cast.kind = ExprKind::Cast { target, ty };
+                    expr_cast.span = Span::new(span_start, self.peek_span_end());
+                    target = expr_cast;
+                    last_cast = true;
                 }
                 _ => return Ok(target),
             }
@@ -902,39 +915,19 @@ impl<'ast> Parser<'ast> {
         Ok(MatchArm { pat, expr })
     }
 
-    fn parse_cast(&mut self) -> Result<P<Cast>, ParseError> {
-        self.consume(); // `cast`
-        let mut cast = self.alloc::<Cast>();
-        self.expect_token(Token::OpenParen, ParseContext::Cast)?;
-        cast.ty = self.parse_type()?;
-        self.expect_token(Token::Comma, ParseContext::Cast)?;
-        cast.expr = self.parse_expr()?;
-        self.expect_token(Token::CloseParen, ParseContext::Cast)?;
-        Ok(cast)
-    }
-
-    fn parse_sizeof(&mut self) -> Result<P<Sizeof>, ParseError> {
-        self.consume(); // `sizeof`
-        let mut sizeof = self.alloc::<Sizeof>();
-        self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
-        sizeof.ty = self.parse_type()?;
-        self.expect_token(Token::CloseParen, ParseContext::Sizeof)?;
-        Ok(sizeof)
-    }
-
-    fn parse_lit(&mut self) -> Result<Lit, ParseError> {
+    fn parse_lit(&mut self) -> Result<ExprKind, ParseError> {
         match self.peek() {
             Token::KwNull => {
                 self.consume();
-                Ok(Lit::Null)
+                Ok(ExprKind::LitNull)
             }
             Token::KwTrue => {
                 self.consume();
-                Ok(Lit::Bool(true))
+                Ok(ExprKind::LitBool { val: true })
             }
             Token::KwFalse => {
                 self.consume();
-                Ok(Lit::Bool(false))
+                Ok(ExprKind::LitBool { val: false })
             }
             Token::IntLit => {
                 let span = self.peek_span();
@@ -959,17 +952,23 @@ impl<'ast> Parser<'ast> {
                         | BasicType::U64
                         | BasicType::Usize => {
                             self.consume();
-                            Ok(Lit::Uint(v, Some(basic)))
+                            Ok(ExprKind::LitUint {
+                                val: v,
+                                ty: Some(basic),
+                            })
                         }
                         BasicType::F32 | BasicType::F64 => {
                             self.consume();
                             //@some values cant be represented
-                            Ok(Lit::Float(v as f64, Some(basic)))
+                            Ok(ExprKind::LitFloat {
+                                val: v as f64,
+                                ty: Some(basic),
+                            })
                         }
                         _ => Err(ParseError::LiteralInteger),
                     }
                 } else {
-                    Ok(Lit::Uint(v, None))
+                    Ok(ExprKind::LitUint { val: v, ty: None })
                 }
             }
             Token::FloatLit => {
@@ -986,25 +985,28 @@ impl<'ast> Parser<'ast> {
                     match basic {
                         BasicType::F32 | BasicType::F64 => {
                             self.consume();
-                            Ok(Lit::Float(v, Some(basic)))
+                            Ok(ExprKind::LitFloat {
+                                val: v,
+                                ty: Some(basic),
+                            })
                         }
                         _ => Err(ParseError::LiteralFloat),
                     }
                 } else {
-                    Ok(Lit::Float(v, None))
+                    Ok(ExprKind::LitFloat { val: v, ty: None })
                 }
             }
             Token::CharLit => {
                 self.consume();
                 let v = self.tokens.char(self.char_id as usize);
                 self.char_id += 1;
-                Ok(Lit::Char(v))
+                Ok(ExprKind::LitChar { val: v })
             }
             Token::StringLit => {
                 self.consume();
                 let id = self.string_id;
                 self.string_id += 1;
-                Ok(Lit::String(InternID(id)))
+                Ok(ExprKind::LitString { id: InternID(id) })
             }
             _ => Err(ParseError::LiteralMatch),
         }
@@ -1100,16 +1102,16 @@ impl BinOp {
     pub fn prec(&self) -> u32 {
         match self {
             BinOp::LogicAnd | BinOp::LogicOr => 1,
-            BinOp::Less
-            | BinOp::Greater
-            | BinOp::LessEq
-            | BinOp::GreaterEq
-            | BinOp::IsEq
-            | BinOp::NotEq => 2,
+            BinOp::CmpLt
+            | BinOp::CmpLtEq
+            | BinOp::CmpGt
+            | BinOp::CmpGtEq
+            | BinOp::CmpIsEq
+            | BinOp::CmpNotEq => 2,
             BinOp::Add | BinOp::Sub => 3,
             BinOp::Mul | BinOp::Div | BinOp::Rem => 4,
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
-            BinOp::Shl | BinOp::Shr => 6,
+            BinOp::BitShl | BinOp::BitShr => 6,
         }
     }
 }

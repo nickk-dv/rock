@@ -30,21 +30,10 @@ pub trait MutVisit: Sized {
 
     fn visit_expr(&mut self, expr: P<Expr>) {}
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
-    fn visit_lit(&mut self, lit: &mut Lit) {}
     fn visit_if(&mut self, if_: P<If>) {}
     fn visit_block(&mut self, block: P<Block>) {}
-    fn visit_match(&mut self, switch: P<Match>) {}
-    fn visit_index(&mut self, index: P<Index>) {}
     fn visit_dot_name(&mut self, name: &mut Ident) {}
-    fn visit_cast(&mut self, cast: P<Cast>) {}
-    fn visit_sizeof(&mut self, sizeof: P<Sizeof>) {}
     fn visit_item(&mut self, item: P<ItemName>) {}
-    fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
-    fn visit_array_init(&mut self, array_init: P<ArrayInit>) {}
-    fn visit_array_repeat(&mut self, array_repeat: P<ArrayRepeat>) {}
-    fn visit_struct_init(&mut self, struct_init: P<StructInit>) {}
-    fn visit_unary_expr(&mut self, unary_expr: P<UnaryExpr>) {}
-    fn visit_binary_expr(&mut self, binary_expr: P<BinaryExpr>) {}
 }
 
 pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
@@ -255,20 +244,25 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
     match expr.kind {
         ExprKind::Unit => {}
         ExprKind::Discard => {}
-        ExprKind::Lit(ref mut lit) => visit_lit(vis, lit),
-        ExprKind::If(if_) => visit_if(vis, if_),
-        ExprKind::Block(block) => visit_block(vis, block),
+        ExprKind::LitNull => {}
+        ExprKind::LitBool { val } => {}
+        ExprKind::LitUint { .. } => {}
+        ExprKind::LitFloat { .. } => {}
+        ExprKind::LitChar { .. } => {}
+        ExprKind::LitString { id } => {}
+        ExprKind::If { if_ } => visit_if(vis, if_),
+        ExprKind::Block { block } => visit_block(vis, block),
         ExprKind::Match { expr, arms } => {} //visit_match(vis, match_),
         ExprKind::Index { target, index } => {} //visit_index(vis, index),
-        ExprKind::DotName { target, name } => {} //visit_dot_name(vis, name),
-        ExprKind::Cast(cast) => visit_cast(vis, cast),
-        ExprKind::Sizeof { ty } => {} //visit_sizeof(vis, sizeof),
+        ExprKind::Field { target, name } => {} //visit_dot_name(vis, name),
+        ExprKind::Cast { target, ty } => {}  //visit_cast(vis, cast),
+        ExprKind::Sizeof { ty } => {}        //visit_sizeof(vis, sizeof),
         ExprKind::Item { item } => visit_item(vis, item),
         ExprKind::ProcCall { item, input } => {} //visit_proc_call(vis, item, input),
-        ExprKind::ArrayInit(array_init) => visit_array_init(vis, array_init),
-        ExprKind::ArrayRepeat(array_repeat) => visit_array_repeat(vis, array_repeat),
+        ExprKind::ArrayInit { input } => {}      //visit_array_init(vis, array_init),
+        ExprKind::ArrayRepeat { expr, size } => {} //visit_array_repeat(vis, array_repeat),
         ExprKind::StructInit { item, input } => {} // visit_struct_init(vis, struct_init),
-        ExprKind::UnaryExpr { op, rhs } => {}      //visit_unary_expr(vis, unary_expr),
+        ExprKind::UnaryExpr { op, rhs } => {}    //visit_unary_expr(vis, unary_expr),
         ExprKind::BinaryExpr { op, lhs, rhs } => {} //visit_binary_expr(vis, binary_expr),
     }
 }
@@ -276,10 +270,6 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
 fn visit_const_expr<T: MutVisit>(vis: &mut T, expr: ConstExpr) {
     vis.visit_const_expr(expr);
     visit_expr(vis, expr.0);
-}
-
-fn visit_lit<T: MutVisit>(vis: &mut T, lit: &mut Lit) {
-    vis.visit_lit(lit);
 }
 
 fn visit_if<T: MutVisit>(vis: &mut T, if_: P<If>) {
@@ -300,83 +290,13 @@ fn visit_block<T: MutVisit>(vis: &mut T, block: P<Block>) {
     }
 }
 
-fn visit_match<T: MutVisit>(vis: &mut T, match_: P<Match>) {
-    vis.visit_match(match_);
-    visit_expr(vis, match_.expr);
-    for arm in match_.arms.iter_mut() {
-        visit_expr(vis, arm.pat);
-        visit_expr(vis, arm.expr);
-    }
-}
-
-fn visit_index<T: MutVisit>(vis: &mut T, index: P<Index>) {
-    vis.visit_index(index);
-    visit_expr(vis, index.expr);
-}
-
 fn visit_dot_name<T: MutVisit>(vis: &mut T, name: &mut Ident) {
     vis.visit_dot_name(name);
     visit_ident(vis, name);
-}
-
-fn visit_cast<T: MutVisit>(vis: &mut T, mut cast: P<Cast>) {
-    vis.visit_cast(cast);
-    visit_type(vis, &mut cast.ty);
-    visit_expr(vis, cast.expr);
-}
-
-fn visit_sizeof<T: MutVisit>(vis: &mut T, mut sizeof: P<Sizeof>) {
-    vis.visit_sizeof(sizeof);
-    visit_type(vis, &mut sizeof.ty);
 }
 
 fn visit_item<T: MutVisit>(vis: &mut T, mut item: P<ItemName>) {
     vis.visit_item(item);
     visit_path(vis, &mut item.path);
     visit_ident(vis, &mut item.name);
-}
-
-fn visit_proc_call<T: MutVisit>(vis: &mut T, mut proc_call: P<ProcCall>) {
-    vis.visit_proc_call(proc_call);
-    visit_path(vis, &mut proc_call.path);
-    visit_ident(vis, &mut proc_call.name);
-    for expr in proc_call.input {
-        visit_expr(vis, expr);
-    }
-}
-
-fn visit_array_init<T: MutVisit>(vis: &mut T, array_init: P<ArrayInit>) {
-    vis.visit_array_init(array_init);
-    for expr in array_init.input {
-        visit_expr(vis, expr);
-    }
-}
-
-fn visit_array_repeat<T: MutVisit>(vis: &mut T, array_repeat: P<ArrayRepeat>) {
-    vis.visit_array_repeat(array_repeat);
-    visit_expr(vis, array_repeat.expr);
-    visit_const_expr(vis, array_repeat.size);
-}
-
-fn visit_struct_init<T: MutVisit>(vis: &mut T, mut struct_init: P<StructInit>) {
-    vis.visit_struct_init(struct_init);
-    visit_path(vis, &mut struct_init.path);
-    visit_ident(vis, &mut struct_init.name);
-    for field in struct_init.input.iter_mut() {
-        visit_ident(vis, &mut field.name);
-        if let Some(expr) = field.expr {
-            visit_expr(vis, expr);
-        }
-    }
-}
-
-fn visit_unary_expr<T: MutVisit>(vis: &mut T, unary_expr: P<UnaryExpr>) {
-    vis.visit_unary_expr(unary_expr);
-    visit_expr(vis, unary_expr.rhs);
-}
-
-fn visit_binary_expr<T: MutVisit>(vis: &mut T, binary_expr: P<BinaryExpr>) {
-    vis.visit_binary_expr(binary_expr);
-    visit_expr(vis, binary_expr.lhs);
-    visit_expr(vis, binary_expr.rhs);
 }

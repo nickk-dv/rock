@@ -268,8 +268,17 @@ impl<'src> Lexer<'src> {
             if c.is_ascii_digit() {
                 self.eat(c);
             } else if c == '.' && !is_float {
-                is_float = true;
-                self.eat(c);
+                match self.peek_next() {
+                    Some(next) => {
+                        if next.is_ascii_digit() {
+                            is_float = true;
+                            self.eat(c);
+                        } else {
+                            break;
+                        }
+                    }
+                    None => break,
+                }
             } else {
                 break;
             }

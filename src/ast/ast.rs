@@ -1,7 +1,7 @@
 use super::intern::*;
 use super::parser::FileID;
 use super::span::Span;
-use crate::hir::scope::{EnumID, ProcID, StructID, UnionID};
+use crate::hir::scope::{EnumID, StructID, UnionID};
 use crate::mem::*;
 
 // 50616
@@ -240,61 +240,31 @@ pub struct Expr {
 #[derive(Copy, Clone)]
 pub struct ConstExpr(pub P<Expr>);
 
+#[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ExprKind {
     Unit,
     Discard,
-    Lit(Lit),
-    If(P<If>),
-    Block(P<Block>),
-    Match {
-        expr: P<Expr>,
-        arms: List<MatchArm>,
-    },
-    DotName {
-        target: P<Expr>,
-        name: Ident,
-    },
-    Index {
-        target: P<Expr>,
-        index: P<Expr>,
-    },
-    Cast(P<Cast>),
-    Sizeof {
-        ty: Type,
-    },
-    Item {
-        item: P<ItemName>,
-    },
-    ProcCall {
-        item: P<ItemName>,
-        input: List<P<Expr>>,
-    },
-    ArrayInit(P<ArrayInit>),
-    StructInit {
-        item: P<ItemName>,
-        input: List<FieldInit>,
-    },
-    ArrayRepeat(P<ArrayRepeat>),
-    UnaryExpr {
-        op: UnOp,
-        rhs: P<Expr>,
-    },
-    BinaryExpr {
-        op: BinOp,
-        lhs: P<Expr>,
-        rhs: P<Expr>,
-    },
-}
-
-#[derive(Copy, Clone)]
-pub enum Lit {
-    Null,
-    Bool(bool),
-    Uint(u64, Option<BasicType>),
-    Float(f64, Option<BasicType>),
-    Char(char),
-    String(InternID),
+    LitNull,
+    LitBool     { val: bool },
+    LitUint     { val: u64, ty: Option<BasicType> },
+    LitFloat    { val: f64, ty: Option<BasicType> },
+    LitChar     { val: char },
+    LitString   { id: InternID },
+    If          { if_: P<If> },
+    Block       { block: P<Block> },
+    Match       { expr: P<Expr>, arms: List<MatchArm> },
+    Field       { target: P<Expr>, name: Ident },
+    Index       { target: P<Expr>, index: P<Expr> },
+    Cast        { target: P<Expr>, ty: Type },
+    Sizeof      { ty: Type },
+    Item        { item: P<ItemName> },
+    ProcCall    { item: P<ItemName>, input: List<P<Expr>> },
+    StructInit  { item: P<ItemName>, input: List<FieldInit> },
+    ArrayInit   { input: List<P<Expr>> },
+    ArrayRepeat { expr: P<Expr>, size: ConstExpr },
+    UnaryExpr   { op: UnOp, rhs: P<Expr> },
+    BinaryExpr  { op: BinOp, lhs: P<Expr>, rhs: P<Expr> },
 }
 
 #[derive(Copy, Clone)]
@@ -316,31 +286,9 @@ pub struct Block {
 }
 
 #[derive(Copy, Clone)]
-pub struct Match {
-    pub expr: P<Expr>,
-    pub arms: List<MatchArm>,
-}
-
-#[derive(Copy, Clone)]
 pub struct MatchArm {
     pub pat: P<Expr>,
     pub expr: P<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Index {
-    pub expr: P<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Cast {
-    pub ty: Type,
-    pub expr: P<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Sizeof {
-    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
@@ -350,56 +298,9 @@ pub struct ItemName {
 }
 
 #[derive(Copy, Clone)]
-pub struct ProcCall {
-    pub path: Path,
-    pub name: Ident,
-    pub input: List<P<Expr>>,
-    pub id: Option<ProcID>, //check
-}
-
-#[derive(Copy, Clone)]
-pub struct ArrayInit {
-    pub input: List<P<Expr>>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ArrayRepeat {
-    pub expr: P<Expr>,
-    pub size: ConstExpr,
-}
-
-#[derive(Copy, Clone)]
-pub struct StructInit {
-    pub path: Path,
-    pub name: Ident,
-    pub input: List<FieldInit>,
-    pub ty: StructInitResolved, //check
-}
-
-#[derive(Copy, Clone)]
-pub enum StructInitResolved {
-    Union(UnionID),
-    Struct(StructID),
-    Poison,
-}
-
-#[derive(Copy, Clone)]
 pub struct FieldInit {
     pub name: Ident,
     pub expr: Option<P<Expr>>,
-}
-
-#[derive(Copy, Clone)]
-pub struct UnaryExpr {
-    pub op: UnOp,
-    pub rhs: P<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct BinaryExpr {
-    pub op: BinOp,
-    pub lhs: P<Expr>,
-    pub rhs: P<Expr>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -437,20 +338,17 @@ pub enum BinOp {
     Mul,
     Div,
     Rem,
-
     BitAnd,
     BitOr,
     BitXor,
-    Shl,
-    Shr,
-
-    IsEq,
-    NotEq,
-    Less,
-    LessEq,
-    Greater,
-    GreaterEq,
-
+    BitShl,
+    BitShr,
+    CmpIsEq,
+    CmpNotEq,
+    CmpLt,
+    CmpLtEq,
+    CmpGt,
+    CmpGtEq,
     LogicAnd,
     LogicOr,
 }
