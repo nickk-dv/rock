@@ -247,18 +247,44 @@ pub enum ExprKind {
     Lit(Lit),
     If(P<If>),
     Block(P<Block>),
-    Match(P<Match>),
-    Index(P<Index>),
-    DotName(Ident),
+    Match {
+        expr: P<Expr>,
+        arms: List<MatchArm>,
+    },
+    DotName {
+        target: P<Expr>,
+        name: Ident,
+    },
+    Index {
+        target: P<Expr>,
+        index: P<Expr>,
+    },
     Cast(P<Cast>),
-    Sizeof(P<Sizeof>),
-    Item(P<ItemName>),
-    ProcCall(P<ProcCall>),
+    Sizeof {
+        ty: Type,
+    },
+    Item {
+        item: P<ItemName>,
+    },
+    ProcCall {
+        item: P<ItemName>,
+        input: List<P<Expr>>,
+    },
     ArrayInit(P<ArrayInit>),
-    StructInit(P<StructInit>),
+    StructInit {
+        item: P<ItemName>,
+        input: List<FieldInit>,
+    },
     ArrayRepeat(P<ArrayRepeat>),
-    UnaryExpr(P<UnaryExpr>),
-    BinaryExpr(P<BinaryExpr>),
+    UnaryExpr {
+        op: UnOp,
+        rhs: P<Expr>,
+    },
+    BinaryExpr {
+        op: BinOp,
+        lhs: P<Expr>,
+        rhs: P<Expr>,
+    },
 }
 
 #[derive(Copy, Clone)]
@@ -427,9 +453,6 @@ pub enum BinOp {
 
     LogicAnd,
     LogicOr,
-
-    Deref, //@remove from bin ops
-    Index, //@remove from bin ops
 }
 
 #[derive(Copy, Clone)]

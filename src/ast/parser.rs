@@ -682,51 +682,19 @@ impl<'ast> Parser<'ast> {
                 if prec < min_prec {
                     break;
                 }
-                match binary_op {
-                    BinOp::Deref | BinOp::Index => {}
-                    _ => self.consume(),
-                }
+                self.consume();
             } else {
                 break;
             }
             let mut expr = self.alloc::<Expr>();
-
-            let mut bin_expr = self.alloc::<BinaryExpr>();
-            bin_expr.op = binary_op;
-            bin_expr.lhs = expr_lhs;
-            bin_expr.rhs = match binary_op {
-                BinOp::Deref | BinOp::Index => self.parse_tail_expr(binary_op)?,
-                _ => self.parse_sub_expr(prec + 1)?,
-            };
-
-            expr.span = Span::new(bin_expr.lhs.span.start, bin_expr.rhs.span.end);
-            expr.kind = ExprKind::BinaryExpr(bin_expr);
+            let op = binary_op;
+            let lhs = expr_lhs;
+            let rhs = self.parse_sub_expr(prec + 1)?;
+            expr.span = Span::new(lhs.span.start, rhs.span.end);
+            expr.kind = ExprKind::BinaryExpr { op, lhs, rhs };
             expr_lhs = expr;
         }
         Ok(expr_lhs)
-    }
-
-    fn parse_tail_expr(&mut self, op: BinOp) -> Result<P<Expr>, ParseError> {
-        let mut expr = self.alloc::<Expr>();
-        let span_start = self.peek_span_start();
-        self.consume();
-
-        expr.kind = match op {
-            BinOp::Deref => {
-                let name = self.parse_ident(ParseContext::Expr)?; //@context
-                ExprKind::DotName(name)
-            }
-            BinOp::Index => {
-                let mut index = self.alloc::<Index>();
-                index.expr = self.parse_expr()?;
-                self.expect_token(Token::CloseBracket, ParseContext::Expr)?; //@context
-                ExprKind::Index(index)
-            }
-            _ => return Err(ParseError::PrimaryExprMatch), //@temp error
-        };
-
-        expr.span = Span::new(span_start, self.peek_span_end());
-        Ok(expr)
     }
 
     fn parse_primary_expr(&mut self) -> Result<P<Expr>, ParseError> {
@@ -747,12 +715,11 @@ impl<'ast> Parser<'ast> {
         let mut expr = self.alloc::<Expr>();
 
         if let Some(unary_op) = self.try_consume_unary_op() {
-            let mut unary_expr = self.alloc::<UnaryExpr>();
-            unary_expr.op = unary_op;
-            unary_expr.rhs = self.parse_primary_expr()?;
+            let op = unary_op;
+            let rhs = self.parse_primary_expr()?;
 
             expr.span = Span::new(span_start, self.peek_span_end());
-            expr.kind = ExprKind::UnaryExpr(unary_expr);
+            expr.kind = ExprKind::UnaryExpr { op, rhs };
             return Ok(expr);
         }
 
@@ -770,9 +737,25 @@ impl<'ast> Parser<'ast> {
             | Token::CharLit
             | Token::StringLit => ExprKind::Lit(self.parse_lit()?),
             Token::OpenBlock => ExprKind::Block(self.parse_block()?),
-            Token::KwMatch => ExprKind::Match(self.parse_match()?),
+            Token::KwMatch => {
+                self.consume();
+                let expr = self.parse_expr()?;
+                let mut arms = List::new();
+                self.expect_token(Token::OpenBlock, ParseContext::Match)?;
+                while !self.try_consume(Token::CloseBlock) {
+                    let arm = self.parse_match_arm()?;
+                    arms.add(&mut self.arena, arm);
+                }
+                ExprKind::Match { expr, arms }
+            }
             Token::KwAs => ExprKind::Cast(self.parse_cast()?),
-            Token::KwSizeof => ExprKind::Sizeof(self.parse_sizeof()?),
+            Token::KwSizeof => {
+                self.consume();
+                self.expect_token(Token::OpenParen, ParseContext::Sizeof)?;
+                let ty = self.parse_type()?;
+                self.expect_token(Token::CloseParen, ParseContext::Sizeof)?;
+                ExprKind::Sizeof { ty }
+            }
             Token::OpenBracket => {
                 self.consume(); // `[`
                 if self.try_consume(Token::CloseBracket) {
@@ -807,26 +790,19 @@ impl<'ast> Parser<'ast> {
                 }
             }
             _ => {
-                let path = self.parse_path()?;
-                let name = self.parse_ident(ParseContext::Expr)?;
+                let item = self.parse_item_name()?;
 
                 match (self.peek(), self.peek_next(1)) {
                     (Token::OpenParen, ..) => {
                         self.consume(); // `(`
-                        let mut proc_call = self.alloc::<ProcCall>();
-                        proc_call.path = path;
-                        proc_call.name = name;
-                        proc_call.input =
+                        let input =
                             self.parse_expr_list(Token::CloseParen, ParseContext::ProcCall)?;
-                        ExprKind::ProcCall(proc_call)
+                        ExprKind::ProcCall { item, input }
                     }
                     (Token::Dot, Token::OpenBlock) => {
                         self.consume(); // `.`
                         self.consume(); // `{`
-                        let mut struct_init = self.alloc::<StructInit>();
-                        struct_init.path = path;
-                        struct_init.name = name;
-                        struct_init.input = List::<FieldInit>::new();
+                        let mut input = List::<FieldInit>::new();
                         if !self.try_consume(Token::CloseBlock) {
                             loop {
                                 let name = self.parse_ident(ParseContext::StructInit)?;
@@ -838,28 +814,46 @@ impl<'ast> Parser<'ast> {
                                     Token::Comma | Token::CloseBlock => None,
                                     _ => return Err(ParseError::FieldInit),
                                 };
-                                struct_init
-                                    .input
-                                    .add(&mut self.arena, FieldInit { name, expr });
+                                input.add(&mut self.arena, FieldInit { name, expr });
                                 if !self.try_consume(Token::Comma) {
                                     break;
                                 }
                             }
                             self.expect_token(Token::CloseBlock, ParseContext::StructInit)?;
                         }
-                        ExprKind::StructInit(struct_init)
+                        ExprKind::StructInit { item, input }
                     }
-                    _ => {
-                        let mut item = self.alloc::<ItemName>();
-                        item.path = path;
-                        item.name = name;
-                        ExprKind::Item(item)
-                    }
+                    _ => ExprKind::Item { item },
                 }
             }
         };
         expr.span = Span::new(span_start, self.peek_span_end());
-        Ok(expr)
+
+        let mut target = expr;
+        loop {
+            match self.peek() {
+                Token::Dot => {
+                    self.consume();
+                    let span_start = self.peek_span_start();
+                    let mut expr_field = self.alloc::<Expr>();
+                    let name = self.parse_ident(ParseContext::Expr)?; //@ctx expr field
+                    expr_field.kind = ExprKind::DotName { target, name };
+                    expr_field.span = Span::new(span_start, self.peek_span_end());
+                    target = expr_field;
+                }
+                Token::OpenBracket => {
+                    self.consume();
+                    let span_start = self.peek_span_start();
+                    let mut expr_index = self.alloc::<Expr>();
+                    let index = self.parse_expr()?;
+                    self.expect_token(Token::CloseBracket, ParseContext::Expr)?; //@ctx expr index
+                    expr_index.kind = ExprKind::Index { target, index };
+                    expr_index.span = Span::new(span_start, self.peek_span_end());
+                    target = expr_index;
+                }
+                _ => return Ok(target),
+            }
+        }
     }
 
     fn parse_if(&mut self) -> Result<P<If>, ParseError> {
@@ -899,18 +893,6 @@ impl<'ast> Parser<'ast> {
             block.stmts.add(&mut self.arena, stmt);
         }
         Ok(block)
-    }
-
-    fn parse_match(&mut self) -> Result<P<Match>, ParseError> {
-        self.consume(); // `match`
-        let mut match_ = self.alloc::<Match>();
-        match_.expr = self.parse_expr()?;
-        self.expect_token(Token::OpenBlock, ParseContext::Match)?;
-        while !self.try_consume(Token::CloseBlock) {
-            let arm = self.parse_match_arm()?;
-            match_.arms.add(&mut self.arena, arm);
-        }
-        Ok(match_)
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {
@@ -1128,7 +1110,6 @@ impl BinOp {
             BinOp::Mul | BinOp::Div | BinOp::Rem => 4,
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
             BinOp::Shl | BinOp::Shr => 6,
-            BinOp::Deref | BinOp::Index => 7,
         }
     }
 }

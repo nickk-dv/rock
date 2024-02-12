@@ -159,7 +159,7 @@ token_impl! {
     Plus         as "+"  => BIN BinOp::Add
     Comma        as ","
     Minus        as "-"  => UN UnOp::Neg => BIN BinOp::Sub
-    Dot          as "."  => BIN BinOp::Deref
+    Dot          as "."
     ForwSlash    as "/"  => BIN BinOp::Div
     Colon        as ":"
     Semicolon    as ";"
@@ -168,7 +168,7 @@ token_impl! {
     Greater      as ">"  => BIN BinOp::Greater
     Question     as "?"
     At           as "@"
-    OpenBracket  as "["  => BIN BinOp::Index
+    OpenBracket  as "["
     BackSlash    as "/"
     CloseBracket as "]"
     Caret        as "^"  => BIN BinOp::BitXor
