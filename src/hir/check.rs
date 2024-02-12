@@ -441,7 +441,7 @@ impl<'a> Context<'a> {
             scope.error(CheckError::MainProcHasParams, main.name.span);
         }
         if let Some(tt) = main.return_ty {
-            if tt.ptr.level == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
+            if tt.ptr.level() == 0 && matches!(tt.kind, TypeKind::Basic(BasicType::S32)) {
                 return;
             }
         }
@@ -834,7 +834,8 @@ impl<'a> Context<'a> {
                     parent
                 } else {
                     let scope = self.get_scope_mut(scope_id);
-                    scope.error(CheckError::SuperUsedFromRootModule, path.kind_span);
+                    let span = Span::new(path.span_start, path.span_start + 5);
+                    scope.error(CheckError::SuperUsedFromRootModule, span);
                     return None;
                 }
             }
@@ -1346,7 +1347,8 @@ impl<'a> Context<'a> {
             StmtKind::Return(_) => {}
             StmtKind::VarDecl(var_decl) => self.check_var_decl(scope_id, proc_scope, var_decl),
             StmtKind::VarAssign(_) => {}
-            StmtKind::ExprStmt(_) => {}
+            StmtKind::ExprSemi(_) => {}
+            StmtKind::ExprTail(_) => {}
         }
     }
 

@@ -7,7 +7,7 @@ pub trait MutVisit: Sized {
     fn visit_ident(&mut self, ident: &mut Ident) {}
     fn visit_path(&mut self, path: &mut Path) {}
     fn visit_type(&mut self, ty: &mut Type) {}
-    fn visit_custom_type(&mut self, custom_type: P<CustomType>) {}
+    fn visit_custom_type(&mut self, custom_type: P<ItemName>) {}
     fn visit_array_slice(&mut self, array_slice: P<ArraySlice>) {}
     fn visit_array_static(&mut self, array_static: P<ArrayStatic>) {}
 
@@ -25,10 +25,8 @@ pub trait MutVisit: Sized {
     fn visit_continue(&mut self) {}
     fn visit_for(&mut self, for_: P<For>) {}
     fn visit_defer(&mut self, block: P<Block>) {}
-    fn visit_return(&mut self, return_: P<Return>) {}
     fn visit_var_decl(&mut self, var_decl: P<VarDecl>) {}
     fn visit_var_assign(&mut self, var_assign: P<VarAssign>) {}
-    fn visit_expr_stmt(&mut self, expr_stmt: P<ExprStmt>) {}
 
     fn visit_expr(&mut self, expr: P<Expr>) {}
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
@@ -40,7 +38,7 @@ pub trait MutVisit: Sized {
     fn visit_dot_name(&mut self, name: &mut Ident) {}
     fn visit_cast(&mut self, cast: P<Cast>) {}
     fn visit_sizeof(&mut self, sizeof: P<Sizeof>) {}
-    fn visit_item(&mut self, item: P<Item>) {}
+    fn visit_item(&mut self, item: P<ItemName>) {}
     fn visit_proc_call(&mut self, proc_call: P<ProcCall>) {}
     fn visit_array_init(&mut self, array_init: P<ArrayInit>) {}
     fn visit_array_repeat(&mut self, array_repeat: P<ArrayRepeat>) {}
@@ -74,7 +72,6 @@ fn visit_path<T: MutVisit>(vis: &mut T, path: &mut Path) {
 fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
     vis.visit_type(ty);
     match ty.kind {
-        TypeKind::Unit => {}
         TypeKind::Basic(..) => {}
         TypeKind::Custom(custom_type) => visit_custom_type(vis, custom_type),
         TypeKind::ArraySlice(array_slice) => visit_array_slice(vis, array_slice),
@@ -86,7 +83,7 @@ fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
     }
 }
 
-fn visit_custom_type<T: MutVisit>(vis: &mut T, mut custom_type: P<CustomType>) {
+fn visit_custom_type<T: MutVisit>(vis: &mut T, mut custom_type: P<ItemName>) {
     vis.visit_custom_type(custom_type);
     visit_path(vis, &mut custom_type.path);
     visit_ident(vis, &mut custom_type.name);
@@ -195,10 +192,15 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
         StmtKind::Continue => visit_continue(vis),
         StmtKind::For(for_) => visit_for(vis, for_),
         StmtKind::Defer(block) => visit_defer(vis, block),
-        StmtKind::Return(return_stmt) => visit_return(vis, return_stmt),
+        StmtKind::Return(return_expr) => {
+            if let Some(expr) = return_expr {
+                visit_expr(vis, expr);
+            }
+        }
         StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
         StmtKind::VarAssign(var_assign) => visit_var_assign(vis, var_assign),
-        StmtKind::ExprStmt(expr_stmt) => visit_expr_stmt(vis, expr_stmt),
+        StmtKind::ExprSemi(expr) => visit_expr(vis, expr),
+        StmtKind::ExprTail(expr) => visit_expr(vis, expr),
     }
 }
 
@@ -229,13 +231,6 @@ fn visit_defer<T: MutVisit>(vis: &mut T, block: P<Block>) {
     visit_block(vis, block);
 }
 
-fn visit_return<T: MutVisit>(vis: &mut T, return_: P<Return>) {
-    vis.visit_return(return_);
-    if let Some(expr) = return_.expr {
-        visit_expr(vis, expr);
-    }
-}
-
 fn visit_var_decl<T: MutVisit>(vis: &mut T, mut var_decl: P<VarDecl>) {
     vis.visit_var_decl(var_decl);
     if let Some(ref mut name) = var_decl.name {
@@ -253,11 +248,6 @@ fn visit_var_assign<T: MutVisit>(vis: &mut T, var_assign: P<VarAssign>) {
     vis.visit_var_assign(var_assign);
     visit_expr(vis, var_assign.lhs);
     visit_expr(vis, var_assign.rhs);
-}
-
-fn visit_expr_stmt<T: MutVisit>(vis: &mut T, expr_stmt: P<ExprStmt>) {
-    vis.visit_expr_stmt(expr_stmt);
-    visit_expr(vis, expr_stmt.expr);
 }
 
 fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
@@ -340,7 +330,7 @@ fn visit_sizeof<T: MutVisit>(vis: &mut T, mut sizeof: P<Sizeof>) {
     visit_type(vis, &mut sizeof.ty);
 }
 
-fn visit_item<T: MutVisit>(vis: &mut T, mut item: P<Item>) {
+fn visit_item<T: MutVisit>(vis: &mut T, mut item: P<ItemName>) {
     vis.visit_item(item);
     visit_path(vis, &mut item.path);
     visit_ident(vis, &mut item.name);

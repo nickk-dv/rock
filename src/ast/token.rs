@@ -1,4 +1,4 @@
-use super::ast::{AssignOp, BasicType, BinOp, UnOp};
+use super::ast::{AssignOp, BasicType, BinOp, Mut, UnOp};
 
 /// Token enum and conversions
 macro_rules! token_impl {
@@ -15,14 +15,12 @@ macro_rules! token_impl {
             $($variant),+
         }
         impl Token {
-            pub fn to_str(token: Token) -> &'static str {
-                token.as_str()
-            }
             pub fn as_str(&self) -> &'static str {
                 match *self {
                     $(Token::$variant => $string,)+
                 }
             }
+            #[allow(unreachable_patterns)]
             pub fn as_keyword(source: &str) -> Option<Token> {
                 match source {
                     $($string => token_impl!(@KW_ARM $variant $(=> KW $mark)?), )+
@@ -67,6 +65,7 @@ macro_rules! token_impl {
 macro_rules! token_glue {
     ($name:ident, $($to:ident as $ch:expr)+) => {
         impl Token {
+            #[allow(unreachable_patterns)]
             pub fn $name(c: char) -> Option<Token> {
                 match c {
                     $($ch => Some(Token::$to),)+
@@ -81,6 +80,7 @@ macro_rules! token_glue {
 macro_rules! token_glue_extend {
     ($name:ident, $( ($ch:expr) $($from:ident => $to:ident,)+ )+ ) => {
         impl Token {
+            #[allow(unreachable_patterns)]
             pub fn $name(c: char, token: Token) -> Option<Token> {
                 match c {
                     $(
@@ -151,7 +151,7 @@ token_impl! {
     Hash         as "#"
     Dollar       as "$"
     Percent      as "%"  => BIN BinOp::Rem
-    Ampersand    as "&"  => UN UnOp::Addr => BIN BinOp::BitAnd
+    Ampersand    as "&"  => UN UnOp::Addr(Mut::Immutable) => BIN BinOp::BitAnd
     Quote        as "\'"
     OpenParen    as "("
     CloseParen   as ")"

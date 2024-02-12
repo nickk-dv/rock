@@ -1,7 +1,6 @@
 use super::intern::InternID;
 use super::parser::FileID;
 use super::span::Span;
-use super::token_list::TokenIndex;
 use crate::mem::arena_id::*;
 use crate::mem::list_id::*;
 
@@ -31,13 +30,13 @@ pub enum Mut {
 #[derive(Clone, Copy)]
 pub struct Ident {
     pub id: InternID,
-    pub index: TokenIndex,
+    pub index: u32,
 }
 
 #[derive(Clone, Copy)]
 pub struct Path {
     pub kind: PathKind,
-    pub kind_index: TokenIndex,
+    pub kind_index: u32,
     pub segments: List<Ident>,
 }
 

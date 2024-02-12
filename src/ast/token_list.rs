@@ -8,9 +8,6 @@ pub struct TokenList {
     strings: Vec<String>,
 }
 
-#[derive(Clone, Copy)]
-pub struct TokenIndex(u32);
-
 impl TokenList {
     pub fn new(cap: usize) -> Self {
         Self {
@@ -60,15 +57,5 @@ impl TokenList {
 
     pub fn cap(&self) -> usize {
         self.tokens.capacity()
-    }
-}
-
-impl TokenIndex {
-    pub fn new(index: usize) -> Self {
-        Self(index as u32)
-    }
-
-    pub fn index(&self) -> usize {
-        self.0 as usize
     }
 }

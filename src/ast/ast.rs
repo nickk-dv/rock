@@ -4,6 +4,12 @@ use super::span::Span;
 use crate::hir::scope::{EnumID, ProcID, StructID, UnionID};
 use crate::mem::*;
 
+// 50616
+// 50576 removed span of mod decl (wasnt used)
+// 49120 changed span to span_start in path (only used to report "super.." error)
+// 48544 encoded expr_semi & expr_tail into stmt instead of allocating separate 16 byte node
+// 48272 store return expr directly in the stmt
+
 pub type ScopeID = u32;
 
 pub struct Ast {
@@ -15,12 +21,6 @@ pub struct Ast {
 pub struct Module {
     pub file_id: FileID,
     pub decls: List<Decl>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Ident {
-    pub id: InternID,
-    pub span: Span,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -36,10 +36,16 @@ pub enum Mut {
 }
 
 #[derive(Copy, Clone)]
+pub struct Ident {
+    pub id: InternID,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
 pub struct Path {
     pub kind: PathKind,
-    pub kind_span: Span,
     pub names: List<Ident>,
+    pub span_start: u32,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -57,27 +63,20 @@ pub struct Type {
 
 #[derive(Copy, Clone)]
 pub struct PtrLevel {
-    pub level: u8,
+    level: u8,
     mut_mask: u8,
 }
 
 #[derive(Copy, Clone)]
 pub enum TypeKind {
-    Unit,
     Basic(BasicType),
-    Custom(P<CustomType>),
+    Custom(P<ItemName>),
     ArraySlice(P<ArraySlice>),
     ArrayStatic(P<ArrayStatic>),
     Enum(EnumID),     //check
     Union(UnionID),   //check
     Struct(StructID), //check
     Poison,           //check
-}
-
-#[derive(Copy, Clone)]
-pub struct CustomType {
-    pub path: Path,
-    pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
@@ -107,7 +106,6 @@ pub enum Decl {
 pub struct ModuleDecl {
     pub vis: Vis,
     pub name: Ident,
-    pub span: Span,
     pub id: Option<ScopeID>, //@ move into "mod_data" when checking?
 }
 
@@ -186,6 +184,7 @@ pub struct StructDecl {
 
 #[derive(Copy, Clone)]
 pub struct StructField {
+    pub vis: Vis,
     pub name: Ident,
     pub ty: Type,
 }
@@ -202,23 +201,19 @@ pub enum StmtKind {
     Continue,
     For(P<For>),
     Defer(P<Block>),
-    Return(P<Return>),
+    Return(Option<P<Expr>>),
     VarDecl(P<VarDecl>),
     VarAssign(P<VarAssign>),
-    ExprStmt(P<ExprStmt>),
+    ExprSemi(P<Expr>),
+    ExprTail(P<Expr>),
 }
 
 #[derive(Copy, Clone)]
 pub struct For {
-    pub var_decl: Option<P<VarDecl>>,
+    pub var_decl: Option<P<VarDecl>>, //@can be encoded using enum with less size
     pub cond: Option<P<Expr>>,
     pub var_assign: Option<P<VarAssign>>,
     pub block: P<Block>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Return {
-    pub expr: Option<P<Expr>>,
 }
 
 #[derive(Copy, Clone)]
@@ -234,12 +229,6 @@ pub struct VarAssign {
     pub lhs: P<Expr>,
     pub rhs: P<Expr>,
     pub op: AssignOp,
-}
-
-#[derive(Copy, Clone)]
-pub struct ExprStmt {
-    pub expr: P<Expr>,
-    pub has_semi: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -263,11 +252,11 @@ pub enum ExprKind {
     DotName(Ident),
     Cast(P<Cast>),
     Sizeof(P<Sizeof>),
-    Item(P<Item>),
+    Item(P<ItemName>),
     ProcCall(P<ProcCall>),
     ArrayInit(P<ArrayInit>),
-    ArrayRepeat(P<ArrayRepeat>),
     StructInit(P<StructInit>),
+    ArrayRepeat(P<ArrayRepeat>),
     UnaryExpr(P<UnaryExpr>),
     BinaryExpr(P<BinaryExpr>),
 }
@@ -329,7 +318,7 @@ pub struct Sizeof {
 }
 
 #[derive(Copy, Clone)]
-pub struct Item {
+pub struct ItemName {
     pub path: Path,
     pub name: Ident,
 }
@@ -411,7 +400,7 @@ pub enum UnOp {
     Neg,
     BitNot,
     LogicNot,
-    Addr,
+    Addr(Mut),
     Deref,
 }
 
@@ -459,18 +448,20 @@ impl PtrLevel {
         }
     }
 
+    pub fn level(&self) -> u8 {
+        self.level
+    }
+
     pub fn add_level(&mut self, mutt: Mut) -> Result<(), ()> {
         if self.level >= Self::MAX_LEVEL {
             return Err(());
         }
-
         let mut_bit = 1u8 << (self.level);
         if mutt == Mut::Mutable {
             self.mut_mask |= mut_bit;
         } else {
             self.mut_mask &= !mut_bit;
         }
-
         self.level += 1;
         Ok(())
     }

@@ -280,7 +280,7 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_path(&mut self) -> Result<Path, ParseError> {
-        let kind_span = self.peek_span();
+        let span_start = self.peek_span_start();
         let kind = match self.peek() {
             Token::KwSuper => PathKind::Super,
             Token::KwPackage => PathKind::Package,
@@ -298,15 +298,15 @@ impl<'ast> Parser<'ast> {
         }
         Ok(Path {
             kind,
-            kind_span,
             names,
+            span_start,
         })
     }
 
     fn parse_type(&mut self) -> Result<Type, ParseError> {
         let mut ty = Type {
             ptr: PtrLevel::new(),
-            kind: TypeKind::Basic(BasicType::Bool),
+            kind: TypeKind::Basic(BasicType::Unit),
         };
         while self.try_consume(Token::Star) {
             let mutt = self.parse_mut();
@@ -323,13 +323,10 @@ impl<'ast> Parser<'ast> {
             Token::OpenParen => {
                 self.consume();
                 self.expect_token(Token::CloseParen, ParseContext::UnitType)?;
-                TypeKind::Unit
+                TypeKind::Basic(BasicType::Unit)
             }
             Token::Ident | Token::KwSuper | Token::KwPackage => {
-                let mut custom_type = self.alloc::<CustomType>();
-                custom_type.path = self.parse_path()?;
-                custom_type.name = self.parse_ident(ParseContext::CustomType)?;
-                TypeKind::Custom(custom_type)
+                TypeKind::Custom(self.parse_item_name()?)
             }
             Token::OpenBracket => match self.peek_next(1) {
                 Token::KwMut | Token::CloseBracket => {
@@ -352,6 +349,13 @@ impl<'ast> Parser<'ast> {
             _ => return Err(ParseError::TypeMatch),
         };
         Ok(ty)
+    }
+
+    fn parse_item_name(&mut self) -> Result<P<ItemName>, ParseError> {
+        let mut item_name = self.alloc::<ItemName>();
+        item_name.path = self.parse_path()?;
+        item_name.name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
+        Ok(item_name)
     }
 
     fn parse_decl(&mut self) -> Result<Decl, ParseError> {
@@ -387,7 +391,6 @@ impl<'ast> Parser<'ast> {
         module_decl.id = None;
         self.expect_token(Token::Semicolon, ParseContext::ModDecl)?;
 
-        module_decl.span = Span::new(span_start, self.peek_span_end());
         Ok(module_decl)
     }
 
@@ -556,11 +559,12 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_struct_field(&mut self) -> Result<StructField, ParseError> {
+        let vis = self.parse_vis();
         let name = self.parse_ident(ParseContext::StructField)?;
         self.expect_token(Token::Colon, ParseContext::StructField)?;
         let ty = self.parse_type()?;
         self.expect_token(Token::Semicolon, ParseContext::StructField)?;
-        Ok(StructField { name, ty })
+        Ok(StructField { vis, name, ty })
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -586,14 +590,13 @@ impl<'ast> Parser<'ast> {
             }
             Token::KwReturn => {
                 self.consume();
-                let mut return_ = self.alloc::<Return>();
-                return_.expr = if self.peek() != Token::Semicolon {
-                    Some(self.parse_expr()?)
+                if self.try_consume(Token::Semicolon) {
+                    StmtKind::Return(None)
                 } else {
-                    None
-                };
-                self.expect_token(Token::Semicolon, ParseContext::Return)?;
-                StmtKind::Return(return_)
+                    let expr = self.parse_expr()?;
+                    self.expect_token(Token::Semicolon, ParseContext::Return)?;
+                    StmtKind::Return(Some(expr))
+                }
             }
             _ => self.parse_stmt_no_keyword()?,
         };
@@ -629,10 +632,11 @@ impl<'ast> Parser<'ast> {
                     Ok(StmtKind::VarAssign(var_assign))
                 }
                 None => {
-                    let has_semi = self.try_consume(Token::Semicolon);
-                    let mut expr_stmt = self.alloc::<ExprStmt>();
-                    *expr_stmt = ExprStmt { expr, has_semi };
-                    Ok(StmtKind::ExprStmt(expr_stmt))
+                    if self.try_consume(Token::Semicolon) {
+                        Ok(StmtKind::ExprSemi(expr))
+                    } else {
+                        Ok(StmtKind::ExprTail(expr))
+                    }
                 }
             }
         }
@@ -846,7 +850,7 @@ impl<'ast> Parser<'ast> {
                         ExprKind::StructInit(struct_init)
                     }
                     _ => {
-                        let mut item = self.alloc::<Item>();
+                        let mut item = self.alloc::<ItemName>();
                         item.path = path;
                         item.name = name;
                         ExprKind::Item(item)
