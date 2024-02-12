@@ -1,2 +1,2 @@
 # lang
-work in progress compiler
+🚧 work in progress compiler 🚧

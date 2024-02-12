@@ -1,3 +1,5 @@
+# Overview is unfinished and out of date 🚧
+
 # Lexical elements & literals
 ### Numbers
 ```
@@ -29,12 +31,12 @@ raw string`
 ### Escape sequences
 ```
 \n  - newline
-\r  - carriage return
 \t  - tab
-\e  - escape
+\r  - carriage return
+\0  - null terminator
+\'  - single quote
+\"  - double quote
 \\  - backslash
-\'  - single quote (in char literals)
-\"  - double quote (in string literals)
 ```
 
 ### Comments
@@ -79,8 +81,7 @@ bool                      - 1 byte boolean
 s8, s16, s32, s64, ssize  - signed integers
 u8, u16, u32, u64, usize  - unsigned integers
 f32, f64                  - float types
-char                      - 4 byte utf8 character
-rawptr                    - pointer to any type (void*)
+char                      - 4 byte unicode code point
 ```
 
 ### Type signatures
@@ -161,11 +162,11 @@ print_geometry(.Line);              // procedure parameter type is known
 
 ## Built-in expressions
 
-### 1. cast
+### 1. as
 Casts expression into the specified type:
 ```
 x : f64 = 2.0;
-y := cast(s32, x); // cast x into s32
+y := x as u32; // cast x into s32
 ```
 
 ### 2. sizeof
