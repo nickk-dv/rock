@@ -203,15 +203,16 @@ fn visit_continue<T: MutVisit>(vis: &mut T) {
 
 fn visit_for<T: MutVisit>(vis: &mut T, for_: P<For>) {
     vis.visit_for(for_);
-    if let Some(var_decl) = for_.var_decl {
-        visit_var_decl(vis, var_decl);
-    }
-    if let Some(cond) = for_.cond {
-        visit_expr(vis, cond);
-    }
-    if let Some(var_assign) = for_.var_assign {
-        visit_var_assign(vis, var_assign);
-    }
+    //@todo
+    //if let Some(var_decl) = for_.var_decl {
+    //    visit_var_decl(vis, var_decl);
+    //}
+    //if let Some(cond) = for_.cond {
+    //    visit_expr(vis, cond);
+    //}
+    //if let Some(var_assign) = for_.var_assign {
+    //    visit_var_assign(vis, var_assign);
+    //}
     visit_block(vis, for_.block);
 }
 

@@ -53,6 +53,7 @@ pub enum ParseError {
     TypeMatch,
     DeclMatch,
     DeclMatchKw,
+    ForAssignOp,
     ImportTargetMatch,
     ElseMatch,
     PrimaryExprMatch,
@@ -220,6 +221,7 @@ impl ParseErrorData {
             ParseError::TypeMatch => ParseContext::Type,
             ParseError::DeclMatch => ParseContext::Decl,
             ParseError::DeclMatchKw => ParseContext::Decl,
+            ParseError::ForAssignOp => ParseContext::For,
             ParseError::ImportTargetMatch => ParseContext::ImportDecl,
             ParseError::ElseMatch => ParseContext::Else,
             ParseError::PrimaryExprMatch => ParseContext::Expr,
@@ -250,6 +252,7 @@ impl ParseErrorData {
                     Token::KwStruct,
                 ]
             }
+            ParseError::ForAssignOp => Self::all_assign_ops(),
             ParseError::ImportTargetMatch => vec![Token::Ident, Token::Star, Token::OpenBlock],
             ParseError::ElseMatch => vec![Token::KwIf, Token::OpenBlock],
             ParseError::PrimaryExprMatch => {
@@ -307,6 +310,21 @@ impl ParseErrorData {
 
     fn all_float_literal_types() -> Vec<Token> {
         vec![Token::KwF32, Token::KwF64]
+    }
+
+    fn all_assign_ops() -> Vec<Token> {
+        vec![
+            Token::AssignAdd,
+            Token::AssignSub,
+            Token::AssignMul,
+            Token::AssignDiv,
+            Token::AssignRem,
+            Token::AssignBitAnd,
+            Token::AssignBitOr,
+            Token::AssignBitXor,
+            Token::AssignShl,
+            Token::AssignShr,
+        ]
     }
 }
 

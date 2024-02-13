@@ -605,7 +605,35 @@ impl<'ast> Parser<'ast> {
 
     fn parse_for(&mut self) -> Result<P<For>, ParseError> {
         let mut for_ = self.alloc::<For>();
-        //@todo parse c like loop
+        match self.peek() {
+            Token::OpenBlock => {
+                for_.kind = ForKind::Loop;
+            }
+            _ => {
+                let expect_var_bind = (self.peek() == Token::KwMut)
+                    || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
+                        && self.peek_next() == Token::Colon);
+                if expect_var_bind {
+                    //@all 3 are expected
+                    let var_decl = self.parse_var_decl()?;
+                    let cond = self.parse_expr()?;
+                    self.expect(Token::Semicolon, ParseContext::For)?;
+                    let mut var_assign = self.alloc::<VarAssign>();
+                    var_assign.lhs = self.parse_expr()?;
+                    var_assign.op = match self.peek().as_assign_op() {
+                        Some(op) => {
+                            self.eat();
+                            op
+                        }
+                        _ => return Err(ParseError::ForAssignOp),
+                    };
+                    var_assign.rhs = self.parse_expr()?;
+                    for_.kind = ForKind::ForLoop(var_decl, cond, var_assign);
+                } else {
+                    for_.kind = ForKind::While(self.parse_expr()?);
+                }
+            }
+        }
         for_.block = self.parse_block()?;
         Ok(for_)
     }

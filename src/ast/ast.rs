@@ -204,10 +204,15 @@ pub enum StmtKind {
 
 #[derive(Copy, Clone)]
 pub struct For {
-    pub var_decl: Option<P<VarDecl>>, //@can be encoded using enum with less size
-    pub cond: Option<P<Expr>>,
-    pub var_assign: Option<P<VarAssign>>,
+    pub kind: ForKind,
     pub block: P<Block>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ForKind {
+    Loop,
+    While(P<Expr>),
+    ForLoop(P<VarDecl>, P<Expr>, P<VarAssign>),
 }
 
 #[derive(Copy, Clone)]
