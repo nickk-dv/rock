@@ -1267,7 +1267,7 @@ impl<'a> Context<'a> {
                         }
                     }
                 }*/
-                StmtKind::For(for_) => {
+                StmtKind::ForLoop(for_) => {
                     self.scope_check_control_flow(
                         scope_id,
                         for_.block,
@@ -1340,7 +1340,7 @@ impl<'a> Context<'a> {
         match stmt.kind {
             StmtKind::Break => {}
             StmtKind::Continue => {}
-            StmtKind::For(for_) => {
+            StmtKind::ForLoop(for_) => {
                 self.check_block(scope_id, proc_scope, for_.block);
             }
             StmtKind::Defer(block) => self.check_block(scope_id, proc_scope, block),

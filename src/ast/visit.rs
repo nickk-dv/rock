@@ -179,7 +179,7 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
     match stmt.kind {
         StmtKind::Break => visit_break(vis),
         StmtKind::Continue => visit_continue(vis),
-        StmtKind::For(for_) => visit_for(vis, for_),
+        StmtKind::ForLoop(for_) => visit_for(vis, for_),
         StmtKind::Defer(block) => visit_defer(vis, block),
         StmtKind::Return(return_expr) => {
             if let Some(expr) = return_expr {

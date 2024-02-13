@@ -4,12 +4,6 @@ use super::span::Span;
 use crate::hir::scope::{EnumID, StructID, UnionID};
 use crate::mem::*;
 
-// 50616
-// 50576 removed span of mod decl (wasnt used)
-// 49120 changed span to span_start in path (only used to report "super.." error)
-// 48544 encoded expr_semi & expr_tail into stmt instead of allocating separate 16 byte node
-// 48272 store return expr directly in the stmt
-
 pub type ScopeID = u32;
 
 pub struct Ast {
@@ -199,9 +193,9 @@ pub struct Stmt {
 pub enum StmtKind {
     Break,
     Continue,
-    For(P<For>),
-    Defer(P<Block>),
     Return(Option<P<Expr>>),
+    Defer(P<Block>),
+    ForLoop(P<For>),
     VarDecl(P<VarDecl>),
     VarAssign(P<VarAssign>),
     ExprSemi(P<Expr>),
@@ -226,9 +220,9 @@ pub struct VarDecl {
 
 #[derive(Copy, Clone)]
 pub struct VarAssign {
+    pub op: AssignOp,
     pub lhs: P<Expr>,
     pub rhs: P<Expr>,
-    pub op: AssignOp,
 }
 
 #[derive(Copy, Clone)]
@@ -386,4 +380,20 @@ impl PtrLevel {
         self.level += 1;
         Ok(())
     }
+}
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+mod size_assert {
+    use super::*;
+    macro_rules! size_assert {
+        ($size:expr, $ty:ty) => {
+            const _: [(); $size] = [(); ::std::mem::size_of::<$ty>()];
+        };
+    }
+    size_assert!(12, Ident);
+    size_assert!(24, Path);
+    size_assert!(24, Type);
+    size_assert!(16, Decl);
+    size_assert!(24, Stmt);
+    size_assert!(40, Expr);
 }
