@@ -601,11 +601,11 @@ impl<'a> Context<'a> {
                     );
                 }
             }
-            ImportTarget::Symbol(name) => {
+            ImportTarget::Symbol { name } => {
                 self.scope_import_symbol(scope_id, from_scope, name);
             }
-            ImportTarget::SymbolList(symbol_list) => {
-                for name in symbol_list {
+            ImportTarget::SymbolList { names } => {
+                for name in names {
                     self.scope_import_symbol(scope_id, from_scope, name);
                 }
             }

@@ -1,30 +1,29 @@
 use super::ast::*;
 use crate::mem::*;
 
+pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
+    visit_module(vis, module);
+}
+
 #[allow(unused_variables)]
 pub trait MutVisit: Sized {
     fn visit_module(&mut self, module: P<Module>) {}
+
     fn visit_ident(&mut self, ident: &mut Ident) {}
     fn visit_path(&mut self, path: &mut Path) {}
     fn visit_type(&mut self, ty: &mut Type) {}
-    fn visit_custom_type(&mut self, custom_type: P<ItemName>) {}
-    fn visit_array_slice(&mut self, array_slice: P<ArraySlice>) {}
-    fn visit_array_static(&mut self, array_static: P<ArrayStatic>) {}
 
     fn visit_decl(&mut self, decl: Decl) {}
     fn visit_module_decl(&mut self, module_decl: P<ModuleDecl>) {}
-    fn visit_global_decl(&mut self, global_decl: P<GlobalDecl>) {}
     fn visit_import_decl(&mut self, import_decl: P<ImportDecl>) {}
+    fn visit_global_decl(&mut self, global_decl: P<GlobalDecl>) {}
     fn visit_proc_decl(&mut self, proc_decl: P<ProcDecl>) {}
     fn visit_enum_decl(&mut self, enum_decl: P<EnumDecl>) {}
     fn visit_union_decl(&mut self, union_decl: P<UnionDecl>) {}
     fn visit_struct_decl(&mut self, struct_decl: P<StructDecl>) {}
 
     fn visit_stmt(&mut self, stmt: Stmt) {}
-    fn visit_break(&mut self) {}
-    fn visit_continue(&mut self) {}
     fn visit_for(&mut self, for_: P<For>) {}
-    fn visit_defer(&mut self, block: P<Block>) {}
     fn visit_var_decl(&mut self, var_decl: P<VarDecl>) {}
     fn visit_var_assign(&mut self, var_assign: P<VarAssign>) {}
 
@@ -32,12 +31,6 @@ pub trait MutVisit: Sized {
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
     fn visit_if(&mut self, if_: P<If>) {}
     fn visit_block(&mut self, block: P<Block>) {}
-    fn visit_dot_name(&mut self, name: &mut Ident) {}
-    fn visit_item(&mut self, item: P<ItemName>) {}
-}
-
-pub fn visit_module_with<T: MutVisit>(vis: &mut T, module: P<Module>) {
-    visit_module(vis, module);
 }
 
 fn visit_module<T: MutVisit>(vis: &mut T, module: P<Module>) {
@@ -62,31 +55,22 @@ fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
     vis.visit_type(ty);
     match ty.kind {
         TypeKind::Basic(..) => {}
-        TypeKind::Custom(custom_type) => visit_custom_type(vis, custom_type),
-        TypeKind::ArraySlice(array_slice) => visit_array_slice(vis, array_slice),
-        TypeKind::ArrayStatic(array_static) => visit_array_static(vis, array_static),
+        TypeKind::Custom(mut custom_type) => {
+            visit_path(vis, &mut custom_type.path);
+            visit_ident(vis, &mut custom_type.name);
+        }
+        TypeKind::ArraySlice(mut array_slice) => {
+            visit_type(vis, &mut array_slice.ty);
+        }
+        TypeKind::ArrayStatic(mut array_static) => {
+            visit_const_expr(vis, array_static.size);
+            visit_type(vis, &mut array_static.ty);
+        }
         TypeKind::Enum(..) => {}
         TypeKind::Union(..) => {}
         TypeKind::Struct(..) => {}
         TypeKind::Poison => {}
     }
-}
-
-fn visit_custom_type<T: MutVisit>(vis: &mut T, mut custom_type: P<ItemName>) {
-    vis.visit_custom_type(custom_type);
-    visit_path(vis, &mut custom_type.path);
-    visit_ident(vis, &mut custom_type.name);
-}
-
-fn visit_array_slice<T: MutVisit>(vis: &mut T, mut array_slice: P<ArraySlice>) {
-    vis.visit_array_slice(array_slice);
-    visit_type(vis, &mut array_slice.ty);
-}
-
-fn visit_array_static<T: MutVisit>(vis: &mut T, mut array_static: P<ArrayStatic>) {
-    vis.visit_array_static(array_static);
-    visit_const_expr(vis, array_static.size);
-    visit_type(vis, &mut array_static.ty);
 }
 
 fn visit_decl<T: MutVisit>(vis: &mut T, decl: Decl) {
@@ -112,8 +96,10 @@ fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {
     visit_path(vis, &mut import_decl.path);
     match import_decl.target {
         ImportTarget::GlobAll => {}
-        ImportTarget::Symbol(ref mut name) => visit_ident(vis, name),
-        ImportTarget::SymbolList(names) => {
+        ImportTarget::Symbol { ref mut name } => {
+            visit_ident(vis, name);
+        }
+        ImportTarget::SymbolList { names } => {
             for name in names.iter_mut() {
                 visit_ident(vis, name);
             }
@@ -177,15 +163,15 @@ fn visit_struct_decl<T: MutVisit>(vis: &mut T, mut struct_decl: P<StructDecl>) {
 fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
     vis.visit_stmt(stmt);
     match stmt.kind {
-        StmtKind::Break => visit_break(vis),
-        StmtKind::Continue => visit_continue(vis),
-        StmtKind::ForLoop(for_) => visit_for(vis, for_),
-        StmtKind::Defer(block) => visit_defer(vis, block),
-        StmtKind::Return(return_expr) => {
-            if let Some(expr) = return_expr {
+        StmtKind::Break => {}
+        StmtKind::Continue => {}
+        StmtKind::Return(ret_expr) => {
+            if let Some(expr) = ret_expr {
                 visit_expr(vis, expr);
             }
         }
+        StmtKind::Defer(block) => visit_block(vis, block),
+        StmtKind::ForLoop(for_) => visit_for(vis, for_),
         StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
         StmtKind::VarAssign(var_assign) => visit_var_assign(vis, var_assign),
         StmtKind::ExprSemi(expr) => visit_expr(vis, expr),
@@ -193,32 +179,24 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
     }
 }
 
-fn visit_break<T: MutVisit>(vis: &mut T) {
-    vis.visit_break();
-}
-
-fn visit_continue<T: MutVisit>(vis: &mut T) {
-    vis.visit_continue();
-}
-
 fn visit_for<T: MutVisit>(vis: &mut T, for_: P<For>) {
     vis.visit_for(for_);
-    //@todo
-    //if let Some(var_decl) = for_.var_decl {
-    //    visit_var_decl(vis, var_decl);
-    //}
-    //if let Some(cond) = for_.cond {
-    //    visit_expr(vis, cond);
-    //}
-    //if let Some(var_assign) = for_.var_assign {
-    //    visit_var_assign(vis, var_assign);
-    //}
+    match for_.kind {
+        ForKind::Loop => {}
+        ForKind::While { cond } => {
+            visit_expr(vis, cond);
+        }
+        ForKind::ForLoop {
+            var_decl,
+            cond,
+            var_assign,
+        } => {
+            visit_var_decl(vis, var_decl);
+            visit_expr(vis, cond);
+            visit_var_assign(vis, var_assign);
+        }
+    }
     visit_block(vis, for_.block);
-}
-
-fn visit_defer<T: MutVisit>(vis: &mut T, block: P<Block>) {
-    vis.visit_defer(block);
-    visit_block(vis, block);
 }
 
 fn visit_var_decl<T: MutVisit>(vis: &mut T, mut var_decl: P<VarDecl>) {
@@ -241,30 +219,77 @@ fn visit_var_assign<T: MutVisit>(vis: &mut T, var_assign: P<VarAssign>) {
 }
 
 fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
-    vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Unit => {}
         ExprKind::Discard => {}
         ExprKind::LitNull => {}
-        ExprKind::LitBool { val } => {}
+        ExprKind::LitBool { .. } => {}
         ExprKind::LitUint { .. } => {}
         ExprKind::LitFloat { .. } => {}
         ExprKind::LitChar { .. } => {}
-        ExprKind::LitString { id } => {}
+        ExprKind::LitString { .. } => {}
         ExprKind::If { if_ } => visit_if(vis, if_),
         ExprKind::Block { block } => visit_block(vis, block),
-        ExprKind::Match { expr, arms } => {} //visit_match(vis, match_),
-        ExprKind::Index { target, index } => {} //visit_index(vis, index),
-        ExprKind::Field { target, name } => {} //visit_dot_name(vis, name),
-        ExprKind::Cast { target, ty } => {}  //visit_cast(vis, cast),
-        ExprKind::Sizeof { ty } => {}        //visit_sizeof(vis, sizeof),
-        ExprKind::Item { item } => visit_item(vis, item),
-        ExprKind::ProcCall { item, input } => {} //visit_proc_call(vis, item, input),
-        ExprKind::ArrayInit { input } => {}      //visit_array_init(vis, array_init),
-        ExprKind::ArrayRepeat { expr, size } => {} //visit_array_repeat(vis, array_repeat),
-        ExprKind::StructInit { item, input } => {} // visit_struct_init(vis, struct_init),
-        ExprKind::UnaryExpr { op, rhs } => {}    //visit_unary_expr(vis, unary_expr),
-        ExprKind::BinaryExpr { op, lhs, rhs } => {} //visit_binary_expr(vis, binary_expr),
+        ExprKind::Match { expr, arms } => {
+            visit_expr(vis, expr);
+            for arm in arms {
+                visit_expr(vis, arm.pat);
+                visit_expr(vis, arm.expr);
+            }
+        }
+        ExprKind::Field {
+            target,
+            ref mut name,
+        } => {
+            visit_expr(vis, target);
+            visit_ident(vis, name);
+        }
+        ExprKind::Index { target, index } => {
+            visit_expr(vis, target);
+            visit_expr(vis, index);
+        }
+        ExprKind::Cast { target, ref mut ty } => {
+            visit_expr(vis, target);
+            visit_type(vis, ty);
+        }
+        ExprKind::Sizeof { ref mut ty } => visit_type(vis, ty),
+        ExprKind::Item { mut item } => {
+            visit_ident(vis, &mut item.name);
+            visit_path(vis, &mut item.path);
+        }
+        ExprKind::ProcCall { mut item, input } => {
+            visit_ident(vis, &mut item.name);
+            visit_path(vis, &mut item.path);
+            for expr in input {
+                visit_expr(vis, expr);
+            }
+        }
+        ExprKind::StructInit { mut item, input } => {
+            visit_ident(vis, &mut item.name);
+            visit_path(vis, &mut item.path);
+            for field in input.iter_mut() {
+                visit_ident(vis, &mut field.name);
+                if let Some(expr) = field.expr {
+                    visit_expr(vis, expr);
+                }
+            }
+        }
+        ExprKind::ArrayInit { input } => {
+            for expr in input {
+                visit_expr(vis, expr);
+            }
+        }
+        ExprKind::ArrayRepeat { expr, size } => {
+            visit_expr(vis, expr);
+            visit_const_expr(vis, size);
+        }
+        ExprKind::UnaryExpr { rhs, .. } => {
+            visit_expr(vis, rhs);
+        }
+        ExprKind::BinaryExpr { lhs, rhs, .. } => {
+            visit_expr(vis, lhs);
+            visit_expr(vis, rhs);
+        }
     }
 }
 
@@ -289,15 +314,4 @@ fn visit_block<T: MutVisit>(vis: &mut T, block: P<Block>) {
     for stmt in block.stmts {
         visit_stmt(vis, stmt);
     }
-}
-
-fn visit_dot_name<T: MutVisit>(vis: &mut T, name: &mut Ident) {
-    vis.visit_dot_name(name);
-    visit_ident(vis, name);
-}
-
-fn visit_item<T: MutVisit>(vis: &mut T, mut item: P<ItemName>) {
-    vis.visit_item(item);
-    visit_path(vis, &mut item.path);
-    visit_ident(vis, &mut item.name);
 }

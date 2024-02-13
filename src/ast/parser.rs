@@ -214,7 +214,7 @@ impl<'a> visit::MutVisit for ModuleInterner<'a> {
 
     fn visit_expr(&mut self, mut expr: P<Expr>) {
         if let ExprKind::LitString { ref mut id } = expr.kind {
-            let string = unsafe { self.tokens.string(id.0 as usize) };
+            let string = self.tokens.string(id.0 as usize);
             *id = self.intern_pool.intern(string);
         }
     }
@@ -412,22 +412,22 @@ impl<'ast> Parser<'ast> {
             }
             Token::Ident => {
                 let name = self.parse_ident(ParseContext::ImportDecl)?;
-                Ok(ImportTarget::Symbol(name))
+                Ok(ImportTarget::Symbol { name })
             }
             Token::OpenBlock => {
                 self.eat();
-                let mut symbols = List::<Ident>::new();
+                let mut names = List::<Ident>::new();
                 if !self.try_eat(Token::CloseBlock) {
                     loop {
                         let name = self.parse_ident(ParseContext::ImportDecl)?;
-                        symbols.add(&mut self.arena, name);
+                        names.add(&mut self.arena, name);
                         if !self.try_eat(Token::Comma) {
                             break;
                         }
                     }
                     self.expect(Token::CloseBlock, ParseContext::ImportDecl)?;
                 }
-                Ok(ImportTarget::SymbolList(symbols))
+                Ok(ImportTarget::SymbolList { names })
             }
             _ => Err(ParseError::ImportTargetMatch),
         }
@@ -628,9 +628,15 @@ impl<'ast> Parser<'ast> {
                         _ => return Err(ParseError::ForAssignOp),
                     };
                     var_assign.rhs = self.parse_expr()?;
-                    for_.kind = ForKind::ForLoop(var_decl, cond, var_assign);
+                    for_.kind = ForKind::ForLoop {
+                        var_decl,
+                        cond,
+                        var_assign,
+                    };
                 } else {
-                    for_.kind = ForKind::While(self.parse_expr()?);
+                    for_.kind = ForKind::While {
+                        cond: self.parse_expr()?,
+                    };
                 }
             }
         }

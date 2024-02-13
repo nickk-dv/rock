@@ -100,7 +100,7 @@ pub enum Decl {
 pub struct ModuleDecl {
     pub vis: Vis,
     pub name: Ident,
-    pub id: Option<ScopeID>, //@ move into "mod_data" when checking?
+    pub id: Option<ScopeID>, //check
 }
 
 #[derive(Copy, Clone)]
@@ -113,8 +113,8 @@ pub struct ImportDecl {
 #[derive(Copy, Clone)]
 pub enum ImportTarget {
     GlobAll,
-    Symbol(Ident),
-    SymbolList(List<Ident>),
+    Symbol { name: Ident },
+    SymbolList { names: List<Ident> },
 }
 
 #[derive(Copy, Clone)]
@@ -132,7 +132,7 @@ pub struct ProcDecl {
     pub params: List<ProcParam>,
     pub is_variadic: bool,
     pub return_ty: Option<Type>,
-    pub block: Option<P<Block>>, //@ None acts like external c_call
+    pub block: Option<P<Block>>,
 }
 
 #[derive(Copy, Clone)]
@@ -208,11 +208,12 @@ pub struct For {
     pub block: P<Block>,
 }
 
+#[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ForKind {
     Loop,
-    While(P<Expr>),
-    ForLoop(P<VarDecl>, P<Expr>, P<VarAssign>),
+    While { cond: P<Expr> },
+    ForLoop { var_decl: P<VarDecl>, cond: P<Expr>, var_assign: P<VarAssign> },
 }
 
 #[derive(Copy, Clone)]
