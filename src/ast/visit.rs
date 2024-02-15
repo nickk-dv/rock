@@ -34,7 +34,7 @@ pub trait MutVisit: Sized {
 }
 
 fn visit_module<T: MutVisit>(vis: &mut T, module: P<Module>) {
-    vis.visit_module(module.copy());
+    vis.visit_module(module);
     for decl in module.decls {
         visit_decl(vis, decl);
     }
@@ -219,6 +219,7 @@ fn visit_var_assign<T: MutVisit>(vis: &mut T, var_assign: P<VarAssign>) {
 }
 
 fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
+    vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Unit => {}
         ExprKind::Discard => {}

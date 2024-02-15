@@ -736,7 +736,7 @@ impl<'ast> Parser<'ast> {
                 let mut expr = self.alloc::<Expr>();
                 expr.kind = ExprKind::Unit;
                 expr.span = Span::new(span_start, self.peek_span_end());
-                return Ok(expr);
+                return self.parse_tail_expr(expr);
             }
             let expr = self.parse_sub_expr(0)?;
             self.expect(Token::CloseParen, ParseContext::Expr)?;
