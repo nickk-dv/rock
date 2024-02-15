@@ -1,10 +1,10 @@
 mod ast;
+mod check;
 mod err;
 mod hir;
 mod llvm;
 mod mem;
 mod tools;
-mod check;
 
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
