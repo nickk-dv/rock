@@ -1,7 +1,8 @@
 use crate::ast::parser;
+use crate::check::check;
 use crate::err::error::*;
 use crate::err::report;
-use crate::hir::check;
+//use crate::hir::check;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -146,18 +147,17 @@ fn cmd_check() -> Result<(), ()> {
     eprintln!("ast arenas mem-usage: {}", res.1.arena.memory_usage());
     //@disabled checking stage for now
     //check::check(res.1, &res.0)?;
+    check::check(&res.0, &res.1);
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
     let res = parser::parse()?;
-    check::check(res.1, &res.0)?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
     let res = parser::parse()?;
-    check::check(res.1, &res.0)?;
     Ok(())
 }
 

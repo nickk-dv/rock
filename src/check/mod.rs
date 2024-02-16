@@ -1,7 +1,11 @@
 use crate::ast::ast::*;
 use crate::ast::intern::InternID;
+use crate::ast::parser::FileID;
+use crate::ast::span::Span;
 use crate::mem::P;
 use std::collections::HashMap;
+
+pub mod check;
 
 pub struct Context {
     scopes: Vec<Scope>,
@@ -116,7 +120,7 @@ macro_rules! impl_scope_item {
     )+) => {
         $(
         #[must_use]
-        pub fn $fn_get(&mut self, id: InternID) -> Result<$item_id, Option<Symbol>> {
+        pub fn $fn_get(&self, id: InternID) -> Result<$item_id, Option<Symbol>> {
             match self.symbols.get(&id).cloned() {
                 Some(symbol) => {
                     if let Symbol::$symbol_name(id) = symbol {
@@ -155,6 +159,41 @@ impl Context {
         UnionData, UnionID, unions, add_union, get_union, get_union_mut;
         StructData, StructID, structs, add_struct, get_struct, get_struct_mut;
     }
+
+    pub fn get_symbol_src(&self, symbol: Symbol) -> SourceLoc {
+        match symbol {
+            Symbol::Module(id) => {
+                let module_data = self.get_module(id);
+                let scope = self.get_scope(module_data.from_id);
+                SourceLoc::new(module_data.decl.name.span, scope.module.file_id)
+            }
+            Symbol::Global(id) => {
+                let global_data = self.get_global(id);
+                let scope = self.get_scope(global_data.from_id);
+                SourceLoc::new(global_data.decl.name.span, scope.module.file_id)
+            }
+            Symbol::Proc(id) => {
+                let proc_data = self.get_proc(id);
+                let scope = self.get_scope(proc_data.from_id);
+                SourceLoc::new(proc_data.decl.name.span, scope.module.file_id)
+            }
+            Symbol::Enum(id) => {
+                let enum_data = self.get_enum(id);
+                let scope = self.get_scope(enum_data.from_id);
+                SourceLoc::new(enum_data.decl.name.span, scope.module.file_id)
+            }
+            Symbol::Union(id) => {
+                let union_data = self.get_union(id);
+                let scope = self.get_scope(union_data.from_id);
+                SourceLoc::new(union_data.decl.name.span, scope.module.file_id)
+            }
+            Symbol::Struct(id) => {
+                let struct_data = self.get_struct(id);
+                let scope = self.get_scope(struct_data.from_id);
+                SourceLoc::new(struct_data.decl.name.span, scope.module.file_id)
+            }
+        }
+    }
 }
 
 impl Scope {
@@ -162,8 +201,17 @@ impl Scope {
     pub fn new(module: P<Module>) -> Self {
         Self {
             module,
-            symbols: HashMap::new(),
+            symbols: HashMap::with_capacity(module.decls.len()),
         }
+    }
+
+    impl_scope_item! {
+        ModuleID, Module, get_module;
+        GlobalID, Global, get_global;
+        ProcID, Proc, get_proc;
+        EnumID, Enum, get_enum;
+        UnionID, Union, get_union;
+        StructID, Struct, get_struct;
     }
 
     #[must_use]
@@ -177,12 +225,19 @@ impl Scope {
         }
     }
 
-    impl_scope_item! {
-        ModuleID, Module, get_module;
-        GlobalID, Global, get_global;
-        ProcID, Proc, get_proc;
-        EnumID, Enum, get_enum;
-        UnionID, Union, get_union;
-        StructID, Struct, get_struct;
+    #[must_use]
+    pub fn get_symbol(&self, id: InternID) -> Option<Symbol> {
+        self.symbols.get(&id).cloned()
+    }
+}
+
+pub struct SourceLoc {
+    pub span: Span,
+    pub file_id: FileID,
+}
+
+impl SourceLoc {
+    pub fn new(span: Span, file_id: FileID) -> Self {
+        Self { span, file_id }
     }
 }

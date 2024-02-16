@@ -14,6 +14,13 @@ pub fn print(
     format.print(handle, marker, is_info);
 }
 
+pub fn print_simple(file: &File, span: Span, marker: Option<&str>, is_info: bool) {
+    let handle = &mut std::io::BufWriter::new(std::io::stderr());
+    let format = SpanFormat::new(file, span);
+    format.print(handle, marker, is_info);
+    let _ = handle.flush();
+}
+
 struct SpanFormat<'a> {
     loc: Loc,
     file: &'a File,

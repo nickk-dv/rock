@@ -29,7 +29,7 @@ pub enum Color {
 }
 
 impl Color {
-    fn as_ansi_str(color: Color) -> &'static str {
+    pub fn as_ansi_str(color: Color) -> &'static str {
         match color {
             Color::Black => "\x1B[0;30m",
             Color::Red => "\x1B[0;31m",
