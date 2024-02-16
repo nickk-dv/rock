@@ -89,6 +89,25 @@ pub struct StructData {
     pub align: u32,
 }
 
+pub struct ScopeIter {
+    curr: u32,
+    len: u32,
+}
+
+impl Iterator for ScopeIter {
+    type Item = ScopeID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr >= self.len {
+            None
+        } else {
+            let scope_id = ScopeID(self.curr);
+            self.curr += 1;
+            Some(scope_id)
+        }
+    }
+}
+
 macro_rules! impl_context_item {
     ($(
         $item:ty, $item_id:ident, $collection:ident,
@@ -159,6 +178,13 @@ impl Context {
         EnumData, EnumID, enums, add_enum, get_enum, get_enum_mut;
         UnionData, UnionID, unions, add_union, get_union, get_union_mut;
         StructData, StructID, structs, add_struct, get_struct, get_struct_mut;
+    }
+
+    pub fn scope_iter(&self) -> ScopeIter {
+        ScopeIter {
+            curr: 0,
+            len: self.scopes.len() as u32,
+        }
     }
 
     pub fn get_symbol_src(&self, symbol: Symbol) -> SourceLoc {
@@ -233,6 +259,7 @@ impl Scope {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct SourceLoc {
     pub span: Span,
     pub file_id: FileID,
