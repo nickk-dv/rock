@@ -19,6 +19,7 @@ pub struct Context {
 
 pub struct Scope {
     pub module: P<Module>,
+    pub parent_id: Option<ScopeID>,
     symbols: HashMap<InternID, Symbol>,
 }
 
@@ -198,9 +199,10 @@ impl Context {
 
 impl Scope {
     #[must_use]
-    pub fn new(module: P<Module>) -> Self {
+    pub fn new(module: P<Module>, parent_id: Option<ScopeID>) -> Self {
         Self {
             module,
+            parent_id,
             symbols: HashMap::with_capacity(module.decls.len()),
         }
     }

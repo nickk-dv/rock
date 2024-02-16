@@ -45,9 +45,10 @@ impl InternPool {
         return id;
     }
 
-    pub fn get_bytes(&self, id: InternID) -> &[u8] {
+    pub fn get_str(&self, id: InternID) -> &str {
         let is = unsafe { self.strings.get_unchecked(id.0 as usize) };
-        unsafe { self.bytes.get_unchecked(is.start as usize..is.end as usize) }
+        let bytes = unsafe { self.bytes.get_unchecked(is.start as usize..is.end as usize) };
+        unsafe { std::str::from_utf8_unchecked(bytes) }
     }
 
     pub fn try_get_str_id(&self, string: &str) -> Option<InternID> {
@@ -61,9 +62,7 @@ impl InternPool {
     }
 
     fn string_compare(&self, id: InternID, string: &str) -> bool {
-        let bytes = self.get_bytes(id);
-        let slice = unsafe { std::str::from_utf8_unchecked(bytes) };
-        string.chars().eq(slice.chars())
+        string.chars().eq(self.get_str(id).chars())
     }
 
     fn hash_djb2(string: &str) -> u32 {
