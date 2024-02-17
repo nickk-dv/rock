@@ -360,11 +360,10 @@ impl<'ast> Parser<'ast> {
         };
         if item_name.path_kind != PathKind::None {
             self.eat();
-            //self.expect(Token::Dot, ParseContext::ModulePath)?; //@ctx
-        } else {
-            let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
-            item_name.names.add(&mut self.arena, name);
+            self.expect(Token::Dot, ParseContext::ModulePath)?; //@ctx
         }
+        let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
+        item_name.names.add(&mut self.arena, name);
         while self.peek() == Token::Dot && self.peek_next() != Token::OpenBlock {
             self.eat();
             let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
