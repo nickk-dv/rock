@@ -105,16 +105,14 @@ pub struct ModuleDecl {
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub path: Path,
-    pub target: ImportTarget,
-    pub span: Span,
+    pub path: P<ItemName>,
+    pub symbols: List<ImportSymbol>,
 }
 
 #[derive(Copy, Clone)]
-pub enum ImportTarget {
-    GlobAll,
-    Symbol { name: Ident },
-    SymbolList { names: List<Ident> },
+pub struct ImportSymbol {
+    pub name: Ident,
+    pub alias: Option<Ident>,
 }
 
 #[derive(Copy, Clone)]

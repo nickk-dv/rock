@@ -565,7 +565,7 @@ impl<'a> Context<'a> {
             return;
         }
 
-        if task.import.path.kind == PathKind::None {
+        if task.import.path.path_kind == PathKind::None {
             let first = task.import.path.names.first().unwrap();
             if !self.scope_in_scope_mod_exists(scope_id, first) {
                 task.status = ImportTaskStatus::SourceNotFound;
@@ -574,42 +574,44 @@ impl<'a> Context<'a> {
         }
         task.status = ImportTaskStatus::Resolved;
 
-        let from_scope = match self.scope_resolve_module_path(scope_id, task.import.path) {
-            Some(from_scope) => from_scope,
-            None => return,
-        };
+        let from_scope = 0;
+        //let from_scope = match self.scope_resolve_module_path(scope_id, task.import.path) {
+        //    Some(from_scope) => from_scope,
+        //    None => return,
+        //};
+        return; // @disabled
 
-        if from_scope == scope_id {
-            self.get_scope_mut(scope_id)
-                .error(CheckError::ImportFromItself, task.import.span);
-            return;
-        }
+        //if from_scope == scope_id {
+        //    self.get_scope_mut(scope_id)
+        //        .error(CheckError::ImportFromItself, task.import.span);
+        //    return;
+        //}
 
-        match task.import.target {
-            ImportTarget::GlobAll => {
-                let import = GlobImport {
-                    from_id: from_scope,
-                    import_span: task.import.span,
-                };
-                if let Err(existing) = self.get_scope_mut(scope_id).add_glob_import(import) {
-                    let file_id = self.get_scope(scope_id).md().file_id;
-                    scope_error!(
-                        self,
-                        scope_id,
-                        Error::check(CheckError::ImportGlobExists, file_id, task.import.span,)
-                            .context("existing import", file_id, existing.import_span)
-                    );
-                }
-            }
-            ImportTarget::Symbol { name } => {
-                self.scope_import_symbol(scope_id, from_scope, name);
-            }
-            ImportTarget::SymbolList { names } => {
-                for name in names {
-                    self.scope_import_symbol(scope_id, from_scope, name);
-                }
-            }
-        }
+        //match task.import.target {
+        //    //ImportTarget::GlobAll => {
+        //    //    let import = GlobImport {
+        //    //        from_id: from_scope,
+        //    //        import_span: task.import.span,
+        //    //    };
+        //    //    if let Err(existing) = self.get_scope_mut(scope_id).add_glob_import(import) {
+        //    //        let file_id = self.get_scope(scope_id).md().file_id;
+        //    //        scope_error!(
+        //    //            self,
+        //    //            scope_id,
+        //    //            Error::check(CheckError::ImportGlobExists, file_id, task.import.span,)
+        //    //                .context("existing import", file_id, existing.import_span)
+        //    //        );
+        //    //    }
+        //    //}
+        //    ImportTarget::Symbol { ref symbol } => {
+        //        self.scope_import_symbol(scope_id, from_scope, symbol.name);
+        //    }
+        //    ImportTarget::SymbolList { symbols } => {
+        //        for symbol in symbols.iter() {
+        //            self.scope_import_symbol(scope_id, from_scope, symbol.name);
+        //        }
+        //    }
+        //}
     }
 
     fn scope_in_scope_mod_exists(&self, scope_id: ScopeID, name: Ident) -> bool {

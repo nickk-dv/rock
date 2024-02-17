@@ -94,16 +94,13 @@ fn visit_module_decl<T: MutVisit>(vis: &mut T, mut mod_decl: P<ModuleDecl>) {
 
 fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {
     vis.visit_import_decl(import_decl);
-    visit_path(vis, &mut import_decl.path);
-    match import_decl.target {
-        ImportTarget::GlobAll => {}
-        ImportTarget::Symbol { ref mut name } => {
-            visit_ident(vis, name);
-        }
-        ImportTarget::SymbolList { names } => {
-            for name in names.iter_mut() {
-                visit_ident(vis, name);
-            }
+    for name in import_decl.path.names.iter_mut() {
+        visit_ident(vis, name);
+    }
+    for symbol in import_decl.symbols.iter_mut() {
+        visit_ident(vis, &mut symbol.name);
+        if let Some(ref mut alias) = symbol.alias {
+            visit_ident(vis, alias);
         }
     }
 }

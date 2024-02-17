@@ -406,45 +406,34 @@ impl<'ast> Parser<'ast> {
     }
 
     fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParseError> {
-        let span_start = self.peek_span_start();
         self.eat(); // `import`
-
         let mut import_decl = self.alloc::<ImportDecl>();
-        import_decl.path = self.parse_path()?;
-        import_decl.target = self.parse_import_target()?;
-        self.expect(Token::Semicolon, ParseContext::ImportDecl)?;
-
-        import_decl.span = Span::new(span_start, self.peek_span_end());
+        import_decl.path = self.parse_item_name()?;
+        import_decl.symbols = List::new();
+        self.expect(Token::Dot, ParseContext::ImportDecl)?;
+        self.expect(Token::OpenBlock, ParseContext::ImportDecl)?;
+        if !self.try_eat(Token::CloseBlock) {
+            loop {
+                let symbol = self.parse_import_symbol()?;
+                import_decl.symbols.add(&mut self.arena, symbol);
+                if !self.try_eat(Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(Token::CloseBlock, ParseContext::ImportDecl)?;
+        }
         Ok(import_decl)
     }
 
-    fn parse_import_target(&mut self) -> Result<ImportTarget, ParseError> {
-        match self.peek() {
-            Token::Star => {
-                self.eat();
-                Ok(ImportTarget::GlobAll)
-            }
-            Token::Ident => {
-                let name = self.parse_ident(ParseContext::ImportDecl)?;
-                Ok(ImportTarget::Symbol { name })
-            }
-            Token::OpenBlock => {
-                self.eat();
-                let mut names = List::<Ident>::new();
-                if !self.try_eat(Token::CloseBlock) {
-                    loop {
-                        let name = self.parse_ident(ParseContext::ImportDecl)?;
-                        names.add(&mut self.arena, name);
-                        if !self.try_eat(Token::Comma) {
-                            break;
-                        }
-                    }
-                    self.expect(Token::CloseBlock, ParseContext::ImportDecl)?;
-                }
-                Ok(ImportTarget::SymbolList { names })
-            }
-            _ => Err(ParseError::ImportTargetMatch),
+    fn parse_import_symbol(&mut self) -> Result<ImportSymbol, ParseError> {
+        let mut symbol = ImportSymbol {
+            name: self.parse_ident(ParseContext::ImportDecl)?, // @ctx
+            alias: None,
+        };
+        if self.try_eat(Token::KwAs) {
+            symbol.alias = Some(self.parse_ident(ParseContext::ImportDecl)?); // @ctx
         }
+        Ok(symbol)
     }
 
     fn parse_global_decl(&mut self, vis: Vis, name: Ident) -> Result<P<GlobalDecl>, ParseError> {
