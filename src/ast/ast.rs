@@ -293,8 +293,8 @@ pub struct MatchArm {
 
 #[derive(Copy, Clone)]
 pub struct ItemName {
-    pub path: Path,
-    pub name: Ident,
+    pub path_kind: PathKind,
+    pub names: List<Ident>,
 }
 
 #[derive(Copy, Clone)]

@@ -120,19 +120,19 @@ impl<'a> visit::MutVisit for Context<'a> {
             return;
         };
 
-        let tt = self.scope_find_type(self.curr_scope, custom_type.path, custom_type.name);
-        match tt {
-            Some(TypeData::Enum(data)) => {
-                ty.kind = TypeKind::Enum(data.id);
-            }
-            Some(TypeData::Union(data)) => {
-                ty.kind = TypeKind::Union(data.id);
-            }
-            Some(TypeData::Struct(data)) => {
-                ty.kind = TypeKind::Struct(data.id);
-            }
-            None => ty.kind = TypeKind::Poison,
-        }
+        //let tt = self.scope_find_type(self.curr_scope, custom_type.path, custom_type.name);
+        //match tt {
+        //    Some(TypeData::Enum(data)) => {
+        //        ty.kind = TypeKind::Enum(data.id);
+        //    }
+        //    Some(TypeData::Union(data)) => {
+        //        ty.kind = TypeKind::Union(data.id);
+        //    }
+        //    Some(TypeData::Struct(data)) => {
+        //        ty.kind = TypeKind::Struct(data.id);
+        //    }
+        //    None => ty.kind = TypeKind::Poison,
+        //}
     }
 
     //fn visit_struct_init(&mut self, mut struct_init: P<StructInit>) {

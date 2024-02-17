@@ -55,9 +55,10 @@ fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
     vis.visit_type(ty);
     match ty.kind {
         TypeKind::Basic(..) => {}
-        TypeKind::Custom(mut custom_type) => {
-            visit_path(vis, &mut custom_type.path);
-            visit_ident(vis, &mut custom_type.name);
+        TypeKind::Custom(item) => {
+            for name in item.names.iter_mut() {
+                visit_ident(vis, name);
+            }
         }
         TypeKind::ArraySlice(mut array_slice) => {
             visit_type(vis, &mut array_slice.ty);
@@ -254,20 +255,23 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
             visit_type(vis, ty);
         }
         ExprKind::Sizeof { ref mut ty } => visit_type(vis, ty),
-        ExprKind::Item { mut item } => {
-            visit_ident(vis, &mut item.name);
-            visit_path(vis, &mut item.path);
+        ExprKind::Item { item } => {
+            for name in item.names.iter_mut() {
+                visit_ident(vis, name);
+            }
         }
-        ExprKind::ProcCall { mut item, input } => {
-            visit_ident(vis, &mut item.name);
-            visit_path(vis, &mut item.path);
+        ExprKind::ProcCall { item, input } => {
+            for name in item.names.iter_mut() {
+                visit_ident(vis, name);
+            }
             for expr in input {
                 visit_expr(vis, expr);
             }
         }
-        ExprKind::StructInit { mut item, input } => {
-            visit_ident(vis, &mut item.name);
-            visit_path(vis, &mut item.path);
+        ExprKind::StructInit { item, input } => {
+            for name in item.names.iter_mut() {
+                visit_ident(vis, name);
+            }
             for field in input.iter_mut() {
                 visit_ident(vis, &mut field.name);
                 if let Some(expr) = field.expr {

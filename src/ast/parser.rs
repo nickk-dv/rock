@@ -353,8 +353,23 @@ impl<'ast> Parser<'ast> {
 
     fn parse_item_name(&mut self) -> Result<P<ItemName>, ParseError> {
         let mut item_name = self.alloc::<ItemName>();
-        item_name.path = self.parse_path()?;
-        item_name.name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
+        item_name.path_kind = match self.peek() {
+            Token::KwSuper => PathKind::Super,
+            Token::KwPackage => PathKind::Package,
+            _ => PathKind::None,
+        };
+        if item_name.path_kind != PathKind::None {
+            self.eat();
+            //self.expect(Token::Dot, ParseContext::ModulePath)?; //@ctx
+        } else {
+            let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
+            item_name.names.add(&mut self.arena, name);
+        }
+        while self.peek() == Token::Dot && self.peek_next() != Token::OpenBlock {
+            self.eat();
+            let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
+            item_name.names.add(&mut self.arena, name);
+        }
         Ok(item_name)
     }
 
