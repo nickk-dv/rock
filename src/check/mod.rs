@@ -221,6 +221,17 @@ impl Context {
             }
         }
     }
+
+    pub fn get_symbol_vis(&self, symbol: Symbol) -> Vis {
+        match symbol {
+            Symbol::Module(id) => self.get_module(id).decl.vis,
+            Symbol::Global(id) => self.get_global(id).decl.vis,
+            Symbol::Proc(id) => self.get_proc(id).decl.vis,
+            Symbol::Enum(id) => self.get_enum(id).decl.vis,
+            Symbol::Union(id) => self.get_union(id).decl.vis,
+            Symbol::Struct(id) => self.get_struct(id).decl.vis,
+        }
+    }
 }
 
 impl Scope {

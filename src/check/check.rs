@@ -7,6 +7,7 @@ pub fn check(ctx: &CompCtx, ast: &Ast) {
     let mut context = Context::new();
     pass_0_populate_scopes(&mut context, &ast, ctx);
     pass_1_check_namesets(&context, ctx);
+    pass_2_import_symbols(&mut context, ctx);
 }
 
 fn report_no_src(message: &'static str) {
@@ -337,5 +338,118 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
                 _ => {}
             }
         }
+    }
+}
+
+fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
+    struct ImportTask {
+        scope_id: ScopeID,
+        symbol: Symbol,
+        name: Ident,
+    }
+    let mut import_tasks = Vec::new();
+
+    for scope_id in context.scope_iter() {
+        let scope = context.get_scope(scope_id);
+
+        'for_decl: for decl in scope.module.decls {
+            match decl {
+                Decl::Import(import_decl) => {
+                    let mut from_id = match import_decl.path.kind {
+                        PathKind::None => scope_id,
+                        PathKind::Super => {
+                            if let Some(parent_id) = scope.parent_id {
+                                parent_id
+                            } else {
+                                let span = Span::new(
+                                    import_decl.path.span_start,
+                                    import_decl.path.span_start + 5,
+                                );
+                                let src = SourceLoc::new(span, scope.module.file_id);
+                                report("cannot use super from a root module", ctx, src);
+                                continue 'for_decl;
+                            }
+                        }
+                        PathKind::Package => ScopeID(0),
+                    };
+                    for name in import_decl.path.names {
+                        let from_scope = context.get_scope(from_id);
+                        let module_id = match from_scope.get_module(name.id) {
+                            Ok(module_id) => module_id,
+                            Err(symbol) => {
+                                let src = SourceLoc::new(name.span, scope.module.file_id);
+                                report("module not found", ctx, src);
+                                if let Some(symbol) = symbol {
+                                    let src = context.get_symbol_src(symbol);
+                                    report_info("name refers to this declaration", ctx, src);
+                                }
+                                continue 'for_decl;
+                            }
+                        };
+                        let module_data = context.get_module(module_id);
+                        from_id = match module_data.target_id {
+                            Some(target_id) => target_id,
+                            None => {
+                                let src = SourceLoc::new(name.span, scope.module.file_id);
+                                report("module file is missing as reported earlier", ctx, src);
+                                continue 'for_decl;
+                            }
+                        };
+                    }
+                    let from_scope = context.get_scope(from_id);
+                    for import_symbol in import_decl.symbols.iter() {
+                        match from_scope.get_symbol(import_symbol.name.id) {
+                            Some(symbol) => {
+                                let vis = context.get_symbol_vis(symbol);
+                                //@allowing use of private package lvl items
+                                if vis == Vis::Private && from_id.0 != 0 {
+                                    let src = SourceLoc::new(
+                                        import_symbol.name.span,
+                                        scope.module.file_id,
+                                    );
+                                    report("symbol is private", ctx, src);
+                                    report_info(
+                                        "private declaration",
+                                        ctx,
+                                        context.get_symbol_src(symbol),
+                                    );
+                                    continue;
+                                }
+                                let name = match import_symbol.alias {
+                                    Some(alias) => alias,
+                                    None => import_symbol.name,
+                                };
+                                import_tasks.push(ImportTask {
+                                    scope_id,
+                                    symbol,
+                                    name,
+                                });
+                            }
+                            None => {
+                                let src =
+                                    SourceLoc::new(import_symbol.name.span, scope.module.file_id);
+                                report("symbol not found in path", ctx, src);
+                                continue;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for task in import_tasks.iter() {
+            let scope = context.get_scope_mut(task.scope_id);
+            match scope.add_symbol(task.name.id, task.symbol) {
+                Ok(()) => {}
+                Err(existing) => {
+                    let src = SourceLoc::new(task.name.span, scope.module.file_id);
+                    report("symbol redifinition", ctx, src);
+                    let src = context.get_symbol_src(existing);
+                    report_info("already declared here", ctx, src);
+                }
+            }
+        }
+        import_tasks.clear();
     }
 }
