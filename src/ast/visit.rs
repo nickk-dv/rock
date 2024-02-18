@@ -10,7 +10,7 @@ pub trait MutVisit: Sized {
     fn visit_module(&mut self, module: P<Module>) {}
 
     fn visit_ident(&mut self, ident: &mut Ident) {}
-    fn visit_path(&mut self, path: &mut Path) {}
+    fn visit_path(&mut self, path: P<Path>) {}
     fn visit_type(&mut self, ty: &mut Type) {}
 
     fn visit_decl(&mut self, decl: Decl) {}
@@ -44,7 +44,7 @@ fn visit_ident<T: MutVisit>(vis: &mut T, name: &mut Ident) {
     vis.visit_ident(name);
 }
 
-fn visit_path<T: MutVisit>(vis: &mut T, path: &mut Path) {
+fn visit_path<T: MutVisit>(vis: &mut T, path: P<Path>) {
     vis.visit_path(path);
     for name in path.names.iter_mut() {
         visit_ident(vis, name);
@@ -55,11 +55,7 @@ fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
     vis.visit_type(ty);
     match ty.kind {
         TypeKind::Basic(..) => {}
-        TypeKind::Custom(item) => {
-            for name in item.names.iter_mut() {
-                visit_ident(vis, name);
-            }
-        }
+        TypeKind::Custom(path) => vis.visit_path(path),
         TypeKind::ArraySlice(mut array_slice) => {
             visit_type(vis, &mut array_slice.ty);
         }
@@ -92,11 +88,9 @@ fn visit_module_decl<T: MutVisit>(vis: &mut T, mut mod_decl: P<ModuleDecl>) {
     visit_ident(vis, &mut mod_decl.name);
 }
 
-fn visit_import_decl<T: MutVisit>(vis: &mut T, mut import_decl: P<ImportDecl>) {
+fn visit_import_decl<T: MutVisit>(vis: &mut T, import_decl: P<ImportDecl>) {
     vis.visit_import_decl(import_decl);
-    for name in import_decl.path.names.iter_mut() {
-        visit_ident(vis, name);
-    }
+    visit_path(vis, import_decl.path);
     for symbol in import_decl.symbols.iter_mut() {
         visit_ident(vis, &mut symbol.name);
         if let Some(ref mut alias) = symbol.alias {
@@ -252,23 +246,15 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
             visit_type(vis, ty);
         }
         ExprKind::Sizeof { ref mut ty } => visit_type(vis, ty),
-        ExprKind::Item { item } => {
-            for name in item.names.iter_mut() {
-                visit_ident(vis, name);
-            }
-        }
-        ExprKind::ProcCall { item, input } => {
-            for name in item.names.iter_mut() {
-                visit_ident(vis, name);
-            }
+        ExprKind::Item { path } => visit_path(vis, path),
+        ExprKind::ProcCall { path, input } => {
+            visit_path(vis, path);
             for expr in input {
                 visit_expr(vis, expr);
             }
         }
-        ExprKind::StructInit { item, input } => {
-            for name in item.names.iter_mut() {
-                visit_ident(vis, name);
-            }
+        ExprKind::StructInit { path, input } => {
+            visit_path(vis, path);
             for field in input.iter_mut() {
                 visit_ident(vis, &mut field.name);
                 if let Some(expr) = field.expr {

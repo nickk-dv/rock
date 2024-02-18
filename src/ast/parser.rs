@@ -279,30 +279,6 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn parse_path(&mut self) -> Result<Path, ParseError> {
-        let span_start = self.peek_span_start();
-        let kind = match self.peek() {
-            Token::KwSuper => PathKind::Super,
-            Token::KwPackage => PathKind::Package,
-            _ => PathKind::None,
-        };
-        if kind != PathKind::None {
-            self.eat();
-            self.expect(Token::ColonColon, ParseContext::ModulePath)?;
-        }
-        let mut names = List::new();
-        while self.peek() == Token::Ident && self.peek_next() == Token::ColonColon {
-            let name = self.parse_ident(ParseContext::ModulePath)?;
-            self.eat();
-            names.add(&mut self.arena, name);
-        }
-        Ok(Path {
-            kind,
-            names,
-            span_start,
-        })
-    }
-
     fn parse_type(&mut self) -> Result<Type, ParseError> {
         let mut ty = Type {
             ptr: PtrLevel::new(),
@@ -326,7 +302,7 @@ impl<'ast> Parser<'ast> {
                 TypeKind::Basic(BasicType::Unit)
             }
             Token::Ident | Token::KwSuper | Token::KwPackage => {
-                TypeKind::Custom(self.parse_item_name()?)
+                TypeKind::Custom(self.parse_path()?)
             }
             Token::OpenBracket => match self.peek_next() {
                 Token::KwMut | Token::CloseBracket => {
@@ -351,25 +327,30 @@ impl<'ast> Parser<'ast> {
         Ok(ty)
     }
 
-    fn parse_item_name(&mut self) -> Result<P<ItemName>, ParseError> {
-        let mut item_name = self.alloc::<ItemName>();
-        item_name.path_kind = match self.peek() {
-            Token::KwSuper => PathKind::Super,
-            Token::KwPackage => PathKind::Package,
-            _ => PathKind::None,
+    fn parse_path(&mut self) -> Result<P<Path>, ParseError> {
+        let mut path = self.alloc::<Path>();
+        path.span_start = self.peek_span_start();
+        path.kind = match self.peek() {
+            Token::KwSuper => {
+                self.eat();
+                PathKind::Super
+            }
+            Token::KwPackage => {
+                self.eat();
+                PathKind::Package
+            }
+            _ => {
+                let name = self.parse_ident(ParseContext::ModulePath)?; //@take specific ctx instead?
+                path.names.add(&mut self.arena, name);
+                PathKind::None
+            }
         };
-        if item_name.path_kind != PathKind::None {
-            self.eat();
-            self.expect(Token::Dot, ParseContext::ModulePath)?; //@ctx
-        }
-        let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
-        item_name.names.add(&mut self.arena, name);
         while self.peek() == Token::Dot && self.peek_next() != Token::OpenBlock {
             self.eat();
-            let name = self.parse_ident(ParseContext::CustomType)?; //@take specific ctx instead?
-            item_name.names.add(&mut self.arena, name);
+            let name = self.parse_ident(ParseContext::ModulePath)?; //@take specific ctx instead?
+            path.names.add(&mut self.arena, name);
         }
-        Ok(item_name)
+        Ok(path)
     }
 
     fn parse_decl(&mut self) -> Result<Decl, ParseError> {
@@ -408,7 +389,7 @@ impl<'ast> Parser<'ast> {
     fn parse_import_decl(&mut self) -> Result<P<ImportDecl>, ParseError> {
         self.eat(); // `import`
         let mut import_decl = self.alloc::<ImportDecl>();
-        import_decl.path = self.parse_item_name()?;
+        import_decl.path = self.parse_path()?;
         import_decl.symbols = List::new();
         self.expect(Token::Dot, ParseContext::ImportDecl)?;
         self.expect(Token::OpenBlock, ParseContext::ImportDecl)?;
@@ -822,14 +803,14 @@ impl<'ast> Parser<'ast> {
                 }
             }
             _ => {
-                let item = self.parse_item_name()?;
+                let path = self.parse_path()?;
 
                 match (self.peek(), self.peek_next()) {
                     (Token::OpenParen, ..) => {
                         self.eat(); // `(`
                         let input =
                             self.parse_expr_list(Token::CloseParen, ParseContext::ProcCall)?;
-                        ExprKind::ProcCall { item, input }
+                        ExprKind::ProcCall { path, input }
                     }
                     (Token::Dot, Token::OpenBlock) => {
                         self.eat(); // `.`
@@ -853,9 +834,9 @@ impl<'ast> Parser<'ast> {
                             }
                             self.expect(Token::CloseBlock, ParseContext::StructInit)?;
                         }
-                        ExprKind::StructInit { item, input }
+                        ExprKind::StructInit { path, input }
                     }
-                    _ => ExprKind::Item { item },
+                    _ => ExprKind::Item { path },
                 }
             }
         };

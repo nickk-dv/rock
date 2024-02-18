@@ -565,7 +565,7 @@ impl<'a> Context<'a> {
             return;
         }
 
-        if task.import.path.path_kind == PathKind::None {
+        if task.import.path.kind == PathKind::None {
             let first = task.import.path.names.first().unwrap();
             if !self.scope_in_scope_mod_exists(scope_id, first) {
                 task.status = ImportTaskStatus::SourceNotFound;

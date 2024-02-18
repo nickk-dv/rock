@@ -64,7 +64,7 @@ pub struct PtrLevel {
 #[derive(Copy, Clone)]
 pub enum TypeKind {
     Basic(BasicType),
-    Custom(P<ItemName>),
+    Custom(P<Path>),
     ArraySlice(P<ArraySlice>),
     ArrayStatic(P<ArrayStatic>),
     Enum(EnumID),     //check
@@ -100,12 +100,12 @@ pub enum Decl {
 pub struct ModuleDecl {
     pub vis: Vis,
     pub name: Ident,
-    pub id: Option<ScopeID>, //check
+    pub id: Option<ScopeID>, // @remove when hir/check.rs is removed
 }
 
 #[derive(Copy, Clone)]
 pub struct ImportDecl {
-    pub path: P<ItemName>,
+    pub path: P<Path>,
     pub symbols: List<ImportSymbol>,
 }
 
@@ -256,9 +256,9 @@ pub enum ExprKind {
     Index       { target: P<Expr>, index: P<Expr> },
     Cast        { target: P<Expr>, ty: Type },
     Sizeof      { ty: Type },
-    Item        { item: P<ItemName> },
-    ProcCall    { item: P<ItemName>, input: List<P<Expr>> },
-    StructInit  { item: P<ItemName>, input: List<FieldInit> },
+    Item        { path: P<Path> },
+    ProcCall    { path: P<Path>, input: List<P<Expr>> },
+    StructInit  { path: P<Path>, input: List<FieldInit> },
     ArrayInit   { input: List<P<Expr>> },
     ArrayRepeat { expr: P<Expr>, size: ConstExpr },
     UnaryExpr   { op: UnOp, rhs: P<Expr> },
@@ -287,12 +287,6 @@ pub struct Block {
 pub struct MatchArm {
     pub pat: P<Expr>,
     pub expr: P<Expr>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ItemName {
-    pub path_kind: PathKind,
-    pub names: List<Ident>,
 }
 
 #[derive(Copy, Clone)]
