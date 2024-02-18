@@ -75,10 +75,12 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                 Decl::Module(sym_decl) => {
                     let scope = context.get_scope(scope_id);
                     if let Some(existing) = scope.get_symbol(sym_decl.name.id) {
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
-                        let info_src = context.get_symbol_src(existing);
-                        report("symbol redefinition", ctx, src);
-                        report_info("already declared here", ctx, info_src)
+                        report("symbol redefinition", ctx, scope.src(sym_decl.name.span));
+                        report_info(
+                            "already declared here",
+                            ctx,
+                            context.get_symbol_src(existing),
+                        )
                     } else {
                         let id = context.add_module(ModuleData {
                             from_id: scope_id,
@@ -87,6 +89,11 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                         });
                         let scope = context.get_scope_mut(scope_id);
                         let _ = scope.add_symbol(sym_decl.name.id, Symbol::Module(id));
+                        eprintln!(
+                            "scope: {} added module: {}",
+                            scope_id.0,
+                            ctx.intern().get_str(sym_decl.name.id)
+                        );
 
                         let name = ctx.intern().get_str(sym_decl.name.id);
                         let name_ext = name.to_string().clone() + ".lang";
@@ -95,7 +102,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                         let path1 = origin.clone().join(name_ext);
                         let path2 = origin.join(name).join("mod.lang");
 
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
+                        let src = scope.src(sym_decl.name.span);
                         let target = match (
                             module_map.get(&path1).cloned(),
                             module_map.get(&path2).cloned(),
@@ -151,10 +158,12 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                 Decl::Global(sym_decl) => {
                     let scope = context.get_scope(scope_id);
                     if let Some(existing) = scope.get_symbol(sym_decl.name.id) {
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
-                        let info_src = context.get_symbol_src(existing);
-                        report("symbol redefinition", ctx, src);
-                        report_info("already declared here", ctx, info_src)
+                        report("symbol redefinition", ctx, scope.src(sym_decl.name.span));
+                        report_info(
+                            "already declared here",
+                            ctx,
+                            context.get_symbol_src(existing),
+                        )
                     } else {
                         let id = context.add_global(GlobalData {
                             from_id: scope_id,
@@ -167,10 +176,12 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                 Decl::Proc(sym_decl) => {
                     let scope = context.get_scope(scope_id);
                     if let Some(existing) = scope.get_symbol(sym_decl.name.id) {
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
-                        let info_src = context.get_symbol_src(existing);
-                        report("symbol redefinition", ctx, src);
-                        report_info("already declared here", ctx, info_src)
+                        report("symbol redefinition", ctx, scope.src(sym_decl.name.span));
+                        report_info(
+                            "already declared here",
+                            ctx,
+                            context.get_symbol_src(existing),
+                        )
                     } else {
                         let id = context.add_proc(ProcData {
                             from_id: scope_id,
@@ -183,10 +194,12 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                 Decl::Enum(sym_decl) => {
                     let scope = context.get_scope(scope_id);
                     if let Some(existing) = scope.get_symbol(sym_decl.name.id) {
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
-                        let info_src = context.get_symbol_src(existing);
-                        report("symbol redefinition", ctx, src);
-                        report_info("already declared here", ctx, info_src)
+                        report("symbol redefinition", ctx, scope.src(sym_decl.name.span));
+                        report_info(
+                            "already declared here",
+                            ctx,
+                            context.get_symbol_src(existing),
+                        )
                     } else {
                         let id = context.add_enum(EnumData {
                             from_id: scope_id,
@@ -199,10 +212,12 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                 Decl::Union(sym_decl) => {
                     let scope = context.get_scope(scope_id);
                     if let Some(existing) = scope.get_symbol(sym_decl.name.id) {
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
-                        let info_src = context.get_symbol_src(existing);
-                        report("symbol redefinition", ctx, src);
-                        report_info("already declared here", ctx, info_src)
+                        report("symbol redefinition", ctx, scope.src(sym_decl.name.span));
+                        report_info(
+                            "already declared here",
+                            ctx,
+                            context.get_symbol_src(existing),
+                        )
                     } else {
                         let id = context.add_union(UnionData {
                             from_id: scope_id,
@@ -217,10 +232,12 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                 Decl::Struct(sym_decl) => {
                     let scope = context.get_scope(scope_id);
                     if let Some(existing) = scope.get_symbol(sym_decl.name.id) {
-                        let src = SourceLoc::new(sym_decl.name.span, scope.module.file_id);
-                        let info_src = context.get_symbol_src(existing);
-                        report("symbol redefinition", ctx, src);
-                        report_info("already declared here", ctx, info_src)
+                        report("symbol redefinition", ctx, scope.src(sym_decl.name.span));
+                        report_info(
+                            "already declared here",
+                            ctx,
+                            context.get_symbol_src(existing),
+                        )
                     } else {
                         let id = context.add_struct(StructData {
                             from_id: scope_id,
@@ -243,8 +260,6 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
         let mut name_set = HashMap::<InternID, Span>::new();
 
         let scope = context.get_scope(scope_id);
-        let file_id = scope.module.file_id;
-
         for decl in scope.module.decls {
             match decl {
                 Decl::Proc(proc_decl) => {
@@ -254,16 +269,8 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
                     name_set.clear();
                     for param in proc_decl.params.iter() {
                         if let Some(existing) = name_set.get(&param.name.id).cloned() {
-                            report(
-                                "proc param redefinition",
-                                ctx,
-                                SourceLoc::new(param.name.span, file_id),
-                            );
-                            report_info(
-                                "already defined here",
-                                ctx,
-                                SourceLoc::new(existing, file_id),
-                            )
+                            report("proc param redefinition", ctx, scope.src(param.name.span));
+                            report_info("already defined here", ctx, scope.src(existing));
                         } else {
                             name_set.insert(param.name.id, param.name.span);
                         }
@@ -279,13 +286,9 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
                             report(
                                 "enum variant redefinition",
                                 ctx,
-                                SourceLoc::new(variant.name.span, file_id),
+                                scope.src(variant.name.span),
                             );
-                            report_info(
-                                "already defined here",
-                                ctx,
-                                SourceLoc::new(existing, file_id),
-                            )
+                            report_info("already defined here", ctx, scope.src(existing));
                         } else {
                             name_set.insert(variant.name.id, variant.name.span);
                         }
@@ -301,13 +304,9 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
                             report(
                                 "union member redefinition",
                                 ctx,
-                                SourceLoc::new(member.name.span, file_id),
+                                scope.src(member.name.span),
                             );
-                            report_info(
-                                "already defined here",
-                                ctx,
-                                SourceLoc::new(existing, file_id),
-                            )
+                            report_info("already defined here", ctx, scope.src(existing));
                         } else {
                             name_set.insert(member.name.id, member.name.span);
                         }
@@ -320,16 +319,8 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
                     name_set.clear();
                     for field in struct_decl.fields.iter() {
                         if let Some(existing) = name_set.get(&field.name.id).cloned() {
-                            report(
-                                "struct field redefinition",
-                                ctx,
-                                SourceLoc::new(field.name.span, file_id),
-                            );
-                            report_info(
-                                "already defined here",
-                                ctx,
-                                SourceLoc::new(existing, file_id),
-                            )
+                            report("struct field redefinition", ctx, scope.src(field.name.span));
+                            report_info("already defined here", ctx, scope.src(existing));
                         } else {
                             name_set.insert(field.name.id, field.name.span);
                         }
@@ -343,113 +334,168 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
 
 fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
     struct ImportTask {
-        scope_id: ScopeID,
+        import_decl: P<ImportDecl>,
+        resolved: bool,
+    }
+    struct ImportSymbolTask {
         symbol: Symbol,
         name: Ident,
     }
-    let mut import_tasks = Vec::new();
+
+    let mut import_tasks = Vec::<ImportTask>::new();
+    let mut import_symbol_tasks = Vec::<ImportSymbolTask>::new();
 
     for scope_id in context.scope_iter() {
-        let scope = context.get_scope(scope_id);
+        import_tasks.clear();
 
-        'for_decl: for decl in scope.module.decls {
+        for decl in context.get_scope(scope_id).module.decls {
             match decl {
-                Decl::Import(import_decl) => {
-                    let mut from_id = match import_decl.path.kind {
-                        PathKind::None => scope_id,
-                        PathKind::Super => {
-                            if let Some(parent_id) = scope.parent_id {
-                                parent_id
-                            } else {
-                                let span = Span::new(
-                                    import_decl.path.span_start,
-                                    import_decl.path.span_start + 5,
-                                );
-                                let src = SourceLoc::new(span, scope.module.file_id);
-                                report("cannot use super from a root module", ctx, src);
-                                continue 'for_decl;
-                            }
-                        }
-                        PathKind::Package => ScopeID(0),
-                    };
-                    for name in import_decl.path.names {
-                        let from_scope = context.get_scope(from_id);
-                        let module_id = match from_scope.get_module(name.id) {
-                            Ok(module_id) => module_id,
-                            Err(symbol) => {
-                                let src = SourceLoc::new(name.span, scope.module.file_id);
-                                report("module not found", ctx, src);
-                                if let Some(symbol) = symbol {
-                                    let src = context.get_symbol_src(symbol);
-                                    report_info("name refers to this declaration", ctx, src);
-                                }
-                                continue 'for_decl;
-                            }
-                        };
-                        let module_data = context.get_module(module_id);
-                        from_id = match module_data.target_id {
-                            Some(target_id) => target_id,
-                            None => {
-                                let src = SourceLoc::new(name.span, scope.module.file_id);
-                                report("module file is missing as reported earlier", ctx, src);
-                                continue 'for_decl;
-                            }
-                        };
-                    }
-                    let from_scope = context.get_scope(from_id);
-                    for import_symbol in import_decl.symbols.iter() {
-                        match from_scope.get_symbol(import_symbol.name.id) {
-                            Some(symbol) => {
-                                let vis = context.get_symbol_vis(symbol);
-                                //@allowing use of private package lvl items
-                                if vis == Vis::Private && from_id.0 != 0 {
-                                    let src = SourceLoc::new(
-                                        import_symbol.name.span,
-                                        scope.module.file_id,
-                                    );
-                                    report("symbol is private", ctx, src);
-                                    report_info(
-                                        "private declaration",
-                                        ctx,
-                                        context.get_symbol_src(symbol),
-                                    );
-                                    continue;
-                                }
-                                let name = match import_symbol.alias {
-                                    Some(alias) => alias,
-                                    None => import_symbol.name,
-                                };
-                                import_tasks.push(ImportTask {
-                                    scope_id,
-                                    symbol,
-                                    name,
-                                });
-                            }
-                            None => {
-                                let src =
-                                    SourceLoc::new(import_symbol.name.span, scope.module.file_id);
-                                report("symbol not found in path", ctx, src);
-                                continue;
-                            }
-                        }
-                    }
-                }
+                Decl::Import(import_decl) => import_tasks.push(ImportTask {
+                    import_decl,
+                    resolved: false,
+                }),
                 _ => {}
             }
         }
 
+        let mut progress = 0;
+        loop {
+            let mut curr_progress = 0;
+
+            'task: for task in import_tasks.iter_mut() {
+                if task.resolved {
+                    curr_progress += 1;
+                    continue 'task;
+                }
+                // resolve path kind
+                let scope = context.get_scope(scope_id);
+                let mut from_id = match task.import_decl.path.kind {
+                    PathKind::None => scope_id,
+                    PathKind::Super => match scope.parent_id {
+                        Some(parent_id) => parent_id,
+                        None => {
+                            let span = Span::new(
+                                task.import_decl.path.span_start,
+                                task.import_decl.path.span_start + 5,
+                            );
+                            report(
+                                "cannot use `super` from the root module",
+                                ctx,
+                                scope.src(span),
+                            );
+                            task.resolved = true;
+                            curr_progress += 1;
+                            continue 'task;
+                        }
+                    },
+                    PathKind::Package => ScopeID(0),
+                };
+                // resolve module path
+                for name in task.import_decl.path.names {
+                    let from_scope = context.get_scope(from_id);
+                    let module_id = match from_scope.get_module(name.id) {
+                        Ok(module_id) => module_id,
+                        Err(symbol) => {
+                            if let Some(symbol) = symbol {
+                                report("module not found", ctx, scope.src(name.span));
+                                report_info(
+                                    "name refers to this declaration",
+                                    ctx,
+                                    context.get_symbol_src(symbol),
+                                );
+                                task.resolved = true;
+                                curr_progress += 1;
+                            }
+                            continue 'task;
+                        }
+                    };
+                    let module_data = context.get_module(module_id);
+                    from_id = match module_data.target_id {
+                        Some(target_id) => target_id,
+                        None => {
+                            report(
+                                "module file is missing as reported earlier",
+                                ctx,
+                                scope.src(name.span),
+                            );
+                            task.resolved = true;
+                            curr_progress += 1;
+                            continue 'task;
+                        }
+                    };
+                }
+                // collect visible symbol imports
+                task.resolved = true;
+                curr_progress += 1;
+                let from_scope = context.get_scope(from_id);
+                import_symbol_tasks.clear();
+
+                for import_symbol in task.import_decl.symbols.iter() {
+                    match from_scope.get_symbol(import_symbol.name.id) {
+                        Some(symbol) => {
+                            let vis = context.get_symbol_vis(symbol);
+                            //@allowing use of private package lvl items
+                            if vis == Vis::Private && from_id.0 != 0 {
+                                report(
+                                    "symbol is private",
+                                    ctx,
+                                    scope.src(import_symbol.name.span),
+                                );
+                                report_info(
+                                    "private declaration",
+                                    ctx,
+                                    context.get_symbol_src(symbol),
+                                );
+                                continue;
+                            }
+                            let name = match import_symbol.alias {
+                                Some(alias) => alias,
+                                None => import_symbol.name,
+                            };
+                            import_symbol_tasks.push(ImportSymbolTask { symbol, name });
+                        }
+                        None => {
+                            report(
+                                "symbol not found in path",
+                                ctx,
+                                scope.src(import_symbol.name.span),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                // import into scope
+                for task in import_symbol_tasks.iter() {
+                    let scope = context.get_scope_mut(scope_id);
+                    match scope.add_symbol(task.name.id, task.symbol) {
+                        Ok(()) => {}
+                        Err(existing) => {
+                            report("symbol redifinition", ctx, scope.src(task.name.span));
+                            report_info(
+                                "already declared here",
+                                ctx,
+                                context.get_symbol_src(existing),
+                            );
+                        }
+                    }
+                }
+            }
+
+            if progress >= curr_progress {
+                break;
+            }
+            progress = curr_progress;
+        }
+
+        // report unresolved paths
+        let scope = context.get_scope(scope_id);
         for task in import_tasks.iter() {
-            let scope = context.get_scope_mut(task.scope_id);
-            match scope.add_symbol(task.name.id, task.symbol) {
-                Ok(()) => {}
-                Err(existing) => {
-                    let src = SourceLoc::new(task.name.span, scope.module.file_id);
-                    report("symbol redifinition", ctx, src);
-                    let src = context.get_symbol_src(existing);
-                    report_info("already declared here", ctx, src);
+            if !task.resolved {
+                for name in task.import_decl.path.names {
+                    report("module not found", ctx, scope.src(name.span));
+                    break;
                 }
             }
         }
-        import_tasks.clear();
     }
 }

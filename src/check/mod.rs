@@ -191,33 +191,33 @@ impl Context {
         match symbol {
             Symbol::Module(id) => {
                 let module_data = self.get_module(id);
-                let scope = self.get_scope(module_data.from_id);
-                SourceLoc::new(module_data.decl.name.span, scope.module.file_id)
+                self.get_scope(module_data.from_id)
+                    .src(module_data.decl.name.span)
             }
             Symbol::Global(id) => {
                 let global_data = self.get_global(id);
-                let scope = self.get_scope(global_data.from_id);
-                SourceLoc::new(global_data.decl.name.span, scope.module.file_id)
+                self.get_scope(global_data.from_id)
+                    .src(global_data.decl.name.span)
             }
             Symbol::Proc(id) => {
                 let proc_data = self.get_proc(id);
-                let scope = self.get_scope(proc_data.from_id);
-                SourceLoc::new(proc_data.decl.name.span, scope.module.file_id)
+                self.get_scope(proc_data.from_id)
+                    .src(proc_data.decl.name.span)
             }
             Symbol::Enum(id) => {
                 let enum_data = self.get_enum(id);
-                let scope = self.get_scope(enum_data.from_id);
-                SourceLoc::new(enum_data.decl.name.span, scope.module.file_id)
+                self.get_scope(enum_data.from_id)
+                    .src(enum_data.decl.name.span)
             }
             Symbol::Union(id) => {
                 let union_data = self.get_union(id);
-                let scope = self.get_scope(union_data.from_id);
-                SourceLoc::new(union_data.decl.name.span, scope.module.file_id)
+                self.get_scope(union_data.from_id)
+                    .src(union_data.decl.name.span)
             }
             Symbol::Struct(id) => {
                 let struct_data = self.get_struct(id);
-                let scope = self.get_scope(struct_data.from_id);
-                SourceLoc::new(struct_data.decl.name.span, scope.module.file_id)
+                self.get_scope(struct_data.from_id)
+                    .src(struct_data.decl.name.span)
             }
         }
     }
@@ -254,6 +254,14 @@ impl Scope {
     }
 
     #[must_use]
+    pub fn src(&self, span: Span) -> SourceLoc {
+        SourceLoc {
+            span,
+            file_id: self.module.file_id,
+        }
+    }
+
+    #[must_use]
     pub fn add_symbol(&mut self, id: InternID, symbol: Symbol) -> Result<(), Symbol> {
         match self.symbols.get(&id).cloned() {
             Some(existing) => Err(existing),
@@ -274,10 +282,4 @@ impl Scope {
 pub struct SourceLoc {
     pub span: Span,
     pub file_id: FileID,
-}
-
-impl SourceLoc {
-    pub fn new(span: Span, file_id: FileID) -> Self {
-        Self { span, file_id }
-    }
 }
