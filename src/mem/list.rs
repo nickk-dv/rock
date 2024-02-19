@@ -63,6 +63,10 @@ impl<T: Copy> List<T> {
             phantom: PhantomData,
         }
     }
+
+    pub fn iter_last(&self) -> ListIterValLast<T> {
+        ListIterValLast { curr: self.first }
+    }
 }
 
 pub struct ListIter<'a, T: Copy> {
@@ -76,6 +80,10 @@ pub struct ListIterMut<'a, T: Copy> {
 }
 
 pub struct ListIterVal<T: Copy> {
+    curr: P<Node<T>>,
+}
+
+pub struct ListIterValLast<T: Copy> {
     curr: P<Node<T>>,
 }
 
@@ -117,6 +125,21 @@ impl<T: Copy> Iterator for ListIterVal<T> {
             let val = self.curr.val;
             self.curr = self.curr.next;
             Some(val)
+        }
+    }
+}
+
+impl<T: Copy> Iterator for ListIterValLast<T> {
+    type Item = (T, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr.is_null() {
+            None
+        } else {
+            let val = self.curr.val;
+            self.curr = self.curr.next;
+            let last = self.curr.is_null();
+            Some((val, last))
         }
     }
 }

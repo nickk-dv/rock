@@ -441,6 +441,21 @@ fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
     }
 }
 
+enum ItemResolved<'a> {
+    Local(&'a LocalVar),
+    None,
+}
+
+fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
+    for name in path.names {
+        match ctx.proc_scope.find_local(name.id) {
+            Some(local) => return ItemResolved::Local(local),
+            None => {}
+        }
+    }
+    ItemResolved::None
+}
+
 struct TypeCtx<'a> {
     scope: &'a Scope,
     context: &'a Context,
@@ -482,37 +497,33 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
             for param in proc_decl.params {
                 ctx.proc_scope.push_local(LocalVar::Param(param));
             }
-            let ty = typecheck_block(ctx, block, return_ty);
-            if !Type::matches(&ty, &return_ty) {
+            typecheck_block(ctx, block, return_ty);
+            //@top level block is not an expression,
+            // need to handle empty function with separate report
+            if block.stmts.is_empty() && !Type::matches(&return_ty, &Type::unit()) {
                 report(
-                    "type mismatch in proc",
+                    "type mismatch",
                     ctx.comp_ctx,
                     ctx.scope.src(proc_decl.name.span),
                 );
+                eprint!("expected: ");
+                eprint_type(return_ty);
+                eprint!("\ngot:      ");
+                eprint_type(&Type::unit());
+                eprint!("\n\n");
             }
         }
     }
 }
 
-//@hack to apply expected type only on the last stmt
 fn typecheck_block(ctx: &TypeCtx, block: P<Block>, expect: &Type) -> Type {
-    let mut stmt_last: Stmt = Stmt {
-        span: Span::new(0, 0),
-        kind: StmtKind::Break,
-    };
-    let mut first = true;
-    for stmt in block.stmts {
-        if !first {
-            typecheck_stmt(ctx, stmt_last, &Type::unit());
+    for (stmt, last) in block.stmts.iter_last() {
+        if last {
+            return typecheck_stmt(ctx, stmt, expect);
         }
-        stmt_last = stmt;
-        first = false;
+        typecheck_stmt(ctx, stmt, &Type::unit());
     }
-    if !first {
-        typecheck_stmt(ctx, stmt_last, expect)
-    } else {
-        Type::unit()
-    }
+    Type::unit()
 }
 
 fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
@@ -537,7 +548,7 @@ fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
 }
 
 fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
-    match expr.kind {
+    let ty = match expr.kind {
         ExprKind::Unit => Type::unit(),
         ExprKind::Discard => todo!(), //@ discard is only allowed in variable bindings
         ExprKind::LitNull => Type::basic(BasicType::Rawptr),
@@ -591,13 +602,92 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
             nameresolve_type(ctx, ty);
             Type::basic(BasicType::Usize)
         }
-        ExprKind::Item { path } => Type::unit(), //@ignored
+        ExprKind::Item { path } => {
+            let item = nameresolve_path(ctx, path);
+            match item {
+                ItemResolved::Local(local) => match local {
+                    LocalVar::Param(param) => param.ty,
+                    LocalVar::Local(var_decl) => match var_decl.ty {
+                        Some(ty) => ty,
+                        None => {
+                            if let Some(name) = var_decl.name {
+                                report(
+                                    "variable type must be known",
+                                    ctx.comp_ctx,
+                                    ctx.scope.src(name.span),
+                                );
+                            }
+                            Type::poison()
+                        }
+                    },
+                },
+                ItemResolved::None => {
+                    //@assuming that all items are a local variable
+                    report("variable not found", ctx.comp_ctx, ctx.scope.src(expr.span));
+                    Type::poison()
+                }
+            }
+        }
         ExprKind::ProcCall { path, input } => Type::unit(), //@ignored
         ExprKind::StructInit { path, input } => Type::unit(), //@ignored
-        ExprKind::ArrayInit { input } => Type::unit(), //@ignored
+        ExprKind::ArrayInit { input } => Type::unit(),      //@ignored
         ExprKind::ArrayRepeat { expr, size } => Type::unit(), //@ignored
-        ExprKind::UnaryExpr { op, rhs } => Type::unit(), //@ignored
+        ExprKind::UnaryExpr { op, rhs } => Type::unit(),    //@ignored
         ExprKind::BinaryExpr { op, lhs, rhs } => Type::unit(), //@ignored
+    };
+    if !Type::matches(&ty, expect) {
+        //@printout is a temporary reporting strategy
+        report("type mismatch", ctx.comp_ctx, ctx.scope.src(expr.span));
+        eprint!("expected: ");
+        eprint_type(&expect);
+        eprint!("\ngot:      ");
+        eprint_type(&ty);
+        eprint!("\n\n");
+    }
+    ty
+}
+
+fn eprint_type(ty: &Type) {
+    for _ in 0..ty.ptr.level() {
+        eprint!("* <MUT?> ");
+    }
+    match ty.kind {
+        TypeKind::Basic(basic) => match basic {
+            BasicType::Unit => eprint!("()"),
+            BasicType::Bool => eprint!("bool"),
+            BasicType::S8 => eprint!("s8"),
+            BasicType::S16 => eprint!("s16"),
+            BasicType::S32 => eprint!("s32"),
+            BasicType::S64 => eprint!("s64"),
+            BasicType::Ssize => eprint!("ssize"),
+            BasicType::U8 => eprint!("u8"),
+            BasicType::U16 => eprint!("u16"),
+            BasicType::U32 => eprint!("u32"),
+            BasicType::U64 => eprint!("u64"),
+            BasicType::Usize => eprint!("usize"),
+            BasicType::F32 => eprint!("f32"),
+            BasicType::F64 => eprint!("f64"),
+            BasicType::Char => eprint!("char"),
+            BasicType::Rawptr => eprint!("rawptr"),
+        },
+        TypeKind::Custom(..) => {
+            eprint!("<CUSTOM>");
+        }
+        TypeKind::ArraySlice(slice) => {
+            match slice.mutt {
+                Mut::Mutable => eprint!("[mut]"),
+                Mut::Immutable => eprint!("[]"),
+            }
+            eprint_type(&slice.ty);
+        }
+        TypeKind::ArrayStatic(array) => {
+            eprint!("[<SIZE>]");
+            eprint_type(&array.ty);
+        }
+        TypeKind::Enum(id) => eprint!("enum({})", id),
+        TypeKind::Union(id) => eprint!("union({})", id),
+        TypeKind::Struct(id) => eprint!("struct({})", id),
+        TypeKind::Poison => eprint!("<POISON>"),
     }
 }
 
