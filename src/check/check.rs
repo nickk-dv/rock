@@ -25,6 +25,7 @@ pub fn check(ctx: &CompCtx, ast: &Ast) {
     pass_0_populate_scopes(&mut context, &ast, ctx);
     pass_1_check_namesets(&context, ctx);
     pass_2_import_symbols(&mut context, ctx);
+    pass_3_typecheck(&context, ctx);
 }
 
 fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
@@ -419,5 +420,144 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
                 }
             }
         }
+    }
+}
+
+fn pass_3_typecheck(context: &Context, ctx: &CompCtx) {
+    for scope_id in context.scope_iter() {
+        let scope = context.get_scope(scope_id);
+        for decl in scope.module.decls {
+            match decl {
+                Decl::Proc(proc_decl) => typecheck_proc(proc_decl, scope, ctx),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn nameresolve_type(ty: &mut Type) {
+    match ty.kind {
+        TypeKind::Basic(_) => {}
+        TypeKind::Custom(path) => {
+            // @ find a way to re-use path resolving
+            // logic as much as possible between path usages in the Ast
+            let kind = path.kind;
+            for name in path.names.iter() {}
+        }
+        TypeKind::ArraySlice(mut slice) => nameresolve_type(&mut slice.ty),
+        TypeKind::ArrayStatic(mut array) => nameresolve_type(&mut array.ty), //@ size ConstExpr is not touched
+        TypeKind::Enum(_) => panic!("nameresolve_type redundant"),
+        TypeKind::Union(_) => panic!("nameresolve_type redundant"),
+        TypeKind::Struct(_) => panic!("nameresolve_type redundant"),
+        TypeKind::Poison => panic!("nameresolve_type redundant"),
+    }
+}
+
+fn typecheck_proc(mut proc_decl: P<ProcDecl>, scope: &Scope, ctx: &CompCtx) {
+    for param in proc_decl.params.iter_mut() {
+        nameresolve_type(&mut param.ty);
+    }
+    let return_ty = if let Some(ref mut ty) = proc_decl.return_ty {
+        nameresolve_type(ty);
+        *ty
+    } else {
+        proc_decl.return_ty = Some(Type::unit());
+        Type::unit()
+    };
+    if let Some(block) = proc_decl.block {
+        let ty = typecheck_block(block);
+        if !Type::matches(&ty, &return_ty) {
+            report("type mismatch in proc", ctx, scope.src(proc_decl.name.span));
+        }
+    }
+}
+
+fn typecheck_block(block: P<Block>) -> Type {
+    let mut ty = Type::unit();
+    for stmt in block.stmts {
+        ty = typecheck_stmt(stmt);
+    }
+    ty
+}
+
+fn typecheck_stmt(stmt: Stmt) -> Type {
+    match stmt.kind {
+        StmtKind::Break => Type::unit(),
+        StmtKind::Continue => Type::unit(),
+        StmtKind::Return(ret) => Type::unit(), //@typecheck againts proc return type
+        StmtKind::Defer(defer) => {
+            typecheck_block(defer);
+            Type::unit()
+        }
+        StmtKind::ForLoop(for_) => Type::unit(), //@ignored
+        StmtKind::VarDecl(var_decl) => Type::unit(), //@ignored
+        StmtKind::VarAssign(var_assign) => Type::unit(), //@ignored
+        StmtKind::ExprSemi(expr) => {
+            typecheck_expr(expr);
+            Type::unit()
+        }
+        StmtKind::ExprTail(expr) => typecheck_expr(expr),
+    }
+}
+
+fn typecheck_expr(mut expr: P<Expr>) -> Type {
+    match expr.kind {
+        ExprKind::Unit => Type::unit(),
+        ExprKind::Discard => todo!(), //@ discard is only allowed in variable bindings
+        ExprKind::LitNull => Type::basic(BasicType::Rawptr),
+        ExprKind::LitBool { .. } => Type::basic(BasicType::Bool),
+        ExprKind::LitUint { ref mut ty, .. } => {
+            let basic = match *ty {
+                Some(basic) => basic,
+                None => {
+                    *ty = Some(BasicType::S32);
+                    BasicType::S32
+                }
+            };
+            Type::basic(basic)
+        }
+        ExprKind::LitFloat { ref mut ty, .. } => {
+            let basic = match *ty {
+                Some(basic) => basic,
+                None => {
+                    *ty = Some(BasicType::F64);
+                    BasicType::F64
+                }
+            };
+            Type::basic(basic)
+        }
+        ExprKind::LitChar { .. } => Type::basic(BasicType::Char),
+        ExprKind::LitString { .. } => Type::new_ptr(Mut::Immutable, TypeKind::Basic(BasicType::U8)),
+        ExprKind::If { if_ } => Type::unit(), //@ignored check if else branch expr
+        ExprKind::Block { block } => typecheck_block(block),
+        ExprKind::Match { expr, arms } => {
+            let ty = typecheck_expr(expr);
+            Type::unit() //@ignored check arms
+        }
+        ExprKind::Field { target, name } => {
+            let target_ty = typecheck_expr(target);
+            Type::unit() //@ignored check target + field name
+        }
+        ExprKind::Index { target, index } => {
+            let target_ty = typecheck_expr(target);
+            Type::unit() //@ignored check target + index
+        }
+        ExprKind::Cast { target, ref mut ty } => {
+            let target_ty = typecheck_expr(target);
+            nameresolve_type(ty);
+            //@ignored check target + cast
+            *ty
+        }
+        ExprKind::Sizeof { ref mut ty } => {
+            nameresolve_type(ty);
+            Type::basic(BasicType::Usize)
+        }
+        ExprKind::Item { path } => Type::unit(), //@ignored
+        ExprKind::ProcCall { path, input } => Type::unit(), //@ignored
+        ExprKind::StructInit { path, input } => Type::unit(), //@ignored
+        ExprKind::ArrayInit { input } => Type::unit(), //@ignored
+        ExprKind::ArrayRepeat { expr, size } => Type::unit(), //@ignored
+        ExprKind::UnaryExpr { op, rhs } => Type::unit(), //@ignored
+        ExprKind::BinaryExpr { op, lhs, rhs } => Type::unit(), //@ignored
     }
 }

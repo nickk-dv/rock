@@ -312,6 +312,7 @@ pub enum BasicType {
     F32,
     F64,
     Char,
+    Rawptr,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -377,6 +378,60 @@ impl PtrLevel {
         }
         self.level += 1;
         Ok(())
+    }
+}
+
+impl Type {
+    pub fn new(kind: TypeKind) -> Self {
+        Self {
+            ptr: PtrLevel::new(),
+            kind,
+        }
+    }
+
+    pub fn new_ptr(mutt: Mut, kind: TypeKind) -> Self {
+        let mut ptr = PtrLevel::new();
+        let _ = ptr.add_level(mutt);
+        Self { ptr, kind }
+    }
+
+    pub fn unit() -> Self {
+        Self {
+            ptr: PtrLevel::new(),
+            kind: TypeKind::Basic(BasicType::Unit),
+        }
+    }
+
+    pub fn basic(basic: BasicType) -> Self {
+        Self {
+            ptr: PtrLevel::new(),
+            kind: TypeKind::Basic(basic),
+        }
+    }
+
+    pub fn matches(ty: &Type, ty2: &Type) -> bool {
+        if ty.ptr.level != ty2.ptr.level {
+            return false;
+        }
+        if ty.ptr.mut_mask != ty2.ptr.mut_mask {
+            return false;
+        }
+        match (ty.kind, ty2.kind) {
+            (TypeKind::Basic(basic), TypeKind::Basic(basic2)) => basic == basic2,
+            (TypeKind::Custom(_), TypeKind::Custom(_)) => panic!("custom type must be resolved"),
+            (TypeKind::ArraySlice(slice), TypeKind::ArraySlice(slice2)) => {
+                slice.mutt == slice2.mutt && Self::matches(&slice.ty, &slice2.ty)
+            }
+            (TypeKind::ArrayStatic(array), TypeKind::ArrayStatic(array2)) => {
+                //@size ConstExpr is ignored
+                Self::matches(&array.ty, &array2.ty)
+            }
+            (TypeKind::Enum(id), TypeKind::Enum(id2)) => id == id2,
+            (TypeKind::Union(id), TypeKind::Union(id2)) => id == id2,
+            (TypeKind::Struct(id), TypeKind::Struct(id2)) => id == id2,
+            (TypeKind::Poison, TypeKind::Poison) => true,
+            _ => false,
+        }
     }
 }
 

@@ -119,6 +119,7 @@ token_impl! {
     KwF32        as "f32"      => KW. => BASIC_TYPE BasicType::F32
     KwF64        as "f64"      => KW. => BASIC_TYPE BasicType::F64
     KwChar       as "char"     => KW. => BASIC_TYPE BasicType::Char
+    Rawptr       as "rawptr"   => KW. => BASIC_TYPE BasicType::Rawptr
 
     KwPub        as "pub"      => KW.
     KwMut        as "mut"      => KW.

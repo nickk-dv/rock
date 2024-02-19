@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 pub type Rawptr = usize;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct P<T: Copy> {
     ptr: Rawptr,
     phantom: PhantomData<T>,
