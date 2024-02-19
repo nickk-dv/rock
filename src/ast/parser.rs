@@ -758,14 +758,14 @@ impl<'ast> Parser<'ast> {
             },
             Token::KwMatch => {
                 self.eat();
-                let expr = self.parse_expr()?;
+                let on_expr = self.parse_expr()?;
                 let mut arms = List::new();
                 self.expect(Token::OpenBlock, ParseContext::Match)?;
                 while !self.try_eat(Token::CloseBlock) {
                     let arm = self.parse_match_arm()?;
                     arms.add(&mut self.arena, arm);
                 }
-                ExprKind::Match { expr, arms }
+                ExprKind::Match { on_expr, arms }
             }
             Token::KwSizeof => {
                 self.eat();

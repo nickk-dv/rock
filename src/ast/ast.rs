@@ -251,7 +251,7 @@ pub enum ExprKind {
     LitString   { id: InternID },
     If          { if_: P<If> },
     Block       { block: P<Block> },
-    Match       { expr: P<Expr>, arms: List<MatchArm> },
+    Match       { on_expr: P<Expr>, arms: List<MatchArm> },
     Field       { target: P<Expr>, name: Ident },
     Index       { target: P<Expr>, index: P<Expr> },
     Cast        { target: P<Expr>, ty: Type },
@@ -409,6 +409,13 @@ impl Type {
         }
     }
 
+    pub fn poison() -> Self {
+        Self {
+            ptr: PtrLevel::new(),
+            kind: TypeKind::Poison,
+        }
+    }
+
     pub fn matches(ty: &Type, ty2: &Type) -> bool {
         if ty.ptr.level != ty2.ptr.level {
             return false;
@@ -429,7 +436,8 @@ impl Type {
             (TypeKind::Enum(id), TypeKind::Enum(id2)) => id == id2,
             (TypeKind::Union(id), TypeKind::Union(id2)) => id == id2,
             (TypeKind::Struct(id), TypeKind::Struct(id2)) => id == id2,
-            (TypeKind::Poison, TypeKind::Poison) => true,
+            (TypeKind::Poison, ..) => true,
+            (.., TypeKind::Poison) => true,
             _ => false,
         }
     }

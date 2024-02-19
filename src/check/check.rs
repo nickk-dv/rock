@@ -423,19 +423,7 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
     }
 }
 
-fn pass_3_typecheck(context: &Context, ctx: &CompCtx) {
-    for scope_id in context.scope_iter() {
-        let scope = context.get_scope(scope_id);
-        for decl in scope.module.decls {
-            match decl {
-                Decl::Proc(proc_decl) => typecheck_proc(proc_decl, scope, ctx),
-                _ => {}
-            }
-        }
-    }
-}
-
-fn nameresolve_type(ty: &mut Type) {
+fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
     match ty.kind {
         TypeKind::Basic(_) => {}
         TypeKind::Custom(path) => {
@@ -444,8 +432,8 @@ fn nameresolve_type(ty: &mut Type) {
             let kind = path.kind;
             for name in path.names.iter() {}
         }
-        TypeKind::ArraySlice(mut slice) => nameresolve_type(&mut slice.ty),
-        TypeKind::ArrayStatic(mut array) => nameresolve_type(&mut array.ty), //@ size ConstExpr is not touched
+        TypeKind::ArraySlice(mut slice) => nameresolve_type(ctx, &mut slice.ty),
+        TypeKind::ArrayStatic(mut array) => nameresolve_type(ctx, &mut array.ty), //@ size ConstExpr is not touched
         TypeKind::Enum(_) => panic!("nameresolve_type redundant"),
         TypeKind::Union(_) => panic!("nameresolve_type redundant"),
         TypeKind::Struct(_) => panic!("nameresolve_type redundant"),
@@ -453,60 +441,109 @@ fn nameresolve_type(ty: &mut Type) {
     }
 }
 
-fn typecheck_proc(mut proc_decl: P<ProcDecl>, scope: &Scope, ctx: &CompCtx) {
-    for param in proc_decl.params.iter_mut() {
-        nameresolve_type(&mut param.ty);
-    }
-    let return_ty = if let Some(ref mut ty) = proc_decl.return_ty {
-        nameresolve_type(ty);
-        *ty
-    } else {
-        proc_decl.return_ty = Some(Type::unit());
-        Type::unit()
-    };
-    if let Some(block) = proc_decl.block {
-        let ty = typecheck_block(block);
-        if !Type::matches(&ty, &return_ty) {
-            report("type mismatch in proc", ctx, scope.src(proc_decl.name.span));
+struct TypeCtx<'a> {
+    scope: &'a Scope,
+    context: &'a Context,
+    comp_ctx: &'a CompCtx,
+    proc_return_ty: Option<&'a Type>,
+    proc_scope: &'a mut ProcScope,
+}
+
+fn pass_3_typecheck(context: &Context, ctx: &CompCtx) {
+    for scope_id in context.scope_iter() {
+        let mut type_ctx = TypeCtx {
+            scope: context.get_scope(scope_id),
+            context,
+            comp_ctx: ctx,
+            proc_return_ty: None,
+            proc_scope: &mut ProcScope::new(),
+        };
+        for decl in type_ctx.scope.module.decls {
+            match decl {
+                Decl::Proc(proc_decl) => typecheck_proc(&mut type_ctx, proc_decl),
+                _ => {}
+            }
         }
     }
 }
 
-fn typecheck_block(block: P<Block>) -> Type {
-    let mut ty = Type::unit();
-    for stmt in block.stmts {
-        ty = typecheck_stmt(stmt);
+fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
+    for param in proc_decl.params.iter_mut() {
+        nameresolve_type(ctx, &mut param.ty);
     }
-    ty
+    if let Some(ref mut ty) = proc_decl.return_ty {
+        nameresolve_type(ctx, ty);
+    } else {
+        proc_decl.return_ty = Some(Type::unit());
+    };
+    if let Some(block) = proc_decl.block {
+        if let Some(ref return_ty) = proc_decl.return_ty {
+            ctx.proc_scope.push_stack_frame();
+            for param in proc_decl.params {
+                ctx.proc_scope.push_local(LocalVar::Param(param));
+            }
+            let ty = typecheck_block(ctx, block, return_ty);
+            if !Type::matches(&ty, &return_ty) {
+                report(
+                    "type mismatch in proc",
+                    ctx.comp_ctx,
+                    ctx.scope.src(proc_decl.name.span),
+                );
+            }
+        }
+    }
 }
 
-fn typecheck_stmt(stmt: Stmt) -> Type {
+//@hack to apply expected type only on the last stmt
+fn typecheck_block(ctx: &TypeCtx, block: P<Block>, expect: &Type) -> Type {
+    let mut stmt_last: Stmt = Stmt {
+        span: Span::new(0, 0),
+        kind: StmtKind::Break,
+    };
+    let mut first = true;
+    for stmt in block.stmts {
+        if !first {
+            typecheck_stmt(ctx, stmt_last, &Type::unit());
+        }
+        stmt_last = stmt;
+        first = false;
+    }
+    if !first {
+        typecheck_stmt(ctx, stmt_last, expect)
+    } else {
+        Type::unit()
+    }
+}
+
+fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
     match stmt.kind {
         StmtKind::Break => Type::unit(),
         StmtKind::Continue => Type::unit(),
-        StmtKind::Return(ret) => Type::unit(), //@typecheck againts proc return type
+        StmtKind::Return(ret) => Type::unit(), //@typecheck against proc return type
         StmtKind::Defer(defer) => {
-            typecheck_block(defer);
+            typecheck_block(ctx, defer, &Type::unit());
             Type::unit()
         }
         StmtKind::ForLoop(for_) => Type::unit(), //@ignored
         StmtKind::VarDecl(var_decl) => Type::unit(), //@ignored
         StmtKind::VarAssign(var_assign) => Type::unit(), //@ignored
         StmtKind::ExprSemi(expr) => {
-            typecheck_expr(expr);
+            //@maybe this is not correct handling of expr semi
+            typecheck_expr(ctx, expr, &Type::unit());
             Type::unit()
         }
-        StmtKind::ExprTail(expr) => typecheck_expr(expr),
+        StmtKind::ExprTail(expr) => typecheck_expr(ctx, expr, expect),
     }
 }
 
-fn typecheck_expr(mut expr: P<Expr>) -> Type {
+fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
     match expr.kind {
         ExprKind::Unit => Type::unit(),
         ExprKind::Discard => todo!(), //@ discard is only allowed in variable bindings
         ExprKind::LitNull => Type::basic(BasicType::Rawptr),
         ExprKind::LitBool { .. } => Type::basic(BasicType::Bool),
         ExprKind::LitUint { ref mut ty, .. } => {
+            //@conform to expectation if not poison
             let basic = match *ty {
                 Some(basic) => basic,
                 None => {
@@ -517,6 +554,7 @@ fn typecheck_expr(mut expr: P<Expr>) -> Type {
             Type::basic(basic)
         }
         ExprKind::LitFloat { ref mut ty, .. } => {
+            //@conform to expectation if not poison
             let basic = match *ty {
                 Some(basic) => basic,
                 None => {
@@ -529,27 +567,28 @@ fn typecheck_expr(mut expr: P<Expr>) -> Type {
         ExprKind::LitChar { .. } => Type::basic(BasicType::Char),
         ExprKind::LitString { .. } => Type::new_ptr(Mut::Immutable, TypeKind::Basic(BasicType::U8)),
         ExprKind::If { if_ } => Type::unit(), //@ignored check if else branch expr
-        ExprKind::Block { block } => typecheck_block(block),
-        ExprKind::Match { expr, arms } => {
-            let ty = typecheck_expr(expr);
+        ExprKind::Block { block } => typecheck_block(ctx, block, expect),
+        ExprKind::Match { on_expr, arms } => {
+            let on_ty = typecheck_expr(ctx, on_expr, &Type::poison()); // `poison` = no expectation
             Type::unit() //@ignored check arms
         }
         ExprKind::Field { target, name } => {
-            let target_ty = typecheck_expr(target);
+            let target_ty = typecheck_expr(ctx, target, &Type::poison()); // `poison` = no expectation
             Type::unit() //@ignored check target + field name
         }
         ExprKind::Index { target, index } => {
-            let target_ty = typecheck_expr(target);
-            Type::unit() //@ignored check target + index
+            let target_ty = typecheck_expr(ctx, target, &Type::poison()); // `poison` = no expectation
+            typecheck_expr(ctx, index, &Type::basic(BasicType::Usize));
+            Type::unit() //@return indexed type if operation is valid
         }
         ExprKind::Cast { target, ref mut ty } => {
-            let target_ty = typecheck_expr(target);
-            nameresolve_type(ty);
+            let target_ty = typecheck_expr(ctx, target, &Type::poison()); // `poison` = no expectation
+            nameresolve_type(ctx, ty);
             //@ignored check target + cast
             *ty
         }
         ExprKind::Sizeof { ref mut ty } => {
-            nameresolve_type(ty);
+            nameresolve_type(ctx, ty);
             Type::basic(BasicType::Usize)
         }
         ExprKind::Item { path } => Type::unit(), //@ignored
@@ -559,5 +598,71 @@ fn typecheck_expr(mut expr: P<Expr>) -> Type {
         ExprKind::ArrayRepeat { expr, size } => Type::unit(), //@ignored
         ExprKind::UnaryExpr { op, rhs } => Type::unit(), //@ignored
         ExprKind::BinaryExpr { op, lhs, rhs } => Type::unit(), //@ignored
+    }
+}
+
+struct ProcScope {
+    locals: Vec<LocalVar>,
+    stack_frames: Vec<StackFrame>,
+}
+
+enum LocalVar {
+    Param(ProcParam),
+    Local(P<VarDecl>),
+}
+
+struct StackFrame {
+    local_count: u32,
+}
+
+impl ProcScope {
+    fn new() -> Self {
+        Self {
+            locals: Vec::new(),
+            stack_frames: Vec::new(),
+        }
+    }
+
+    fn push_stack_frame(&mut self) {
+        self.stack_frames.push(StackFrame { local_count: 0 });
+    }
+
+    fn push_local(&mut self, local: LocalVar) {
+        self.locals.push(local);
+        match self.stack_frames.last_mut() {
+            Some(frame) => frame.local_count += 1,
+            None => panic!("push_local with 0 stack frames"),
+        }
+    }
+
+    fn pop_stack_frame(&mut self) {
+        match self.stack_frames.pop() {
+            Some(frame) => {
+                for _ in 0..frame.local_count {
+                    self.locals.pop();
+                }
+            }
+            None => panic!("pop_stack_frame with 0 stack frames"),
+        }
+    }
+
+    fn find_local(&self, id: InternID) -> Option<&LocalVar> {
+        for local in self.locals.iter() {
+            match local {
+                LocalVar::Param(param) => {
+                    if param.name.id == id {
+                        return Some(local);
+                    }
+                }
+                LocalVar::Local(var_decl) => {
+                    if let Some(name) = var_decl.name {
+                        if name.id == id {
+                            return Some(local);
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }

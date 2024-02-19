@@ -223,8 +223,8 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
         ExprKind::LitString { .. } => {}
         ExprKind::If { if_ } => visit_if(vis, if_),
         ExprKind::Block { block } => visit_block(vis, block),
-        ExprKind::Match { expr, arms } => {
-            visit_expr(vis, expr);
+        ExprKind::Match { on_expr, arms } => {
+            visit_expr(vis, on_expr);
             for arm in arms {
                 visit_expr(vis, arm.pat);
                 visit_expr(vis, arm.expr);
