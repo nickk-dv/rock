@@ -91,7 +91,7 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
     let timer = Timer::new();
     let mut ctx = CompCtx::new();
     let mut ast = Ast {
-        arena: Arena::new(1024 * 1024),
+        arena: Arena::new(),
         modules: Vec::new(),
     };
     timer.elapsed_ms("parse arena created");
@@ -118,7 +118,7 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
         };
 
         let res = parser.parse_module(id);
-        ast.modules.push(res.0.copy());
+        ast.modules.push(res.0);
         if let Some(error) = res.1 {
             report::report(handle, &error, &ctx);
         } else {
@@ -244,7 +244,7 @@ impl<'ast> Parser<'ast> {
                 }
                 Err(err) => {
                     let got_token = (self.peek(), self.peek_span());
-                    return (module.copy(), Some(Error::parse(err, file_id, got_token)));
+                    return (module, Some(Error::parse(err, file_id, got_token)));
                 }
             }
         }
@@ -795,7 +795,9 @@ impl<'ast> Parser<'ast> {
             Token::OpenBracket => {
                 self.eat();
                 if self.try_eat(Token::CloseBracket) {
-                    ExprKind::ArrayInit { input: List::new() }
+                    ExprKind::ArrayInit {
+                        input: ListBuilder::new().take(),
+                    }
                 } else {
                     let expr = self.parse_expr()?;
                     if self.try_eat(Token::Semicolon) {

@@ -1,15 +1,15 @@
-use super::*;
+use super::{arena::Arena, ptr::P};
 use std::marker::PhantomData;
-
-#[derive(Copy, Clone)]
-pub struct List<T: Copy> {
-    first: P<Node<T>>,
-}
 
 #[derive(Copy, Clone)]
 pub struct ListBuilder<T: Copy> {
     first: P<Node<T>>,
     last: P<Node<T>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct List<T: Copy> {
+    first: P<Node<T>>,
 }
 
 #[derive(Copy, Clone)]
@@ -46,23 +46,12 @@ impl<T: Copy> ListBuilder<T> {
 }
 
 impl<T: Copy> List<T> {
-    pub fn new() -> Self {
-        Self { first: P::null() }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.first.is_null()
-    }
-
     pub fn len(&self) -> usize {
         self.iter().count()
     }
 
-    pub fn first(&self) -> Option<T> {
-        if !self.first.is_null() {
-            return Some(self.first.val);
-        }
-        None
+    pub fn is_empty(&self) -> bool {
+        self.first.is_null()
     }
 
     pub fn iter(&self) -> ListIter<T> {

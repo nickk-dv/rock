@@ -114,7 +114,7 @@ impl TypeData {
 
 impl Scope {
     pub fn md(&self) -> P<Module> {
-        self.module.copy()
+        self.module
     }
 
     pub fn error(&mut self, error: CheckError, span: Span) {

@@ -1,72 +1,85 @@
-use super::*;
+use super::{list::ListBuilder, ptr::P};
 use std::alloc;
 
+const PAGE_SIZE: usize = 4096;
+const MAX_PAGE_SIZE: usize = 512 * 4096;
+
 pub struct Arena {
-    data: P<u8>,
     offset: usize,
+    block: Block,
+    used_blocks: ListBuilder<Block>,
+}
+
+#[derive(Copy, Clone)]
+struct Block {
+    data: P<u8>,
     layout: alloc::Layout,
-    blocks: ListBuilder<P<u8>>,
 }
 
 impl Arena {
-    const PAGE_SIZE: usize = 4096;
-
-    pub fn new(mut block_size: usize) -> Self {
-        if block_size < Self::PAGE_SIZE {
-            block_size = Self::PAGE_SIZE;
-        }
-        let mut arena = Arena {
-            data: P::null(),
+    pub fn new() -> Self {
+        Self {
             offset: 0,
-            layout: alloc::Layout::from_size_align(block_size, Self::PAGE_SIZE).unwrap(),
-            blocks: ListBuilder::new(),
-        };
-        arena.alloc_block();
-        return arena;
+            block: Block::alloc(PAGE_SIZE),
+            used_blocks: ListBuilder::new(),
+        }
     }
 
     pub fn alloc<T: Copy>(&mut self) -> P<T> {
-        self.alloc_buffer(1)
-    }
-
-    pub fn alloc_array<T: Copy>(&mut self, len: usize) -> Array<T> {
-        Array::new(self.alloc_buffer(len), len as u32)
-    }
-
-    fn alloc_buffer<T: Copy>(&mut self, len: usize) -> P<T> {
-        let size = (len * std::mem::size_of::<T>() + 7) & !7;
-        if self.offset + size > self.layout.size() {
-            self.alloc_block();
+        let size = std::mem::size_of::<T>();
+        if self.offset + size > self.block.size() {
+            self.grow();
         }
-        let ptr = self.data.add(self.offset);
+        let offset = unsafe { self.block.data.as_mut().add(self.offset) };
         self.offset += size;
-        return P::new(ptr.as_raw());
+        P::new(offset as *mut T)
     }
 
-    fn alloc_block(&mut self) {
-        self.data = unsafe { P::new(alloc::alloc_zeroed(self.layout) as Rawptr) };
+    fn grow(&mut self) {
+        let used_block = self.block;
+        let new_size = usize::min(self.block.size() * 2, MAX_PAGE_SIZE);
         self.offset = 0;
-        let mut blocks = self.blocks;
-        blocks.add(self, self.data);
-        self.blocks = blocks;
+        self.block = Block::alloc(new_size);
+
+        let mut used_blocks = self.used_blocks;
+        used_blocks.add(self, used_block);
+        self.used_blocks = used_blocks;
     }
 
-    pub fn manual_drop(&mut self) {
-        for block in self.blocks.take() {
-            unsafe {
-                alloc::dealloc(block.as_mut(), self.layout);
-            }
+    pub fn mem_usage(&self) -> usize {
+        let mut usage: usize = 0;
+        for block in self.used_blocks.take() {
+            usage += block.size();
+        }
+        usage += self.offset;
+        usage
+    }
+}
+
+impl Drop for Arena {
+    fn drop(&mut self) {
+        for block in self.used_blocks.take() {
+            block.dealloc();
+        }
+        self.block.dealloc();
+    }
+}
+
+impl Block {
+    fn alloc(size: usize) -> Self {
+        let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
+        let bytes = unsafe { alloc::alloc_zeroed(layout) };
+        Self {
+            data: P::new(bytes),
+            layout,
         }
     }
 
-    pub fn memory_usage(&self) -> usize {
-        let mut bytes_used = 0;
-        let blocks = self.blocks;
-        for _ in blocks.take() {
-            bytes_used += self.layout.size();
-        }
-        bytes_used -= self.layout.size();
-        bytes_used += self.offset;
-        bytes_used
+    fn dealloc(self) {
+        unsafe { alloc::dealloc(self.data.as_mut(), self.layout) };
+    }
+
+    fn size(&self) -> usize {
+        self.layout.size()
     }
 }
