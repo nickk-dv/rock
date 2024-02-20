@@ -497,33 +497,9 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
             for param in proc_decl.params {
                 ctx.proc_scope.push_local(LocalVar::Param(param));
             }
-            typecheck_block(ctx, block, return_ty);
-            //@top level block is not an expression,
-            // need to handle empty function with separate report
-            if block.stmts.is_empty() && !Type::matches(&return_ty, &Type::unit()) {
-                report(
-                    "type mismatch",
-                    ctx.comp_ctx,
-                    ctx.scope.src(proc_decl.name.span),
-                );
-                eprint!("expected: ");
-                eprint_type(return_ty);
-                eprint!("\ngot:      ");
-                eprint_type(&Type::unit());
-                eprint!("\n\n");
-            }
+            typecheck_expr(ctx, block, return_ty);
         }
     }
-}
-
-fn typecheck_block(ctx: &TypeCtx, block: P<Block>, expect: &Type) -> Type {
-    for (stmt, last) in block.stmts.iter_last() {
-        if last {
-            return typecheck_stmt(ctx, stmt, expect);
-        }
-        typecheck_stmt(ctx, stmt, &Type::unit());
-    }
-    Type::unit()
 }
 
 fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
@@ -532,7 +508,7 @@ fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
         StmtKind::Continue => Type::unit(),
         StmtKind::Return(ret) => Type::unit(), //@typecheck against proc return type
         StmtKind::Defer(defer) => {
-            typecheck_block(ctx, defer, &Type::unit());
+            typecheck_expr(ctx, defer, &Type::unit());
             Type::unit()
         }
         StmtKind::ForLoop(for_) => Type::unit(), //@ignored
@@ -577,8 +553,52 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
         }
         ExprKind::LitChar { .. } => Type::basic(BasicType::Char),
         ExprKind::LitString { .. } => Type::new_ptr(Mut::Immutable, TypeKind::Basic(BasicType::U8)),
-        ExprKind::If { if_ } => Type::unit(), //@ignored check if else branch expr
-        ExprKind::Block { block } => typecheck_block(ctx, block, expect),
+        ExprKind::If { if_ } => {
+            let mut curr_if = if_;
+            let mut closed = false;
+            loop {
+                match curr_if.else_ {
+                    Some(Else::If { else_if }) => curr_if = else_if,
+                    Some(Else::Block { .. }) => {
+                        closed = true;
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+
+            let mut block_expect = &Type::unit();
+            if closed {
+                block_expect = expect;
+            };
+
+            curr_if = if_;
+            loop {
+                typecheck_expr(ctx, curr_if.cond, &Type::basic(BasicType::Bool));
+                typecheck_expr(ctx, curr_if.block, block_expect);
+                match curr_if.else_ {
+                    Some(Else::If { else_if }) => curr_if = else_if,
+                    Some(Else::Block { block }) => {
+                        typecheck_expr(ctx, block, block_expect);
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+
+            *block_expect
+        }
+        ExprKind::Block { stmts } => {
+            let mut block_ty = Type::unit();
+            for (stmt, last) in stmts.iter_last() {
+                if last {
+                    block_ty = typecheck_stmt(ctx, stmt, expect);
+                } else {
+                    typecheck_stmt(ctx, stmt, &Type::unit());
+                }
+            }
+            block_ty
+        }
         ExprKind::Match { on_expr, arms } => {
             let on_ty = typecheck_expr(ctx, on_expr, &Type::poison()); // `poison` = no expectation
             Type::unit() //@ignored check arms

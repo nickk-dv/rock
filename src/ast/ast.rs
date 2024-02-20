@@ -130,7 +130,7 @@ pub struct ProcDecl {
     pub params: List<ProcParam>,
     pub is_variadic: bool,
     pub return_ty: Option<Type>,
-    pub block: Option<P<Block>>,
+    pub block: Option<P<Expr>>,
 }
 
 #[derive(Copy, Clone)]
@@ -192,7 +192,7 @@ pub enum StmtKind {
     Break,
     Continue,
     Return(Option<P<Expr>>),
-    Defer(P<Block>),
+    Defer(P<Expr>),
     ForLoop(P<For>),
     VarDecl(P<VarDecl>),
     VarAssign(P<VarAssign>),
@@ -203,7 +203,7 @@ pub enum StmtKind {
 #[derive(Copy, Clone)]
 pub struct For {
     pub kind: ForKind,
-    pub block: P<Block>,
+    pub block: P<Expr>,
 }
 
 #[rustfmt::skip]
@@ -250,7 +250,7 @@ pub enum ExprKind {
     LitChar     { val: char },
     LitString   { id: InternID },
     If          { if_: P<If> },
-    Block       { block: P<Block> },
+    Block       { stmts: List<Stmt> },
     Match       { on_expr: P<Expr>, arms: List<MatchArm> },
     Field       { target: P<Expr>, name: Ident },
     Index       { target: P<Expr>, index: P<Expr> },
@@ -268,19 +268,14 @@ pub enum ExprKind {
 #[derive(Copy, Clone)]
 pub struct If {
     pub cond: P<Expr>,
-    pub block: P<Block>,
+    pub block: P<Expr>,
     pub else_: Option<Else>,
 }
 
 #[derive(Copy, Clone)]
 pub enum Else {
-    If(P<If>),
-    Block(P<Block>),
-}
-
-#[derive(Copy, Clone)]
-pub struct Block {
-    pub stmts: List<Stmt>,
+    If { else_if: P<If> },
+    Block { block: P<Expr> },
 }
 
 #[derive(Copy, Clone)]

@@ -754,7 +754,7 @@ impl<'ast> Parser<'ast> {
             | Token::CharLit
             | Token::StringLit => self.parse_lit()?,
             Token::OpenBlock => ExprKind::Block {
-                block: self.parse_block()?,
+                stmts: self.parse_block_stmts()?,
             },
             Token::KwMatch => {
                 self.eat();
@@ -894,12 +894,12 @@ impl<'ast> Parser<'ast> {
             match self.peek() {
                 Token::KwIf => {
                     let else_if = self.parse_if_branch()?;
-                    if_prev.else_ = Some(Else::If(else_if));
+                    if_prev.else_ = Some(Else::If { else_if });
                     if_prev = else_if;
                 }
                 Token::OpenBlock => {
                     let block = self.parse_block()?;
-                    if_prev.else_ = Some(Else::Block(block));
+                    if_prev.else_ = Some(Else::Block { block });
                 }
                 _ => return Err(ParseError::ElseMatch),
             }
@@ -916,14 +916,24 @@ impl<'ast> Parser<'ast> {
         Ok(if_)
     }
 
-    fn parse_block(&mut self) -> Result<P<Block>, ParseError> {
-        let mut block = self.alloc::<Block>();
+    fn parse_block(&mut self) -> Result<P<Expr>, ParseError> {
+        let span_start = self.peek_span_start();
+        let mut expr = self.alloc::<Expr>();
+        expr.kind = ExprKind::Block {
+            stmts: self.parse_block_stmts()?,
+        };
+        expr.span = Span::new(span_start, self.peek_span_end());
+        Ok(expr)
+    }
+
+    fn parse_block_stmts(&mut self) -> Result<List<Stmt>, ParseError> {
+        let mut stmts = List::new();
         self.expect(Token::OpenBlock, ParseContext::Block)?;
         while !self.try_eat(Token::CloseBlock) {
             let stmt = self.parse_stmt()?;
-            block.stmts.add(&mut self.arena, stmt);
+            stmts.add(&mut self.arena, stmt);
         }
-        Ok(block)
+        Ok(stmts)
     }
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, ParseError> {

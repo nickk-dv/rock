@@ -30,7 +30,6 @@ pub trait MutVisit: Sized {
     fn visit_expr(&mut self, expr: P<Expr>) {}
     fn visit_const_expr(&mut self, expr: ConstExpr) {}
     fn visit_if(&mut self, if_: P<If>) {}
-    fn visit_block(&mut self, block: P<Block>) {}
 }
 
 fn visit_module<T: MutVisit>(vis: &mut T, module: P<Module>) {
@@ -119,7 +118,7 @@ fn visit_proc_decl<T: MutVisit>(vis: &mut T, mut proc_decl: P<ProcDecl>) {
         visit_type(vis, ty);
     }
     if let Some(block) = proc_decl.block {
-        visit_block(vis, block);
+        visit_expr(vis, block);
     }
 }
 
@@ -162,7 +161,7 @@ fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
                 visit_expr(vis, expr);
             }
         }
-        StmtKind::Defer(block) => visit_block(vis, block),
+        StmtKind::Defer(block) => visit_expr(vis, block),
         StmtKind::ForLoop(for_) => visit_for(vis, for_),
         StmtKind::VarDecl(var_decl) => visit_var_decl(vis, var_decl),
         StmtKind::VarAssign(var_assign) => visit_var_assign(vis, var_assign),
@@ -188,7 +187,7 @@ fn visit_for<T: MutVisit>(vis: &mut T, for_: P<For>) {
             visit_var_assign(vis, var_assign);
         }
     }
-    visit_block(vis, for_.block);
+    visit_expr(vis, for_.block);
 }
 
 fn visit_var_decl<T: MutVisit>(vis: &mut T, mut var_decl: P<VarDecl>) {
@@ -222,7 +221,11 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
         ExprKind::LitChar { .. } => {}
         ExprKind::LitString { .. } => {}
         ExprKind::If { if_ } => visit_if(vis, if_),
-        ExprKind::Block { block } => visit_block(vis, block),
+        ExprKind::Block { stmts } => {
+            for stmt in stmts {
+                visit_stmt(vis, stmt);
+            }
+        }
         ExprKind::Match { on_expr, arms } => {
             visit_expr(vis, on_expr);
             for arm in arms {
@@ -289,17 +292,10 @@ fn visit_const_expr<T: MutVisit>(vis: &mut T, expr: ConstExpr) {
 fn visit_if<T: MutVisit>(vis: &mut T, if_: P<If>) {
     vis.visit_if(if_);
     visit_expr(vis, if_.cond);
-    visit_block(vis, if_.block);
+    visit_expr(vis, if_.block);
     match if_.else_ {
-        Some(Else::If(if_else)) => visit_if(vis, if_else),
-        Some(Else::Block(block)) => visit_block(vis, block),
+        Some(Else::If { else_if }) => visit_if(vis, else_if),
+        Some(Else::Block { block }) => visit_expr(vis, block),
         None => {}
-    }
-}
-
-fn visit_block<T: MutVisit>(vis: &mut T, block: P<Block>) {
-    vis.visit_block(block);
-    for stmt in block.stmts {
-        visit_stmt(vis, stmt);
     }
 }
