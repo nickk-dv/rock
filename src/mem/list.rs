@@ -4,6 +4,11 @@ use std::marker::PhantomData;
 #[derive(Copy, Clone)]
 pub struct List<T: Copy> {
     first: P<Node<T>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ListBuilder<T: Copy> {
+    first: P<Node<T>>,
     last: P<Node<T>>,
 }
 
@@ -13,12 +18,16 @@ struct Node<T: Copy> {
     next: P<Node<T>>,
 }
 
-impl<T: Copy> List<T> {
+impl<T: Copy> ListBuilder<T> {
     pub fn new() -> Self {
         Self {
             first: P::null(),
             last: P::null(),
         }
+    }
+
+    pub fn take(self) -> List<T> {
+        List::<T> { first: self.first }
     }
 
     pub fn add(&mut self, arena: &mut Arena, val: T) {
@@ -33,6 +42,12 @@ impl<T: Copy> List<T> {
             self.last.next = node;
             self.last = node;
         }
+    }
+}
+
+impl<T: Copy> List<T> {
+    pub fn new() -> Self {
+        Self { first: P::null() }
     }
 
     pub fn is_empty(&self) -> bool {

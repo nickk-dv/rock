@@ -5,7 +5,7 @@ pub struct Arena {
     data: P<u8>,
     offset: usize,
     layout: alloc::Layout,
-    blocks: List<P<u8>>,
+    blocks: ListBuilder<P<u8>>,
 }
 
 impl Arena {
@@ -19,7 +19,7 @@ impl Arena {
             data: P::null(),
             offset: 0,
             layout: alloc::Layout::from_size_align(block_size, Self::PAGE_SIZE).unwrap(),
-            blocks: List::new(),
+            blocks: ListBuilder::new(),
         };
         arena.alloc_block();
         return arena;
@@ -52,7 +52,7 @@ impl Arena {
     }
 
     pub fn manual_drop(&mut self) {
-        for block in self.blocks.iter() {
+        for block in self.blocks.take() {
             unsafe {
                 alloc::dealloc(block.as_mut(), self.layout);
             }
@@ -61,7 +61,8 @@ impl Arena {
 
     pub fn memory_usage(&self) -> usize {
         let mut bytes_used = 0;
-        for _ in self.blocks {
+        let blocks = self.blocks;
+        for _ in blocks.take() {
             bytes_used += self.layout.size();
         }
         bytes_used -= self.layout.size();

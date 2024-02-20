@@ -100,7 +100,6 @@ pub enum Decl {
 pub struct ModuleDecl {
     pub vis: Vis,
     pub name: Ident,
-    pub id: Option<ScopeID>, // @remove when hir/check.rs is removed
 }
 
 #[derive(Copy, Clone)]
@@ -254,8 +253,8 @@ pub enum ExprKind {
     Match       { on_expr: P<Expr>, arms: List<MatchArm> },
     Field       { target: P<Expr>, name: Ident },
     Index       { target: P<Expr>, index: P<Expr> },
-    Cast        { target: P<Expr>, ty: Type },
-    Sizeof      { ty: Type },
+    Cast        { target: P<Expr>, ty: P<Type> },
+    Sizeof      { ty: P<Type> },
     Item        { path: P<Path> },
     ProcCall    { path: P<Path>, input: List<P<Expr>> },
     StructInit  { path: P<Path>, input: List<FieldInit> },
@@ -446,10 +445,11 @@ mod size_assert {
             const _: [(); $size] = [(); ::std::mem::size_of::<$ty>()];
         };
     }
+
     size_assert!(12, Ident);
-    size_assert!(24, Path);
+    size_assert!(16, Path);
     size_assert!(24, Type);
     size_assert!(16, Decl);
     size_assert!(24, Stmt);
-    size_assert!(40, Expr);
+    size_assert!(32, Expr);
 }

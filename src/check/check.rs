@@ -612,14 +612,14 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
             typecheck_expr(ctx, index, &Type::basic(BasicType::Usize));
             Type::unit() //@return indexed type if operation is valid
         }
-        ExprKind::Cast { target, ref mut ty } => {
+        ExprKind::Cast { target, mut ty } => {
             let target_ty = typecheck_expr(ctx, target, &Type::poison()); // `poison` = no expectation
-            nameresolve_type(ctx, ty);
+            nameresolve_type(ctx, &mut ty);
             //@ignored check target + cast
             *ty
         }
-        ExprKind::Sizeof { ref mut ty } => {
-            nameresolve_type(ctx, ty);
+        ExprKind::Sizeof { mut ty } => {
+            nameresolve_type(ctx, &mut ty);
             Type::basic(BasicType::Usize)
         }
         ExprKind::Item { path } => {
