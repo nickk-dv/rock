@@ -70,13 +70,13 @@ impl<'src> Lexer<'src> {
                         } else {
                             self.lex_symbol(c)
                         };
-                        tokens.add(res.0, res.1);
+                        tokens.add_token(res.0, res.1);
                     }
                 }
             }
         }
         for _ in 0..4 {
-            tokens.add(Token::Eof, Span::new(u32::MAX, u32::MAX));
+            tokens.add_token(Token::Eof, Span::new(u32::MAX, u32::MAX));
         }
         return tokens;
     }

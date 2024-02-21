@@ -1,5 +1,5 @@
-use super::span::*;
-use super::token::*;
+use super::span::Span;
+use super::token::Token;
 
 pub struct TokenList {
     tokens: Vec<Token>,
@@ -18,7 +18,7 @@ impl TokenList {
         }
     }
 
-    pub fn add(&mut self, token: Token, span: Span) {
+    pub fn add_token(&mut self, token: Token, span: Span) {
         self.tokens.push(token);
         self.spans.push(span);
     }
@@ -35,27 +35,19 @@ impl TokenList {
         self.strings.push(s);
     }
 
-    pub fn token(&self, index: usize) -> Token {
+    pub fn get_token(&self, index: usize) -> Token {
         unsafe { *self.tokens.get_unchecked(index) }
     }
 
-    pub fn span(&self, index: usize) -> Span {
+    pub fn get_span(&self, index: usize) -> Span {
         unsafe { *self.spans.get_unchecked(index) }
     }
 
-    pub fn char(&self, index: usize) -> char {
+    pub fn get_char(&self, index: usize) -> char {
         unsafe { *self.chars.get_unchecked(index) }
     }
 
-    pub fn string(&self, index: usize) -> &str {
+    pub fn get_string(&self, index: usize) -> &str {
         unsafe { self.strings.get_unchecked(index) }
-    }
-
-    pub fn len(&self) -> usize {
-        self.tokens.len()
-    }
-
-    pub fn cap(&self) -> usize {
-        self.tokens.capacity()
     }
 }

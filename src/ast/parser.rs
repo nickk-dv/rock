@@ -214,7 +214,7 @@ impl<'a> visit::MutVisit for ModuleInterner<'a> {
 
     fn visit_expr(&mut self, mut expr: P<Expr>) {
         if let ExprKind::LitString { ref mut id } = expr.kind {
-            let string = self.tokens.string(id.0 as usize);
+            let string = self.tokens.get_string(id.0 as usize);
             *id = self.intern_pool.intern(string);
         }
     }
@@ -1052,7 +1052,7 @@ impl<'ast> Parser<'ast> {
             }
             Token::CharLit => {
                 self.eat();
-                let v = self.tokens.char(self.char_id as usize);
+                let v = self.tokens.get_char(self.char_id as usize);
                 self.char_id += 1;
                 Ok(ExprKind::LitChar { val: v })
             }
@@ -1090,23 +1090,23 @@ impl<'ast> Parser<'ast> {
     }
 
     fn peek(&self) -> Token {
-        self.tokens.token(self.cursor)
+        self.tokens.get_token(self.cursor)
     }
 
     fn peek_next(&self) -> Token {
-        self.tokens.token(self.cursor + 1)
+        self.tokens.get_token(self.cursor + 1)
     }
 
     fn peek_span(&self) -> Span {
-        self.tokens.span(self.cursor)
+        self.tokens.get_span(self.cursor)
     }
 
     fn peek_span_start(&self) -> u32 {
-        self.tokens.span(self.cursor).start
+        self.tokens.get_span(self.cursor).start
     }
 
     fn peek_span_end(&self) -> u32 {
-        self.tokens.span(self.cursor - 1).end
+        self.tokens.get_span(self.cursor - 1).end
     }
 
     fn eat(&mut self) {

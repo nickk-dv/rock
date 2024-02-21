@@ -47,11 +47,11 @@ pub struct ModuleID(u32);
 pub struct GlobalID(u32);
 #[derive(Copy, Clone)]
 pub struct ProcID(u32);
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, std::fmt::Debug)]
 pub struct EnumID(u32);
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, std::fmt::Debug)]
 pub struct UnionID(u32);
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, std::fmt::Debug)]
 pub struct StructID(u32);
 
 pub struct ModuleData {
@@ -209,7 +209,7 @@ impl Context {
     pub fn get_symbol_src(&self, scope_id: ScopeID, symbol: Symbol) -> SourceLoc {
         match symbol {
             Symbol::Declared { symbol_id } => self.get_symbol_id_src(symbol_id),
-            Symbol::Imported { symbol_id, import } => {
+            Symbol::Imported { import, .. } => {
                 let scope = self.get_scope(scope_id);
                 scope.src(import)
             }

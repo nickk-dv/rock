@@ -1,10 +1,8 @@
 use super::intern::*;
 use super::parser::FileID;
 use super::span::Span;
-use crate::hir::scope::{EnumID, StructID, UnionID};
+use crate::check::{EnumID, StructID, UnionID};
 use crate::mem::*;
-
-pub type ScopeID = u32;
 
 pub struct Ast {
     pub arena: Arena,
@@ -67,10 +65,10 @@ pub enum TypeKind {
     Custom(P<Path>),
     ArraySlice(P<ArraySlice>),
     ArrayStatic(P<ArrayStatic>),
-    Enum(EnumID),     //check
-    Union(UnionID),   //check
-    Struct(StructID), //check
-    Poison,           //check
+    Enum(EnumID),
+    Union(UnionID),
+    Struct(StructID),
+    Poison,
 }
 
 #[derive(Copy, Clone)]
@@ -390,24 +388,15 @@ impl Type {
     }
 
     pub fn unit() -> Self {
-        Self {
-            ptr: PtrLevel::new(),
-            kind: TypeKind::Basic(BasicType::Unit),
-        }
+        Self::new(TypeKind::Basic(BasicType::Unit))
     }
 
     pub fn basic(basic: BasicType) -> Self {
-        Self {
-            ptr: PtrLevel::new(),
-            kind: TypeKind::Basic(basic),
-        }
+        Self::new(TypeKind::Basic(basic))
     }
 
     pub fn poison() -> Self {
-        Self {
-            ptr: PtrLevel::new(),
-            kind: TypeKind::Poison,
-        }
+        Self::new(TypeKind::Poison)
     }
 
     pub fn matches(ty: &Type, ty2: &Type) -> bool {

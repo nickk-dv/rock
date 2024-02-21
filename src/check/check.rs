@@ -25,6 +25,7 @@ pub fn check(ctx: &CompCtx, ast: &Ast) {
     pass_0_populate_scopes(&mut context, &ast, ctx);
     pass_1_check_namesets(&context, ctx);
     pass_2_import_symbols(&mut context, ctx);
+    pass_3_check_main_decl(&context, ctx);
     pass_3_typecheck(&context, ctx);
 }
 
@@ -423,6 +424,30 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
     }
 }
 
+fn pass_3_check_main_decl(context: &Context, ctx: &CompCtx) {
+    //@will crash if not root scope existed
+    // early return or be aware of this on all passes
+    // this pass should be skipped if compiling a library
+    let id = match ctx.intern().try_get_str_id("main") {
+        Some(id) => id,
+        None => {
+            report_no_src("missing main procedure");
+            return;
+        }
+    };
+    let root = context.get_scope(ScopeID(0));
+    match root.get_declared_proc(id) {
+        Ok(proc_id) => {
+            let _ = context.get_proc(proc_id).decl;
+            //@check decl to match: main :: () -> s32 { }
+        }
+        Err(_) => {
+            report_no_src("missing main procedure");
+            return;
+        }
+    }
+}
+
 fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
     match ty.kind {
         TypeKind::Basic(_) => {}
@@ -431,6 +456,13 @@ fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
             // logic as much as possible between path usages in the Ast
             let kind = path.kind;
             for name in path.names.iter() {}
+            //@resolve into one of those:
+            ty.kind = TypeKind::Enum(EnumID(0));
+            ty.kind = TypeKind::Union(UnionID(0));
+            ty.kind = TypeKind::Struct(StructID(0));
+            ty.kind = TypeKind::Poison;
+            //@unchanged
+            ty.kind = TypeKind::Custom(path);
         }
         TypeKind::ArraySlice(mut slice) => nameresolve_type(ctx, &mut slice.ty),
         TypeKind::ArrayStatic(mut array) => nameresolve_type(ctx, &mut array.ty), //@ size ConstExpr is not touched
@@ -704,9 +736,9 @@ fn eprint_type(ty: &Type) {
             eprint!("[<SIZE>]");
             eprint_type(&array.ty);
         }
-        TypeKind::Enum(id) => eprint!("enum({})", id),
-        TypeKind::Union(id) => eprint!("union({})", id),
-        TypeKind::Struct(id) => eprint!("struct({})", id),
+        TypeKind::Enum(id) => eprint!("enum({:?})", id),
+        TypeKind::Union(id) => eprint!("union({:?})", id),
+        TypeKind::Struct(id) => eprint!("struct({:?})", id),
         TypeKind::Poison => eprint!("<POISON>"),
     }
 }

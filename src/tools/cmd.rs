@@ -149,12 +149,12 @@ fn cmd_check() -> Result<(), ()> {
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let res = parser::parse()?;
+    let _ = parser::parse()?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let res = parser::parse()?;
+    let _ = parser::parse()?;
     Ok(())
 }
 
