@@ -39,7 +39,7 @@ pub enum SymbolID {
     Struct(StructID),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct ScopeID(u32);
 #[derive(Copy, Clone)]
 pub struct ModuleID(u32);

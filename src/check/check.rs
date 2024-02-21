@@ -479,16 +479,65 @@ enum ItemResolved<'a> {
 }
 
 fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
-    for name in path.names {
-        match ctx.proc_scope.find_local(name.id) {
-            Some(local) => return ItemResolved::Local(local),
-            None => {}
+    let mut span = Span::new(path.span_start, path.span_start);
+
+    let from_id = match path.kind {
+        PathKind::None => ctx.scope_id,
+        PathKind::Super => {
+            span.end += 5;
+            match ctx.scope.parent_id {
+                Some(parent_id) => parent_id,
+                None => {
+                    report(
+                        "cannot use `super` in root module",
+                        ctx.comp_ctx,
+                        ctx.scope.src(span),
+                    );
+                    return ItemResolved::None;
+                }
+            }
         }
+        PathKind::Package => {
+            span.end += 7;
+            ScopeID(0)
+        }
+    };
+
+    if path.names.is_empty() {
+        report("incomplete access path", ctx.comp_ctx, ctx.scope.src(span));
+        return ItemResolved::None;
     }
+
+    for name in path.names {
+        let from_scope = ctx.context.get_scope(from_id);
+        let symbol = if from_id == ctx.scope_id {
+            from_scope.get_symbol(name.id)
+        } else {
+            from_scope.get_declared_symbol(name.id)
+        };
+        match symbol {
+            Some(s) => {}
+            None => {
+                report(
+                    "symbol not found in scope",
+                    ctx.comp_ctx,
+                    ctx.scope.src(name.span),
+                );
+                return ItemResolved::None;
+            }
+        }
+
+        //match ctx.proc_scope.find_local(name.id) {
+        //    Some(local) => return ItemResolved::Local(local),
+        //    None => {}
+        //}
+    }
+
     ItemResolved::None
 }
 
 struct TypeCtx<'a> {
+    scope_id: ScopeID,
     scope: &'a Scope,
     context: &'a Context,
     comp_ctx: &'a CompCtx,
@@ -499,6 +548,7 @@ struct TypeCtx<'a> {
 fn pass_3_typecheck(context: &Context, ctx: &CompCtx) {
     for scope_id in context.scope_iter() {
         let mut type_ctx = TypeCtx {
+            scope_id,
             scope: context.get_scope(scope_id),
             context,
             comp_ctx: ctx,
@@ -562,23 +612,68 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
         ExprKind::LitNull => Type::basic(BasicType::Rawptr),
         ExprKind::LitBool { .. } => Type::basic(BasicType::Bool),
         ExprKind::LitUint { ref mut ty, .. } => {
-            //@conform to expectation if not poison
             let basic = match *ty {
                 Some(basic) => basic,
                 None => {
-                    *ty = Some(BasicType::S32);
-                    BasicType::S32
+                    let expect_basic = if expect.ptr.level() == 0 {
+                        match expect.kind {
+                            TypeKind::Basic(expect_basic) => match expect_basic {
+                                BasicType::S8
+                                | BasicType::S16
+                                | BasicType::S32
+                                | BasicType::S64
+                                | BasicType::Ssize
+                                | BasicType::U8
+                                | BasicType::U16
+                                | BasicType::U32
+                                | BasicType::U64
+                                | BasicType::Usize => Some(expect_basic),
+                                _ => None,
+                            },
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    match expect_basic {
+                        Some(expect_basic) => {
+                            *ty = Some(expect_basic);
+                            expect_basic
+                        }
+                        None => {
+                            *ty = Some(BasicType::S32);
+                            BasicType::S32
+                        }
+                    }
                 }
             };
             Type::basic(basic)
         }
         ExprKind::LitFloat { ref mut ty, .. } => {
-            //@conform to expectation if not poison
             let basic = match *ty {
                 Some(basic) => basic,
                 None => {
-                    *ty = Some(BasicType::F64);
-                    BasicType::F64
+                    let expect_basic = if expect.ptr.level() == 0 {
+                        match expect.kind {
+                            TypeKind::Basic(expect_basic) => match expect_basic {
+                                BasicType::F32 | BasicType::F64 => Some(expect_basic),
+                                _ => None,
+                            },
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    match expect_basic {
+                        Some(expect_basic) => {
+                            *ty = Some(expect_basic);
+                            expect_basic
+                        }
+                        None => {
+                            *ty = Some(BasicType::F64);
+                            BasicType::F64
+                        }
+                    }
                 }
             };
             Type::basic(basic)
@@ -629,6 +724,9 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                     typecheck_stmt(ctx, stmt, &Type::unit());
                 }
             }
+            //@block as expr can trigger "typemismatch" multiple
+            // times both on last expr and on block itself
+            // thats not the best behavior.
             block_ty
         }
         ExprKind::Match { on_expr, arms } => {
