@@ -1,8 +1,7 @@
-use crate::ast::parser;
+use crate::ast;
 use crate::check::check;
 use crate::err::error::*;
 use crate::err::report;
-//use crate::hir::check;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -34,7 +33,7 @@ main :: () -> s32 {
     let gitignore_path = proj_dir.join(".gitignore");
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
 
-    let ctx = parser::CompCtx::new(); //@all errors require ctx (rework later)
+    let ctx = ast::CompCtx::new(); //@all errors require ctx (rework later)
 
     if let Err(err) = fs::create_dir(&proj_dir) {
         report::report(
@@ -142,24 +141,24 @@ main :: () -> s32 {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let res = parser::parse()?;
+    let res = ast::parse()?;
     eprintln!("ast arenas mem-usage: {}", res.1.arena.mem_usage());
     check::check(&res.0, &res.1);
     Ok(())
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let _ = parser::parse()?;
+    let _ = ast::parse()?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let _ = parser::parse()?;
+    let _ = ast::parse()?;
     Ok(())
 }
 
 fn cmd_fmt() -> Result<(), ()> {
-    let _ = parser::parse()?;
+    let _ = ast::parse()?;
     Ok(())
 }
 

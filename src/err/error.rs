@@ -1,7 +1,7 @@
 use super::message::Message;
-use crate::ast::parser::FileID;
 use crate::ast::span::*;
 use crate::ast::token::*;
+use crate::ast::FileID;
 
 #[allow(private_interfaces)]
 pub enum Error {

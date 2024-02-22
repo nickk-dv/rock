@@ -1,6 +1,6 @@
 use super::intern::*;
-use super::parser::FileID;
 use super::span::Span;
+use super::FileID;
 use crate::check::{EnumID, StructID, UnionID};
 use crate::mem::*;
 
@@ -13,74 +13,6 @@ pub struct Ast {
 pub struct Module {
     pub file_id: FileID,
     pub decls: List<Decl>,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Vis {
-    Public,
-    Private,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Mut {
-    Mutable,
-    Immutable,
-}
-
-#[derive(Copy, Clone)]
-pub struct Ident {
-    pub id: InternID,
-    pub span: Span,
-}
-
-#[derive(Copy, Clone)]
-pub struct Path {
-    pub kind: PathKind,
-    pub names: List<Ident>,
-    pub span_start: u32,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum PathKind {
-    None,
-    Super,
-    Package,
-}
-
-#[derive(Copy, Clone)]
-pub struct Type {
-    pub ptr: PtrLevel,
-    pub kind: TypeKind,
-}
-
-#[derive(Copy, Clone)]
-pub struct PtrLevel {
-    level: u8,
-    mut_mask: u8,
-}
-
-#[derive(Copy, Clone)]
-pub enum TypeKind {
-    Basic(BasicType),
-    Custom(P<Path>),
-    ArraySlice(P<ArraySlice>),
-    ArrayStatic(P<ArrayStatic>),
-    Enum(EnumID),
-    Union(UnionID),
-    Struct(StructID),
-    Poison,
-}
-
-#[derive(Copy, Clone)]
-pub struct ArraySlice {
-    pub mutt: Mut,
-    pub ty: Type,
-}
-
-#[derive(Copy, Clone)]
-pub struct ArrayStatic {
-    pub size: ConstExpr,
-    pub ty: Type,
 }
 
 #[derive(Copy, Clone)]
@@ -175,6 +107,74 @@ pub struct StructDecl {
 pub struct StructField {
     pub vis: Vis,
     pub name: Ident,
+    pub ty: Type,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Vis {
+    Public,
+    Private,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Mut {
+    Mutable,
+    Immutable,
+}
+
+#[derive(Copy, Clone)]
+pub struct Ident {
+    pub id: InternID,
+    pub span: Span,
+}
+
+#[derive(Copy, Clone)]
+pub struct Path {
+    pub kind: PathKind,
+    pub names: List<Ident>,
+    pub span_start: u32,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum PathKind {
+    None,
+    Super,
+    Package,
+}
+
+#[derive(Copy, Clone)]
+pub struct Type {
+    pub ptr: PtrLevel,
+    pub kind: TypeKind,
+}
+
+#[derive(Copy, Clone)]
+pub struct PtrLevel {
+    level: u8,
+    mut_mask: u8,
+}
+
+#[derive(Copy, Clone)]
+pub enum TypeKind {
+    Basic(BasicType),
+    Custom(P<Path>),
+    ArraySlice(P<ArraySlice>),
+    ArrayStatic(P<ArrayStatic>),
+    Enum(EnumID),
+    Union(UnionID),
+    Struct(StructID),
+    Poison,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArraySlice {
+    pub mutt: Mut,
+    pub ty: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayStatic {
+    pub size: ConstExpr,
     pub ty: Type,
 }
 

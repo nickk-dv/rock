@@ -1,6 +1,6 @@
 use super::ansi::{self, Color};
-use crate::ast::parser::File;
 use crate::ast::span::*;
+use crate::ast::File;
 use std::io::{BufWriter, Stderr, Write};
 
 pub fn print(

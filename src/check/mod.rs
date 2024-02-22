@@ -1,7 +1,7 @@
 use crate::ast::ast::*;
 use crate::ast::intern::InternID;
-use crate::ast::parser::FileID;
 use crate::ast::span::Span;
+use crate::ast::FileID;
 use crate::mem::P;
 use std::collections::HashMap;
 

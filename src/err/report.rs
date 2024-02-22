@@ -1,7 +1,7 @@
 use super::ansi::{self, Color};
 use super::error::*;
 use super::span_fmt;
-use crate::ast::parser::CompCtx;
+use crate::ast::CompCtx;
 use std::io::{BufWriter, Stderr, Write};
 
 static mut ERR_COUNT: u32 = 0;

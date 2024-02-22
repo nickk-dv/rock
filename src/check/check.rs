@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::parser::CompCtx;
+use crate::ast::CompCtx;
 use crate::err::ansi;
 use crate::err::span_fmt;
 
