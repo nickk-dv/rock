@@ -115,6 +115,7 @@ pub struct ImportSymbol {
 #[derive(Copy, Clone)]
 pub struct GlobalDecl {
     pub vis: Vis,
+    pub mutt: Mut,
     pub name: Ident,
     pub ty: Option<Type>,
     pub value: ConstExpr,
@@ -141,7 +142,6 @@ pub struct ProcParam {
 pub struct EnumDecl {
     pub vis: Vis,
     pub name: Ident,
-    pub basic_ty: Option<BasicType>,
     pub variants: List<EnumVariant>,
 }
 

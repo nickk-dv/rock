@@ -242,7 +242,7 @@ impl ParseErrorData {
                 Token::KwPackage,
                 Token::OpenBracket,
             ],
-            ParseError::DeclMatch => vec![Token::Ident, Token::KwPub, Token::KwImport],
+            ParseError::DeclMatch => vec![Token::Ident, Token::KwPub, Token::KwUse],
             ParseError::DeclMatchKw => {
                 vec![
                     Token::KwMod,

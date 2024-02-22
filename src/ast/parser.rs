@@ -361,30 +361,27 @@ impl<'ast> Parser<'ast> {
 
     fn parse_decl(&mut self) -> Result<Decl, ParseError> {
         match self.peek() {
-            Token::KwImport => Ok(Decl::Import(self.parse_import_decl()?)),
-            Token::Ident | Token::KwPub => {
+            Token::KwUse => Ok(Decl::Import(self.parse_import_decl()?)),
+            _ => {
                 let vis = self.parse_vis();
-                let name = self.parse_ident(ParseContext::Decl)?;
-                if self.peek() == Token::Colon {
-                    return Ok(Decl::Global(self.parse_global_decl(vis, name)?));
-                }
-                self.expect(Token::ColonColon, ParseContext::Decl)?;
                 match self.peek() {
-                    Token::KwMod => Ok(Decl::Module(self.parse_module_decl(vis, name)?)),
-                    Token::OpenParen => Ok(Decl::Proc(self.parse_proc_decl(vis, name)?)),
-                    Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(vis, name)?)),
-                    Token::KwUnion => Ok(Decl::Union(self.parse_union_decl(vis, name)?)),
-                    Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(vis, name)?)),
+                    Token::KwMod => Ok(Decl::Module(self.parse_module_decl(vis)?)),
+                    Token::KwProc => Ok(Decl::Proc(self.parse_proc_decl(vis)?)),
+                    Token::KwEnum => Ok(Decl::Enum(self.parse_enum_decl(vis)?)),
+                    Token::KwUnion => Ok(Decl::Union(self.parse_union_decl(vis)?)),
+                    Token::KwStruct => Ok(Decl::Struct(self.parse_struct_decl(vis)?)),
+                    Token::KwMut | Token::Ident => Ok(Decl::Global(self.parse_global_decl(vis)?)),
                     _ => Err(ParseError::DeclMatchKw),
                 }
-            }
-            _ => Err(ParseError::DeclMatch),
+            } //_ => Err(ParseError::DeclMatch),
         }
     }
 
-    fn parse_module_decl(&mut self, vis: Vis, name: Ident) -> Result<P<ModuleDecl>, ParseError> {
+    fn parse_module_decl(&mut self, vis: Vis) -> Result<P<ModuleDecl>, ParseError> {
         self.eat(); // `mod`
+        let name = self.parse_ident(ParseContext::ModDecl)?;
         self.expect(Token::Semicolon, ParseContext::ModDecl)?;
+
         let mut module_decl = self.alloc::<ModuleDecl>();
         module_decl.vis = vis;
         module_decl.name = name;
@@ -423,12 +420,12 @@ impl<'ast> Parser<'ast> {
         Ok(symbol)
     }
 
-    fn parse_global_decl(&mut self, vis: Vis, name: Ident) -> Result<P<GlobalDecl>, ParseError> {
-        self.eat(); // `:`
+    fn parse_global_decl(&mut self, vis: Vis) -> Result<P<GlobalDecl>, ParseError> {
         let mut global_decl = self.alloc::<GlobalDecl>();
         global_decl.vis = vis;
-        global_decl.name = name;
-
+        global_decl.mutt = self.parse_mut();
+        global_decl.name = self.parse_ident(ParseContext::GlobalDecl)?;
+        self.expect(Token::Colon, ParseContext::GlobalDecl)?;
         if self.try_eat(Token::Equals) {
             global_decl.ty = None;
             global_decl.value = ConstExpr(self.parse_expr()?);
@@ -441,13 +438,14 @@ impl<'ast> Parser<'ast> {
         Ok(global_decl)
     }
 
-    fn parse_proc_decl(&mut self, vis: Vis, name: Ident) -> Result<P<ProcDecl>, ParseError> {
-        self.eat(); // `(`
+    fn parse_proc_decl(&mut self, vis: Vis) -> Result<P<ProcDecl>, ParseError> {
+        self.eat(); // `proc`
         let mut proc_decl = self.alloc::<ProcDecl>();
         let mut params = ListBuilder::new();
         proc_decl.vis = vis;
-        proc_decl.name = name;
+        proc_decl.name = self.parse_ident(ParseContext::ProcDecl)?;
 
+        self.expect(Token::OpenParen, ParseContext::ProcDecl)?;
         if !self.try_eat(Token::CloseParen) {
             loop {
                 if self.try_eat(Token::DotDot) {
@@ -485,14 +483,13 @@ impl<'ast> Parser<'ast> {
         Ok(ProcParam { mutt, name, ty })
     }
 
-    fn parse_enum_decl(&mut self, vis: Vis, name: Ident) -> Result<P<EnumDecl>, ParseError> {
+    fn parse_enum_decl(&mut self, vis: Vis) -> Result<P<EnumDecl>, ParseError> {
         self.eat(); // `enum`
         let mut enum_decl = self.alloc::<EnumDecl>();
         let mut variants = ListBuilder::new();
         enum_decl.vis = vis;
-        enum_decl.name = name;
+        enum_decl.name = self.parse_ident(ParseContext::EnumDecl)?;
 
-        enum_decl.basic_ty = self.try_eat_basic_type();
         self.expect(Token::OpenBlock, ParseContext::EnumDecl)?;
         while !self.try_eat(Token::CloseBlock) {
             let variant = self.parse_enum_variant()?;
@@ -513,12 +510,12 @@ impl<'ast> Parser<'ast> {
         Ok(EnumVariant { name, value })
     }
 
-    fn parse_union_decl(&mut self, vis: Vis, name: Ident) -> Result<P<UnionDecl>, ParseError> {
+    fn parse_union_decl(&mut self, vis: Vis) -> Result<P<UnionDecl>, ParseError> {
         self.eat(); // `union`
         let mut union_decl = self.alloc::<UnionDecl>();
         let mut members = ListBuilder::new();
         union_decl.vis = vis;
-        union_decl.name = name;
+        union_decl.name = self.parse_ident(ParseContext::UnionDecl)?;
 
         self.expect(Token::OpenBlock, ParseContext::UnionDecl)?;
         while !self.try_eat(Token::CloseBlock) {
@@ -537,12 +534,12 @@ impl<'ast> Parser<'ast> {
         Ok(UnionMember { name, ty })
     }
 
-    fn parse_struct_decl(&mut self, vis: Vis, name: Ident) -> Result<P<StructDecl>, ParseError> {
+    fn parse_struct_decl(&mut self, vis: Vis) -> Result<P<StructDecl>, ParseError> {
         self.eat(); // `struct`
         let mut struct_decl = self.alloc::<StructDecl>();
         let mut fields = ListBuilder::new();
         struct_decl.vis = vis;
-        struct_decl.name = name;
+        struct_decl.name = self.parse_ident(ParseContext::StructDecl)?;
 
         self.expect(Token::OpenBlock, ParseContext::StructDecl)?;
         while !self.try_eat(Token::CloseBlock) {

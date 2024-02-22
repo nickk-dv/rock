@@ -1,6 +1,5 @@
 use super::ast::{AssignOp, BasicType, BinOp, Mut, UnOp};
 
-/// Token enum and conversions
 macro_rules! token_impl {
     ($(
         $variant:ident as $string:expr
@@ -20,7 +19,6 @@ macro_rules! token_impl {
                     $(Token::$variant => $string,)+
                 }
             }
-            #[allow(unreachable_patterns)]
             pub fn as_keyword(source: &str) -> Option<Token> {
                 match source {
                     $($string => token_impl!(@KW_ARM $variant $(=> KW $mark)?), )+
@@ -61,11 +59,9 @@ macro_rules! token_impl {
     (@BASIC_TYPE_ARM) => { None };
 }
 
-/// Token glue for creating 1 character tokens
 macro_rules! token_glue {
     ($name:ident, $($to:ident as $ch:expr)+) => {
         impl Token {
-            #[allow(unreachable_patterns)]
             pub fn $name(c: char) -> Option<Token> {
                 match c {
                     $($ch => Some(Token::$to),)+
@@ -76,11 +72,9 @@ macro_rules! token_glue {
     };
 }
 
-/// Token glue for extending 1-2 character tokens
 macro_rules! token_glue_extend {
     ($name:ident, $( ($ch:expr) $($from:ident => $to:ident,)+ )+ ) => {
         impl Token {
-            #[allow(unreachable_patterns)]
             pub fn $name(c: char, token: Token) -> Option<Token> {
                 match c {
                     $(
@@ -124,9 +118,10 @@ token_impl! {
     KwPub        as "pub"      => KW.
     KwMut        as "mut"      => KW.
     KwMod        as "mod"      => KW.
-    KwImport     as "import"   => KW.
+    KwUse        as "use"      => KW.
     KwSuper      as "super"    => KW.
     KwPackage    as "package"  => KW.
+    KwProc       as "proc"     => KW.
     KwEnum       as "enum"     => KW.
     KwUnion      as "union"    => KW.
     KwStruct     as "struct"   => KW.
@@ -170,7 +165,7 @@ token_impl! {
     Question     as "?"
     At           as "@"
     OpenBracket  as "["
-    BackSlash    as "/"
+    BackSlash    as "\\"
     CloseBracket as "]"
     Caret        as "^"  => BIN BinOp::BitXor
     Underscore   as "_"  => KW.
@@ -231,7 +226,7 @@ token_glue! {
     Question     as '?'
     At           as '@'
     OpenBracket  as '['
-    BackSlash    as '/'
+    BackSlash    as '\\'
     CloseBracket as ']'
     Caret        as '^'
     Underscore   as '_'
@@ -270,6 +265,7 @@ token_glue_extend! {
 
 token_glue_extend! {
     glue3,
-    ('=') BinShl => AssignShl,
-    ('=') BinShr => AssignShr,
+    ('=')
+    BinShl => AssignShl,
+    BinShr => AssignShr,
 }
