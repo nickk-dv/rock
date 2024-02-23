@@ -91,7 +91,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
 
         for decl in task.module.decls {
             match decl {
-                Decl::Module(module_decl) => {
+                Decl::Mod(module_decl) => {
                     #[rustfmt::skip]
                     add_declared!(
                         module_decl, add_module, Module,
@@ -195,7 +195,8 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                         StructData { from_id: scope_id, decl: struct_decl, size: 0, align: 0 }
                     );
                 }
-                Decl::Import(..) => {}
+                Decl::Use(..) => {}
+                Decl::Const(const_decl) => {} //@todo
             }
         }
     }
@@ -247,7 +248,7 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
 // its unclear on which span to use, try to improve the api
 fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
     struct ImportTask {
-        import_decl: P<ImportDecl>,
+        import_decl: P<UseDecl>,
         resolved: bool,
     }
     struct ImportSymbolTask {
@@ -263,7 +264,7 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
 
         for decl in context.get_scope(scope_id).module.decls {
             match decl {
-                Decl::Import(import_decl) => import_tasks.push(ImportTask {
+                Decl::Use(import_decl) => import_tasks.push(ImportTask {
                     import_decl,
                     resolved: false,
                 }),
@@ -611,7 +612,7 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
         ExprKind::Discard => todo!(), //@ discard is only allowed in variable bindings
         ExprKind::LitNull => Type::basic(BasicType::Rawptr),
         ExprKind::LitBool { .. } => Type::basic(BasicType::Bool),
-        ExprKind::LitUint { ref mut ty, .. } => {
+        ExprKind::LitInt { ref mut ty, .. } => {
             let basic = match *ty {
                 Some(basic) => basic,
                 None => {

@@ -19,7 +19,7 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error, ctx: &CompCtx) {
     match error {
         Error::Parse(err) => {
             print_error(handle, "parse error");
-            let _ = writeln!(handle, "in {}", err.context.as_str());
+            let _ = writeln!(handle, "in {}", err.ctx.as_str());
             let _ = write!(handle, "expected: ");
             for (index, token) in err.expected.iter().enumerate() {
                 if index < err.expected.len() - 1 {

@@ -1,9 +1,10 @@
 use super::ast::*;
 use super::intern::*;
+use super::parse_error::*;
 use super::span::Span;
 use super::token::Token;
 use super::token_list::TokenList;
-use crate::err::error::*;
+use crate::err::error::Error;
 use crate::mem::*;
 
 pub struct Parser<'ast> {
@@ -30,21 +31,27 @@ impl<'ast> Parser<'ast> {
     fn peek(&self) -> Token {
         self.tokens.get_token(self.cursor)
     }
+
     fn peek_next(&self) -> Token {
         self.tokens.get_token(self.cursor + 1)
     }
+
     fn peek_span(&self) -> Span {
         self.tokens.get_span(self.cursor)
     }
+
     fn peek_span_start(&self) -> u32 {
         self.tokens.get_span(self.cursor).start
     }
+
     fn peek_span_end(&self) -> u32 {
         self.tokens.get_span(self.cursor - 1).end
     }
+
     fn eat(&mut self) {
         self.cursor += 1;
     }
+
     fn try_eat(&mut self, token: Token) -> bool {
         if token == self.peek() {
             self.eat();
@@ -52,12 +59,13 @@ impl<'ast> Parser<'ast> {
         }
         false
     }
-    fn expect(&mut self, token: Token, context: ParseContext) -> Result<(), ParseError> {
+
+    fn expect(&mut self, token: Token, ctx: ParseCtx) -> Result<(), ParseError> {
         if token == self.peek() {
             self.eat();
             return Ok(());
         }
-        Err(ParseError::ExpectToken(context, token))
+        Err(ParseError::ExpectToken(ctx, token))
     }
 
     pub fn module(&mut self, file_id: super::FileID) -> Result<P<Module>, Error> {
@@ -66,9 +74,9 @@ impl<'ast> Parser<'ast> {
         while self.peek() != Token::Eof {
             match self.decl() {
                 Ok(decl) => decls.add(&mut self.arena, decl),
-                Err(err) => {
+                Err(error) => {
                     let got_token = (self.peek(), self.peek_span());
-                    return Err(Error::parse(err, file_id, got_token));
+                    return Err(Error::parse(ParseErrorData::new(error, file_id, got_token)));
                 }
             }
         }
@@ -78,82 +86,59 @@ impl<'ast> Parser<'ast> {
     }
 
     fn decl(&mut self) -> Result<Decl, ParseError> {
+        let vis = self.vis();
         match self.peek() {
-            Token::KwUse => Ok(Decl::Import(self.import_decl()?)),
-            _ => {
-                let vis = self.vis();
-                match self.peek() {
-                    Token::KwMod => Ok(Decl::Module(self.module_decl(vis)?)),
-                    Token::KwProc => Ok(Decl::Proc(self.proc_decl(vis)?)),
-                    Token::KwEnum => Ok(Decl::Enum(self.enum_decl(vis)?)),
-                    Token::KwUnion => Ok(Decl::Union(self.union_decl(vis)?)),
-                    Token::KwStruct => Ok(Decl::Struct(self.struct_decl(vis)?)),
-                    Token::KwMut | Token::Ident => Ok(Decl::Global(self.global_decl(vis)?)),
-                    _ => Err(ParseError::DeclMatchKw),
-                }
-            } //_ => Err(ParseError::DeclMatch),
+            Token::KwMod => Ok(Decl::Mod(self.mod_decl(vis)?)),
+            Token::KwUse => Ok(Decl::Use(self.use_decl()?)),
+            Token::KwProc => Ok(Decl::Proc(self.proc_decl(vis)?)),
+            Token::KwEnum => Ok(Decl::Enum(self.enum_decl(vis)?)),
+            Token::KwUnion => Ok(Decl::Union(self.union_decl(vis)?)),
+            Token::KwStruct => Ok(Decl::Struct(self.struct_decl(vis)?)),
+            Token::KwConst => Ok(Decl::Const(self.const_decl(vis)?)),
+            Token::KwGlobal => Ok(Decl::Global(self.global_decl(vis)?)),
+            _ => Err(ParseError::DeclMatch),
         }
     }
 
-    fn module_decl(&mut self, vis: Vis) -> Result<P<ModuleDecl>, ParseError> {
+    fn mod_decl(&mut self, vis: Vis) -> Result<P<ModDecl>, ParseError> {
         self.eat(); // `mod`
-        let name = self.ident(ParseContext::ModDecl)?;
-        self.expect(Token::Semicolon, ParseContext::ModDecl)?;
-
-        let mut module_decl = self.arena.alloc::<ModuleDecl>();
-        module_decl.vis = vis;
-        module_decl.name = name;
-        Ok(module_decl)
+        let mut mod_decl = self.arena.alloc::<ModDecl>();
+        mod_decl.vis = vis;
+        mod_decl.name = self.ident(ParseCtx::ModDecl)?;
+        self.expect(Token::Semicolon, ParseCtx::ModDecl)?;
+        Ok(mod_decl)
     }
 
-    fn import_decl(&mut self) -> Result<P<ImportDecl>, ParseError> {
-        self.eat(); // `import`
-        let mut import_decl = self.arena.alloc::<ImportDecl>();
+    fn use_decl(&mut self) -> Result<P<UseDecl>, ParseError> {
+        self.eat(); // `use`
+        let mut use_decl = self.arena.alloc::<UseDecl>();
         let mut symbols = ListBuilder::new();
-        import_decl.path = self.path()?;
-        self.expect(Token::Dot, ParseContext::ImportDecl)?;
-        self.expect(Token::OpenBlock, ParseContext::ImportDecl)?;
+        use_decl.path = self.path()?;
+        self.expect(Token::Dot, ParseCtx::UseDecl)?;
+        self.expect(Token::OpenBlock, ParseCtx::UseDecl)?;
         if !self.try_eat(Token::CloseBlock) {
             loop {
-                let symbol = self.import_symbol()?;
+                let symbol = self.use_symbol()?;
                 symbols.add(&mut self.arena, symbol);
                 if !self.try_eat(Token::Comma) {
                     break;
                 }
             }
-            self.expect(Token::CloseBlock, ParseContext::ImportDecl)?;
+            self.expect(Token::CloseBlock, ParseCtx::UseDecl)?;
         }
-        import_decl.symbols = symbols.take();
-        Ok(import_decl)
+        use_decl.symbols = symbols.take();
+        Ok(use_decl)
     }
 
-    fn import_symbol(&mut self) -> Result<ImportSymbol, ParseError> {
-        let mut symbol = ImportSymbol {
-            name: self.ident(ParseContext::ImportDecl)?,
+    fn use_symbol(&mut self) -> Result<UseSymbol, ParseError> {
+        let mut symbol = UseSymbol {
+            name: self.ident(ParseCtx::UseDecl)?,
             alias: None,
         };
         if self.try_eat(Token::KwAs) {
-            symbol.alias = Some(self.ident(ParseContext::ImportDecl)?);
+            symbol.alias = Some(self.ident(ParseCtx::UseDecl)?);
         }
         Ok(symbol)
-    }
-
-    fn global_decl(&mut self, vis: Vis) -> Result<P<GlobalDecl>, ParseError> {
-        let mut global_decl = self.arena.alloc::<GlobalDecl>();
-        global_decl.vis = vis;
-        global_decl.mutt = self.mutt();
-        global_decl.name = self.ident(ParseContext::GlobalDecl)?;
-        self.expect(Token::Colon, ParseContext::GlobalDecl)?;
-        if self.try_eat(Token::Equals) {
-            global_decl.ty = None;
-            global_decl.value = ConstExpr(self.expr()?);
-        } else {
-            global_decl.ty = Some(self.ty()?);
-            self.expect(Token::Equals, ParseContext::GlobalDecl)?;
-            global_decl.value = ConstExpr(self.expr()?);
-        }
-        self.expect(Token::Semicolon, ParseContext::GlobalDecl)?;
-        Ok(global_decl)
     }
 
     fn proc_decl(&mut self, vis: Vis) -> Result<P<ProcDecl>, ParseError> {
@@ -161,9 +146,8 @@ impl<'ast> Parser<'ast> {
         let mut proc_decl = self.arena.alloc::<ProcDecl>();
         let mut params = ListBuilder::new();
         proc_decl.vis = vis;
-        proc_decl.name = self.ident(ParseContext::ProcDecl)?;
-
-        self.expect(Token::OpenParen, ParseContext::ProcDecl)?;
+        proc_decl.name = self.ident(ParseCtx::ProcDecl)?;
+        self.expect(Token::OpenParen, ParseCtx::ProcDecl)?;
         if !self.try_eat(Token::CloseParen) {
             loop {
                 if self.try_eat(Token::DotDot) {
@@ -176,18 +160,17 @@ impl<'ast> Parser<'ast> {
                     break;
                 }
             }
-            self.expect(Token::CloseParen, ParseContext::ProcDecl)?;
+            self.expect(Token::CloseParen, ParseCtx::ProcDecl)?;
         }
-
         proc_decl.return_ty = if self.try_eat(Token::ArrowThin) {
             Some(self.ty()?)
         } else {
             None
         };
-        proc_decl.block = if !self.try_eat(Token::DirCCall) {
-            Some(self.block()?)
-        } else {
+        proc_decl.block = if self.try_eat(Token::DirCCall) {
             None
+        } else {
+            Some(self.block()?)
         };
         proc_decl.params = params.take();
         Ok(proc_decl)
@@ -195,8 +178,8 @@ impl<'ast> Parser<'ast> {
 
     fn proc_param(&mut self) -> Result<ProcParam, ParseError> {
         let mutt = self.mutt();
-        let name = self.ident(ParseContext::ProcParam)?;
-        self.expect(Token::Colon, ParseContext::ProcParam)?;
+        let name = self.ident(ParseCtx::ProcParam)?;
+        self.expect(Token::Colon, ParseCtx::ProcParam)?;
         let ty = self.ty()?;
         Ok(ProcParam { mutt, name, ty })
     }
@@ -206,9 +189,8 @@ impl<'ast> Parser<'ast> {
         let mut enum_decl = self.arena.alloc::<EnumDecl>();
         let mut variants = ListBuilder::new();
         enum_decl.vis = vis;
-        enum_decl.name = self.ident(ParseContext::EnumDecl)?;
-
-        self.expect(Token::OpenBlock, ParseContext::EnumDecl)?;
+        enum_decl.name = self.ident(ParseCtx::EnumDecl)?;
+        self.expect(Token::OpenBlock, ParseCtx::EnumDecl)?;
         while !self.try_eat(Token::CloseBlock) {
             let variant = self.enum_variant()?;
             variants.add(&mut self.arena, variant);
@@ -218,13 +200,13 @@ impl<'ast> Parser<'ast> {
     }
 
     fn enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
-        let name = self.ident(ParseContext::EnumVariant)?;
+        let name = self.ident(ParseCtx::EnumVariant)?;
         let value = if self.try_eat(Token::Equals) {
             Some(ConstExpr(self.expr()?))
         } else {
             None
         };
-        self.expect(Token::Semicolon, ParseContext::EnumVariant)?;
+        self.expect(Token::Semicolon, ParseCtx::EnumVariant)?;
         Ok(EnumVariant { name, value })
     }
 
@@ -233,9 +215,8 @@ impl<'ast> Parser<'ast> {
         let mut union_decl = self.arena.alloc::<UnionDecl>();
         let mut members = ListBuilder::new();
         union_decl.vis = vis;
-        union_decl.name = self.ident(ParseContext::UnionDecl)?;
-
-        self.expect(Token::OpenBlock, ParseContext::UnionDecl)?;
+        union_decl.name = self.ident(ParseCtx::UnionDecl)?;
+        self.expect(Token::OpenBlock, ParseCtx::UnionDecl)?;
         while !self.try_eat(Token::CloseBlock) {
             let member = self.union_member()?;
             members.add(&mut self.arena, member);
@@ -245,10 +226,10 @@ impl<'ast> Parser<'ast> {
     }
 
     fn union_member(&mut self) -> Result<UnionMember, ParseError> {
-        let name = self.ident(ParseContext::UnionMember)?;
-        self.expect(Token::Colon, ParseContext::UnionMember)?;
+        let name = self.ident(ParseCtx::UnionMember)?;
+        self.expect(Token::Colon, ParseCtx::UnionMember)?;
         let ty = self.ty()?;
-        self.expect(Token::Semicolon, ParseContext::UnionMember)?;
+        self.expect(Token::Semicolon, ParseCtx::UnionMember)?;
         Ok(UnionMember { name, ty })
     }
 
@@ -257,9 +238,8 @@ impl<'ast> Parser<'ast> {
         let mut struct_decl = self.arena.alloc::<StructDecl>();
         let mut fields = ListBuilder::new();
         struct_decl.vis = vis;
-        struct_decl.name = self.ident(ParseContext::StructDecl)?;
-
-        self.expect(Token::OpenBlock, ParseContext::StructDecl)?;
+        struct_decl.name = self.ident(ParseCtx::StructDecl)?;
+        self.expect(Token::OpenBlock, ParseCtx::StructDecl)?;
         while !self.try_eat(Token::CloseBlock) {
             let field = self.struct_field()?;
             fields.add(&mut self.arena, field);
@@ -270,23 +250,47 @@ impl<'ast> Parser<'ast> {
 
     fn struct_field(&mut self) -> Result<StructField, ParseError> {
         let vis = self.vis();
-        let name = self.ident(ParseContext::StructField)?;
-        self.expect(Token::Colon, ParseContext::StructField)?;
+        let name = self.ident(ParseCtx::StructField)?;
+        self.expect(Token::Colon, ParseCtx::StructField)?;
         let ty = self.ty()?;
-        self.expect(Token::Semicolon, ParseContext::StructField)?;
+        self.expect(Token::Semicolon, ParseCtx::StructField)?;
         Ok(StructField { vis, name, ty })
     }
 
-    fn ident(&mut self, context: ParseContext) -> Result<Ident, ParseError> {
-        if self.peek() == Token::Ident {
-            let span = self.peek_span();
-            self.eat();
-            return Ok(Ident {
-                span,
-                id: INTERN_DUMMY_ID,
-            });
-        }
-        Err(ParseError::Ident(context))
+    fn const_decl(&mut self, vis: Vis) -> Result<P<ConstDecl>, ParseError> {
+        self.eat(); // `const`
+        let mut const_decl = self.arena.alloc::<ConstDecl>();
+        const_decl.vis = vis;
+        const_decl.name = self.ident(ParseCtx::ConstDecl)?;
+        self.expect(Token::Colon, ParseCtx::ConstDecl)?;
+        const_decl.ty = if self.try_eat(Token::Equals) {
+            None
+        } else {
+            let ty = Some(self.ty()?);
+            self.expect(Token::Equals, ParseCtx::ConstDecl)?;
+            ty
+        };
+        const_decl.value = ConstExpr(self.expr()?);
+        self.expect(Token::Semicolon, ParseCtx::ConstDecl)?;
+        Ok(const_decl)
+    }
+
+    fn global_decl(&mut self, vis: Vis) -> Result<P<GlobalDecl>, ParseError> {
+        self.eat(); // `global`
+        let mut global_decl = self.arena.alloc::<GlobalDecl>();
+        global_decl.vis = vis;
+        global_decl.name = self.ident(ParseCtx::GlobalDecl)?;
+        self.expect(Token::Colon, ParseCtx::GlobalDecl)?;
+        global_decl.ty = if self.try_eat(Token::Equals) {
+            None
+        } else {
+            let ty = Some(self.ty()?);
+            self.expect(Token::Equals, ParseCtx::GlobalDecl)?;
+            ty
+        };
+        global_decl.value = ConstExpr(self.expr()?);
+        self.expect(Token::Semicolon, ParseCtx::GlobalDecl)?;
+        Ok(global_decl)
     }
 
     fn vis(&mut self) -> Vis {
@@ -303,6 +307,46 @@ impl<'ast> Parser<'ast> {
         Mut::Immutable
     }
 
+    fn ident(&mut self, ctx: ParseCtx) -> Result<Ident, ParseError> {
+        if self.peek() == Token::Ident {
+            let span = self.peek_span();
+            self.eat();
+            return Ok(Ident {
+                span,
+                id: INTERN_DUMMY_ID,
+            });
+        }
+        Err(ParseError::ExpectIdent(ctx))
+    }
+
+    fn path(&mut self) -> Result<P<Path>, ParseError> {
+        let mut path = self.arena.alloc::<Path>();
+        let mut names = ListBuilder::new();
+        path.span_start = self.peek_span_start();
+        path.kind = match self.peek() {
+            Token::KwSuper => {
+                self.eat(); // `super`
+                PathKind::Super
+            }
+            Token::KwPackage => {
+                self.eat(); // `package`
+                PathKind::Package
+            }
+            _ => {
+                let name = self.ident(ParseCtx::Path)?;
+                names.add(&mut self.arena, name);
+                PathKind::None
+            }
+        };
+        while self.peek() == Token::Dot && self.peek_next() != Token::OpenBlock {
+            self.eat(); // `.`
+            let name = self.ident(ParseCtx::Path)?;
+            names.add(&mut self.arena, name);
+        }
+        path.names = names.take();
+        Ok(path)
+    }
+
     fn ty(&mut self) -> Result<Type, ParseError> {
         let mut ty = Type {
             ptr: PtrLevel::new(),
@@ -316,31 +360,31 @@ impl<'ast> Parser<'ast> {
             }
         }
         if let Some(basic) = self.peek().as_basic_type() {
-            self.eat();
+            self.eat(); // `basic_type`
             ty.kind = TypeKind::Basic(basic);
             return Ok(ty);
         }
         ty.kind = match self.peek() {
             Token::OpenParen => {
-                self.eat();
-                self.expect(Token::CloseParen, ParseContext::UnitType)?;
+                self.eat(); // `(`
+                self.expect(Token::CloseParen, ParseCtx::UnitType)?;
                 TypeKind::Basic(BasicType::Unit)
             }
             Token::Ident | Token::KwSuper | Token::KwPackage => TypeKind::Custom(self.path()?),
             Token::OpenBracket => match self.peek_next() {
                 Token::KwMut | Token::CloseBracket => {
-                    self.eat();
+                    self.eat(); // `[`
                     let mut array_slice = self.arena.alloc::<ArraySlice>();
                     array_slice.mutt = self.mutt();
-                    self.expect(Token::CloseBracket, ParseContext::ArraySlice)?;
+                    self.expect(Token::CloseBracket, ParseCtx::ArraySlice)?;
                     array_slice.ty = self.ty()?;
                     TypeKind::ArraySlice(array_slice)
                 }
                 _ => {
-                    self.eat();
+                    self.eat(); // `[`
                     let mut array_static = self.arena.alloc::<ArrayStatic>();
                     array_static.size = ConstExpr(self.expr()?);
-                    self.expect(Token::CloseBracket, ParseContext::ArrayStatic)?;
+                    self.expect(Token::CloseBracket, ParseCtx::ArrayStatic)?;
                     array_static.ty = self.ty()?;
                     TypeKind::ArrayStatic(array_static)
                 }
@@ -350,66 +394,36 @@ impl<'ast> Parser<'ast> {
         Ok(ty)
     }
 
-    fn path(&mut self) -> Result<P<Path>, ParseError> {
-        let mut path = self.arena.alloc::<Path>();
-        let mut names = ListBuilder::new();
-
-        path.span_start = self.peek_span_start();
-        path.kind = match self.peek() {
-            Token::KwSuper => {
-                self.eat();
-                PathKind::Super
-            }
-            Token::KwPackage => {
-                self.eat();
-                PathKind::Package
-            }
-            _ => {
-                let name = self.ident(ParseContext::ModulePath)?; //@take specific ctx instead?
-                names.add(&mut self.arena, name);
-                PathKind::None
-            }
-        };
-        while self.peek() == Token::Dot && self.peek_next() != Token::OpenBlock {
-            self.eat();
-            let name = self.ident(ParseContext::ModulePath)?; //@take specific ctx instead?
-            names.add(&mut self.arena, name);
-        }
-
-        path.names = names.take();
-        Ok(path)
-    }
-
     fn stmt(&mut self) -> Result<Stmt, ParseError> {
         let span_start = self.peek_span_start();
         let kind = match self.peek() {
             Token::KwBreak => {
-                self.eat();
-                self.expect(Token::Semicolon, ParseContext::Break)?;
+                self.eat(); // `break`
+                self.expect(Token::Semicolon, ParseCtx::Break)?;
                 StmtKind::Break
             }
             Token::KwContinue => {
-                self.eat();
-                self.expect(Token::Semicolon, ParseContext::Continue)?;
+                self.eat(); // `continue`
+                self.expect(Token::Semicolon, ParseCtx::Continue)?;
                 StmtKind::Continue
             }
-            Token::KwFor => {
-                self.eat();
-                StmtKind::ForLoop(self.for_()?)
-            }
-            Token::KwDefer => {
-                self.eat();
-                StmtKind::Defer(self.block()?)
-            }
             Token::KwReturn => {
-                self.eat();
+                self.eat(); // `return`
                 if self.try_eat(Token::Semicolon) {
                     StmtKind::Return(None)
                 } else {
                     let expr = self.expr()?;
-                    self.expect(Token::Semicolon, ParseContext::Return)?;
+                    self.expect(Token::Semicolon, ParseCtx::Return)?;
                     StmtKind::Return(Some(expr))
                 }
+            }
+            Token::KwDefer => {
+                self.eat(); // `defer`
+                StmtKind::Defer(self.block()?)
+            }
+            Token::KwFor => {
+                self.eat(); // `for`
+                StmtKind::ForLoop(self.for_()?)
             }
             _ => self.stmt_no_keyword()?,
         };
@@ -433,7 +447,7 @@ impl<'ast> Parser<'ast> {
                     //@all 3 are expected
                     let var_decl = self.var_decl()?;
                     let cond = self.expr()?;
-                    self.expect(Token::Semicolon, ParseContext::For)?;
+                    self.expect(Token::Semicolon, ParseCtx::ForLoop)?;
                     let mut var_assign = self.arena.alloc::<VarAssign>();
                     var_assign.lhs = self.expr()?;
                     var_assign.op = match self.peek().as_assign_op() {
@@ -473,7 +487,7 @@ impl<'ast> Parser<'ast> {
                     var_assign.op = op;
                     var_assign.lhs = expr;
                     var_assign.rhs = self.expr()?;
-                    self.expect(Token::Semicolon, ParseContext::VarAssign)?;
+                    self.expect(Token::Semicolon, ParseCtx::VarAssign)?;
                     Ok(StmtKind::VarAssign(var_assign))
                 }
                 None => {
@@ -493,9 +507,9 @@ impl<'ast> Parser<'ast> {
         var_decl.name = if self.try_eat(Token::Underscore) {
             None
         } else {
-            Some(self.ident(ParseContext::VarDecl)?)
+            Some(self.ident(ParseCtx::VarDecl)?)
         };
-        self.expect(Token::Colon, ParseContext::VarDecl)?;
+        self.expect(Token::Colon, ParseCtx::VarDecl)?;
 
         if self.try_eat(Token::Equals) {
             var_decl.ty = None;
@@ -508,7 +522,7 @@ impl<'ast> Parser<'ast> {
                 None
             }
         }
-        self.expect(Token::Semicolon, ParseContext::VarDecl)?;
+        self.expect(Token::Semicolon, ParseCtx::VarDecl)?;
         Ok(var_decl)
     }
 
@@ -553,7 +567,7 @@ impl<'ast> Parser<'ast> {
                 return self.tail_expr(expr);
             }
             let expr = self.sub_expr(0)?;
-            self.expect(Token::CloseParen, ParseContext::Expr)?;
+            self.expect(Token::CloseParen, ParseCtx::Expr)?;
             return self.tail_expr(expr);
         }
 
@@ -589,7 +603,7 @@ impl<'ast> Parser<'ast> {
                 self.eat();
                 let on_expr = self.expr()?;
                 let mut arms = ListBuilder::new();
-                self.expect(Token::OpenBlock, ParseContext::Match)?;
+                self.expect(Token::OpenBlock, ParseCtx::Match)?;
                 while !self.try_eat(Token::CloseBlock) {
                     let arm = self.match_arm()?;
                     arms.add(&mut self.arena, arm);
@@ -601,10 +615,10 @@ impl<'ast> Parser<'ast> {
             }
             Token::KwSizeof => {
                 self.eat();
-                self.expect(Token::OpenParen, ParseContext::Sizeof)?;
+                self.expect(Token::OpenParen, ParseCtx::Sizeof)?;
                 let mut pty = self.arena.alloc::<Type>();
                 *pty = self.ty()?;
-                self.expect(Token::CloseParen, ParseContext::Sizeof)?;
+                self.expect(Token::CloseParen, ParseCtx::Sizeof)?;
                 ExprKind::Sizeof { ty: pty }
             }
             Token::OpenBracket => {
@@ -617,13 +631,13 @@ impl<'ast> Parser<'ast> {
                     let expr = self.expr()?;
                     if self.try_eat(Token::Semicolon) {
                         let size = ConstExpr(self.expr()?);
-                        self.expect(Token::CloseBracket, ParseContext::ArrayInit)?;
+                        self.expect(Token::CloseBracket, ParseCtx::ArrayInit)?;
                         ExprKind::ArrayRepeat { expr, size }
                     } else {
                         let mut input = ListBuilder::new();
                         input.add(&mut self.arena, expr);
                         if !self.try_eat(Token::CloseBracket) {
-                            self.expect(Token::Comma, ParseContext::ArrayInit)?;
+                            self.expect(Token::Comma, ParseCtx::ArrayInit)?;
                             loop {
                                 let expr = self.expr()?;
                                 input.add(&mut self.arena, expr);
@@ -631,7 +645,7 @@ impl<'ast> Parser<'ast> {
                                     break;
                                 }
                             }
-                            self.expect(Token::CloseBracket, ParseContext::ArrayInit)?;
+                            self.expect(Token::CloseBracket, ParseCtx::ArrayInit)?;
                         }
                         ExprKind::ArrayInit {
                             input: input.take(),
@@ -645,7 +659,7 @@ impl<'ast> Parser<'ast> {
                 match (self.peek(), self.peek_next()) {
                     (Token::OpenParen, ..) => {
                         self.eat(); // `(`
-                        let input = self.expr_list(Token::CloseParen, ParseContext::ProcCall)?;
+                        let input = self.expr_list(Token::CloseParen, ParseCtx::ProcCall)?;
                         ExprKind::ProcCall { path, input }
                     }
                     (Token::Dot, Token::OpenBlock) => {
@@ -654,10 +668,10 @@ impl<'ast> Parser<'ast> {
                         let mut input = ListBuilder::new();
                         if !self.try_eat(Token::CloseBlock) {
                             loop {
-                                let name = self.ident(ParseContext::StructInit)?;
+                                let name = self.ident(ParseCtx::StructInit)?;
                                 let expr = match self.peek() {
                                     Token::Colon => {
-                                        self.eat();
+                                        self.eat(); // ':'
                                         Some(self.expr()?)
                                     }
                                     Token::Comma | Token::CloseBlock => None,
@@ -668,7 +682,7 @@ impl<'ast> Parser<'ast> {
                                     break;
                                 }
                             }
-                            self.expect(Token::CloseBlock, ParseContext::StructInit)?;
+                            self.expect(Token::CloseBlock, ParseCtx::StructInit)?;
                         }
                         ExprKind::StructInit {
                             path,
@@ -695,7 +709,7 @@ impl<'ast> Parser<'ast> {
                     }
                     self.eat();
                     let mut expr_field = self.arena.alloc::<Expr>();
-                    let name = self.ident(ParseContext::Expr)?; //@ctx expr field
+                    let name = self.ident(ParseCtx::ExprField)?;
                     expr_field.kind = ExprKind::Field { target, name };
                     expr_field.span = Span::new(span_start, self.peek_span_end());
                     target = expr_field;
@@ -707,7 +721,7 @@ impl<'ast> Parser<'ast> {
                     self.eat();
                     let mut expr_index = self.arena.alloc::<Expr>();
                     let index = self.expr()?;
-                    self.expect(Token::CloseBracket, ParseContext::Expr)?; //@ctx expr index
+                    self.expect(Token::CloseBracket, ParseCtx::ExprIndex)?;
                     expr_index.kind = ExprKind::Index { target, index };
                     expr_index.span = Span::new(span_start, self.peek_span_end());
                     target = expr_index;
@@ -768,7 +782,7 @@ impl<'ast> Parser<'ast> {
 
     fn block_stmts(&mut self) -> Result<List<Stmt>, ParseError> {
         let mut stmts = ListBuilder::new();
-        self.expect(Token::OpenBlock, ParseContext::Block)?;
+        self.expect(Token::OpenBlock, ParseCtx::Block)?;
         while !self.try_eat(Token::CloseBlock) {
             let stmt = self.stmt()?;
             stmts.add(&mut self.arena, stmt);
@@ -778,7 +792,7 @@ impl<'ast> Parser<'ast> {
 
     fn match_arm(&mut self) -> Result<MatchArm, ParseError> {
         let pat = self.expr()?;
-        self.expect(Token::ArrowWide, ParseContext::MatchArm)?;
+        self.expect(Token::ArrowWide, ParseCtx::MatchArm)?;
         let expr = self.expr()?;
         Ok(MatchArm { pat, expr })
     }
@@ -820,7 +834,7 @@ impl<'ast> Parser<'ast> {
                         | BasicType::U64
                         | BasicType::Usize => {
                             self.eat();
-                            Ok(ExprKind::LitUint {
+                            Ok(ExprKind::LitInt {
                                 val: v,
                                 ty: Some(basic),
                             })
@@ -833,10 +847,10 @@ impl<'ast> Parser<'ast> {
                                 ty: Some(basic),
                             })
                         }
-                        _ => Err(ParseError::LiteralInteger),
+                        _ => Err(ParseError::LitInt),
                     }
                 } else {
-                    Ok(ExprKind::LitUint { val: v, ty: None })
+                    Ok(ExprKind::LitInt { val: v, ty: None })
                 }
             }
             Token::FloatLit => {
@@ -858,7 +872,7 @@ impl<'ast> Parser<'ast> {
                                 ty: Some(basic),
                             })
                         }
-                        _ => Err(ParseError::LiteralFloat),
+                        _ => Err(ParseError::LitFloat),
                     }
                 } else {
                     Ok(ExprKind::LitFloat { val: v, ty: None })
@@ -876,15 +890,11 @@ impl<'ast> Parser<'ast> {
                 self.string_id += 1;
                 Ok(ExprKind::LitString { id: InternID(id) })
             }
-            _ => Err(ParseError::LiteralMatch),
+            _ => Err(ParseError::LitMatch),
         }
     }
 
-    fn expr_list(
-        &mut self,
-        end: Token,
-        context: ParseContext,
-    ) -> Result<List<P<Expr>>, ParseError> {
+    fn expr_list(&mut self, end: Token, ctx: ParseCtx) -> Result<List<P<Expr>>, ParseError> {
         let mut expr_list = ListBuilder::new();
         if !self.try_eat(end) {
             loop {
@@ -894,7 +904,7 @@ impl<'ast> Parser<'ast> {
                     break;
                 }
             }
-            self.expect(end, context)?;
+            self.expect(end, ctx)?;
         }
         Ok(expr_list.take())
     }

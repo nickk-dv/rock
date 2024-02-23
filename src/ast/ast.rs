@@ -17,40 +17,32 @@ pub struct Module {
 
 #[derive(Copy, Clone)]
 pub enum Decl {
-    Module(P<ModuleDecl>),
-    Import(P<ImportDecl>),
-    Global(P<GlobalDecl>),
+    Mod(P<ModDecl>),
+    Use(P<UseDecl>),
     Proc(P<ProcDecl>),
     Enum(P<EnumDecl>),
     Union(P<UnionDecl>),
     Struct(P<StructDecl>),
+    Const(P<ConstDecl>),
+    Global(P<GlobalDecl>),
 }
 
 #[derive(Copy, Clone)]
-pub struct ModuleDecl {
+pub struct ModDecl {
     pub vis: Vis,
     pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
-pub struct ImportDecl {
+pub struct UseDecl {
     pub path: P<Path>,
-    pub symbols: List<ImportSymbol>,
+    pub symbols: List<UseSymbol>,
 }
 
 #[derive(Copy, Clone)]
-pub struct ImportSymbol {
+pub struct UseSymbol {
     pub name: Ident,
     pub alias: Option<Ident>,
-}
-
-#[derive(Copy, Clone)]
-pub struct GlobalDecl {
-    pub vis: Vis,
-    pub mutt: Mut,
-    pub name: Ident,
-    pub ty: Option<Type>,
-    pub value: ConstExpr,
 }
 
 #[derive(Copy, Clone)]
@@ -108,6 +100,22 @@ pub struct StructField {
     pub vis: Vis,
     pub name: Ident,
     pub ty: Type,
+}
+
+#[derive(Copy, Clone)]
+pub struct ConstDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub ty: Option<Type>,
+    pub value: ConstExpr,
+}
+
+#[derive(Copy, Clone)]
+pub struct GlobalDecl {
+    pub vis: Vis,
+    pub name: Ident,
+    pub ty: Option<Type>,
+    pub value: ConstExpr,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -242,7 +250,7 @@ pub enum ExprKind {
     Discard,
     LitNull,
     LitBool     { val: bool },
-    LitUint     { val: u64, ty: Option<BasicType> },
+    LitInt      { val: u64, ty: Option<BasicType> },
     LitFloat    { val: f64, ty: Option<BasicType> },
     LitChar     { val: char },
     LitString   { id: InternID },

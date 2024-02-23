@@ -14,13 +14,14 @@ pub trait MutVisit: Sized {
     fn visit_type(&mut self, ty: &mut Type) {}
 
     fn visit_decl(&mut self, decl: Decl) {}
-    fn visit_module_decl(&mut self, module_decl: P<ModuleDecl>) {}
-    fn visit_import_decl(&mut self, import_decl: P<ImportDecl>) {}
-    fn visit_global_decl(&mut self, global_decl: P<GlobalDecl>) {}
+    fn visit_mod_decl(&mut self, mod_decl: P<ModDecl>) {}
+    fn visit_use_decl(&mut self, use_decl: P<UseDecl>) {}
     fn visit_proc_decl(&mut self, proc_decl: P<ProcDecl>) {}
     fn visit_enum_decl(&mut self, enum_decl: P<EnumDecl>) {}
     fn visit_union_decl(&mut self, union_decl: P<UnionDecl>) {}
     fn visit_struct_decl(&mut self, struct_decl: P<StructDecl>) {}
+    fn visit_const_decl(&mut self, const_decl: P<ConstDecl>) {}
+    fn visit_global_decl(&mut self, global_decl: P<GlobalDecl>) {}
 
     fn visit_stmt(&mut self, stmt: Stmt) {}
     fn visit_for(&mut self, for_: P<For>) {}
@@ -72,39 +73,31 @@ fn visit_type<T: MutVisit>(vis: &mut T, ty: &mut Type) {
 fn visit_decl<T: MutVisit>(vis: &mut T, decl: Decl) {
     vis.visit_decl(decl);
     match decl {
-        Decl::Module(module_decl) => visit_module_decl(vis, module_decl),
-        Decl::Import(import_decl) => visit_import_decl(vis, import_decl),
-        Decl::Global(global_decl) => visit_global_decl(vis, global_decl),
+        Decl::Mod(mod_decl) => visit_mod_decl(vis, mod_decl),
+        Decl::Use(use_decl) => visit_use_decl(vis, use_decl),
         Decl::Proc(proc_decl) => visit_proc_decl(vis, proc_decl),
         Decl::Enum(enum_decl) => visit_enum_decl(vis, enum_decl),
         Decl::Union(union_decl) => visit_union_decl(vis, union_decl),
         Decl::Struct(struct_decl) => visit_struct_decl(vis, struct_decl),
+        Decl::Const(const_decl) => visit_const_decl(vis, const_decl),
+        Decl::Global(global_decl) => visit_global_decl(vis, global_decl),
     }
 }
 
-fn visit_module_decl<T: MutVisit>(vis: &mut T, mut mod_decl: P<ModuleDecl>) {
-    vis.visit_module_decl(mod_decl);
+fn visit_mod_decl<T: MutVisit>(vis: &mut T, mut mod_decl: P<ModDecl>) {
+    vis.visit_mod_decl(mod_decl);
     visit_ident(vis, &mut mod_decl.name);
 }
 
-fn visit_import_decl<T: MutVisit>(vis: &mut T, import_decl: P<ImportDecl>) {
-    vis.visit_import_decl(import_decl);
-    visit_path(vis, import_decl.path);
-    for symbol in import_decl.symbols.iter_mut() {
+fn visit_use_decl<T: MutVisit>(vis: &mut T, use_decl: P<UseDecl>) {
+    vis.visit_use_decl(use_decl);
+    visit_path(vis, use_decl.path);
+    for symbol in use_decl.symbols.iter_mut() {
         visit_ident(vis, &mut symbol.name);
         if let Some(ref mut alias) = symbol.alias {
             visit_ident(vis, alias);
         }
     }
-}
-
-fn visit_global_decl<T: MutVisit>(vis: &mut T, mut global_decl: P<GlobalDecl>) {
-    vis.visit_global_decl(global_decl);
-    visit_ident(vis, &mut global_decl.name);
-    if let Some(ref mut ty) = global_decl.ty {
-        visit_type(vis, ty);
-    }
-    visit_const_expr(vis, global_decl.value);
 }
 
 fn visit_proc_decl<T: MutVisit>(vis: &mut T, mut proc_decl: P<ProcDecl>) {
@@ -149,6 +142,24 @@ fn visit_struct_decl<T: MutVisit>(vis: &mut T, mut struct_decl: P<StructDecl>) {
         visit_ident(vis, &mut field.name);
         visit_type(vis, &mut field.ty);
     }
+}
+
+fn visit_const_decl<T: MutVisit>(vis: &mut T, mut const_decl: P<ConstDecl>) {
+    vis.visit_const_decl(const_decl);
+    visit_ident(vis, &mut const_decl.name);
+    if let Some(ref mut ty) = const_decl.ty {
+        visit_type(vis, ty);
+    }
+    visit_const_expr(vis, const_decl.value);
+}
+
+fn visit_global_decl<T: MutVisit>(vis: &mut T, mut global_decl: P<GlobalDecl>) {
+    vis.visit_global_decl(global_decl);
+    visit_ident(vis, &mut global_decl.name);
+    if let Some(ref mut ty) = global_decl.ty {
+        visit_type(vis, ty);
+    }
+    visit_const_expr(vis, global_decl.value);
 }
 
 fn visit_stmt<T: MutVisit>(vis: &mut T, stmt: Stmt) {
@@ -216,7 +227,7 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
         ExprKind::Discard => {}
         ExprKind::LitNull => {}
         ExprKind::LitBool { .. } => {}
-        ExprKind::LitUint { .. } => {}
+        ExprKind::LitInt { .. } => {}
         ExprKind::LitFloat { .. } => {}
         ExprKind::LitChar { .. } => {}
         ExprKind::LitString { .. } => {}
@@ -244,11 +255,11 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
             visit_expr(vis, target);
             visit_expr(vis, index);
         }
-        ExprKind::Cast { target, ref mut ty } => {
+        ExprKind::Cast { target, mut ty } => {
             visit_expr(vis, target);
-            visit_type(vis, ty);
+            visit_type(vis, &mut ty);
         }
-        ExprKind::Sizeof { ref mut ty } => visit_type(vis, ty),
+        ExprKind::Sizeof { mut ty } => visit_type(vis, &mut ty),
         ExprKind::Item { path } => visit_path(vis, path),
         ExprKind::ProcCall { path, input } => {
             visit_path(vis, path);

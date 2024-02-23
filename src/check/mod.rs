@@ -56,7 +56,7 @@ pub struct StructID(u32);
 
 pub struct ModuleData {
     pub from_id: ScopeID,
-    pub decl: P<ModuleDecl>,
+    pub decl: P<ModDecl>,
     pub target_id: Option<ScopeID>,
 }
 

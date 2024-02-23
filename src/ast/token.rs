@@ -125,6 +125,8 @@ token_impl! {
     KwEnum       as "enum"     => KW.
     KwUnion      as "union"    => KW.
     KwStruct     as "struct"   => KW.
+    KwConst      as "const"    => KW.
+    KwGlobal     as "global"   => KW.
 
     KwFor        as "for"      => KW.
     KwDefer      as "defer"    => KW.

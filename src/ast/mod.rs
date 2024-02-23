@@ -1,11 +1,12 @@
 pub mod ast;
 pub mod intern;
 pub mod lexer;
-pub mod parser;
+pub mod parse_error;
+mod parser;
 pub mod span;
 pub mod token;
-pub mod token_list;
-pub mod visit;
+mod token_list;
+mod visit;
 
 use crate::err::error::*;
 use crate::err::report;
@@ -15,7 +16,6 @@ use intern::InternPool;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
-use token_list::TokenList;
 
 //@empty error tokens produce invalid span diagnostic
 
