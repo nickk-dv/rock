@@ -99,6 +99,34 @@ token_impl! {
     CharLit      as "char literal"
     StringLit    as "string literal"
 
+    KwPub        as "pub"      => KW.
+    KwMut        as "mut"      => KW.
+    KwSuper      as "super"    => KW.
+    KwPackage    as "package"  => KW.
+    KwMod        as "mod"      => KW.
+    KwUse        as "use"      => KW.
+    KwProc       as "proc"     => KW.
+    KwEnum       as "enum"     => KW.
+    KwUnion      as "union"    => KW.
+    KwStruct     as "struct"   => KW.
+    KwConst      as "const"    => KW.
+    KwGlobal     as "global"   => KW.
+
+    KwBreak      as "break"    => KW.
+    KwContinue   as "continue" => KW.
+    KwReturn     as "return"   => KW.
+    KwFor        as "for"      => KW.
+    KwDefer      as "defer"    => KW.
+    KwNull       as "null"     => KW.
+    KwTrue       as "true"     => KW.
+    KwFalse      as "false"    => KW.
+    KwIf         as "if"       => KW.
+    KwElse       as "else"     => KW.
+    KwMatch      as "match"    => KW.
+    KwAs         as "as"       => KW.
+    KwSizeof     as "sizeof"   => KW.
+    DirCCall     as "c_call"   => KW.
+
     KwBool       as "bool"     => KW. => BASIC_TYPE BasicType::Bool
     KwS8         as "s8"       => KW. => BASIC_TYPE BasicType::S8
     KwS16        as "s16"      => KW. => BASIC_TYPE BasicType::S16
@@ -114,35 +142,6 @@ token_impl! {
     KwF64        as "f64"      => KW. => BASIC_TYPE BasicType::F64
     KwChar       as "char"     => KW. => BASIC_TYPE BasicType::Char
     Rawptr       as "rawptr"   => KW. => BASIC_TYPE BasicType::Rawptr
-
-    KwPub        as "pub"      => KW.
-    KwMut        as "mut"      => KW.
-    KwMod        as "mod"      => KW.
-    KwUse        as "use"      => KW.
-    KwSuper      as "super"    => KW.
-    KwPackage    as "package"  => KW.
-    KwProc       as "proc"     => KW.
-    KwEnum       as "enum"     => KW.
-    KwUnion      as "union"    => KW.
-    KwStruct     as "struct"   => KW.
-    KwConst      as "const"    => KW.
-    KwGlobal     as "global"   => KW.
-
-    KwFor        as "for"      => KW.
-    KwDefer      as "defer"    => KW.
-    KwBreak      as "break"    => KW.
-    KwContinue   as "continue" => KW.
-    KwReturn     as "return"   => KW.
-
-    KwAs         as "as"       => KW.
-    KwIf         as "if"       => KW.
-    KwElse       as "else"     => KW.
-    KwMatch      as "match"    => KW.
-    KwSizeof     as "sizeof"   => KW.
-    KwNull       as "null"     => KW.
-    KwTrue       as "true"     => KW.
-    KwFalse      as "false"    => KW.
-    DirCCall     as "c_call"   => KW.
 
     Bang         as "!"  => UN UnOp::LogicNot
     Quote2       as "\""
@@ -178,7 +177,6 @@ token_impl! {
     Tilde        as "~"  => UN UnOp::BitNot
 
     DotDot       as ".."
-    ColonColon   as "::"
     ArrowThin    as "->"
     ArrowWide    as "=>"
 
@@ -242,7 +240,6 @@ token_glue! {
 token_glue_extend! {
     glue2,
     ('.') Dot => DotDot,
-    (':') Colon => ColonColon,
     ('<') Less => BinShl,
     ('&') Ampersand => BinLogicAnd,
     ('|') Pipe => BinLogicOr,

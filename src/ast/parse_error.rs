@@ -132,7 +132,7 @@ impl ParseError {
                 Token::OpenBracket,
             ],
             ParseError::ForAssignOp => Self::all_assign_ops(),
-            ParseError::LitMatch => Self::all_literal_tokens(),
+            ParseError::LitMatch => Self::all_literals(),
             ParseError::LitInt => {
                 let mut expected = Self::all_integer_types();
                 expected.extend(Self::all_float_types());
@@ -144,7 +144,7 @@ impl ParseError {
         }
     }
 
-    fn all_literal_tokens() -> Vec<Token> {
+    fn all_literals() -> Vec<Token> {
         vec![
             Token::KwNull,
             Token::KwTrue,
