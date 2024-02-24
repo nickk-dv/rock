@@ -2,6 +2,7 @@ use super::*;
 use crate::ast::CompCtx;
 use crate::err::ansi;
 use crate::err::span_fmt;
+use crate::mem::Arena;
 
 fn report_no_src(message: &'static str) {
     let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
@@ -20,13 +21,13 @@ fn report_info(marker: &'static str, ctx: &CompCtx, src: SourceLoc) {
     span_fmt::print_simple(ctx.file(src.file_id), src.span, Some(marker), true);
 }
 
-pub fn check(ctx: &CompCtx, ast: &Ast) {
+pub fn check(ctx: &CompCtx, ast: &mut Ast) {
     let mut context = Context::new();
     pass_0_populate_scopes(&mut context, &ast, ctx);
     pass_1_check_namesets(&context, ctx);
     pass_2_import_symbols(&mut context, ctx);
     pass_3_check_main_decl(&context, ctx);
-    pass_3_typecheck(&context, ctx);
+    pass_3_typecheck(&context, ctx, &mut ast.arena);
 }
 
 fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
@@ -544,9 +545,10 @@ struct TypeCtx<'a> {
     comp_ctx: &'a CompCtx,
     proc_return_ty: Option<&'a Type>,
     proc_scope: &'a mut ProcScope,
+    ast_arena: &'a mut Arena,
 }
 
-fn pass_3_typecheck(context: &Context, ctx: &CompCtx) {
+fn pass_3_typecheck(context: &Context, ctx: &CompCtx, arena: &mut Arena) {
     for scope_id in context.scope_iter() {
         let mut type_ctx = TypeCtx {
             scope_id,
@@ -555,6 +557,7 @@ fn pass_3_typecheck(context: &Context, ctx: &CompCtx) {
             comp_ctx: ctx,
             proc_return_ty: None,
             proc_scope: &mut ProcScope::new(),
+            ast_arena: arena,
         };
         for decl in type_ctx.scope.module.decls {
             match decl {
@@ -585,7 +588,7 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
     }
 }
 
-fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
+fn typecheck_stmt(ctx: &mut TypeCtx, stmt: Stmt, expect: &Type) -> Type {
     match stmt.kind {
         StmtKind::Break => Type::unit(),
         StmtKind::Continue => Type::unit(),
@@ -606,10 +609,9 @@ fn typecheck_stmt(ctx: &TypeCtx, stmt: Stmt, expect: &Type) -> Type {
     }
 }
 
-fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
+fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
     let ty = match expr.kind {
         ExprKind::Unit => Type::unit(),
-        ExprKind::Discard => todo!(), //@ discard is only allowed in variable bindings
         ExprKind::LitNull => Type::basic(BasicType::Rawptr),
         ExprKind::LitBool { .. } => Type::basic(BasicType::Bool),
         ExprKind::LitInt { ref mut ty, .. } => {
@@ -761,13 +763,11 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                     LocalVar::Local(var_decl) => match var_decl.ty {
                         Some(ty) => ty,
                         None => {
-                            if let Some(name) = var_decl.name {
-                                report(
-                                    "variable type must be known",
-                                    ctx.comp_ctx,
-                                    ctx.scope.src(name.span),
-                                );
-                            }
+                            report(
+                                "variable type must be known",
+                                ctx.comp_ctx,
+                                ctx.scope.src(var_decl.name.span),
+                            );
                             Type::poison()
                         }
                     },
@@ -779,12 +779,165 @@ fn typecheck_expr(ctx: &TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                 }
             }
         }
-        ExprKind::ProcCall { path, input } => Type::unit(), //@ignored
-        ExprKind::StructInit { path, input } => Type::unit(), //@ignored
-        ExprKind::ArrayInit { input } => Type::unit(),      //@ignored
-        ExprKind::ArrayRepeat { expr, size } => Type::unit(), //@ignored
-        ExprKind::UnaryExpr { op, rhs } => Type::unit(),    //@ignored
-        ExprKind::BinaryExpr { op, lhs, rhs } => Type::unit(), //@ignored
+        ExprKind::ProcCall { path, input } => {
+            let item = nameresolve_path(ctx, path);
+            Type::poison() //@ignored
+        }
+        ExprKind::StructInit { path, input } => {
+            // invalid => poison
+            // if union has at least 1 field require only 1 input
+            // if struct require field_count inputs
+            // expect field / member => matching type
+
+            let item = nameresolve_path(ctx, path);
+            Type::poison() //@ignored
+        }
+        ExprKind::ArrayInit { input } => {
+            if input.iter().nth(0).is_none() {
+                report(
+                    "array initializer must have at least 1 element",
+                    ctx.comp_ctx,
+                    ctx.scope.src(expr.span),
+                );
+                Type::poison()
+            } else {
+                //@false positive match when first doesnt match expected array type
+                // not clear on what to base array type
+                // contexts: [expect_ty] [no expect_ty]
+
+                // expect ArrayStatic.ty
+                let mut expect_ty = if expect.ptr.level() == 0 {
+                    match expect.kind {
+                        TypeKind::ArrayStatic(array) => array.ty,
+                        _ => Type::poison(),
+                    }
+                } else {
+                    Type::poison()
+                };
+
+                let mut first = true;
+                let mut array_size = 0;
+                let no_expect = matches!(expect_ty.kind, TypeKind::Poison);
+
+                // expect expect_ty or first ty
+                for expr in input {
+                    array_size += 1;
+                    if first {
+                        first = false;
+                        let ty = typecheck_expr(ctx, expr, &expect_ty);
+                        if no_expect {
+                            expect_ty = ty;
+                        }
+                    } else {
+                        typecheck_expr(ctx, expr, &expect_ty);
+                    }
+                }
+
+                // alloc ArrayStatic type if not poison
+                match expect_ty.kind {
+                    TypeKind::Poison => Type::poison(),
+                    _ => {
+                        //@Have to generate ConstExpr without any span
+                        // rework array type handling during typecheck
+                        let mut array_ty = ctx.ast_arena.alloc::<ArrayStatic>();
+                        let mut size_expr = ConstExpr(ctx.ast_arena.alloc::<Expr>());
+                        size_expr.0.kind = ExprKind::LitInt {
+                            val: array_size,
+                            ty: Some(BasicType::Usize),
+                        };
+                        array_ty.ty = expect_ty;
+                        array_ty.size = size_expr;
+                        Type {
+                            ptr: PtrLevel::new(),
+                            kind: TypeKind::ArrayStatic(array_ty),
+                        }
+                    }
+                }
+            }
+        }
+        ExprKind::ArrayRepeat { expr, size } => {
+            //@ConstExpr size not properly resolved
+            //@unknown size arrays not supported during typecheck
+
+            // expect ArrayStatic.ty
+            let expect_ty = if expect.ptr.level() == 0 {
+                match expect.kind {
+                    TypeKind::ArrayStatic(array) => array.ty,
+                    _ => Type::poison(),
+                }
+            } else {
+                Type::poison()
+            };
+
+            let ty = typecheck_expr(ctx, expr, &expect_ty);
+            typecheck_expr(ctx, size.0, &Type::basic(BasicType::Usize)); //@Resolve as ConstExpr
+
+            // alloc ArrayStatic type if not poison
+            match ty.kind {
+                TypeKind::Poison => Type::poison(),
+                _ => {
+                    let mut array_ty = ctx.ast_arena.alloc::<ArrayStatic>();
+                    array_ty.ty = ty;
+                    array_ty.size = size; //@storing same ConstExpr, no option to have `_` unknown size
+                    Type {
+                        ptr: PtrLevel::new(),
+                        kind: TypeKind::ArrayStatic(array_ty),
+                    }
+                }
+            }
+        }
+        ExprKind::UnaryExpr { op, rhs } => {
+            let _ = typecheck_expr(ctx, rhs, &Type::poison()); // `poison` = no expectation
+            match op {
+                UnOp::Neg => Type::poison(),
+                UnOp::BitNot => Type::poison(),
+                UnOp::LogicNot => Type::poison(),
+                UnOp::Addr(mutt) => Type::poison(),
+                UnOp::Deref => Type::poison(),
+            }
+        }
+        ExprKind::BinaryExpr { op, lhs, rhs } => {
+            //@peer type resolve on ints doesnt exactly work
+            // the lhs => rhs expectation works fine
+            // how to achieve this "coloring" behaviour?
+            // let x = 2 + 2 * 3usize; // all become usize in rust
+
+            //@unfinished
+            // expectation is ignored when resolving
+            // can be used to pass expectation in case of arith ops (to affect literals)
+            match op {
+                BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor
+                | BinOp::BitShl
+                | BinOp::BitShr => {
+                    let ty_lhs = typecheck_expr(ctx, lhs, &Type::poison()); // `poison` = no expectation
+                    let _ = typecheck_expr(ctx, rhs, &ty_lhs);
+                    Type::poison() //@ignored
+                }
+                BinOp::CmpIsEq
+                | BinOp::CmpNotEq
+                | BinOp::CmpLt
+                | BinOp::CmpLtEq
+                | BinOp::CmpGt
+                | BinOp::CmpGtEq => {
+                    let ty_lhs = typecheck_expr(ctx, lhs, &Type::poison()); // `poison` = no expectation
+                    let _ = typecheck_expr(ctx, rhs, &ty_lhs);
+                    Type::basic(BasicType::Bool)
+                }
+                BinOp::LogicAnd | BinOp::LogicOr => {
+                    let bool_ty = Type::basic(BasicType::Bool);
+                    typecheck_expr(ctx, lhs, &bool_ty);
+                    typecheck_expr(ctx, rhs, &bool_ty);
+                    bool_ty
+                }
+            }
+        }
     };
     if !Type::matches(&ty, expect) {
         //@printout is a temporary reporting strategy
@@ -889,19 +1042,12 @@ impl ProcScope {
 
     fn find_local(&self, id: InternID) -> Option<&LocalVar> {
         for local in self.locals.iter() {
-            match local {
-                LocalVar::Param(param) => {
-                    if param.name.id == id {
-                        return Some(local);
-                    }
-                }
-                LocalVar::Local(var_decl) => {
-                    if let Some(name) = var_decl.name {
-                        if name.id == id {
-                            return Some(local);
-                        }
-                    }
-                }
+            let name_id = match local {
+                LocalVar::Param(param) => param.name.id,
+                LocalVar::Local(var_decl) => var_decl.name.id,
+            };
+            if name_id == id {
+                return Some(local);
             }
         }
         None

@@ -141,9 +141,9 @@ main :: () -> s32 {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let res = ast::parse()?;
+    let mut res = ast::parse()?;
     eprintln!("ast arenas mem-usage: {}", res.1.arena.mem_usage());
-    check::check(&res.0, &res.1);
+    check::check(&res.0, &mut res.1);
     Ok(())
 }
 

@@ -203,9 +203,7 @@ fn visit_for<T: MutVisit>(vis: &mut T, for_: P<For>) {
 
 fn visit_var_decl<T: MutVisit>(vis: &mut T, mut var_decl: P<VarDecl>) {
     vis.visit_var_decl(var_decl);
-    if let Some(ref mut name) = var_decl.name {
-        visit_ident(vis, name);
-    }
+    visit_ident(vis, &mut var_decl.name);
     if let Some(ref mut ty) = var_decl.ty {
         visit_type(vis, ty);
     }
@@ -224,7 +222,6 @@ fn visit_expr<T: MutVisit>(vis: &mut T, mut expr: P<Expr>) {
     vis.visit_expr(expr);
     match expr.kind {
         ExprKind::Unit => {}
-        ExprKind::Discard => {}
         ExprKind::LitNull => {}
         ExprKind::LitBool { .. } => {}
         ExprKind::LitInt { .. } => {}

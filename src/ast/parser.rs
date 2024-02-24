@@ -504,13 +504,8 @@ impl<'ast> Parser<'ast> {
     fn var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
         let mut var_decl = self.arena.alloc::<VarDecl>();
         var_decl.mutt = self.mutt();
-        var_decl.name = if self.try_eat(Token::Underscore) {
-            None
-        } else {
-            Some(self.ident(ParseCtx::VarDecl)?)
-        };
+        var_decl.name = self.ident(ParseCtx::VarDecl)?;
         self.expect(Token::Colon, ParseCtx::VarDecl)?;
-
         if self.try_eat(Token::Equals) {
             var_decl.ty = None;
             var_decl.expr = Some(self.expr()?);
@@ -584,10 +579,6 @@ impl<'ast> Parser<'ast> {
         }
 
         expr.kind = match self.peek() {
-            Token::Underscore => {
-                self.eat();
-                ExprKind::Discard
-            }
             Token::KwIf => ExprKind::If { if_: self.if_()? },
             Token::KwNull
             | Token::KwTrue

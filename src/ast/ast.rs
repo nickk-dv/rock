@@ -222,7 +222,7 @@ pub enum ForKind {
 #[derive(Copy, Clone)]
 pub struct VarDecl {
     pub mutt: Mut,
-    pub name: Option<Ident>,
+    pub name: Ident,
     pub ty: Option<Type>,
     pub expr: Option<P<Expr>>,
 }
@@ -247,7 +247,6 @@ pub struct ConstExpr(pub P<Expr>);
 #[derive(Copy, Clone)]
 pub enum ExprKind {
     Unit,
-    Discard,
     LitNull,
     LitBool     { val: bool },
     LitInt      { val: u64, ty: Option<BasicType> },
