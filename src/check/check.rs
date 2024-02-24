@@ -481,58 +481,68 @@ enum ItemResolved<'a> {
 }
 
 fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
-    let mut span = Span::new(path.span_start, path.span_start);
+    let mut path_span = Span::new(path.span_start, path.span_start);
 
     let from_id = match path.kind {
         PathKind::None => ctx.scope_id,
         PathKind::Super => {
-            span.end += 5;
+            path_span.end += 5;
             match ctx.scope.parent_id {
                 Some(parent_id) => parent_id,
                 None => {
                     report(
                         "cannot use `super` in root module",
                         ctx.comp_ctx,
-                        ctx.scope.src(span),
+                        ctx.scope.src(path_span),
                     );
                     return ItemResolved::None;
                 }
             }
         }
         PathKind::Package => {
-            span.end += 7;
+            path_span.end += 7;
             ScopeID(0)
         }
     };
 
     if path.names.is_empty() {
-        report("incomplete access path", ctx.comp_ctx, ctx.scope.src(span));
+        report(
+            "incomplete access path",
+            ctx.comp_ctx,
+            ctx.scope.src(path_span),
+        );
         return ItemResolved::None;
     }
 
     for name in path.names {
-        let from_scope = ctx.context.get_scope(from_id);
-        let symbol = if from_id == ctx.scope_id {
-            from_scope.get_symbol(name.id)
-        } else {
-            from_scope.get_declared_symbol(name.id)
-        };
-        match symbol {
-            Some(s) => {}
+        //let from_scope = ctx.context.get_scope(from_id);
+        //let symbol = if from_id == ctx.scope_id {
+        //    from_scope.get_symbol(name.id)
+        //} else {
+        //    from_scope.get_declared_symbol(name.id)
+        //};
+        //match symbol {
+        //    Some(s) => {}
+        //    None => {
+        //        report(
+        //            "symbol not found in scope",
+        //            ctx.comp_ctx,
+        //            ctx.scope.src(name.span),
+        //        );
+        //        return ItemResolved::None;
+        //    }
+        //}
+
+        match ctx.proc_scope.find_local(name.id) {
+            Some(local) => return ItemResolved::Local(local),
             None => {
                 report(
-                    "symbol not found in scope",
+                    "symbol is not a found as local variable",
                     ctx.comp_ctx,
                     ctx.scope.src(name.span),
                 );
-                return ItemResolved::None;
             }
         }
-
-        //match ctx.proc_scope.find_local(name.id) {
-        //    Some(local) => return ItemResolved::Local(local),
-        //    None => {}
-        //}
     }
 
     ItemResolved::None
@@ -543,7 +553,7 @@ struct TypeCtx<'a> {
     scope: &'a Scope,
     context: &'a Context,
     comp_ctx: &'a CompCtx,
-    proc_return_ty: Option<&'a Type>,
+    proc_return_ty: Type,
     proc_scope: &'a mut ProcScope,
     ast_arena: &'a mut Arena,
 }
@@ -555,7 +565,7 @@ fn pass_3_typecheck(context: &Context, ctx: &CompCtx, arena: &mut Arena) {
             scope: context.get_scope(scope_id),
             context,
             comp_ctx: ctx,
-            proc_return_ty: None,
+            proc_return_ty: Type::unit(),
             proc_scope: &mut ProcScope::new(),
             ast_arena: arena,
         };
@@ -574,9 +584,8 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
     }
     if let Some(ref mut ty) = proc_decl.return_ty {
         nameresolve_type(ctx, ty);
-    } else {
-        proc_decl.return_ty = Some(Type::unit());
-    };
+        ctx.proc_return_ty = *ty;
+    }
     if let Some(block) = proc_decl.block {
         if let Some(ref return_ty) = proc_decl.return_ty {
             ctx.proc_scope.push_stack_frame();
@@ -590,20 +599,46 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
 
 fn typecheck_stmt(ctx: &mut TypeCtx, stmt: Stmt, expect: &Type) -> Type {
     match stmt.kind {
-        StmtKind::Break => Type::unit(),
-        StmtKind::Continue => Type::unit(),
-        StmtKind::Return(ret) => Type::unit(), //@typecheck against proc return type
+        StmtKind::Break => Type::unit(),    //@is it correct to return unit?
+        StmtKind::Continue => Type::unit(), //@is it correct to return unit?
+        StmtKind::Return(ret) => {
+            if let Some(expr) = ret {
+                let ret_ty = ctx.proc_return_ty;
+                typecheck_expr(ctx, expr, &ret_ty);
+            }
+            Type::poison() // @ignored @is it correct to return poison?
+        }
         StmtKind::Defer(defer) => {
             typecheck_expr(ctx, defer, &Type::unit());
             Type::unit()
         }
-        StmtKind::ForLoop(for_) => Type::unit(), //@ignored
-        StmtKind::VarDecl(var_decl) => Type::unit(), //@ignored
-        StmtKind::VarAssign(var_assign) => Type::unit(), //@ignored
+        StmtKind::ForLoop(for_) => {
+            Type::unit() //@ignored
+        }
+        StmtKind::VarDecl(mut var_decl) => {
+            if let Some(ref mut ty) = var_decl.ty {
+                nameresolve_type(ctx, ty);
+            }
+            if let Some(expr) = var_decl.expr {
+                match var_decl.ty {
+                    Some(ref ty) => {
+                        typecheck_expr(ctx, expr, ty);
+                    }
+                    None => {
+                        var_decl.ty = Some(typecheck_expr(ctx, expr, &Type::poison()));
+                    }
+                }
+            }
+            ctx.proc_scope.push_local(LocalVar::Local(var_decl));
+            Type::unit() //@is it correct to return unit?
+        }
+        StmtKind::VarAssign(var_assign) => {
+            Type::unit() //@is it correct to return unit?
+        }
         StmtKind::ExprSemi(expr) => {
             //@maybe this is not correct handling of expr semi
             typecheck_expr(ctx, expr, &Type::unit());
-            Type::unit()
+            Type::unit() //@is it correct to return unit?
         }
         StmtKind::ExprTail(expr) => typecheck_expr(ctx, expr, expect),
     }
@@ -763,8 +798,11 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                     LocalVar::Local(var_decl) => match var_decl.ty {
                         Some(ty) => ty,
                         None => {
+                            //@need to track if this error was already emitted
+                            // to not cause diagnostic on each use of invalid variable
+                            // only applies to local vars type of which can be missing
                             report(
-                                "variable type must be known",
+                                "variable type must be known at this point",
                                 ctx.comp_ctx,
                                 ctx.scope.src(var_decl.name.span),
                             );
@@ -773,13 +811,16 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                     },
                 },
                 ItemResolved::None => {
-                    //@assuming that all items are a local variable
+                    //@temp assuming that all items are a local variable
                     report("variable not found", ctx.comp_ctx, ctx.scope.src(expr.span));
                     Type::poison()
                 }
             }
         }
         ExprKind::ProcCall { path, input } => {
+            // check inputs
+            // based on if function name was resolved correctly
+
             let item = nameresolve_path(ctx, path);
             Type::poison() //@ignored
         }
