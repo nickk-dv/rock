@@ -4,10 +4,30 @@ use crate::err::ansi;
 use crate::err::span_fmt;
 use crate::mem::Arena;
 
+#[derive(Clone)]
+pub struct CheckError {
+    pub error: Message,
+    pub context: Vec<Message>,
+}
+
+#[derive(Clone)]
+pub struct Message {
+    pub src: SourceLoc,
+    pub message: &'static str,
+}
+
+static mut ERRORS: Vec<CheckError> = Vec::new();
+
+pub fn get_errors() -> Vec<CheckError> {
+    unsafe { ERRORS.to_vec() }
+}
+
 fn report_no_src(message: &'static str) {
     let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
     let ansi_clear = "\x1B[0m";
     eprintln!("{}error:{} {}", ansi_red, ansi_clear, message);
+
+    //@not added as Error since its "global" to project
 }
 
 fn report(message: &'static str, ctx: &CompCtx, src: SourceLoc) {
@@ -15,10 +35,26 @@ fn report(message: &'static str, ctx: &CompCtx, src: SourceLoc) {
     let ansi_clear = "\x1B[0m";
     eprintln!("{}error:{} {}", ansi_red, ansi_clear, message);
     span_fmt::print_simple(ctx.file(src.file_id), src.span, None, false);
+
+    unsafe {
+        ERRORS.push(CheckError {
+            error: Message { src, message },
+            context: Vec::new(),
+        });
+    }
 }
 
 fn report_info(marker: &'static str, ctx: &CompCtx, src: SourceLoc) {
     span_fmt::print_simple(ctx.file(src.file_id), src.span, Some(marker), true);
+
+    unsafe {
+        if let Some(error) = ERRORS.last_mut() {
+            error.context.push(Message {
+                src,
+                message: marker,
+            })
+        }
+    }
 }
 
 pub fn check(ctx: &CompCtx, ast: &mut Ast) {
