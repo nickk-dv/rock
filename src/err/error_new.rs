@@ -2,27 +2,47 @@ use crate::check::SourceLoc;
 
 #[derive(Clone)]
 pub struct CompError {
-    pub error: Message,
-    pub context: Vec<Message>,
-}
-
-#[derive(Clone)]
-pub struct Message {
     pub src: SourceLoc,
-    pub message: ErrorMessage,
+    pub msg: Message,
+    pub context: Vec<ErrorContext>,
 }
 
 #[derive(Clone)]
-pub enum ErrorMessage {
+pub enum ErrorContext {
+    Message { msg: Message },
+    MessageSource { ctx_src: SourceLoc, msg: Message },
+}
+
+#[derive(Clone)]
+pub enum Message {
     Str(&'static str),
     String(String),
 }
 
-impl ErrorMessage {
+impl CompError {
+    pub fn new(src: SourceLoc, msg: Message) -> Self {
+        Self {
+            src,
+            msg,
+            context: Vec::new(),
+        }
+    }
+
+    pub fn context(mut self, ctx: ErrorContext) -> Self {
+        self.context.push(ctx);
+        self
+    }
+
+    pub fn add_context(&mut self, ctx: ErrorContext) {
+        self.context.push(ctx);
+    }
+}
+
+impl Message {
     pub fn as_str(&self) -> &str {
         match self {
-            ErrorMessage::Str(str) => str,
-            ErrorMessage::String(string) => string.as_str(),
+            Message::Str(str) => str,
+            Message::String(string) => string.as_str(),
         }
     }
 }

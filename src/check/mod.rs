@@ -344,3 +344,9 @@ pub struct SourceLoc {
     pub span: Span,
     pub file_id: FileID,
 }
+
+impl SourceLoc {
+    pub fn new(span: Span, file_id: FileID) -> Self {
+        Self { span, file_id }
+    }
+}

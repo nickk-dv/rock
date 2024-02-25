@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use super::ast::*;
 use super::intern::*;
 use super::parse_error::*;
@@ -79,21 +81,23 @@ impl<'ast> Parser<'ast> {
                 Err(error) => {
                     let got_token = (self.peek(), self.peek_span());
                     let parse_error_data = ParseErrorData::new(error, file_id, got_token);
+
                     //@no marker on the span "unexpected token"
-                    let comp_error = CompError {
-                        error: Message {
-                            src: SourceLoc {
-                                span: got_token.1,
-                                file_id,
-                            },
-                            message: ErrorMessage::String(format!(
-                                "in {}",
-                                parse_error_data.ctx.as_str()
-                            )),
-                        },
-                        context: Vec::new(),
-                    };
+                    let message = format!("Parse Error: {}", parse_error_data.ctx.as_str());
+                    let mut error_ctx = String::new();
+                    for token in parse_error_data.expected.iter() {
+                        error_ctx.push_str(token.as_str());
+                        error_ctx.push_str(", ");
+                    }
+
                     let error = Error::parse(parse_error_data);
+                    let comp_error = CompError::new(
+                        SourceLoc::new(got_token.1, file_id),
+                        Message::String(message),
+                    )
+                    .context(ErrorContext::Message {
+                        msg: Message::String(error_ctx),
+                    });
                     return Err((error, comp_error));
                 }
             }

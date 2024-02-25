@@ -6,7 +6,7 @@ use crate::err::span_fmt;
 use crate::mem::Arena;
 
 //@not added as Error since its "global" to project
-// always printed out in the cli
+//@always printed out in the cli
 fn report_no_src(message: &'static str) {
     let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
     let ansi_clear = "\x1B[0m";
@@ -15,23 +15,23 @@ fn report_no_src(message: &'static str) {
 
 fn report(message: &'static str, _: &CompCtx, src: SourceLoc) {
     unsafe {
-        ERRORS.push(CompError {
-            error: Message {
-                src,
-                message: ErrorMessage::Str(message),
-            },
-            context: Vec::new(),
-        });
+        ERRORS.push(CompError::new(src, Message::Str(message)));
+    }
+}
+
+fn report_msg(msg: Message, _: &CompCtx, src: SourceLoc) {
+    unsafe {
+        ERRORS.push(CompError::new(src, msg));
     }
 }
 
 fn report_info(marker: &'static str, _: &CompCtx, src: SourceLoc) {
     unsafe {
         if let Some(error) = ERRORS.last_mut() {
-            error.context.push(Message {
-                src,
-                message: ErrorMessage::Str(marker),
-            })
+            error.add_context(ErrorContext::MessageSource {
+                ctx_src: src,
+                msg: Message::Str(marker),
+            });
         }
     }
 }
@@ -40,25 +40,23 @@ pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
     for error in errors {
         let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
         let ansi_clear = "\x1B[0m";
-        eprintln!(
-            "\n{}error:{} {}",
-            ansi_red,
-            ansi_clear,
-            error.error.message.as_str()
-        );
-        span_fmt::print_simple(
-            ctx.file(error.error.src.file_id),
-            error.error.src.span,
-            None,
-            false,
-        );
+        eprintln!("\n{}error:{} {}", ansi_red, ansi_clear, error.msg.as_str());
+        span_fmt::print_simple(ctx.file(error.src.file_id), error.src.span, None, false);
+
         for context in error.context.iter() {
-            span_fmt::print_simple(
-                ctx.file(context.src.file_id),
-                context.src.span,
-                Some(context.message.as_str()),
-                true,
-            );
+            match context {
+                ErrorContext::Message { msg } => {
+                    eprintln!("{}", msg.as_str());
+                }
+                ErrorContext::MessageSource { ctx_src, msg } => {
+                    span_fmt::print_simple(
+                        ctx.file(ctx_src.file_id),
+                        ctx_src.span,
+                        Some(msg.as_str()),
+                        true,
+                    );
+                }
+            }
         }
     }
 }
@@ -1035,59 +1033,61 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
         }
     };
     if !Type::matches(&ty, expect) {
-        //@printout is a temporary reporting strategy
-        report("type mismatch", ctx.comp_ctx, ctx.scope.src(expr.span));
-        eprint!("expected: ");
-        eprint_type(&expect);
-        eprint!("\ngot:      ");
-        eprint_type(&ty);
-        eprint!("\n\n");
+        report_msg(
+            Message::String(format!(
+                "type mismatch\nexpected: `{}`, found `{}`",
+                stringify_type(expect),
+                stringify_type(&ty)
+            )),
+            ctx.comp_ctx,
+            ctx.scope.src(expr.span),
+        );
     }
     ty
 }
 
-fn eprint_type(ty: &Type) {
+fn stringify_type(ty: &Type) -> String {
+    let mut string = String::new();
     for _ in 0..ty.ptr.level() {
-        eprint!("* <MUT?> ");
+        string.push_str("* <MUT?> ");
     }
     match ty.kind {
         TypeKind::Basic(basic) => match basic {
-            BasicType::Unit => eprint!("()"),
-            BasicType::Bool => eprint!("bool"),
-            BasicType::S8 => eprint!("s8"),
-            BasicType::S16 => eprint!("s16"),
-            BasicType::S32 => eprint!("s32"),
-            BasicType::S64 => eprint!("s64"),
-            BasicType::Ssize => eprint!("ssize"),
-            BasicType::U8 => eprint!("u8"),
-            BasicType::U16 => eprint!("u16"),
-            BasicType::U32 => eprint!("u32"),
-            BasicType::U64 => eprint!("u64"),
-            BasicType::Usize => eprint!("usize"),
-            BasicType::F32 => eprint!("f32"),
-            BasicType::F64 => eprint!("f64"),
-            BasicType::Char => eprint!("char"),
-            BasicType::Rawptr => eprint!("rawptr"),
+            BasicType::Unit => string.push_str("()"),
+            BasicType::Bool => string.push_str("bool"),
+            BasicType::S8 => string.push_str("s8"),
+            BasicType::S16 => string.push_str("s16"),
+            BasicType::S32 => string.push_str("s32"),
+            BasicType::S64 => string.push_str("s64"),
+            BasicType::Ssize => string.push_str("ssize"),
+            BasicType::U8 => string.push_str("u8"),
+            BasicType::U16 => string.push_str("u16"),
+            BasicType::U32 => string.push_str("u32"),
+            BasicType::U64 => string.push_str("u64"),
+            BasicType::Usize => string.push_str("usize"),
+            BasicType::F32 => string.push_str("f32"),
+            BasicType::F64 => string.push_str("f64"),
+            BasicType::Char => string.push_str("char"),
+            BasicType::Rawptr => string.push_str("rawptr"),
         },
-        TypeKind::Custom(..) => {
-            eprint!("<CUSTOM>");
-        }
+        TypeKind::Custom(..) => string.push_str("<CUSTOM>"),
         TypeKind::ArraySlice(slice) => {
             match slice.mutt {
-                Mut::Mutable => eprint!("[mut]"),
-                Mut::Immutable => eprint!("[]"),
+                Mut::Mutable => string.push_str("[mut]"),
+                Mut::Immutable => string.push_str("[]"),
             }
-            eprint_type(&slice.ty);
+            string.push_str(stringify_type(&slice.ty).as_str());
         }
         TypeKind::ArrayStatic(array) => {
-            eprint!("[<SIZE>]");
-            eprint_type(&array.ty);
+            string.push_str("[<SIZE>]");
+            string.push_str(stringify_type(&array.ty).as_str());
         }
-        TypeKind::Enum(id) => eprint!("enum({:?})", id),
-        TypeKind::Union(id) => eprint!("union({:?})", id),
-        TypeKind::Struct(id) => eprint!("struct({:?})", id),
-        TypeKind::Poison => eprint!("<POISON>"),
+        TypeKind::Enum(id) => string.push_str(format!("enum({:?})", id).as_str()),
+        TypeKind::Union(id) => string.push_str(format!("union({:?})", id).as_str()),
+        TypeKind::Struct(id) => string.push_str(format!("struct({:?})", id).as_str()),
+        TypeKind::Poison => string.push_str("<POISON>"),
     }
+    string
 }
 
 struct ProcScope {
