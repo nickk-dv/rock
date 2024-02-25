@@ -1,70 +1,87 @@
 use super::*;
 use crate::ast::CompCtx;
 use crate::err::ansi;
+use crate::err::error_new::*;
 use crate::err::span_fmt;
 use crate::mem::Arena;
 
-#[derive(Clone)]
-pub struct CheckError {
-    pub error: Message,
-    pub context: Vec<Message>,
-}
-
-#[derive(Clone)]
-pub struct Message {
-    pub src: SourceLoc,
-    pub message: &'static str,
-}
-
-static mut ERRORS: Vec<CheckError> = Vec::new();
-
-pub fn get_errors() -> Vec<CheckError> {
-    unsafe { ERRORS.to_vec() }
-}
-
+//@not added as Error since its "global" to project
+// always printed out in the cli
 fn report_no_src(message: &'static str) {
     let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
     let ansi_clear = "\x1B[0m";
     eprintln!("{}error:{} {}", ansi_red, ansi_clear, message);
-
-    //@not added as Error since its "global" to project
 }
 
-fn report(message: &'static str, ctx: &CompCtx, src: SourceLoc) {
-    let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
-    let ansi_clear = "\x1B[0m";
-    eprintln!("{}error:{} {}", ansi_red, ansi_clear, message);
-    span_fmt::print_simple(ctx.file(src.file_id), src.span, None, false);
-
+fn report(message: &'static str, _: &CompCtx, src: SourceLoc) {
     unsafe {
-        ERRORS.push(CheckError {
-            error: Message { src, message },
+        ERRORS.push(CompError {
+            error: Message {
+                src,
+                message: ErrorMessage::Str(message),
+            },
             context: Vec::new(),
         });
     }
 }
 
-fn report_info(marker: &'static str, ctx: &CompCtx, src: SourceLoc) {
-    span_fmt::print_simple(ctx.file(src.file_id), src.span, Some(marker), true);
-
+fn report_info(marker: &'static str, _: &CompCtx, src: SourceLoc) {
     unsafe {
         if let Some(error) = ERRORS.last_mut() {
             error.context.push(Message {
                 src,
-                message: marker,
+                message: ErrorMessage::Str(marker),
             })
         }
     }
 }
 
-pub fn check(ctx: &CompCtx, ast: &mut Ast) {
+pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
+    for error in errors {
+        let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
+        let ansi_clear = "\x1B[0m";
+        eprintln!(
+            "\n{}error:{} {}",
+            ansi_red,
+            ansi_clear,
+            error.error.message.as_str()
+        );
+        span_fmt::print_simple(
+            ctx.file(error.error.src.file_id),
+            error.error.src.span,
+            None,
+            false,
+        );
+        for context in error.context.iter() {
+            span_fmt::print_simple(
+                ctx.file(context.src.file_id),
+                context.src.span,
+                Some(context.message.as_str()),
+                true,
+            );
+        }
+    }
+}
+
+static mut ERRORS: Vec<CompError> = Vec::new();
+
+pub fn check(ctx: &CompCtx, ast: &mut Ast) -> Result<(), Vec<CompError>> {
     unsafe { ERRORS.clear() };
+
     let mut context = Context::new();
     pass_0_populate_scopes(&mut context, &ast, ctx);
     pass_1_check_namesets(&context, ctx);
     pass_2_import_symbols(&mut context, ctx);
     pass_3_check_main_decl(&context, ctx);
     pass_3_typecheck(&context, ctx, &mut ast.arena);
+
+    unsafe {
+        if ERRORS.len() > 0 {
+            Result::Err(ERRORS.to_vec())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {

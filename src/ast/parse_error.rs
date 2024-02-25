@@ -30,7 +30,7 @@ macro_rules! parse_ctx_impl {
             $($variant,)+
         }
         impl ParseCtx {
-            pub fn as_str(&self) -> &'static str {
+            pub const fn as_str(&self) -> &'static str {
                 match *self {
                     $(ParseCtx::$variant => $string,)+
                 }

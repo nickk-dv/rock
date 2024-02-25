@@ -4,7 +4,9 @@ use super::parse_error::*;
 use super::span::Span;
 use super::token::Token;
 use super::token_list::TokenList;
+use crate::check::SourceLoc;
 use crate::err::error::Error;
+use crate::err::error_new::*;
 use crate::mem::*;
 
 pub struct Parser<'ast> {
@@ -68,7 +70,7 @@ impl<'ast> Parser<'ast> {
         Err(ParseError::ExpectToken(ctx, token))
     }
 
-    pub fn module(&mut self, file_id: super::FileID) -> Result<P<Module>, Error> {
+    pub fn module(&mut self, file_id: super::FileID) -> Result<P<Module>, (Error, CompError)> {
         let mut module = self.arena.alloc::<Module>();
         let mut decls = ListBuilder::new();
         while self.peek() != Token::Eof {
@@ -76,7 +78,23 @@ impl<'ast> Parser<'ast> {
                 Ok(decl) => decls.add(&mut self.arena, decl),
                 Err(error) => {
                     let got_token = (self.peek(), self.peek_span());
-                    return Err(Error::parse(ParseErrorData::new(error, file_id, got_token)));
+                    let parse_error_data = ParseErrorData::new(error, file_id, got_token);
+                    //@no marker on the span "unexpected token"
+                    let comp_error = CompError {
+                        error: Message {
+                            src: SourceLoc {
+                                span: got_token.1,
+                                file_id,
+                            },
+                            message: ErrorMessage::String(format!(
+                                "in {}",
+                                parse_error_data.ctx.as_str()
+                            )),
+                        },
+                        context: Vec::new(),
+                    };
+                    let error = Error::parse(parse_error_data);
+                    return Err((error, comp_error));
                 }
             }
         }

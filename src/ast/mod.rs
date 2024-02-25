@@ -93,7 +93,9 @@ impl Timer {
     }
 }
 
-pub fn parse() -> Result<(CompCtx, Ast), ()> {
+use crate::err::error_new::*;
+
+pub fn parse() -> (CompCtx, Result<Ast, Vec<CompError>>) {
     let timer = Timer::new();
     let mut ctx = CompCtx::new();
     let mut ast = Ast {
@@ -101,6 +103,8 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
         modules: Vec::new(),
     };
     timer.elapsed_ms("parse arena created");
+
+    let mut errors = Vec::<CompError>::new();
 
     let timer = Timer::new();
     let files = collect_files(&mut ctx);
@@ -121,8 +125,9 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
                 ast.modules.push(module);
                 module_strings.push(tokens.strings());
             }
-            Err(err) => {
-                report::report(handle, &err, &ctx);
+            Err((error, error_new)) => {
+                errors.push(error_new);
+                report::report(handle, &error, &ctx);
             }
         }
     }
@@ -142,7 +147,11 @@ pub fn parse() -> Result<(CompCtx, Ast), ()> {
     }
     timer.elapsed_ms("interned all modules");
 
-    report::err_status((ctx, ast))
+    if errors.len() > 0 {
+        (ctx, Err(errors))
+    } else {
+        (ctx, Ok(ast))
+    }
 }
 
 #[must_use]

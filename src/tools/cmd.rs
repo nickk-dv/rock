@@ -141,24 +141,34 @@ main :: () -> s32 {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let mut res = ast::parse()?;
-    eprintln!("ast arenas mem-usage: {}", res.1.arena.mem_usage());
-    check::check(&res.0, &mut res.1);
-    Ok(())
+    let (ctx, parse_res) = ast::parse();
+    let mut ast = match parse_res {
+        Ok(ast) => ast,
+        Err(errors) => {
+            check::report_check_errors_cli(&ctx, &errors);
+            return Err(());
+        }
+    };
+    eprintln!("ast arenas mem-usage: {}", ast.arena.mem_usage()); //@debugging mem usage
+    let check_res = check::check(&ctx, &mut ast);
+    match check_res {
+        Ok(()) => Ok(()),
+        Err(errors) => {
+            check::report_check_errors_cli(&ctx, &errors);
+            Err(())
+        }
+    }
 }
 
 fn cmd_build() -> Result<(), ()> {
-    let _ = ast::parse()?;
     Ok(())
 }
 
 fn cmd_run() -> Result<(), ()> {
-    let _ = ast::parse()?;
     Ok(())
 }
 
 fn cmd_fmt() -> Result<(), ()> {
-    let _ = ast::parse()?;
     Ok(())
 }
 
