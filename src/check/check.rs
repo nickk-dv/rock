@@ -58,6 +58,7 @@ fn report_info(marker: &'static str, ctx: &CompCtx, src: SourceLoc) {
 }
 
 pub fn check(ctx: &CompCtx, ast: &mut Ast) {
+    unsafe { ERRORS.clear() };
     let mut context = Context::new();
     pass_0_populate_scopes(&mut context, &ast, ctx);
     pass_1_check_namesets(&context, ctx);
