@@ -36,6 +36,14 @@ fn report_info(marker: &'static str, _: &CompCtx, src: SourceLoc) {
     }
 }
 
+fn report_info_msg(msg: Message, _: &CompCtx, src: SourceLoc) {
+    unsafe {
+        if let Some(error) = ERRORS.last_mut() {
+            error.add_context(ErrorContext::MessageSource { ctx_src: src, msg });
+        }
+    }
+}
+
 pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
     for error in errors {
         let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
@@ -167,15 +175,15 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                         module_map.get(&path2).cloned(),
                     ) {
                         (None, None) => {
-                            report("both module paths are missing", ctx, src);
-                            eprintln!("path: {:?}", path1);
-                            eprintln!("path2: {:?}", path2);
+                            let msg =
+                                format!("both module paths are missing:\n{:?}\n{:?}", path1, path2);
+                            report_msg(Message::String(msg), ctx, src);
                             continue;
                         }
                         (Some(..), Some(..)) => {
-                            report("both module paths are prevent", ctx, src);
-                            eprintln!("path: {:?}", path1);
-                            eprintln!("path2: {:?}", path2);
+                            let msg =
+                                format!("both module paths are present\n{:?}\n{:?}", path1, path2);
+                            report_msg(Message::String(msg), ctx, src);
                             continue;
                         }
                         (Some(p), None) => match p {
@@ -188,7 +196,6 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                             Err(taken) => {
                                 report("module has been taken", ctx, src);
                                 report_info("by this module declaration", ctx, taken);
-                                eprintln!("path: {:?}", path1);
                                 continue;
                             }
                         },
@@ -202,7 +209,6 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                             Err(taken) => {
                                 report("module has been taken", ctx, src);
                                 report_info("by this module declaration", ctx, taken);
-                                eprintln!("path: {:?}", path2);
                                 continue;
                             }
                         },

@@ -83,21 +83,26 @@ impl<'ast> Parser<'ast> {
                     let parse_error_data = ParseErrorData::new(error, file_id, got_token);
 
                     //@no marker on the span "unexpected token"
-                    let message = format!("Parse Error: {}", parse_error_data.ctx.as_str());
-                    let mut error_ctx = String::new();
-                    for token in parse_error_data.expected.iter() {
+                    let mut error_ctx = "expected: ".to_string();
+                    for (i, token) in parse_error_data.expected.iter().enumerate() {
+                        error_ctx.push_str("`");
                         error_ctx.push_str(token.as_str());
-                        error_ctx.push_str(", ");
+                        error_ctx.push_str("`");
+                        if i < parse_error_data.expected.len() - 1 {
+                            error_ctx.push_str(", ");
+                        }
                     }
+                    let message = format!(
+                        "Parse Error: in {}\n{}",
+                        parse_error_data.ctx.as_str(),
+                        error_ctx
+                    );
 
                     let error = Error::parse(parse_error_data);
                     let comp_error = CompError::new(
                         SourceLoc::new(got_token.1, file_id),
                         Message::String(message),
-                    )
-                    .context(ErrorContext::Message {
-                        msg: Message::String(error_ctx),
-                    });
+                    );
                     return Err((error, comp_error));
                 }
             }

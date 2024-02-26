@@ -20,8 +20,11 @@ use std::time::Instant;
 //@empty error tokens produce invalid span diagnostic
 
 /// Persistant data across a compilation
+//@move to separate module / folder
+// make iteration a private function
+// if its still needed by ls server
 pub struct CompCtx {
-    files: Vec<File>,
+    pub files: Vec<File>,
     intern: InternPool,
 }
 
