@@ -152,6 +152,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
 
         for decl in task.module.decls {
             match decl {
+                Decl::Use(..) => {}
                 Decl::Mod(mod_decl) => {
                     #[rustfmt::skip]
                     add_declared!(
@@ -219,13 +220,6 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                         parent: Some((scope_id, mod_id)),
                     });
                 }
-                Decl::Global(global_decl) => {
-                    #[rustfmt::skip]
-                    add_declared!(
-                        global_decl, add_global, Global,
-                        GlobalData { from_id: scope_id, decl: global_decl }
-                    );
-                }
                 Decl::Proc(proc_decl) => {
                     #[rustfmt::skip]
                     add_declared!(
@@ -254,8 +248,20 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                         StructData { from_id: scope_id, decl: struct_decl, size: 0, align: 0 }
                     );
                 }
-                Decl::Use(..) => {}
-                Decl::Const(const_decl) => {} //@todo
+                Decl::Const(const_decl) => {
+                    #[rustfmt::skip]
+                    add_declared!(
+                        const_decl, add_const, Const,
+                        ConstData { from_id: scope_id, decl: const_decl }
+                    );
+                }
+                Decl::Global(global_decl) => {
+                    #[rustfmt::skip]
+                    add_declared!(
+                        global_decl, add_global, Global,
+                        GlobalData { from_id: scope_id, decl: global_decl }
+                    );
+                }
             }
         }
     }
@@ -533,9 +539,51 @@ fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
     }
 }
 
+impl StructData {
+    fn find_field<'a>(&'a self, id: InternID) -> Option<&'a StructField> {
+        for field in self.decl.fields.iter() {
+            if field.name.id == id {
+                return Some(field);
+            }
+        }
+        None
+    }
+}
+
+impl UnionData {
+    fn find_member<'a>(&'a self, id: InternID) -> Option<&'a UnionMember> {
+        for member in self.decl.members.iter() {
+            if member.name.id == id {
+                return Some(member);
+            }
+        }
+        None
+    }
+}
+
+/*
+Or a long field access chain
+which might be attached to:
+local variable
+constant / global variable
+*/
+
 enum ItemResolved<'a> {
-    Local(&'a LocalVar),
     None,
+    Local {
+        local: &'a LocalVar,
+    },
+    Symbol {
+        symbol: Symbol,
+    },
+    StructField {
+        struct_id: StructID,
+        field: &'a StructField,
+    },
+    UnionMember {
+        union_id: UnionID,
+        member: &'a UnionMember,
+    },
 }
 
 fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
@@ -592,7 +640,7 @@ fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
         //}
 
         match ctx.proc_scope.find_local(name.id) {
-            Some(local) => return ItemResolved::Local(local),
+            Some(local) => return ItemResolved::Local { local },
             None => {
                 report(
                     "symbol is not a found as local variable",
@@ -851,7 +899,7 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
         ExprKind::Item { path } => {
             let item = nameresolve_path(ctx, path);
             match item {
-                ItemResolved::Local(local) => match local {
+                ItemResolved::Local { local } => match local {
                     LocalVar::Param(param) => param.ty,
                     LocalVar::Local(var_decl) => match var_decl.ty {
                         Some(ty) => ty,
@@ -868,7 +916,8 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                         }
                     },
                 },
-                ItemResolved::None => {
+                //@ignoring other possible patterns
+                _ => {
                     //@temp assuming that all items are a local variable
                     report("variable not found", ctx.comp_ctx, ctx.scope.src(expr.span));
                     Type::poison()
