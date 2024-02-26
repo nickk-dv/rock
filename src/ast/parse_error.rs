@@ -41,8 +41,8 @@ macro_rules! parse_ctx_impl {
 
 parse_ctx_impl! {
     Decl        as "declaration"
-    ModDecl     as "module declaration"
     UseDecl     as "use declaration"
+    ModDecl     as "module declaration"
     ProcDecl    as "procedure declaration"
     ProcParam   as "procedure parameter"
     EnumDecl    as "enum declaration"

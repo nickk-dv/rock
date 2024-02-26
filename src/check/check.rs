@@ -94,7 +94,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
     use std::path::PathBuf;
     struct ScopeTreeTask {
         module: P<Module>,
-        parent: Option<(ScopeID, ModuleID)>,
+        parent: Option<(ScopeID, ModID)>,
     }
 
     let mut module_map = HashMap::<PathBuf, Result<P<Module>, SourceLoc>>::new();
@@ -127,9 +127,9 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
             None => None,
         };
         let scope_id = context.add_scope(Scope::new(task.module, parent_id));
-        if let Some((.., module_id)) = task.parent {
-            let parent_module = context.get_module_mut(module_id);
-            parent_module.target_id = Some(scope_id);
+        if let Some((.., mod_id)) = task.parent {
+            let parent_mod = context.get_mod_mut(mod_id);
+            parent_mod.target_id = Some(scope_id);
         }
 
         macro_rules! add_declared {
@@ -152,24 +152,24 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
 
         for decl in task.module.decls {
             match decl {
-                Decl::Mod(module_decl) => {
+                Decl::Mod(mod_decl) => {
                     #[rustfmt::skip]
                     add_declared!(
-                        module_decl, add_module, Module,
-                        ModuleData { from_id: scope_id, decl: module_decl, target_id: None }
+                        mod_decl, add_mod, Mod,
+                        ModData { from_id: scope_id, decl: mod_decl, target_id: None }
                     );
 
                     let scope = context.get_scope(scope_id);
-                    let module_id = ModuleID((context.modules.len() - 1) as u32);
+                    let mod_id = ModID((context.mods.len() - 1) as u32);
 
-                    let name = ctx.intern().get_str(module_decl.name.id);
+                    let name = ctx.intern().get_str(mod_decl.name.id);
                     let name_ext = name.to_string().clone() + ".lang";
                     let mut origin = ctx.file(scope.module.file_id).path.clone();
                     origin.pop();
                     let path1 = origin.clone().join(name_ext);
                     let path2 = origin.join(name).join("mod.lang");
 
-                    let src = scope.src(module_decl.name.span);
+                    let src = scope.src(mod_decl.name.span);
                     let target = match (
                         module_map.get(&path1).cloned(),
                         module_map.get(&path2).cloned(),
@@ -216,7 +216,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
 
                     tasks.push(ScopeTreeTask {
                         module: target,
-                        parent: Some((scope_id, module_id)),
+                        parent: Some((scope_id, mod_id)),
                     });
                 }
                 Decl::Global(global_decl) => {
@@ -367,8 +367,8 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
                 let mut span_end = task.import_decl.path.span_start;
                 for name in task.import_decl.path.names {
                     let from_scope = context.get_scope(from_id);
-                    let module_id = match from_scope.get_module(name.id) {
-                        Ok(module_id) => module_id,
+                    let mod_id = match from_scope.get_mod(name.id) {
+                        Ok(mod_id) => mod_id,
                         Err(symbol) => {
                             if let Some(symbol) = symbol {
                                 report("module not found", ctx, scope.src(name.span));
@@ -383,8 +383,8 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
                             continue 'task;
                         }
                     };
-                    let module_data = context.get_module(module_id);
-                    from_id = match module_data.target_id {
+                    let mod_data = context.get_mod(mod_id);
+                    from_id = match mod_data.target_id {
                         Some(target_id) => target_id,
                         None => {
                             report(

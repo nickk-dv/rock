@@ -103,8 +103,8 @@ token_impl! {
     KwMut        as "mut"      => KW.
     KwSuper      as "super"    => KW.
     KwPackage    as "package"  => KW.
-    KwMod        as "mod"      => KW.
     KwUse        as "use"      => KW.
+    KwMod        as "mod"      => KW.
     KwProc       as "proc"     => KW.
     KwEnum       as "enum"     => KW.
     KwUnion      as "union"    => KW.

@@ -17,20 +17,14 @@ pub struct Module {
 
 #[derive(Copy, Clone)]
 pub enum Decl {
-    Mod(P<ModDecl>),
     Use(P<UseDecl>),
+    Mod(P<ModDecl>),
     Proc(P<ProcDecl>),
     Enum(P<EnumDecl>),
     Union(P<UnionDecl>),
     Struct(P<StructDecl>),
     Const(P<ConstDecl>),
     Global(P<GlobalDecl>),
-}
-
-#[derive(Copy, Clone)]
-pub struct ModDecl {
-    pub vis: Vis,
-    pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
@@ -43,6 +37,12 @@ pub struct UseDecl {
 pub struct UseSymbol {
     pub name: Ident,
     pub alias: Option<Ident>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ModDecl {
+    pub vis: Vis,
+    pub name: Ident,
 }
 
 #[derive(Copy, Clone)]

@@ -9,12 +9,13 @@ pub mod check;
 
 pub struct Context {
     scopes: Vec<Scope>,
-    modules: Vec<ModuleData>,
-    globals: Vec<GlobalData>,
+    mods: Vec<ModData>,
     procs: Vec<ProcData>,
     enums: Vec<EnumData>,
     unions: Vec<UnionData>,
     structs: Vec<StructData>,
+    consts: Vec<ConstData>,
+    globals: Vec<GlobalData>,
 }
 
 pub struct Scope {
@@ -31,38 +32,43 @@ pub enum Symbol {
 
 #[derive(Copy, Clone)]
 pub enum SymbolID {
-    Module(ModuleID),
-    Global(GlobalID),
+    Mod(ModID),
     Proc(ProcID),
     Enum(EnumID),
     Union(UnionID),
     Struct(StructID),
+    Const(ConstID),
+    Global(GlobalID),
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ScopeID(u32);
+
 #[derive(Copy, Clone)]
-pub struct ModuleID(u32);
-#[derive(Copy, Clone)]
-pub struct GlobalID(u32);
+pub struct ModID(u32);
+
 #[derive(Copy, Clone)]
 pub struct ProcID(u32);
+
 #[derive(Copy, Clone, PartialEq, std::fmt::Debug)]
 pub struct EnumID(u32);
+
 #[derive(Copy, Clone, PartialEq, std::fmt::Debug)]
 pub struct UnionID(u32);
+
 #[derive(Copy, Clone, PartialEq, std::fmt::Debug)]
 pub struct StructID(u32);
 
-pub struct ModuleData {
+#[derive(Copy, Clone)]
+pub struct ConstID(u32);
+
+#[derive(Copy, Clone)]
+pub struct GlobalID(u32);
+
+pub struct ModData {
     pub from_id: ScopeID,
     pub decl: P<ModDecl>,
     pub target_id: Option<ScopeID>,
-}
-
-pub struct GlobalData {
-    pub from_id: ScopeID,
-    pub decl: P<GlobalDecl>,
 }
 
 pub struct ProcData {
@@ -87,6 +93,16 @@ pub struct StructData {
     pub decl: P<StructDecl>,
     pub size: usize,
     pub align: u32,
+}
+
+pub struct ConstData {
+    pub from_id: ScopeID,
+    pub decl: P<ConstDecl>,
+}
+
+pub struct GlobalData {
+    pub from_id: ScopeID,
+    pub decl: P<GlobalDecl>,
 }
 
 pub struct ScopeIter {
@@ -179,23 +195,25 @@ impl Context {
     pub fn new() -> Self {
         Self {
             scopes: Vec::new(),
-            modules: Vec::new(),
-            globals: Vec::new(),
+            mods: Vec::new(),
             procs: Vec::new(),
             enums: Vec::new(),
             unions: Vec::new(),
             structs: Vec::new(),
+            consts: Vec::new(),
+            globals: Vec::new(),
         }
     }
 
     impl_context_item! {
         Scope, ScopeID, scopes, add_scope, get_scope, get_scope_mut;
-        ModuleData, ModuleID, modules, add_module, get_module, get_module_mut;
-        GlobalData, GlobalID, globals, add_global, get_global, get_global_mut;
+        ModData, ModID, mods, add_mod, get_mod, get_mod_mut;
         ProcData, ProcID, procs, add_proc, get_proc, get_proc_mut;
         EnumData, EnumID, enums, add_enum, get_enum, get_enum_mut;
         UnionData, UnionID, unions, add_union, get_union, get_union_mut;
         StructData, StructID, structs, add_struct, get_struct, get_struct_mut;
+        ConstData, ConstID, consts, add_const, get_const, get_const_mut;
+        GlobalData, GlobalID, globals, add_global, get_global, get_global_mut;
     }
 
     #[must_use]
@@ -219,15 +237,10 @@ impl Context {
     #[must_use]
     pub fn get_symbol_id_src(&self, symbol_id: SymbolID) -> SourceLoc {
         match symbol_id {
-            SymbolID::Module(id) => {
-                let module_data = self.get_module(id);
-                self.get_scope(module_data.from_id)
-                    .src(module_data.decl.name.span)
-            }
-            SymbolID::Global(id) => {
-                let global_data = self.get_global(id);
-                self.get_scope(global_data.from_id)
-                    .src(global_data.decl.name.span)
+            SymbolID::Mod(id) => {
+                let mod_data = self.get_mod(id);
+                self.get_scope(mod_data.from_id)
+                    .src(mod_data.decl.name.span)
             }
             SymbolID::Proc(id) => {
                 let proc_data = self.get_proc(id);
@@ -249,18 +262,29 @@ impl Context {
                 self.get_scope(struct_data.from_id)
                     .src(struct_data.decl.name.span)
             }
+            SymbolID::Const(id) => {
+                let const_data = self.get_const(id);
+                self.get_scope(const_data.from_id)
+                    .src(const_data.decl.name.span)
+            }
+            SymbolID::Global(id) => {
+                let global_data = self.get_global(id);
+                self.get_scope(global_data.from_id)
+                    .src(global_data.decl.name.span)
+            }
         }
     }
 
     #[must_use]
     pub fn get_symbol_vis(&self, symbol_id: SymbolID) -> Vis {
         match symbol_id {
-            SymbolID::Module(id) => self.get_module(id).decl.vis,
-            SymbolID::Global(id) => self.get_global(id).decl.vis,
+            SymbolID::Mod(id) => self.get_mod(id).decl.vis,
             SymbolID::Proc(id) => self.get_proc(id).decl.vis,
             SymbolID::Enum(id) => self.get_enum(id).decl.vis,
             SymbolID::Union(id) => self.get_union(id).decl.vis,
             SymbolID::Struct(id) => self.get_struct(id).decl.vis,
+            SymbolID::Const(id) => self.get_const(id).decl.vis,
+            SymbolID::Global(id) => self.get_global(id).decl.vis,
         }
     }
 }
@@ -276,12 +300,13 @@ impl Scope {
     }
 
     impl_scope_item! {
-        ModuleID, Module, get_module, get_declared_module;
-        GlobalID, Global, get_global, get_declared_global;
+        ModID, Mod, get_mod, get_declared_mod;
         ProcID, Proc, get_proc, get_declared_proc;
         EnumID, Enum, get_enum, get_declared_enum;
         UnionID, Union, get_union, get_declared_union;
         StructID, Struct, get_struct, get_declared_struct;
+        ConstID, Const, get_const, get_declared_const;
+        GlobalID, Global, get_global, get_declared_global;
     }
 
     #[must_use]

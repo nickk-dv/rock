@@ -115,8 +115,8 @@ impl<'ast> Parser<'ast> {
     fn decl(&mut self) -> Result<Decl, ParseError> {
         let vis = self.vis();
         match self.peek() {
-            Token::KwMod => Ok(Decl::Mod(self.mod_decl(vis)?)),
             Token::KwUse => Ok(Decl::Use(self.use_decl()?)),
+            Token::KwMod => Ok(Decl::Mod(self.mod_decl(vis)?)),
             Token::KwProc => Ok(Decl::Proc(self.proc_decl(vis)?)),
             Token::KwEnum => Ok(Decl::Enum(self.enum_decl(vis)?)),
             Token::KwUnion => Ok(Decl::Union(self.union_decl(vis)?)),
@@ -125,15 +125,6 @@ impl<'ast> Parser<'ast> {
             Token::KwGlobal => Ok(Decl::Global(self.global_decl(vis)?)),
             _ => Err(ParseError::DeclMatch),
         }
-    }
-
-    fn mod_decl(&mut self, vis: Vis) -> Result<P<ModDecl>, ParseError> {
-        self.eat(); // `mod`
-        let mut mod_decl = self.arena.alloc::<ModDecl>();
-        mod_decl.vis = vis;
-        mod_decl.name = self.ident(ParseCtx::ModDecl)?;
-        self.expect(Token::Semicolon, ParseCtx::ModDecl)?;
-        Ok(mod_decl)
     }
 
     fn use_decl(&mut self) -> Result<P<UseDecl>, ParseError> {
@@ -166,6 +157,15 @@ impl<'ast> Parser<'ast> {
             symbol.alias = Some(self.ident(ParseCtx::UseDecl)?);
         }
         Ok(symbol)
+    }
+
+    fn mod_decl(&mut self, vis: Vis) -> Result<P<ModDecl>, ParseError> {
+        self.eat(); // `mod`
+        let mut mod_decl = self.arena.alloc::<ModDecl>();
+        mod_decl.vis = vis;
+        mod_decl.name = self.ident(ParseCtx::ModDecl)?;
+        self.expect(Token::Semicolon, ParseCtx::ModDecl)?;
+        Ok(mod_decl)
     }
 
     fn proc_decl(&mut self, vis: Vis) -> Result<P<ProcDecl>, ParseError> {
