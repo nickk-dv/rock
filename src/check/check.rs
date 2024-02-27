@@ -574,7 +574,7 @@ enum ItemResolved<'a> {
         local: &'a LocalVar,
     },
     Symbol {
-        symbol: Symbol,
+        symbol: SymbolID, // @just getting SymbolID for now
     },
     StructField {
         struct_id: StructID,
@@ -586,7 +586,7 @@ enum ItemResolved<'a> {
     },
 }
 
-fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
+fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> (ItemResolved<'a>, Span) {
     let mut path_span = Span::new(path.span_start, path.span_start);
 
     let from_id = match path.kind {
@@ -601,7 +601,7 @@ fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
                         ctx.comp_ctx,
                         ctx.scope.src(path_span),
                     );
-                    return ItemResolved::None;
+                    return (ItemResolved::None, path_span);
                 }
             }
         }
@@ -617,41 +617,39 @@ fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> ItemResolved<'a> {
             ctx.comp_ctx,
             ctx.scope.src(path_span),
         );
-        return ItemResolved::None;
+        return (ItemResolved::None, path_span);
     }
 
     for name in path.names {
-        //let from_scope = ctx.context.get_scope(from_id);
-        //let symbol = if from_id == ctx.scope_id {
-        //    from_scope.get_symbol(name.id)
-        //} else {
-        //    from_scope.get_declared_symbol(name.id)
-        //};
-        //match symbol {
-        //    Some(s) => {}
-        //    None => {
-        //        report(
-        //            "symbol not found in scope",
-        //            ctx.comp_ctx,
-        //            ctx.scope.src(name.span),
-        //        );
-        //        return ItemResolved::None;
-        //    }
-        //}
+        path_span.end = name.span.end;
 
-        match ctx.proc_scope.find_local(name.id) {
-            Some(local) => return ItemResolved::Local { local },
-            None => {
-                report(
-                    "symbol is not a found as local variable",
-                    ctx.comp_ctx,
-                    ctx.scope.src(name.span),
-                );
-            }
-        }
+        let from_scope = ctx.context.get_scope(from_id);
+        let symbol_option = if from_id == ctx.scope_id {
+            from_scope.get_symbol(name.id)
+        } else {
+            from_scope.get_declared_symbol(name.id)
+        };
+
+        let item = match symbol_option {
+            Some(symbol) => ItemResolved::Symbol { symbol },
+            None => match ctx.proc_scope.find_local(name.id) {
+                Some(local) => ItemResolved::Local { local },
+                None => {
+                    report(
+                        "symbol not found in scope",
+                        ctx.comp_ctx,
+                        ctx.scope.src(name.span),
+                    );
+                    return (ItemResolved::None, path_span);
+                }
+            },
+        };
+
+        return (item, path_span);
     }
 
-    ItemResolved::None
+    //@temp this cannot be reached
+    unreachable!("path nameresolve error");
 }
 
 struct TypeCtx<'a> {
@@ -897,7 +895,7 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
             Type::basic(BasicType::Usize)
         }
         ExprKind::Item { path } => {
-            let item = nameresolve_path(ctx, path);
+            let (item, path_span) = nameresolve_path(ctx, path);
             match item {
                 ItemResolved::Local { local } => match local {
                     LocalVar::Param(param) => param.ty,
@@ -916,20 +914,57 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
                         }
                     },
                 },
-                //@ignoring other possible patterns
-                _ => {
-                    //@temp assuming that all items are a local variable
-                    report("variable not found", ctx.comp_ctx, ctx.scope.src(expr.span));
-                    Type::poison()
-                }
+                //@ignoring other possible patterns of resolved item
+                _ => Type::poison(),
             }
         }
         ExprKind::ProcCall { path, input } => {
             // check inputs
             // based on if function name was resolved correctly
 
-            let item = nameresolve_path(ctx, path);
-            Type::poison() //@ignored
+            let (item, path_span) = nameresolve_path(ctx, path);
+            match item {
+                ItemResolved::None => Type::poison(),
+                ItemResolved::Symbol { symbol } => match symbol {
+                    SymbolID::Proc(proc_id) => {
+                        let proc_data = ctx.context.get_proc(proc_id);
+
+                        //@check inputs
+                        //@return types is optional, but in reality its a Unit if not specified
+                        //ast was created that way to "correctly" reflect syntax
+                        //if ast is not used for formatting then this Option ret type
+                        //is not required
+
+                        match proc_data.decl.return_ty {
+                            Some(ty) => ty, //@nameresolved by this point? might not be
+                            None => Type::unit(),
+                        }
+                    }
+                    SymbolID::Mod(..)
+                    | SymbolID::Enum(..)
+                    | SymbolID::Union(..)
+                    | SymbolID::Struct(..)
+                    | SymbolID::Const(..)
+                    | SymbolID::Global(..) => {
+                        report(
+                            "access path is not a procedure",
+                            ctx.comp_ctx,
+                            ctx.scope.src(path_span),
+                        );
+                        Type::poison()
+                    }
+                },
+                ItemResolved::Local { .. }
+                | ItemResolved::StructField { .. }
+                | ItemResolved::UnionMember { .. } => {
+                    report(
+                        "access path is not a procedure",
+                        ctx.comp_ctx,
+                        ctx.scope.src(path_span),
+                    );
+                    Type::poison()
+                }
+            }
         }
         ExprKind::StructInit { path, input } => {
             // invalid => poison
@@ -937,8 +972,40 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
             // if struct require field_count inputs
             // expect field / member => matching type
 
-            let item = nameresolve_path(ctx, path);
-            Type::poison() //@ignored
+            let (item, path_span) = nameresolve_path(ctx, path);
+            match item {
+                ItemResolved::None => Type::poison(),
+                ItemResolved::Symbol { symbol } => match symbol {
+                    SymbolID::Union(union_id) => {
+                        Type::poison() //@ignoring
+                    }
+                    SymbolID::Struct(struct_id) => {
+                        Type::poison() //@ignoring
+                    }
+                    SymbolID::Mod(..)
+                    | SymbolID::Proc(..)
+                    | SymbolID::Enum(..)
+                    | SymbolID::Const(..)
+                    | SymbolID::Global(..) => {
+                        report(
+                            "access path is not a struct or union type",
+                            ctx.comp_ctx,
+                            ctx.scope.src(path_span),
+                        );
+                        Type::poison()
+                    }
+                },
+                ItemResolved::Local { .. }
+                | ItemResolved::StructField { .. }
+                | ItemResolved::UnionMember { .. } => {
+                    report(
+                        "access path is not a struct or union type",
+                        ctx.comp_ctx,
+                        ctx.scope.src(path_span),
+                    );
+                    Type::poison()
+                }
+            }
         }
         ExprKind::ArrayInit { input } => {
             if input.iter().nth(0).is_none() {

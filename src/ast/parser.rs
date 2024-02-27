@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use super::ast::*;
 use super::intern::*;
 use super::parse_error::*;
