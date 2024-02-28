@@ -141,23 +141,32 @@ main :: () -> s32 {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    let (ctx, parse_res) = ast::parse();
-    let mut ast = match parse_res {
-        Ok(ast) => ast,
-        Err(errors) => {
-            check::report_check_errors_cli(&ctx, &errors);
-            return Err(());
-        }
-    };
-    eprintln!("ast arenas mem-usage: {}", ast.arena.mem_usage()); //@debugging mem usage
-    let check_res = check::check(&ctx, &mut ast);
-    match check_res {
-        Ok(()) => Ok(()),
-        Err(errors) => {
-            check::report_check_errors_cli(&ctx, &errors);
-            Err(())
-        }
+    for _ in 0..10 {
+        eprintln!("Arena based");
+        let res = ast::parse();
     }
+    for _ in 0..10 {
+        eprintln!("Box based");
+        let res2 = ast::parse2();
+    }
+    Err(())
+    //let (ctx, parse_res) = ast::parse();
+    //let mut ast = match parse_res {
+    //    Ok(ast) => ast,
+    //    Err(errors) => {
+    //        check::report_check_errors_cli(&ctx, &errors);
+    //        return Err(());
+    //    }
+    //};
+    //eprintln!("ast arenas mem-usage: {}", ast.arena.mem_usage()); //@debugging mem usage
+    //let check_res = check::check(&ctx, &mut ast);
+    //match check_res {
+    //    Ok(()) => Ok(()),
+    //    Err(errors) => {
+    //        check::report_check_errors_cli(&ctx, &errors);
+    //        Err(())
+    //    }
+    //}
 }
 
 fn cmd_build() -> Result<(), ()> {

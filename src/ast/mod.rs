@@ -1,8 +1,10 @@
 pub mod ast;
+pub mod ast2;
 pub mod intern;
 pub mod lexer;
 pub mod parse_error;
 mod parser;
+mod parser2;
 pub mod span;
 pub mod token;
 mod token_list;
@@ -149,6 +151,65 @@ pub fn parse() -> (CompCtx, Result<Ast, Vec<CompError>>) {
         visit::visit_module_with(&mut interner, *module);
     }
     timer.elapsed_ms("interned all modules");
+
+    if errors.len() > 0 {
+        (ctx, Err(errors))
+    } else {
+        (ctx, Ok(ast))
+    }
+}
+
+pub fn parse2() -> (CompCtx, Result<ast2::Ast, Vec<CompError>>) {
+    let timer = Timer::new();
+    let mut ctx = CompCtx::new();
+    let mut ast = ast2::Ast {
+        arena: Arena::new(),
+        modules: Vec::new(),
+    };
+    timer.elapsed_ms("parse arena created");
+
+    let mut errors = Vec::<CompError>::new();
+
+    let timer = Timer::new();
+    let files = collect_files(&mut ctx);
+    timer.elapsed_ms("collect files");
+
+    let timer = Timer::new();
+    let handle = &mut std::io::BufWriter::new(std::io::stderr());
+    let mut module_strings: Vec<Vec<String>> = Vec::new();
+
+    for file_id in files {
+        let source = ctx.file(file_id).source.as_str();
+        let lexer = lexer::Lexer::new(source);
+        let tokens = lexer.lex();
+        let mut parser = parser2::Parser::new(&tokens, &mut ast.arena, source);
+
+        match parser.module(file_id) {
+            Ok(module) => {
+                ast.modules.push(module);
+                module_strings.push(tokens.strings());
+            }
+            Err((error, error_new)) => {
+                errors.push(error_new);
+                report::report(handle, &error, &ctx);
+            }
+        }
+    }
+    timer.elapsed_ms("parsed all files");
+    let _ = handle.flush();
+
+    //let timer = Timer::new();
+    //for (id, module) in ast.modules.iter().enumerate() {
+    //    //@cloning entire source text, since &File + &mut InternPool
+    //    // violates borrow checker try solving this later
+    //    let mut interner = ModuleInterner {
+    //        file: ctx.file(module.file_id).source.clone(),
+    //        intern_pool: ctx.intern_mut(),
+    //        strings: module_strings.get(id).unwrap(), //@unwrap
+    //    };
+    //    visit::visit_module_with(&mut interner, *module);
+    //}
+    //timer.elapsed_ms("interned all modules");
 
     if errors.len() > 0 {
         (ctx, Err(errors))
