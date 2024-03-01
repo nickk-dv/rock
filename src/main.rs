@@ -3,6 +3,7 @@ mod check;
 mod err;
 mod llvm;
 mod mem;
+mod syntax;
 mod tools;
 
 fn main() {
