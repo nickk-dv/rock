@@ -1,35 +1,34 @@
 use super::intern::*;
 use super::span::Span;
 use super::FileID;
-use crate::check::{EnumID, StructID, UnionID};
 use crate::mem::*;
 
-pub struct Ast {
-    pub arena: Arena,
-    pub modules: Vec<P<Module>>,
+pub struct Ast<'ast> {
+    pub arena: Arena<'ast>,
+    pub modules: Vec<Module<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct Module {
+pub struct Module<'ast> {
     pub file_id: FileID,
-    pub decls: List<Decl>,
+    pub decls: List<Decl<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub enum Decl {
-    Use(P<UseDecl>),
-    Mod(P<ModDecl>),
-    Proc(P<ProcDecl>),
-    Enum(P<EnumDecl>),
-    Union(P<UnionDecl>),
-    Struct(P<StructDecl>),
-    Const(P<ConstDecl>),
-    Global(P<GlobalDecl>),
+pub enum Decl<'ast> {
+    Use(&'ast UseDecl<'ast>),
+    Mod(&'ast ModDecl),
+    Proc(&'ast ProcDecl<'ast>),
+    Enum(&'ast EnumDecl<'ast>),
+    Union(&'ast UnionDecl<'ast>),
+    Struct(&'ast StructDecl<'ast>),
+    Const(&'ast ConstDecl<'ast>),
+    Global(&'ast GlobalDecl<'ast>),
 }
 
 #[derive(Copy, Clone)]
-pub struct UseDecl {
-    pub path: P<Path>,
+pub struct UseDecl<'ast> {
+    pub path: &'ast Path,
     pub symbols: List<UseSymbol>,
 }
 
@@ -46,76 +45,76 @@ pub struct ModDecl {
 }
 
 #[derive(Copy, Clone)]
-pub struct ProcDecl {
+pub struct ProcDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub params: List<ProcParam>,
+    pub params: List<ProcParam<'ast>>,
     pub is_variadic: bool,
-    pub return_ty: Option<Type>,
-    pub block: Option<P<Expr>>,
+    pub return_ty: Option<Type<'ast>>,
+    pub block: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct ProcParam {
+pub struct ProcParam<'ast> {
     pub mutt: Mut,
     pub name: Ident,
-    pub ty: Type,
+    pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct EnumDecl {
+pub struct EnumDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub variants: List<EnumVariant>,
+    pub variants: List<EnumVariant<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct EnumVariant {
+pub struct EnumVariant<'ast> {
     pub name: Ident,
-    pub value: Option<ConstExpr>,
+    pub value: Option<ConstExpr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct UnionDecl {
+pub struct UnionDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub members: List<UnionMember>,
+    pub members: List<UnionMember<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct UnionMember {
+pub struct UnionMember<'ast> {
     pub name: Ident,
-    pub ty: Type,
+    pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct StructDecl {
+pub struct StructDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub fields: List<StructField>,
+    pub fields: List<StructField<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct StructField {
+pub struct StructField<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Type,
+    pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct ConstDecl {
+pub struct ConstDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Option<Type>,
-    pub value: ConstExpr,
+    pub ty: Option<Type<'ast>>,
+    pub value: ConstExpr<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct GlobalDecl {
+pub struct GlobalDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Option<Type>,
-    pub value: ConstExpr,
+    pub ty: Option<Type<'ast>>,
+    pub value: ConstExpr<'ast>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -151,101 +150,86 @@ pub enum PathKind {
 }
 
 #[derive(Copy, Clone)]
-pub struct Type {
-    pub ptr: PtrLevel,
-    pub kind: TypeKind,
-}
-
-#[derive(Copy, Clone)]
-pub struct PtrLevel {
-    level: u8,
-    mut_mask: u8,
-}
-
-#[derive(Copy, Clone)]
-pub enum TypeKind {
+pub enum Type<'ast> {
     Basic(BasicType),
-    Custom(P<Path>),
-    ArraySlice(P<ArraySlice>),
-    ArrayStatic(P<ArrayStatic>),
-    Enum(EnumID),
-    Union(UnionID),
-    Struct(StructID),
-    Poison,
+    Custom(&'ast Path),
+    Reference(&'ast Type<'ast>, Mut),
+    ArraySlice(&'ast ArraySlice<'ast>),
+    ArrayStatic(&'ast ArrayStatic<'ast>),
 }
 
 #[derive(Copy, Clone)]
-pub struct ArraySlice {
+pub struct ArraySlice<'ast> {
     pub mutt: Mut,
-    pub ty: Type,
+    pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct ArrayStatic {
-    pub size: ConstExpr,
-    pub ty: Type,
+pub struct ArrayStatic<'ast> {
+    pub size: ConstExpr<'ast>,
+    pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct Stmt {
-    pub kind: StmtKind,
+pub struct Stmt<'ast> {
+    pub kind: StmtKind<'ast>,
     pub span: Span,
 }
 
 #[derive(Copy, Clone)]
-pub enum StmtKind {
+pub enum StmtKind<'ast> {
     Break,
     Continue,
-    Return(Option<P<Expr>>),
-    Defer(P<Expr>),
-    ForLoop(P<For>),
-    VarDecl(P<VarDecl>),
-    VarAssign(P<VarAssign>),
-    ExprSemi(P<Expr>),
-    ExprTail(P<Expr>),
+    Return(Option<&'ast Expr<'ast>>),
+    Defer(&'ast Expr<'ast>),
+    ForLoop(&'ast For<'ast>),
+    VarDecl(&'ast VarDecl<'ast>),
+    VarAssign(&'ast VarAssign<'ast>),
+    ExprSemi(&'ast Expr<'ast>),
+    ExprTail(&'ast Expr<'ast>),
 }
 
 #[derive(Copy, Clone)]
-pub struct For {
-    pub kind: ForKind,
-    pub block: P<Expr>,
+pub struct For<'ast> {
+    pub kind: ForKind<'ast>,
+    pub block: &'ast Expr<'ast>,
 }
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum ForKind {
+pub enum ForKind<'ast> {
     Loop,
-    While { cond: P<Expr> },
-    ForLoop { var_decl: P<VarDecl>, cond: P<Expr>, var_assign: P<VarAssign> },
+    While { cond: &'ast Expr<'ast> },
+    ForLoop { var_decl: &'ast VarDecl<'ast>, cond: &'ast Expr<'ast>, var_assign: &'ast VarAssign<'ast> },
 }
 
 #[derive(Copy, Clone)]
-pub struct VarDecl {
+pub struct VarDecl<'ast> {
     pub mutt: Mut,
     pub name: Ident,
-    pub ty: Option<Type>,
-    pub expr: Option<P<Expr>>,
+    pub ty: Option<Type<'ast>>,
+    pub expr: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct VarAssign {
+pub struct VarAssign<'ast> {
     pub op: AssignOp,
-    pub lhs: P<Expr>,
-    pub rhs: P<Expr>,
+    pub lhs: &'ast Expr<'ast>,
+    pub rhs: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct Expr {
-    pub kind: ExprKind,
+pub struct Expr<'ast> {
+    pub kind: ExprKind<'ast>,
     pub span: Span,
 }
 
 #[derive(Copy, Clone)]
-pub struct ConstExpr(pub P<Expr>);
+pub struct ConstExpr<'ast>(pub &'ast Expr<'ast>);
 
-#[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum ExprKind {
+#[rustfmt::skip]
+pub enum ExprKind<'ast> {
     Unit,
     LitNull,
     LitBool     { val: bool },
@@ -253,45 +237,45 @@ pub enum ExprKind {
     LitFloat    { val: f64, ty: Option<BasicType> },
     LitChar     { val: char },
     LitString   { id: InternID },
-    If          { if_: P<If> },
-    Block       { stmts: List<Stmt> },
-    Match       { on_expr: P<Expr>, arms: List<MatchArm> },
-    Field       { target: P<Expr>, name: Ident },
-    Index       { target: P<Expr>, index: P<Expr> },
-    Cast        { target: P<Expr>, ty: P<Type> },
-    Sizeof      { ty: P<Type> },
-    Item        { path: P<Path> },
-    ProcCall    { path: P<Path>, input: List<P<Expr>> },
-    StructInit  { path: P<Path>, input: List<FieldInit> },
-    ArrayInit   { input: List<P<Expr>> },
-    ArrayRepeat { expr: P<Expr>, size: ConstExpr },
-    UnaryExpr   { op: UnOp, rhs: P<Expr> },
-    BinaryExpr  { op: BinOp, lhs: P<Expr>, rhs: P<Expr> },
+    If          { if_: &'ast If<'ast> },
+    Block       { stmts: List<Stmt<'ast>> },
+    Match       { on_expr: &'ast Expr<'ast>, arms: List<MatchArm<'ast>> },
+    Field       { target: &'ast Expr<'ast>, name: Ident },
+    Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
+    Cast        { target: &'ast Expr<'ast>, ty: &'ast Type<'ast> },
+    Sizeof      { ty: Type<'ast> },
+    Item        { path: &'ast Path },
+    ProcCall    { path: &'ast Path, input: List<&'ast Expr<'ast>> },
+    StructInit  { path: &'ast Path, input: List<FieldInit<'ast>> },
+    ArrayInit   { input: List<&'ast Expr<'ast>> },
+    ArrayRepeat { expr: &'ast Expr<'ast>, size: ConstExpr<'ast> },
+    UnaryExpr   { op: UnOp, rhs: &'ast Expr<'ast> },
+    BinaryExpr  { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
 
 #[derive(Copy, Clone)]
-pub struct If {
-    pub cond: P<Expr>,
-    pub block: P<Expr>,
-    pub else_: Option<Else>,
+pub struct If<'ast> {
+    pub cond: &'ast Expr<'ast>,
+    pub block: &'ast Expr<'ast>,
+    pub else_: Option<Else<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub enum Else {
-    If { else_if: P<If> },
-    Block { block: P<Expr> },
+pub enum Else<'ast> {
+    If { else_if: &'ast If<'ast> },
+    Block { block: &'ast Expr<'ast> },
 }
 
 #[derive(Copy, Clone)]
-pub struct MatchArm {
-    pub pat: P<Expr>,
-    pub expr: P<Expr>,
+pub struct MatchArm<'ast> {
+    pub pat: &'ast Expr<'ast>,
+    pub expr: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub struct FieldInit {
+pub struct FieldInit<'ast> {
     pub name: Ident,
-    pub expr: Option<P<Expr>>,
+    pub expr: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -351,88 +335,6 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
-impl PtrLevel {
-    const MAX_LEVEL: u8 = 8;
-
-    pub fn new() -> Self {
-        Self {
-            level: 0,
-            mut_mask: 0,
-        }
-    }
-
-    pub fn level(&self) -> u8 {
-        self.level
-    }
-
-    pub fn add_level(&mut self, mutt: Mut) -> Result<(), ()> {
-        if self.level >= Self::MAX_LEVEL {
-            return Err(());
-        }
-        let mut_bit = 1u8 << (self.level);
-        if mutt == Mut::Mutable {
-            self.mut_mask |= mut_bit;
-        } else {
-            self.mut_mask &= !mut_bit;
-        }
-        self.level += 1;
-        Ok(())
-    }
-}
-
-impl Type {
-    pub fn new(kind: TypeKind) -> Self {
-        Self {
-            ptr: PtrLevel::new(),
-            kind,
-        }
-    }
-
-    pub fn new_ptr(mutt: Mut, kind: TypeKind) -> Self {
-        let mut ptr = PtrLevel::new();
-        let _ = ptr.add_level(mutt);
-        Self { ptr, kind }
-    }
-
-    pub fn unit() -> Self {
-        Self::new(TypeKind::Basic(BasicType::Unit))
-    }
-
-    pub fn basic(basic: BasicType) -> Self {
-        Self::new(TypeKind::Basic(basic))
-    }
-
-    pub fn poison() -> Self {
-        Self::new(TypeKind::Poison)
-    }
-
-    pub fn matches(ty: &Type, ty2: &Type) -> bool {
-        if ty.ptr.level != ty2.ptr.level {
-            return false;
-        }
-        if ty.ptr.mut_mask != ty2.ptr.mut_mask {
-            return false;
-        }
-        match (ty.kind, ty2.kind) {
-            (TypeKind::Basic(basic), TypeKind::Basic(basic2)) => basic == basic2,
-            (TypeKind::Custom(_), TypeKind::Custom(_)) => panic!("custom type must be resolved"),
-            (TypeKind::ArraySlice(slice), TypeKind::ArraySlice(slice2)) => {
-                slice.mutt == slice2.mutt && Self::matches(&slice.ty, &slice2.ty)
-            }
-            (TypeKind::ArrayStatic(array), TypeKind::ArrayStatic(array2)) => {
-                //@size ConstExpr is ignored
-                Self::matches(&array.ty, &array2.ty)
-            }
-            (TypeKind::Enum(id), TypeKind::Enum(id2)) => id == id2,
-            (TypeKind::Union(id), TypeKind::Union(id2)) => id == id2,
-            (TypeKind::Struct(id), TypeKind::Struct(id2)) => id == id2,
-            (TypeKind::Poison, ..) => true,
-            (.., TypeKind::Poison) => true,
-            _ => false,
-        }
-    }
-}
-
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
 mod size_assert {
     use super::*;
@@ -443,9 +345,9 @@ mod size_assert {
     }
 
     size_assert!(12, Ident);
-    size_assert!(16, Path);
-    size_assert!(24, Type);
     size_assert!(16, Decl);
+    size_assert!(16, Path);
+    size_assert!(16, Type);
     size_assert!(24, Stmt);
     size_assert!(32, Expr);
 }

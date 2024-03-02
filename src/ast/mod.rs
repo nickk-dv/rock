@@ -1,10 +1,8 @@
 pub mod ast;
-pub mod ast2;
 pub mod intern;
 pub mod lexer;
 pub mod parse_error;
 mod parser;
-mod parser2;
 pub mod span;
 pub mod token;
 mod token_list;
@@ -100,15 +98,7 @@ impl Timer {
 
 use crate::err::error_new::*;
 
-pub fn parse() -> (CompCtx, Result<Ast, Vec<CompError>>) {
-    let timer = Timer::new();
-    let mut ctx = CompCtx::new();
-    let mut ast = Ast {
-        arena: Arena::new(),
-        modules: Vec::new(),
-    };
-    timer.elapsed_ms("parse arena created");
-
+pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<CompError> {
     let mut errors = Vec::<CompError>::new();
 
     let timer = Timer::new();
@@ -117,18 +107,18 @@ pub fn parse() -> (CompCtx, Result<Ast, Vec<CompError>>) {
 
     let timer = Timer::new();
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
-    let mut module_strings: Vec<Vec<String>> = Vec::new();
 
     for file_id in files {
-        let source = ctx.file(file_id).source.as_str();
-        let lexer = lexer::Lexer::new(source);
+        let lexer = lexer::Lexer::new(ctx.file(file_id).source.as_str());
         let tokens = lexer.lex();
-        let mut parser = parser::Parser::new(&tokens, &mut ast.arena, source);
+        let source_copy = ctx.file(file_id).source.clone();
+        let mut parser =
+            parser::Parser::new(tokens, &mut ast.arena, ctx.intern_mut(), &source_copy);
+        let parse_res = parser.module(file_id);
 
-        match parser.module(file_id) {
+        match parse_res {
             Ok(module) => {
                 ast.modules.push(module);
-                module_strings.push(tokens.strings());
             }
             Err((error, error_new)) => {
                 errors.push(error_new);
@@ -138,84 +128,7 @@ pub fn parse() -> (CompCtx, Result<Ast, Vec<CompError>>) {
     }
     timer.elapsed_ms("parsed all files");
     let _ = handle.flush();
-
-    let timer = Timer::new();
-    for (id, module) in ast.modules.iter().enumerate() {
-        //@cloning entire source text, since &File + &mut InternPool
-        // violates borrow checker try solving this later
-        let mut interner = ModuleInterner {
-            file: ctx.file(module.file_id).source.clone(),
-            intern_pool: ctx.intern_mut(),
-            strings: module_strings.get(id).unwrap(), //@unwrap
-        };
-        visit::visit_module_with(&mut interner, *module);
-    }
-    timer.elapsed_ms("interned all modules");
-
-    if errors.len() > 0 {
-        (ctx, Err(errors))
-    } else {
-        (ctx, Ok(ast))
-    }
-}
-
-pub fn parse2() -> (CompCtx, Result<ast2::Ast, Vec<CompError>>) {
-    let timer = Timer::new();
-    let mut ctx = CompCtx::new();
-    let mut ast = ast2::Ast {
-        arena: Arena::new(),
-        modules: Vec::new(),
-    };
-    timer.elapsed_ms("parse arena created");
-
-    let mut errors = Vec::<CompError>::new();
-
-    let timer = Timer::new();
-    let files = collect_files(&mut ctx);
-    timer.elapsed_ms("collect files");
-
-    let timer = Timer::new();
-    let handle = &mut std::io::BufWriter::new(std::io::stderr());
-    let mut module_strings: Vec<Vec<String>> = Vec::new();
-
-    for file_id in files {
-        let source = ctx.file(file_id).source.as_str();
-        let lexer = lexer::Lexer::new(source);
-        let tokens = lexer.lex();
-        let mut parser = parser2::Parser::new(&tokens, &mut ast.arena, source);
-
-        match parser.module(file_id) {
-            Ok(module) => {
-                ast.modules.push(module);
-                module_strings.push(tokens.strings());
-            }
-            Err((error, error_new)) => {
-                errors.push(error_new);
-                report::report(handle, &error, &ctx);
-            }
-        }
-    }
-    timer.elapsed_ms("parsed all files");
-    let _ = handle.flush();
-
-    //let timer = Timer::new();
-    //for (id, module) in ast.modules.iter().enumerate() {
-    //    //@cloning entire source text, since &File + &mut InternPool
-    //    // violates borrow checker try solving this later
-    //    let mut interner = ModuleInterner {
-    //        file: ctx.file(module.file_id).source.clone(),
-    //        intern_pool: ctx.intern_mut(),
-    //        strings: module_strings.get(id).unwrap(), //@unwrap
-    //    };
-    //    visit::visit_module_with(&mut interner, *module);
-    //}
-    //timer.elapsed_ms("interned all modules");
-
-    if errors.len() > 0 {
-        (ctx, Err(errors))
-    } else {
-        (ctx, Ok(ast))
-    }
+    errors
 }
 
 #[must_use]
@@ -279,24 +192,4 @@ fn collect_files(ctx: &mut CompCtx) -> Vec<FileID> {
     }
 
     files
-}
-
-struct ModuleInterner<'a> {
-    file: String,
-    intern_pool: &'a mut InternPool,
-    strings: &'a [String],
-}
-
-impl<'a> visit::MutVisit for ModuleInterner<'a> {
-    fn visit_ident(&mut self, ident: &mut Ident) {
-        let string = ident.span.slice(&self.file);
-        ident.id = self.intern_pool.intern(string);
-    }
-
-    fn visit_expr(&mut self, mut expr: P<Expr>) {
-        if let ExprKind::LitString { ref mut id } = expr.kind {
-            let string = unsafe { self.strings.get_unchecked(id.0 as usize).as_str() };
-            *id = self.intern_pool.intern(string);
-        }
-    }
 }

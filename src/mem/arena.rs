@@ -1,13 +1,14 @@
 use super::{list::ListBuilder, ptr::P};
-use std::alloc;
+use std::{alloc, marker::PhantomData};
 
 const PAGE_SIZE: usize = 4096;
 const MAX_PAGE_SIZE: usize = 512 * 4096;
 
-pub struct Arena {
+pub struct Arena<'ast> {
     offset: usize,
     block: Block,
     used_blocks: ListBuilder<Block>,
+    phantom: PhantomData<&'ast ()>,
 }
 
 #[derive(Copy, Clone)]
@@ -16,12 +17,13 @@ struct Block {
     layout: alloc::Layout,
 }
 
-impl Arena {
+impl<'ast> Arena<'ast> {
     pub fn new() -> Self {
         Self {
             offset: 0,
             block: Block::alloc(PAGE_SIZE),
             used_blocks: ListBuilder::new(),
+            phantom: PhantomData::default(),
         }
     }
 
@@ -33,6 +35,17 @@ impl Arena {
         let offset = unsafe { self.block.data.as_mut().add(self.offset) };
         self.offset += size;
         P::new(offset as *mut T)
+    }
+
+    pub fn alloc_ref_new<T: Copy>(&mut self, val: T) -> &'ast T {
+        let size = std::mem::size_of::<T>();
+        if self.offset + size > self.block.size() {
+            self.grow();
+        }
+        let offset = unsafe { self.block.data.as_mut().add(self.offset) };
+        self.offset += size;
+        unsafe { *(offset as *mut T) = val };
+        unsafe { &*(offset as *mut T) }
     }
 
     fn grow(&mut self) {
@@ -56,7 +69,7 @@ impl Arena {
     }
 }
 
-impl Drop for Arena {
+impl<'ast> Drop for Arena<'ast> {
     fn drop(&mut self) {
         for block in self.used_blocks.take() {
             block.dealloc();

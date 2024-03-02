@@ -47,7 +47,7 @@ impl TokenList {
         unsafe { *self.chars.get_unchecked(index) }
     }
 
-    pub fn strings(self) -> Vec<String> {
-        self.strings
+    pub fn get_string(&self, index: usize) -> &str {
+        unsafe { self.strings.get_unchecked(index) }
     }
 }

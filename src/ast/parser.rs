@@ -7,23 +7,30 @@ use super::token_list::TokenList;
 use crate::check::SourceLoc;
 use crate::err::error::Error;
 use crate::err::error_new::*;
-use crate::mem::*;
+use crate::mem::{Arena, List, ListBuilder};
 
-pub struct Parser<'ast> {
+pub struct Parser<'a, 'ast> {
     cursor: usize,
-    tokens: &'ast TokenList,
-    arena: &'ast mut Arena,
-    source: &'ast str,
+    tokens: TokenList,
+    arena: &'a mut Arena<'ast>,
+    intern_pool: &'a mut InternPool,
+    source: &'a str,
     char_id: u32,
     string_id: u32,
 }
 
-impl<'ast> Parser<'ast> {
-    pub fn new(tokens: &'ast TokenList, arena: &'ast mut Arena, source: &'ast str) -> Self {
+impl<'a, 'ast> Parser<'a, 'ast> {
+    pub fn new(
+        tokens: TokenList,
+        arena: &'a mut Arena<'ast>,
+        intern_pool: &'a mut InternPool,
+        source: &'a str,
+    ) -> Self {
         Self {
             cursor: 0,
             tokens,
             arena,
+            intern_pool,
             source,
             char_id: 0,
             string_id: 0,
@@ -70,8 +77,7 @@ impl<'ast> Parser<'ast> {
         Err(ParseError::ExpectToken(ctx, token))
     }
 
-    pub fn module(&mut self, file_id: super::FileID) -> Result<P<Module>, (Error, CompError)> {
-        let mut module = self.arena.alloc::<Module>();
+    pub fn module(&mut self, file_id: super::FileID) -> Result<Module<'ast>, (Error, CompError)> {
         let mut decls = ListBuilder::new();
         while self.peek() != Token::Eof {
             match self.decl() {
@@ -95,7 +101,6 @@ impl<'ast> Parser<'ast> {
                         parse_error_data.ctx.as_str(),
                         error_ctx
                     );
-
                     let error = Error::parse(parse_error_data);
                     let comp_error = CompError::new(
                         SourceLoc::new(got_token.1, file_id),
@@ -105,12 +110,13 @@ impl<'ast> Parser<'ast> {
                 }
             }
         }
-        module.file_id = file_id;
-        module.decls = decls.take();
-        Ok(module)
+        Ok(Module::<'ast> {
+            file_id,
+            decls: decls.take(),
+        })
     }
 
-    fn decl(&mut self) -> Result<Decl, ParseError> {
+    fn decl(&mut self) -> Result<Decl<'ast>, ParseError> {
         let vis = self.vis();
         match self.peek() {
             Token::KwUse => Ok(Decl::Use(self.use_decl()?)),
@@ -125,13 +131,12 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn use_decl(&mut self) -> Result<P<UseDecl>, ParseError> {
+    fn use_decl(&mut self) -> Result<&'ast UseDecl<'ast>, ParseError> {
         self.eat(); // `use`
-        let mut use_decl = self.arena.alloc::<UseDecl>();
-        let mut symbols = ListBuilder::new();
-        use_decl.path = self.path()?;
+        let path = self.path()?;
         self.expect(Token::Dot, ParseCtx::UseDecl)?;
         self.expect(Token::OpenBlock, ParseCtx::UseDecl)?;
+        let mut symbols = ListBuilder::new();
         if !self.try_eat(Token::CloseBlock) {
             loop {
                 let symbol = self.use_symbol()?;
@@ -142,8 +147,10 @@ impl<'ast> Parser<'ast> {
             }
             self.expect(Token::CloseBlock, ParseCtx::UseDecl)?;
         }
-        use_decl.symbols = symbols.take();
-        Ok(use_decl)
+        Ok(self.arena.alloc_ref_new(UseDecl {
+            path,
+            symbols: symbols.take(),
+        }))
     }
 
     fn use_symbol(&mut self) -> Result<UseSymbol, ParseError> {
@@ -157,26 +164,23 @@ impl<'ast> Parser<'ast> {
         Ok(symbol)
     }
 
-    fn mod_decl(&mut self, vis: Vis) -> Result<P<ModDecl>, ParseError> {
+    fn mod_decl(&mut self, vis: Vis) -> Result<&'ast ModDecl, ParseError> {
         self.eat(); // `mod`
-        let mut mod_decl = self.arena.alloc::<ModDecl>();
-        mod_decl.vis = vis;
-        mod_decl.name = self.ident(ParseCtx::ModDecl)?;
+        let name = self.ident(ParseCtx::ModDecl)?;
         self.expect(Token::Semicolon, ParseCtx::ModDecl)?;
-        Ok(mod_decl)
+        Ok(self.arena.alloc_ref_new(ModDecl { vis, name }))
     }
 
-    fn proc_decl(&mut self, vis: Vis) -> Result<P<ProcDecl>, ParseError> {
+    fn proc_decl(&mut self, vis: Vis) -> Result<&'ast ProcDecl<'ast>, ParseError> {
         self.eat(); // `proc`
-        let mut proc_decl = self.arena.alloc::<ProcDecl>();
+        let name = self.ident(ParseCtx::ProcDecl)?;
         let mut params = ListBuilder::new();
-        proc_decl.vis = vis;
-        proc_decl.name = self.ident(ParseCtx::ProcDecl)?;
+        let mut is_variadic = false;
         self.expect(Token::OpenParen, ParseCtx::ProcDecl)?;
         if !self.try_eat(Token::CloseParen) {
             loop {
                 if self.try_eat(Token::DotDot) {
-                    proc_decl.is_variadic = true;
+                    is_variadic = true;
                     break;
                 }
                 let param = self.proc_param()?;
@@ -187,21 +191,27 @@ impl<'ast> Parser<'ast> {
             }
             self.expect(Token::CloseParen, ParseCtx::ProcDecl)?;
         }
-        proc_decl.return_ty = if self.try_eat(Token::ArrowThin) {
+        let return_ty = if self.try_eat(Token::ArrowThin) {
             Some(self.ty()?)
         } else {
             None
         };
-        proc_decl.block = if self.try_eat(Token::DirCCall) {
+        let block = if self.try_eat(Token::DirCCall) {
             None
         } else {
             Some(self.block()?)
         };
-        proc_decl.params = params.take();
-        Ok(proc_decl)
+        Ok(self.arena.alloc_ref_new(ProcDecl {
+            vis,
+            name,
+            params: params.take(),
+            is_variadic,
+            return_ty,
+            block,
+        }))
     }
 
-    fn proc_param(&mut self) -> Result<ProcParam, ParseError> {
+    fn proc_param(&mut self) -> Result<ProcParam<'ast>, ParseError> {
         let mutt = self.mutt();
         let name = self.ident(ParseCtx::ProcParam)?;
         self.expect(Token::Colon, ParseCtx::ProcParam)?;
@@ -209,22 +219,24 @@ impl<'ast> Parser<'ast> {
         Ok(ProcParam { mutt, name, ty })
     }
 
-    fn enum_decl(&mut self, vis: Vis) -> Result<P<EnumDecl>, ParseError> {
+    fn enum_decl(&mut self, vis: Vis) -> Result<&'ast EnumDecl<'ast>, ParseError> {
         self.eat(); // `enum`
-        let mut enum_decl = self.arena.alloc::<EnumDecl>();
+        let name = self.ident(ParseCtx::EnumDecl)?;
         let mut variants = ListBuilder::new();
-        enum_decl.vis = vis;
-        enum_decl.name = self.ident(ParseCtx::EnumDecl)?;
         self.expect(Token::OpenBlock, ParseCtx::EnumDecl)?;
         while !self.try_eat(Token::CloseBlock) {
             let variant = self.enum_variant()?;
             variants.add(&mut self.arena, variant);
         }
-        enum_decl.variants = variants.take();
-        Ok(enum_decl)
+        let enum_decl = EnumDecl {
+            vis,
+            name,
+            variants: variants.take(),
+        };
+        Ok(self.arena.alloc_ref_new(enum_decl))
     }
 
-    fn enum_variant(&mut self) -> Result<EnumVariant, ParseError> {
+    fn enum_variant(&mut self) -> Result<EnumVariant<'ast>, ParseError> {
         let name = self.ident(ParseCtx::EnumVariant)?;
         let value = if self.try_eat(Token::Equals) {
             Some(ConstExpr(self.expr()?))
@@ -235,22 +247,23 @@ impl<'ast> Parser<'ast> {
         Ok(EnumVariant { name, value })
     }
 
-    fn union_decl(&mut self, vis: Vis) -> Result<P<UnionDecl>, ParseError> {
+    fn union_decl(&mut self, vis: Vis) -> Result<&'ast UnionDecl<'ast>, ParseError> {
         self.eat(); // `union`
-        let mut union_decl = self.arena.alloc::<UnionDecl>();
-        let mut members = ListBuilder::new();
-        union_decl.vis = vis;
-        union_decl.name = self.ident(ParseCtx::UnionDecl)?;
+        let name = self.ident(ParseCtx::UnionDecl)?;
         self.expect(Token::OpenBlock, ParseCtx::UnionDecl)?;
+        let mut members = ListBuilder::new();
         while !self.try_eat(Token::CloseBlock) {
             let member = self.union_member()?;
             members.add(&mut self.arena, member);
         }
-        union_decl.members = members.take();
-        Ok(union_decl)
+        Ok(self.arena.alloc_ref_new(UnionDecl {
+            vis,
+            name,
+            members: members.take(),
+        }))
     }
 
-    fn union_member(&mut self) -> Result<UnionMember, ParseError> {
+    fn union_member(&mut self) -> Result<UnionMember<'ast>, ParseError> {
         let name = self.ident(ParseCtx::UnionMember)?;
         self.expect(Token::Colon, ParseCtx::UnionMember)?;
         let ty = self.ty()?;
@@ -258,22 +271,23 @@ impl<'ast> Parser<'ast> {
         Ok(UnionMember { name, ty })
     }
 
-    fn struct_decl(&mut self, vis: Vis) -> Result<P<StructDecl>, ParseError> {
+    fn struct_decl(&mut self, vis: Vis) -> Result<&'ast StructDecl<'ast>, ParseError> {
         self.eat(); // `struct`
-        let mut struct_decl = self.arena.alloc::<StructDecl>();
+        let name = self.ident(ParseCtx::StructDecl)?;
         let mut fields = ListBuilder::new();
-        struct_decl.vis = vis;
-        struct_decl.name = self.ident(ParseCtx::StructDecl)?;
         self.expect(Token::OpenBlock, ParseCtx::StructDecl)?;
         while !self.try_eat(Token::CloseBlock) {
             let field = self.struct_field()?;
             fields.add(&mut self.arena, field);
         }
-        struct_decl.fields = fields.take();
-        Ok(struct_decl)
+        Ok(self.arena.alloc_ref_new(StructDecl {
+            vis,
+            name,
+            fields: fields.take(),
+        }))
     }
 
-    fn struct_field(&mut self) -> Result<StructField, ParseError> {
+    fn struct_field(&mut self) -> Result<StructField<'ast>, ParseError> {
         let vis = self.vis();
         let name = self.ident(ParseCtx::StructField)?;
         self.expect(Token::Colon, ParseCtx::StructField)?;
@@ -282,40 +296,46 @@ impl<'ast> Parser<'ast> {
         Ok(StructField { vis, name, ty })
     }
 
-    fn const_decl(&mut self, vis: Vis) -> Result<P<ConstDecl>, ParseError> {
+    fn const_decl(&mut self, vis: Vis) -> Result<&'ast ConstDecl<'ast>, ParseError> {
         self.eat(); // `const`
-        let mut const_decl = self.arena.alloc::<ConstDecl>();
-        const_decl.vis = vis;
-        const_decl.name = self.ident(ParseCtx::ConstDecl)?;
+        let name = self.ident(ParseCtx::ConstDecl)?;
         self.expect(Token::Colon, ParseCtx::ConstDecl)?;
-        const_decl.ty = if self.try_eat(Token::Equals) {
+        let ty = if self.try_eat(Token::Equals) {
             None
         } else {
             let ty = Some(self.ty()?);
             self.expect(Token::Equals, ParseCtx::ConstDecl)?;
             ty
         };
-        const_decl.value = ConstExpr(self.expr()?);
+        let value = ConstExpr(self.expr()?);
         self.expect(Token::Semicolon, ParseCtx::ConstDecl)?;
-        Ok(const_decl)
+        Ok(self.arena.alloc_ref_new(ConstDecl {
+            vis,
+            name,
+            ty,
+            value,
+        }))
     }
 
-    fn global_decl(&mut self, vis: Vis) -> Result<P<GlobalDecl>, ParseError> {
+    fn global_decl(&mut self, vis: Vis) -> Result<&'ast GlobalDecl<'ast>, ParseError> {
         self.eat(); // `global`
-        let mut global_decl = self.arena.alloc::<GlobalDecl>();
-        global_decl.vis = vis;
-        global_decl.name = self.ident(ParseCtx::GlobalDecl)?;
+        let name = self.ident(ParseCtx::GlobalDecl)?;
         self.expect(Token::Colon, ParseCtx::GlobalDecl)?;
-        global_decl.ty = if self.try_eat(Token::Equals) {
+        let ty = if self.try_eat(Token::Equals) {
             None
         } else {
             let ty = Some(self.ty()?);
             self.expect(Token::Equals, ParseCtx::GlobalDecl)?;
             ty
         };
-        global_decl.value = ConstExpr(self.expr()?);
+        let value = ConstExpr(self.expr()?);
         self.expect(Token::Semicolon, ParseCtx::GlobalDecl)?;
-        Ok(global_decl)
+        Ok(self.arena.alloc_ref_new(GlobalDecl {
+            vis,
+            name,
+            ty,
+            value,
+        }))
     }
 
     fn vis(&mut self) -> Vis {
@@ -336,19 +356,19 @@ impl<'ast> Parser<'ast> {
         if self.peek() == Token::Ident {
             let span = self.peek_span();
             self.eat();
+            let string = span.slice(&self.source);
             return Ok(Ident {
                 span,
-                id: INTERN_DUMMY_ID,
+                id: self.intern_pool.intern(string),
             });
         }
         Err(ParseError::ExpectIdent(ctx))
     }
 
-    fn path(&mut self) -> Result<P<Path>, ParseError> {
-        let mut path = self.arena.alloc::<Path>();
+    fn path(&mut self) -> Result<&'ast Path, ParseError> {
         let mut names = ListBuilder::new();
-        path.span_start = self.peek_span_start();
-        path.kind = match self.peek() {
+        let span_start = self.peek_span_start();
+        let kind = match self.peek() {
             Token::KwSuper => {
                 self.eat(); // `super`
                 PathKind::Super
@@ -368,58 +388,57 @@ impl<'ast> Parser<'ast> {
             let name = self.ident(ParseCtx::Path)?;
             names.add(&mut self.arena, name);
         }
-        path.names = names.take();
-        Ok(path)
+        Ok(self.arena.alloc_ref_new(Path {
+            kind,
+            names: names.take(),
+            span_start,
+        }))
     }
 
-    fn ty(&mut self) -> Result<Type, ParseError> {
-        let mut ty = Type {
-            ptr: PtrLevel::new(),
-            kind: TypeKind::Basic(BasicType::Unit),
-        };
-        while self.try_eat(Token::Star) {
-            let mutt = self.mutt();
-            if let Err(..) = ty.ptr.add_level(mutt) {
-                //@overflown ptr indirection span cannot be captured by current err system
-                // silently ignoring this error
-            }
-        }
+    fn ty(&mut self) -> Result<Type<'ast>, ParseError> {
         if let Some(basic) = self.peek().as_basic_type() {
             self.eat(); // `basic_type`
-            ty.kind = TypeKind::Basic(basic);
-            return Ok(ty);
+            return Ok(Type::Basic(basic));
         }
-        ty.kind = match self.peek() {
+        match self.peek() {
+            Token::Star => {
+                self.eat(); // '*'
+                let mutt = self.mutt();
+                let ty = self.ty()?;
+                let ty_ref = self.arena.alloc_ref_new(ty);
+                Ok(Type::Reference(ty_ref, mutt))
+            }
             Token::OpenParen => {
                 self.eat(); // `(`
                 self.expect(Token::CloseParen, ParseCtx::UnitType)?;
-                TypeKind::Basic(BasicType::Unit)
+                Ok(Type::Basic(BasicType::Unit))
             }
-            Token::Ident | Token::KwSuper | Token::KwPackage => TypeKind::Custom(self.path()?),
+            Token::Ident | Token::KwSuper | Token::KwPackage => Ok(Type::Custom(self.path()?)),
             Token::OpenBracket => match self.peek_next() {
                 Token::KwMut | Token::CloseBracket => {
                     self.eat(); // `[`
-                    let mut array_slice = self.arena.alloc::<ArraySlice>();
-                    array_slice.mutt = self.mutt();
+                    let mutt = self.mutt();
                     self.expect(Token::CloseBracket, ParseCtx::ArraySlice)?;
-                    array_slice.ty = self.ty()?;
-                    TypeKind::ArraySlice(array_slice)
+                    let ty = self.ty()?;
+                    Ok(Type::ArraySlice(
+                        self.arena.alloc_ref_new(ArraySlice { mutt, ty }),
+                    ))
                 }
                 _ => {
                     self.eat(); // `[`
-                    let mut array_static = self.arena.alloc::<ArrayStatic>();
-                    array_static.size = ConstExpr(self.expr()?);
+                    let size = ConstExpr(self.expr()?);
                     self.expect(Token::CloseBracket, ParseCtx::ArrayStatic)?;
-                    array_static.ty = self.ty()?;
-                    TypeKind::ArrayStatic(array_static)
+                    let ty = self.ty()?;
+                    Ok(Type::ArrayStatic(
+                        self.arena.alloc_ref_new(ArrayStatic { size, ty }),
+                    ))
                 }
             },
-            _ => return Err(ParseError::TypeMatch),
-        };
-        Ok(ty)
+            _ => Err(ParseError::TypeMatch),
+        }
     }
 
-    fn stmt(&mut self) -> Result<Stmt, ParseError> {
+    fn stmt(&mut self) -> Result<Stmt<'ast>, ParseError> {
         let span_start = self.peek_span_start();
         let kind = match self.peek() {
             Token::KwBreak => {
@@ -458,12 +477,9 @@ impl<'ast> Parser<'ast> {
         })
     }
 
-    fn for_(&mut self) -> Result<P<For>, ParseError> {
-        let mut for_ = self.arena.alloc::<For>();
-        match self.peek() {
-            Token::OpenBlock => {
-                for_.kind = ForKind::Loop;
-            }
+    fn for_(&mut self) -> Result<&'ast For<'ast>, ParseError> {
+        let kind = match self.peek() {
+            Token::OpenBlock => ForKind::Loop,
             _ => {
                 let expect_var_bind = (self.peek() == Token::KwMut)
                     || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
@@ -473,31 +489,31 @@ impl<'ast> Parser<'ast> {
                     let var_decl = self.var_decl()?;
                     let cond = self.expr()?;
                     self.expect(Token::Semicolon, ParseCtx::ForLoop)?;
-                    let mut var_assign = self.arena.alloc::<VarAssign>();
-                    var_assign.lhs = self.expr()?;
-                    var_assign.op = match self.peek().as_assign_op() {
+                    let lhs = self.expr()?;
+                    let op = match self.peek().as_assign_op() {
                         Some(op) => {
                             self.eat();
                             op
                         }
                         _ => return Err(ParseError::ForAssignOp),
                     };
-                    var_assign.rhs = self.expr()?;
-                    for_.kind = ForKind::ForLoop {
+                    let rhs = self.expr()?;
+                    let var_assign = self.arena.alloc_ref_new(VarAssign { op, lhs, rhs });
+                    ForKind::ForLoop {
                         var_decl,
                         cond,
                         var_assign,
-                    };
+                    }
                 } else {
-                    for_.kind = ForKind::While { cond: self.expr()? };
+                    ForKind::While { cond: self.expr()? }
                 }
             }
-        }
-        for_.block = self.block()?;
-        Ok(for_)
+        };
+        let block = self.block()?;
+        Ok(self.arena.alloc_ref_new(For { kind, block }))
     }
 
-    fn stmt_no_keyword(&mut self) -> Result<StmtKind, ParseError> {
+    fn stmt_no_keyword(&mut self) -> Result<StmtKind<'ast>, ParseError> {
         let expect_var_bind = (self.peek() == Token::KwMut)
             || ((self.peek() == Token::Ident || self.peek() == Token::Underscore)
                 && self.peek_next() == Token::Colon);
@@ -508,12 +524,15 @@ impl<'ast> Parser<'ast> {
             match self.peek().as_assign_op() {
                 Some(op) => {
                     self.eat();
-                    let mut var_assign = self.arena.alloc::<VarAssign>();
-                    var_assign.op = op;
-                    var_assign.lhs = expr;
-                    var_assign.rhs = self.expr()?;
+                    let op = op;
+                    let lhs = expr;
+                    let rhs = self.expr()?;
                     self.expect(Token::Semicolon, ParseCtx::VarAssign)?;
-                    Ok(StmtKind::VarAssign(var_assign))
+                    Ok(StmtKind::VarAssign(self.arena.alloc_ref_new(VarAssign {
+                        op,
+                        lhs,
+                        rhs,
+                    })))
                 }
                 None => {
                     if self.try_eat(Token::Semicolon) {
@@ -526,31 +545,37 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn var_decl(&mut self) -> Result<P<VarDecl>, ParseError> {
-        let mut var_decl = self.arena.alloc::<VarDecl>();
-        var_decl.mutt = self.mutt();
-        var_decl.name = self.ident(ParseCtx::VarDecl)?;
+    fn var_decl(&mut self) -> Result<&'ast VarDecl<'ast>, ParseError> {
+        let mutt = self.mutt();
+        let name = self.ident(ParseCtx::VarDecl)?;
         self.expect(Token::Colon, ParseCtx::VarDecl)?;
+        let ty;
+        let expr;
         if self.try_eat(Token::Equals) {
-            var_decl.ty = None;
-            var_decl.expr = Some(self.expr()?);
+            ty = None;
+            expr = Some(self.expr()?);
         } else {
-            var_decl.ty = Some(self.ty()?);
-            var_decl.expr = if self.try_eat(Token::Equals) {
+            ty = Some(self.ty()?);
+            expr = if self.try_eat(Token::Equals) {
                 Some(self.expr()?)
             } else {
                 None
             }
         }
         self.expect(Token::Semicolon, ParseCtx::VarDecl)?;
-        Ok(var_decl)
+        Ok(self.arena.alloc_ref_new(VarDecl {
+            mutt,
+            name,
+            ty,
+            expr,
+        }))
     }
 
-    fn expr(&mut self) -> Result<P<Expr>, ParseError> {
+    fn expr(&mut self) -> Result<&'ast Expr<'ast>, ParseError> {
         self.sub_expr(0)
     }
 
-    fn sub_expr(&mut self, min_prec: u32) -> Result<P<Expr>, ParseError> {
+    fn sub_expr(&mut self, min_prec: u32) -> Result<&'ast Expr<'ast>, ParseError> {
         let mut expr_lhs = self.primary_expr()?;
         loop {
             let prec: u32;
@@ -565,25 +590,26 @@ impl<'ast> Parser<'ast> {
             } else {
                 break;
             }
-            let mut expr = self.arena.alloc::<Expr>();
             let op = binary_op;
             let lhs = expr_lhs;
             let rhs = self.sub_expr(prec + 1)?;
-            expr.span = Span::new(lhs.span.start, rhs.span.end);
-            expr.kind = ExprKind::BinaryExpr { op, lhs, rhs };
-            expr_lhs = expr;
+            expr_lhs = self.arena.alloc_ref_new(Expr {
+                kind: ExprKind::BinaryExpr { op, lhs, rhs },
+                span: Span::new(lhs.span.start, rhs.span.end),
+            });
         }
         Ok(expr_lhs)
     }
 
-    fn primary_expr(&mut self) -> Result<P<Expr>, ParseError> {
+    fn primary_expr(&mut self) -> Result<&'ast Expr<'ast>, ParseError> {
         let span_start = self.peek_span_start();
 
         if self.try_eat(Token::OpenParen) {
             if self.try_eat(Token::CloseParen) {
-                let mut expr = self.arena.alloc::<Expr>();
-                expr.kind = ExprKind::Unit;
-                expr.span = Span::new(span_start, self.peek_span_end());
+                let expr = self.arena.alloc_ref_new(Expr {
+                    kind: ExprKind::Unit,
+                    span: Span::new(span_start, self.peek_span_end()),
+                });
                 return self.tail_expr(expr);
             }
             let expr = self.sub_expr(0)?;
@@ -591,19 +617,19 @@ impl<'ast> Parser<'ast> {
             return self.tail_expr(expr);
         }
 
-        let mut expr = self.arena.alloc::<Expr>();
-
         if let Some(un_op) = self.peek().as_un_op() {
             self.eat();
-            expr.kind = ExprKind::UnaryExpr {
+            let kind = ExprKind::UnaryExpr {
                 op: un_op,
                 rhs: self.primary_expr()?,
             };
-            expr.span = Span::new(span_start, self.peek_span_end());
-            return Ok(expr);
+            return Ok(self.arena.alloc_ref_new(Expr {
+                kind,
+                span: Span::new(span_start, self.peek_span_end()),
+            }));
         }
 
-        expr.kind = match self.peek() {
+        let kind = match self.peek() {
             Token::KwIf => ExprKind::If { if_: self.if_()? },
             Token::KwNull
             | Token::KwTrue
@@ -632,10 +658,9 @@ impl<'ast> Parser<'ast> {
             Token::KwSizeof => {
                 self.eat();
                 self.expect(Token::OpenParen, ParseCtx::Sizeof)?;
-                let mut pty = self.arena.alloc::<Type>();
-                *pty = self.ty()?;
+                let ty = self.ty()?;
                 self.expect(Token::CloseParen, ParseCtx::Sizeof)?;
-                ExprKind::Sizeof { ty: pty }
+                ExprKind::Sizeof { ty }
             }
             Token::OpenBracket => {
                 self.eat();
@@ -709,11 +734,14 @@ impl<'ast> Parser<'ast> {
                 }
             }
         };
-        expr.span = Span::new(span_start, self.peek_span_end());
-        return self.tail_expr(expr);
+        let expr = self.arena.alloc_ref_new(Expr {
+            kind,
+            span: Span::new(span_start, self.peek_span_end()),
+        });
+        self.tail_expr(expr)
     }
 
-    fn tail_expr(&mut self, expr: P<Expr>) -> Result<P<Expr>, ParseError> {
+    fn tail_expr(&mut self, expr: &'ast Expr) -> Result<&'ast Expr<'ast>, ParseError> {
         let mut target = expr;
         let mut last_cast = false;
         let span_start = expr.span.start;
@@ -724,32 +752,32 @@ impl<'ast> Parser<'ast> {
                         return Ok(target);
                     }
                     self.eat();
-                    let mut expr_field = self.arena.alloc::<Expr>();
                     let name = self.ident(ParseCtx::ExprField)?;
-                    expr_field.kind = ExprKind::Field { target, name };
-                    expr_field.span = Span::new(span_start, self.peek_span_end());
-                    target = expr_field;
+                    target = self.arena.alloc_ref_new(Expr {
+                        kind: ExprKind::Field { target, name },
+                        span: Span::new(span_start, self.peek_span_end()),
+                    });
                 }
                 Token::OpenBracket => {
                     if last_cast {
                         return Ok(target);
                     }
                     self.eat();
-                    let mut expr_index = self.arena.alloc::<Expr>();
                     let index = self.expr()?;
                     self.expect(Token::CloseBracket, ParseCtx::ExprIndex)?;
-                    expr_index.kind = ExprKind::Index { target, index };
-                    expr_index.span = Span::new(span_start, self.peek_span_end());
-                    target = expr_index;
+                    target = self.arena.alloc_ref_new(Expr {
+                        kind: ExprKind::Index { target, index },
+                        span: Span::new(span_start, self.peek_span_end()),
+                    });
                 }
                 Token::KwAs => {
                     self.eat();
-                    let mut expr_cast = self.arena.alloc::<Expr>();
-                    let mut pty = self.arena.alloc::<Type>();
-                    *pty = self.ty()?;
-                    expr_cast.kind = ExprKind::Cast { target, ty: pty };
-                    expr_cast.span = Span::new(span_start, self.peek_span_end());
-                    target = expr_cast;
+                    let ty = self.ty()?;
+                    let ty_ref = self.arena.alloc_ref_new(ty);
+                    target = self.arena.alloc_ref_new(Expr {
+                        kind: ExprKind::Cast { target, ty: ty_ref },
+                        span: Span::new(span_start, self.peek_span_end()),
+                    });
                     last_cast = true;
                 }
                 _ => return Ok(target),
@@ -757,46 +785,42 @@ impl<'ast> Parser<'ast> {
         }
     }
 
-    fn if_(&mut self) -> Result<P<If>, ParseError> {
-        let if_ = self.if_branch()?;
-        let mut if_prev = if_;
-        while self.try_eat(Token::KwElse) {
+    fn if_(&mut self) -> Result<&'ast If<'ast>, ParseError> {
+        self.eat();
+        let if_ = If {
+            cond: self.expr()?,
+            block: self.block()?,
+            else_: self.else_branch()?,
+        };
+        Ok(self.arena.alloc_ref_new(if_))
+    }
+
+    fn else_branch(&mut self) -> Result<Option<Else<'ast>>, ParseError> {
+        if self.try_eat(Token::KwElse) {
             match self.peek() {
-                Token::KwIf => {
-                    let else_if = self.if_branch()?;
-                    if_prev.else_ = Some(Else::If { else_if });
-                    if_prev = else_if;
-                }
-                Token::OpenBlock => {
-                    let block = self.block()?;
-                    if_prev.else_ = Some(Else::Block { block });
-                }
+                Token::KwIf => Ok(Some(Else::If {
+                    else_if: self.if_()?,
+                })),
+                Token::OpenBlock => Ok(Some(Else::Block {
+                    block: self.block()?,
+                })),
                 _ => return Err(ParseError::ElseMatch),
             }
+        } else {
+            Ok(None)
         }
-        Ok(if_)
     }
 
-    fn if_branch(&mut self) -> Result<P<If>, ParseError> {
-        self.eat();
-        let mut if_ = self.arena.alloc::<If>();
-        if_.cond = self.expr()?;
-        if_.block = self.block()?;
-        if_.else_ = None;
-        Ok(if_)
-    }
-
-    fn block(&mut self) -> Result<P<Expr>, ParseError> {
+    fn block(&mut self) -> Result<&'ast Expr<'ast>, ParseError> {
         let span_start = self.peek_span_start();
-        let mut expr = self.arena.alloc::<Expr>();
-        expr.kind = ExprKind::Block {
-            stmts: self.block_stmts()?,
-        };
-        expr.span = Span::new(span_start, self.peek_span_end());
-        Ok(expr)
+        let stmts = self.block_stmts()?;
+        Ok(self.arena.alloc_ref_new(Expr {
+            kind: ExprKind::Block { stmts },
+            span: Span::new(span_start, self.peek_span_end()),
+        }))
     }
 
-    fn block_stmts(&mut self) -> Result<List<Stmt>, ParseError> {
+    fn block_stmts(&mut self) -> Result<List<Stmt<'ast>>, ParseError> {
         let mut stmts = ListBuilder::new();
         self.expect(Token::OpenBlock, ParseCtx::Block)?;
         while !self.try_eat(Token::CloseBlock) {
@@ -806,14 +830,14 @@ impl<'ast> Parser<'ast> {
         Ok(stmts.take())
     }
 
-    fn match_arm(&mut self) -> Result<MatchArm, ParseError> {
+    fn match_arm(&mut self) -> Result<MatchArm<'ast>, ParseError> {
         let pat = self.expr()?;
         self.expect(Token::ArrowWide, ParseCtx::MatchArm)?;
         let expr = self.expr()?;
         Ok(MatchArm { pat, expr })
     }
 
-    fn lit(&mut self) -> Result<ExprKind, ParseError> {
+    fn lit(&mut self) -> Result<ExprKind<'ast>, ParseError> {
         match self.peek() {
             Token::KwNull => {
                 self.eat();
@@ -902,15 +926,21 @@ impl<'ast> Parser<'ast> {
             }
             Token::StringLit => {
                 self.eat();
-                let id = self.string_id;
+                let string = self.tokens.get_string(self.string_id as usize);
                 self.string_id += 1;
-                Ok(ExprKind::LitString { id: InternID(id) })
+                Ok(ExprKind::LitString {
+                    id: self.intern_pool.intern(string),
+                })
             }
             _ => Err(ParseError::LitMatch),
         }
     }
 
-    fn expr_list(&mut self, end: Token, ctx: ParseCtx) -> Result<List<P<Expr>>, ParseError> {
+    fn expr_list(
+        &mut self,
+        end: Token,
+        ctx: ParseCtx,
+    ) -> Result<List<&'ast Expr<'ast>>, ParseError> {
         let mut expr_list = ListBuilder::new();
         if !self.try_eat(end) {
             loop {

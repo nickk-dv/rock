@@ -3,7 +3,6 @@ use crate::ast::CompCtx;
 use crate::err::ansi;
 use crate::err::error_new::*;
 use crate::err::span_fmt;
-use crate::mem::Arena;
 
 //@not added as Error since its "global" to project
 //@always printed out in the cli
@@ -71,15 +70,15 @@ pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
 
 static mut ERRORS: Vec<CompError> = Vec::new();
 
-pub fn check(ctx: &CompCtx, ast: &mut Ast) -> Result<(), Vec<CompError>> {
+pub fn check(ctx: &CompCtx, ast: Ast) -> Result<(), Vec<CompError>> {
     unsafe { ERRORS.clear() };
 
     let mut context = Context::new();
-    pass_0_populate_scopes(&mut context, &ast, ctx);
+    pass_0_populate_scopes(&mut context, ast, ctx);
     pass_1_check_namesets(&context, ctx);
     pass_2_import_symbols(&mut context, ctx);
     pass_3_check_main_decl(&context, ctx);
-    pass_3_typecheck(&context, ctx, &mut ast.arena);
+    pass_3_typecheck(&mut context, ctx);
 
     unsafe {
         if ERRORS.len() > 0 {
@@ -90,22 +89,22 @@ pub fn check(ctx: &CompCtx, ast: &mut Ast) -> Result<(), Vec<CompError>> {
     }
 }
 
-fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
+fn pass_0_populate_scopes(context: &mut Context, ast: Ast, ctx: &CompCtx) {
     use std::path::PathBuf;
     struct ScopeTreeTask {
-        module: P<Module>,
+        module: Box<Module>,
         parent: Option<(ScopeID, ModID)>,
     }
 
-    let mut module_map = HashMap::<PathBuf, Result<P<Module>, SourceLoc>>::new();
+    let mut module_map = HashMap::<PathBuf, Result<Box<Module>, SourceLoc>>::new();
     let mut tasks = Vec::<ScopeTreeTask>::new();
 
-    for module in ast.modules.iter() {
-        module_map.insert(ctx.file(module.file_id).path.clone(), Ok(*module));
+    for module in ast.modules {
+        module_map.insert(ctx.file(module.file_id).path.clone(), Ok(module));
     }
 
     let root_path = PathBuf::new().join("test").join("main.lang");
-    match module_map.get(&root_path).cloned() {
+    match module_map.remove(&root_path) {
         Some(p) => match p {
             Ok(module) => {
                 tasks.push(ScopeTreeTask {
@@ -171,10 +170,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                     let path2 = origin.join(name).join("mod.lang");
 
                     let src = scope.src(mod_decl.name.span);
-                    let target = match (
-                        module_map.get(&path1).cloned(),
-                        module_map.get(&path2).cloned(),
-                    ) {
+                    let target = match (module_map.get(&path1), module_map.get(&path2)) {
                         (None, None) => {
                             let msg =
                                 format!("both module paths are missing:\n{:?}\n{:?}", path1, path2);
@@ -196,7 +192,7 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                             }
                             Err(taken) => {
                                 report("module has been taken", ctx, src);
-                                report_info("by this module declaration", ctx, taken);
+                                report_info("by this module declaration", ctx, *taken);
                                 continue;
                             }
                         },
@@ -209,14 +205,14 @@ fn pass_0_populate_scopes(context: &mut Context, ast: &Ast, ctx: &CompCtx) {
                             }
                             Err(taken) => {
                                 report("module has been taken", ctx, src);
-                                report_info("by this module declaration", ctx, taken);
+                                report_info("by this module declaration", ctx, *taken);
                                 continue;
                             }
                         },
                     };
 
                     tasks.push(ScopeTreeTask {
-                        module: target,
+                        module: *target,
                         parent: Some((scope_id, mod_id)),
                     });
                 }
@@ -289,7 +285,7 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
             }};
         }
 
-        for decl in scope.module.decls {
+        for decl in scope.module.decls.iter() {
             match decl {
                 Decl::Proc(proc_decl) => {
                     check_nameset!(proc_decl, params, "proc param redefinition")
@@ -313,7 +309,7 @@ fn pass_1_check_namesets(context: &Context, ctx: &CompCtx) {
 // its unclear on which span to use, try to improve the api
 fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
     struct ImportTask {
-        import_decl: P<UseDecl>,
+        use_decl: Box<UseDecl>,
         resolved: bool,
     }
     struct ImportSymbolTask {
@@ -321,16 +317,15 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
         name: Ident,
     }
 
-    let mut import_tasks = Vec::<ImportTask>::new();
     let mut import_symbol_tasks = Vec::<ImportSymbolTask>::new();
 
     for scope_id in context.scope_iter() {
-        import_tasks.clear();
+        let mut import_tasks = Vec::<ImportTask>::new();
 
-        for decl in context.get_scope(scope_id).module.decls {
+        for decl in context.get_scope(scope_id).module.decls.iter() {
             match decl {
-                Decl::Use(import_decl) => import_tasks.push(ImportTask {
-                    import_decl,
+                Decl::Use(use_decl) => import_tasks.push(ImportTask {
+                    use_decl: use_decl.clone(), //@clone
                     resolved: false,
                 }),
                 _ => {}
@@ -348,14 +343,14 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
                 }
                 // resolve path kind
                 let scope = context.get_scope(scope_id);
-                let mut from_id = match task.import_decl.path.kind {
+                let mut from_id = match task.use_decl.path.kind {
                     PathKind::None => scope_id,
                     PathKind::Super => match scope.parent_id {
                         Some(parent_id) => parent_id,
                         None => {
                             let span = Span::new(
-                                task.import_decl.path.span_start,
-                                task.import_decl.path.span_start + 5,
+                                task.use_decl.path.span_start,
+                                task.use_decl.path.span_start + 5,
                             );
                             report(
                                 "cannot use `super` from the root module",
@@ -370,8 +365,8 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
                     PathKind::Package => ScopeID(0),
                 };
                 // resolve module path
-                let mut span_end = task.import_decl.path.span_start;
-                for name in task.import_decl.path.names {
+                let mut span_end = task.use_decl.path.span_start;
+                for name in task.use_decl.path.names.iter() {
                     let from_scope = context.get_scope(from_id);
                     let mod_id = match from_scope.get_mod(name.id) {
                         Ok(mod_id) => mod_id,
@@ -413,14 +408,14 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
                     report(
                         "importing from self is redundant",
                         ctx,
-                        scope.src(Span::new(task.import_decl.path.span_start, span_end)),
+                        scope.src(Span::new(task.use_decl.path.span_start, span_end)),
                     );
                     continue 'task;
                 }
                 let from_scope = context.get_scope(from_id);
                 import_symbol_tasks.clear();
 
-                for import_symbol in task.import_decl.symbols.iter() {
+                for import_symbol in task.use_decl.symbols.iter() {
                     match from_scope.get_symbol(import_symbol.name.id) {
                         Some(symbol_id) => {
                             let vis = context.get_symbol_vis(symbol_id);
@@ -481,7 +476,7 @@ fn pass_2_import_symbols(context: &mut Context, ctx: &CompCtx) {
         let scope = context.get_scope(scope_id);
         for task in import_tasks.iter() {
             if !task.resolved {
-                for name in task.import_decl.path.names {
+                for name in task.use_decl.path.names.iter() {
                     report("module not found", ctx, scope.src(name.span));
                     break;
                 }
@@ -515,7 +510,7 @@ fn pass_3_check_main_decl(context: &Context, ctx: &CompCtx) {
 }
 
 fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
-    match ty.kind {
+    match &mut ty.kind {
         TypeKind::Basic(_) => {}
         TypeKind::Custom(path) => {
             // @ find a way to re-use path resolving
@@ -528,10 +523,9 @@ fn nameresolve_type(ctx: &TypeCtx, ty: &mut Type) {
             ty.kind = TypeKind::Struct(StructID(0));
             ty.kind = TypeKind::Poison;
             //@unchanged
-            ty.kind = TypeKind::Custom(path);
         }
-        TypeKind::ArraySlice(mut slice) => nameresolve_type(ctx, &mut slice.ty),
-        TypeKind::ArrayStatic(mut array) => nameresolve_type(ctx, &mut array.ty), //@ size ConstExpr is not touched
+        TypeKind::ArraySlice(slice) => nameresolve_type(ctx, &mut slice.ty),
+        TypeKind::ArrayStatic(array) => nameresolve_type(ctx, &mut array.ty), //@ size ConstExpr is not touched
         TypeKind::Enum(_) => panic!("nameresolve_type redundant"),
         TypeKind::Union(_) => panic!("nameresolve_type redundant"),
         TypeKind::Struct(_) => panic!("nameresolve_type redundant"),
@@ -571,7 +565,7 @@ constant / global variable
 enum ItemResolved<'a> {
     None,
     Local {
-        local: &'a LocalVar,
+        local: &'a LocalVar<'a>,
     },
     Symbol {
         symbol: SymbolID, // @just getting SymbolID for now
@@ -586,7 +580,7 @@ enum ItemResolved<'a> {
     },
 }
 
-fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> (ItemResolved<'a>, Span) {
+fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: &Path) -> (ItemResolved<'a>, Span) {
     let mut path_span = Span::new(path.span_start, path.span_start);
 
     let from_id = match path.kind {
@@ -620,7 +614,7 @@ fn nameresolve_path<'a>(ctx: &'a TypeCtx, path: P<Path>) -> (ItemResolved<'a>, S
         return (ItemResolved::None, path_span);
     }
 
-    for name in path.names {
+    for name in path.names.iter() {
         path_span.end = name.span.end;
 
         let from_scope = ctx.context.get_scope(from_id);
@@ -658,11 +652,10 @@ struct TypeCtx<'a> {
     context: &'a Context,
     comp_ctx: &'a CompCtx,
     proc_return_ty: Type,
-    proc_scope: &'a mut ProcScope,
-    ast_arena: &'a mut Arena,
+    proc_scope: &'a mut ProcScope<'a>,
 }
 
-fn pass_3_typecheck(context: &Context, ctx: &CompCtx, arena: &mut Arena) {
+fn pass_3_typecheck(context: &mut Context, ctx: &CompCtx) {
     for scope_id in context.scope_iter() {
         let mut type_ctx = TypeCtx {
             scope_id,
@@ -671,9 +664,8 @@ fn pass_3_typecheck(context: &Context, ctx: &CompCtx, arena: &mut Arena) {
             comp_ctx: ctx,
             proc_return_ty: Type::unit(),
             proc_scope: &mut ProcScope::new(),
-            ast_arena: arena,
         };
-        for decl in type_ctx.scope.module.decls {
+        for decl in &mut type_ctx.scope.module.decls {
             match decl {
                 Decl::Proc(proc_decl) => typecheck_proc(&mut type_ctx, proc_decl),
                 _ => {}
@@ -682,7 +674,7 @@ fn pass_3_typecheck(context: &Context, ctx: &CompCtx, arena: &mut Arena) {
     }
 }
 
-fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
+fn typecheck_proc(ctx: &mut TypeCtx, proc_decl: &mut ProcDecl) {
     for param in proc_decl.params.iter_mut() {
         nameresolve_type(ctx, &mut param.ty);
     }
@@ -690,10 +682,10 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
         nameresolve_type(ctx, ty);
         ctx.proc_return_ty = *ty;
     }
-    if let Some(block) = proc_decl.block {
+    if let Some(ref mut block) = proc_decl.block {
         if let Some(ref return_ty) = proc_decl.return_ty {
             ctx.proc_scope.push_stack_frame();
-            for param in proc_decl.params {
+            for param in proc_decl.params.iter() {
                 ctx.proc_scope.push_local(LocalVar::Param(param));
             }
             typecheck_expr(ctx, block, return_ty);
@@ -701,12 +693,12 @@ fn typecheck_proc(ctx: &mut TypeCtx, mut proc_decl: P<ProcDecl>) {
     }
 }
 
-fn typecheck_stmt(ctx: &mut TypeCtx, stmt: Stmt, expect: &Type) -> Type {
-    match stmt.kind {
+fn typecheck_stmt(ctx: &mut TypeCtx, stmt: &mut Stmt, expect: &Type) -> Type {
+    match &mut stmt.kind {
         StmtKind::Break => Type::unit(),    //@is it correct to return unit?
         StmtKind::Continue => Type::unit(), //@is it correct to return unit?
         StmtKind::Return(ret) => {
-            if let Some(expr) = ret {
+            if let Some(ref mut expr) = ret {
                 let ret_ty = ctx.proc_return_ty;
                 typecheck_expr(ctx, expr, &ret_ty);
             }
@@ -719,11 +711,11 @@ fn typecheck_stmt(ctx: &mut TypeCtx, stmt: Stmt, expect: &Type) -> Type {
         StmtKind::ForLoop(for_) => {
             Type::unit() //@ignored
         }
-        StmtKind::VarDecl(mut var_decl) => {
+        StmtKind::VarDecl(var_decl) => {
             if let Some(ref mut ty) = var_decl.ty {
                 nameresolve_type(ctx, ty);
             }
-            if let Some(expr) = var_decl.expr {
+            if let Some(ref mut expr) = var_decl.expr {
                 match var_decl.ty {
                     Some(ref ty) => {
                         typecheck_expr(ctx, expr, ty);
@@ -748,7 +740,9 @@ fn typecheck_stmt(ctx: &mut TypeCtx, stmt: Stmt, expect: &Type) -> Type {
     }
 }
 
-fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
+fn typecheck_expr(ctx: &mut TypeCtx, expr: &mut Expr, expect: &Type) -> Type {
+    *expect
+    /*
     let ty = match expr.kind {
         ExprKind::Unit => Type::unit(),
         ExprKind::LitNull => Type::basic(BasicType::Rawptr),
@@ -1166,6 +1160,7 @@ fn typecheck_expr(ctx: &mut TypeCtx, mut expr: P<Expr>, expect: &Type) -> Type {
         );
     }
     ty
+    */
 }
 
 fn stringify_type(ty: &Type) -> String {
@@ -1173,7 +1168,7 @@ fn stringify_type(ty: &Type) -> String {
     for _ in 0..ty.ptr.level() {
         string.push_str("* <MUT?> ");
     }
-    match ty.kind {
+    match &ty.kind {
         TypeKind::Basic(basic) => match basic {
             BasicType::Unit => string.push_str("()"),
             BasicType::Bool => string.push_str("bool"),
@@ -1212,21 +1207,21 @@ fn stringify_type(ty: &Type) -> String {
     string
 }
 
-struct ProcScope {
-    locals: Vec<LocalVar>,
+struct ProcScope<'a> {
+    locals: Vec<LocalVar<'a>>,
     stack_frames: Vec<StackFrame>,
 }
 
-enum LocalVar {
-    Param(ProcParam),
-    Local(P<VarDecl>),
+enum LocalVar<'a> {
+    Param(&'a ProcParam),
+    Local(&'a mut VarDecl),
 }
 
 struct StackFrame {
     local_count: u32,
 }
 
-impl ProcScope {
+impl<'a> ProcScope<'a> {
     fn new() -> Self {
         Self {
             locals: Vec::new(),
@@ -1238,7 +1233,7 @@ impl ProcScope {
         self.stack_frames.push(StackFrame { local_count: 0 });
     }
 
-    fn push_local(&mut self, local: LocalVar) {
+    fn push_local(&mut self, local: LocalVar<'a>) {
         self.locals.push(local);
         match self.stack_frames.last_mut() {
             Some(frame) => frame.local_count += 1,

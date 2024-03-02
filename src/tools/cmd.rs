@@ -1,7 +1,11 @@
 use crate::ast;
-use crate::check::check;
+use crate::ast::ast::Ast;
+use crate::ast::parse;
+use crate::ast::CompCtx;
+use crate::check;
 use crate::err::error::*;
 use crate::err::report;
+use crate::mem::Arena;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -141,15 +145,15 @@ main :: () -> s32 {
 }
 
 fn cmd_check() -> Result<(), ()> {
-    for _ in 0..10 {
-        eprintln!("Arena based");
-        let res = ast::parse();
-    }
-    for _ in 0..10 {
-        eprintln!("Box based");
-        let res2 = ast::parse2();
-    }
-    Err(())
+    let mut ctx = CompCtx::new();
+    let mut ast = Ast {
+        arena: Arena::new(),
+        modules: Vec::new(),
+    };
+    let errors = parse(&mut ctx, &mut ast);
+    check::report_check_errors_cli(&ctx, &errors);
+    eprintln!("mem usage: {}", ast.arena.mem_usage());
+    Ok(())
     //let (ctx, parse_res) = ast::parse();
     //let mut ast = match parse_res {
     //    Ok(ast) => ast,

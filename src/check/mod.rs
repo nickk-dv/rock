@@ -1,11 +1,51 @@
-use crate::ast::ast::*;
+//pub mod check;
+
 use crate::ast::intern::InternID;
 use crate::ast::span::Span;
 use crate::ast::FileID;
-use crate::mem::P;
+use crate::ast::{ast::*, CompCtx};
+use crate::err::error_new::{CompError, ErrorContext};
+use crate::err::{ansi, span_fmt};
 use std::collections::HashMap;
 
-pub mod check;
+#[derive(Copy, Clone)]
+pub struct SourceLoc {
+    pub span: Span,
+    pub file_id: FileID,
+}
+
+impl SourceLoc {
+    pub fn new(span: Span, file_id: FileID) -> Self {
+        Self { span, file_id }
+    }
+}
+
+pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
+    for error in errors {
+        let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
+        let ansi_clear = "\x1B[0m";
+        eprintln!("\n{}error:{} {}", ansi_red, ansi_clear, error.msg.as_str());
+        span_fmt::print_simple(ctx.file(error.src.file_id), error.src.span, None, false);
+
+        for context in error.context.iter() {
+            match context {
+                ErrorContext::Message { msg } => {
+                    eprintln!("{}", msg.as_str());
+                }
+                ErrorContext::MessageSource { ctx_src, msg } => {
+                    span_fmt::print_simple(
+                        ctx.file(ctx_src.file_id),
+                        ctx_src.span,
+                        Some(msg.as_str()),
+                        true,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/*
 
 pub struct Context {
     scopes: Vec<Scope>,
@@ -19,7 +59,7 @@ pub struct Context {
 }
 
 pub struct Scope {
-    pub module: P<Module>,
+    pub module: Box<Module>,
     pub parent_id: Option<ScopeID>,
     symbols: HashMap<InternID, Symbol>,
 }
@@ -67,42 +107,42 @@ pub struct GlobalID(u32);
 
 pub struct ModData {
     pub from_id: ScopeID,
-    pub decl: P<ModDecl>,
+    pub decl: Box<ModDecl>,
     pub target_id: Option<ScopeID>,
 }
 
 pub struct ProcData {
     pub from_id: ScopeID,
-    pub decl: P<ProcDecl>,
+    pub decl: Box<ProcDecl>,
 }
 
 pub struct EnumData {
     pub from_id: ScopeID,
-    pub decl: P<EnumDecl>,
+    pub decl: Box<EnumDecl>,
 }
 
 pub struct UnionData {
     pub from_id: ScopeID,
-    pub decl: P<UnionDecl>,
+    pub decl: Box<UnionDecl>,
     pub size: usize,
     pub align: u32,
 }
 
 pub struct StructData {
     pub from_id: ScopeID,
-    pub decl: P<StructDecl>,
+    pub decl: Box<StructDecl>,
     pub size: usize,
     pub align: u32,
 }
 
 pub struct ConstData {
     pub from_id: ScopeID,
-    pub decl: P<ConstDecl>,
+    pub decl: Box<ConstDecl>,
 }
 
 pub struct GlobalData {
     pub from_id: ScopeID,
-    pub decl: P<GlobalDecl>,
+    pub decl: Box<GlobalDecl>,
 }
 
 pub struct ScopeIter {
@@ -291,11 +331,12 @@ impl Context {
 
 impl Scope {
     #[must_use]
-    pub fn new(module: P<Module>, parent_id: Option<ScopeID>) -> Self {
+    pub fn new(module: Box<Module>, parent_id: Option<ScopeID>) -> Self {
+        let decls_len = module.decls.len();
         Self {
             module,
             parent_id,
-            symbols: HashMap::with_capacity(module.decls.len()),
+            symbols: HashMap::with_capacity(decls_len),
         }
     }
 
@@ -363,15 +404,4 @@ impl Scope {
         }
     }
 }
-
-#[derive(Copy, Clone)]
-pub struct SourceLoc {
-    pub span: Span,
-    pub file_id: FileID,
-}
-
-impl SourceLoc {
-    pub fn new(span: Span, file_id: FileID) -> Self {
-        Self { span, file_id }
-    }
-}
+*/
