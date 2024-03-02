@@ -1,6 +1,7 @@
 mod green;
 mod kinds;
 mod red;
+mod syntax_tree;
 
 pub use self::{
     green::{GreenNode, GreenNodeData, GreenToken, GreenTokenData},
