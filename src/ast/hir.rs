@@ -1,14 +1,48 @@
-use super::ast::{AssignOp, BasicType, BinOp, Mut, UnOp};
+use super::ast;
 use super::intern::*;
 use super::span::Span;
 use crate::mem::Arena;
 use std::collections::HashMap;
 
-pub struct Hir<'hir> {
+pub struct Hir<'ast, 'hir> {
     arena: Arena<'hir>,
     scopes: Vec<Scope>,
+    mods: Vec<ModData>,
+    procs: Vec<ProcData<'hir>>,
+    enums: Vec<EnumData<'ast, 'hir>>,
+    unions: Vec<UnionData<'hir>>,
+    structs: Vec<StructData<'hir>>,
+    consts: Vec<ConstData<'ast, 'hir>>,
+    globals: Vec<GlobalData<'ast, 'hir>>,
 }
 
+pub struct Scope {
+    parent: Option<ScopeID>,
+    symbols: HashMap<InternID, Symbol>,
+}
+
+#[derive(Copy, Clone)]
+pub enum Symbol {
+    Defined { kind: SymbolKind },
+    Imported { kind: SymbolKind, import: Span },
+}
+
+#[derive(Copy, Clone)]
+pub enum SymbolKind {
+    Mod(ModID),
+    Proc(ProcID),
+    Enum(EnumID),
+    Union(UnionID),
+    Struct(StructID),
+    Const(ConstID),
+    Global(GlobalID),
+}
+
+#[derive(Copy, Clone)]
+pub struct ScopeID(u32);
+
+#[derive(Copy, Clone)]
+pub struct ModID(u32);
 #[derive(Copy, Clone)]
 pub struct ProcID(u32);
 #[derive(Copy, Clone)]
@@ -21,6 +55,9 @@ pub struct StructID(u32);
 pub struct ConstID(u32);
 #[derive(Copy, Clone)]
 pub struct GlobalID(u32);
+
+// @local storage bodies arent defined yet
+// LocalID doesnt have a usage yet
 #[derive(Copy, Clone)]
 pub struct LocalID(u32);
 #[derive(Copy, Clone)]
@@ -30,51 +67,127 @@ pub struct UnionMemberID(u32);
 #[derive(Copy, Clone)]
 pub struct StructFieldID(u32);
 
-pub type Symbol = ();
-#[derive(Copy, Clone)]
-struct ScopeID(u32);
-
-pub struct Scope {
-    parent: Option<ScopeID>,
-    symbols: HashMap<InternID, Symbol>,
+pub struct ModData {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub target: Option<ScopeID>,
 }
 
-#[derive(Copy, Clone)]
+pub struct ProcData<'hir> {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub params: &'hir [ProcParam<'hir>],
+    pub is_variadic: bool,
+    pub return_ty: Type<'hir>,
+    pub block: Option<&'hir Expr<'hir>>,
+}
+
+pub struct ProcParam<'hir> {
+    pub mutt: ast::Mut,
+    pub name: Ident,
+    pub ty: Type<'hir>,
+}
+
+pub struct EnumData<'ast, 'hir> {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub variants: &'hir [EnumVariant<'ast, 'hir>],
+}
+
+pub struct EnumVariant<'ast, 'hir> {
+    pub name: Ident,
+    pub value: Option<ConstExpr<'ast, 'hir>>, // @we can assign specific numeric value without a span to it
+}
+
+pub struct UnionData<'hir> {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub members: &'hir [UnionMember<'hir>],
+}
+
+pub struct UnionMember<'hir> {
+    pub name: Ident,
+    pub ty: Type<'hir>,
+}
+
+pub struct StructData<'hir> {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub fields: &'hir [StructField<'hir>],
+}
+
+pub struct StructField<'hir> {
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub ty: Type<'hir>,
+}
+
+pub struct ConstData<'ast, 'hir> {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub ty: Option<Type<'hir>>, // @how to handle type is it required?
+    pub value: ConstExpr<'ast, 'hir>,
+}
+
+pub struct GlobalData<'ast, 'hir> {
+    pub from_id: ScopeID,
+    pub vis: ast::Vis,
+    pub name: Ident,
+    pub ty: Option<Type<'hir>>, // @how to handle type is it required?
+    pub value: ConstExpr<'ast, 'hir>,
+}
+
+// @also store them in vec and refer to them by ID ?
+// might be useful for resolution of such values
+pub struct ConstExpr<'ast, 'hir> {
+    pub from_id: ScopeID,
+    pub name: Ident,
+    pub source: &'ast ast::Expr<'ast>,
+    pub resolved: Option<&'hir Expr<'hir>>,
+}
+
 pub struct Ident {
     pub id: InternID,
     pub span: Span,
 }
 
-#[derive(Copy, Clone)]
+// @should static arrays with ast::ConstExpr that are used in declarations
+// be represented diffrently? since they are part of constant dependency
+// resolution process, and might get a 'Erorr' value for their size
+// in general Type[?] is usefull concept to represent for better typecheking flow
+// since we dont need to mark entire type as Error
 pub enum Type<'hir> {
-    Basic(BasicType),
+    Error,
+    Basic(ast::BasicType),
     Enum(EnumID),
     Union(UnionID),
     Struct(StructID),
-    Reference(&'hir Type<'hir>, Mut),
+    Reference(&'hir Type<'hir>, ast::Mut),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
 }
 
-#[derive(Copy, Clone)]
 pub struct ArraySlice<'hir> {
-    pub mutt: Mut,
+    pub mutt: ast::Mut,
     pub ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
 pub struct ArrayStatic<'hir> {
-    pub size: ConstExpr<'hir>,
+    pub size: &'hir Expr<'hir>,
     pub ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
 pub struct Stmt<'hir> {
     pub kind: StmtKind<'hir>,
     pub span: Span,
 }
 
-#[derive(Copy, Clone)]
 pub enum StmtKind<'hir> {
     Break,
     Continue,
@@ -88,53 +201,44 @@ pub enum StmtKind<'hir> {
     ExprTail(&'hir Expr<'hir>),
 }
 
-#[derive(Copy, Clone)]
 pub struct For<'hir> {
     pub kind: ForKind<'hir>,
     pub block: &'hir Expr<'hir>,
 }
 
 #[rustfmt::skip]
-#[derive(Copy, Clone)]
 pub enum ForKind<'hir> {
     Loop,
     While { cond: &'hir Expr<'hir> },
     ForLoop { var_decl: &'hir VarDecl<'hir>, cond: &'hir Expr<'hir>, var_assign: &'hir VarAssign<'hir> },
 }
 
-#[derive(Copy, Clone)]
 pub struct VarDecl<'hir> {
-    pub mutt: Mut,
+    pub mutt: ast::Mut,
     pub name: Ident,
-    pub ty: Option<Type<'hir>>,
+    pub ty: Type<'hir>,
     pub expr: Option<&'hir Expr<'hir>>,
 }
 
-#[derive(Copy, Clone)]
 pub struct VarAssign<'hir> {
-    pub op: AssignOp,
+    pub op: ast::AssignOp,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
 }
 
-#[derive(Copy, Clone)]
 pub struct Expr<'hir> {
     pub kind: ExprKind<'hir>,
     pub span: Span,
 }
 
-#[derive(Copy, Clone)]
-pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
-
-#[derive(Copy, Clone)]
 #[rustfmt::skip]
 pub enum ExprKind<'hir> {
     Error,
     Unit,
     LitNull,
     LitBool     { val: bool },
-    LitInt      { val: u64, ty: BasicType },
-    LitFloat    { val: f64, ty: BasicType },
+    LitInt      { val: u64, ty: ast::BasicType },
+    LitFloat    { val: f64, ty: ast::BasicType },
     LitChar     { val: char },
     LitString   { id: InternID },
     If          { if_: &'hir If<'hir> },
@@ -152,43 +256,38 @@ pub enum ExprKind<'hir> {
     UnionInit   { union_id: UnionID, input: UnionMemberInit<'hir> },
     StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
     ArrayInit   { input: &'hir [&'hir Expr<'hir>] },
-    ArrayRepeat { expr: &'hir Expr<'hir>, size: ConstExpr<'hir> },
-    UnaryExpr   { op: UnOp, rhs: &'hir Expr<'hir> },
-    BinaryExpr  { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
+    ArrayRepeat { expr: &'hir Expr<'hir>, size: &'hir Expr<'hir> },
+    UnaryExpr   { op: ast::UnOp, rhs: &'hir Expr<'hir> },
+    BinaryExpr  { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
-#[derive(Copy, Clone)]
+// @rework to slice of branches?
 pub struct If<'hir> {
     pub cond: &'hir Expr<'hir>,
     pub block: &'hir Expr<'hir>,
     pub else_: Option<Else<'hir>>,
 }
 
-#[derive(Copy, Clone)]
 pub enum Else<'hir> {
     If { else_if: &'hir If<'hir> },
     Block { block: &'hir Expr<'hir> },
 }
 
-#[derive(Copy, Clone)]
 pub struct Match<'hir> {
     pub on_expr: &'hir Expr<'hir>,
     pub arms: &'hir [MatchArm<'hir>],
 }
 
-#[derive(Copy, Clone)]
 pub struct MatchArm<'hir> {
     pub pat: &'hir Expr<'hir>,
     pub expr: &'hir Expr<'hir>,
 }
 
-#[derive(Copy, Clone)]
 pub struct UnionMemberInit<'hir> {
     pub id: UnionMemberID,
     pub expr: &'hir Expr<'hir>,
 }
 
-#[derive(Copy, Clone)]
 pub struct StructFieldInit<'hir> {
     pub id: StructFieldID,
     pub expr: &'hir Expr<'hir>,

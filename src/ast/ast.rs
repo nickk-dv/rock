@@ -105,7 +105,7 @@ pub struct StructField<'ast> {
 pub struct ConstDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Option<Type<'ast>>,
+    pub ty: Option<Type<'ast>>, // @how to handle type is it required?
     pub value: ConstExpr<'ast>,
 }
 
@@ -113,7 +113,7 @@ pub struct ConstDecl<'ast> {
 pub struct GlobalDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Option<Type<'ast>>,
+    pub ty: Option<Type<'ast>>, // @how to handle type is it required?
     pub value: ConstExpr<'ast>,
 }
 
@@ -241,6 +241,7 @@ pub enum ExprKind<'ast> {
     BinaryExpr  { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
 
+// @rework to list of branches?
 #[derive(Copy, Clone)]
 pub struct If<'ast> {
     pub cond: &'ast Expr<'ast>,
