@@ -1,4 +1,5 @@
 pub mod ast;
+mod hir;
 pub mod intern;
 pub mod lexer;
 pub mod parse_error;

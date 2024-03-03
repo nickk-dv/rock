@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct InternID(pub u32);
-pub const INTERN_DUMMY_ID: InternID = InternID(u32::MAX);
+#[derive(Copy, Clone)]
+pub struct InternID(u32);
 
 pub struct InternPool {
     next: InternID,

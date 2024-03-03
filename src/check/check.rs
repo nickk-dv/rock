@@ -43,31 +43,6 @@ fn report_info_msg(msg: Message, _: &CompCtx, src: SourceLoc) {
     }
 }
 
-pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
-    for error in errors {
-        let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
-        let ansi_clear = "\x1B[0m";
-        eprintln!("\n{}error:{} {}", ansi_red, ansi_clear, error.msg.as_str());
-        span_fmt::print_simple(ctx.file(error.src.file_id), error.src.span, None, false);
-
-        for context in error.context.iter() {
-            match context {
-                ErrorContext::Message { msg } => {
-                    eprintln!("{}", msg.as_str());
-                }
-                ErrorContext::MessageSource { ctx_src, msg } => {
-                    span_fmt::print_simple(
-                        ctx.file(ctx_src.file_id),
-                        ctx_src.span,
-                        Some(msg.as_str()),
-                        true,
-                    );
-                }
-            }
-        }
-    }
-}
-
 static mut ERRORS: Vec<CompError> = Vec::new();
 
 pub fn check(ctx: &CompCtx, ast: Ast) -> Result<(), Vec<CompError>> {

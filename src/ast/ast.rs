@@ -117,18 +117,6 @@ pub struct GlobalDecl<'ast> {
     pub value: ConstExpr<'ast>,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum Vis {
-    Public,
-    Private,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Mut {
-    Mutable,
-    Immutable,
-}
-
 #[derive(Copy, Clone)]
 pub struct Ident {
     pub id: InternID,
@@ -276,6 +264,18 @@ pub struct MatchArm<'ast> {
 pub struct FieldInit<'ast> {
     pub name: Ident,
     pub expr: Option<&'ast Expr<'ast>>,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Vis {
+    Public,
+    Private,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Mut {
+    Mutable,
+    Immutable,
 }
 
 #[derive(Copy, Clone, PartialEq)]
