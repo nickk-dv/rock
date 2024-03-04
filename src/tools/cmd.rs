@@ -3,6 +3,7 @@ use crate::ast::ast::Ast;
 use crate::ast::parse;
 use crate::ast::CompCtx;
 use crate::check;
+use crate::err;
 use crate::err::error::*;
 use crate::err::report;
 use crate::mem::Arena;
@@ -151,26 +152,10 @@ fn cmd_check() -> Result<(), ()> {
         modules: Vec::new(),
     };
     let errors = parse(&mut ctx, &mut ast);
-    check::report_check_errors_cli(&ctx, &errors);
+    err::error_new::report_check_errors_cli(&ctx, &errors);
     eprintln!("mem usage: {}", ast.arena.mem_usage());
+    let hir = check::check(&ctx, ast);
     Ok(())
-    //let (ctx, parse_res) = ast::parse();
-    //let mut ast = match parse_res {
-    //    Ok(ast) => ast,
-    //    Err(errors) => {
-    //        check::report_check_errors_cli(&ctx, &errors);
-    //        return Err(());
-    //    }
-    //};
-    //eprintln!("ast arenas mem-usage: {}", ast.arena.mem_usage()); //@debugging mem usage
-    //let check_res = check::check(&ctx, &mut ast);
-    //match check_res {
-    //    Ok(()) => Ok(()),
-    //    Err(errors) => {
-    //        check::report_check_errors_cli(&ctx, &errors);
-    //        Err(())
-    //    }
-    //}
 }
 
 fn cmd_build() -> Result<(), ()> {

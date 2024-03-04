@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InternID(u32);
 
 pub struct InternPool {

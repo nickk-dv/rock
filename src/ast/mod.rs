@@ -1,5 +1,4 @@
 pub mod ast;
-mod hir;
 pub mod intern;
 pub mod lexer;
 pub mod parse_error;
@@ -11,7 +10,6 @@ mod visit;
 
 use crate::err::error::*;
 use crate::err::report;
-use crate::mem::*;
 use ast::*;
 use intern::InternPool;
 use std::io::Write;

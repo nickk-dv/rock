@@ -4,8 +4,8 @@ use super::parse_error::*;
 use super::span::Span;
 use super::token::Token;
 use super::token_list::TokenList;
-use crate::check::SourceLoc;
 use crate::err::error::Error;
+use crate::err::error_new::SourceLoc;
 use crate::err::error_new::*;
 use crate::mem::{Arena, List, ListBuilder};
 

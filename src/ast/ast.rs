@@ -9,6 +9,9 @@ pub struct Ast<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub struct ModuleID(pub u32);
+
+#[derive(Copy, Clone)]
 pub struct Module<'ast> {
     pub file_id: FileID,
     pub decls: List<Decl<'ast>>,
@@ -215,8 +218,8 @@ pub struct Expr<'ast> {
 #[derive(Copy, Clone)]
 pub struct ConstExpr<'ast>(pub &'ast Expr<'ast>);
 
-#[derive(Copy, Clone)]
 #[rustfmt::skip]
+#[derive(Copy, Clone)]
 pub enum ExprKind<'ast> {
     Unit,
     LitNull,
@@ -241,7 +244,6 @@ pub enum ExprKind<'ast> {
     BinaryExpr  { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
 
-// @rework to list of branches?
 #[derive(Copy, Clone)]
 pub struct If<'ast> {
     pub cond: &'ast Expr<'ast>,

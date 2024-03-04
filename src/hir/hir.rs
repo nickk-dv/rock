@@ -1,160 +1,119 @@
-use super::ast;
-use super::intern::*;
-use super::span::Span;
+use super::hir_temp;
+use crate::ast::ast;
+use crate::ast::intern;
+use crate::ast::span::Span;
 use crate::mem::Arena;
-use std::collections::HashMap;
 
-pub struct Hir<'ast, 'hir> {
+pub struct Hir<'hir> {
     arena: Arena<'hir>,
-    scopes: Vec<Scope>,
-    mods: Vec<ModData>,
     procs: Vec<ProcData<'hir>>,
-    enums: Vec<EnumData<'ast, 'hir>>,
+    enums: Vec<EnumData<'hir>>,
     unions: Vec<UnionData<'hir>>,
     structs: Vec<StructData<'hir>>,
-    consts: Vec<ConstData<'ast, 'hir>>,
-    globals: Vec<GlobalData<'ast, 'hir>>,
+    consts: Vec<ConstData<'hir>>,
+    globals: Vec<GlobalData<'hir>>,
+    const_exprs: Vec<ConstExpr<'hir>>,
 }
-
-pub struct Scope {
-    parent: Option<ScopeID>,
-    symbols: HashMap<InternID, Symbol>,
-}
-
-#[derive(Copy, Clone)]
-pub enum Symbol {
-    Defined { kind: SymbolKind },
-    Imported { kind: SymbolKind, import: Span },
-}
-
-#[derive(Copy, Clone)]
-pub enum SymbolKind {
-    Mod(ModID),
-    Proc(ProcID),
-    Enum(EnumID),
-    Union(UnionID),
-    Struct(StructID),
-    Const(ConstID),
-    Global(GlobalID),
-}
-
-#[derive(Copy, Clone)]
-pub struct ScopeID(u32);
-
-#[derive(Copy, Clone)]
-pub struct ModID(u32);
-#[derive(Copy, Clone)]
-pub struct ProcID(u32);
-#[derive(Copy, Clone)]
-pub struct EnumID(u32);
-#[derive(Copy, Clone)]
-pub struct UnionID(u32);
-#[derive(Copy, Clone)]
-pub struct StructID(u32);
-#[derive(Copy, Clone)]
-pub struct ConstID(u32);
-#[derive(Copy, Clone)]
-pub struct GlobalID(u32);
 
 // @local storage bodies arent defined yet
 // LocalID doesnt have a usage yet
 #[derive(Copy, Clone)]
 pub struct LocalID(u32);
-#[derive(Copy, Clone)]
-pub struct EnumVariantID(u32);
-#[derive(Copy, Clone)]
-pub struct UnionMemberID(u32);
-#[derive(Copy, Clone)]
-pub struct StructFieldID(u32);
 
-pub struct ModData {
-    pub from_id: ScopeID,
-    pub vis: ast::Vis,
-    pub name: Ident,
-    pub target: Option<ScopeID>,
-}
-
+#[derive(Copy, Clone)]
+pub struct ProcID(u32);
 pub struct ProcData<'hir> {
-    pub from_id: ScopeID,
+    pub from_id: hir_temp::ScopeID,
     pub vis: ast::Vis,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub params: &'hir [ProcParam<'hir>],
     pub is_variadic: bool,
     pub return_ty: Type<'hir>,
     pub block: Option<&'hir Expr<'hir>>,
 }
 
+#[derive(Copy, Clone)]
+pub struct ProcParamID(u32);
 pub struct ProcParam<'hir> {
     pub mutt: ast::Mut,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub ty: Type<'hir>,
 }
 
-pub struct EnumData<'ast, 'hir> {
-    pub from_id: ScopeID,
+#[derive(Copy, Clone)]
+pub struct EnumID(u32);
+pub struct EnumData<'hir> {
+    pub from_id: hir_temp::ScopeID,
     pub vis: ast::Vis,
-    pub name: Ident,
-    pub variants: &'hir [EnumVariant<'ast, 'hir>],
+    pub name: ast::Ident,
+    pub variants: &'hir [EnumVariant],
 }
 
-pub struct EnumVariant<'ast, 'hir> {
-    pub name: Ident,
-    pub value: Option<ConstExpr<'ast, 'hir>>, // @we can assign specific numeric value without a span to it
+#[derive(Copy, Clone)]
+pub struct EnumVariantID(u32);
+pub struct EnumVariant {
+    pub name: ast::Ident,
+    pub value: Option<ConstExprID>, // @we can assign specific numeric value without a span to it
 }
 
+#[derive(Copy, Clone)]
+pub struct UnionID(u32);
 pub struct UnionData<'hir> {
-    pub from_id: ScopeID,
+    pub from_id: hir_temp::ScopeID,
     pub vis: ast::Vis,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub members: &'hir [UnionMember<'hir>],
 }
 
+#[derive(Copy, Clone)]
+pub struct UnionMemberID(u32);
 pub struct UnionMember<'hir> {
-    pub name: Ident,
+    pub name: ast::Ident,
     pub ty: Type<'hir>,
 }
 
+#[derive(Copy, Clone)]
+pub struct StructID(u32);
 pub struct StructData<'hir> {
-    pub from_id: ScopeID,
+    pub from_id: hir_temp::ScopeID,
     pub vis: ast::Vis,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub fields: &'hir [StructField<'hir>],
 }
 
+#[derive(Copy, Clone)]
+pub struct StructFieldID(u32);
 pub struct StructField<'hir> {
     pub vis: ast::Vis,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub ty: Type<'hir>,
 }
 
-pub struct ConstData<'ast, 'hir> {
-    pub from_id: ScopeID,
+#[derive(Copy, Clone)]
+pub struct ConstID(u32);
+pub struct ConstData<'hir> {
+    pub from_id: hir_temp::ScopeID,
     pub vis: ast::Vis,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub ty: Option<Type<'hir>>, // @how to handle type is it required?
-    pub value: ConstExpr<'ast, 'hir>,
+    pub value: ConstExprID,
 }
 
-pub struct GlobalData<'ast, 'hir> {
-    pub from_id: ScopeID,
+#[derive(Copy, Clone)]
+pub struct GlobalID(u32);
+pub struct GlobalData<'hir> {
+    pub from_id: hir_temp::ScopeID,
     pub vis: ast::Vis,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub ty: Option<Type<'hir>>, // @how to handle type is it required?
-    pub value: ConstExpr<'ast, 'hir>,
+    pub value: ConstExprID,
 }
 
-// @also store them in vec and refer to them by ID ?
-// might be useful for resolution of such values
-pub struct ConstExpr<'ast, 'hir> {
-    pub from_id: ScopeID,
-    pub name: Ident,
-    pub source: &'ast ast::Expr<'ast>,
-    pub resolved: Option<&'hir Expr<'hir>>,
-}
-
-pub struct Ident {
-    pub id: InternID,
-    pub span: Span,
+#[derive(Copy, Clone)]
+pub struct ConstExprID(u32);
+pub struct ConstExpr<'hir> {
+    pub from_id: hir_temp::ScopeID,
+    pub value: Option<&'hir Expr<'hir>>,
 }
 
 // @should static arrays with ast::ConstExpr that are used in declarations
@@ -215,7 +174,7 @@ pub enum ForKind<'hir> {
 
 pub struct VarDecl<'hir> {
     pub mutt: ast::Mut,
-    pub name: Ident,
+    pub name: ast::Ident,
     pub ty: Type<'hir>,
     pub expr: Option<&'hir Expr<'hir>>,
 }
@@ -240,7 +199,7 @@ pub enum ExprKind<'hir> {
     LitInt      { val: u64, ty: ast::BasicType },
     LitFloat    { val: f64, ty: ast::BasicType },
     LitChar     { val: char },
-    LitString   { id: InternID },
+    LitString   { id: intern::InternID },
     If          { if_: &'hir If<'hir> },
     Block       { stmts: &'hir [Stmt<'hir>] },
     Match       { match_: &'hir Match<'hir> },
@@ -249,6 +208,7 @@ pub enum ExprKind<'hir> {
     Index       { target: &'hir Expr<'hir>, index: &'hir Expr<'hir> },
     Cast        { target: &'hir Expr<'hir>, ty: &'hir Type<'hir> },
     LocalVar    { local_id: LocalID },
+    ParamVar    { param_id: ProcParamID },
     ConstVar    { const_id: ConstID },
     GlobalVar   { global_id: GlobalID },
     EnumVariant { enum_id: EnumID, id: EnumVariantID },
@@ -261,7 +221,6 @@ pub enum ExprKind<'hir> {
     BinaryExpr  { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
-// @rework to slice of branches?
 pub struct If<'hir> {
     pub cond: &'hir Expr<'hir>,
     pub block: &'hir Expr<'hir>,
@@ -284,11 +243,26 @@ pub struct MatchArm<'hir> {
 }
 
 pub struct UnionMemberInit<'hir> {
-    pub id: UnionMemberID,
+    pub member_id: UnionMemberID,
     pub expr: &'hir Expr<'hir>,
 }
 
 pub struct StructFieldInit<'hir> {
-    pub id: StructFieldID,
+    pub field_id: StructFieldID,
     pub expr: &'hir Expr<'hir>,
+}
+
+impl<'ast> Hir<'ast> {
+    pub fn new() -> Self {
+        Self {
+            arena: Arena::new(),
+            procs: Vec::new(),
+            enums: Vec::new(),
+            unions: Vec::new(),
+            structs: Vec::new(),
+            consts: Vec::new(),
+            globals: Vec::new(),
+            const_exprs: Vec::new(),
+        }
+    }
 }
