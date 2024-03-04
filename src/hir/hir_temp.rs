@@ -12,6 +12,25 @@ pub struct HirTemp<'ast> {
     const_exprs: Vec<ConstExprTemp<'ast>>,
 }
 
+pub struct ScopeIter {
+    curr: u32,
+    len: u32,
+}
+
+impl Iterator for ScopeIter {
+    type Item = ScopeID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr >= self.len {
+            None
+        } else {
+            let scope_id = ScopeID(self.curr);
+            self.curr += 1;
+            Some(scope_id)
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct ModID(u32);
 pub struct ModData {
@@ -88,6 +107,51 @@ impl<'ast> HirTemp<'ast> {
     pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
         self.ast.modules.iter()
     }
+
+    pub fn scope_ids(&self) -> ScopeIter {
+        ScopeIter {
+            curr: 0,
+            len: self.scopes.len() as u32,
+        }
+    }
+    pub fn scope_temp_ids(&self) -> ScopeIter {
+        ScopeIter {
+            curr: 0,
+            len: self.scopes_temp.len() as u32,
+        }
+    }
+
+    pub fn add_mod(&mut self, data: ModData) -> ModID {
+        self.mods.push(data);
+        ModID((self.mods.len() - 1) as u32)
+    }
+    pub fn get_mod(&self, id: ModID) -> &ModData {
+        self.mods.get(id.0 as usize).unwrap()
+    }
+    pub fn get_mod_mut(&mut self, id: ModID) -> &mut ModData {
+        self.mods.get_mut(id.0 as usize).unwrap()
+    }
+
+    pub fn add_scope(&mut self, scope: Scope) {
+        self.scopes.push(scope);
+    }
+    pub fn get_scope(&self, id: ScopeID) -> &Scope {
+        self.scopes.get(id.0 as usize).unwrap()
+    }
+    pub fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope {
+        self.scopes.get_mut(id.0 as usize).unwrap()
+    }
+
+    pub fn add_scope_temp(&mut self, scope: ScopeTemp<'ast>) -> ScopeID {
+        self.scopes_temp.push(scope);
+        ScopeID((self.scopes_temp.len() - 1) as u32)
+    }
+    pub fn get_scope_temp(&self, id: ScopeID) -> &ScopeTemp<'ast> {
+        self.scopes_temp.get(id.0 as usize).unwrap()
+    }
+    pub fn get_scope_temp_mut(&mut self, id: ScopeID) -> &mut ScopeTemp<'ast> {
+        self.scopes_temp.get_mut(id.0 as usize).unwrap()
+    }
 }
 
 impl<'ast> ScopeTemp<'ast> {
@@ -97,6 +161,18 @@ impl<'ast> ScopeTemp<'ast> {
             module,
             symbols: HashMap::new(),
         }
+    }
+
+    pub fn parent(&self) -> Option<ScopeID> {
+        self.parent
+    }
+
+    pub fn module_file_id(&self) -> crate::ast::FileID {
+        self.module.file_id
+    }
+
+    pub fn module_decls(&self) -> impl Iterator<Item = ast::Decl<'ast>> {
+        self.module.decls.into_iter()
     }
 
     pub fn add_symbol(
@@ -124,6 +200,10 @@ impl Scope {
             parent,
             symbols: HashMap::new(),
         }
+    }
+
+    pub fn parent(&self) -> Option<ScopeID> {
+        self.parent
     }
 
     pub fn add_symbol(&mut self, id: intern::InternID, symbol: Symbol) -> Result<(), Symbol> {

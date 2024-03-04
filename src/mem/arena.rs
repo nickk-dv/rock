@@ -54,6 +54,9 @@ impl<'arena> Arena<'arena> {
             self.grow();
         }
         let offset = unsafe { self.block.data.as_mut().add(self.offset) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(val.as_ptr(), offset as *mut T, val.len());
+        }
         self.offset += size;
         unsafe { std::slice::from_raw_parts(offset as *const T, val.len()) }
     }

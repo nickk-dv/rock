@@ -252,7 +252,7 @@ pub struct StructFieldInit<'hir> {
     pub expr: &'hir Expr<'hir>,
 }
 
-impl<'ast> Hir<'ast> {
+impl<'hir> Hir<'hir> {
     pub fn new() -> Self {
         Self {
             arena: Arena::new(),
@@ -264,5 +264,60 @@ impl<'ast> Hir<'ast> {
             globals: Vec::new(),
             const_exprs: Vec::new(),
         }
+    }
+
+    pub fn arena(&mut self) -> &mut Arena<'hir> {
+        &mut self.arena
+    }
+
+    pub fn add_proc(&mut self, data: ProcData<'hir>) -> ProcID {
+        self.procs.push(data);
+        ProcID((self.procs.len() - 1) as u32)
+    }
+    pub fn add_enum(&mut self, data: EnumData<'hir>) -> EnumID {
+        self.enums.push(data);
+        EnumID((self.enums.len() - 1) as u32)
+    }
+    pub fn add_union(&mut self, data: UnionData<'hir>) -> UnionID {
+        self.unions.push(data);
+        UnionID((self.unions.len() - 1) as u32)
+    }
+    pub fn add_struct(&mut self, data: StructData<'hir>) -> StructID {
+        self.structs.push(data);
+        StructID((self.structs.len() - 1) as u32)
+    }
+    pub fn add_const(&mut self, data: ConstData<'hir>) -> ConstID {
+        self.consts.push(data);
+        ConstID((self.consts.len() - 1) as u32)
+    }
+    pub fn add_global(&mut self, data: GlobalData<'hir>) -> GlobalID {
+        self.globals.push(data);
+        GlobalID((self.globals.len() - 1) as u32)
+    }
+    pub fn add_const_expr(&mut self, data: ConstExpr<'hir>) -> ConstExprID {
+        self.const_exprs.push(data);
+        ConstExprID((self.const_exprs.len() - 1) as u32)
+    }
+
+    pub fn get_proc(&self, id: ProcID) -> &ProcData {
+        self.procs.get(id.0 as usize).unwrap()
+    }
+    pub fn get_enum(&self, id: EnumID) -> &EnumData {
+        self.enums.get(id.0 as usize).unwrap()
+    }
+    pub fn get_union(&self, id: UnionID) -> &UnionData {
+        self.unions.get(id.0 as usize).unwrap()
+    }
+    pub fn get_struct(&self, id: StructID) -> &StructData {
+        self.structs.get(id.0 as usize).unwrap()
+    }
+    pub fn get_const(&self, id: ConstID) -> &ConstData {
+        self.consts.get(id.0 as usize).unwrap()
+    }
+    pub fn get_global(&self, id: GlobalID) -> &GlobalData {
+        self.globals.get(id.0 as usize).unwrap()
+    }
+    pub fn get_const_expr(&self, id: ConstExprID) -> &ConstExpr {
+        self.const_exprs.get(id.0 as usize).unwrap()
     }
 }
