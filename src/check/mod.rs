@@ -21,29 +21,27 @@ pub fn check<'ast, 'hir>(
     Ok(hir)
 }
 
-fn hir_pass_make_scope_tree(hir_temp: &mut hir_temp::HirTemp, ctx: &CompCtx) {
+fn hir_pass_make_scope_tree<'ast>(hir_temp: &mut hir_temp::HirTemp<'ast>, ctx: &CompCtx) {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    struct ScopeTreeTask {
-        module_id: ast::ModuleID,
+    struct ScopeTreeTask<'ast> {
+        module: ast::Module<'ast>,
         parent: Option<hir_temp::ModID>,
     }
 
-    let mut module_map = HashMap::<&PathBuf, ast::ModuleID>::new();
+    let mut module_map = HashMap::<&PathBuf, ast::Module<'ast>>::new();
     let mut taken_module_map = HashMap::<&PathBuf, SourceLoc>::new();
     let mut task_queue = Vec::<ScopeTreeTask>::new();
 
-    for (idx, module) in hir_temp.modules().enumerate() {
-        module_map.insert(&ctx.file(module.file_id).path, ast::ModuleID(idx as u32));
+    for module in hir_temp.ast_modules().cloned() {
+        module_map.insert(&ctx.file(module.file_id).path, module);
     }
 
-    // @test is remporary path for the root, lib not supported
-    // @lib is not supported yet, base on context
     let root_path: PathBuf = ["test", "main.lang"].iter().collect();
     match module_map.remove(&root_path) {
-        Some(module_id) => task_queue.push(ScopeTreeTask {
-            module_id,
+        Some(module) => task_queue.push(ScopeTreeTask {
+            module,
             parent: None,
         }),
         None => {

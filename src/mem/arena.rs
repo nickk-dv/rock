@@ -4,11 +4,11 @@ use std::{alloc, marker::PhantomData};
 const PAGE_SIZE: usize = 4096;
 const MAX_PAGE_SIZE: usize = 512 * 4096;
 
-pub struct Arena<'ast> {
+pub struct Arena<'arena> {
     offset: usize,
     block: Block,
     used_blocks: ListBuilder<Block>,
-    phantom: PhantomData<&'ast ()>,
+    phantom: PhantomData<&'arena ()>,
 }
 
 #[derive(Copy, Clone)]
@@ -17,7 +17,7 @@ struct Block {
     layout: alloc::Layout,
 }
 
-impl<'ast> Arena<'ast> {
+impl<'arena> Arena<'arena> {
     pub fn new() -> Self {
         Self {
             offset: 0,
@@ -37,7 +37,7 @@ impl<'ast> Arena<'ast> {
         P::new(offset as *mut T)
     }
 
-    pub fn alloc_ref_new<T: Copy>(&mut self, val: T) -> &'ast T {
+    pub fn alloc_ref_new<T: Copy>(&mut self, val: T) -> &'arena T {
         let size = std::mem::size_of::<T>();
         if self.offset + size > self.block.size() {
             self.grow();
@@ -46,6 +46,16 @@ impl<'ast> Arena<'ast> {
         self.offset += size;
         unsafe { *(offset as *mut T) = val };
         unsafe { &*(offset as *mut T) }
+    }
+
+    pub fn alloc_slice<T: Copy>(&mut self, val: &[T]) -> &'arena [T] {
+        let size = val.len() * std::mem::size_of::<T>();
+        if self.offset + size > self.block.size() {
+            self.grow();
+        }
+        let offset = unsafe { self.block.data.as_mut().add(self.offset) };
+        self.offset += size;
+        unsafe { std::slice::from_raw_parts(offset as *const T, val.len()) }
     }
 
     fn grow(&mut self) {
@@ -69,7 +79,7 @@ impl<'ast> Arena<'ast> {
     }
 }
 
-impl<'ast> Drop for Arena<'ast> {
+impl<'arena> Drop for Arena<'arena> {
     fn drop(&mut self) {
         for block in self.used_blocks.take() {
             block.dealloc();

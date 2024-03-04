@@ -1,4 +1,3 @@
-#[deny(unsafe_code)]
 mod ast;
 mod check;
 mod err;

@@ -9,9 +9,6 @@ pub struct Ast<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct ModuleID(pub u32);
-
-#[derive(Copy, Clone)]
 pub struct Module<'ast> {
     pub file_id: FileID,
     pub decls: List<Decl<'ast>>,
