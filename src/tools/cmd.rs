@@ -2,10 +2,10 @@ use crate::ast;
 use crate::ast::ast::Ast;
 use crate::ast::parse;
 use crate::ast::CompCtx;
-use crate::check;
 use crate::err;
 use crate::err::error::*;
 use crate::err::report;
+use crate::hir_lower;
 use crate::mem::Arena;
 use std::fs;
 use std::io::Write;
@@ -154,7 +154,7 @@ fn cmd_check() -> Result<(), ()> {
     let errors = parse(&mut ctx, &mut ast);
     err::error_new::report_check_errors_cli(&ctx, &errors);
     eprintln!("mem usage: {}", ast.arena.mem_usage());
-    let hir = check::check(&ctx, ast);
+    let hir = hir_lower::check(&ctx, ast);
     Ok(())
 }
 

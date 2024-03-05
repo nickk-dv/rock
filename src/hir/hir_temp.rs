@@ -12,25 +12,6 @@ pub struct HirTemp<'ast> {
     const_exprs: Vec<ConstExprTemp<'ast>>,
 }
 
-pub struct ScopeIter {
-    curr: u32,
-    len: u32,
-}
-
-impl Iterator for ScopeIter {
-    type Item = ScopeID;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.curr >= self.len {
-            None
-        } else {
-            let scope_id = ScopeID(self.curr);
-            self.curr += 1;
-            Some(scope_id)
-        }
-    }
-}
-
 #[derive(Copy, Clone)]
 pub struct ModID(u32);
 pub struct ModData {
@@ -91,6 +72,11 @@ pub enum SymbolTempKind<'ast> {
 pub struct ConstExprTemp<'ast> {
     pub from_id: ScopeID,
     pub source: &'ast ast::Expr<'ast>,
+}
+
+pub struct ScopeIter {
+    curr: u32,
+    len: u32,
 }
 
 impl<'ast> HirTemp<'ast> {
@@ -218,5 +204,19 @@ impl Scope {
 
     pub fn get_symbol(&self, id: intern::InternID) -> Option<Symbol> {
         self.symbols.get(&id).cloned()
+    }
+}
+
+impl Iterator for ScopeIter {
+    type Item = ScopeID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr >= self.len {
+            None
+        } else {
+            let scope_id = ScopeID(self.curr);
+            self.curr += 1;
+            Some(scope_id)
+        }
     }
 }

@@ -1,7 +1,7 @@
 mod ast;
-mod check;
 mod err;
 mod hir;
+mod hir_lower;
 mod llvm;
 mod mem;
 mod syntax;
