@@ -4,84 +4,157 @@ use crate::{
     text_range::TextRange,
 };
 
-#[derive(Clone)]
-pub struct CompError {
-    pub src: SourceLoc,
-    pub msg: Message,
-    pub context: Vec<ErrorContext>,
+// @reduce invariance of main error message
+// separate root message from contexts with sources
+// handle relation of severity across the message,
+// usually / context match the root severity but hints are always possible
+// and maybe add optional note at the bottom of the error
+
+pub struct ErrorComp {
+    inner: Vec<ErrorContext>,
 }
 
-#[derive(Clone)]
-pub enum ErrorContext {
-    Message { msg: Message },
-    MessageSource { ctx_src: SourceLoc, msg: Message },
+pub struct ErrorContext {
+    message: ErrorMessage,
+    severity: ErrorSeverity,
+    source: Option<SourceRange>,
 }
 
-#[derive(Clone)]
-pub enum Message {
-    Str(&'static str),
+pub enum ErrorMessage {
     String(String),
-}
-
-impl CompError {
-    pub fn new(src: SourceLoc, msg: Message) -> Self {
-        Self {
-            src,
-            msg,
-            context: Vec::new(),
-        }
-    }
-
-    pub fn context(mut self, ctx: ErrorContext) -> Self {
-        self.context.push(ctx);
-        self
-    }
-
-    pub fn add_context(&mut self, ctx: ErrorContext) {
-        self.context.push(ctx);
-    }
-}
-
-impl Message {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Message::Str(str) => str,
-            Message::String(string) => string.as_str(),
-        }
-    }
+    Static(&'static str),
 }
 
 #[derive(Copy, Clone)]
-pub struct SourceLoc {
-    pub range: TextRange,
-    pub file_id: FileID,
+pub enum ErrorSeverity {
+    Error,
+    Warning,
+    InfoHint,
 }
 
-impl SourceLoc {
-    pub fn new(range: TextRange, file_id: FileID) -> Self {
-        Self { range, file_id }
+#[derive(Copy, Clone)]
+pub struct SourceRange {
+    range: TextRange,
+    file_id: FileID,
+}
+
+impl ErrorComp {
+    pub fn new(message: ErrorMessage, severity: ErrorSeverity, source: SourceRange) -> Self {
+        Self {
+            inner: vec![ErrorContext {
+                message,
+                severity,
+                source: Some(source),
+            }],
+        }
+    }
+
+    pub fn context(
+        mut self,
+        message: ErrorMessage,
+        severity: ErrorSeverity,
+        source: Option<SourceRange>,
+    ) -> Self {
+        self.add_context(message, severity, source);
+        self
+    }
+
+    pub fn add_context(
+        &mut self,
+        message: ErrorMessage,
+        severity: ErrorSeverity,
+        source: Option<SourceRange>,
+    ) {
+        self.inner.push(ErrorContext {
+            message,
+            severity,
+            source,
+        });
+    }
+
+    pub fn main_context(&self) -> &ErrorContext {
+        self.inner.get(0).unwrap()
+    }
+
+    pub fn other_context(&self) -> impl Iterator<Item = &ErrorContext> {
+        self.inner.iter().skip(1)
     }
 }
 
-pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
+impl ErrorMessage {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ErrorMessage::String(string) => &string,
+            ErrorMessage::Static(string) => string,
+        }
+    }
+}
+
+impl ErrorSeverity {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ErrorSeverity::Error => "error",
+            ErrorSeverity::Warning => "warning",
+            ErrorSeverity::InfoHint => "hint",
+        }
+    }
+}
+
+impl ErrorContext {
+    pub fn message(&self) -> &ErrorMessage {
+        &self.message
+    }
+    pub fn severity(&self) -> ErrorSeverity {
+        self.severity
+    }
+    pub fn source(&self) -> Option<SourceRange> {
+        self.source
+    }
+}
+
+impl SourceRange {
+    pub fn new(range: TextRange, file_id: FileID) -> Self {
+        Self { range, file_id }
+    }
+    pub fn range(&self) -> TextRange {
+        self.range
+    }
+    pub fn file_id(&self) -> FileID {
+        self.file_id
+    }
+}
+
+pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[ErrorComp]) {
     for error in errors {
         let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
         let ansi_clear = "\x1B[0m";
-        eprintln!("\n{}error:{} {}", ansi_red, ansi_clear, error.msg.as_str());
-        range_fmt::print_simple(ctx.file(error.src.file_id), error.src.range, None, false);
+        let main_context = error.main_context();
+        eprintln!(
+            "\n{}{}:{} {}",
+            ansi_red,
+            main_context.severity().as_str(),
+            ansi_clear,
+            main_context.message.as_str()
+        );
+        range_fmt::print_simple(
+            ctx.file(main_context.source().unwrap().file_id()),
+            main_context.source().unwrap().range(),
+            None,
+            false,
+        );
 
-        for context in error.context.iter() {
-            match context {
-                ErrorContext::Message { msg } => {
-                    eprintln!("{}", msg.as_str());
-                }
-                ErrorContext::MessageSource { ctx_src, msg } => {
+        for context in error.other_context() {
+            match context.source() {
+                Some(source) => {
                     range_fmt::print_simple(
-                        ctx.file(ctx_src.file_id),
-                        ctx_src.range,
-                        Some(msg.as_str()),
+                        ctx.file(source.file_id()),
+                        source.range(),
+                        Some(context.message().as_str()),
                         true,
                     );
+                }
+                None => {
+                    eprintln!("{}", context.message().as_str());
                 }
             }
         }

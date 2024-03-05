@@ -4,7 +4,6 @@ use super::parse_error::*;
 use super::token::Token;
 use super::token_list::TokenList;
 use crate::err::error::Error;
-use crate::err::error_new::SourceLoc;
 use crate::err::error_new::*;
 use crate::mem::{Arena, List, ListBuilder};
 use crate::text_range::TextOffset;
@@ -78,7 +77,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         Err(ParseError::ExpectToken(ctx, token))
     }
 
-    pub fn module(&mut self, file_id: super::FileID) -> Result<Module<'ast>, (Error, CompError)> {
+    pub fn module(&mut self, file_id: super::FileID) -> Result<Module<'ast>, (Error, ErrorComp)> {
         let mut decls = ListBuilder::new();
         while self.peek() != Token::Eof {
             match self.decl() {
@@ -105,9 +104,10 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                         error_ctx
                     );
                     let error = Error::parse(parse_error_data);
-                    let comp_error = CompError::new(
-                        SourceLoc::new(got_token.1, file_id),
-                        Message::String(message),
+                    let comp_error = ErrorComp::new(
+                        ErrorMessage::String(message),
+                        ErrorSeverity::Error,
+                        SourceRange::new(got_token.1, file_id),
                     );
                     return Err((error, comp_error));
                 }

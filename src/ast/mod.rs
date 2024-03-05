@@ -97,8 +97,8 @@ impl Timer {
 
 use crate::err::error_new::*;
 
-pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<CompError> {
-    let mut errors = Vec::<CompError>::new();
+pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<ErrorComp> {
+    let mut errors = Vec::<ErrorComp>::new();
 
     let timer = Timer::new();
     let files = collect_files(&mut ctx);

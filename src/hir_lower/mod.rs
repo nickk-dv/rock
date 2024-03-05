@@ -2,7 +2,7 @@ mod pass_1;
 
 use crate::ast::ast;
 use crate::ast::CompCtx;
-use crate::err::error_new::CompError;
+use crate::err::error_new::ErrorComp;
 use crate::hir::hir;
 use crate::hir::hir_temp;
 
@@ -15,7 +15,7 @@ use crate::hir::hir_temp;
 pub fn check<'ast, 'hir>(
     ctx: &CompCtx,
     ast: ast::Ast<'ast>,
-) -> Result<hir::Hir<'hir>, Vec<CompError>> {
+) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
     let hir = hir::Hir::new();
     let mut hir_temp = hir_temp::HirTemp::new(ast);
     pass_1::run_scope_tree_gen(ctx, &mut hir_temp);

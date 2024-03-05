@@ -1,7 +1,6 @@
 use crate::ast::ast;
 use crate::ast::CompCtx;
-use crate::err::error_new::SourceLoc;
-use crate::err::error_new::{CompError, ErrorContext, Message};
+use crate::err::error_new::SourceRange;
 use crate::hir::hir_temp;
 
 use std::collections::HashMap;
@@ -26,7 +25,7 @@ struct ScopeTreeTask<'ast> {
 
 #[derive(Copy, Clone)]
 enum ModuleStatus<'ast> {
-    Taken(SourceLoc),
+    Taken(SourceRange),
     Available(ast::Module<'ast>),
 }
 
@@ -165,7 +164,8 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                             eprintln!("module was taken by:");
                         }
                         ModuleStatus::Available(module) => {
-                            let src = SourceLoc::new(decl.name.range, scope_temp.module_file_id());
+                            let src =
+                                SourceRange::new(decl.name.range, scope_temp.module_file_id());
                             self.module_map
                                 .insert(chosen_path, ModuleStatus::Taken(src));
                             self.task_queue.push(ScopeTreeTask {
