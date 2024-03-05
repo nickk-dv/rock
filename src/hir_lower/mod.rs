@@ -18,6 +18,13 @@ pub fn check<'ast, 'hir>(
 ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
     let hir = hir::Hir::new();
     let mut hir_temp = hir_temp::HirTemp::new(ast);
-    pass_1::run_scope_tree_gen(ctx, &mut hir_temp);
-    Ok(hir)
+    let mut errors = Vec::new();
+
+    errors.extend(pass_1::run_scope_tree_gen(ctx, &mut hir_temp));
+
+    if errors.is_empty() {
+        Ok(hir)
+    } else {
+        Err(errors)
+    }
 }

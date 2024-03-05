@@ -1,6 +1,7 @@
 use super::hir;
 use crate::ast::ast;
 use crate::ast::intern;
+use crate::err::error_new::SourceRange;
 use crate::text_range::TextRange;
 use std::collections::HashMap;
 
@@ -177,6 +178,30 @@ impl<'ast> ScopeTemp<'ast> {
 
     pub fn get_symbol(&self, id: intern::InternID) -> Option<SymbolTemp<'ast>> {
         self.symbols.get(&id).cloned()
+    }
+
+    pub fn source(&self, range: TextRange) -> SourceRange {
+        SourceRange::new(range, self.module_file_id())
+    }
+
+    pub fn get_local_symbol_source(
+        &self,
+        hir_temp: &HirTemp<'ast>,
+        symbol: SymbolTemp<'ast>,
+    ) -> SourceRange {
+        let range = match symbol {
+            SymbolTemp::Defined { kind } => match kind {
+                SymbolTempKind::Mod(decl) => hir_temp.get_mod(decl).name.range,
+                SymbolTempKind::Proc(decl) => decl.name.range,
+                SymbolTempKind::Enum(decl) => decl.name.range,
+                SymbolTempKind::Union(decl) => decl.name.range,
+                SymbolTempKind::Struct(decl) => decl.name.range,
+                SymbolTempKind::Const(decl) => decl.name.range,
+                SymbolTempKind::Global(decl) => decl.name.range,
+            },
+            SymbolTemp::Imported { import, .. } => import,
+        };
+        self.source(range)
     }
 }
 

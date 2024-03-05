@@ -48,7 +48,7 @@ impl TextRange {
 
     #[inline]
     pub const fn contains_offset(self, offset: TextOffset) -> bool {
-        (self.start.raw >= offset.raw) && (self.start.raw <= offset.raw)
+        self.start.raw <= offset.raw && offset.raw < self.end.raw
     }
 
     #[inline]
@@ -60,6 +60,12 @@ impl TextRange {
 impl fmt::Debug for TextRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start.raw, self.end.raw)
+    }
+}
+
+impl TextOffset {
+    pub fn new(offset: u32) -> TextOffset {
+        TextOffset { raw: offset }
     }
 }
 

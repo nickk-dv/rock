@@ -90,6 +90,18 @@ impl ErrorMessage {
     }
 }
 
+impl From<String> for ErrorMessage {
+    fn from(value: String) -> Self {
+        ErrorMessage::String(value)
+    }
+}
+
+impl From<&'static str> for ErrorMessage {
+    fn from(value: &'static str) -> Self {
+        ErrorMessage::Static(value)
+    }
+}
+
 impl ErrorSeverity {
     pub fn as_str(&self) -> &'static str {
         match self {

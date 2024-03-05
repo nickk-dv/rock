@@ -3,6 +3,16 @@ use crate::ast::File;
 use crate::text_range::TextRange;
 use std::io::{BufWriter, Stderr, Write};
 
+// @temp old code
+// @the whole range formatting output system needs to be redisigned
+// utf8 works when generating the Loc's from TextRanges
+// but its not fully tested and output markers can be miss-aligned
+
+// @is fix possible?
+// loc col is correct utf8 character index
+// and it matches vscode status bar `Col`
+// but goto from console jump to byte instead
+
 pub fn print(
     handle: &mut BufWriter<Stderr>,
     file: &File,
@@ -33,8 +43,8 @@ impl<'a> TextRangeFormat<'a> {
     fn new(file: &'a File, range: TextRange) -> Self {
         let mut lex = crate::ast::lexer::Lexer::new(&file.source);
         let line_ranges = lex.lex_line_ranges(); //@temp getting all line ranges, since they are no longer stored in ast
+        let loc = find_loc(&line_ranges, range, &file.source);
 
-        let loc = find_loc(&line_ranges, range);
         let prefix_range = TextRange::new(loc.range.start(), range.start());
         let marker_pad = &file.source[prefix_range.as_usize()];
 
@@ -117,7 +127,7 @@ struct Loc {
     range: TextRange,
 }
 
-fn find_loc(line_ranges: &[TextRange], range: TextRange) -> Loc {
+fn find_loc(line_ranges: &[TextRange], range: TextRange, text: &str) -> Loc {
     let mut loc = Loc {
         line: 0,
         col: 1,
@@ -125,15 +135,21 @@ fn find_loc(line_ranges: &[TextRange], range: TextRange) -> Loc {
     };
     for line_range in line_ranges {
         loc.line += 1;
-        if range.contains_offset(line_range.start()) {
-            let diff = range.start() - line_range.start();
-            loc.col = diff.into();
-            loc.col += 1;
+        if line_range.contains_offset(range.start()) {
+            let prefix_range = TextRange::new(line_range.start(), range.start());
+            let prefix = &text[prefix_range.as_usize()];
+            let utf8_chars = prefix.chars().count();
+
+            loc.col = 1 + utf8_chars as u32;
             loc.range = *line_range;
             return loc;
         }
     }
-    loc
+    Loc {
+        line: 0,
+        col: 1,
+        range: TextRange::empty_at(0.into()),
+    }
 }
 
 fn marker_space_slice(size: usize) -> &'static str {

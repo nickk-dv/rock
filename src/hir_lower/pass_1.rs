@@ -1,18 +1,26 @@
 use crate::ast::ast;
 use crate::ast::CompCtx;
+use crate::err::error_new::ErrorComp;
+use crate::err::error_new::ErrorSeverity;
 use crate::err::error_new::SourceRange;
 use crate::hir::hir_temp;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub fn run_scope_tree_gen<'a, 'ast>(ctx: &'a CompCtx, hir_temp: &'a mut hir_temp::HirTemp<'ast>) {
-    PassContext::new(ctx, hir_temp).run();
+pub fn run_scope_tree_gen<'a, 'ast>(
+    ctx: &'a CompCtx,
+    hir_temp: &'a mut hir_temp::HirTemp<'ast>,
+) -> Vec<ErrorComp> {
+    let mut pass = PassContext::new(ctx, hir_temp);
+    pass.run();
+    pass.errors
 }
 
 struct PassContext<'a, 'ast> {
     ctx: &'a CompCtx,
     hir_temp: &'a mut hir_temp::HirTemp<'ast>,
+    errors: Vec<ErrorComp>,
     task_queue: Vec<ScopeTreeTask<'ast>>,
     module_map: HashMap<PathBuf, ModuleStatus<'ast>>,
 }
@@ -34,6 +42,7 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
         Self {
             ctx,
             hir_temp,
+            errors: Vec::new(),
             task_queue: Vec::new(),
             module_map: HashMap::new(),
         }
@@ -64,12 +73,11 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         parent: None,
                     });
                 }
-                ModuleStatus::Taken(src) => {
-                    eprintln!("module was taken by:");
-                }
+                ModuleStatus::Taken(..) => return,
             },
             None => {
-                eprintln!("no root module found, add src/main.lang"); //@report
+                //@ reporting without main context is not supported yet @03/05/24
+                eprintln!("no root module found, add src/main.lang");
             }
         }
     }
@@ -104,8 +112,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `mod`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                             continue;
                         }
                         None => {
@@ -140,19 +170,27 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         self.module_map.get(&mod_path_2).cloned(),
                     ) {
                         (Some(..), Some(..)) => {
-                            let msg = format!(
-                                "module path is ambiguous:\n{:?}\n{:?}",
-                                mod_path_1, mod_path_2
-                            );
-                            eprintln!("{}", msg);
+                            self.errors.push(ErrorComp::new(
+                                format!(
+                                    "module path is ambiguous:\n{:?}\n{:?}",
+                                    mod_path_1, mod_path_2
+                                )
+                                .into(),
+                                ErrorSeverity::Error,
+                                scope_temp.source(decl.name.range),
+                            ));
                             continue;
                         }
                         (None, None) => {
-                            let msg = format!(
-                                "both module paths are missing:\n{:?}\n{:?}",
-                                mod_path_1, mod_path_2
-                            );
-                            eprintln!("{}", msg);
+                            self.errors.push(ErrorComp::new(
+                                format!(
+                                    "both module paths are missing:\n{:?}\n{:?}",
+                                    mod_path_1, mod_path_2
+                                )
+                                .into(),
+                                ErrorSeverity::Error,
+                                scope_temp.source(decl.name.range),
+                            ));
                             continue;
                         }
                         (Some(status), None) => (status, mod_path_1.clone()),
@@ -161,7 +199,11 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
 
                     match status {
                         ModuleStatus::Taken(src) => {
-                            eprintln!("module was taken by:");
+                            self.errors.push(ErrorComp::new(
+                                "module is already taken by other mod declaration".into(),
+                                ErrorSeverity::Error,
+                                src,
+                            ));
                         }
                         ModuleStatus::Available(module) => {
                             let src =
@@ -182,8 +224,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `proc`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                         }
                         None => {
                             let scope_temp = self.hir_temp.get_scope_temp_mut(scope_id);
@@ -203,8 +267,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `enum`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                         }
                         None => {
                             let scope_temp = self.hir_temp.get_scope_temp_mut(scope_id);
@@ -224,8 +310,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `union`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                         }
                         None => {
                             let scope_temp = self.hir_temp.get_scope_temp_mut(scope_id);
@@ -245,8 +353,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `struct`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                         }
                         None => {
                             let scope_temp = self.hir_temp.get_scope_temp_mut(scope_id);
@@ -266,8 +396,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `const`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                         }
                         None => {
                             let scope_temp = self.hir_temp.get_scope_temp_mut(scope_id);
@@ -287,8 +439,30 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                         .get_symbol(decl.name.id)
                     {
                         Some(existing) => {
-                            // ?
-                            eprintln!("name already in scope when adding `global`");
+                            let scope_temp = self.hir_temp.get_scope_temp(scope_id);
+                            self.errors.push(
+                                ErrorComp::new(
+                                    format!(
+                                        "name `{}` is defined multiple times",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::Error,
+                                    scope_temp.source(decl.name.range),
+                                )
+                                .context(
+                                    format!(
+                                        "name `{}` already used here",
+                                        self.ctx.intern().get_str(decl.name.id)
+                                    )
+                                    .into(),
+                                    ErrorSeverity::InfoHint,
+                                    Some(
+                                        scope_temp
+                                            .get_local_symbol_source(&self.hir_temp, existing),
+                                    ),
+                                ),
+                            );
                         }
                         None => {
                             let scope_temp = self.hir_temp.get_scope_temp_mut(scope_id);

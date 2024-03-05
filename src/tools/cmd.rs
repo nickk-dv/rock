@@ -153,8 +153,15 @@ fn cmd_check() -> Result<(), ()> {
     };
     let errors = parse(&mut ctx, &mut ast);
     err::error_new::report_check_errors_cli(&ctx, &errors);
-    eprintln!("mem usage: {}", ast.arena.mem_usage());
-    let hir = hir_lower::check(&ctx, ast);
+    eprintln!("ast arena mem usage: {}", ast.arena.mem_usage());
+
+    let hir = match hir_lower::check(&ctx, ast) {
+        Ok(hir) => hir,
+        Err(errors) => {
+            err::error_new::report_check_errors_cli(&ctx, &errors);
+            return Err(());
+        }
+    };
     Ok(())
 }
 
