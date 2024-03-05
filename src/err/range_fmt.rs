@@ -1,27 +1,27 @@
 use super::ansi::{self, Color};
-use crate::ast::span::*;
 use crate::ast::File;
+use crate::text_range::TextRange;
 use std::io::{BufWriter, Stderr, Write};
 
 pub fn print(
     handle: &mut BufWriter<Stderr>,
     file: &File,
-    span: Span,
+    range: TextRange,
     marker: Option<&str>,
     is_info: bool,
 ) {
-    let format = SpanFormat::new(file, span);
+    let format = TextRangeFormat::new(file, range);
     format.print(handle, marker, is_info);
 }
 
-pub fn print_simple(file: &File, span: Span, marker: Option<&str>, is_info: bool) {
+pub fn print_simple(file: &File, range: TextRange, marker: Option<&str>, is_info: bool) {
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
-    let format = SpanFormat::new(file, span);
+    let format = TextRangeFormat::new(file, range);
     format.print(handle, marker, is_info);
     let _ = handle.flush();
 }
 
-struct SpanFormat<'a> {
+struct TextRangeFormat<'a> {
     loc: Loc,
     file: &'a File,
     line: String,
@@ -29,16 +29,16 @@ struct SpanFormat<'a> {
     marker_pad_len: usize,
 }
 
-impl<'a> SpanFormat<'a> {
-    fn new(file: &'a File, span: Span) -> Self {
+impl<'a> TextRangeFormat<'a> {
+    fn new(file: &'a File, range: TextRange) -> Self {
         let mut lex = crate::ast::lexer::Lexer::new(&file.source);
-        let line_spans = lex.lex_line_spans(); //@temp getting all line spans, since they are no longer stored in ast
+        let line_ranges = lex.lex_line_ranges(); //@temp getting all line ranges, since they are no longer stored in ast
 
-        let loc = find_loc(&line_spans, span);
-        let prefix = Span::new(loc.span.start, span.start);
-        let marker_pad = prefix.slice(&file.source);
+        let loc = find_loc(&line_ranges, range);
+        let prefix_range = TextRange::new(loc.range.start(), range.start());
+        let marker_pad = &file.source[prefix_range.as_usize()];
 
-        let marker_str = span.slice(&file.source);
+        let marker_str = &file.source[range.as_usize()];
         let marker_str = if marker_str.contains('\n') {
             marker_str.lines().next().unwrap_or("").trim_end()
         } else {
@@ -48,7 +48,7 @@ impl<'a> SpanFormat<'a> {
         Self {
             loc,
             file,
-            line: normalize_tab(loc.span.slice(&file.source)),
+            line: normalize_tab(&file.source[loc.range.as_usize()]),
             marker_len: normalize_tab_len(marker_str),
             marker_pad_len: normalize_tab_len(marker_pad),
         }
@@ -114,24 +114,26 @@ impl<'a> SpanFormat<'a> {
 struct Loc {
     line: u32,
     col: u32,
-    span: Span,
+    range: TextRange,
 }
 
-fn find_loc(line_spans: &Vec<Span>, span: Span) -> Loc {
+fn find_loc(line_ranges: &[TextRange], range: TextRange) -> Loc {
     let mut loc = Loc {
         line: 0,
         col: 1,
-        span,
+        range,
     };
-    for line_span in line_spans.iter() {
+    for line_range in line_ranges {
         loc.line += 1;
-        if span.start >= line_span.start && span.start <= line_span.end {
-            loc.col = 1 + span.start - line_span.start;
-            loc.span = *line_span;
+        if range.contains_offset(line_range.start()) {
+            let diff = range.start() - line_range.start();
+            loc.col = diff.into();
+            loc.col += 1;
+            loc.range = *line_range;
             return loc;
         }
     }
-    return loc;
+    loc
 }
 
 fn marker_space_slice(size: usize) -> &'static str {

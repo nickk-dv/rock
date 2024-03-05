@@ -1,8 +1,8 @@
 use super::message::Message;
 use crate::ast::parse_error::ParseErrorData;
-use crate::ast::span::*;
 use crate::ast::token::*;
 use crate::ast::FileID;
+use crate::text_range::TextRange;
 
 #[allow(private_interfaces)]
 pub enum Error {
@@ -16,7 +16,7 @@ pub struct CheckErrorData {
     pub(super) message: Message,
     pub(super) no_source: bool,
     pub(super) file_id: FileID,
-    pub(super) span: Span,
+    pub(super) range: TextRange,
     pub(super) info: Vec<CheckErrorInfo>,
 }
 
@@ -28,7 +28,7 @@ pub(super) enum CheckErrorInfo {
 pub(super) struct CheckErrorContext {
     pub(super) marker: &'static str,
     pub(super) file_id: FileID,
-    pub(super) span: Span,
+    pub(super) range: TextRange,
 }
 
 pub struct FileIOErrorData {
@@ -181,12 +181,17 @@ impl Error {
         Self::Parse(data)
     }
 
-    pub fn check(error: CheckError, file_id: FileID, span: Span) -> CheckErrorData {
-        CheckErrorData::new(error, false, file_id, span)
+    pub fn check(error: CheckError, file_id: FileID, range: TextRange) -> CheckErrorData {
+        CheckErrorData::new(error, false, file_id, range)
     }
 
     pub fn check_no_src(error: CheckError) -> Self {
-        Self::Check(CheckErrorData::new(error, true, FileID(0), Span::new(0, 0)))
+        Self::Check(CheckErrorData::new(
+            error,
+            true,
+            FileID(0),
+            TextRange::empty_at(0.into()),
+        ))
     }
 
     pub fn file_io(error: FileIOError) -> FileIOErrorData {
@@ -198,31 +203,22 @@ impl Error {
     }
 }
 
-#[macro_export]
-macro_rules! error_check {
-    ($err:expr, $span:expr, $file_id:expr $(=> $marker:expr, $span_ctx:expr, $file_id_ctx:expr)* ) => {{
-        let check_error: Error = CheckErrorData::new($err, false, $file_id, $span)
-        $(.context($marker, $file_id_ctx, $span_ctx))* .into();
-        check_error
-    }};
-}
-
 impl CheckErrorData {
-    fn new(error: CheckError, no_source: bool, file_id: FileID, span: Span) -> Self {
+    fn new(error: CheckError, no_source: bool, file_id: FileID, range: TextRange) -> Self {
         CheckErrorData {
             message: error.into(),
             no_source,
             file_id,
-            span,
+            range,
             info: Vec::new(),
         }
     }
 
-    pub fn context(mut self, marker: &'static str, file_id: FileID, span: Span) -> Self {
+    pub fn context(mut self, marker: &'static str, file_id: FileID, range: TextRange) -> Self {
         self.info.push(CheckErrorInfo::Context(CheckErrorContext {
             marker,
             file_id,
-            span,
+            range,
         }));
         self
     }

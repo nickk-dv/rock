@@ -1,13 +1,12 @@
-use super::span::*;
 use super::token::*;
 use super::token_list::*;
+use crate::text_range::TextRange;
 use std::{iter::Peekable, str::Chars};
 
 pub struct Lexer<'src> {
     source: &'src str,
     chars: Peekable<Chars<'src>>,
-    span_start: u32,
-    span_end: u32,
+    range: TextRange,
 }
 
 impl<'src> Lexer<'src> {
@@ -15,28 +14,31 @@ impl<'src> Lexer<'src> {
         Self {
             source,
             chars: source.chars().peekable(),
-            span_start: 0,
-            span_end: 0,
+            range: TextRange::empty_at(0.into()),
         }
     }
 
+    #[inline]
     fn peek(&mut self) -> Option<char> {
         self.chars.peek().cloned()
     }
 
+    #[inline]
     fn peek_next(&self) -> Option<char> {
         let mut iter = self.chars.clone();
         iter.next();
         iter.peek().cloned()
     }
 
+    #[inline]
     fn eat(&mut self, c: char) {
-        self.span_end += c.len_utf8() as u32;
+        self.range.extend_by(c.len_utf8().try_into().unwrap());
         self.chars.next();
     }
 
-    fn span(&self) -> Span {
-        Span::new(self.span_start, self.span_end)
+    #[inline]
+    fn token_range(&self) -> TextRange {
+        self.range
     }
 
     pub fn lex(mut self) -> TokenList {
@@ -46,7 +48,7 @@ impl<'src> Lexer<'src> {
         while self.peek().is_some() {
             self.skip_whitespace();
             if let Some(c) = self.peek() {
-                self.span_start = self.span_end;
+                self.range = TextRange::empty_at(self.range.end());
                 self.eat(c);
 
                 match c {
@@ -75,10 +77,12 @@ impl<'src> Lexer<'src> {
                 }
             }
         }
+        // @define parser lookead and assert on it in peek_next() in parser
+        // and use it in a loop here
         for _ in 0..4 {
-            tokens.add_token(Token::Eof, Span::new(u32::MAX, u32::MAX));
+            tokens.add_token(Token::Eof, TextRange::empty_at(0.into()));
         }
-        return tokens;
+        tokens
     }
 
     fn skip_whitespace(&mut self) {
@@ -146,7 +150,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn lex_char(&mut self) -> (char, Span) {
+    fn lex_char(&mut self) -> (char, TextRange) {
         let fc = match self.peek() {
             Some(c) => {
                 self.eat(c);
@@ -193,10 +197,10 @@ impl<'src> Lexer<'src> {
             panic!("char literal not terminated, missing closing `'`");
         }
 
-        (char, self.span())
+        (char, self.token_range())
     }
 
-    fn lex_string(&mut self) -> (String, Span) {
+    fn lex_string(&mut self) -> (String, TextRange) {
         let mut string = String::new();
         let mut terminated = false;
 
@@ -214,7 +218,7 @@ impl<'src> Lexer<'src> {
                         Ok(char) => char,
                         Err(invalid) => {
                             if invalid {
-                                eprintln!("at span: {}", self.span().slice(self.source));
+                                eprintln!("at range: {}", &self.source[self.range.as_usize()]);
                                 panic!("string lit invalid escape sequence");
                             }
                             panic!("string lit incomplete escape sequence");
@@ -233,10 +237,10 @@ impl<'src> Lexer<'src> {
             panic!("string lit not terminated, missing closing `\"`");
         }
 
-        (string, self.span())
+        (string, self.token_range())
     }
 
-    fn lex_raw_string(&mut self) -> (String, Span) {
+    fn lex_raw_string(&mut self) -> (String, TextRange) {
         let mut string = String::new();
         let mut terminated = false;
 
@@ -259,10 +263,10 @@ impl<'src> Lexer<'src> {
             panic!("raw string lit not terminated, missing closing `");
         }
 
-        (string, self.span())
+        (string, self.token_range())
     }
 
-    fn lex_number(&mut self) -> (Token, Span) {
+    fn lex_number(&mut self) -> (Token, TextRange) {
         let mut is_float = false;
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
@@ -285,12 +289,12 @@ impl<'src> Lexer<'src> {
         }
 
         match is_float {
-            true => (Token::FloatLit, self.span()),
-            false => (Token::IntLit, self.span()),
+            true => (Token::FloatLit, self.token_range()),
+            false => (Token::IntLit, self.token_range()),
         }
     }
 
-    fn lex_ident(&mut self) -> (Token, Span) {
+    fn lex_ident(&mut self) -> (Token, TextRange) {
         while let Some(c) = self.peek() {
             if c == '_' || c.is_ascii_digit() || c.is_alphabetic() {
                 self.eat(c);
@@ -299,17 +303,17 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        let slice = self.span().slice(self.source);
-        match Token::as_keyword(slice) {
-            Some(token) => (token, self.span()),
-            None => (Token::Ident, self.span()),
+        let string = &self.source[self.range.as_usize()];
+        match Token::as_keyword(string) {
+            Some(token) => (token, self.token_range()),
+            None => (Token::Ident, self.token_range()),
         }
     }
 
-    fn lex_symbol(&mut self, fc: char) -> (Token, Span) {
+    fn lex_symbol(&mut self, fc: char) -> (Token, TextRange) {
         let mut token = match Token::glue(fc) {
             Some(sym) => sym,
-            None => return (Token::Error, self.span()),
+            None => return (Token::Error, self.token_range()),
         };
         match self.peek() {
             Some(c) => match Token::glue2(c, token) {
@@ -317,9 +321,9 @@ impl<'src> Lexer<'src> {
                     self.eat(c);
                     token = sym;
                 }
-                None => return (token, self.span()),
+                None => return (token, self.token_range()),
             },
-            None => return (token, self.span()),
+            None => return (token, self.token_range()),
         }
         match self.peek() {
             Some(c) => match Token::glue3(c, token) {
@@ -327,31 +331,32 @@ impl<'src> Lexer<'src> {
                     self.eat(c);
                     token = sym;
                 }
-                None => return (token, self.span()),
+                None => return (token, self.token_range()),
             },
-            None => return (token, self.span()),
+            None => return (token, self.token_range()),
         }
-        (token, self.span())
+        (token, self.token_range())
     }
 
-    pub fn lex_line_spans(&mut self) -> Vec<Span> {
-        let mut line_spans = Vec::new();
-        let mut line_start = 0;
-
-        self.span_end = 0;
+    pub fn lex_line_ranges(&mut self) -> Vec<TextRange> {
+        self.range = TextRange::empty_at(0.into());
         self.chars = self.source.chars().peekable();
+        let mut line_ranges = Vec::new();
 
         while let Some(c) = self.peek() {
-            self.eat(c);
             if c == '\n' {
-                line_spans.push(Span::new(line_start, self.span_end - 1));
-                line_start = self.span_end;
+                line_ranges.push(self.range);
+                self.eat(c);
+                self.range = TextRange::empty_at(self.range.end());
+            } else {
+                self.eat(c);
             }
         }
 
-        if line_start < self.source.len() as u32 {
-            line_spans.push(Span::new(line_start, self.span_end));
+        let total_range = TextRange::new(0.into(), self.range.end());
+        if total_range.len() < self.source.len() {
+            line_ranges.push(self.range);
         }
-        return line_spans;
+        line_ranges
     }
 }

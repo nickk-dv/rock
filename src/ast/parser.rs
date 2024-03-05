@@ -1,13 +1,14 @@
 use super::ast::*;
 use super::intern::*;
 use super::parse_error::*;
-use super::span::Span;
 use super::token::Token;
 use super::token_list::TokenList;
 use crate::err::error::Error;
 use crate::err::error_new::SourceLoc;
 use crate::err::error_new::*;
 use crate::mem::{Arena, List, ListBuilder};
+use crate::text_range::TextOffset;
+use crate::text_range::TextRange;
 
 pub struct Parser<'a, 'ast> {
     cursor: usize,
@@ -45,16 +46,16 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         self.tokens.get_token(self.cursor + 1)
     }
 
-    fn peek_span(&self) -> Span {
-        self.tokens.get_span(self.cursor)
+    fn peek_range(&self) -> TextRange {
+        self.tokens.get_range(self.cursor)
     }
 
-    fn peek_span_start(&self) -> u32 {
-        self.tokens.get_span(self.cursor).start
+    fn peek_range_start(&self) -> TextOffset {
+        self.tokens.get_range(self.cursor).start()
     }
 
-    fn peek_span_end(&self) -> u32 {
-        self.tokens.get_span(self.cursor - 1).end
+    fn peek_range_end(&self) -> TextOffset {
+        self.tokens.get_range(self.cursor - 1).end()
     }
 
     fn eat(&mut self) {
@@ -83,10 +84,12 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             match self.decl() {
                 Ok(decl) => decls.add(&mut self.arena, decl),
                 Err(error) => {
-                    let got_token = (self.peek(), self.peek_span());
+                    let got_token = (self.peek(), self.peek_range()); //@remove print debug
+                    eprintln!("parse error token range: {:?}", got_token.1);
                     let parse_error_data = ParseErrorData::new(error, file_id, got_token);
 
-                    //@no marker on the span "unexpected token"
+                    //@no marker on the range of "unexpected token"
+                    // incomplete new error system messages, revisit this
                     let mut error_ctx = "expected: ".to_string();
                     for (i, token) in parse_error_data.expected.iter().enumerate() {
                         error_ctx.push_str("`");
@@ -354,11 +357,11 @@ impl<'a, 'ast> Parser<'a, 'ast> {
 
     fn ident(&mut self, ctx: ParseCtx) -> Result<Ident, ParseError> {
         if self.peek() == Token::Ident {
-            let span = self.peek_span();
+            let range = self.peek_range();
             self.eat();
-            let string = span.slice(&self.source);
+            let string = &self.source[range.as_usize()];
             return Ok(Ident {
-                span,
+                range,
                 id: self.intern_pool.intern(string),
             });
         }
@@ -367,7 +370,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
 
     fn path(&mut self) -> Result<&'ast Path, ParseError> {
         let mut names = ListBuilder::new();
-        let span_start = self.peek_span_start();
+        let range_start = self.peek_range_start();
         let kind = match self.peek() {
             Token::KwSuper => {
                 self.eat(); // `super`
@@ -391,7 +394,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         Ok(self.arena.alloc_ref_new(Path {
             kind,
             names: names.take(),
-            span_start,
+            range_start,
         }))
     }
 
@@ -439,7 +442,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn stmt(&mut self) -> Result<Stmt<'ast>, ParseError> {
-        let span_start = self.peek_span_start();
+        let range_start = self.peek_range_start();
         let kind = match self.peek() {
             Token::KwBreak => {
                 self.eat(); // `break`
@@ -473,7 +476,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         };
         Ok(Stmt {
             kind,
-            span: Span::new(span_start, self.peek_span_end()),
+            range: TextRange::new(range_start, self.peek_range_end()),
         })
     }
 
@@ -595,20 +598,20 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             let rhs = self.sub_expr(prec + 1)?;
             expr_lhs = self.arena.alloc_ref_new(Expr {
                 kind: ExprKind::BinaryExpr { op, lhs, rhs },
-                span: Span::new(lhs.span.start, rhs.span.end),
+                range: TextRange::new(lhs.range.start(), rhs.range.end()),
             });
         }
         Ok(expr_lhs)
     }
 
     fn primary_expr(&mut self) -> Result<&'ast Expr<'ast>, ParseError> {
-        let span_start = self.peek_span_start();
+        let range_start = self.peek_range_start();
 
         if self.try_eat(Token::OpenParen) {
             if self.try_eat(Token::CloseParen) {
                 let expr = self.arena.alloc_ref_new(Expr {
                     kind: ExprKind::Unit,
-                    span: Span::new(span_start, self.peek_span_end()),
+                    range: TextRange::new(range_start, self.peek_range_end()),
                 });
                 return self.tail_expr(expr);
             }
@@ -625,7 +628,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             };
             return Ok(self.arena.alloc_ref_new(Expr {
                 kind,
-                span: Span::new(span_start, self.peek_span_end()),
+                range: TextRange::new(range_start, self.peek_range_end()),
             }));
         }
 
@@ -736,7 +739,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         };
         let expr = self.arena.alloc_ref_new(Expr {
             kind,
-            span: Span::new(span_start, self.peek_span_end()),
+            range: TextRange::new(range_start, self.peek_range_end()),
         });
         self.tail_expr(expr)
     }
@@ -744,7 +747,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     fn tail_expr(&mut self, expr: &'ast Expr) -> Result<&'ast Expr<'ast>, ParseError> {
         let mut target = expr;
         let mut last_cast = false;
-        let span_start = expr.span.start;
+        let range_start = expr.range.start();
         loop {
             match self.peek() {
                 Token::Dot => {
@@ -755,7 +758,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     let name = self.ident(ParseCtx::ExprField)?;
                     target = self.arena.alloc_ref_new(Expr {
                         kind: ExprKind::Field { target, name },
-                        span: Span::new(span_start, self.peek_span_end()),
+                        range: TextRange::new(range_start, self.peek_range_end()),
                     });
                 }
                 Token::OpenBracket => {
@@ -767,7 +770,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     self.expect(Token::CloseBracket, ParseCtx::ExprIndex)?;
                     target = self.arena.alloc_ref_new(Expr {
                         kind: ExprKind::Index { target, index },
-                        span: Span::new(span_start, self.peek_span_end()),
+                        range: TextRange::new(range_start, self.peek_range_end()),
                     });
                 }
                 Token::KwAs => {
@@ -776,7 +779,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     let ty_ref = self.arena.alloc_ref_new(ty);
                     target = self.arena.alloc_ref_new(Expr {
                         kind: ExprKind::Cast { target, ty: ty_ref },
-                        span: Span::new(span_start, self.peek_span_end()),
+                        range: TextRange::new(range_start, self.peek_range_end()),
                     });
                     last_cast = true;
                 }
@@ -812,11 +815,11 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn block(&mut self) -> Result<&'ast Expr<'ast>, ParseError> {
-        let span_start = self.peek_span_start();
+        let range_start = self.peek_range_start();
         let stmts = self.block_stmts()?;
         Ok(self.arena.alloc_ref_new(Expr {
             kind: ExprKind::Block { stmts },
-            span: Span::new(span_start, self.peek_span_end()),
+            range: TextRange::new(range_start, self.peek_range_end()),
         }))
     }
 
@@ -852,10 +855,10 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 Ok(ExprKind::LitBool { val: false })
             }
             Token::IntLit => {
-                let span = self.peek_span();
+                let range = self.peek_range();
                 self.eat();
-                let str = span.slice(self.source);
-                let v = match str.parse::<u64>() {
+                let string = &self.source[range.as_usize()];
+                let v = match string.parse::<u64>() {
                     Ok(value) => value,
                     Err(error) => {
                         panic!("parse int error: {}", error.to_string());
@@ -894,10 +897,10 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 }
             }
             Token::FloatLit => {
-                let span = self.peek_span();
+                let range = self.peek_range();
                 self.eat();
-                let str = span.slice(self.source);
-                let v = match str.parse::<f64>() {
+                let string = &self.source[range.as_usize()];
+                let v = match string.parse::<f64>() {
                     Ok(value) => value,
                     Err(error) => {
                         panic!("parse float error: {}", error.to_string());

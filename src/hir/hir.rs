@@ -1,8 +1,8 @@
 use super::hir_temp;
 use crate::ast::ast;
 use crate::ast::intern;
-use crate::ast::span::Span;
 use crate::mem::Arena;
+use crate::text_range::TextRange;
 
 pub struct Hir<'hir> {
     arena: Arena<'hir>,
@@ -53,7 +53,7 @@ pub struct EnumData<'hir> {
 pub struct EnumVariantID(u32);
 pub struct EnumVariant {
     pub name: ast::Ident,
-    pub value: Option<ConstExprID>, // @we can assign specific numeric value without a span to it
+    pub value: Option<ConstExprID>, // @we can assign specific numeric value without a range in source text
 }
 
 #[derive(Copy, Clone)]
@@ -144,7 +144,7 @@ pub struct ArrayStatic<'hir> {
 
 pub struct Stmt<'hir> {
     pub kind: StmtKind<'hir>,
-    pub span: Span,
+    pub range: TextRange,
 }
 
 pub enum StmtKind<'hir> {
@@ -187,7 +187,7 @@ pub struct VarAssign<'hir> {
 
 pub struct Expr<'hir> {
     pub kind: ExprKind<'hir>,
-    pub span: Span,
+    pub range: TextRange,
 }
 
 #[rustfmt::skip]

@@ -1,7 +1,7 @@
 use super::hir;
 use crate::ast::ast;
 use crate::ast::intern;
-use crate::ast::span::Span;
+use crate::text_range::TextRange;
 use std::collections::HashMap;
 
 pub struct HirTemp<'ast> {
@@ -31,7 +31,7 @@ pub struct Scope {
 #[derive(Copy, Clone)]
 pub enum Symbol {
     Defined { kind: SymbolKind },
-    Imported { kind: SymbolKind, import: Span },
+    Imported { kind: SymbolKind, import: TextRange },
 }
 
 #[derive(Copy, Clone)]
@@ -55,7 +55,7 @@ pub struct ScopeTemp<'ast> {
 #[derive(Copy, Clone)]
 pub enum SymbolTemp<'ast> {
     Defined  { kind: SymbolTempKind<'ast> },
-    Imported { kind: SymbolTempKind<'ast>, import: Span },
+    Imported { kind: SymbolTempKind<'ast>, import: TextRange },
 }
 
 #[derive(Copy, Clone)]

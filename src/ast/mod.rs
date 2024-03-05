@@ -3,7 +3,6 @@ pub mod intern;
 pub mod lexer;
 pub mod parse_error;
 mod parser;
-pub mod span;
 pub mod token;
 mod token_list;
 mod visit;
@@ -16,7 +15,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
-//@empty error tokens produce invalid span diagnostic
+//@empty error tokens produce invalid range diagnostic
+// need to handle 'missing' and `unexpected token` errors to be differently
 
 /// Persistant data across a compilation
 //@move to separate module / folder

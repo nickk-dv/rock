@@ -165,7 +165,7 @@ impl<'a, 'ast> PassContext<'a, 'ast> {
                             eprintln!("module was taken by:");
                         }
                         ModuleStatus::Available(module) => {
-                            let src = SourceLoc::new(decl.name.span, scope_temp.module_file_id());
+                            let src = SourceLoc::new(decl.name.range, scope_temp.module_file_id());
                             self.module_map
                                 .insert(chosen_path, ModuleStatus::Taken(src));
                             self.task_queue.push(ScopeTreeTask {

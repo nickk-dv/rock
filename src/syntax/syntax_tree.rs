@@ -1,31 +1,8 @@
-use std::{fmt, iter, rc::Rc};
-
-#[derive(Copy, Clone, Debug)]
-struct TextOffset {
-    raw: u32,
-}
-
-impl From<u32> for TextOffset {
-    fn from(raw: u32) -> Self {
-        TextOffset { raw }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct TextRange {
-    start: TextOffset,
-    end: TextOffset,
-}
-
-impl TextRange {
-    fn new(start: TextOffset, end: TextOffset) -> Self {
-        Self { start, end }
-    }
-}
+use crate::text_range::*;
+use std::rc::Rc;
 
 type SyntaxNode = Rc<SyntaxNodeData>;
 
-#[derive(Debug)]
 struct SyntaxNodeData {
     kind: SyntaxKind,
     parent: Option<SyntaxNode>,
@@ -33,13 +10,11 @@ struct SyntaxNodeData {
     range: TextRange,
 }
 
-#[derive(Debug)]
 struct SyntaxTokenData {
     kind: SyntaxKind,
     range: TextRange,
 }
 
-#[derive(Debug)]
 enum SyntaxElement {
     Node(SyntaxNode),
     Token(SyntaxTokenData),
@@ -149,7 +124,7 @@ impl SyntaxTree {
             match element {
                 SyntaxElement::Node(node) => self.children_to_string(&node, string),
                 SyntaxElement::Token(token) => {
-                    let range = token.range().start.raw as usize..token.range().end.raw as usize;
+                    let range = token.range().start().into()..token.range().end().into();
                     string.push_str(&self.source[range]);
                 }
             }

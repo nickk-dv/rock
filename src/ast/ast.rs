@@ -1,7 +1,7 @@
 use super::intern::*;
-use super::span::Span;
 use super::FileID;
 use crate::mem::*;
+use crate::text_range::{TextOffset, TextRange};
 
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
@@ -120,14 +120,14 @@ pub struct GlobalDecl<'ast> {
 #[derive(Copy, Clone)]
 pub struct Ident {
     pub id: InternID,
-    pub span: Span,
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
 pub struct Path {
     pub kind: PathKind,
     pub names: List<Ident>,
-    pub span_start: u32,
+    pub range_start: TextOffset,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -161,7 +161,7 @@ pub struct ArrayStatic<'ast> {
 #[derive(Copy, Clone)]
 pub struct Stmt<'ast> {
     pub kind: StmtKind<'ast>,
-    pub span: Span,
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
@@ -209,7 +209,7 @@ pub struct VarAssign<'ast> {
 #[derive(Copy, Clone)]
 pub struct Expr<'ast> {
     pub kind: ExprKind<'ast>,
-    pub span: Span,
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]

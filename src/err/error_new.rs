@@ -1,6 +1,7 @@
 use crate::{
-    ast::{span::Span, CompCtx, FileID},
-    err::{ansi, span_fmt},
+    ast::{CompCtx, FileID},
+    err::{ansi, range_fmt},
+    text_range::TextRange,
 };
 
 #[derive(Clone)]
@@ -52,13 +53,13 @@ impl Message {
 
 #[derive(Copy, Clone)]
 pub struct SourceLoc {
-    pub span: Span,
+    pub range: TextRange,
     pub file_id: FileID,
 }
 
 impl SourceLoc {
-    pub fn new(span: Span, file_id: FileID) -> Self {
-        Self { span, file_id }
+    pub fn new(range: TextRange, file_id: FileID) -> Self {
+        Self { range, file_id }
     }
 }
 
@@ -67,7 +68,7 @@ pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
         let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
         let ansi_clear = "\x1B[0m";
         eprintln!("\n{}error:{} {}", ansi_red, ansi_clear, error.msg.as_str());
-        span_fmt::print_simple(ctx.file(error.src.file_id), error.src.span, None, false);
+        range_fmt::print_simple(ctx.file(error.src.file_id), error.src.range, None, false);
 
         for context in error.context.iter() {
             match context {
@@ -75,9 +76,9 @@ pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[CompError]) {
                     eprintln!("{}", msg.as_str());
                 }
                 ErrorContext::MessageSource { ctx_src, msg } => {
-                    span_fmt::print_simple(
+                    range_fmt::print_simple(
                         ctx.file(ctx_src.file_id),
-                        ctx_src.span,
+                        ctx_src.range,
                         Some(msg.as_str()),
                         true,
                     );

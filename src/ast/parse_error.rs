@@ -1,12 +1,12 @@
-use super::span::Span;
 use super::token::Token;
 use super::FileID;
+use crate::text_range::TextRange;
 
 pub struct ParseErrorData {
     pub file_id: FileID,
     pub ctx: ParseCtx,
     pub expected: Vec<Token>,
-    pub got_token: (Token, Span),
+    pub got_token: (Token, TextRange),
 }
 
 #[derive(Copy, Clone)]
@@ -84,7 +84,7 @@ parse_ctx_impl! {
 }
 
 impl ParseErrorData {
-    pub(super) fn new(error: ParseError, file_id: FileID, got_token: (Token, Span)) -> Self {
+    pub(super) fn new(error: ParseError, file_id: FileID, got_token: (Token, TextRange)) -> Self {
         Self {
             file_id,
             ctx: error.ctx(),

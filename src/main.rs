@@ -5,6 +5,7 @@ mod hir_lower;
 mod llvm;
 mod mem;
 mod syntax;
+mod text_range;
 mod tools;
 
 fn main() {

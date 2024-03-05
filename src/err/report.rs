@@ -1,6 +1,6 @@
 use super::ansi::{self, Color};
 use super::error::*;
-use super::span_fmt;
+use super::range_fmt;
 use crate::ast::CompCtx;
 use std::io::{BufWriter, Stderr, Write};
 
@@ -28,7 +28,7 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error, ctx: &CompCtx) {
                     let _ = writeln!(handle, "`{}`", token.as_str());
                 }
             }
-            span_fmt::print(
+            range_fmt::print(
                 handle,
                 ctx.file(err.file_id),
                 err.got_token.1,
@@ -40,17 +40,17 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error, ctx: &CompCtx) {
             print_error(handle, "error");
             let _ = writeln!(handle, "{}", err.message.0);
             if !err.no_source {
-                span_fmt::print(handle, ctx.file(err.file_id), err.span, None, false);
+                range_fmt::print(handle, ctx.file(err.file_id), err.range, None, false);
                 for info in err.info.iter() {
                     match info {
                         CheckErrorInfo::InfoString(info) => {
                             let _ = writeln!(handle, "{}", info);
                         }
                         CheckErrorInfo::Context(context) => {
-                            span_fmt::print(
+                            range_fmt::print(
                                 handle,
                                 ctx.file(context.file_id),
-                                context.span,
+                                context.range,
                                 Some(context.marker),
                                 true,
                             );
