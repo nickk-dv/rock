@@ -171,6 +171,7 @@ impl SyntaxTree {
 #[derive(Copy, Clone, Debug)]
 pub enum SyntaxNodeKind {
     SOURCE_FILE,
+    TOMBSTONE,
     ERROR,
 
     USE_DECL,
