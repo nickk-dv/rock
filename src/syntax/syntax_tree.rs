@@ -1,52 +1,47 @@
 use crate::ast::token::Token;
 use crate::text_range::*;
+use std::cell::Cell;
 use std::rc::Rc;
 
+#[derive(Debug)]
 struct SyntaxTree {
     source: String,
     root: SyntaxNode,
 }
 
 type SyntaxNode = Rc<SyntaxNodeData>;
+#[derive(Debug)]
 struct SyntaxNodeData {
     kind: SyntaxNodeKind,
-    parent: Option<SyntaxNode>,
+    range: Cell<TextRange>,
     children: Vec<SyntaxElement>,
-    range: TextRange,
 }
 
+#[derive(Debug)]
 struct SyntaxTokenData {
-    kind: Token,
+    token: Token,
     range: TextRange,
 }
 
+#[derive(Debug)]
 enum SyntaxElement {
     Node(SyntaxNode),
     Token(SyntaxTokenData),
 }
 
 impl SyntaxNodeData {
-    fn new(
-        kind: SyntaxNodeKind,
-        parent: Option<SyntaxNode>,
-        children: Vec<SyntaxElement>,
-        range: TextRange,
-    ) -> Self {
+    fn new(kind: SyntaxNodeKind, range: TextRange, children: Vec<SyntaxElement>) -> Self {
         Self {
             kind,
-            parent,
+            range: Cell::new(range),
             children,
-            range,
         }
     }
     fn kind(&self) -> SyntaxNodeKind {
         self.kind
     }
     fn range(&self) -> TextRange {
-        self.range
-    }
-    fn parent<'a>(self: &'a SyntaxNode) -> Option<&'a SyntaxNode> {
-        self.parent.as_ref()
+        self.range.get()
     }
     fn children<'a>(self: &'a SyntaxNode) -> impl Iterator<Item = &'a SyntaxElement> {
         self.children.iter()
@@ -54,11 +49,11 @@ impl SyntaxNodeData {
 }
 
 impl SyntaxTokenData {
-    fn new(kind: Token, range: TextRange) -> Self {
-        Self { kind, range }
+    fn new(token: Token, range: TextRange) -> Self {
+        Self { token, range }
     }
-    fn kind(&self) -> Token {
-        self.kind
+    fn token(&self) -> Token {
+        self.token
     }
     fn range(&self) -> TextRange {
         self.range
@@ -119,7 +114,7 @@ fn test_syntax_tree() {
     let four = SyntaxTokenData::new(Token::IntLit, TextRange::new(4.into(), 5.into()));
     let mul_expr = SyntaxNodeData::new(
         SyntaxNodeKind::EXPR_BIN,
-        None,
+        TextRange::new(0.into(), 5.into()),
         vec![
             three.into(),
             ws.into(),
@@ -127,12 +122,41 @@ fn test_syntax_tree() {
             ws2.into(),
             four.into(),
         ],
-        TextRange::new(0.into(), 5.into()),
     );
     let tree = SyntaxTree::new("3 * 4".into(), Rc::new(mul_expr));
     let tree_string = tree.to_string();
     assert_eq!(tree.source, tree_string);
     println!("{}", tree_string);
+}
+
+#[test]
+fn test_syntax_tree_build() {
+    let three = SyntaxTokenData::new(Token::IntLit, TextRange::new(0.into(), 1.into()));
+    let ws = SyntaxTokenData::new(Token::Whitespace, TextRange::new(1.into(), 2.into()));
+    let star = SyntaxTokenData::new(Token::Star, TextRange::new(2.into(), 3.into()));
+    let ws2 = SyntaxTokenData::new(Token::Whitespace, TextRange::new(3.into(), 4.into()));
+    let four = SyntaxTokenData::new(Token::IntLit, TextRange::new(4.into(), 5.into()));
+    let name = SyntaxTokenData::new(Token::Ident, TextRange::new(5.into(), 9.into()));
+
+    let mut builder = SyntaxTreeBuilder::new();
+    builder.start_node(SyntaxNodeKind::SOURCE_FILE);
+    builder.start_node(SyntaxNodeKind::EXPR_BIN);
+    builder.token(three.token, three.range);
+    builder.token(ws.token, ws.range);
+    builder.token(star.token, star.range);
+    builder.token(ws2.token, ws2.range);
+    builder.token(four.token, four.range);
+    builder.end_node();
+    builder.start_node(SyntaxNodeKind::NAME);
+    builder.token(name.token, name.range);
+    builder.end_node();
+    builder.end_node();
+
+    let tree = SyntaxTree::new("5 * 6name".into(), builder.finish());
+    let tree_string = tree.to_string();
+    assert_eq!(tree.source, tree_string);
+    println!("{}", tree_string);
+    println!("{:#?}", tree);
 }
 
 #[repr(u8)]
@@ -196,4 +220,63 @@ enum SyntaxNodeKind {
     EXPR_ARRAY_REPEAT,
     EXPR_UN,
     EXPR_BIN,
+}
+
+struct SyntaxTreeBuilder {
+    parents: Vec<(SyntaxNodeKind, usize)>,
+    children: Vec<SyntaxElement>,
+}
+
+impl SyntaxTreeBuilder {
+    pub fn new() -> Self {
+        Self {
+            parents: Vec::new(),
+            children: Vec::new(),
+        }
+    }
+
+    pub fn start_node(&mut self, kind: SyntaxNodeKind) {
+        let first_child = self.children.len();
+        self.parents.push((kind, first_child))
+    }
+
+    pub fn end_node(&mut self) {
+        let (kind, first_child) = self.parents.pop().unwrap();
+        let node = SyntaxNodeData::new(
+            kind,
+            TextRange::empty_at(0.into()),
+            self.children.drain(first_child..).collect(),
+        );
+        self.children.push(SyntaxElement::Node(Rc::new(node)));
+    }
+
+    pub fn token(&mut self, token: Token, range: TextRange) {
+        self.children
+            .push(SyntaxElement::Token(SyntaxTokenData::new(token, range)))
+    }
+
+    pub fn finish(mut self) -> SyntaxNode {
+        assert_eq!(self.children.len(), 1);
+        let root = match self.children.pop().unwrap() {
+            SyntaxElement::Node(node) => node,
+            SyntaxElement::Token(_) => panic!(),
+        };
+        Self::compute_ranges(&root, TextRange::empty_at(0.into()));
+        root
+    }
+
+    fn compute_ranges(node: &SyntaxNodeData, mut range: TextRange) {
+        for child in node.children.iter() {
+            match child {
+                SyntaxElement::Node(node) => {
+                    Self::compute_ranges(&node, TextRange::empty_at(range.end()));
+                    range = TextRange::new(range.start(), node.range.get().end());
+                }
+                SyntaxElement::Token(token) => {
+                    range = TextRange::new(range.start(), token.range.end())
+                }
+            }
+        }
+        node.range.set(range);
+    }
 }

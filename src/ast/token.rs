@@ -9,7 +9,7 @@ macro_rules! token_impl {
         $(=> ASSIGN $assign:expr)?
         $(=> BASIC_TYPE $basic_type:expr)?
     )+) => {
-        #[derive(Copy, Clone, PartialEq)]
+        #[derive(Copy, Clone, Debug, PartialEq)]
         pub enum Token {
             $($variant),+
         }
