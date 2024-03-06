@@ -4,6 +4,7 @@ use super::syntax_tree::{SyntaxNode, SyntaxNodeKind, SyntaxTree, SyntaxTreeBuild
 use crate::{
     ast::{lexer, token::Token, token_list::TokenList, CompCtx, FileID},
     err::error_new::{ErrorComp, ErrorSeverity, SourceRange},
+    text_range::TextRange,
 };
 
 #[test]
@@ -90,12 +91,49 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn error_eat(&mut self, message: &'static str) {
-        let curr_range = self.tokens.get_range(self.cursor);
+    fn expect_after_or_end_node(&mut self, token: Token, end_node: bool) -> Option<()> {
+        if self.peek() == token {
+            self.eat();
+            Some(())
+        } else {
+            // look back considering whitespace
+            // @hacky solution to whitescape
+            let range = if self.tokens.get_token(self.cursor - 1) == Token::Whitespace {
+                self.tokens.get_range(self.cursor - 2)
+            } else {
+                self.tokens.get_range(self.cursor - 1)
+            };
+            let message = format!("add `{}` after this token", token.as_str());
+            self.errors.push(ErrorComp::new(
+                message.into(),
+                ErrorSeverity::Error,
+                SourceRange::new(range, FileID(0)),
+            ));
+            if end_node {
+                self.builder.end_node();
+            }
+            None
+        }
+    }
+
+    fn expect_or_end_node(&mut self, token: Token) -> Option<()> {
+        if self.peek() == token {
+            self.eat();
+            Some(())
+        } else {
+            let message = format!("expected `{}`", token.as_str());
+            self.error_eat(&message);
+            self.builder.end_node();
+            None
+        }
+    }
+
+    fn error_eat(&mut self, message: &str) {
+        let range = self.tokens.get_range(self.cursor);
         self.errors.push(ErrorComp::new(
-            message.into(),
+            message.to_string().into(),
             ErrorSeverity::Error,
-            SourceRange::new(curr_range, FileID(0)),
+            SourceRange::new(range, FileID(0)),
         ));
 
         self.builder.start_node(SyntaxNodeKind::ERROR);
@@ -138,8 +176,12 @@ impl<'a> Parser<'a> {
         // vis is ignored
         // it should expect all top level keywords exept `use`
         match self.peek() {
-            Token::KwUse => self.use_decl(),
-            Token::KwMod => self.mod_decl(),
+            Token::KwUse => {
+                self.use_decl();
+            }
+            Token::KwMod => {
+                self.mod_decl();
+            }
             Token::KwProc => self.proc_decl(),
             Token::KwEnum => self.enum_decl(),
             Token::KwUnion => self.union_decl(),
@@ -185,21 +227,45 @@ impl<'a> Parser<'a> {
     fn use_decl(&mut self) {
         self.builder.start_node(SyntaxNodeKind::USE_DECL);
         self.eat(); // 'use'
-        self.path();
-        self.use_symbol_list();
+        if self.path().is_none() {
+            self.builder.end_node();
+            return;
+        }
+        if self.use_symbol_list().is_none() {
+            self.builder.end_node();
+            return;
+        }
         self.builder.end_node();
     }
 
-    fn use_symbol_list(&mut self) {
-        // ...
+    #[must_use]
+    fn use_symbol_list(&mut self) -> Option<()> {
+        self.builder.start_node(SyntaxNodeKind::USE_SYMBOL_LIST);
+        self.expect_after_or_end_node(Token::Dot, true)?;
+        self.expect_after_or_end_node(Token::OpenBlock, true)?;
+        //
+        self.expect_after_or_end_node(Token::CloseBlock, true)?;
+        self.builder.end_node();
+        Some(())
     }
 
-    fn mod_decl(&mut self) {
+    fn use_symbol(&mut self) {
+        self.builder.start_node(SyntaxNodeKind::USE_SYMBOL);
+        self.name_ref();
+        self.builder.end_node();
+    }
+
+    // mod name;
+    fn mod_decl(&mut self) -> Option<()> {
         self.builder.start_node(SyntaxNodeKind::MOD_DECL);
         self.eat(); // 'mod'
-        self.name();
-        // @ ;
+        if self.name_after().is_none() {
+            self.builder.end_node();
+            return None;
+        }
+        self.expect_after_or_end_node(Token::Semicolon, true)?;
         self.builder.end_node();
+        Some(())
     }
 
     fn proc_decl(&mut self) {
@@ -250,6 +316,18 @@ impl<'a> Parser<'a> {
         self.builder.end_node();
     }
 
+    fn name_after(&mut self) -> Option<()> {
+        match self.peek() {
+            Token::Ident => {
+                self.builder.start_node(SyntaxNodeKind::NAME);
+                self.eat();
+                self.builder.end_node();
+                Some(())
+            }
+            _ => self.expect_after_or_end_node(Token::Ident, false),
+        }
+    }
+
     fn name(&mut self) {
         match self.peek() {
             Token::Ident => {
@@ -272,15 +350,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn path(&mut self) {
+    fn path(&mut self) -> Option<()> {
         self.builder.start_node(SyntaxNodeKind::PATH);
         match self.peek() {
             Token::KwSuper => self.eat(),
             Token::KwPackage => self.eat(),
             Token::Ident => self.name_ref(),
-            _ => self.error_eat("expected `identifier` `super` `package` in path"),
+            _ => {
+                self.error_eat("expected `identifier` `super` `package` in path");
+                self.builder.end_node();
+                return None;
+            }
         }
         self.builder.end_node();
+        Some(())
     }
 
     fn ty(&mut self) {
