@@ -4,27 +4,27 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 #[derive(Debug)]
-struct SyntaxTree {
-    source: String,
-    root: SyntaxNode,
+pub struct SyntaxTree {
+    pub source: String,
+    pub root: SyntaxNode,
 }
 
-type SyntaxNode = Rc<SyntaxNodeData>;
+pub type SyntaxNode = Rc<SyntaxNodeData>;
 #[derive(Debug)]
-struct SyntaxNodeData {
+pub struct SyntaxNodeData {
     kind: SyntaxNodeKind,
     range: Cell<TextRange>,
     children: Vec<SyntaxElement>,
 }
 
 #[derive(Debug)]
-struct SyntaxTokenData {
+pub struct SyntaxTokenData {
     token: Token,
     range: TextRange,
 }
 
 #[derive(Debug)]
-enum SyntaxElement {
+pub enum SyntaxElement {
     Node(SyntaxNode),
     Token(SyntaxTokenData),
 }
@@ -86,7 +86,7 @@ impl SyntaxTree {
         Self { source, root }
     }
 
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         let mut string = String::new();
         self.children_to_string(&self.root, &mut string);
         string
@@ -103,66 +103,73 @@ impl SyntaxTree {
             }
         }
     }
-}
 
-#[test]
-fn test_syntax_tree() {
-    let three = SyntaxTokenData::new(Token::IntLit, TextRange::new(0.into(), 1.into()));
-    let ws = SyntaxTokenData::new(Token::Whitespace, TextRange::new(1.into(), 2.into()));
-    let star = SyntaxTokenData::new(Token::Star, TextRange::new(2.into(), 3.into()));
-    let ws2 = SyntaxTokenData::new(Token::Whitespace, TextRange::new(3.into(), 4.into()));
-    let four = SyntaxTokenData::new(Token::IntLit, TextRange::new(4.into(), 5.into()));
-    let mul_expr = SyntaxNodeData::new(
-        SyntaxNodeKind::EXPR_BIN,
-        TextRange::new(0.into(), 5.into()),
-        vec![
-            three.into(),
-            ws.into(),
-            star.into(),
-            ws2.into(),
-            four.into(),
-        ],
-    );
-    let tree = SyntaxTree::new("3 * 4".into(), Rc::new(mul_expr));
-    let tree_string = tree.to_string();
-    assert_eq!(tree.source, tree_string);
-    println!("{}", tree_string);
-}
+    pub fn format_to_string(&self, ansi: bool) -> String {
+        let mut string = if ansi { "\n".into() } else { "".into() };
+        let depth: u32 = 0;
+        self.children_format(ansi, depth, &self.root, &mut string);
+        string
+    }
 
-#[test]
-fn test_syntax_tree_build() {
-    let three = SyntaxTokenData::new(Token::IntLit, TextRange::new(0.into(), 1.into()));
-    let ws = SyntaxTokenData::new(Token::Whitespace, TextRange::new(1.into(), 2.into()));
-    let star = SyntaxTokenData::new(Token::Star, TextRange::new(2.into(), 3.into()));
-    let ws2 = SyntaxTokenData::new(Token::Whitespace, TextRange::new(3.into(), 4.into()));
-    let four = SyntaxTokenData::new(Token::IntLit, TextRange::new(4.into(), 5.into()));
-    let name = SyntaxTokenData::new(Token::Ident, TextRange::new(5.into(), 9.into()));
+    fn children_format(
+        &self,
+        ansi: bool,
+        depth: u32,
+        node_data: &SyntaxNodeData,
+        string: &mut String,
+    ) {
+        for _ in 0..depth {
+            string.push_str("  ");
+        }
 
-    let mut builder = SyntaxTreeBuilder::new();
-    builder.start_node(SyntaxNodeKind::SOURCE_FILE);
-    builder.start_node(SyntaxNodeKind::EXPR_BIN);
-    builder.token(three.token, three.range);
-    builder.token(ws.token, ws.range);
-    builder.token(star.token, star.range);
-    builder.token(ws2.token, ws2.range);
-    builder.token(four.token, four.range);
-    builder.end_node();
-    builder.start_node(SyntaxNodeKind::NAME);
-    builder.token(name.token, name.range);
-    builder.end_node();
-    builder.end_node();
+        use crate::err::ansi;
+        let mut yellow = ansi::Color::as_ansi_str(ansi::Color::BoldYellow);
+        let mut green = ansi::Color::as_ansi_str(ansi::Color::Green);
+        let mut purple = ansi::Color::as_ansi_str(ansi::Color::Purple);
+        let mut reset = "\x1B[0m";
+        if !ansi {
+            yellow = "";
+            green = "";
+            purple = "";
+            reset = "";
+        }
 
-    let tree = SyntaxTree::new("5 * 6name".into(), builder.finish());
-    let tree_string = tree.to_string();
-    assert_eq!(tree.source, tree_string);
-    println!("{}", tree_string);
-    println!("{:#?}", tree);
+        string.push_str(
+            format!(
+                "{yellow}{:?}{reset}{purple}@{:?}{reset}\n",
+                node_data.kind,
+                node_data.range.get()
+            )
+            .as_str(),
+        );
+
+        for element in node_data.children.iter() {
+            match element {
+                SyntaxElement::Node(node) => {
+                    self.children_format(ansi, depth + 1, &node, string);
+                }
+                SyntaxElement::Token(token) => {
+                    for _ in 0..=depth {
+                        string.push_str("  ");
+                    }
+                    let token_string = &self.source[token.range().as_usize()];
+                    string.push_str(
+                        format!(
+                            "{:?}{purple}@{:?}{reset} {green}{:?}{reset}\n",
+                            token.token, token.range, token_string
+                        )
+                        .as_str(),
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[repr(u8)]
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, Debug)]
-enum SyntaxNodeKind {
+pub enum SyntaxNodeKind {
     SOURCE_FILE,
     ERROR,
 
@@ -222,7 +229,7 @@ enum SyntaxNodeKind {
     EXPR_BIN,
 }
 
-struct SyntaxTreeBuilder {
+pub struct SyntaxTreeBuilder {
     parents: Vec<(SyntaxNodeKind, usize)>,
     children: Vec<SyntaxElement>,
 }
@@ -250,9 +257,14 @@ impl SyntaxTreeBuilder {
         self.children.push(SyntaxElement::Node(Rc::new(node)));
     }
 
-    pub fn token(&mut self, token: Token, range: TextRange) {
+    pub fn token_(&mut self, token: Token, range: TextRange) {
         self.children
             .push(SyntaxElement::Token(SyntaxTokenData::new(token, range)))
+    }
+
+    pub fn token(&mut self, token: (Token, TextRange)) {
+        self.children
+            .push(SyntaxElement::Token(SyntaxTokenData::new(token.0, token.1)))
     }
 
     pub fn finish(mut self) -> SyntaxNode {

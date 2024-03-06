@@ -106,7 +106,7 @@ impl<'src> Lexer<'src> {
                 break;
             }
         }
-        if self.lex_whitespace {
+        if self.lex_whitespace && self.token_range().len() > 0 {
             tokens.add_token(Token::Whitespace, self.token_range())
         }
     }

@@ -4,7 +4,7 @@ pub mod lexer;
 pub mod parse_error;
 mod parser;
 pub mod token;
-mod token_list;
+pub mod token_list;
 mod visit;
 
 use crate::err::error::*;

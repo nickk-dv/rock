@@ -38,7 +38,7 @@ impl TextRange {
 
     #[inline]
     pub const fn len(self) -> usize {
-        (self.start.raw - self.end.raw) as usize
+        (self.end.raw - self.start.raw) as usize
     }
 
     #[inline]
