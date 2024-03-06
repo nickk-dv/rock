@@ -142,11 +142,13 @@ pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[ErrorComp]) {
         let ansi_clear = "\x1B[0m";
         let main_context = error.main_context();
         eprintln!(
-            "\n{}{}:{} {}",
+            "\n{}{}:{} {}{}{}",
             ansi_red,
             main_context.severity().as_str(),
             ansi_clear,
-            main_context.message.as_str()
+            ansi::Color::as_ansi_str(ansi::Color::BoldWhite),
+            main_context.message.as_str(),
+            ansi_clear,
         );
         range_fmt::print_simple(
             ctx.file(main_context.source().unwrap().file_id()),

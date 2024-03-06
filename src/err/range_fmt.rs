@@ -41,7 +41,7 @@ struct TextRangeFormat<'a> {
 
 impl<'a> TextRangeFormat<'a> {
     fn new(file: &'a File, range: TextRange) -> Self {
-        let mut lex = crate::ast::lexer::Lexer::new(&file.source);
+        let mut lex = crate::ast::lexer::Lexer::new(&file.source, false);
         let line_ranges = lex.lex_line_ranges(); //@temp getting all line ranges, since they are no longer stored in ast
         let loc = find_loc(&line_ranges, range, &file.source);
 
@@ -109,9 +109,9 @@ impl<'a> TextRangeFormat<'a> {
 
         if let Some(msg) = marker_msg {
             if is_info {
-                ansi::set_color(handle, Color::Green)
+                ansi::set_color(handle, Color::BoldGreen)
             } else {
-                ansi::set_color(handle, Color::Red)
+                ansi::set_color(handle, Color::BoldRed)
             }
             let _ = handle.write(msg.as_bytes());
         }

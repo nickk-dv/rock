@@ -7,14 +7,16 @@ pub struct Lexer<'src> {
     source: &'src str,
     chars: Peekable<Chars<'src>>,
     range: TextRange,
+    lex_whitespace: bool,
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(source: &'src str) -> Self {
+    pub fn new(source: &'src str, lex_whitespace: bool) -> Self {
         Self {
             source,
             chars: source.chars().peekable(),
             range: TextRange::empty_at(0.into()),
+            lex_whitespace,
         }
     }
 
@@ -46,7 +48,7 @@ impl<'src> Lexer<'src> {
         let mut tokens = TokenList::new(init_cap);
 
         while self.peek().is_some() {
-            self.skip_whitespace();
+            self.skip_whitespace(&mut tokens);
             if let Some(c) = self.peek() {
                 self.range = TextRange::empty_at(self.range.end());
                 self.eat(c);
@@ -85,7 +87,10 @@ impl<'src> Lexer<'src> {
         tokens
     }
 
-    fn skip_whitespace(&mut self) {
+    fn skip_whitespace(&mut self, tokens: &mut TokenList) {
+        if self.lex_whitespace {
+            self.range = TextRange::empty_at(self.range.end());
+        }
         while let Some(c) = self.peek() {
             if c.is_ascii_whitespace() {
                 self.eat(c);
@@ -100,6 +105,9 @@ impl<'src> Lexer<'src> {
             } else {
                 break;
             }
+        }
+        if self.lex_whitespace {
+            tokens.add_token(Token::Whitespace, self.token_range())
         }
     }
 

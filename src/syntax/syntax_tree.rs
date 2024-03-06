@@ -1,17 +1,22 @@
+use crate::ast::token::Token;
 use crate::text_range::*;
 use std::rc::Rc;
 
-type SyntaxNode = Rc<SyntaxNodeData>;
+struct SyntaxTree {
+    source: String,
+    root: SyntaxNode,
+}
 
+type SyntaxNode = Rc<SyntaxNodeData>;
 struct SyntaxNodeData {
-    kind: SyntaxKind,
+    kind: SyntaxNodeKind,
     parent: Option<SyntaxNode>,
     children: Vec<SyntaxElement>,
     range: TextRange,
 }
 
 struct SyntaxTokenData {
-    kind: SyntaxKind,
+    kind: Token,
     range: TextRange,
 }
 
@@ -20,30 +25,9 @@ enum SyntaxElement {
     Token(SyntaxTokenData),
 }
 
-struct SyntaxTree {
-    source: String,
-    root: SyntaxNode,
-}
-
-#[derive(Copy, Clone, Debug)]
-enum SyntaxKind {
-    // Nodes
-    Proc,
-    ParamList,
-    Name,
-    BinExpr,
-    // Tokens
-    Whitespace,
-    KwProc,
-    LCurly,
-    RCurly,
-    Star,
-    NumberInt,
-}
-
 impl SyntaxNodeData {
     fn new(
-        kind: SyntaxKind,
+        kind: SyntaxNodeKind,
         parent: Option<SyntaxNode>,
         children: Vec<SyntaxElement>,
         range: TextRange,
@@ -55,7 +39,7 @@ impl SyntaxNodeData {
             range,
         }
     }
-    fn kind(&self) -> SyntaxKind {
+    fn kind(&self) -> SyntaxNodeKind {
         self.kind
     }
     fn range(&self) -> TextRange {
@@ -70,10 +54,10 @@ impl SyntaxNodeData {
 }
 
 impl SyntaxTokenData {
-    fn new(kind: SyntaxKind, range: TextRange) -> Self {
+    fn new(kind: Token, range: TextRange) -> Self {
         Self { kind, range }
     }
-    fn kind(&self) -> SyntaxKind {
+    fn kind(&self) -> Token {
         self.kind
     }
     fn range(&self) -> TextRange {
@@ -82,12 +66,6 @@ impl SyntaxTokenData {
 }
 
 impl SyntaxElement {
-    fn kind(&self) -> SyntaxKind {
-        match self {
-            SyntaxElement::Node(it) => it.kind(),
-            SyntaxElement::Token(it) => it.kind(),
-        }
-    }
     fn range(&self) -> TextRange {
         match self {
             SyntaxElement::Node(it) => it.range(),
@@ -134,13 +112,13 @@ impl SyntaxTree {
 
 #[test]
 fn test_syntax_tree() {
-    let three = SyntaxTokenData::new(SyntaxKind::NumberInt, TextRange::new(0.into(), 1.into()));
-    let ws = SyntaxTokenData::new(SyntaxKind::Whitespace, TextRange::new(1.into(), 2.into()));
-    let star = SyntaxTokenData::new(SyntaxKind::Star, TextRange::new(2.into(), 3.into()));
-    let ws2 = SyntaxTokenData::new(SyntaxKind::Whitespace, TextRange::new(3.into(), 4.into()));
-    let four = SyntaxTokenData::new(SyntaxKind::NumberInt, TextRange::new(4.into(), 5.into()));
+    let three = SyntaxTokenData::new(Token::IntLit, TextRange::new(0.into(), 1.into()));
+    let ws = SyntaxTokenData::new(Token::Whitespace, TextRange::new(1.into(), 2.into()));
+    let star = SyntaxTokenData::new(Token::Star, TextRange::new(2.into(), 3.into()));
+    let ws2 = SyntaxTokenData::new(Token::Whitespace, TextRange::new(3.into(), 4.into()));
+    let four = SyntaxTokenData::new(Token::IntLit, TextRange::new(4.into(), 5.into()));
     let mul_expr = SyntaxNodeData::new(
-        SyntaxKind::BinExpr,
+        SyntaxNodeKind::EXPR_BIN,
         None,
         vec![
             three.into(),
@@ -155,4 +133,67 @@ fn test_syntax_tree() {
     let tree_string = tree.to_string();
     assert_eq!(tree.source, tree_string);
     println!("{}", tree_string);
+}
+
+#[repr(u8)]
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone, Debug)]
+enum SyntaxNodeKind {
+    SOURCE_FILE,
+    ERROR,
+
+    USE_DECL,
+    MOD_DECL,
+    PROC_DECL,
+    ENUM_DECL,
+    UNION_DECL,
+    STRUCT_DECL,
+    CONST_DECL,
+    GLOBAL_DECL,
+
+    USE_SYMBOL_LIST,
+    PROC_PARAM_LIST,
+    ENUM_VARIANT_LIST,
+    UNION_MEMBER_LIST,
+    STRUCT_FIELD_LIST,
+
+    USE_SYMBOL,
+    PROC_PARAM,
+    ENUM_VARIANT,
+    UNION_MEMBER,
+    STRUCT_FIELD,
+
+    NAME,
+    NAME_REF,
+    PATH,
+    TYPE,
+    TYPE_ARRAY_SLICE,
+    TYPE_ARRAY_STATIC,
+
+    STMT_LIST,
+    STMT,
+    STMT_RETURN,
+    STMT_DEFER,
+    STMT_FOR,
+    STMT_VAR_DECL,
+    STMT_VAR_ASSIGN,
+    STMT_EXPR,
+
+    EXPR_UNIT,
+    EXPR_LIT,
+    EXPR_IF,
+    EXPR_BLOCK,
+    EXPR_MATCH,
+    EXPR_FIELD,
+    EXPR_INDEX,
+    EXPR_CAST,
+    EXPR_SIZEOF,
+    EXPR_ITEM,
+    EXPR_PROC_CALL,
+    PROC_CALL_ARG_LIST,
+    EXPR_STRUCT_INIT,
+    EXPR_ARRAY_INIT,
+    EXPR_ARRAY_REPEAT,
+    EXPR_UN,
+    EXPR_BIN,
 }

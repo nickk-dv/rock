@@ -108,7 +108,7 @@ pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
 
     for file_id in files {
-        let lexer = lexer::Lexer::new(ctx.file(file_id).source.as_str());
+        let lexer = lexer::Lexer::new(ctx.file(file_id).source.as_str(), false);
         let tokens = lexer.lex();
         let source_copy = ctx.file(file_id).source.clone();
         let mut parser =

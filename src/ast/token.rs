@@ -93,6 +93,7 @@ macro_rules! token_glue_extend {
 token_impl! {
     Eof          as "end of file"
     Error        as "error token"
+    Whitespace   as "whitespace"
     Ident        as "identifier"
     IntLit       as "int literal"
     FloatLit     as "float literal"
