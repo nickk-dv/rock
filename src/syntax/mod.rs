@@ -1,6 +1,8 @@
+mod event;
 mod green;
 mod kinds;
 mod parser;
+mod parser_api;
 mod red;
 mod syntax_tree;
 mod token_set;

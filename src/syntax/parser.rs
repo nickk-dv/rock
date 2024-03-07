@@ -1,11 +1,22 @@
 use std::{cell::Cell, path::PathBuf};
 
-use super::syntax_tree::{SyntaxNode, SyntaxNodeKind, SyntaxTree, SyntaxTreeBuilder};
+use super::{
+    parser_api,
+    syntax_tree::{SyntaxNode, SyntaxNodeKind, SyntaxTree, SyntaxTreeBuilder},
+};
 use crate::{
     ast::{lexer, token::Token, token_list::TokenList, CompCtx, FileID},
     err::error_new::{ErrorComp, ErrorSeverity, SourceRange},
     text_range::TextRange,
 };
+
+#[test]
+fn fail_test() {
+    let mut p = parser_api::Parser::new(vec![]);
+    let m = p.start();
+    m.complete(&mut p, SyntaxNodeKind::PROC_DECL);
+    let events = p.finish();
+}
 
 #[test]
 fn parse_syntax_tree() {
