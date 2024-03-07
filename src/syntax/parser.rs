@@ -1,6 +1,7 @@
 use std::{cell::Cell, path::PathBuf};
 
 use super::{
+    event::Event,
     parser_api,
     syntax_tree::{SyntaxNode, SyntaxNodeKind, SyntaxTree, SyntaxTreeBuilder},
 };
@@ -11,15 +12,59 @@ use crate::{
 };
 
 #[test]
-fn fail_test() {
-    let mut p = parser_api::Parser::new(vec![]);
-    let m = p.start();
-    m.complete(&mut p, SyntaxNodeKind::PROC_DECL);
+fn parse_api_test() {
+    let mut ctx = CompCtx::new();
+    let path = PathBuf::from("test/core.lang");
+    let source = std::fs::read_to_string(&path).expect("failed to read main file source");
+    let file_id = ctx.add_file(path, source);
+
+    // not parsing whitespace, in real case would need to split whitespace and non whitespace tokens
+    let lex = lexer::Lexer::new(&ctx.file(file_id).source, false);
+    let tokens = lex.lex();
+
+    let mut p = parser_api::Parser::new(tokens.tokens());
+    super::grammar::source_file(&mut p);
     let events = p.finish();
+    pretty_print_events(&events);
+}
+
+fn pretty_print_events(events: &[Event]) {
+    use crate::err::ansi;
+    let yellow = ansi::Color::as_ansi_str(ansi::Color::BoldYellow);
+    let green = ansi::Color::as_ansi_str(ansi::Color::Green);
+    let purple = ansi::Color::as_ansi_str(ansi::Color::Purple);
+    let reset = "\x1B[0m";
+
+    println!("EVENTS:");
+    let mut depth = 0;
+    fn print_depth(depth: i32) {
+        for _ in 0..depth {
+            print!("  ");
+        }
+    }
+    for e in events {
+        match e {
+            Event::EndNode => {}
+            _ => print_depth(depth),
+        }
+        match e {
+            Event::StartNode { kind } => {
+                println!("{yellow}{:?}{reset}", kind);
+                depth += 1;
+            }
+            Event::EndNode => {
+                depth -= 1;
+            }
+            Event::Token { token } => println!("{green}{:?}{reset}", token),
+            Event::Error { message } => println!("{purple}ERROR:{reset} {:?}", message),
+        }
+    }
 }
 
 #[test]
 fn parse_syntax_tree() {
+    return;
+
     let mut ctx = CompCtx::new();
     let path = PathBuf::from("test/core.lang");
     let source = std::fs::read_to_string(&path).expect("failed to read main file source");

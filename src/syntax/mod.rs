@@ -1,4 +1,5 @@
 mod event;
+mod grammar;
 mod green;
 mod kinds;
 mod parser;

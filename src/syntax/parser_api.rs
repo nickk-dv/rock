@@ -56,8 +56,40 @@ impl Parser {
         true
     }
 
+    pub fn expect(&mut self, token: Token) -> bool {
+        if self.eat(token) {
+            return true;
+        }
+        self.error(format!("expected {:?}", token));
+        false
+    }
+
     pub fn bump(&mut self, token: Token) {
         assert!(self.eat(token));
+    }
+
+    pub fn error_bump<S: Into<String>>(&mut self, message: S) {
+        self.error_recover(message, TokenSet::EMPTY)
+    }
+
+    pub fn error_recover<S: Into<String>>(&mut self, message: S, recovery: TokenSet) {
+        //match self.peek() {
+        //    Token::OpenBlock | Token::CloseBlock => {
+        //        self.error(message);
+        //        return;
+        //    }
+        //    _ => (),
+        //}
+
+        if self.at_set(recovery) {
+            self.error(message);
+            return;
+        }
+
+        let m = self.start();
+        self.error(message);
+        self.bump_any();
+        m.complete(self, SyntaxNodeKind::ERROR);
     }
 
     pub fn start(&mut self) -> Marker {
@@ -68,9 +100,22 @@ impl Parser {
         Marker::new(event_pos)
     }
 
+    fn error<S: Into<String>>(&mut self, message: S) {
+        self.push_event(Event::Error {
+            message: message.into(),
+        });
+    }
+
+    fn bump_any(&mut self) {
+        if self.peek() == Token::Eof {
+            return;
+        }
+        self.do_bump(self.peek());
+    }
+
     fn do_bump(&mut self, token: Token) {
-        self.step_reset();
         self.pos += 1;
+        self.step_reset();
         self.push_event(Event::Token { token });
     }
 
