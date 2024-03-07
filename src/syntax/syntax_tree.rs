@@ -190,6 +190,7 @@ pub enum SyntaxNodeKind {
     STRUCT_FIELD_LIST,
 
     USE_SYMBOL,
+    USE_RENAME,
     PROC_PARAM,
     ENUM_VARIANT,
     UNION_MEMBER,

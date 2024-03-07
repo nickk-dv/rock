@@ -3,6 +3,7 @@ mod kinds;
 mod parser;
 mod red;
 mod syntax_tree;
+mod token_set;
 
 pub use self::{
     green::{GreenNode, GreenNodeData, GreenToken, GreenTokenData},
