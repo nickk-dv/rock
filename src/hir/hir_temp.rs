@@ -5,6 +5,33 @@ use crate::err::error_new::SourceRange;
 use crate::text_range::TextRange;
 use std::collections::HashMap;
 
+// @Hir lowering design direction 07.03.24
+// 1st pass would create:
+// a single Scopes array:
+// where each symbol holds the ID of the uniquely named symbol
+// and its corresponding ast node.
+// types and blocks would be set to Error / None by default
+
+// 2nd importing pass would add references to symbols
+// resolving all use declarations in each scope's ast module
+
+// 3rd later pass would go though the data arrays and resolve:
+// types & constant expressions of the declarations
+
+// 4th pass would perform translation of Ast procedure blocks
+// into hir form, and assign this top block to the ProcData
+// this pass is isolated and only references already resolved declarations
+// and its scope's namespace.
+
+// Output: hir is similar to ast in structure
+// but contains linear representation of package contents
+// which is fully typechecked and name-resolved
+// no errors would mean that its ready to be passed to LLVM-IR gen
+// or any other low level IR backend
+
+// - minor changes:
+// use free functions for passes, with PassContext named `p` passed in (for read-ability)
+
 pub struct HirTemp<'ast> {
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
