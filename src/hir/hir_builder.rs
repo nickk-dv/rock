@@ -1,7 +1,8 @@
-use super::hir;
 use crate::ast::ast;
 use crate::ast::intern;
 use crate::err::error_new::SourceRange;
+use crate::hir;
+use crate::mem::Arena;
 use crate::text_range::TextRange;
 use std::collections::HashMap;
 
@@ -32,11 +33,11 @@ use std::collections::HashMap;
 // - minor changes:
 // use free functions for passes, with PassContext named `p` passed in (for read-ability)
 
-pub struct HirTemp<'ast> {
+pub struct HirBuilder<'ast, 'hir: 'ast> {
     ast: ast::Ast<'ast>,
+    hir: hir::Hir<'hir>,
     mods: Vec<ModData>,
-    scopes: Vec<Scope>,
-    scopes_temp: Vec<ScopeTemp<'ast>>,
+    scopes: Vec<Scope<'ast>>,
     const_exprs: Vec<ConstExprTemp<'ast>>,
 }
 
@@ -51,50 +52,28 @@ pub struct ModData {
 
 #[derive(Copy, Clone)]
 pub struct ScopeID(u32);
-pub struct Scope {
-    parent: Option<ScopeID>,
-    symbols: HashMap<intern::InternID, Symbol>,
-}
-
-#[derive(Copy, Clone)]
-pub enum Symbol {
-    Defined { kind: SymbolKind },
-    Imported { kind: SymbolKind, import: TextRange },
-}
-
-#[derive(Copy, Clone)]
-pub enum SymbolKind {
-    Mod(ModID),
-    Proc(hir::ProcID),
-    Enum(hir::EnumID),
-    Union(hir::UnionID),
-    Struct(hir::StructID),
-    Const(hir::ConstID),
-    Global(hir::GlobalID),
-}
-
-pub struct ScopeTemp<'ast> {
+pub struct Scope<'ast> {
     parent: Option<ScopeID>,
     module: ast::Module<'ast>,
-    symbols: HashMap<intern::InternID, SymbolTemp<'ast>>,
+    symbols: HashMap<intern::InternID, Symbol<'ast>>,
 }
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum SymbolTemp<'ast> {
-    Defined  { kind: SymbolTempKind<'ast> },
-    Imported { kind: SymbolTempKind<'ast>, import: TextRange },
+pub enum Symbol<'ast> {
+    Defined  { kind: SymbolKind<'ast> },
+    Imported { kind: SymbolKind<'ast>, import: TextRange },
 }
 
 #[derive(Copy, Clone)]
-pub enum SymbolTempKind<'ast> {
+pub enum SymbolKind<'ast> {
     Mod(ModID),
-    Proc(&'ast ast::ProcDecl<'ast>),
-    Enum(&'ast ast::EnumDecl<'ast>),
-    Union(&'ast ast::UnionDecl<'ast>),
-    Struct(&'ast ast::StructDecl<'ast>),
-    Const(&'ast ast::ConstDecl<'ast>),
-    Global(&'ast ast::GlobalDecl<'ast>),
+    Proc(hir::ProcID, &'ast ast::ProcDecl<'ast>),
+    Enum(hir::EnumID, &'ast ast::EnumDecl<'ast>),
+    Union(hir::UnionID, &'ast ast::UnionDecl<'ast>),
+    Struct(hir::StructID, &'ast ast::StructDecl<'ast>),
+    Const(hir::ConstID, &'ast ast::ConstDecl<'ast>),
+    Global(hir::GlobalID, &'ast ast::GlobalDecl<'ast>),
 }
 
 pub struct ConstExprTemp<'ast> {
@@ -107,15 +86,62 @@ pub struct ScopeIter {
     len: u32,
 }
 
-impl<'ast> HirTemp<'ast> {
-    pub fn new(ast: ast::Ast<'ast>) -> HirTemp {
-        HirTemp {
+impl<'ast, 'hir: 'ast> HirBuilder<'ast, 'hir> {
+    pub fn new(ast: ast::Ast<'ast>) -> HirBuilder {
+        HirBuilder {
             ast,
+            hir: hir::Hir::<'hir> {
+                arena: Arena::new(),
+                procs: Vec::new(),
+                enums: Vec::new(),
+                unions: Vec::new(),
+                structs: Vec::new(),
+                consts: Vec::new(),
+                globals: Vec::new(),
+                const_exprs: Vec::new(),
+            },
             mods: Vec::new(),
             scopes: Vec::new(),
-            scopes_temp: Vec::new(),
             const_exprs: Vec::new(),
         }
+    }
+
+    pub fn finish(self) -> hir::Hir<'hir> {
+        self.hir
+    }
+
+    pub fn arena(&mut self) -> &mut Arena<'hir> {
+        &mut self.hir.arena
+    }
+
+    pub fn add_proc(&mut self, data: hir::ProcData<'hir>) -> hir::ProcID {
+        self.hir.procs.push(data);
+        hir::ProcID((self.hir.procs.len() - 1) as u32)
+    }
+    pub fn add_enum(&mut self, data: hir::EnumData<'hir>) -> hir::EnumID {
+        self.hir.enums.push(data);
+        hir::EnumID((self.hir.enums.len() - 1) as u32)
+    }
+    pub fn add_union(&mut self, data: hir::UnionData<'hir>) -> hir::UnionID {
+        self.hir.unions.push(data);
+        hir::UnionID((self.hir.unions.len() - 1) as u32)
+    }
+    pub fn add_struct(&mut self, data: hir::StructData<'hir>) -> hir::StructID {
+        self.hir.structs.push(data);
+        hir::StructID((self.hir.structs.len() - 1) as u32)
+    }
+    pub fn add_const(&mut self, data: hir::ConstData<'hir>) -> hir::ConstID {
+        self.hir.consts.push(data);
+        hir::ConstID((self.hir.consts.len() - 1) as u32)
+    }
+    pub fn add_global(&mut self, data: hir::GlobalData<'hir>) -> hir::GlobalID {
+        self.hir.globals.push(data);
+        hir::GlobalID((self.hir.globals.len() - 1) as u32)
+    }
+    pub fn add_const_expr(&mut self, data: hir::ConstExpr<'hir>) -> hir::ConstExprID {
+        self.hir.const_exprs.push(data);
+        // @self const exprs not the hir const_exprs
+        hir::ConstExprID((self.const_exprs.len() - 1) as u32)
     }
 
     pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
@@ -126,12 +152,6 @@ impl<'ast> HirTemp<'ast> {
         ScopeIter {
             curr: 0,
             len: self.scopes.len() as u32,
-        }
-    }
-    pub fn scope_temp_ids(&self) -> ScopeIter {
-        ScopeIter {
-            curr: 0,
-            len: self.scopes_temp.len() as u32,
         }
     }
 
@@ -146,31 +166,21 @@ impl<'ast> HirTemp<'ast> {
         self.mods.get_mut(id.0 as usize).unwrap()
     }
 
-    pub fn add_scope(&mut self, scope: Scope) {
+    pub fn add_scope(&mut self, scope: Scope<'ast>) -> ScopeID {
         self.scopes.push(scope);
+        ScopeID((self.scopes.len() - 1) as u32)
     }
-    pub fn get_scope(&self, id: ScopeID) -> &Scope {
+    pub fn get_scope(&self, id: ScopeID) -> &Scope<'ast> {
         self.scopes.get(id.0 as usize).unwrap()
     }
-    pub fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope {
+    pub fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope<'ast> {
         self.scopes.get_mut(id.0 as usize).unwrap()
-    }
-
-    pub fn add_scope_temp(&mut self, scope: ScopeTemp<'ast>) -> ScopeID {
-        self.scopes_temp.push(scope);
-        ScopeID((self.scopes_temp.len() - 1) as u32)
-    }
-    pub fn get_scope_temp(&self, id: ScopeID) -> &ScopeTemp<'ast> {
-        self.scopes_temp.get(id.0 as usize).unwrap()
-    }
-    pub fn get_scope_temp_mut(&mut self, id: ScopeID) -> &mut ScopeTemp<'ast> {
-        self.scopes_temp.get_mut(id.0 as usize).unwrap()
     }
 }
 
-impl<'ast> ScopeTemp<'ast> {
-    pub fn new(parent: Option<ScopeID>, module: ast::Module<'ast>) -> ScopeTemp {
-        ScopeTemp {
+impl<'ast> Scope<'ast> {
+    pub fn new(parent: Option<ScopeID>, module: ast::Module<'ast>) -> Scope {
+        Scope {
             parent,
             module,
             symbols: HashMap::new(),
@@ -192,8 +202,8 @@ impl<'ast> ScopeTemp<'ast> {
     pub fn add_symbol(
         &mut self,
         id: intern::InternID,
-        symbol: SymbolTemp<'ast>,
-    ) -> Result<(), SymbolTemp<'ast>> {
+        symbol: Symbol<'ast>,
+    ) -> Result<(), Symbol<'ast>> {
         match self.symbols.get(&id).cloned() {
             Some(existing) => Err(existing),
             None => {
@@ -203,7 +213,7 @@ impl<'ast> ScopeTemp<'ast> {
         }
     }
 
-    pub fn get_symbol(&self, id: intern::InternID) -> Option<SymbolTemp<'ast>> {
+    pub fn get_symbol(&self, id: intern::InternID) -> Option<Symbol<'ast>> {
         self.symbols.get(&id).cloned()
     }
 
@@ -211,51 +221,24 @@ impl<'ast> ScopeTemp<'ast> {
         SourceRange::new(range, self.module_file_id())
     }
 
-    pub fn get_local_symbol_source(
+    pub fn get_local_symbol_source<'hir>(
         &self,
-        hir_temp: &HirTemp<'ast>,
-        symbol: SymbolTemp<'ast>,
+        hb: &HirBuilder<'ast, 'hir>,
+        symbol: Symbol<'ast>,
     ) -> SourceRange {
         let range = match symbol {
-            SymbolTemp::Defined { kind } => match kind {
-                SymbolTempKind::Mod(decl) => hir_temp.get_mod(decl).name.range,
-                SymbolTempKind::Proc(decl) => decl.name.range,
-                SymbolTempKind::Enum(decl) => decl.name.range,
-                SymbolTempKind::Union(decl) => decl.name.range,
-                SymbolTempKind::Struct(decl) => decl.name.range,
-                SymbolTempKind::Const(decl) => decl.name.range,
-                SymbolTempKind::Global(decl) => decl.name.range,
+            Symbol::Defined { kind } => match kind {
+                SymbolKind::Mod(decl) => hb.get_mod(decl).name.range,
+                SymbolKind::Proc(id, decl) => decl.name.range,
+                SymbolKind::Enum(id, decl) => decl.name.range,
+                SymbolKind::Union(id, decl) => decl.name.range,
+                SymbolKind::Struct(id, decl) => decl.name.range,
+                SymbolKind::Const(id, decl) => decl.name.range,
+                SymbolKind::Global(id, decl) => decl.name.range,
             },
-            SymbolTemp::Imported { import, .. } => import,
+            Symbol::Imported { import, .. } => import,
         };
         self.source(range)
-    }
-}
-
-impl Scope {
-    pub fn new(parent: Option<ScopeID>) -> Scope {
-        Scope {
-            parent,
-            symbols: HashMap::new(),
-        }
-    }
-
-    pub fn parent(&self) -> Option<ScopeID> {
-        self.parent
-    }
-
-    pub fn add_symbol(&mut self, id: intern::InternID, symbol: Symbol) -> Result<(), Symbol> {
-        match self.symbols.get(&id).cloned() {
-            Some(existing) => Err(existing),
-            None => {
-                self.symbols.insert(id, symbol);
-                Ok(())
-            }
-        }
-    }
-
-    pub fn get_symbol(&self, id: intern::InternID) -> Option<Symbol> {
-        self.symbols.get(&id).cloned()
     }
 }
 
