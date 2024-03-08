@@ -1,5 +1,6 @@
 use crate::ast::ast;
 use crate::ast::intern;
+use crate::ast::CompCtx;
 use crate::err::error_new::SourceRange;
 use crate::hir;
 use crate::mem::Arena;
@@ -33,7 +34,8 @@ use std::collections::HashMap;
 // - minor changes:
 // use free functions for passes, with PassContext named `p` passed in (for read-ability)
 
-pub struct HirBuilder<'ast, 'hir: 'ast> {
+pub struct HirBuilder<'ctx, 'ast, 'hir> {
+    pub ctx: &'ctx CompCtx,
     ast: ast::Ast<'ast>,
     hir: hir::Hir<'hir>,
     mods: Vec<ModData>,
@@ -86,11 +88,12 @@ pub struct ScopeIter {
     len: u32,
 }
 
-impl<'ast, 'hir: 'ast> HirBuilder<'ast, 'hir> {
-    pub fn new(ast: ast::Ast<'ast>) -> HirBuilder {
+impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
+    pub fn new(ctx: &'ctx CompCtx, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
         HirBuilder {
+            ctx,
             ast,
-            hir: hir::Hir::<'hir> {
+            hir: hir::Hir {
                 arena: Arena::new(),
                 procs: Vec::new(),
                 enums: Vec::new(),
@@ -199,18 +202,9 @@ impl<'ast> Scope<'ast> {
         self.module.decls.into_iter()
     }
 
-    pub fn add_symbol(
-        &mut self,
-        id: intern::InternID,
-        symbol: Symbol<'ast>,
-    ) -> Result<(), Symbol<'ast>> {
-        match self.symbols.get(&id).cloned() {
-            Some(existing) => Err(existing),
-            None => {
-                self.symbols.insert(id, symbol);
-                Ok(())
-            }
-        }
+    pub fn add_symbol(&mut self, id: intern::InternID, symbol: Symbol<'ast>) {
+        assert!(self.get_symbol(id).is_none());
+        self.symbols.insert(id, symbol);
     }
 
     pub fn get_symbol(&self, id: intern::InternID) -> Option<Symbol<'ast>> {
@@ -221,20 +215,20 @@ impl<'ast> Scope<'ast> {
         SourceRange::new(range, self.module_file_id())
     }
 
-    pub fn get_local_symbol_source<'hir>(
+    pub fn get_defined_symbol_source<'ctx, 'hir>(
         &self,
-        hb: &HirBuilder<'ast, 'hir>,
+        hb: &HirBuilder<'ctx, 'ast, 'hir>,
         symbol: Symbol<'ast>,
     ) -> SourceRange {
         let range = match symbol {
             Symbol::Defined { kind } => match kind {
-                SymbolKind::Mod(decl) => hb.get_mod(decl).name.range,
-                SymbolKind::Proc(id, decl) => decl.name.range,
-                SymbolKind::Enum(id, decl) => decl.name.range,
-                SymbolKind::Union(id, decl) => decl.name.range,
-                SymbolKind::Struct(id, decl) => decl.name.range,
-                SymbolKind::Const(id, decl) => decl.name.range,
-                SymbolKind::Global(id, decl) => decl.name.range,
+                SymbolKind::Mod(id) => hb.get_mod(id).name.range,
+                SymbolKind::Proc(.., decl) => decl.name.range,
+                SymbolKind::Enum(.., decl) => decl.name.range,
+                SymbolKind::Union(.., decl) => decl.name.range,
+                SymbolKind::Struct(.., decl) => decl.name.range,
+                SymbolKind::Const(.., decl) => decl.name.range,
+                SymbolKind::Global(.., decl) => decl.name.range,
             },
             Symbol::Imported { import, .. } => import,
         };
