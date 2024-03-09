@@ -54,6 +54,10 @@ pub struct ModData {
 
 #[derive(Copy, Clone)]
 pub struct ScopeID(u32);
+
+// @in a single package project ROOT_SCOPE_ID is always 0 since its the first module to be added
+pub const ROOT_SCOPE_ID: ScopeID = ScopeID(0);
+
 pub struct Scope<'ast> {
     parent: Option<ScopeID>,
     module: ast::Module<'ast>,

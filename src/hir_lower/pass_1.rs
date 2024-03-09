@@ -85,37 +85,37 @@ fn process_scope_task<'ctx, 'ast, 'hir>(
         match decl {
             ast::Decl::Use(..) => {}
             ast::Decl::Mod(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_mod_decl(p, hb, scope_id, decl);
                 }
             }
             ast::Decl::Proc(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_proc_decl(p, hb, scope_id, decl);
                 }
             }
             ast::Decl::Enum(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_enum_decl(p, hb, scope_id, decl);
                 }
             }
             ast::Decl::Union(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_union_decl(p, hb, scope_id, decl);
                 }
             }
             ast::Decl::Struct(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_struct_decl(p, hb, scope_id, decl);
                 }
             }
             ast::Decl::Const(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_const_decl(p, hb, scope_id, decl);
                 }
             }
             ast::Decl::Global(decl) => {
-                if !name_already_defined_error(p, hb, scope_id, decl.name) {
+                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
                     add_defined_global_decl(p, hb, scope_id, decl);
                 }
             }
@@ -123,8 +123,8 @@ fn process_scope_task<'ctx, 'ast, 'hir>(
     }
 }
 
-fn name_already_defined_error<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
+pub fn name_already_defined_error<'ctx, 'ast, 'hir>(
+    errors: &mut Vec<ErrorComp>,
     hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
     scope_id: hb::ScopeID,
     name: ast::Ident,
@@ -137,7 +137,7 @@ fn name_already_defined_error<'ctx, 'ast, 'hir>(
     // @add marker for error span with "name redefinition"
     // to fully explain this error
     // currently marker are not possible on main error message source loc
-    p.errors.push(
+    errors.push(
         ErrorComp::new(
             format!(
                 "name `{}` is defined multiple times",
@@ -231,7 +231,7 @@ fn add_defined_mod_decl<'ctx, 'ast, 'hir>(
                     scope.source(decl.name.range),
                 )
                 .context(
-                    "taken by this mod declaration".into(),
+                    "taken by this module declaration".into(),
                     ErrorSeverity::InfoHint,
                     Some(src),
                 ),
