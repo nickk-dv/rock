@@ -1,5 +1,5 @@
 use crate::ast::ast;
-use crate::ast::intern;
+use crate::ast::intern::InternID;
 use crate::ast::CompCtx;
 use crate::err::error_new::SourceRange;
 use crate::hir;
@@ -61,7 +61,7 @@ pub const ROOT_SCOPE_ID: ScopeID = ScopeID(0);
 pub struct Scope<'ast> {
     parent: Option<ScopeID>,
     module: ast::Module<'ast>,
-    symbols: HashMap<intern::InternID, Symbol<'ast>>,
+    symbols: HashMap<InternID, Symbol<'ast>>,
 }
 
 #[rustfmt::skip]
@@ -80,6 +80,11 @@ pub enum SymbolKind<'ast> {
     Struct(hir::StructID, &'ast ast::StructDecl<'ast>),
     Const(hir::ConstID, &'ast ast::ConstDecl<'ast>),
     Global(hir::GlobalID, &'ast ast::GlobalDecl<'ast>),
+}
+
+pub struct SymbolQuery<'ast> {
+    kind: SymbolKind<'ast>,
+    source: SourceRange,
 }
 
 pub struct ConstExprTemp<'ast> {
@@ -183,6 +188,52 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     pub fn get_scope_mut(&mut self, id: ScopeID) -> &mut Scope<'ast> {
         self.scopes.get_mut(id.0 as usize).unwrap()
     }
+
+    fn symbol_kind_range(&self, kind: SymbolKind<'ast>) -> TextRange {
+        match kind {
+            SymbolKind::Mod(id) => self.get_mod(id).name.range,
+            SymbolKind::Proc(_, decl) => decl.name.range,
+            SymbolKind::Enum(_, decl) => decl.name.range,
+            SymbolKind::Union(_, decl) => decl.name.range,
+            SymbolKind::Struct(_, decl) => decl.name.range,
+            SymbolKind::Const(_, decl) => decl.name.range,
+            SymbolKind::Global(_, decl) => decl.name.range,
+        }
+    }
+
+    pub fn get_symbol(
+        &self,
+        id: InternID,
+        scope_id: ScopeID,
+        from_id: ScopeID,
+    ) -> Option<SymbolQuery<'ast>> {
+        // @doesnt work if scope_id is in path
+        // in that case imported will be able to be accessed
+        // allow it for now probably... not a big deal.
+        let scope = self.get_scope(from_id);
+        if scope_id.0 == from_id.0 {
+            // can take defined and imported symbols
+            match scope.symbols.get(&id).cloned() {
+                Some(Symbol::Defined { kind }) => Some(SymbolQuery {
+                    kind,
+                    source: scope.source(self.symbol_kind_range(kind)),
+                }),
+                Some(Symbol::Imported { kind, import }) => Some(SymbolQuery {
+                    kind,
+                    source: scope.source(import),
+                }),
+                _ => None,
+            }
+        } else {
+            match scope.symbols.get(&id).cloned() {
+                Some(Symbol::Defined { kind }) => Some(SymbolQuery {
+                    kind,
+                    source: scope.source(self.symbol_kind_range(kind)),
+                }),
+                _ => None,
+            }
+        }
+    }
 }
 
 impl<'ast> Scope<'ast> {
@@ -206,12 +257,12 @@ impl<'ast> Scope<'ast> {
         self.module.decls.into_iter()
     }
 
-    pub fn add_symbol(&mut self, id: intern::InternID, symbol: Symbol<'ast>) {
+    pub fn add_symbol(&mut self, id: InternID, symbol: Symbol<'ast>) {
         assert!(self.get_symbol(id).is_none());
         self.symbols.insert(id, symbol);
     }
 
-    pub fn get_symbol(&self, id: intern::InternID) -> Option<Symbol<'ast>> {
+    pub fn get_symbol(&self, id: InternID) -> Option<Symbol<'ast>> {
         self.symbols.get(&id).cloned()
     }
 
