@@ -497,7 +497,7 @@ fn add_defined_const_decl<'ctx, 'ast, 'hir>(
         from_id: scope_id,
         vis: decl.vis,
         name: decl.name,
-        ty: None,                   // @not handled
+        ty: hir::Type::Error,       // @not handled
         value: hir::ConstExprID(0), // @not handled
     });
 
@@ -520,7 +520,7 @@ fn add_defined_global_decl<'ctx, 'ast, 'hir>(
         from_id: scope_id,
         vis: decl.vis,
         name: decl.name,
-        ty: None,                   // @not handled
+        ty: hir::Type::Error,       // @not handled
         value: hir::ConstExprID(0), // @not handled
     });
 

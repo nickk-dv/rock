@@ -105,7 +105,7 @@ pub struct StructField<'ast> {
 pub struct ConstDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Option<Type<'ast>>, // @how to handle type is it required?
+    pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
 }
 
@@ -113,7 +113,7 @@ pub struct ConstDecl<'ast> {
 pub struct GlobalDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub ty: Option<Type<'ast>>, // @how to handle type is it required?
+    pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
 }
 

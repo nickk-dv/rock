@@ -303,15 +303,11 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         self.eat(); // `const`
         let name = self.ident(ParseCtx::ConstDecl)?;
         self.expect(Token::Colon, ParseCtx::ConstDecl)?;
-        let ty = if self.try_eat(Token::Equals) {
-            None
-        } else {
-            let ty = Some(self.ty()?);
-            self.expect(Token::Equals, ParseCtx::ConstDecl)?;
-            ty
-        };
+        let ty = self.ty()?;
+        self.expect(Token::Equals, ParseCtx::ConstDecl)?;
         let value = ConstExpr(self.expr()?);
         self.expect(Token::Semicolon, ParseCtx::ConstDecl)?;
+
         Ok(self.arena.alloc_ref_new(ConstDecl {
             vis,
             name,
@@ -324,15 +320,11 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         self.eat(); // `global`
         let name = self.ident(ParseCtx::GlobalDecl)?;
         self.expect(Token::Colon, ParseCtx::GlobalDecl)?;
-        let ty = if self.try_eat(Token::Equals) {
-            None
-        } else {
-            let ty = Some(self.ty()?);
-            self.expect(Token::Equals, ParseCtx::GlobalDecl)?;
-            ty
-        };
+        let ty = self.ty()?;
+        self.expect(Token::Equals, ParseCtx::GlobalDecl)?;
         let value = ConstExpr(self.expr()?);
         self.expect(Token::Semicolon, ParseCtx::GlobalDecl)?;
+
         Ok(self.arena.alloc_ref_new(GlobalDecl {
             vis,
             name,

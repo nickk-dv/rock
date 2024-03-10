@@ -148,18 +148,14 @@ fn visit_struct_decl<'ast, T: Visit<'ast>>(vis: &mut T, struct_decl: &'ast Struc
 fn visit_const_decl<'ast, T: Visit<'ast>>(vis: &mut T, const_decl: &'ast ConstDecl) {
     vis.visit_const_decl(const_decl);
     visit_ident(vis, &const_decl.name);
-    if let Some(ref ty) = const_decl.ty {
-        visit_type(vis, ty);
-    }
+    visit_type(vis, &const_decl.ty);
     visit_const_expr(vis, &const_decl.value);
 }
 
 fn visit_global_decl<'ast, T: Visit<'ast>>(vis: &mut T, global_decl: &'ast GlobalDecl) {
     vis.visit_global_decl(global_decl);
     visit_ident(vis, &global_decl.name);
-    if let Some(ref ty) = global_decl.ty {
-        visit_type(vis, ty);
-    }
+    visit_type(vis, &global_decl.ty);
     visit_const_expr(vis, &global_decl.value);
 }
 

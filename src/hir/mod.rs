@@ -108,7 +108,7 @@ pub struct ConstData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
-    pub ty: Option<Type<'hir>>, // @how to handle type is it required?
+    pub ty: Type<'hir>,
     pub value: ConstExprID,
 }
 
@@ -119,7 +119,7 @@ pub struct GlobalData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
-    pub ty: Option<Type<'hir>>, // @how to handle type is it required?
+    pub ty: Type<'hir>,
     pub value: ConstExprID,
 }
 
