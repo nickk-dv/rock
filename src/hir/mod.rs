@@ -8,6 +8,13 @@ use hir_builder as hb;
 //@try to remove from_id: hb::ScopeID, from data structs
 // (if possible) to fully de-couple any data thats needed to perform lowering from final Hir
 
+//@currently Hir doesnt store File information
+// related to scopes, only scope_ids are stored in arrays of Data structs
+// the spans and file_ids are still usefull for debug information or stack-traces
+// potentially during codegeneration.
+// So some Module or Scope information like FileID still needs to be included
+// This is not the top priority, so far.
+
 pub struct Hir<'hir> {
     arena: Arena<'hir>,
     procs: Vec<ProcData<'hir>>,
@@ -16,7 +23,7 @@ pub struct Hir<'hir> {
     structs: Vec<StructData<'hir>>,
     consts: Vec<ConstData<'hir>>,
     globals: Vec<GlobalData<'hir>>,
-    const_exprs: Vec<ConstExpr<'hir>>,
+    const_exprs: Vec<ConstExprData<'hir>>,
 }
 
 // @local storage bodies arent defined yet
@@ -26,7 +33,6 @@ pub struct LocalID(u32);
 
 #[derive(Copy, Clone)]
 pub struct ProcID(u32);
-#[derive(Copy, Clone)]
 pub struct ProcData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
@@ -48,7 +54,6 @@ pub struct ProcParam<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct EnumID(u32);
-#[derive(Copy, Clone)]
 pub struct EnumData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
@@ -66,7 +71,6 @@ pub struct EnumVariant {
 
 #[derive(Copy, Clone)]
 pub struct UnionID(u32);
-#[derive(Copy, Clone)]
 pub struct UnionData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
@@ -84,7 +88,6 @@ pub struct UnionMember<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct StructID(u32);
-#[derive(Copy, Clone)]
 pub struct StructData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
@@ -103,7 +106,6 @@ pub struct StructField<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ConstID(u32);
-#[derive(Copy, Clone)]
 pub struct ConstData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
@@ -114,7 +116,6 @@ pub struct ConstData<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct GlobalID(u32);
-#[derive(Copy, Clone)]
 pub struct GlobalData<'hir> {
     pub from_id: hb::ScopeID,
     pub vis: ast::Vis,
@@ -124,9 +125,8 @@ pub struct GlobalData<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct ConstExprID(pub u32); //@hide vis
-#[derive(Copy, Clone)]
-pub struct ConstExpr<'hir> {
+pub struct ConstExprID(u32);
+pub struct ConstExprData<'hir> {
     pub from_id: hb::ScopeID,
     pub value: Option<&'hir Expr<'hir>>,
 }
@@ -303,7 +303,7 @@ impl<'hir> Hir<'hir> {
     pub fn get_global(&self, id: GlobalID) -> &GlobalData {
         self.globals.get(id.0 as usize).unwrap()
     }
-    pub fn get_const_expr(&self, id: ConstExprID) -> &ConstExpr {
+    pub fn get_const_expr(&self, id: ConstExprID) -> &ConstExprData {
         self.const_exprs.get(id.0 as usize).unwrap()
     }
 }

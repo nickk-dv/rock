@@ -35,12 +35,18 @@ use std::collections::HashMap;
 // use free functions for passes, with PassContext named `p` passed in (for read-ability)
 
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
-    pub ctx: &'ctx CompCtx,
+    ctx: &'ctx CompCtx,
     ast: ast::Ast<'ast>,
-    hir: hir::Hir<'hir>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
-    const_exprs: Vec<ConstExprTemp<'ast>>,
+    hir: hir::Hir<'hir>,
+    ast_procs: Vec<&'ast ast::ProcDecl<'ast>>,
+    ast_enums: Vec<&'ast ast::EnumDecl<'ast>>,
+    ast_unions: Vec<&'ast ast::UnionDecl<'ast>>,
+    ast_structs: Vec<&'ast ast::StructDecl<'ast>>,
+    ast_consts: Vec<&'ast ast::ConstDecl<'ast>>,
+    ast_globals: Vec<&'ast ast::GlobalDecl<'ast>>,
+    ast_const_exprs: Vec<ast::ConstExpr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
@@ -57,40 +63,37 @@ pub struct ScopeID(u32);
 
 // @in a single package project ROOT_SCOPE_ID is always 0 since its the first module to be added
 pub const ROOT_SCOPE_ID: ScopeID = ScopeID(0);
+pub const DUMMY_CONST_EXPR_ID: hir::ConstExprID = hir::ConstExprID(u32::MAX);
 
 pub struct Scope<'ast> {
     parent: Option<ScopeID>,
     module: ast::Module<'ast>,
-    symbols: HashMap<InternID, Symbol<'ast>>,
+    symbols: HashMap<InternID, Symbol>,
 }
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum Symbol<'ast> {
-    Defined  { kind: SymbolKind<'ast> },
-    Imported { kind: SymbolKind<'ast>, import: TextRange },
+pub enum Symbol {
+    Defined  { kind: SymbolKind, },
+    Imported { kind: SymbolKind, use_range: TextRange },
 }
 
 #[derive(Copy, Clone)]
-pub enum SymbolKind<'ast> {
+pub enum SymbolKind {
     Mod(ModID),
-    Proc(hir::ProcID, &'ast ast::ProcDecl<'ast>),
-    Enum(hir::EnumID, &'ast ast::EnumDecl<'ast>),
-    Union(hir::UnionID, &'ast ast::UnionDecl<'ast>),
-    Struct(hir::StructID, &'ast ast::StructDecl<'ast>),
-    Const(hir::ConstID, &'ast ast::ConstDecl<'ast>),
-    Global(hir::GlobalID, &'ast ast::GlobalDecl<'ast>),
+    Proc(hir::ProcID),
+    Enum(hir::EnumID),
+    Union(hir::UnionID),
+    Struct(hir::StructID),
+    Const(hir::ConstID),
+    Global(hir::GlobalID),
 }
 
-pub struct SymbolQuery<'ast> {
-    kind: SymbolKind<'ast>,
-    source: SourceRange,
-}
-
-pub struct ConstExprTemp<'ast> {
-    pub from_id: ScopeID,
-    pub source: &'ast ast::Expr<'ast>,
-}
+//@revisit
+//pub struct SymbolQuery<'ast> {
+//    kind: SymbolKind<'ast>,
+//    source: SourceRange,
+//}
 
 pub struct ScopeIter {
     curr: u32,
@@ -102,6 +105,8 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         HirBuilder {
             ctx,
             ast,
+            mods: Vec::new(),
+            scopes: Vec::new(),
             hir: hir::Hir {
                 arena: Arena::new(),
                 procs: Vec::new(),
@@ -112,9 +117,13 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
                 globals: Vec::new(),
                 const_exprs: Vec::new(),
             },
-            mods: Vec::new(),
-            scopes: Vec::new(),
-            const_exprs: Vec::new(),
+            ast_procs: Vec::new(),
+            ast_enums: Vec::new(),
+            ast_unions: Vec::new(),
+            ast_structs: Vec::new(),
+            ast_consts: Vec::new(),
+            ast_globals: Vec::new(),
+            ast_const_exprs: Vec::new(),
         }
     }
 
@@ -122,42 +131,107 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         self.hir
     }
 
+    pub fn ctx(&self) -> &'ctx CompCtx {
+        self.ctx
+    }
+
+    pub fn name_str(&self, id: InternID) -> &str {
+        self.ctx.intern().get_str(id)
+    }
+
     pub fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.hir.arena
     }
 
-    pub fn add_proc(&mut self, data: hir::ProcData<'hir>) -> hir::ProcID {
-        self.hir.procs.push(data);
-        hir::ProcID((self.hir.procs.len() - 1) as u32)
-    }
-    pub fn add_enum(&mut self, data: hir::EnumData<'hir>) -> hir::EnumID {
-        self.hir.enums.push(data);
-        hir::EnumID((self.hir.enums.len() - 1) as u32)
-    }
-    pub fn add_union(&mut self, data: hir::UnionData<'hir>) -> hir::UnionID {
-        self.hir.unions.push(data);
-        hir::UnionID((self.hir.unions.len() - 1) as u32)
-    }
-    pub fn add_struct(&mut self, data: hir::StructData<'hir>) -> hir::StructID {
-        self.hir.structs.push(data);
-        hir::StructID((self.hir.structs.len() - 1) as u32)
-    }
-    pub fn add_const(&mut self, data: hir::ConstData<'hir>) -> hir::ConstID {
-        self.hir.consts.push(data);
-        hir::ConstID((self.hir.consts.len() - 1) as u32)
-    }
-    pub fn add_global(&mut self, data: hir::GlobalData<'hir>) -> hir::GlobalID {
-        self.hir.globals.push(data);
-        hir::GlobalID((self.hir.globals.len() - 1) as u32)
-    }
-    pub fn add_const_expr(&mut self, data: hir::ConstExpr<'hir>) -> hir::ConstExprID {
-        self.hir.const_exprs.push(data);
-        // @self const exprs not the hir const_exprs
-        hir::ConstExprID((self.const_exprs.len() - 1) as u32)
-    }
-
     pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
         self.ast.modules.iter()
+    }
+
+    pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
+        let id = ModID(self.mods.len() as u32);
+        self.mods.push(data);
+        let symbol = Symbol::Defined {
+            kind: SymbolKind::Mod(id),
+        };
+        (symbol, id)
+    }
+
+    pub fn add_proc(
+        &mut self,
+        decl: &'ast ast::ProcDecl<'ast>,
+        data: hir::ProcData<'hir>,
+    ) -> Symbol {
+        let id = hir::ProcID(self.ast_procs.len() as u32);
+        self.ast_procs.push(decl);
+        self.hir.procs.push(data);
+        Symbol::Defined {
+            kind: SymbolKind::Proc(id),
+        }
+    }
+
+    pub fn add_enum(
+        &mut self,
+        decl: &'ast ast::EnumDecl<'ast>,
+        data: hir::EnumData<'hir>,
+    ) -> Symbol {
+        let id = hir::EnumID(self.ast_enums.len() as u32);
+        self.ast_enums.push(decl);
+        self.hir.enums.push(data);
+        Symbol::Defined {
+            kind: SymbolKind::Enum(id),
+        }
+    }
+
+    pub fn add_union(
+        &mut self,
+        decl: &'ast ast::UnionDecl<'ast>,
+        data: hir::UnionData<'hir>,
+    ) -> Symbol {
+        let id = hir::UnionID(self.ast_unions.len() as u32);
+        self.ast_unions.push(decl);
+        self.hir.unions.push(data);
+        Symbol::Defined {
+            kind: SymbolKind::Union(id),
+        }
+    }
+
+    pub fn add_struct(
+        &mut self,
+        decl: &'ast ast::StructDecl<'ast>,
+        data: hir::StructData<'hir>,
+    ) -> Symbol {
+        let id = hir::StructID(self.ast_structs.len() as u32);
+        self.ast_structs.push(decl);
+        self.hir.structs.push(data);
+        Symbol::Defined {
+            kind: SymbolKind::Struct(id),
+        }
+    }
+
+    pub fn add_const(
+        &mut self,
+        decl: &'ast ast::ConstDecl<'ast>,
+        data: hir::ConstData<'hir>,
+    ) -> Symbol {
+        let id = hir::ConstID(self.ast_consts.len() as u32);
+        self.ast_consts.push(decl);
+        self.hir.consts.push(data);
+        Symbol::Defined {
+            kind: SymbolKind::Const(id),
+        }
+    }
+
+    pub fn add_global(
+        &mut self,
+        decl: &'ast ast::GlobalDecl<'ast>,
+        data: hir::GlobalData<'hir>,
+    ) -> Symbol {
+        let id = hir::GlobalID(self.ast_globals.len() as u32);
+        self.ast_globals.push(decl);
+        self.hir.globals.push(data);
+        Symbol::Defined {
+            kind: SymbolKind::Global(id),
+        }
     }
 
     pub fn scope_ids(&self) -> ScopeIter {
@@ -167,10 +241,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
-    pub fn add_mod(&mut self, data: ModData) -> ModID {
-        self.mods.push(data);
-        ModID((self.mods.len() - 1) as u32)
-    }
     pub fn get_mod(&self, id: ModID) -> &ModData {
         self.mods.get(id.0 as usize).unwrap()
     }
@@ -189,18 +259,28 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         self.scopes.get_mut(id.0 as usize).unwrap()
     }
 
-    fn symbol_kind_range(&self, kind: SymbolKind<'ast>) -> TextRange {
-        match kind {
-            SymbolKind::Mod(id) => self.get_mod(id).name.range,
-            SymbolKind::Proc(_, decl) => decl.name.range,
-            SymbolKind::Enum(_, decl) => decl.name.range,
-            SymbolKind::Union(_, decl) => decl.name.range,
-            SymbolKind::Struct(_, decl) => decl.name.range,
-            SymbolKind::Const(_, decl) => decl.name.range,
-            SymbolKind::Global(_, decl) => decl.name.range,
+    pub fn symbol_range(&self, symbol: Symbol) -> TextRange {
+        match symbol {
+            Symbol::Defined { kind } => self.symbol_kind_range(kind),
+            Symbol::Imported { use_range, .. } => use_range,
         }
     }
 
+    fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
+        match kind {
+            SymbolKind::Mod(id) => self.get_mod(id).name.range,
+            SymbolKind::Proc(id) => self.hir.get_proc(id).name.range,
+            SymbolKind::Enum(id) => self.hir.get_enum(id).name.range,
+            SymbolKind::Union(id) => self.hir.get_union(id).name.range,
+            SymbolKind::Struct(id) => self.hir.get_struct(id).name.range,
+            SymbolKind::Const(id) => self.hir.get_const(id).name.range,
+            SymbolKind::Global(id) => self.hir.get_global(id).name.range,
+        }
+    }
+
+    //@revisit the concept of single query system
+    // (need to specify if its in path) to not allow access to imports
+    /*
     pub fn get_symbol(
         &self,
         id: InternID,
@@ -234,6 +314,7 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             }
         }
     }
+    */
 }
 
 impl<'ast> Scope<'ast> {
@@ -249,45 +330,25 @@ impl<'ast> Scope<'ast> {
         self.parent
     }
 
-    pub fn module_file_id(&self) -> crate::ast::FileID {
+    pub fn file_id(&self) -> crate::ast::FileID {
         self.module.file_id
     }
 
-    pub fn module_decls(&self) -> impl Iterator<Item = ast::Decl<'ast>> {
+    pub fn ast_decls(&self) -> impl Iterator<Item = ast::Decl<'ast>> {
         self.module.decls.into_iter()
     }
 
-    pub fn add_symbol(&mut self, id: InternID, symbol: Symbol<'ast>) {
+    pub fn add_symbol(&mut self, id: InternID, symbol: Symbol) {
         assert!(self.get_symbol(id).is_none());
         self.symbols.insert(id, symbol);
     }
 
-    pub fn get_symbol(&self, id: InternID) -> Option<Symbol<'ast>> {
+    pub fn get_symbol(&self, id: InternID) -> Option<Symbol> {
         self.symbols.get(&id).cloned()
     }
 
     pub fn source(&self, range: TextRange) -> SourceRange {
-        SourceRange::new(range, self.module_file_id())
-    }
-
-    pub fn get_defined_symbol_source<'ctx, 'hir>(
-        &self,
-        hb: &HirBuilder<'ctx, 'ast, 'hir>,
-        symbol: Symbol<'ast>,
-    ) -> SourceRange {
-        let range = match symbol {
-            Symbol::Defined { kind } => match kind {
-                SymbolKind::Mod(id) => hb.get_mod(id).name.range,
-                SymbolKind::Proc(.., decl) => decl.name.range,
-                SymbolKind::Enum(.., decl) => decl.name.range,
-                SymbolKind::Union(.., decl) => decl.name.range,
-                SymbolKind::Struct(.., decl) => decl.name.range,
-                SymbolKind::Const(.., decl) => decl.name.range,
-                SymbolKind::Global(.., decl) => decl.name.range,
-            },
-            Symbol::Imported { import, .. } => import,
-        };
-        self.source(range)
+        SourceRange::new(range, self.file_id())
     }
 }
 

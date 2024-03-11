@@ -1,5 +1,6 @@
 mod pass_1;
 mod pass_2;
+mod pass_3;
 
 use crate::ast::ast;
 use crate::ast::CompCtx;
@@ -16,6 +17,7 @@ pub fn check<'ctx, 'ast, 'hir>(
 
     errors.extend(pass_1::run(&mut hir_builder));
     errors.extend(pass_2::run(&mut hir_builder));
+    errors.extend(pass_3::run(&mut hir_builder));
 
     if errors.is_empty() {
         Ok(hir_builder.finish())

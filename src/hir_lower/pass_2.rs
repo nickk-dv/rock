@@ -19,7 +19,7 @@ pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
     for scope_id in hb.scope_ids() {
         let mut use_tasks = Vec::new();
 
-        for decl in hb.get_scope(scope_id).module_decls() {
+        for decl in hb.get_scope(scope_id).ast_decls() {
             if let ast::Decl::Use(use_decl) = decl {
                 use_tasks.push(UseTask {
                     resolved: false,
@@ -51,7 +51,7 @@ pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
             }
             for name in task.decl.path.names.iter() {
                 p.errors.push(ErrorComp::new(
-                    format!("module `{}` is not found", hb.ctx.intern().get_str(name.id)).into(),
+                    format!("module `{}` is not found", hb.name_str(name.id)).into(),
                     ErrorSeverity::Error,
                     scope.source(name.range),
                 ));
@@ -93,7 +93,7 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
                         alias_name.id,
                         hb::Symbol::Imported {
                             kind,
-                            import: alias_name.range,
+                            use_range: alias_name.range,
                         },
                     )
                 }
@@ -111,7 +111,7 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
                 p.errors.push(ErrorComp::new(
                     format!(
                         "name `{}` is not found in module", //@support showing module paths in all errors
-                        hb.ctx.intern().get_str(use_name.name.id)
+                        hb.name_str(use_name.name.id)
                     )
                     .into(),
                     ErrorSeverity::Error,
@@ -156,7 +156,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
         match from_scope.get_symbol(name.id) {
             // copy pasted Defined code, not checking if from_scope and origin_scope match
             // hack to get out of order imports working
-            Some(hb::Symbol::Imported { kind, import }) => match kind {
+            Some(hb::Symbol::Imported { kind, use_range }) => match kind {
                 hb::SymbolKind::Mod(id) => {
                     let mod_data = hb.get_mod(id);
                     if let Some(target) = mod_data.target {
@@ -165,7 +165,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                         p.errors.push(ErrorComp::new(
                             format!(
                                 "module `{}` is missing its associated file",
-                                hb.ctx.intern().get_str(name.id)
+                                hb.name_str(name.id)
                             )
                             .into(),
                             ErrorSeverity::Error,
@@ -177,7 +177,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                 _ => {
                     // add info hint to its declaration or apperance if its imported
                     p.errors.push(ErrorComp::new(
-                        format!("`{}` is not a module", hb.ctx.intern().get_str(name.id)).into(),
+                        format!("`{}` is not a module", hb.name_str(name.id)).into(),
                         ErrorSeverity::Error,
                         origin_scope.source(name.range),
                     ));
@@ -196,7 +196,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                         p.errors.push(ErrorComp::new(
                             format!(
                                 "module `{}` is missing its associated file",
-                                hb.ctx.intern().get_str(name.id)
+                                hb.name_str(name.id)
                             )
                             .into(),
                             ErrorSeverity::Error,
@@ -208,7 +208,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                 _ => {
                     // add info hint to its declaration or apperance if its imported
                     p.errors.push(ErrorComp::new(
-                        format!("`{}` is not a module", hb.ctx.intern().get_str(name.id)).into(),
+                        format!("`{}` is not a module", hb.name_str(name.id)).into(),
                         ErrorSeverity::Error,
                         origin_scope.source(name.range),
                     ));
@@ -220,7 +220,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                     return Err(());
                 }
                 p.errors.push(ErrorComp::new(
-                    format!("module `{}` is not found", hb.ctx.intern().get_str(name.id)).into(),
+                    format!("module `{}` is not found", hb.name_str(name.id)).into(),
                     ErrorSeverity::Error,
                     origin_scope.source(name.range),
                 ));

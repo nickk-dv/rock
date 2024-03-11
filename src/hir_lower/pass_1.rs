@@ -26,26 +26,23 @@ enum ModuleStatus<'ast> {
 pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
     let mut p = Pass::default();
     make_module_path_map(&mut p, hb);
-    push_root_scope_task(&mut p);
+    add_root_scope_task(&mut p);
     while let Some(task) = p.task_queue.pop() {
         process_scope_task(&mut p, hb, task);
     }
     p.errors
 }
 
-fn make_module_path_map<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &hb::HirBuilder<'ctx, 'ast, 'hir>,
-) {
+fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, '_>) {
     for module in hb.ast_modules().cloned() {
         p.module_map.insert(
-            hb.ctx.file(module.file_id).path.clone(),
+            hb.ctx().file(module.file_id).path.clone(),
             ModuleStatus::Available(module),
         );
     }
 }
 
-fn push_root_scope_task<'ctx, 'ast, 'hir>(p: &mut Pass<'ast>) {
+fn add_root_scope_task(p: &mut Pass) {
     let root_path: PathBuf = ["test", "main.lang"].iter().collect();
     match p.module_map.remove(&root_path) {
         Some(status) => match status {
@@ -59,14 +56,15 @@ fn push_root_scope_task<'ctx, 'ast, 'hir>(p: &mut Pass<'ast>) {
         },
         None => {
             //@ reporting without main source range is not supported yet @03/05/24
+            //@allow errors without any context @03/11/24
             eprintln!("no root module found, add src/main.lang");
         }
     }
 }
 
-fn process_scope_task<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
+fn process_scope_task<'ast>(
+    p: &mut Pass,
+    hb: &mut hb::HirBuilder<'_, 'ast, '_>,
     task: ScopeTreeTask<'ast>,
 ) {
     let parent = match task.parent {
@@ -74,58 +72,115 @@ fn process_scope_task<'ctx, 'ast, 'hir>(
         None => None,
     };
 
-    let scope_temp = hb::Scope::new(parent, task.module);
-    let scope_id = hb.add_scope(scope_temp);
+    let scope = hb::Scope::new(parent, task.module);
+    let scope_id = hb.add_scope(scope);
 
     if let Some(mod_id) = task.parent {
         hb.get_mod_mut(mod_id).target = Some(scope_id);
     }
 
-    for decl in hb.get_scope(scope_id).module_decls() {
+    for decl in hb.get_scope(scope_id).ast_decls() {
         match decl {
-            ast::Decl::Use(..) => {}
+            ast::Decl::Use(..) => {
+                continue;
+            }
             ast::Decl::Mod(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_mod_decl(p, hb, scope_id, decl);
+                    let data = hb::ModData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        target: None,
+                    };
+                    let (symbol, id) = hb.add_mod(data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
+                    add_scope_task_from_mod_decl(p, hb, scope_id, decl, id);
                 }
             }
             ast::Decl::Proc(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_proc_decl(p, hb, scope_id, decl);
+                    let data = hir::ProcData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        params: &[],
+                        is_variadic: decl.is_variadic,
+                        return_ty: hir::Type::Error,
+                        block: None,
+                    };
+                    let symbol = hb.add_proc(decl, data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
                 }
             }
             ast::Decl::Enum(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_enum_decl(p, hb, scope_id, decl);
+                    let data = hir::EnumData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        variants: &[],
+                    };
+                    let symbol = hb.add_enum(decl, data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
                 }
             }
             ast::Decl::Union(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_union_decl(p, hb, scope_id, decl);
+                    let data = hir::UnionData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        members: &[],
+                    };
+                    let symbol = hb.add_union(decl, data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
                 }
             }
             ast::Decl::Struct(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_struct_decl(p, hb, scope_id, decl);
+                    let data = hir::StructData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        fields: &[],
+                    };
+                    let symbol = hb.add_struct(decl, data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
                 }
             }
             ast::Decl::Const(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_const_decl(p, hb, scope_id, decl);
+                    let data = hir::ConstData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        ty: hir::Type::Error,
+                        value: hb::DUMMY_CONST_EXPR_ID,
+                    };
+                    let symbol = hb.add_const(decl, data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
                 }
             }
             ast::Decl::Global(decl) => {
                 if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
-                    add_defined_global_decl(p, hb, scope_id, decl);
+                    let data = hir::GlobalData {
+                        from_id: scope_id,
+                        vis: decl.vis,
+                        name: decl.name,
+                        ty: hir::Type::Error,
+                        value: hb::DUMMY_CONST_EXPR_ID,
+                    };
+                    let symbol = hb.add_global(decl, data);
+                    hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
                 }
             }
         }
     }
 }
 
-pub fn name_already_defined_error<'ctx, 'ast, 'hir>(
+pub fn name_already_defined_error(
     errors: &mut Vec<ErrorComp>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
+    hb: &mut hb::HirBuilder,
     scope_id: hb::ScopeID,
     name: ast::Ident,
 ) -> bool {
@@ -139,49 +194,31 @@ pub fn name_already_defined_error<'ctx, 'ast, 'hir>(
     // currently marker are not possible on main error message source loc
     errors.push(
         ErrorComp::new(
-            format!(
-                "name `{}` is defined multiple times",
-                hb.ctx.intern().get_str(name.id)
-            )
-            .into(),
+            format!("name `{}` is defined multiple times", hb.name_str(name.id)).into(),
             ErrorSeverity::Error,
             scope.source(name.range),
         )
         .context(
             "existing definition".into(),
             ErrorSeverity::InfoHint,
-            Some(scope.get_defined_symbol_source(hb, existing)),
+            Some(scope.source(hb.symbol_range(existing))),
         ),
     );
     true
 }
 
-fn add_defined_mod_decl<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
+fn add_scope_task_from_mod_decl(
+    p: &mut Pass,
+    hb: &mut hb::HirBuilder,
     scope_id: hb::ScopeID,
-    decl: &'ast ast::ModDecl,
+    decl: &ast::ModDecl,
+    id: hb::ModID,
 ) {
-    let id = hb.add_mod(hb::ModData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        target: None,
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Mod(id),
-        },
-    );
-
     let scope = hb.get_scope(scope_id);
-    let mut scope_dir = hb.ctx.file(scope.module_file_id()).path.clone();
+    let mut scope_dir = hb.ctx().file(scope.file_id()).path.clone();
     scope_dir.pop();
 
-    let mod_name = hb.ctx.intern().get_str(decl.name.id);
+    let mod_name = hb.name_str(decl.name.id);
     let mod_filename = mod_name.to_string() + ".lang";
     let mod_path_1 = scope_dir.join(mod_filename);
     let mod_path_2 = scope_dir.join(mod_name).join("mod.lang");
@@ -214,17 +251,28 @@ fn add_defined_mod_decl<'ctx, 'ast, 'hir>(
             ));
             return;
         }
-        (Some(status), None) => (status, mod_path_1.clone()),
-        (None, Some(status)) => (status, mod_path_2.clone()),
+        (Some(status), None) => (status, mod_path_1),
+        (None, Some(status)) => (status, mod_path_2),
     };
 
     match status {
+        ModuleStatus::Available(module) => {
+            let replaced = p.module_map.insert(
+                chosen_path,
+                ModuleStatus::Taken(scope.source(decl.name.range)),
+            );
+            assert!(replaced.is_some());
+            p.task_queue.push(ScopeTreeTask {
+                module,
+                parent: Some(id),
+            });
+        }
         ModuleStatus::Taken(src) => {
             p.errors.push(
                 ErrorComp::new(
                     format!(
                         "module `{}` is already taken by other mod declaration",
-                        hb.ctx.intern().get_str(decl.name.id)
+                        hb.name_str(decl.name.id)
                     )
                     .into(),
                     ErrorSeverity::Error,
@@ -237,298 +285,5 @@ fn add_defined_mod_decl<'ctx, 'ast, 'hir>(
                 ),
             );
         }
-        ModuleStatus::Available(module) => {
-            p.module_map.insert(
-                chosen_path,
-                ModuleStatus::Taken(scope.source(decl.name.range)),
-            );
-            p.task_queue.push(ScopeTreeTask {
-                module,
-                parent: Some(id),
-            });
-        }
     }
-}
-
-fn add_defined_proc_decl<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
-    decl: &'ast ast::ProcDecl<'ast>,
-) {
-    let scope = hb.get_scope(scope_id);
-    let mut unique_params = Vec::<hir::ProcParam>::new();
-
-    for param in decl.params.iter() {
-        if let Some(existing) = unique_params.iter().find_map(|it| {
-            if it.name.id == param.name.id {
-                Some(it)
-            } else {
-                None
-            }
-        }) {
-            p.errors.push(
-                ErrorComp::new(
-                    format!(
-                        "parameter `{}` is defined multiple times",
-                        hb.ctx.intern().get_str(param.name.id)
-                    )
-                    .into(),
-                    ErrorSeverity::Error,
-                    scope.source(param.name.range),
-                )
-                .context(
-                    "existing parameter".into(),
-                    ErrorSeverity::InfoHint,
-                    Some(scope.source(existing.name.range)),
-                ),
-            );
-        } else {
-            unique_params.push(hir::ProcParam {
-                mutt: param.mutt,
-                name: param.name,
-                ty: hir::Type::Error,
-            });
-        }
-    }
-
-    let params = hb.arena().alloc_slice(&unique_params);
-    let id = hb.add_proc(hir::ProcData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        params,
-        is_variadic: decl.is_variadic,
-        return_ty: hir::Type::Error, //@array constants not processed
-        block: None,
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Proc(id, decl),
-        },
-    );
-}
-
-fn add_defined_enum_decl<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
-    decl: &'ast ast::EnumDecl<'ast>,
-) {
-    let scope = hb.get_scope(scope_id);
-    let mut unique_variants = Vec::<hir::EnumVariant>::new();
-
-    for variant in decl.variants.iter() {
-        if let Some(existing) = unique_variants.iter().find_map(|it| {
-            if it.name.id == variant.name.id {
-                Some(it)
-            } else {
-                None
-            }
-        }) {
-            p.errors.push(
-                ErrorComp::new(
-                    format!(
-                        "variant `{}` is defined multiple times",
-                        hb.ctx.intern().get_str(variant.name.id)
-                    )
-                    .into(),
-                    ErrorSeverity::Error,
-                    scope.source(variant.name.range),
-                )
-                .context(
-                    "existing variant".into(),
-                    ErrorSeverity::InfoHint,
-                    Some(scope.source(existing.name.range)),
-                ),
-            );
-        } else {
-            unique_variants.push(hir::EnumVariant {
-                name: variant.name,
-                value: None, //@optional constant expr value not handled
-            });
-        }
-    }
-
-    let variants = hb.arena().alloc_slice(&unique_variants);
-    let id = hb.add_enum(hir::EnumData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        variants,
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Enum(id, decl),
-        },
-    );
-}
-
-fn add_defined_union_decl<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
-    decl: &'ast ast::UnionDecl<'ast>,
-) {
-    let scope = hb.get_scope(scope_id);
-    let mut unique_members = Vec::<hir::UnionMember>::new();
-
-    for member in decl.members.iter() {
-        if let Some(existing) = unique_members.iter().find_map(|it| {
-            if it.name.id == member.name.id {
-                Some(it)
-            } else {
-                None
-            }
-        }) {
-            p.errors.push(
-                ErrorComp::new(
-                    format!(
-                        "member `{}` is defined multiple times",
-                        hb.ctx.intern().get_str(member.name.id)
-                    )
-                    .into(),
-                    ErrorSeverity::Error,
-                    scope.source(member.name.range),
-                )
-                .context(
-                    "existing member".into(),
-                    ErrorSeverity::InfoHint,
-                    Some(scope.source(existing.name.range)),
-                ),
-            );
-        } else {
-            unique_members.push(hir::UnionMember {
-                name: member.name,
-                ty: hir::Type::Error, // @not handled
-            });
-        }
-    }
-
-    let members = hb.arena().alloc_slice(&unique_members);
-    let id = hb.add_union(hir::UnionData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        members,
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Union(id, decl),
-        },
-    );
-}
-
-fn add_defined_struct_decl<'ctx, 'ast, 'hir>(
-    p: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
-    decl: &'ast ast::StructDecl<'ast>,
-) {
-    let scope = hb.get_scope(scope_id);
-    let mut unique_fields = Vec::<hir::StructField>::new();
-
-    for field in decl.fields.iter() {
-        if let Some(existing) = unique_fields.iter().find_map(|it| {
-            if it.name.id == field.name.id {
-                Some(it)
-            } else {
-                None
-            }
-        }) {
-            p.errors.push(
-                ErrorComp::new(
-                    format!(
-                        "field `{}` is defined multiple times",
-                        hb.ctx.intern().get_str(field.name.id)
-                    )
-                    .into(),
-                    ErrorSeverity::Error,
-                    scope.source(field.name.range),
-                )
-                .context(
-                    "existing field".into(),
-                    ErrorSeverity::InfoHint,
-                    Some(scope.source(existing.name.range)),
-                ),
-            );
-        } else {
-            unique_fields.push(hir::StructField {
-                vis: field.vis,
-                name: field.name,
-                ty: hir::Type::Error, // @not handled
-            });
-        }
-    }
-
-    let fields = hb.arena().alloc_slice(&unique_fields);
-    let id = hb.add_struct(hir::StructData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        fields,
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Struct(id, decl),
-        },
-    );
-}
-
-fn add_defined_const_decl<'ctx, 'ast, 'hir>(
-    _: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
-    decl: &'ast ast::ConstDecl<'ast>,
-) {
-    let id = hb.add_const(hir::ConstData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        ty: hir::Type::Error,       // @not handled
-        value: hir::ConstExprID(0), // @not handled
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Const(id, decl),
-        },
-    );
-}
-
-fn add_defined_global_decl<'ctx, 'ast, 'hir>(
-    _: &mut Pass<'ast>,
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
-    decl: &'ast ast::GlobalDecl<'ast>,
-) {
-    let id = hb.add_global(hir::GlobalData {
-        from_id: scope_id,
-        vis: decl.vis,
-        name: decl.name,
-        ty: hir::Type::Error,       // @not handled
-        value: hir::ConstExprID(0), // @not handled
-    });
-
-    let scope = hb.get_scope_mut(scope_id);
-    scope.add_symbol(
-        decl.name.id,
-        hb::Symbol::Defined {
-            kind: hb::SymbolKind::Global(id, decl),
-        },
-    );
 }
