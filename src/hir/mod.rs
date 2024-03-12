@@ -146,6 +146,7 @@ pub enum Type<'hir> {
     Reference(&'hir Type<'hir>, ast::Mut),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
+    ArrayStaticDecl(&'hir ArrayStaticDecl<'hir>),
 }
 
 #[derive(Copy, Clone)]
@@ -157,6 +158,12 @@ pub struct ArraySlice<'hir> {
 #[derive(Copy, Clone)]
 pub struct ArrayStatic<'hir> {
     pub size: &'hir Expr<'hir>,
+    pub ty: Type<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayStaticDecl<'hir> {
+    pub size: ConstExprID,
     pub ty: Type<'hir>,
 }
 
