@@ -3,7 +3,76 @@ use crate::err::error_new::{ErrorComp, ErrorSeverity, SourceRange};
 use crate::hir;
 use crate::hir::hir_builder as hb;
 
-pub fn run(hb: &mut hb::HirBuilder) {}
+pub fn run(hb: &mut hb::HirBuilder) {
+    for id in hb.enum_ids() {
+        let decl = hb.enum_ast(id);
+        let from_id = hb.enum_data(id).from_id;
+
+        let mut unique_variants = Vec::<hir::EnumVariant>::new();
+        for variant in decl.variants.iter() {
+            if let Some(existing) = unique_variants.iter().find_map(|it| {
+                if it.name.id == variant.name.id {
+                    Some(it)
+                } else {
+                    None
+                }
+            }) {
+                let scope = hb.get_scope(from_id);
+                hb.error(
+                    ErrorComp::new(
+                        format!(
+                            "variant `{}` is defined multiple times",
+                            hb.name_str(variant.name.id)
+                        )
+                        .into(),
+                        ErrorSeverity::Error,
+                        scope.source(variant.name.range),
+                    )
+                    .context(
+                        "existing variant".into(),
+                        ErrorSeverity::InfoHint,
+                        Some(scope.source(existing.name.range)),
+                    ),
+                );
+            } else {
+                let value = if let Some(const_expr) = variant.value {
+                    let const_id = hb.add_const_expr(from_id, const_expr);
+                    match const_expr.0.kind {
+                        ast::ExprKind::LitInt { val, ty } => {
+                            let resolved = hb.arena().alloc_ref_new(hir::Expr {
+                                kind: hir::ExprKind::LitInt {
+                                    val,
+                                    ty: ast::BasicType::U64,
+                                },
+                                range: const_expr.0.range,
+                            });
+                            hb.resolve_const_expr(const_id, resolved);
+                        }
+                        _ => {
+                            let source = hb.get_scope(from_id).source(const_expr.0.range);
+                            hb.error(ErrorComp::new(
+                                "only integers can be constant expressions for now".into(),
+                                ErrorSeverity::Error,
+                                source,
+                            ));
+                        }
+                    }
+                    Some(const_id)
+                } else {
+                    None
+                };
+                unique_variants.push(hir::EnumVariant {
+                    name: variant.name,
+                    value,
+                });
+            }
+        }
+
+        let variants = hb.arena().alloc_slice(&unique_variants);
+        let data_mut = hb.enum_data_mut(id);
+        data_mut.variants = variants;
+    }
+}
 
 /*
 let scope = hb.get_scope(scope_id);

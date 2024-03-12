@@ -305,6 +305,24 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
+    pub fn add_const_expr(
+        &mut self,
+        from_id: ScopeID,
+        const_expr: ast::ConstExpr<'ast>,
+    ) -> hir::ConstExprID {
+        let id = hir::ConstExprID(self.ast_const_exprs.len() as u32);
+        self.ast_const_exprs.push(const_expr);
+        self.hir.const_exprs.push(hir::ConstExprData {
+            from_id,
+            value: None,
+        });
+        id
+    }
+
+    pub fn resolve_const_expr(&mut self, id: hir::ConstExprID, expr: &'hir hir::Expr<'hir>) {
+        self.hir.const_exprs[id.0 as usize].value = Some(expr);
+    }
+
     pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
         let id = ModID(self.mods.len() as u32);
         self.mods.push(data);
