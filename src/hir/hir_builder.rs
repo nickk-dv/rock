@@ -1,6 +1,7 @@
 use crate::ast::ast;
 use crate::ast::intern::InternID;
 use crate::ast::CompCtx;
+use crate::err::error_new::ErrorComp;
 use crate::err::error_new::SourceRange;
 use crate::hir;
 use crate::mem::Arena;
@@ -34,11 +35,19 @@ use std::collections::HashMap;
 // - minor changes:
 // use free functions for passes, with PassContext named `p` passed in (for read-ability)
 
+//@ 3/12/24
+//@its possible to threat scopes / modules the same way
+// the other declarations are used
+// we can have some hir data for module (like file_id which are needed later on)
+// and hir_builder would store scope information like Symbols + Parent + ast::Module
+// this would make Module and Scope relation much simpler and coherent with the way other items are used
+
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
     ctx: &'ctx CompCtx,
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
+    errors: Vec<ErrorComp>,
     hir: hir::Hir<'hir>,
     ast_procs: Vec<&'ast ast::ProcDecl<'ast>>,
     ast_enums: Vec<&'ast ast::EnumDecl<'ast>>,
@@ -95,11 +104,6 @@ pub enum SymbolKind {
 //    source: SourceRange,
 //}
 
-pub struct ScopeIter {
-    curr: u32,
-    len: u32,
-}
-
 impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     pub fn new(ctx: &'ctx CompCtx, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
         HirBuilder {
@@ -107,6 +111,7 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             ast,
             mods: Vec::new(),
             scopes: Vec::new(),
+            errors: Vec::new(),
             hir: hir::Hir {
                 arena: Arena::new(),
                 procs: Vec::new(),
@@ -127,33 +132,104 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
-    pub fn finish(self) -> hir::Hir<'hir> {
-        self.hir
+    pub fn finish(self) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+        if self.errors.is_empty() {
+            Ok(self.hir)
+        } else {
+            Err(self.errors)
+        }
     }
 
     pub fn ctx(&self) -> &'ctx CompCtx {
         self.ctx
     }
-
     pub fn name_str(&self, id: InternID) -> &str {
         self.ctx.intern().get_str(id)
     }
-
+    pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
+        self.ast.modules.iter()
+    }
+    pub fn error(&mut self, error: ErrorComp) {
+        self.errors.push(error);
+    }
     pub fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.hir.arena
     }
 
-    pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
-        self.ast.modules.iter()
+    pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
+        (0..self.hir.procs.len()).map(|it| hir::ProcID(it as u32))
+    }
+    pub fn enum_ids(&self) -> impl Iterator<Item = hir::EnumID> {
+        (0..self.hir.enums.len()).map(|it| hir::EnumID(it as u32))
+    }
+    pub fn union_ids(&self) -> impl Iterator<Item = hir::UnionID> {
+        (0..self.hir.unions.len()).map(|it| hir::UnionID(it as u32))
+    }
+    pub fn struct_ids(&self) -> impl Iterator<Item = hir::StructID> {
+        (0..self.hir.structs.len()).map(|it| hir::StructID(it as u32))
+    }
+    pub fn const_ids(&self) -> impl Iterator<Item = hir::ConstID> {
+        (0..self.hir.consts.len()).map(|it| hir::ConstID(it as u32))
+    }
+    pub fn global_ids(&self) -> impl Iterator<Item = hir::GlobalID> {
+        (0..self.hir.globals.len()).map(|it| hir::GlobalID(it as u32))
     }
 
-    pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
-        let id = ModID(self.mods.len() as u32);
-        self.mods.push(data);
-        let symbol = Symbol::Defined {
-            kind: SymbolKind::Mod(id),
-        };
-        (symbol, id)
+    pub fn proc_ast(&self, id: hir::ProcID) -> &'ast ast::ProcDecl<'ast> {
+        self.ast_procs.get(id.0 as usize).unwrap()
+    }
+    pub fn enum_ast(&self, id: hir::EnumID) -> &'ast ast::EnumDecl<'ast> {
+        self.ast_enums.get(id.0 as usize).unwrap()
+    }
+    pub fn union_ast(&self, id: hir::UnionID) -> &'ast ast::UnionDecl<'ast> {
+        self.ast_unions.get(id.0 as usize).unwrap()
+    }
+    pub fn struct_ast(&self, id: hir::StructID) -> &'ast ast::StructDecl<'ast> {
+        self.ast_structs.get(id.0 as usize).unwrap()
+    }
+    pub fn const_ast(&self, id: hir::ConstID) -> &'ast ast::ConstDecl<'ast> {
+        self.ast_consts.get(id.0 as usize).unwrap()
+    }
+    pub fn global_ast(&self, id: hir::GlobalID) -> &'ast ast::GlobalDecl<'ast> {
+        self.ast_globals.get(id.0 as usize).unwrap()
+    }
+
+    pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
+        self.hir.procs.get(id.0 as usize).unwrap()
+    }
+    pub fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
+        self.hir.enums.get(id.0 as usize).unwrap()
+    }
+    pub fn union_data(&self, id: hir::UnionID) -> &hir::UnionData<'hir> {
+        self.hir.unions.get(id.0 as usize).unwrap()
+    }
+    pub fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
+        self.hir.structs.get(id.0 as usize).unwrap()
+    }
+    pub fn const_data(&self, id: hir::ConstID) -> &hir::ConstData<'hir> {
+        self.hir.consts.get(id.0 as usize).unwrap()
+    }
+    pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
+        self.hir.globals.get(id.0 as usize).unwrap()
+    }
+
+    pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
+        self.hir.procs.get_mut(id.0 as usize).unwrap()
+    }
+    pub fn enum_data_mut(&mut self, id: hir::EnumID) -> &mut hir::EnumData<'hir> {
+        self.hir.enums.get_mut(id.0 as usize).unwrap()
+    }
+    pub fn union_data_mut(&mut self, id: hir::UnionID) -> &mut hir::UnionData<'hir> {
+        self.hir.unions.get_mut(id.0 as usize).unwrap()
+    }
+    pub fn struct_data_mut(&mut self, id: hir::StructID) -> &mut hir::StructData<'hir> {
+        self.hir.structs.get_mut(id.0 as usize).unwrap()
+    }
+    pub fn const_data_mut(&mut self, id: hir::ConstID) -> &mut hir::ConstData<'hir> {
+        self.hir.consts.get_mut(id.0 as usize).unwrap()
+    }
+    pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
+        self.hir.globals.get_mut(id.0 as usize).unwrap()
     }
 
     pub fn add_proc(
@@ -168,7 +244,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             kind: SymbolKind::Proc(id),
         }
     }
-
     pub fn add_enum(
         &mut self,
         decl: &'ast ast::EnumDecl<'ast>,
@@ -181,7 +256,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             kind: SymbolKind::Enum(id),
         }
     }
-
     pub fn add_union(
         &mut self,
         decl: &'ast ast::UnionDecl<'ast>,
@@ -194,7 +268,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             kind: SymbolKind::Union(id),
         }
     }
-
     pub fn add_struct(
         &mut self,
         decl: &'ast ast::StructDecl<'ast>,
@@ -207,7 +280,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             kind: SymbolKind::Struct(id),
         }
     }
-
     pub fn add_const(
         &mut self,
         decl: &'ast ast::ConstDecl<'ast>,
@@ -220,7 +292,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             kind: SymbolKind::Const(id),
         }
     }
-
     pub fn add_global(
         &mut self,
         decl: &'ast ast::GlobalDecl<'ast>,
@@ -234,11 +305,17 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
-    pub fn scope_ids(&self) -> ScopeIter {
-        ScopeIter {
-            curr: 0,
-            len: self.scopes.len() as u32,
-        }
+    pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
+        let id = ModID(self.mods.len() as u32);
+        self.mods.push(data);
+        let symbol = Symbol::Defined {
+            kind: SymbolKind::Mod(id),
+        };
+        (symbol, id)
+    }
+
+    pub fn scope_ids(&self) -> impl Iterator<Item = ScopeID> {
+        (0..self.scopes.len()).map(|it| ScopeID(it as u32))
     }
 
     pub fn get_mod(&self, id: ModID) -> &ModData {
@@ -349,19 +426,5 @@ impl<'ast> Scope<'ast> {
 
     pub fn source(&self, range: TextRange) -> SourceRange {
         SourceRange::new(range, self.file_id())
-    }
-}
-
-impl Iterator for ScopeIter {
-    type Item = ScopeID;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.curr >= self.len {
-            None
-        } else {
-            let scope_id = ScopeID(self.curr);
-            self.curr += 1;
-            Some(scope_id)
-        }
     }
 }

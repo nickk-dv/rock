@@ -4,18 +4,12 @@ use crate::err::error_new::{ErrorComp, ErrorSeverity};
 use crate::hir::hir_builder as hb;
 use crate::text_range::TextRange;
 
-#[derive(Default)]
-struct Pass {
-    errors: Vec<ErrorComp>,
-}
-
 struct UseTask<'ast> {
     resolved: bool,
     decl: &'ast ast::UseDecl<'ast>,
 }
 
-pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
-    let mut p = Pass::default();
+pub fn run(hb: &mut hb::HirBuilder) {
     for scope_id in hb.scope_ids() {
         let mut use_tasks = Vec::new();
 
@@ -34,7 +28,7 @@ pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
                 if task.resolved {
                     continue;
                 }
-                task.resolved = try_process_use_decl(&mut p, hb, scope_id, task.decl);
+                task.resolved = try_process_use_decl(hb, scope_id, task.decl);
                 if task.resolved {
                     new_progress = true;
                 }
@@ -44,34 +38,31 @@ pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
             }
         }
 
-        let scope = hb.get_scope(scope_id);
         for task in use_tasks.iter() {
             if task.resolved {
                 continue;
             }
             for name in task.decl.path.names.iter() {
-                p.errors.push(ErrorComp::new(
+                hb.error(ErrorComp::new(
                     format!("module `{}` is not found", hb.name_str(name.id)).into(),
                     ErrorSeverity::Error,
-                    scope.source(name.range),
+                    hb.get_scope(scope_id).source(name.range),
                 ));
                 break;
             }
         }
     }
-    p.errors
 }
 
 // @try iteration of first module name is not done yet
 // store progress in pass and compare it to know when to stop iteration
 // + know which use declarations ware already fully evaluated (using an option might be fine)
 fn try_process_use_decl<'ctx, 'ast, 'hir>(
-    p: &mut Pass,
     hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
     scope_id: hb::ScopeID,
     decl: &'ast ast::UseDecl<'ast>,
 ) -> bool {
-    let from_id = match try_resolve_use_path(p, hb, scope_id, decl.path) {
+    let from_id = match try_resolve_use_path(hb, scope_id, decl.path) {
         Ok(Some(from_id)) => from_id,
         Ok(None) => return true,
         Err(()) => return false,
@@ -87,7 +78,7 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
 
         match from_scope.get_symbol(use_name.name.id) {
             Some(hb::Symbol::Defined { kind }) => {
-                if !pass_1::name_already_defined_error(&mut p.errors, hb, scope_id, alias_name) {
+                if !pass_1::name_already_defined_error(hb, scope_id, alias_name) {
                     let origin_scope = hb.get_scope_mut(scope_id);
                     origin_scope.add_symbol(
                         alias_name.id,
@@ -108,7 +99,7 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
                 // sort source range locs if in same file + dont display file link twice
                 // display main error todo link, with hints being in any order based on lexical order
                 let origin_scope = hb.get_scope(scope_id);
-                p.errors.push(ErrorComp::new(
+                hb.error(ErrorComp::new(
                     format!(
                         "name `{}` is not found in module", //@support showing module paths in all errors
                         hb.name_str(use_name.name.id)
@@ -125,7 +116,6 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
 
 // @visibility rules are ignored
 fn try_resolve_use_path<'ctx, 'ast, 'hir>(
-    p: &mut Pass,
     hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
     scope_id: hb::ScopeID,
     path: &'ast ast::Path,
@@ -139,7 +129,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
             None => {
                 let mut range = TextRange::empty_at(path.range_start);
                 range.extend_by(5.into());
-                p.errors.push(ErrorComp::new(
+                hb.error(ErrorComp::new(
                     "parent module `super` doesnt exist for the root module".into(),
                     ErrorSeverity::Error,
                     origin_scope.source(range),
@@ -162,7 +152,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                     if let Some(target) = mod_data.target {
                         from_id = target;
                     } else {
-                        p.errors.push(ErrorComp::new(
+                        hb.error(ErrorComp::new(
                             format!(
                                 "module `{}` is missing its associated file",
                                 hb.name_str(name.id)
@@ -176,7 +166,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                 }
                 _ => {
                     // add info hint to its declaration or apperance if its imported
-                    p.errors.push(ErrorComp::new(
+                    hb.error(ErrorComp::new(
                         format!("`{}` is not a module", hb.name_str(name.id)).into(),
                         ErrorSeverity::Error,
                         origin_scope.source(name.range),
@@ -193,7 +183,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                     if let Some(target) = mod_data.target {
                         from_id = target;
                     } else {
-                        p.errors.push(ErrorComp::new(
+                        hb.error(ErrorComp::new(
                             format!(
                                 "module `{}` is missing its associated file",
                                 hb.name_str(name.id)
@@ -207,7 +197,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                 }
                 _ => {
                     // add info hint to its declaration or apperance if its imported
-                    p.errors.push(ErrorComp::new(
+                    hb.error(ErrorComp::new(
                         format!("`{}` is not a module", hb.name_str(name.id)).into(),
                         ErrorSeverity::Error,
                         origin_scope.source(name.range),
@@ -219,7 +209,7 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                 if allow_retry {
                     return Err(());
                 }
-                p.errors.push(ErrorComp::new(
+                hb.error(ErrorComp::new(
                     format!("module `{}` is not found", hb.name_str(name.id)).into(),
                     ErrorSeverity::Error,
                     origin_scope.source(name.range),

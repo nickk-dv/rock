@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 #[derive(Default)]
 struct Pass<'ast> {
-    errors: Vec<ErrorComp>,
     task_queue: Vec<ScopeTreeTask<'ast>>,
     module_map: HashMap<PathBuf, ModuleStatus<'ast>>,
 }
@@ -23,14 +22,13 @@ enum ModuleStatus<'ast> {
     Available(ast::Module<'ast>),
 }
 
-pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
+pub fn run(hb: &mut hb::HirBuilder) {
     let mut p = Pass::default();
     make_module_path_map(&mut p, hb);
     add_root_scope_task(&mut p);
     while let Some(task) = p.task_queue.pop() {
         process_scope_task(&mut p, hb, task);
     }
-    p.errors
 }
 
 fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, '_>) {
@@ -85,7 +83,7 @@ fn process_scope_task<'ast>(
                 continue;
             }
             ast::Decl::Mod(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hb::ModData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -98,7 +96,7 @@ fn process_scope_task<'ast>(
                 }
             }
             ast::Decl::Proc(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hir::ProcData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -113,7 +111,7 @@ fn process_scope_task<'ast>(
                 }
             }
             ast::Decl::Enum(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hir::EnumData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -125,7 +123,7 @@ fn process_scope_task<'ast>(
                 }
             }
             ast::Decl::Union(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hir::UnionData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -137,7 +135,7 @@ fn process_scope_task<'ast>(
                 }
             }
             ast::Decl::Struct(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hir::StructData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -149,7 +147,7 @@ fn process_scope_task<'ast>(
                 }
             }
             ast::Decl::Const(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hir::ConstData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -162,7 +160,7 @@ fn process_scope_task<'ast>(
                 }
             }
             ast::Decl::Global(decl) => {
-                if !name_already_defined_error(&mut p.errors, hb, scope_id, decl.name) {
+                if !name_already_defined_error(hb, scope_id, decl.name) {
                     let data = hir::GlobalData {
                         from_id: scope_id,
                         vis: decl.vis,
@@ -179,7 +177,6 @@ fn process_scope_task<'ast>(
 }
 
 pub fn name_already_defined_error(
-    errors: &mut Vec<ErrorComp>,
     hb: &mut hb::HirBuilder,
     scope_id: hb::ScopeID,
     name: ast::Ident,
@@ -192,7 +189,7 @@ pub fn name_already_defined_error(
     // @add marker for error span with "name redefinition"
     // to fully explain this error
     // currently marker are not possible on main error message source loc
-    errors.push(
+    hb.error(
         ErrorComp::new(
             format!("name `{}` is defined multiple times", hb.name_str(name.id)).into(),
             ErrorSeverity::Error,
@@ -228,7 +225,7 @@ fn add_scope_task_from_mod_decl(
         p.module_map.get(&mod_path_2).cloned(),
     ) {
         (Some(..), Some(..)) => {
-            p.errors.push(ErrorComp::new(
+            hb.error(ErrorComp::new(
                 format!(
                     "only one possible module path can exist:\n{:?} or {:?}",
                     mod_path_1, mod_path_2
@@ -240,7 +237,7 @@ fn add_scope_task_from_mod_decl(
             return;
         }
         (None, None) => {
-            p.errors.push(ErrorComp::new(
+            hb.error(ErrorComp::new(
                 format!(
                     "both possible module paths are missing:\n{:?} or {:?}",
                     mod_path_1, mod_path_2
@@ -268,7 +265,7 @@ fn add_scope_task_from_mod_decl(
             });
         }
         ModuleStatus::Taken(src) => {
-            p.errors.push(
+            hb.error(
                 ErrorComp::new(
                     format!(
                         "module `{}` is already taken by other mod declaration",

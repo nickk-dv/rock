@@ -1,17 +1,9 @@
 use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, ErrorSeverity};
+use crate::err::error_new::{ErrorComp, ErrorSeverity, SourceRange};
 use crate::hir;
 use crate::hir::hir_builder as hb;
 
-#[derive(Default)]
-struct Pass {
-    errors: Vec<ErrorComp>,
-}
-
-pub fn run(hb: &mut hb::HirBuilder) -> Vec<ErrorComp> {
-    let mut p = Pass::default();
-    p.errors
-}
+pub fn run(hb: &mut hb::HirBuilder) {}
 
 /*
 let scope = hb.get_scope(scope_id);
