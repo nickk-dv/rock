@@ -193,6 +193,9 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     pub fn global_ast(&self, id: hir::GlobalID) -> &'ast ast::GlobalDecl<'ast> {
         self.ast_globals.get(id.0 as usize).unwrap()
     }
+    pub fn const_expr_ast(&self, id: hir::ConstExprID) -> &'ast ast::Expr<'ast> {
+        self.ast_const_exprs.get(id.0 as usize).unwrap().0
+    }
 
     pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
         self.hir.procs.get(id.0 as usize).unwrap()
@@ -212,6 +215,9 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
         self.hir.globals.get(id.0 as usize).unwrap()
     }
+    pub fn const_expr_data(&self, id: hir::ConstExprID) -> &hir::ConstExprData<'hir> {
+        self.hir.const_exprs.get(id.0 as usize).unwrap()
+    }
 
     pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
         self.hir.procs.get_mut(id.0 as usize).unwrap()
@@ -230,6 +236,9 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     }
     pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
         self.hir.globals.get_mut(id.0 as usize).unwrap()
+    }
+    pub fn const_expr_data_mut(&mut self, id: hir::ConstExprID) -> &mut hir::ConstExprData<'hir> {
+        self.hir.const_exprs.get_mut(id.0 as usize).unwrap()
     }
 
     pub fn add_proc(
@@ -317,10 +326,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             value: None,
         });
         id
-    }
-
-    pub fn resolve_const_expr(&mut self, id: hir::ConstExprID, expr: &'hir hir::Expr<'hir>) {
-        self.hir.const_exprs[id.0 as usize].value = Some(expr);
     }
 
     pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
