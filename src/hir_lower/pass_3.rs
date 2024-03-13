@@ -2,6 +2,7 @@ use crate::ast::ast;
 use crate::err::error_new::{ErrorComp, ErrorSeverity};
 use crate::hir;
 use crate::hir::hir_builder as hb;
+use crate::text_range::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
     for id in hb.proc_ids() {
@@ -31,7 +32,7 @@ fn resolve_decl_type<'ast, 'hir>(
 ) -> hir::Type<'hir> {
     match ast_ty {
         ast::Type::Basic(basic) => hir::Type::Basic(basic),
-        ast::Type::Custom(path) => hir::Type::Error, //@placeholder
+        ast::Type::Custom(path) => path_resolve_as_type(hb, from_id, path),
         ast::Type::Reference(ref_ty, mutt) => {
             let ref_ty = resolve_decl_type(hb, from_id, *ref_ty);
             let ty = hb.arena().alloc_ref_new(ref_ty);
@@ -165,6 +166,127 @@ fn process_global_data(hb: &mut hb::HirBuilder, id: hir::GlobalID) {
     let data = hb.global_data_mut(id);
     data.ty = ty;
     data.value = const_id;
+}
+
+//@getting imported symbols & visisiblity is ignored
+// due to lack of good apis for this (temp)
+fn path_resolve_as_type<'ast, 'hir>(
+    hb: &mut hb::HirBuilder,
+    origin_id: hb::ScopeID,
+    path: &'ast ast::Path,
+) -> hir::Type<'hir> {
+    let mut range_end = path.range_start;
+
+    let mut from_id = match path.kind {
+        ast::PathKind::None => origin_id,
+        ast::PathKind::Super => {
+            let origin_scope = hb.get_scope(origin_id);
+            match origin_scope.parent() {
+                Some(parent_id) => parent_id,
+                None => {
+                    range_end = range_end + 5.into();
+                    hb.error(ErrorComp::new(
+                        "TYPE_RESOLVE parent module `super` doesnt exist for the root module"
+                            .into(),
+                        ErrorSeverity::Error,
+                        origin_scope.source(TextRange::new(path.range_start, range_end)),
+                    ));
+                    return hir::Type::Error;
+                }
+            }
+        }
+        ast::PathKind::Package => hb::ROOT_SCOPE_ID,
+    };
+
+    let mut segments = path.names.into_iter().peekable();
+
+    // walk modules
+    while let Some(name) = segments.peek().cloned() {
+        let from_scope = hb.get_scope(from_id);
+        range_end = name.range.end();
+
+        match from_scope.get_symbol(name.id) {
+            Some(hb::Symbol::Defined { kind }) => match kind {
+                hb::SymbolKind::Mod(id) => {
+                    let mod_data = hb.get_mod(id);
+                    if let Some(target) = mod_data.target {
+                        segments.next();
+                        from_id = target;
+                    } else {
+                        hb.error(ErrorComp::new(
+                            format!(
+                                "TYPE_RESOLVE module `{}` is missing its associated file",
+                                hb.name_str(name.id)
+                            )
+                            .into(),
+                            ErrorSeverity::Error,
+                            hb.get_scope(origin_id).source(name.range),
+                        ));
+                        return hir::Type::Error;
+                    }
+                }
+                _ => break,
+            },
+            _ => break,
+        }
+    }
+
+    let hir_type;
+
+    // expect type
+    match segments.peek().cloned() {
+        Some(name) => {
+            let from_scope = hb.get_scope(from_id);
+            segments.next();
+
+            match from_scope.get_symbol(name.id) {
+                Some(hb::Symbol::Defined { kind }) => match kind {
+                    hb::SymbolKind::Enum(id) => hir_type = hir::Type::Enum(id),
+                    hb::SymbolKind::Union(id) => hir_type = hir::Type::Union(id),
+                    hb::SymbolKind::Struct(id) => hir_type = hir::Type::Struct(id),
+                    _ => {
+                        hb.error(ErrorComp::new(
+                            format!("TYPE_RESOLVE `{}` is not a type name", hb.name_str(name.id))
+                                .into(),
+                            ErrorSeverity::Error,
+                            hb.get_scope(origin_id).source(name.range),
+                        ));
+                        return hir::Type::Error;
+                    }
+                },
+                _ => {
+                    hb.error(ErrorComp::new(
+                        format!("TYPE_RESOLVE name `{}` is not found", hb.name_str(name.id)).into(),
+                        ErrorSeverity::Error,
+                        hb.get_scope(origin_id).source(name.range),
+                    ));
+                    return hir::Type::Error;
+                }
+            }
+        }
+        None => {
+            hb.error(ErrorComp::new(
+                format!("TYPE_RESOLVE path does not lead to a type name").into(),
+                ErrorSeverity::Error,
+                hb.get_scope(origin_id)
+                    .source(TextRange::new(path.range_start, range_end)),
+            ));
+            return hir::Type::Error;
+        }
+    }
+
+    // reject additional access
+    match segments.peek().cloned() {
+        Some(name) => {
+            hb.error(ErrorComp::new(
+                format!("TYPE_RESOLVE no further access is possible on type name").into(),
+                ErrorSeverity::Error,
+                hb.get_scope(origin_id).source(name.range),
+            ));
+            return hir::Type::Error;
+        }
+        None => return hir_type,
+    }
 }
 
 fn error_duplicate_proc_param<'ast>(
