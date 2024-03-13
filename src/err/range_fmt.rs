@@ -1,4 +1,4 @@
-use super::ansi::{self, Color};
+use super::ansi;
 use crate::ast::File;
 use crate::text_range::TextRange;
 use std::io::{BufWriter, Stderr, Write};
@@ -74,8 +74,7 @@ impl<'a> TextRangeFormat<'a> {
             marker_error_slice(self.marker_len)
         };
 
-        ansi::set_color(handle, Color::Cyan);
-        let _ = write!(handle, "{}--> ", left_pad);
+        let _ = write!(handle, "{}{}--> ", ansi::CYAN, left_pad);
         let _ = writeln!(
             handle,
             "{}:{}:{}",
@@ -88,35 +87,41 @@ impl<'a> TextRangeFormat<'a> {
         let _ = handle.write(" |\n".as_bytes());
 
         let _ = handle.write(line_num.as_bytes());
-        let _ = handle.write(" | ".as_bytes());
-        ansi::reset(handle);
+        let _ = write!(handle, " |{} ", ansi::CLEAR);
+
         let _ = handle.write(self.line.as_bytes());
         let _ = handle.write("\n".as_bytes());
 
-        ansi::set_color(handle, Color::Cyan);
-        let _ = handle.write(left_pad.as_bytes());
-        let _ = handle.write(" | ".as_bytes());
-        ansi::reset(handle);
+        write!(handle, "{}{} | {}", ansi::CYAN, left_pad, ansi::CLEAR);
 
         if is_info {
-            ansi::set_color(handle, Color::BoldGreen)
+            write!(
+                handle,
+                "{}{}{}{} ",
+                ansi::GREEN_BOLD,
+                marker_pad,
+                marker,
+                ansi::CLEAR
+            );
         } else {
-            ansi::set_color(handle, Color::BoldRed)
+            write!(
+                handle,
+                "{}{}{}{} ",
+                ansi::RED_BOLD,
+                marker_pad,
+                marker,
+                ansi::CLEAR
+            );
         }
-        let _ = handle.write(marker_pad.as_bytes());
-        let _ = handle.write(marker.as_bytes());
-        let _ = handle.write(" ".as_bytes());
 
         if let Some(msg) = marker_msg {
             if is_info {
-                ansi::set_color(handle, Color::BoldGreen)
+                write!(handle, "{}{msg}{}", ansi::GREEN_BOLD, ansi::CLEAR);
             } else {
-                ansi::set_color(handle, Color::BoldRed)
+                write!(handle, "{}{msg}{}", ansi::RED_BOLD, ansi::CLEAR);
             }
-            let _ = handle.write(msg.as_bytes());
         }
-        let _ = handle.write("\n".as_bytes());
-        ansi::reset(handle);
+        write!(handle, "\n{}", ansi::CLEAR);
     }
 }
 

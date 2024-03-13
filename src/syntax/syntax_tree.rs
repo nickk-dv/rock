@@ -123,25 +123,20 @@ impl SyntaxTree {
         }
 
         use crate::err::ansi;
-        let mut yellow = ansi::Color::as_ansi_str(ansi::Color::BoldYellow);
-        let mut green = ansi::Color::as_ansi_str(ansi::Color::Green);
-        let mut purple = ansi::Color::as_ansi_str(ansi::Color::Purple);
-        let mut reset = "\x1B[0m";
-        if !ansi {
-            yellow = "";
-            green = "";
-            purple = "";
-            reset = "";
-        }
 
-        string.push_str(
+        let format = if ansi {
             format!(
-                "{yellow}{:?}{reset}{purple}@{:?}{reset}\n",
+                "{}{:?}{}@{:?}{}\n",
+                ansi::YELLOW_BOLD,
                 node_data.kind,
-                node_data.range.get()
+                ansi::MAGENTA,
+                node_data.range.get(),
+                ansi::CLEAR
             )
-            .as_str(),
-        );
+        } else {
+            format!("{:?}@{:?}\n", node_data.kind, node_data.range.get())
+        };
+        string.push_str(format.as_str());
 
         for element in node_data.children.iter() {
             match element {
@@ -153,13 +148,20 @@ impl SyntaxTree {
                         string.push_str("  ");
                     }
                     let token_string = &self.source[token.range().as_usize()];
-                    string.push_str(
+                    let format = if ansi {
                         format!(
-                            "{:?}{purple}@{:?}{reset} {green}{:?}{reset}\n",
-                            token.token, token.range, token_string
+                            "{:?}{}@{:?} {}{:?}{}\n",
+                            token.token,
+                            ansi::MAGENTA,
+                            token.range,
+                            ansi::GREEN,
+                            token_string,
+                            ansi::CLEAR
                         )
-                        .as_str(),
-                    );
+                    } else {
+                        format!("{:?}@{:?} {:?}\n", token.token, token.range, token_string)
+                    };
+                    string.push_str(format.as_str());
                 }
             }
         }

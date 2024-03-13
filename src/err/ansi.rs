@@ -1,52 +1,17 @@
-#![allow(unused)]
-use std::io::{BufWriter, Stderr, Write};
-
-pub fn set_color(handle: &mut BufWriter<Stderr>, color: Color) {
-    write!(handle, "{}", Color::as_ansi_str(color));
-}
-
-pub fn reset(handle: &mut BufWriter<Stderr>) {
-    write!(handle, "\x1B[0m");
-}
-
-pub enum Color {
-    Black,
-    Red,
-    Green,
-    Yellow,
-    Blue,
-    Purple,
-    Cyan,
-    White,
-    BoldBlack,
-    BoldRed,
-    BoldGreen,
-    BoldYellow,
-    BoldBlue,
-    BoldPurple,
-    BoldCyan,
-    BoldWhite,
-}
-
-impl Color {
-    pub fn as_ansi_str(color: Color) -> &'static str {
-        match color {
-            Color::Black => "\x1B[0;30m",
-            Color::Red => "\x1B[0;31m",
-            Color::Green => "\x1B[0;32m",
-            Color::Yellow => "\x1B[0;33m",
-            Color::Blue => "\x1B[0;34m",
-            Color::Purple => "\x1B[0;35m",
-            Color::Cyan => "\x1B[0;36m",
-            Color::White => "\x1B[0;37m",
-            Color::BoldBlack => "\x1B[1;30m",
-            Color::BoldRed => "\x1B[1;31m",
-            Color::BoldGreen => "\x1B[1;32m",
-            Color::BoldYellow => "\x1B[1;33m",
-            Color::BoldBlue => "\x1B[1;34m",
-            Color::BoldPurple => "\x1B[1;35m",
-            Color::BoldCyan => "\x1B[1;36m",
-            Color::BoldWhite => "\x1B[1;37m",
-        }
-    }
-}
+pub const CLEAR: &str = "\x1B[0m";
+pub const BLACK: &str = "\x1B[0;30m";
+pub const BLACK_BOLD: &str = "\x1B[1;30m";
+pub const RED: &str = "\x1B[0;31m";
+pub const RED_BOLD: &str = "\x1B[1;31m";
+pub const GREEN: &str = "\x1B[0;32m";
+pub const GREEN_BOLD: &str = "\x1B[1;32m";
+pub const YELLOW: &str = "\x1B[0;33m";
+pub const YELLOW_BOLD: &str = "\x1B[1;33m";
+pub const BLUE: &str = "\x1B[0;34m";
+pub const BLUE_BOLD: &str = "\x1B[1;34m";
+pub const MAGENTA: &str = "\x1B[0;35m";
+pub const MAGENTA_BOLD: &str = "\x1B[1;35m";
+pub const CYAN: &str = "\x1B[0;36m";
+pub const CYAN_BOLD: &str = "\x1B[1;36m";
+pub const WHITE: &str = "\x1B[0;37m";
+pub const WHITE_BOLD: &str = "\x1B[1;37m";

@@ -138,17 +138,15 @@ impl SourceRange {
 
 pub fn report_check_errors_cli(ctx: &CompCtx, errors: &[ErrorComp]) {
     for error in errors {
-        let ansi_red = ansi::Color::as_ansi_str(ansi::Color::BoldRed);
-        let ansi_clear = "\x1B[0m";
         let main_context = error.main_context();
         eprintln!(
             "\n{}{}:{} {}{}{}",
-            ansi_red,
+            ansi::RED_BOLD,
             main_context.severity().as_str(),
-            ansi_clear,
-            ansi::Color::as_ansi_str(ansi::Color::BoldWhite),
+            ansi::CLEAR,
+            ansi::WHITE_BOLD,
             main_context.message.as_str(),
-            ansi_clear,
+            ansi::CLEAR,
         );
         range_fmt::print_simple(
             ctx.file(main_context.source().unwrap().file_id()),

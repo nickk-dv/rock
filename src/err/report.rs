@@ -1,4 +1,4 @@
-use super::ansi::{self, Color};
+use super::ansi;
 use super::error::*;
 use super::range_fmt;
 use crate::ast::CompCtx;
@@ -80,16 +80,18 @@ pub fn report(handle: &mut BufWriter<Stderr>, error: &Error, ctx: &CompCtx) {
 }
 
 fn print_error(handle: &mut BufWriter<Stderr>, error_name: &'static str) {
-    ansi::set_color(handle, Color::BoldRed);
-    let _ = write!(handle, "\n{}: ", error_name);
-    ansi::reset(handle);
+    let _ = write!(
+        handle,
+        "\n{}{}:{} ",
+        ansi::RED_BOLD,
+        error_name,
+        ansi::CLEAR
+    );
 }
 
 fn print_help(handle: &mut BufWriter<Stderr>, help: Option<&'static str>) {
     if let Some(str) = help {
-        ansi::set_color(handle, Color::Cyan);
-        let _ = write!(handle, "help: ");
-        ansi::reset(handle);
+        let _ = write!(handle, "{}help:{} ", ansi::CYAN, ansi::CLEAR);
         let _ = writeln!(handle, "{}", str);
     }
 }

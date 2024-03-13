@@ -5,7 +5,6 @@ pub mod parse_error;
 mod parser;
 pub mod token;
 pub mod token_list;
-mod visit;
 
 use crate::err::error::*;
 use crate::err::report;

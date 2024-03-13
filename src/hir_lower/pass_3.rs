@@ -78,6 +78,11 @@ fn process_proc_data(hb: &mut hb::HirBuilder, id: hir::ProcID) {
         }
     }
     hb.proc_data_mut(id).params = hb.arena().alloc_slice(&unique);
+    hb.proc_data_mut(id).return_ty = if let Some(ret_ty) = decl.return_ty {
+        resolve_decl_type(hb, from_id, ret_ty)
+    } else {
+        hir::Type::Basic(ast::BasicType::Unit)
+    }
 }
 
 fn process_enum_data(hb: &mut hb::HirBuilder, id: hir::EnumID) {

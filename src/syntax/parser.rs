@@ -30,10 +30,6 @@ fn parse_api_test() {
 
 fn pretty_print_events(events: &[Event]) {
     use crate::err::ansi;
-    let yellow = ansi::Color::as_ansi_str(ansi::Color::BoldYellow);
-    let green = ansi::Color::as_ansi_str(ansi::Color::Green);
-    let purple = ansi::Color::as_ansi_str(ansi::Color::Purple);
-    let reset = "\x1B[0m";
 
     println!("EVENTS:");
     let mut depth = 0;
@@ -49,14 +45,16 @@ fn pretty_print_events(events: &[Event]) {
         }
         match e {
             Event::StartNode { kind } => {
-                println!("{yellow}{:?}{reset}", kind);
+                println!("{}{:?}{}", ansi::YELLOW_BOLD, kind, ansi::CLEAR);
                 depth += 1;
             }
             Event::EndNode => {
                 depth -= 1;
             }
-            Event::Token { token } => println!("{green}{:?}{reset}", token),
-            Event::Error { message } => println!("{purple}ERROR:{reset} {:?}", message),
+            Event::Token { token } => println!("{}{:?}{}", ansi::GREEN, token, ansi::CLEAR),
+            Event::Error { message } => {
+                println!("{}ERROR:{} {:?}", ansi::MAGENTA, message, ansi::CLEAR)
+            }
         }
     }
 }

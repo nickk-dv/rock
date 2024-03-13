@@ -28,10 +28,12 @@ pub fn run(hb: &mut hb::HirBuilder) {
 fn const_resolve_proc_data(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let data = hb.proc_data(id);
     let from_id = data.from_id;
+    let ret_ty = data.return_ty;
 
     for param in data.params.iter() {
         const_resolve_type(hb, from_id, param.ty);
     }
+    const_resolve_type(hb, from_id, ret_ty);
 }
 
 fn const_resolve_enum_data(hb: &mut hb::HirBuilder, id: hir::EnumID) {
