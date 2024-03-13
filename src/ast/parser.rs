@@ -104,11 +104,8 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                         error_ctx
                     );
                     let error = Error::parse(parse_error_data);
-                    let comp_error = ErrorComp::new(
-                        ErrorMessage::String(message),
-                        ErrorSeverity::Error,
-                        SourceRange::new(got_token.1, file_id),
-                    );
+                    let comp_error = ErrorComp::error(message)
+                        .context_msg("unexpected token", SourceRange::new(got_token.1, file_id));
                     return Err((error, comp_error));
                 }
             }

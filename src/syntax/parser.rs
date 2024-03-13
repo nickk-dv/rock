@@ -171,12 +171,10 @@ impl<'a> Parser<'a> {
             } else {
                 self.tokens.get_range(self.cursor - 1)
             };
-            let message = format!("add `{}` after this token", token.as_str());
-            self.errors.push(ErrorComp::new(
-                message.into(),
-                ErrorSeverity::Error,
-                SourceRange::new(range, FileID(0)),
-            ));
+            self.errors.push(
+                ErrorComp::error(format!("add `{}` after this token", token.as_str()))
+                    .context(SourceRange::new(range, FileID(0))),
+            );
             if end_node {
                 self.builder.end_node();
             }
@@ -198,11 +196,9 @@ impl<'a> Parser<'a> {
 
     fn error_eat(&mut self, message: &str) {
         let range = self.tokens.get_range(self.cursor);
-        self.errors.push(ErrorComp::new(
-            message.to_string().into(),
-            ErrorSeverity::Error,
-            SourceRange::new(range, FileID(0)),
-        ));
+        self.errors.push(
+            ErrorComp::error(message.to_string()).context(SourceRange::new(range, FileID(0))), //@temp file 0
+        );
 
         self.builder.start_node(SyntaxNodeKind::ERROR);
         self.bump();

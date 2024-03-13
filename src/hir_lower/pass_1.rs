@@ -190,15 +190,14 @@ pub fn name_already_defined_error(
     // to fully explain this error
     // currently marker are not possible on main error message source loc
     hb.error(
-        ErrorComp::new(
-            format!("name `{}` is defined multiple times", hb.name_str(name.id)).into(),
-            ErrorSeverity::Error,
-            scope.source(name.range),
-        )
-        .context(
-            "existing definition".into(),
-            ErrorSeverity::InfoHint,
-            Some(scope.source(hb.symbol_range(existing))),
+        ErrorComp::error(format!(
+            "name `{}` is defined multiple times",
+            hb.name_str(name.id)
+        ))
+        .context(scope.source(name.range))
+        .context_info(
+            "existing definition",
+            scope.source(hb.symbol_range(existing)),
         ),
     );
     true
@@ -225,27 +224,23 @@ fn add_scope_task_from_mod_decl(
         p.module_map.get(&mod_path_2).cloned(),
     ) {
         (Some(..), Some(..)) => {
-            hb.error(ErrorComp::new(
-                format!(
+            hb.error(
+                ErrorComp::error(format!(
                     "only one possible module path can exist:\n{:?} or {:?}",
                     mod_path_1, mod_path_2
-                )
-                .into(),
-                ErrorSeverity::Error,
-                scope.source(decl.name.range),
-            ));
+                ))
+                .context(scope.source(decl.name.range)),
+            );
             return;
         }
         (None, None) => {
-            hb.error(ErrorComp::new(
-                format!(
+            hb.error(
+                ErrorComp::error(format!(
                     "both possible module paths are missing:\n{:?} or {:?}",
                     mod_path_1, mod_path_2
-                )
-                .into(),
-                ErrorSeverity::Error,
-                scope.source(decl.name.range),
-            ));
+                ))
+                .context(scope.source(decl.name.range)),
+            );
             return;
         }
         (Some(status), None) => (status, mod_path_1),
@@ -266,20 +261,12 @@ fn add_scope_task_from_mod_decl(
         }
         ModuleStatus::Taken(src) => {
             hb.error(
-                ErrorComp::new(
-                    format!(
-                        "module `{}` is already taken by other mod declaration",
-                        hb.name_str(decl.name.id)
-                    )
-                    .into(),
-                    ErrorSeverity::Error,
-                    scope.source(decl.name.range),
-                )
-                .context(
-                    "taken by this module declaration".into(),
-                    ErrorSeverity::InfoHint,
-                    Some(src),
-                ),
+                ErrorComp::error(format!(
+                    "module `{}` is already taken by other mod declaration",
+                    hb.name_str(decl.name.id)
+                ))
+                .context(scope.source(decl.name.range))
+                .context_info("taken by this module declaration", src),
             );
         }
     }

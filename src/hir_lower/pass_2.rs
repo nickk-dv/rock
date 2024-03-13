@@ -43,11 +43,10 @@ pub fn run(hb: &mut hb::HirBuilder) {
                 continue;
             }
             for name in task.decl.path.names.iter() {
-                hb.error(ErrorComp::new(
-                    format!("module `{}` is not found", hb.name_str(name.id)).into(),
-                    ErrorSeverity::Error,
-                    hb.get_scope(scope_id).source(name.range),
-                ));
+                hb.error(
+                    ErrorComp::error(format!("module `{}` is not found", hb.name_str(name.id)))
+                        .context(hb.get_scope(scope_id).source(name.range)),
+                );
                 break;
             }
         }
@@ -99,15 +98,13 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
                 // sort source range locs if in same file + dont display file link twice
                 // display main error todo link, with hints being in any order based on lexical order
                 let origin_scope = hb.get_scope(scope_id);
-                hb.error(ErrorComp::new(
-                    format!(
+                hb.error(
+                    ErrorComp::error(format!(
                         "name `{}` is not found in module", //@support showing module paths in all errors
                         hb.name_str(use_name.name.id)
-                    )
-                    .into(),
-                    ErrorSeverity::Error,
-                    origin_scope.source(use_name.name.range),
-                ));
+                    ))
+                    .context(origin_scope.source(use_name.name.range)),
+                );
             }
         }
     }
@@ -129,11 +126,10 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
             None => {
                 let mut range = TextRange::empty_at(path.range_start);
                 range.extend_by(5.into());
-                hb.error(ErrorComp::new(
-                    "parent module `super` doesnt exist for the root module".into(),
-                    ErrorSeverity::Error,
-                    origin_scope.source(range),
-                ));
+                hb.error(
+                    ErrorComp::error("parent module `super` doesnt exist for the root module")
+                        .context(origin_scope.source(range)),
+                );
                 return Ok(None);
             }
         },
@@ -152,25 +148,22 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                     if let Some(target) = mod_data.target {
                         from_id = target;
                     } else {
-                        hb.error(ErrorComp::new(
-                            format!(
+                        hb.error(
+                            ErrorComp::error(format!(
                                 "module `{}` is missing its associated file",
                                 hb.name_str(name.id)
-                            )
-                            .into(),
-                            ErrorSeverity::Error,
-                            origin_scope.source(name.range),
-                        ));
+                            ))
+                            .context(origin_scope.source(name.range)),
+                        );
                         return Ok(None);
                     }
                 }
                 _ => {
                     // add info hint to its declaration or apperance if its imported
-                    hb.error(ErrorComp::new(
-                        format!("`{}` is not a module", hb.name_str(name.id)).into(),
-                        ErrorSeverity::Error,
-                        origin_scope.source(name.range),
-                    ));
+                    hb.error(
+                        ErrorComp::error(format!("`{}` is not a module", hb.name_str(name.id)))
+                            .context(origin_scope.source(name.range)),
+                    );
                     return Ok(None);
                 }
             },
@@ -183,25 +176,22 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                     if let Some(target) = mod_data.target {
                         from_id = target;
                     } else {
-                        hb.error(ErrorComp::new(
-                            format!(
+                        hb.error(
+                            ErrorComp::error(format!(
                                 "module `{}` is missing its associated file",
                                 hb.name_str(name.id)
-                            )
-                            .into(),
-                            ErrorSeverity::Error,
-                            origin_scope.source(name.range),
-                        ));
+                            ))
+                            .context(origin_scope.source(name.range)),
+                        );
                         return Ok(None);
                     }
                 }
                 _ => {
                     // add info hint to its declaration or apperance if its imported
-                    hb.error(ErrorComp::new(
-                        format!("`{}` is not a module", hb.name_str(name.id)).into(),
-                        ErrorSeverity::Error,
-                        origin_scope.source(name.range),
-                    ));
+                    hb.error(
+                        ErrorComp::error(format!("`{}` is not a module", hb.name_str(name.id)))
+                            .context(origin_scope.source(name.range)),
+                    );
                     return Ok(None);
                 }
             },
@@ -209,11 +199,10 @@ fn try_resolve_use_path<'ctx, 'ast, 'hir>(
                 if allow_retry {
                     return Err(());
                 }
-                hb.error(ErrorComp::new(
-                    format!("module `{}` is not found", hb.name_str(name.id)).into(),
-                    ErrorSeverity::Error,
-                    origin_scope.source(name.range),
-                ));
+                hb.error(
+                    ErrorComp::error(format!("module `{}` is not found", hb.name_str(name.id)))
+                        .context(origin_scope.source(name.range)),
+                );
                 return Ok(None);
             }
         };

@@ -190,12 +190,12 @@ fn path_resolve_as_type<'ast, 'hir>(
                 Some(parent_id) => parent_id,
                 None => {
                     range_end = range_end + 5.into();
-                    hb.error(ErrorComp::new(
-                        "TYPE_RESOLVE parent module `super` doesnt exist for the root module"
-                            .into(),
-                        ErrorSeverity::Error,
-                        origin_scope.source(TextRange::new(path.range_start, range_end)),
-                    ));
+                    hb.error(
+                        ErrorComp::error(
+                            "TYPE_RESOLVE parent module `super` doesnt exist for the root module",
+                        )
+                        .context(origin_scope.source(TextRange::new(path.range_start, range_end))),
+                    );
                     return hir::Type::Error;
                 }
             }
@@ -218,15 +218,13 @@ fn path_resolve_as_type<'ast, 'hir>(
                         segments.next();
                         from_id = target;
                     } else {
-                        hb.error(ErrorComp::new(
-                            format!(
+                        hb.error(
+                            ErrorComp::error(format!(
                                 "TYPE_RESOLVE module `{}` is missing its associated file",
                                 hb.name_str(name.id)
-                            )
-                            .into(),
-                            ErrorSeverity::Error,
-                            hb.get_scope(origin_id).source(name.range),
-                        ));
+                            ))
+                            .context(hb.get_scope(origin_id).source(name.range)),
+                        );
                         return hir::Type::Error;
                     }
                 }
@@ -250,32 +248,36 @@ fn path_resolve_as_type<'ast, 'hir>(
                     hb::SymbolKind::Union(id) => hir_type = hir::Type::Union(id),
                     hb::SymbolKind::Struct(id) => hir_type = hir::Type::Struct(id),
                     _ => {
-                        hb.error(ErrorComp::new(
-                            format!("TYPE_RESOLVE `{}` is not a type name", hb.name_str(name.id))
-                                .into(),
-                            ErrorSeverity::Error,
-                            hb.get_scope(origin_id).source(name.range),
-                        ));
+                        hb.error(
+                            ErrorComp::error(format!(
+                                "TYPE_RESOLVE `{}` is not a type name",
+                                hb.name_str(name.id)
+                            ))
+                            .context(hb.get_scope(origin_id).source(name.range)),
+                        );
                         return hir::Type::Error;
                     }
                 },
                 _ => {
-                    hb.error(ErrorComp::new(
-                        format!("TYPE_RESOLVE name `{}` is not found", hb.name_str(name.id)).into(),
-                        ErrorSeverity::Error,
-                        hb.get_scope(origin_id).source(name.range),
-                    ));
+                    hb.error(
+                        ErrorComp::error(format!(
+                            "TYPE_RESOLVE name `{}` is not found",
+                            hb.name_str(name.id)
+                        ))
+                        .context(hb.get_scope(origin_id).source(name.range)),
+                    );
                     return hir::Type::Error;
                 }
             }
         }
         None => {
-            hb.error(ErrorComp::new(
-                format!("TYPE_RESOLVE path does not lead to a type name").into(),
-                ErrorSeverity::Error,
-                hb.get_scope(origin_id)
-                    .source(TextRange::new(path.range_start, range_end)),
-            ));
+            hb.error(
+                ErrorComp::error(format!("TYPE_RESOLVE path does not lead to a type name"))
+                    .context(
+                        hb.get_scope(origin_id)
+                            .source(TextRange::new(path.range_start, range_end)),
+                    ),
+            );
             return hir::Type::Error;
         }
     }
@@ -283,11 +285,12 @@ fn path_resolve_as_type<'ast, 'hir>(
     // reject additional access
     match segments.peek().cloned() {
         Some(name) => {
-            hb.error(ErrorComp::new(
-                format!("TYPE_RESOLVE no further access is possible on type name").into(),
-                ErrorSeverity::Error,
-                hb.get_scope(origin_id).source(name.range),
-            ));
+            hb.error(
+                ErrorComp::error(format!(
+                    "TYPE_RESOLVE no further access is possible on type name"
+                ))
+                .context(hb.get_scope(origin_id).source(name.range)),
+            );
             return hir::Type::Error;
         }
         None => return hir_type,
@@ -302,20 +305,12 @@ fn error_duplicate_proc_param<'ast>(
 ) {
     let scope = hb.get_scope(from_id);
     hb.error(
-        ErrorComp::new(
-            format!(
-                "parameter `{}` is defined multiple times",
-                hb.name_str(param.name.id)
-            )
-            .into(),
-            ErrorSeverity::Error,
-            scope.source(param.name.range),
-        )
-        .context(
-            "existing parameter".into(),
-            ErrorSeverity::InfoHint,
-            Some(scope.source(existing.name.range)),
-        ),
+        ErrorComp::error(format!(
+            "parameter `{}` is defined multiple times",
+            hb.name_str(param.name.id)
+        ))
+        .context(scope.source(param.name.range))
+        .context_info("existing parameter", scope.source(existing.name.range)),
     );
 }
 
@@ -327,20 +322,12 @@ fn error_duplicate_enum_variant<'ast>(
 ) {
     let scope = hb.get_scope(from_id);
     hb.error(
-        ErrorComp::new(
-            format!(
-                "variant `{}` is defined multiple times",
-                hb.name_str(variant.name.id)
-            )
-            .into(),
-            ErrorSeverity::Error,
-            scope.source(variant.name.range),
-        )
-        .context(
-            "existing variant".into(),
-            ErrorSeverity::InfoHint,
-            Some(scope.source(existing.name.range)),
-        ),
+        ErrorComp::error(format!(
+            "variant `{}` is defined multiple times",
+            hb.name_str(variant.name.id)
+        ))
+        .context(scope.source(variant.name.range))
+        .context_info("existing variant", scope.source(existing.name.range)),
     );
 }
 
@@ -352,20 +339,12 @@ fn error_duplicate_union_member<'ast>(
 ) {
     let scope = hb.get_scope(from_id);
     hb.error(
-        ErrorComp::new(
-            format!(
-                "member `{}` is defined multiple times",
-                hb.name_str(member.name.id)
-            )
-            .into(),
-            ErrorSeverity::Error,
-            scope.source(member.name.range),
-        )
-        .context(
-            "existing member".into(),
-            ErrorSeverity::InfoHint,
-            Some(scope.source(existing.name.range)),
-        ),
+        ErrorComp::error(format!(
+            "member `{}` is defined multiple times",
+            hb.name_str(member.name.id)
+        ))
+        .context(scope.source(member.name.range))
+        .context_info("existing member", scope.source(existing.name.range)),
     );
 }
 
@@ -377,19 +356,11 @@ fn error_duplicate_struct_field<'ast>(
 ) {
     let scope = hb.get_scope(from_id);
     hb.error(
-        ErrorComp::new(
-            format!(
-                "field `{}` is defined multiple times",
-                hb.name_str(field.name.id)
-            )
-            .into(),
-            ErrorSeverity::Error,
-            scope.source(field.name.range),
-        )
-        .context(
-            "existing field".into(),
-            ErrorSeverity::InfoHint,
-            Some(scope.source(existing.name.range)),
-        ),
+        ErrorComp::error(format!(
+            "field `{}` is defined multiple times",
+            hb.name_str(field.name.id)
+        ))
+        .context(scope.source(field.name.range))
+        .context_info("existing field", scope.source(existing.name.range)),
     );
 }

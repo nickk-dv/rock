@@ -43,7 +43,7 @@ impl TextRange {
 
     #[inline]
     pub fn extend_by(&mut self, by: TextOffset) {
-        self.end = self.end + by;
+        self.end += by;
     }
 
     #[inline]
@@ -112,10 +112,9 @@ impl ops::Add for TextOffset {
     }
 }
 
-impl ops::Sub for TextOffset {
-    type Output = TextOffset;
+impl ops::AddAssign for TextOffset {
     #[inline]
-    fn sub(self, rhs: Self) -> Self::Output {
-        (self.raw - rhs.raw).into()
+    fn add_assign(&mut self, rhs: Self) {
+        self.raw = self.raw + rhs.raw;
     }
 }
