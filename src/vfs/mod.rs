@@ -1,18 +1,18 @@
-use crate::text_range::{TextOffset, TextRange};
+use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
-struct Vfs {
+pub struct Vfs {
     files: Vec<File>,
 }
 
-struct File {
+pub struct File {
     pub path: PathBuf,
     pub source: String,
     pub line_ranges: Vec<TextRange>,
 }
 
 #[derive(Copy, Clone)]
-pub struct FileID(u32);
+pub struct FileID(pub u32); //@make private (used in syntax tree to set 0)
 
 impl Vfs {
     pub fn new() -> Vfs {
@@ -29,7 +29,7 @@ impl Vfs {
             Ok(source) => source,
             Err(error) => panic!("vfs file read failed: {}", error),
         };
-        let line_ranges = compute_line_ranges(&source);
+        let line_ranges = text::line_ranges(&source);
         self.files.push(File {
             path,
             source,
@@ -46,21 +46,4 @@ impl FileID {
     fn index(self) -> usize {
         self.0 as usize
     }
-}
-
-fn compute_line_ranges(text: &str) -> Vec<TextRange> {
-    let mut ranges = Vec::new();
-    let mut range = TextRange::empty_at(0.into());
-    for c in text.chars() {
-        let size: TextOffset = (c.len_utf8() as u32).into();
-        range.extend_by(size);
-        if c == '\n' {
-            ranges.push(range);
-            range = TextRange::empty_at(range.end());
-        }
-    }
-    if range.len() > 0 {
-        ranges.push(range);
-    }
-    ranges
 }

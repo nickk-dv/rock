@@ -1,6 +1,4 @@
 use super::hir_builder as hb;
-use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, ErrorSeverity};
 use crate::hir;
 
 pub fn run(hb: &mut hb::HirBuilder) {

@@ -1,5 +1,5 @@
 use crate::ast::token::Token;
-use crate::text_range::*;
+use crate::text::*;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -122,7 +122,7 @@ impl SyntaxTree {
             string.push_str("  ");
         }
 
-        use crate::err::ansi;
+        use crate::error::ansi;
 
         let format = if ansi {
             format!(

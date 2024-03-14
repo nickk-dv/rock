@@ -1,8 +1,8 @@
 use super::hir_builder as hb;
 use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, ErrorSeverity};
+use crate::error::ErrorComp;
 use crate::hir;
-use crate::text_range::TextRange;
+use crate::text::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
     for id in hb.proc_ids() {

@@ -3,11 +3,11 @@ use super::intern::*;
 use super::parse_error::*;
 use super::token::Token;
 use super::token_list::TokenList;
-use crate::err::error::Error;
-use crate::err::error_new::*;
+use crate::error::{ErrorComp, SourceRange};
 use crate::mem::{Arena, List, ListBuilder};
-use crate::text_range::TextOffset;
-use crate::text_range::TextRange;
+use crate::text::TextOffset;
+use crate::text::TextRange;
+use crate::vfs;
 
 pub struct Parser<'a, 'ast> {
     cursor: usize,
@@ -77,7 +77,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         Err(ParseError::ExpectToken(ctx, token))
     }
 
-    pub fn module(&mut self, file_id: super::FileID) -> Result<Module<'ast>, (Error, ErrorComp)> {
+    pub fn module(&mut self, file_id: vfs::FileID) -> Result<Module<'ast>, ErrorComp> {
         let mut decls = ListBuilder::new();
         while self.peek() != Token::Eof {
             match self.decl() {
@@ -98,11 +98,12 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                             error_ctx.push_str(", ");
                         }
                     }
-                    let message = format!("unexpected token in {}", parse_error_data.ctx.as_str(),);
-                    let error = Error::parse(parse_error_data);
-                    let comp_error = ErrorComp::error(message)
-                        .context_msg(error_ctx, SourceRange::new(got_token.1, file_id));
-                    return Err((error, comp_error));
+                    let error = ErrorComp::error(format!(
+                        "unexpected token in {}",
+                        parse_error_data.ctx.as_str()
+                    ))
+                    .context_msg(error_ctx, SourceRange::new(got_token.1, file_id));
+                    return Err(error);
                 }
             }
         }

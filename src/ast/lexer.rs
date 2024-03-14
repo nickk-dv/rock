@@ -1,6 +1,6 @@
 use super::token::*;
 use super::token_list::*;
-use crate::text_range::TextRange;
+use crate::text::TextRange;
 use std::{iter::Peekable, str::Chars};
 
 pub struct Lexer<'src> {

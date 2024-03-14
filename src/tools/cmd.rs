@@ -2,13 +2,9 @@ use crate::ast;
 use crate::ast::ast::Ast;
 use crate::ast::parse;
 use crate::ast::CompCtx;
-use crate::err;
-use crate::err::error::*;
-use crate::err::report;
+use crate::error;
 use crate::hir_lower;
 use crate::mem::Arena;
-use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 
 const VERSION_MAJOR: u32 = 0; // major releases
@@ -40,6 +36,7 @@ main :: () -> s32 {
 
     let ctx = ast::CompCtx::new(); //@all errors require ctx (rework later)
 
+    /*
     if let Err(err) = fs::create_dir(&proj_dir) {
         report::report(
             handle,
@@ -141,6 +138,7 @@ main :: () -> s32 {
         );
         return Err(());
     }
+    */
 
     Ok(())
 }
@@ -152,13 +150,13 @@ fn cmd_check() -> Result<(), ()> {
         modules: Vec::new(),
     };
     let errors = parse(&mut ctx, &mut ast);
-    err::error_new::report_check_errors_cli(&ctx, &errors);
+    error::format::print_errors(&ctx.vfs, &errors);
     eprintln!("ast arena mem usage: {}", ast.arena.mem_usage());
 
     let hir = match hir_lower::check(&ctx, ast) {
         Ok(hir) => hir,
         Err(errors) => {
-            err::error_new::report_check_errors_cli(&ctx, &errors);
+            error::format::print_errors(&ctx.vfs, &errors);
             return Err(());
         }
     };

@@ -1,6 +1,6 @@
 use super::token::Token;
-use super::FileID;
-use crate::text_range::TextRange;
+use crate::text::TextRange;
+use crate::vfs::FileID;
 
 pub struct ParseErrorData {
     pub file_id: FileID,

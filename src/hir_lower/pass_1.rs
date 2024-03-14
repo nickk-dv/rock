@@ -1,6 +1,6 @@
 use super::hir_builder as hb;
 use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, SourceRange};
+use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,7 +34,7 @@ pub fn run(hb: &mut hb::HirBuilder) {
 fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, '_>) {
     for module in hb.ast_modules().cloned() {
         p.module_map.insert(
-            hb.ctx().file(module.file_id).path.clone(),
+            hb.ctx().vfs.file(module.file_id).path.clone(),
             ModuleStatus::Available(module),
         );
     }
@@ -212,7 +212,7 @@ fn add_scope_task_from_mod_decl(
     id: hb::ModID,
 ) {
     let scope = hb.get_scope(scope_id);
-    let mut scope_dir = hb.ctx().file(scope.file_id()).path.clone();
+    let mut scope_dir = hb.ctx().vfs.file(scope.file_id()).path.clone();
     scope_dir.pop();
 
     let mod_name = hb.name_str(decl.name.id);

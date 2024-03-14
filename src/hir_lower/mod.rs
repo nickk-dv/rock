@@ -7,7 +7,7 @@ mod pass_5;
 
 use crate::ast::ast;
 use crate::ast::CompCtx;
-use crate::err::error_new::ErrorComp;
+use crate::error::ErrorComp;
 use crate::hir;
 use hir_builder as hb;
 

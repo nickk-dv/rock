@@ -1,9 +1,9 @@
 use super::hir_builder as hb;
 use super::pass_1;
 use crate::ast::ast;
-use crate::err::error_new::ErrorComp;
+use crate::error::ErrorComp;
 use crate::hir;
-use crate::text_range::TextRange;
+use crate::text::TextRange;
 
 struct UseTask<'ast> {
     resolved: bool,

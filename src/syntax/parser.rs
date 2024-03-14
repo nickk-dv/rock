@@ -6,20 +6,19 @@ use super::{
     syntax_tree::{SyntaxNode, SyntaxNodeKind, SyntaxTree, SyntaxTreeBuilder},
 };
 use crate::{
-    ast::{lexer, token::Token, token_list::TokenList, CompCtx, FileID},
-    err::error_new::{ErrorComp, ErrorSeverity, SourceRange},
-    text_range::TextRange,
+    ast::{lexer, token::Token, token_list::TokenList, CompCtx},
+    error::{ErrorComp, SourceRange},
+    text::TextRange,
+    vfs,
 };
 
 #[test]
 fn parse_api_test() {
     let mut ctx = CompCtx::new();
-    let path = PathBuf::from("test/core.lang");
-    let source = std::fs::read_to_string(&path).expect("failed to read main file source");
-    let file_id = ctx.add_file(path, source);
+    let file_id = ctx.vfs.register_file(PathBuf::from("test/core.lang"));
 
     // not parsing whitespace, in real case would need to split whitespace and non whitespace tokens
-    let lex = lexer::Lexer::new(&ctx.file(file_id).source, false);
+    let lex = lexer::Lexer::new(&ctx.vfs.file(file_id).source, false);
     let tokens = lex.lex();
 
     let mut p = parser_api::Parser::new(tokens.tokens());
@@ -29,7 +28,7 @@ fn parse_api_test() {
 }
 
 fn pretty_print_events(events: &[Event]) {
-    use crate::err::ansi;
+    use crate::error::ansi;
 
     println!("EVENTS:");
     let mut depth = 0;
@@ -64,11 +63,9 @@ fn parse_syntax_tree() {
     return;
 
     let mut ctx = CompCtx::new();
-    let path = PathBuf::from("test/core.lang");
-    let source = std::fs::read_to_string(&path).expect("failed to read main file source");
-    let file_id = ctx.add_file(path, source);
+    let file_id = ctx.vfs.register_file(PathBuf::from("test/core.lang"));
 
-    let lex = lexer::Lexer::new(&ctx.file(file_id).source, true);
+    let lex = lexer::Lexer::new(&ctx.vfs.file(file_id).source, true);
     let tokens = lex.lex();
 
     let builder = SyntaxTreeBuilder::new();
@@ -84,10 +81,10 @@ fn parse_syntax_tree() {
     parser.parse_source();
     let (root, errors) = parser.finish();
     let root = SyntaxTree {
-        source: ctx.file(file_id).source.clone(),
+        source: ctx.vfs.file(file_id).source.clone(),
         root,
     };
-    crate::err::error_new::report_check_errors_cli(&ctx, &errors);
+    crate::error::format::print_errors(&ctx.vfs, &errors);
 
     std::fs::File::create("test/syntax_tree.rast").expect("failed to create file");
     std::fs::write("test/syntax_tree.rast", root.format_to_string(false))
@@ -173,7 +170,7 @@ impl<'a> Parser<'a> {
             };
             self.errors.push(
                 ErrorComp::error(format!("add `{}` after this token", token.as_str()))
-                    .context(SourceRange::new(range, FileID(0))),
+                    .context(SourceRange::new(range, vfs::FileID(0))),
             );
             if end_node {
                 self.builder.end_node();
@@ -197,7 +194,7 @@ impl<'a> Parser<'a> {
     fn error_eat(&mut self, message: &str) {
         let range = self.tokens.get_range(self.cursor);
         self.errors.push(
-            ErrorComp::error(message.to_string()).context(SourceRange::new(range, FileID(0))), //@temp file 0
+            ErrorComp::error(message.to_string()).context(SourceRange::new(range, vfs::FileID(0))), //@temp file 0
         );
 
         self.builder.start_node(SyntaxNodeKind::ERROR);

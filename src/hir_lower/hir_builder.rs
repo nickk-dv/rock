@@ -1,11 +1,11 @@
 use crate::ast::ast;
 use crate::ast::intern::InternID;
 use crate::ast::CompCtx;
-use crate::err::error_new::ErrorComp;
-use crate::err::error_new::SourceRange;
+use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::mem::Arena;
-use crate::text_range::TextRange;
+use crate::text::TextRange;
+use crate::vfs;
 use std::collections::HashMap;
 
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
@@ -350,7 +350,7 @@ impl<'ast> Scope<'ast> {
         self.parent
     }
 
-    pub fn file_id(&self) -> crate::ast::FileID {
+    pub fn file_id(&self) -> vfs::FileID {
         self.module.file_id
     }
 

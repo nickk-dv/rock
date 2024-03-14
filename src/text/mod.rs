@@ -1,14 +1,20 @@
 use std::{fmt, num::TryFromIntError, ops};
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct TextRange {
     start: TextOffset,
     end: TextOffset,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TextOffset {
     raw: u32,
+}
+
+#[derive(Copy, Clone)]
+pub struct TextLocation {
+    line: u32,
+    col: u32,
 }
 
 impl TextRange {
@@ -17,7 +23,6 @@ impl TextRange {
         assert!(start.raw <= end.raw);
         TextRange { start, end }
     }
-
     #[inline]
     pub const fn empty_at(offset: TextOffset) -> TextRange {
         TextRange {
@@ -25,53 +30,35 @@ impl TextRange {
             end: offset,
         }
     }
-
     #[inline]
     pub const fn start(self) -> TextOffset {
         self.start
     }
-
     #[inline]
     pub const fn end(self) -> TextOffset {
         self.end
     }
-
     #[inline]
     pub const fn len(self) -> usize {
         (self.end.raw - self.start.raw) as usize
     }
-
     #[inline]
     pub fn extend_by(&mut self, by: TextOffset) {
         self.end += by;
     }
-
     #[inline]
     pub const fn contains_offset(self, offset: TextOffset) -> bool {
         self.start.raw <= offset.raw && offset.raw < self.end.raw
     }
-
     #[inline]
     pub fn as_usize(self) -> std::ops::Range<usize> {
         self.start.into()..self.end.into()
     }
 }
 
-impl fmt::Debug for TextRange {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}..{}", self.start.raw, self.end.raw)
-    }
-}
-
 impl TextOffset {
     pub fn new(offset: u32) -> TextOffset {
         TextOffset { raw: offset }
-    }
-}
-
-impl fmt::Debug for TextOffset {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.raw)
     }
 }
 
@@ -117,4 +104,66 @@ impl ops::AddAssign for TextOffset {
     fn add_assign(&mut self, rhs: Self) {
         self.raw = self.raw + rhs.raw;
     }
+}
+
+impl TextLocation {
+    #[inline]
+    pub const fn new(line: u32, col: u32) -> TextLocation {
+        TextLocation { line, col }
+    }
+    #[inline]
+    pub const fn line(&self) -> u32 {
+        self.line
+    }
+    #[inline]
+    pub const fn col(&self) -> u32 {
+        self.col
+    }
+}
+
+impl fmt::Debug for TextRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start.raw, self.end.raw)
+    }
+}
+
+impl fmt::Debug for TextOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.raw)
+    }
+}
+
+impl fmt::Debug for TextLocation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.line, self.col)
+    }
+}
+
+pub fn line_ranges(text: &str) -> Vec<TextRange> {
+    let mut ranges = Vec::new();
+    let mut range = TextRange::empty_at(0.into());
+    for c in text.chars() {
+        let size: TextOffset = (c.len_utf8() as u32).into();
+        range.extend_by(size);
+        if c == '\n' {
+            ranges.push(range);
+            range = TextRange::empty_at(range.end());
+        }
+    }
+    if range.len() > 0 {
+        ranges.push(range);
+    }
+    ranges
+}
+
+pub fn position_from_line_ranges(
+    offset: TextOffset,
+    line_ranges: &[TextRange],
+) -> (TextLocation, TextRange) {
+    for (line, range) in line_ranges.iter().enumerate() {
+        if range.contains_offset(offset) {
+            return (TextLocation::new((line + 1) as u32, 0), *range);
+        }
+    }
+    panic!("text location not found");
 }

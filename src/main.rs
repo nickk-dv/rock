@@ -1,11 +1,11 @@
 mod ast;
-mod err;
+mod error;
 mod hir;
 mod hir_lower;
 mod llvm;
 mod mem;
 mod syntax;
-mod text_range;
+mod text;
 mod tools;
 mod vfs;
 

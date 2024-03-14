@@ -6,8 +6,8 @@ mod parser;
 pub mod token;
 pub mod token_list;
 
-use crate::err::error::*;
-use crate::err::report;
+use crate::error::ErrorComp;
+use crate::vfs;
 use ast::*;
 use intern::InternPool;
 use std::io::Write;
@@ -22,32 +22,16 @@ use std::time::Instant;
 // make iteration a private function
 // if its still needed by ls server
 pub struct CompCtx {
-    pub files: Vec<File>,
+    pub vfs: vfs::Vfs,
     intern: InternPool,
 }
-
-pub struct File {
-    pub path: PathBuf,
-    pub source: String,
-}
-
-#[derive(Clone, Copy)]
-pub struct FileID(pub u32);
 
 impl CompCtx {
     pub fn new() -> CompCtx {
         CompCtx {
-            files: Vec::new(),
+            vfs: vfs::Vfs::new(),
             intern: InternPool::new(),
         }
-    }
-
-    pub fn file(&self, file_id: FileID) -> &File {
-        if let Some(file) = self.files.get(file_id.raw_index()) {
-            return file;
-        }
-        //@internal error
-        panic!("getting file using an invalid ID {}", file_id.raw())
     }
 
     pub fn intern(&self) -> &InternPool {
@@ -56,22 +40,6 @@ impl CompCtx {
 
     pub fn intern_mut(&mut self) -> &mut InternPool {
         &mut self.intern
-    }
-
-    pub fn add_file(&mut self, path: PathBuf, source: String) -> FileID {
-        let id = self.files.len();
-        self.files.push(File { path, source });
-        FileID(id as u32)
-    }
-}
-
-impl FileID {
-    fn raw(&self) -> u32 {
-        self.0
-    }
-
-    fn raw_index(&self) -> usize {
-        self.0 as usize
     }
 }
 
@@ -94,8 +62,6 @@ impl Timer {
     }
 }
 
-use crate::err::error_new::*;
-
 pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<ErrorComp> {
     let mut errors = Vec::<ErrorComp>::new();
 
@@ -107,9 +73,9 @@ pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
 
     for file_id in files {
-        let lexer = lexer::Lexer::new(ctx.file(file_id).source.as_str(), false);
+        let lexer = lexer::Lexer::new(ctx.vfs.file(file_id).source.as_str(), false);
         let tokens = lexer.lex();
-        let source_copy = ctx.file(file_id).source.clone();
+        let source_copy = ctx.vfs.file(file_id).source.clone();
         let mut parser =
             parser::Parser::new(tokens, &mut ast.arena, ctx.intern_mut(), &source_copy);
         let parse_res = parser.module(file_id);
@@ -118,9 +84,8 @@ pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<
             Ok(module) => {
                 ast.modules.push(module);
             }
-            Err((error, error_new)) => {
-                errors.push(error_new);
-                report::report(handle, &error, &ctx);
+            Err(error) => {
+                errors.push(error);
             }
         }
     }
@@ -130,7 +95,7 @@ pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<
 }
 
 #[must_use]
-fn collect_files(ctx: &mut CompCtx) -> Vec<FileID> {
+fn collect_files(ctx: &mut CompCtx) -> Vec<vfs::FileID> {
     //relative 'root' path of the project being compiled
     //@hardcoded to 'test' for faster testing
     let mut dir_paths = Vec::new();
@@ -156,14 +121,15 @@ fn collect_files(ctx: &mut CompCtx) -> Vec<FileID> {
                 }
             }
             Err(err) => {
-                report::report(
-                    handle,
-                    &Error::file_io(FileIOError::DirRead)
-                        .info(err.to_string())
-                        .info(format!("path: {:?}", dir_path))
-                        .into(),
-                    &ctx,
-                );
+                //@deal with the error of reading a directory
+                //report::report(
+                //    handle,
+                //    &Error::file_io(FileIOError::DirRead)
+                //        .info(err.to_string())
+                //        .info(format!("path: {:?}", dir_path))
+                //        .into(),
+                //    &ctx,
+                //);
             }
         }
     }
@@ -171,22 +137,8 @@ fn collect_files(ctx: &mut CompCtx) -> Vec<FileID> {
     let mut files = Vec::new();
 
     for path in filepaths {
-        match std::fs::read_to_string(&path) {
-            Ok(source) => {
-                let id = ctx.add_file(path, source);
-                files.push(id);
-            }
-            Err(err) => {
-                report::report(
-                    handle,
-                    &Error::file_io(FileIOError::FileRead)
-                        .info(err.to_string())
-                        .info(format!("path: {:?}", path))
-                        .into(),
-                    &ctx,
-                );
-            }
-        };
+        let id = ctx.vfs.register_file(path);
+        files.push(id);
     }
 
     files
