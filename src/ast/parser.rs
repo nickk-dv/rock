@@ -98,14 +98,10 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                             error_ctx.push_str(", ");
                         }
                     }
-                    let message = format!(
-                        "Parse Error: in {}\n{}",
-                        parse_error_data.ctx.as_str(),
-                        error_ctx
-                    );
+                    let message = format!("unexpected token in {}", parse_error_data.ctx.as_str(),);
                     let error = Error::parse(parse_error_data);
                     let comp_error = ErrorComp::error(message)
-                        .context_msg("unexpected token", SourceRange::new(got_token.1, file_id));
+                        .context_msg(error_ctx, SourceRange::new(got_token.1, file_id));
                     return Err((error, comp_error));
                 }
             }

@@ -1,50 +1,54 @@
-pub mod hir_builder;
 use crate::ast::ast;
 use crate::ast::intern;
+use crate::ast::FileID;
 use crate::mem::Arena;
 use crate::text_range::TextRange;
-use hir_builder as hb;
-
-//@try to remove from_id: hb::ScopeID, from data structs
-// (if possible) to fully de-couple any data thats needed to perform lowering from final Hir
-
-//@currently Hir doesnt store File information
-// related to scopes, only scope_ids are stored in arrays of Data structs
-// the spans and file_ids are still usefull for debug information or stack-traces
-// potentially during codegeneration.
-// So some Module or Scope information like FileID still needs to be included
-// This is not the top priority, so far.
 
 pub struct Hir<'hir> {
-    arena: Arena<'hir>,
-    procs: Vec<ProcData<'hir>>,
-    enums: Vec<EnumData<'hir>>,
-    unions: Vec<UnionData<'hir>>,
-    structs: Vec<StructData<'hir>>,
-    consts: Vec<ConstData<'hir>>,
-    globals: Vec<GlobalData<'hir>>,
-    const_exprs: Vec<ConstExprData<'hir>>,
+    pub arena: Arena<'hir>,
+    pub scopes: Vec<ScopeData>,
+    pub procs: Vec<ProcData<'hir>>,
+    pub enums: Vec<EnumData<'hir>>,
+    pub unions: Vec<UnionData<'hir>>,
+    pub structs: Vec<StructData<'hir>>,
+    pub consts: Vec<ConstData<'hir>>,
+    pub globals: Vec<GlobalData<'hir>>,
+    pub const_exprs: Vec<ConstExprData<'hir>>,
 }
 
-// @local storage bodies arent defined yet
-// LocalID doesnt have a usage yet
-#[derive(Copy, Clone)]
-pub struct LocalID(u32);
+macro_rules! hir_id_impl {
+    ($name:ident) => {
+        #[derive(Copy, Clone)]
+        pub struct $name(u32);
+        impl $name {
+            pub const fn new(index: usize) -> $name {
+                $name(index as u32)
+            }
+            pub const fn index(self) -> usize {
+                self.0 as usize
+            }
+        }
+    };
+}
 
-#[derive(Copy, Clone)]
-pub struct ProcID(u32);
+hir_id_impl!(ScopeID);
+pub struct ScopeData {
+    pub file_id: FileID,
+}
+
+hir_id_impl!(ProcID);
 pub struct ProcData<'hir> {
-    pub from_id: hb::ScopeID,
+    pub from_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub params: &'hir [ProcParam<'hir>],
     pub is_variadic: bool,
     pub return_ty: Type<'hir>,
     pub block: Option<&'hir Expr<'hir>>,
+    pub body: ProcBody<'hir>,
 }
 
-#[derive(Copy, Clone)]
-pub struct ProcParamID(u32);
+hir_id_impl!(ProcParamID);
 #[derive(Copy, Clone)]
 pub struct ProcParam<'hir> {
     pub mutt: ast::Mut,
@@ -52,51 +56,51 @@ pub struct ProcParam<'hir> {
     pub ty: Type<'hir>,
 }
 
+hir_id_impl!(LocalID);
 #[derive(Copy, Clone)]
-pub struct EnumID(u32);
+pub struct ProcBody<'hir> {
+    pub locals: &'hir [&'hir VarDecl<'hir>],
+}
+
+hir_id_impl!(EnumID);
 pub struct EnumData<'hir> {
-    pub from_id: hb::ScopeID,
+    pub from_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub variants: &'hir [EnumVariant],
 }
 
-#[derive(Copy, Clone)]
-pub struct EnumVariantID(u32);
+hir_id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
 pub struct EnumVariant {
     pub name: ast::Ident,
-    pub value: Option<ConstExprID>, // @we can assign specific numeric value without a range in source text
+    pub value: Option<ConstExprID>,
 }
 
-#[derive(Copy, Clone)]
-pub struct UnionID(u32);
+hir_id_impl!(UnionID);
 pub struct UnionData<'hir> {
-    pub from_id: hb::ScopeID,
+    pub from_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub members: &'hir [UnionMember<'hir>],
 }
 
-#[derive(Copy, Clone)]
-pub struct UnionMemberID(u32);
+hir_id_impl!(UnionMemberID);
 #[derive(Copy, Clone)]
 pub struct UnionMember<'hir> {
     pub name: ast::Ident,
     pub ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
-pub struct StructID(u32);
+hir_id_impl!(StructID);
 pub struct StructData<'hir> {
-    pub from_id: hb::ScopeID,
+    pub from_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub fields: &'hir [StructField<'hir>],
 }
 
-#[derive(Copy, Clone)]
-pub struct StructFieldID(u32);
+hir_id_impl!(StructFieldID);
 #[derive(Copy, Clone)]
 pub struct StructField<'hir> {
     pub vis: ast::Vis,
@@ -104,38 +108,30 @@ pub struct StructField<'hir> {
     pub ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
-pub struct ConstID(u32);
+hir_id_impl!(ConstID);
 pub struct ConstData<'hir> {
-    pub from_id: hb::ScopeID,
+    pub from_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub ty: Type<'hir>,
     pub value: ConstExprID,
 }
 
-#[derive(Copy, Clone)]
-pub struct GlobalID(u32);
+hir_id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
-    pub from_id: hb::ScopeID,
+    pub from_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub ty: Type<'hir>,
     pub value: ConstExprID,
 }
 
-#[derive(Copy, Clone)]
-pub struct ConstExprID(u32);
+hir_id_impl!(ConstExprID);
 pub struct ConstExprData<'hir> {
-    pub from_id: hb::ScopeID,
-    pub value: Option<&'hir Expr<'hir>>,
+    pub from_id: ScopeID,
+    pub value: Option<Expr<'hir>>,
 }
 
-// @should static arrays with ast::ConstExpr that are used in declarations
-// be represented diffrently? since they are part of constant dependency
-// resolution process, and might get a 'Erorr' value for their size
-// in general Type[?] is usefull concept to represent for better typecheking flow
-// since we dont need to mark entire type as Error
 #[derive(Copy, Clone)]
 pub enum Type<'hir> {
     Error,
@@ -292,25 +288,25 @@ pub struct StructFieldInit<'hir> {
 }
 
 impl<'hir> Hir<'hir> {
-    pub fn get_proc(&self, id: ProcID) -> &ProcData {
-        self.procs.get(id.0 as usize).unwrap()
+    pub fn proc_data(&self, id: ProcID) -> &ProcData {
+        self.procs.get(id.index()).unwrap()
     }
-    pub fn get_enum(&self, id: EnumID) -> &EnumData {
-        self.enums.get(id.0 as usize).unwrap()
+    pub fn enum_data(&self, id: EnumID) -> &EnumData {
+        self.enums.get(id.index()).unwrap()
     }
-    pub fn get_union(&self, id: UnionID) -> &UnionData {
-        self.unions.get(id.0 as usize).unwrap()
+    pub fn union_data(&self, id: UnionID) -> &UnionData {
+        self.unions.get(id.index()).unwrap()
     }
-    pub fn get_struct(&self, id: StructID) -> &StructData {
-        self.structs.get(id.0 as usize).unwrap()
+    pub fn struct_data(&self, id: StructID) -> &StructData {
+        self.structs.get(id.index()).unwrap()
     }
-    pub fn get_const(&self, id: ConstID) -> &ConstData {
-        self.consts.get(id.0 as usize).unwrap()
+    pub fn const_data(&self, id: ConstID) -> &ConstData {
+        self.consts.get(id.index()).unwrap()
     }
-    pub fn get_global(&self, id: GlobalID) -> &GlobalData {
-        self.globals.get(id.0 as usize).unwrap()
+    pub fn global_data(&self, id: GlobalID) -> &GlobalData {
+        self.globals.get(id.index()).unwrap()
     }
-    pub fn get_const_expr(&self, id: ConstExprID) -> &ConstExprData {
-        self.const_exprs.get(id.0 as usize).unwrap()
+    pub fn const_expr_data(&self, id: ConstExprID) -> &ConstExprData {
+        self.const_exprs.get(id.index()).unwrap()
     }
 }

@@ -1,7 +1,7 @@
+use super::hir_builder as hb;
 use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, ErrorSeverity, SourceRange};
+use crate::err::error_new::{ErrorComp, SourceRange};
 use crate::hir;
-use crate::hir::hir_builder as hb;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -105,6 +105,7 @@ fn process_scope_task<'ast>(
                         is_variadic: decl.is_variadic,
                         return_ty: hir::Type::Error,
                         block: None,
+                        body: hir::ProcBody { locals: &[] },
                     };
                     let symbol = hb.add_proc(decl, data);
                     hb.get_scope_mut(scope_id).add_symbol(decl.name.id, symbol);
@@ -178,7 +179,7 @@ fn process_scope_task<'ast>(
 
 pub fn name_already_defined_error(
     hb: &mut hb::HirBuilder,
-    scope_id: hb::ScopeID,
+    scope_id: hir::ScopeID,
     name: ast::Ident,
 ) -> bool {
     let scope = hb.get_scope(scope_id);
@@ -206,7 +207,7 @@ pub fn name_already_defined_error(
 fn add_scope_task_from_mod_decl(
     p: &mut Pass,
     hb: &mut hb::HirBuilder,
-    scope_id: hb::ScopeID,
+    scope_id: hir::ScopeID,
     decl: &ast::ModDecl,
     id: hb::ModID,
 ) {

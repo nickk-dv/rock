@@ -1,7 +1,7 @@
+use super::hir_builder as hb;
 use crate::ast::ast;
 use crate::err::error_new::{ErrorComp, ErrorSeverity};
 use crate::hir;
-use crate::hir::hir_builder as hb;
 use crate::text_range::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
@@ -83,7 +83,7 @@ fn const_resolve_global_data(hb: &mut hb::HirBuilder, id: hir::GlobalID) {
     const_resolve_const_expr(hb, from_id, value);
 }
 
-fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hb::ScopeID, ty: hir::Type) {
+fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, ty: hir::Type) {
     match ty {
         hir::Type::Reference(ref_ty, _) => const_resolve_type(hb, from_id, *ref_ty),
         hir::Type::ArraySlice(slice) => const_resolve_type(hb, from_id, slice.ty),
@@ -96,7 +96,7 @@ fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hb::ScopeID, ty: hir::Ty
     }
 }
 
-fn const_resolve_const_expr(hb: &mut hb::HirBuilder, from_id: hb::ScopeID, id: hir::ConstExprID) {
+fn const_resolve_const_expr(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, id: hir::ConstExprID) {
     let ast_expr = hb.const_expr_ast(id);
 
     let kind = match ast_expr.kind {
@@ -109,16 +109,15 @@ fn const_resolve_const_expr(hb: &mut hb::HirBuilder, from_id: hb::ScopeID, id: h
             hir::ExprKind::Error
         }
     };
-    let hir_expr = hb.arena().alloc_ref_new(hir::Expr {
+    let hir_expr = hir::Expr {
         kind,
         range: ast_expr.range,
-    });
-
+    };
     let data = hb.const_expr_data_mut(id);
     data.value = Some(hir_expr)
 }
 
-fn error_const_expr_unsupported(hb: &mut hb::HirBuilder, from_id: hb::ScopeID, range: TextRange) {
+fn error_const_expr_unsupported(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, range: TextRange) {
     let source = hb.get_scope(from_id).source(range);
     hb.error(ErrorComp::error("only integer constant expressions are supported").context(source));
 }

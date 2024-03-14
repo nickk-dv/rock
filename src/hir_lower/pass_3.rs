@@ -1,7 +1,7 @@
+use super::hir_builder as hb;
 use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, ErrorSeverity};
+use crate::err::error_new::ErrorComp;
 use crate::hir;
-use crate::hir::hir_builder as hb;
 use crate::text_range::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
@@ -27,7 +27,7 @@ pub fn run(hb: &mut hb::HirBuilder) {
 
 fn resolve_decl_type<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
-    from_id: hb::ScopeID,
+    from_id: hir::ScopeID,
     ast_ty: ast::Type<'ast>,
 ) -> hir::Type<'hir> {
     match ast_ty {
@@ -177,7 +177,7 @@ fn process_global_data(hb: &mut hb::HirBuilder, id: hir::GlobalID) {
 // due to lack of good apis for this (temp)
 fn path_resolve_as_type<'ast, 'hir>(
     hb: &mut hb::HirBuilder,
-    origin_id: hb::ScopeID,
+    origin_id: hir::ScopeID,
     path: &'ast ast::Path,
 ) -> hir::Type<'hir> {
     let mut range_end = path.range_start;
@@ -299,7 +299,7 @@ fn path_resolve_as_type<'ast, 'hir>(
 
 fn error_duplicate_proc_param<'ast>(
     hb: &mut hb::HirBuilder,
-    from_id: hb::ScopeID,
+    from_id: hir::ScopeID,
     param: &'ast ast::ProcParam<'ast>,
     existing: &hir::ProcParam,
 ) {
@@ -316,7 +316,7 @@ fn error_duplicate_proc_param<'ast>(
 
 fn error_duplicate_enum_variant<'ast>(
     hb: &mut hb::HirBuilder,
-    from_id: hb::ScopeID,
+    from_id: hir::ScopeID,
     variant: &'ast ast::EnumVariant<'ast>,
     existing: &hir::EnumVariant,
 ) {
@@ -333,7 +333,7 @@ fn error_duplicate_enum_variant<'ast>(
 
 fn error_duplicate_union_member<'ast>(
     hb: &mut hb::HirBuilder,
-    from_id: hb::ScopeID,
+    from_id: hir::ScopeID,
     member: &'ast ast::UnionMember<'ast>,
     existing: &hir::UnionMember,
 ) {
@@ -350,7 +350,7 @@ fn error_duplicate_union_member<'ast>(
 
 fn error_duplicate_struct_field<'ast>(
     hb: &mut hb::HirBuilder,
-    from_id: hb::ScopeID,
+    from_id: hir::ScopeID,
     field: &'ast ast::StructField<'ast>,
     existing: &hir::StructField,
 ) {

@@ -1,3 +1,4 @@
+pub mod hir_builder;
 mod pass_1;
 mod pass_2;
 mod pass_3;
@@ -8,7 +9,7 @@ use crate::ast::ast;
 use crate::ast::CompCtx;
 use crate::err::error_new::ErrorComp;
 use crate::hir;
-use crate::hir::hir_builder as hb;
+use hir_builder as hb;
 
 pub fn check<'ctx, 'ast, 'hir>(
     ctx: &'ctx CompCtx,

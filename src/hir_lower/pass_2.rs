@@ -1,7 +1,8 @@
+use super::hir_builder as hb;
 use super::pass_1;
 use crate::ast::ast;
-use crate::err::error_new::{ErrorComp, ErrorSeverity};
-use crate::hir::hir_builder as hb;
+use crate::err::error_new::ErrorComp;
+use crate::hir;
 use crate::text_range::TextRange;
 
 struct UseTask<'ast> {
@@ -58,7 +59,7 @@ pub fn run(hb: &mut hb::HirBuilder) {
 // + know which use declarations ware already fully evaluated (using an option might be fine)
 fn try_process_use_decl<'ctx, 'ast, 'hir>(
     hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
+    scope_id: hir::ScopeID,
     decl: &'ast ast::UseDecl<'ast>,
 ) -> bool {
     let from_id = match try_resolve_use_path(hb, scope_id, decl.path) {
@@ -114,9 +115,9 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
 // @visibility rules are ignored
 fn try_resolve_use_path<'ctx, 'ast, 'hir>(
     hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
-    scope_id: hb::ScopeID,
+    scope_id: hir::ScopeID,
     path: &'ast ast::Path,
-) -> Result<Option<hb::ScopeID>, ()> {
+) -> Result<Option<hir::ScopeID>, ()> {
     let origin_scope = hb.get_scope(scope_id);
 
     let (mut from_id, mut allow_retry) = match path.kind {

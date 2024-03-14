@@ -1,7 +1,7 @@
+use super::hir_builder as hb;
 use crate::ast::ast;
 use crate::err::error_new::{ErrorComp, ErrorSeverity};
 use crate::hir;
-use crate::hir::hir_builder as hb;
 
 pub fn run(hb: &mut hb::HirBuilder) {
     for id in hb.proc_ids() {

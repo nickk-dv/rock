@@ -117,7 +117,7 @@ impl ErrorContext {
 impl ErrorMessage {
     pub fn as_str(&self) -> &str {
         match self {
-            ErrorMessage::String(string) => &string,
+            ErrorMessage::String(string) => string,
             ErrorMessage::Static(string) => string,
         }
     }
