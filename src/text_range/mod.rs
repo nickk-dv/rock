@@ -1,12 +1,12 @@
 use std::{fmt, num::TryFromIntError, ops};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct TextRange {
     start: TextOffset,
     end: TextOffset,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct TextOffset {
     raw: u32,
 }
