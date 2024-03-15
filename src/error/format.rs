@@ -1,6 +1,6 @@
 use super::ansi;
 use super::{ErrorComp, ErrorSeverity};
-use crate::text::{self, TextLocation, TextRange};
+use crate::text::{self, TextRange};
 use crate::vfs::Vfs;
 use std::io::{BufWriter, Stderr, Write};
 

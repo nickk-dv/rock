@@ -25,7 +25,7 @@ enum ModuleStatus<'ast> {
 pub fn run(hb: &mut hb::HirBuilder) {
     let mut p = Pass::default();
     make_module_path_map(&mut p, hb);
-    add_root_scope_task(&mut p);
+    add_root_scope_task(&mut p, hb);
     while let Some(task) = p.task_queue.pop() {
         process_scope_task(&mut p, hb, task);
     }
@@ -40,8 +40,11 @@ fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, 
     }
 }
 
-fn add_root_scope_task(p: &mut Pass) {
-    let root_path: PathBuf = ["test", "main.lang"].iter().collect();
+fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
+    let root_path = std::env::current_dir()
+        .unwrap()
+        .join("src")
+        .join("main.lang");
     match p.module_map.remove(&root_path) {
         Some(status) => match status {
             ModuleStatus::Available(module) => {
@@ -53,9 +56,7 @@ fn add_root_scope_task(p: &mut Pass) {
             ModuleStatus::Taken(..) => unreachable!("root module cannot be taken"),
         },
         None => {
-            //@ reporting without main source range is not supported yet @03/05/24
-            //@allow errors without any context @03/11/24
-            eprintln!("no root module found, add src/main.lang");
+            hb.error(ErrorComp::error("root module src/main.lang not found"));
         }
     }
 }

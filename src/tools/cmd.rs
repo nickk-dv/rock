@@ -3,8 +3,10 @@ use crate::ast::ast::Ast;
 use crate::ast::parse;
 use crate::ast::CompCtx;
 use crate::error;
+use crate::error::ErrorComp;
 use crate::hir_lower;
 use crate::mem::Arena;
+use crate::vfs;
 use std::path::PathBuf;
 
 const VERSION_MAJOR: u32 = 0; // major releases
@@ -17,128 +19,72 @@ pub fn cmd_parse() -> Result<(), ()> {
     Ok(())
 }
 
-fn cmd_new(cmd: &Cmd) -> Result<(), ()> {
-    const MAIN_FILE: &str = r#"
-main :: () -> s32 {
-    return 0;
-}
-"#;
-    const GITIGNORE_FILE: &str = r#"build/
-"#;
-
-    //@temp unwrap, no cmd validation or err handing is done
+fn cmd_new(cmd: &Cmd) -> Result<(), ErrorComp> {
+    //@temp unwrap, no cli arg validation is done
     let package_name = cmd.args.get(0).unwrap();
-    let proj_dir = PathBuf::new().join(package_name);
-    let src_path = proj_dir.join("src");
-    let main_path = src_path.join("main.lang");
-    let gitignore_path = proj_dir.join(".gitignore");
-    let handle = &mut std::io::BufWriter::new(std::io::stderr());
+    validate_name(&package_name)?;
 
-    let ctx = ast::CompCtx::new(); //@all errors require ctx (rework later)
+    let cwd = std::env::current_dir().unwrap();
+    let package_dir = cwd.join(package_name);
+    let src_dir = package_dir.join("src");
+    let build_dir = package_dir.join("build");
+    let main_path = src_dir.join("main.lang");
+    let gitignore_path = package_dir.join(".gitignore");
 
-    /*
-    if let Err(err) = fs::create_dir(&proj_dir) {
-        report::report(
-            handle,
-            &Error::file_io(FileIOError::DirCreate)
-                .info(err.to_string())
-                .info(format!("path: {:?}", proj_dir))
-                .into(),
-            &ctx,
-        );
-        return Err(());
-    }
+    make_dir(&package_dir)?;
+    make_dir(&src_dir)?;
+    make_dir(&build_dir)?;
+    make_file(&main_path, "\nproc main() -> s32 {\n\treturn 0;\n}\n")?;
+    make_file(&gitignore_path, "build/\n")?;
+    git_init(&package_dir)?;
 
-    if let Err(err) = fs::create_dir(&src_path) {
-        report::report(
-            handle,
-            &Error::file_io(FileIOError::DirCreate)
-                .info(err.to_string())
-                .info(format!("path: {:?}", src_path))
-                .into(),
-            &ctx,
-        );
-        return Err(());
-    }
-
-    let mut main_file = match fs::File::create(&main_path) {
-        Ok(file) => file,
-        Err(err) => {
-            report::report(
-                handle,
-                &Error::file_io(FileIOError::FileCreate)
-                    .info(err.to_string())
-                    .info(format!("path: {:?}", main_path))
-                    .into(),
-                &ctx,
-            );
-            return Err(());
+    fn validate_name(name: &str) -> Result<(), ErrorComp> {
+        for c in name.chars() {
+            let valid = c.is_alphanumeric() || c == '-' || c == '_';
+            if !valid {
+                return Err(ErrorComp::error(format!(
+                "package name must consist only of alphanumeric characters, underscores `_` or hyphens `-`",
+            )));
+            }
         }
-    };
+        Ok(())
+    }
 
-    let mut gitignore_file = match fs::File::create(&gitignore_path) {
-        Ok(file) => file,
-        Err(err) => {
-            report::report(
-                handle,
-                &Error::file_io(FileIOError::FileCreate)
-                    .info(err.to_string())
-                    .info(format!("path: {:?}", gitignore_path))
-                    .into(),
-                &ctx,
-            );
-            return Err(());
+    fn make_dir(path: &PathBuf) -> Result<(), ErrorComp> {
+        if let Err(io_error) = std::fs::create_dir(path) {
+            return Err(ErrorComp::error(format!(
+                "failed to create directory: {}",
+                io_error
+            )));
         }
-    };
-
-    if let Err(err) = main_file.write_all(MAIN_FILE.as_bytes()) {
-        report::report(
-            handle,
-            &Error::file_io(FileIOError::FileWrite)
-                .info(err.to_string())
-                .info(format!("path: {:?}", main_path))
-                .into(),
-            &ctx,
-        );
-        return Err(());
+        Ok(())
     }
 
-    if let Err(err) = gitignore_file.write_all(GITIGNORE_FILE.as_bytes()) {
-        report::report(
-            handle,
-            &Error::file_io(FileIOError::FileWrite)
-                .info(err.to_string())
-                .info(format!("path: {:?}", gitignore_path))
-                .into(),
-            &ctx,
-        );
-        return Err(());
+    fn make_file(path: &PathBuf, text: &str) -> Result<(), ErrorComp> {
+        if let Err(io_error) = std::fs::write(path, text) {
+            return Err(ErrorComp::error(format!(
+                "failed to create file: {}",
+                io_error
+            )));
+        }
+        Ok(())
     }
 
-    if let Err(err) = std::env::set_current_dir(&proj_dir) {
-        report::report(
-            handle,
-            &Error::file_io(FileIOError::EnvCurrentDir)
-                .info(err.to_string())
-                .info(format!("path: {:?}", proj_dir))
-                .into(),
-            &ctx,
-        );
-        return Err(());
+    fn git_init(package_dir: &PathBuf) -> Result<(), ErrorComp> {
+        if let Err(io_error) = std::env::set_current_dir(package_dir) {
+            return Err(ErrorComp::error(format!(
+                "failed to set working directory: {}",
+                io_error
+            )));
+        }
+        if let Err(io_error) = std::process::Command::new("git").arg("init").status() {
+            return Err(ErrorComp::error(format!(
+                "failed to initialize git repository: {}",
+                io_error
+            )));
+        }
+        Ok(())
     }
-
-    if let Err(err) = std::process::Command::new("git").arg("init").status() {
-        report::report(
-            handle,
-            &Error::file_io(FileIOError::EnvCommand)
-                .info(format!("command: `git init`, reason:{}", err.to_string()))
-                .info("make sure git is installed, or use -no_git option".to_string())
-                .into(),
-            &ctx,
-        );
-        return Err(());
-    }
-    */
 
     Ok(())
 }
@@ -294,7 +240,14 @@ impl Cmd {
 
     fn execute(&self) -> Result<(), ()> {
         match self.kind {
-            CmdKind::New => cmd_new(self),
+            CmdKind::New => match cmd_new(self) {
+                Err(error) => {
+                    let vfs = vfs::Vfs::new();
+                    error::format::print_errors(&vfs, &[error]);
+                    Err(())
+                }
+                Ok(()) => Ok(()),
+            },
             CmdKind::Check => cmd_check(),
             CmdKind::Build => cmd_build(),
             CmdKind::Run => cmd_run(),

@@ -99,7 +99,9 @@ fn collect_files(ctx: &mut CompCtx) -> Vec<vfs::FileID> {
     //relative 'root' path of the project being compiled
     //@hardcoded to 'test' for faster testing
     let mut dir_paths = Vec::new();
-    dir_paths.push(PathBuf::from("test"));
+    let src_dir = std::env::current_dir().unwrap().join("src");
+    eprintln!("collecting files from: {:?}", src_dir);
+    dir_paths.push(src_dir);
 
     let handle = &mut std::io::BufWriter::new(std::io::stderr());
     let mut filepaths = Vec::new();
