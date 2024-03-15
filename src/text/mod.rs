@@ -157,12 +157,18 @@ pub fn line_ranges(text: &str) -> Vec<TextRange> {
 }
 
 pub fn position_from_line_ranges(
+    text: &str,
     offset: TextOffset,
     line_ranges: &[TextRange],
 ) -> (TextLocation, TextRange) {
     for (line, range) in line_ranges.iter().enumerate() {
         if range.contains_offset(offset) {
-            return (TextLocation::new((line + 1) as u32, 0), *range);
+            let prefix_range = TextRange::new(range.start(), offset);
+            let prefix = &text[prefix_range.as_usize()];
+            return (
+                TextLocation::new(line as u32 + 1, prefix.chars().count() as u32 + 1),
+                *range,
+            );
         }
     }
     panic!("text location not found");

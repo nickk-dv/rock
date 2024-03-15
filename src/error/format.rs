@@ -1,11 +1,11 @@
 use super::ansi;
 use super::{ErrorComp, ErrorSeverity};
-use crate::text::{self, TextRange};
+use crate::text::{self, TextLocation, TextRange};
 use crate::vfs::Vfs;
 use std::io::{BufWriter, Stderr, Write};
 
 const TAB_SPACE_COUNT: usize = 2;
-const TAB_REPLACE_STR: &'static str = " ";
+const TAB_REPLACE_STR: &'static str = "  ";
 
 pub fn print_errors(vfs: &Vfs, errors: &[ErrorComp]) {
     let handle = &mut BufWriter::new(std::io::stderr());
@@ -37,7 +37,7 @@ fn print_error(vfs: &Vfs, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
 
         let range = context.source().range();
         let (position, line_range) =
-            text::position_from_line_ranges(range.start(), &file.line_ranges);
+            text::position_from_line_ranges(&file.source, range.start(), &file.line_ranges);
         let prefix_range = TextRange::new(line_range.start(), range.start());
         let source_range = TextRange::new(range.start(), line_range.end().min(range.end()));
 
