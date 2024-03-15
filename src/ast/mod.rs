@@ -7,6 +7,7 @@ pub mod token;
 pub mod token_list;
 
 use crate::error::ErrorComp;
+use crate::mem::Arena;
 use crate::vfs;
 use ast::*;
 use intern::InternPool;
@@ -62,8 +63,12 @@ impl Timer {
     }
 }
 
-pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<ErrorComp> {
+pub fn parse<'ast>(mut ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
     let mut errors = Vec::<ErrorComp>::new();
+    let mut ast = Ast {
+        arena: Arena::new(),
+        modules: Vec::new(),
+    };
 
     let timer = Timer::new();
     let files = collect_files(&mut ctx);
@@ -91,7 +96,11 @@ pub fn parse<'a, 'ast>(mut ctx: &'a mut CompCtx, ast: &'a mut Ast<'ast>) -> Vec<
     }
     timer.elapsed_ms("parsed all files");
     let _ = handle.flush();
-    errors
+    if errors.is_empty() {
+        Ok(ast)
+    } else {
+        Err(errors)
+    }
 }
 
 #[must_use]

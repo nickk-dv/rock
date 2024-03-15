@@ -1,4 +1,5 @@
 mod ast;
+mod ast_parse;
 mod error;
 mod hir;
 mod hir_lower;
@@ -10,6 +11,5 @@ mod tools;
 mod vfs;
 
 fn main() {
-    std::env::set_var("RUST_BACKTRACE", "1");
-    let _ = tools::cmd::cmd_parse();
+    tools::cli();
 }
