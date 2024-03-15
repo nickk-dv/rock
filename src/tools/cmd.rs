@@ -9,83 +9,194 @@ use crate::mem::Arena;
 use crate::vfs;
 use std::path::PathBuf;
 
-const VERSION_MAJOR: u32 = 0; // major releases
-const VERSION_MINOR: u32 = 1; // minor changes
-const VERSION_PATCH: u32 = 0; // hotfixes to current release
+mod new {
+    use crate::error::ansi;
+    use crate::error::ErrorComp;
+    use std::path::PathBuf;
 
-pub fn cmd_parse() -> Result<(), ()> {
-    let cmd = CmdParser::parse()?;
-    cmd.execute()?;
-    Ok(())
-}
+    pub struct CmdData {
+        pub name: String,
+        pub kind: ProjectKind,
+        pub no_git: bool,
+    }
 
-fn cmd_new(cmd: &Cmd) -> Result<(), ErrorComp> {
-    //@temp unwrap, no cli arg validation is done
-    let package_name = cmd.args.get(0).unwrap();
-    validate_name(&package_name)?;
+    pub enum ProjectKind {
+        Lib,
+        Bin,
+    }
 
-    let cwd = std::env::current_dir().unwrap();
-    let package_dir = cwd.join(package_name);
-    let src_dir = package_dir.join("src");
-    let build_dir = package_dir.join("build");
-    let main_path = src_dir.join("main.lang");
-    let gitignore_path = package_dir.join(".gitignore");
+    pub fn cmd(data: CmdData) -> Result<(), ErrorComp> {
+        let cwd = std::env::current_dir().unwrap();
+        let root_dir = cwd.join(&data.name);
+        let src_dir = root_dir.join("src");
+        let build_dir = root_dir.join("build");
 
-    make_dir(&package_dir)?;
-    make_dir(&src_dir)?;
-    make_dir(&build_dir)?;
-    make_file(&main_path, "\nproc main() -> s32 {\n\treturn 0;\n}\n")?;
-    make_file(&gitignore_path, "build/\n")?;
-    git_init(&package_dir)?;
+        check_name(&data.name)?;
+        make_dir(&root_dir)?;
+        make_dir(&src_dir)?;
+        make_dir(&build_dir)?;
 
-    fn validate_name(name: &str) -> Result<(), ErrorComp> {
-        for c in name.chars() {
-            let valid = c.is_alphanumeric() || c == '-' || c == '_';
-            if !valid {
-                return Err(ErrorComp::error(format!(
-                "package name must consist only of alphanumeric characters, underscores `_` or hyphens `-`",
-            )));
+        match data.kind {
+            ProjectKind::Lib => {
+                let path = src_dir.join("lib.lang");
+                make_file(&path, "")?;
             }
+            ProjectKind::Bin => {
+                let path = src_dir.join("main.lang");
+                make_file(&path, "\nproc main() -> s32 {\n\treturn 0;\n}\n")?;
+            }
+        }
+        if !data.no_git {
+            let gitignore = root_dir.join(".gitignore");
+            make_file(&gitignore, "build/\n")?;
+            git_init(&root_dir)?;
+        }
+
+        let kind_name = match data.kind {
+            ProjectKind::Lib => "library",
+            ProjectKind::Bin => "executable",
+        };
+        println!(
+            "{}Created{} {kind_name} `{}` package",
+            ansi::GREEN_BOLD,
+            ansi::CLEAR,
+            data.name,
+        );
+        Ok(())
+    }
+
+    fn check_name(name: &str) -> Result<(), ErrorComp> {
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(ErrorComp::error("package name must consist only of alphanumeric characters, underscores `_` or hyphens `-`"));
         }
         Ok(())
     }
 
     fn make_dir(path: &PathBuf) -> Result<(), ErrorComp> {
-        if let Err(io_error) = std::fs::create_dir(path) {
-            return Err(ErrorComp::error(format!(
-                "failed to create directory: {}",
-                io_error
-            )));
-        }
-        Ok(())
+        std::fs::create_dir(path).map_err(|io_error| {
+            ErrorComp::error(format!("failed to create directory: {}", io_error))
+        })
     }
 
     fn make_file(path: &PathBuf, text: &str) -> Result<(), ErrorComp> {
-        if let Err(io_error) = std::fs::write(path, text) {
-            return Err(ErrorComp::error(format!(
-                "failed to create file: {}",
-                io_error
-            )));
-        }
-        Ok(())
+        std::fs::write(path, text)
+            .map_err(|io_error| ErrorComp::error(format!("failed to create file: {}", io_error)))
     }
 
     fn git_init(package_dir: &PathBuf) -> Result<(), ErrorComp> {
-        if let Err(io_error) = std::env::set_current_dir(package_dir) {
-            return Err(ErrorComp::error(format!(
-                "failed to set working directory: {}",
-                io_error
-            )));
-        }
-        if let Err(io_error) = std::process::Command::new("git").arg("init").status() {
-            return Err(ErrorComp::error(format!(
-                "failed to initialize git repository: {}",
-                io_error
-            )));
-        }
+        std::env::set_current_dir(package_dir).map_err(|io_error| {
+            ErrorComp::error(format!("failed to set working directory: {}", io_error))
+        })?;
+        std::process::Command::new("git")
+            .arg("init")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|io_error| {
+                ErrorComp::error(format!("failed to initialize git repository: {}", io_error))
+            })?;
         Ok(())
     }
+}
 
+mod check {
+    pub fn cmd() {}
+}
+
+pub enum BuildKind {
+    Debug,
+    Release,
+}
+
+mod build {
+    use super::BuildKind;
+    pub struct CmdData {
+        pub kind: BuildKind,
+    }
+
+    pub fn cmd(data: CmdData) {}
+}
+
+mod run {
+    use super::BuildKind;
+    pub struct CmdData {
+        pub kind: BuildKind,
+        pub args: Vec<String>,
+    }
+
+    pub fn cmd(data: CmdData) {}
+}
+
+mod help {
+    use crate::error::ansi;
+
+    pub fn cmd() {
+        let g = ansi::GREEN_BOLD;
+        let c = ansi::CYAN_BOLD;
+        let r = ansi::CLEAR;
+
+        #[rustfmt::skip]
+        println!(
+r#"
+{g}Usage:
+  {c}lang <command> [options]
+
+{g}Commands:
+  {c}n, new       {r}Create new project
+  {c}c, check     {r}Check the program
+  {c}b, build     {r}Build the program
+  {c}r, run       {r}Build and run the program
+  {c}h, help      {r}Print help information
+  {c}v, version   {r}Print compiler version
+
+{g}Options:
+  {c}new:
+    {c}--lib      {r}Create library project
+    {c}--bin      {r}Create executable project
+    {c}--no_git   {r}Create project without git
+
+  {c}build, run:
+    {c}--debug    {r}Build in debug mode
+    {c}--release  {r}Build in release mode
+
+  {c}run:
+    {c}--args     {r}Pass command line arguments
+"#);
+    }
+}
+
+mod version {
+    use std::fmt;
+
+    pub fn cmd() {
+        println!("lang version: {VERSION}");
+    }
+
+    const VERSION: Version = Version {
+        major: 0,
+        minor: 1,
+        patch: 0,
+    };
+
+    struct Version {
+        major: u32,
+        minor: u32,
+        patch: u32,
+    }
+
+    impl fmt::Display for Version {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+        }
+    }
+}
+
+pub fn cmd_parse() -> Result<(), ()> {
+    let cmd = CmdParser::parse()?;
+    cmd.execute()?;
     Ok(())
 }
 
@@ -118,15 +229,6 @@ fn cmd_run() -> Result<(), ()> {
 }
 
 fn cmd_fmt() -> Result<(), ()> {
-    Ok(())
-}
-
-fn cmd_version() -> Result<(), ()> {
-    //@update lang name
-    println!(
-        "lang version: {}.{}.{}",
-        VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH
-    );
     Ok(())
 }
 
@@ -240,7 +342,11 @@ impl Cmd {
 
     fn execute(&self) -> Result<(), ()> {
         match self.kind {
-            CmdKind::New => match cmd_new(self) {
+            CmdKind::New => match new::cmd(new::CmdData {
+                name: "temp_name".into(),
+                no_git: false,
+                kind: new::ProjectKind::Lib,
+            }) {
                 Err(error) => {
                     let vfs = vfs::Vfs::new();
                     error::format::print_errors(&vfs, &[error]);
@@ -252,8 +358,14 @@ impl Cmd {
             CmdKind::Build => cmd_build(),
             CmdKind::Run => cmd_run(),
             CmdKind::Fmt => cmd_fmt(),
-            CmdKind::Help => cmd_help(),
-            CmdKind::Version => cmd_version(),
+            CmdKind::Help => {
+                help::cmd();
+                Ok(())
+            }
+            CmdKind::Version => {
+                version::cmd();
+                Ok(())
+            }
         }
     }
 }
