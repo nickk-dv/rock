@@ -128,8 +128,8 @@ impl ParseError {
                 Token::Ident,
                 Token::KwSuper,
                 Token::KwPackage,
-                Token::OpenParen,
-                Token::OpenBracket,
+                Token::ParenOpen,
+                Token::BracketOpen,
             ],
             ParseError::ForAssignOp => Self::all_assign_ops(),
             ParseError::LitMatch => Self::all_literals(),
@@ -139,8 +139,8 @@ impl ParseError {
                 expected
             }
             ParseError::LitFloat => Self::all_float_types(),
-            ParseError::ElseMatch => vec![Token::KwIf, Token::OpenBlock],
-            ParseError::FieldInit => vec![Token::Colon, Token::Comma, Token::CloseBlock],
+            ParseError::ElseMatch => vec![Token::KwIf, Token::BlockOpen],
+            ParseError::FieldInit => vec![Token::Colon, Token::Comma, Token::BlockClose],
         }
     }
 

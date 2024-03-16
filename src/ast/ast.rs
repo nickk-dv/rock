@@ -303,8 +303,8 @@ pub enum UnOp {
     Neg,
     BitNot,
     LogicNot,
-    Addr(Mut),
     Deref,
+    Addr(Mut),
 }
 
 #[derive(Copy, Clone, PartialEq)]

@@ -54,7 +54,7 @@ fn proc_decl(p: &mut Parser) {
     p.bump(Token::KwProc);
     p.expect(Token::Ident);
     // required but not reported as missing yet
-    if p.at(Token::OpenParen) {
+    if p.at(Token::ParenOpen) {
         proc_param_list(p);
     }
     // required but not reported as missing yet
@@ -62,7 +62,7 @@ fn proc_decl(p: &mut Parser) {
         // consider first set of type? same as with other parts
         ty(p);
     }
-    if p.at(Token::OpenBlock) {
+    if p.at(Token::BlockOpen) {
         block(p);
     }
     m.complete(p, SyntaxNodeKind::PROC_DECL);
@@ -70,15 +70,15 @@ fn proc_decl(p: &mut Parser) {
 
 fn proc_param_list(p: &mut Parser) {
     let m = p.start();
-    p.bump(Token::OpenParen);
-    while !p.at(Token::CloseParen) && !p.at(Token::Eof) {
+    p.bump(Token::ParenOpen);
+    while !p.at(Token::ParenClose) && !p.at(Token::Eof) {
         if p.at(Token::Ident) {
             proc_param(p);
         } else {
             break;
         }
     }
-    p.expect(Token::CloseParen);
+    p.expect(Token::ParenClose);
     m.complete(p, SyntaxNodeKind::PROC_PARAM_LIST);
 }
 
@@ -88,7 +88,7 @@ fn proc_param(p: &mut Parser) {
     p.expect(Token::Colon);
     // consider first set of type? same as with other parts
     ty(p);
-    if !p.at(Token::CloseParen) {
+    if !p.at(Token::ParenClose) {
         p.expect(Token::Comma);
     }
     m.complete(p, SyntaxNodeKind::PROC_PARAM);
@@ -102,11 +102,11 @@ fn ty(p: &mut Parser) {
 
 fn block(p: &mut Parser) {
     let m = p.start();
-    p.bump(Token::OpenBlock);
-    while !p.at(Token::CloseBlock) && !p.at(Token::Eof) {
+    p.bump(Token::BlockOpen);
+    while !p.at(Token::BlockClose) && !p.at(Token::Eof) {
         stmt(p);
     }
-    p.expect(Token::CloseBlock);
+    p.expect(Token::BlockClose);
     m.complete(p, SyntaxNodeKind::EXPR_BLOCK);
 }
 

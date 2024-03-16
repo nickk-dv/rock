@@ -222,16 +222,16 @@ r#"
   {c}v, version      {r}Print compiler version
 
 {g}Options:
-  {c}new:
+  {c}new
     {c}--lib         {r}Create library project
     {c}--bin         {r}Create executable project
     {c}--no_git      {r}Create project without git
 
-  {c}build:
+  {c}build
     {c}--debug       {r}Build in debug mode
     {c}--release     {r}Build in release mode
 
-  {c}run:
+  {c}run
     {c}--debug       {r}Run the debug build
     {c}--release     {r}Run the release build
     {c}--args [args] {r}Pass command line arguments

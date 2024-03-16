@@ -319,12 +319,12 @@ impl<'src> Lexer<'src> {
     }
 
     fn lex_symbol(&mut self, fc: char) -> (Token, TextRange) {
-        let mut token = match Token::glue(fc) {
+        let mut token = match Token::from_char(fc) {
             Some(sym) => sym,
             None => return (Token::Error, self.token_range()),
         };
         match self.peek() {
-            Some(c) => match Token::glue2(c, token) {
+            Some(c) => match Token::glue_double(c, token) {
                 Some(sym) => {
                     self.eat(c);
                     token = sym;
@@ -334,7 +334,7 @@ impl<'src> Lexer<'src> {
             None => return (token, self.token_range()),
         }
         match self.peek() {
-            Some(c) => match Token::glue3(c, token) {
+            Some(c) => match Token::glue_triple(c, token) {
                 Some(sym) => {
                     self.eat(c);
                     token = sym;

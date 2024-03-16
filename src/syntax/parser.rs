@@ -303,19 +303,19 @@ impl<'a> Parser<'a> {
     fn use_symbol_list(&mut self) -> Option<()> {
         self.builder.start_node(SyntaxNodeKind::USE_SYMBOL_LIST);
         self.expect_after_or_end_node(Token::Dot, true)?;
-        self.expect_after_or_end_node(Token::OpenBlock, true)?;
+        self.expect_after_or_end_node(Token::BlockOpen, true)?;
 
-        while !self.at(Token::Eof) && !self.at(Token::CloseBlock) {
+        while !self.at(Token::Eof) && !self.at(Token::BlockClose) {
             if self.expect(Token::Comma) {
                 self.error_eat("expected use symbol");
                 break;
             }
             self.use_symbol();
-            if !self.at(Token::CloseBlock) {
+            if !self.at(Token::BlockClose) {
                 self.expect(Token::Comma);
             }
         }
-        self.expect(Token::CloseBlock);
+        self.expect(Token::BlockClose);
         self.builder.end_node();
         Some(())
     }

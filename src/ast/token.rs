@@ -1,271 +1,186 @@
 use super::ast::{AssignOp, BasicType, BinOp, Mut, UnOp};
+use super::token_gen;
 
-macro_rules! token_impl {
-    ($(
-        $variant:ident as $string:expr
-        $(=> KW $mark:tt)?
-        $(=> UN $un:expr)?
-        $(=> BIN $bin:expr)?
-        $(=> ASSIGN $assign:expr)?
-        $(=> BASIC_TYPE $basic_type:expr)?
-    )+) => {
-        #[derive(Copy, Clone, Debug, PartialEq)]
-        pub enum Token {
-            $($variant),+
-        }
-        impl Token {
-            pub fn as_str(&self) -> &'static str {
-                match *self {
-                    $(Token::$variant => $string,)+
-                }
-            }
-            pub fn as_keyword(source: &str) -> Option<Token> {
-                match source {
-                    $($string => token_impl!(@KW_ARM $variant $(=> KW $mark)?), )+
-                    _ => None,
-                }
-            }
-            pub fn as_un_op(&self) -> Option<UnOp> {
-                match *self {
-                    $(Token::$variant => token_impl!(@UN_ARM $(=> UN $un)?), )+
-                }
-            }
-            pub fn as_bin_op(&self) -> Option<BinOp> {
-                match *self {
-                    $(Token::$variant => token_impl!(@BIN_ARM $(=> BIN $bin)?), )+
-                }
-            }
-            pub fn as_assign_op(&self) -> Option<AssignOp> {
-                match *self {
-                    $(Token::$variant => token_impl!(@ASSIGN_ARM $(=> ASSIGN $assign)?), )+
-                }
-            }
-            pub fn as_basic_type(&self) -> Option<BasicType> {
-                match *self {
-                    $(Token::$variant => token_impl!(@BASIC_TYPE_ARM $(=> BASIC_TYPE $basic_type)?), )+
-                }
-            }
-        }
-    };
-    (@KW_ARM $variant:ident => KW $mark:tt) => { Some(Token::$variant) };
-    (@KW_ARM $variant:ident) => { None };
-    (@UN_ARM => UN $un:expr) => { Some($un) };
-    (@UN_ARM) => { None };
-    (@BIN_ARM => BIN $bin:expr) => { Some($bin) };
-    (@BIN_ARM) => { None };
-    (@ASSIGN_ARM => ASSIGN $assign:expr) => { Some($assign) };
-    (@ASSIGN_ARM) => { None };
-    (@BASIC_TYPE_ARM => BASIC_TYPE $basic_type:expr) => { Some($basic_type) };
-    (@BASIC_TYPE_ARM) => { None };
+#[rustfmt::skip]
+token_gen::token_gen! {
+    // special tokens
+    [eof]        | "end of file"    | Eof        |
+    [error]      | "error token"    | Error      |
+    [whitespace] | "whitespace"     | Whitespace |
+    [ident]      | "identifier"     | Ident      |
+    [int_lit]    | "int literal"    | IntLit     |
+    [float_lit]  | "float literal"  | FloatLit   |
+    [char_lit]   | "char literal"   | CharLit    |
+    [string_lit] | "string literal" | StringLit  |
+
+    // keyword general
+    [pub]      | "pub"      | KwPub      | KW.
+    [mut]      | "mut"      | KwMut      | KW.
+    [super]    | "super"    | KwSuper    | KW.
+    [package]  | "package"  | KwPackage  | KW.
+
+    // keyword declarations
+    [use]      | "use"      | KwUse      | KW.
+    [mod]      | "mod"      | KwMod      | KW.
+    [proc]     | "proc"     | KwProc     | KW.
+    [enum]     | "enum"     | KwEnum     | KW.
+    [union]    | "union"    | KwUnion    | KW.
+    [struct]   | "struct"   | KwStruct   | KW.
+    [const]    | "const"    | KwConst    | KW.
+    [global]   | "global"   | KwGlobal   | KW.
+
+    // keyword statements
+    [break]    | "break"    | KwBreak    | KW.
+    [continue] | "continue" | KwContinue | KW.
+    [return]   | "return"   | KwReturn   | KW.
+    [for]      | "for"      | KwFor      | KW.
+    [defer]    | "defer"    | KwDefer    | KW.
+
+    // keyword expressions
+    [null]     | "null"     | KwNull     | KW.
+    [true]     | "true"     | KwTrue     | KW.
+    [false]    | "false"    | KwFalse    | KW.
+    [if]       | "if"       | KwIf       | KW.
+    [else]     | "else"     | KwElse     | KW.
+    [match]    | "match"    | KwMatch    | KW.
+    [as]       | "as"       | KwAs       | KW.
+    [sizeof]   | "sizeof"   | KwSizeof   | KW.
+
+    // keyword basic types
+    [bool]     | "bool"     | KwBool     | KW. BASIC[BasicType::Bool]
+    [s8]       | "s8"       | KwS8       | KW. BASIC[BasicType::S8]
+    [s16]      | "s16"      | KwS16      | KW. BASIC[BasicType::S16]
+    [s32]      | "s32"      | KwS32      | KW. BASIC[BasicType::S32]
+    [s64]      | "s64"      | KwS64      | KW. BASIC[BasicType::S64]
+    [ssize]    | "ssize"    | KwSsize    | KW. BASIC[BasicType::Ssize]
+    [u8]       | "u8"       | KwU8       | KW. BASIC[BasicType::U8]
+    [u16]      | "u16"      | KwU16      | KW. BASIC[BasicType::U16]
+    [u32]      | "u32"      | KwU32      | KW. BASIC[BasicType::U32]
+    [u64]      | "u64"      | KwU64      | KW. BASIC[BasicType::U64]
+    [usize]    | "usize"    | KwUsize    | KW. BASIC[BasicType::Usize]
+    [f32]      | "f32"      | KwF32      | KW. BASIC[BasicType::F32]
+    [f64]      | "f64"      | KwF64      | KW. BASIC[BasicType::F64]
+    [char]     | "char"     | KwChar     | KW. BASIC[BasicType::Char]
+    [rawptr]   | "rawptr"   | Rawptr     | KW. BASIC[BasicType::Rawptr]
+
+    // single punctuation
+    [.]      | "."      | Dot          |
+    [,]      | ","      | Comma        |
+    [:]      | ":"      | Colon        |
+    [;]      | ";"      | Semicolon    |
+    [#]      | "#"      | Hash         |
+    ['(']    | "("      | ParenOpen    |
+    [')']    | ")"      | ParenClose   |
+    ['[']    | "["      | BracketOpen  |
+    [']']    | "]"      | BracketClose |
+    ['{']    | "{"      | BlockOpen    |
+    ['}']    | "}"      | BlockClose   |
+
+    // double punctuation
+    [..]     | ".."     | DotDot       |
+    [->]     | "->"     | ArrowThin    |
+    [=>]     | "=>"     | ArrowWide    |
+
+    // un op tokens
+    [~]      | "~"      | Tilde        | UN[UnOp::BitNot]
+    [!]      | "!"      | Bang         | UN[UnOp::LogicNot]
+
+    // bin op tokens
+    [+]      | "+"      | Plus         | BIN[BinOp::Add]
+    [-]      | "-"      | Minus        | BIN[BinOp::Sub] UN[UnOp::Neg]
+    [*]      | "*"      | Star         | BIN[BinOp::Mul] UN[UnOp::Deref]
+    [/]      | "/"      | ForwSlash    | BIN[BinOp::Div]
+    [%]      | "%"      | Percent      | BIN[BinOp::Rem]
+    [&]      | "&"      | Ampersand    | BIN[BinOp::BitAnd] UN[UnOp::Addr(Mut::Immutable)]
+    [|]      | "|"      | Pipe         | BIN[BinOp::BitOr]
+    [^]      | "^"      | Caret        | BIN[BinOp::BitXor]
+    [<<]     | "<<"     | BinShl       | BIN[BinOp::BitShl]
+    [>>]     | ">>"     | BinShr       | BIN[BinOp::BitShr]
+    [==]     | "=="     | BinIsEq      | BIN[BinOp::CmpIsEq]
+    [!=]     | "!="     | BinNotEq     | BIN[BinOp::CmpNotEq]
+    [<]      | "<"      | Less         | BIN[BinOp::CmpLt]
+    [<=]     | "<="     | BinLessEq    | BIN[BinOp::CmpLtEq]
+    [>]      | ">"      | Greater      | BIN[BinOp::CmpGt]
+    [>=]     | ">="     | BinGreaterEq | BIN[BinOp::CmpGtEq]
+    [&&]     | "&&"     | BinLogicAnd  | BIN[BinOp::LogicAnd]
+    [||]     | "||"     | BinLogicOr   | BIN[BinOp::LogicOr]
+
+    // assign op tokens
+    [=]      | "="      | Equals       | ASSIGN[AssignOp::Assign]
+    [+=]     | "+="     | AssignAdd    | ASSIGN[AssignOp::Bin(BinOp::Add)]
+    [-=]     | "-="     | AssignSub    | ASSIGN[AssignOp::Bin(BinOp::Sub)]
+    [*=]     | "*="     | AssignMul    | ASSIGN[AssignOp::Bin(BinOp::Mul)]
+    [/=]     | "/="     | AssignDiv    | ASSIGN[AssignOp::Bin(BinOp::Div)]
+    [%=]     | "%="     | AssignRem    | ASSIGN[AssignOp::Bin(BinOp::Rem)]
+    [&=]     | "&="     | AssignBitAnd | ASSIGN[AssignOp::Bin(BinOp::BitAnd)]
+    [|=]     | "|="     | AssignBitOr  | ASSIGN[AssignOp::Bin(BinOp::BitOr)]
+    [^=]     | "^="     | AssignBitXor | ASSIGN[AssignOp::Bin(BinOp::BitXor)]
+    [<<=]    | "<<="    | AssignShl    | ASSIGN[AssignOp::Bin(BinOp::BitShl)]
+    [>>=]    | ">>="    | AssignShr    | ASSIGN[AssignOp::Bin(BinOp::BitShr)]
 }
 
-macro_rules! token_glue {
-    ($name:ident, $($to:ident as $ch:expr)+) => {
-        impl Token {
-            pub fn $name(c: char) -> Option<Token> {
-                match c {
-                    $($ch => Some(Token::$to),)+
-                    _ => None,
-                }
-            }
-        }
-    };
+#[rustfmt::skip]
+token_gen::token_from_char! {
+    '.' => T![.]
+    ',' => T![,]
+    ':' => T![:]
+    ';' => T![;]
+    '#' => T![#]
+    '(' => T!['(']
+    ')' => T![')']
+    '[' => T!['[']
+    ']' => T![']']
+    '{' => T!['{']
+    '}' => T!['}']
+
+    '~' => T![~]
+    '!' => T![!]
+
+    '+' => T![+]
+    '-' => T![-]
+    '*' => T![*]
+    '/' => T![/]
+    '%' => T![%]
+    '&' => T![&]
+    '|' => T![|]
+    '^' => T![^]
+    '<' => T![<]
+    '>' => T![>]
+
+    '=' => T![=]
 }
 
-macro_rules! token_glue_extend {
-    ($name:ident, $( ($ch:expr) $($from:ident => $to:ident,)+ )+ ) => {
-        impl Token {
-            pub fn $name(c: char, token: Token) -> Option<Token> {
-                match c {
-                    $(
-                        $ch => match token {
-                            $(Token::$from => Some(Token::$to),)+
-                            _ => None,
-                        },
-                    )+
-                    _ => None,
-                }
-            }
-        }
-    };
+#[rustfmt::skip]
+token_gen::token_glue_extend! {
+    glue_double,
+    (T![.] => T![..]) if '.'
+    (T![<] => T![<<]) if '<'
+    (T![&] => T![&&]) if '&'
+    (T![|] => T![||]) if '|'
+
+    (T![-] => T![->])
+    (T![=] => T![=>])
+    (T![>] => T![>>]) if '>'
+
+    (T![=] => T![==])
+    (T![!] => T![!=])
+    (T![<] => T![<=])
+    (T![>] => T![>=])
+    (T![+] => T![+=])
+    (T![-] => T![-=])
+    (T![*] => T![*=])
+    (T![/] => T![/=])
+    (T![%] => T![%=])
+    (T![&] => T![&=])
+    (T![|] => T![|=])
+    (T![^] => T![^=]) if '='
 }
 
-token_impl! {
-    Eof          as "end of file"
-    Error        as "error token"
-    Whitespace   as "whitespace"
-    Ident        as "identifier"
-    IntLit       as "int literal"
-    FloatLit     as "float literal"
-    CharLit      as "char literal"
-    StringLit    as "string literal"
-
-    KwPub        as "pub"      => KW.
-    KwMut        as "mut"      => KW.
-    KwSuper      as "super"    => KW.
-    KwPackage    as "package"  => KW.
-    KwUse        as "use"      => KW.
-    KwMod        as "mod"      => KW.
-    KwProc       as "proc"     => KW.
-    KwEnum       as "enum"     => KW.
-    KwUnion      as "union"    => KW.
-    KwStruct     as "struct"   => KW.
-    KwConst      as "const"    => KW.
-    KwGlobal     as "global"   => KW.
-
-    KwBreak      as "break"    => KW.
-    KwContinue   as "continue" => KW.
-    KwReturn     as "return"   => KW.
-    KwFor        as "for"      => KW.
-    KwDefer      as "defer"    => KW.
-    KwNull       as "null"     => KW.
-    KwTrue       as "true"     => KW.
-    KwFalse      as "false"    => KW.
-    KwIf         as "if"       => KW.
-    KwElse       as "else"     => KW.
-    KwMatch      as "match"    => KW.
-    KwAs         as "as"       => KW.
-    KwSizeof     as "sizeof"   => KW.
-    DirCCall     as "c_call"   => KW.
-
-    KwBool       as "bool"     => KW. => BASIC_TYPE BasicType::Bool
-    KwS8         as "s8"       => KW. => BASIC_TYPE BasicType::S8
-    KwS16        as "s16"      => KW. => BASIC_TYPE BasicType::S16
-    KwS32        as "s32"      => KW. => BASIC_TYPE BasicType::S32
-    KwS64        as "s64"      => KW. => BASIC_TYPE BasicType::S64
-    KwSsize      as "ssize"    => KW. => BASIC_TYPE BasicType::Ssize
-    KwU8         as "u8"       => KW. => BASIC_TYPE BasicType::U8
-    KwU16        as "u16"      => KW. => BASIC_TYPE BasicType::U16
-    KwU32        as "u32"      => KW. => BASIC_TYPE BasicType::U32
-    KwU64        as "u64"      => KW. => BASIC_TYPE BasicType::U64
-    KwUsize      as "usize"    => KW. => BASIC_TYPE BasicType::Usize
-    KwF32        as "f32"      => KW. => BASIC_TYPE BasicType::F32
-    KwF64        as "f64"      => KW. => BASIC_TYPE BasicType::F64
-    KwChar       as "char"     => KW. => BASIC_TYPE BasicType::Char
-    Rawptr       as "rawptr"   => KW. => BASIC_TYPE BasicType::Rawptr
-
-    Bang         as "!"  => UN UnOp::LogicNot
-    Quote2       as "\""
-    Hash         as "#"
-    Dollar       as "$"
-    Percent      as "%"  => BIN BinOp::Rem
-    Ampersand    as "&"  => UN UnOp::Addr(Mut::Immutable) => BIN BinOp::BitAnd
-    Quote        as "\'"
-    OpenParen    as "("
-    CloseParen   as ")"
-    Star         as "*"  => UN UnOp::Deref => BIN BinOp::Mul
-    Plus         as "+"  => BIN BinOp::Add
-    Comma        as ","
-    Minus        as "-"  => UN UnOp::Neg => BIN BinOp::Sub
-    Dot          as "."
-    ForwSlash    as "/"  => BIN BinOp::Div
-    Colon        as ":"
-    Semicolon    as ";"
-    Less         as "<"  => BIN BinOp::CmpLt
-    Equals       as "="  => ASSIGN AssignOp::Assign
-    Greater      as ">"  => BIN BinOp::CmpGt
-    Question     as "?"
-    At           as "@"
-    OpenBracket  as "["
-    BackSlash    as "\\"
-    CloseBracket as "]"
-    Caret        as "^"  => BIN BinOp::BitXor
-    Underscore   as "_"  => KW.
-    Backtick     as "`"
-    OpenBlock    as "{"
-    Pipe         as "|"  => BIN BinOp::BitOr
-    CloseBlock   as "}"
-    Tilde        as "~"  => UN UnOp::BitNot
-
-    DotDot       as ".."
-    ArrowThin    as "->"
-    ArrowWide    as "=>"
-
-    BinShl       as "<<" => BIN BinOp::BitShl
-    BinShr       as ">>" => BIN BinOp::BitShr
-    BinIsEq      as "==" => BIN BinOp::CmpIsEq
-    BinNotEq     as "!=" => BIN BinOp::CmpNotEq
-    BinLessEq    as "<=" => BIN BinOp::CmpLtEq
-    BinGreaterEq as ">=" => BIN BinOp::CmpGtEq
-    BinLogicAnd  as "&&" => BIN BinOp::LogicAnd
-    BinLogicOr   as "||" => BIN BinOp::LogicOr
-
-    AssignAdd    as "+="  => ASSIGN AssignOp::Bin(BinOp::Add)
-    AssignSub    as "-="  => ASSIGN AssignOp::Bin(BinOp::Sub)
-    AssignMul    as "*="  => ASSIGN AssignOp::Bin(BinOp::Mul)
-    AssignDiv    as "/="  => ASSIGN AssignOp::Bin(BinOp::Div)
-    AssignRem    as "%="  => ASSIGN AssignOp::Bin(BinOp::Rem)
-    AssignBitAnd as "&="  => ASSIGN AssignOp::Bin(BinOp::BitAnd)
-    AssignBitOr  as "|="  => ASSIGN AssignOp::Bin(BinOp::BitOr)
-    AssignBitXor as "^="  => ASSIGN AssignOp::Bin(BinOp::BitXor)
-    AssignShl    as "<<=" => ASSIGN AssignOp::Bin(BinOp::BitShl)
-    AssignShr    as ">>=" => ASSIGN AssignOp::Bin(BinOp::BitShr)
+#[rustfmt::skip]
+token_gen::token_glue_extend! {
+    glue_triple,
+    (T![<<] => T![<<=])
+    (T![>>] => T![>>=]) if '='
 }
 
-token_glue! {
-    glue,
-    Bang         as '!'
-    Quote2       as '\"'
-    Hash         as '#'
-    Dollar       as '$'
-    Percent      as '%'
-    Ampersand    as '&'
-    Quote        as '\''
-    OpenParen    as '('
-    CloseParen   as ')'
-    Star         as '*'
-    Plus         as '+'
-    Comma        as ','
-    Minus        as '-'
-    Dot          as '.'
-    ForwSlash    as '/'
-    Colon        as ':'
-    Semicolon    as ';'
-    Less         as '<'
-    Equals       as '='
-    Greater      as '>'
-    Question     as '?'
-    At           as '@'
-    OpenBracket  as '['
-    BackSlash    as '\\'
-    CloseBracket as ']'
-    Caret        as '^'
-    Underscore   as '_'
-    Backtick     as '`'
-    OpenBlock    as '{'
-    Pipe         as '|'
-    CloseBlock   as '}'
-    Tilde        as '~'
-}
-
-token_glue_extend! {
-    glue2,
-    ('.') Dot => DotDot,
-    ('<') Less => BinShl,
-    ('&') Ampersand => BinLogicAnd,
-    ('|') Pipe => BinLogicOr,
-    ('>')
-    Minus => ArrowThin,
-    Equals => ArrowWide,
-    Greater => BinShr,
-    ('=')
-    Equals => BinIsEq,
-    Bang => BinNotEq,
-    Less => BinLessEq,
-    Greater => BinGreaterEq,
-    Plus => AssignAdd,
-    Minus => AssignSub,
-    Star => AssignMul,
-    ForwSlash => AssignDiv,
-    Percent => AssignRem,
-    Ampersand => AssignBitAnd,
-    Pipe => AssignBitOr,
-    Caret => AssignBitXor,
-}
-
-token_glue_extend! {
-    glue3,
-    ('=')
-    BinShl => AssignShl,
-    BinShr => AssignShr,
-}
+pub(super) use T;
