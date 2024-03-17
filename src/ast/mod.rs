@@ -12,17 +12,11 @@ use crate::mem::Arena;
 use crate::vfs;
 use ast::*;
 use intern::InternPool;
-use std::io::Write;
 use std::path::PathBuf;
-use std::time::Instant;
 
-//@empty error tokens produce invalid range diagnostic
-// need to handle 'missing' and `unexpected token` errors to be differently
+///@persistant data across a compilation
+// move to separate module / folder
 
-/// Persistant data across a compilation
-//@move to separate module / folder
-// make iteration a private function
-// if its still needed by ls server
 pub struct CompCtx {
     pub vfs: vfs::Vfs,
     intern: InternPool,
@@ -45,48 +39,24 @@ impl CompCtx {
     }
 }
 
-struct Timer {
-    start_time: Instant,
-}
+pub fn parse<'ast>(ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
+    let source_files = collect_cwd_source_files().map_err(|error| vec![error])?;
 
-impl Timer {
-    fn new() -> Self {
-        Timer {
-            start_time: Instant::now(),
-        }
-    }
-
-    fn elapsed_ms(self, message: &'static str) {
-        let elapsed = self.start_time.elapsed();
-        let sec_ms = elapsed.as_secs_f64() * 1000.0;
-        let ms = sec_ms + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
-        eprintln!("{}: {:.3} ms", message, ms);
-    }
-}
-
-pub fn parse<'ast>(mut ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
-    let mut errors = Vec::<ErrorComp>::new();
+    let mut errors = Vec::new();
     let mut ast = Ast {
         arena: Arena::new(),
         modules: Vec::new(),
     };
 
-    let timer = Timer::new();
-    let files = collect_files(&mut ctx);
-    timer.elapsed_ms("collect files");
+    for path in source_files {
+        let file_id = ctx.vfs.register_file(path);
+        let source = ctx.vfs.file(file_id).source.clone();
 
-    let timer = Timer::new();
-    let handle = &mut std::io::BufWriter::new(std::io::stderr());
-
-    for file_id in files {
-        let lexer = lexer::Lexer::new(ctx.vfs.file(file_id).source.as_str(), false);
+        let lexer = lexer::Lexer::new(&source, false);
         let tokens = lexer.lex();
-        let source_copy = ctx.vfs.file(file_id).source.clone();
-        let mut parser =
-            parser::Parser::new(tokens, &mut ast.arena, ctx.intern_mut(), &source_copy);
-        let parse_res = parser.module(file_id);
+        let mut parser = parser::Parser::new(tokens, &mut ast.arena, ctx.intern_mut(), &source);
 
-        match parse_res {
+        match parser.module(file_id) {
             Ok(module) => {
                 ast.modules.push(module);
             }
@@ -95,8 +65,7 @@ pub fn parse<'ast>(mut ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
             }
         }
     }
-    timer.elapsed_ms("parsed all files");
-    let _ = handle.flush();
+
     if errors.is_empty() {
         Ok(ast)
     } else {
@@ -104,54 +73,42 @@ pub fn parse<'ast>(mut ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
     }
 }
 
-#[must_use]
-fn collect_files(ctx: &mut CompCtx) -> Vec<vfs::FileID> {
-    //relative 'root' path of the project being compiled
-    //@hardcoded to 'test' for faster testing
-    let mut dir_paths = Vec::new();
-    let src_dir = std::env::current_dir().unwrap().join("src");
-    eprintln!("collecting files from: {:?}", src_dir);
-    dir_paths.push(src_dir);
+fn collect_cwd_source_files() -> Result<Vec<PathBuf>, ErrorComp> {
+    let cwd = std::env::current_dir().map_err(|io_error| {
+        ErrorComp::error(format!(
+            "failed to read current working directory. reason: {}",
+            io_error
+        ))
+    })?;
 
-    let handle = &mut std::io::BufWriter::new(std::io::stderr());
-    let mut filepaths = Vec::new();
+    let src_dir = cwd.join("src");
+    if !src_dir.exists() {
+        return Err(ErrorComp::error(format!(
+            "could not find src folder. source files must be located in `{}`",
+            src_dir.to_string_lossy()
+        )));
+    }
 
-    while let Some(dir_path) = dir_paths.pop() {
-        match std::fs::read_dir(&dir_path) {
-            Ok(dir) => {
-                for entry in dir.flatten() {
-                    let path = entry.path();
-                    if path.is_file() {
-                        if let Some(extension) = path.extension() {
-                            if extension == "lang" {
-                                filepaths.push(path);
-                            }
-                        }
-                    } else if path.is_dir() {
-                        dir_paths.push(path);
-                    }
-                }
-            }
-            Err(err) => {
-                //@deal with the error of reading a directory
-                //report::report(
-                //    handle,
-                //    &Error::file_io(FileIOError::DirRead)
-                //        .info(err.to_string())
-                //        .info(format!("path: {:?}", dir_path))
-                //        .into(),
-                //    &ctx,
-                //);
+    let mut dir_visits = vec![src_dir];
+    let mut source_files = Vec::new();
+
+    while let Some(dir) = dir_visits.pop() {
+        let read_dir = std::fs::read_dir(&dir).map_err(|io_error| {
+            ErrorComp::error(format!(
+                "failed to read directory: `{}`. reason: {}",
+                dir.to_string_lossy(),
+                io_error
+            ))
+        })?;
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().unwrap_or_default() == "lang" {
+                source_files.push(path);
+            } else if path.is_dir() {
+                dir_visits.push(path);
             }
         }
     }
 
-    let mut files = Vec::new();
-
-    for path in filepaths {
-        let id = ctx.vfs.register_file(path);
-        files.push(id);
-    }
-
-    files
+    Ok(source_files)
 }

@@ -9,6 +9,9 @@ use crate::text::TextOffset;
 use crate::text::TextRange;
 use crate::vfs;
 
+//@empty error tokens produce invalid range diagnostic
+// need to handle 'missing' and `unexpected token` errors to be differently
+
 pub struct Parser<'a, 'ast> {
     cursor: usize,
     tokens: TokenList,
