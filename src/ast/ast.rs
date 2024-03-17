@@ -1,5 +1,5 @@
 use super::intern::*;
-use crate::mem::*;
+use crate::arena::Arena;
 use crate::text::{TextOffset, TextRange};
 use crate::vfs;
 

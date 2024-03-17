@@ -1,9 +1,9 @@
+use crate::arena::Arena;
 use crate::ast::ast;
 use crate::ast::intern::InternID;
 use crate::ast::CompCtx;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
-use crate::mem::Arena;
 use crate::text::TextRange;
 use crate::vfs;
 use std::collections::HashMap;

@@ -7,8 +7,8 @@ pub mod token;
 mod token_gen;
 pub mod token_list;
 
+use crate::arena::Arena;
 use crate::error::ErrorComp;
-use crate::mem::Arena;
 use crate::vfs;
 use ast::*;
 use intern::InternPool;

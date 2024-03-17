@@ -1,6 +1,6 @@
+use crate::arena::Arena;
 use crate::ast::ast;
 use crate::ast::intern;
-use crate::mem::Arena;
 use crate::text::TextRange;
 use crate::vfs;
 

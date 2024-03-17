@@ -77,7 +77,7 @@ fn typecheck_expr<'ast, 'hir>(
         ast::ExprKind::LitFloat { val, ty } => hir::Type::Basic(ty.unwrap_or(ast::BasicType::F64)),
         ast::ExprKind::LitChar { val } => hir::Type::Basic(ast::BasicType::Char),
         ast::ExprKind::LitString { id } => {
-            let slice = hb.arena().alloc_ref_new(hir::ArraySlice {
+            let slice = hb.arena().alloc(hir::ArraySlice {
                 mutt: ast::Mut::Immutable,
                 ty: hir::Type::Basic(ast::BasicType::U8),
             });

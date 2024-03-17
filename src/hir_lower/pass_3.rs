@@ -35,12 +35,12 @@ fn resolve_decl_type<'ast, 'hir>(
         ast::Type::Custom(path) => path_resolve_as_type(hb, from_id, path),
         ast::Type::Reference(ref_ty, mutt) => {
             let ref_ty = resolve_decl_type(hb, from_id, *ref_ty);
-            let ty = hb.arena().alloc_ref_new(ref_ty);
+            let ty = hb.arena().alloc(ref_ty);
             hir::Type::Reference(ty, mutt)
         }
         ast::Type::ArraySlice(slice) => {
             let elem_ty = resolve_decl_type(hb, from_id, slice.ty);
-            let hir_slice = hb.arena().alloc_ref_new(hir::ArraySlice {
+            let hir_slice = hb.arena().alloc(hir::ArraySlice {
                 mutt: slice.mutt,
                 ty: elem_ty,
             });
@@ -49,7 +49,7 @@ fn resolve_decl_type<'ast, 'hir>(
         ast::Type::ArrayStatic(array) => {
             let const_id = hb.add_const_expr(from_id, array.size);
             let elem_ty = resolve_decl_type(hb, from_id, array.ty);
-            let hir_array = hb.arena().alloc_ref_new(hir::ArrayStaticDecl {
+            let hir_array = hb.arena().alloc(hir::ArrayStaticDecl {
                 size: const_id,
                 ty: elem_ty,
             });

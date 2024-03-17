@@ -3,8 +3,8 @@ use super::intern::*;
 use super::parse_error::*;
 use super::token::Token;
 use super::token_list::TokenList;
+use crate::arena::Arena;
 use crate::error::{ErrorComp, SourceRange};
-use crate::mem::Arena;
 use crate::text::TextOffset;
 use crate::text::TextRange;
 use crate::vfs;
@@ -195,7 +195,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             self.expect(Token::BlockClose, ParseCtx::UseDecl)?;
         }
         let symbols = self.buf_use_symbols.take(start, self.arena);
-        Ok(self.arena.alloc_ref_new(UseDecl { path, symbols }))
+        Ok(self.arena.alloc(UseDecl { path, symbols }))
     }
 
     fn use_symbol(&mut self) -> Result<UseSymbol, ParseError> {
@@ -213,7 +213,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         self.eat(); // `mod`
         let name = self.ident(ParseCtx::ModDecl)?;
         self.expect(Token::Semicolon, ParseCtx::ModDecl)?;
-        Ok(self.arena.alloc_ref_new(ModDecl { vis, name }))
+        Ok(self.arena.alloc(ModDecl { vis, name }))
     }
 
     fn proc_decl(&mut self, vis: Vis) -> Result<&'ast ProcDecl<'ast>, ParseError> {
@@ -253,7 +253,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         let block = Some(self.block()?);
 
         let params = self.buf_proc_params.take(start, self.arena);
-        Ok(self.arena.alloc_ref_new(ProcDecl {
+        Ok(self.arena.alloc(ProcDecl {
             vis,
             name,
             params,
@@ -285,7 +285,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             name,
             variants: self.buf_enum_variants.take(start, self.arena),
         };
-        Ok(self.arena.alloc_ref_new(enum_decl))
+        Ok(self.arena.alloc(enum_decl))
     }
 
     fn enum_variant(&mut self) -> Result<EnumVariant<'ast>, ParseError> {
@@ -309,7 +309,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             self.buf_union_members.add(member);
         }
         let members = self.buf_union_members.take(start, self.arena);
-        Ok(self.arena.alloc_ref_new(UnionDecl { vis, name, members }))
+        Ok(self.arena.alloc(UnionDecl { vis, name, members }))
     }
 
     fn union_member(&mut self) -> Result<UnionMember<'ast>, ParseError> {
@@ -330,7 +330,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             self.buf_struct_fields.add(field);
         }
         let fields = self.buf_struct_fields.take(start, self.arena);
-        Ok(self.arena.alloc_ref_new(StructDecl { vis, name, fields }))
+        Ok(self.arena.alloc(StructDecl { vis, name, fields }))
     }
 
     fn struct_field(&mut self) -> Result<StructField<'ast>, ParseError> {
@@ -351,7 +351,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         let value = ConstExpr(self.expr()?);
         self.expect(Token::Semicolon, ParseCtx::ConstDecl)?;
 
-        Ok(self.arena.alloc_ref_new(ConstDecl {
+        Ok(self.arena.alloc(ConstDecl {
             vis,
             name,
             ty,
@@ -368,7 +368,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         let value = ConstExpr(self.expr()?);
         self.expect(Token::Semicolon, ParseCtx::GlobalDecl)?;
 
-        Ok(self.arena.alloc_ref_new(GlobalDecl {
+        Ok(self.arena.alloc(GlobalDecl {
             vis,
             name,
             ty,
@@ -427,7 +427,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             self.buf_names.add(name);
         }
         let names = self.buf_names.take(start, self.arena);
-        Ok(self.arena.alloc_ref_new(Path {
+        Ok(self.arena.alloc(Path {
             kind,
             names,
             range_start,
@@ -444,7 +444,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 self.eat(); // '*'
                 let mutt = self.mutt();
                 let ty = self.ty()?;
-                let ty_ref = self.arena.alloc_ref_new(ty);
+                let ty_ref = self.arena.alloc(ty);
                 Ok(Type::Reference(ty_ref, mutt))
             }
             Token::ParenOpen => {
@@ -459,9 +459,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     let mutt = self.mutt();
                     self.expect(Token::BracketClose, ParseCtx::ArraySlice)?;
                     let ty = self.ty()?;
-                    Ok(Type::ArraySlice(
-                        self.arena.alloc_ref_new(ArraySlice { mutt, ty }),
-                    ))
+                    Ok(Type::ArraySlice(self.arena.alloc(ArraySlice { mutt, ty })))
                 }
                 _ => {
                     self.eat(); // `[`
@@ -469,7 +467,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     self.expect(Token::BracketClose, ParseCtx::ArrayStatic)?;
                     let ty = self.ty()?;
                     Ok(Type::ArrayStatic(
-                        self.arena.alloc_ref_new(ArrayStatic { size, ty }),
+                        self.arena.alloc(ArrayStatic { size, ty }),
                     ))
                 }
             },
@@ -536,7 +534,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                         _ => return Err(ParseError::ForAssignOp),
                     };
                     let rhs = self.expr()?;
-                    let var_assign = self.arena.alloc_ref_new(VarAssign { op, lhs, rhs });
+                    let var_assign = self.arena.alloc(VarAssign { op, lhs, rhs });
                     ForKind::ForLoop {
                         var_decl,
                         cond,
@@ -548,7 +546,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             }
         };
         let block = self.block()?;
-        Ok(self.arena.alloc_ref_new(For { kind, block }))
+        Ok(self.arena.alloc(For { kind, block }))
     }
 
     fn stmt_no_keyword(&mut self) -> Result<StmtKind<'ast>, ParseError> {
@@ -565,7 +563,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     let lhs = expr;
                     let rhs = self.expr()?;
                     self.expect(Token::Semicolon, ParseCtx::VarAssign)?;
-                    Ok(StmtKind::VarAssign(self.arena.alloc_ref_new(VarAssign {
+                    Ok(StmtKind::VarAssign(self.arena.alloc(VarAssign {
                         op,
                         lhs,
                         rhs,
@@ -600,7 +598,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             }
         }
         self.expect(Token::Semicolon, ParseCtx::VarDecl)?;
-        Ok(self.arena.alloc_ref_new(VarDecl {
+        Ok(self.arena.alloc(VarDecl {
             mutt,
             name,
             ty,
@@ -630,7 +628,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             let op = binary_op;
             let lhs = expr_lhs;
             let rhs = self.sub_expr(prec + 1)?;
-            expr_lhs = self.arena.alloc_ref_new(Expr {
+            expr_lhs = self.arena.alloc(Expr {
                 kind: ExprKind::BinaryExpr { op, lhs, rhs },
                 range: TextRange::new(lhs.range.start(), rhs.range.end()),
             });
@@ -643,7 +641,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
 
         if self.try_eat(Token::ParenOpen) {
             if self.try_eat(Token::ParenClose) {
-                let expr = self.arena.alloc_ref_new(Expr {
+                let expr = self.arena.alloc(Expr {
                     kind: ExprKind::Unit,
                     range: TextRange::new(range_start, self.peek_range_end()),
                 });
@@ -660,7 +658,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 op: un_op,
                 rhs: self.primary_expr()?,
             };
-            return Ok(self.arena.alloc_ref_new(Expr {
+            return Ok(self.arena.alloc(Expr {
                 kind,
                 range: TextRange::new(range_start, self.peek_range_end()),
             }));
@@ -689,7 +687,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 }
 
                 let arms = self.buf_match_arms.take(start, self.arena);
-                let match_ = self.arena.alloc_ref_new(Match { on_expr, arms });
+                let match_ = self.arena.alloc(Match { on_expr, arms });
                 ExprKind::Match { match_ }
             }
             Token::KwSizeof => {
@@ -736,7 +734,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     (Token::ParenOpen, ..) => {
                         self.eat(); // `(`
                         let input = self.expr_list(Token::ParenClose, ParseCtx::ProcCall)?;
-                        let proc_call = self.arena.alloc_ref_new(ProcCall { path, input });
+                        let proc_call = self.arena.alloc(ProcCall { path, input });
                         ExprKind::ProcCall { proc_call }
                     }
                     (Token::Dot, Token::BlockOpen) => {
@@ -762,14 +760,14 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                             self.expect(Token::BlockClose, ParseCtx::StructInit)?;
                         }
                         let input = self.buf_field_inits.take(start, self.arena);
-                        let struct_init = self.arena.alloc_ref_new(StructInit { path, input });
+                        let struct_init = self.arena.alloc(StructInit { path, input });
                         ExprKind::StructInit { struct_init }
                     }
                     _ => ExprKind::Item { path },
                 }
             }
         };
-        let expr = self.arena.alloc_ref_new(Expr {
+        let expr = self.arena.alloc(Expr {
             kind,
             range: TextRange::new(range_start, self.peek_range_end()),
         });
@@ -788,7 +786,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     }
                     self.eat();
                     let name = self.ident(ParseCtx::ExprField)?;
-                    target = self.arena.alloc_ref_new(Expr {
+                    target = self.arena.alloc(Expr {
                         kind: ExprKind::Field { target, name },
                         range: TextRange::new(range_start, self.peek_range_end()),
                     });
@@ -800,7 +798,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     self.eat();
                     let index = self.expr()?;
                     self.expect(Token::BracketClose, ParseCtx::ExprIndex)?;
-                    target = self.arena.alloc_ref_new(Expr {
+                    target = self.arena.alloc(Expr {
                         kind: ExprKind::Index { target, index },
                         range: TextRange::new(range_start, self.peek_range_end()),
                     });
@@ -808,8 +806,8 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 Token::KwAs => {
                     self.eat();
                     let ty = self.ty()?;
-                    let ty_ref = self.arena.alloc_ref_new(ty);
-                    target = self.arena.alloc_ref_new(Expr {
+                    let ty_ref = self.arena.alloc(ty);
+                    target = self.arena.alloc(Expr {
                         kind: ExprKind::Cast { target, ty: ty_ref },
                         range: TextRange::new(range_start, self.peek_range_end()),
                     });
@@ -827,7 +825,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             block: self.block()?,
             else_: self.else_branch()?,
         };
-        Ok(self.arena.alloc_ref_new(if_))
+        Ok(self.arena.alloc(if_))
     }
 
     fn else_branch(&mut self) -> Result<Option<Else<'ast>>, ParseError> {
@@ -849,7 +847,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     fn block(&mut self) -> Result<&'ast Expr<'ast>, ParseError> {
         let range_start = self.peek_range_start();
         let stmts = self.block_stmts()?;
-        Ok(self.arena.alloc_ref_new(Expr {
+        Ok(self.arena.alloc(Expr {
             kind: ExprKind::Block { stmts },
             range: TextRange::new(range_start, self.peek_range_end()),
         }))
