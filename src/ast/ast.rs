@@ -11,7 +11,7 @@ pub struct Ast<'ast> {
 #[derive(Copy, Clone)]
 pub struct Module<'ast> {
     pub file_id: vfs::FileID,
-    pub decls: List<Decl<'ast>>,
+    pub decls: &'ast [Decl<'ast>],
 }
 
 #[derive(Copy, Clone)]
@@ -28,8 +28,8 @@ pub enum Decl<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct UseDecl<'ast> {
-    pub path: &'ast Path,
-    pub symbols: List<UseSymbol>,
+    pub path: &'ast Path<'ast>,
+    pub symbols: &'ast [UseSymbol],
 }
 
 #[derive(Copy, Clone)]
@@ -48,7 +48,7 @@ pub struct ModDecl {
 pub struct ProcDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub params: List<ProcParam<'ast>>,
+    pub params: &'ast [ProcParam<'ast>],
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
     pub block: Option<&'ast Expr<'ast>>,
@@ -65,7 +65,7 @@ pub struct ProcParam<'ast> {
 pub struct EnumDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub variants: List<EnumVariant<'ast>>,
+    pub variants: &'ast [EnumVariant<'ast>],
 }
 
 #[derive(Copy, Clone)]
@@ -78,7 +78,7 @@ pub struct EnumVariant<'ast> {
 pub struct UnionDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub members: List<UnionMember<'ast>>,
+    pub members: &'ast [UnionMember<'ast>],
 }
 
 #[derive(Copy, Clone)]
@@ -91,7 +91,7 @@ pub struct UnionMember<'ast> {
 pub struct StructDecl<'ast> {
     pub vis: Vis,
     pub name: Ident,
-    pub fields: List<StructField<'ast>>,
+    pub fields: &'ast [StructField<'ast>],
 }
 
 #[derive(Copy, Clone)]
@@ -124,9 +124,9 @@ pub struct Ident {
 }
 
 #[derive(Copy, Clone)]
-pub struct Path {
+pub struct Path<'ast> {
     pub kind: PathKind,
-    pub names: List<Ident>,
+    pub names: &'ast [Ident],
     pub range_start: TextOffset,
 }
 
@@ -140,7 +140,7 @@ pub enum PathKind {
 #[derive(Copy, Clone)]
 pub enum Type<'ast> {
     Basic(BasicType),
-    Custom(&'ast Path),
+    Custom(&'ast Path<'ast>),
     Reference(&'ast Type<'ast>, Mut),
     ArraySlice(&'ast ArraySlice<'ast>),
     ArrayStatic(&'ast ArrayStatic<'ast>),
@@ -226,16 +226,16 @@ pub enum ExprKind<'ast> {
     LitChar     { val: char },
     LitString   { id: InternID },
     If          { if_: &'ast If<'ast> },
-    Block       { stmts: List<Stmt<'ast>> },
-    Match       { on_expr: &'ast Expr<'ast>, arms: List<MatchArm<'ast>> },
+    Block       { stmts: &'ast [Stmt<'ast>] },
+    Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Ident },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
     Cast        { target: &'ast Expr<'ast>, ty: &'ast Type<'ast> },
     Sizeof      { ty: Type<'ast> },
-    Item        { path: &'ast Path },
-    ProcCall    { path: &'ast Path, input: List<&'ast Expr<'ast>> },
-    StructInit  { path: &'ast Path, input: List<FieldInit<'ast>> },
-    ArrayInit   { input: List<&'ast Expr<'ast>> },
+    Item        { path: &'ast Path<'ast> },
+    ProcCall    { proc_call: &'ast ProcCall<'ast> },
+    StructInit  { struct_init: &'ast StructInit<'ast> },
+    ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, size: ConstExpr<'ast> },
     UnaryExpr   { op: UnOp, rhs: &'ast Expr<'ast> },
     BinaryExpr  { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
@@ -255,9 +255,27 @@ pub enum Else<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub struct Match<'ast> {
+    pub on_expr: &'ast Expr<'ast>,
+    pub arms: &'ast [MatchArm<'ast>],
+}
+
+#[derive(Copy, Clone)]
 pub struct MatchArm<'ast> {
     pub pat: &'ast Expr<'ast>,
     pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcCall<'ast> {
+    pub path: &'ast Path<'ast>,
+    pub input: &'ast [&'ast Expr<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct StructInit<'ast> {
+    pub path: &'ast Path<'ast>,
+    pub input: &'ast [FieldInit<'ast>],
 }
 
 #[derive(Copy, Clone)]
@@ -346,7 +364,7 @@ mod size_assert {
 
     size_assert!(12, Ident);
     size_assert!(16, Decl);
-    size_assert!(16, Path);
+    size_assert!(24, Path);
     size_assert!(16, Type);
     size_assert!(24, Stmt);
     size_assert!(32, Expr);

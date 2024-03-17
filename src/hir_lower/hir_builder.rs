@@ -359,7 +359,7 @@ impl<'ast> Scope<'ast> {
     }
 
     pub fn ast_decls(&self) -> impl Iterator<Item = ast::Decl<'ast>> {
-        self.module.decls.into_iter()
+        self.module.decls.iter().cloned()
     }
 
     pub fn add_symbol(&mut self, id: InternID, symbol: Symbol) {

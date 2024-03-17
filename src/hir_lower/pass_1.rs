@@ -32,10 +32,10 @@ pub fn run(hb: &mut hb::HirBuilder) {
 }
 
 fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, '_>) {
-    for module in hb.ast_modules().cloned() {
+    for module in hb.ast_modules() {
         p.module_map.insert(
             hb.ctx().vfs.file(module.file_id).path.clone(),
-            ModuleStatus::Available(module),
+            ModuleStatus::Available(*module),
         );
     }
 }

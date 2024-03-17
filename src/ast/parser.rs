@@ -4,7 +4,7 @@ use super::parse_error::*;
 use super::token::Token;
 use super::token_list::TokenList;
 use crate::error::{ErrorComp, SourceRange};
-use crate::mem::{Arena, List, ListBuilder};
+use crate::mem::Arena;
 use crate::text::TextOffset;
 use crate::text::TextRange;
 use crate::vfs;
@@ -20,6 +20,42 @@ pub struct Parser<'a, 'ast> {
     source: &'a str,
     char_id: u32,
     string_id: u32,
+    buf_decls: NodeBuffer<Decl<'ast>>,
+    buf_use_symbols: NodeBuffer<UseSymbol>,
+    buf_proc_params: NodeBuffer<ProcParam<'ast>>,
+    buf_enum_variants: NodeBuffer<EnumVariant<'ast>>,
+    buf_union_members: NodeBuffer<UnionMember<'ast>>,
+    buf_struct_fields: NodeBuffer<StructField<'ast>>,
+    buf_names: NodeBuffer<Ident>,
+    buf_stmts: NodeBuffer<Stmt<'ast>>,
+    buf_match_arms: NodeBuffer<MatchArm<'ast>>,
+    buf_exprs: NodeBuffer<&'ast Expr<'ast>>,
+    buf_field_inits: NodeBuffer<FieldInit<'ast>>,
+}
+
+struct NodeBufferOffset(usize);
+struct NodeBuffer<T: Copy> {
+    buffer: Vec<T>,
+}
+
+impl<T: Copy> NodeBuffer<T> {
+    fn new() -> Self {
+        Self { buffer: Vec::new() }
+    }
+
+    fn start(&self) -> NodeBufferOffset {
+        NodeBufferOffset(self.buffer.len())
+    }
+
+    fn add(&mut self, value: T) {
+        self.buffer.push(value);
+    }
+
+    fn take<'arena>(&mut self, start: NodeBufferOffset, arena: &mut Arena<'arena>) -> &'arena [T] {
+        let slice = arena.alloc_slice(&self.buffer[start.0..]);
+        self.buffer.truncate(start.0);
+        slice
+    }
 }
 
 impl<'a, 'ast> Parser<'a, 'ast> {
@@ -37,6 +73,17 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             source,
             char_id: 0,
             string_id: 0,
+            buf_decls: NodeBuffer::new(),
+            buf_use_symbols: NodeBuffer::new(),
+            buf_proc_params: NodeBuffer::new(),
+            buf_enum_variants: NodeBuffer::new(),
+            buf_union_members: NodeBuffer::new(),
+            buf_struct_fields: NodeBuffer::new(),
+            buf_names: NodeBuffer::new(),
+            buf_stmts: NodeBuffer::new(),
+            buf_match_arms: NodeBuffer::new(),
+            buf_exprs: NodeBuffer::new(),
+            buf_field_inits: NodeBuffer::new(),
         }
     }
 
@@ -81,10 +128,10 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     pub fn module(&mut self, file_id: vfs::FileID) -> Result<Module<'ast>, ErrorComp> {
-        let mut decls = ListBuilder::new();
+        let start = self.buf_decls.start();
         while self.peek() != Token::Eof {
             match self.decl() {
-                Ok(decl) => decls.add(&mut self.arena, decl),
+                Ok(decl) => self.buf_decls.add(decl),
                 Err(error) => {
                     let got_token = (self.peek(), self.peek_range()); //@remove print debug
                     eprintln!("parse error token range: {:?}", got_token.1);
@@ -110,9 +157,9 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 }
             }
         }
-        Ok(Module::<'ast> {
+        Ok(Module {
             file_id,
-            decls: decls.take(),
+            decls: self.buf_decls.take(start, self.arena),
         })
     }
 
@@ -132,25 +179,23 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn use_decl(&mut self) -> Result<&'ast UseDecl<'ast>, ParseError> {
+        let start = self.buf_use_symbols.start();
         self.eat(); // `use`
         let path = self.path()?;
         self.expect(Token::Dot, ParseCtx::UseDecl)?;
         self.expect(Token::BlockOpen, ParseCtx::UseDecl)?;
-        let mut symbols = ListBuilder::new();
         if !self.try_eat(Token::BlockClose) {
             loop {
                 let symbol = self.use_symbol()?;
-                symbols.add(&mut self.arena, symbol);
+                self.buf_use_symbols.add(symbol);
                 if !self.try_eat(Token::Comma) {
                     break;
                 }
             }
             self.expect(Token::BlockClose, ParseCtx::UseDecl)?;
         }
-        Ok(self.arena.alloc_ref_new(UseDecl {
-            path,
-            symbols: symbols.take(),
-        }))
+        let symbols = self.buf_use_symbols.take(start, self.arena);
+        Ok(self.arena.alloc_ref_new(UseDecl { path, symbols }))
     }
 
     fn use_symbol(&mut self) -> Result<UseSymbol, ParseError> {
@@ -172,9 +217,9 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn proc_decl(&mut self, vis: Vis) -> Result<&'ast ProcDecl<'ast>, ParseError> {
+        let start = self.buf_proc_params.start();
         self.eat(); // `proc`
         let name = self.ident(ParseCtx::ProcDecl)?;
-        let mut params = ListBuilder::new();
         let mut is_variadic = false;
         self.expect(Token::ParenOpen, ParseCtx::ProcDecl)?;
         if !self.try_eat(Token::ParenClose) {
@@ -184,7 +229,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     break;
                 }
                 let param = self.proc_param()?;
-                params.add(&mut self.arena, param);
+                self.buf_proc_params.add(param);
                 if !self.try_eat(Token::Comma) {
                     break;
                 }
@@ -207,10 +252,11 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         */
         let block = Some(self.block()?);
 
+        let params = self.buf_proc_params.take(start, self.arena);
         Ok(self.arena.alloc_ref_new(ProcDecl {
             vis,
             name,
-            params: params.take(),
+            params,
             is_variadic,
             return_ty,
             block,
@@ -226,18 +272,18 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn enum_decl(&mut self, vis: Vis) -> Result<&'ast EnumDecl<'ast>, ParseError> {
+        let start = self.buf_enum_variants.start();
         self.eat(); // `enum`
         let name = self.ident(ParseCtx::EnumDecl)?;
-        let mut variants = ListBuilder::new();
         self.expect(Token::BlockOpen, ParseCtx::EnumDecl)?;
         while !self.try_eat(Token::BlockClose) {
             let variant = self.enum_variant()?;
-            variants.add(&mut self.arena, variant);
+            self.buf_enum_variants.add(variant);
         }
         let enum_decl = EnumDecl {
             vis,
             name,
-            variants: variants.take(),
+            variants: self.buf_enum_variants.take(start, self.arena),
         };
         Ok(self.arena.alloc_ref_new(enum_decl))
     }
@@ -254,19 +300,16 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn union_decl(&mut self, vis: Vis) -> Result<&'ast UnionDecl<'ast>, ParseError> {
+        let start = self.buf_union_members.start();
         self.eat(); // `union`
         let name = self.ident(ParseCtx::UnionDecl)?;
         self.expect(Token::BlockOpen, ParseCtx::UnionDecl)?;
-        let mut members = ListBuilder::new();
         while !self.try_eat(Token::BlockClose) {
             let member = self.union_member()?;
-            members.add(&mut self.arena, member);
+            self.buf_union_members.add(member);
         }
-        Ok(self.arena.alloc_ref_new(UnionDecl {
-            vis,
-            name,
-            members: members.take(),
-        }))
+        let members = self.buf_union_members.take(start, self.arena);
+        Ok(self.arena.alloc_ref_new(UnionDecl { vis, name, members }))
     }
 
     fn union_member(&mut self) -> Result<UnionMember<'ast>, ParseError> {
@@ -278,19 +321,16 @@ impl<'a, 'ast> Parser<'a, 'ast> {
     }
 
     fn struct_decl(&mut self, vis: Vis) -> Result<&'ast StructDecl<'ast>, ParseError> {
+        let start = self.buf_struct_fields.start();
         self.eat(); // `struct`
         let name = self.ident(ParseCtx::StructDecl)?;
-        let mut fields = ListBuilder::new();
         self.expect(Token::BlockOpen, ParseCtx::StructDecl)?;
         while !self.try_eat(Token::BlockClose) {
             let field = self.struct_field()?;
-            fields.add(&mut self.arena, field);
+            self.buf_struct_fields.add(field);
         }
-        Ok(self.arena.alloc_ref_new(StructDecl {
-            vis,
-            name,
-            fields: fields.take(),
-        }))
+        let fields = self.buf_struct_fields.take(start, self.arena);
+        Ok(self.arena.alloc_ref_new(StructDecl { vis, name, fields }))
     }
 
     fn struct_field(&mut self) -> Result<StructField<'ast>, ParseError> {
@@ -363,8 +403,8 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         Err(ParseError::ExpectIdent(ctx))
     }
 
-    fn path(&mut self) -> Result<&'ast Path, ParseError> {
-        let mut names = ListBuilder::new();
+    fn path(&mut self) -> Result<&'ast Path<'ast>, ParseError> {
+        let start = self.buf_names.start();
         let range_start = self.peek_range_start();
         let kind = match self.peek() {
             Token::KwSuper => {
@@ -377,18 +417,19 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             }
             _ => {
                 let name = self.ident(ParseCtx::Path)?;
-                names.add(&mut self.arena, name);
+                self.buf_names.add(name);
                 PathKind::None
             }
         };
         while self.peek() == Token::Dot && self.peek_next() != Token::BlockOpen {
             self.eat(); // `.`
             let name = self.ident(ParseCtx::Path)?;
-            names.add(&mut self.arena, name);
+            self.buf_names.add(name);
         }
+        let names = self.buf_names.take(start, self.arena);
         Ok(self.arena.alloc_ref_new(Path {
             kind,
-            names: names.take(),
+            names,
             range_start,
         }))
     }
@@ -638,18 +679,18 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                 stmts: self.block_stmts()?,
             },
             Token::KwMatch => {
+                let start = self.buf_match_arms.start();
                 self.eat();
                 let on_expr = self.expr()?;
-                let mut arms = ListBuilder::new();
                 self.expect(Token::BlockOpen, ParseCtx::Match)?;
                 while !self.try_eat(Token::BlockClose) {
                     let arm = self.match_arm()?;
-                    arms.add(&mut self.arena, arm);
+                    self.buf_match_arms.add(arm);
                 }
-                ExprKind::Match {
-                    on_expr,
-                    arms: arms.take(),
-                }
+
+                let arms = self.buf_match_arms.take(start, self.arena);
+                let match_ = self.arena.alloc_ref_new(Match { on_expr, arms });
+                ExprKind::Match { match_ }
             }
             Token::KwSizeof => {
                 self.eat();
@@ -661,9 +702,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             Token::BracketOpen => {
                 self.eat();
                 if self.try_eat(Token::BracketClose) {
-                    ExprKind::ArrayInit {
-                        input: ListBuilder::new().take(),
-                    }
+                    ExprKind::ArrayInit { input: &[] }
                 } else {
                     let expr = self.expr()?;
                     if self.try_eat(Token::Semicolon) {
@@ -671,13 +710,13 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                         self.expect(Token::BracketClose, ParseCtx::ArrayInit)?;
                         ExprKind::ArrayRepeat { expr, size }
                     } else {
-                        let mut input = ListBuilder::new();
-                        input.add(&mut self.arena, expr);
+                        let start = self.buf_exprs.start();
+                        self.buf_exprs.add(expr);
                         if !self.try_eat(Token::BracketClose) {
                             self.expect(Token::Comma, ParseCtx::ArrayInit)?;
                             loop {
                                 let expr = self.expr()?;
-                                input.add(&mut self.arena, expr);
+                                self.buf_exprs.add(expr);
                                 if !self.try_eat(Token::Comma) {
                                     break;
                                 }
@@ -685,7 +724,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                             self.expect(Token::BracketClose, ParseCtx::ArrayInit)?;
                         }
                         ExprKind::ArrayInit {
-                            input: input.take(),
+                            input: self.buf_exprs.take(start, self.arena),
                         }
                     }
                 }
@@ -697,12 +736,13 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                     (Token::ParenOpen, ..) => {
                         self.eat(); // `(`
                         let input = self.expr_list(Token::ParenClose, ParseCtx::ProcCall)?;
-                        ExprKind::ProcCall { path, input }
+                        let proc_call = self.arena.alloc_ref_new(ProcCall { path, input });
+                        ExprKind::ProcCall { proc_call }
                     }
                     (Token::Dot, Token::BlockOpen) => {
                         self.eat(); // `.`
                         self.eat(); // `{`
-                        let mut input = ListBuilder::new();
+                        let start = self.buf_field_inits.start();
                         if !self.try_eat(Token::BlockClose) {
                             loop {
                                 let name = self.ident(ParseCtx::StructInit)?;
@@ -714,17 +754,16 @@ impl<'a, 'ast> Parser<'a, 'ast> {
                                     Token::Comma | Token::BlockClose => None,
                                     _ => return Err(ParseError::FieldInit),
                                 };
-                                input.add(&mut self.arena, FieldInit { name, expr });
+                                self.buf_field_inits.add(FieldInit { name, expr });
                                 if !self.try_eat(Token::Comma) {
                                     break;
                                 }
                             }
                             self.expect(Token::BlockClose, ParseCtx::StructInit)?;
                         }
-                        ExprKind::StructInit {
-                            path,
-                            input: input.take(),
-                        }
+                        let input = self.buf_field_inits.take(start, self.arena);
+                        let struct_init = self.arena.alloc_ref_new(StructInit { path, input });
+                        ExprKind::StructInit { struct_init }
                     }
                     _ => ExprKind::Item { path },
                 }
@@ -816,14 +855,14 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         }))
     }
 
-    fn block_stmts(&mut self) -> Result<List<Stmt<'ast>>, ParseError> {
-        let mut stmts = ListBuilder::new();
+    fn block_stmts(&mut self) -> Result<&'ast [Stmt<'ast>], ParseError> {
+        let start = self.buf_stmts.start();
         self.expect(Token::BlockOpen, ParseCtx::Block)?;
         while !self.try_eat(Token::BlockClose) {
             let stmt = self.stmt()?;
-            stmts.add(&mut self.arena, stmt);
+            self.buf_stmts.add(stmt);
         }
-        Ok(stmts.take())
+        Ok(self.buf_stmts.take(start, self.arena))
     }
 
     fn match_arm(&mut self) -> Result<MatchArm<'ast>, ParseError> {
@@ -936,19 +975,19 @@ impl<'a, 'ast> Parser<'a, 'ast> {
         &mut self,
         end: Token,
         ctx: ParseCtx,
-    ) -> Result<List<&'ast Expr<'ast>>, ParseError> {
-        let mut expr_list = ListBuilder::new();
+    ) -> Result<&'ast [&'ast Expr<'ast>], ParseError> {
+        let mut start = self.buf_exprs.start();
         if !self.try_eat(end) {
             loop {
-                let expr = self.expr()?;
-                expr_list.add(&mut self.arena, expr);
+                let expr: &Expr<'_> = self.expr()?;
+                self.buf_exprs.add(expr);
                 if !self.try_eat(Token::Comma) {
                     break;
                 }
             }
             self.expect(end, ctx)?;
         }
-        Ok(expr_list.take())
+        Ok(self.buf_exprs.take(start, self.arena))
     }
 }
 

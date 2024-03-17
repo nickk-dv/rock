@@ -103,7 +103,7 @@ fn typecheck_expr<'ast, 'hir>(
             //}
             hir::Type::Basic(ast::BasicType::Unit)
         }
-        ast::ExprKind::Match { on_expr, arms } => {
+        ast::ExprKind::Match { match_ } => {
             //@todo
             hir::Type::Basic(ast::BasicType::Unit)
         }
@@ -124,11 +124,11 @@ fn typecheck_expr<'ast, 'hir>(
             //@todo
             hir::Type::Basic(ast::BasicType::Unit)
         }
-        ast::ExprKind::ProcCall { path, input } => {
+        ast::ExprKind::ProcCall { proc_call } => {
             //@todo
             hir::Type::Basic(ast::BasicType::Unit)
         }
-        ast::ExprKind::StructInit { path, input } => {
+        ast::ExprKind::StructInit { struct_init } => {
             //@todo
             hir::Type::Basic(ast::BasicType::Unit)
         }

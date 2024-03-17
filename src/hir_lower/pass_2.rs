@@ -43,7 +43,7 @@ pub fn run(hb: &mut hb::HirBuilder) {
             if task.resolved {
                 continue;
             }
-            for name in task.decl.path.names.iter() {
+            for name in task.decl.path.names {
                 hb.error(
                     ErrorComp::error(format!("module `{}` is not found", hb.name_str(name.id)))
                         .context(hb.get_scope(scope_id).source(name.range)),
@@ -68,7 +68,7 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
         Err(()) => return false,
     };
 
-    for use_name in decl.symbols.iter() {
+    for use_name in decl.symbols {
         let from_scope = hb.get_scope(from_id);
 
         let alias_name = match use_name.alias {
