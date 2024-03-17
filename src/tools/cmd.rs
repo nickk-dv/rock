@@ -135,7 +135,7 @@ pub mod check {
                 return;
             }
         };
-        let hir = match hir_lower::check(&ctx, ast) {
+        let hir = match hir_lower::check(&mut ctx, ast) {
             Ok(ast) => ast,
             Err(errors) => {
                 error::format::print_errors(&ctx.vfs, &errors);
@@ -160,7 +160,7 @@ pub mod build {
                 return;
             }
         };
-        let hir = match hir_lower::check(&ctx, ast) {
+        let hir = match hir_lower::check(&mut ctx, ast) {
             Ok(ast) => ast,
             Err(errors) => {
                 error::format::print_errors(&ctx.vfs, &errors);
@@ -186,7 +186,7 @@ pub mod run {
                 return;
             }
         };
-        let hir = match hir_lower::check(&ctx, ast) {
+        let hir = match hir_lower::check(&mut ctx, ast) {
             Ok(ast) => ast,
             Err(errors) => {
                 error::format::print_errors(&ctx.vfs, &errors);

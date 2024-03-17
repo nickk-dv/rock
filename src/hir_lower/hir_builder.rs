@@ -9,7 +9,7 @@ use crate::vfs;
 use std::collections::HashMap;
 
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
-    ctx: &'ctx CompCtx,
+    ctx: &'ctx mut CompCtx,
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
@@ -61,7 +61,7 @@ pub enum SymbolKind {
 }
 
 impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
-    pub fn new(ctx: &'ctx CompCtx, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
+    pub fn new(ctx: &'ctx mut CompCtx, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
         HirBuilder {
             ctx,
             ast,
@@ -97,9 +97,13 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
-    pub fn ctx(&self) -> &'ctx CompCtx {
+    pub fn ctx(&self) -> &CompCtx {
         self.ctx
     }
+    pub fn ctx_mut(&mut self) -> &mut CompCtx {
+        self.ctx
+    }
+
     pub fn name_str(&self, id: InternID) -> &str {
         self.ctx.intern().get_str(id)
     }

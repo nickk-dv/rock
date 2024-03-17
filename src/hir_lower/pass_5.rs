@@ -12,11 +12,11 @@ fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let decl = hb.proc_ast(id);
     if let Some(block) = decl.block {
         let ty = typecheck_expr(hb, block);
-        println!(
-            "procedure `{}` block has type: {}",
-            hb.name_str(decl.name.id).to_string(),
-            type_format(hb, ty)
-        );
+        //println!(
+        //    "procedure `{}` block has type: {}",
+        //    hb.name_str(decl.name.id).to_string(),
+        //    type_format(hb, ty)
+        //);
     }
 }
 
@@ -88,19 +88,19 @@ fn typecheck_expr<'ast, 'hir>(
             hir::Type::Basic(ast::BasicType::Unit)
         }
         ast::ExprKind::Block { stmts } => {
-            for stmt in stmts {
-                match stmt.kind {
-                    ast::StmtKind::Break => todo!(),
-                    ast::StmtKind::Continue => todo!(),
-                    ast::StmtKind::Return(_) => todo!(),
-                    ast::StmtKind::Defer(_) => todo!(),
-                    ast::StmtKind::ForLoop(_) => todo!(),
-                    ast::StmtKind::VarDecl(_) => todo!(),
-                    ast::StmtKind::VarAssign(_) => todo!(),
-                    ast::StmtKind::ExprSemi(_) => todo!(),
-                    ast::StmtKind::ExprTail(_) => todo!(),
-                }
-            }
+            //for stmt in stmts {
+            //    match stmt.kind {
+            //        ast::StmtKind::Break => todo!(),
+            //        ast::StmtKind::Continue => todo!(),
+            //        ast::StmtKind::Return(_) => todo!(),
+            //        ast::StmtKind::Defer(_) => todo!(),
+            //        ast::StmtKind::ForLoop(_) => todo!(),
+            //        ast::StmtKind::VarDecl(_) => todo!(),
+            //        ast::StmtKind::VarAssign(_) => todo!(),
+            //        ast::StmtKind::ExprSemi(_) => todo!(),
+            //        ast::StmtKind::ExprTail(_) => todo!(),
+            //    }
+            //}
             hir::Type::Basic(ast::BasicType::Unit)
         }
         ast::ExprKind::Match { on_expr, arms } => {

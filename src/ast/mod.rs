@@ -20,6 +20,8 @@ use std::path::PathBuf;
 pub struct CompCtx {
     pub vfs: vfs::Vfs,
     intern: InternPool,
+    timings: Vec<std::time::Instant>,
+    traces: Vec<String>,
 }
 
 impl CompCtx {
@@ -27,6 +29,8 @@ impl CompCtx {
         CompCtx {
             vfs: vfs::Vfs::new(),
             intern: InternPool::new(),
+            timings: Vec::new(),
+            traces: Vec::new(),
         }
     }
 
@@ -37,10 +41,48 @@ impl CompCtx {
     pub fn intern_mut(&mut self) -> &mut InternPool {
         &mut self.intern
     }
+
+    pub fn timing_start(&mut self) {
+        self.timings.push(std::time::Instant::now());
+    }
+
+    pub fn timing_end(&mut self, message: &'static str) {
+        if let Some(start) = self.timings.pop() {
+            let elapsed = start.elapsed();
+            let sec_ms = elapsed.as_secs_f64() * 1000.0;
+            let ms = sec_ms + f64::from(elapsed.subsec_nanos()) / 1_000_000.0;
+            self.traces.push(format!("{}: {:.3} ms", message, ms));
+        }
+    }
+
+    pub fn add_trace(&mut self, message: String) {
+        self.traces.push(message);
+    }
+
+    pub fn display_traces(&self) {
+        for trace in self.traces.iter() {
+            eprintln!("{trace}");
+        }
+    }
+}
+
+impl Drop for CompCtx {
+    fn drop(&mut self) {
+        self.display_traces();
+    }
 }
 
 pub fn parse<'ast>(ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
+    ctx.timing_start();
     let source_files = collect_cwd_source_files().map_err(|error| vec![error])?;
+    ctx.timing_end("parse: collect file paths");
+
+    ctx.timing_start();
+    let file_ids: Vec<vfs::FileID> = source_files
+        .into_iter()
+        .map(|path| ctx.vfs.register_file(path))
+        .collect();
+    ctx.timing_end("parse: vfs read files");
 
     let mut errors = Vec::new();
     let mut ast = Ast {
@@ -48,10 +90,11 @@ pub fn parse<'ast>(ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
         modules: Vec::new(),
     };
 
-    for path in source_files {
-        let file_id = ctx.vfs.register_file(path);
+    ctx.timing_start();
+    for file_id in file_ids {
+        //@fix source clone() later
+        //@due to borrowing of intern_pool & source text at the same time
         let source = ctx.vfs.file(file_id).source.clone();
-
         let lexer = lexer::Lexer::new(&source, false);
         let tokens = lexer.lex();
         let mut parser = parser::Parser::new(tokens, &mut ast.arena, ctx.intern_mut(), &source);
@@ -65,7 +108,11 @@ pub fn parse<'ast>(ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
             }
         }
     }
-
+    ctx.timing_end("parse: ast");
+    ctx.add_trace(format!(
+        "arena ast: mem usage {} bytes",
+        ast.arena.mem_usage()
+    ));
     if errors.is_empty() {
         Ok(ast)
     } else {
