@@ -15,7 +15,6 @@ token_gen::token_gen! {
 
     // keyword general
     [pub]      | "pub"      | KwPub      | KW.
-    [mut]      | "mut"      | KwMut      | KW.
     [super]    | "super"    | KwSuper    | KW.
     [package]  | "package"  | KwPackage  | KW.
 
@@ -30,6 +29,8 @@ token_gen::token_gen! {
     [global]   | "global"   | KwGlobal   | KW.
 
     // keyword statements
+    [let]      | "let"      | KwLet      | KW.
+    [mut]      | "mut"      | KwMut      | KW.
     [break]    | "break"    | KwBreak    | KW.
     [continue] | "continue" | KwContinue | KW.
     [return]   | "return"   | KwReturn   | KW.

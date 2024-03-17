@@ -39,13 +39,13 @@ pub mod new {
     use std::path::PathBuf;
 
     pub fn cmd(data: CommandNew) {
-        if let Err(error) = executable(data) {
+        if let Err(error) = make_project(data) {
             let vfs = Vfs::new();
             error::format::print_errors(&vfs, &[error]);
         }
     }
 
-    pub fn executable(data: CommandNew) -> Result<(), ErrorComp> {
+    fn make_project(data: CommandNew) -> Result<(), ErrorComp> {
         let cwd = std::env::current_dir().unwrap();
         let root_dir = cwd.join(&data.name);
         let src_dir = root_dir.join("src");
@@ -57,18 +57,17 @@ pub mod new {
         make_dir(&build_dir)?;
 
         match data.kind {
-            ProjectKind::Lib => {
-                let path = src_dir.join("lib.lang");
-                make_file(&path, "")?;
-            }
-            ProjectKind::Bin => {
-                let path = src_dir.join("main.lang");
-                make_file(&path, "\nproc main() -> s32 {\n\treturn 0;\n}\n")?;
-            }
+            ProjectKind::Lib => make_file(&src_dir.join("lib.lang"), "")?,
+            ProjectKind::Bin => make_file(
+                &src_dir.join("main.lang"),
+                "\nproc main() -> s32 {\n\treturn 0;\n}\n",
+            )?,
         }
+
         if !data.no_git {
-            let gitignore = root_dir.join(".gitignore");
-            make_file(&gitignore, "build/\n")?;
+            make_file(&root_dir.join(".gitattributes"), "* text eol=lf\n")?;
+            make_file(&root_dir.join(".gitignore"), "build/\n")?;
+            make_file(&root_dir.join("README.md"), &format!("# {}\n", data.name))?;
             git_init(&root_dir)?;
         }
 
