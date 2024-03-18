@@ -345,30 +345,4 @@ impl<'src> Lexer<'src> {
         }
         (token, self.token_range())
     }
-
-    //@overall this should be removed in favor of binary search over the text
-    // to find line + col of requested range
-    pub fn lex_line_ranges(&mut self) -> Vec<TextRange> {
-        self.range = TextRange::empty_at(0.into());
-        self.chars = self.source.chars().peekable();
-        let mut line_ranges = Vec::new();
-        let mut ate: bool = false; //@find better way to create ranges without /n
-
-        while let Some(c) = self.peek() {
-            if c == '\n' {
-                line_ranges.push(self.range);
-                self.eat(c);
-                self.range = TextRange::empty_at(self.range.end());
-                ate = false;
-            } else {
-                self.eat(c);
-                ate = true;
-            }
-        }
-
-        if ate {
-            line_ranges.push(self.range);
-        }
-        line_ranges
-    }
 }

@@ -42,6 +42,11 @@ impl<'arena> Arena<'arena> {
         }
     }
 
+    pub fn alloc_str(&mut self, val: &str) -> &'arena str {
+        let bytes = self.alloc_slice(val.as_bytes());
+        unsafe { std::str::from_utf8_unchecked(bytes) }
+    }
+
     fn offset_raw<T: Copy>(&mut self, size: usize) -> *mut T {
         if self.offset + size > self.block.layout.size() {
             self.grow();

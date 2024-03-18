@@ -1,74 +1,70 @@
+use crate::arena::Arena;
 use std::collections::HashMap;
+use std::hash::{BuildHasher, Hasher};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InternID(u32);
 
 pub struct InternPool {
     next: InternID,
-    bytes: Vec<u8>,
-    strings: Vec<InternString>,
-    intern_map: HashMap<u32, InternID>,
-}
-
-struct InternString {
-    start: u32,
-    end: u32,
+    arena: Arena<'static>,
+    strings: Vec<&'static str>,
+    intern_map: HashMap<&'static str, InternID, Fnv1aHasher>,
 }
 
 impl InternPool {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> InternPool {
+        InternPool {
             next: InternID(0),
-            bytes: Vec::new(),
-            strings: Vec::new(),
-            intern_map: HashMap::new(),
+            arena: Arena::new(),
+            strings: Vec::with_capacity(1024),
+            intern_map: HashMap::with_capacity_and_hasher(1024, Fnv1aHasher),
         }
     }
 
     pub fn intern(&mut self, string: &str) -> InternID {
-        let hash = Self::hash_djb2(string);
-        if let Some(id) = self.intern_map.get(&hash).cloned() {
-            if self.string_compare(id, string) {
-                return id;
-            }
-        };
-
-        let start = self.bytes.len() as u32;
-        self.bytes.extend_from_slice(string.as_bytes());
-        let end = self.bytes.len() as u32;
-        self.strings.push(InternString { start, end });
-
-        let id = self.next;
-        self.intern_map.insert(hash, id);
-        self.next = InternID(self.next.0.wrapping_add(1));
-        return id;
+        self.intern_map.get(string).cloned().unwrap_or({
+            let id = self.next;
+            let str = self.arena.alloc_str(string);
+            self.next.0 = self.next.0.wrapping_add(1);
+            self.strings.push(str);
+            self.intern_map.insert(str, id);
+            id
+        })
     }
 
     pub fn get_str(&self, id: InternID) -> &str {
-        let is = unsafe { self.strings.get_unchecked(id.0 as usize) };
-        let bytes = unsafe { self.bytes.get_unchecked(is.start as usize..is.end as usize) };
-        unsafe { std::str::from_utf8_unchecked(bytes) }
+        self.strings[id.0 as usize]
     }
-
-    pub fn try_get_str_id(&self, string: &str) -> Option<InternID> {
-        let hash = Self::hash_djb2(string);
-        if let Some(id) = self.intern_map.get(&hash).cloned() {
-            if self.string_compare(id, string) {
-                return Some(id);
-            }
-        };
-        None
+    pub fn get_id(&self, string: &str) -> Option<InternID> {
+        self.intern_map.get(string).cloned()
     }
+}
 
-    fn string_compare(&self, id: InternID, string: &str) -> bool {
-        string.chars().eq(self.get_str(id).chars())
-    }
+const FNV_OFFSET: u32 = 2166136261;
+const FNV_PRIME: u32 = 16777619;
 
-    fn hash_djb2(string: &str) -> u32 {
-        let mut hash: u32 = 5381;
-        for c in string.chars() {
-            hash = ((hash << 5).wrapping_add(hash)) ^ c as u32;
+struct Fnv1aHasher;
+pub struct Fnv1a {
+    hash: u32,
+}
+
+impl Hasher for Fnv1a {
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.hash ^= byte as u32;
+            self.hash = self.hash.wrapping_mul(FNV_PRIME);
         }
-        hash
+    }
+    fn finish(&self) -> u64 {
+        self.hash as u64
+    }
+}
+
+impl BuildHasher for Fnv1aHasher {
+    type Hasher = Fnv1a;
+
+    fn build_hasher(&self) -> Fnv1a {
+        Fnv1a { hash: FNV_OFFSET }
     }
 }
