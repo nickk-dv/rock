@@ -49,6 +49,14 @@ pub struct Fnv1a {
     hash: u32,
 }
 
+impl BuildHasher for Fnv1aHasher {
+    type Hasher = Fnv1a;
+
+    fn build_hasher(&self) -> Fnv1a {
+        Fnv1a { hash: FNV_OFFSET }
+    }
+}
+
 impl Hasher for Fnv1a {
     fn write(&mut self, bytes: &[u8]) {
         for &byte in bytes {
@@ -58,13 +66,5 @@ impl Hasher for Fnv1a {
     }
     fn finish(&self) -> u64 {
         self.hash as u64
-    }
-}
-
-impl BuildHasher for Fnv1aHasher {
-    type Hasher = Fnv1a;
-
-    fn build_hasher(&self) -> Fnv1a {
-        Fnv1a { hash: FNV_OFFSET }
     }
 }

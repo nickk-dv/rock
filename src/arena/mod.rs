@@ -65,11 +65,10 @@ impl<'arena> Arena<'arena> {
     }
 
     pub fn mem_usage(&self) -> usize {
-        let mut usage: usize = 0;
+        let mut usage: usize = self.offset;
         for block in &self.full_blocks {
             usage += block.layout.size();
         }
-        usage += self.offset;
         usage
     }
 }

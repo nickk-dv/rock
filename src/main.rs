@@ -2,7 +2,6 @@
 
 #[allow(unsafe_code)]
 mod arena;
-#[allow(unsafe_code)]
 mod ast;
 mod ast_parse;
 mod error;

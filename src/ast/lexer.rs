@@ -34,7 +34,7 @@ impl<'src> Lexer<'src> {
 
     #[inline]
     fn eat(&mut self, c: char) {
-        self.range.extend_by(c.len_utf8().try_into().unwrap());
+        self.range.extend_by((c.len_utf8() as u32).into());
         self.chars.next();
     }
 

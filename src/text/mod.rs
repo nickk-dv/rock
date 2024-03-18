@@ -1,4 +1,4 @@
-use std::{fmt, num::TryFromIntError, ops};
+pub mod find;
 
 #[derive(Copy, Clone)]
 pub struct TextRange {
@@ -57,7 +57,8 @@ impl TextRange {
 }
 
 impl TextOffset {
-    pub fn new(offset: u32) -> TextOffset {
+    #[inline]
+    pub const fn new(offset: u32) -> TextOffset {
         TextOffset { raw: offset }
     }
 }
@@ -66,14 +67,6 @@ impl From<u32> for TextOffset {
     #[inline]
     fn from(value: u32) -> Self {
         TextOffset { raw: value }
-    }
-}
-
-impl TryFrom<usize> for TextOffset {
-    type Error = TryFromIntError;
-    #[inline]
-    fn try_from(value: usize) -> Result<Self, TryFromIntError> {
-        Ok(u32::try_from(value)?.into())
     }
 }
 
@@ -91,17 +84,17 @@ impl From<TextOffset> for usize {
     }
 }
 
-impl ops::Add for TextOffset {
+impl std::ops::Add for TextOffset {
     type Output = TextOffset;
     #[inline]
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: TextOffset) -> Self::Output {
         (self.raw + rhs.raw).into()
     }
 }
 
-impl ops::AddAssign for TextOffset {
+impl std::ops::AddAssign for TextOffset {
     #[inline]
-    fn add_assign(&mut self, rhs: Self) {
+    fn add_assign(&mut self, rhs: TextOffset) {
         self.raw = self.raw + rhs.raw;
     }
 }
@@ -121,6 +114,8 @@ impl TextLocation {
     }
 }
 
+use std::fmt;
+
 impl fmt::Debug for TextRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start.raw, self.end.raw)
@@ -137,39 +132,4 @@ impl fmt::Debug for TextLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.line, self.col)
     }
-}
-
-pub fn line_ranges(text: &str) -> Vec<TextRange> {
-    let mut ranges = Vec::new();
-    let mut range = TextRange::empty_at(0.into());
-    for c in text.chars() {
-        let size: TextOffset = (c.len_utf8() as u32).into();
-        range.extend_by(size);
-        if c == '\n' {
-            ranges.push(range);
-            range = TextRange::empty_at(range.end());
-        }
-    }
-    if range.len() > 0 {
-        ranges.push(range);
-    }
-    ranges
-}
-
-pub fn position_from_line_ranges(
-    text: &str,
-    offset: TextOffset,
-    line_ranges: &[TextRange],
-) -> (TextLocation, TextRange) {
-    for (line, range) in line_ranges.iter().enumerate() {
-        if range.contains_offset(offset) {
-            let prefix_range = TextRange::new(range.start(), offset);
-            let prefix = &text[prefix_range.as_usize()];
-            return (
-                TextLocation::new(line as u32 + 1, prefix.chars().count() as u32 + 1),
-                *range,
-            );
-        }
-    }
-    panic!("text location not found");
 }

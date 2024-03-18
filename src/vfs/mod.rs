@@ -1,4 +1,5 @@
-use crate::text::{self, TextRange};
+use crate::text;
+use crate::text::TextRange;
 use std::path::PathBuf;
 
 pub struct Vfs {
@@ -29,7 +30,7 @@ impl Vfs {
             Ok(source) => source,
             Err(error) => panic!("vfs file read failed: {}", error),
         };
-        let line_ranges = text::line_ranges(&source);
+        let line_ranges = text::find::line_ranges(&source);
         self.files.push(File {
             path,
             source,

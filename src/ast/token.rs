@@ -19,8 +19,8 @@ token_gen::token_gen! {
     [package]  | "package"  | KwPackage  | KW.
 
     // keyword declarations
-    [use]      | "use"      | KwUse      | KW.
     [mod]      | "mod"      | KwMod      | KW.
+    [use]      | "use"      | KwUse      | KW.
     [proc]     | "proc"     | KwProc     | KW.
     [enum]     | "enum"     | KwEnum     | KW.
     [union]    | "union"    | KwUnion    | KW.

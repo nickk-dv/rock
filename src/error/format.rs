@@ -1,6 +1,7 @@
 use super::ansi;
 use super::{ErrorComp, ErrorSeverity};
-use crate::text::{self, TextRange};
+use crate::text;
+use crate::text::TextRange;
 use crate::vfs::Vfs;
 use std::io::{BufWriter, Stderr, Write};
 
@@ -36,8 +37,8 @@ fn print_error(vfs: &Vfs, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
         let file = vfs.file(context.source().file_id());
 
         let range = context.source().range();
-        let (position, line_range) =
-            text::position_from_line_ranges(&file.source, range.start(), &file.line_ranges);
+        let (location, line_range) =
+            text::find::text_location(&file.source, range.start(), &file.line_ranges);
         let prefix_range = TextRange::new(line_range.start(), range.start());
         let source_range = TextRange::new(range.start(), line_range.end().min(range.end()));
 
@@ -45,7 +46,7 @@ fn print_error(vfs: &Vfs, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
         let prefix_str = &file.source[prefix_range.as_usize()];
         let source_str = &file.source[source_range.as_usize()];
 
-        let line_num = position.line().to_string();
+        let line_num = location.line().to_string();
         let line_pad = " ".repeat(line_num.len());
         let line = line_str.trim_end().replace("\t", TAB_REPLACE_STR);
         let marker_pad = " ".repeat(normalized_tab_len(prefix_str));
@@ -60,7 +61,7 @@ fn print_error(vfs: &Vfs, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
 {line_pad} │ {marker_pad}{}{marker} {message}{}"#,
             ansi::CYAN,
             file.path.to_string_lossy(),
-            position,
+            location,
             ansi::CLEAR,
             ansi::CYAN,
             severity_color(context.severity()),
