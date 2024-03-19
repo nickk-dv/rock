@@ -1,7 +1,6 @@
 pub mod ast;
 pub mod intern;
 pub mod lexer;
-pub mod parse_error;
 mod parser;
 pub mod token;
 mod token_gen;
@@ -99,7 +98,7 @@ pub fn parse<'ast>(ctx: &mut CompCtx) -> Result<Ast<'ast>, Vec<ErrorComp>> {
         let tokens = lexer.lex();
         let mut parser = parser::Parser::new(tokens, &mut ast.arena, ctx.intern_mut(), &source);
 
-        match parser.module(file_id) {
+        match parser::module(&mut parser, file_id) {
             Ok(module) => {
                 ast.modules.push(module);
             }
