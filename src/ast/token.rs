@@ -30,6 +30,7 @@ token_gen::token_gen! {
 
     // keyword statements
     [let]      | "let"      | KwLet      | KW.
+    [var]      | "var"      | KwVar      | KW.
     [mut]      | "mut"      | KwMut      | KW.
     [break]    | "break"    | KwBreak    | KW.
     [continue] | "continue" | KwContinue | KW.

@@ -507,22 +507,18 @@ fn stmt<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Stmt<'ast>, String> {
             p.bump();
             StmtKind::ForLoop(for_loop(p)?)
         }
+        T![let] | T![var] => StmtKind::VarDecl(var_decl(p)?),
         _ => {
-            let expect_var_decl = p.at(T![mut]) || (p.at(T![ident]) && p.at_next(T![:]));
-            if expect_var_decl {
-                StmtKind::VarDecl(var_decl(p)?)
+            let lhs = expr(p)?;
+            if let Some(op) = p.peek().as_assign_op() {
+                p.bump();
+                let rhs = expr(p)?;
+                p.expect(T![;])?;
+                StmtKind::VarAssign(p.arena.alloc(VarAssign { op, lhs, rhs }))
+            } else if p.eat(T![;]) {
+                StmtKind::ExprSemi(lhs)
             } else {
-                let lhs = expr(p)?;
-                if let Some(op) = p.peek().as_assign_op() {
-                    p.bump();
-                    let rhs = expr(p)?;
-                    p.expect(T![;])?;
-                    StmtKind::VarAssign(p.arena.alloc(VarAssign { op, lhs, rhs }))
-                } else if p.eat(T![;]) {
-                    StmtKind::ExprSemi(lhs)
-                } else {
-                    StmtKind::ExprTail(lhs)
-                }
+                StmtKind::ExprTail(lhs)
             }
         }
     };
@@ -536,58 +532,52 @@ fn stmt<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Stmt<'ast>, String> {
 fn for_loop<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast For<'ast>, String> {
     let kind = match p.peek() {
         T!['{'] => ForKind::Loop,
-        _ => {
-            let expect_var_decl = p.at(T![mut]) || (p.at(T![ident]) && p.at_next(T![:]));
-            if !expect_var_decl {
-                ForKind::While { cond: expr(p)? }
-            } else {
-                let var_decl = var_decl(p)?;
-                let cond = expr(p)?;
-                p.expect(T![;])?;
+        T![let] | T![var] => {
+            let var_decl = var_decl(p)?;
+            let cond = expr(p)?;
+            p.expect(T![;])?;
 
-                let lhs = expr(p)?;
-                let op = match p.peek().as_assign_op() {
-                    Some(op) => {
-                        p.bump();
-                        op
-                    }
-                    _ => return Err("expected assignment operator".into()),
-                };
-                let rhs = expr(p)?;
-                let var_assign = p.arena.alloc(VarAssign { op, lhs, rhs });
-
-                ForKind::ForLoop {
-                    var_decl,
-                    cond,
-                    var_assign,
+            let lhs = expr(p)?;
+            let op = match p.peek().as_assign_op() {
+                Some(op) => {
+                    p.bump();
+                    op
                 }
+                _ => return Err("expected assignment operator".into()),
+            };
+            let rhs = expr(p)?;
+            let var_assign = p.arena.alloc(VarAssign { op, lhs, rhs });
+
+            ForKind::ForLoop {
+                var_decl,
+                cond,
+                var_assign,
             }
         }
+        _ => ForKind::While { cond: expr(p)? },
     };
     let block = block(p)?;
     Ok(p.arena.alloc(For { kind, block }))
 }
 
 fn var_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast VarDecl<'ast>, String> {
-    let mutt = mutt(p);
+    let mutt = match p.peek() {
+        T![let] => Mut::Immutable,
+        T![var] => Mut::Mutable,
+        _ => return Err("expected `let` or `var`".into()),
+    };
+    p.bump();
+
     let name = name(p)?;
-    p.expect(T![:])?;
-    let ty_;
-    let lhs_expr;
-    if p.eat(T![=]) {
-        ty_ = None;
-        lhs_expr = Some(expr(p)?);
-    } else {
-        ty_ = Some(ty(p)?);
-        lhs_expr = if p.eat(T![=]) { Some(expr(p)?) } else { None }
-    }
+    let ty = if p.eat(T![:]) { Some(ty(p)?) } else { None };
+    let expr = if p.eat(T![=]) { Some(expr(p)?) } else { None };
     p.expect(T![;])?;
 
     Ok(p.arena.alloc(VarDecl {
         mutt,
         name,
-        ty: ty_,
-        expr: lhs_expr,
+        ty,
+        expr,
     }))
 }
 
