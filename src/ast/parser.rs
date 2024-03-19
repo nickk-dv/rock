@@ -27,6 +27,7 @@ pub struct Parser<'a, 'ast> {
     match_arms: NodeBuffer<MatchArm<'ast>>,
     exprs: NodeBuffer<&'ast Expr<'ast>>,
     field_inits: NodeBuffer<FieldInit<'ast>>,
+    if_arms: NodeBuffer<IfArm<'ast>>,
 }
 
 struct NodeOffset(usize);
@@ -80,6 +81,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             match_arms: NodeBuffer::new(),
             exprs: NodeBuffer::new(),
             field_inits: NodeBuffer::new(),
+            if_arms: NodeBuffer::new(),
         }
     }
 
@@ -733,7 +735,7 @@ fn primary_expr<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Expr<'ast>, 
                 id: p.intern_pool.intern(string),
             }
         }
-        T![if] => ExprKind::If { if_: if_(p)? },
+        T![if] => ExprKind::If { if_: if_match(p)? },
         T!['{'] => ExprKind::Block {
             stmts: block_stmts(p)?,
         },
@@ -905,6 +907,19 @@ fn else_branch<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Option<Else<'ast>>,
     } else {
         Ok(None)
     }
+}
+
+fn if_match<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast [IfArm<'ast>], String> {
+    p.bump();
+    let arms = semi_separated_block!(p, if_arm, if_arms);
+    Ok(arms)
+}
+
+fn if_arm<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<IfArm<'ast>, String> {
+    let cond = if p.eat(T![_]) { None } else { Some(expr(p)?) };
+    p.expect(T![->])?;
+    let expr = expr(p)?;
+    Ok(IfArm { cond, expr })
 }
 
 fn block<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Expr<'ast>, String> {

@@ -44,6 +44,7 @@ token_gen::token_gen! {
     [false]    | "false"    | KwFalse    | KW.
     [if]       | "if"       | KwIf       | KW.
     [else]     | "else"     | KwElse     | KW.
+    [_]        | "_"        | KwDiscard  | KW.
     [match]    | "match"    | KwMatch    | KW.
     [as]       | "as"       | KwAs       | KW.
     [sizeof]   | "sizeof"   | KwSizeof   | KW.
