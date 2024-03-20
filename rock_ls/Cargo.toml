@@ -1,3 +1,6 @@
 [package]
 name = "rock_ls"
 edition = "2021"
+
+[dependencies]
+rock_core = { path = "../rock_core" }

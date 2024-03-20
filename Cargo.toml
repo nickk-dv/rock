@@ -1,10 +1,5 @@
-[package]
-name = "lang"
-version = "0.1.0"
-edition = "2021"
-build = "src/build.rs"
-
 [workspace]
+resolver = "2"
 members = [
     "rock_cli",
     "rock_core",
