@@ -1,0 +1,7 @@
+[package]
+name = "rock_cli"
+edition = "2021"
+
+[[bin]]
+name = "rock"
+path = "src/main.rs"

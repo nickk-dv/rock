@@ -1,0 +1,3 @@
+[package]
+name = "rock_ls"
+edition = "2021"

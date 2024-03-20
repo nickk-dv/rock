@@ -3,3 +3,10 @@ name = "lang"
 version = "0.1.0"
 edition = "2021"
 build = "src/build.rs"
+
+[workspace]
+members = [
+    "rock_cli",
+    "rock_core",
+    "rock_ls",
+]

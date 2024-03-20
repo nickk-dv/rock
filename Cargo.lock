@@ -5,3 +5,15 @@ version = 3
 [[package]]
 name = "lang"
 version = "0.1.0"
+
+[[package]]
+name = "rock_cli"
+version = "0.0.0"
+
+[[package]]
+name = "rock_core"
+version = "0.0.0"
+
+[[package]]
+name = "rock_ls"
+version = "0.0.0"
