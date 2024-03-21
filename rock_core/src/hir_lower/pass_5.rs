@@ -104,7 +104,15 @@ fn typecheck_expr<'ast, 'hir>(
             });
             hir::Type::ArraySlice(slice)
         }
-        ast::ExprKind::If { if_ } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::If { if_ } => {
+            for arm in if_ {
+                if let Some(cond) = arm.cond {
+                    let _ = typecheck_expr(hb, from_id, cond); //@expect bool
+                }
+                let _ = typecheck_expr(hb, from_id, arm.expr);
+            }
+            typecheck_todo(hb, from_id, checked_expr)
+        }
         ast::ExprKind::Block { stmts } => {
             for (idx, stmt) in stmts.iter().enumerate() {
                 let last = idx + 1 == stmts.len();
@@ -125,11 +133,14 @@ fn typecheck_expr<'ast, 'hir>(
             }
             hir::Type::Basic(ast::BasicType::Unit)
         }
-        ast::ExprKind::Match { match_ } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::Match { match_ } => {
+            for arm in match_.arms {
+                //
+            }
+            typecheck_todo(hb, from_id, checked_expr)
+        }
         ast::ExprKind::Field { target, name } => {
-            //@allowing only single reference access of the field
-            // no automatic derefencing is done automatically
-            // might be a preferred design choice
+            //@allowing only single reference access of the field, no automatic derefencing is done automatically
             let ty = typecheck_expr(hb, from_id, target);
             match ty {
                 hir::Type::Reference(ref_ty, mutt) => check_field_ty(hb, from_id, *ref_ty, name),
@@ -137,6 +148,7 @@ fn typecheck_expr<'ast, 'hir>(
             }
         }
         ast::ExprKind::Index { target, index } => {
+            //@allowing only single reference access of the field, no automatic derefencing is done automatically
             let ty = typecheck_expr(hb, from_id, target);
             let _ = typecheck_expr(hb, from_id, index); //@expect usize
             match ty {
@@ -151,7 +163,10 @@ fn typecheck_expr<'ast, 'hir>(
             //@check ast type
             hir::Type::Basic(ast::BasicType::Usize)
         }
-        ast::ExprKind::Item { path } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::Item { path } => {
+            //@nameresolve item path
+            typecheck_todo(hb, from_id, checked_expr)
+        }
         ast::ExprKind::ProcCall { proc_call } => {
             //@nameresolve proc_call.path
 
@@ -178,7 +193,38 @@ fn typecheck_expr<'ast, 'hir>(
             }
             typecheck_todo(hb, from_id, checked_expr)
         }
-        ast::ExprKind::ArrayInit { input } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::ArrayInit { input } => {
+            //@expected type should make empty array to be of that type
+            // since type of empty array literal is anything otherwise
+            // if we work with non hir types directly representing the Unknown type is possible
+            // and mutation is fine
+
+            // rust example:
+            // let empty: [unknown; 0] = [];
+            // let slice: &[u32] = &empty; //now array type is known
+
+            //@try to design a better method that might check a procedure body
+            // without starting to produce a new hir right-away
+            // since the series of Hir::Expr are not usefull if this code
+            // wont be compiled any further, we dont need to allocate anything in that case
+
+            let mut elem_ty = hir::Type::Error;
+            for (idx, &expr) in input.iter().enumerate() {
+                let ty = typecheck_expr(hb, from_id, expr);
+                if idx == 0 {
+                    elem_ty = ty;
+                }
+            }
+            let size = hb.arena().alloc(hir::Expr {
+                kind: hir::ExprKind::LitInt {
+                    val: input.len() as u64,
+                    ty: ast::BasicType::Usize,
+                },
+                range: checked_expr.range, //@this size doesnt have a explicit range
+            });
+            let array = hb.arena().alloc(hir::ArrayStatic { size, ty: elem_ty });
+            hir::Type::ArrayStatic(array)
+        }
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_todo(hb, from_id, checked_expr),
         ast::ExprKind::UnaryExpr { op, rhs } => {
             let rhs = typecheck_expr(hb, from_id, rhs);

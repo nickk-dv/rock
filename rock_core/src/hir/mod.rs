@@ -250,6 +250,7 @@ pub enum ExprKind<'hir> {
     BinaryExpr  { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
+//@new experimental if syntax not represented
 #[derive(Copy, Clone)]
 pub struct If<'hir> {
     pub cond: &'hir Expr<'hir>,
@@ -271,7 +272,7 @@ pub struct Match<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct MatchArm<'hir> {
-    pub pat: &'hir Expr<'hir>,
+    pub pat: &'hir Expr<'hir>, //@optional fallback pattern not represented
     pub expr: &'hir Expr<'hir>,
 }
 

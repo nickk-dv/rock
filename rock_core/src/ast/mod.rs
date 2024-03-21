@@ -291,7 +291,7 @@ pub struct Match<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct MatchArm<'ast> {
-    pub pat: &'ast Expr<'ast>,
+    pub pat: Option<&'ast Expr<'ast>>,
     pub expr: &'ast Expr<'ast>,
 }
 

@@ -942,7 +942,7 @@ fn block_stmts<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast [Stmt<'ast>],
 }
 
 fn match_arm<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<MatchArm<'ast>, String> {
-    let pat = expr(p)?;
+    let pat = if p.eat(T![_]) { None } else { Some(expr(p)?) };
     p.expect(T![=>])?;
     let expr = expr(p)?;
     Ok(MatchArm { pat, expr })
