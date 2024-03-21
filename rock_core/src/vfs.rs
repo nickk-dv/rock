@@ -2,7 +2,7 @@ use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
 pub struct Vfs {
-    files: Vec<File>,
+    pub files: Vec<File>,
 }
 
 pub struct File {

@@ -1,28 +1,24 @@
 #![forbid(unsafe_code)]
 
+use lsp_server::{Connection, ExtractError, Message, Response};
+use lsp_types::notification::{self, Notification};
+use lsp_types::request::{self, Request};
 use std::error::Error;
 
-use lsp_types::OneOf;
-use lsp_types::{
-    request::GotoDefinition, GotoDefinitionResponse, InitializeParams, ServerCapabilities,
-};
-
-use lsp_server::{Connection, ExtractError, Message, Request, RequestId, Response};
-
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
-    // Note that  we must have our logging only write out to stderr.
-    eprintln!("starting generic LSP server");
-
-    // Create the transport. Includes the stdio (stdin and stdout) versions but this could
-    // also be implemented to use sockets or HTTP.
     let (connection, io_threads) = Connection::stdio();
 
-    // Run the server and wait for the two threads to end (typically by trigger LSP Exit event).
-    let server_capabilities = serde_json::to_value(&ServerCapabilities {
-        definition_provider: Some(OneOf::Left(true)),
+    let server_capabilities = serde_json::to_value(&lsp_types::ServerCapabilities {
+        text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
+            lsp_types::TextDocumentSyncKind::INCREMENTAL,
+        )),
+        completion_provider: Some(lsp_types::CompletionOptions {
+            ..Default::default()
+        }),
         ..Default::default()
     })
     .unwrap();
+
     let initialization_params = match connection.initialize(server_capabilities) {
         Ok(it) => it,
         Err(e) => {
@@ -32,61 +28,188 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
             return Err(e.into());
         }
     };
-    main_loop(connection, initialization_params)?;
-    io_threads.join()?;
+    let params: lsp_types::InitializeParams =
+        serde_json::from_value(initialization_params).unwrap();
 
-    // Shut down gracefully.
-    eprintln!("shutting down server");
+    main_loop(connection)?;
+    io_threads.join()?;
     Ok(())
 }
 
-fn main_loop(
-    connection: Connection,
-    params: serde_json::Value,
-) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let _params: InitializeParams = serde_json::from_value(params).unwrap();
-    eprintln!("starting example main loop");
+fn main_loop(connection: Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
     for msg in &connection.receiver {
-        eprintln!("got msg: {msg:?}");
         match msg {
             Message::Request(req) => {
                 if connection.handle_shutdown(&req)? {
                     return Ok(());
                 }
-                eprintln!("got request: {req:?}");
-                match cast::<GotoDefinition>(req) {
-                    Ok((id, params)) => {
-                        eprintln!("got gotoDefinition request #{id}: {params:?}");
-                        let result = Some(GotoDefinitionResponse::Array(Vec::new()));
-                        let result = serde_json::to_value(&result).unwrap();
-                        let resp = Response {
-                            id,
-                            result: Some(result),
-                            error: None,
-                        };
-                        connection.sender.send(Message::Response(resp))?;
-                        continue;
-                    }
-                    Err(err @ ExtractError::JsonError { .. }) => panic!("{err:?}"),
-                    Err(ExtractError::MethodMismatch(req)) => req,
-                };
-                // ...
+                eprintln!("\nGOT REQUEST: {req:?}\n");
+                handle_request(&connection, req);
             }
             Message::Response(resp) => {
-                eprintln!("got response: {resp:?}");
+                eprintln!("\nGOT RESPONSE: {resp:?}\n");
+                handle_responce(&connection, resp);
             }
             Message::Notification(not) => {
-                eprintln!("got notification: {not:?}");
+                eprintln!("\nGOT NOTIFICATION: {not:?}\n");
+                handle_notification(&connection, not);
             }
         }
     }
     Ok(())
 }
 
-fn cast<R>(req: Request) -> Result<(RequestId, R::Params), ExtractError<Request>>
+fn send<Content: Into<Message>>(conn: &Connection, msg: Content) {
+    conn.sender.send(msg.into()).expect("send failed");
+}
+
+fn cast_req<P>(
+    req: lsp_server::Request,
+) -> Result<(lsp_server::RequestId, P::Params), ExtractError<lsp_server::Request>>
 where
-    R: lsp_types::request::Request,
-    R::Params: serde::de::DeserializeOwned,
+    P: lsp_types::request::Request,
+    P::Params: serde::de::DeserializeOwned,
 {
-    req.extract(R::METHOD)
+    req.extract(P::METHOD)
+}
+
+fn cast_not<P>(
+    not: lsp_server::Notification,
+) -> Result<P::Params, ExtractError<lsp_server::Notification>>
+where
+    P: notification::Notification,
+    P::Params: serde::de::DeserializeOwned,
+{
+    not.extract(P::METHOD)
+}
+
+fn handle_request(conn: &Connection, req: lsp_server::Request) {
+    match req.method.as_str() {
+        request::Completion::METHOD => {
+            let (id, params) = cast_req::<request::Completion>(req).unwrap();
+        }
+        _ => {}
+    }
+}
+
+fn handle_responce(conn: &Connection, resp: lsp_server::Response) {}
+
+fn handle_notification(conn: &Connection, not: lsp_server::Notification) {
+    match not.method.as_str() {
+        notification::Cancel::METHOD => {
+            let params = cast_not::<notification::Cancel>(not).unwrap();
+        }
+        notification::DidChangeTextDocument::METHOD => {
+            let params = cast_not::<notification::DidChangeTextDocument>(not).unwrap();
+        }
+        notification::DidSaveTextDocument::METHOD => {
+            let params = cast_not::<notification::DidSaveTextDocument>(not).unwrap();
+
+            let publish_diagnostics = run_diagnostics();
+            for publish in publish_diagnostics.iter() {
+                send(
+                    conn,
+                    lsp_server::Notification::new(
+                        notification::PublishDiagnostics::METHOD.into(),
+                        publish,
+                    ),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+use rock_core::ast_parse::{self, CompCtx};
+use rock_core::error::{ErrorComp, ErrorSeverity};
+use rock_core::hir_lower;
+use rock_core::text;
+
+use lsp_types::{
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Position,
+    PublishDiagnosticsParams, Range,
+};
+use std::path::PathBuf;
+
+fn run_check(ctx: &mut CompCtx) -> Result<(), Vec<ErrorComp>> {
+    let ast = ast_parse::parse(ctx)?;
+    let _ = hir_lower::check(ctx, ast)?;
+    Ok(())
+}
+
+fn url_from_path(path: PathBuf) -> lsp_types::Url {
+    lsp_types::Url::from_file_path(path).expect("failed to create uri from source filepath")
+}
+
+fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
+    use std::collections::HashMap;
+
+    // run full project check
+    let mut ctx = ast_parse::CompCtx::new();
+    let errors = if let Err(errors) = run_check(&mut ctx) {
+        errors
+    } else {
+        vec![]
+    };
+
+    // assign empty diagnostics
+    let mut diagnostics_map = HashMap::new();
+    for file in ctx.vfs.files.iter() {
+        diagnostics_map.insert(file.path.clone(), Vec::new());
+    }
+
+    // generate diagnostics
+    for error in errors {
+        let (main_message, main_seveiry) = error.main_message();
+        let mut diagnostic = Diagnostic::new_simple(Range::default(), "DEFAULT MESSAGE".into());
+        let mut main_path = PathBuf::from("");
+        let mut related_info = Vec::new();
+
+        for context in error.context_iter() {
+            let source = context.source();
+            let file = ctx.vfs.file(source.file_id());
+
+            let (start_location, _) =
+                text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
+            let (end_location, _) =
+                text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
+            let range = Range::new(
+                Position::new(start_location.line() - 1, start_location.col() - 1),
+                Position::new(end_location.line() - 1, end_location.col() - 1),
+            );
+
+            if context.severity() == main_seveiry {
+                main_path = file.path.clone();
+                diagnostic = Diagnostic::new_simple(range, main_message.to_string());
+                diagnostic.severity = match context.severity() {
+                    ErrorSeverity::Error => Some(DiagnosticSeverity::ERROR),
+                    ErrorSeverity::Warning => Some(DiagnosticSeverity::WARNING),
+                    ErrorSeverity::InfoHint => Some(DiagnosticSeverity::HINT),
+                };
+            } else {
+                related_info.push(DiagnosticRelatedInformation {
+                    location: Location::new(url_from_path(file.path.clone()), range),
+                    message: context.message().into(),
+                });
+            }
+        }
+
+        diagnostic.related_information = Some(related_info);
+        match diagnostics_map.get_mut(&main_path) {
+            Some(diagnostics) => {
+                diagnostics.push(diagnostic);
+            }
+            None => {
+                diagnostics_map.insert(main_path, vec![diagnostic]);
+            }
+        }
+    }
+
+    //@not using any document versioning
+    diagnostics_map
+        .into_iter()
+        .map(|(path, diagnostics)| {
+            PublishDiagnosticsParams::new(url_from_path(path), diagnostics, None)
+        })
+        .collect()
 }
