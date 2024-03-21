@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+#[allow(dead_code)]
 mod ansi;
 mod args;
 mod cmd;
