@@ -2,6 +2,7 @@ use super::hir_builder as hb;
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
+use crate::text::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
     for id in hb.proc_ids() {
@@ -11,9 +12,30 @@ pub fn run(hb: &mut hb::HirBuilder) {
 
 fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let decl = hb.proc_ast(id);
-    if let Some(block) = decl.block {
-        let data = hb.proc_data(id);
-        let ty = typecheck_expr(hb, data.from_id, block);
+    let data = hb.proc_data(id);
+
+    match decl.block {
+        Some(block) => {
+            let ty = typecheck_expr(hb, data.from_id, block);
+        }
+        None => {
+            //@for now having a tail directive assumes that it must be a #[c_call]
+            // and this directory is only present with no block expression
+            let directive_tail = decl
+                .directive_tail
+                .expect("directive expected with no proc block");
+
+            let directive_name = hb.name_str(directive_tail.name.id);
+            if directive_name != "c_call" {
+                hb.error(
+                    ErrorComp::error(format!(
+                        "expected a `c_call` directive, got `{}`",
+                        directive_name
+                    ))
+                    .context(hb.get_scope(data.from_id).source(directive_tail.name.range)),
+                )
+            }
+        }
     }
 }
 
@@ -62,6 +84,7 @@ fn type_format(hb: &mut hb::HirBuilder, ty: hir::Type) -> String {
 
 //@better idea would be to return type repr that is not allocated via arena
 // and will be fast to construct and compare
+#[must_use]
 fn typecheck_expr<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
     from_id: hir::ScopeID,
@@ -109,16 +132,52 @@ fn typecheck_expr<'ast, 'hir>(
             // might be a preferred design choice
             let ty = typecheck_expr(hb, from_id, target);
             match ty {
-                hir::Type::Reference(ref_ty, mutt) => check_field_expr(hb, from_id, *ref_ty, name),
-                _ => check_field_expr(hb, from_id, ty, name),
+                hir::Type::Reference(ref_ty, mutt) => check_field_ty(hb, from_id, *ref_ty, name),
+                _ => check_field_ty(hb, from_id, ty, name),
             }
         }
-        ast::ExprKind::Index { target, index } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::Index { target, index } => {
+            let ty = typecheck_expr(hb, from_id, target);
+            let _ = typecheck_expr(hb, from_id, index); //@expect usize
+            match ty {
+                hir::Type::Reference(ref_ty, mutt) => {
+                    check_index_ty(hb, from_id, *ref_ty, index.range)
+                }
+                _ => check_index_ty(hb, from_id, ty, index.range),
+            }
+        }
         ast::ExprKind::Cast { target, ty } => typecheck_todo(hb, from_id, checked_expr),
-        ast::ExprKind::Sizeof { ty } => hir::Type::Basic(ast::BasicType::Usize),
+        ast::ExprKind::Sizeof { ty } => {
+            //@check ast type
+            hir::Type::Basic(ast::BasicType::Usize)
+        }
         ast::ExprKind::Item { path } => typecheck_todo(hb, from_id, checked_expr),
-        ast::ExprKind::ProcCall { proc_call } => typecheck_todo(hb, from_id, checked_expr),
-        ast::ExprKind::StructInit { struct_init } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::ProcCall { proc_call } => {
+            //@nameresolve proc_call.path
+
+            for &expr in proc_call.input {
+                let _ = typecheck_expr(hb, from_id, expr);
+            }
+            typecheck_todo(hb, from_id, checked_expr)
+        }
+        ast::ExprKind::StructInit { struct_init } => {
+            //@nameresolve struct_init.path
+
+            // @first find if field name exists, only then handle
+            // name and expr or just a name
+            for init in struct_init.input {
+                match init.expr {
+                    Some(expr) => {
+                        //@field name and the expression
+                        let _ = typecheck_expr(hb, from_id, expr);
+                    }
+                    None => {
+                        //@field name that must match some named value in scope
+                    }
+                }
+            }
+            typecheck_todo(hb, from_id, checked_expr)
+        }
         ast::ExprKind::ArrayInit { input } => typecheck_todo(hb, from_id, checked_expr),
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_todo(hb, from_id, checked_expr),
         ast::ExprKind::UnaryExpr { op, rhs } => {
@@ -144,7 +203,8 @@ fn typecheck_todo<'hir>(
     );
     hir::Type::Error
 }
-fn check_field_expr<'hir>(
+
+fn check_field_ty<'hir>(
     hb: &mut hb::HirBuilder<'_, '_, 'hir>,
     from_id: hir::ScopeID,
     ty: hir::Type<'hir>,
@@ -205,6 +265,28 @@ fn check_field_expr<'hir>(
                     ty_format,
                 ))
                 .context(hb.get_scope(from_id).source(name.range)),
+            );
+            hir::Type::Error
+        }
+    }
+}
+
+fn check_index_ty<'hir>(
+    hb: &mut hb::HirBuilder<'_, '_, 'hir>,
+    from_id: hir::ScopeID,
+    ty: hir::Type<'hir>,
+    index_range: TextRange,
+) -> hir::Type<'hir> {
+    match ty {
+        hir::Type::Error => hir::Type::Error,
+        hir::Type::ArraySlice(slice) => slice.ty,
+        hir::Type::ArrayStatic(array) => array.ty,
+        hir::Type::ArrayStaticDecl(array) => array.ty,
+        _ => {
+            let ty_format = type_format(hb, ty);
+            hb.error(
+                ErrorComp::error(format!("cannot index value of type {}", ty_format,))
+                    .context(hb.get_scope(from_id).source(index_range)),
             );
             hir::Type::Error
         }
