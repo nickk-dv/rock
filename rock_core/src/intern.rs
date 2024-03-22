@@ -23,14 +23,15 @@ impl InternPool {
     }
 
     pub fn intern(&mut self, string: &str) -> InternID {
-        self.intern_map.get(string).cloned().unwrap_or({
-            let id = self.next;
-            let str = self.arena.alloc_str(string);
-            self.next.0 = self.next.0.wrapping_add(1);
-            self.strings.push(str);
-            self.intern_map.insert(str, id);
-            id
-        })
+        if let Some(id) = self.intern_map.get(string).cloned() {
+            return id;
+        }
+        let id = self.next;
+        let str = self.arena.alloc_str(string);
+        self.next.0 = self.next.0.wrapping_add(1);
+        self.strings.push(str);
+        self.intern_map.insert(str, id);
+        id
     }
 
     pub fn get_str(&self, id: InternID) -> &str {

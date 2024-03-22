@@ -87,7 +87,7 @@ fn type_format(hb: &mut hb::HirBuilder, ty: hir::Type) -> String {
 #[must_use]
 fn typecheck_expr<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
-    from_id: hir::ScopeID,
+    origin_id: hir::ScopeID,
     checked_expr: &ast::Expr<'ast>,
 ) -> hir::Type<'hir> {
     match checked_expr.kind {
@@ -107,11 +107,11 @@ fn typecheck_expr<'ast, 'hir>(
         ast::ExprKind::If { if_ } => {
             for arm in if_ {
                 if let Some(cond) = arm.cond {
-                    let _ = typecheck_expr(hb, from_id, cond); //@expect bool
+                    let _ = typecheck_expr(hb, origin_id, cond); //@expect bool
                 }
-                let _ = typecheck_expr(hb, from_id, arm.expr);
+                let _ = typecheck_expr(hb, origin_id, arm.expr);
             }
-            typecheck_todo(hb, from_id, checked_expr)
+            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::Block { stmts } => {
             for (idx, stmt) in stmts.iter().enumerate() {
@@ -124,8 +124,8 @@ fn typecheck_expr<'ast, 'hir>(
                     ast::StmtKind::ForLoop(_) => hir::Type::Basic(ast::BasicType::Unit),
                     ast::StmtKind::VarDecl(_) => hir::Type::Basic(ast::BasicType::Unit),
                     ast::StmtKind::VarAssign(_) => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::ExprSemi(expr) => typecheck_expr(hb, from_id, expr),
-                    ast::StmtKind::ExprTail(expr) => typecheck_expr(hb, from_id, expr),
+                    ast::StmtKind::ExprSemi(expr) => typecheck_expr(hb, origin_id, expr),
+                    ast::StmtKind::ExprTail(expr) => typecheck_expr(hb, origin_id, expr),
                 };
                 if last {
                     return stmt_ty;
@@ -137,46 +137,48 @@ fn typecheck_expr<'ast, 'hir>(
             for arm in match_.arms {
                 //
             }
-            typecheck_todo(hb, from_id, checked_expr)
+            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::Field { target, name } => {
             //@allowing only single reference access of the field, no automatic derefencing is done automatically
-            let ty = typecheck_expr(hb, from_id, target);
+            let ty = typecheck_expr(hb, origin_id, target);
             match ty {
-                hir::Type::Reference(ref_ty, mutt) => check_field_ty(hb, from_id, *ref_ty, name),
-                _ => check_field_ty(hb, from_id, ty, name),
+                hir::Type::Reference(ref_ty, mutt) => check_field_ty(hb, origin_id, *ref_ty, name),
+                _ => check_field_ty(hb, origin_id, ty, name),
             }
         }
         ast::ExprKind::Index { target, index } => {
             //@allowing only single reference access of the field, no automatic derefencing is done automatically
-            let ty = typecheck_expr(hb, from_id, target);
-            let _ = typecheck_expr(hb, from_id, index); //@expect usize
+            let ty = typecheck_expr(hb, origin_id, target);
+            let _ = typecheck_expr(hb, origin_id, index); //@expect usize
             match ty {
                 hir::Type::Reference(ref_ty, mutt) => {
-                    check_index_ty(hb, from_id, *ref_ty, index.range)
+                    check_index_ty(hb, origin_id, *ref_ty, index.range)
                 }
-                _ => check_index_ty(hb, from_id, ty, index.range),
+                _ => check_index_ty(hb, origin_id, ty, index.range),
             }
         }
-        ast::ExprKind::Cast { target, ty } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::Cast { target, ty } => typecheck_todo(hb, origin_id, checked_expr),
         ast::ExprKind::Sizeof { ty } => {
             //@check ast type
             hir::Type::Basic(ast::BasicType::Usize)
         }
         ast::ExprKind::Item { path } => {
             //@nameresolve item path
-            typecheck_todo(hb, from_id, checked_expr)
+            let target_id = path_resolve_target_scope(hb, origin_id, path);
+            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::ProcCall { proc_call } => {
             //@nameresolve proc_call.path
-
+            let target_id = path_resolve_target_scope(hb, origin_id, proc_call.path);
             for &expr in proc_call.input {
-                let _ = typecheck_expr(hb, from_id, expr);
+                let _ = typecheck_expr(hb, origin_id, expr);
             }
-            typecheck_todo(hb, from_id, checked_expr)
+            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::StructInit { struct_init } => {
             //@nameresolve struct_init.path
+            let target_id = path_resolve_target_scope(hb, origin_id, struct_init.path);
 
             // @first find if field name exists, only then handle
             // name and expr or just a name
@@ -184,14 +186,14 @@ fn typecheck_expr<'ast, 'hir>(
                 match init.expr {
                     Some(expr) => {
                         //@field name and the expression
-                        let _ = typecheck_expr(hb, from_id, expr);
+                        let _ = typecheck_expr(hb, origin_id, expr);
                     }
                     None => {
                         //@field name that must match some named value in scope
                     }
                 }
             }
-            typecheck_todo(hb, from_id, checked_expr)
+            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::ArrayInit { input } => {
             //@expected type should make empty array to be of that type
@@ -210,7 +212,7 @@ fn typecheck_expr<'ast, 'hir>(
 
             let mut elem_ty = hir::Type::Error;
             for (idx, &expr) in input.iter().enumerate() {
-                let ty = typecheck_expr(hb, from_id, expr);
+                let ty = typecheck_expr(hb, origin_id, expr);
                 if idx == 0 {
                     elem_ty = ty;
                 }
@@ -225,15 +227,15 @@ fn typecheck_expr<'ast, 'hir>(
             let array = hb.arena().alloc(hir::ArrayStatic { size, ty: elem_ty });
             hir::Type::ArrayStatic(array)
         }
-        ast::ExprKind::ArrayRepeat { expr, size } => typecheck_todo(hb, from_id, checked_expr),
+        ast::ExprKind::ArrayRepeat { expr, size } => typecheck_todo(hb, origin_id, checked_expr),
         ast::ExprKind::UnaryExpr { op, rhs } => {
-            let rhs = typecheck_expr(hb, from_id, rhs);
-            typecheck_todo(hb, from_id, checked_expr)
+            let rhs = typecheck_expr(hb, origin_id, rhs);
+            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::BinaryExpr { op, lhs, rhs } => {
-            let lhs = typecheck_expr(hb, from_id, lhs);
-            let rhs = typecheck_expr(hb, from_id, rhs);
-            typecheck_todo(hb, from_id, checked_expr)
+            let lhs = typecheck_expr(hb, origin_id, lhs);
+            let rhs = typecheck_expr(hb, origin_id, rhs);
+            typecheck_todo(hb, origin_id, checked_expr)
         }
     }
 }
@@ -243,10 +245,10 @@ fn typecheck_todo<'hir>(
     from_id: hir::ScopeID,
     checked_expr: &ast::Expr,
 ) -> hir::Type<'hir> {
-    hb.error(
-        ErrorComp::warning("this expression is not yet typechecked")
-            .context(hb.get_scope(from_id).source(checked_expr.range)),
-    );
+    //hb.error(
+    //    ErrorComp::warning("this expression is not yet typechecked")
+    //        .context(hb.get_scope(from_id).source(checked_expr.range)),
+    //);
     hir::Type::Error
 }
 
@@ -333,6 +335,165 @@ fn check_index_ty<'hir>(
             hb.error(
                 ErrorComp::error(format!("cannot index value of type {}", ty_format,))
                     .context(hb.get_scope(from_id).source(index_range)),
+            );
+            hir::Type::Error
+        }
+    }
+}
+
+/*
+path syntax resolution:
+prefix.name.name.name ...
+
+prefix:
+super.   -> start at scope_id
+package. -> start at scope_id
+
+items:
+mod        -> <chained> will change target scope of an item
+proc       -> [no follow]
+enum       -> <follow?> by single enum variant name
+union      -> [no follow]
+struct     -> [no follow]
+const      -> <follow?> by <chained> field access
+global     -> <follow?> by <chained> field access
+param_var  -> <follow?> by <chained> field access
+local_var  -> <follow?> by <chained> field access
+
+*/
+
+fn path_resolve_target_scope<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    path: &'ast ast::Path<'ast>,
+) -> Option<(hir::ScopeID, &'ast [ast::Ident])> {
+    let mut target_id = match path.kind {
+        ast::PathKind::None => origin_id,
+        ast::PathKind::Super => match hb.get_scope(origin_id).parent() {
+            Some(it) => it,
+            None => {
+                let range = TextRange::new(path.range_start, path.range_start + 5.into());
+                hb.error(
+                    ErrorComp::error("parent module `super` cannot be used from the root module")
+                        .context(hb.get_scope(origin_id).source(range)),
+                );
+                return None;
+            }
+        },
+        ast::PathKind::Package => hb::ROOT_SCOPE_ID,
+    };
+
+    let mut mod_count: usize = 0;
+    for name in path.names {
+        match hb.symbol_from_scope(origin_id, target_id, name.id) {
+            Some((symbol, source)) => match symbol {
+                hb::SymbolKind::Mod(id) => {
+                    let data = hb.get_mod(id);
+                    if let Some(new_target) = data.target {
+                        mod_count += 1;
+                        target_id = new_target;
+                    } else {
+                        hb.error(
+                            ErrorComp::error(format!(
+                                "module `{}` does not have its associated file",
+                                hb.name_str(name.id)
+                            ))
+                            .context(hb.get_scope(origin_id).source(name.range))
+                            .context_info("defined here", source),
+                        );
+                        return None;
+                    }
+                }
+                _ => break,
+            },
+            None => {
+                hb.error(
+                    ErrorComp::error(format!("name `{}` is not found", hb.name_str(name.id)))
+                        .context(hb.get_scope(origin_id).source(name.range)),
+                );
+                return None;
+            }
+        }
+    }
+
+    Some((target_id, &path.names[mod_count..]))
+}
+
+pub fn path_resolve_as_module_path<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    path: &'ast ast::Path<'ast>,
+) -> Option<hir::ScopeID> {
+    let (target_id, names) = path_resolve_target_scope(hb, origin_id, path)?;
+
+    match names.first() {
+        Some(name) => {
+            hb.error(
+                ErrorComp::error(format!("`{}` is not a module", hb.name_str(name.id)))
+                    .context(hb.get_scope(origin_id).source(name.range)),
+            );
+            None
+        }
+        _ => Some(target_id),
+    }
+}
+
+pub fn path_resolve_as_type<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    path: &'ast ast::Path<'ast>,
+) -> hir::Type<'hir> {
+    let (target_id, names) = match path_resolve_target_scope(hb, origin_id, path) {
+        Some(it) => it,
+        None => return hir::Type::Error,
+    };
+    let mut names = names.iter();
+
+    match names.next() {
+        Some(name) => match hb.symbol_from_scope(origin_id, target_id, name.id) {
+            Some((kind, source)) => {
+                let ty = match kind {
+                    hb::SymbolKind::Enum(id) => hir::Type::Enum(id),
+                    hb::SymbolKind::Union(id) => hir::Type::Union(id),
+                    hb::SymbolKind::Struct(id) => hir::Type::Struct(id),
+                    _ => {
+                        hb.error(
+                            ErrorComp::error(format!("expected type, got other item",))
+                                .context(hb.get_scope(origin_id).source(name.range))
+                                .context_info("defined here", source),
+                        );
+                        return hir::Type::Error;
+                    }
+                };
+                if let Some(next_name) = names.next() {
+                    hb.error(
+                        ErrorComp::error(format!("type cannot be accessed further",))
+                            .context(hb.get_scope(origin_id).source(next_name.range))
+                            .context_info("defined here", source),
+                    );
+                    return hir::Type::Error;
+                }
+                ty
+            }
+            None => {
+                //@is a duplicate check
+                // maybe module resolver can return a Option<(SymbolKind, SourceRange)>
+                // which was seen before breaking
+                hb.error(
+                    ErrorComp::error(format!("name `{}` is not found", hb.name_str(name.id)))
+                        .context(hb.get_scope(origin_id).source(name.range)),
+                );
+                hir::Type::Error
+            }
+        },
+        None => {
+            let path_range = TextRange::new(
+                path.range_start,
+                path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
+            );
+            hb.error(
+                ErrorComp::error(format!("expected type, got module path",))
+                    .context(hb.get_scope(origin_id).source(path_range)),
             );
             hir::Type::Error
         }

@@ -8,6 +8,8 @@ use crate::text::TextRange;
 use crate::vfs;
 use std::collections::HashMap;
 
+//@not adding the ScopeData into hir so far
+// (it only stores scope file_ids that might be usefull in later stages)
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
     ctx: &'ctx mut CompCtx,
     ast: ast::Ast<'ast>,
@@ -115,6 +117,21 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     }
     pub fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.hir.arena
+    }
+
+    pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
+        let id = ModID(self.mods.len() as u32);
+        self.mods.push(data);
+        let symbol = Symbol::Defined {
+            kind: SymbolKind::Mod(id),
+        };
+        (symbol, id)
+    }
+    pub fn get_mod(&self, id: ModID) -> &ModData {
+        self.mods.get(id.0 as usize).unwrap()
+    }
+    pub fn get_mod_mut(&mut self, id: ModID) -> &mut ModData {
+        self.mods.get_mut(id.0 as usize).unwrap()
     }
 
     pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
@@ -289,24 +306,8 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         id
     }
 
-    pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
-        let id = ModID(self.mods.len() as u32);
-        self.mods.push(data);
-        let symbol = Symbol::Defined {
-            kind: SymbolKind::Mod(id),
-        };
-        (symbol, id)
-    }
-
     pub fn scope_ids(&self) -> impl Iterator<Item = hir::ScopeID> {
         (0..self.scopes.len()).map(hir::ScopeID::new)
-    }
-
-    pub fn get_mod(&self, id: ModID) -> &ModData {
-        self.mods.get(id.0 as usize).unwrap()
-    }
-    pub fn get_mod_mut(&mut self, id: ModID) -> &mut ModData {
-        self.mods.get_mut(id.0 as usize).unwrap()
     }
 
     pub fn add_scope(&mut self, scope: Scope<'ast>) -> hir::ScopeID {
@@ -339,6 +340,32 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             SymbolKind::Global(id) => self.hir.global_data(id).name.range,
         }
     }
+
+    pub fn symbol_from_scope(
+        &self,
+        origin_id: hir::ScopeID,
+        target_id: hir::ScopeID,
+        id: InternID,
+    ) -> Option<(SymbolKind, SourceRange)> {
+        let target = self.get_scope(target_id);
+        match target.get_symbol(id) {
+            Some(symbol) => match symbol {
+                Symbol::Defined { kind } => {
+                    let source = target.source(self.symbol_kind_range(kind));
+                    Some((kind, source))
+                }
+                Symbol::Imported { kind, use_range } => {
+                    if origin_id.index() == target_id.index() {
+                        let source = target.source(use_range);
+                        Some((kind, source))
+                    } else {
+                        None
+                    }
+                }
+            },
+            None => None,
+        }
+    }
 }
 
 impl<'ast> Scope<'ast> {
@@ -363,6 +390,9 @@ impl<'ast> Scope<'ast> {
     }
 
     pub fn add_symbol(&mut self, id: InternID, symbol: Symbol) {
+        //@sanity check, current api and hashmap doesnt prevent this
+        // might be removed, we only add symbols in pass_1, which is fairly simple
+        //@try using entry() api to conditionally insert (later)
         assert!(self.get_symbol(id).is_none());
         self.symbols.insert(id, symbol);
     }
