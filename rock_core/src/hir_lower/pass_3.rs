@@ -2,7 +2,6 @@ use super::hir_builder as hb;
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
-use crate::text::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
     for id in hb.proc_ids() {
@@ -179,14 +178,13 @@ fn error_duplicate_proc_param<'ast>(
     param: &'ast ast::ProcParam<'ast>,
     existing: &hir::ProcParam,
 ) {
-    let scope = hb.get_scope(from_id);
     hb.error(
         ErrorComp::error(format!(
             "parameter `{}` is defined multiple times",
             hb.name_str(param.name.id)
         ))
-        .context(scope.source(param.name.range))
-        .context_info("existing parameter", scope.source(existing.name.range)),
+        .context(hb.src(from_id, param.name.range))
+        .context_info("existing parameter", hb.src(from_id, existing.name.range)),
     );
 }
 
@@ -196,14 +194,13 @@ fn error_duplicate_enum_variant<'ast>(
     variant: &'ast ast::EnumVariant<'ast>,
     existing: &hir::EnumVariant,
 ) {
-    let scope = hb.get_scope(from_id);
     hb.error(
         ErrorComp::error(format!(
             "variant `{}` is defined multiple times",
             hb.name_str(variant.name.id)
         ))
-        .context(scope.source(variant.name.range))
-        .context_info("existing variant", scope.source(existing.name.range)),
+        .context(hb.src(from_id, variant.name.range))
+        .context_info("existing variant", hb.src(from_id, existing.name.range)),
     );
 }
 
@@ -213,14 +210,13 @@ fn error_duplicate_union_member<'ast>(
     member: &'ast ast::UnionMember<'ast>,
     existing: &hir::UnionMember,
 ) {
-    let scope = hb.get_scope(from_id);
     hb.error(
         ErrorComp::error(format!(
             "member `{}` is defined multiple times",
             hb.name_str(member.name.id)
         ))
-        .context(scope.source(member.name.range))
-        .context_info("existing member", scope.source(existing.name.range)),
+        .context(hb.src(from_id, member.name.range))
+        .context_info("existing member", hb.src(from_id, existing.name.range)),
     );
 }
 
@@ -230,13 +226,12 @@ fn error_duplicate_struct_field<'ast>(
     field: &'ast ast::StructField<'ast>,
     existing: &hir::StructField,
 ) {
-    let scope = hb.get_scope(from_id);
     hb.error(
         ErrorComp::error(format!(
             "field `{}` is defined multiple times",
             hb.name_str(field.name.id)
         ))
-        .context(scope.source(field.name.range))
-        .context_info("existing field", scope.source(existing.name.range)),
+        .context(hb.src(from_id, field.name.range))
+        .context_info("existing field", hb.src(from_id, existing.name.range)),
     );
 }

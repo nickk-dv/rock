@@ -118,6 +118,6 @@ fn const_resolve_const_expr(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, id: 
 }
 
 fn error_const_expr_unsupported(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, range: TextRange) {
-    let source = hb.get_scope(from_id).source(range);
+    let source = hb.src(from_id, range);
     hb.error(ErrorComp::error("only integer constant expressions are supported").context(source));
 }

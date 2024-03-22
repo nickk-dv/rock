@@ -32,7 +32,7 @@ fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
                         "expected a `c_call` directive, got `{}`",
                         directive_name
                     ))
-                    .context(hb.get_scope(data.from_id).source(directive_tail.name.range)),
+                    .context(hb.src(data.from_id, directive_tail.name.range)),
                 )
             }
         }
@@ -245,10 +245,10 @@ fn typecheck_todo<'hir>(
     from_id: hir::ScopeID,
     checked_expr: &ast::Expr,
 ) -> hir::Type<'hir> {
-    //hb.error(
-    //    ErrorComp::warning("this expression is not yet typechecked")
-    //        .context(hb.get_scope(from_id).source(checked_expr.range)),
-    //);
+    hb.error(
+        ErrorComp::warning("this expression is not yet typechecked")
+            .context(hb.src(from_id, checked_expr.range)),
+    );
     hir::Type::Error
 }
 
@@ -276,7 +276,7 @@ fn check_field_ty<'hir>(
                             hb.name_str(name.id),
                             hb.name_str(data.name.id),
                         ))
-                        .context(hb.get_scope(from_id).source(name.range)),
+                        .context(hb.src(from_id, name.range)),
                     );
                     hir::Type::Error
                 }
@@ -298,7 +298,7 @@ fn check_field_ty<'hir>(
                             hb.name_str(name.id),
                             hb.name_str(data.name.id),
                         ))
-                        .context(hb.get_scope(from_id).source(name.range)),
+                        .context(hb.src(from_id, name.range)),
                     );
                     hir::Type::Error
                 }
@@ -312,7 +312,7 @@ fn check_field_ty<'hir>(
                     hb.name_str(name.id),
                     ty_format,
                 ))
-                .context(hb.get_scope(from_id).source(name.range)),
+                .context(hb.src(from_id, name.range)),
             );
             hir::Type::Error
         }
@@ -334,7 +334,7 @@ fn check_index_ty<'hir>(
             let ty_format = type_format(hb, ty);
             hb.error(
                 ErrorComp::error(format!("cannot index value of type {}", ty_format,))
-                    .context(hb.get_scope(from_id).source(index_range)),
+                    .context(hb.src(from_id, index_range)),
             );
             hir::Type::Error
         }
@@ -369,13 +369,13 @@ fn path_resolve_target_scope<'ast, 'hir>(
 ) -> Option<(hir::ScopeID, &'ast [ast::Ident])> {
     let mut target_id = match path.kind {
         ast::PathKind::None => origin_id,
-        ast::PathKind::Super => match hb.get_scope(origin_id).parent() {
+        ast::PathKind::Super => match hb.scope_parent(origin_id) {
             Some(it) => it,
             None => {
                 let range = TextRange::new(path.range_start, path.range_start + 5.into());
                 hb.error(
                     ErrorComp::error("parent module `super` cannot be used from the root module")
-                        .context(hb.get_scope(origin_id).source(range)),
+                        .context(hb.src(origin_id, range)),
                 );
                 return None;
             }
@@ -398,7 +398,7 @@ fn path_resolve_target_scope<'ast, 'hir>(
                                 "module `{}` does not have its associated file",
                                 hb.name_str(name.id)
                             ))
-                            .context(hb.get_scope(origin_id).source(name.range))
+                            .context(hb.src(origin_id, name.range))
                             .context_info("defined here", source),
                         );
                         return None;
@@ -409,7 +409,7 @@ fn path_resolve_target_scope<'ast, 'hir>(
             None => {
                 hb.error(
                     ErrorComp::error(format!("name `{}` is not found", hb.name_str(name.id)))
-                        .context(hb.get_scope(origin_id).source(name.range)),
+                        .context(hb.src(origin_id, name.range)),
                 );
                 return None;
             }
@@ -430,7 +430,7 @@ pub fn path_resolve_as_module_path<'ast, 'hir>(
         Some(name) => {
             hb.error(
                 ErrorComp::error(format!("`{}` is not a module", hb.name_str(name.id)))
-                    .context(hb.get_scope(origin_id).source(name.range)),
+                    .context(hb.src(origin_id, name.range)),
             );
             None
         }
@@ -459,7 +459,7 @@ pub fn path_resolve_as_type<'ast, 'hir>(
                     _ => {
                         hb.error(
                             ErrorComp::error(format!("expected type, got other item",))
-                                .context(hb.get_scope(origin_id).source(name.range))
+                                .context(hb.src(origin_id, name.range))
                                 .context_info("defined here", source),
                         );
                         return hir::Type::Error;
@@ -468,7 +468,7 @@ pub fn path_resolve_as_type<'ast, 'hir>(
                 if let Some(next_name) = names.next() {
                     hb.error(
                         ErrorComp::error(format!("type cannot be accessed further",))
-                            .context(hb.get_scope(origin_id).source(next_name.range))
+                            .context(hb.src(origin_id, next_name.range))
                             .context_info("defined here", source),
                     );
                     return hir::Type::Error;
@@ -481,19 +481,19 @@ pub fn path_resolve_as_type<'ast, 'hir>(
                 // which was seen before breaking
                 hb.error(
                     ErrorComp::error(format!("name `{}` is not found", hb.name_str(name.id)))
-                        .context(hb.get_scope(origin_id).source(name.range)),
+                        .context(hb.src(origin_id, name.range)),
                 );
                 hir::Type::Error
             }
         },
         None => {
-            let path_range = TextRange::new(
+            let range = TextRange::new(
                 path.range_start,
                 path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
             );
             hb.error(
                 ErrorComp::error(format!("expected type, got module path",))
-                    .context(hb.get_scope(origin_id).source(path_range)),
+                    .context(hb.src(origin_id, range)),
             );
             hir::Type::Error
         }

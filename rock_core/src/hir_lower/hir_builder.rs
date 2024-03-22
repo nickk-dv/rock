@@ -1,5 +1,5 @@
 use crate::arena::Arena;
-use crate::ast;
+use crate::ast::{self, UseDecl};
 use crate::ast_parse::CompCtx;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
@@ -119,14 +119,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         &mut self.hir.arena
     }
 
-    pub fn add_mod(&mut self, data: ModData) -> (Symbol, ModID) {
-        let id = ModID(self.mods.len() as u32);
-        self.mods.push(data);
-        let symbol = Symbol::Defined {
-            kind: SymbolKind::Mod(id),
-        };
-        (symbol, id)
-    }
     pub fn get_mod(&self, id: ModID) -> &ModData {
         self.mods.get(id.0 as usize).unwrap()
     }
@@ -219,79 +211,99 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         self.hir.const_exprs.get_mut(id.index()).unwrap()
     }
 
+    pub fn add_mod(&mut self, origin_id: hir::ScopeID, data: ModData) -> ModID {
+        let id = ModID(self.mods.len() as u32);
+        let symbol = Symbol::Defined {
+            kind: SymbolKind::Mod(id),
+        };
+        self.scope_add_symbol(origin_id, data.name.id, symbol);
+        self.mods.push(data);
+        id
+    }
     pub fn add_proc(
         &mut self,
+        origin_id: hir::ScopeID,
         decl: &'ast ast::ProcDecl<'ast>,
         data: hir::ProcData<'hir>,
-    ) -> Symbol {
+    ) {
         let id = hir::ProcID::new(self.ast_procs.len());
         self.ast_procs.push(decl);
         self.hir.procs.push(data);
-        Symbol::Defined {
+        let symbol = Symbol::Defined {
             kind: SymbolKind::Proc(id),
-        }
+        };
+        self.scope_add_symbol(origin_id, decl.name.id, symbol);
     }
     pub fn add_enum(
         &mut self,
+        origin_id: hir::ScopeID,
         decl: &'ast ast::EnumDecl<'ast>,
         data: hir::EnumData<'hir>,
-    ) -> Symbol {
+    ) {
         let id = hir::EnumID::new(self.ast_enums.len());
         self.ast_enums.push(decl);
         self.hir.enums.push(data);
-        Symbol::Defined {
+        let symbol = Symbol::Defined {
             kind: SymbolKind::Enum(id),
-        }
+        };
+        self.scope_add_symbol(origin_id, decl.name.id, symbol);
     }
     pub fn add_union(
         &mut self,
+        origin_id: hir::ScopeID,
         decl: &'ast ast::UnionDecl<'ast>,
         data: hir::UnionData<'hir>,
-    ) -> Symbol {
+    ) {
         let id = hir::UnionID::new(self.ast_unions.len());
         self.ast_unions.push(decl);
         self.hir.unions.push(data);
-        Symbol::Defined {
+        let symbol = Symbol::Defined {
             kind: SymbolKind::Union(id),
-        }
+        };
+        self.scope_add_symbol(origin_id, decl.name.id, symbol);
     }
     pub fn add_struct(
         &mut self,
+        origin_id: hir::ScopeID,
         decl: &'ast ast::StructDecl<'ast>,
         data: hir::StructData<'hir>,
-    ) -> Symbol {
+    ) {
         let id = hir::StructID::new(self.ast_structs.len());
         self.ast_structs.push(decl);
         self.hir.structs.push(data);
-        Symbol::Defined {
+        let symbol = Symbol::Defined {
             kind: SymbolKind::Struct(id),
-        }
+        };
+        self.scope_add_symbol(origin_id, decl.name.id, symbol);
     }
     pub fn add_const(
         &mut self,
+        origin_id: hir::ScopeID,
         decl: &'ast ast::ConstDecl<'ast>,
         data: hir::ConstData<'hir>,
-    ) -> Symbol {
+    ) {
         let id = hir::ConstID::new(self.ast_consts.len());
         self.ast_consts.push(decl);
         self.hir.consts.push(data);
-        Symbol::Defined {
+        let symbol = Symbol::Defined {
             kind: SymbolKind::Const(id),
-        }
+        };
+        self.scope_add_symbol(origin_id, decl.name.id, symbol);
     }
     pub fn add_global(
         &mut self,
+        origin_id: hir::ScopeID,
         decl: &'ast ast::GlobalDecl<'ast>,
         data: hir::GlobalData<'hir>,
-    ) -> Symbol {
+    ) {
         let id = hir::GlobalID::new(self.ast_globals.len());
         self.ast_globals.push(decl);
         self.hir.globals.push(data);
-        Symbol::Defined {
+        let symbol = Symbol::Defined {
             kind: SymbolKind::Global(id),
-        }
+        };
+        self.scope_add_symbol(origin_id, decl.name.id, symbol);
     }
-
     pub fn add_const_expr(
         &mut self,
         from_id: hir::ScopeID,
@@ -310,23 +322,113 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         (0..self.scopes.len()).map(hir::ScopeID::new)
     }
 
-    pub fn add_scope(&mut self, scope: Scope<'ast>) -> hir::ScopeID {
+    pub fn src(&self, id: hir::ScopeID, range: TextRange) -> SourceRange {
+        SourceRange::new(range, self.scope(id).module.file_id)
+    }
+
+    pub fn scope_add_imported(
+        &mut self,
+        origin_id: hir::ScopeID,
+        use_name: ast::Ident,
+        kind: SymbolKind,
+    ) {
+        self.scope_add_symbol(
+            origin_id,
+            use_name.id,
+            Symbol::Imported {
+                kind,
+                use_range: use_name.range,
+            },
+        );
+    }
+
+    pub fn scope_file_path(&self, id: hir::ScopeID) -> std::path::PathBuf {
+        self.ctx
+            .vfs
+            .file(self.scope(id).module.file_id)
+            .path
+            .clone()
+    }
+
+    pub fn scope_name_defined(&self, origin_id: hir::ScopeID, id: InternID) -> Option<SourceRange> {
+        let origin = self.scope(origin_id);
+        if let Some(symbol) = origin.symbols.get(&id).cloned() {
+            let file_id = origin.module.file_id;
+            match symbol {
+                Symbol::Defined { kind } => {
+                    Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
+                }
+                Symbol::Imported { use_range, .. } => Some(SourceRange::new(use_range, file_id)),
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn scope_parent(&self, id: hir::ScopeID) -> Option<hir::ScopeID> {
+        self.scope(id).parent
+    }
+
+    pub fn scope_ast_decls(&self, id: hir::ScopeID) -> impl Iterator<Item = ast::Decl<'ast>> {
+        self.scope(id).module.decls.iter().cloned()
+    }
+
+    pub fn add_scope(
+        &mut self,
+        parent: Option<hir::ScopeID>,
+        module: ast::Module<'ast>,
+    ) -> hir::ScopeID {
         let id = hir::ScopeID::new(self.scopes.len());
+        let scope = Scope {
+            parent,
+            module,
+            symbols: HashMap::new(),
+        };
         self.scopes.push(scope);
         id
     }
-    pub fn get_scope(&self, id: hir::ScopeID) -> &Scope<'ast> {
-        self.scopes.get(id.index()).unwrap()
+
+    fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
+        self.scope_mut(origin_id).symbols.insert(id, symbol);
     }
-    pub fn get_scope_mut(&mut self, id: hir::ScopeID) -> &mut Scope<'ast> {
-        self.scopes.get_mut(id.index()).unwrap()
+    //@ incorrect imported scoping rule
+    // origin_id.index() == target_id.index() is not sufficient rule
+    // since package. prefix can result in use being in the same module
+    // of any other prefix, and imported symbols would be taken on demand
+    // which is not correct behavior of imported scoping
+    pub fn symbol_from_scope(
+        &self,
+        origin_id: hir::ScopeID,
+        target_id: hir::ScopeID,
+        id: InternID,
+    ) -> Option<(SymbolKind, SourceRange)> {
+        let target = self.scope(target_id);
+        match target.symbols.get(&id).cloned() {
+            Some(symbol) => match symbol {
+                Symbol::Defined { kind } => {
+                    let source =
+                        SourceRange::new(self.symbol_kind_range(kind), target.module.file_id);
+                    Some((kind, source))
+                }
+                Symbol::Imported { kind, use_range } => {
+                    if origin_id.index() == target_id.index() {
+                        let source = SourceRange::new(use_range, target.module.file_id);
+                        Some((kind, source))
+                    } else {
+                        None
+                    }
+                }
+            },
+            None => None,
+        }
     }
 
-    pub fn symbol_range(&self, symbol: Symbol) -> TextRange {
-        match symbol {
-            Symbol::Defined { kind } => self.symbol_kind_range(kind),
-            Symbol::Imported { use_range, .. } => use_range,
-        }
+    fn scope(&self, id: hir::ScopeID) -> &Scope<'ast> {
+        self.scopes.get(id.index()).unwrap()
+    }
+
+    fn scope_mut(&mut self, id: hir::ScopeID) -> &mut Scope<'ast> {
+        self.scopes.get_mut(id.index()).unwrap()
     }
 
     fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
@@ -339,69 +441,5 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             SymbolKind::Const(id) => self.hir.const_data(id).name.range,
             SymbolKind::Global(id) => self.hir.global_data(id).name.range,
         }
-    }
-
-    pub fn symbol_from_scope(
-        &self,
-        origin_id: hir::ScopeID,
-        target_id: hir::ScopeID,
-        id: InternID,
-    ) -> Option<(SymbolKind, SourceRange)> {
-        let target = self.get_scope(target_id);
-        match target.get_symbol(id) {
-            Some(symbol) => match symbol {
-                Symbol::Defined { kind } => {
-                    let source = target.source(self.symbol_kind_range(kind));
-                    Some((kind, source))
-                }
-                Symbol::Imported { kind, use_range } => {
-                    if origin_id.index() == target_id.index() {
-                        let source = target.source(use_range);
-                        Some((kind, source))
-                    } else {
-                        None
-                    }
-                }
-            },
-            None => None,
-        }
-    }
-}
-
-impl<'ast> Scope<'ast> {
-    pub fn new(parent: Option<hir::ScopeID>, module: ast::Module<'ast>) -> Scope {
-        Scope {
-            parent,
-            module,
-            symbols: HashMap::new(),
-        }
-    }
-
-    pub fn parent(&self) -> Option<hir::ScopeID> {
-        self.parent
-    }
-
-    pub fn file_id(&self) -> vfs::FileID {
-        self.module.file_id
-    }
-
-    pub fn ast_decls(&self) -> impl Iterator<Item = ast::Decl<'ast>> {
-        self.module.decls.iter().cloned()
-    }
-
-    pub fn add_symbol(&mut self, id: InternID, symbol: Symbol) {
-        //@sanity check, current api and hashmap doesnt prevent this
-        // might be removed, we only add symbols in pass_1, which is fairly simple
-        //@try using entry() api to conditionally insert (later)
-        assert!(self.get_symbol(id).is_none());
-        self.symbols.insert(id, symbol);
-    }
-
-    pub fn get_symbol(&self, id: InternID) -> Option<Symbol> {
-        self.symbols.get(&id).cloned()
-    }
-
-    pub fn source(&self, range: TextRange) -> SourceRange {
-        SourceRange::new(range, self.file_id())
     }
 }
