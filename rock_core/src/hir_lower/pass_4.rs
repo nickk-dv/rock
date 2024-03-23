@@ -99,19 +99,15 @@ fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, ty: hir::T
 fn const_resolve_const_expr(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, id: hir::ConstExprID) {
     let ast_expr = hb.const_expr_ast(id);
 
-    let kind = match ast_expr.kind {
-        ast::ExprKind::LitInt { val, ty } => hir::ExprKind::LitInt {
+    let hir_expr = match ast_expr.kind {
+        ast::ExprKind::LitInt { val, ty } => hir::Expr::LitInt {
             val,
             ty: ast::BasicType::U64,
         },
         _ => {
             error_const_expr_unsupported(hb, from_id, ast_expr.range);
-            hir::ExprKind::Error
+            hir::Expr::Error
         }
-    };
-    let hir_expr = hir::Expr {
-        kind,
-        range: ast_expr.range,
     };
     let data = hb.const_expr_data_mut(id);
     data.value = Some(hir_expr)

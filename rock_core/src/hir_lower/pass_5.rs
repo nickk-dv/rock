@@ -2,6 +2,7 @@ use super::hir_builder as hb;
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
+use crate::intern::InternID;
 use crate::text::TextRange;
 
 pub fn run(hb: &mut hb::HirBuilder) {
@@ -16,7 +17,14 @@ fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
 
     match decl.block {
         Some(block) => {
-            let ty = typecheck_expr(hb, data.from_id, block);
+            let mut locals = Vec::new();
+            let ty = typecheck_expr(
+                hb,
+                data.from_id,
+                BlockFlags::from_root(),
+                block,
+                &mut locals,
+            );
         }
         None => {
             //@for now having a tail directive assumes that it must be a #[c_call]
@@ -82,13 +90,57 @@ fn type_format(hb: &mut hb::HirBuilder, ty: hir::Type) -> String {
     }
 }
 
+#[derive(Copy, Clone)]
+struct BlockFlags {
+    in_loop: bool,
+    in_defer: bool,
+}
+
+impl BlockFlags {
+    fn from_root() -> BlockFlags {
+        BlockFlags {
+            in_loop: false,
+            in_defer: false,
+        }
+    }
+
+    fn enter_defer(self) -> BlockFlags {
+        BlockFlags {
+            in_loop: self.in_loop,
+            in_defer: true,
+        }
+    }
+
+    fn enter_loop(self) -> BlockFlags {
+        BlockFlags {
+            in_loop: true,
+            in_defer: self.in_defer,
+        }
+    }
+}
+
+fn find_local<'ast>(
+    locals: &[&'ast ast::VarDecl<'ast>],
+    id: InternID,
+) -> Option<&'ast ast::VarDecl<'ast>> {
+    locals.iter().cloned().find_map(|local| {
+        if local.name.id == id {
+            Some(local)
+        } else {
+            None
+        }
+    })
+}
+
 //@better idea would be to return type repr that is not allocated via arena
 // and will be fast to construct and compare
 #[must_use]
 fn typecheck_expr<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
     origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
     checked_expr: &ast::Expr<'ast>,
+    locals: &mut Vec<&'ast ast::VarDecl<'ast>>,
 ) -> hir::Type<'hir> {
     match checked_expr.kind {
         ast::ExprKind::Unit => hir::Type::Basic(ast::BasicType::Unit),
@@ -105,27 +157,110 @@ fn typecheck_expr<'ast, 'hir>(
             hir::Type::ArraySlice(slice)
         }
         ast::ExprKind::If { if_ } => {
-            for arm in if_ {
-                if let Some(cond) = arm.cond {
-                    let _ = typecheck_expr(hb, origin_id, cond); //@expect bool
+            if if_.is_empty() {
+                hir::Type::Basic(ast::BasicType::Unit)
+            } else {
+                for arm in if_ {
+                    if let Some(cond) = arm.cond {
+                        let _ = typecheck_expr(hb, origin_id, block_flags, cond, locals);
+                        //@expect bool
+                    }
+                    let _ = typecheck_expr(hb, origin_id, block_flags, arm.expr, locals);
                 }
-                let _ = typecheck_expr(hb, origin_id, arm.expr);
+                typecheck_todo(hb, origin_id, checked_expr)
             }
-            typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::Block { stmts } => {
             for (idx, stmt) in stmts.iter().enumerate() {
                 let last = idx + 1 == stmts.len();
                 let stmt_ty = match stmt.kind {
-                    ast::StmtKind::Break => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::Continue => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::Return(_) => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::Defer(_) => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::ForLoop(_) => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::VarDecl(_) => hir::Type::Basic(ast::BasicType::Unit),
+                    ast::StmtKind::Break => {
+                        if !block_flags.in_loop {
+                            hb.error(
+                                ErrorComp::error("cannot use `break` outside of a loop")
+                                    .context(hb.src(origin_id, stmt.range)),
+                            );
+                        }
+                        hir::Type::Basic(ast::BasicType::Unit)
+                    }
+                    ast::StmtKind::Continue => {
+                        if !block_flags.in_loop {
+                            hb.error(
+                                ErrorComp::error("cannot use `continue` outside of a loop")
+                                    .context(hb.src(origin_id, stmt.range)),
+                            );
+                        }
+                        hir::Type::Basic(ast::BasicType::Unit)
+                    }
+                    ast::StmtKind::Return(expr) => {
+                        if block_flags.in_defer {
+                            let range =
+                                TextRange::new(stmt.range.start(), stmt.range.start() + 6.into());
+                            hb.error(
+                                ErrorComp::error("cannot use `return` inside the defer block")
+                                    .context(hb.src(origin_id, range)),
+                            );
+                        }
+                        if let Some(expr) = expr {
+                            let _ = typecheck_expr(
+                                hb,
+                                origin_id,
+                                block_flags.enter_defer(),
+                                expr,
+                                locals,
+                            );
+                        }
+                        hir::Type::Basic(ast::BasicType::Unit)
+                    }
+                    ast::StmtKind::Defer(defer) => {
+                        if block_flags.in_defer {
+                            let range =
+                                TextRange::new(stmt.range.start(), stmt.range.start() + 5.into());
+                            hb.error(
+                                ErrorComp::error("`defer` statement cannot be nested")
+                                    .context(hb.src(origin_id, range)),
+                            );
+                        }
+                        typecheck_expr(hb, origin_id, block_flags.enter_defer(), defer, locals)
+                    }
+                    ast::StmtKind::ForLoop(for_) => {
+                        //@check and add for loop variables to the corect scope
+                        typecheck_expr(hb, origin_id, block_flags.enter_loop(), for_.block, locals)
+                    }
+                    ast::StmtKind::VarDecl(var_decl) => {
+                        match hb.scope_name_defined(origin_id, var_decl.name.id) {
+                            Some(existing) => {
+                                super::pass_1::name_already_defined_error(
+                                    hb,
+                                    origin_id,
+                                    var_decl.name,
+                                    existing,
+                                );
+                            }
+                            None => match find_local(&locals, var_decl.name.id) {
+                                Some(existing) => hb.error(
+                                    ErrorComp::error(format!(
+                                        "local `{}` is already defined",
+                                        hb.name_str(existing.name.id)
+                                    ))
+                                    .context(hb.src(origin_id, var_decl.name.range))
+                                    .context_info(
+                                        "defined here",
+                                        hb.src(origin_id, existing.name.range),
+                                    ),
+                                ),
+                                None => locals.push(var_decl),
+                            },
+                        }
+                        hir::Type::Basic(ast::BasicType::Unit)
+                    }
                     ast::StmtKind::VarAssign(_) => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::ExprSemi(expr) => typecheck_expr(hb, origin_id, expr),
-                    ast::StmtKind::ExprTail(expr) => typecheck_expr(hb, origin_id, expr),
+                    ast::StmtKind::ExprSemi(expr) => {
+                        typecheck_expr(hb, origin_id, block_flags, expr, locals)
+                    }
+                    ast::StmtKind::ExprTail(expr) => {
+                        typecheck_expr(hb, origin_id, block_flags, expr, locals)
+                    }
                 };
                 if last {
                     return stmt_ty;
@@ -134,14 +269,19 @@ fn typecheck_expr<'ast, 'hir>(
             hir::Type::Basic(ast::BasicType::Unit)
         }
         ast::ExprKind::Match { match_ } => {
+            let _ = typecheck_expr(hb, origin_id, block_flags, match_.on_expr, locals); // @only enums and integers and bools are allowed (like switch expr)
             for arm in match_.arms {
-                //
+                if let Some(pat) = arm.pat {
+                    let _ = typecheck_expr(hb, origin_id, block_flags, pat, locals);
+                    //@expect same type as being matched on (enum -> enum, int -> int)
+                }
+                let _ = typecheck_expr(hb, origin_id, block_flags, arm.expr, locals);
             }
             typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::Field { target, name } => {
             //@allowing only single reference access of the field, no automatic derefencing is done automatically
-            let ty = typecheck_expr(hb, origin_id, target);
+            let ty = typecheck_expr(hb, origin_id, block_flags, target, locals);
             match ty {
                 hir::Type::Reference(ref_ty, mutt) => check_field_ty(hb, origin_id, *ref_ty, name),
                 _ => check_field_ty(hb, origin_id, ty, name),
@@ -149,8 +289,8 @@ fn typecheck_expr<'ast, 'hir>(
         }
         ast::ExprKind::Index { target, index } => {
             //@allowing only single reference access of the field, no automatic derefencing is done automatically
-            let ty = typecheck_expr(hb, origin_id, target);
-            let _ = typecheck_expr(hb, origin_id, index); //@expect usize
+            let ty = typecheck_expr(hb, origin_id, block_flags, target, locals);
+            let _ = typecheck_expr(hb, origin_id, block_flags, index, locals); //@expect usize
             match ty {
                 hir::Type::Reference(ref_ty, mutt) => {
                     check_index_ty(hb, origin_id, *ref_ty, index.range)
@@ -161,6 +301,8 @@ fn typecheck_expr<'ast, 'hir>(
         ast::ExprKind::Cast { target, ty } => typecheck_todo(hb, origin_id, checked_expr),
         ast::ExprKind::Sizeof { ty } => {
             //@check ast type
+            //@this can be promoted to a constant expression
+            // but no alignment or size resolution is done so far on checking phase
             hir::Type::Basic(ast::BasicType::Usize)
         }
         ast::ExprKind::Item { path } => {
@@ -172,7 +314,7 @@ fn typecheck_expr<'ast, 'hir>(
             //@nameresolve proc_call.path
             let target_id = path_resolve_target_scope(hb, origin_id, proc_call.path);
             for &expr in proc_call.input {
-                let _ = typecheck_expr(hb, origin_id, expr);
+                let _ = typecheck_expr(hb, origin_id, block_flags, expr, locals);
             }
             typecheck_todo(hb, origin_id, checked_expr)
         }
@@ -186,7 +328,7 @@ fn typecheck_expr<'ast, 'hir>(
                 match init.expr {
                     Some(expr) => {
                         //@field name and the expression
-                        let _ = typecheck_expr(hb, origin_id, expr);
+                        let _ = typecheck_expr(hb, origin_id, block_flags, expr, locals);
                     }
                     None => {
                         //@field name that must match some named value in scope
@@ -212,29 +354,26 @@ fn typecheck_expr<'ast, 'hir>(
 
             let mut elem_ty = hir::Type::Error;
             for (idx, &expr) in input.iter().enumerate() {
-                let ty = typecheck_expr(hb, origin_id, expr);
+                let ty = typecheck_expr(hb, origin_id, block_flags, expr, locals);
                 if idx == 0 {
                     elem_ty = ty;
                 }
             }
-            let size = hb.arena().alloc(hir::Expr {
-                kind: hir::ExprKind::LitInt {
-                    val: input.len() as u64,
-                    ty: ast::BasicType::Usize,
-                },
-                range: checked_expr.range, //@this size doesnt have a explicit range
+            let size = hb.arena().alloc(hir::Expr::LitInt {
+                val: input.len() as u64,
+                ty: ast::BasicType::Usize,
             });
             let array = hb.arena().alloc(hir::ArrayStatic { size, ty: elem_ty });
             hir::Type::ArrayStatic(array)
         }
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_todo(hb, origin_id, checked_expr),
         ast::ExprKind::UnaryExpr { op, rhs } => {
-            let rhs = typecheck_expr(hb, origin_id, rhs);
+            let rhs = typecheck_expr(hb, origin_id, block_flags, rhs, locals);
             typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::BinaryExpr { op, lhs, rhs } => {
-            let lhs = typecheck_expr(hb, origin_id, lhs);
-            let rhs = typecheck_expr(hb, origin_id, rhs);
+            let lhs = typecheck_expr(hb, origin_id, block_flags, lhs, locals);
+            let rhs = typecheck_expr(hb, origin_id, block_flags, rhs, locals);
             typecheck_todo(hb, origin_id, checked_expr)
         }
     }

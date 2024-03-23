@@ -1,7 +1,6 @@
 use crate::arena::Arena;
 use crate::ast;
 use crate::intern::InternID;
-use crate::text::TextRange;
 use crate::vfs;
 
 pub struct Hir<'hir> {
@@ -164,13 +163,7 @@ pub struct ArrayStaticDecl<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Stmt<'hir> {
-    pub kind: StmtKind<'hir>,
-    pub range: TextRange,
-}
-
-#[derive(Copy, Clone)]
-pub enum StmtKind<'hir> {
+pub enum Stmt<'hir> {
     Break,
     Continue,
     Return,
@@ -212,15 +205,9 @@ pub struct VarAssign<'hir> {
     pub rhs: &'hir Expr<'hir>,
 }
 
-#[derive(Copy, Clone)]
-pub struct Expr<'hir> {
-    pub kind: ExprKind<'hir>,
-    pub range: TextRange,
-}
-
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum ExprKind<'hir> {
+pub enum Expr<'hir> {
     Error,
     Unit,
     LitNull,

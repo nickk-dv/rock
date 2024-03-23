@@ -138,7 +138,10 @@ fn run_check(ctx: &mut CompCtx) -> Result<(), Vec<ErrorComp>> {
 }
 
 fn url_from_path(path: PathBuf) -> lsp_types::Url {
-    lsp_types::Url::from_file_path(path).expect("failed to create uri from source filepath")
+    match lsp_types::Url::from_file_path(&path) {
+        Ok(url) => url,
+        Err(()) => panic!("failed to convert `{}` to url", path.to_string_lossy()),
+    }
 }
 
 fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
