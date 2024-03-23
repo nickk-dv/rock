@@ -45,9 +45,4 @@ impl TokenList {
     pub fn get_string(&self, index: usize) -> &str {
         &self.strings[index]
     }
-
-    //@temp moving out tokens, used in syntax
-    pub fn tokens(self) -> Vec<Token> {
-        self.tokens
-    }
 }

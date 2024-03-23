@@ -84,7 +84,6 @@ token_gen::token_gen! {
     // double punctuation
     [..]     | ".."     | DotDot       |
     [->]     | "->"     | ArrowThin    |
-    [=>]     | "=>"     | ArrowWide    |
 
     // un op tokens
     [~]      | "~"      | Tilde        | UN[UnOp::BitNot]
@@ -164,7 +163,6 @@ token_gen::token_glue_extend! {
     (T![|] => T![||]) if '|'
 
     (T![-] => T![->])
-    (T![=] => T![=>])
     (T![>] => T![>>]) if '>'
 
     (T![=] => T![==])

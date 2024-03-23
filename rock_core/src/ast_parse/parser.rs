@@ -887,28 +887,6 @@ fn tail_expr<'a, 'ast>(
     }
 }
 
-fn if_<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast If<'ast>, String> {
-    p.bump();
-    let if_ = If {
-        cond: expr(p)?,
-        block: block(p)?,
-        else_: else_branch(p)?,
-    };
-    Ok(p.arena.alloc(if_))
-}
-
-fn else_branch<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Option<Else<'ast>>, String> {
-    if p.eat(T![else]) {
-        match p.peek() {
-            T![if] => Ok(Some(Else::If { else_if: if_(p)? })),
-            T!['{'] => Ok(Some(Else::Block { block: block(p)? })),
-            _ => return Err("expected `if` or `{`".into()),
-        }
-    } else {
-        Ok(None)
-    }
-}
-
 fn if_match<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast [IfArm<'ast>], String> {
     p.bump();
     let arms = semi_separated_block!(p, if_arm, if_arms);
@@ -943,7 +921,7 @@ fn block_stmts<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast [Stmt<'ast>],
 
 fn match_arm<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<MatchArm<'ast>, String> {
     let pat = if p.eat(T![_]) { None } else { Some(expr(p)?) };
-    p.expect(T![=>])?;
+    p.expect(T![->])?;
     let expr = expr(p)?;
     Ok(MatchArm { pat, expr })
 }

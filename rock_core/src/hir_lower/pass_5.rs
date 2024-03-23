@@ -385,7 +385,7 @@ fn path_resolve_target_scope<'ast, 'hir>(
 
     let mut mod_count: usize = 0;
     for name in path.names {
-        match hb.symbol_from_scope(origin_id, target_id, name.id) {
+        match hb.symbol_from_scope(origin_id, target_id, path.kind, name.id) {
             Some((symbol, source)) => match symbol {
                 hb::SymbolKind::Mod(id) => {
                     let data = hb.get_mod(id);
@@ -450,7 +450,7 @@ pub fn path_resolve_as_type<'ast, 'hir>(
     let mut names = names.iter();
 
     match names.next() {
-        Some(name) => match hb.symbol_from_scope(origin_id, target_id, name.id) {
+        Some(name) => match hb.symbol_from_scope(origin_id, target_id, path.kind, name.id) {
             Some((kind, source)) => {
                 let ty = match kind {
                     hb::SymbolKind::Enum(id) => hir::Type::Enum(id),

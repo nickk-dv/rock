@@ -1,15 +1,12 @@
 use crate::arena::Arena;
-use crate::ast::{self, UseDecl};
+use crate::ast;
 use crate::ast_parse::CompCtx;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::intern::InternID;
 use crate::text::TextRange;
-use crate::vfs;
 use std::collections::HashMap;
 
-//@not adding the ScopeData into hir so far
-// (it only stores scope file_ids that might be usefull in later stages)
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
     ctx: &'ctx mut CompCtx,
     ast: ast::Ast<'ast>,
@@ -385,21 +382,17 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
             symbols: HashMap::new(),
         };
         self.scopes.push(scope);
+        self.hir.scopes.push(hir::ScopeData {
+            file_id: module.file_id,
+        });
         id
     }
 
-    fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
-        self.scope_mut(origin_id).symbols.insert(id, symbol);
-    }
-    //@ incorrect imported scoping rule
-    // origin_id.index() == target_id.index() is not sufficient rule
-    // since package. prefix can result in use being in the same module
-    // of any other prefix, and imported symbols would be taken on demand
-    // which is not correct behavior of imported scoping
     pub fn symbol_from_scope(
         &self,
         origin_id: hir::ScopeID,
         target_id: hir::ScopeID,
+        path_kind: ast::PathKind,
         id: InternID,
     ) -> Option<(SymbolKind, SourceRange)> {
         let target = self.scope(target_id);
@@ -411,7 +404,9 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
                     Some((kind, source))
                 }
                 Symbol::Imported { kind, use_range } => {
-                    if origin_id.index() == target_id.index() {
+                    let allow_use = path_kind == ast::PathKind::None
+                        && (origin_id.index() == target_id.index());
+                    if allow_use {
                         let source = SourceRange::new(use_range, target.module.file_id);
                         Some((kind, source))
                     } else {
@@ -427,19 +422,20 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         self.scopes.get(id.index()).unwrap()
     }
 
-    fn scope_mut(&mut self, id: hir::ScopeID) -> &mut Scope<'ast> {
-        self.scopes.get_mut(id.index()).unwrap()
+    fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
+        let scope = self.scopes.get_mut(origin_id.index()).unwrap();
+        scope.symbols.insert(id, symbol);
     }
 
     fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
         match kind {
             SymbolKind::Mod(id) => self.get_mod(id).name.range,
-            SymbolKind::Proc(id) => self.hir.proc_data(id).name.range,
-            SymbolKind::Enum(id) => self.hir.enum_data(id).name.range,
-            SymbolKind::Union(id) => self.hir.union_data(id).name.range,
-            SymbolKind::Struct(id) => self.hir.struct_data(id).name.range,
-            SymbolKind::Const(id) => self.hir.const_data(id).name.range,
-            SymbolKind::Global(id) => self.hir.global_data(id).name.range,
+            SymbolKind::Proc(id) => self.proc_data(id).name.range,
+            SymbolKind::Enum(id) => self.enum_data(id).name.range,
+            SymbolKind::Union(id) => self.union_data(id).name.range,
+            SymbolKind::Struct(id) => self.struct_data(id).name.range,
+            SymbolKind::Const(id) => self.const_data(id).name.range,
+            SymbolKind::Global(id) => self.global_data(id).name.range,
         }
     }
 }
