@@ -13,20 +13,19 @@ pub fn run(hb: &mut hb::HirBuilder) {
 
 fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let decl = hb.proc_ast(id);
-    let data = hb.proc_data(id);
-
     match decl.block {
         Some(block) => {
-            let mut locals = Vec::new();
+            let data = hb.proc_data(id);
             let ty = typecheck_expr(
                 hb,
                 data.from_id,
                 BlockFlags::from_root(),
                 block,
-                &mut locals,
+                &mut ProcScope::new(id),
             );
         }
         None => {
+            let data = hb.proc_data(id);
             //@for now having a tail directive assumes that it must be a #[c_call]
             // and this directory is only present with no block expression
             let directive_tail = decl
@@ -119,17 +118,63 @@ impl BlockFlags {
     }
 }
 
-fn find_local<'ast>(
-    locals: &[&'ast ast::VarDecl<'ast>],
-    id: InternID,
-) -> Option<&'ast ast::VarDecl<'ast>> {
-    locals.iter().cloned().find_map(|local| {
-        if local.name.id == id {
-            Some(local)
-        } else {
-            None
+#[derive(Copy, Clone)]
+enum VariableID {
+    Local(hir::LocalID),
+    Param(hir::ProcParamID),
+}
+
+//@locals in scope needs to be popped
+// on stack exit
+struct ProcScope<'hir> {
+    proc_id: hir::ProcID,
+    locals: Vec<&'hir hir::VarDecl<'hir>>,
+    locals_in_scope: Vec<hir::LocalID>,
+}
+
+impl<'hir> ProcScope<'hir> {
+    fn new(proc_id: hir::ProcID) -> ProcScope<'hir> {
+        ProcScope {
+            proc_id,
+            locals: Vec::new(),
+            locals_in_scope: Vec::new(),
         }
-    })
+    }
+
+    fn get_local(&self, id: hir::LocalID) -> &'hir hir::VarDecl<'hir> {
+        self.locals.get(id.index()).unwrap()
+    }
+
+    fn get_param(
+        &self,
+        hb: &hb::HirBuilder<'_, '_, 'hir>,
+        id: hir::ProcParamID,
+    ) -> &'hir hir::ProcParam<'hir> {
+        let data = hb.proc_data(self.proc_id);
+        data.params.get(id.index()).unwrap()
+    }
+
+    fn push_local(&mut self, var_decl: &'hir hir::VarDecl<'hir>) {
+        let id = hir::LocalID::new(self.locals.len());
+        self.locals.push(var_decl);
+        self.locals_in_scope.push(id);
+    }
+
+    fn find_variable(&self, hb: &hb::HirBuilder, id: InternID) -> Option<VariableID> {
+        let data = hb.proc_data(self.proc_id);
+        for (idx, param) in data.params.iter().enumerate() {
+            if param.name.id == id {
+                let id = hir::ProcParamID::new(idx);
+                return Some(VariableID::Param(id));
+            }
+        }
+        for local_id in self.locals_in_scope.iter().cloned() {
+            if self.get_local(local_id).name.id == id {
+                return Some(VariableID::Local(local_id));
+            }
+        }
+        None
+    }
 }
 
 //@better idea would be to return type repr that is not allocated via arena
@@ -140,7 +185,7 @@ fn typecheck_expr<'ast, 'hir>(
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     checked_expr: &ast::Expr<'ast>,
-    locals: &mut Vec<&'ast ast::VarDecl<'ast>>,
+    locals: &mut ProcScope<'hir>,
 ) -> hir::Type<'hir> {
     match checked_expr.kind {
         ast::ExprKind::Unit => hir::Type::Basic(ast::BasicType::Unit),
@@ -228,7 +273,7 @@ fn typecheck_expr<'ast, 'hir>(
                         typecheck_expr(hb, origin_id, block_flags.enter_loop(), for_.block, locals)
                     }
                     ast::StmtKind::VarDecl(var_decl) => {
-                        match hb.scope_name_defined(origin_id, var_decl.name.id) {
+                        let duplicate = match hb.scope_name_defined(origin_id, var_decl.name.id) {
                             Some(existing) => {
                                 super::pass_1::name_already_defined_error(
                                     hb,
@@ -236,22 +281,62 @@ fn typecheck_expr<'ast, 'hir>(
                                     var_decl.name,
                                     existing,
                                 );
+                                true
                             }
-                            None => match find_local(&locals, var_decl.name.id) {
-                                Some(existing) => hb.error(
-                                    ErrorComp::error(format!(
-                                        "local `{}` is already defined",
-                                        hb.name_str(existing.name.id)
-                                    ))
-                                    .context(hb.src(origin_id, var_decl.name.range))
-                                    .context_info(
-                                        "defined here",
-                                        hb.src(origin_id, existing.name.range),
-                                    ),
-                                ),
-                                None => locals.push(var_decl),
-                            },
+                            None => {
+                                let var = locals.find_variable(hb, var_decl.name.id);
+
+                                let existing = match var {
+                                    Some(VariableID::Local(id)) => {
+                                        Some(locals.get_local(id).name.range)
+                                    }
+                                    Some(VariableID::Param(id)) => {
+                                        Some(locals.get_param(hb, id).name.range)
+                                    }
+                                    None => None,
+                                };
+
+                                match existing {
+                                    Some(existing) => {
+                                        hb.error(
+                                            ErrorComp::error(format!(
+                                                "local `{}` is already defined",
+                                                hb.name_str(var_decl.name.id)
+                                            ))
+                                            .context(hb.src(origin_id, var_decl.name.range))
+                                            .context_info(
+                                                "defined here",
+                                                hb.src(origin_id, existing),
+                                            ),
+                                        );
+                                        true
+                                    }
+                                    None => false,
+                                }
+                            }
+                        };
+
+                        let ty = var_decl
+                            .ty
+                            .map(|ast_ty| {
+                                super::pass_3::resolve_decl_type(hb, origin_id, ast_ty, true)
+                            })
+                            .unwrap_or(hir::Type::Error);
+                        let expr = var_decl.expr.map(|ast_expr| {
+                            let _ = typecheck_expr(hb, origin_id, block_flags, ast_expr, locals);
+                            hb.arena().alloc(hir::Expr::Error)
+                        });
+
+                        if !duplicate {
+                            let var_decl = hb.arena().alloc(hir::VarDecl {
+                                mutt: var_decl.mutt,
+                                name: var_decl.name,
+                                ty,
+                                expr,
+                            });
+                            locals.push_local(var_decl);
                         }
+
                         hir::Type::Basic(ast::BasicType::Unit)
                     }
                     ast::StmtKind::VarAssign(_) => hir::Type::Basic(ast::BasicType::Unit),

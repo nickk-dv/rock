@@ -96,7 +96,11 @@ fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, ty: hir::T
     }
 }
 
-fn const_resolve_const_expr(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, id: hir::ConstExprID) {
+pub fn const_resolve_const_expr(
+    hb: &mut hb::HirBuilder,
+    from_id: hir::ScopeID,
+    id: hir::ConstExprID,
+) {
     let ast_expr = hb.const_expr_ast(id);
 
     let hir_expr = match ast_expr.kind {

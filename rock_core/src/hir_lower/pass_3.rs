@@ -24,21 +24,22 @@ pub fn run(hb: &mut hb::HirBuilder) {
     }
 }
 
-fn resolve_decl_type<'ast, 'hir>(
+pub fn resolve_decl_type<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
     from_id: hir::ScopeID,
     ast_ty: ast::Type<'ast>,
+    resolve_const: bool,
 ) -> hir::Type<'hir> {
     match ast_ty {
         ast::Type::Basic(basic) => hir::Type::Basic(basic),
         ast::Type::Custom(path) => super::pass_5::path_resolve_as_type(hb, from_id, path),
         ast::Type::Reference(ref_ty, mutt) => {
-            let ref_ty = resolve_decl_type(hb, from_id, *ref_ty);
+            let ref_ty = resolve_decl_type(hb, from_id, *ref_ty, resolve_const);
             let ty = hb.arena().alloc(ref_ty);
             hir::Type::Reference(ty, mutt)
         }
         ast::Type::ArraySlice(slice) => {
-            let elem_ty = resolve_decl_type(hb, from_id, slice.ty);
+            let elem_ty = resolve_decl_type(hb, from_id, slice.ty, resolve_const);
             let hir_slice = hb.arena().alloc(hir::ArraySlice {
                 mutt: slice.mutt,
                 ty: elem_ty,
@@ -47,7 +48,10 @@ fn resolve_decl_type<'ast, 'hir>(
         }
         ast::Type::ArrayStatic(array) => {
             let const_id = hb.add_const_expr(from_id, array.size);
-            let elem_ty = resolve_decl_type(hb, from_id, array.ty);
+            let elem_ty = resolve_decl_type(hb, from_id, array.ty, resolve_const);
+            if resolve_const {
+                super::pass_4::const_resolve_const_expr(hb, from_id, const_id);
+            }
             let hir_array = hb.arena().alloc(hir::ArrayStaticDecl {
                 size: const_id,
                 ty: elem_ty,
@@ -72,13 +76,13 @@ fn process_proc_data(hb: &mut hb::HirBuilder, id: hir::ProcID) {
             unique.push(hir::ProcParam {
                 mutt: param.mutt,
                 name: param.name,
-                ty: resolve_decl_type(hb, from_id, param.ty),
+                ty: resolve_decl_type(hb, from_id, param.ty, false),
             });
         }
     }
     hb.proc_data_mut(id).params = hb.arena().alloc_slice(&unique);
     hb.proc_data_mut(id).return_ty = if let Some(ret_ty) = decl.return_ty {
-        resolve_decl_type(hb, from_id, ret_ty)
+        resolve_decl_type(hb, from_id, ret_ty, false)
     } else {
         hir::Type::Basic(ast::BasicType::Unit)
     }
@@ -119,7 +123,7 @@ fn process_union_data(hb: &mut hb::HirBuilder, id: hir::UnionID) {
         } else {
             unique.push(hir::UnionMember {
                 name: member.name,
-                ty: resolve_decl_type(hb, from_id, member.ty),
+                ty: resolve_decl_type(hb, from_id, member.ty, false),
             });
         }
     }
@@ -141,7 +145,7 @@ fn process_struct_data(hb: &mut hb::HirBuilder, id: hir::StructID) {
             unique.push(hir::StructField {
                 vis: field.vis,
                 name: field.name,
-                ty: resolve_decl_type(hb, from_id, field.ty),
+                ty: resolve_decl_type(hb, from_id, field.ty, false),
             });
         }
     }
@@ -152,7 +156,7 @@ fn process_const_data(hb: &mut hb::HirBuilder, id: hir::ConstID) {
     let decl = hb.const_ast(id);
     let from_id = hb.const_data(id).from_id;
 
-    let ty = resolve_decl_type(hb, from_id, decl.ty);
+    let ty = resolve_decl_type(hb, from_id, decl.ty, false);
     let const_id = hb.add_const_expr(from_id, decl.value);
 
     let data = hb.const_data_mut(id);
@@ -164,7 +168,7 @@ fn process_global_data(hb: &mut hb::HirBuilder, id: hir::GlobalID) {
     let decl = hb.global_ast(id);
     let from_id = hb.global_data(id).from_id;
 
-    let ty = resolve_decl_type(hb, from_id, decl.ty);
+    let ty = resolve_decl_type(hb, from_id, decl.ty, false);
     let const_id = hb.add_const_expr(from_id, decl.value);
 
     let data = hb.global_data_mut(id);
