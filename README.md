@@ -1,2 +1,2 @@
-# lang
-🚧 work in progress compiler 🚧
+# Rock
+🚧 work in progress programming language toolchain 🚧

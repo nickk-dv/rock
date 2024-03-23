@@ -44,7 +44,8 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
     let root_path = std::env::current_dir()
         .unwrap()
         .join("src")
-        .join("main.lang");
+        .join("main.rock");
+
     match p.module_map.remove(&root_path) {
         Some(status) => match status {
             ModuleStatus::Available(module) => {
@@ -56,7 +57,15 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
             ModuleStatus::Taken(..) => unreachable!("root module cannot be taken"),
         },
         None => {
-            hb.error(ErrorComp::error("root module src/main.lang not found"));
+            //@use same path format with to_string_lossy() and ` `
+            // this might require abs_path_type in vfs
+            // with display implementation
+            // to format and enforce it being absolute
+            // displayed paths might need to be trimmed to start at `src` src/path/to/file.rock
+            hb.error(ErrorComp::error(format!(
+                "root module `{}` is missing",
+                root_path.to_string_lossy()
+            )));
         }
     }
 }
@@ -204,9 +213,9 @@ fn add_scope_task_from_mod_decl(
     scope_dir.pop();
 
     let mod_name = hb.name_str(decl.name.id);
-    let mod_filename = mod_name.to_string() + ".lang";
+    let mod_filename = mod_name.to_string() + ".rock";
     let mod_path_1 = scope_dir.join(mod_filename);
-    let mod_path_2 = scope_dir.join(mod_name).join("mod.lang");
+    let mod_path_2 = scope_dir.join(mod_name).join("mod.rock");
 
     let (status, chosen_path) = match (
         p.module_map.get(&mod_path_1).cloned(),
@@ -215,8 +224,9 @@ fn add_scope_task_from_mod_decl(
         (Some(..), Some(..)) => {
             hb.error(
                 ErrorComp::error(format!(
-                    "only one possible module path can exist:\n{:?} or {:?}",
-                    mod_path_1, mod_path_2
+                    "only one possible module path can exist:\n`{}` or `{}`",
+                    mod_path_1.to_string_lossy(),
+                    mod_path_2.to_string_lossy()
                 ))
                 .context(hb.src(scope_id, decl.name.range)),
             );
@@ -225,8 +235,9 @@ fn add_scope_task_from_mod_decl(
         (None, None) => {
             hb.error(
                 ErrorComp::error(format!(
-                    "both possible module paths are missing:\n{:?} or {:?}",
-                    mod_path_1, mod_path_2
+                    "both possible module paths are missing:\n`{}` or `{}`",
+                    mod_path_1.to_string_lossy(),
+                    mod_path_2.to_string_lossy()
                 ))
                 .context(hb.src(scope_id, decl.name.range)),
             );
@@ -248,6 +259,8 @@ fn add_scope_task_from_mod_decl(
                 parent: Some(id),
             });
         }
+        //@also provide information on which file was taken?
+        // current error only gives the sources of module declarations
         ModuleStatus::Taken(src) => {
             hb.error(
                 ErrorComp::error(format!(

@@ -143,7 +143,7 @@ fn collect_cwd_source_files() -> Result<Vec<PathBuf>, ErrorComp> {
         })?;
         for entry in read_dir.flatten() {
             let path = entry.path();
-            if path.is_file() && path.extension().unwrap_or_default() == "lang" {
+            if path.is_file() && path.extension().unwrap_or_default() == "rock" {
                 source_files.push(path);
             } else if path.is_dir() {
                 dir_visits.push(path);

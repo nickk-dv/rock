@@ -35,7 +35,7 @@ impl Parser {
             }
             None => {
                 return Err(vec![ErrorComp::error(
-                    "command is missing, use `lang help` to learn the usage",
+                    "command is missing, use `rock help` to learn the usage",
                 )]);
             }
         };
@@ -49,11 +49,11 @@ impl Parser {
             "v" | "version" => self.parse_version(),
             "init" | "create" | "make" | "start" | "setup" | "initialize" | "begin" | "project" => {
                 Err(vec![ErrorComp::error(format!(
-                    "did you mean `lang new`? use `lang help` to learn the usage",
+                    "did you mean `rock new`? use `rock help` to learn the usage",
                 ))])
             }
             _ => Err(vec![ErrorComp::error(format!(
-                "command `{}` does not exist, use `lang help` to learn the usage",
+                "command `{}` does not exist, use `rock help` to learn the usage",
                 command
             ))]),
         }
@@ -67,7 +67,7 @@ impl Parser {
             }
             None => {
                 return Err(vec![ErrorComp::error(format!(
-                    "missing package name, use `lang help` to learn the usage",
+                    "missing package name, use `rock help` to learn the usage",
                 ))]);
             }
         };

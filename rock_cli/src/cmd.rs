@@ -59,9 +59,9 @@ pub mod new {
         make_dir(&build_dir)?;
 
         match data.kind {
-            ProjectKind::Lib => make_file(&src_dir.join("lib.lang"), "")?,
+            ProjectKind::Lib => make_file(&src_dir.join("lib.rock"), "")?,
             ProjectKind::Bin => make_file(
-                &src_dir.join("main.lang"),
+                &src_dir.join("main.rock"),
                 "\nproc main() -> s32 {\n\treturn 0;\n}\n",
             )?,
         }
@@ -212,7 +212,7 @@ pub mod help {
         println!(
 r#"
 {g}Usage:
-  {c}lang <command> [options]
+  {c}rock <command> [options]
 
 {g}Commands:
   {c}n, new <name>   {r}Create new project
@@ -246,7 +246,7 @@ pub mod version {
 
     pub fn cmd() {
         println!(
-            "  {}Lang version:{} {VERSION}",
+            "  {}Rock version:{} {VERSION}",
             ansi::GREEN_BOLD,
             ansi::CLEAR
         );
