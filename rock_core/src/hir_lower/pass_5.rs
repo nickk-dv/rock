@@ -1,6 +1,6 @@
 use super::hir_builder as hb;
 use crate::ast;
-use crate::error::ErrorComp;
+use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
@@ -264,7 +264,14 @@ fn typecheck_expr_2<'ast, 'hir>(
         ),
         ast::ExprKind::Sizeof { ty } => typecheck_placeholder(hb),
         ast::ExprKind::Item { path } => typecheck_placeholder(hb),
-        ast::ExprKind::ProcCall { proc_call } => typecheck_placeholder(hb),
+        ast::ExprKind::ProcCall { proc_call } => typecheck_proc_call(
+            hb,
+            origin_id,
+            block_flags,
+            proc_scope,
+            proc_call,
+            expr.range,
+        ),
         ast::ExprKind::StructInit { struct_init } => typecheck_placeholder(hb),
         ast::ExprKind::ArrayInit { input } => typecheck_placeholder(hb),
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_placeholder(hb),
@@ -664,6 +671,63 @@ fn typecheck_cast<'ast, 'hir>(
     }
 }
 
+fn typecheck_proc_call<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    proc_scope: &mut ProcScope<'hir>,
+    proc_call: &'ast ast::ProcCall<'ast>,
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
+    let proc_id = match path_resolve_as_proc(hb, origin_id, proc_call.path) {
+        Some(it) => it,
+        None => {
+            for &expr in proc_call.input {
+                let _ = typecheck_expr_2(
+                    hb,
+                    origin_id,
+                    block_flags,
+                    proc_scope,
+                    hir::Type::Error,
+                    expr,
+                );
+            }
+            return TypeResult::new(hir::Type::Error, hb.arena().alloc(hir::Expr::Error));
+        }
+    };
+
+    for (idx, &expr) in proc_call.input.iter().enumerate() {
+        let data = hb.proc_data(proc_id);
+        let param = data.params.get(idx);
+
+        let expect_ty = match param {
+            Some(param) => param.ty,
+            None => hir::Type::Error,
+        };
+        let _ = typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, expr);
+    }
+
+    //@getting proc data multiple times due to mutable error reporting
+    // maybe pass error context to all functions isntead
+    let input_count = proc_call.input.len();
+    let expected_count = hb.proc_data(proc_id).params.len();
+
+    if input_count != expected_count {
+        let data = hb.proc_data(proc_id);
+        hb.error(
+            ErrorComp::error("unexpected number of input argument")
+                .context(hb.src(origin_id, expr_range))
+                .context_info(
+                    "calling this procedure",
+                    hb.src(data.from_id, data.name.range),
+                ),
+        );
+    }
+
+    let data = hb.proc_data(proc_id);
+    TypeResult::new(data.return_ty, hb.arena().alloc(hir::Expr::Error))
+}
+
 fn typecheck_block<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
     origin_id: hir::ScopeID,
@@ -982,12 +1046,12 @@ fn typecheck_expr<'ast, 'hir>(
         }
         ast::ExprKind::Item { path } => {
             //@nameresolve item path
-            let target_id = path_resolve_target_scope(hb, origin_id, path);
+            //let target_id = path_resolve_target_scope(hb, origin_id, path);
             typecheck_todo(hb, origin_id, checked_expr)
         }
         ast::ExprKind::ProcCall { proc_call } => {
             //@nameresolve proc_call.path
-            let target_id = path_resolve_target_scope(hb, origin_id, proc_call.path);
+            //let target_id = path_resolve_target_scope(hb, origin_id, proc_call.path);
             for &expr in proc_call.input {
                 let _ = typecheck_expr(hb, origin_id, block_flags, expr, locals);
             }
@@ -995,7 +1059,7 @@ fn typecheck_expr<'ast, 'hir>(
         }
         ast::ExprKind::StructInit { struct_init } => {
             //@nameresolve struct_init.path
-            let target_id = path_resolve_target_scope(hb, origin_id, struct_init.path);
+            //let target_id = path_resolve_target_scope(hb, origin_id, struct_init.path);
 
             // @first find if field name exists, only then handle
             // name and expr or just a name
@@ -1176,11 +1240,17 @@ local_var  -> <follow?> by <chained> field access
 
 */
 
-fn path_resolve_target_scope<'ast, 'hir>(
+struct PathResult<'ast> {
+    target_id: hir::ScopeID,
+    symbol: Option<(hb::SymbolKind, SourceRange, ast::Ident)>,
+    remaining: &'ast [ast::Ident],
+}
+
+fn path_resolve_target_scope_2<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
-) -> Option<(hir::ScopeID, &'ast [ast::Ident])> {
+) -> Option<PathResult<'ast>> {
     let mut target_id = match path.kind {
         ast::PathKind::None => origin_id,
         ast::PathKind::Super => match hb.scope_parent(origin_id) {
@@ -1197,14 +1267,15 @@ fn path_resolve_target_scope<'ast, 'hir>(
         ast::PathKind::Package => hb::ROOT_SCOPE_ID,
     };
 
-    let mut mod_count: usize = 0;
+    let mut step_count: usize = 0;
     for name in path.names {
         match hb.symbol_from_scope(origin_id, target_id, path.kind, name.id) {
             Some((symbol, source)) => match symbol {
                 hb::SymbolKind::Mod(id) => {
                     let data = hb.get_mod(id);
+                    step_count += 1;
+
                     if let Some(new_target) = data.target {
-                        mod_count += 1;
                         target_id = new_target;
                     } else {
                         hb.error(
@@ -1218,7 +1289,14 @@ fn path_resolve_target_scope<'ast, 'hir>(
                         return None;
                     }
                 }
-                _ => break,
+                _ => {
+                    step_count += 1;
+                    return Some(PathResult {
+                        target_id,
+                        symbol: Some((symbol, source, *name)),
+                        remaining: &path.names[step_count..],
+                    });
+                }
             },
             None => {
                 hb.error(
@@ -1230,26 +1308,11 @@ fn path_resolve_target_scope<'ast, 'hir>(
         }
     }
 
-    Some((target_id, &path.names[mod_count..]))
-}
-
-pub fn path_resolve_as_module_path<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
-    origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'ast>,
-) -> Option<hir::ScopeID> {
-    let (target_id, names) = path_resolve_target_scope(hb, origin_id, path)?;
-
-    match names.first() {
-        Some(name) => {
-            hb.error(
-                ErrorComp::error(format!("`{}` is not a module", hb.name_str(name.id)))
-                    .context(hb.src(origin_id, name.range)),
-            );
-            None
-        }
-        _ => Some(target_id),
-    }
+    Some(PathResult {
+        target_id,
+        symbol: None,
+        remaining: &path.names[step_count..],
+    })
 }
 
 pub fn path_resolve_as_type<'ast, 'hir>(
@@ -1257,59 +1320,117 @@ pub fn path_resolve_as_type<'ast, 'hir>(
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> hir::Type<'hir> {
-    let (target_id, names) = match path_resolve_target_scope(hb, origin_id, path) {
+    let path_res = match path_resolve_target_scope_2(hb, origin_id, path) {
         Some(it) => it,
         None => return hir::Type::Error,
     };
-    let mut names = names.iter();
 
-    match names.next() {
-        Some(name) => match hb.symbol_from_scope(origin_id, target_id, path.kind, name.id) {
-            Some((kind, source)) => {
-                let ty = match kind {
-                    hb::SymbolKind::Enum(id) => hir::Type::Enum(id),
-                    hb::SymbolKind::Union(id) => hir::Type::Union(id),
-                    hb::SymbolKind::Struct(id) => hir::Type::Struct(id),
-                    _ => {
-                        hb.error(
-                            ErrorComp::error(format!("expected type, got other item",))
-                                .context(hb.src(origin_id, name.range))
-                                .context_info("defined here", source),
-                        );
-                        return hir::Type::Error;
-                    }
-                };
-                if let Some(next_name) = names.next() {
-                    hb.error(
-                        ErrorComp::error(format!("type cannot be accessed further",))
-                            .context(hb.src(origin_id, next_name.range))
-                            .context_info("defined here", source),
-                    );
-                    return hir::Type::Error;
-                }
-                ty
-            }
-            None => {
-                //@is a duplicate check
-                // maybe module resolver can return a Option<(SymbolKind, SourceRange)>
-                // which was seen before breaking
+    let type_res = match path_res.symbol {
+        Some((symbol, source, name)) => match symbol {
+            hb::SymbolKind::Enum(id) => hir::Type::Enum(id),
+            hb::SymbolKind::Union(id) => hir::Type::Union(id),
+            hb::SymbolKind::Struct(id) => hir::Type::Struct(id),
+            _ => {
                 hb.error(
-                    ErrorComp::error(format!("name `{}` is not found", hb.name_str(name.id)))
-                        .context(hb.src(origin_id, name.range)),
+                    ErrorComp::error("expected custom type item")
+                        .context(hb.src(origin_id, name.range))
+                        .context_info("found this", source),
                 );
-                hir::Type::Error
+                return hir::Type::Error;
             }
         },
         None => {
-            let range = TextRange::new(
+            let path_range = TextRange::new(
                 path.range_start,
                 path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
             );
             hb.error(
-                ErrorComp::error(format!("expected type, got module path",))
-                    .context(hb.src(origin_id, range)),
+                ErrorComp::error(format!("module path does not lead to an item",))
+                    .context(hb.src(origin_id, path_range)),
             );
-            hir::Type::Error
+            return hir::Type::Error;
         }
+    };
+
+    if !path_res.remaining.is_empty() {
+        let start = path_res.remaining.first().unwrap().range.start();
+        let end = path_res.remaining.last().unwrap().range.end();
+        hb.error(
+            ErrorComp::error("type name cannot be accessed further")
+                .context(hb.src(origin_id, TextRange::new(start, end))),
+        );
+    }
+
+    type_res
+}
+
+pub fn path_resolve_as_proc<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    path: &'ast ast::Path<'ast>,
+) -> Option<hir::ProcID> {
+    let path_res = match path_resolve_target_scope_2(hb, origin_id, path) {
+        Some(it) => it,
+        None => return None,
+    };
+
+    let proc_id = match path_res.symbol {
+        Some((symbol, source, name)) => match symbol {
+            hb::SymbolKind::Proc(id) => Some(id),
+            _ => {
+                hb.error(
+                    ErrorComp::error("expected procedure item")
+                        .context(hb.src(origin_id, name.range))
+                        .context_info("found this", source),
+                );
+                return None;
+            }
+        },
+        None => {
+            //@repeating with similar as_type
+            let path_range = TextRange::new(
+                path.range_start,
+                path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
+            );
+            hb.error(
+                ErrorComp::error(format!("module path does not lead to an item",))
+                    .context(hb.src(origin_id, path_range)),
+            );
+            return None;
+        }
+    };
+
+    //@repeating with similar as_type
+    if !path_res.remaining.is_empty() {
+        let start = path_res.remaining.first().unwrap().range.start();
+        let end = path_res.remaining.last().unwrap().range.end();
+        hb.error(
+            ErrorComp::error("procedure name cannot be accessed further")
+                .context(hb.src(origin_id, TextRange::new(start, end))),
+        );
+    }
+
+    proc_id
+}
+
+pub fn path_resolve_as_module_path<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    path: &'ast ast::Path<'ast>,
+) -> Option<hir::ScopeID> {
+    let path_res = match path_resolve_target_scope_2(hb, origin_id, path) {
+        Some(it) => it,
+        None => return None,
+    };
+
+    match path_res.symbol {
+        Some((_, _, name)) => {
+            hb.error(
+                ErrorComp::error(format!("`{}` is not a module", hb.name_str(name.id)))
+                    .context(hb.src(origin_id, name.range)),
+            );
+            None
+        }
+        _ => Some(path_res.target_id),
     }
 }
