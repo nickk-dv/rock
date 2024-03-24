@@ -104,7 +104,7 @@ pub fn const_resolve_const_expr(
     let ast_expr = hb.const_expr_ast(id);
 
     let hir_expr = match ast_expr.kind {
-        ast::ExprKind::LitInt { val, ty } => hir::Expr::LitInt {
+        ast::ExprKind::LitInt { val } => hir::Expr::LitInt {
             val,
             ty: ast::BasicType::U64,
         },

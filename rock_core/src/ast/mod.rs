@@ -239,11 +239,11 @@ pub enum ExprKind<'ast> {
     Unit,
     LitNull,
     LitBool     { val: bool },
-    LitInt      { val: u64, ty: Option<BasicType> },
-    LitFloat    { val: f64, ty: Option<BasicType> },
+    LitInt      { val: u64 },
+    LitFloat    { val: f64 },
     LitChar     { val: char },
     LitString   { id: InternID },
-    If          { if_: &'ast [IfArm<'ast>] },
+    If          { if_: &'ast If<'ast> },
     Block       { stmts: &'ast [Stmt<'ast>] },
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Ident },
@@ -260,14 +260,16 @@ pub enum ExprKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct IfMatch<'ast> {
-    pub arms: &'ast [IfArm<'ast>],
+pub struct If<'ast> {
+    pub cond: &'ast Expr<'ast>,
+    pub block: &'ast Expr<'ast>,
+    pub else_: Option<Else<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct IfArm<'ast> {
-    pub cond: Option<&'ast Expr<'ast>>,
-    pub expr: &'ast Expr<'ast>,
+pub enum Else<'ast> {
+    If { else_if: &'ast If<'ast> },
+    Block { block: &'ast Expr<'ast> },
 }
 
 #[derive(Copy, Clone)]

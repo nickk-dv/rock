@@ -27,7 +27,6 @@ pub struct Parser<'a, 'ast> {
     match_arms: NodeBuffer<MatchArm<'ast>>,
     exprs: NodeBuffer<&'ast Expr<'ast>>,
     field_inits: NodeBuffer<FieldInit<'ast>>,
-    if_arms: NodeBuffer<IfArm<'ast>>,
 }
 
 struct NodeOffset(usize);
@@ -81,7 +80,6 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             match_arms: NodeBuffer::new(),
             exprs: NodeBuffer::new(),
             field_inits: NodeBuffer::new(),
-            if_arms: NodeBuffer::new(),
         }
     }
 
@@ -658,68 +656,27 @@ fn primary_expr<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Expr<'ast>, 
             let range = p.peek_range();
             p.bump();
             let string = &p.source[range.as_usize()];
-            let v = match string.parse::<u64>() {
+
+            let val = match string.parse::<u64>() {
                 Ok(value) => value,
                 Err(error) => {
-                    panic!("parse int error: {}", error.to_string());
+                    panic!("parse int error: {}", error.to_string()); //@handle gracefully, without a panic
                 }
             };
-            if let Some(basic) = p.peek().as_basic_type() {
-                match basic {
-                    BasicType::S8
-                    | BasicType::S16
-                    | BasicType::S32
-                    | BasicType::S64
-                    | BasicType::Ssize
-                    | BasicType::U8
-                    | BasicType::U16
-                    | BasicType::U32
-                    | BasicType::U64
-                    | BasicType::Usize => {
-                        p.bump();
-                        ExprKind::LitInt {
-                            val: v,
-                            ty: Some(basic),
-                        }
-                    }
-                    BasicType::F32 | BasicType::F64 => {
-                        p.bump();
-                        //@some values cant be represented
-                        ExprKind::LitFloat {
-                            val: v as f64,
-                            ty: Some(basic),
-                        }
-                    }
-                    _ => return Err("expected integer of float type".into()),
-                }
-            } else {
-                ExprKind::LitInt { val: v, ty: None }
-            }
+            ExprKind::LitInt { val }
         }
         T![float_lit] => {
             let range = p.peek_range();
             p.bump();
             let string = &p.source[range.as_usize()];
-            let v = match string.parse::<f64>() {
+
+            let val = match string.parse::<f64>() {
                 Ok(value) => value,
                 Err(error) => {
-                    panic!("parse float error: {}", error.to_string());
+                    panic!("parse float error: {}", error.to_string()); //@handle gracefully, without a panic
                 }
             };
-            if let Some(basic) = p.peek().as_basic_type() {
-                match basic {
-                    BasicType::F32 | BasicType::F64 => {
-                        p.bump();
-                        ExprKind::LitFloat {
-                            val: v,
-                            ty: Some(basic),
-                        }
-                    }
-                    _ => return Err("expected `f32` or `f64`".into()),
-                }
-            } else {
-                ExprKind::LitFloat { val: v, ty: None }
-            }
+            ExprKind::LitFloat { val }
         }
         T![char_lit] => {
             p.bump();
@@ -735,7 +692,7 @@ fn primary_expr<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Expr<'ast>, 
                 id: p.intern_pool.intern(string),
             }
         }
-        T![if] => ExprKind::If { if_: if_match(p)? },
+        T![if] => ExprKind::If { if_: if_(p)? },
         T!['{'] => ExprKind::Block {
             stmts: block_stmts(p)?,
         },
@@ -887,17 +844,26 @@ fn tail_expr<'a, 'ast>(
     }
 }
 
-fn if_match<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast [IfArm<'ast>], String> {
+fn if_<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast If<'ast>, String> {
     p.bump();
-    let arms = semi_separated_block!(p, if_arm, if_arms);
-    Ok(arms)
+    let if_ = If {
+        cond: expr(p)?,
+        block: block(p)?,
+        else_: else_branch(p)?,
+    };
+    Ok(p.arena.alloc(if_))
 }
 
-fn if_arm<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<IfArm<'ast>, String> {
-    let cond = if p.eat(T![_]) { None } else { Some(expr(p)?) };
-    p.expect(T![->])?;
-    let expr = expr(p)?;
-    Ok(IfArm { cond, expr })
+fn else_branch<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Option<Else<'ast>>, String> {
+    if p.eat(T![else]) {
+        match p.peek() {
+            T![if] => Ok(Some(Else::If { else_if: if_(p)? })),
+            T!['{'] => Ok(Some(Else::Block { block: block(p)? })),
+            _ => return Err("expected `if` or `{`".into()),
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 fn block<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Expr<'ast>, String> {
