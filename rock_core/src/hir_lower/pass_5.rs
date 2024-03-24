@@ -3,7 +3,7 @@ use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 use crate::intern::InternID;
-use crate::text::TextRange;
+use crate::text::{TextOffset, TextRange};
 
 pub fn run(hb: &mut hb::HirBuilder) {
     for id in hb.proc_ids() {
@@ -13,19 +13,27 @@ pub fn run(hb: &mut hb::HirBuilder) {
 
 fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let decl = hb.proc_ast(id);
+    let data = hb.proc_data(id);
+
     match decl.block {
         Some(block) => {
-            let data = hb.proc_data(id);
-            let ty = typecheck_expr(
+            //let ty = typecheck_expr(
+            //    hb,
+            //    data.from_id,
+            //    BlockFlags::from_root(),
+            //    block,
+            //    &mut ProcScope::new(id),
+            //);
+            let _ = typecheck_expr_2(
                 hb,
                 data.from_id,
                 BlockFlags::from_root(),
-                block,
                 &mut ProcScope::new(id),
+                data.return_ty,
+                block,
             );
         }
         None => {
-            let data = hb.proc_data(id);
             //@for now having a tail directive assumes that it must be a #[c_call]
             // and this directory is only present with no block expression
             let directive_tail = decl
@@ -175,6 +183,314 @@ impl<'hir> ProcScope<'hir> {
         }
         None
     }
+}
+
+struct TypeResult<'hir> {
+    ty: hir::Type<'hir>,
+    expr: &'hir hir::Expr<'hir>,
+}
+
+impl<'hir> TypeResult<'hir> {
+    fn new(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
+        TypeResult { ty, expr }
+    }
+}
+
+pub fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
+    match (ty, ty2) {
+        (hir::Type::Error, ..) => true,
+        (.., hir::Type::Error) => true,
+        (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
+        (hir::Type::Enum(id), hir::Type::Enum(id2)) => id == id2,
+        (hir::Type::Union(id), hir::Type::Union(id2)) => id == id2,
+        (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
+        (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
+            mutt == mutt2 && type_matches(*ref_ty, *ref_ty2)
+        }
+        (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
+            slice.mutt == slice2.mutt && type_matches(slice.ty, slice2.ty)
+        }
+        //@division of 2 kinds of static sized arrays
+        // makes this eq check totally incorrect, for now
+        // or theres needs to be a 4 cases to compare them all
+        (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
+            //@size const_expr is ignored
+            type_matches(array.ty, array2.ty)
+        }
+        (hir::Type::ArrayStaticDecl(array), hir::Type::ArrayStaticDecl(array2)) => {
+            //@size const_expr is ignored
+            type_matches(array.ty, array2.ty)
+        }
+        _ => false,
+    }
+}
+
+fn typecheck_expr_2<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    proc_scope: &mut ProcScope<'hir>,
+    expect_ty: hir::Type<'hir>,
+    checked_expr: &'ast ast::Expr<'ast>,
+) -> TypeResult<'hir> {
+    let type_result = match checked_expr.kind {
+        ast::ExprKind::Unit => typecheck_expr_unit(hb),
+        ast::ExprKind::LitNull => typecheck_expr_lit_null(hb),
+        ast::ExprKind::LitBool { val } => typecheck_expr_lit_bool(hb, val),
+        ast::ExprKind::LitInt { val, ty } => typecheck_expr_lit_int(hb, expect_ty, val),
+        ast::ExprKind::LitFloat { val, ty } => typecheck_expr_lit_float(hb, expect_ty, val),
+        ast::ExprKind::LitChar { val } => typecheck_expr_lit_char(hb, val),
+        ast::ExprKind::LitString { id } => typecheck_expr_lit_string(hb, id),
+        ast::ExprKind::If { if_ } => typecheck_placeholder(hb),
+        ast::ExprKind::Block { stmts } => {
+            typecheck_expr_block(hb, origin_id, block_flags, proc_scope, expect_ty, stmts)
+        }
+        ast::ExprKind::Match { match_ } => typecheck_placeholder(hb),
+        ast::ExprKind::Field { target, name } => typecheck_placeholder(hb),
+        ast::ExprKind::Index { target, index } => typecheck_placeholder(hb),
+        ast::ExprKind::Cast { target, ty } => typecheck_placeholder(hb),
+        ast::ExprKind::Sizeof { ty } => typecheck_placeholder(hb),
+        ast::ExprKind::Item { path } => typecheck_placeholder(hb),
+        ast::ExprKind::ProcCall { proc_call } => typecheck_placeholder(hb),
+        ast::ExprKind::StructInit { struct_init } => typecheck_placeholder(hb),
+        ast::ExprKind::ArrayInit { input } => typecheck_placeholder(hb),
+        ast::ExprKind::ArrayRepeat { expr, size } => typecheck_placeholder(hb),
+        ast::ExprKind::UnaryExpr { op, rhs } => typecheck_placeholder(hb),
+        ast::ExprKind::BinaryExpr { op, lhs, rhs } => typecheck_placeholder(hb),
+    };
+    if !type_matches(expect_ty, type_result.ty) {
+        let msg: String = format!(
+            "type mismatch: expected {}, got {}",
+            type_format(hb, expect_ty),
+            type_format(hb, type_result.ty)
+        );
+        hb.error(ErrorComp::error(msg).context(hb.src(origin_id, checked_expr.range)));
+    }
+    type_result
+}
+
+fn typecheck_placeholder<'ast, 'hir>(hb: &mut hb::HirBuilder<'_, 'ast, 'hir>) -> TypeResult<'hir> {
+    TypeResult::new(hir::Type::Error, hb.arena().alloc(hir::Expr::Error))
+}
+
+fn typecheck_expr_unit<'ast, 'hir>(hb: &mut hb::HirBuilder<'_, 'ast, 'hir>) -> TypeResult<'hir> {
+    TypeResult::new(
+        hir::Type::Basic(ast::BasicType::Unit),
+        hb.arena().alloc(hir::Expr::Unit),
+    )
+}
+
+fn typecheck_expr_lit_null<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+) -> TypeResult<'hir> {
+    TypeResult::new(
+        hir::Type::Basic(ast::BasicType::Rawptr),
+        hb.arena().alloc(hir::Expr::LitNull),
+    )
+}
+
+fn typecheck_expr_lit_bool<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    val: bool,
+) -> TypeResult<'hir> {
+    TypeResult::new(
+        hir::Type::Basic(ast::BasicType::Bool),
+        hb.arena().alloc(hir::Expr::LitBool { val }),
+    )
+}
+
+fn typecheck_expr_lit_int<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    expect_ty: hir::Type<'hir>,
+    val: u64,
+) -> TypeResult<'hir> {
+    const DEFAULT_INT_TYPE: ast::BasicType = ast::BasicType::S32;
+
+    let lit_type = match expect_ty {
+        hir::Type::Basic(expect) => match expect {
+            ast::BasicType::Unit => DEFAULT_INT_TYPE,
+            ast::BasicType::Bool => DEFAULT_INT_TYPE,
+            ast::BasicType::S8
+            | ast::BasicType::S16
+            | ast::BasicType::S32
+            | ast::BasicType::S64
+            | ast::BasicType::Ssize
+            | ast::BasicType::U8
+            | ast::BasicType::U16
+            | ast::BasicType::U32
+            | ast::BasicType::U64
+            | ast::BasicType::Usize => expect,
+            ast::BasicType::F32 => DEFAULT_INT_TYPE,
+            ast::BasicType::F64 => DEFAULT_INT_TYPE,
+            ast::BasicType::Char => DEFAULT_INT_TYPE,
+            ast::BasicType::Rawptr => DEFAULT_INT_TYPE,
+        },
+        _ => DEFAULT_INT_TYPE,
+    };
+
+    TypeResult::new(
+        hir::Type::Basic(lit_type),
+        hb.arena().alloc(hir::Expr::LitInt { val, ty: lit_type }),
+    )
+}
+
+fn typecheck_expr_lit_float<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    expect_ty: hir::Type<'hir>,
+    val: f64,
+) -> TypeResult<'hir> {
+    const DEFAULT_FLOAT_TYPE: ast::BasicType = ast::BasicType::F64;
+
+    let lit_type = match expect_ty {
+        hir::Type::Basic(expect) => match expect {
+            ast::BasicType::Unit => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::Bool => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::S8 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::S16 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::S32 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::S64 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::Ssize => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::U8 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::U16 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::U32 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::U64 => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::Usize => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::F32 | ast::BasicType::F64 => expect,
+            ast::BasicType::Char => DEFAULT_FLOAT_TYPE,
+            ast::BasicType::Rawptr => DEFAULT_FLOAT_TYPE,
+        },
+        _ => DEFAULT_FLOAT_TYPE,
+    };
+
+    TypeResult::new(
+        hir::Type::Basic(lit_type),
+        hb.arena().alloc(hir::Expr::LitFloat { val, ty: lit_type }),
+    )
+}
+
+fn typecheck_expr_lit_char<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    val: char,
+) -> TypeResult<'hir> {
+    TypeResult::new(
+        hir::Type::Basic(ast::BasicType::Char),
+        hb.arena().alloc(hir::Expr::LitChar { val }),
+    )
+}
+
+fn typecheck_expr_lit_string<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    id: InternID,
+) -> TypeResult<'hir> {
+    let slice = hb.arena().alloc(hir::ArraySlice {
+        mutt: ast::Mut::Immutable,
+        ty: hir::Type::Basic(ast::BasicType::U8),
+    });
+
+    TypeResult::new(
+        hir::Type::ArraySlice(slice),
+        hb.arena().alloc(hir::Expr::LitString { id }),
+    )
+}
+
+fn typecheck_expr_block<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    proc_scope: &mut ProcScope<'hir>,
+    expect_ty: hir::Type<'hir>,
+    stmts: &'ast [ast::Stmt<'ast>],
+) -> TypeResult<'hir> {
+    for stmt in stmts {
+        match stmt.kind {
+            ast::StmtKind::Break => typecheck_stmt_break(hb, origin_id, block_flags, stmt.range),
+            ast::StmtKind::Continue => {
+                typecheck_stmt_continue(hb, origin_id, block_flags, stmt.range);
+            }
+            ast::StmtKind::Return(ret_expr) => {}
+            ast::StmtKind::Defer(block) => typecheck_stmt_defer(
+                hb,
+                origin_id,
+                block_flags,
+                proc_scope,
+                stmt.range.start(),
+                block,
+            ),
+            ast::StmtKind::ForLoop(for_) => {}
+            ast::StmtKind::VarDecl(var_decl) => {}
+            ast::StmtKind::VarAssign(var_assign) => {}
+            ast::StmtKind::ExprSemi(expr) => {
+                let _ = typecheck_expr_2(
+                    hb,
+                    origin_id,
+                    block_flags,
+                    proc_scope,
+                    hir::Type::Basic(ast::BasicType::Unit), //@is unit expect valid?
+                    expr,
+                );
+            }
+            ast::StmtKind::ExprTail(expr) => {
+                let _ = typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, expr);
+            }
+        }
+    }
+
+    TypeResult::new(
+        hir::Type::Basic(ast::BasicType::Unit),
+        hb.arena().alloc(hir::Expr::Unit),
+    )
+}
+
+fn typecheck_stmt_break<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    stmt_range: TextRange,
+) {
+    if !block_flags.in_loop {
+        hb.error(
+            ErrorComp::error("cannot use `break` outside of a loop")
+                .context(hb.src(origin_id, stmt_range)),
+        );
+    }
+}
+
+fn typecheck_stmt_continue<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    stmt_range: TextRange,
+) {
+    if !block_flags.in_loop {
+        hb.error(
+            ErrorComp::error("cannot use `continue` outside of a loop")
+                .context(hb.src(origin_id, stmt_range)),
+        );
+    }
+}
+
+fn typecheck_stmt_defer<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    proc_scope: &mut ProcScope<'hir>,
+    stmt_start: TextOffset,
+    block: &'ast ast::Expr<'ast>,
+) {
+    if block_flags.in_defer {
+        hb.error(
+            ErrorComp::error("`defer` statement cannot be nested")
+                .context(hb.src(origin_id, TextRange::new(stmt_start, stmt_start + 5.into()))),
+        );
+    }
+    let _ = typecheck_expr_2(
+        hb,
+        origin_id,
+        block_flags.enter_defer(),
+        proc_scope,
+        hir::Type::Basic(ast::BasicType::Unit),
+        block,
+    );
 }
 
 //@better idea would be to return type repr that is not allocated via arena

@@ -17,7 +17,7 @@ pub struct Hir<'hir> {
 
 macro_rules! hir_id_impl {
     ($name:ident) => {
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, PartialEq)]
         pub struct $name(u32);
         impl $name {
             pub const fn new(index: usize) -> $name {

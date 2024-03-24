@@ -404,8 +404,7 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
                     Some((kind, source))
                 }
                 Symbol::Imported { kind, use_range } => {
-                    let allow_use = path_kind == ast::PathKind::None
-                        && (origin_id.index() == target_id.index());
+                    let allow_use = path_kind == ast::PathKind::None && (origin_id == target_id);
                     if allow_use {
                         let source = SourceRange::new(use_range, target.module.file_id);
                         Some((kind, source))
