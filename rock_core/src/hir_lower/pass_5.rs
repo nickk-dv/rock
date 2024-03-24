@@ -228,9 +228,9 @@ fn typecheck_expr_2<'ast, 'hir>(
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
     expect_ty: hir::Type<'hir>,
-    checked_expr: &'ast ast::Expr<'ast>,
+    expr: &'ast ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
-    let type_result = match checked_expr.kind {
+    let type_result = match expr.kind {
         ast::ExprKind::Unit => typecheck_unit(hb),
         ast::ExprKind::LitNull => typecheck_lit_null(hb),
         ast::ExprKind::LitBool { val } => typecheck_lit_bool(hb, val),
@@ -253,7 +253,15 @@ fn typecheck_expr_2<'ast, 'hir>(
         ast::ExprKind::Index { target, index } => {
             typecheck_index(hb, origin_id, block_flags, proc_scope, target, index)
         }
-        ast::ExprKind::Cast { target, ty } => typecheck_placeholder(hb),
+        ast::ExprKind::Cast { target, ty } => typecheck_cast(
+            hb,
+            origin_id,
+            block_flags,
+            proc_scope,
+            target,
+            ty,
+            expr.range,
+        ),
         ast::ExprKind::Sizeof { ty } => typecheck_placeholder(hb),
         ast::ExprKind::Item { path } => typecheck_placeholder(hb),
         ast::ExprKind::ProcCall { proc_call } => typecheck_placeholder(hb),
@@ -270,7 +278,7 @@ fn typecheck_expr_2<'ast, 'hir>(
             type_format(hb, expect_ty),
             type_format(hb, type_result.ty)
         );
-        hb.error(ErrorComp::error(msg).context(hb.src(origin_id, checked_expr.range)));
+        hb.error(ErrorComp::error(msg).context(hb.src(origin_id, expr.range)));
     }
 
     type_result
@@ -605,6 +613,54 @@ fn verify_elem_type(ty: hir::Type) -> Option<hir::Type> {
         hir::Type::ArrayStatic(array) => Some(array.ty),
         hir::Type::ArrayStaticDecl(array) => Some(array.ty),
         _ => None,
+    }
+}
+
+fn typecheck_cast<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    proc_scope: &mut ProcScope<'hir>,
+    target: &'ast ast::Expr<'ast>,
+    ty: &'ast ast::Type<'ast>,
+    cast_range: TextRange,
+) -> TypeResult<'hir> {
+    let target_res = typecheck_expr_2(
+        hb,
+        origin_id,
+        block_flags,
+        proc_scope,
+        hir::Type::Error, // no expectation
+        target,
+    );
+    let cast_ty = super::pass_3::resolve_decl_type(hb, origin_id, *ty, true);
+
+    match (target_res.ty, cast_ty) {
+        (hir::Type::Error, ..) => {}
+        (.., hir::Type::Error) => {}
+        (hir::Type::Basic(from), hir::Type::Basic(into)) => {
+            //@verify that from into pair is valid
+            // determine type of the cast, according to llvm, e.g: fp_trunc, fp_to_int etc.
+        }
+        _ => {
+            let from_format = type_format(hb, target_res.ty);
+            let into_format = type_format(hb, cast_ty);
+            hb.error(
+                ErrorComp::error(format!(
+                    "non privitive cast from `{from_format}` into `{into_format}`",
+                ))
+                .context(hb.src(origin_id, cast_range)),
+            );
+        }
+    }
+
+    let hir_ty = hb.arena().alloc(cast_ty);
+    TypeResult {
+        ty: cast_ty,
+        expr: hb.arena().alloc(hir::Expr::Cast {
+            target: target_res.expr,
+            ty: hir_ty,
+        }),
     }
 }
 
