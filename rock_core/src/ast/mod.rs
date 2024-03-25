@@ -11,29 +11,29 @@ pub struct Ast<'ast> {
 #[derive(Copy, Clone)]
 pub struct Module<'ast> {
     pub file_id: vfs::FileID,
-    pub decls: &'ast [Decl<'ast>],
+    pub items: &'ast [Item<'ast>],
 }
 
 #[derive(Copy, Clone)]
-pub enum Decl<'ast> {
-    Mod(&'ast ModDecl),
-    Use(&'ast UseDecl<'ast>),
-    Proc(&'ast ProcDecl<'ast>),
-    Enum(&'ast EnumDecl<'ast>),
-    Union(&'ast UnionDecl<'ast>),
-    Struct(&'ast StructDecl<'ast>),
-    Const(&'ast ConstDecl<'ast>),
-    Global(&'ast GlobalDecl<'ast>),
+pub enum Item<'ast> {
+    Mod(&'ast ModItem),
+    Use(&'ast UseItem<'ast>),
+    Proc(&'ast ProcItem<'ast>),
+    Enum(&'ast EnumItem<'ast>),
+    Union(&'ast UnionItem<'ast>),
+    Struct(&'ast StructItem<'ast>),
+    Const(&'ast ConstItem<'ast>),
+    Global(&'ast GlobalItem<'ast>),
 }
 
 #[derive(Copy, Clone)]
-pub struct ModDecl {
+pub struct ModItem {
     pub vis: Vis,
     pub name: Ident,
 }
 
 #[derive(Copy, Clone)]
-pub struct UseDecl<'ast> {
+pub struct UseItem<'ast> {
     pub path: &'ast Path<'ast>,
     pub symbols: &'ast [UseSymbol],
 }
@@ -45,7 +45,7 @@ pub struct UseSymbol {
 }
 
 #[derive(Copy, Clone)]
-pub struct ProcDecl<'ast> {
+pub struct ProcItem<'ast> {
     pub vis: Vis,
     pub name: Ident,
     pub params: &'ast [ProcParam<'ast>],
@@ -63,7 +63,7 @@ pub struct ProcParam<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct EnumDecl<'ast> {
+pub struct EnumItem<'ast> {
     pub vis: Vis,
     pub name: Ident,
     pub variants: &'ast [EnumVariant<'ast>],
@@ -76,7 +76,7 @@ pub struct EnumVariant<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct UnionDecl<'ast> {
+pub struct UnionItem<'ast> {
     pub vis: Vis,
     pub name: Ident,
     pub members: &'ast [UnionMember<'ast>],
@@ -89,7 +89,7 @@ pub struct UnionMember<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct StructDecl<'ast> {
+pub struct StructItem<'ast> {
     pub vis: Vis,
     pub name: Ident,
     pub fields: &'ast [StructField<'ast>],
@@ -103,7 +103,7 @@ pub struct StructField<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct ConstDecl<'ast> {
+pub struct ConstItem<'ast> {
     pub vis: Vis,
     pub name: Ident,
     pub ty: Type<'ast>,
@@ -111,7 +111,7 @@ pub struct ConstDecl<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct GlobalDecl<'ast> {
+pub struct GlobalItem<'ast> {
     pub vis: Vis,
     pub name: Ident,
     pub ty: Type<'ast>,
@@ -189,8 +189,8 @@ pub enum StmtKind<'ast> {
     Return(Option<&'ast Expr<'ast>>),
     Defer(&'ast Expr<'ast>),
     ForLoop(&'ast For<'ast>),
-    VarDecl(&'ast VarDecl<'ast>),
-    VarAssign(&'ast VarAssign<'ast>),
+    Local(&'ast Local<'ast>),
+    Assign(&'ast Assign<'ast>),
     ExprSemi(&'ast Expr<'ast>),
     ExprTail(&'ast Expr<'ast>),
 }
@@ -206,11 +206,11 @@ pub struct For<'ast> {
 pub enum ForKind<'ast> {
     Loop,
     While { cond: &'ast Expr<'ast> },
-    ForLoop { var_decl: &'ast VarDecl<'ast>, cond: &'ast Expr<'ast>, var_assign: &'ast VarAssign<'ast> },
+    ForLoop { local: &'ast Local<'ast>, cond: &'ast Expr<'ast>, assign: &'ast Assign<'ast> },
 }
 
 #[derive(Copy, Clone)]
-pub struct VarDecl<'ast> {
+pub struct Local<'ast> {
     pub mutt: Mut,
     pub name: Ident,
     pub ty: Option<Type<'ast>>,
@@ -218,7 +218,7 @@ pub struct VarDecl<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct VarAssign<'ast> {
+pub struct Assign<'ast> {
     pub op: AssignOp,
     pub lhs: &'ast Expr<'ast>,
     pub rhs: &'ast Expr<'ast>,
@@ -369,7 +369,7 @@ mod size_assert {
     }
 
     size_assert!(12, Ident);
-    size_assert!(16, Decl);
+    size_assert!(16, Item);
     size_assert!(24, Path);
     size_assert!(16, Type);
     size_assert!(24, Stmt);

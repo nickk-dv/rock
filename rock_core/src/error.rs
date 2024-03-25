@@ -142,3 +142,20 @@ impl SourceRange {
         self.file_id
     }
 }
+
+//@might use this shared error context across the project
+struct ErrorCache {
+    errors: Vec<ErrorComp>,
+}
+
+impl ErrorCache {
+    pub fn new() -> ErrorCache {
+        ErrorCache { errors: Vec::new() }
+    }
+    pub fn add(&mut self, error: ErrorComp) {
+        self.errors.push(error);
+    }
+    pub fn collect(self) -> std::vec::IntoIter<ErrorComp> {
+        self.errors.into_iter()
+    }
+}

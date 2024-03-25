@@ -12,14 +12,14 @@ pub fn run(hb: &mut hb::HirBuilder) {
 }
 
 fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
-    let decl = hb.proc_ast(id);
+    let item = hb.proc_ast(id);
     let data = hb.proc_data(id);
 
-    match decl.block {
+    match item.block {
         Some(block) => {
             let _ = typecheck_expr_2(
                 hb,
-                data.from_id,
+                data.origin_id,
                 BlockFlags::from_root(),
                 &mut ProcScope::new(id),
                 data.return_ty,
@@ -29,7 +29,7 @@ fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
         None => {
             //@for now having a tail directive assumes that it must be a #[c_call]
             // and this directory is only present with no block expression
-            let directive_tail = decl
+            let directive_tail = item
                 .directive_tail
                 .expect("directive expected with no proc block");
 
@@ -40,7 +40,7 @@ fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
                         "expected a `c_call` directive, got `{}`",
                         directive_name
                     ))
-                    .context(hb.src(data.from_id, directive_tail.name.range)),
+                    .context(hb.src(data.origin_id, directive_tail.name.range)),
                 )
             }
         }
@@ -129,7 +129,7 @@ enum VariableID {
 // on stack exit
 struct ProcScope<'hir> {
     proc_id: hir::ProcID,
-    locals: Vec<&'hir hir::VarDecl<'hir>>,
+    locals: Vec<&'hir hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
 }
 
@@ -142,7 +142,7 @@ impl<'hir> ProcScope<'hir> {
         }
     }
 
-    fn get_local(&self, id: hir::LocalID) -> &'hir hir::VarDecl<'hir> {
+    fn get_local(&self, id: hir::LocalID) -> &'hir hir::Local<'hir> {
         self.locals.get(id.index()).unwrap()
     }
 
@@ -155,9 +155,9 @@ impl<'hir> ProcScope<'hir> {
         data.params.get(id.index()).unwrap()
     }
 
-    fn push_local(&mut self, var_decl: &'hir hir::VarDecl<'hir>) {
+    fn push_local(&mut self, local: &'hir hir::Local<'hir>) {
         let id = hir::LocalID::new(self.locals.len());
-        self.locals.push(var_decl);
+        self.locals.push(local);
         self.locals_in_scope.push(id);
     }
 
@@ -640,7 +640,7 @@ fn typecheck_cast<'ast, 'hir>(
         hir::Type::Error, // no expectation
         target,
     );
-    let cast_ty = super::pass_3::resolve_decl_type(hb, origin_id, *ty, true);
+    let cast_ty = super::pass_3::resolve_type(hb, origin_id, *ty, true);
 
     match (target_res.ty, cast_ty) {
         (hir::Type::Error, ..) => {}
@@ -719,7 +719,7 @@ fn typecheck_proc_call<'ast, 'hir>(
                 .context(hb.src(origin_id, expr_range))
                 .context_info(
                     "calling this procedure",
-                    hb.src(data.from_id, data.name.range),
+                    hb.src(data.origin_id, data.name.range),
                 ),
         );
     }
@@ -752,8 +752,8 @@ fn typecheck_block<'ast, 'hir>(
                 block,
             ),
             ast::StmtKind::ForLoop(for_) => {}
-            ast::StmtKind::VarDecl(var_decl) => {}
-            ast::StmtKind::VarAssign(var_assign) => {}
+            ast::StmtKind::Local(local) => {}
+            ast::StmtKind::Assign(assign) => {}
             ast::StmtKind::ExprSemi(expr) => {
                 let _ = typecheck_expr_2(
                     hb,
@@ -830,395 +830,6 @@ fn typecheck_stmt_defer<'ast, 'hir>(
     );
 }
 
-//@better idea would be to return type repr that is not allocated via arena
-// and will be fast to construct and compare
-#[must_use]
-fn typecheck_expr<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
-    origin_id: hir::ScopeID,
-    block_flags: BlockFlags,
-    checked_expr: &ast::Expr<'ast>,
-    locals: &mut ProcScope<'hir>,
-) -> hir::Type<'hir> {
-    match checked_expr.kind {
-        ast::ExprKind::Unit => hir::Type::Basic(ast::BasicType::Unit),
-        ast::ExprKind::LitNull => hir::Type::Basic(ast::BasicType::Rawptr),
-        ast::ExprKind::LitBool { val } => hir::Type::Basic(ast::BasicType::Bool),
-        ast::ExprKind::LitInt { val } => hir::Type::Basic(ast::BasicType::S32),
-        ast::ExprKind::LitFloat { val } => hir::Type::Basic(ast::BasicType::F64),
-        ast::ExprKind::LitChar { val } => hir::Type::Basic(ast::BasicType::Char),
-        ast::ExprKind::LitString { id } => {
-            let slice = hb.arena().alloc(hir::ArraySlice {
-                mutt: ast::Mut::Immutable,
-                ty: hir::Type::Basic(ast::BasicType::U8),
-            });
-            hir::Type::ArraySlice(slice)
-        }
-        ast::ExprKind::If { if_ } => {
-            //if if_.is_empty() {
-            //    hir::Type::Basic(ast::BasicType::Unit)
-            //} else {
-            //    for arm in if_ {
-            //        if let Some(cond) = arm.cond {
-            //            let _ = typecheck_expr(hb, origin_id, block_flags, cond, locals);
-            //            //@expect bool
-            //        }
-            //        let _ = typecheck_expr(hb, origin_id, block_flags, arm.expr, locals);
-            //    }
-            //    typecheck_todo(hb, origin_id, checked_expr)
-            //}
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-        ast::ExprKind::Block { stmts } => {
-            for (idx, stmt) in stmts.iter().enumerate() {
-                let last = idx + 1 == stmts.len();
-                let stmt_ty = match stmt.kind {
-                    ast::StmtKind::Break => {
-                        if !block_flags.in_loop {
-                            hb.error(
-                                ErrorComp::error("cannot use `break` outside of a loop")
-                                    .context(hb.src(origin_id, stmt.range)),
-                            );
-                        }
-                        hir::Type::Basic(ast::BasicType::Unit)
-                    }
-                    ast::StmtKind::Continue => {
-                        if !block_flags.in_loop {
-                            hb.error(
-                                ErrorComp::error("cannot use `continue` outside of a loop")
-                                    .context(hb.src(origin_id, stmt.range)),
-                            );
-                        }
-                        hir::Type::Basic(ast::BasicType::Unit)
-                    }
-                    ast::StmtKind::Return(expr) => {
-                        if block_flags.in_defer {
-                            let range =
-                                TextRange::new(stmt.range.start(), stmt.range.start() + 6.into());
-                            hb.error(
-                                ErrorComp::error("cannot use `return` inside the defer block")
-                                    .context(hb.src(origin_id, range)),
-                            );
-                        }
-                        if let Some(expr) = expr {
-                            let _ = typecheck_expr(
-                                hb,
-                                origin_id,
-                                block_flags.enter_defer(),
-                                expr,
-                                locals,
-                            );
-                        }
-                        hir::Type::Basic(ast::BasicType::Unit)
-                    }
-                    ast::StmtKind::Defer(defer) => {
-                        if block_flags.in_defer {
-                            let range =
-                                TextRange::new(stmt.range.start(), stmt.range.start() + 5.into());
-                            hb.error(
-                                ErrorComp::error("`defer` statement cannot be nested")
-                                    .context(hb.src(origin_id, range)),
-                            );
-                        }
-                        typecheck_expr(hb, origin_id, block_flags.enter_defer(), defer, locals)
-                    }
-                    ast::StmtKind::ForLoop(for_) => {
-                        //@check and add for loop variables to the corect scope
-                        typecheck_expr(hb, origin_id, block_flags.enter_loop(), for_.block, locals)
-                    }
-                    ast::StmtKind::VarDecl(var_decl) => {
-                        let duplicate = match hb.scope_name_defined(origin_id, var_decl.name.id) {
-                            Some(existing) => {
-                                super::pass_1::name_already_defined_error(
-                                    hb,
-                                    origin_id,
-                                    var_decl.name,
-                                    existing,
-                                );
-                                true
-                            }
-                            None => {
-                                let var = locals.find_variable(hb, var_decl.name.id);
-
-                                let existing = match var {
-                                    Some(VariableID::Local(id)) => {
-                                        Some(locals.get_local(id).name.range)
-                                    }
-                                    Some(VariableID::Param(id)) => {
-                                        Some(locals.get_param(hb, id).name.range)
-                                    }
-                                    None => None,
-                                };
-
-                                match existing {
-                                    Some(existing) => {
-                                        hb.error(
-                                            ErrorComp::error(format!(
-                                                "local `{}` is already defined",
-                                                hb.name_str(var_decl.name.id)
-                                            ))
-                                            .context(hb.src(origin_id, var_decl.name.range))
-                                            .context_info(
-                                                "defined here",
-                                                hb.src(origin_id, existing),
-                                            ),
-                                        );
-                                        true
-                                    }
-                                    None => false,
-                                }
-                            }
-                        };
-
-                        let ty = var_decl
-                            .ty
-                            .map(|ast_ty| {
-                                super::pass_3::resolve_decl_type(hb, origin_id, ast_ty, true)
-                            })
-                            .unwrap_or(hir::Type::Error);
-                        let expr = var_decl.expr.map(|ast_expr| {
-                            let _ = typecheck_expr(hb, origin_id, block_flags, ast_expr, locals);
-                            hb.arena().alloc(hir::Expr::Error)
-                        });
-
-                        if !duplicate {
-                            let var_decl = hb.arena().alloc(hir::VarDecl {
-                                mutt: var_decl.mutt,
-                                name: var_decl.name,
-                                ty,
-                                expr,
-                            });
-                            locals.push_local(var_decl);
-                        }
-
-                        hir::Type::Basic(ast::BasicType::Unit)
-                    }
-                    ast::StmtKind::VarAssign(_) => hir::Type::Basic(ast::BasicType::Unit),
-                    ast::StmtKind::ExprSemi(expr) => {
-                        typecheck_expr(hb, origin_id, block_flags, expr, locals)
-                    }
-                    ast::StmtKind::ExprTail(expr) => {
-                        typecheck_expr(hb, origin_id, block_flags, expr, locals)
-                    }
-                };
-                if last {
-                    return stmt_ty;
-                }
-            }
-            hir::Type::Basic(ast::BasicType::Unit)
-        }
-        ast::ExprKind::Match { match_ } => {
-            let _ = typecheck_expr(hb, origin_id, block_flags, match_.on_expr, locals); // @only enums and integers and bools are allowed (like switch expr)
-            for arm in match_.arms {
-                if let Some(pat) = arm.pat {
-                    let _ = typecheck_expr(hb, origin_id, block_flags, pat, locals);
-                    //@expect same type as being matched on (enum -> enum, int -> int)
-                }
-                let _ = typecheck_expr(hb, origin_id, block_flags, arm.expr, locals);
-            }
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-        ast::ExprKind::Field { target, name } => {
-            //@allowing only single reference access of the field, no automatic derefencing is done automatically
-            let ty = typecheck_expr(hb, origin_id, block_flags, target, locals);
-            match ty {
-                hir::Type::Reference(ref_ty, mutt) => check_field_ty(hb, origin_id, *ref_ty, name),
-                _ => check_field_ty(hb, origin_id, ty, name),
-            }
-        }
-        ast::ExprKind::Index { target, index } => {
-            //@allowing only single reference access of the field, no automatic derefencing is done automatically
-            let ty = typecheck_expr(hb, origin_id, block_flags, target, locals);
-            let _ = typecheck_expr(hb, origin_id, block_flags, index, locals); //@expect usize
-            match ty {
-                hir::Type::Reference(ref_ty, mutt) => {
-                    check_index_ty(hb, origin_id, *ref_ty, index.range)
-                }
-                _ => check_index_ty(hb, origin_id, ty, index.range),
-            }
-        }
-        ast::ExprKind::Cast { target, ty } => typecheck_todo(hb, origin_id, checked_expr),
-        ast::ExprKind::Sizeof { ty } => {
-            //@check ast type
-            //@this can be promoted to a constant expression
-            // but no alignment or size resolution is done so far on checking phase
-            hir::Type::Basic(ast::BasicType::Usize)
-        }
-        ast::ExprKind::Item { path } => {
-            //@nameresolve item path
-            //let target_id = path_resolve_target_scope(hb, origin_id, path);
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-        ast::ExprKind::ProcCall { proc_call } => {
-            //@nameresolve proc_call.path
-            //let target_id = path_resolve_target_scope(hb, origin_id, proc_call.path);
-            for &expr in proc_call.input {
-                let _ = typecheck_expr(hb, origin_id, block_flags, expr, locals);
-            }
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-        ast::ExprKind::StructInit { struct_init } => {
-            //@nameresolve struct_init.path
-            //let target_id = path_resolve_target_scope(hb, origin_id, struct_init.path);
-
-            // @first find if field name exists, only then handle
-            // name and expr or just a name
-            for init in struct_init.input {
-                match init.expr {
-                    Some(expr) => {
-                        //@field name and the expression
-                        let _ = typecheck_expr(hb, origin_id, block_flags, expr, locals);
-                    }
-                    None => {
-                        //@field name that must match some named value in scope
-                    }
-                }
-            }
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-        ast::ExprKind::ArrayInit { input } => {
-            //@expected type should make empty array to be of that type
-            // since type of empty array literal is anything otherwise
-            // if we work with non hir types directly representing the Unknown type is possible
-            // and mutation is fine
-
-            // rust example:
-            // let empty: [unknown; 0] = [];
-            // let slice: &[u32] = &empty; //now array type is known
-
-            //@try to design a better method that might check a procedure body
-            // without starting to produce a new hir right-away
-            // since the series of Hir::Expr are not usefull if this code
-            // wont be compiled any further, we dont need to allocate anything in that case
-
-            let mut elem_ty = hir::Type::Error;
-            for (idx, &expr) in input.iter().enumerate() {
-                let ty = typecheck_expr(hb, origin_id, block_flags, expr, locals);
-                if idx == 0 {
-                    elem_ty = ty;
-                }
-            }
-            let size = hb.arena().alloc(hir::Expr::LitInt {
-                val: input.len() as u64,
-                ty: ast::BasicType::Usize,
-            });
-            let array = hb.arena().alloc(hir::ArrayStatic { size, ty: elem_ty });
-            hir::Type::ArrayStatic(array)
-        }
-        ast::ExprKind::ArrayRepeat { expr, size } => typecheck_todo(hb, origin_id, checked_expr),
-        ast::ExprKind::UnaryExpr { op, rhs } => {
-            let rhs = typecheck_expr(hb, origin_id, block_flags, rhs, locals);
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-        ast::ExprKind::BinaryExpr { op, lhs, rhs } => {
-            let lhs = typecheck_expr(hb, origin_id, block_flags, lhs, locals);
-            let rhs = typecheck_expr(hb, origin_id, block_flags, rhs, locals);
-            typecheck_todo(hb, origin_id, checked_expr)
-        }
-    }
-}
-
-fn typecheck_todo<'hir>(
-    hb: &mut hb::HirBuilder,
-    from_id: hir::ScopeID,
-    checked_expr: &ast::Expr,
-) -> hir::Type<'hir> {
-    hb.error(
-        ErrorComp::warning("this expression is not yet typechecked")
-            .context(hb.src(from_id, checked_expr.range)),
-    );
-    hir::Type::Error
-}
-
-fn check_field_ty<'hir>(
-    hb: &mut hb::HirBuilder<'_, '_, 'hir>,
-    from_id: hir::ScopeID,
-    ty: hir::Type<'hir>,
-    name: ast::Ident,
-) -> hir::Type<'hir> {
-    match ty {
-        hir::Type::Error => hir::Type::Error,
-        hir::Type::Union(id) => {
-            let data = hb.union_data(id);
-            let find = data
-                .members
-                .iter()
-                .enumerate()
-                .find_map(|(id, member)| (member.name.id == name.id).then(|| member));
-            match find {
-                Some(member) => member.ty,
-                _ => {
-                    hb.error(
-                        ErrorComp::error(format!(
-                            "no field `{}` exists on union type `{}`",
-                            hb.name_str(name.id),
-                            hb.name_str(data.name.id),
-                        ))
-                        .context(hb.src(from_id, name.range)),
-                    );
-                    hir::Type::Error
-                }
-            }
-        }
-        hir::Type::Struct(id) => {
-            let data = hb.struct_data(id);
-            let find = data
-                .fields
-                .iter()
-                .enumerate()
-                .find_map(|(id, field)| (field.name.id == name.id).then(|| field));
-            match find {
-                Some(field) => field.ty,
-                _ => {
-                    hb.error(
-                        ErrorComp::error(format!(
-                            "no field `{}` exists on struct type `{}`",
-                            hb.name_str(name.id),
-                            hb.name_str(data.name.id),
-                        ))
-                        .context(hb.src(from_id, name.range)),
-                    );
-                    hir::Type::Error
-                }
-            }
-        }
-        _ => {
-            let ty_format = type_format(hb, ty);
-            hb.error(
-                ErrorComp::error(format!(
-                    "no field `{}` exists on value of type {}",
-                    hb.name_str(name.id),
-                    ty_format,
-                ))
-                .context(hb.src(from_id, name.range)),
-            );
-            hir::Type::Error
-        }
-    }
-}
-
-fn check_index_ty<'hir>(
-    hb: &mut hb::HirBuilder<'_, '_, 'hir>,
-    from_id: hir::ScopeID,
-    ty: hir::Type<'hir>,
-    index_range: TextRange,
-) -> hir::Type<'hir> {
-    match ty {
-        hir::Type::Error => hir::Type::Error,
-        hir::Type::ArraySlice(slice) => slice.ty,
-        hir::Type::ArrayStatic(array) => array.ty,
-        hir::Type::ArrayStaticDecl(array) => array.ty,
-        _ => {
-            let ty_format = type_format(hb, ty);
-            hb.error(
-                ErrorComp::error(format!("cannot index value of type {}", ty_format,))
-                    .context(hb.src(from_id, index_range)),
-            );
-            hir::Type::Error
-        }
-    }
-}
-
 /*
 path syntax resolution:
 prefix.name.name.name ...
@@ -1240,13 +851,18 @@ local_var  -> <follow?> by <chained> field access
 
 */
 
+//@this needs to be re-thinked
+// to allow more general use
+// to get first item of any kind
+// and reduce checks for missing item etc
+// change api, maybe expect an item and emit if path is modules only
 struct PathResult<'ast> {
     target_id: hir::ScopeID,
     symbol: Option<(hb::SymbolKind, SourceRange, ast::Ident)>,
     remaining: &'ast [ast::Ident],
 }
 
-fn path_resolve_target_scope_2<'ast, 'hir>(
+fn path_resolve_target_scope<'ast, 'hir>(
     hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
@@ -1320,7 +936,7 @@ pub fn path_resolve_as_type<'ast, 'hir>(
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> hir::Type<'hir> {
-    let path_res = match path_resolve_target_scope_2(hb, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hb, origin_id, path) {
         Some(it) => it,
         None => return hir::Type::Error,
     };
@@ -1369,7 +985,7 @@ pub fn path_resolve_as_proc<'ast, 'hir>(
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> Option<hir::ProcID> {
-    let path_res = match path_resolve_target_scope_2(hb, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hb, origin_id, path) {
         Some(it) => it,
         None => return None,
     };
@@ -1418,7 +1034,7 @@ pub fn path_resolve_as_module_path<'ast, 'hir>(
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> Option<hir::ScopeID> {
-    let path_res = match path_resolve_target_scope_2(hb, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hb, origin_id, path) {
         Some(it) => it,
         None => return None,
     };

@@ -16,7 +16,7 @@ pub struct Parser<'a, 'ast> {
     source: &'a str,
     char_id: u32,
     string_id: u32,
-    decls: NodeBuffer<Decl<'ast>>,
+    items: NodeBuffer<Item<'ast>>,
     use_symbols: NodeBuffer<UseSymbol>,
     proc_params: NodeBuffer<ProcParam<'ast>>,
     enum_variants: NodeBuffer<EnumVariant<'ast>>,
@@ -69,7 +69,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             source,
             char_id: 0,
             string_id: 0,
-            decls: NodeBuffer::new(),
+            items: NodeBuffer::new(),
             use_symbols: NodeBuffer::new(),
             proc_params: NodeBuffer::new(),
             enum_variants: NodeBuffer::new(),
@@ -165,10 +165,10 @@ pub fn module<'a, 'ast>(
     p: &mut Parser<'a, 'ast>,
     file_id: vfs::FileID,
 ) -> Result<Module<'ast>, ErrorComp> {
-    let start = p.decls.start();
+    let start = p.items.start();
     while !p.at(T![eof]) {
-        match decl(p) {
-            Ok(decl) => p.decls.add(decl),
+        match item(p) {
+            Ok(item) => p.items.add(item),
             Err(error) => {
                 if p.at(T![eof]) {
                     p.cursor -= 1;
@@ -179,39 +179,39 @@ pub fn module<'a, 'ast>(
             }
         }
     }
-    let decls = p.decls.take(start, p.arena);
-    Ok(Module { file_id, decls })
+    let items = p.items.take(start, p.arena);
+    Ok(Module { file_id, items })
 }
 
-fn decl<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Decl<'ast>, String> {
+fn item<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Item<'ast>, String> {
     let vis = vis(p); //@not allowing vis with `use` is not enforced right now
     match p.peek() {
-        T![mod] => Ok(Decl::Mod(mod_decl(p, vis)?)),
-        T![use] => Ok(Decl::Use(use_decl(p)?)),
-        T![proc] => Ok(Decl::Proc(proc_decl(p, vis)?)),
-        T![enum] => Ok(Decl::Enum(enum_decl(p, vis)?)),
-        T![union] => Ok(Decl::Union(union_decl(p, vis)?)),
-        T![struct] => Ok(Decl::Struct(struct_decl(p, vis)?)),
-        T![const] => Ok(Decl::Const(const_decl(p, vis)?)),
-        T![global] => Ok(Decl::Global(global_decl(p, vis)?)),
-        _ => Err("expected declaration".into()),
+        T![mod] => Ok(Item::Mod(mod_item(p, vis)?)),
+        T![use] => Ok(Item::Use(use_item(p)?)),
+        T![proc] => Ok(Item::Proc(proc_item(p, vis)?)),
+        T![enum] => Ok(Item::Enum(enum_item(p, vis)?)),
+        T![union] => Ok(Item::Union(union_item(p, vis)?)),
+        T![struct] => Ok(Item::Struct(struct_item(p, vis)?)),
+        T![const] => Ok(Item::Const(const_item(p, vis)?)),
+        T![global] => Ok(Item::Global(global_item(p, vis)?)),
+        _ => Err("expected item".into()),
     }
 }
 
-fn mod_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast ModDecl, String> {
+fn mod_item<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast ModItem, String> {
     p.bump();
     let name = name(p)?;
     p.expect(T![;])?;
 
-    Ok(p.arena.alloc(ModDecl { vis, name }))
+    Ok(p.arena.alloc(ModItem { vis, name }))
 }
 
-fn use_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast UseDecl<'ast>, String> {
+fn use_item<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast UseItem<'ast>, String> {
     p.bump();
     let path = path(p)?;
     p.expect(T![.])?;
     let symbols = comma_separated_list!(p, use_symbol, use_symbols, T!['{'], T!['}']);
-    Ok(p.arena.alloc(UseDecl { path, symbols }))
+    Ok(p.arena.alloc(UseItem { path, symbols }))
 }
 
 fn use_symbol(p: &mut Parser) -> Result<UseSymbol, String> {
@@ -221,7 +221,7 @@ fn use_symbol(p: &mut Parser) -> Result<UseSymbol, String> {
     })
 }
 
-fn proc_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast ProcDecl<'ast>, String> {
+fn proc_item<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast ProcItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
 
@@ -250,7 +250,7 @@ fn proc_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast ProcD
         None
     };
 
-    Ok(p.arena.alloc(ProcDecl {
+    Ok(p.arena.alloc(ProcItem {
         vis,
         name,
         params,
@@ -269,11 +269,11 @@ fn proc_param<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<ProcParam<'ast>, Str
     Ok(ProcParam { mutt, name, ty })
 }
 
-fn enum_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast EnumDecl<'ast>, String> {
+fn enum_item<'a, 'ast>(p: &mut Parser<'a, 'ast>, vis: Vis) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     let variants = semi_separated_block!(p, enum_variant, enum_variants);
-    Ok(p.arena.alloc(EnumDecl {
+    Ok(p.arena.alloc(EnumItem {
         vis,
         name,
         variants,
@@ -290,14 +290,14 @@ fn enum_variant<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<EnumVariant<'ast>,
     Ok(EnumVariant { name, value })
 }
 
-fn union_decl<'a, 'ast>(
+fn union_item<'a, 'ast>(
     p: &mut Parser<'a, 'ast>,
     vis: Vis,
-) -> Result<&'ast UnionDecl<'ast>, String> {
+) -> Result<&'ast UnionItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     let members = semi_separated_block!(p, union_member, union_members);
-    Ok(p.arena.alloc(UnionDecl { vis, name, members }))
+    Ok(p.arena.alloc(UnionItem { vis, name, members }))
 }
 
 fn union_member<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<UnionMember<'ast>, String> {
@@ -307,14 +307,14 @@ fn union_member<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<UnionMember<'ast>,
     Ok(UnionMember { name, ty })
 }
 
-fn struct_decl<'a, 'ast>(
+fn struct_item<'a, 'ast>(
     p: &mut Parser<'a, 'ast>,
     vis: Vis,
-) -> Result<&'ast StructDecl<'ast>, String> {
+) -> Result<&'ast StructItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     let fields = semi_separated_block!(p, struct_field, struct_fields);
-    Ok(p.arena.alloc(StructDecl { vis, name, fields }))
+    Ok(p.arena.alloc(StructItem { vis, name, fields }))
 }
 
 fn struct_field<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<StructField<'ast>, String> {
@@ -325,10 +325,10 @@ fn struct_field<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<StructField<'ast>,
     Ok(StructField { vis, name, ty })
 }
 
-fn const_decl<'a, 'ast>(
+fn const_item<'a, 'ast>(
     p: &mut Parser<'a, 'ast>,
     vis: Vis,
-) -> Result<&'ast ConstDecl<'ast>, String> {
+) -> Result<&'ast ConstItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     p.expect(T![:])?;
@@ -337,7 +337,7 @@ fn const_decl<'a, 'ast>(
     let value = ConstExpr(expr(p)?);
     p.expect(T![;])?;
 
-    Ok(p.arena.alloc(ConstDecl {
+    Ok(p.arena.alloc(ConstItem {
         vis,
         name,
         ty,
@@ -345,10 +345,10 @@ fn const_decl<'a, 'ast>(
     }))
 }
 
-fn global_decl<'a, 'ast>(
+fn global_item<'a, 'ast>(
     p: &mut Parser<'a, 'ast>,
     vis: Vis,
-) -> Result<&'ast GlobalDecl<'ast>, String> {
+) -> Result<&'ast GlobalItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     p.expect(T![:])?;
@@ -357,7 +357,7 @@ fn global_decl<'a, 'ast>(
     let value = ConstExpr(expr(p)?);
     p.expect(T![;])?;
 
-    Ok(p.arena.alloc(GlobalDecl {
+    Ok(p.arena.alloc(GlobalItem {
         vis,
         name,
         ty,
@@ -507,14 +507,14 @@ fn stmt<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Stmt<'ast>, String> {
             p.bump();
             StmtKind::ForLoop(for_loop(p)?)
         }
-        T![let] | T![var] => StmtKind::VarDecl(var_decl(p)?),
+        T![let] | T![mut] => StmtKind::Local(local(p)?),
         _ => {
             let lhs = expr(p)?;
             if let Some(op) = p.peek().as_assign_op() {
                 p.bump();
                 let rhs = expr(p)?;
                 p.expect(T![;])?;
-                StmtKind::VarAssign(p.arena.alloc(VarAssign { op, lhs, rhs }))
+                StmtKind::Assign(p.arena.alloc(Assign { op, lhs, rhs }))
             } else if p.eat(T![;]) {
                 StmtKind::ExprSemi(lhs)
             } else {
@@ -532,8 +532,8 @@ fn stmt<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Stmt<'ast>, String> {
 fn for_loop<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast For<'ast>, String> {
     let kind = match p.peek() {
         T!['{'] => ForKind::Loop,
-        T![let] | T![var] => {
-            let var_decl = var_decl(p)?;
+        T![let] | T![mut] => {
+            let local = local(p)?;
             let cond = expr(p)?;
             p.expect(T![;])?;
 
@@ -546,12 +546,12 @@ fn for_loop<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast For<'ast>, Strin
                 _ => return Err("expected assignment operator".into()),
             };
             let rhs = expr(p)?;
-            let var_assign = p.arena.alloc(VarAssign { op, lhs, rhs });
+            let assign = p.arena.alloc(Assign { op, lhs, rhs });
 
             ForKind::ForLoop {
-                var_decl,
+                local,
                 cond,
-                var_assign,
+                assign,
             }
         }
         _ => ForKind::While { cond: expr(p)? },
@@ -560,10 +560,10 @@ fn for_loop<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast For<'ast>, Strin
     Ok(p.arena.alloc(For { kind, block }))
 }
 
-fn var_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast VarDecl<'ast>, String> {
+fn local<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Local<'ast>, String> {
     let mutt = match p.peek() {
+        T![mut] => Mut::Mutable,
         T![let] => Mut::Immutable,
-        T![var] => Mut::Mutable,
         _ => return Err("expected `let` or `var`".into()),
     };
     p.bump();
@@ -573,7 +573,7 @@ fn var_decl<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast VarDecl<'ast>, S
     let expr = if p.eat(T![=]) { Some(expr(p)?) } else { None };
     p.expect(T![;])?;
 
-    Ok(p.arena.alloc(VarDecl {
+    Ok(p.arena.alloc(Local {
         mutt,
         name,
         ty,

@@ -27,70 +27,70 @@ pub fn run(hb: &mut hb::HirBuilder) {
 
 fn const_resolve_proc_data(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let data = hb.proc_data(id);
-    let from_id = data.from_id;
+    let origin_id = data.origin_id;
     let ret_ty = data.return_ty;
 
     for param in data.params.iter() {
-        const_resolve_type(hb, from_id, param.ty);
+        const_resolve_type(hb, origin_id, param.ty);
     }
-    const_resolve_type(hb, from_id, ret_ty);
+    const_resolve_type(hb, origin_id, ret_ty);
 }
 
 fn const_resolve_enum_data(hb: &mut hb::HirBuilder, id: hir::EnumID) {
     let data = hb.enum_data(id);
-    let from_id = data.from_id;
+    let origin_id = data.origin_id;
 
     for variant in data.variants.iter() {
         if let Some(const_id) = variant.value {
-            const_resolve_const_expr(hb, from_id, const_id);
+            const_resolve_const_expr(hb, origin_id, const_id);
         }
     }
 }
 
 fn const_resolve_union_data(hb: &mut hb::HirBuilder, id: hir::UnionID) {
     let data = hb.union_data(id);
-    let from_id = data.from_id;
+    let origin_id = data.origin_id;
 
     for member in data.members.iter() {
-        const_resolve_type(hb, from_id, member.ty);
+        const_resolve_type(hb, origin_id, member.ty);
     }
 }
 
 fn const_resolve_struct_data(hb: &mut hb::HirBuilder, id: hir::StructID) {
     let data = hb.struct_data(id);
-    let from_id = data.from_id;
+    let origin_id = data.origin_id;
 
     for field in data.fields.iter() {
-        const_resolve_type(hb, from_id, field.ty);
+        const_resolve_type(hb, origin_id, field.ty);
     }
 }
 
 fn const_resolve_const_data(hb: &mut hb::HirBuilder, id: hir::ConstID) {
     let data = hb.const_data(id);
-    let from_id = data.from_id;
+    let origin_id = data.origin_id;
     let value = data.value;
 
-    const_resolve_type(hb, from_id, data.ty);
-    const_resolve_const_expr(hb, from_id, value);
+    const_resolve_type(hb, origin_id, data.ty);
+    const_resolve_const_expr(hb, origin_id, value);
 }
 
 fn const_resolve_global_data(hb: &mut hb::HirBuilder, id: hir::GlobalID) {
     let data = hb.global_data(id);
-    let from_id = data.from_id;
+    let origin_id = data.origin_id;
     let value = data.value;
 
-    const_resolve_type(hb, from_id, data.ty);
-    const_resolve_const_expr(hb, from_id, value);
+    const_resolve_type(hb, origin_id, data.ty);
+    const_resolve_const_expr(hb, origin_id, value);
 }
 
-fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, ty: hir::Type) {
+fn const_resolve_type(hb: &mut hb::HirBuilder, origin_id: hir::ScopeID, ty: hir::Type) {
     match ty {
-        hir::Type::Reference(ref_ty, _) => const_resolve_type(hb, from_id, *ref_ty),
-        hir::Type::ArraySlice(slice) => const_resolve_type(hb, from_id, slice.ty),
-        hir::Type::ArrayStatic(array) => const_resolve_type(hb, from_id, array.ty),
+        hir::Type::Reference(ref_ty, _) => const_resolve_type(hb, origin_id, *ref_ty),
+        hir::Type::ArraySlice(slice) => const_resolve_type(hb, origin_id, slice.ty),
+        hir::Type::ArrayStatic(array) => const_resolve_type(hb, origin_id, array.ty),
         hir::Type::ArrayStaticDecl(array) => {
-            const_resolve_const_expr(hb, from_id, array.size);
-            const_resolve_type(hb, from_id, array.ty);
+            const_resolve_const_expr(hb, origin_id, array.size);
+            const_resolve_type(hb, origin_id, array.ty);
         }
         _ => {}
     }
@@ -98,7 +98,7 @@ fn const_resolve_type(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, ty: hir::T
 
 pub fn const_resolve_const_expr(
     hb: &mut hb::HirBuilder,
-    from_id: hir::ScopeID,
+    origin_id: hir::ScopeID,
     id: hir::ConstExprID,
 ) {
     let ast_expr = hb.const_expr_ast(id);
@@ -109,7 +109,7 @@ pub fn const_resolve_const_expr(
             ty: ast::BasicType::U64,
         },
         _ => {
-            error_const_expr_unsupported(hb, from_id, ast_expr.range);
+            error_const_expr_unsupported(hb, origin_id, ast_expr.range);
             hir::Expr::Error
         }
     };
@@ -117,7 +117,11 @@ pub fn const_resolve_const_expr(
     data.value = Some(hir_expr)
 }
 
-fn error_const_expr_unsupported(hb: &mut hb::HirBuilder, from_id: hir::ScopeID, range: TextRange) {
-    let source = hb.src(from_id, range);
+fn error_const_expr_unsupported(
+    hb: &mut hb::HirBuilder,
+    origin_id: hir::ScopeID,
+    range: TextRange,
+) {
+    let source = hb.src(origin_id, range);
     hb.error(ErrorComp::error("only integer constant expressions are supported").context(source));
 }

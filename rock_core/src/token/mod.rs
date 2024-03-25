@@ -20,7 +20,7 @@ token_gen::token_gen! {
     [super]    | "super"    | KwSuper    | KW.
     [package]  | "package"  | KwPackage  | KW.
 
-    // keyword declarations
+    // keyword items
     [mod]      | "mod"      | KwMod      | KW.
     [use]      | "use"      | KwUse      | KW.
     [proc]     | "proc"     | KwProc     | KW.
@@ -32,7 +32,6 @@ token_gen::token_gen! {
 
     // keyword statements
     [let]      | "let"      | KwLet      | KW.
-    [var]      | "var"      | KwVar      | KW.
     [mut]      | "mut"      | KwMut      | KW.
     [break]    | "break"    | KwBreak    | KW.
     [continue] | "continue" | KwContinue | KW.
@@ -98,16 +97,16 @@ token_gen::token_gen! {
     [&]      | "&"      | Ampersand    | BIN[BinOp::BitAnd] UN[UnOp::Addr(Mut::Immutable)]
     [|]      | "|"      | Pipe         | BIN[BinOp::BitOr]
     [^]      | "^"      | Caret        | BIN[BinOp::BitXor]
-    [<<]     | "<<"     | BinShl       | BIN[BinOp::BitShl]
-    [>>]     | ">>"     | BinShr       | BIN[BinOp::BitShr]
-    [==]     | "=="     | BinIsEq      | BIN[BinOp::CmpIsEq]
-    [!=]     | "!="     | BinNotEq     | BIN[BinOp::CmpNotEq]
+    [<<]     | "<<"     | Shl          | BIN[BinOp::BitShl]
+    [>>]     | ">>"     | Shr          | BIN[BinOp::BitShr]
+    [==]     | "=="     | IsEq         | BIN[BinOp::CmpIsEq]
+    [!=]     | "!="     | NotEq        | BIN[BinOp::CmpNotEq]
     [<]      | "<"      | Less         | BIN[BinOp::CmpLt]
-    [<=]     | "<="     | BinLessEq    | BIN[BinOp::CmpLtEq]
+    [<=]     | "<="     | LessEq       | BIN[BinOp::CmpLtEq]
     [>]      | ">"      | Greater      | BIN[BinOp::CmpGt]
-    [>=]     | ">="     | BinGreaterEq | BIN[BinOp::CmpGtEq]
-    [&&]     | "&&"     | BinLogicAnd  | BIN[BinOp::LogicAnd]
-    [||]     | "||"     | BinLogicOr   | BIN[BinOp::LogicOr]
+    [>=]     | ">="     | GreaterEq    | BIN[BinOp::CmpGtEq]
+    [&&]     | "&&"     | LogicAnd     | BIN[BinOp::LogicAnd]
+    [||]     | "||"     | LogicOr      | BIN[BinOp::LogicOr]
 
     // assign op tokens
     [=]      | "="      | Equals       | ASSIGN[AssignOp::Assign]

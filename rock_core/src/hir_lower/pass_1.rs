@@ -76,110 +76,110 @@ fn process_scope_task<'ast>(
     task: ScopeTreeTask<'ast>,
 ) {
     let parent = match task.parent {
-        Some(mod_id) => Some(hb.get_mod(mod_id).from_id),
+        Some(mod_id) => Some(hb.get_mod(mod_id).origin_id),
         None => None,
     };
 
-    let scope_id = hb.add_scope(parent, task.module);
+    let origin_id = hb.add_scope(parent, task.module);
 
     if let Some(mod_id) = task.parent {
-        hb.get_mod_mut(mod_id).target = Some(scope_id);
+        hb.get_mod_mut(mod_id).target = Some(origin_id);
     }
 
-    for decl in hb.scope_ast_decls(scope_id) {
-        match decl {
-            ast::Decl::Mod(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+    for item in hb.scope_ast_items(origin_id) {
+        match item {
+            ast::Item::Mod(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hb::ModData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         target: None,
                     };
-                    let id = hb.add_mod(scope_id, data);
-                    add_scope_task_from_mod_decl(p, hb, scope_id, decl, id);
+                    let id = hb.add_mod(origin_id, data);
+                    add_scope_task_from_mod_item(p, hb, origin_id, item, id);
                 }
             },
-            ast::Decl::Use(..) => {
+            ast::Item::Use(..) => {
                 continue;
             }
-            ast::Decl::Proc(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+            ast::Item::Proc(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hir::ProcData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         params: &[],
-                        is_variadic: decl.is_variadic,
+                        is_variadic: item.is_variadic,
                         return_ty: hir::Type::Error,
                         block: None,
                         body: hir::ProcBody { locals: &[] },
                     };
-                    hb.add_proc(scope_id, decl, data);
+                    hb.add_proc(origin_id, item, data);
                 }
             },
-            ast::Decl::Enum(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+            ast::Item::Enum(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hir::EnumData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         variants: &[],
                     };
-                    hb.add_enum(scope_id, decl, data);
+                    hb.add_enum(origin_id, item, data);
                 }
             },
-            ast::Decl::Union(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+            ast::Item::Union(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hir::UnionData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         members: &[],
                     };
-                    hb.add_union(scope_id, decl, data);
+                    hb.add_union(origin_id, item, data);
                 }
             },
-            ast::Decl::Struct(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+            ast::Item::Struct(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hir::StructData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         fields: &[],
                     };
-                    hb.add_struct(scope_id, decl, data);
+                    hb.add_struct(origin_id, item, data);
                 }
             },
-            ast::Decl::Const(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+            ast::Item::Const(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hir::ConstData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         ty: hir::Type::Error,
                         value: hb::DUMMY_CONST_EXPR_ID,
                     };
-                    hb.add_const(scope_id, decl, data);
+                    hb.add_const(origin_id, item, data);
                 }
             },
-            ast::Decl::Global(decl) => match hb.scope_name_defined(scope_id, decl.name.id) {
-                Some(existing) => name_already_defined_error(hb, scope_id, decl.name, existing),
+            ast::Item::Global(item) => match hb.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
                 None => {
                     let data = hir::GlobalData {
-                        from_id: scope_id,
-                        vis: decl.vis,
-                        name: decl.name,
+                        origin_id,
+                        vis: item.vis,
+                        name: item.name,
                         ty: hir::Type::Error,
                         value: hb::DUMMY_CONST_EXPR_ID,
                     };
-                    hb.add_global(scope_id, decl, data);
+                    hb.add_global(origin_id, item, data);
                 }
             },
         }
@@ -202,17 +202,17 @@ pub fn name_already_defined_error(
     );
 }
 
-fn add_scope_task_from_mod_decl(
+fn add_scope_task_from_mod_item(
     p: &mut Pass,
     hb: &mut hb::HirBuilder,
     scope_id: hir::ScopeID,
-    decl: &ast::ModDecl,
+    item: &ast::ModItem,
     id: hb::ModID,
 ) {
     let mut scope_dir = hb.scope_file_path(scope_id);
     scope_dir.pop();
 
-    let mod_name = hb.name_str(decl.name.id);
+    let mod_name = hb.name_str(item.name.id);
     let mod_filename = mod_name.to_string() + ".rock";
     let mod_path_1 = scope_dir.join(mod_filename);
     let mod_path_2 = scope_dir.join(mod_name).join("mod.rock");
@@ -228,7 +228,7 @@ fn add_scope_task_from_mod_decl(
                     mod_path_1.to_string_lossy(),
                     mod_path_2.to_string_lossy()
                 ))
-                .context(hb.src(scope_id, decl.name.range)),
+                .context(hb.src(scope_id, item.name.range)),
             );
             return;
         }
@@ -239,7 +239,7 @@ fn add_scope_task_from_mod_decl(
                     mod_path_1.to_string_lossy(),
                     mod_path_2.to_string_lossy()
                 ))
-                .context(hb.src(scope_id, decl.name.range)),
+                .context(hb.src(scope_id, item.name.range)),
             );
             return;
         }
@@ -251,7 +251,7 @@ fn add_scope_task_from_mod_decl(
         ModuleStatus::Available(module) => {
             let replaced = p.module_map.insert(
                 chosen_path,
-                ModuleStatus::Taken(hb.src(scope_id, decl.name.range)),
+                ModuleStatus::Taken(hb.src(scope_id, item.name.range)),
             );
             assert!(replaced.is_some());
             p.task_queue.push(ScopeTreeTask {
@@ -259,16 +259,16 @@ fn add_scope_task_from_mod_decl(
                 parent: Some(id),
             });
         }
-        //@also provide information on which file was taken?
-        // current error only gives the sources of module declarations
+        //@also provide information on which file path was taken?
+        // current error only gives the sources of module items
         ModuleStatus::Taken(src) => {
             hb.error(
                 ErrorComp::error(format!(
-                    "module `{}` is already taken by other mod declaration",
-                    hb.name_str(decl.name.id)
+                    "module `{}` is already taken by other mod item",
+                    hb.name_str(item.name.id)
                 ))
-                .context(hb.src(scope_id, decl.name.range))
-                .context_info("taken by this module declaration", src),
+                .context(hb.src(scope_id, item.name.range))
+                .context_info("taken by this mod item", src),
             );
         }
     }

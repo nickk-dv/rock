@@ -25,7 +25,7 @@ pub fn check<'ctx, 'ast, 'hir>(
     hb.ctx_mut().timing_end("hir lower pass2 `use resolve`");
     hb.ctx_mut().timing_start();
     pass_3::run(&mut hb);
-    hb.ctx_mut().timing_end("hir lower pass3 `decl process`");
+    hb.ctx_mut().timing_end("hir lower pass3 `item process`");
     hb.ctx_mut().timing_start();
     pass_4::run(&mut hb);
     hb.ctx_mut().timing_end("hir lower pass4 `const resolve`");

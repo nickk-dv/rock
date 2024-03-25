@@ -5,20 +5,20 @@ use crate::hir;
 
 struct UseTask<'ast> {
     resolved: bool,
-    decl: &'ast ast::UseDecl<'ast>,
+    use_item: &'ast ast::UseItem<'ast>,
 }
 
 pub fn run(hb: &mut hb::HirBuilder) {
     let mut use_tasks = Vec::new();
 
-    for scope_id in hb.scope_ids() {
+    for origin_id in hb.scope_ids() {
         use_tasks.clear();
 
-        for decl in hb.scope_ast_decls(scope_id) {
-            if let ast::Decl::Use(use_decl) = decl {
+        for item in hb.scope_ast_items(origin_id) {
+            if let ast::Item::Use(use_item) = item {
                 use_tasks.push(UseTask {
                     resolved: false,
-                    decl: use_decl,
+                    use_item,
                 });
             }
         }
@@ -29,7 +29,7 @@ pub fn run(hb: &mut hb::HirBuilder) {
                 if task.resolved {
                     continue;
                 }
-                task.resolved = try_process_use_decl(hb, scope_id, task.decl);
+                task.resolved = try_process_use_item(hb, origin_id, task.use_item);
                 if task.resolved {
                     made_progress = true;
                 }
@@ -43,10 +43,10 @@ pub fn run(hb: &mut hb::HirBuilder) {
             if task.resolved {
                 continue;
             }
-            for name in task.decl.path.names {
+            for name in task.use_item.path.names {
                 hb.error(
                     ErrorComp::error(format!("module `{}` is not found", hb.name_str(name.id)))
-                        .context(hb.src(scope_id, name.range)),
+                        .context(hb.src(origin_id, name.range)),
                 );
                 break;
             }
@@ -54,15 +54,15 @@ pub fn run(hb: &mut hb::HirBuilder) {
     }
 }
 
-fn try_process_use_decl<'ctx, 'ast, 'hir>(
+fn try_process_use_item<'ctx, 'ast, 'hir>(
     hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
     origin_id: hir::ScopeID,
-    decl: &'ast ast::UseDecl<'ast>,
+    use_item: &'ast ast::UseItem<'ast>,
 ) -> bool {
-    let path = decl.path;
+    let path = use_item.path;
 
     if path.kind == ast::PathKind::None {
-        let name = path.names.first().cloned().expect("");
+        let name = path.names[0];
         let symbol = hb.symbol_from_scope(origin_id, origin_id, path.kind, name.id);
         if symbol.is_none() {
             return false;
@@ -73,7 +73,7 @@ fn try_process_use_decl<'ctx, 'ast, 'hir>(
         None => return true,
     };
 
-    for use_symbol in decl.symbols {
+    for use_symbol in use_item.symbols {
         let item_name = use_symbol.name;
         let alias_name = match use_symbol.alias {
             Some(alias) => alias,

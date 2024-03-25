@@ -37,7 +37,7 @@ pub struct ScopeData {
 
 hir_id_impl!(ProcID);
 pub struct ProcData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub params: &'hir [ProcParam<'hir>],
@@ -58,12 +58,12 @@ pub struct ProcParam<'hir> {
 hir_id_impl!(LocalID);
 #[derive(Copy, Clone)]
 pub struct ProcBody<'hir> {
-    pub locals: &'hir [&'hir VarDecl<'hir>],
+    pub locals: &'hir [&'hir Local<'hir>],
 }
 
 hir_id_impl!(EnumID);
 pub struct EnumData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub variants: &'hir [EnumVariant],
@@ -78,7 +78,7 @@ pub struct EnumVariant {
 
 hir_id_impl!(UnionID);
 pub struct UnionData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub members: &'hir [UnionMember<'hir>],
@@ -93,7 +93,7 @@ pub struct UnionMember<'hir> {
 
 hir_id_impl!(StructID);
 pub struct StructData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub fields: &'hir [StructField<'hir>],
@@ -109,7 +109,7 @@ pub struct StructField<'hir> {
 
 hir_id_impl!(ConstID);
 pub struct ConstData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub ty: Type<'hir>,
@@ -118,7 +118,7 @@ pub struct ConstData<'hir> {
 
 hir_id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub ty: Type<'hir>,
@@ -127,7 +127,7 @@ pub struct GlobalData<'hir> {
 
 hir_id_impl!(ConstExprID);
 pub struct ConstExprData<'hir> {
-    pub from_id: ScopeID,
+    pub origin_id: ScopeID,
     pub value: Option<Expr<'hir>>,
 }
 
@@ -141,7 +141,7 @@ pub enum Type<'hir> {
     Reference(&'hir Type<'hir>, ast::Mut),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
-    ArrayStaticDecl(&'hir ArrayStaticDecl<'hir>),
+    ArrayStaticDecl(&'hir ArrayStaticDecl<'hir>), //@differs in how const expr size are resolved, remove
 }
 
 #[derive(Copy, Clone)]
@@ -170,8 +170,8 @@ pub enum Stmt<'hir> {
     ReturnVal(&'hir Expr<'hir>),
     Defer(&'hir Expr<'hir>),
     ForLoop(&'hir For<'hir>),
-    VarDecl(&'hir VarDecl<'hir>),
-    VarAssign(&'hir VarAssign<'hir>),
+    Local(&'hir Local<'hir>),
+    Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
 }
@@ -187,11 +187,11 @@ pub struct For<'hir> {
 pub enum ForKind<'hir> {
     Loop,
     While { cond: &'hir Expr<'hir> },
-    ForLoop { var_decl: &'hir VarDecl<'hir>, cond: &'hir Expr<'hir>, var_assign: &'hir VarAssign<'hir> },
+    ForLoop { local: &'hir Local<'hir>, cond: &'hir Expr<'hir>, assign: &'hir Assign<'hir> },
 }
 
 #[derive(Copy, Clone)]
-pub struct VarDecl<'hir> {
+pub struct Local<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Ident,
     pub ty: Type<'hir>,
@@ -199,7 +199,7 @@ pub struct VarDecl<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct VarAssign<'hir> {
+pub struct Assign<'hir> {
     pub op: ast::AssignOp,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
@@ -237,7 +237,6 @@ pub enum Expr<'hir> {
     BinaryExpr  { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
-//@new experimental if syntax not represented
 #[derive(Copy, Clone)]
 pub struct If<'hir> {
     pub cond: &'hir Expr<'hir>,
@@ -277,24 +276,24 @@ pub struct StructFieldInit<'hir> {
 
 impl<'hir> Hir<'hir> {
     pub fn proc_data(&self, id: ProcID) -> &ProcData {
-        self.procs.get(id.index()).unwrap()
+        &self.procs[id.index()]
     }
     pub fn enum_data(&self, id: EnumID) -> &EnumData {
-        self.enums.get(id.index()).unwrap()
+        &self.enums[id.index()]
     }
     pub fn union_data(&self, id: UnionID) -> &UnionData {
-        self.unions.get(id.index()).unwrap()
+        &self.unions[id.index()]
     }
     pub fn struct_data(&self, id: StructID) -> &StructData {
-        self.structs.get(id.index()).unwrap()
+        &self.structs[id.index()]
     }
     pub fn const_data(&self, id: ConstID) -> &ConstData {
-        self.consts.get(id.index()).unwrap()
+        &self.consts[id.index()]
     }
     pub fn global_data(&self, id: GlobalID) -> &GlobalData {
-        self.globals.get(id.index()).unwrap()
+        &self.globals[id.index()]
     }
     pub fn const_expr_data(&self, id: ConstExprID) -> &ConstExprData {
-        self.const_exprs.get(id.index()).unwrap()
+        &self.const_exprs[id.index()]
     }
 }

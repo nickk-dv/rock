@@ -14,19 +14,19 @@ pub struct HirBuilder<'ctx, 'ast, 'hir> {
     scopes: Vec<Scope<'ast>>,
     errors: Vec<ErrorComp>,
     hir: hir::Hir<'hir>,
-    ast_procs: Vec<&'ast ast::ProcDecl<'ast>>,
-    ast_enums: Vec<&'ast ast::EnumDecl<'ast>>,
-    ast_unions: Vec<&'ast ast::UnionDecl<'ast>>,
-    ast_structs: Vec<&'ast ast::StructDecl<'ast>>,
-    ast_consts: Vec<&'ast ast::ConstDecl<'ast>>,
-    ast_globals: Vec<&'ast ast::GlobalDecl<'ast>>,
+    ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
+    ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
+    ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
+    ast_structs: Vec<&'ast ast::StructItem<'ast>>,
+    ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
+    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
     ast_const_exprs: Vec<ast::ConstExpr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ModID(u32);
 pub struct ModData {
-    pub from_id: hir::ScopeID,
+    pub origin_id: hir::ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Ident,
     pub target: Option<hir::ScopeID>,
@@ -142,48 +142,48 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         (0..self.hir.globals.len()).map(hir::GlobalID::new)
     }
 
-    pub fn proc_ast(&self, id: hir::ProcID) -> &'ast ast::ProcDecl<'ast> {
-        self.ast_procs.get(id.index()).unwrap()
+    pub fn proc_ast(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
+        self.ast_procs[id.index()]
     }
-    pub fn enum_ast(&self, id: hir::EnumID) -> &'ast ast::EnumDecl<'ast> {
-        self.ast_enums.get(id.index()).unwrap()
+    pub fn enum_ast(&self, id: hir::EnumID) -> &'ast ast::EnumItem<'ast> {
+        self.ast_enums[id.index()]
     }
-    pub fn union_ast(&self, id: hir::UnionID) -> &'ast ast::UnionDecl<'ast> {
-        self.ast_unions.get(id.index()).unwrap()
+    pub fn union_ast(&self, id: hir::UnionID) -> &'ast ast::UnionItem<'ast> {
+        self.ast_unions[id.index()]
     }
-    pub fn struct_ast(&self, id: hir::StructID) -> &'ast ast::StructDecl<'ast> {
-        self.ast_structs.get(id.index()).unwrap()
+    pub fn struct_ast(&self, id: hir::StructID) -> &'ast ast::StructItem<'ast> {
+        self.ast_structs[id.index()]
     }
-    pub fn const_ast(&self, id: hir::ConstID) -> &'ast ast::ConstDecl<'ast> {
-        self.ast_consts.get(id.index()).unwrap()
+    pub fn const_ast(&self, id: hir::ConstID) -> &'ast ast::ConstItem<'ast> {
+        self.ast_consts[id.index()]
     }
-    pub fn global_ast(&self, id: hir::GlobalID) -> &'ast ast::GlobalDecl<'ast> {
-        self.ast_globals.get(id.index()).unwrap()
+    pub fn global_ast(&self, id: hir::GlobalID) -> &'ast ast::GlobalItem<'ast> {
+        self.ast_globals[id.index()]
     }
     pub fn const_expr_ast(&self, id: hir::ConstExprID) -> &'ast ast::Expr<'ast> {
-        self.ast_const_exprs.get(id.index()).unwrap().0
+        self.ast_const_exprs[id.index()].0
     }
 
     pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
-        self.hir.procs.get(id.index()).unwrap()
+        &self.hir.procs[id.index()]
     }
     pub fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
-        self.hir.enums.get(id.index()).unwrap()
+        &self.hir.enums[id.index()]
     }
     pub fn union_data(&self, id: hir::UnionID) -> &hir::UnionData<'hir> {
-        self.hir.unions.get(id.index()).unwrap()
+        &self.hir.unions[id.index()]
     }
     pub fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
-        self.hir.structs.get(id.index()).unwrap()
+        &self.hir.structs[id.index()]
     }
     pub fn const_data(&self, id: hir::ConstID) -> &hir::ConstData<'hir> {
-        self.hir.consts.get(id.index()).unwrap()
+        &self.hir.consts[id.index()]
     }
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
-        self.hir.globals.get(id.index()).unwrap()
+        &self.hir.globals[id.index()]
     }
     pub fn const_expr_data(&self, id: hir::ConstExprID) -> &hir::ConstExprData<'hir> {
-        self.hir.const_exprs.get(id.index()).unwrap()
+        &self.hir.const_exprs[id.index()]
     }
 
     pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
@@ -220,96 +220,96 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     pub fn add_proc(
         &mut self,
         origin_id: hir::ScopeID,
-        decl: &'ast ast::ProcDecl<'ast>,
+        item: &'ast ast::ProcItem<'ast>,
         data: hir::ProcData<'hir>,
     ) {
         let id = hir::ProcID::new(self.ast_procs.len());
-        self.ast_procs.push(decl);
+        self.ast_procs.push(item);
         self.hir.procs.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Proc(id),
         };
-        self.scope_add_symbol(origin_id, decl.name.id, symbol);
+        self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
     pub fn add_enum(
         &mut self,
         origin_id: hir::ScopeID,
-        decl: &'ast ast::EnumDecl<'ast>,
+        item: &'ast ast::EnumItem<'ast>,
         data: hir::EnumData<'hir>,
     ) {
         let id = hir::EnumID::new(self.ast_enums.len());
-        self.ast_enums.push(decl);
+        self.ast_enums.push(item);
         self.hir.enums.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Enum(id),
         };
-        self.scope_add_symbol(origin_id, decl.name.id, symbol);
+        self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
     pub fn add_union(
         &mut self,
         origin_id: hir::ScopeID,
-        decl: &'ast ast::UnionDecl<'ast>,
+        item: &'ast ast::UnionItem<'ast>,
         data: hir::UnionData<'hir>,
     ) {
         let id = hir::UnionID::new(self.ast_unions.len());
-        self.ast_unions.push(decl);
+        self.ast_unions.push(item);
         self.hir.unions.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Union(id),
         };
-        self.scope_add_symbol(origin_id, decl.name.id, symbol);
+        self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
     pub fn add_struct(
         &mut self,
         origin_id: hir::ScopeID,
-        decl: &'ast ast::StructDecl<'ast>,
+        item: &'ast ast::StructItem<'ast>,
         data: hir::StructData<'hir>,
     ) {
         let id = hir::StructID::new(self.ast_structs.len());
-        self.ast_structs.push(decl);
+        self.ast_structs.push(item);
         self.hir.structs.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Struct(id),
         };
-        self.scope_add_symbol(origin_id, decl.name.id, symbol);
+        self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
     pub fn add_const(
         &mut self,
         origin_id: hir::ScopeID,
-        decl: &'ast ast::ConstDecl<'ast>,
+        item: &'ast ast::ConstItem<'ast>,
         data: hir::ConstData<'hir>,
     ) {
         let id = hir::ConstID::new(self.ast_consts.len());
-        self.ast_consts.push(decl);
+        self.ast_consts.push(item);
         self.hir.consts.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Const(id),
         };
-        self.scope_add_symbol(origin_id, decl.name.id, symbol);
+        self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
     pub fn add_global(
         &mut self,
         origin_id: hir::ScopeID,
-        decl: &'ast ast::GlobalDecl<'ast>,
+        item: &'ast ast::GlobalItem<'ast>,
         data: hir::GlobalData<'hir>,
     ) {
         let id = hir::GlobalID::new(self.ast_globals.len());
-        self.ast_globals.push(decl);
+        self.ast_globals.push(item);
         self.hir.globals.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Global(id),
         };
-        self.scope_add_symbol(origin_id, decl.name.id, symbol);
+        self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
     pub fn add_const_expr(
         &mut self,
-        from_id: hir::ScopeID,
+        origin_id: hir::ScopeID,
         const_expr: ast::ConstExpr<'ast>,
     ) -> hir::ConstExprID {
         let id = hir::ConstExprID::new(self.ast_const_exprs.len());
         self.ast_const_exprs.push(const_expr);
         self.hir.const_exprs.push(hir::ConstExprData {
-            from_id,
+            origin_id,
             value: None,
         });
         id
@@ -366,8 +366,8 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         self.scope(id).parent
     }
 
-    pub fn scope_ast_decls(&self, id: hir::ScopeID) -> impl Iterator<Item = ast::Decl<'ast>> {
-        self.scope(id).module.decls.iter().cloned()
+    pub fn scope_ast_items(&self, id: hir::ScopeID) -> impl Iterator<Item = ast::Item<'ast>> {
+        self.scope(id).module.items.iter().cloned()
     }
 
     pub fn add_scope(
@@ -418,11 +418,11 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     }
 
     fn scope(&self, id: hir::ScopeID) -> &Scope<'ast> {
-        self.scopes.get(id.index()).unwrap()
+        &self.scopes[id.index()]
     }
 
     fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
-        let scope = self.scopes.get_mut(origin_id.index()).unwrap();
+        let scope = &mut self.scopes[origin_id.index()];
         scope.symbols.insert(id, symbol);
     }
 
