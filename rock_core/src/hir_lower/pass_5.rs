@@ -272,7 +272,14 @@ fn typecheck_expr_2<'ast, 'hir>(
             proc_call,
             expr.range,
         ),
-        ast::ExprKind::StructInit { struct_init } => typecheck_placeholder(hb),
+        ast::ExprKind::StructInit { struct_init } => typecheck_struct_init(
+            hb,
+            origin_id,
+            block_flags,
+            proc_scope,
+            struct_init,
+            expr.range,
+        ),
         ast::ExprKind::ArrayInit { input } => typecheck_placeholder(hb),
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_placeholder(hb),
         ast::ExprKind::UnaryExpr { op, rhs } => typecheck_placeholder(hb),
@@ -715,7 +722,7 @@ fn typecheck_proc_call<'ast, 'hir>(
     if input_count != expected_count {
         let data = hb.proc_data(proc_id);
         hb.error(
-            ErrorComp::error("unexpected number of input argument")
+            ErrorComp::error("unexpected number of input arguments")
                 .context(hb.src(origin_id, expr_range))
                 .context_info(
                     "calling this procedure",
@@ -726,6 +733,68 @@ fn typecheck_proc_call<'ast, 'hir>(
 
     let data = hb.proc_data(proc_id);
     TypeResult::new(data.return_ty, hb.arena().alloc(hir::Expr::Error))
+}
+
+fn typecheck_struct_init<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    block_flags: BlockFlags,
+    proc_scope: &mut ProcScope<'hir>,
+    struct_init: &'ast ast::StructInit<'ast>,
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
+    let struct_id = match path_resolve_as_struct(hb, origin_id, struct_init.path) {
+        Some(it) => it,
+        None => {
+            for &expr in struct_init.input {
+                //@resolve expr & field name or name as expr
+                //let _ = typecheck_expr_2(
+                //    hb,
+                //    origin_id,
+                //    block_flags,
+                //    proc_scope,
+                //    hir::Type::Error,
+                //    expr,
+                //);
+            }
+            return TypeResult::new(hir::Type::Error, hb.arena().alloc(hir::Expr::Error));
+        }
+    };
+
+    for (idx, &expr) in struct_init.input.iter().enumerate() {
+        let data = hb.struct_data(struct_id);
+        let field = data.fields.get(idx);
+
+        let expect_ty = match field {
+            Some(field) => field.ty,
+            None => hir::Type::Error,
+        };
+        //@resolve expr & field name or name as expr
+        //let _ = typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, expr);
+    }
+
+    //@getting proc data multiple times due to mutable error reporting
+    // maybe pass error context to all functions isntead
+    let input_count = struct_init.input.len();
+    let expected_count = hb.struct_data(struct_id).fields.len();
+
+    if input_count != expected_count {
+        let data = hb.struct_data(struct_id);
+        hb.error(
+            ErrorComp::error("unexpected number of input fields")
+                .context(hb.src(origin_id, expr_range))
+                .context_info(
+                    "calling this procedure",
+                    hb.src(data.origin_id, data.name.range),
+                ),
+        );
+    }
+
+    let data = hb.struct_data(struct_id);
+    TypeResult::new(
+        hir::Type::Struct(struct_id),
+        hb.arena().alloc(hir::Expr::Error),
+    )
 }
 
 fn typecheck_block<'ast, 'hir>(
@@ -1027,6 +1096,55 @@ pub fn path_resolve_as_proc<'ast, 'hir>(
     }
 
     proc_id
+}
+
+pub fn path_resolve_as_struct<'ast, 'hir>(
+    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+    origin_id: hir::ScopeID,
+    path: &'ast ast::Path<'ast>,
+) -> Option<hir::StructID> {
+    let path_res = match path_resolve_target_scope(hb, origin_id, path) {
+        Some(it) => it,
+        None => return None,
+    };
+
+    let struct_id = match path_res.symbol {
+        Some((symbol, source, name)) => match symbol {
+            hb::SymbolKind::Struct(id) => Some(id),
+            _ => {
+                hb.error(
+                    ErrorComp::error("expected struct item")
+                        .context(hb.src(origin_id, name.range))
+                        .context_info("found this", source),
+                );
+                return None;
+            }
+        },
+        None => {
+            //@repeating with similar as_type
+            let path_range = TextRange::new(
+                path.range_start,
+                path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
+            );
+            hb.error(
+                ErrorComp::error(format!("module path does not lead to an item",))
+                    .context(hb.src(origin_id, path_range)),
+            );
+            return None;
+        }
+    };
+
+    //@repeating with similar as_type
+    if !path_res.remaining.is_empty() {
+        let start = path_res.remaining.first().unwrap().range.start();
+        let end = path_res.remaining.last().unwrap().range.end();
+        hb.error(
+            ErrorComp::error("struct name cannot be accessed further")
+                .context(hb.src(origin_id, TextRange::new(start, end))),
+        );
+    }
+
+    struct_id
 }
 
 pub fn path_resolve_as_module_path<'ast, 'hir>(
