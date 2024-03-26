@@ -24,6 +24,7 @@ pub struct Parser<'a, 'ast> {
     struct_fields: NodeBuffer<StructField<'ast>>,
     names: NodeBuffer<Ident>,
     stmts: NodeBuffer<Stmt<'ast>>,
+    branches: NodeBuffer<Branch<'ast>>,
     match_arms: NodeBuffer<MatchArm<'ast>>,
     exprs: NodeBuffer<&'ast Expr<'ast>>,
     field_inits: NodeBuffer<FieldInit<'ast>>,
@@ -77,6 +78,7 @@ impl<'a, 'ast> Parser<'a, 'ast> {
             struct_fields: NodeBuffer::new(),
             names: NodeBuffer::new(),
             stmts: NodeBuffer::new(),
+            branches: NodeBuffer::new(),
             match_arms: NodeBuffer::new(),
             exprs: NodeBuffer::new(),
             field_inits: NodeBuffer::new(),
@@ -846,24 +848,32 @@ fn tail_expr<'a, 'ast>(
 
 fn if_<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast If<'ast>, String> {
     p.bump();
-    let if_ = If {
+    let entry = Branch {
         cond: expr(p)?,
         block: block(p)?,
-        else_: else_branch(p)?,
     };
-    Ok(p.arena.alloc(if_))
-}
+    let mut fallback = None;
 
-fn else_branch<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<Option<Else<'ast>>, String> {
-    if p.eat(T![else]) {
-        match p.peek() {
-            T![if] => Ok(Some(Else::If { else_if: if_(p)? })),
-            T!['{'] => Ok(Some(Else::Block { block: block(p)? })),
-            _ => return Err("expected `if` or `{`".into()),
+    let start = p.branches.start();
+    while p.eat(T![else]) {
+        if p.eat(T![if]) {
+            let branch = Branch {
+                cond: expr(p)?,
+                block: block(p)?,
+            };
+            p.branches.add(branch);
+        } else {
+            fallback = Some(block(p)?);
+            break;
         }
-    } else {
-        Ok(None)
     }
+    let branches = p.branches.take(start, p.arena);
+
+    Ok(p.arena.alloc(If {
+        entry,
+        branches,
+        fallback,
+    }))
 }
 
 fn block<'a, 'ast>(p: &mut Parser<'a, 'ast>) -> Result<&'ast Expr<'ast>, String> {

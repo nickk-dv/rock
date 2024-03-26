@@ -261,15 +261,15 @@ pub enum ExprKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct If<'ast> {
-    pub cond: &'ast Expr<'ast>,
-    pub block: &'ast Expr<'ast>,
-    pub else_: Option<Else<'ast>>,
+    pub entry: Branch<'ast>,
+    pub branches: &'ast [Branch<'ast>],
+    pub fallback: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub enum Else<'ast> {
-    If { else_if: &'ast If<'ast> },
-    Block { block: &'ast Expr<'ast> },
+pub struct Branch<'ast> {
+    pub cond: &'ast Expr<'ast>,
+    pub block: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]

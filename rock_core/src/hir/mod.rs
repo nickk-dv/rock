@@ -238,16 +238,16 @@ pub enum Expr<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct If<'hir> {
-    pub cond: &'hir Expr<'hir>,
-    pub block: &'hir Expr<'hir>,
-    pub else_: Option<Else<'hir>>,
+pub struct If<'ast> {
+    pub entry: Branch<'ast>,
+    pub branches: &'ast [Branch<'ast>],
+    pub fallback: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub enum Else<'hir> {
-    If { else_if: &'hir If<'hir> },
-    Block { block: &'hir Expr<'hir> },
+pub struct Branch<'ast> {
+    pub cond: &'ast Expr<'ast>,
+    pub block: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]

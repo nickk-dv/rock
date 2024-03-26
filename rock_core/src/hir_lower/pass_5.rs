@@ -20,7 +20,7 @@ fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
             let _ = typecheck_expr_2(
                 hb,
                 data.origin_id,
-                BlockFlags::from_root(),
+                BlockFlags::entry(),
                 &mut ProcScope::new(id),
                 data.return_ty,
                 block,
@@ -97,13 +97,15 @@ struct BlockFlags {
 }
 
 impl BlockFlags {
-    fn from_root() -> BlockFlags {
+    fn entry() -> BlockFlags {
         BlockFlags {
             in_loop: false,
             in_defer: false,
         }
     }
-
+    //@need some way to recognize if loop was started while in defer
+    // since break / continue cannot be used in defer in loops that originate
+    // outside of that defer (defer is by design simple to think about)
     fn enter_defer(self) -> BlockFlags {
         BlockFlags {
             in_loop: self.in_loop,
@@ -428,9 +430,49 @@ fn typecheck_if<'ast, 'hir>(
     expect_ty: hir::Type<'hir>,
     if_: &'ast ast::If<'ast>,
 ) -> TypeResult<'hir> {
-    //@linearize the ast::If and hir repr of the if else chain
-    // need to know if its closed or open without recursion
-    // and parsing with the loop would be better
+    let has_fallback = if_.fallback.is_some();
+
+    let entry = if_.entry;
+    let _ = typecheck_expr_2(
+        hb,
+        origin_id,
+        block_flags,
+        proc_scope,
+        hir::Type::Basic(ast::BasicType::Bool),
+        entry.cond,
+    );
+    let _ = typecheck_expr_2(
+        hb,
+        origin_id,
+        block_flags,
+        proc_scope,
+        expect_ty,
+        entry.block,
+    );
+
+    for &branch in if_.branches {
+        let _ = typecheck_expr_2(
+            hb,
+            origin_id,
+            block_flags,
+            proc_scope,
+            hir::Type::Basic(ast::BasicType::Bool),
+            branch.cond,
+        );
+        let _ = typecheck_expr_2(
+            hb,
+            origin_id,
+            block_flags,
+            proc_scope,
+            expect_ty,
+            branch.block,
+        );
+    }
+
+    if let Some(block) = if_.fallback {
+        let _ = typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, block);
+    }
+
     typecheck_placeholder(hb)
 }
 
@@ -805,7 +847,9 @@ fn typecheck_block<'ast, 'hir>(
     expect_ty: hir::Type<'hir>,
     stmts: &'ast [ast::Stmt<'ast>],
 ) -> TypeResult<'hir> {
-    for stmt in stmts {
+    let mut block_ty = None;
+
+    for (idx, stmt) in stmts.iter().enumerate() {
         match stmt.kind {
             ast::StmtKind::Break => typecheck_stmt_break(hb, origin_id, block_flags, stmt.range),
             ast::StmtKind::Continue => {
@@ -834,15 +878,37 @@ fn typecheck_block<'ast, 'hir>(
                 );
             }
             ast::StmtKind::ExprTail(expr) => {
-                let _ = typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, expr);
+                if idx + 1 == stmts.len() {
+                    let res =
+                        typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, expr);
+                    block_ty = Some(res.ty);
+                } else {
+                    //@decide if semi should enforced on parsing
+                    // of we just expect a unit from that no-semi expression
+                    // when its not a last expression?
+                    let _ = typecheck_expr_2(
+                        hb,
+                        origin_id,
+                        block_flags,
+                        proc_scope,
+                        hir::Type::Basic(ast::BasicType::Unit),
+                        expr,
+                    );
+                }
             }
         }
     }
 
-    TypeResult::new(
-        hir::Type::Basic(ast::BasicType::Unit),
-        hb.arena().alloc(hir::Expr::Unit),
-    )
+    // when type expectation was passed to tail expr
+    // return Type::Error to not trigger duplicate type mismatch errors
+    if block_ty.is_some() {
+        TypeResult::new(hir::Type::Error, hb.arena().alloc(hir::Expr::Error))
+    } else {
+        TypeResult::new(
+            hir::Type::Basic(ast::BasicType::Unit),
+            hb.arena().alloc(hir::Expr::Error),
+        )
+    }
 }
 
 fn typecheck_stmt_break<'ast, 'hir>(
