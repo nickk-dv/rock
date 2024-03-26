@@ -1,7 +1,7 @@
 use crate::arena::Arena;
 use crate::intern::InternID;
+use crate::session::FileID;
 use crate::text::{TextOffset, TextRange};
-use crate::vfs;
 
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
@@ -10,7 +10,7 @@ pub struct Ast<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Module<'ast> {
-    pub file_id: vfs::FileID,
+    pub file_id: FileID,
     pub items: &'ast [Item<'ast>],
 }
 

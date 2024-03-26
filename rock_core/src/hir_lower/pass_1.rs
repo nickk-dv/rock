@@ -34,17 +34,14 @@ pub fn run(hb: &mut hb::HirBuilder) {
 fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, '_>) {
     for module in hb.ast_modules() {
         p.module_map.insert(
-            hb.ctx().vfs.file(module.file_id).path.clone(),
+            hb.session().file(module.file_id).path.clone(),
             ModuleStatus::Available(*module),
         );
     }
 }
 
 fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
-    let root_path = std::env::current_dir()
-        .unwrap()
-        .join("src")
-        .join("main.rock");
+    let root_path = hb.session().cwd().join("src").join("main.rock");
 
     match p.module_map.remove(&root_path) {
         Some(status) => match status {
@@ -58,7 +55,7 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
         },
         None => {
             //@use same path format with to_string_lossy() and ` `
-            // this might require abs_path_type in vfs
+            // this might require abs_path_type
             // with display implementation
             // to format and enforce it being absolute
             // displayed paths might need to be trimmed to start at `src` src/path/to/file.rock

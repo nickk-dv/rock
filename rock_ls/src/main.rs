@@ -120,9 +120,10 @@ fn handle_notification(conn: &Connection, not: lsp_server::Notification) {
     }
 }
 
-use rock_core::ast_parse::{self, CompCtx};
+use rock_core::ast_parse;
 use rock_core::error::{ErrorComp, ErrorSeverity};
 use rock_core::hir_lower;
+use rock_core::session::Session;
 use rock_core::text;
 
 use lsp_types::{
@@ -131,9 +132,9 @@ use lsp_types::{
 };
 use std::path::PathBuf;
 
-fn run_check(ctx: &mut CompCtx) -> Result<(), Vec<ErrorComp>> {
-    let ast = ast_parse::parse(ctx)?;
-    let _ = hir_lower::check(ctx, ast)?;
+fn run_check(session: &mut Session) -> Result<(), Vec<ErrorComp>> {
+    let ast = ast_parse::parse(session)?;
+    let _ = hir_lower::check(session, ast)?;
     Ok(())
 }
 
@@ -147,9 +148,12 @@ fn url_from_path(path: PathBuf) -> lsp_types::Url {
 fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
     use std::collections::HashMap;
 
-    // run full project check
-    let mut ctx = ast_parse::CompCtx::new();
-    let errors = if let Err(errors) = run_check(&mut ctx) {
+    //@session errors ignored, its not a correct way to have context in ls server
+    // this is a temporary full compilation run
+    let mut session = Session::new()
+        .map_err(|_| Result::<(), ()>::Err(()))
+        .unwrap();
+    let errors = if let Err(errors) = run_check(&mut session) {
         errors
     } else {
         vec![]
@@ -157,8 +161,9 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
 
     // assign empty diagnostics
     let mut diagnostics_map = HashMap::new();
-    for file in ctx.vfs.files.iter() {
-        diagnostics_map.insert(file.path.clone(), Vec::new());
+    for file_id in session.file_ids() {
+        let path = session.file(file_id).path.clone();
+        diagnostics_map.insert(path, Vec::new());
     }
 
     // generate diagnostics
@@ -170,7 +175,7 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
 
         for context in error.context_iter() {
             let source = context.source();
-            let file = ctx.vfs.file(source.file_id());
+            let file = session.file(source.file_id());
 
             let (start_location, _) =
                 text::find_text_location(&file.source, source.range().start(), &file.line_ranges);

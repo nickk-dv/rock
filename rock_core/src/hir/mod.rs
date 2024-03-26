@@ -1,7 +1,7 @@
 use crate::arena::Arena;
 use crate::ast;
 use crate::intern::InternID;
-use crate::vfs;
+use crate::session::FileID;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -32,7 +32,7 @@ macro_rules! hir_id_impl {
 
 hir_id_impl!(ScopeID);
 pub struct ScopeData {
-    pub file_id: vfs::FileID,
+    pub file_id: FileID,
 }
 
 hir_id_impl!(ProcID);

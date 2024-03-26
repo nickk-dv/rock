@@ -1,14 +1,14 @@
 use crate::arena::Arena;
 use crate::ast;
-use crate::ast_parse::CompCtx;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::intern::InternID;
+use crate::session::Session;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
 pub struct HirBuilder<'ctx, 'ast, 'hir> {
-    ctx: &'ctx mut CompCtx,
+    session: &'ctx Session,
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
@@ -60,9 +60,9 @@ pub enum SymbolKind {
 }
 
 impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
-    pub fn new(ctx: &'ctx mut CompCtx, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
+    pub fn new(session: &'ctx Session, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
         HirBuilder {
-            ctx,
+            session,
             ast,
             mods: Vec::new(),
             scopes: Vec::new(),
@@ -96,15 +96,12 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
-    pub fn ctx(&self) -> &CompCtx {
-        self.ctx
-    }
-    pub fn ctx_mut(&mut self) -> &mut CompCtx {
-        self.ctx
+    pub fn session(&self) -> &Session {
+        self.session
     }
 
     pub fn name_str(&self, id: InternID) -> &str {
-        self.ctx.intern().get_str(id)
+        self.session.intern().get_str(id)
     }
     pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
         self.ast.modules.iter()
@@ -340,8 +337,7 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     }
 
     pub fn scope_file_path(&self, id: hir::ScopeID) -> std::path::PathBuf {
-        self.ctx
-            .vfs
+        self.session
             .file(self.scope(id).module.file_id)
             .path
             .clone()

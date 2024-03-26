@@ -9,6 +9,6 @@ mod hir;
 pub mod hir_lower;
 mod intern;
 mod lexer;
+pub mod session;
 pub mod text;
 mod token;
-pub mod vfs;

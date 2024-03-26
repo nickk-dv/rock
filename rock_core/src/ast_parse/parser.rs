@@ -2,11 +2,11 @@ use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::{ErrorComp, SourceRange};
 use crate::intern::InternPool;
+use crate::session::FileID;
 use crate::text::TextOffset;
 use crate::text::TextRange;
 use crate::token::token_list::TokenList;
 use crate::token::{Token, T};
-use crate::vfs;
 
 pub struct Parser<'a, 'ast> {
     cursor: usize,
@@ -165,7 +165,7 @@ macro_rules! semi_separated_block {
 
 pub fn module<'a, 'ast>(
     p: &mut Parser<'a, 'ast>,
-    file_id: vfs::FileID,
+    file_id: FileID,
 ) -> Result<Module<'ast>, ErrorComp> {
     let start = p.items.start();
     while !p.at(T![eof]) {

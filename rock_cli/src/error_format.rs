@@ -1,28 +1,28 @@
 use crate::ansi;
 use rock_core::error::{ErrorComp, ErrorSeverity};
+use rock_core::session::Session;
 use rock_core::text::{self, TextRange};
-use rock_core::vfs::Vfs;
 use std::io::{BufWriter, Stderr, Write};
 
 const TAB_SPACE_COUNT: usize = 2;
 const TAB_REPLACE_STR: &'static str = "  ";
 
-pub fn print_errors(vfs: &Vfs, errors: &[ErrorComp]) {
+pub fn print_errors(session: Option<&Session>, errors: &[ErrorComp]) {
     let handle = &mut BufWriter::new(std::io::stderr());
     for error in errors {
         if error.severity() == ErrorSeverity::Warning {
-            print_error(vfs, error, handle)
+            print_error(session, error, handle)
         }
     }
     for error in errors {
         if error.severity() == ErrorSeverity::Error {
-            print_error(vfs, error, handle)
+            print_error(session, error, handle)
         }
     }
     let _ = handle.flush();
 }
 
-fn print_error(vfs: &Vfs, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
+fn print_error(session: Option<&Session>, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
     let (message, severiry) = error.main_message();
     let _ = writeln!(
         handle,
@@ -32,8 +32,12 @@ fn print_error(vfs: &Vfs, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
         ansi::WHITE_BOLD,
         ansi::CLEAR
     );
+    let session = match session {
+        Some(it) => it,
+        None => return,
+    };
     for context in error.context_iter() {
-        let file = vfs.file(context.source().file_id());
+        let file = session.file(context.source().file_id());
 
         let range = context.source().range();
         let (location, line_range) =

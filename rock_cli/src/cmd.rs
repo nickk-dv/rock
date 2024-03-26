@@ -37,13 +37,11 @@ pub mod new {
     use crate::ansi;
     use crate::error_format;
     use rock_core::error::ErrorComp;
-    use rock_core::vfs::Vfs;
     use std::path::PathBuf;
 
     pub fn cmd(data: CommandNew) {
         if let Err(error) = make_project(data) {
-            let vfs = Vfs::new();
-            error_format::print_errors(&vfs, &[error]);
+            error_format::print_errors(None, &[error]);
         }
     }
 
@@ -125,22 +123,29 @@ pub mod new {
 
 pub mod check {
     use crate::error_format;
-    use rock_core::ast_parse::{parse, CompCtx};
+    use rock_core::ast_parse;
     use rock_core::hir_lower;
+    use rock_core::session::Session;
 
     pub fn cmd() {
-        let mut ctx = CompCtx::new();
-        let ast = match parse(&mut ctx) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(&ctx.vfs, &errors);
+        let mut session = match Session::new() {
+            Ok(it) => it,
+            Err(error) => {
+                error_format::print_errors(None, &[error]);
                 return;
             }
         };
-        let hir = match hir_lower::check(&mut ctx, ast) {
+        let ast = match ast_parse::parse(&mut session) {
             Ok(ast) => ast,
             Err(errors) => {
-                error_format::print_errors(&ctx.vfs, &errors);
+                error_format::print_errors(Some(&session), &errors);
+                return;
+            }
+        };
+        let hir = match hir_lower::check(&mut session, ast) {
+            Ok(ast) => ast,
+            Err(errors) => {
+                error_format::print_errors(Some(&session), &errors);
                 return;
             }
         };
@@ -150,22 +155,29 @@ pub mod check {
 pub mod build {
     use super::CommandBuild;
     use crate::error_format;
-    use rock_core::ast_parse::{parse, CompCtx};
+    use rock_core::ast_parse;
     use rock_core::hir_lower;
+    use rock_core::session::Session;
 
     pub fn cmd(data: CommandBuild) {
-        let mut ctx = CompCtx::new();
-        let ast = match parse(&mut ctx) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(&ctx.vfs, &errors);
+        let mut session = match Session::new() {
+            Ok(it) => it,
+            Err(error) => {
+                error_format::print_errors(None, &[error]);
                 return;
             }
         };
-        let hir = match hir_lower::check(&mut ctx, ast) {
+        let ast = match ast_parse::parse(&mut session) {
             Ok(ast) => ast,
             Err(errors) => {
-                error_format::print_errors(&ctx.vfs, &errors);
+                error_format::print_errors(Some(&session), &errors);
+                return;
+            }
+        };
+        let hir = match hir_lower::check(&mut session, ast) {
+            Ok(ast) => ast,
+            Err(errors) => {
+                error_format::print_errors(Some(&session), &errors);
                 return;
             }
         };
@@ -176,22 +188,29 @@ pub mod build {
 pub mod run {
     use super::CommandRun;
     use crate::error_format;
-    use rock_core::ast_parse::{parse, CompCtx};
+    use rock_core::ast_parse;
     use rock_core::hir_lower;
+    use rock_core::session::Session;
 
     pub fn cmd(data: CommandRun) {
-        let mut ctx = CompCtx::new();
-        let ast = match parse(&mut ctx) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(&ctx.vfs, &errors);
+        let mut session = match Session::new() {
+            Ok(it) => it,
+            Err(error) => {
+                error_format::print_errors(None, &[error]);
                 return;
             }
         };
-        let hir = match hir_lower::check(&mut ctx, ast) {
+        let ast = match ast_parse::parse(&mut session) {
             Ok(ast) => ast,
             Err(errors) => {
-                error_format::print_errors(&ctx.vfs, &errors);
+                error_format::print_errors(Some(&session), &errors);
+                return;
+            }
+        };
+        let hir = match hir_lower::check(&mut session, ast) {
+            Ok(ast) => ast,
+            Err(errors) => {
+                error_format::print_errors(Some(&session), &errors);
                 return;
             }
         };

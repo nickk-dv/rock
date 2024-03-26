@@ -1,5 +1,5 @@
+use crate::session::FileID;
 use crate::text::TextRange;
-use crate::vfs::FileID;
 
 pub struct ErrorComp {
     message: ErrorMessage,
