@@ -1,10 +1,11 @@
 use crate::arena::Arena;
-use crate::intern::InternID;
+use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
 use crate::text::{TextOffset, TextRange};
 
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
+    pub intern: InternPool,
     pub modules: Vec<Module<'ast>>,
 }
 

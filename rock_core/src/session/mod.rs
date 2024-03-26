@@ -1,12 +1,10 @@
 use crate::error::ErrorComp;
-use crate::intern::InternPool;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
 pub struct Session {
     cwd: PathBuf,
     files: Vec<File>,
-    intern: InternPool,
     package: PackageData,
 }
 
@@ -37,12 +35,6 @@ impl Session {
     }
     pub fn file_ids(&self) -> impl Iterator<Item = FileID> {
         (0..self.files.len()).map(FileID::new)
-    }
-    pub fn intern(&self) -> &InternPool {
-        &self.intern
-    }
-    pub fn intern_mut(&mut self) -> &mut InternPool {
-        &mut self.intern
     }
     pub fn package(&self) -> &PackageData {
         &self.package
@@ -142,7 +134,6 @@ fn create_session() -> Result<Session, ErrorComp> {
     Ok(Session {
         cwd,
         files,
-        intern: InternPool::new(),
         package,
     })
 }

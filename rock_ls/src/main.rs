@@ -133,7 +133,7 @@ use lsp_types::{
 use std::path::PathBuf;
 
 fn run_check(session: &mut Session) -> Result<(), Vec<ErrorComp>> {
-    let ast = ast_parse::parse(session)?;
+    let ast = ast_parse::parser::parse(session)?;
     let _ = hir_lower::check(session, ast)?;
     Ok(())
 }

@@ -99,9 +99,8 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
     pub fn session(&self) -> &Session {
         self.session
     }
-
     pub fn name_str(&self, id: InternID) -> &str {
-        self.session.intern().get_str(id)
+        self.ast.intern.get_str(id)
     }
     pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
         self.ast.modules.iter()
