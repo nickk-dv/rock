@@ -41,7 +41,11 @@ fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, 
 }
 
 fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
-    let root_path = hb.session().cwd().join("src").join("main.rock");
+    let root_path = if hb.session().package().is_binary {
+        hb.session().cwd().join("src").join("main.rock")
+    } else {
+        hb.session().cwd().join("src").join("lib.rock")
+    };
 
     match p.module_map.remove(&root_path) {
         Some(status) => match status {
@@ -51,16 +55,11 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
                     parent: None,
                 });
             }
-            ModuleStatus::Taken(..) => unreachable!("root module cannot be taken"),
+            ModuleStatus::Taken(..) => panic!("root module cannot be taken"),
         },
         None => {
-            //@use same path format with to_string_lossy() and ` `
-            // this might require abs_path_type
-            // with display implementation
-            // to format and enforce it being absolute
-            // displayed paths might need to be trimmed to start at `src` src/path/to/file.rock
             hb.error(ErrorComp::error(format!(
-                "root module `{}` is missing",
+                "root module file `{}` is missing",
                 root_path.to_string_lossy()
             )));
         }

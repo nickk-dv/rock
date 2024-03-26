@@ -58,22 +58,50 @@ impl FileID {
     }
 }
 
+//@general display paths as relative to src folder?
+// both in errors here, and diagnostic cli formats
+// e.g: src/main.rock or ./src/main.rock
 fn create_session() -> Result<Session, ErrorComp> {
     let cwd = std::env::current_dir().map_err(|io_error| {
         ErrorComp::error(format!(
-            "failed to read current working directory, reason: {}",
+            "failed to get current working directory, reason: {}",
             io_error
         ))
     })?;
 
-    let src_dir = cwd.join("src");
-    if !src_dir.exists() {
-        return Err(ErrorComp::error(format!(
-            "could not find `src` directory, source files must be located in `{}`",
-            src_dir.to_string_lossy()
-        )));
-    }
+    let os_name = cwd
+        .file_name()
+        .ok_or_else(|| ErrorComp::error("failed to get current working directory name"))?;
+    let name = os_name
+        .to_str()
+        .ok_or_else(|| ErrorComp::error("current working directory name is not valid utf-8"))?
+        .to_string();
 
+    let src_dir = cwd.join("src");
+    let src_bin = src_dir.join("main.rock");
+    let src_lib = src_dir.join("lib.rock");
+
+    let is_binary = match (src_bin.exists(), src_lib.exists()) {
+        (true, false) => true,
+        (false, true) => false,
+        (false, false) => {
+            return Err(ErrorComp::error(format!(
+                "could not find `{}` or `{}`",
+                src_bin.to_string_lossy(),
+                src_lib.to_string_lossy(),
+            )));
+        }
+        (true, true) => {
+            return Err(ErrorComp::error(format!(
+                "could not determine package kind\nonly `{}` or `{}` can exist at the same time",
+                src_bin.to_string_lossy(),
+                src_lib.to_string_lossy(),
+            )));
+        }
+    };
+    let package = PackageData { name, is_binary };
+
+    let mut files = Vec::new();
     let mut dir_visits = vec![src_dir];
     let mut source_paths = Vec::new();
 
@@ -95,8 +123,6 @@ fn create_session() -> Result<Session, ErrorComp> {
         }
     }
 
-    let mut files = Vec::new();
-
     for path in source_paths {
         let source = std::fs::read_to_string(&path).map_err(|io_error| {
             ErrorComp::error(format!(
@@ -117,9 +143,6 @@ fn create_session() -> Result<Session, ErrorComp> {
         cwd,
         files,
         intern: InternPool::new(),
-        package: PackageData {
-            name: "example".into(), //@infer from name of the forlder
-            is_binary: true, //@infer from exitance of  src/main or src/lib and report if both are missing, remove current `src` missing error
-        },
+        package,
     })
 }
