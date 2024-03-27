@@ -39,7 +39,7 @@ hir_id_impl!(ProcID);
 pub struct ProcData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub params: &'hir [ProcParam<'hir>],
     pub is_variadic: bool,
     pub return_ty: Type<'hir>,
@@ -51,7 +51,7 @@ hir_id_impl!(ProcParamID);
 #[derive(Copy, Clone)]
 pub struct ProcParam<'hir> {
     pub mutt: ast::Mut,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub ty: Type<'hir>,
 }
 
@@ -65,14 +65,14 @@ hir_id_impl!(EnumID);
 pub struct EnumData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub variants: &'hir [EnumVariant],
 }
 
 hir_id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
 pub struct EnumVariant {
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub value: Option<ConstExprID>,
 }
 
@@ -80,14 +80,14 @@ hir_id_impl!(UnionID);
 pub struct UnionData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub members: &'hir [UnionMember<'hir>],
 }
 
 hir_id_impl!(UnionMemberID);
 #[derive(Copy, Clone)]
 pub struct UnionMember<'hir> {
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub ty: Type<'hir>,
 }
 
@@ -95,7 +95,7 @@ hir_id_impl!(StructID);
 pub struct StructData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub fields: &'hir [StructField<'hir>],
 }
 
@@ -103,7 +103,7 @@ hir_id_impl!(StructFieldID);
 #[derive(Copy, Clone)]
 pub struct StructField<'hir> {
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub ty: Type<'hir>,
 }
 
@@ -111,7 +111,7 @@ hir_id_impl!(ConstID);
 pub struct ConstData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstExprID,
 }
@@ -120,7 +120,7 @@ hir_id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstExprID,
 }
@@ -193,7 +193,7 @@ pub enum ForKind<'hir> {
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
     pub mutt: ast::Mut,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub ty: Type<'hir>,
     pub expr: Option<&'hir Expr<'hir>>,
 }

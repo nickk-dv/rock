@@ -3,6 +3,7 @@ use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
 use crate::text::{TextOffset, TextRange};
 
+#[derive(Default)]
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
     pub intern: InternPool,
@@ -30,7 +31,7 @@ pub enum Item<'ast> {
 #[derive(Copy, Clone)]
 pub struct ModItem {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
 }
 
 #[derive(Copy, Clone)]
@@ -41,14 +42,14 @@ pub struct UseItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct UseSymbol {
-    pub name: Ident,
-    pub alias: Option<Ident>,
+    pub name: Name,
+    pub alias: Option<Name>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub params: &'ast [ProcParam<'ast>],
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
@@ -59,54 +60,54 @@ pub struct ProcItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct ProcParam<'ast> {
     pub mutt: Mut,
-    pub name: Ident,
+    pub name: Name,
     pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
 pub struct EnumItem<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub variants: &'ast [EnumVariant<'ast>],
 }
 
 #[derive(Copy, Clone)]
 pub struct EnumVariant<'ast> {
-    pub name: Ident,
+    pub name: Name,
     pub value: Option<ConstExpr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct UnionItem<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub members: &'ast [UnionMember<'ast>],
 }
 
 #[derive(Copy, Clone)]
 pub struct UnionMember<'ast> {
-    pub name: Ident,
+    pub name: Name,
     pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
 pub struct StructItem<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub fields: &'ast [StructField<'ast>],
 }
 
 #[derive(Copy, Clone)]
 pub struct StructField<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ConstItem<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
 }
@@ -114,7 +115,7 @@ pub struct ConstItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
     pub vis: Vis,
-    pub name: Ident,
+    pub name: Name,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
 }
@@ -132,20 +133,20 @@ pub enum Mut {
 }
 
 #[derive(Copy, Clone)]
-pub struct Ident {
+pub struct Name {
     pub id: InternID,
     pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
 pub struct Directive {
-    pub name: Ident,
+    pub name: Name,
 }
 
 #[derive(Copy, Clone)]
 pub struct Path<'ast> {
     pub kind: PathKind,
-    pub names: &'ast [Ident],
+    pub names: &'ast [Name],
     pub range_start: TextOffset,
 }
 
@@ -213,7 +214,7 @@ pub enum ForKind<'ast> {
 #[derive(Copy, Clone)]
 pub struct Local<'ast> {
     pub mutt: Mut,
-    pub name: Ident,
+    pub name: Name,
     pub ty: Option<Type<'ast>>,
     pub expr: Option<&'ast Expr<'ast>>,
 }
@@ -247,7 +248,7 @@ pub enum ExprKind<'ast> {
     If          { if_: &'ast If<'ast> },
     Block       { stmts: &'ast [Stmt<'ast>] },
     Match       { match_: &'ast Match<'ast> },
-    Field       { target: &'ast Expr<'ast>, name: Ident },
+    Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
     Cast        { target: &'ast Expr<'ast>, ty: &'ast Type<'ast> },
     Sizeof      { ty: Type<'ast> },
@@ -256,8 +257,8 @@ pub enum ExprKind<'ast> {
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, size: ConstExpr<'ast> },
-    UnaryExpr   { op: UnOp, rhs: &'ast Expr<'ast> },
-    BinaryExpr  { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
+    Unary       { op: UnOp, rhs: &'ast Expr<'ast> },
+    Binary      { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
 
 #[derive(Copy, Clone)]
@@ -299,7 +300,7 @@ pub struct StructInit<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct FieldInit<'ast> {
-    pub name: Ident,
+    pub name: Name,
     pub expr: Option<&'ast Expr<'ast>>,
 }
 
@@ -369,7 +370,7 @@ mod size_assert {
         };
     }
 
-    size_assert!(12, Ident);
+    size_assert!(12, Name);
     size_assert!(16, Item);
     size_assert!(24, Path);
     size_assert!(16, Type);

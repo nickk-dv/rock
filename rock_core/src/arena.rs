@@ -64,6 +64,12 @@ impl<'arena> Arena<'arena> {
     }
 }
 
+impl<'arena> Default for Arena<'arena> {
+    fn default() -> Arena<'arena> {
+        Arena::new()
+    }
+}
+
 impl<'arena> Drop for Arena<'arena> {
     fn drop(&mut self) {
         for block in &self.full_blocks {

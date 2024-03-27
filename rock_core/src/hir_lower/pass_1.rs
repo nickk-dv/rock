@@ -187,7 +187,7 @@ fn process_scope_task<'ast>(
 pub fn name_already_defined_error(
     hb: &mut hb::HirBuilder,
     origin_id: hir::ScopeID,
-    name: ast::Ident,
+    name: ast::Name,
     existing: SourceRange,
 ) {
     hb.error(

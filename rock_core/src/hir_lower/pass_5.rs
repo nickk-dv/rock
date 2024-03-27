@@ -11,20 +11,20 @@ pub fn run(hb: &mut hb::HirBuilder) {
     }
 }
 
-fn typecheck_proc(hb: &mut hb::HirBuilder, id: hir::ProcID) {
+fn typecheck_proc<'hir, 'ast>(hb: &mut hb::HirBuilder<'hir, 'ast>, id: hir::ProcID) {
     let item = hb.proc_ast(id);
     let data = hb.proc_data(id);
 
     match item.block {
         Some(block) => {
-            let _ = typecheck_expr_2(
-                hb,
-                data.origin_id,
-                BlockFlags::entry(),
-                &mut ProcScope::new(id),
-                data.return_ty,
-                block,
-            );
+            //let _ = typecheck_expr_2(
+            //    hb,
+            //    data.origin_id,
+            //    BlockFlags::entry(),
+            //    &mut ProcScope::new(data),
+            //    data.return_ty,
+            //    block,
+            //);
         }
         None => {
             //@for now having a tail directive assumes that it must be a #[c_call]
@@ -121,51 +121,66 @@ impl BlockFlags {
     }
 }
 
-#[derive(Copy, Clone)]
+struct ProcScope<'hir> {
+    data: &'hir hir::ProcData<'hir>,
+    blocks: Vec<BlockData>,
+    locals: Vec<&'hir hir::Local<'hir>>,
+    locals_in_scope: Vec<hir::LocalID>,
+}
+
+struct BlockData {
+    in_loop: bool,
+    in_defer: bool,
+    local_count: u32,
+}
+
 enum VariableID {
     Local(hir::LocalID),
     Param(hir::ProcParamID),
 }
 
-//@locals in scope needs to be popped
-// on stack exit
-struct ProcScope<'hir> {
-    proc_id: hir::ProcID,
-    locals: Vec<&'hir hir::Local<'hir>>,
-    locals_in_scope: Vec<hir::LocalID>,
-}
-
 impl<'hir> ProcScope<'hir> {
-    fn new(proc_id: hir::ProcID) -> ProcScope<'hir> {
+    fn new(data: &'hir hir::ProcData<'hir>) -> ProcScope<'hir> {
         ProcScope {
-            proc_id,
+            data,
+            blocks: Vec::new(),
             locals: Vec::new(),
             locals_in_scope: Vec::new(),
         }
     }
 
-    fn get_local(&self, id: hir::LocalID) -> &'hir hir::Local<'hir> {
-        self.locals.get(id.index()).unwrap()
-    }
-
-    fn get_param<'ast>(
-        &self,
-        hb: &hb::HirBuilder<'hir, 'ast>,
-        id: hir::ProcParamID,
-    ) -> &'hir hir::ProcParam<'hir> {
-        let data = hb.proc_data(self.proc_id);
-        data.params.get(id.index()).unwrap()
+    fn push_block(&mut self) {
+        self.blocks.push(BlockData {
+            in_loop: false,
+            in_defer: false,
+            local_count: 0,
+        });
     }
 
     fn push_local(&mut self, local: &'hir hir::Local<'hir>) {
-        let id = hir::LocalID::new(self.locals.len());
+        let local_id = hir::LocalID::new(self.locals.len());
         self.locals.push(local);
-        self.locals_in_scope.push(id);
+        self.locals_in_scope.push(local_id);
+        self.blocks.last_mut().expect("block exists").local_count += 1;
     }
 
-    fn find_variable(&self, hb: &hb::HirBuilder, id: InternID) -> Option<VariableID> {
-        let data = hb.proc_data(self.proc_id);
-        for (idx, param) in data.params.iter().enumerate() {
+    fn pop_block(&mut self) {
+        let block = self.blocks.pop().expect("block exists");
+        for _ in 0..block.local_count {
+            self.locals_in_scope.pop();
+        }
+    }
+
+    fn get_local(&self, id: hir::LocalID) -> &'hir hir::Local<'hir> {
+        &self.locals[id.index()]
+    }
+
+    fn get_param<'ast>(&self, id: hir::ProcParamID) -> &'hir hir::ProcParam<'hir> {
+        &self.data.params[id.index()]
+    }
+
+    fn find_variable(&self, id: InternID) -> Option<VariableID> {
+        for (idx, param) in self.data.params.iter().enumerate() {
             if param.name.id == id {
                 let id = hir::ProcParamID::new(idx);
                 return Some(VariableID::Param(id));
@@ -284,8 +299,8 @@ fn typecheck_expr_2<'hir, 'ast>(
         ),
         ast::ExprKind::ArrayInit { input } => typecheck_placeholder(hb),
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_placeholder(hb),
-        ast::ExprKind::UnaryExpr { op, rhs } => typecheck_placeholder(hb),
-        ast::ExprKind::BinaryExpr { op, lhs, rhs } => typecheck_placeholder(hb),
+        ast::ExprKind::Unary { op, rhs } => typecheck_placeholder(hb),
+        ast::ExprKind::Binary { op, lhs, rhs } => typecheck_placeholder(hb),
     };
 
     if !type_matches(expect_ty, type_result.ty) {
@@ -507,7 +522,7 @@ fn typecheck_field<'hir, 'ast>(
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
     target: &'ast ast::Expr,
-    name: ast::Ident,
+    name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr_2(
         hb,
@@ -554,7 +569,7 @@ fn verify_type_field<'hir, 'ast>(
     hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     ty: hir::Type<'hir>,
-    name: ast::Ident,
+    name: ast::Name,
 ) -> (hir::Type<'hir>, FieldExprKind) {
     match ty {
         hir::Type::Error => (hir::Type::Error, FieldExprKind::None),
@@ -993,8 +1008,8 @@ local_var  -> <follow?> by <chained> field access
 // change api, maybe expect an item and emit if path is modules only
 struct PathResult<'ast> {
     target_id: hir::ScopeID,
-    symbol: Option<(hb::SymbolKind, SourceRange, ast::Ident)>,
-    remaining: &'ast [ast::Ident],
+    symbol: Option<(hb::SymbolKind, SourceRange, ast::Name)>,
+    remaining: &'ast [ast::Name],
 }
 
 fn path_resolve_target_scope<'hir, 'ast>(

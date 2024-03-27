@@ -7,19 +7,121 @@ use crate::session::FileID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-pub struct HirBuilder<'hir, 'ast> {
+//@order of passing
+// s. // hir scope // mostly immut
+// h. // hir data  // sometimes mut
+// e. // hir emit  // mut
+// p. // proc scope // mut
+
+#[derive(Default)]
+pub struct HirScope<'ast> {
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
+    procs: Vec<&'ast ast::ProcItem<'ast>>,
+    enums: Vec<&'ast ast::EnumItem<'ast>>,
+    unions: Vec<&'ast ast::UnionItem<'ast>>,
+    structs: Vec<&'ast ast::StructItem<'ast>>,
+    consts: Vec<&'ast ast::ConstItem<'ast>>,
+    globals: Vec<&'ast ast::GlobalItem<'ast>>,
+    const_exprs: Vec<ast::ConstExpr<'ast>>,
+}
+
+#[derive(Default)]
+pub struct HirData<'hir> {
+    scopes: Vec<hir::ScopeData>,
+    procs: Vec<hir::ProcData<'hir>>,
+    enums: Vec<hir::EnumData<'hir>>,
+    unions: Vec<hir::UnionData<'hir>>,
+    structs: Vec<hir::StructData<'hir>>,
+    consts: Vec<hir::ConstData<'hir>>,
+    globals: Vec<hir::GlobalData<'hir>>,
+    const_exprs: Vec<hir::ConstExprData<'hir>>,
+}
+
+pub struct HirEmit<'hir> {
+    arena: Arena<'hir>,
     errors: Vec<ErrorComp>,
-    hir: hir::Hir<'hir>,
-    ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
-    ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
-    ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
-    ast_structs: Vec<&'ast ast::StructItem<'ast>>,
-    ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
-    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
-    ast_const_exprs: Vec<ast::ConstExpr<'ast>>,
+}
+
+impl<'ast> HirScope<'ast> {
+    pub fn new(ast: ast::Ast<'ast>) -> HirScope<'ast> {
+        HirScope {
+            ast,
+            ..Default::default()
+        }
+    }
+}
+
+impl<'hir> HirData<'hir> {
+    pub fn new() -> HirData<'hir> {
+        HirData::default()
+    }
+}
+
+impl<'hir> HirEmit<'hir> {
+    pub fn new() -> HirEmit<'hir> {
+        HirEmit {
+            arena: Arena::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
+fn test_flow<'hir, 'ast>(ast: ast::Ast<'ast>) -> hir::Hir<'hir> {
+    let scope = HirScope {
+        ast,
+        mods: Vec::new(),
+        scopes: Vec::new(),
+        procs: Vec::new(),
+        enums: Vec::new(),
+        unions: Vec::new(),
+        structs: Vec::new(),
+        consts: Vec::new(),
+        globals: Vec::new(),
+        const_exprs: Vec::new(),
+    };
+    let data = HirData {
+        scopes: Vec::new(),
+        procs: Vec::new(),
+        enums: Vec::new(),
+        unions: Vec::new(),
+        structs: Vec::new(),
+        consts: Vec::new(),
+        globals: Vec::new(),
+        const_exprs: Vec::new(),
+    };
+    let sink = HirEmit {
+        arena: Arena::new(),
+        errors: Vec::new(),
+    };
+    let hir = hir::Hir {
+        arena: sink.arena,
+        scopes: data.scopes,
+        procs: data.procs,
+        enums: data.enums,
+        unions: data.unions,
+        structs: data.structs,
+        consts: data.consts,
+        globals: data.globals,
+        const_exprs: data.const_exprs,
+    };
+    hir
+}
+
+pub struct HirBuilder<'hir, 'ast> {
+    ast: ast::Ast<'ast>,                           // immutable
+    mods: Vec<ModData>,                            // immutable after created in pass 1
+    scopes: Vec<Scope<'ast>>,                      // immutable after pass 1 and pass 2 are done
+    errors: Vec<ErrorComp>, // !mutated errors are always added in all passes that are being ran
+    hir: hir::Hir<'hir>,    // !mutated and created gradually, arena allocated
+    ast_procs: Vec<&'ast ast::ProcItem<'ast>>, // immutable after created in pass 1
+    ast_enums: Vec<&'ast ast::EnumItem<'ast>>, // immutable after created in pass 1
+    ast_unions: Vec<&'ast ast::UnionItem<'ast>>, // immutable after created in pass 1
+    ast_structs: Vec<&'ast ast::StructItem<'ast>>, // immutable after created in pass 1
+    ast_consts: Vec<&'ast ast::ConstItem<'ast>>, // immutable after created in pass 1
+    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>, // immutable after created in pass 1
+    ast_const_exprs: Vec<ast::ConstExpr<'ast>>, // immutable after created in pass 1
 }
 
 #[derive(Copy, Clone)]
@@ -27,7 +129,7 @@ pub struct ModID(u32);
 pub struct ModData {
     pub origin_id: hir::ScopeID,
     pub vis: ast::Vis,
-    pub name: ast::Ident,
+    pub name: ast::Name,
     pub target: Option<hir::ScopeID>,
 }
 
@@ -317,7 +419,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     pub fn scope_add_imported(
         &mut self,
         origin_id: hir::ScopeID,
-        use_name: ast::Ident,
+        use_name: ast::Name,
         kind: SymbolKind,
     ) {
         self.scope_add_symbol(

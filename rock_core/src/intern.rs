@@ -42,6 +42,12 @@ impl InternPool {
     }
 }
 
+impl Default for InternPool {
+    fn default() -> InternPool {
+        InternPool::new()
+    }
+}
+
 const FNV_OFFSET: u32 = 2166136261;
 const FNV_PRIME: u32 = 16777619;
 

@@ -48,7 +48,7 @@ struct ParseState<'ast> {
     enum_variants: NodeBuffer<EnumVariant<'ast>>,
     union_members: NodeBuffer<UnionMember<'ast>>,
     struct_fields: NodeBuffer<StructField<'ast>>,
-    names: NodeBuffer<Ident>,
+    names: NodeBuffer<Name>,
     stmts: NodeBuffer<Stmt<'ast>>,
     branches: NodeBuffer<Branch<'ast>>,
     match_arms: NodeBuffer<MatchArm<'ast>>,

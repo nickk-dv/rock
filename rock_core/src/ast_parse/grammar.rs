@@ -255,12 +255,12 @@ fn mutt(p: &mut Parser) -> Mut {
     }
 }
 
-fn name(p: &mut Parser) -> Result<Ident, String> {
+fn name(p: &mut Parser) -> Result<Name, String> {
     let range = p.peek_range();
     p.expect(T![ident])?;
     let string = &p.source[range.as_usize()];
     let id = p.state.intern.intern(string);
-    Ok(Ident { range, id })
+    Ok(Name { range, id })
 }
 
 fn directive(p: &mut Parser) -> Result<Option<Directive>, String> {
@@ -482,7 +482,7 @@ fn sub_expr<'ast>(p: &mut Parser<'ast, '_, '_>, min_prec: u32) -> Result<&'ast E
         let lhs = expr_lhs;
         let rhs = sub_expr(p, prec + 1)?;
         expr_lhs = p.state.arena.alloc(Expr {
-            kind: ExprKind::BinaryExpr { op, lhs, rhs },
+            kind: ExprKind::Binary { op, lhs, rhs },
             range: TextRange::new(lhs.range.start(), rhs.range.end()),
         });
     }
@@ -507,7 +507,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
 
     if let Some(un_op) = p.peek().as_un_op() {
         p.bump();
-        let kind = ExprKind::UnaryExpr {
+        let kind = ExprKind::Unary {
             op: un_op,
             rhs: primary_expr(p)?,
         };
