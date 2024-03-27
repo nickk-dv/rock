@@ -16,7 +16,7 @@ impl<'arena> Arena<'arena> {
             offset: 0,
             block: alloc_zeroed(PAGE_SIZE),
             full_blocks: Vec::new(),
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         }
     }
 
@@ -29,9 +29,9 @@ impl<'arena> Arena<'arena> {
     }
 
     pub fn alloc_slice<T: Copy>(&mut self, val: &[T]) -> &'arena [T] {
-        let offset = self.offset_raw::<T>(std::mem::size_of::<T>() * val.len());
+        let offset = self.offset_raw::<T>(std::mem::size_of_val(val));
         unsafe {
-            std::ptr::copy_nonoverlapping(val.as_ptr(), offset as *mut T, val.len());
+            std::ptr::copy_nonoverlapping(val.as_ptr(), offset, val.len());
             std::slice::from_raw_parts(offset as *const T, val.len())
         }
     }

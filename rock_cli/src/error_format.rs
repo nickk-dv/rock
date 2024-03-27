@@ -5,7 +5,7 @@ use rock_core::text::{self, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 
 const TAB_SPACE_COUNT: usize = 2;
-const TAB_REPLACE_STR: &'static str = "  ";
+const TAB_REPLACE_STR: &str = "  ";
 
 pub fn print_errors(session: Option<&Session>, errors: &[ErrorComp]) {
     let handle = &mut BufWriter::new(std::io::stderr());
@@ -51,7 +51,7 @@ fn print_error(session: Option<&Session>, error: &ErrorComp, handle: &mut BufWri
 
         let line_num = location.line().to_string();
         let line_pad = " ".repeat(line_num.len());
-        let line = line_str.trim_end().replace("\t", TAB_REPLACE_STR);
+        let line = line_str.trim_end().replace('\t', TAB_REPLACE_STR);
         let marker_pad = " ".repeat(normalized_tab_len(prefix_str));
         let marker = severity_marker(context.severity()).repeat(normalized_tab_len(source_str));
         let message = context.message();

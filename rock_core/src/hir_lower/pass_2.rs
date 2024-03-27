@@ -43,19 +43,18 @@ pub fn run(hb: &mut hb::HirBuilder) {
             if task.resolved {
                 continue;
             }
-            for name in task.use_item.path.names {
+            if let Some(name) = task.use_item.path.names.iter().next() {
                 hb.error(
                     ErrorComp::error(format!("module `{}` is not found", hb.name_str(name.id)))
                         .context(hb.src(origin_id, name.range)),
                 );
-                break;
             }
         }
     }
 }
 
-fn try_process_use_item<'ctx, 'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'ctx, 'ast, 'hir>,
+fn try_process_use_item<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     use_item: &'ast ast::UseItem<'ast>,
 ) -> bool {

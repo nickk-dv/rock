@@ -2,6 +2,7 @@ use super::hir_builder as hb;
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
+use crate::session::Session;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -22,29 +23,33 @@ enum ModuleStatus<'ast> {
     Available(ast::Module<'ast>),
 }
 
-pub fn run(hb: &mut hb::HirBuilder) {
+pub fn run(hb: &mut hb::HirBuilder, session: &Session) {
     let mut p = Pass::default();
-    make_module_path_map(&mut p, hb);
-    add_root_scope_task(&mut p, hb);
+    make_module_path_map(&mut p, hb, session);
+    add_root_scope_task(&mut p, hb, session);
     while let Some(task) = p.task_queue.pop() {
-        process_scope_task(&mut p, hb, task);
+        process_scope_task(&mut p, hb, session, task);
     }
 }
 
-fn make_module_path_map<'ast>(p: &mut Pass<'ast>, hb: &hb::HirBuilder<'_, 'ast, '_>) {
+fn make_module_path_map<'ast>(
+    p: &mut Pass<'ast>,
+    hb: &hb::HirBuilder<'_, 'ast>,
+    session: &Session,
+) {
     for module in hb.ast_modules() {
         p.module_map.insert(
-            hb.session().file(module.file_id).path.clone(),
+            session.file(module.file_id).path.clone(),
             ModuleStatus::Available(*module),
         );
     }
 }
 
-fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
-    let root_path = if hb.session().package().is_binary {
-        hb.session().cwd().join("src").join("main.rock")
+fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder, session: &Session) {
+    let root_path = if session.package().is_binary {
+        session.cwd().join("src").join("main.rock")
     } else {
-        hb.session().cwd().join("src").join("lib.rock")
+        session.cwd().join("src").join("lib.rock")
     };
 
     match p.module_map.remove(&root_path) {
@@ -68,14 +73,11 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder) {
 
 fn process_scope_task<'ast>(
     p: &mut Pass,
-    hb: &mut hb::HirBuilder<'_, 'ast, '_>,
+    hb: &mut hb::HirBuilder<'_, 'ast>,
+    session: &Session,
     task: ScopeTreeTask<'ast>,
 ) {
-    let parent = match task.parent {
-        Some(mod_id) => Some(hb.get_mod(mod_id).origin_id),
-        None => None,
-    };
-
+    let parent = task.parent.map(|mod_id| hb.get_mod(mod_id).origin_id);
     let origin_id = hb.add_scope(parent, task.module);
 
     if let Some(mod_id) = task.parent {
@@ -94,7 +96,7 @@ fn process_scope_task<'ast>(
                         target: None,
                     };
                     let id = hb.add_mod(origin_id, data);
-                    add_scope_task_from_mod_item(p, hb, origin_id, item, id);
+                    add_scope_task_from_mod_item(p, hb, session, origin_id, item, id);
                 }
             },
             ast::Item::Use(..) => {
@@ -201,11 +203,13 @@ pub fn name_already_defined_error(
 fn add_scope_task_from_mod_item(
     p: &mut Pass,
     hb: &mut hb::HirBuilder,
+    session: &Session,
     scope_id: hir::ScopeID,
     item: &ast::ModItem,
     id: hb::ModID,
 ) {
-    let mut scope_dir = hb.scope_file_path(scope_id);
+    let file_id = hb.scope_file_id(scope_id);
+    let mut scope_dir = session.file(file_id).path.clone();
     scope_dir.pop();
 
     let mod_name = hb.name_str(item.name.id);

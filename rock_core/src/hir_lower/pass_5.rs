@@ -148,9 +148,9 @@ impl<'hir> ProcScope<'hir> {
         self.locals.get(id.index()).unwrap()
     }
 
-    fn get_param(
+    fn get_param<'ast>(
         &self,
-        hb: &hb::HirBuilder<'_, '_, 'hir>,
+        hb: &hb::HirBuilder<'hir, 'ast>,
         id: hir::ProcParamID,
     ) -> &'hir hir::ProcParam<'hir> {
         let data = hb.proc_data(self.proc_id);
@@ -224,8 +224,8 @@ pub fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
 // and maybe type::unknown, to facilitate better inference
 // to better represent partially typed arrays, etc
 #[must_use]
-fn typecheck_expr_2<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_expr_2<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -300,26 +300,26 @@ fn typecheck_expr_2<'ast, 'hir>(
     type_result
 }
 
-fn typecheck_placeholder<'ast, 'hir>(hb: &mut hb::HirBuilder<'_, 'ast, 'hir>) -> TypeResult<'hir> {
+fn typecheck_placeholder<'hir, 'ast>(hb: &mut hb::HirBuilder<'hir, 'ast>) -> TypeResult<'hir> {
     TypeResult::new(hir::Type::Error, hb.arena().alloc(hir::Expr::Error))
 }
 
-fn typecheck_unit<'ast, 'hir>(hb: &mut hb::HirBuilder<'_, 'ast, 'hir>) -> TypeResult<'hir> {
+fn typecheck_unit<'hir, 'ast>(hb: &mut hb::HirBuilder<'hir, 'ast>) -> TypeResult<'hir> {
     TypeResult::new(
         hir::Type::Basic(ast::BasicType::Unit),
         hb.arena().alloc(hir::Expr::Unit),
     )
 }
 
-fn typecheck_lit_null<'ast, 'hir>(hb: &mut hb::HirBuilder<'_, 'ast, 'hir>) -> TypeResult<'hir> {
+fn typecheck_lit_null<'hir, 'ast>(hb: &mut hb::HirBuilder<'hir, 'ast>) -> TypeResult<'hir> {
     TypeResult::new(
         hir::Type::Basic(ast::BasicType::Rawptr),
         hb.arena().alloc(hir::Expr::LitNull),
     )
 }
 
-fn typecheck_lit_bool<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_lit_bool<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     val: bool,
 ) -> TypeResult<'hir> {
     TypeResult::new(
@@ -328,8 +328,8 @@ fn typecheck_lit_bool<'ast, 'hir>(
     )
 }
 
-fn typecheck_lit_int<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_lit_int<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     expect_ty: hir::Type<'hir>,
     val: u64,
 ) -> TypeResult<'hir> {
@@ -363,8 +363,8 @@ fn typecheck_lit_int<'ast, 'hir>(
     )
 }
 
-fn typecheck_lit_float<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_lit_float<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     expect_ty: hir::Type<'hir>,
     val: f64,
 ) -> TypeResult<'hir> {
@@ -397,8 +397,8 @@ fn typecheck_lit_float<'ast, 'hir>(
     )
 }
 
-fn typecheck_lit_char<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_lit_char<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     val: char,
 ) -> TypeResult<'hir> {
     TypeResult::new(
@@ -407,8 +407,8 @@ fn typecheck_lit_char<'ast, 'hir>(
     )
 }
 
-fn typecheck_lit_string<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_lit_string<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     id: InternID,
 ) -> TypeResult<'hir> {
     let slice = hb.arena().alloc(hir::ArraySlice {
@@ -422,8 +422,8 @@ fn typecheck_lit_string<'ast, 'hir>(
     )
 }
 
-fn typecheck_if<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_if<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -476,8 +476,8 @@ fn typecheck_if<'ast, 'hir>(
     typecheck_placeholder(hb)
 }
 
-fn typecheck_match<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_match<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -501,8 +501,8 @@ fn typecheck_match<'ast, 'hir>(
     typecheck_placeholder(hb)
 }
 
-fn typecheck_field<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_field<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -550,8 +550,8 @@ enum FieldExprKind {
     Field(hir::StructFieldID),
 }
 
-fn verify_type_field<'hir>(
-    hb: &mut hb::HirBuilder<'_, '_, 'hir>,
+fn verify_type_field<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     ty: hir::Type<'hir>,
     name: ast::Ident,
@@ -613,8 +613,8 @@ fn verify_type_field<'hir>(
     }
 }
 
-fn typecheck_index<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_index<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -672,8 +672,8 @@ fn verify_elem_type(ty: hir::Type) -> Option<hir::Type> {
     }
 }
 
-fn typecheck_cast<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_cast<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -720,8 +720,8 @@ fn typecheck_cast<'ast, 'hir>(
     }
 }
 
-fn typecheck_proc_call<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_proc_call<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -777,8 +777,8 @@ fn typecheck_proc_call<'ast, 'hir>(
     TypeResult::new(data.return_ty, hb.arena().alloc(hir::Expr::Error))
 }
 
-fn typecheck_struct_init<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_struct_init<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -839,8 +839,8 @@ fn typecheck_struct_init<'ast, 'hir>(
     )
 }
 
-fn typecheck_block<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_block<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -911,8 +911,8 @@ fn typecheck_block<'ast, 'hir>(
     }
 }
 
-fn typecheck_stmt_break<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_stmt_break<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     stmt_range: TextRange,
@@ -925,8 +925,8 @@ fn typecheck_stmt_break<'ast, 'hir>(
     }
 }
 
-fn typecheck_stmt_continue<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_stmt_continue<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     stmt_range: TextRange,
@@ -941,8 +941,8 @@ fn typecheck_stmt_continue<'ast, 'hir>(
 
 //@allow break and continue from loops that originated within defer itself
 // this can probably be done via resetting the in_loop when entering defer block
-fn typecheck_stmt_defer<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn typecheck_stmt_defer<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     block_flags: BlockFlags,
     proc_scope: &mut ProcScope<'hir>,
@@ -997,8 +997,8 @@ struct PathResult<'ast> {
     remaining: &'ast [ast::Ident],
 }
 
-fn path_resolve_target_scope<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+fn path_resolve_target_scope<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> Option<PathResult<'ast>> {
@@ -1066,8 +1066,8 @@ fn path_resolve_target_scope<'ast, 'hir>(
     })
 }
 
-pub fn path_resolve_as_type<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+pub fn path_resolve_as_type<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> hir::Type<'hir> {
@@ -1096,7 +1096,7 @@ pub fn path_resolve_as_type<'ast, 'hir>(
                 path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
             );
             hb.error(
-                ErrorComp::error(format!("module path does not lead to an item",))
+                ErrorComp::error("module path does not lead to an item")
                     .context(hb.src(origin_id, path_range)),
             );
             return hir::Type::Error;
@@ -1115,8 +1115,8 @@ pub fn path_resolve_as_type<'ast, 'hir>(
     type_res
 }
 
-pub fn path_resolve_as_proc<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+pub fn path_resolve_as_proc<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> Option<hir::ProcID> {
@@ -1164,8 +1164,8 @@ pub fn path_resolve_as_proc<'ast, 'hir>(
     proc_id
 }
 
-pub fn path_resolve_as_struct<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+pub fn path_resolve_as_struct<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> Option<hir::StructID> {
@@ -1213,8 +1213,8 @@ pub fn path_resolve_as_struct<'ast, 'hir>(
     struct_id
 }
 
-pub fn path_resolve_as_module_path<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+pub fn path_resolve_as_module_path<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     path: &'ast ast::Path<'ast>,
 ) -> Option<hir::ScopeID> {

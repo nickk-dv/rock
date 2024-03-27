@@ -10,7 +10,7 @@ use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 
-pub fn parse<'ast, 'src>(session: &'src Session) -> Result<Ast<'ast>, Vec<ErrorComp>> {
+pub fn parse<'ast>(session: &Session) -> Result<Ast<'ast>, Vec<ErrorComp>> {
     let mut state = ParseState::new();
 
     for file_id in session.file_ids() {

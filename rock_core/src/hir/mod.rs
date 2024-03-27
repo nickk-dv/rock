@@ -233,8 +233,8 @@ pub enum Expr<'hir> {
     StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
     ArrayInit   { input: &'hir [&'hir Expr<'hir>] },
     ArrayRepeat { expr: &'hir Expr<'hir>, size: &'hir Expr<'hir> },
-    UnaryExpr   { op: ast::UnOp, rhs: &'hir Expr<'hir> },
-    BinaryExpr  { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
+    Unary       { op: ast::UnOp, rhs: &'hir Expr<'hir> },
+    Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
 #[derive(Copy, Clone)]

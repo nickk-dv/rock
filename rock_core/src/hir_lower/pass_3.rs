@@ -24,8 +24,8 @@ pub fn run(hb: &mut hb::HirBuilder) {
     }
 }
 
-pub fn resolve_type<'ast, 'hir>(
-    hb: &mut hb::HirBuilder<'_, 'ast, 'hir>,
+pub fn resolve_type<'hir, 'ast>(
+    hb: &mut hb::HirBuilder<'hir, 'ast>,
     origin_id: hir::ScopeID,
     ast_ty: ast::Type<'ast>,
     resolve_const: bool,
@@ -67,10 +67,7 @@ fn process_proc_data(hb: &mut hb::HirBuilder, id: hir::ProcID) {
     let mut unique = Vec::<hir::ProcParam>::new();
 
     for param in item.params.iter() {
-        if let Some(existing) = unique
-            .iter()
-            .find_map(|it| (it.name.id == param.name.id).then_some(it))
-        {
+        if let Some(existing) = unique.iter().find(|&it| it.name.id == param.name.id) {
             error_duplicate_proc_param(hb, origin_id, param, existing);
         } else {
             unique.push(hir::ProcParam {
@@ -94,10 +91,7 @@ fn process_enum_data(hb: &mut hb::HirBuilder, id: hir::EnumID) {
     let mut unique = Vec::<hir::EnumVariant>::new();
 
     for variant in item.variants.iter() {
-        if let Some(existing) = unique
-            .iter()
-            .find_map(|it| (it.name.id == variant.name.id).then_some(it))
-        {
+        if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
             error_duplicate_enum_variant(hb, origin_id, variant, existing);
         } else {
             unique.push(hir::EnumVariant {
@@ -117,10 +111,7 @@ fn process_union_data(hb: &mut hb::HirBuilder, id: hir::UnionID) {
     let mut unique = Vec::<hir::UnionMember>::new();
 
     for member in item.members.iter() {
-        if let Some(existing) = unique
-            .iter()
-            .find_map(|it| (it.name.id == member.name.id).then_some(it))
-        {
+        if let Some(existing) = unique.iter().find(|&it| it.name.id == member.name.id) {
             error_duplicate_union_member(hb, origin_id, member, existing);
         } else {
             unique.push(hir::UnionMember {
@@ -138,10 +129,7 @@ fn process_struct_data(hb: &mut hb::HirBuilder, id: hir::StructID) {
     let mut unique = Vec::<hir::StructField>::new();
 
     for field in item.fields.iter() {
-        if let Some(existing) = unique
-            .iter()
-            .find_map(|it| (it.name.id == field.name.id).then_some(it))
-        {
+        if let Some(existing) = unique.iter().find(|&it| it.name.id == field.name.id) {
             error_duplicate_struct_field(hb, origin_id, field, existing);
         } else {
             unique.push(hir::StructField {

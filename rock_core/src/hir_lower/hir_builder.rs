@@ -3,12 +3,11 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::intern::InternID;
-use crate::session::Session;
+use crate::session::FileID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-pub struct HirBuilder<'ctx, 'ast, 'hir> {
-    session: &'ctx Session,
+pub struct HirBuilder<'hir, 'ast> {
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
@@ -59,10 +58,9 @@ pub enum SymbolKind {
     Global(hir::GlobalID),
 }
 
-impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
-    pub fn new(session: &'ctx Session, ast: ast::Ast<'ast>) -> HirBuilder<'ctx, 'ast, 'hir> {
-        HirBuilder {
-            session,
+impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
+    pub fn new(ast: ast::Ast<'ast>) -> Self {
+        Self {
             ast,
             mods: Vec::new(),
             scopes: Vec::new(),
@@ -96,9 +94,6 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         }
     }
 
-    pub fn session(&self) -> &Session {
-        self.session
-    }
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern.get_str(id)
     }
@@ -335,11 +330,8 @@ impl<'ctx, 'ast, 'hir> HirBuilder<'ctx, 'ast, 'hir> {
         );
     }
 
-    pub fn scope_file_path(&self, id: hir::ScopeID) -> std::path::PathBuf {
-        self.session
-            .file(self.scope(id).module.file_id)
-            .path
-            .clone()
+    pub fn scope_file_id(&self, id: hir::ScopeID) -> FileID {
+        self.scope(id).module.file_id
     }
 
     pub fn scope_name_defined(&self, origin_id: hir::ScopeID, id: InternID) -> Option<SourceRange> {

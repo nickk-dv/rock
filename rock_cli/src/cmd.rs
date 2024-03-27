@@ -35,17 +35,10 @@ pub enum BuildKind {
 pub mod new {
     use super::{CommandNew, ProjectKind};
     use crate::ansi;
-    use crate::error_format;
     use rock_core::error::ErrorComp;
     use std::path::PathBuf;
 
-    pub fn cmd(data: CommandNew) {
-        if let Err(error) = make_project(data) {
-            error_format::print_errors(None, &[error]);
-        }
-    }
-
-    fn make_project(data: CommandNew) -> Result<(), ErrorComp> {
+    pub fn cmd(data: CommandNew) -> Result<(), ErrorComp> {
         let cwd = std::env::current_dir().unwrap();
         let root_dir = cwd.join(&data.name);
         let src_dir = root_dir.join("src");
@@ -122,100 +115,49 @@ pub mod new {
 }
 
 pub mod check {
-    use crate::error_format;
     use rock_core::ast_parse;
+    use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
     use rock_core::session::Session;
 
-    pub fn cmd() {
-        let mut session = match Session::new() {
-            Ok(it) => it,
-            Err(error) => {
-                error_format::print_errors(None, &[error]);
-                return;
-            }
-        };
-        let ast = match ast_parse::parse(&mut session) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(Some(&session), &errors);
-                return;
-            }
-        };
-        let hir = match hir_lower::check(&mut session, ast) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(Some(&session), &errors);
-                return;
-            }
-        };
+    pub fn cmd() -> Result<(), Vec<ErrorComp>> {
+        let session = Session::new()?;
+        let ast = ast_parse::parse(&session)?;
+        let _ = hir_lower::check(ast, &session)?;
+        Ok(())
     }
 }
 
 pub mod build {
     use super::CommandBuild;
-    use crate::error_format;
     use rock_core::ast_parse;
+    use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
     use rock_core::session::Session;
 
-    pub fn cmd(data: CommandBuild) {
-        let mut session = match Session::new() {
-            Ok(it) => it,
-            Err(error) => {
-                error_format::print_errors(None, &[error]);
-                return;
-            }
-        };
-        let ast = match ast_parse::parse(&mut session) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(Some(&session), &errors);
-                return;
-            }
-        };
-        let hir = match hir_lower::check(&mut session, ast) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(Some(&session), &errors);
-                return;
-            }
-        };
-        //@no build
+    pub fn cmd(data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
+        let session = Session::new()?;
+        let ast = ast_parse::parse(&session)?;
+        let _ = hir_lower::check(ast, &session)?;
+        //@build
+        Ok(())
     }
 }
 
 pub mod run {
     use super::CommandRun;
-    use crate::error_format;
     use rock_core::ast_parse;
+    use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
     use rock_core::session::Session;
 
-    pub fn cmd(data: CommandRun) {
-        let mut session = match Session::new() {
-            Ok(it) => it,
-            Err(error) => {
-                error_format::print_errors(None, &[error]);
-                return;
-            }
-        };
-        let ast = match ast_parse::parse(&mut session) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(Some(&session), &errors);
-                return;
-            }
-        };
-        let hir = match hir_lower::check(&mut session, ast) {
-            Ok(ast) => ast,
-            Err(errors) => {
-                error_format::print_errors(Some(&session), &errors);
-                return;
-            }
-        };
-        //@no build
-        //@no run
+    pub fn cmd(data: CommandRun) -> Result<(), Vec<ErrorComp>> {
+        let session = Session::new()?;
+        let ast = ast_parse::parse(&session)?;
+        let _ = hir_lower::check(ast, &session)?;
+        //@build
+        //@run
+        Ok(())
     }
 }
 

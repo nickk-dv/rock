@@ -48,9 +48,9 @@ impl Parser {
             "h" | "help" => self.parse_help(),
             "v" | "version" => self.parse_version(),
             "init" | "create" | "make" | "start" | "setup" | "initialize" | "begin" | "project" => {
-                Err(vec![ErrorComp::error(format!(
+                Err(vec![ErrorComp::error(
                     "did you mean `rock new`? use `rock help` to learn the usage",
-                ))])
+                )])
             }
             _ => Err(vec![ErrorComp::error(format!(
                 "command `{}` does not exist, use `rock help` to learn the usage",
@@ -66,9 +66,9 @@ impl Parser {
                 name
             }
             None => {
-                return Err(vec![ErrorComp::error(format!(
+                return Err(vec![ErrorComp::error(
                     "missing package name, use `rock help` to learn the usage",
-                ))]);
+                )]);
             }
         };
         Ok(Command::New(CommandNew {

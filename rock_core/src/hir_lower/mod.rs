@@ -11,12 +11,9 @@ use crate::hir;
 use crate::session::Session;
 use hir_builder as hb;
 
-pub fn check<'ctx, 'ast, 'hir>(
-    session: &Session,
-    ast: ast::Ast<'ast>,
-) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
-    let mut hb = hb::HirBuilder::new(session, ast);
-    pass_1::run(&mut hb);
+pub fn check<'hir>(ast: ast::Ast, session: &Session) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+    let mut hb = hb::HirBuilder::new(ast);
+    pass_1::run(&mut hb, session);
     pass_2::run(&mut hb);
     pass_3::run(&mut hb);
     pass_4::run(&mut hb);
