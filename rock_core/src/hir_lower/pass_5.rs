@@ -1,4 +1,4 @@
-use super::hir_builder as hb;
+use super::hir_build as hb;
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;

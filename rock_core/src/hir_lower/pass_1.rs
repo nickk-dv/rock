@@ -1,4 +1,4 @@
-use super::hir_builder as hb;
+use super::hir_build::{self as hb, HirData, HirEmit};
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
@@ -23,39 +23,40 @@ enum ModuleStatus<'ast> {
     Available(ast::Module<'ast>),
 }
 
-pub fn run(hb: &mut hb::HirBuilder, session: &Session) {
-    let mut p = Pass::default();
-    make_module_path_map(&mut p, hb, session);
-    add_root_scope_task(&mut p, hb, session);
-    while let Some(task) = p.task_queue.pop() {
-        process_scope_task(&mut p, hb, session, task);
-    }
-}
+pub fn run(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
+    let pass = &mut Pass::default();
 
-fn make_module_path_map<'ast>(
-    p: &mut Pass<'ast>,
-    hb: &hb::HirBuilder<'_, 'ast>,
-    session: &Session,
-) {
-    for module in hb.ast_modules() {
-        p.module_map.insert(
+    for module in hir.ast_modules() {
+        pass.module_map.insert(
             session.file(module.file_id).path.clone(),
             ModuleStatus::Available(*module),
         );
     }
+
+    push_root_scope_task(hir, emit, pass, session);
+    while let Some(task) = pass.task_queue.pop() {
+        resolve_scope_task(hir, emit, pass, session, task);
+    }
 }
 
-fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder, session: &Session) {
+fn push_root_scope_task<'ast>(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    pass: &mut Pass<'ast>,
+    session: &Session,
+) {
     let root_path = if session.package().is_binary {
         session.cwd().join("src").join("main.rock")
     } else {
         session.cwd().join("src").join("lib.rock")
     };
 
-    match p.module_map.remove(&root_path) {
+    //@is removing this wrong? should switch to taken instead?
+    // via insert call
+    match pass.module_map.remove(&root_path) {
         Some(status) => match status {
             ModuleStatus::Available(module) => {
-                p.task_queue.push(ScopeTreeTask {
+                pass.task_queue.push(ScopeTreeTask {
                     module,
                     parent: None,
                 });
@@ -63,7 +64,7 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder, session: &Session)
             ModuleStatus::Taken(..) => panic!("root module cannot be taken"),
         },
         None => {
-            hb.error(ErrorComp::error(format!(
+            emit.error(ErrorComp::error(format!(
                 "root module file `{}` is missing",
                 root_path.to_string_lossy()
             )));
@@ -71,23 +72,26 @@ fn add_root_scope_task(p: &mut Pass, hb: &mut hb::HirBuilder, session: &Session)
     }
 }
 
-fn process_scope_task<'ast>(
-    p: &mut Pass,
-    hb: &mut hb::HirBuilder<'_, 'ast>,
+fn resolve_scope_task<'ast>(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    pass: &mut Pass<'ast>,
     session: &Session,
     task: ScopeTreeTask<'ast>,
 ) {
-    let parent = task.parent.map(|mod_id| hb.get_mod(mod_id).origin_id);
-    let origin_id = hb.add_scope(parent, task.module);
+    let parent = task.parent.map(|mod_id| hir.get_mod(mod_id).origin_id);
+    let origin_id = hir.add_scope(parent, task.module);
 
     if let Some(mod_id) = task.parent {
-        hb.get_mod_mut(mod_id).target = Some(origin_id);
+        hir.get_mod_mut(mod_id).target = Some(origin_id);
     }
 
-    for item in hb.scope_ast_items(origin_id) {
+    for item in hir.scope_ast_items(origin_id) {
         match item {
-            ast::Item::Mod(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Mod(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hb::ModData {
                         origin_id,
@@ -95,15 +99,17 @@ fn process_scope_task<'ast>(
                         name: item.name,
                         target: None,
                     };
-                    let id = hb.add_mod(origin_id, data);
-                    add_scope_task_from_mod_item(p, hb, session, origin_id, item, id);
+                    let id = hir.add_mod(origin_id, data);
+                    add_scope_task_from_mod_item(hir, emit, pass, session, origin_id, item, id);
                 }
             },
             ast::Item::Use(..) => {
                 continue;
             }
-            ast::Item::Proc(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Proc(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hir::ProcData {
                         origin_id,
@@ -115,11 +121,13 @@ fn process_scope_task<'ast>(
                         block: None,
                         body: hir::ProcBody { locals: &[] },
                     };
-                    hb.add_proc(origin_id, item, data);
+                    hir.add_proc(origin_id, item, data);
                 }
             },
-            ast::Item::Enum(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Enum(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hir::EnumData {
                         origin_id,
@@ -127,11 +135,13 @@ fn process_scope_task<'ast>(
                         name: item.name,
                         variants: &[],
                     };
-                    hb.add_enum(origin_id, item, data);
+                    hir.add_enum(origin_id, item, data);
                 }
             },
-            ast::Item::Union(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Union(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hir::UnionData {
                         origin_id,
@@ -139,11 +149,13 @@ fn process_scope_task<'ast>(
                         name: item.name,
                         members: &[],
                     };
-                    hb.add_union(origin_id, item, data);
+                    hir.add_union(origin_id, item, data);
                 }
             },
-            ast::Item::Struct(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Struct(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hir::StructData {
                         origin_id,
@@ -151,11 +163,13 @@ fn process_scope_task<'ast>(
                         name: item.name,
                         fields: &[],
                     };
-                    hb.add_struct(origin_id, item, data);
+                    hir.add_struct(origin_id, item, data);
                 }
             },
-            ast::Item::Const(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Const(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hir::ConstData {
                         origin_id,
@@ -164,11 +178,13 @@ fn process_scope_task<'ast>(
                         ty: hir::Type::Error,
                         value: hb::DUMMY_CONST_EXPR_ID,
                     };
-                    hb.add_const(origin_id, item, data);
+                    hir.add_const(origin_id, item, data);
                 }
             },
-            ast::Item::Global(item) => match hb.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => name_already_defined_error(hb, origin_id, item.name, existing),
+            ast::Item::Global(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+                Some(existing) => {
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                }
                 None => {
                     let data = hir::GlobalData {
                         origin_id,
@@ -177,7 +193,7 @@ fn process_scope_task<'ast>(
                         ty: hir::Type::Error,
                         value: hb::DUMMY_CONST_EXPR_ID,
                     };
-                    hb.add_global(origin_id, item, data);
+                    hir.add_global(origin_id, item, data);
                 }
             },
         }
@@ -185,61 +201,63 @@ fn process_scope_task<'ast>(
 }
 
 pub fn name_already_defined_error(
-    hb: &mut hb::HirBuilder,
+    hir: &HirData,
+    emit: &mut HirEmit,
     origin_id: hir::ScopeID,
     name: ast::Name,
     existing: SourceRange,
 ) {
-    hb.error(
+    emit.error(
         ErrorComp::error(format!(
             "name `{}` is defined multiple times",
-            hb.name_str(name.id)
+            hir.name_str(name.id)
         ))
-        .context(hb.src(origin_id, name.range))
+        .context(hir.src(origin_id, name.range))
         .context_info("existing definition", existing),
     );
 }
 
 fn add_scope_task_from_mod_item(
-    p: &mut Pass,
-    hb: &mut hb::HirBuilder,
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    pass: &mut Pass,
     session: &Session,
     scope_id: hir::ScopeID,
     item: &ast::ModItem,
     id: hb::ModID,
 ) {
-    let file_id = hb.scope_file_id(scope_id);
+    let file_id = hir.scope_file_id(scope_id);
     let mut scope_dir = session.file(file_id).path.clone();
     scope_dir.pop();
 
-    let mod_name = hb.name_str(item.name.id);
+    let mod_name = hir.name_str(item.name.id);
     let mod_filename = mod_name.to_string() + ".rock";
     let mod_path_1 = scope_dir.join(mod_filename);
     let mod_path_2 = scope_dir.join(mod_name).join("mod.rock");
 
     let (status, chosen_path) = match (
-        p.module_map.get(&mod_path_1).cloned(),
-        p.module_map.get(&mod_path_2).cloned(),
+        pass.module_map.get(&mod_path_1).cloned(),
+        pass.module_map.get(&mod_path_2).cloned(),
     ) {
         (Some(..), Some(..)) => {
-            hb.error(
+            emit.error(
                 ErrorComp::error(format!(
                     "only one possible module path can exist:\n`{}` or `{}`",
                     mod_path_1.to_string_lossy(),
                     mod_path_2.to_string_lossy()
                 ))
-                .context(hb.src(scope_id, item.name.range)),
+                .context(hir.src(scope_id, item.name.range)),
             );
             return;
         }
         (None, None) => {
-            hb.error(
+            emit.error(
                 ErrorComp::error(format!(
                     "both possible module paths are missing:\n`{}` or `{}`",
                     mod_path_1.to_string_lossy(),
                     mod_path_2.to_string_lossy()
                 ))
-                .context(hb.src(scope_id, item.name.range)),
+                .context(hir.src(scope_id, item.name.range)),
             );
             return;
         }
@@ -249,12 +267,12 @@ fn add_scope_task_from_mod_item(
 
     match status {
         ModuleStatus::Available(module) => {
-            let replaced = p.module_map.insert(
+            let replaced = pass.module_map.insert(
                 chosen_path,
-                ModuleStatus::Taken(hb.src(scope_id, item.name.range)),
+                ModuleStatus::Taken(hir.src(scope_id, item.name.range)),
             );
             assert!(replaced.is_some());
-            p.task_queue.push(ScopeTreeTask {
+            pass.task_queue.push(ScopeTreeTask {
                 module,
                 parent: Some(id),
             });
@@ -262,12 +280,12 @@ fn add_scope_task_from_mod_item(
         //@also provide information on which file path was taken?
         // current error only gives the sources of module items
         ModuleStatus::Taken(src) => {
-            hb.error(
+            emit.error(
                 ErrorComp::error(format!(
                     "module `{}` is already taken by other mod item",
-                    hb.name_str(item.name.id)
+                    hir.name_str(item.name.id)
                 ))
-                .context(hb.src(scope_id, item.name.range))
+                .context(hir.src(scope_id, item.name.range))
                 .context_info("taken by this mod item", src),
             );
         }

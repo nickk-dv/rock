@@ -1,58 +1,59 @@
-use super::hir_builder as hb;
+use super::hir_build::{HirData, HirEmit};
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 
-pub fn run(hb: &mut hb::HirBuilder) {
-    for id in hb.proc_ids() {
-        process_proc_data(hb, id)
+pub fn run(hir: &mut HirData, emit: &mut HirEmit) {
+    for id in hir.proc_ids() {
+        process_proc_data(hir, id)
     }
-    for id in hb.enum_ids() {
-        process_enum_data(hb, id)
+    for id in hir.enum_ids() {
+        process_enum_data(hir, id)
     }
-    for id in hb.union_ids() {
-        process_union_data(hb, id)
+    for id in hir.union_ids() {
+        process_union_data(hir, id)
     }
-    for id in hb.struct_ids() {
-        process_struct_data(hb, id)
+    for id in hir.struct_ids() {
+        process_struct_data(hir, id)
     }
-    for id in hb.const_ids() {
-        process_const_data(hb, id)
+    for id in hir.const_ids() {
+        process_const_data(hir, id)
     }
-    for id in hb.global_ids() {
-        process_global_data(hb, id)
+    for id in hir.global_ids() {
+        process_global_data(hir, id)
     }
 }
 
 pub fn resolve_type<'hir, 'ast>(
-    hb: &mut hb::HirBuilder<'hir, 'ast>,
+    hir: &mut HirData,
+    emit: &mut HirEmit,
     origin_id: hir::ScopeID,
     ast_ty: ast::Type<'ast>,
     resolve_const: bool,
 ) -> hir::Type<'hir> {
     match ast_ty {
         ast::Type::Basic(basic) => hir::Type::Basic(basic),
-        ast::Type::Custom(path) => super::pass_5::path_resolve_as_type(hb, origin_id, path),
+        ast::Type::Custom(path) => super::pass_5::path_resolve_as_type(hir, emit, origin_id, path),
         ast::Type::Reference(ref_ty, mutt) => {
-            let ref_ty = resolve_type(hb, origin_id, *ref_ty, resolve_const);
-            let ty = hb.arena().alloc(ref_ty);
+            let ref_ty = resolve_type(hir, emit, origin_id, *ref_ty, resolve_const);
+            let ty = emit.arena.alloc(ref_ty);
             hir::Type::Reference(ty, mutt)
         }
         ast::Type::ArraySlice(slice) => {
-            let elem_ty = resolve_type(hb, origin_id, slice.ty, resolve_const);
-            let hir_slice = hb.arena().alloc(hir::ArraySlice {
+            let elem_ty = resolve_type(hir, emit, origin_id, slice.ty, resolve_const);
+            let hir_slice = emit.arena.alloc(hir::ArraySlice {
                 mutt: slice.mutt,
                 ty: elem_ty,
             });
             hir::Type::ArraySlice(hir_slice)
         }
         ast::Type::ArrayStatic(array) => {
-            let const_id = hb.add_const_expr(origin_id, array.size);
-            let elem_ty = resolve_type(hb, origin_id, array.ty, resolve_const);
+            let const_id = hir.add_const_expr(origin_id, array.size);
+            let elem_ty = resolve_type(hir, emit, origin_id, array.ty, resolve_const);
             if resolve_const {
-                super::pass_4::const_resolve_const_expr(hb, origin_id, const_id);
+                super::pass_4::const_resolve_const_expr(hir, emit, origin_id, const_id);
             }
-            let hir_array = hb.arena().alloc(hir::ArrayStaticDecl {
+            let hir_array = emit.arena.alloc(hir::ArrayStaticDecl {
                 size: const_id,
                 ty: elem_ty,
             });
@@ -61,48 +62,48 @@ pub fn resolve_type<'hir, 'ast>(
     }
 }
 
-fn process_proc_data(hb: &mut hb::HirBuilder, id: hir::ProcID) {
-    let item = hb.proc_ast(id);
-    let origin_id = hb.proc_data(id).origin_id;
+fn process_proc_data(hir: &mut HirData, emit: &mut HirEmit, id: hir::ProcID) {
+    let item = hir.proc_ast(id);
+    let origin_id = hir.proc_data(id).origin_id;
     let mut unique = Vec::<hir::ProcParam>::new();
 
     for param in item.params.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == param.name.id) {
-            error_duplicate_proc_param(hb, origin_id, param, existing);
+            error_duplicate_proc_param(hir, origin_id, param, existing);
         } else {
             unique.push(hir::ProcParam {
                 mutt: param.mutt,
                 name: param.name,
-                ty: resolve_type(hb, origin_id, param.ty, false),
+                ty: resolve_type(hir, emit, origin_id, param.ty, false),
             });
         }
     }
-    hb.proc_data_mut(id).params = hb.arena().alloc_slice(&unique);
-    hb.proc_data_mut(id).return_ty = if let Some(ret_ty) = item.return_ty {
-        resolve_type(hb, origin_id, ret_ty, false)
+    hir.proc_data_mut(id).params = emit.arena.alloc_slice(&unique);
+    hir.proc_data_mut(id).return_ty = if let Some(ret_ty) = item.return_ty {
+        resolve_type(hir, emit, origin_id, ret_ty, false)
     } else {
         hir::Type::Basic(ast::BasicType::Unit)
     }
 }
 
-fn process_enum_data(hb: &mut hb::HirBuilder, id: hir::EnumID) {
-    let item = hb.enum_ast(id);
-    let origin_id = hb.enum_data(id).origin_id;
+fn process_enum_data(hir: &mut HirData, emit: &mut HirEmit, id: hir::EnumID) {
+    let item = hir.enum_ast(id);
+    let origin_id = hir.enum_data(id).origin_id;
     let mut unique = Vec::<hir::EnumVariant>::new();
 
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
-            error_duplicate_enum_variant(hb, origin_id, variant, existing);
+            error_duplicate_enum_variant(hir, origin_id, variant, existing);
         } else {
             unique.push(hir::EnumVariant {
                 name: variant.name,
                 value: variant
                     .value
-                    .map(|value| hb.add_const_expr(origin_id, value)),
+                    .map(|value| hir.add_const_expr(origin_id, value)),
             });
         }
     }
-    hb.enum_data_mut(id).variants = hb.arena().alloc_slice(&unique);
+    hir.enum_data_mut(id).variants = emit.arena.alloc_slice(&unique);
 }
 
 fn process_union_data(hb: &mut hb::HirBuilder, id: hir::UnionID) {

@@ -1,4 +1,4 @@
-use super::hir_builder as hb;
+use super::hir_build::{HirData, HirEmit};
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
@@ -8,13 +8,13 @@ struct UseTask<'ast> {
     use_item: &'ast ast::UseItem<'ast>,
 }
 
-pub fn run(hb: &mut hb::HirBuilder) {
+pub fn run(hir: &mut HirData, emit: &mut HirEmit) {
     let mut use_tasks = Vec::new();
 
-    for origin_id in hb.scope_ids() {
+    for origin_id in hir.scope_ids() {
         use_tasks.clear();
 
-        for item in hb.scope_ast_items(origin_id) {
+        for item in hir.scope_ast_items(origin_id) {
             if let ast::Item::Use(use_item) = item {
                 use_tasks.push(UseTask {
                     resolved: false,
@@ -29,7 +29,7 @@ pub fn run(hb: &mut hb::HirBuilder) {
                 if task.resolved {
                     continue;
                 }
-                task.resolved = try_process_use_item(hb, origin_id, task.use_item);
+                task.resolved = try_process_use_item(hir, emit, origin_id, task.use_item);
                 if task.resolved {
                     made_progress = true;
                 }
@@ -44,9 +44,9 @@ pub fn run(hb: &mut hb::HirBuilder) {
                 continue;
             }
             if let Some(name) = task.use_item.path.names.iter().next() {
-                hb.error(
-                    ErrorComp::error(format!("module `{}` is not found", hb.name_str(name.id)))
-                        .context(hb.src(origin_id, name.range)),
+                emit.error(
+                    ErrorComp::error(format!("module `{}` is not found", hir.name_str(name.id)))
+                        .context(hir.src(origin_id, name.range)),
                 );
             }
         }
@@ -54,7 +54,8 @@ pub fn run(hb: &mut hb::HirBuilder) {
 }
 
 fn try_process_use_item<'hir, 'ast>(
-    hb: &mut hb::HirBuilder<'hir, 'ast>,
+    hir: &mut HirData,
+    emit: &mut HirEmit,
     origin_id: hir::ScopeID,
     use_item: &'ast ast::UseItem<'ast>,
 ) -> bool {
@@ -62,12 +63,12 @@ fn try_process_use_item<'hir, 'ast>(
 
     if path.kind == ast::PathKind::None {
         let name = path.names[0];
-        let symbol = hb.symbol_from_scope(origin_id, origin_id, path.kind, name.id);
+        let symbol = hir.symbol_from_scope(origin_id, origin_id, path.kind, name.id);
         if symbol.is_none() {
             return false;
         }
     }
-    let target_id = match super::pass_5::path_resolve_as_module_path(hb, origin_id, path) {
+    let target_id = match super::pass_5::path_resolve_as_module_path(hir, emit, origin_id, path) {
         Some(it) => it,
         None => return true,
     };
@@ -79,20 +80,22 @@ fn try_process_use_item<'hir, 'ast>(
             None => use_symbol.name,
         };
 
-        match hb.symbol_from_scope(origin_id, target_id, path.kind, item_name.id) {
-            Some((kind, ..)) => match hb.scope_name_defined(origin_id, alias_name.id) {
+        match hir.symbol_from_scope(origin_id, target_id, path.kind, item_name.id) {
+            Some((kind, ..)) => match hir.scope_name_defined(origin_id, alias_name.id) {
                 Some(existing) => {
-                    super::pass_1::name_already_defined_error(hb, origin_id, alias_name, existing);
+                    super::pass_1::name_already_defined_error(
+                        hir, emit, origin_id, alias_name, existing,
+                    );
                 }
-                None => hb.scope_add_imported(origin_id, alias_name, kind),
+                None => hir.scope_add_imported(origin_id, alias_name, kind),
             },
             None => {
-                hb.error(
+                emit.error(
                     ErrorComp::error(format!(
                         "name `{}` is not found in module",
-                        hb.name_str(item_name.id)
+                        hir.name_str(item_name.id)
                     ))
-                    .context(hb.src(origin_id, item_name.range)),
+                    .context(hir.src(origin_id, item_name.range)),
                 );
             }
         }

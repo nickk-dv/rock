@@ -7,29 +7,19 @@ use crate::session::FileID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-//@order of passing
-// s. // hir scope // mostly immut
-// h. // hir data  // sometimes mut
-// e. // hir emit  // mut
-// p. // proc scope // mut
-
 #[derive(Default)]
-pub struct HirScope<'ast> {
+pub struct HirData<'hir, 'ast> {
     ast: ast::Ast<'ast>,
     mods: Vec<ModData>,
     scopes: Vec<Scope<'ast>>,
-    procs: Vec<&'ast ast::ProcItem<'ast>>,
-    enums: Vec<&'ast ast::EnumItem<'ast>>,
-    unions: Vec<&'ast ast::UnionItem<'ast>>,
-    structs: Vec<&'ast ast::StructItem<'ast>>,
-    consts: Vec<&'ast ast::ConstItem<'ast>>,
-    globals: Vec<&'ast ast::GlobalItem<'ast>>,
-    const_exprs: Vec<ast::ConstExpr<'ast>>,
-}
-
-#[derive(Default)]
-pub struct HirData<'hir> {
-    scopes: Vec<hir::ScopeData>,
+    ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
+    ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
+    ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
+    ast_structs: Vec<&'ast ast::StructItem<'ast>>,
+    ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
+    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
+    ast_const_exprs: Vec<ast::ConstExpr<'ast>>,
+    hir_scopes: Vec<hir::ScopeData>,
     procs: Vec<hir::ProcData<'hir>>,
     enums: Vec<hir::EnumData<'hir>>,
     unions: Vec<hir::UnionData<'hir>>,
@@ -37,100 +27,6 @@ pub struct HirData<'hir> {
     consts: Vec<hir::ConstData<'hir>>,
     globals: Vec<hir::GlobalData<'hir>>,
     const_exprs: Vec<hir::ConstExprData<'hir>>,
-}
-
-pub struct HirEmit<'hir> {
-    arena: Arena<'hir>,
-    errors: Vec<ErrorComp>,
-}
-
-impl<'ast> HirScope<'ast> {
-    pub fn new(ast: ast::Ast<'ast>) -> HirScope<'ast> {
-        HirScope {
-            ast,
-            ..Default::default()
-        }
-    }
-}
-
-impl<'hir> HirData<'hir> {
-    pub fn new() -> HirData<'hir> {
-        HirData::default()
-    }
-}
-
-impl<'hir> HirEmit<'hir> {
-    pub fn new() -> HirEmit<'hir> {
-        HirEmit {
-            arena: Arena::new(),
-            errors: Vec::new(),
-        }
-    }
-}
-
-fn test_flow<'hir, 'ast>(ast: ast::Ast<'ast>) -> hir::Hir<'hir> {
-    let scope = HirScope {
-        ast,
-        mods: Vec::new(),
-        scopes: Vec::new(),
-        procs: Vec::new(),
-        enums: Vec::new(),
-        unions: Vec::new(),
-        structs: Vec::new(),
-        consts: Vec::new(),
-        globals: Vec::new(),
-        const_exprs: Vec::new(),
-    };
-    let data = HirData {
-        scopes: Vec::new(),
-        procs: Vec::new(),
-        enums: Vec::new(),
-        unions: Vec::new(),
-        structs: Vec::new(),
-        consts: Vec::new(),
-        globals: Vec::new(),
-        const_exprs: Vec::new(),
-    };
-    let sink = HirEmit {
-        arena: Arena::new(),
-        errors: Vec::new(),
-    };
-    let hir = hir::Hir {
-        arena: sink.arena,
-        scopes: data.scopes,
-        procs: data.procs,
-        enums: data.enums,
-        unions: data.unions,
-        structs: data.structs,
-        consts: data.consts,
-        globals: data.globals,
-        const_exprs: data.const_exprs,
-    };
-    hir
-}
-
-pub struct HirBuilder<'hir, 'ast> {
-    ast: ast::Ast<'ast>,                           // immutable
-    mods: Vec<ModData>,                            // immutable after created in pass 1
-    scopes: Vec<Scope<'ast>>,                      // immutable after pass 1 and pass 2 are done
-    errors: Vec<ErrorComp>, // !mutated errors are always added in all passes that are being ran
-    hir: hir::Hir<'hir>,    // !mutated and created gradually, arena allocated
-    ast_procs: Vec<&'ast ast::ProcItem<'ast>>, // immutable after created in pass 1
-    ast_enums: Vec<&'ast ast::EnumItem<'ast>>, // immutable after created in pass 1
-    ast_unions: Vec<&'ast ast::UnionItem<'ast>>, // immutable after created in pass 1
-    ast_structs: Vec<&'ast ast::StructItem<'ast>>, // immutable after created in pass 1
-    ast_consts: Vec<&'ast ast::ConstItem<'ast>>, // immutable after created in pass 1
-    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>, // immutable after created in pass 1
-    ast_const_exprs: Vec<ast::ConstExpr<'ast>>, // immutable after created in pass 1
-}
-
-#[derive(Copy, Clone)]
-pub struct ModID(u32);
-pub struct ModData {
-    pub origin_id: hir::ScopeID,
-    pub vis: ast::Vis,
-    pub name: ast::Name,
-    pub target: Option<hir::ScopeID>,
 }
 
 pub const ROOT_SCOPE_ID: hir::ScopeID = hir::ScopeID::new(0);
@@ -160,39 +56,26 @@ pub enum SymbolKind {
     Global(hir::GlobalID),
 }
 
-impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
-    pub fn new(ast: ast::Ast<'ast>) -> Self {
-        Self {
-            ast,
-            mods: Vec::new(),
-            scopes: Vec::new(),
-            errors: Vec::new(),
-            hir: hir::Hir {
-                arena: Arena::new(),
-                scopes: Vec::new(),
-                procs: Vec::new(),
-                enums: Vec::new(),
-                unions: Vec::new(),
-                structs: Vec::new(),
-                consts: Vec::new(),
-                globals: Vec::new(),
-                const_exprs: Vec::new(),
-            },
-            ast_procs: Vec::new(),
-            ast_enums: Vec::new(),
-            ast_unions: Vec::new(),
-            ast_structs: Vec::new(),
-            ast_consts: Vec::new(),
-            ast_globals: Vec::new(),
-            ast_const_exprs: Vec::new(),
-        }
-    }
+#[derive(Copy, Clone)]
+pub struct ModID(u32);
+pub struct ModData {
+    pub origin_id: hir::ScopeID,
+    pub vis: ast::Vis,
+    pub name: ast::Name,
+    pub target: Option<hir::ScopeID>,
+}
 
-    pub fn finish(self) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
-        if self.errors.is_empty() {
-            Ok(self.hir)
-        } else {
-            Err(self.errors)
+#[derive(Default)]
+pub struct HirEmit<'hir> {
+    pub arena: Arena<'hir>,
+    errors: Vec<ErrorComp>,
+}
+
+impl<'hir, 'ast> HirData<'hir, 'ast> {
+    pub fn new(ast: ast::Ast<'ast>) -> HirData<'hir, 'ast> {
+        HirData {
+            ast,
+            ..Default::default()
         }
     }
 
@@ -202,13 +85,10 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
         self.ast.modules.iter()
     }
-    pub fn error(&mut self, error: ErrorComp) {
-        self.errors.push(error);
-    }
-    pub fn arena(&mut self) -> &mut Arena<'hir> {
-        &mut self.hir.arena
-    }
 
+    pub fn scope_ids(&self) -> impl Iterator<Item = hir::ScopeID> {
+        (0..self.scopes.len()).map(hir::ScopeID::new)
+    }
     pub fn get_mod(&self, id: ModID) -> &ModData {
         self.mods.get(id.0 as usize).unwrap()
     }
@@ -217,22 +97,22 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     }
 
     pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
-        (0..self.hir.procs.len()).map(hir::ProcID::new)
+        (0..self.procs.len()).map(hir::ProcID::new)
     }
     pub fn enum_ids(&self) -> impl Iterator<Item = hir::EnumID> {
-        (0..self.hir.enums.len()).map(hir::EnumID::new)
+        (0..self.enums.len()).map(hir::EnumID::new)
     }
     pub fn union_ids(&self) -> impl Iterator<Item = hir::UnionID> {
-        (0..self.hir.unions.len()).map(hir::UnionID::new)
+        (0..self.unions.len()).map(hir::UnionID::new)
     }
     pub fn struct_ids(&self) -> impl Iterator<Item = hir::StructID> {
-        (0..self.hir.structs.len()).map(hir::StructID::new)
+        (0..self.structs.len()).map(hir::StructID::new)
     }
     pub fn const_ids(&self) -> impl Iterator<Item = hir::ConstID> {
-        (0..self.hir.consts.len()).map(hir::ConstID::new)
+        (0..self.consts.len()).map(hir::ConstID::new)
     }
     pub fn global_ids(&self) -> impl Iterator<Item = hir::GlobalID> {
-        (0..self.hir.globals.len()).map(hir::GlobalID::new)
+        (0..self.globals.len()).map(hir::GlobalID::new)
     }
 
     pub fn proc_ast(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
@@ -258,47 +138,47 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     }
 
     pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
-        &self.hir.procs[id.index()]
+        &self.procs[id.index()]
     }
     pub fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
-        &self.hir.enums[id.index()]
+        &self.enums[id.index()]
     }
     pub fn union_data(&self, id: hir::UnionID) -> &hir::UnionData<'hir> {
-        &self.hir.unions[id.index()]
+        &self.unions[id.index()]
     }
     pub fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
-        &self.hir.structs[id.index()]
+        &self.structs[id.index()]
     }
     pub fn const_data(&self, id: hir::ConstID) -> &hir::ConstData<'hir> {
-        &self.hir.consts[id.index()]
+        &self.consts[id.index()]
     }
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
-        &self.hir.globals[id.index()]
+        &self.globals[id.index()]
     }
     pub fn const_expr_data(&self, id: hir::ConstExprID) -> &hir::ConstExprData<'hir> {
-        &self.hir.const_exprs[id.index()]
+        &self.const_exprs[id.index()]
     }
 
     pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
-        self.hir.procs.get_mut(id.index()).unwrap()
+        self.procs.get_mut(id.index()).unwrap()
     }
     pub fn enum_data_mut(&mut self, id: hir::EnumID) -> &mut hir::EnumData<'hir> {
-        self.hir.enums.get_mut(id.index()).unwrap()
+        self.enums.get_mut(id.index()).unwrap()
     }
     pub fn union_data_mut(&mut self, id: hir::UnionID) -> &mut hir::UnionData<'hir> {
-        self.hir.unions.get_mut(id.index()).unwrap()
+        self.unions.get_mut(id.index()).unwrap()
     }
     pub fn struct_data_mut(&mut self, id: hir::StructID) -> &mut hir::StructData<'hir> {
-        self.hir.structs.get_mut(id.index()).unwrap()
+        self.structs.get_mut(id.index()).unwrap()
     }
     pub fn const_data_mut(&mut self, id: hir::ConstID) -> &mut hir::ConstData<'hir> {
-        self.hir.consts.get_mut(id.index()).unwrap()
+        self.consts.get_mut(id.index()).unwrap()
     }
     pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
-        self.hir.globals.get_mut(id.index()).unwrap()
+        self.globals.get_mut(id.index()).unwrap()
     }
     pub fn const_expr_data_mut(&mut self, id: hir::ConstExprID) -> &mut hir::ConstExprData<'hir> {
-        self.hir.const_exprs.get_mut(id.index()).unwrap()
+        self.const_exprs.get_mut(id.index()).unwrap()
     }
 
     pub fn add_mod(&mut self, origin_id: hir::ScopeID, data: ModData) -> ModID {
@@ -318,7 +198,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) {
         let id = hir::ProcID::new(self.ast_procs.len());
         self.ast_procs.push(item);
-        self.hir.procs.push(data);
+        self.procs.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Proc(id),
         };
@@ -332,7 +212,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) {
         let id = hir::EnumID::new(self.ast_enums.len());
         self.ast_enums.push(item);
-        self.hir.enums.push(data);
+        self.enums.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Enum(id),
         };
@@ -346,7 +226,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) {
         let id = hir::UnionID::new(self.ast_unions.len());
         self.ast_unions.push(item);
-        self.hir.unions.push(data);
+        self.unions.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Union(id),
         };
@@ -360,7 +240,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) {
         let id = hir::StructID::new(self.ast_structs.len());
         self.ast_structs.push(item);
-        self.hir.structs.push(data);
+        self.structs.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Struct(id),
         };
@@ -374,7 +254,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) {
         let id = hir::ConstID::new(self.ast_consts.len());
         self.ast_consts.push(item);
-        self.hir.consts.push(data);
+        self.consts.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Const(id),
         };
@@ -388,7 +268,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) {
         let id = hir::GlobalID::new(self.ast_globals.len());
         self.ast_globals.push(item);
-        self.hir.globals.push(data);
+        self.globals.push(data);
         let symbol = Symbol::Defined {
             kind: SymbolKind::Global(id),
         };
@@ -401,15 +281,11 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
     ) -> hir::ConstExprID {
         let id = hir::ConstExprID::new(self.ast_const_exprs.len());
         self.ast_const_exprs.push(const_expr);
-        self.hir.const_exprs.push(hir::ConstExprData {
+        self.const_exprs.push(hir::ConstExprData {
             origin_id,
             value: None,
         });
         id
-    }
-
-    pub fn scope_ids(&self) -> impl Iterator<Item = hir::ScopeID> {
-        (0..self.scopes.len()).map(hir::ScopeID::new)
     }
 
     pub fn src(&self, id: hir::ScopeID, range: TextRange) -> SourceRange {
@@ -471,7 +347,7 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
             symbols: HashMap::new(),
         };
         self.scopes.push(scope);
-        self.hir.scopes.push(hir::ScopeData {
+        self.hir_scopes.push(hir::ScopeData {
             file_id: module.file_id,
         });
         id
@@ -524,6 +400,34 @@ impl<'hir, 'ast> HirBuilder<'hir, 'ast> {
             SymbolKind::Struct(id) => self.struct_data(id).name.range,
             SymbolKind::Const(id) => self.const_data(id).name.range,
             SymbolKind::Global(id) => self.global_data(id).name.range,
+        }
+    }
+}
+
+impl<'hir> HirEmit<'hir> {
+    pub fn new() -> HirEmit<'hir> {
+        HirEmit::default()
+    }
+
+    pub fn error(&mut self, error: ErrorComp) {
+        self.errors.push(error);
+    }
+
+    pub fn emit(self, hir: HirData) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+        if self.errors.is_empty() {
+            Ok(hir::Hir {
+                arena: self.arena,
+                scopes: hir.hir_scopes,
+                procs: hir.procs,
+                enums: hir.enums,
+                unions: hir.unions,
+                structs: hir.structs,
+                consts: hir.consts,
+                globals: hir.globals,
+                const_exprs: hir.const_exprs,
+            })
+        } else {
+            Err(self.errors)
         }
     }
 }
