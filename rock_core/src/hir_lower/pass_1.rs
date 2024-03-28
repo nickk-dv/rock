@@ -73,7 +73,7 @@ fn push_root_scope_task<'ast>(
 }
 
 fn resolve_scope_task<'ast>(
-    hir: &mut HirData,
+    hir: &mut HirData<'_, 'ast>,
     emit: &mut HirEmit,
     pass: &mut Pass<'ast>,
     session: &Session,

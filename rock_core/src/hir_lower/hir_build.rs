@@ -413,7 +413,7 @@ impl<'hir> HirEmit<'hir> {
         self.errors.push(error);
     }
 
-    pub fn emit(self, hir: HirData) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+    pub fn emit<'ast>(self, hir: HirData<'hir, 'ast>) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
         if self.errors.is_empty() {
             Ok(hir::Hir {
                 arena: self.arena,

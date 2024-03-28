@@ -11,14 +11,16 @@ use crate::hir;
 use crate::session::Session;
 use hir_build::{HirData, HirEmit};
 
-pub fn check<'hir>(ast: ast::Ast, session: &Session) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+pub fn check<'hir, 'ast>(
+    ast: ast::Ast<'ast>,
+    session: &Session,
+) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
     let mut hir = HirData::new(ast);
     let mut emit = HirEmit::new();
     pass_1::run(&mut hir, &mut emit, session);
-    //pass_2::run(&mut hb);
-    //pass_3::run(&mut hb);
-    //pass_4::run(&mut hb);
-    //pass_5::run(&mut hb);
-    //hb.finish()
+    pass_2::run(&mut hir, &mut emit);
+    pass_3::run(&mut hir, &mut emit);
+    pass_4::run(&mut hir, &mut emit);
+    pass_5::run(&mut hir, &mut emit);
     emit.emit(hir)
 }
