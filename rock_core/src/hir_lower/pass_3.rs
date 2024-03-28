@@ -3,7 +3,7 @@ use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 
-pub fn run<'hir, 'ast>(hir: &mut HirData<'hir, 'ast>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.proc_ids() {
         process_proc_data(hir, emit, id)
     }
@@ -24,11 +24,11 @@ pub fn run<'hir, 'ast>(hir: &mut HirData<'hir, 'ast>, emit: &mut HirEmit<'hir>) 
     }
 }
 
-pub fn resolve_type_instant<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+pub fn resolve_type_instant<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    ast_ty: ast::Type<'ast>,
+    ast_ty: ast::Type,
 ) -> hir::Type<'hir> {
     match ast_ty {
         ast::Type::Basic(basic) => hir::Type::Basic(basic),

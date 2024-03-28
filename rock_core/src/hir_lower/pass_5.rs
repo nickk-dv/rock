@@ -5,17 +5,13 @@ use crate::hir;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
 
-pub fn run<'a, 'hir, 'ast>(hir: &mut HirData<'hir, 'ast>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.proc_ids() {
         typecheck_proc(hir, emit, id)
     }
 }
 
-fn typecheck_proc<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
-    id: hir::ProcID,
-) {
+fn typecheck_proc<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, id: hir::ProcID) {
     let item = hir.proc_ast(id);
 
     match item.block {
@@ -79,7 +75,7 @@ pub fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
     }
 }
 
-fn type_format<'hir, 'ast>(hir: &HirData<'hir, 'ast>, ty: hir::Type<'hir>) -> String {
+fn type_format<'hir>(hir: &HirData<'hir, '_>, ty: hir::Type<'hir>) -> String {
     match ty {
         hir::Type::Error => "error".into(),
         hir::Type::Basic(basic) => match basic {
@@ -207,9 +203,9 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         self.data.origin_id
     }
     fn get_local(&self, id: hir::LocalID) -> &'hir hir::Local<'hir> {
-        &self.locals[id.index()]
+        self.locals[id.index()]
     }
-    fn get_param<'ast>(&self, id: hir::ProcParamID) -> &'hir hir::ProcParam<'hir> {
+    fn get_param(&self, id: hir::ProcParamID) -> &'hir hir::ProcParam<'hir> {
         &self.data.params[id.index()]
     }
 
@@ -244,12 +240,12 @@ impl<'hir> TypeResult<'hir> {
 // and maybe type::unknown, or type::infer type to facilitate better inference
 // to better represent partially typed arrays, etc
 #[must_use]
-fn typecheck_expr<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_expr<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
-    expr: &'ast ast::Expr<'ast>,
+    expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
     let expr_res = match expr.kind {
         ast::ExprKind::Unit => typecheck_unit(emit),
@@ -267,7 +263,7 @@ fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::Cast { target, ty } => {
             typecheck_cast(hir, emit, proc, target, ty, expr.range)
         }
-        ast::ExprKind::Sizeof { ty } => typecheck_placeholder(emit),
+        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, expr.range.start(), ty),
         ast::ExprKind::Item { path } => typecheck_placeholder(emit),
         ast::ExprKind::ProcCall { proc_call } => {
             typecheck_proc_call(hir, emit, proc, proc_call, expr.range)
@@ -275,7 +271,7 @@ fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(hir, emit, proc, struct_init, expr.range)
         }
-        ast::ExprKind::ArrayInit { input } => typecheck_placeholder(emit),
+        ast::ExprKind::ArrayInit { input } => typecheck_array_init(hir, emit, proc, expect, input),
         ast::ExprKind::ArrayRepeat { expr, size } => typecheck_placeholder(emit),
         ast::ExprKind::Unary { op, rhs } => typecheck_placeholder(emit),
         ast::ExprKind::Binary { op, lhs, rhs } => typecheck_placeholder(emit),
@@ -293,32 +289,32 @@ fn typecheck_expr<'hir, 'ast>(
     expr_res
 }
 
-fn typecheck_placeholder<'hir, 'ast>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
+fn typecheck_placeholder<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
     TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
-fn typecheck_unit<'hir, 'ast>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
+fn typecheck_unit<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
     TypeResult::new(
         hir::Type::Basic(ast::BasicType::Unit),
         emit.arena.alloc(hir::Expr::Unit),
     )
 }
 
-fn typecheck_lit_null<'hir, 'ast>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
+fn typecheck_lit_null<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
     TypeResult::new(
         hir::Type::Basic(ast::BasicType::Rawptr),
         emit.arena.alloc(hir::Expr::LitNull),
     )
 }
 
-fn typecheck_lit_bool<'hir, 'ast>(emit: &mut HirEmit<'hir>, val: bool) -> TypeResult<'hir> {
+fn typecheck_lit_bool<'hir>(emit: &mut HirEmit<'hir>, val: bool) -> TypeResult<'hir> {
     TypeResult::new(
         hir::Type::Basic(ast::BasicType::Bool),
         emit.arena.alloc(hir::Expr::LitBool { val }),
     )
 }
 
-fn typecheck_lit_int<'hir, 'ast>(
+fn typecheck_lit_int<'hir>(
     emit: &mut HirEmit<'hir>,
     expect: hir::Type<'hir>,
     val: u64,
@@ -353,7 +349,7 @@ fn typecheck_lit_int<'hir, 'ast>(
     )
 }
 
-fn typecheck_lit_float<'hir, 'ast>(
+fn typecheck_lit_float<'hir>(
     emit: &mut HirEmit<'hir>,
     expect: hir::Type<'hir>,
     val: f64,
@@ -387,14 +383,14 @@ fn typecheck_lit_float<'hir, 'ast>(
     )
 }
 
-fn typecheck_lit_char<'hir, 'ast>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'hir> {
+fn typecheck_lit_char<'hir>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'hir> {
     TypeResult::new(
         hir::Type::Basic(ast::BasicType::Char),
         emit.arena.alloc(hir::Expr::LitChar { val }),
     )
 }
 
-fn typecheck_lit_string<'hir, 'ast>(emit: &mut HirEmit<'hir>, id: InternID) -> TypeResult<'hir> {
+fn typecheck_lit_string<'hir>(emit: &mut HirEmit<'hir>, id: InternID) -> TypeResult<'hir> {
     let slice = emit.arena.alloc(hir::ArraySlice {
         mutt: ast::Mut::Immutable,
         ty: hir::Type::Basic(ast::BasicType::U8),
@@ -405,12 +401,12 @@ fn typecheck_lit_string<'hir, 'ast>(emit: &mut HirEmit<'hir>, id: InternID) -> T
     )
 }
 
-fn typecheck_if<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_if<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
-    if_: &'ast ast::If<'ast>,
+    if_: &ast::If<'_>,
 ) -> TypeResult<'hir> {
     let has_fallback = if_.fallback.is_some();
 
@@ -442,12 +438,12 @@ fn typecheck_if<'hir, 'ast>(
     typecheck_placeholder(emit)
 }
 
-fn typecheck_match<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_match<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
-    match_: &'ast ast::Match<'ast>,
+    match_: &ast::Match<'_>,
 ) -> TypeResult<'hir> {
     let on_res = typecheck_expr(hir, emit, proc, hir::Type::Error, match_.on_expr);
     for arm in match_.arms {
@@ -459,11 +455,11 @@ fn typecheck_match<'hir, 'ast>(
     typecheck_placeholder(emit)
 }
 
-fn typecheck_field<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_field<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    target: &'ast ast::Expr,
+    target: &ast::Expr,
     name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
@@ -500,8 +496,8 @@ enum FieldExprKind {
     Field(hir::StructFieldID),
 }
 
-fn verify_type_field<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn verify_type_field<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: hir::Type<'hir>,
@@ -564,12 +560,12 @@ fn verify_type_field<'hir, 'ast>(
     }
 }
 
-fn typecheck_index<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_index<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    target: &'ast ast::Expr<'ast>,
-    index: &'ast ast::Expr<'ast>,
+    target: &ast::Expr<'_>,
+    index: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
     let index_res = typecheck_expr(
@@ -614,12 +610,12 @@ fn verify_elem_type(ty: hir::Type) -> Option<hir::Type> {
     }
 }
 
-fn typecheck_cast<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_cast<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    target: &'ast ast::Expr<'ast>,
-    ty: &'ast ast::Type<'ast>,
+    target: &ast::Expr<'_>,
+    ty: &ast::Type<'_>,
     cast_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
@@ -654,11 +650,72 @@ fn typecheck_cast<'hir, 'ast>(
     }
 }
 
-fn typecheck_proc_call<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+//@type-sizing not done:
+// is complicated due to constant dependency graphs,
+// recursive types also not detected yet.
+fn typecheck_sizeof<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    proc_call: &'ast ast::ProcCall<'ast>,
+    start: TextOffset,
+    ty: ast::Type,
+) -> TypeResult<'hir> {
+    let ty = super::pass_3::resolve_type_instant(hir, emit, proc.origin_id(), ty);
+
+    let size = match ty {
+        hir::Type::Basic(basic) => {
+            let size: u64 = match basic {
+                ast::BasicType::Unit => 0,
+                ast::BasicType::Bool => 1,
+                ast::BasicType::S8 => 1,
+                ast::BasicType::S16 => 2,
+                ast::BasicType::S32 => 4,
+                ast::BasicType::S64 => 8,
+                ast::BasicType::Ssize => 8, //@assuming 64bit target
+                ast::BasicType::U8 => 1,
+                ast::BasicType::U16 => 2,
+                ast::BasicType::U32 => 4,
+                ast::BasicType::U64 => 8,
+                ast::BasicType::Usize => 8, //@assuming 64bit target
+                ast::BasicType::F32 => 4,
+                ast::BasicType::F64 => 8,
+                ast::BasicType::Char => 4,
+                ast::BasicType::Rawptr => 8, //@assuming 64bit target
+            };
+            Some(size)
+        }
+        hir::Type::Reference(..) => Some(8), //@assuming 64bit target
+        hir::Type::ArraySlice(..) => Some(16), //@assuming 64bit target
+        _ => {
+            emit.error(
+                ErrorComp::error(
+                    "sizeof for user defined or static array types is not yet supported",
+                )
+                .context(hir.src(proc.origin_id(), TextRange::new(start, start + 6.into()))),
+            );
+            None
+        }
+    };
+
+    //@usize semantics not finalized yet
+    // assigning usize type to constant int, since it represents size
+    let hir_expr = if let Some(size) = size {
+        emit.arena.alloc(hir::Expr::LitInt {
+            val: size,
+            ty: ast::BasicType::Usize,
+        })
+    } else {
+        emit.arena.alloc(hir::Expr::Error)
+    };
+
+    TypeResult::new(hir::Type::Basic(ast::BasicType::Usize), hir_expr)
+}
+
+fn typecheck_proc_call<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    proc_call: &ast::ProcCall<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let proc_id = match path_resolve_as_proc(hir, emit, proc.origin_id(), proc_call.path) {
@@ -703,11 +760,11 @@ fn typecheck_proc_call<'hir, 'ast>(
     TypeResult::new(data.return_ty, emit.arena.alloc(hir::Expr::Error))
 }
 
-fn typecheck_struct_init<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_struct_init<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    struct_init: &'ast ast::StructInit<'ast>,
+    struct_init: &ast::StructInit<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_id = match path_resolve_as_struct(hir, emit, proc.origin_id(), struct_init.path) {
@@ -764,12 +821,54 @@ fn typecheck_struct_init<'hir, 'ast>(
     )
 }
 
-fn typecheck_block<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_array_init<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
-    stmts: &'ast [ast::Stmt<'ast>],
+    input: &[&ast::Expr<'_>],
+) -> TypeResult<'hir> {
+    let mut first_elem = hir::Type::Error;
+    let mut expect_elem = match expect {
+        hir::Type::ArrayStatic(array) => array.ty,
+        hir::Type::ArrayStaticDecl(array) => array.ty,
+        _ => hir::Type::Error,
+    };
+
+    let mut input_iter = input.iter().cloned();
+
+    if let Some(expr) = input_iter.next() {
+        let expr_res = typecheck_expr(hir, emit, proc, expect_elem, expr);
+        first_elem = expr_res.ty;
+        if !matches!(expect_elem, hir::Type::Error) {
+            expect_elem = expr_res.ty;
+        }
+    }
+
+    for expr in input_iter {
+        let expr_res = typecheck_expr(hir, emit, proc, expect_elem, expr);
+    }
+
+    let size = emit.arena.alloc(hir::Expr::LitInt {
+        val: input.len() as u64,
+        ty: ast::BasicType::Ssize,
+    });
+    let array_ty = emit.arena.alloc(hir::ArrayStatic {
+        size,
+        ty: first_elem,
+    });
+    TypeResult::new(
+        hir::Type::ArrayStatic(array_ty),
+        emit.arena.alloc(hir::Expr::Error),
+    )
+}
+
+fn typecheck_block<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    expect: hir::Type<'hir>,
+    stmts: &[ast::Stmt<'_>],
 ) -> TypeResult<'hir> {
     let mut block_ty = None;
 
@@ -821,8 +920,8 @@ fn typecheck_block<'hir, 'ast>(
     }
 }
 
-fn typecheck_stmt_break<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_stmt_break<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
@@ -838,8 +937,8 @@ fn typecheck_stmt_break<'hir, 'ast>(
     */
 }
 
-fn typecheck_stmt_continue<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_stmt_continue<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
@@ -857,12 +956,12 @@ fn typecheck_stmt_continue<'hir, 'ast>(
 
 //@allow break and continue from loops that originated within defer itself
 // this can probably be done via resetting the in_loop when entering defer block
-fn typecheck_stmt_defer<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_stmt_defer<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     start: TextOffset,
-    block: &'ast ast::Expr<'ast>,
+    block: &ast::Expr<'_>,
 ) {
     //@proc block flags
     /*
@@ -915,10 +1014,10 @@ struct PathResult<'ast> {
 }
 
 fn path_resolve_target_scope<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'ast>,
+    path: &'ast ast::Path<'_>,
 ) -> Option<PathResult<'ast>> {
     let mut target_id = match path.kind {
         ast::PathKind::None => origin_id,
@@ -984,11 +1083,11 @@ fn path_resolve_target_scope<'hir, 'ast>(
     })
 }
 
-pub fn path_resolve_as_type<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+pub fn path_resolve_as_type<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'ast>,
+    path: &ast::Path<'_>,
 ) -> hir::Type<'hir> {
     let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
         Some(it) => it,
@@ -1034,11 +1133,11 @@ pub fn path_resolve_as_type<'hir, 'ast>(
     type_res
 }
 
-pub fn path_resolve_as_proc<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+pub fn path_resolve_as_proc<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'ast>,
+    path: &ast::Path<'_>,
 ) -> Option<hir::ProcID> {
     let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
         Some(it) => it,
@@ -1064,7 +1163,7 @@ pub fn path_resolve_as_proc<'hir, 'ast>(
                 path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
             );
             emit.error(
-                ErrorComp::error(format!("module path does not lead to an item",))
+                ErrorComp::error("module path does not lead to an item")
                     .context(hir.src(origin_id, path_range)),
             );
             return None;
@@ -1084,11 +1183,11 @@ pub fn path_resolve_as_proc<'hir, 'ast>(
     proc_id
 }
 
-pub fn path_resolve_as_struct<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+pub fn path_resolve_as_struct<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'ast>,
+    path: &ast::Path<'_>,
 ) -> Option<hir::StructID> {
     let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
         Some(it) => it,
@@ -1114,7 +1213,7 @@ pub fn path_resolve_as_struct<'hir, 'ast>(
                 path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
             );
             emit.error(
-                ErrorComp::error(format!("module path does not lead to an item",))
+                ErrorComp::error("module path does not lead to an item")
                     .context(hir.src(origin_id, path_range)),
             );
             return None;
@@ -1134,11 +1233,11 @@ pub fn path_resolve_as_struct<'hir, 'ast>(
     struct_id
 }
 
-pub fn path_resolve_as_module_path<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+pub fn path_resolve_as_module_path<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'ast>,
+    path: &ast::Path<'_>,
 ) -> Option<hir::ScopeID> {
     let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
         Some(it) => it,

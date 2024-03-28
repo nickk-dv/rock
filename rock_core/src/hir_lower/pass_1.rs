@@ -33,18 +33,13 @@ pub fn run(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
         );
     }
 
-    push_root_scope_task(hir, emit, pass, session);
+    push_root_scope_task(emit, pass, session);
     while let Some(task) = pass.task_queue.pop() {
         resolve_scope_task(hir, emit, pass, session, task);
     }
 }
 
-fn push_root_scope_task<'ast>(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
-    pass: &mut Pass<'ast>,
-    session: &Session,
-) {
+fn push_root_scope_task(emit: &mut HirEmit, pass: &mut Pass, session: &Session) {
     let root_path = if session.package().is_binary {
         session.cwd().join("src").join("main.rock")
     } else {

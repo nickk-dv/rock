@@ -8,7 +8,7 @@ struct UseTask<'ast> {
     use_item: &'ast ast::UseItem<'ast>,
 }
 
-pub fn run<'hir, 'ast>(hir: &mut HirData<'hir, 'ast>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     let mut use_tasks = Vec::new();
 
     for origin_id in hir.scope_ids() {
