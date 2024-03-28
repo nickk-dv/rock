@@ -23,7 +23,7 @@ enum ModuleStatus<'ast> {
     Available(ast::Module<'ast>),
 }
 
-pub fn run(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
+pub fn run<'hir, 'ast>(hir: &mut HirData<'hir, 'ast>, emit: &mut HirEmit<'hir>, session: &Session) {
     let pass = &mut Pass::default();
 
     for module in hir.ast_modules() {
@@ -67,9 +67,9 @@ fn push_root_scope_task(emit: &mut HirEmit, pass: &mut Pass, session: &Session) 
     }
 }
 
-fn resolve_scope_task<'ast>(
-    hir: &mut HirData<'_, 'ast>,
-    emit: &mut HirEmit,
+fn resolve_scope_task<'hir, 'ast>(
+    hir: &mut HirData<'hir, 'ast>,
+    emit: &mut HirEmit<'hir>,
     pass: &mut Pass<'ast>,
     session: &Session,
     task: ScopeTreeTask<'ast>,
@@ -166,12 +166,13 @@ fn resolve_scope_task<'ast>(
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
                 None => {
+                    let value = super::pass_4::const_expr_resolve(hir, emit, origin_id, item.value);
                     let data = hir::ConstData {
                         origin_id,
                         vis: item.vis,
                         name: item.name,
                         ty: hir::Type::Error,
-                        value: hb::DUMMY_CONST_EXPR_ID,
+                        value,
                     };
                     hir.add_const(origin_id, item, data);
                 }
@@ -181,12 +182,13 @@ fn resolve_scope_task<'ast>(
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
                 None => {
+                    let value = super::pass_4::const_expr_resolve(hir, emit, origin_id, item.value);
                     let data = hir::GlobalData {
                         origin_id,
                         vis: item.vis,
                         name: item.name,
                         ty: hir::Type::Error,
-                        value: hb::DUMMY_CONST_EXPR_ID,
+                        value,
                     };
                     hir.add_global(origin_id, item, data);
                 }

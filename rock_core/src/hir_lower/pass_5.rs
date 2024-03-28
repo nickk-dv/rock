@@ -67,10 +67,6 @@ pub fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
             //@size const_expr is ignored
             type_matches(array.ty, array2.ty)
         }
-        (hir::Type::ArrayStaticDecl(array), hir::Type::ArrayStaticDecl(array2)) => {
-            //@size const_expr is ignored
-            type_matches(array.ty, array2.ty)
-        }
         _ => false,
     }
 }
@@ -114,7 +110,6 @@ fn type_format<'hir>(hir: &HirData<'hir, '_>, ty: hir::Type<'hir>) -> String {
             format!("[{}]{}", mut_str, type_format(hir, slice.ty))
         }
         hir::Type::ArrayStatic(array) => format!("[<SIZE>]{}", type_format(hir, array.ty)),
-        hir::Type::ArrayStaticDecl(array) => format!("[<SIZE>]{}", type_format(hir, array.ty)),
     }
 }
 
@@ -605,7 +600,6 @@ fn verify_elem_type(ty: hir::Type) -> Option<hir::Type> {
         hir::Type::Error => Some(hir::Type::Error),
         hir::Type::ArraySlice(slice) => Some(slice.ty),
         hir::Type::ArrayStatic(array) => Some(array.ty),
-        hir::Type::ArrayStaticDecl(array) => Some(array.ty),
         _ => None,
     }
 }
@@ -619,7 +613,7 @@ fn typecheck_cast<'hir>(
     cast_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
-    let cast_ty = super::pass_3::resolve_type_instant(hir, emit, proc.origin_id(), *ty);
+    let cast_ty = super::pass_3::type_resolve(hir, emit, proc.origin_id(), *ty);
 
     match (target_res.ty, cast_ty) {
         (hir::Type::Error, ..) => {}
@@ -660,7 +654,7 @@ fn typecheck_sizeof<'hir>(
     start: TextOffset,
     ty: ast::Type,
 ) -> TypeResult<'hir> {
-    let ty = super::pass_3::resolve_type_instant(hir, emit, proc.origin_id(), ty);
+    let ty = super::pass_3::type_resolve(hir, emit, proc.origin_id(), ty);
 
     let size = match ty {
         hir::Type::Basic(basic) => {
@@ -831,7 +825,6 @@ fn typecheck_array_init<'hir>(
     let mut first_elem = hir::Type::Error;
     let mut expect_elem = match expect {
         hir::Type::ArrayStatic(array) => array.ty,
-        hir::Type::ArrayStaticDecl(array) => array.ty,
         _ => hir::Type::Error,
     };
 
@@ -854,7 +847,7 @@ fn typecheck_array_init<'hir>(
         ty: ast::BasicType::Ssize,
     });
     let array_ty = emit.arena.alloc(hir::ArrayStatic {
-        size,
+        size: hir::ConstExpr(size),
         ty: first_elem,
     });
     TypeResult::new(

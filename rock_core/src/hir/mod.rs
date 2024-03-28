@@ -12,7 +12,6 @@ pub struct Hir<'hir> {
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
-    pub const_exprs: Vec<ConstExprData<'hir>>,
 }
 
 macro_rules! hir_id_impl {
@@ -66,14 +65,14 @@ pub struct EnumData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub variants: &'hir [EnumVariant],
+    pub variants: &'hir [EnumVariant<'hir>],
 }
 
 hir_id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
-pub struct EnumVariant {
+pub struct EnumVariant<'hir> {
     pub name: ast::Name,
-    pub value: Option<ConstExprID>,
+    pub value: Option<ConstExpr<'hir>>,
 }
 
 hir_id_impl!(UnionID);
@@ -113,7 +112,7 @@ pub struct ConstData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstExprID,
+    pub value: ConstExpr<'hir>,
 }
 
 hir_id_impl!(GlobalID);
@@ -122,13 +121,7 @@ pub struct GlobalData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstExprID,
-}
-
-hir_id_impl!(ConstExprID);
-pub struct ConstExprData<'hir> {
-    pub origin_id: ScopeID,
-    pub value: Option<Expr<'hir>>,
+    pub value: ConstExpr<'hir>,
 }
 
 #[derive(Copy, Clone)]
@@ -141,7 +134,6 @@ pub enum Type<'hir> {
     Reference(&'hir Type<'hir>, ast::Mut),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
-    ArrayStaticDecl(&'hir ArrayStaticDecl<'hir>), //@differs in how const expr size are resolved, remove
 }
 
 #[derive(Copy, Clone)]
@@ -152,13 +144,7 @@ pub struct ArraySlice<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic<'hir> {
-    pub size: &'hir Expr<'hir>,
-    pub ty: Type<'hir>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ArrayStaticDecl<'hir> {
-    pub size: ConstExprID,
+    pub size: ConstExpr<'hir>,
     pub ty: Type<'hir>,
 }
 
@@ -205,6 +191,9 @@ pub struct Assign<'hir> {
     pub rhs: &'hir Expr<'hir>,
 }
 
+#[derive(Copy, Clone)]
+pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
+
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum Expr<'hir> {
@@ -232,7 +221,7 @@ pub enum Expr<'hir> {
     UnionInit   { union_id: UnionID, input: UnionMemberInit<'hir> },
     StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
     ArrayInit   { input: &'hir [&'hir Expr<'hir>] },
-    ArrayRepeat { expr: &'hir Expr<'hir>, size: &'hir Expr<'hir> },
+    ArrayRepeat { expr: &'hir Expr<'hir>, size: ConstExpr<'hir> },
     Unary       { op: ast::UnOp, rhs: &'hir Expr<'hir> },
     Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
@@ -292,8 +281,5 @@ impl<'hir> Hir<'hir> {
     }
     pub fn global_data(&self, id: GlobalID) -> &GlobalData {
         &self.globals[id.index()]
-    }
-    pub fn const_expr_data(&self, id: ConstExprID) -> &ConstExprData {
-        &self.const_exprs[id.index()]
     }
 }

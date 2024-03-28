@@ -18,7 +18,6 @@ pub struct HirData<'hir, 'ast> {
     ast_structs: Vec<&'ast ast::StructItem<'ast>>,
     ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
     ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
-    ast_const_exprs: Vec<ast::ConstExpr<'ast>>,
     hir_scopes: Vec<hir::ScopeData>,
     procs: Vec<hir::ProcData<'hir>>,
     enums: Vec<hir::EnumData<'hir>>,
@@ -26,11 +25,9 @@ pub struct HirData<'hir, 'ast> {
     structs: Vec<hir::StructData<'hir>>,
     consts: Vec<hir::ConstData<'hir>>,
     globals: Vec<hir::GlobalData<'hir>>,
-    const_exprs: Vec<hir::ConstExprData<'hir>>,
 }
 
 pub const ROOT_SCOPE_ID: hir::ScopeID = hir::ScopeID::new(0);
-pub const DUMMY_CONST_EXPR_ID: hir::ConstExprID = hir::ConstExprID::new(u32::MAX as usize);
 
 pub struct Scope<'ast> {
     parent: Option<hir::ScopeID>,
@@ -133,9 +130,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     pub fn global_ast(&self, id: hir::GlobalID) -> &'ast ast::GlobalItem<'ast> {
         self.ast_globals[id.index()]
     }
-    pub fn const_expr_ast(&self, id: hir::ConstExprID) -> &'ast ast::Expr<'ast> {
-        self.ast_const_exprs[id.index()].0
-    }
 
     pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
         &self.procs[id.index()]
@@ -155,9 +149,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
         &self.globals[id.index()]
     }
-    pub fn const_expr_data(&self, id: hir::ConstExprID) -> &hir::ConstExprData<'hir> {
-        &self.const_exprs[id.index()]
-    }
 
     pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
         self.procs.get_mut(id.index()).unwrap()
@@ -176,9 +167,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     }
     pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
         self.globals.get_mut(id.index()).unwrap()
-    }
-    pub fn const_expr_data_mut(&mut self, id: hir::ConstExprID) -> &mut hir::ConstExprData<'hir> {
-        self.const_exprs.get_mut(id.index()).unwrap()
     }
 
     pub fn add_mod(&mut self, origin_id: hir::ScopeID, data: ModData) -> ModID {
@@ -273,19 +261,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
             kind: SymbolKind::Global(id),
         };
         self.scope_add_symbol(origin_id, item.name.id, symbol);
-    }
-    pub fn add_const_expr(
-        &mut self,
-        origin_id: hir::ScopeID,
-        const_expr: ast::ConstExpr<'ast>,
-    ) -> hir::ConstExprID {
-        let id = hir::ConstExprID::new(self.ast_const_exprs.len());
-        self.ast_const_exprs.push(const_expr);
-        self.const_exprs.push(hir::ConstExprData {
-            origin_id,
-            value: None,
-        });
-        id
     }
 
     pub fn src(&self, id: hir::ScopeID, range: TextRange) -> SourceRange {
@@ -424,7 +399,6 @@ impl<'hir> HirEmit<'hir> {
                 structs: hir.structs,
                 consts: hir.consts,
                 globals: hir.globals,
-                const_exprs: hir.const_exprs,
             })
         } else {
             Err(self.errors)

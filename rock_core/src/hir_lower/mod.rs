@@ -17,7 +17,6 @@ pub fn check<'hir>(ast: ast::Ast<'_>, session: &Session) -> Result<hir::Hir<'hir
     pass_1::run(&mut hir, &mut emit, session);
     pass_2::run(&mut hir, &mut emit);
     pass_3::run(&mut hir, &mut emit);
-    pass_4::run(&mut hir, &mut emit);
     pass_5::run(&mut hir, &mut emit);
     emit.emit(hir)
 }
