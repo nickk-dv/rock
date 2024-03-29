@@ -1010,7 +1010,9 @@ fn path_resolve_target_scope<'hir, 'ast>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
-    path: &'ast ast::Path<'_>,
+    path: &'ast ast::Path,
+    expect_item: bool,
+    expect_remaining: bool,
 ) -> Option<PathResult<'ast>> {
     let mut target_id = match path.kind {
         ast::PathKind::None => origin_id,
@@ -1069,11 +1071,34 @@ fn path_resolve_target_scope<'hir, 'ast>(
         }
     }
 
-    Some(PathResult {
+    if expect_item {
+        //@end of path is not determined
+        // would be better to store a full range in the ast
+        let path_range = TextRange::new(path.range_start, path.range_start + 5.into());
+        emit.error(
+            ErrorComp::error("path does not lead to an item")
+                .context(hir.src(origin_id, path_range)),
+        );
+        return None;
+    }
+
+    let mut path_res = PathResult {
         target_id,
         symbol: None,
         remaining: &path.names[step_count..],
-    })
+    };
+
+    if !expect_remaining && !path_res.remaining.is_empty() {
+        let start = path_res.remaining.first().unwrap().range.start();
+        let end = path_res.remaining.last().unwrap().range.end();
+        path_res.remaining = &[];
+        emit.error(
+            ErrorComp::error("this item cannot be accessed further")
+                .context(hir.src(origin_id, TextRange::new(start, end))),
+        );
+    }
+
+    Some(path_res)
 }
 
 pub fn path_resolve_as_type<'hir>(
@@ -1082,48 +1107,27 @@ pub fn path_resolve_as_type<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path<'_>,
 ) -> hir::Type<'hir> {
-    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path, true, false) {
         Some(it) => it,
         None => return hir::Type::Error,
     };
 
-    let type_res = match path_res.symbol {
+    match path_res.symbol {
         Some((symbol, source, name)) => match symbol {
             SymbolKind::Enum(id) => hir::Type::Enum(id),
             SymbolKind::Union(id) => hir::Type::Union(id),
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
                 emit.error(
-                    ErrorComp::error("expected custom type item")
+                    ErrorComp::error("expected type item")
                         .context(hir.src(origin_id, name.range))
                         .context_info("found this", source),
                 );
-                return hir::Type::Error;
+                hir::Type::Error
             }
         },
-        None => {
-            let path_range = TextRange::new(
-                path.range_start,
-                path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
-            );
-            emit.error(
-                ErrorComp::error("module path does not lead to an item")
-                    .context(hir.src(origin_id, path_range)),
-            );
-            return hir::Type::Error;
-        }
-    };
-
-    if !path_res.remaining.is_empty() {
-        let start = path_res.remaining.first().unwrap().range.start();
-        let end = path_res.remaining.last().unwrap().range.end();
-        emit.error(
-            ErrorComp::error("type name cannot be accessed further")
-                .context(hir.src(origin_id, TextRange::new(start, end))),
-        );
+        None => hir::Type::Error,
     }
-
-    type_res
 }
 
 pub fn path_resolve_as_proc<'hir>(
@@ -1132,12 +1136,12 @@ pub fn path_resolve_as_proc<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path<'_>,
 ) -> Option<hir::ProcID> {
-    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path, true, false) {
         Some(it) => it,
         None => return None,
     };
 
-    let proc_id = match path_res.symbol {
+    match path_res.symbol {
         Some((symbol, source, name)) => match symbol {
             SymbolKind::Proc(id) => Some(id),
             _ => {
@@ -1146,34 +1150,11 @@ pub fn path_resolve_as_proc<'hir>(
                         .context(hir.src(origin_id, name.range))
                         .context_info("found this", source),
                 );
-                return None;
+                None
             }
         },
-        None => {
-            //@repeating with similar as_type
-            let path_range = TextRange::new(
-                path.range_start,
-                path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
-            );
-            emit.error(
-                ErrorComp::error("module path does not lead to an item")
-                    .context(hir.src(origin_id, path_range)),
-            );
-            return None;
-        }
-    };
-
-    //@repeating with similar as_type
-    if !path_res.remaining.is_empty() {
-        let start = path_res.remaining.first().unwrap().range.start();
-        let end = path_res.remaining.last().unwrap().range.end();
-        emit.error(
-            ErrorComp::error("procedure name cannot be accessed further")
-                .context(hir.src(origin_id, TextRange::new(start, end))),
-        );
+        None => None,
     }
-
-    proc_id
 }
 
 pub fn path_resolve_as_struct<'hir>(
@@ -1182,12 +1163,12 @@ pub fn path_resolve_as_struct<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path<'_>,
 ) -> Option<hir::StructID> {
-    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path, true, false) {
         Some(it) => it,
         None => return None,
     };
 
-    let struct_id = match path_res.symbol {
+    match path_res.symbol {
         Some((symbol, source, name)) => match symbol {
             SymbolKind::Struct(id) => Some(id),
             _ => {
@@ -1196,34 +1177,11 @@ pub fn path_resolve_as_struct<'hir>(
                         .context(hir.src(origin_id, name.range))
                         .context_info("found this", source),
                 );
-                return None;
+                None
             }
         },
-        None => {
-            //@repeating with similar as_type
-            let path_range = TextRange::new(
-                path.range_start,
-                path.names.last().expect("non empty path").range.end(), //@just store path range in ast?
-            );
-            emit.error(
-                ErrorComp::error("module path does not lead to an item")
-                    .context(hir.src(origin_id, path_range)),
-            );
-            return None;
-        }
-    };
-
-    //@repeating with similar as_type
-    if !path_res.remaining.is_empty() {
-        let start = path_res.remaining.first().unwrap().range.start();
-        let end = path_res.remaining.last().unwrap().range.end();
-        emit.error(
-            ErrorComp::error("struct name cannot be accessed further")
-                .context(hir.src(origin_id, TextRange::new(start, end))),
-        );
+        None => None,
     }
-
-    struct_id
 }
 
 pub fn path_resolve_as_module_path<'hir>(
@@ -1232,7 +1190,7 @@ pub fn path_resolve_as_module_path<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path<'_>,
 ) -> Option<hir::ScopeID> {
-    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path) {
+    let path_res = match path_resolve_target_scope(hir, emit, origin_id, path, false, false) {
         Some(it) => it,
         None => return None,
     };
