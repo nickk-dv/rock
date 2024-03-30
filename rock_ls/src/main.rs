@@ -150,10 +150,10 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
 
     //@session errors ignored, its not a correct way to have context in ls server
     // this is a temporary full compilation run
-    let mut session = Session::new()
+    let session = Session::new()
         .map_err(|_| Result::<(), ()>::Err(()))
         .unwrap();
-    let errors = if let Err(errors) = run_check(&mut session) {
+    let errors = if let Err(errors) = run_check(&session) {
         errors
     } else {
         vec![]

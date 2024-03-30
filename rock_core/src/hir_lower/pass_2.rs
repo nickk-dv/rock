@@ -45,7 +45,18 @@ fn resolve_import<'hir, 'ast>(
     }
 
     let alias_name = match import.alias {
-        Some(alias) => alias,
+        Some(alias) => {
+            if import.module.id == alias.id {
+                emit.error(
+                    ErrorComp::warning(format!(
+                        "name alias `{}` is redundant",
+                        hir.name_str(alias.id)
+                    ))
+                    .context(hir.src(origin_id, alias.range)),
+                );
+            }
+            alias
+        }
         None => import.module,
     };
 
@@ -60,23 +71,47 @@ fn resolve_import<'hir, 'ast>(
     for symbol in import.symbols {
         let item_name = symbol.name;
         let alias_name = match symbol.alias {
-            Some(alias) => alias,
+            Some(alias) => {
+                if symbol.name.id == alias.id {
+                    emit.error(
+                        ErrorComp::warning(format!(
+                            "name alias `{}` is redundant",
+                            hir.name_str(alias.id)
+                        ))
+                        .context(hir.src(origin_id, alias.range)),
+                    );
+                }
+                alias
+            }
             None => symbol.name,
         };
 
         match hir.symbol_from_scope(origin_id, target_id, item_name.id) {
-            Some((kind, ..)) => match hir.scope_name_defined(origin_id, alias_name.id) {
-                Some(existing) => {
-                    super::pass_1::name_already_defined_error(
-                        hir, emit, origin_id, alias_name, existing,
+            Some((kind, vis, source)) => {
+                if vis == ast::Vis::Private {
+                    emit.error(
+                        ErrorComp::error(format!(
+                            "item `{}` is private",
+                            hir.name_str(item_name.id)
+                        ))
+                        .context(hir.src(origin_id, item_name.range))
+                        .context_info("defined here", source),
                     );
+                    continue;
                 }
-                None => hir.scope_add_imported(origin_id, alias_name, kind),
-            },
+                match hir.scope_name_defined(origin_id, alias_name.id) {
+                    Some(existing) => {
+                        super::pass_1::name_already_defined_error(
+                            hir, emit, origin_id, alias_name, existing,
+                        );
+                    }
+                    None => hir.scope_add_imported(origin_id, alias_name, kind),
+                }
+            }
             None => {
                 emit.error(
                     ErrorComp::error(format!(
-                        "name `{}` is not found in module", //@display module paths?
+                        "name `{}` is not found in module", //@display module path?
                         hir.name_str(item_name.id)
                     ))
                     .context(hir.src(origin_id, item_name.range)),

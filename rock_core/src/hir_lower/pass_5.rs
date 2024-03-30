@@ -1014,36 +1014,24 @@ fn path_resolve_target_scope<'hir, 'ast>(
     expect_item: bool,
     expect_remaining: bool,
 ) -> Option<PathResult<'ast>> {
-    let mut target_id = match path.kind {
-        ast::PathKind::None => origin_id,
-        ast::PathKind::Super => match hir.scope_parent(origin_id) {
-            Some(it) => it,
-            None => {
-                let range = TextRange::new(path.range_start, path.range_start + 5.into());
-                emit.error(
-                    ErrorComp::error("parent module `super` cannot be used from the root module")
-                        .context(hir.src(origin_id, range)),
-                );
-                return None;
-            }
-        },
-        ast::PathKind::Package => hb::ROOT_SCOPE_ID,
-    };
+    let mut target_id = origin_id;
 
     let mut step_count: usize = 0;
-    for name in path.names {
-        match hir.symbol_from_scope(origin_id, target_id, path.kind, name.id) {
-            Some((symbol, source)) => match symbol {
-                SymbolKind::Mod(id) => {
-                    let data = hir.get_mod(id);
-                    step_count += 1;
 
-                    if let Some(new_target) = data.target {
-                        target_id = new_target;
-                    } else {
+    if let Some(name) = path.names.first().cloned() {
+        match hir.symbol_from_scope(origin_id, target_id, name.id) {
+            Some((symbol, vis, source)) => match symbol {
+                SymbolKind::Module(id) => {
+                    step_count += 1;
+                    target_id = id;
+                }
+                _ => {
+                    //@duplicate error same as in import pass
+                    // api for getting things from scopes is bad
+                    if vis == ast::Vis::Private {
                         emit.error(
                             ErrorComp::error(format!(
-                                "module `{}` does not have its associated file",
+                                "item `{}` is private",
                                 hir.name_str(name.id)
                             ))
                             .context(hir.src(origin_id, name.range))
@@ -1051,12 +1039,10 @@ fn path_resolve_target_scope<'hir, 'ast>(
                         );
                         return None;
                     }
-                }
-                _ => {
                     step_count += 1;
                     return Some(PathResult {
                         target_id,
-                        symbol: Some((symbol, source, *name)),
+                        symbol: Some((symbol, source, name)),
                         remaining: &path.names[step_count..],
                     });
                 }
@@ -1071,10 +1057,15 @@ fn path_resolve_target_scope<'hir, 'ast>(
         }
     }
 
+    //@change this error to something like:
+    // "expected {item_name} found module {name}"
+    // defined here / imported here
     if expect_item {
-        //@end of path is not determined
-        // would be better to store a full range in the ast
-        let path_range = TextRange::new(path.range_start, path.range_start + 5.into());
+        //@unwrapping, assuming 1+ exists (enforced by the parser)
+        let path_range = TextRange::new(
+            path.names.first().unwrap().range.start(),
+            path.names.last().unwrap().range.end(),
+        );
         emit.error(
             ErrorComp::error("path does not lead to an item")
                 .context(hir.src(origin_id, path_range)),

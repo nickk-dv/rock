@@ -138,19 +138,24 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         origin_id: hir::ScopeID,
         target_id: hir::ScopeID,
         id: InternID,
-    ) -> Option<(SymbolKind, SourceRange)> {
+    ) -> Option<(SymbolKind, ast::Vis, SourceRange)> {
         let target = self.scope(target_id);
         match target.symbols.get(&id).cloned() {
             Some(symbol) => match symbol {
                 Symbol::Defined { kind } => {
                     let source =
                         SourceRange::new(self.symbol_kind_range(kind), target.module.file_id);
-                    Some((kind, source))
+                    let vis = if origin_id == target_id {
+                        ast::Vis::Public
+                    } else {
+                        self.symbol_kind_vis(kind)
+                    };
+                    Some((kind, vis, source))
                 }
                 Symbol::Imported { kind, import_range } => {
                     if origin_id == target_id {
                         let source = SourceRange::new(import_range, target.module.file_id);
-                        Some((kind, source))
+                        Some((kind, ast::Vis::Public, source))
                     } else {
                         None
                     }
@@ -173,7 +178,19 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
             SymbolKind::Struct(id) => self.struct_data(id).name.range,
             SymbolKind::Const(id) => self.const_data(id).name.range,
             SymbolKind::Global(id) => self.global_data(id).name.range,
-            SymbolKind::Module(..) => unreachable!(), //@name for module symbol is stored in Symbol::Imported
+            SymbolKind::Module(..) => unreachable!(),
+        }
+    }
+
+    fn symbol_kind_vis(&self, kind: SymbolKind) -> ast::Vis {
+        match kind {
+            SymbolKind::Proc(id) => self.proc_data(id).vis,
+            SymbolKind::Enum(id) => self.enum_data(id).vis,
+            SymbolKind::Union(id) => self.union_data(id).vis,
+            SymbolKind::Struct(id) => self.struct_data(id).vis,
+            SymbolKind::Const(id) => self.const_data(id).vis,
+            SymbolKind::Global(id) => self.global_data(id).vis,
+            SymbolKind::Module(..) => unreachable!(),
         }
     }
 
