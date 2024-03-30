@@ -155,5 +155,6 @@ pub fn find_text_location(
             );
         }
     }
+    //@can fail (most often in current lsp that runs full check pass, and can de-sync), handle gracefully
     panic!("text location not found");
 }

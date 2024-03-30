@@ -122,7 +122,7 @@ fn handle_notification(conn: &Connection, not: lsp_server::Notification) {
 
 use rock_core::ast_parse;
 use rock_core::error::{ErrorComp, ErrorSeverity};
-//@use rock_core::hir_lower;
+use rock_core::hir_lower;
 use rock_core::session::Session;
 use rock_core::text;
 
@@ -132,9 +132,9 @@ use lsp_types::{
 };
 use std::path::PathBuf;
 
-fn run_check(session: &mut Session) -> Result<(), Vec<ErrorComp>> {
+fn run_check(session: &Session) -> Result<(), Vec<ErrorComp>> {
     let ast = ast_parse::parse(session)?;
-    //@let _ = hir_lower::check(ast, session)?;
+    let _ = hir_lower::check(ast)?;
     Ok(())
 }
 

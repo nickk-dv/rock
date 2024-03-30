@@ -32,7 +32,7 @@ pub fn type_resolve<'hir>(
 ) -> hir::Type<'hir> {
     match ast_ty {
         ast::Type::Basic(basic) => hir::Type::Basic(basic),
-        ast::Type::Custom(path) => super::pass_5::path_resolve_as_type(hir, emit, origin_id, path),
+        ast::Type::Custom(path) => hir::Type::Error, //@disabled super::pass_5::path_resolve_as_type(hir, emit, origin_id, path),
         ast::Type::Reference(ref_ty, mutt) => {
             let ref_ty = type_resolve(hir, emit, origin_id, *ref_ty);
             let ty = emit.arena.alloc(ref_ty);

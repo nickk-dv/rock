@@ -13,6 +13,7 @@ pub struct Ast<'ast> {
 #[derive(Copy, Clone)]
 pub struct Module<'ast> {
     pub file_id: FileID,
+    pub name_id: InternID,
     pub items: &'ast [Item<'ast>],
 }
 

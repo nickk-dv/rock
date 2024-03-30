@@ -61,74 +61,53 @@ fn create_session() -> Result<Session, ErrorComp> {
         ))
     })?;
 
-    let os_name = cwd
+    let src_dir = cwd.join("src");
+
+    let name = cwd
         .file_name()
-        .ok_or_else(|| ErrorComp::error("failed to get current working directory name"))?;
-    let name = os_name
+        .ok_or_else(|| ErrorComp::error("failed to get current working directory name"))?
         .to_str()
         .ok_or_else(|| ErrorComp::error("current working directory name is not valid utf-8"))?
         .to_string();
 
-    let src_dir = cwd.join("src");
-    let src_bin = src_dir.join("main.rock");
-    let src_lib = src_dir.join("lib.rock");
-
-    let is_binary = match (src_bin.exists(), src_lib.exists()) {
-        (true, false) => true,
-        (false, true) => false,
-        (false, false) => {
-            return Err(ErrorComp::error(format!(
-                "could not find `{}` or `{}`",
-                src_bin.to_string_lossy(),
-                src_lib.to_string_lossy(),
-            )));
-        }
-        (true, true) => {
-            return Err(ErrorComp::error(format!(
-                "could not determine package kind\nonly `{}` or `{}` can exist at the same time",
-                src_bin.to_string_lossy(),
-                src_lib.to_string_lossy(),
-            )));
-        }
+    let package = PackageData {
+        name,
+        is_binary: src_dir.join("main.rock").exists(),
     };
-    let package = PackageData { name, is_binary };
+
+    let read_dir = std::fs::read_dir(&src_dir).map_err(|io_error| {
+        ErrorComp::error(format!(
+            "failed to read directory: `{}`, reason: {}",
+            src_dir.to_string_lossy(),
+            io_error
+        ))
+    })?;
 
     let mut files = Vec::new();
-    let mut dir_visits = vec![src_dir];
-    let mut source_paths = Vec::new();
 
-    while let Some(dir) = dir_visits.pop() {
-        let read_dir = std::fs::read_dir(&dir).map_err(|io_error| {
-            ErrorComp::error(format!(
-                "failed to read directory: `{}`, reason: {}",
-                dir.to_string_lossy(),
-                io_error
-            ))
-        })?;
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            if path.is_file() && path.extension().unwrap_or_default() == "rock" {
-                source_paths.push(path);
-            } else if path.is_dir() {
-                dir_visits.push(path);
-            }
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+
+        if path.is_file() && path.extension().unwrap_or_default() == "rock" {
+            let source = std::fs::read_to_string(&path).map_err(|io_error| {
+                ErrorComp::error(format!(
+                    "failed to read file: `{}`, reason: {}",
+                    path.to_string_lossy(),
+                    io_error
+                ))
+            })?;
+            let line_ranges = text::find_line_ranges(&source);
+            files.push(File {
+                path,
+                source,
+                line_ranges,
+            });
+        } else if path.is_dir() {
+            //@communicate that directories in src folder of rock package are not allowed?
+            // this can remove confusion about how module and package system is organized
+            //@currently nested directories are ignored, and wont be parsed
+            // lsp could produce a error about disconnected or invalid file in similar manner
         }
-    }
-
-    for path in source_paths {
-        let source = std::fs::read_to_string(&path).map_err(|io_error| {
-            ErrorComp::error(format!(
-                "failed to read file: `{}`, reason: {}",
-                path.to_string_lossy(),
-                io_error
-            ))
-        })?;
-        let line_ranges = text::find_line_ranges(&source);
-        files.push(File {
-            path,
-            source,
-            line_ranges,
-        });
     }
 
     Ok(Session {

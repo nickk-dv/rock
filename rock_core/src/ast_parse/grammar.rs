@@ -1,6 +1,7 @@
 use super::Parser;
 use crate::ast::*;
 use crate::error::{ErrorComp, SourceRange};
+use crate::intern::InternID;
 use crate::session::FileID;
 use crate::text::TextRange;
 use crate::token::{Token, T};
@@ -38,6 +39,7 @@ macro_rules! semi_separated_block {
 pub fn module<'ast>(
     mut p: Parser<'ast, '_, '_>,
     file_id: FileID,
+    name_id: InternID,
 ) -> Result<Module<'ast>, ErrorComp> {
     let start = p.state.items.start();
     while !p.at(T![eof]) {
@@ -54,7 +56,11 @@ pub fn module<'ast>(
         }
     }
     let items = p.state.items.take(start, &mut p.state.arena);
-    Ok(Module { file_id, items })
+    Ok(Module {
+        file_id,
+        name_id,
+        items,
+    })
 }
 
 fn item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Item<'ast>, String> {

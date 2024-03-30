@@ -6,7 +6,7 @@ mod ast;
 pub mod ast_parse;
 pub mod error;
 mod hir;
-//pub mod hir_lower;
+pub mod hir_lower;
 mod intern;
 mod lexer;
 pub mod session;

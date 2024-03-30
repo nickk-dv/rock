@@ -3,14 +3,13 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::intern::InternID;
-use crate::session::FileID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct HirData<'hir, 'ast> {
     ast: ast::Ast<'ast>,
-    mods: Vec<ModData>,
+    scope_map: HashMap<InternID, hir::ScopeID>,
     scopes: Vec<Scope<'ast>>,
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
     ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
@@ -27,10 +26,7 @@ pub struct HirData<'hir, 'ast> {
     globals: Vec<hir::GlobalData<'hir>>,
 }
 
-pub const ROOT_SCOPE_ID: hir::ScopeID = hir::ScopeID::new(0);
-
 pub struct Scope<'ast> {
-    parent: Option<hir::ScopeID>,
     module: ast::Module<'ast>,
     symbols: HashMap<InternID, Symbol>,
 }
@@ -39,27 +35,18 @@ pub struct Scope<'ast> {
 #[derive(Copy, Clone)]
 pub enum Symbol {
     Defined  { kind: SymbolKind, },
-    Imported { kind: SymbolKind, use_range: TextRange },
+    Imported { kind: SymbolKind, import_range: TextRange },
 }
 
 #[derive(Copy, Clone)]
 pub enum SymbolKind {
-    Mod(ModID),
     Proc(hir::ProcID),
     Enum(hir::EnumID),
     Union(hir::UnionID),
     Struct(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
-}
-
-#[derive(Copy, Clone)]
-pub struct ModID(u32);
-pub struct ModData {
-    pub origin_id: hir::ScopeID,
-    pub vis: ast::Vis,
-    pub name: ast::Name,
-    pub target: Option<hir::ScopeID>,
+    Module(hir::ScopeID),
 }
 
 #[derive(Default)]
@@ -76,21 +63,118 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         }
     }
 
+    pub fn src(&self, id: hir::ScopeID, range: TextRange) -> SourceRange {
+        SourceRange::new(range, self.scope(id).module.file_id)
+    }
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern.get_str(id)
     }
-    pub fn ast_modules(&self) -> impl Iterator<Item = &ast::Module<'ast>> {
-        self.ast.modules.iter()
+
+    pub fn add_ast_modules(&mut self) {
+        for module in self.ast.modules.iter() {
+            let id = hir::ScopeID::new(self.scopes.len());
+            let scope = Scope {
+                module: *module,
+                symbols: HashMap::new(),
+            };
+            self.scopes.push(scope);
+            self.hir_scopes.push(hir::ScopeData {
+                file_id: module.file_id,
+            });
+            self.scope_map.insert(module.name_id, id);
+        }
     }
 
     pub fn scope_ids(&self) -> impl Iterator<Item = hir::ScopeID> {
         (0..self.scopes.len()).map(hir::ScopeID::new)
     }
-    pub fn get_mod(&self, id: ModID) -> &ModData {
-        self.mods.get(id.0 as usize).unwrap()
+    fn scope(&self, id: hir::ScopeID) -> &Scope<'ast> {
+        &self.scopes[id.index()]
     }
-    pub fn get_mod_mut(&mut self, id: ModID) -> &mut ModData {
-        self.mods.get_mut(id.0 as usize).unwrap()
+
+    pub fn get_module_id(&self, id: InternID) -> Option<hir::ScopeID> {
+        self.scope_map.get(&id).cloned()
+    }
+
+    pub fn scope_add_imported(
+        &mut self,
+        origin_id: hir::ScopeID,
+        import_name: ast::Name,
+        kind: SymbolKind,
+    ) {
+        self.scope_add_symbol(
+            origin_id,
+            import_name.id,
+            Symbol::Imported {
+                kind,
+                import_range: import_name.range,
+            },
+        );
+    }
+
+    pub fn scope_name_defined(&self, origin_id: hir::ScopeID, id: InternID) -> Option<SourceRange> {
+        let origin = self.scope(origin_id);
+        if let Some(symbol) = origin.symbols.get(&id).cloned() {
+            let file_id = origin.module.file_id;
+            match symbol {
+                Symbol::Defined { kind } => {
+                    Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
+                }
+                Symbol::Imported { import_range, .. } => {
+                    Some(SourceRange::new(import_range, file_id))
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn scope_ast_items(&self, id: hir::ScopeID) -> impl Iterator<Item = ast::Item<'ast>> {
+        self.scope(id).module.items.iter().cloned()
+    }
+
+    pub fn symbol_from_scope(
+        &self,
+        origin_id: hir::ScopeID,
+        target_id: hir::ScopeID,
+        id: InternID,
+    ) -> Option<(SymbolKind, SourceRange)> {
+        let target = self.scope(target_id);
+        match target.symbols.get(&id).cloned() {
+            Some(symbol) => match symbol {
+                Symbol::Defined { kind } => {
+                    let source =
+                        SourceRange::new(self.symbol_kind_range(kind), target.module.file_id);
+                    Some((kind, source))
+                }
+                Symbol::Imported { kind, import_range } => {
+                    if origin_id == target_id {
+                        let source = SourceRange::new(import_range, target.module.file_id);
+                        Some((kind, source))
+                    } else {
+                        None
+                    }
+                }
+            },
+            None => None,
+        }
+    }
+
+    fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
+        let scope = &mut self.scopes[origin_id.index()];
+        scope.symbols.insert(id, symbol);
+    }
+
+    fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
+        match kind {
+            SymbolKind::Proc(id) => self.proc_data(id).name.range,
+            SymbolKind::Enum(id) => self.enum_data(id).name.range,
+            SymbolKind::Union(id) => self.union_data(id).name.range,
+            SymbolKind::Struct(id) => self.struct_data(id).name.range,
+            SymbolKind::Const(id) => self.const_data(id).name.range,
+            SymbolKind::Global(id) => self.global_data(id).name.range,
+            SymbolKind::Module(..) => unreachable!(), //@name for module symbol is stored in Symbol::Imported
+        }
     }
 
     pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
@@ -112,6 +196,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         (0..self.globals.len()).map(hir::GlobalID::new)
     }
 
+    //@try removing reference lifetimes?
     pub fn proc_ast(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
         self.ast_procs[id.index()]
     }
@@ -169,15 +254,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         self.globals.get_mut(id.index()).unwrap()
     }
 
-    pub fn add_mod(&mut self, origin_id: hir::ScopeID, data: ModData) -> ModID {
-        let id = ModID(self.mods.len() as u32);
-        let symbol = Symbol::Defined {
-            kind: SymbolKind::Mod(id),
-        };
-        self.scope_add_symbol(origin_id, data.name.id, symbol);
-        self.mods.push(data);
-        id
-    }
     pub fn add_proc(
         &mut self,
         origin_id: hir::ScopeID,
@@ -261,121 +337,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
             kind: SymbolKind::Global(id),
         };
         self.scope_add_symbol(origin_id, item.name.id, symbol);
-    }
-
-    pub fn src(&self, id: hir::ScopeID, range: TextRange) -> SourceRange {
-        SourceRange::new(range, self.scope(id).module.file_id)
-    }
-
-    pub fn scope_add_imported(
-        &mut self,
-        origin_id: hir::ScopeID,
-        use_name: ast::Name,
-        kind: SymbolKind,
-    ) {
-        self.scope_add_symbol(
-            origin_id,
-            use_name.id,
-            Symbol::Imported {
-                kind,
-                use_range: use_name.range,
-            },
-        );
-    }
-
-    pub fn scope_file_id(&self, id: hir::ScopeID) -> FileID {
-        self.scope(id).module.file_id
-    }
-
-    pub fn scope_name_defined(&self, origin_id: hir::ScopeID, id: InternID) -> Option<SourceRange> {
-        let origin = self.scope(origin_id);
-        if let Some(symbol) = origin.symbols.get(&id).cloned() {
-            let file_id = origin.module.file_id;
-            match symbol {
-                Symbol::Defined { kind } => {
-                    Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
-                }
-                Symbol::Imported { use_range, .. } => Some(SourceRange::new(use_range, file_id)),
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn scope_parent(&self, id: hir::ScopeID) -> Option<hir::ScopeID> {
-        self.scope(id).parent
-    }
-
-    pub fn scope_ast_items(&self, id: hir::ScopeID) -> impl Iterator<Item = ast::Item<'ast>> {
-        self.scope(id).module.items.iter().cloned()
-    }
-
-    pub fn add_scope(
-        &mut self,
-        parent: Option<hir::ScopeID>,
-        module: ast::Module<'ast>,
-    ) -> hir::ScopeID {
-        let id = hir::ScopeID::new(self.scopes.len());
-        let scope = Scope {
-            parent,
-            module,
-            symbols: HashMap::new(),
-        };
-        self.scopes.push(scope);
-        self.hir_scopes.push(hir::ScopeData {
-            file_id: module.file_id,
-        });
-        id
-    }
-
-    pub fn symbol_from_scope(
-        &self,
-        origin_id: hir::ScopeID,
-        target_id: hir::ScopeID,
-        path_kind: ast::PathKind,
-        id: InternID,
-    ) -> Option<(SymbolKind, SourceRange)> {
-        let target = self.scope(target_id);
-        match target.symbols.get(&id).cloned() {
-            Some(symbol) => match symbol {
-                Symbol::Defined { kind } => {
-                    let source =
-                        SourceRange::new(self.symbol_kind_range(kind), target.module.file_id);
-                    Some((kind, source))
-                }
-                Symbol::Imported { kind, use_range } => {
-                    let allow_use = path_kind == ast::PathKind::None && (origin_id == target_id);
-                    if allow_use {
-                        let source = SourceRange::new(use_range, target.module.file_id);
-                        Some((kind, source))
-                    } else {
-                        None
-                    }
-                }
-            },
-            None => None,
-        }
-    }
-
-    fn scope(&self, id: hir::ScopeID) -> &Scope<'ast> {
-        &self.scopes[id.index()]
-    }
-
-    fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
-        let scope = &mut self.scopes[origin_id.index()];
-        scope.symbols.insert(id, symbol);
-    }
-
-    fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
-        match kind {
-            SymbolKind::Mod(id) => self.get_mod(id).name.range,
-            SymbolKind::Proc(id) => self.proc_data(id).name.range,
-            SymbolKind::Enum(id) => self.enum_data(id).name.range,
-            SymbolKind::Union(id) => self.union_data(id).name.range,
-            SymbolKind::Struct(id) => self.struct_data(id).name.range,
-            SymbolKind::Const(id) => self.const_data(id).name.range,
-            SymbolKind::Global(id) => self.global_data(id).name.range,
-        }
     }
 }
 

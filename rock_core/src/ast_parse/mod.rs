@@ -15,11 +15,19 @@ pub fn parse<'ast>(session: &Session) -> Result<Ast<'ast>, Vec<ErrorComp>> {
 
     for file_id in session.file_ids() {
         let file = session.file(file_id);
+        let filename = file
+            .path
+            .file_stem()
+            .expect("filename")
+            .to_str()
+            .expect("utf-8");
+        let name_id = state.intern.intern(filename);
+
         let lexer = Lexer::new(&file.source, false);
         let tokens = lexer.lex();
         let parser = Parser::new(tokens, &file.source, &mut state);
 
-        match grammar::module(parser, file_id) {
+        match grammar::module(parser, file_id, name_id) {
             Ok(it) => state.modules.push(it),
             Err(error) => state.errors.push(error),
         }
