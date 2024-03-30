@@ -58,41 +58,17 @@ pub fn module<'ast>(
 }
 
 fn item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Item<'ast>, String> {
-    let vis = vis(p); //@not allowing vis with `use` is not enforced right now
+    let vis = vis(p); //@not allowing vis with `import` is not enforced right now
     match p.peek() {
-        T![mod] => Ok(Item::Mod(mod_item(p, vis)?)),
-        T![use] => Ok(Item::Use(use_item(p)?)),
         T![proc] => Ok(Item::Proc(proc_item(p, vis)?)),
         T![enum] => Ok(Item::Enum(enum_item(p, vis)?)),
         T![union] => Ok(Item::Union(union_item(p, vis)?)),
         T![struct] => Ok(Item::Struct(struct_item(p, vis)?)),
         T![const] => Ok(Item::Const(const_item(p, vis)?)),
         T![global] => Ok(Item::Global(global_item(p, vis)?)),
+        T![import] => Ok(Item::Import(import_item(p)?)),
         _ => Err("expected item".into()),
     }
-}
-
-fn mod_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast ModItem, String> {
-    p.bump();
-    let name = name(p)?;
-    p.expect(T![;])?;
-
-    Ok(p.state.arena.alloc(ModItem { vis, name }))
-}
-
-fn use_item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast UseItem<'ast>, String> {
-    p.bump();
-    let path = path(p)?;
-    p.expect(T![.])?;
-    let symbols = comma_separated_list!(p, use_symbol, use_symbols, T!['{'], T!['}']);
-    Ok(p.state.arena.alloc(UseItem { path, symbols }))
-}
-
-fn use_symbol(p: &mut Parser) -> Result<UseSymbol, String> {
-    Ok(UseSymbol {
-        name: name(p)?,
-        alias: if p.eat(T![as]) { Some(name(p)?) } else { None },
-    })
 }
 
 fn proc_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast ProcItem<'ast>, String> {
@@ -239,6 +215,34 @@ fn global_item<'ast>(
     }))
 }
 
+fn import_item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast ImportItem<'ast>, String> {
+    p.bump();
+    let module = name(p)?;
+    let alias = if p.eat(T![as]) { Some(name(p)?) } else { None };
+
+    let symbols = if p.eat(T![.]) {
+        let symbols = comma_separated_list!(p, import_symbol, import_symbols, T!['{'], T!['}']);
+        p.eat(T![;]);
+        symbols
+    } else {
+        p.expect(T![;])?;
+        &[]
+    };
+
+    Ok(p.state.arena.alloc(ImportItem {
+        module,
+        alias,
+        symbols,
+    }))
+}
+
+fn import_symbol(p: &mut Parser) -> Result<ImportSymbol, String> {
+    Ok(ImportSymbol {
+        name: name(p)?,
+        alias: if p.eat(T![as]) { Some(name(p)?) } else { None },
+    })
+}
+
 fn vis(p: &mut Parser) -> Vis {
     if p.eat(T![pub]) {
         Vis::Public
@@ -276,23 +280,9 @@ fn directive(p: &mut Parser) -> Result<Option<Directive>, String> {
 
 fn path<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Path<'ast>, String> {
     let start = p.state.names.start();
-    let range_start = p.peek_range_start();
 
-    let kind = match p.peek() {
-        T![super] => {
-            p.bump();
-            PathKind::Super
-        }
-        T![package] => {
-            p.bump();
-            PathKind::Package
-        }
-        _ => {
-            let name = name(p)?;
-            p.state.names.add(name);
-            PathKind::None
-        }
-    };
+    let first = name(p)?;
+    p.state.names.add(first);
 
     while p.at(T![.]) {
         if p.at_next(T!['{']) {
@@ -304,11 +294,7 @@ fn path<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Path<'ast>, String> 
     }
     let names = p.state.names.take(start, &mut p.state.arena);
 
-    Ok(p.state.arena.alloc(Path {
-        kind,
-        names,
-        range_start,
-    }))
+    Ok(p.state.arena.alloc(Path { names }))
 }
 
 fn ty<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Type<'ast>, String> {
@@ -322,7 +308,7 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Type<'ast>, String> {
             p.expect(T![')'])?;
             Ok(Type::Basic(BasicType::Unit))
         }
-        T![ident] | T![super] | T![package] => Ok(Type::Custom(path(p)?)),
+        T![ident] => Ok(Type::Custom(path(p)?)),
         T![*] => {
             p.bump();
             let mutt = mutt(p);
@@ -595,7 +581,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
             p.expect(T![')'])?;
             ExprKind::Sizeof { ty }
         }
-        T![ident] | T![super] | T![package] => {
+        T![ident] => {
             let path = path(p)?;
 
             match (p.peek(), p.peek_next()) {

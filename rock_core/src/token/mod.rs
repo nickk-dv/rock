@@ -15,20 +15,15 @@ token_gen::token_gen! {
     [char_lit]   | "char literal"   | CharLit    |
     [string_lit] | "string literal" | StringLit  |
 
-    // keyword general
-    [pub]      | "pub"      | KwPub      | KW.
-    [super]    | "super"    | KwSuper    | KW.
-    [package]  | "package"  | KwPackage  | KW.
-
     // keyword items
-    [mod]      | "mod"      | KwMod      | KW.
-    [use]      | "use"      | KwUse      | KW.
+    [pub]      | "pub"      | KwPub      | KW.
     [proc]     | "proc"     | KwProc     | KW.
     [enum]     | "enum"     | KwEnum     | KW.
     [union]    | "union"    | KwUnion    | KW.
     [struct]   | "struct"   | KwStruct   | KW.
     [const]    | "const"    | KwConst    | KW.
     [global]   | "global"   | KwGlobal   | KW.
+    [import]   | "import"   | KwImport   | KW.
 
     // keyword statements
     [let]      | "let"      | KwLet      | KW.

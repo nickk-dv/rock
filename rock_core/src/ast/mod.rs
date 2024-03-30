@@ -1,7 +1,7 @@
 use crate::arena::Arena;
 use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
-use crate::text::{TextOffset, TextRange};
+use crate::text::TextRange;
 
 #[derive(Default)]
 pub struct Ast<'ast> {
@@ -18,32 +18,13 @@ pub struct Module<'ast> {
 
 #[derive(Copy, Clone)]
 pub enum Item<'ast> {
-    Mod(&'ast ModItem),
-    Use(&'ast UseItem<'ast>),
     Proc(&'ast ProcItem<'ast>),
     Enum(&'ast EnumItem<'ast>),
     Union(&'ast UnionItem<'ast>),
     Struct(&'ast StructItem<'ast>),
     Const(&'ast ConstItem<'ast>),
     Global(&'ast GlobalItem<'ast>),
-}
-
-#[derive(Copy, Clone)]
-pub struct ModItem {
-    pub vis: Vis,
-    pub name: Name,
-}
-
-#[derive(Copy, Clone)]
-pub struct UseItem<'ast> {
-    pub path: &'ast Path<'ast>,
-    pub symbols: &'ast [UseSymbol],
-}
-
-#[derive(Copy, Clone)]
-pub struct UseSymbol {
-    pub name: Name,
-    pub alias: Option<Name>,
+    Import(&'ast ImportItem<'ast>),
 }
 
 #[derive(Copy, Clone)]
@@ -120,6 +101,19 @@ pub struct GlobalItem<'ast> {
     pub value: ConstExpr<'ast>,
 }
 
+#[derive(Copy, Clone)]
+pub struct ImportItem<'ast> {
+    pub module: Name,
+    pub alias: Option<Name>,
+    pub symbols: &'ast [ImportSymbol],
+}
+
+#[derive(Copy, Clone)]
+pub struct ImportSymbol {
+    pub name: Name,
+    pub alias: Option<Name>,
+}
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum Vis {
     Public,
@@ -145,16 +139,7 @@ pub struct Directive {
 
 #[derive(Copy, Clone)]
 pub struct Path<'ast> {
-    pub kind: PathKind,
     pub names: &'ast [Name],
-    pub range_start: TextOffset,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum PathKind {
-    None,
-    Super,
-    Package,
 }
 
 #[derive(Copy, Clone)]
@@ -372,7 +357,7 @@ mod size_assert {
 
     size_assert!(12, Name);
     size_assert!(16, Item);
-    size_assert!(24, Path);
+    size_assert!(16, Path);
     size_assert!(16, Type);
     size_assert!(24, Stmt);
     size_assert!(32, Expr);

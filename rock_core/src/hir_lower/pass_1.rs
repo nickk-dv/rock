@@ -83,24 +83,6 @@ fn resolve_scope_task<'hir, 'ast>(
 
     for item in hir.scope_ast_items(origin_id) {
         match item {
-            ast::Item::Mod(item) => match hir.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => {
-                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
-                }
-                None => {
-                    let data = hb::ModData {
-                        origin_id,
-                        vis: item.vis,
-                        name: item.name,
-                        target: None,
-                    };
-                    let id = hir.add_mod(origin_id, data);
-                    add_scope_task_from_mod_item(hir, emit, pass, session, origin_id, item, id);
-                }
-            },
-            ast::Item::Use(..) => {
-                continue;
-            }
             ast::Item::Proc(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
@@ -193,6 +175,7 @@ fn resolve_scope_task<'hir, 'ast>(
                     hir.add_global(origin_id, item, data);
                 }
             },
+            ast::Item::Import(..) => {}
         }
     }
 }
