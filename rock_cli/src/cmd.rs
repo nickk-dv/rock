@@ -115,6 +115,7 @@ pub mod new {
 }
 
 pub mod check {
+    use crate::error_format;
     use rock_core::ast_parse;
     use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
@@ -122,6 +123,13 @@ pub mod check {
 
     pub fn cmd() -> Result<(), Vec<ErrorComp>> {
         let session = Session::new()?;
+        if let Err(errors) = check(&session) {
+            error_format::print_errors(Some(&session), &errors);
+        }
+        Ok(())
+    }
+
+    fn check(session: &Session) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
         let _ = hir_lower::check(ast)?;
         Ok(())
@@ -130,6 +138,7 @@ pub mod check {
 
 pub mod build {
     use super::CommandBuild;
+    use crate::error_format;
     use rock_core::ast_parse;
     use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
@@ -137,15 +146,22 @@ pub mod build {
 
     pub fn cmd(data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
         let session = Session::new()?;
+        if let Err(errors) = build(&session) {
+            error_format::print_errors(Some(&session), &errors);
+        }
+        Ok(())
+    }
+
+    fn build(session: &Session) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
         let _ = hir_lower::check(ast)?;
-        //@build
         Ok(())
     }
 }
 
 pub mod run {
     use super::CommandRun;
+    use crate::error_format;
     use rock_core::ast_parse;
     use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
@@ -153,10 +169,15 @@ pub mod run {
 
     pub fn cmd(data: CommandRun) -> Result<(), Vec<ErrorComp>> {
         let session = Session::new()?;
+        if let Err(errors) = run(&session) {
+            error_format::print_errors(Some(&session), &errors);
+        }
+        Ok(())
+    }
+
+    fn run(session: &Session) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
         let _ = hir_lower::check(ast)?;
-        //@build
-        //@run
         Ok(())
     }
 }

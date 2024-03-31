@@ -23,8 +23,14 @@ pub fn parse<'ast>(session: &Session) -> Result<Ast<'ast>, Vec<ErrorComp>> {
             .expect("utf-8");
         let name_id = state.intern.intern(filename);
 
-        let lexer = Lexer::new(&file.source, false);
-        let tokens = lexer.lex();
+        let lexer = Lexer::new(&file.source, file_id, false);
+        let tokens = match lexer.lex() {
+            Ok(it) => it,
+            Err(errors) => {
+                state.errors.extend(errors);
+                continue;
+            }
+        };
         let parser = Parser::new(tokens, &file.source, &mut state);
 
         match grammar::module(parser, file_id, name_id) {

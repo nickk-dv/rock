@@ -1,3 +1,5 @@
+use crate::error::{ErrorComp, SourceRange};
+use crate::session::FileID;
 use crate::text::TextRange;
 use crate::token::token_list::TokenList;
 use crate::token::Token;
@@ -7,15 +9,19 @@ pub struct Lexer<'src> {
     source: &'src str,
     chars: Peekable<Chars<'src>>,
     range: TextRange,
+    file_id: FileID,
+    errors: Vec<ErrorComp>,
     lex_whitespace: bool,
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(source: &'src str, lex_whitespace: bool) -> Self {
+    pub fn new(source: &'src str, file_id: FileID, lex_whitespace: bool) -> Self {
         Self {
             source,
             chars: source.chars().peekable(),
             range: TextRange::empty_at(0.into()),
+            file_id,
+            errors: Vec::new(),
             lex_whitespace,
         }
     }
@@ -43,7 +49,7 @@ impl<'src> Lexer<'src> {
         self.range
     }
 
-    pub fn lex(mut self) -> TokenList {
+    pub fn lex(mut self) -> Result<TokenList, Vec<ErrorComp>> {
         let init_cap = self.source.len() / 8;
         let mut tokens = TokenList::new(init_cap);
 
@@ -84,7 +90,12 @@ impl<'src> Lexer<'src> {
         for _ in 0..4 {
             tokens.add_token(Token::Eof, TextRange::empty_at(0.into()));
         }
-        tokens
+
+        if self.errors.is_empty() {
+            Ok(tokens)
+        } else {
+            Err(self.errors)
+        }
     }
 
     fn skip_whitespace(&mut self, tokens: &mut TokenList) {
@@ -142,7 +153,7 @@ impl<'src> Lexer<'src> {
 
     fn lex_escape(&mut self) -> Result<char, bool> {
         if let Some(c) = self.peek() {
-            self.eat(c); // always eat?
+            self.eat(c); //@always eat?
             match c {
                 'n' => Ok('\n'),
                 't' => Ok('\t'),
@@ -164,13 +175,19 @@ impl<'src> Lexer<'src> {
                 self.eat(c);
                 c
             }
-            None => panic!("missing char lit character"),
+            None => {
+                self.errors.push(
+                    ErrorComp::error("expected character literal")
+                        .context(SourceRange::new(self.token_range(), self.file_id)),
+                );
+                return (' ', self.token_range());
+            }
         };
 
         let mut terminated = false;
         let char = match fc {
             '\\' => {
-                //self.eat(fc);
+                //@self.eat(fc);
                 match self.lex_escape() {
                     Ok(char) => char,
                     Err(invalid) => {
@@ -242,7 +259,10 @@ impl<'src> Lexer<'src> {
         }
 
         if !terminated {
-            panic!("string lit not terminated, missing closing `\"`");
+            self.errors.push(
+                ErrorComp::error("string literal not terminated, missing closing \"")
+                    .context(SourceRange::new(self.token_range(), self.file_id)),
+            );
         }
 
         (string, self.token_range())
@@ -268,7 +288,10 @@ impl<'src> Lexer<'src> {
         }
 
         if !terminated {
-            panic!("raw string lit not terminated, missing closing `");
+            self.errors.push(
+                ErrorComp::error("raw string literal not terminated, missing closing `")
+                    .context(SourceRange::new(self.token_range(), self.file_id)),
+            );
         }
 
         (string, self.token_range())
@@ -276,6 +299,7 @@ impl<'src> Lexer<'src> {
 
     fn lex_number(&mut self) -> (Token, TextRange) {
         let mut is_float = false;
+
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 self.eat(c);

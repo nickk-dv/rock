@@ -1,4 +1,4 @@
-use super::hir_build::{self as hb, HirData, HirEmit, SymbolKind};
+use super::hir_build::{HirData, HirEmit, SymbolKind};
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
@@ -46,7 +46,7 @@ fn typecheck_proc<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, i
     }
 }
 
-pub fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
+fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
     match (ty, ty2) {
         (hir::Type::Error, ..) => true,
         (.., hir::Type::Error) => true,
@@ -60,9 +60,6 @@ pub fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
             slice.mutt == slice2.mutt && type_matches(slice.ty, slice2.ty)
         }
-        //@division of 2 kinds of static sized arrays
-        // makes this eq check totally incorrect, for now
-        // or theres needs to be a 4 cases to compare them all
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
             //@size const_expr is ignored
             type_matches(array.ty, array2.ty)
@@ -113,37 +110,11 @@ fn type_format<'hir>(hir: &HirData<'hir, '_>, ty: hir::Type<'hir>) -> String {
     }
 }
 
-#[derive(Copy, Clone)]
-struct BlockFlags {
-    in_loop: bool,
-    in_defer: bool,
-}
+//@need some way to recognize if loop was started within in defer
+// to allow break / continue to be used there
+// thats part of current design, otherwise break and continue cannot be part of defer block
 
-impl BlockFlags {
-    fn entry() -> BlockFlags {
-        BlockFlags {
-            in_loop: false,
-            in_defer: false,
-        }
-    }
-    //@need some way to recognize if loop was started while in defer
-    // since break / continue cannot be used in defer in loops that originate
-    // outside of that defer (defer is by design simple to think about)
-    fn enter_defer(self) -> BlockFlags {
-        BlockFlags {
-            in_loop: self.in_loop,
-            in_defer: true,
-        }
-    }
-
-    fn enter_loop(self) -> BlockFlags {
-        BlockFlags {
-            in_loop: true,
-            in_defer: self.in_defer,
-        }
-    }
-}
-
+//@re-use same proc scope to avoid frequent re-alloc (not important yet)
 pub struct ProcScope<'hir, 'check> {
     data: &'check hir::ProcData<'hir>,
     blocks: Vec<BlockData>,
