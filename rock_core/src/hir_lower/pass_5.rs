@@ -259,7 +259,7 @@ fn typecheck_expr<'hir>(
             typecheck_cast(hir, emit, proc, target, ty, expr.range)
         }
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, expr.range.start(), ty),
-        ast::ExprKind::Item { path } => typecheck_placeholder(emit),
+        ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::ProcCall { proc_call } => {
             typecheck_proc_call(hir, emit, proc, proc_call, expr.range)
         }
@@ -272,15 +272,14 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Binary { op, lhs, rhs } => typecheck_placeholder(emit),
     };
 
-    //@disabled due to noise when testing name resolution
-    //if !type_matches(expect, expr_res.ty) {
-    //    let msg: String = format!(
-    //        "type mismatch: expected `{}`, found `{}`",
-    //        type_format(hir, expect),
-    //        type_format(hir, expr_res.ty)
-    //    );
-    //    emit.error(ErrorComp::error(msg).context(hir.src(proc.origin_id(), expr.range)));
-    //}
+    if !type_matches(expect, expr_res.ty) {
+        let msg: String = format!(
+            "type mismatch: expected `{}`, found `{}`",
+            type_format(hir, expect),
+            type_format(hir, expr_res.ty)
+        );
+        emit.error(ErrorComp::error(msg).context(hir.src(proc.origin_id(), expr.range)));
+    }
 
     expr_res
 }
@@ -706,6 +705,53 @@ fn typecheck_sizeof<'hir>(
     TypeResult::new(hir::Type::Basic(ast::BasicType::Usize), hir_expr)
 }
 
+fn typecheck_item<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    path: &ast::Path,
+) -> TypeResult<'hir> {
+    let value_id = path_resolve_value(hir, emit, Some(proc), proc.origin_id(), path);
+
+    match value_id {
+        ValueID::None => {
+            return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
+        }
+        ValueID::Enum(id) => {
+            //@resolve variant, based on remaining path names
+            return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
+        }
+        ValueID::Const(id) => {
+            //@resolve potential field access chain
+            return TypeResult::new(
+                hir.const_data(id).ty,
+                emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
+            );
+        }
+        ValueID::Global(id) => {
+            //@resolve potential field access chain
+            return TypeResult::new(
+                hir.global_data(id).ty,
+                emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
+            );
+        }
+        ValueID::Local(id) => {
+            //@resolve potential field access chain
+            return TypeResult::new(
+                proc.get_local(id).ty,
+                emit.arena.alloc(hir::Expr::LocalVar { local_id: id }),
+            );
+        }
+        ValueID::Param(id) => {
+            //@resolve potential field access chain
+            return TypeResult::new(
+                proc.get_param(id).ty,
+                emit.arena.alloc(hir::Expr::ParamVar { param_id: id }),
+            );
+        }
+    }
+}
+
 fn typecheck_proc_call<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
@@ -986,53 +1032,36 @@ enum ResolvedPath {
     Symbol(SymbolKind, SourceRange),
 }
 
-//@need to return slice of remaining names
-// and if additional names are not expected
-// emit error on the spot
 fn path_resolve<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,
     path: &ast::Path,
-) -> ResolvedPath {
+) -> (ResolvedPath, usize) {
     let name = path.names.first().cloned().expect("non empty path");
 
     if let Some(proc) = proc {
-        if let Some(var) = proc.find_variable(name.id) {
-            return ResolvedPath::Variable(var);
+        if let Some(var_id) = proc.find_variable(name.id) {
+            return (ResolvedPath::Variable(var_id), 0);
         }
     }
 
-    let (kind, source) = match hir.symbol_from_scope(emit, origin_id, origin_id, name) {
-        Some(it) => it,
-        None => return ResolvedPath::None,
-    };
-    let target_id = match kind {
-        SymbolKind::Module(id) => id,
-        _ => return ResolvedPath::Symbol(kind, source),
-    };
-
-    //@instead when no 2nd name exists still return SymbolKind for module
-    // and later specific path resolve function would report:
-    // expected type, found module
-    // expected procedure, found struct
-    let name = match path.names.iter().nth(1).cloned() {
-        Some(it) => it,
-        None => {
-            emit.error(
-                ErrorComp::error("path does not lead to an item")
-                    .context(hir.src(origin_id, name.range)),
-            );
-            return ResolvedPath::None;
+    let (module_id, name) = match hir.symbol_from_scope(emit, origin_id, origin_id, name) {
+        Some((kind, source)) => {
+            let next_name = path.names.get(1).cloned();
+            match (kind, next_name) {
+                (SymbolKind::Module(module_id), Some(name)) => (module_id, name),
+                _ => return (ResolvedPath::Symbol(kind, source), 0),
+            }
         }
-    };
-    let (kind, source) = match hir.symbol_from_scope(emit, origin_id, target_id, name) {
-        Some(it) => it,
-        None => return ResolvedPath::None,
+        None => return (ResolvedPath::None, 0),
     };
 
-    return ResolvedPath::Symbol(kind, source);
+    match hir.symbol_from_scope(emit, origin_id, module_id, name) {
+        Some((kind, source)) => (ResolvedPath::Symbol(kind, source), 1),
+        None => return (ResolvedPath::None, 1),
+    }
 }
 
 pub fn path_resolve_type<'hir>(
@@ -1042,15 +1071,27 @@ pub fn path_resolve_type<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
-    let resolve = path_resolve(hir, emit, proc, origin_id, path);
-    match resolve {
+    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    match resolved {
         ResolvedPath::None => hir::Type::Error,
-        ResolvedPath::Variable(_) => hir::Type::Error,
+        ResolvedPath::Variable(_) => hir::Type::Error, //@missing error message
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Enum(id) => hir::Type::Enum(id),
             SymbolKind::Union(id) => hir::Type::Union(id),
             SymbolKind::Struct(id) => hir::Type::Struct(id),
-            _ => hir::Type::Error,
+            _ => {
+                let name = path.names[name_idx];
+                emit.error(
+                    ErrorComp::error(format!(
+                        "expected type, found {} `{}`",
+                        HirData::symbol_kind_name(kind),
+                        hir.name_str(name.id)
+                    ))
+                    .context(hir.src(origin_id, name.range))
+                    .context_info("defined here", source),
+                );
+                hir::Type::Error
+            }
         },
     }
 }
@@ -1062,13 +1103,25 @@ fn path_resolve_proc<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path,
 ) -> Option<hir::ProcID> {
-    let resolve = path_resolve(hir, emit, proc, origin_id, path);
-    match resolve {
+    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    match resolved {
         ResolvedPath::None => None,
-        ResolvedPath::Variable(_) => None,
+        ResolvedPath::Variable(_) => None, //@missing error message
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Proc(id) => Some(id),
-            _ => None,
+            _ => {
+                let name = path.names[name_idx];
+                emit.error(
+                    ErrorComp::error(format!(
+                        "expected procedure, found {} `{}`",
+                        HirData::symbol_kind_name(kind),
+                        hir.name_str(name.id)
+                    ))
+                    .context(hir.src(origin_id, name.range))
+                    .context_info("defined here", source),
+                );
+                None
+            }
         },
     }
 }
@@ -1086,14 +1139,70 @@ fn path_resolve_structure<'hir>(
     origin_id: hir::ScopeID,
     path: &ast::Path,
 ) -> StructureID {
-    let resolve = path_resolve(hir, emit, proc, origin_id, path);
-    match resolve {
+    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    match resolved {
         ResolvedPath::None => StructureID::None,
-        ResolvedPath::Variable(_) => StructureID::None,
+        ResolvedPath::Variable(_) => StructureID::None, //@missing error message
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Union(id) => StructureID::Union(id),
             SymbolKind::Struct(id) => StructureID::Struct(id),
-            _ => StructureID::None,
+            _ => {
+                let name = path.names[name_idx];
+                emit.error(
+                    ErrorComp::error(format!(
+                        "expected struct or union, found {} `{}`",
+                        HirData::symbol_kind_name(kind),
+                        hir.name_str(name.id)
+                    ))
+                    .context(hir.src(origin_id, name.range))
+                    .context_info("defined here", source),
+                );
+                StructureID::None
+            }
+        },
+    }
+}
+
+enum ValueID {
+    None,
+    Enum(hir::EnumID),
+    Const(hir::ConstID),
+    Global(hir::GlobalID),
+    Local(hir::LocalID),
+    Param(hir::ProcParamID),
+}
+
+fn path_resolve_value<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: Option<&ProcScope<'hir, '_>>,
+    origin_id: hir::ScopeID,
+    path: &ast::Path,
+) -> ValueID {
+    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    match resolved {
+        ResolvedPath::None => ValueID::None,
+        ResolvedPath::Variable(var) => match var {
+            VariableID::Local(id) => ValueID::Local(id),
+            VariableID::Param(id) => ValueID::Param(id),
+        },
+        ResolvedPath::Symbol(kind, source) => match kind {
+            SymbolKind::Enum(id) => ValueID::Enum(id),
+            SymbolKind::Const(id) => ValueID::Const(id),
+            SymbolKind::Global(id) => ValueID::Global(id),
+            _ => {
+                let name = path.names[name_idx];
+                emit.error(
+                    ErrorComp::error(format!(
+                        "expected value, found {} `{}`",
+                        HirData::symbol_kind_name(kind),
+                        hir.name_str(name.id)
+                    ))
+                    .context(hir.src(origin_id, name.range))
+                    .context_info("defined here", source),
+                );
+                ValueID::None
+            }
         },
     }
 }
