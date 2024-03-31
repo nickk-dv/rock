@@ -86,37 +86,16 @@ fn resolve_import<'hir, 'ast>(
             None => symbol.name,
         };
 
-        match hir.symbol_from_scope(origin_id, target_id, item_name.id) {
-            Some((kind, vis, source)) => {
-                if vis == ast::Vis::Private {
-                    emit.error(
-                        ErrorComp::error(format!(
-                            "item `{}` is private",
-                            hir.name_str(item_name.id)
-                        ))
-                        .context(hir.src(origin_id, item_name.range))
-                        .context_info("defined here", source),
+        match hir.symbol_from_scope(emit, origin_id, target_id, item_name) {
+            Some((kind, source)) => match hir.scope_name_defined(origin_id, alias_name.id) {
+                Some(existing) => {
+                    super::pass_1::name_already_defined_error(
+                        hir, emit, origin_id, alias_name, existing,
                     );
-                    continue;
                 }
-                match hir.scope_name_defined(origin_id, alias_name.id) {
-                    Some(existing) => {
-                        super::pass_1::name_already_defined_error(
-                            hir, emit, origin_id, alias_name, existing,
-                        );
-                    }
-                    None => hir.scope_add_imported(origin_id, alias_name, kind),
-                }
-            }
-            None => {
-                emit.error(
-                    ErrorComp::error(format!(
-                        "name `{}` is not found in module", //@display module path?
-                        hir.name_str(item_name.id)
-                    ))
-                    .context(hir.src(origin_id, item_name.range)),
-                );
-            }
+                None => hir.scope_add_imported(origin_id, alias_name, kind),
+            },
+            None => {}
         }
     }
 }

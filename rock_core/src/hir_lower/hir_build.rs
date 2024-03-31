@@ -135,12 +135,13 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
 
     pub fn symbol_from_scope(
         &self,
+        emit: &mut HirEmit<'hir>,
         origin_id: hir::ScopeID,
         target_id: hir::ScopeID,
-        id: InternID,
-    ) -> Option<(SymbolKind, ast::Vis, SourceRange)> {
+        name: ast::Name,
+    ) -> Option<(SymbolKind, SourceRange)> {
         let target = self.scope(target_id);
-        match target.symbols.get(&id).cloned() {
+        match target.symbols.get(&name.id).cloned() {
             Some(symbol) => match symbol {
                 Symbol::Defined { kind } => {
                     let source =
@@ -150,24 +151,61 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
                     } else {
                         self.symbol_kind_vis(kind)
                     };
-                    Some((kind, vis, source))
+                    if vis == ast::Vis::Private {
+                        emit.error(
+                            ErrorComp::error(format!(
+                                "{} `{}` is private",
+                                Self::symbol_kind_name(kind),
+                                self.name_str(name.id)
+                            ))
+                            .context(self.src(origin_id, name.range))
+                            .context_info("defined here", source),
+                        );
+                        None
+                    } else {
+                        Some((kind, source))
+                    }
                 }
                 Symbol::Imported { kind, import_range } => {
                     if origin_id == target_id {
                         let source = SourceRange::new(import_range, target.module.file_id);
-                        Some((kind, ast::Vis::Public, source))
+                        Some((kind, source))
                     } else {
                         None
                     }
                 }
             },
-            None => None,
+            None => {
+                //@sometimes its in self scope
+                // else its in some module.
+                // display module path?
+                emit.error(
+                    ErrorComp::error(format!(
+                        "name `{}` is not found in module",
+                        self.name_str(name.id)
+                    ))
+                    .context(self.src(origin_id, name.range)),
+                );
+                None
+            }
         }
     }
 
     fn scope_add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
         let scope = &mut self.scopes[origin_id.index()];
         scope.symbols.insert(id, symbol);
+    }
+
+    pub fn symbol_kind_name(kind: SymbolKind) -> &'static str {
+        match kind {
+            SymbolKind::Proc(_) => "procedure",
+            SymbolKind::Enum(_) => "enum",
+            SymbolKind::Union(_) => "union",
+            SymbolKind::Struct(_) => "struct",
+            SymbolKind::Const(_) => "constant",
+            SymbolKind::Global(_) => "global",
+            SymbolKind::Module(_) => "module",
+        }
     }
 
     fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
