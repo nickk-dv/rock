@@ -1,4 +1,5 @@
 use super::hir_build::{HirData, HirEmit, SymbolKind};
+use super::proc_scope::{ProcScope, VariableID};
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
@@ -110,87 +111,6 @@ fn type_format<'hir>(hir: &HirData<'hir, '_>, ty: hir::Type<'hir>) -> String {
     }
 }
 
-//@need some way to recognize if loop was started within in defer
-// to allow break / continue to be used there
-// thats part of current design, otherwise break and continue cannot be part of defer block
-
-//@re-use same proc scope to avoid frequent re-alloc (not important yet)
-pub struct ProcScope<'hir, 'check> {
-    data: &'check hir::ProcData<'hir>,
-    blocks: Vec<BlockData>,
-    locals: Vec<&'hir hir::Local<'hir>>,
-    locals_in_scope: Vec<hir::LocalID>,
-}
-
-struct BlockData {
-    in_loop: bool,
-    in_defer: bool,
-    local_count: u32,
-}
-
-enum VariableID {
-    Local(hir::LocalID),
-    Param(hir::ProcParamID),
-}
-
-impl<'hir, 'check> ProcScope<'hir, 'check> {
-    fn new(data: &'check hir::ProcData<'hir>) -> Self {
-        ProcScope {
-            data,
-            blocks: Vec::new(),
-            locals: Vec::new(),
-            locals_in_scope: Vec::new(),
-        }
-    }
-
-    fn push_block(&mut self) {
-        self.blocks.push(BlockData {
-            in_loop: false,
-            in_defer: false,
-            local_count: 0,
-        });
-    }
-
-    fn push_local(&mut self, local: &'hir hir::Local<'hir>) {
-        let local_id = hir::LocalID::new(self.locals.len());
-        self.locals.push(local);
-        self.locals_in_scope.push(local_id);
-        self.blocks.last_mut().expect("block exists").local_count += 1;
-    }
-
-    fn pop_block(&mut self) {
-        let block = self.blocks.pop().expect("block exists");
-        for _ in 0..block.local_count {
-            self.locals_in_scope.pop();
-        }
-    }
-
-    fn origin_id(&self) -> hir::ScopeID {
-        self.data.origin_id
-    }
-    fn get_local(&self, id: hir::LocalID) -> &'hir hir::Local<'hir> {
-        self.locals[id.index()]
-    }
-    fn get_param(&self, id: hir::ProcParamID) -> &'hir hir::ProcParam<'hir> {
-        &self.data.params[id.index()]
-    }
-
-    fn find_variable(&self, id: InternID) -> Option<VariableID> {
-        for (idx, param) in self.data.params.iter().enumerate() {
-            if param.name.id == id {
-                let id = hir::ProcParamID::new(idx);
-                return Some(VariableID::Param(id));
-            }
-        }
-        for local_id in self.locals_in_scope.iter().cloned() {
-            if self.get_local(local_id).name.id == id {
-                return Some(VariableID::Local(local_id));
-            }
-        }
-        None
-    }
-}
-
 struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     expr: &'hir hir::Expr<'hir>,
@@ -251,7 +171,7 @@ fn typecheck_expr<'hir>(
             type_format(hir, expect),
             type_format(hir, expr_res.ty)
         );
-        emit.error(ErrorComp::error(msg).context(hir.src(proc.origin_id(), expr.range)));
+        emit.error(ErrorComp::error(msg).context(hir.src(proc.origin(), expr.range)));
     }
 
     expr_res
@@ -465,7 +385,7 @@ fn verify_type_field<'hir>(
                             hir.name_str(name.id),
                             hir.name_str(data.name.id),
                         ))
-                        .context(hir.src(proc.origin_id(), name.range)),
+                        .context(hir.src(proc.origin(), name.range)),
                     );
                     (hir::Type::Error, FieldExprKind::None)
                 }
@@ -485,7 +405,7 @@ fn verify_type_field<'hir>(
                             hir.name_str(name.id),
                             hir.name_str(data.name.id),
                         ))
-                        .context(hir.src(proc.origin_id(), name.range)),
+                        .context(hir.src(proc.origin(), name.range)),
                     );
                     (hir::Type::Error, FieldExprKind::None)
                 }
@@ -499,7 +419,7 @@ fn verify_type_field<'hir>(
                     hir.name_str(name.id),
                     ty_format,
                 ))
-                .context(hir.src(proc.origin_id(), name.range)),
+                .context(hir.src(proc.origin(), name.range)),
             );
             (hir::Type::Error, FieldExprKind::None)
         }
@@ -539,7 +459,7 @@ fn typecheck_index<'hir>(
             let ty_format = type_format(hir, target_res.ty);
             emit.error(
                 ErrorComp::error(format!("cannot index value of type {}", ty_format))
-                    .context(hir.src(proc.origin_id(), index.range)),
+                    .context(hir.src(proc.origin(), index.range)),
             );
             TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
         }
@@ -564,7 +484,7 @@ fn typecheck_cast<'hir>(
     cast_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
-    let cast_ty = super::pass_3::type_resolve(hir, emit, proc.origin_id(), *ty);
+    let cast_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), *ty);
 
     match (target_res.ty, cast_ty) {
         (hir::Type::Error, ..) => {}
@@ -580,7 +500,7 @@ fn typecheck_cast<'hir>(
                 ErrorComp::error(format!(
                     "non privitive cast from `{from_format}` into `{into_format}`",
                 ))
-                .context(hir.src(proc.origin_id(), cast_range)),
+                .context(hir.src(proc.origin(), cast_range)),
             );
         }
     }
@@ -605,7 +525,7 @@ fn typecheck_sizeof<'hir>(
     start: TextOffset,
     ty: ast::Type,
 ) -> TypeResult<'hir> {
-    let ty = super::pass_3::type_resolve(hir, emit, proc.origin_id(), ty);
+    let ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
 
     let size = match ty {
         hir::Type::Basic(basic) => {
@@ -636,7 +556,7 @@ fn typecheck_sizeof<'hir>(
                 ErrorComp::error(
                     "sizeof for user defined or static array types is not yet supported",
                 )
-                .context(hir.src(proc.origin_id(), TextRange::new(start, start + 6.into()))),
+                .context(hir.src(proc.origin(), TextRange::new(start, start + 6.into()))),
             );
             None
         }
@@ -662,7 +582,7 @@ fn typecheck_item<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
 ) -> TypeResult<'hir> {
-    let value_id = path_resolve_value(hir, emit, Some(proc), proc.origin_id(), path);
+    let value_id = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
 
     match value_id {
         ValueID::None => {
@@ -710,7 +630,7 @@ fn typecheck_proc_call<'hir>(
     proc_call: &ast::ProcCall<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let proc_id = match path_resolve_proc(hir, emit, Some(proc), proc.origin_id(), proc_call.path) {
+    let proc_id = match path_resolve_proc(hir, emit, Some(proc), proc.origin(), proc_call.path) {
         Some(id) => id,
         None => {
             for &expr in proc_call.input {
@@ -740,7 +660,7 @@ fn typecheck_proc_call<'hir>(
         let data = hir.proc_data(proc_id);
         emit.error(
             ErrorComp::error("unexpected number of input arguments")
-                .context(hir.src(proc.origin_id(), expr_range))
+                .context(hir.src(proc.origin(), expr_range))
                 .context_info(
                     "calling this procedure",
                     hir.src(data.origin_id, data.name.range),
@@ -760,7 +680,7 @@ fn typecheck_struct_init<'hir>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_id =
-        match path_resolve_structure(hir, emit, Some(proc), proc.origin_id(), struct_init.path) {
+        match path_resolve_structure(hir, emit, Some(proc), proc.origin(), struct_init.path) {
             StructureID::Struct(id) => id,
             _ => {
                 //@union case is ignored for now
@@ -789,7 +709,7 @@ fn typecheck_struct_init<'hir>(
         let data = hir.struct_data(struct_id);
         emit.error(
             ErrorComp::error("unexpected number of input fields")
-                .context(hir.src(proc.origin_id(), expr_range))
+                .context(hir.src(proc.origin(), expr_range))
                 .context_info(
                     "calling this procedure",
                     hir.src(data.origin_id, data.name.range),
@@ -811,11 +731,12 @@ fn typecheck_array_init<'hir>(
     expect: hir::Type<'hir>,
     input: &[&ast::Expr<'_>],
 ) -> TypeResult<'hir> {
-    let mut first_elem = hir::Type::Error;
     let mut expect_elem = match expect {
         hir::Type::ArrayStatic(array) => array.ty,
         _ => hir::Type::Error,
     };
+
+    let mut first_elem = hir::Type::Error;
 
     let mut input_iter = input.iter().cloned();
 
@@ -853,7 +774,23 @@ fn typecheck_array_repeat<'hir>(
     expr: &ast::Expr,
     size: ast::ConstExpr,
 ) -> TypeResult<'hir> {
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+    let expect_elem = match expect {
+        hir::Type::ArrayStatic(array) => array.ty,
+        _ => hir::Type::Error,
+    };
+
+    let expr_res = typecheck_expr(hir, emit, proc, expect_elem, expr);
+    let size_res = super::pass_4::const_expr_resolve(hir, emit, proc.origin(), size);
+
+    let array = emit.arena.alloc(hir::ArrayStatic {
+        size: size_res,
+        ty: expr_res.ty,
+    });
+    let hir_expr = emit.arena.alloc(hir::Expr::ArrayRepeat {
+        expr: expr_res.expr,
+        size: size_res,
+    });
+    TypeResult::new(hir::Type::ArrayStatic(array), hir_expr)
 }
 
 fn typecheck_unary<'hir>(
@@ -909,9 +846,8 @@ fn typecheck_unary<'hir>(
     };
 
     if let hir::Type::Error = unary_ty {
-        //@unary op str is same as token to_str
-        // but those are separate types, this could be adressed to de-duplicate
-        // op => &str conversion
+        //@unary op &str is same as token.to_str()
+        // but those are separate types, this could be de-duplicated
         let op_str = match op {
             ast::UnOp::Neg => "-",
             ast::UnOp::BitNot => "~",
@@ -927,11 +863,11 @@ fn typecheck_unary<'hir>(
                 "unary operator `{op_str}` cannot be applied to `{}`",
                 type_format(hir, rhs_res.ty)
             ))
-            .context(hir.src(proc.origin_id(), rhs.range)),
+            .context(hir.src(proc.origin(), rhs.range)),
         );
     }
 
-    return TypeResult::new(unary_ty, rhs_res.expr);
+    TypeResult::new(unary_ty, rhs_res.expr)
 }
 
 fn typecheck_binary<'hir>(
@@ -984,22 +920,22 @@ fn typecheck_block<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
-    stmts: &[ast::Stmt<'_>],
+    stmts: &[ast::Stmt],
 ) -> TypeResult<'hir> {
+    proc.push_block();
+
     let mut block_ty = None;
 
     for (idx, stmt) in stmts.iter().enumerate() {
         match stmt.kind {
-            ast::StmtKind::Break => typecheck_stmt_break(hir, emit, proc, stmt.range),
-            ast::StmtKind::Continue => {
-                typecheck_stmt_continue(hir, emit, proc, stmt.range);
-            }
-            ast::StmtKind::Return(ret_expr) => {}
+            ast::StmtKind::Break => typecheck_break(hir, emit, proc, stmt.range),
+            ast::StmtKind::Continue => typecheck_continue(hir, emit, proc, stmt.range),
+            ast::StmtKind::Return(expr) => typecheck_return(hir, emit, proc, stmt.range, expr),
             ast::StmtKind::Defer(block) => {
-                typecheck_stmt_defer(hir, emit, proc, stmt.range.start(), block)
+                typecheck_defer(hir, emit, proc, stmt.range.start(), block)
             }
             ast::StmtKind::ForLoop(for_) => {}
-            ast::StmtKind::Local(local) => {}
+            ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
             ast::StmtKind::Assign(assign) => {}
             ast::StmtKind::ExprSemi(expr) => {
                 let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
@@ -1024,6 +960,8 @@ fn typecheck_block<'hir>(
         }
     }
 
+    proc.pop_block();
+
     // when type expectation was passed to tail expr
     // return Type::Error to not trigger duplicate type mismatch errors
     if block_ty.is_some() {
@@ -1036,58 +974,66 @@ fn typecheck_block<'hir>(
     }
 }
 
-fn typecheck_stmt_break<'hir>(
+fn typecheck_break<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
 ) {
-    //@proc block flags
-    /*
-    if !block_flags.in_loop {
+    if !proc.get_block().in_loop {
         emit.error(
             ErrorComp::error("cannot use `break` outside of a loop")
-                .context(hir.src(proc.origin_id(), range)),
+                .context(hir.src(proc.origin(), range)),
         );
     }
-    */
 }
 
-fn typecheck_stmt_continue<'hir>(
+fn typecheck_continue<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
 ) {
-    //@proc block flags
-    /*
-    if !block_flags.in_loop {
+    if !proc.get_block().in_loop {
         emit.error(
             ErrorComp::error("cannot use `continue` outside of a loop")
-                .context(hir.src(proc.origin_id(), range)),
+                .context(hir.src(proc.origin(), range)),
         );
     }
-    */
+}
+
+fn typecheck_return<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    range: TextRange,
+    expr: Option<&ast::Expr>,
+) {
+    if let Some(expr) = expr {
+        let expect = proc.data().return_ty;
+        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+    } else {
+        //@figure out a way to report return type related errors
+        // this also applies to tail return expression in blocks
+        //@does empty return need its own unique error?
+    }
 }
 
 //@allow break and continue from loops that originated within defer itself
 // this can probably be done via resetting the in_loop when entering defer block
-fn typecheck_stmt_defer<'hir>(
+fn typecheck_defer<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     start: TextOffset,
     block: &ast::Expr<'_>,
 ) {
-    //@proc block flags
-    /*
-    if block_flags.in_defer {
+    if proc.get_block().in_defer {
         emit.error(
-            ErrorComp::error("`defer` statement cannot be nested")
-                .context(hir.src(proc.origin_id(), TextRange::new(start, start + 5.into()))),
+            ErrorComp::error("`defer` statements cannot be nested")
+                .context(hir.src(proc.origin(), TextRange::new(start, start + 5.into()))),
         );
     }
-    */
     let _ = typecheck_expr(
         hir,
         emit,
@@ -1095,6 +1041,65 @@ fn typecheck_stmt_defer<'hir>(
         hir::Type::Basic(ast::BasicType::Unit),
         block,
     );
+}
+
+fn typecheck_local<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    local: &ast::Local,
+) {
+    if let Some(existing) = hir.scope_name_defined(proc.origin(), local.name.id) {
+        super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
+        return; //@not checking type and expr in case of name duplicate (need to check)
+    }
+
+    //@theres no `nice` way to find both existing name from global (hir) scope
+    // and proc_scope, those are so far disconnected,
+    // some unified model of symbols might be better in the future
+    // this also applies to SymbolKind which is separate from VariableID (leads to some issues in path resolve) @1.04.24
+    if let Some(existing_var) = proc.find_variable(local.name.id) {
+        let existing = match existing_var {
+            VariableID::Local(id) => hir.src(proc.origin(), proc.get_local(id).name.range),
+            VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
+        };
+        super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
+        return; //@not checking type and expr in case of name duplicate (need to check)
+    }
+
+    //@local type can be both not specified and not inferred by the expression
+    // this is currently being represented as hir::Type::Error
+    // instead of having some UnknownType.
+    // also proc_scope stores hir::Local which are immutable
+    // so type cannot be filled in after the fact.
+    //@this could be adressed by requiring type or expression on local
+    // this could be a valid design choice:
+    // bindings like: `let x; let y;` dont make too much sence, and can be confusing; @1.04.24
+
+    let mut local_ty = match local.ty {
+        Some(ty) => super::pass_3::type_resolve(hir, emit, proc.origin(), ty),
+        None => hir::Type::Error,
+    };
+
+    let local_value = match local.value {
+        Some(expr) => {
+            let expr_res = typecheck_expr(hir, emit, proc, local_ty, expr);
+            if local.ty.is_none() {
+                local_ty = expr_res.ty;
+            }
+            Some(expr_res.expr)
+        }
+        None => None,
+    };
+
+    let local = emit.arena.alloc(hir::Local {
+        mutt: local.mutt,
+        name: local.name,
+        ty: local_ty,
+        value: local_value,
+    });
+
+    proc.push_local(local);
 }
 
 /*

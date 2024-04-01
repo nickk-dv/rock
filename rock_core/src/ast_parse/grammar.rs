@@ -440,14 +440,14 @@ fn local<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Local<'ast>, String
 
     let name = name(p)?;
     let ty = if p.eat(T![:]) { Some(ty(p)?) } else { None };
-    let expr = if p.eat(T![=]) { Some(expr(p)?) } else { None };
+    let value = if p.eat(T![=]) { Some(expr(p)?) } else { None };
     p.expect(T![;])?;
 
     Ok(p.state.arena.alloc(Local {
         mutt,
         name,
         ty,
-        expr,
+        value,
     }))
 }
 

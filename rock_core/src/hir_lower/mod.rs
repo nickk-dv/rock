@@ -4,6 +4,7 @@ mod pass_2;
 mod pass_3;
 mod pass_4;
 mod pass_5;
+mod proc_scope;
 
 use crate::ast;
 use crate::error::ErrorComp;

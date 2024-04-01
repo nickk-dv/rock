@@ -202,7 +202,7 @@ pub struct Local<'ast> {
     pub mutt: Mut,
     pub name: Name,
     pub ty: Option<Type<'ast>>,
-    pub expr: Option<&'ast Expr<'ast>>,
+    pub value: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone)]

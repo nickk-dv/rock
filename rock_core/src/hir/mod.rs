@@ -181,7 +181,7 @@ pub struct Local<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub expr: Option<&'hir Expr<'hir>>,
+    pub value: Option<&'hir Expr<'hir>>,
 }
 
 #[derive(Copy, Clone)]
