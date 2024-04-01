@@ -238,9 +238,11 @@ fn typecheck_expr<'hir>(
             typecheck_struct_init(hir, emit, proc, struct_init, expr.range)
         }
         ast::ExprKind::ArrayInit { input } => typecheck_array_init(hir, emit, proc, expect, input),
-        ast::ExprKind::ArrayRepeat { expr, size } => typecheck_placeholder(emit),
-        ast::ExprKind::Unary { op, rhs } => typecheck_placeholder(emit),
-        ast::ExprKind::Binary { op, lhs, rhs } => typecheck_placeholder(emit),
+        ast::ExprKind::ArrayRepeat { expr, size } => {
+            typecheck_array_repeat(hir, emit, proc, expect, expr, size)
+        }
+        ast::ExprKind::Unary { op, rhs } => typecheck_unary(hir, emit, proc, op, rhs),
+        ast::ExprKind::Binary { op, lhs, rhs } => typecheck_binary(hir, emit, proc, op, lhs, rhs),
     };
 
     if !type_matches(expect, expr_res.ty) {
@@ -253,10 +255,6 @@ fn typecheck_expr<'hir>(
     }
 
     expr_res
-}
-
-fn typecheck_placeholder<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
 fn typecheck_unit<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
@@ -289,8 +287,6 @@ fn typecheck_lit_int<'hir>(
 
     let lit_type = match expect {
         hir::Type::Basic(basic) => match basic {
-            ast::BasicType::Unit => DEFAULT_INT_TYPE,
-            ast::BasicType::Bool => DEFAULT_INT_TYPE,
             ast::BasicType::S8
             | ast::BasicType::S16
             | ast::BasicType::S32
@@ -301,10 +297,7 @@ fn typecheck_lit_int<'hir>(
             | ast::BasicType::U32
             | ast::BasicType::U64
             | ast::BasicType::Usize => basic,
-            ast::BasicType::F32 => DEFAULT_INT_TYPE,
-            ast::BasicType::F64 => DEFAULT_INT_TYPE,
-            ast::BasicType::Char => DEFAULT_INT_TYPE,
-            ast::BasicType::Rawptr => DEFAULT_INT_TYPE,
+            _ => DEFAULT_INT_TYPE,
         },
         _ => DEFAULT_INT_TYPE,
     };
@@ -324,21 +317,8 @@ fn typecheck_lit_float<'hir>(
 
     let lit_type = match expect {
         hir::Type::Basic(basic) => match basic {
-            ast::BasicType::Unit => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::Bool => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::S8 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::S16 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::S32 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::S64 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::Ssize => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::U8 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::U16 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::U32 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::U64 => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::Usize => DEFAULT_FLOAT_TYPE,
             ast::BasicType::F32 | ast::BasicType::F64 => basic,
-            ast::BasicType::Char => DEFAULT_FLOAT_TYPE,
-            ast::BasicType::Rawptr => DEFAULT_FLOAT_TYPE,
+            _ => DEFAULT_FLOAT_TYPE,
         },
         _ => DEFAULT_FLOAT_TYPE,
     };
@@ -401,7 +381,7 @@ fn typecheck_if<'hir>(
         let _ = typecheck_expr(hir, emit, proc, expect, block);
     }
 
-    typecheck_placeholder(emit)
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
 fn typecheck_match<'hir>(
@@ -418,7 +398,7 @@ fn typecheck_match<'hir>(
         }
         //@check match arm expr
     }
-    typecheck_placeholder(emit)
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
 fn typecheck_field<'hir>(
@@ -863,6 +843,140 @@ fn typecheck_array_init<'hir>(
         hir::Type::ArrayStatic(array_ty),
         emit.arena.alloc(hir::Expr::Error),
     )
+}
+
+fn typecheck_array_repeat<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    expect: hir::Type<'hir>,
+    expr: &ast::Expr,
+    size: ast::ConstExpr,
+) -> TypeResult<'hir> {
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+}
+
+fn typecheck_unary<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    op: ast::UnOp,
+    rhs: &ast::Expr,
+) -> TypeResult<'hir> {
+    let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
+
+    if let hir::Type::Error = rhs_res.ty {
+        return TypeResult::new(hir::Type::Error, rhs_res.expr);
+    }
+
+    let unary_ty = match op {
+        ast::UnOp::Neg => match rhs_res.ty {
+            hir::Type::Basic(basic) => match basic {
+                ast::BasicType::S8
+                | ast::BasicType::S16
+                | ast::BasicType::S32
+                | ast::BasicType::S64
+                | ast::BasicType::Ssize
+                | ast::BasicType::F32
+                | ast::BasicType::F64 => hir::Type::Basic(basic),
+                _ => hir::Type::Error,
+            },
+            _ => hir::Type::Error,
+        },
+        ast::UnOp::BitNot => match rhs_res.ty {
+            hir::Type::Basic(basic) => match basic {
+                ast::BasicType::U8
+                | ast::BasicType::U16
+                | ast::BasicType::U32
+                | ast::BasicType::U64
+                | ast::BasicType::Usize => hir::Type::Basic(basic),
+                _ => hir::Type::Error,
+            },
+            _ => hir::Type::Error,
+        },
+        ast::UnOp::LogicNot => match rhs_res.ty {
+            hir::Type::Basic(basic) => match basic {
+                ast::BasicType::Bool => hir::Type::Basic(basic),
+                _ => hir::Type::Error,
+            },
+            _ => hir::Type::Error,
+        },
+        ast::UnOp::Deref => match rhs_res.ty {
+            hir::Type::Reference(ref_ty, ..) => *ref_ty,
+            _ => hir::Type::Error,
+        },
+        ast::UnOp::Addr(mutt) => hir::Type::Error, // @todo
+    };
+
+    if let hir::Type::Error = unary_ty {
+        //@unary op str is same as token to_str
+        // but those are separate types, this could be adressed to de-duplicate
+        // op => &str conversion
+        let op_str = match op {
+            ast::UnOp::Neg => "-",
+            ast::UnOp::BitNot => "~",
+            ast::UnOp::LogicNot => "!",
+            ast::UnOp::Deref => "*",
+            ast::UnOp::Addr(mutt) => match mutt {
+                ast::Mut::Mutable => "&mut",
+                ast::Mut::Immutable => "&",
+            },
+        };
+        emit.error(
+            ErrorComp::error(format!(
+                "unary operator `{op_str}` cannot be applied to `{}`",
+                type_format(hir, rhs_res.ty)
+            ))
+            .context(hir.src(proc.origin_id(), rhs.range)),
+        );
+    }
+
+    return TypeResult::new(unary_ty, rhs_res.expr);
+}
+
+fn typecheck_binary<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    op: ast::BinOp,
+    lhs: &ast::Expr,
+    rhs: &ast::Expr,
+) -> TypeResult<'hir> {
+    let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+    let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
+
+    match (lhs_res.ty, rhs_res.ty) {
+        (hir::Type::Error, ..) | (.., hir::Type::Error) => {
+            //@allocate proper bin_expr here?
+            return TypeResult::new(hir::Type::Error, lhs_res.expr);
+        }
+        _ => {}
+    }
+
+    /* @todo
+    match op {
+        ast::BinOp::Add => todo!(),
+        ast::BinOp::Sub => todo!(),
+        ast::BinOp::Mul => todo!(),
+        ast::BinOp::Div => todo!(),
+        ast::BinOp::Rem => todo!(),
+        ast::BinOp::BitAnd => todo!(),
+        ast::BinOp::BitOr => todo!(),
+        ast::BinOp::BitXor => todo!(),
+        ast::BinOp::BitShl => todo!(),
+        ast::BinOp::BitShr => todo!(),
+        ast::BinOp::CmpIsEq => todo!(),
+        ast::BinOp::CmpNotEq => todo!(),
+        ast::BinOp::CmpLt => todo!(),
+        ast::BinOp::CmpLtEq => todo!(),
+        ast::BinOp::CmpGt => todo!(),
+        ast::BinOp::CmpGtEq => todo!(),
+        ast::BinOp::LogicAnd => todo!(),
+        ast::BinOp::LogicOr => todo!(),
+    }
+    */
+
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
 fn typecheck_block<'hir>(
