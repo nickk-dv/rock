@@ -211,7 +211,7 @@ pub enum Expr<'hir> {
     UnionMember { target: &'hir Expr<'hir>, id: UnionMemberID },
     StructField { target: &'hir Expr<'hir>, id: StructFieldID },
     Index       { target: &'hir Expr<'hir>, index: &'hir Expr<'hir> },
-    Cast        { target: &'hir Expr<'hir>, ty: &'hir Type<'hir> },
+    Cast        { target: &'hir Expr<'hir>, kind: CastKind },
     LocalVar    { local_id: LocalID },
     ParamVar    { param_id: ProcParamID },
     ConstVar    { const_id: ConstID },
@@ -249,6 +249,21 @@ pub struct Match<'hir> {
 pub struct MatchArm<'hir> {
     pub pat: &'hir Expr<'hir>, //@optional fallback pattern not represented
     pub expr: &'hir Expr<'hir>,
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone)]
+pub enum CastKind {
+    Error,
+    Integer_Trunc,
+    Uint_Zero_Extend,
+    Sint_Sign_Extend,
+    Float_to_Uint,
+    Float_to_Sint,
+    Uint_to_Float,
+    Sint_to_Float,
+    Float_Trunc,
+    Float_Extend,
 }
 
 #[derive(Copy, Clone)]

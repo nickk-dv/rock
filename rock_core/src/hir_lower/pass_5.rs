@@ -481,36 +481,39 @@ fn typecheck_cast<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
     ty: &ast::Type<'_>,
-    cast_range: TextRange,
+    range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
     let cast_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), *ty);
 
-    match (target_res.ty, cast_ty) {
-        (hir::Type::Error, ..) => {}
-        (.., hir::Type::Error) => {}
+    let kind = match (target_res.ty, cast_ty) {
+        (hir::Type::Error, ..) | (.., hir::Type::Error) => hir::CastKind::Error,
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
-            //@verify that from into pair is valid
-            // determine type of the cast, according to llvm, e.g: fp_trunc, fp_to_int etc.
+            //@find `clean` way to generate other CastKinds
+            match (from, into) {
+                (ast::BasicType::F64, ast::BasicType::F32) => hir::CastKind::Float_Trunc,
+                (ast::BasicType::F32, ast::BasicType::F64) => hir::CastKind::Float_Extend,
+                _ => hir::CastKind::Error, //@emit error on incompatable basic cast
+            }
         }
         _ => {
-            let from_format = type_format(hir, target_res.ty);
-            let into_format = type_format(hir, cast_ty);
             emit.error(
                 ErrorComp::error(format!(
-                    "non privitive cast from `{from_format}` into `{into_format}`",
+                    "non privitive cast from `{}` into `{}`",
+                    type_format(hir, target_res.ty),
+                    type_format(hir, cast_ty)
                 ))
-                .context(hir.src(proc.origin(), cast_range)),
+                .context(hir.src(proc.origin(), range)),
             );
+            hir::CastKind::Error
         }
-    }
+    };
 
-    let hir_ty = emit.arena.alloc(cast_ty);
     TypeResult {
         ty: cast_ty,
         expr: emit.arena.alloc(hir::Expr::Cast {
             target: target_res.expr,
-            ty: hir_ty,
+            kind,
         }),
     }
 }
@@ -867,7 +870,11 @@ fn typecheck_unary<'hir>(
         );
     }
 
-    TypeResult::new(unary_ty, rhs_res.expr)
+    let unary_expr = emit.arena.alloc(hir::Expr::Unary {
+        op,
+        rhs: rhs_res.expr,
+    });
+    TypeResult::new(unary_ty, unary_expr)
 }
 
 fn typecheck_binary<'hir>(
@@ -936,7 +943,7 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::ForLoop(for_) => {}
             ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
-            ast::StmtKind::Assign(assign) => {}
+            ast::StmtKind::Assign(assign) => typecheck_assign(hir, emit, proc, assign),
             ast::StmtKind::ExprSemi(expr) => {
                 let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
             }
@@ -1100,6 +1107,49 @@ fn typecheck_local<'hir>(
     });
 
     proc.push_local(local);
+}
+
+//@not checking lhs variable mutability
+//@not emitting any specific errors like when assigning to constants
+//@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
+// clean this up in general
+fn typecheck_assign<'hir>(
+    hir: &HirData<'hir, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    assign: &ast::Assign,
+) {
+    let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, assign.lhs);
+
+    let expect = if matches!(lhs_res.ty, hir::Type::Error) {
+        hir::Type::Error
+    } else {
+        if verify_is_expr_assignable(lhs_res.expr) {
+            lhs_res.ty
+        } else {
+            emit.error(
+                ErrorComp::error("cannot assign to this expression")
+                    .context(hir.src(proc.origin(), assign.lhs.range)),
+            );
+            hir::Type::Error
+        }
+    };
+
+    let rhs_res = typecheck_expr(hir, emit, proc, expect, assign.rhs);
+}
+
+fn verify_is_expr_assignable(expr: &hir::Expr) -> bool {
+    match *expr {
+        hir::Expr::Error => true,
+        hir::Expr::UnionMember { target, .. } => verify_is_expr_assignable(target),
+        hir::Expr::StructField { target, .. } => verify_is_expr_assignable(target),
+        hir::Expr::Index { target, .. } => verify_is_expr_assignable(target),
+        hir::Expr::LocalVar { .. } => true,
+        hir::Expr::ParamVar { .. } => true,
+        hir::Expr::GlobalVar { .. } => true,
+        hir::Expr::Unary { op, .. } => matches!(op, ast::UnOp::Deref),
+        _ => false,
+    }
 }
 
 /*
