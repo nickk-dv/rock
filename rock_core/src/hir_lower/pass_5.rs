@@ -274,34 +274,52 @@ fn typecheck_if<'hir>(
     expect: hir::Type<'hir>,
     if_: &ast::If<'_>,
 ) -> TypeResult<'hir> {
-    let has_fallback = if_.fallback.is_some();
+    //@remove this when theres TypeRepr with shorthand creation functions eg TypeRepr::bool()
+    const BOOL_TYPE: hir::Type = hir::Type::Basic(BasicType::Bool);
 
-    let entry = if_.entry;
-    let _ = typecheck_expr(
-        hir,
-        emit,
-        proc,
-        hir::Type::Basic(BasicType::Bool),
-        entry.cond,
-    );
-    let _ = typecheck_expr(hir, emit, proc, expect, entry.block);
+    let expect = if if_.fallback.is_some() {
+        expect
+    } else {
+        hir::Type::Error
+    };
 
+    let entry_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, if_.entry.cond);
+    let entry_block = typecheck_expr(hir, emit, proc, expect, if_.entry.block);
+    let entry = hir::Branch {
+        cond: entry_cond.expr,
+        block: entry_block.expr,
+    };
+
+    let mut branches = Vec::<hir::Branch>::new();
     for &branch in if_.branches {
-        let _ = typecheck_expr(
-            hir,
-            emit,
-            proc,
-            hir::Type::Basic(BasicType::Bool),
-            branch.cond,
-        );
-        let _ = typecheck_expr(hir, emit, proc, expect, branch.block);
+        let branch_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, branch.cond);
+        let branch_block = typecheck_expr(hir, emit, proc, expect, branch.block);
+
+        branches.push(hir::Branch {
+            cond: branch_cond.expr,
+            block: branch_block.expr,
+        });
     }
 
+    let mut fallback = None;
     if let Some(block) = if_.fallback {
-        let _ = typecheck_expr(hir, emit, proc, expect, block);
+        let fallback_block = typecheck_expr(hir, emit, proc, expect, block);
+        fallback = Some(fallback_block.expr);
     }
 
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+    let branches = emit.arena.alloc_slice(&branches);
+    let hir_if = emit.arena.alloc(hir::If {
+        entry,
+        branches,
+        fallback,
+    });
+    let hir_expr = emit.arena.alloc(hir::Expr::If { if_: hir_if });
+
+    //@no idea which type to return for the if expression
+    // too many different permutations, current expectation model doesnt provide enough information
+    // for example caller cannot know if type error occured on that call
+    // this problem applies to block, if, match, array expressions. @02.04.24
+    TypeResult::new(hir::Type::Error, hir_expr)
 }
 
 fn typecheck_match<'hir>(
