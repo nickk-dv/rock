@@ -315,18 +315,18 @@ fn typecheck_if<'hir>(
     }
 
     let branches = emit.arena.alloc_slice(&branches);
-    let hir_if = emit.arena.alloc(hir::If {
+    let if_ = emit.arena.alloc(hir::If {
         entry,
         branches,
         fallback,
     });
-    let hir_expr = emit.arena.alloc(hir::Expr::If { if_: hir_if });
+    let if_expr = emit.arena.alloc(hir::Expr::If { if_ });
 
     //@no idea which type to return for the if expression
     // too many different permutations, current expectation model doesnt provide enough information
     // for example caller cannot know if type error occured on that call
     // this problem applies to block, if, match, array expressions. @02.04.24
-    TypeResult::new(if_type, hir_expr)
+    TypeResult::new(if_type, if_expr)
 }
 
 fn typecheck_match<'hir>(
@@ -337,13 +337,65 @@ fn typecheck_match<'hir>(
     match_: &ast::Match<'_>,
 ) -> TypeResult<'hir> {
     let on_res = typecheck_expr(hir, emit, proc, hir::Type::Error, match_.on_expr);
-    for arm in match_.arms {
-        if let Some(pat) = arm.pat {
-            let pat_res = typecheck_expr(hir, emit, proc, on_res.ty, pat);
-        }
-        //@check match arm expr
+
+    if !verify_can_match(on_res.ty) {
+        emit.error(
+            ErrorComp::error(format!(
+                "cannot match on value of type `{}`",
+                type_format(hir, on_res.ty)
+            ))
+            .context(hir.src(proc.origin(), match_.on_expr.range)),
+        );
     }
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+
+    //@approx esmitation based on first match block value
+    let mut match_type = hir::Type::Error;
+    let mut match_arms = Vec::<hir::MatchArm>::with_capacity(match_.arms.len());
+
+    for (idx, arm) in match_.arms.iter().enumerate() {
+        //@pat must also be constant value, which isnt checked
+        // since it will always compile to a switch primitive
+        let pat = if let Some(pat) = arm.pat {
+            let pat_res = typecheck_expr(hir, emit, proc, on_res.ty, pat);
+            Some(pat_res.expr)
+        } else {
+            None
+        };
+
+        let block_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
+        if idx == 0 {
+            match_type = block_res.ty;
+        }
+
+        match_arms.push(hir::MatchArm {
+            pat,
+            expr: block_res.expr,
+        })
+    }
+
+    let match_arms = emit.arena.alloc_slice(&match_arms);
+    let match_ = emit.arena.alloc(hir::Match {
+        on_expr: on_res.expr,
+        arms: match_arms,
+    });
+    let match_expr = emit.arena.alloc(hir::Expr::Match { match_ });
+    TypeResult::new(match_type, match_expr)
+}
+
+fn verify_can_match(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => {
+            let basic_kind = BasicTypeKind::from_basic(basic);
+            match basic_kind {
+                BasicTypeKind::SignedInt => true,
+                BasicTypeKind::UnsignedInt => true,
+                _ => false,
+            }
+        }
+        hir::Type::Enum(_) => true,
+        _ => false,
+    }
 }
 
 fn typecheck_field<'hir>(
@@ -458,22 +510,21 @@ fn typecheck_index<'hir>(
         _ => verify_elem_type(target_res.ty),
     };
 
-    match elem_ty {
-        Some(it) => {
-            let hir_expr = emit.arena.alloc(hir::Expr::Index {
-                target: target_res.expr,
-                index: index_res.expr,
-            });
-            TypeResult::new(it, hir_expr)
-        }
-        None => {
-            let ty_format = type_format(hir, target_res.ty);
-            emit.error(
-                ErrorComp::error(format!("cannot index value of type {}", ty_format))
-                    .context(hir.src(proc.origin(), index.range)),
-            );
-            TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
-        }
+    if let Some(elem_ty) = elem_ty {
+        let index_expr = emit.arena.alloc(hir::Expr::Index {
+            target: target_res.expr,
+            index: index_res.expr,
+        });
+        TypeResult::new(elem_ty, index_expr)
+    } else {
+        emit.error(
+            ErrorComp::error(format!(
+                "cannot index value of type {}",
+                type_format(hir, target_res.ty)
+            ))
+            .context(hir.src(proc.origin(), index.range)),
+        );
+        TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
     }
 }
 
@@ -678,7 +729,7 @@ fn typecheck_sizeof<'hir>(
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
-    let hir_expr = if let Some(size) = size {
+    let sizeof_expr = if let Some(size) = size {
         emit.arena.alloc(hir::Expr::LitInt {
             val: size,
             ty: BasicType::Usize,
@@ -686,8 +737,7 @@ fn typecheck_sizeof<'hir>(
     } else {
         emit.arena.alloc(hir::Expr::Error)
     };
-
-    TypeResult::new(hir::Type::Basic(BasicType::Usize), hir_expr)
+    TypeResult::new(hir::Type::Basic(BasicType::Usize), sizeof_expr)
 }
 
 fn typecheck_item<'hir>(
@@ -704,7 +754,16 @@ fn typecheck_item<'hir>(
         }
         ValueID::Enum(id) => {
             //@resolve variant, based on remaining path names
-            return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
+            // still returning enum type as temp solution
+            emit.error(
+                ErrorComp::error("enum variants in path are not yet resolved (todo)").context(
+                    hir.src(
+                        proc.origin(),
+                        path.names.first().expect("non empty path").range,
+                    ),
+                ),
+            );
+            return TypeResult::new(hir::Type::Enum(id), emit.arena.alloc(hir::Expr::Error));
         }
         ValueID::Const(id) => {
             //@resolve potential field access chain
@@ -753,37 +812,38 @@ fn typecheck_proc_call<'hir>(
             return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
         }
     };
+    let data = hir.proc_data(proc_id);
+    let input_count = proc_call.input.len();
+    let expected_count = data.params.len();
 
+    if input_count != expected_count {
+        emit.error(
+            ErrorComp::error(format!(
+                "expected {} input arguments, found {}",
+                expected_count, input_count
+            ))
+            .context(hir.src(proc.origin(), expr_range))
+            .context_info(
+                "calling this procedure",
+                hir.src(data.origin_id, data.name.range),
+            ),
+        );
+    }
+
+    let mut input = Vec::with_capacity(proc_call.input.len());
     for (idx, &expr) in proc_call.input.iter().enumerate() {
-        let data = hir.proc_data(proc_id);
         let param = data.params.get(idx);
-
         let expect = match param {
             Some(param) => param.ty,
             None => hir::Type::Error,
         };
-        let _ = typecheck_expr(hir, emit, proc, expect, expr);
+        let input_res = typecheck_expr(hir, emit, proc, expect, expr);
+        input.push(input_res.expr);
     }
 
-    //@getting proc data multiple times due to mutable error reporting
-    // maybe pass error context to all functions isntead
-    let input_count = proc_call.input.len();
-    let expected_count = hir.proc_data(proc_id).params.len();
-
-    if input_count != expected_count {
-        let data = hir.proc_data(proc_id);
-        emit.error(
-            ErrorComp::error("unexpected number of input arguments")
-                .context(hir.src(proc.origin(), expr_range))
-                .context_info(
-                    "calling this procedure",
-                    hir.src(data.origin_id, data.name.range),
-                ),
-        );
-    }
-
-    let data = hir.proc_data(proc_id);
-    TypeResult::new(data.return_ty, emit.arena.alloc(hir::Expr::Error))
+    let input = emit.arena.alloc_slice(&input);
+    let proc_call = hir::Expr::ProcCall { proc_id, input };
+    TypeResult::new(data.return_ty, emit.arena.alloc(proc_call))
 }
 
 fn typecheck_struct_init<'hir>(
@@ -948,38 +1008,36 @@ fn typecheck_array_init<'hir>(
     expect: hir::Type<'hir>,
     input: &[&ast::Expr<'_>],
 ) -> TypeResult<'hir> {
-    let mut expect_elem = match expect {
+    let mut elem_type = hir::Type::Error;
+    let expect = match expect {
         hir::Type::ArrayStatic(array) => array.ty,
         _ => hir::Type::Error,
     };
 
-    let mut first_elem = hir::Type::Error;
-
-    let mut input_iter = input.iter().cloned();
-
-    if let Some(expr) = input_iter.next() {
-        let expr_res = typecheck_expr(hir, emit, proc, expect_elem, expr);
-        first_elem = expr_res.ty;
-        if !matches!(expect_elem, hir::Type::Error) {
-            expect_elem = expr_res.ty;
+    let mut hir_input = Vec::with_capacity(input.len());
+    for (idx, &expr) in input.iter().enumerate() {
+        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        hir_input.push(expr_res.expr);
+        if idx == 0 {
+            elem_type = expr_res.ty;
         }
     }
+    let hir_input = emit.arena.alloc_slice(&hir_input);
 
-    for expr in input_iter {
-        let expr_res = typecheck_expr(hir, emit, proc, expect_elem, expr);
-    }
-
+    //@types used during typechecking shount be a hir::Type
+    // allocating const expr to store array size is temporary
     let size = emit.arena.alloc(hir::Expr::LitInt {
         val: input.len() as u64,
         ty: BasicType::Ssize,
     });
-    let array_ty = emit.arena.alloc(hir::ArrayStatic {
+    let array_type = emit.arena.alloc(hir::ArrayStatic {
         size: hir::ConstExpr(size),
-        ty: first_elem,
+        ty: elem_type,
     });
+    let array_expr = hir::Expr::ArrayInit { input: hir_input };
     TypeResult::new(
-        hir::Type::ArrayStatic(array_ty),
-        emit.arena.alloc(hir::Expr::Error),
+        hir::Type::ArrayStatic(array_type),
+        emit.arena.alloc(array_expr),
     )
 }
 
@@ -991,23 +1049,23 @@ fn typecheck_array_repeat<'hir>(
     expr: &ast::Expr,
     size: ast::ConstExpr,
 ) -> TypeResult<'hir> {
-    let expect_elem = match expect {
+    let expect = match expect {
         hir::Type::ArrayStatic(array) => array.ty,
         _ => hir::Type::Error,
     };
 
-    let expr_res = typecheck_expr(hir, emit, proc, expect_elem, expr);
+    let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
     let size_res = super::pass_4::const_expr_resolve(hir, emit, proc.origin(), size);
 
-    let array = emit.arena.alloc(hir::ArrayStatic {
+    let array_type = emit.arena.alloc(hir::ArrayStatic {
         size: size_res,
         ty: expr_res.ty,
     });
-    let hir_expr = emit.arena.alloc(hir::Expr::ArrayRepeat {
+    let array_repeat = emit.arena.alloc(hir::Expr::ArrayRepeat {
         expr: expr_res.expr,
         size: size_res,
     });
-    TypeResult::new(hir::Type::ArrayStatic(array), hir_expr)
+    TypeResult::new(hir::Type::ArrayStatic(array_type), array_repeat)
 }
 
 fn typecheck_unary<'hir>(
@@ -1146,48 +1204,67 @@ fn typecheck_block<'hir>(
     proc.push_block();
 
     let mut block_ty = None;
+    let mut hir_stmts = Vec::with_capacity(stmts.len());
 
     for (idx, stmt) in stmts.iter().enumerate() {
-        match stmt.kind {
-            ast::StmtKind::Break => typecheck_break(hir, emit, proc, stmt.range),
-            ast::StmtKind::Continue => typecheck_continue(hir, emit, proc, stmt.range),
-            ast::StmtKind::Return(expr) => typecheck_return(hir, emit, proc, stmt.range, expr),
-            ast::StmtKind::Defer(block) => {
-                typecheck_defer(hir, emit, proc, stmt.range.start(), block)
+        let hir_stmt = match stmt.kind {
+            ast::StmtKind::Break => Some(typecheck_break(hir, emit, proc, stmt.range)),
+            ast::StmtKind::Continue => Some(typecheck_continue(hir, emit, proc, stmt.range)),
+            ast::StmtKind::Return(expr) => {
+                Some(typecheck_return(hir, emit, proc, stmt.range, expr))
             }
-            ast::StmtKind::ForLoop(for_) => {}
+            ast::StmtKind::Defer(block) => {
+                Some(typecheck_defer(hir, emit, proc, stmt.range.start(), block))
+            }
+            ast::StmtKind::ForLoop(for_) => None, //@temporarely not processed
             ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
-            ast::StmtKind::Assign(assign) => typecheck_assign(hir, emit, proc, assign),
+            ast::StmtKind::Assign(assign) => Some(typecheck_assign(hir, emit, proc, assign)),
             ast::StmtKind::ExprSemi(expr) => {
-                let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
+                let expr_res = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
+                Some(hir::Stmt::ExprSemi(expr_res.expr))
             }
             ast::StmtKind::ExprTail(expr) => {
                 if idx + 1 == stmts.len() {
-                    let res = typecheck_expr(hir, emit, proc, expect, expr);
-                    block_ty = Some(res.ty);
+                    let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+                    block_ty = Some(expr_res.ty);
+                    Some(hir::Stmt::ExprTail(expr_res.expr))
                 } else {
                     //@decide if semi should enforced on parsing
                     // or we just expect a unit from that no-semi expression
                     // when its not a last expression?
-                    let _ =
+                    let expr_res =
                         typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Unit), expr);
+                    Some(hir::Stmt::ExprTail(expr_res.expr))
                 }
             }
+        };
+        if let Some(hir_stmt) = hir_stmt {
+            hir_stmts.push(hir_stmt);
         }
     }
 
     proc.pop_block();
 
-    // when type expectation was passed to tail expr
+    //@when type expectation was passed to tail expr
     // return Type::Error to not trigger duplicate type mismatch errors
-    if block_ty.is_some() {
-        TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+    // this propagates typecheck match further down the call stack
+    // without triggering error on each nested block level
+    let block_ty = if block_ty.is_some() {
+        //@this disables other typechecks
+        // this hack of disabling type error also has side effect
+        // of not producing any usefull errors after
+        // this hir::Type::Error value from the block is a lie
+        // the actual type is tail returned experrsion type stored in `block_ty`
+        //hir::Type::Error
+
+        block_ty.unwrap() //@generating more errors, but handling block type correctly
     } else {
-        TypeResult::new(
-            hir::Type::Basic(BasicType::Unit),
-            emit.arena.alloc(hir::Expr::Error),
-        )
-    }
+        hir::Type::Basic(BasicType::Unit)
+    };
+
+    let stmts = emit.arena.alloc_slice(&hir_stmts);
+    let block_expr = emit.arena.alloc(hir::Expr::Block { stmts });
+    TypeResult::new(block_ty, block_expr)
 }
 
 fn typecheck_break<'hir>(
@@ -1195,13 +1272,15 @@ fn typecheck_break<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
-) {
+) -> hir::Stmt<'hir> {
     if !proc.get_block().in_loop {
         emit.error(
             ErrorComp::error("cannot use `break` outside of a loop")
                 .context(hir.src(proc.origin(), range)),
         );
     }
+
+    hir::Stmt::Break
 }
 
 fn typecheck_continue<'hir>(
@@ -1209,13 +1288,15 @@ fn typecheck_continue<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
-) {
+) -> hir::Stmt<'hir> {
     if !proc.get_block().in_loop {
         emit.error(
             ErrorComp::error("cannot use `continue` outside of a loop")
                 .context(hir.src(proc.origin(), range)),
         );
     }
+
+    hir::Stmt::Continue
 }
 
 fn typecheck_return<'hir>(
@@ -1224,14 +1305,16 @@ fn typecheck_return<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
     expr: Option<&ast::Expr>,
-) {
+) -> hir::Stmt<'hir> {
     if let Some(expr) = expr {
         let expect = proc.data().return_ty;
         let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        hir::Stmt::ReturnVal(expr_res.expr)
     } else {
         //@figure out a way to report return type related errors
         // this also applies to tail return expression in blocks
         //@does empty return need its own unique error?
+        hir::Stmt::Return
     }
 }
 
@@ -1243,14 +1326,16 @@ fn typecheck_defer<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     start: TextOffset,
     block: &ast::Expr<'_>,
-) {
+) -> hir::Stmt<'hir> {
     if proc.get_block().in_defer {
         emit.error(
             ErrorComp::error("`defer` statements cannot be nested")
                 .context(hir.src(proc.origin(), TextRange::new(start, start + 5.into()))),
         );
     }
-    let _ = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Unit), block);
+
+    let block_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Unit), block);
+    hir::Stmt::Defer(block_res.expr)
 }
 
 fn typecheck_local<'hir>(
@@ -1258,10 +1343,17 @@ fn typecheck_local<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     local: &ast::Local,
-) {
+) -> Option<hir::Stmt<'hir>> {
     if let Some(existing) = hir.scope_name_defined(proc.origin(), local.name.id) {
         super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
-        return; //@not checking type and expr in case of name duplicate (need to check)
+
+        if let Some(ty) = local.ty {
+            super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
+        };
+        if let Some(expr) = local.value {
+            let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
+        }
+        return None;
     }
 
     //@theres no `nice` way to find both existing name from global (hir) scope
@@ -1274,7 +1366,14 @@ fn typecheck_local<'hir>(
             VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
         };
         super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
-        return; //@not checking type and expr in case of name duplicate (need to check)
+
+        if let Some(ty) = local.ty {
+            super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
+        };
+        if let Some(expr) = local.value {
+            let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
+        }
+        return None;
     }
 
     //@local type can be both not specified and not inferred by the expression
@@ -1308,8 +1407,9 @@ fn typecheck_local<'hir>(
         ty: local_ty,
         value: local_value,
     });
-
     proc.push_local(local);
+
+    Some(hir::Stmt::Local(local))
 }
 
 //@not checking lhs variable mutability
@@ -1321,7 +1421,7 @@ fn typecheck_assign<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     assign: &ast::Assign,
-) {
+) -> hir::Stmt<'hir> {
     let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, assign.lhs);
 
     let expect = if matches!(lhs_res.ty, hir::Type::Error) {
@@ -1339,6 +1439,13 @@ fn typecheck_assign<'hir>(
     };
 
     let rhs_res = typecheck_expr(hir, emit, proc, expect, assign.rhs);
+
+    let assign = hir::Assign {
+        op: assign.op,
+        lhs: lhs_res.expr,
+        rhs: rhs_res.expr,
+    };
+    hir::Stmt::Assign(emit.arena.alloc(assign))
 }
 
 fn verify_is_expr_assignable(expr: &hir::Expr) -> bool {

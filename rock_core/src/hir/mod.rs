@@ -245,9 +245,13 @@ pub struct Match<'hir> {
     pub arms: &'hir [MatchArm<'hir>],
 }
 
+//@fallback `pat` could be stored separately, as optional
+// similar to structure of `if`
+// this removes invariant on resolved match arm list
+// comeback to this when proper match validation is done @03.04.24
 #[derive(Copy, Clone)]
 pub struct MatchArm<'hir> {
-    pub pat: &'hir Expr<'hir>, //@optional fallback pattern not represented
+    pub pat: Option<&'hir Expr<'hir>>,
     pub expr: &'hir Expr<'hir>,
 }
 
