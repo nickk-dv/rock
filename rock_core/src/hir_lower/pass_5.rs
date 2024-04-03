@@ -807,39 +807,36 @@ fn typecheck_struct_init<'hir>(
             let data = hir.union_data(union_id);
 
             if let Some((first, other)) = struct_init.input.split_first() {
-                let type_res = match data.find_member(first.name.id) {
-                    Some((member_id, member)) => {
-                        let input_res = typecheck_expr(hir, emit, proc, member.ty, first.expr);
+                let type_res = if let Some((member_id, member)) = data.find_member(first.name.id) {
+                    let input_res = typecheck_expr(hir, emit, proc, member.ty, first.expr);
 
-                        let member_init = hir::UnionMemberInit {
-                            member_id,
-                            expr: input_res.expr,
-                        };
-                        let union_init = hir::Expr::UnionInit {
-                            union_id,
-                            input: member_init,
-                        };
-                        TypeResult::new(hir::Type::Union(union_id), emit.arena.alloc(union_init))
-                    }
-                    None => {
-                        emit.error(
-                            ErrorComp::error(format!(
-                                "field `{}` is not found",
-                                hir.name_str(first.name.id),
-                            ))
-                            .context(hir.src(proc.origin(), first.name.range))
-                            .context_info(
-                                "union defined here",
-                                hir.src(data.origin_id, data.name.range),
-                            ),
-                        );
-                        let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, first.expr);
+                    let member_init = hir::UnionMemberInit {
+                        member_id,
+                        expr: input_res.expr,
+                    };
+                    let union_init = hir::Expr::UnionInit {
+                        union_id,
+                        input: member_init,
+                    };
+                    TypeResult::new(hir::Type::Union(union_id), emit.arena.alloc(union_init))
+                } else {
+                    emit.error(
+                        ErrorComp::error(format!(
+                            "field `{}` is not found",
+                            hir.name_str(first.name.id),
+                        ))
+                        .context(hir.src(proc.origin(), first.name.range))
+                        .context_info(
+                            "union defined here",
+                            hir.src(data.origin_id, data.name.range),
+                        ),
+                    );
+                    let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, first.expr);
 
-                        TypeResult::new(
-                            hir::Type::Union(union_id),
-                            emit.arena.alloc(hir::Expr::Error),
-                        )
-                    }
+                    TypeResult::new(
+                        hir::Type::Union(union_id),
+                        emit.arena.alloc(hir::Expr::Error),
+                    )
                 };
 
                 for input in other {
@@ -865,20 +862,40 @@ fn typecheck_struct_init<'hir>(
         }
         StructureID::Struct(struct_id) => {
             let data = hir.struct_data(struct_id);
-            let mut field_inits = Vec::<hir::StructFieldInit>::new();
 
-            //@check duplicate initialization
-            //@check unitialized fields
+            enum FieldStatus {
+                None,
+                Init(TextRange),
+            }
+
+            //@potentially a lot of allocations (simple solution), same memory could be re-used
+            let mut field_inits = Vec::<hir::StructFieldInit>::with_capacity(data.fields.len());
+            let mut field_status = Vec::<FieldStatus>::new();
+            field_status.resize_with(data.fields.len(), || FieldStatus::None);
+            let mut init_count: usize = 0;
 
             for input in struct_init.input {
                 if let Some((field_id, field)) = data.find_field(input.name.id) {
                     let input_res = typecheck_expr(hir, emit, proc, field.ty, input.expr);
 
-                    let field_init = hir::StructFieldInit {
-                        field_id,
-                        expr: input_res.expr,
-                    };
-                    field_inits.push(field_init);
+                    if let FieldStatus::Init(range) = field_status[field_id.index()] {
+                        emit.error(
+                            ErrorComp::error(format!(
+                                "field `{}` was already initialized",
+                                hir.name_str(input.name.id),
+                            ))
+                            .context(hir.src(proc.origin(), input.name.range))
+                            .context_info("initialized here", hir.src(data.origin_id, range)),
+                        );
+                    } else {
+                        let field_init = hir::StructFieldInit {
+                            field_id,
+                            expr: input_res.expr,
+                        };
+                        field_inits.push(field_init);
+                        field_status[field_id.index()] = FieldStatus::Init(input.name.range);
+                        init_count += 1;
+                    }
                 } else {
                     emit.error(
                         ErrorComp::error(format!(
@@ -893,6 +910,28 @@ fn typecheck_struct_init<'hir>(
                     );
                     let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, input.expr);
                 }
+            }
+
+            if init_count < data.fields.len() {
+                let mut message = "missing field initializers: ".to_string();
+
+                for (idx, status) in field_status.iter().enumerate() {
+                    if let FieldStatus::None = status {
+                        let field = data.fields[idx];
+                        message.push_str(hir.name_str(field.name.id));
+                        if idx + 1 != data.fields.len() {
+                            message.push_str(", ");
+                        }
+                    }
+                }
+                emit.error(
+                    ErrorComp::error(message)
+                        .context(hir.src(proc.origin(), structure_name.range))
+                        .context_info(
+                            "struct defined here",
+                            hir.src(data.origin_id, data.name.range),
+                        ),
+                );
             }
 
             let input = emit.arena.alloc_slice(&field_inits);
