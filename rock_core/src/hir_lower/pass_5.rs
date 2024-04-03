@@ -155,7 +155,7 @@ fn typecheck_expr<'hir>(
             typecheck_proc_call(hir, emit, proc, proc_call, expr.range)
         }
         ast::ExprKind::StructInit { struct_init } => {
-            typecheck_struct_init(hir, emit, proc, struct_init, expr.range)
+            typecheck_struct_init(hir, emit, proc, struct_init)
         }
         ast::ExprKind::ArrayInit { input } => typecheck_array_init(hir, emit, proc, expect, input),
         ast::ExprKind::ArrayRepeat { expr, size } => {
@@ -290,11 +290,18 @@ fn typecheck_if<'hir>(
         block: entry_block.expr,
     };
 
+    //@approx esmitation based on first entry block type
+    // this is the same typecheck error reporting problem as described below
+    let if_type = if if_.fallback.is_some() {
+        entry_block.ty
+    } else {
+        hir::Type::Basic(BasicType::Unit)
+    };
+
     let mut branches = Vec::<hir::Branch>::new();
     for &branch in if_.branches {
         let branch_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, branch.cond);
         let branch_block = typecheck_expr(hir, emit, proc, expect, branch.block);
-
         branches.push(hir::Branch {
             cond: branch_cond.expr,
             block: branch_block.expr,
@@ -319,7 +326,7 @@ fn typecheck_if<'hir>(
     // too many different permutations, current expectation model doesnt provide enough information
     // for example caller cannot know if type error occured on that call
     // this problem applies to block, if, match, array expressions. @02.04.24
-    TypeResult::new(hir::Type::Error, hir_expr)
+    TypeResult::new(if_type, hir_expr)
 }
 
 fn typecheck_match<'hir>(
@@ -391,42 +398,34 @@ fn verify_type_field<'hir>(
         hir::Type::Error => (hir::Type::Error, FieldExprKind::None),
         hir::Type::Union(id) => {
             let data = hir.union_data(id);
-            let find = data.members.iter().enumerate().find_map(|(id, member)| {
-                (member.name.id == name.id).then(|| (hir::UnionMemberID::new(id), member))
-            });
-            match find {
-                Some((id, member)) => (member.ty, FieldExprKind::Member(id)),
-                _ => {
-                    emit.error(
-                        ErrorComp::error(format!(
-                            "no field `{}` exists on union type `{}`",
-                            hir.name_str(name.id),
-                            hir.name_str(data.name.id),
-                        ))
-                        .context(hir.src(proc.origin(), name.range)),
-                    );
-                    (hir::Type::Error, FieldExprKind::None)
-                }
+            if let Some((member_id, member)) = data.find_member(name.id) {
+                (member.ty, FieldExprKind::Member(member_id))
+            } else {
+                emit.error(
+                    ErrorComp::error(format!(
+                        "no field `{}` exists on union type `{}`",
+                        hir.name_str(name.id),
+                        hir.name_str(data.name.id),
+                    ))
+                    .context(hir.src(proc.origin(), name.range)),
+                );
+                (hir::Type::Error, FieldExprKind::None)
             }
         }
         hir::Type::Struct(id) => {
             let data = hir.struct_data(id);
-            let find = data.fields.iter().enumerate().find_map(|(id, field)| {
-                (field.name.id == name.id).then(|| (hir::StructFieldID::new(id), field))
-            });
-            match find {
-                Some((id, field)) => (field.ty, FieldExprKind::Field(id)),
-                _ => {
-                    emit.error(
-                        ErrorComp::error(format!(
-                            "no field `{}` exists on struct type `{}`",
-                            hir.name_str(name.id),
-                            hir.name_str(data.name.id),
-                        ))
-                        .context(hir.src(proc.origin(), name.range)),
-                    );
-                    (hir::Type::Error, FieldExprKind::None)
-                }
+            if let Some((field_id, field)) = data.find_field(name.id) {
+                (field.ty, FieldExprKind::Field(field_id))
+            } else {
+                emit.error(
+                    ErrorComp::error(format!(
+                        "no field `{}` exists on struct type `{}`",
+                        hir.name_str(name.id),
+                        hir.name_str(data.name.id),
+                    ))
+                    .context(hir.src(proc.origin(), name.range)),
+                );
+                (hir::Type::Error, FieldExprKind::None)
             }
         }
         _ => {
@@ -792,51 +791,115 @@ fn typecheck_struct_init<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     struct_init: &ast::StructInit<'_>,
-    expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let struct_id =
-        match path_resolve_structure(hir, emit, Some(proc), proc.origin(), struct_init.path) {
-            StructureID::Struct(id) => id,
-            _ => {
-                //@union case is ignored for now
-                return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
+    let structure_id =
+        path_resolve_structure(hir, emit, Some(proc), proc.origin(), struct_init.path);
+    let structure_name = *struct_init.path.names.last().expect("non empty path");
+
+    match structure_id {
+        StructureID::None => {
+            for input in struct_init.input {
+                let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, input.expr);
             }
-        };
+            TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+        }
+        StructureID::Union(union_id) => {
+            let data = hir.union_data(union_id);
 
-    for (idx, &expr) in struct_init.input.iter().enumerate() {
-        let data = hir.struct_data(struct_id);
-        let field = data.fields.get(idx);
+            if let Some((first, other)) = struct_init.input.split_first() {
+                let type_res = match data.find_member(first.name.id) {
+                    Some((member_id, member)) => {
+                        let input_res = typecheck_expr(hir, emit, proc, member.ty, first.expr);
 
-        let expect_ty = match field {
-            Some(field) => field.ty,
-            None => hir::Type::Error,
-        };
-        //@resolve expr & field name or name as expr
-        //let _ = typecheck_expr_2(hb, origin_id, block_flags, proc_scope, expect_ty, expr);
+                        let member_init = hir::UnionMemberInit {
+                            member_id,
+                            expr: input_res.expr,
+                        };
+                        let union_init = hir::Expr::UnionInit {
+                            union_id,
+                            input: member_init,
+                        };
+                        TypeResult::new(hir::Type::Union(union_id), emit.arena.alloc(union_init))
+                    }
+                    None => {
+                        emit.error(
+                            ErrorComp::error(format!(
+                                "field `{}` is not found",
+                                hir.name_str(first.name.id),
+                            ))
+                            .context(hir.src(proc.origin(), first.name.range))
+                            .context_info(
+                                "union defined here",
+                                hir.src(data.origin_id, data.name.range),
+                            ),
+                        );
+                        let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, first.expr);
+
+                        TypeResult::new(
+                            hir::Type::Union(union_id),
+                            emit.arena.alloc(hir::Expr::Error),
+                        )
+                    }
+                };
+
+                for input in other {
+                    emit.error(
+                        ErrorComp::error("union initializer must have exactly one field")
+                            .context(hir.src(proc.origin(), input.name.range)),
+                    );
+                    let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, input.expr);
+                }
+
+                type_res
+            } else {
+                emit.error(
+                    ErrorComp::error("union initializer must have exactly one field")
+                        .context(hir.src(proc.origin(), structure_name.range)),
+                );
+
+                TypeResult::new(
+                    hir::Type::Union(union_id),
+                    emit.arena.alloc(hir::Expr::Error),
+                )
+            }
+        }
+        StructureID::Struct(struct_id) => {
+            let data = hir.struct_data(struct_id);
+            let mut field_inits = Vec::<hir::StructFieldInit>::new();
+
+            //@check duplicate initialization
+            //@check unitialized fields
+
+            for input in struct_init.input {
+                if let Some((field_id, field)) = data.find_field(input.name.id) {
+                    let input_res = typecheck_expr(hir, emit, proc, field.ty, input.expr);
+
+                    let field_init = hir::StructFieldInit {
+                        field_id,
+                        expr: input_res.expr,
+                    };
+                    field_inits.push(field_init);
+                } else {
+                    emit.error(
+                        ErrorComp::error(format!(
+                            "field `{}` is not found",
+                            hir.name_str(input.name.id),
+                        ))
+                        .context(hir.src(proc.origin(), input.name.range))
+                        .context_info(
+                            "struct defined here",
+                            hir.src(data.origin_id, data.name.range),
+                        ),
+                    );
+                    let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, input.expr);
+                }
+            }
+
+            let input = emit.arena.alloc_slice(&field_inits);
+            let struct_init = hir::Expr::StructInit { struct_id, input };
+            TypeResult::new(hir::Type::Struct(struct_id), emit.arena.alloc(struct_init))
+        }
     }
-
-    //@getting proc data multiple times due to mutable error reporting
-    // maybe pass error context to all functions isntead
-    let input_count = struct_init.input.len();
-    let expected_count = hir.struct_data(struct_id).fields.len();
-
-    if input_count != expected_count {
-        let data = hir.struct_data(struct_id);
-        emit.error(
-            ErrorComp::error("unexpected number of input fields")
-                .context(hir.src(proc.origin(), expr_range))
-                .context_info(
-                    "calling this procedure",
-                    hir.src(data.origin_id, data.name.range),
-                ),
-        );
-    }
-
-    let data = hir.struct_data(struct_id);
-    TypeResult::new(
-        hir::Type::Struct(struct_id),
-        emit.arena.alloc(hir::Expr::Error),
-    )
 }
 
 fn typecheck_array_init<'hir>(

@@ -298,3 +298,36 @@ impl<'hir> Hir<'hir> {
         &self.globals[id.index()]
     }
 }
+
+impl<'hir> EnumData<'hir> {
+    pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant<'hir>)> {
+        for (idx, variant) in self.variants.iter().enumerate() {
+            if variant.name.id == id {
+                return Some((EnumVariantID::new(idx), variant));
+            }
+        }
+        None
+    }
+}
+
+impl<'hir> UnionData<'hir> {
+    pub fn find_member(&self, id: InternID) -> Option<(UnionMemberID, &'hir UnionMember<'hir>)> {
+        for (idx, member) in self.members.iter().enumerate() {
+            if member.name.id == id {
+                return Some((UnionMemberID::new(idx), member));
+            }
+        }
+        None
+    }
+}
+
+impl<'hir> StructData<'hir> {
+    pub fn find_field(&self, id: InternID) -> Option<(StructFieldID, &'hir StructField<'hir>)> {
+        for (idx, field) in self.fields.iter().enumerate() {
+            if field.name.id == id {
+                return Some((StructFieldID::new(idx), field));
+            }
+        }
+        None
+    }
+}

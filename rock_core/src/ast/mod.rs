@@ -287,7 +287,7 @@ pub struct StructInit<'ast> {
 #[derive(Copy, Clone)]
 pub struct FieldInit<'ast> {
     pub name: Name,
-    pub expr: Option<&'ast Expr<'ast>>,
+    pub expr: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone, PartialEq)]

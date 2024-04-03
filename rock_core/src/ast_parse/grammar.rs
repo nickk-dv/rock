@@ -602,13 +602,21 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
                     let start = p.state.field_inits.start();
                     if !p.eat(T!['}']) {
                         loop {
+                            let range_start = p.peek_range_start();
                             let name = name(p)?;
                             let expr = match p.peek() {
                                 T![:] => {
                                     p.bump(); // ':'
-                                    Some(expr(p)?)
+                                    expr(p)?
                                 }
-                                T![,] | T!['}'] => None,
+                                T![,] | T!['}'] => {
+                                    let names = p.state.arena.alloc_slice(&[name]);
+                                    let path = p.state.arena.alloc(Path { names });
+                                    p.state.arena.alloc(Expr {
+                                        kind: ExprKind::Item { path },
+                                        range: TextRange::new(range_start, p.peek_range_end()),
+                                    })
+                                }
                                 _ => return Err("expected `:`, `}` or `,`".into()),
                             };
                             p.state.field_inits.add(FieldInit { name, expr });
