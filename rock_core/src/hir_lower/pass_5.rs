@@ -978,12 +978,16 @@ fn typecheck_struct_init<'hir>(
                 for (idx, status) in field_status.iter().enumerate() {
                     if let FieldStatus::None = status {
                         let field = data.fields[idx];
+                        message.push('`');
                         message.push_str(hir.name_str(field.name.id));
                         if idx + 1 != data.fields.len() {
-                            message.push_str(", ");
+                            message.push_str("`, ");
+                        } else {
+                            message.push_str("`");
                         }
                     }
                 }
+
                 emit.error(
                     ErrorComp::error(message)
                         .context(hir.src(proc.origin(), structure_name.range))
