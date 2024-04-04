@@ -385,14 +385,14 @@ fn typecheck_match<'hir>(
 fn verify_can_match(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
-        hir::Type::Basic(basic) => {
-            let basic_kind = BasicTypeKind::from_basic(basic);
-            match basic_kind {
-                BasicTypeKind::SignedInt => true,
-                BasicTypeKind::UnsignedInt => true,
-                _ => false,
-            }
-        }
+        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            BasicTypeKind::Unit => false,
+            BasicTypeKind::Bool => false,
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => true,
+            BasicTypeKind::Float => false,
+            BasicTypeKind::Char => false,
+            BasicTypeKind::Rawptr => false,
+        },
         hir::Type::Enum(_) => true,
         _ => false,
     }
@@ -633,6 +633,8 @@ fn typecheck_cast<'hir>(
             let into_size = basic_type_size(into);
 
             match from_kind {
+                BasicTypeKind::Unit => hir::CastKind::Error,
+                BasicTypeKind::Bool => hir::CastKind::Error,
                 BasicTypeKind::SignedInt => match into_kind {
                     BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => {
                         if from_size < into_size {
@@ -667,8 +669,6 @@ fn typecheck_cast<'hir>(
                     }
                     _ => hir::CastKind::Error,
                 },
-                BasicTypeKind::Unit => hir::CastKind::Error,
-                BasicTypeKind::Bool => hir::CastKind::Error,
                 BasicTypeKind::Char => hir::CastKind::Error,
                 BasicTypeKind::Rawptr => hir::CastKind::Error,
             }
@@ -1146,11 +1146,11 @@ fn typecheck_unary<'hir>(
         );
     }
 
-    let unary_expr = emit.arena.alloc(hir::Expr::Unary {
+    let unary_expr = hir::Expr::Unary {
         op,
         rhs: rhs_res.expr,
-    });
-    TypeResult::new(unary_ty, unary_expr)
+    };
+    TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
 }
 
 fn typecheck_binary<'hir>(
@@ -1161,41 +1161,154 @@ fn typecheck_binary<'hir>(
     lhs: &ast::Expr,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
-    let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
-    let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
+    //@remove this when theres TypeRepr with shorthand creation functions eg TypeRepr::bool()
+    const BOOL_TYPE: hir::Type = hir::Type::Basic(BasicType::Bool);
 
-    match (lhs_res.ty, rhs_res.ty) {
-        (hir::Type::Error, ..) | (.., hir::Type::Error) => {
-            //@allocate proper bin_expr here?
-            return TypeResult::new(hir::Type::Error, lhs_res.expr);
+    let (binary_ty, lhs_expr, rhs_expr) = match op {
+        ast::BinOp::Add | ast::BinOp::Sub | ast::BinOp::Mul | ast::BinOp::Div => {
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
+
+            let binary_ty = if !check_type_allow_math_ops(lhs_res.ty) {
+                emit.error(
+                    ErrorComp::error(format!(
+                        "cannot use math operator on value of type `{}`",
+                        type_format(hir, lhs_res.ty)
+                    ))
+                    .context(hir.src(proc.origin(), lhs.range)),
+                );
+                lhs_res.ty
+            } else {
+                hir::Type::Error
+            };
+
+            (binary_ty, lhs_res.expr, rhs_res.expr)
         }
-        _ => {}
-    }
+        ast::BinOp::Rem => {
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
-    /* @todo
-    match op {
-        ast::BinOp::Add => todo!(),
-        ast::BinOp::Sub => todo!(),
-        ast::BinOp::Mul => todo!(),
-        ast::BinOp::Div => todo!(),
-        ast::BinOp::Rem => todo!(),
-        ast::BinOp::BitAnd => todo!(),
-        ast::BinOp::BitOr => todo!(),
-        ast::BinOp::BitXor => todo!(),
-        ast::BinOp::BitShl => todo!(),
-        ast::BinOp::BitShr => todo!(),
-        ast::BinOp::CmpIsEq => todo!(),
-        ast::BinOp::CmpNotEq => todo!(),
-        ast::BinOp::CmpLt => todo!(),
-        ast::BinOp::CmpLtEq => todo!(),
-        ast::BinOp::CmpGt => todo!(),
-        ast::BinOp::CmpGtEq => todo!(),
-        ast::BinOp::LogicAnd => todo!(),
-        ast::BinOp::LogicOr => todo!(),
-    }
-    */
+            let binary_ty = if !check_type_allow_remainder(lhs_res.ty) {
+                emit.error(
+                    ErrorComp::error(format!(
+                        "cannot use remainder operator on value of type `{}`",
+                        type_format(hir, lhs_res.ty)
+                    ))
+                    .context(hir.src(proc.origin(), lhs.range)),
+                );
+                lhs_res.ty
+            } else {
+                hir::Type::Error
+            };
 
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+            (binary_ty, lhs_res.expr, rhs_res.expr)
+        }
+        ast::BinOp::BitAnd
+        | ast::BinOp::BitOr
+        | ast::BinOp::BitXor
+        | ast::BinOp::BitShl
+        | ast::BinOp::BitShr => {
+            //@binary bit ops are not checked yet
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
+
+            (lhs_res.ty, lhs_res.expr, rhs_res.expr)
+        }
+        ast::BinOp::CmpIsEq | ast::BinOp::CmpNotEq => {
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
+
+            if !check_type_allow_compare_eq(lhs_res.ty) {
+                emit.error(
+                    ErrorComp::error(format!(
+                        "cannot compare equality for value of type `{}`",
+                        type_format(hir, lhs_res.ty)
+                    ))
+                    .context(hir.src(proc.origin(), lhs.range)),
+                );
+            }
+
+            (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
+        }
+        ast::BinOp::CmpLt | ast::BinOp::CmpLtEq | ast::BinOp::CmpGt | ast::BinOp::CmpGtEq => {
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
+
+            if !check_type_allow_compare_ord(lhs_res.ty) {
+                emit.error(
+                    ErrorComp::error(format!(
+                        "cannot compare order for value of type `{}`",
+                        type_format(hir, lhs_res.ty)
+                    ))
+                    .context(hir.src(proc.origin(), lhs.range)),
+                );
+            }
+
+            (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
+        }
+        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
+            let lhs_res = typecheck_expr(hir, emit, proc, BOOL_TYPE, lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, BOOL_TYPE, rhs);
+
+            (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
+        }
+    };
+
+    let binary_expr = hir::Expr::Binary {
+        op,
+        lhs: lhs_expr,
+        rhs: rhs_expr,
+    };
+    TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
+}
+
+fn check_type_allow_math_ops(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn check_type_allow_remainder(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn check_type_allow_compare_eq(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            BasicTypeKind::Bool
+            | BasicTypeKind::SignedInt
+            | BasicTypeKind::UnsignedInt
+            | BasicTypeKind::Float
+            | BasicTypeKind::Char
+            | BasicTypeKind::Rawptr => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn check_type_allow_compare_ord(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float => true,
+            _ => false,
+        },
+        _ => false,
+    }
 }
 
 fn typecheck_block<'hir>(
