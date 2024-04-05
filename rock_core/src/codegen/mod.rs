@@ -1,157 +1,135 @@
-use crate::ast::BasicType;
+use crate::ast;
 use crate::hir;
-use inkwell::context::Context;
-use inkwell::targets::{
-    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
-    TargetTriple,
-};
+use inkwell::builder;
+use inkwell::context;
+use inkwell::module;
+use inkwell::targets;
 use inkwell::types;
-use inkwell::OptimizationLevel;
+use inkwell::types::BasicType;
 use std::path::Path;
 
-pub fn test_codegen(hir: hir::Hir) {
-    let context = Context::create();
-    let module = context.create_module("example_test");
-    let builder = context.create_builder();
-
-    let i64_type = context.i64_type();
-    let fn_type = i64_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
-    let function = module.add_function("sum_of_3numbers", fn_type, None);
-    let basic_block = context.append_basic_block(function, "entry");
-
-    builder.position_at_end(basic_block);
-    let x = function.get_nth_param(0).unwrap().into_int_value();
-    let y = function.get_nth_param(1).unwrap().into_int_value();
-    let z = function.get_nth_param(2).unwrap().into_int_value();
-
-    let sum = builder.build_int_add(x, y, "sum").unwrap();
-    let sum = builder.build_int_add(sum, z, "sum").unwrap();
-    builder.build_return(Some(&sum)).unwrap();
-
-    let fn_type = i64_type.fn_type(&[], false);
-    let function_main = module.add_function("main", fn_type, None);
-    let basic_block = context.append_basic_block(function_main, "entry");
-    builder.position_at_end(basic_block);
-    let value = builder
-        .build_call(
-            function,
-            &[
-                i64_type.const_int(1, true).into(),
-                i64_type.const_int(2, true).into(),
-                i64_type.const_int(3, true).into(),
-            ],
-            "sum_result",
-        )
-        .unwrap();
-    builder
-        .build_return(Some(&value.try_as_basic_value().unwrap_left()))
-        .unwrap();
-
-    module.print_to_stderr();
-
-    Target::initialize_x86(&InitializationConfig::default());
-
-    let opt = OptimizationLevel::None;
-    let reloc = RelocMode::Default;
-    let model = CodeModel::Default;
-    let path = Path::new("build/main.o");
-    let target = Target::from_name("x86-64").unwrap();
-
-    let target_machine = target
-        .create_target_machine(
-            &TargetMachine::get_default_triple(),
-            "x86-64",
-            TargetMachine::get_host_cpu_features()
-                .to_str()
-                .expect("utf-8"),
-            opt,
-            reloc,
-            model,
-        )
-        .unwrap();
-
-    assert!(target_machine
-        .write_to_file(&module, FileType::Object, &path)
-        .is_ok());
-}
-
-struct CodegenData<'ctx> {
+struct Codegen<'ctx> {
+    context: &'ctx context::Context,
+    module: module::Module<'ctx>,
+    builder: builder::Builder<'ctx>,
+    target_machine: targets::TargetMachine,
     struct_types: Vec<types::StructType<'ctx>>,
 }
 
-//@perf context.ptr_sized_int_type( could be cached in Codegen
-// to avoid extra calls and matching in the call_stack
-// same could be done for other types, to not call into llvm context as much
-fn type_to_llvm<'ctx>(
-    context: &'ctx Context,
-    codegen: &CodegenData<'ctx>,
-    ty: hir::Type,
-    target_data: &TargetData,
-) -> Option<types::BasicTypeEnum<'ctx>> {
-    let llvm_ty = match ty {
-        hir::Type::Error => panic!("unexpected error type during codegen"),
-        hir::Type::Basic(basic) => match basic {
-            BasicType::Unit => return None,
-            BasicType::Bool => context.bool_type().into(),
-            BasicType::S8 => context.i8_type().into(),
-            BasicType::S16 => context.i16_type().into(),
-            BasicType::S32 => context.i32_type().into(),
-            BasicType::S64 => context.i64_type().into(),
-            BasicType::Ssize => context.ptr_sized_int_type(target_data, None).into(),
-            BasicType::U8 => context.i8_type().into(),
-            BasicType::U16 => context.i16_type().into(),
-            BasicType::U32 => context.i32_type().into(),
-            BasicType::U64 => context.i64_type().into(),
-            BasicType::Usize => context.ptr_sized_int_type(target_data, None).into(),
-            BasicType::F32 => context.f32_type().into(),
-            BasicType::F64 => context.f64_type().into(),
-            BasicType::Char => context.i32_type().into(),
-            BasicType::Rawptr => context.ptr_sized_int_type(target_data, None).into(),
-        },
-        hir::Type::Enum(_) => todo!(),
-        hir::Type::Union(_) => todo!(),
-        hir::Type::Struct(id) => codegen.struct_types[id.index()].into(),
-        hir::Type::Reference(_, _) => context.ptr_sized_int_type(target_data, None).into(),
-        hir::Type::ArraySlice(_) => todo!(),
-        hir::Type::ArrayStatic(_) => todo!(),
-    };
-    Some(llvm_ty)
+impl<'ctx> Codegen<'ctx> {
+    fn new(context: &'ctx context::Context) -> Codegen<'ctx> {
+        let module = context.create_module("rock_module");
+        let builder = context.create_builder();
+
+        targets::Target::initialize_x86(&targets::InitializationConfig::default());
+        let target = targets::Target::from_name("x86-64").unwrap();
+        let target_machine = target
+            .create_target_machine(
+                &targets::TargetMachine::get_default_triple(),
+                "x86-64",
+                targets::TargetMachine::get_host_cpu_features()
+                    .to_str()
+                    .expect("utf-8"),
+                inkwell::OptimizationLevel::None,
+                targets::RelocMode::Default,
+                targets::CodeModel::Default,
+            )
+            .unwrap();
+
+        Codegen {
+            context,
+            module,
+            builder,
+            struct_types: Vec::new(),
+            target_machine,
+        }
+    }
+
+    //@debug printing module,
+    // handle build directory missing properly:
+    // currently its created by LLVM when requesting the file output
+    fn build_object(self) {
+        self.module.print_to_stderr();
+        let path = Path::new("build/main.o");
+        self.target_machine
+            .write_to_file(&self.module, targets::FileType::Object, &path)
+            .expect("llvm write object")
+    }
+
+    //@perf, could be cached once to avoid llvm calls and extra checks
+    // profile difference on actual release setup and bigger codebases
+    fn pointer_sized_int_type(&self) -> types::IntType<'ctx> {
+        self.context
+            .ptr_sized_int_type(&self.target_machine.get_target_data(), None)
+            .into()
+    }
+
+    //@any is used as general type
+    // unit / void is not accepted by enums that wrap
+    // struct field types, proc param types.
+    fn type_into_any(&self, ty: hir::Type) -> types::AnyTypeEnum<'ctx> {
+        match ty {
+            hir::Type::Error => panic!("unexpected error type during codegen"),
+            hir::Type::Basic(basic) => match basic {
+                ast::BasicType::Unit => self.context.void_type().into(),
+                ast::BasicType::Bool => self.context.bool_type().into(),
+                ast::BasicType::S8 => self.context.i8_type().into(),
+                ast::BasicType::S16 => self.context.i16_type().into(),
+                ast::BasicType::S32 => self.context.i32_type().into(),
+                ast::BasicType::S64 => self.context.i64_type().into(),
+                ast::BasicType::Ssize => self.pointer_sized_int_type().into(),
+                ast::BasicType::U8 => self.context.i8_type().into(),
+                ast::BasicType::U16 => self.context.i16_type().into(),
+                ast::BasicType::U32 => self.context.i32_type().into(),
+                ast::BasicType::U64 => self.context.i64_type().into(),
+                ast::BasicType::Usize => self.pointer_sized_int_type().into(),
+                ast::BasicType::F32 => self.context.f32_type().into(),
+                ast::BasicType::F64 => self.context.f64_type().into(),
+                ast::BasicType::Char => self.context.i32_type().into(),
+                ast::BasicType::Rawptr => self.pointer_sized_int_type().into(),
+            },
+            hir::Type::Enum(_) => todo!(),
+            hir::Type::Union(_) => todo!(),
+            hir::Type::Struct(id) => self.struct_types[id.index()].into(),
+            hir::Type::Reference(_, _) => self.pointer_sized_int_type().into(),
+            hir::Type::ArraySlice(_) => todo!(),
+            hir::Type::ArrayStatic(_) => todo!(),
+        }
+    }
+
+    fn type_into_basic(&self, ty: hir::Type) -> Option<types::BasicTypeEnum<'ctx>> {
+        self.type_into_any(ty).try_into().ok()
+    }
+
+    fn type_into_basic_metadata(
+        &self,
+        ty: hir::Type,
+    ) -> Option<types::BasicMetadataTypeEnum<'ctx>> {
+        self.type_into_any(ty).try_into().ok()
+    }
 }
 
 pub fn codegen(hir: hir::Hir) {
-    Target::initialize_x86(&InitializationConfig::default());
+    let context = context::Context::create();
+    let mut cg = Codegen::new(&context);
+    codegen_struct_types(&mut cg, &hir);
+    codegen_procedures(&cg, &hir);
+    cg.build_object();
+}
 
-    let opt = OptimizationLevel::None;
-    let reloc = RelocMode::Default;
-    let model = CodeModel::Default;
-    let path = Path::new("build/main.o");
-    let target = Target::from_name("x86-64").unwrap();
-
-    let target_machine = target
-        .create_target_machine(
-            &TargetMachine::get_default_triple(),
-            "x86-64",
-            TargetMachine::get_host_cpu_features()
-                .to_str()
-                .expect("utf-8"),
-            opt,
-            reloc,
-            model,
-        )
-        .unwrap();
-
-    let context = Context::create();
-    let module = context.create_module("rock_module");
-    let builder = context.create_builder();
-
-    let mut codegen = CodegenData {
-        struct_types: Vec::with_capacity(hir.structs.len()),
-    };
-
+//@breaking issue inkwell api takes in BasicTypeEnum for struct body creation
+// which doesnt allow void type which is represented as unit () in rock language
+// this has a side-effect of shifting field ids in relation to generated StructFieldIDs in hir::Expr
+// llvm doesnt seem to explicitly disallow void_type in structures. @05.04.24
+//@same applies to unit / void types in procedure params, ProcParamIDs would be synced to llvm param ids
+// when unit type params are removed @05.04.24
+//@this is general design problem with unit / void type in the language
+// currently its allowed to be used freely
+fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
     for idx in 0..hir.structs.len() {
-        codegen
-            .struct_types
-            .push(context.opaque_struct_type(&format!("rock_struct_{idx}")));
+        let name = format!("rock_struct_{idx}");
+        let opaque = cg.context.opaque_struct_type(&name);
+        cg.struct_types.push(opaque);
     }
 
     let mut field_types = Vec::<types::BasicTypeEnum>::new();
@@ -159,35 +137,49 @@ pub fn codegen(hir: hir::Hir) {
         field_types.clear();
 
         for field in struct_data.fields {
-            let field_ty = type_to_llvm(
-                &context,
-                &codegen,
-                field.ty,
-                &target_machine.get_target_data(),
-            );
-            //@issue related to unit / void type below
-            if let Some(field_ty) = field_ty {
-                field_types.push(field_ty);
+            //@unit types being ignored, they cannot be passed via inkwell api
+            // which might be correct with llvm spec, void only used as procedure return type
+            match cg.type_into_basic(field.ty) {
+                Some(ty) => field_types.push(ty),
+                None => {}
             }
         }
 
-        //@breaking issue inkwell api takes in BasicTypeEnum for struct body creation
-        // which doesnt allow void type which is represented as unit () in rock language
-        // this has a side-effect of shifting field ids in relation to generated StructFieldIDs in hir::Expr
-        // llvm doesnt seem to explicitly disallow void_type in structures. @05.04.24
-        let opaque_struct_type = codegen.struct_types[idx];
-        opaque_struct_type.set_body(&field_types, false);
-        eprintln!("{}", opaque_struct_type.print_to_string());
+        let opaque = cg.struct_types[idx];
+        opaque.set_body(&field_types, false);
+        eprintln!("{}", opaque.print_to_string());
     }
+}
 
+fn codegen_procedures(cg: &Codegen, hir: &hir::Hir) {
+    let mut param_types = Vec::<types::BasicMetadataTypeEnum>::new();
     for (idx, proc_data) in hir.procs.iter().enumerate() {
-        let function_ty = context.void_type().fn_type(&[], false);
-        //@specify linkage based on function kind #[c_call] etc.
-        let function = module.add_function(&format!("rock_proc_{idx}"), function_ty, None);
-        let basic_block = context.append_basic_block(function, "entry");
-        builder.position_at_end(basic_block);
-    }
+        param_types.clear();
 
-    //@debug print
-    module.print_to_stderr();
+        for param in proc_data.params {
+            //@unit types being ignored, they cannot be passed via inkwell api
+            // which might be correct with llvm spec, void only used as procedure return type
+            match cg.type_into_basic_metadata(param.ty) {
+                Some(ty) => param_types.push(ty),
+                None => {}
+            }
+        }
+
+        let function_ty = match cg.type_into_basic(proc_data.return_ty) {
+            Some(ty) => ty.fn_type(&param_types, proc_data.is_variadic),
+            None => cg
+                .context
+                .void_type()
+                .fn_type(&param_types, proc_data.is_variadic),
+        };
+
+        //@specify linkage and name based on function kind #[c_call], `main` function, etc.
+        let name = format!("rock_struct_{idx}");
+        let function = cg.module.add_function(&name, function_ty, None);
+
+        //@placeholder for expr codegen
+        let basic_block = cg.context.append_basic_block(function, "entry");
+        cg.builder.position_at_end(basic_block);
+        cg.builder.build_return(None).unwrap();
+    }
 }
