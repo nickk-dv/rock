@@ -140,6 +140,7 @@ pub mod build {
     use super::CommandBuild;
     use crate::error_format;
     use rock_core::ast_parse;
+    use rock_core::codegen;
     use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
     use rock_core::session::Session;
@@ -154,7 +155,8 @@ pub mod build {
 
     fn build(session: &Session) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
-        let _ = hir_lower::check(ast)?;
+        let hir = hir_lower::check(ast)?;
+        codegen::test_codegen(hir);
         Ok(())
     }
 }
@@ -163,6 +165,7 @@ pub mod run {
     use super::CommandRun;
     use crate::error_format;
     use rock_core::ast_parse;
+    use rock_core::codegen;
     use rock_core::error::ErrorComp;
     use rock_core::hir_lower;
     use rock_core::session::Session;
@@ -177,7 +180,8 @@ pub mod run {
 
     fn run(session: &Session) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
-        let _ = hir_lower::check(ast)?;
+        let hir = hir_lower::check(ast)?;
+        codegen::test_codegen(hir);
         Ok(())
     }
 }

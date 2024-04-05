@@ -1,3 +1,8 @@
 [package]
 name = "rock_core"
 edition = "2021"
+build = "build.rs"
+
+[dependencies]
+inkwell = { version = "0.4.0", features = ["llvm17-0"] }
+llvm-sys = { version = "170.0.1", features = ["no-llvm-linking"]  }
