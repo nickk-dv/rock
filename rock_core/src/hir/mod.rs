@@ -58,6 +58,14 @@ pub struct ProcParam<'hir> {
 hir_id_impl!(LocalID);
 #[derive(Copy, Clone)]
 pub struct ProcBody<'hir> {
+    //@locals design:
+    // storing array of all locals is good to achieve delayed type inference on variable bindings
+    // which is allowed, but not enforced by current design:
+    // (local keeps Type::Error) if no expr or type were specified on binding
+    // if this delayed approach is kept,
+    // statement: Stmt::Local would only need to store LocalID
+    // since exact type isnt known when that statement is generated
+    // and all information about variable binding is stored in Locals of proc_body @06.04.24
     pub locals: &'hir [&'hir Local<'hir>],
 }
 

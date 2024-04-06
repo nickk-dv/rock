@@ -16,6 +16,7 @@ struct Codegen<'ctx> {
     builder: builder::Builder<'ctx>,
     target_machine: targets::TargetMachine,
     struct_types: Vec<types::StructType<'ctx>>,
+    function_values: Vec<values::FunctionValue<'ctx>>,
     current_funtion: Option<values::FunctionValue<'ctx>>,
 }
 
@@ -45,6 +46,7 @@ impl<'ctx> Codegen<'ctx> {
             builder,
             target_machine,
             struct_types: Vec::new(),
+            function_values: Vec::new(),
             current_funtion: None,
         }
     }
@@ -122,7 +124,8 @@ pub fn codegen(hir: hir::Hir) {
     let context = context::Context::create();
     let mut cg = Codegen::new(&context);
     codegen_struct_types(&mut cg, &hir);
-    codegen_procedures(&mut cg, &hir);
+    codegen_function_values(&mut cg, &hir);
+    codegen_function_bodies(&mut cg, &hir);
     cg.build_object();
 }
 
@@ -135,9 +138,10 @@ pub fn codegen(hir: hir::Hir) {
 //@this is general design problem with unit / void type in the language
 // currently its allowed to be used freely
 fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
-    for idx in 0..hir.structs.len() {
-        let name = format!("rock_struct_{idx}");
-        let opaque = cg.context.opaque_struct_type(&name);
+    cg.struct_types.reserve_exact(hir.structs.len());
+
+    for _ in 0..hir.structs.len() {
+        let opaque = cg.context.opaque_struct_type("rock_struct");
         cg.struct_types.push(opaque);
     }
 
@@ -160,9 +164,11 @@ fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
     }
 }
 
-fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
+fn codegen_function_values(cg: &mut Codegen, hir: &hir::Hir) {
+    cg.function_values.reserve_exact(hir.structs.len());
+
     let mut param_types = Vec::<types::BasicMetadataTypeEnum>::new();
-    for (idx, proc_data) in hir.procs.iter().enumerate() {
+    for proc_data in hir.procs.iter() {
         param_types.clear();
 
         for param in proc_data.params {
@@ -189,20 +195,38 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
         let name = if proc_data.origin_id == hir::ScopeID::new(0)
             && hir.intern.get_str(proc_data.name.id) == "main"
         {
-            "main".to_string()
+            "main"
         } else {
-            format!("rock_proc_{idx}")
+            "rock_proc"
         };
 
         //@specify linkage and name based on function kind and attributes #[c_call], etc.
         let function = cg.module.add_function(&name, function_ty, None);
-        cg.current_funtion = Some(function);
+        cg.function_values.push(function);
+    }
+}
 
+fn codegen_function_bodies(cg: &mut Codegen, hir: &hir::Hir) {
+    for (idx, proc_data) in hir.procs.iter().enumerate() {
         if let Some(block) = proc_data.block {
+            let function = cg.function_values[idx];
+            cg.current_funtion = Some(function);
+
             if let Some(value) = codegen_expr(cg, block) {
                 let entry = function.get_first_basic_block().expect("entry block");
                 cg.builder.position_at_end(entry);
                 cg.builder.build_return(Some(&value)).unwrap();
+            } else {
+                //@hack generating implicit return
+                //also generate it on last block on regular void return functions?
+                // cannot detect if `return;` was already written there
+                //@overall all returns must be included in Hir explicitly,
+                //so codegen doesnt need to do any work to get correct outputs
+                let entry = function.get_first_basic_block().expect("entry block");
+                if entry.get_terminator().is_none() {
+                    cg.builder.position_at_end(entry);
+                    cg.builder.build_return(None).unwrap();
+                }
             }
         }
     }
@@ -238,7 +262,7 @@ fn codegen_expr<'ctx>(
         hir::Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
         hir::Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
-        hir::Expr::ProcCall { proc_id, input } => Some(codegen_proc_call(cg, proc_id, input)),
+        hir::Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_id, input),
         hir::Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
         hir::Expr::StructInit { struct_id, input } => {
             Some(codegen_struct_init(cg, struct_id, input))
@@ -318,11 +342,26 @@ fn codegen_block<'ctx>(
             }
             hir::Stmt::Defer(_) => todo!("codegen `defer` not supported"),
             hir::Stmt::ForLoop(_) => todo!("codegen `for loop` not supported"),
-            hir::Stmt::Local(_) => todo!("codegen `local` not supported"),
+            hir::Stmt::Local(local) => {
+                //@variables without value expression are always zero initialized
+                // theres no way to detect potentially uninitialized variables
+                // during check and analysis phases, this might change. @06.04.24
+
+                //@store local var pointers to be accessed later according to hir::LocalID
+                let var_ty = cg.type_into_basic(local.ty).expect("non void type");
+                let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
+
+                if let Some(expr) = local.value {
+                    let value = codegen_expr(cg, expr).expect("value");
+                    cg.builder.build_store(var_ptr, value).unwrap();
+                } else {
+                    let zero_value = var_ty.const_zero();
+                    cg.builder.build_store(var_ptr, zero_value).unwrap();
+                }
+            }
             hir::Stmt::Assign(_) => todo!("codegen `assign` not supported"),
             hir::Stmt::ExprSemi(expr) => {
-                //@are expressions like `5;` valid when output as llvm ir?
-                // probably yes
+                //@are expressions like `5;` valid when output as llvm ir? probably yes
                 codegen_expr(cg, expr);
             }
             hir::Stmt::ExprTail(expr) => {
@@ -417,8 +456,19 @@ fn codegen_proc_call<'ctx>(
     cg: &Codegen<'ctx>,
     proc_id: hir::ProcID,
     input: &[&hir::Expr],
-) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `proc call` not supported")
+) -> Option<values::BasicValueEnum<'ctx>> {
+    let mut input_values = Vec::with_capacity(input.len());
+    for &expr in input {
+        let value = codegen_expr(cg, expr).expect("value");
+        input_values.push(values::BasicMetadataValueEnum::from(value));
+    }
+
+    let function = cg.function_values[proc_id.index()];
+    let call_val = cg
+        .builder
+        .build_direct_call(function, &input_values, "call_val")
+        .unwrap();
+    call_val.try_as_basic_value().left()
 }
 
 fn codegen_union_init<'ctx>(
