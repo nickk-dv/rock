@@ -165,7 +165,7 @@ pub enum Stmt<'hir> {
     ReturnVal(&'hir Expr<'hir>),
     Defer(&'hir Expr<'hir>),
     ForLoop(&'hir For<'hir>),
-    Local(&'hir Local<'hir>),
+    Local(LocalID),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
@@ -182,7 +182,7 @@ pub struct For<'hir> {
 pub enum ForKind<'hir> {
     Loop,
     While { cond: &'hir Expr<'hir> },
-    ForLoop { local: &'hir Local<'hir>, cond: &'hir Expr<'hir>, assign: &'hir Assign<'hir> },
+    ForLoop { local_id: LocalID, cond: &'hir Expr<'hir>, assign: &'hir Assign<'hir> },
 }
 
 #[derive(Copy, Clone)]

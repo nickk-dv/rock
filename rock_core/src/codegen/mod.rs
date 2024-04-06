@@ -17,11 +17,17 @@ struct Codegen<'ctx> {
     target_machine: targets::TargetMachine,
     struct_types: Vec<types::StructType<'ctx>>,
     function_values: Vec<values::FunctionValue<'ctx>>,
-    current_funtion: Option<values::FunctionValue<'ctx>>,
+    hir: hir::Hir<'ctx>,
+}
+
+struct ProcCodegen<'ctx> {
+    proc_id: hir::ProcID,
+    function: values::FunctionValue<'ctx>,
+    local_vars: Vec<Option<values::PointerValue<'ctx>>>,
 }
 
 impl<'ctx> Codegen<'ctx> {
-    fn new(context: &'ctx context::Context) -> Codegen<'ctx> {
+    fn new(context: &'ctx context::Context, hir: hir::Hir<'ctx>) -> Codegen<'ctx> {
         let module = context.create_module("rock_module");
         let builder = context.create_builder();
 
@@ -47,7 +53,7 @@ impl<'ctx> Codegen<'ctx> {
             target_machine,
             struct_types: Vec::new(),
             function_values: Vec::new(),
-            current_funtion: None,
+            hir,
         }
     }
 
@@ -122,10 +128,10 @@ impl<'ctx> Codegen<'ctx> {
 
 pub fn codegen(hir: hir::Hir) {
     let context = context::Context::create();
-    let mut cg = Codegen::new(&context);
-    codegen_struct_types(&mut cg, &hir);
-    codegen_function_values(&mut cg, &hir);
-    codegen_function_bodies(&mut cg, &hir);
+    let mut cg = Codegen::new(&context, hir);
+    codegen_struct_types(&mut cg);
+    codegen_function_values(&mut cg);
+    codegen_function_bodies(&mut cg);
     cg.build_object();
 }
 
@@ -137,16 +143,16 @@ pub fn codegen(hir: hir::Hir) {
 // when unit type params are removed @05.04.24
 //@this is general design problem with unit / void type in the language
 // currently its allowed to be used freely
-fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
-    cg.struct_types.reserve_exact(hir.structs.len());
+fn codegen_struct_types(cg: &mut Codegen) {
+    cg.struct_types.reserve_exact(cg.hir.structs.len());
 
-    for _ in 0..hir.structs.len() {
+    for _ in 0..cg.hir.structs.len() {
         let opaque = cg.context.opaque_struct_type("rock_struct");
         cg.struct_types.push(opaque);
     }
 
     let mut field_types = Vec::<types::BasicTypeEnum>::new();
-    for (idx, struct_data) in hir.structs.iter().enumerate() {
+    for (idx, struct_data) in cg.hir.structs.iter().enumerate() {
         field_types.clear();
 
         for field in struct_data.fields {
@@ -164,11 +170,11 @@ fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
     }
 }
 
-fn codegen_function_values(cg: &mut Codegen, hir: &hir::Hir) {
-    cg.function_values.reserve_exact(hir.structs.len());
+fn codegen_function_values(cg: &mut Codegen) {
+    cg.function_values.reserve_exact(cg.hir.structs.len());
 
     let mut param_types = Vec::<types::BasicMetadataTypeEnum>::new();
-    for proc_data in hir.procs.iter() {
+    for proc_data in cg.hir.procs.iter() {
         param_types.clear();
 
         for param in proc_data.params {
@@ -193,7 +199,7 @@ fn codegen_function_values(cg: &mut Codegen, hir: &hir::Hir) {
         // (switch to explicit main flag on proc_data or in hir instead)
         //@temporary condition to determine if its entry point or not @06.04.24
         let name = if proc_data.origin_id == hir::ScopeID::new(0)
-            && hir.intern.get_str(proc_data.name.id) == "main"
+            && cg.hir.intern.get_str(proc_data.name.id) == "main"
         {
             "main"
         } else {
@@ -206,13 +212,20 @@ fn codegen_function_values(cg: &mut Codegen, hir: &hir::Hir) {
     }
 }
 
-fn codegen_function_bodies(cg: &mut Codegen, hir: &hir::Hir) {
-    for (idx, proc_data) in hir.procs.iter().enumerate() {
+fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
+    for (idx, proc_data) in cg.hir.procs.iter().enumerate() {
         if let Some(block) = proc_data.block {
             let function = cg.function_values[idx];
-            cg.current_funtion = Some(function);
 
-            if let Some(value) = codegen_expr(cg, block) {
+            let mut local_vars = Vec::new();
+            local_vars.resize_with(proc_data.body.locals.len(), || None);
+            let mut proc_cg = ProcCodegen {
+                function,
+                proc_id: hir::ProcID::new(idx),
+                local_vars,
+            };
+
+            if let Some(value) = codegen_expr(cg, &mut proc_cg, block) {
                 let entry = function.get_first_basic_block().expect("entry block");
                 cg.builder.position_at_end(entry);
                 cg.builder.build_return(Some(&value)).unwrap();
@@ -239,30 +252,31 @@ fn codegen_function_bodies(cg: &mut Codegen, hir: &hir::Hir) {
 // hir could potentially generate code without tail returns (not sure yet) @06.04.24
 fn codegen_expr<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     expr: &hir::Expr,
 ) -> Option<values::BasicValueEnum<'ctx>> {
     match *expr {
         hir::Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
         hir::Expr::Unit => panic!("codegen unexpected hir::Expr::Unit (unit semantics arent done)"),
-        hir::Expr::LitNull => Some(codegen_lit_null(cg).into()),
-        hir::Expr::LitBool { val } => Some(codegen_lit_bool(cg, val).into()),
-        hir::Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty).into()),
-        hir::Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty).into()),
-        hir::Expr::LitChar { val } => Some(codegen_lit_char(cg, val).into()),
+        hir::Expr::LitNull => Some(codegen_lit_null(cg)),
+        hir::Expr::LitBool { val } => Some(codegen_lit_bool(cg, val)),
+        hir::Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty)),
+        hir::Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty)),
+        hir::Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
         hir::Expr::LitString { id } => Some(codegen_lit_string(cg, id)),
         hir::Expr::If { if_ } => Some(codegen_if(cg, if_)),
-        hir::Expr::Block { stmts } => codegen_block(cg, stmts),
+        hir::Expr::Block { stmts } => codegen_block(cg, proc_cg, stmts),
         hir::Expr::Match { match_ } => Some(codegen_match(cg, match_)),
         hir::Expr::UnionMember { target, id } => Some(codegen_union_member(cg, target, id)),
         hir::Expr::StructField { target, id } => Some(codegen_struct_field(cg, target, id)),
         hir::Expr::Index { target, index } => Some(codegen_index(cg, target, index)),
         hir::Expr::Cast { target, kind } => Some(codegen_cast(cg, target, kind)),
-        hir::Expr::LocalVar { local_id } => Some(codegen_local_var(cg, local_id)),
+        hir::Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, local_id)),
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
         hir::Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
         hir::Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
-        hir::Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_id, input),
+        hir::Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         hir::Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
         hir::Expr::StructInit { struct_id, input } => {
             Some(codegen_struct_init(cg, struct_id, input))
@@ -274,14 +288,14 @@ fn codegen_expr<'ctx>(
     }
 }
 
-fn codegen_lit_null<'ctx>(cg: &Codegen<'ctx>) -> values::IntValue<'ctx> {
+fn codegen_lit_null<'ctx>(cg: &Codegen<'ctx>) -> values::BasicValueEnum<'ctx> {
     let ptr_type = cg.pointer_sized_int_type();
-    ptr_type.const_zero()
+    ptr_type.const_zero().into()
 }
 
-fn codegen_lit_bool<'ctx>(cg: &Codegen<'ctx>, val: bool) -> values::IntValue<'ctx> {
+fn codegen_lit_bool<'ctx>(cg: &Codegen<'ctx>, val: bool) -> values::BasicValueEnum<'ctx> {
     let bool_type = cg.context.bool_type();
-    bool_type.const_int(val as u64, false)
+    bool_type.const_int(val as u64, false).into()
 }
 
 //@since its always u64 value thats not sign extended in 2s compliment form
@@ -292,25 +306,25 @@ fn codegen_lit_int<'ctx>(
     cg: &Codegen<'ctx>,
     val: u64,
     ty: ast::BasicType,
-) -> values::IntValue<'ctx> {
+) -> values::BasicValueEnum<'ctx> {
     let int_type = cg.type_into_any(hir::Type::Basic(ty)).into_int_type();
-    int_type.const_int(val, false)
+    int_type.const_int(val, false).into()
 }
 
 fn codegen_lit_float<'ctx>(
     cg: &Codegen<'ctx>,
     val: f64,
     ty: ast::BasicType,
-) -> values::FloatValue<'ctx> {
+) -> values::BasicValueEnum<'ctx> {
     let float_type = cg.type_into_any(hir::Type::Basic(ty)).into_float_type();
-    float_type.const_float(val)
+    float_type.const_float(val).into()
 }
 
-fn codegen_lit_char<'ctx>(cg: &Codegen<'ctx>, val: char) -> values::IntValue<'ctx> {
+fn codegen_lit_char<'ctx>(cg: &Codegen<'ctx>, val: char) -> values::BasicValueEnum<'ctx> {
     let char_type = cg
         .type_into_any(hir::Type::Basic(ast::BasicType::Char))
         .into_int_type();
-    char_type.const_int(val as u64, false)
+    char_type.const_int(val as u64, false).into()
 }
 
 fn codegen_lit_string<'ctx>(cg: &Codegen<'ctx>, id: InternID) -> values::BasicValueEnum<'ctx> {
@@ -323,10 +337,10 @@ fn codegen_if<'ctx>(cg: &Codegen<'ctx>, if_: &hir::If) -> values::BasicValueEnum
 
 fn codegen_block<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     stmts: &[hir::Stmt],
 ) -> Option<values::BasicValueEnum<'ctx>> {
-    let function = cg.current_funtion.expect("current function");
-    let basic_block = cg.context.append_basic_block(function, "block");
+    let basic_block = cg.context.append_basic_block(proc_cg.function, "block");
     cg.builder.position_at_end(basic_block);
 
     for (idx, stmt) in stmts.iter().enumerate() {
@@ -337,22 +351,22 @@ fn codegen_block<'ctx>(
                 cg.builder.build_return(None).unwrap();
             }
             hir::Stmt::ReturnVal(expr) => {
-                let value = codegen_expr(cg, expr).expect("value");
+                let value = codegen_expr(cg, proc_cg, expr).expect("value");
                 cg.builder.build_return(Some(&value)).unwrap();
             }
             hir::Stmt::Defer(_) => todo!("codegen `defer` not supported"),
             hir::Stmt::ForLoop(_) => todo!("codegen `for loop` not supported"),
-            hir::Stmt::Local(local) => {
+            hir::Stmt::Local(local_id) => {
+                let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
+                let var_ty = cg.type_into_basic(local.ty).expect("non void type");
+                let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
+                proc_cg.local_vars[local_id.index()] = Some(var_ptr);
+
                 //@variables without value expression are always zero initialized
                 // theres no way to detect potentially uninitialized variables
                 // during check and analysis phases, this might change. @06.04.24
-
-                //@store local var pointers to be accessed later according to hir::LocalID
-                let var_ty = cg.type_into_basic(local.ty).expect("non void type");
-                let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
-
                 if let Some(expr) = local.value {
-                    let value = codegen_expr(cg, expr).expect("value");
+                    let value = codegen_expr(cg, proc_cg, expr).expect("value");
                     cg.builder.build_store(var_ptr, value).unwrap();
                 } else {
                     let zero_value = var_ty.const_zero();
@@ -362,7 +376,7 @@ fn codegen_block<'ctx>(
             hir::Stmt::Assign(_) => todo!("codegen `assign` not supported"),
             hir::Stmt::ExprSemi(expr) => {
                 //@are expressions like `5;` valid when output as llvm ir? probably yes
-                codegen_expr(cg, expr);
+                codegen_expr(cg, proc_cg, expr);
             }
             hir::Stmt::ExprTail(expr) => {
                 //@assumed to be last code in the block
@@ -372,7 +386,7 @@ fn codegen_block<'ctx>(
                     stmts.len(),
                     "codegen Stmt::ExprTail must be the last statement of the block"
                 );
-                return codegen_expr(cg, expr);
+                return codegen_expr(cg, proc_cg, expr);
             }
         }
     }
@@ -418,9 +432,13 @@ fn codegen_cast<'ctx>(
 
 fn codegen_local_var<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     local_id: hir::LocalID,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `local var` not supported")
+    let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
+    let var_ty = cg.type_into_basic(local.ty).expect("non void type");
+    let var_ptr = proc_cg.local_vars[local_id.index()].expect("var ptr");
+    cg.builder.build_load(var_ty, var_ptr, "local_val").unwrap()
 }
 
 fn codegen_param_var<'ctx>(
@@ -454,12 +472,13 @@ fn codegen_enum_variant<'ctx>(
 
 fn codegen_proc_call<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     proc_id: hir::ProcID,
     input: &[&hir::Expr],
 ) -> Option<values::BasicValueEnum<'ctx>> {
     let mut input_values = Vec::with_capacity(input.len());
     for &expr in input {
-        let value = codegen_expr(cg, expr).expect("value");
+        let value = codegen_expr(cg, proc_cg, expr).expect("value");
         input_values.push(values::BasicMetadataValueEnum::from(value));
     }
 

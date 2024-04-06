@@ -58,11 +58,12 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         });
     }
 
-    pub fn push_local(&mut self, local: &'hir hir::Local<'hir>) {
+    pub fn push_local(&mut self, local: &'hir hir::Local<'hir>) -> hir::LocalID {
         let local_id = hir::LocalID::new(self.locals.len());
         self.locals.push(local);
         self.locals_in_scope.push(local_id);
         self.blocks.last_mut().expect("block exists").local_count += 1;
+        local_id
     }
 
     pub fn pop_block(&mut self) {
@@ -85,5 +86,9 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
             }
         }
         None
+    }
+
+    pub fn finish(self) -> Vec<&'hir hir::Local<'hir>> {
+        self.locals
     }
 }

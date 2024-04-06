@@ -18,12 +18,16 @@ fn typecheck_proc<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, i
     match item.block {
         Some(block) => {
             let data = hir.proc_data(id);
-            let proc = &mut ProcScope::new(data);
+            let mut proc = ProcScope::new(data);
 
-            let block_res = typecheck_expr(hir, emit, proc, data.return_ty, block);
+            let block_res = typecheck_expr(hir, emit, &mut proc, data.return_ty, block);
+
+            let locals = proc.finish();
+            let locals = emit.arena.alloc_slice(&locals);
 
             let data = hir.proc_data_mut(id);
             data.block = Some(block_res.expr);
+            data.body.locals = locals;
         }
         None => {
             let data = hir.proc_data(id);
@@ -1524,9 +1528,8 @@ fn typecheck_local<'hir>(
         ty: local_ty,
         value: local_value,
     });
-    proc.push_local(local);
-
-    Some(hir::Stmt::Local(local))
+    let local_id = proc.push_local(local);
+    Some(hir::Stmt::Local(local_id))
 }
 
 //@not checking lhs variable mutability
