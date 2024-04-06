@@ -712,7 +712,10 @@ fn tail_expr<'ast>(
                 let ty = ty(p)?;
                 let ty_ref = p.state.arena.alloc(ty);
                 target = p.state.arena.alloc(Expr {
-                    kind: ExprKind::Cast { target, ty: ty_ref },
+                    kind: ExprKind::Cast {
+                        target,
+                        into: ty_ref,
+                    },
                     range: TextRange::new(range_start, p.peek_range_end()),
                 });
                 last_cast = true;

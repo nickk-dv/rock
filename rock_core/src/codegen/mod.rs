@@ -255,36 +255,35 @@ fn codegen_expr<'ctx>(
     proc_cg: &mut ProcCodegen<'ctx>,
     expr: &hir::Expr,
 ) -> Option<values::BasicValueEnum<'ctx>> {
+    use hir::Expr;
     match *expr {
-        hir::Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
-        hir::Expr::Unit => panic!("codegen unexpected hir::Expr::Unit (unit semantics arent done)"),
-        hir::Expr::LitNull => Some(codegen_lit_null(cg)),
-        hir::Expr::LitBool { val } => Some(codegen_lit_bool(cg, val)),
-        hir::Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty)),
-        hir::Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty)),
-        hir::Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
-        hir::Expr::LitString { id } => Some(codegen_lit_string(cg, id)),
-        hir::Expr::If { if_ } => Some(codegen_if(cg, if_)),
-        hir::Expr::Block { stmts } => codegen_block(cg, proc_cg, stmts),
-        hir::Expr::Match { match_ } => Some(codegen_match(cg, match_)),
-        hir::Expr::UnionMember { target, id } => Some(codegen_union_member(cg, target, id)),
-        hir::Expr::StructField { target, id } => Some(codegen_struct_field(cg, target, id)),
-        hir::Expr::Index { target, index } => Some(codegen_index(cg, target, index)),
-        hir::Expr::Cast { target, kind } => Some(codegen_cast(cg, target, kind)),
-        hir::Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, local_id)),
-        hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
-        hir::Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
-        hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
-        hir::Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
-        hir::Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
-        hir::Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
-        hir::Expr::StructInit { struct_id, input } => {
-            Some(codegen_struct_init(cg, struct_id, input))
-        }
-        hir::Expr::ArrayInit { input } => Some(codegen_array_init(cg, input)),
-        hir::Expr::ArrayRepeat { expr, size } => Some(codegen_array_repeat(cg, expr, size)),
-        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
-        hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
+        Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
+        Expr::Unit => panic!("codegen unexpected hir::Expr::Unit (unit semantics arent done)"),
+        Expr::LitNull => Some(codegen_lit_null(cg)),
+        Expr::LitBool { val } => Some(codegen_lit_bool(cg, val)),
+        Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty)),
+        Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty)),
+        Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
+        Expr::LitString { id } => Some(codegen_lit_string(cg, id)),
+        Expr::If { if_ } => Some(codegen_if(cg, if_)),
+        Expr::Block { stmts } => codegen_block(cg, proc_cg, stmts),
+        Expr::Match { match_ } => Some(codegen_match(cg, match_)),
+        Expr::UnionMember { target, id } => Some(codegen_union_member(cg, target, id)),
+        Expr::StructField { target, id } => Some(codegen_struct_field(cg, target, id)),
+        Expr::Index { target, index } => Some(codegen_index(cg, target, index)),
+        Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
+        Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, local_id)),
+        Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
+        Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
+        Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
+        Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
+        Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
+        Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
+        Expr::StructInit { struct_id, input } => Some(codegen_struct_init(cg, struct_id, input)),
+        Expr::ArrayInit { input } => Some(codegen_array_init(cg, input)),
+        Expr::ArrayRepeat { expr, size } => Some(codegen_array_repeat(cg, expr, size)),
+        Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
+        Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
     }
 }
 
@@ -424,10 +423,27 @@ fn codegen_index<'ctx>(
 
 fn codegen_cast<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     target: &hir::Expr,
+    into: &hir::Type,
     kind: hir::CastKind,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `cast` not supported")
+    let target = codegen_expr(cg, proc_cg, target).expect("value");
+    let into = cg.type_into_basic(*into).expect("non void type");
+    let op = match kind {
+        hir::CastKind::Error => panic!("codegen unexpected hir::CastKind::Error"),
+        hir::CastKind::NoOp => return target,
+        hir::CastKind::Integer_Trunc => values::InstructionOpcode::Trunc,
+        hir::CastKind::Sint_Sign_Extend => values::InstructionOpcode::SExt,
+        hir::CastKind::Uint_Zero_Extend => values::InstructionOpcode::ZExt,
+        hir::CastKind::Float_to_Sint => values::InstructionOpcode::FPToSI,
+        hir::CastKind::Float_to_Uint => values::InstructionOpcode::FPToUI,
+        hir::CastKind::Sint_to_Float => values::InstructionOpcode::SIToFP,
+        hir::CastKind::Uint_to_Float => values::InstructionOpcode::UIToFP,
+        hir::CastKind::Float_Trunc => values::InstructionOpcode::FPTrunc,
+        hir::CastKind::Float_Extend => values::InstructionOpcode::FPExt,
+    };
+    cg.builder.build_cast(op, target, into, "cast_val").unwrap()
 }
 
 fn codegen_local_var<'ctx>(
@@ -481,7 +497,6 @@ fn codegen_proc_call<'ctx>(
         let value = codegen_expr(cg, proc_cg, expr).expect("value");
         input_values.push(values::BasicMetadataValueEnum::from(value));
     }
-
     let function = cg.function_values[proc_id.index()];
     let call_val = cg
         .builder

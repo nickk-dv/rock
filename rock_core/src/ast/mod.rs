@@ -236,7 +236,7 @@ pub enum ExprKind<'ast> {
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
-    Cast        { target: &'ast Expr<'ast>, ty: &'ast Type<'ast> },
+    Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: Type<'ast> },
     Item        { path: &'ast Path<'ast> },
     ProcCall    { proc_call: &'ast ProcCall<'ast> },

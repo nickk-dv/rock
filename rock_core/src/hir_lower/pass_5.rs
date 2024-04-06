@@ -150,8 +150,8 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(hir, emit, proc, target, index),
-        ast::ExprKind::Cast { target, ty } => {
-            typecheck_cast(hir, emit, proc, target, ty, expr.range)
+        ast::ExprKind::Cast { target, into } => {
+            typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, expr.range.start(), ty),
         ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
@@ -595,41 +595,54 @@ fn typecheck_cast<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
-    ty: &ast::Type<'_>,
+    into: &ast::Type<'_>,
     range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
-    let cast_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), *ty);
+    let into = super::pass_3::type_resolve(hir, emit, proc.origin(), *into);
 
     // early return prevents false positives on cast warning & cast error
-    if matches!(target_res.ty, hir::Type::Error) || matches!(cast_ty, hir::Type::Error) {
+    if matches!(target_res.ty, hir::Type::Error) || matches!(into, hir::Type::Error) {
         //@this could be skipped by returning reference to same error expression
         // to save memory in error cases and reduce noise in the code itself.
-        let cast_expr = emit.arena.alloc(hir::Expr::Cast {
+
+        let cast_expr = hir::Expr::Cast {
             target: target_res.expr,
-            kind: hir::CastKind::Error,
-        });
-        return TypeResult::new(hir::Type::Error, cast_expr);
+            into: emit.arena.alloc(into),
+            kind: hir::CastKind::NoOp,
+        };
+        return TypeResult {
+            ty: into,
+            expr: emit.arena.alloc(cast_expr),
+        };
     }
 
     // invariant: both types are not Error
     // ensured by early return above
-    if type_matches(target_res.ty, cast_ty) {
+    if type_matches(target_res.ty, into) {
         emit.error(
             ErrorComp::warning(format!(
                 "redundant cast from `{}` into `{}`",
                 type_format(hir, target_res.ty),
-                type_format(hir, cast_ty)
+                type_format(hir, into)
             ))
             .context(hir.src(proc.origin(), range)),
         );
-        // cast expression is not generated
-        return TypeResult::new(cast_ty, target_res.expr);
+
+        let cast_expr = hir::Expr::Cast {
+            target: target_res.expr,
+            into: emit.arena.alloc(into),
+            kind: hir::CastKind::NoOp,
+        };
+        return TypeResult {
+            ty: into,
+            expr: emit.arena.alloc(cast_expr),
+        };
     }
 
     // invariant: from_size != into_size
     // ensured by cast redundancy warning above
-    let cast_kind = match (target_res.ty, cast_ty) {
+    let cast_kind = match (target_res.ty, into) {
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::from_basic(from);
             let into_kind = BasicTypeKind::from_basic(into);
@@ -688,19 +701,20 @@ fn typecheck_cast<'hir>(
             ErrorComp::error(format!(
                 "non primitive cast from `{}` into `{}`",
                 type_format(hir, target_res.ty),
-                type_format(hir, cast_ty)
+                type_format(hir, into)
             ))
             .context(hir.src(proc.origin(), range)),
         );
     }
 
-    let cast_expr = emit.arena.alloc(hir::Expr::Cast {
+    let cast_expr = hir::Expr::Cast {
         target: target_res.expr,
+        into: emit.arena.alloc(into),
         kind: cast_kind,
-    });
+    };
     TypeResult {
-        ty: cast_ty,
-        expr: cast_expr,
+        ty: into,
+        expr: emit.arena.alloc(cast_expr),
     }
 }
 
@@ -1430,6 +1444,10 @@ fn typecheck_return<'hir>(
     if let Some(expr) = expr {
         let expect = proc.data().return_ty;
         let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        //@not typechecked with return type
+        // same problem as below (need to find proper way reference function return type
+        // to avoid TextRange on Type could use procedure name range instead
+        // this would make both `implicit -> ()` and `-> SomeType` reports consistant
         hir::Stmt::ReturnVal(expr_res.expr)
     } else {
         //@figure out a way to report return type related errors
