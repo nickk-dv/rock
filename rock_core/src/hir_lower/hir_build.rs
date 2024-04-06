@@ -408,6 +408,7 @@ impl<'hir> HirEmit<'hir> {
         if self.errors.is_empty() {
             Ok(hir::Hir {
                 arena: self.arena,
+                intern: hir.ast.intern,
                 scopes: hir.hir_scopes,
                 procs: hir.procs,
                 enums: hir.enums,

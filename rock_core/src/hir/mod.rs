@@ -1,10 +1,11 @@
 use crate::arena::Arena;
 use crate::ast;
-use crate::intern::InternID;
+use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
+    pub intern: InternPool,
     pub scopes: Vec<ScopeData>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
