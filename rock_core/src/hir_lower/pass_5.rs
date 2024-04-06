@@ -1030,7 +1030,13 @@ fn typecheck_array_init<'hir>(
     expect: hir::Type<'hir>,
     input: &[&ast::Expr<'_>],
 ) -> TypeResult<'hir> {
-    let mut elem_type = hir::Type::Error;
+    //@unknown type in empty initializers gets ignored
+    // same would be a problem for empty slices: `&[]`
+    // & will be used as slicing syntax most likely
+    // need to properly seaprate Error type and Unknown types
+    // and handle them properly (relates to variables and overall inference flow) @06.04.24
+    let mut elem_ty = hir::Type::Error;
+
     let expect = match expect {
         hir::Type::ArrayStatic(array) => array.ty,
         _ => hir::Type::Error,
@@ -1041,7 +1047,7 @@ fn typecheck_array_init<'hir>(
         let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
         hir_input.push(expr_res.expr);
         if idx == 0 {
-            elem_type = expr_res.ty;
+            elem_ty = expr_res.ty;
         }
     }
     let hir_input = emit.arena.alloc_slice(&hir_input);
@@ -1054,9 +1060,14 @@ fn typecheck_array_init<'hir>(
     });
     let array_type = emit.arena.alloc(hir::ArrayStatic {
         size: hir::ConstExpr(size),
-        ty: elem_type,
+        ty: elem_ty,
     });
-    let array_expr = hir::Expr::ArrayInit { input: hir_input };
+
+    let array_init = emit.arena.alloc(hir::ArrayInit {
+        elem_ty,
+        input: hir_input,
+    });
+    let array_expr = hir::Expr::ArrayInit { array_init };
     TypeResult::new(
         hir::Type::ArrayStatic(array_type),
         emit.arena.alloc(array_expr),
@@ -1083,11 +1094,17 @@ fn typecheck_array_repeat<'hir>(
         size: size_res,
         ty: expr_res.ty,
     });
-    let array_repeat = emit.arena.alloc(hir::Expr::ArrayRepeat {
+
+    let array_repeat = emit.arena.alloc(hir::ArrayRepeat {
+        elem_ty: expr_res.ty,
         expr: expr_res.expr,
         size: size_res,
     });
-    TypeResult::new(hir::Type::ArrayStatic(array_type), array_repeat)
+    let array_expr = hir::Expr::ArrayRepeat { array_repeat };
+    TypeResult::new(
+        hir::Type::ArrayStatic(array_type),
+        emit.arena.alloc(array_expr),
+    )
 }
 
 fn typecheck_unary<'hir>(

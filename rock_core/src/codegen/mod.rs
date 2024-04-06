@@ -109,8 +109,18 @@ impl<'ctx> Codegen<'ctx> {
             hir::Type::Union(_) => todo!(),
             hir::Type::Struct(id) => self.struct_types[id.index()].into(),
             hir::Type::Reference(_, _) => self.pointer_sized_int_type().into(),
-            hir::Type::ArraySlice(_) => todo!(),
-            hir::Type::ArrayStatic(_) => todo!(),
+            hir::Type::ArraySlice(slice) => todo!(),
+            hir::Type::ArrayStatic(array) => {
+                //@array static shoudnt always carry expresion inside
+                // when its not declared it might just store u32 or u64 size without allocations
+                // store u32 since its expected size for static arrays @06.04.24
+                let elem_ty = self.type_into_basic(array.ty).expect("non void type");
+                if let hir::Expr::LitInt { val, .. } = *array.size.0 {
+                    elem_ty.array_type(val as u32).into()
+                } else {
+                    panic!("codegen: invalid array static size expression");
+                }
+            }
         }
     }
 
@@ -279,9 +289,11 @@ fn codegen_expr<'ctx>(
         Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
         Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
-        Expr::StructInit { struct_id, input } => Some(codegen_struct_init(cg, struct_id, input)),
-        Expr::ArrayInit { input } => Some(codegen_array_init(cg, input)),
-        Expr::ArrayRepeat { expr, size } => Some(codegen_array_repeat(cg, expr, size)),
+        Expr::StructInit { struct_id, input } => {
+            Some(codegen_struct_init(cg, proc_cg, struct_id, input))
+        }
+        Expr::ArrayInit { array_init } => Some(codegen_array_init(cg, proc_cg, array_init)),
+        Expr::ArrayRepeat { array_repeat } => Some(codegen_array_repeat(cg, proc_cg, array_repeat)),
         Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
         Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
     }
@@ -497,6 +509,7 @@ fn codegen_proc_call<'ctx>(
         let value = codegen_expr(cg, proc_cg, expr).expect("value");
         input_values.push(values::BasicMetadataValueEnum::from(value));
     }
+
     let function = cg.function_values[proc_id.index()];
     let call_val = cg
         .builder
@@ -515,23 +528,63 @@ fn codegen_union_init<'ctx>(
 
 fn codegen_struct_init<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     struct_id: hir::StructID,
     input: &[hir::StructFieldInit],
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `struct init` not supported")
+    let struct_ty = cg
+        .type_into_basic(hir::Type::Struct(struct_id))
+        .expect("non void type");
+    let struct_ptr = cg.builder.build_alloca(struct_ty, "struct_temp").unwrap();
+
+    for field_init in input {
+        let value = codegen_expr(cg, proc_cg, field_init.expr).expect("value");
+        let field_idx = field_init.field_id.index() as u32;
+        let field_ptr = cg
+            .builder
+            .build_struct_gep(struct_ty, struct_ptr, field_idx, "field_ptr")
+            .unwrap();
+        cg.builder.build_store(field_ptr, value).unwrap();
+    }
+
+    cg.builder
+        .build_load(struct_ty, struct_ptr, "struct_val")
+        .unwrap()
 }
 
+#[allow(unsafe_code)]
 fn codegen_array_init<'ctx>(
     cg: &Codegen<'ctx>,
-    input: &[&hir::Expr],
+    proc_cg: &mut ProcCodegen<'ctx>,
+    array_init: &hir::ArrayInit,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `array init` not supported")
+    let elem_ty = cg
+        .type_into_basic(array_init.elem_ty)
+        .expect("non void type");
+    let array_ty = elem_ty.array_type(array_init.input.len() as u32);
+    let array_ptr = cg.builder.build_alloca(array_ty, "array_temp").unwrap();
+    let index_type = cg.pointer_sized_int_type();
+
+    for (idx, &expr) in array_init.input.iter().enumerate() {
+        let value = codegen_expr(cg, proc_cg, expr).expect("value");
+        let index_value = index_type.const_int(idx as u64, false);
+        let elem_ptr = unsafe {
+            cg.builder
+                .build_in_bounds_gep(array_ty, array_ptr, &[index_value], "elem_ptr")
+                .unwrap()
+        };
+        cg.builder.build_store(elem_ptr, value).unwrap();
+    }
+
+    cg.builder
+        .build_load(array_ty, array_ptr, "array_val")
+        .unwrap()
 }
 
 fn codegen_array_repeat<'ctx>(
     cg: &Codegen<'ctx>,
-    expr: &hir::Expr,
-    size: hir::ConstExpr,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    array_repeat: &hir::ArrayRepeat,
 ) -> values::BasicValueEnum<'ctx> {
     todo!("codegen `array repeat` not supported")
 }

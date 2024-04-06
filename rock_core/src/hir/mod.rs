@@ -229,8 +229,8 @@ pub enum Expr<'hir> {
     ProcCall    { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     UnionInit   { union_id: UnionID, input: UnionMemberInit<'hir> },
     StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
-    ArrayInit   { input: &'hir [&'hir Expr<'hir>] },
-    ArrayRepeat { expr: &'hir Expr<'hir>, size: ConstExpr<'hir> },
+    ArrayInit   { array_init: &'hir ArrayInit<'hir> },
+    ArrayRepeat { array_repeat: &'hir ArrayRepeat<'hir> },
     Unary       { op: ast::UnOp, rhs: &'hir Expr<'hir> },
     Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
@@ -290,6 +290,19 @@ pub struct UnionMemberInit<'hir> {
 pub struct StructFieldInit<'hir> {
     pub field_id: StructFieldID,
     pub expr: &'hir Expr<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayInit<'hir> {
+    pub elem_ty: Type<'hir>,
+    pub input: &'hir [&'hir Expr<'hir>],
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayRepeat<'hir> {
+    pub elem_ty: Type<'hir>,
+    pub expr: &'hir Expr<'hir>,
+    pub size: ConstExpr<'hir>,
 }
 
 impl<'hir> Hir<'hir> {
