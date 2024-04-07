@@ -128,10 +128,15 @@ fn proc_param<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<ProcParam<'ast>, Str
 fn enum_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
+    let basic = p.peek().as_basic_type();
+    if basic.is_some() {
+        p.bump();
+    }
     let variants = semi_separated_block!(p, enum_variant, enum_variants);
     Ok(p.state.arena.alloc(EnumItem {
         vis,
         name,
+        basic,
         variants,
     }))
 }
@@ -556,10 +561,11 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
         }
         T![string_lit] => {
             p.bump();
-            let string = p.tokens.get_string(p.string_id as usize);
+            let (string, c_string) = p.tokens.get_string(p.string_id as usize);
             p.string_id += 1;
             ExprKind::LitString {
                 id: p.state.intern.intern(string),
+                c_string,
             }
         }
         T![if] => ExprKind::If { if_: if_(p)? },

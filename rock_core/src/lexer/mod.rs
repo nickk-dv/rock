@@ -5,6 +5,17 @@ use crate::token::token_list::TokenList;
 use crate::token::Token;
 use std::{iter::Peekable, str::Chars};
 
+//@lexer needs a re-write @07.04.24
+// error handling is annoying
+// most errors currently panic!()
+// support multiline strings, raw, c_strings
+// validate that no null terminators present in c_strings (it would be auto inserted)
+
+// @think about whether we need to add \0 to strings, @07.04.24
+// instead of having llvm insert those as it already does
+// having \0 might reduce interning deduplication in case of same C and normal strings
+// (dont add \0 most likely)
+
 pub struct Lexer<'src> {
     source: &'src str,
     chars: Peekable<Chars<'src>>,
@@ -65,13 +76,29 @@ impl<'src> Lexer<'src> {
                         tokens.add_char(res.0, res.1);
                     }
                     '\"' => {
-                        let res = self.lex_string();
-                        tokens.add_string(res.0, res.1);
+                        let res = self.lex_string(false);
+                        tokens.add_string(res.0, res.1, res.2);
                     }
                     '`' => {
                         let res = self.lex_raw_string();
-                        tokens.add_string(res.0, res.1);
+                        tokens.add_string(res.0, false, res.1);
                     }
+                    'c' => match self.peek() {
+                        Some('\"') => {
+                            self.eat(c); // eat "
+                            let res = self.lex_string(true);
+                            tokens.add_string(res.0, res.1, res.2);
+                        }
+                        Some('`') => {
+                            self.eat(c); // eat `
+                            let res = self.lex_raw_string();
+                            tokens.add_string(res.0, false, res.1);
+                        }
+                        _ => {
+                            let res = self.lex_ident();
+                            tokens.add_token(res.0, res.1);
+                        }
+                    },
                     _ => {
                         let res = if c.is_ascii_digit() {
                             self.lex_number()
@@ -225,7 +252,7 @@ impl<'src> Lexer<'src> {
         (char, self.token_range())
     }
 
-    fn lex_string(&mut self) -> (String, TextRange) {
+    fn lex_string(&mut self, c_string: bool) -> (String, bool, TextRange) {
         let mut string = String::new();
         let mut terminated = false;
 
@@ -265,7 +292,7 @@ impl<'src> Lexer<'src> {
             );
         }
 
-        (string, self.token_range())
+        (string, c_string, self.token_range())
     }
 
     fn lex_raw_string(&mut self) -> (String, TextRange) {

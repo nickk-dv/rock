@@ -109,7 +109,13 @@ impl<'ctx> Codegen<'ctx> {
             hir::Type::Union(_) => todo!(),
             hir::Type::Struct(id) => self.struct_types[id.index()].into(),
             hir::Type::Reference(_, _) => self.pointer_sized_int_type().into(),
-            hir::Type::ArraySlice(slice) => todo!(),
+            hir::Type::ArraySlice(_) => {
+                //@this slice type could be generated once and referenced every time
+                let ptr_type = self.pointer_sized_int_type();
+                self.context
+                    .struct_type(&[ptr_type.into(), ptr_type.into()], false)
+                    .into()
+            }
             hir::Type::ArrayStatic(array) => {
                 //@array static shoudnt always carry expresion inside
                 // when its not declared it might just store u32 or u64 size without allocations
@@ -280,7 +286,7 @@ fn codegen_expr<'ctx>(
         Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty)),
         Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty)),
         Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
-        Expr::LitString { id } => Some(codegen_lit_string(cg, id)),
+        Expr::LitString { id, c_string } => Some(codegen_lit_string(cg, id, c_string)),
         Expr::If { if_ } => Some(codegen_if(cg, if_)),
         Expr::Block { stmts } => codegen_block(cg, proc_cg, expect_ptr, stmts),
         Expr::Match { match_ } => Some(codegen_match(cg, match_)),
@@ -359,16 +365,45 @@ fn codegen_lit_char<'ctx>(cg: &Codegen<'ctx>, val: char) -> values::BasicValueEn
     char_type.const_int(val as u64, false).into()
 }
 
+//@current lit string codegen doesnt deduplicate strings
+// by their intern ID, this is temporary.
+// global is created for each occurence of the string literal @07.04.24
 #[allow(unsafe_code)]
-fn codegen_lit_string<'ctx>(cg: &Codegen<'ctx>, id: InternID) -> values::BasicValueEnum<'ctx> {
-    //@creating always null terminated bytes array in data section
+fn codegen_lit_string<'ctx>(
+    cg: &Codegen<'ctx>,
+    id: InternID,
+    c_string: bool,
+) -> values::BasicValueEnum<'ctx> {
     let string = cg.hir.intern.get_str(id);
-    let array_value = cg.context.const_string(string.as_bytes(), true);
+    let array_value = cg.context.const_string(string.as_bytes(), c_string);
     let array_ty = array_value.get_type();
+
     let global = cg.module.add_global(array_ty, None, "global_string");
-    global.set_initializer(&array_value);
     global.set_constant(true);
-    global.as_pointer_value().into()
+    global.set_linkage(module::Linkage::Private);
+    global.set_initializer(&array_value);
+    let global_ptr = global.as_pointer_value();
+
+    let ptr_int = cg
+        .builder
+        .build_ptr_to_int(global_ptr, cg.pointer_sized_int_type(), "string_ptr")
+        .unwrap();
+
+    if c_string {
+        ptr_int.into()
+    } else {
+        //@sign extend would likely ruin any len values about MAX signed of that type
+        // same problem as const integer codegen @07.04.24
+        // also usize from rust, casted int u64, represented by pointer_sized_int is confusing
+        // most likely problems wont show up for strings of reasonable len (especially on 64bit)
+        let bytes_len = cg
+            .pointer_sized_int_type()
+            .const_int(string.len() as u64, false);
+        let slice_value = cg
+            .context
+            .const_struct(&[ptr_int.into(), bytes_len.into()], false);
+        slice_value.into()
+    }
 }
 
 fn codegen_if<'ctx>(cg: &Codegen<'ctx>, if_: &hir::If) -> values::BasicValueEnum<'ctx> {

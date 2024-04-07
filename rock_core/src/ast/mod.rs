@@ -50,6 +50,7 @@ pub struct ProcParam<'ast> {
 pub struct EnumItem<'ast> {
     pub vis: Vis,
     pub name: Name,
+    pub basic: Option<BasicType>,
     pub variants: &'ast [EnumVariant<'ast>],
 }
 
@@ -230,7 +231,7 @@ pub enum ExprKind<'ast> {
     LitInt      { val: u64 },
     LitFloat    { val: f64 },
     LitChar     { val: char },
-    LitString   { id: InternID },
+    LitString   { id: InternID, c_string: bool },
     If          { if_: &'ast If<'ast> },
     Block       { stmts: &'ast [Stmt<'ast>] },
     Match       { match_: &'ast Match<'ast> },

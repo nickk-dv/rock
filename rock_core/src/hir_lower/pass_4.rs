@@ -28,7 +28,7 @@ pub fn const_expr_resolve<'hir, 'ast>(
             ty: ast::BasicType::F64, //@always f64
         },
         ast::ExprKind::LitChar { val } => hir::Expr::LitChar { val },
-        ast::ExprKind::LitString { id } => hir::Expr::LitString { id },
+        ast::ExprKind::LitString { id, c_string } => hir::Expr::LitString { id, c_string },
         _ => {
             emit.error(
                 ErrorComp::error("constant expressions only support single literals so far")

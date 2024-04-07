@@ -144,7 +144,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::LitInt { val } => typecheck_lit_int(emit, expect, val),
         ast::ExprKind::LitFloat { val } => typecheck_lit_float(emit, expect, val),
         ast::ExprKind::LitChar { val } => typecheck_lit_char(emit, val),
-        ast::ExprKind::LitString { id } => typecheck_lit_string(emit, id),
+        ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_),
         ast::ExprKind::Block { stmts } => typecheck_block(hir, emit, proc, expect, stmts),
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
@@ -260,23 +260,25 @@ fn typecheck_lit_char<'hir>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'
     )
 }
 
-fn typecheck_lit_string<'hir>(emit: &mut HirEmit<'hir>, id: InternID) -> TypeResult<'hir> {
-    //@pretend that is a C string and is a `&u8`, temporary hack to make C calls easier to deal with @06.04.24
-    let c_string = emit.arena.alloc(hir::Type::Basic(BasicType::U8));
-    TypeResult::new(
-        hir::Type::Reference(c_string, ast::Mut::Immutable),
-        emit.arena.alloc(hir::Expr::LitString { id }),
-    )
-    /*
-    let slice = emit.arena.alloc(hir::ArraySlice {
-        mutt: ast::Mut::Immutable,
-        ty: hir::Type::Basic(BasicType::U8),
-    });
-    TypeResult::new(
-        hir::Type::ArraySlice(slice),
-        emit.arena.alloc(hir::Expr::LitString { id }),
-    )
-    */
+fn typecheck_lit_string<'hir>(
+    emit: &mut HirEmit<'hir>,
+    id: InternID,
+    c_string: bool,
+) -> TypeResult<'hir> {
+    let string_ty = if c_string {
+        let byte = emit.arena.alloc(hir::Type::Basic(BasicType::U8));
+        hir::Type::Reference(byte, ast::Mut::Immutable)
+    } else {
+        let slice = emit.arena.alloc(hir::ArraySlice {
+            mutt: ast::Mut::Immutable,
+            ty: hir::Type::Basic(BasicType::U8),
+        });
+        hir::Type::ArraySlice(slice)
+    };
+
+    let string_expr = hir::Expr::LitString { id, c_string };
+
+    TypeResult::new(string_ty, emit.arena.alloc(string_expr))
 }
 
 fn typecheck_if<'hir>(

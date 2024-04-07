@@ -74,6 +74,7 @@ pub struct EnumData<'hir> {
     pub origin_id: ScopeID,
     pub vis: ast::Vis,
     pub name: ast::Name,
+    pub basic: Option<ast::BasicType>,
     pub variants: &'hir [EnumVariant<'hir>],
 }
 
@@ -213,7 +214,7 @@ pub enum Expr<'hir> {
     LitInt      { val: u64, ty: ast::BasicType },
     LitFloat    { val: f64, ty: ast::BasicType },
     LitChar     { val: char },
-    LitString   { id: InternID },
+    LitString   { id: InternID, c_string: bool },
     If          { if_: &'hir If<'hir> },
     Block       { stmts: &'hir [Stmt<'hir>] },
     Match       { match_: &'hir Match<'hir> },

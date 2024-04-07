@@ -5,7 +5,7 @@ pub struct TokenList {
     tokens: Vec<Token>,
     ranges: Vec<TextRange>,
     chars: Vec<char>,
-    strings: Vec<String>,
+    strings: Vec<(String, bool)>,
 }
 
 impl TokenList {
@@ -27,10 +27,10 @@ impl TokenList {
         self.ranges.push(range);
         self.chars.push(c);
     }
-    pub fn add_string(&mut self, s: String, range: TextRange) {
+    pub fn add_string(&mut self, s: String, c_string: bool, range: TextRange) {
         self.tokens.push(Token::StringLit);
         self.ranges.push(range);
-        self.strings.push(s);
+        self.strings.push((s, c_string));
     }
 
     pub fn get_token(&self, index: usize) -> Token {
@@ -42,7 +42,8 @@ impl TokenList {
     pub fn get_char(&self, index: usize) -> char {
         self.chars[index]
     }
-    pub fn get_string(&self, index: usize) -> &str {
-        &self.strings[index]
+    pub fn get_string(&self, index: usize) -> (&str, bool) {
+        let string = &self.strings[index].0;
+        (string, self.strings[index].1)
     }
 }

@@ -44,6 +44,7 @@ fn add_module_scope<'hir>(
                         origin_id,
                         vis: item.vis,
                         name: item.name,
+                        basic: item.basic,
                         variants: &[],
                     };
                     hir.add_enum(origin_id, item, data);
