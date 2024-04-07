@@ -1498,18 +1498,29 @@ fn typecheck_return<'hir>(
     range: TextRange,
     expr: Option<&ast::Expr>,
 ) -> hir::Stmt<'hir> {
+    let expect = proc.data().return_ty;
+
     if let Some(expr) = expr {
-        let expect = proc.data().return_ty;
         let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-        //@not typechecked with return type
-        // same problem as below (need to find proper way reference function return type
-        // to avoid TextRange on Type could use procedure name range instead
-        // this would make both `implicit -> ()` and `-> SomeType` reports consistant
         hir::Stmt::ReturnVal(expr_res.expr)
     } else {
-        //@figure out a way to report return type related errors
-        // this also applies to tail return expression in blocks
-        //@does empty return need its own unique error?
+        //@this is modified duplicated typecheck error, special case for empty return @07.04.24
+        let found = hir::Type::Basic(BasicType::Unit);
+        if !type_matches(expect, found) {
+            let expect_format = type_format(hir, expect);
+            let found_format = type_format(hir, found);
+            emit.error(
+                ErrorComp::error(format!(
+                    "type mismatch: expected `{}`, found `{}`",
+                    expect_format, found_format,
+                ))
+                .context(hir.src(proc.origin(), range))
+                .context_info(
+                    format!("procedure returns `{expect_format}`"),
+                    hir.src(proc.origin(), proc.data().name.range),
+                ),
+            );
+        }
         hir::Stmt::Return
     }
 }

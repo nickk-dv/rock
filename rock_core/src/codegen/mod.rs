@@ -3,6 +3,7 @@ use crate::hir;
 use crate::intern::InternID;
 use inkwell::builder;
 use inkwell::context;
+use inkwell::context::AsContextRef;
 use inkwell::module;
 use inkwell::targets;
 use inkwell::types;
@@ -81,6 +82,17 @@ impl<'ctx> Codegen<'ctx> {
             .into()
     }
 
+    //@this is a hack untill inkwell pr is merged https://github.com/TheDan64/inkwell/pull/468 @07.04.24
+    #[allow(unsafe_code)]
+    fn ptr_type(&self) -> types::PointerType<'ctx> {
+        unsafe {
+            types::PointerType::new(llvm_sys::core::LLVMPointerTypeInContext(
+                self.context.as_ctx_ref(),
+                0,
+            ))
+        }
+    }
+
     //@any is used as general type
     // unit / void is not accepted by enums that wrap
     // struct field types, proc param types.
@@ -103,17 +115,19 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::F32 => self.context.f32_type().into(),
                 ast::BasicType::F64 => self.context.f64_type().into(),
                 ast::BasicType::Char => self.context.i32_type().into(),
-                ast::BasicType::Rawptr => self.pointer_sized_int_type().into(),
+                ast::BasicType::Rawptr => self.ptr_type().into(),
             },
             hir::Type::Enum(_) => todo!(),
             hir::Type::Union(_) => todo!(),
             hir::Type::Struct(id) => self.struct_types[id.index()].into(),
-            hir::Type::Reference(_, _) => self.pointer_sized_int_type().into(),
+            hir::Type::Reference(_, _) => self.ptr_type().into(),
             hir::Type::ArraySlice(_) => {
                 //@this slice type could be generated once and referenced every time
-                let ptr_type = self.pointer_sized_int_type();
                 self.context
-                    .struct_type(&[ptr_type.into(), ptr_type.into()], false)
+                    .struct_type(
+                        &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
+                        false,
+                    )
                     .into()
             }
             hir::Type::ArrayStatic(array) => {
@@ -326,13 +340,11 @@ fn codegen_expr<'ctx>(
 }
 
 fn codegen_lit_null<'ctx>(cg: &Codegen<'ctx>) -> values::BasicValueEnum<'ctx> {
-    let ptr_type = cg.pointer_sized_int_type();
-    ptr_type.const_zero().into()
+    cg.ptr_type().const_zero().into()
 }
 
 fn codegen_lit_bool<'ctx>(cg: &Codegen<'ctx>, val: bool) -> values::BasicValueEnum<'ctx> {
-    let bool_type = cg.context.bool_type();
-    bool_type.const_int(val as u64, false).into()
+    cg.context.bool_type().const_int(val as u64, false).into()
 }
 
 //@since its always u64 value thats not sign extended in 2s compliment form
@@ -384,13 +396,8 @@ fn codegen_lit_string<'ctx>(
     global.set_initializer(&array_value);
     let global_ptr = global.as_pointer_value();
 
-    let ptr_int = cg
-        .builder
-        .build_ptr_to_int(global_ptr, cg.pointer_sized_int_type(), "string_ptr")
-        .unwrap();
-
     if c_string {
-        ptr_int.into()
+        global_ptr.into()
     } else {
         //@sign extend would likely ruin any len values about MAX signed of that type
         // same problem as const integer codegen @07.04.24
@@ -401,7 +408,7 @@ fn codegen_lit_string<'ctx>(
             .const_int(string.len() as u64, false);
         let slice_value = cg
             .context
-            .const_struct(&[ptr_int.into(), bytes_len.into()], false);
+            .const_struct(&[global_ptr.into(), bytes_len.into()], false);
         slice_value.into()
     }
 }
@@ -707,6 +714,7 @@ fn codegen_array_init<'ctx>(
 
     for (idx, &expr) in array_init.input.iter().enumerate() {
         let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
+        //@same possible sign extension problem as with all integers currently
         let index_value = index_type.const_int(idx as u64, false);
         let elem_ptr = unsafe {
             cg.builder
