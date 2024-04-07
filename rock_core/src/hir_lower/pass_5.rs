@@ -261,6 +261,13 @@ fn typecheck_lit_char<'hir>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'
 }
 
 fn typecheck_lit_string<'hir>(emit: &mut HirEmit<'hir>, id: InternID) -> TypeResult<'hir> {
+    //@pretend that is a C string and is a `&u8`, temporary hack to make C calls easier to deal with @06.04.24
+    let c_string = emit.arena.alloc(hir::Type::Basic(BasicType::U8));
+    TypeResult::new(
+        hir::Type::Reference(c_string, ast::Mut::Immutable),
+        emit.arena.alloc(hir::Expr::LitString { id }),
+    )
+    /*
     let slice = emit.arena.alloc(hir::ArraySlice {
         mutt: ast::Mut::Immutable,
         ty: hir::Type::Basic(BasicType::U8),
@@ -269,6 +276,7 @@ fn typecheck_lit_string<'hir>(emit: &mut HirEmit<'hir>, id: InternID) -> TypeRes
         hir::Type::ArraySlice(slice),
         emit.arena.alloc(hir::Expr::LitString { id }),
     )
+    */
 }
 
 fn typecheck_if<'hir>(
@@ -420,17 +428,19 @@ fn typecheck_field<'hir>(
         FieldExprKind::None => {
             TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
         }
-        FieldExprKind::Member(id) => TypeResult::new(
+        FieldExprKind::Member(union_id, id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::UnionMember {
                 target: target_res.expr,
+                union_id,
                 id,
             }),
         ),
-        FieldExprKind::Field(id) => TypeResult::new(
+        FieldExprKind::Field(struct_id, id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::StructField {
                 target: target_res.expr,
+                struct_id,
                 id,
             }),
         ),
@@ -439,8 +449,8 @@ fn typecheck_field<'hir>(
 
 enum FieldExprKind {
     None,
-    Member(hir::UnionMemberID),
-    Field(hir::StructFieldID),
+    Member(hir::UnionID, hir::UnionMemberID),
+    Field(hir::StructID, hir::StructFieldID),
 }
 
 fn verify_type_field<'hir>(
@@ -455,7 +465,7 @@ fn verify_type_field<'hir>(
         hir::Type::Union(id) => {
             let data = hir.union_data(id);
             if let Some((member_id, member)) = data.find_member(name.id) {
-                (member.ty, FieldExprKind::Member(member_id))
+                (member.ty, FieldExprKind::Member(id, member_id))
             } else {
                 emit.error(
                     ErrorComp::error(format!(
@@ -471,7 +481,7 @@ fn verify_type_field<'hir>(
         hir::Type::Struct(id) => {
             let data = hir.struct_data(id);
             if let Some((field_id, field)) = data.find_field(name.id) {
-                (field.ty, FieldExprKind::Field(field_id))
+                (field.ty, FieldExprKind::Field(id, field_id))
             } else {
                 emit.error(
                     ErrorComp::error(format!(
@@ -834,10 +844,14 @@ fn typecheck_proc_call<'hir>(
     let input_count = proc_call.input.len();
     let expected_count = data.params.len();
 
-    if input_count != expected_count {
+    if (data.is_variadic && (input_count < expected_count))
+        || (!data.is_variadic && (input_count != expected_count))
+    {
+        let at_least = if data.is_variadic { " at least" } else { "" };
+        //@plular form for argument`s` only needed if != 1
         emit.error(
             ErrorComp::error(format!(
-                "expected {} input arguments, found {}",
+                "expected{at_least} {} input arguments, found {}",
                 expected_count, input_count
             ))
             .context(hir.src(proc.origin(), expr_range))
@@ -1368,7 +1382,31 @@ fn typecheck_block<'hir>(
             ast::StmtKind::Defer(block) => {
                 Some(typecheck_defer(hir, emit, proc, stmt.range.start(), block))
             }
-            ast::StmtKind::ForLoop(for_) => None, //@temporarely not processed
+            ast::StmtKind::ForLoop(for_) => {
+                let kind = match for_.kind {
+                    ast::ForKind::Loop => hir::ForKind::Loop,
+                    ast::ForKind::While { cond } => todo!("for_loop while-like is not supported"),
+                    ast::ForKind::ForLoop {
+                        local,
+                        cond,
+                        assign,
+                    } => todo!("for_loop c-like is not supported"),
+                };
+
+                let block_res = typecheck_expr(
+                    hir,
+                    emit,
+                    proc,
+                    hir::Type::Basic(BasicType::Unit),
+                    for_.block,
+                );
+
+                let for_ = hir::For {
+                    kind,
+                    block: block_res.expr,
+                };
+                Some(hir::Stmt::ForLoop(emit.arena.alloc(for_))) //@placeholder
+            }
             ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
             ast::StmtKind::Assign(assign) => Some(typecheck_assign(hir, emit, proc, assign)),
             ast::StmtKind::ExprSemi(expr) => {

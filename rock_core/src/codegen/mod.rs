@@ -208,10 +208,12 @@ fn codegen_function_values(cg: &mut Codegen) {
         // main name_id could be cached to avoid string compares and get from pool
         // (switch to explicit main flag on proc_data or in hir instead)
         //@temporary condition to determine if its entry point or not @06.04.24
-        let name = if proc_data.origin_id == hir::ScopeID::new(0)
-            && cg.hir.intern.get_str(proc_data.name.id) == "main"
-        {
-            "main"
+
+        let name = cg.hir.intern.get_str(proc_data.name.id);
+        let name = if proc_data.block.is_none() {
+            name
+        } else if proc_data.origin_id == hir::ScopeID::new(0) && name == "main" {
+            name
         } else {
             "rock_proc"
         };
@@ -235,7 +237,10 @@ fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
                 local_vars,
             };
 
-            if let Some(value) = codegen_expr(cg, &mut proc_cg, block) {
+            let entry_block = cg.context.append_basic_block(proc_cg.function, "entry");
+            cg.builder.position_at_end(entry_block);
+
+            if let Some(value) = codegen_expr(cg, &mut proc_cg, false, block) {
                 let entry = function.get_first_basic_block().expect("entry block");
                 cg.builder.position_at_end(entry);
                 cg.builder.build_return(Some(&value)).unwrap();
@@ -263,6 +268,7 @@ fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
 fn codegen_expr<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     expr: &hir::Expr,
 ) -> Option<values::BasicValueEnum<'ctx>> {
     use hir::Expr;
@@ -276,23 +282,37 @@ fn codegen_expr<'ctx>(
         Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
         Expr::LitString { id } => Some(codegen_lit_string(cg, id)),
         Expr::If { if_ } => Some(codegen_if(cg, if_)),
-        Expr::Block { stmts } => codegen_block(cg, proc_cg, stmts),
+        Expr::Block { stmts } => codegen_block(cg, proc_cg, expect_ptr, stmts),
         Expr::Match { match_ } => Some(codegen_match(cg, match_)),
-        Expr::UnionMember { target, id } => Some(codegen_union_member(cg, target, id)),
-        Expr::StructField { target, id } => Some(codegen_struct_field(cg, target, id)),
-        Expr::Index { target, index } => Some(codegen_index(cg, target, index)),
+        Expr::UnionMember {
+            target,
+            union_id,
+            id,
+        } => Some(codegen_union_member(cg, target, union_id, id)),
+        Expr::StructField {
+            target,
+            struct_id,
+            id,
+        } => Some(codegen_struct_field(
+            cg, proc_cg, expect_ptr, target, struct_id, id,
+        )),
+        Expr::Index { target, index } => {
+            Some(codegen_index(cg, proc_cg, expect_ptr, target, index))
+        }
         Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
-        Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, local_id)),
+        Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
         Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
         Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
-        Expr::StructInit { struct_id, input } => {
-            Some(codegen_struct_init(cg, proc_cg, struct_id, input))
+        Expr::StructInit { struct_id, input } => Some(codegen_struct_init(
+            cg, proc_cg, expect_ptr, struct_id, input,
+        )),
+        Expr::ArrayInit { array_init } => {
+            Some(codegen_array_init(cg, proc_cg, expect_ptr, array_init))
         }
-        Expr::ArrayInit { array_init } => Some(codegen_array_init(cg, proc_cg, array_init)),
         Expr::ArrayRepeat { array_repeat } => Some(codegen_array_repeat(cg, proc_cg, array_repeat)),
         Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
         Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
@@ -318,6 +338,7 @@ fn codegen_lit_int<'ctx>(
     val: u64,
     ty: ast::BasicType,
 ) -> values::BasicValueEnum<'ctx> {
+    //@unsigned values bigger that signed max of that type get flipped (skill issue, 2s compliment)
     let int_type = cg.type_into_any(hir::Type::Basic(ty)).into_int_type();
     int_type.const_int(val, false).into()
 }
@@ -338,8 +359,16 @@ fn codegen_lit_char<'ctx>(cg: &Codegen<'ctx>, val: char) -> values::BasicValueEn
     char_type.const_int(val as u64, false).into()
 }
 
+#[allow(unsafe_code)]
 fn codegen_lit_string<'ctx>(cg: &Codegen<'ctx>, id: InternID) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `lit_string` not supported")
+    //@creating always null terminated bytes array in data section
+    let string = cg.hir.intern.get_str(id);
+    let array_value = cg.context.const_string(string.as_bytes(), true);
+    let array_ty = array_value.get_type();
+    let global = cg.module.add_global(array_ty, None, "global_string");
+    global.set_initializer(&array_value);
+    global.set_constant(true);
+    global.as_pointer_value().into()
 }
 
 fn codegen_if<'ctx>(cg: &Codegen<'ctx>, if_: &hir::If) -> values::BasicValueEnum<'ctx> {
@@ -349,11 +378,9 @@ fn codegen_if<'ctx>(cg: &Codegen<'ctx>, if_: &hir::If) -> values::BasicValueEnum
 fn codegen_block<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     stmts: &[hir::Stmt],
 ) -> Option<values::BasicValueEnum<'ctx>> {
-    let basic_block = cg.context.append_basic_block(proc_cg.function, "block");
-    cg.builder.position_at_end(basic_block);
-
     for (idx, stmt) in stmts.iter().enumerate() {
         match *stmt {
             hir::Stmt::Break => todo!("codegen `break` not supported"),
@@ -362,32 +389,49 @@ fn codegen_block<'ctx>(
                 cg.builder.build_return(None).unwrap();
             }
             hir::Stmt::ReturnVal(expr) => {
-                let value = codegen_expr(cg, proc_cg, expr).expect("value");
+                let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
                 cg.builder.build_return(Some(&value)).unwrap();
             }
             hir::Stmt::Defer(_) => todo!("codegen `defer` not supported"),
-            hir::Stmt::ForLoop(_) => todo!("codegen `for loop` not supported"),
+            hir::Stmt::ForLoop(for_) => {
+                match for_.kind {
+                    hir::ForKind::Loop => {}
+                    hir::ForKind::While { cond } => todo!("codegen `for while` not supported"),
+                    hir::ForKind::ForLoop {
+                        local_id,
+                        cond,
+                        assign,
+                    } => todo!("codegen `for c-like` not supported"),
+                }
+
+                let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+                cg.builder.build_unconditional_branch(body_block).unwrap();
+                cg.builder.position_at_end(body_block);
+                codegen_expr(cg, proc_cg, false, for_.block);
+                cg.builder.position_at_end(body_block);
+                cg.builder.build_unconditional_branch(body_block).unwrap();
+            }
             hir::Stmt::Local(local_id) => {
                 let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
                 let var_ty = cg.type_into_basic(local.ty).expect("non void type");
-                let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
-                proc_cg.local_vars[local_id.index()] = Some(var_ptr);
 
                 //@variables without value expression are always zero initialized
                 // theres no way to detect potentially uninitialized variables
                 // during check and analysis phases, this might change. @06.04.24
-                if let Some(expr) = local.value {
-                    let value = codegen_expr(cg, proc_cg, expr).expect("value");
-                    cg.builder.build_store(var_ptr, value).unwrap();
+                let value = if let Some(expr) = local.value {
+                    codegen_expr(cg, proc_cg, false, expr).expect("value")
                 } else {
-                    let zero_value = var_ty.const_zero();
-                    cg.builder.build_store(var_ptr, zero_value).unwrap();
-                }
+                    var_ty.const_zero()
+                };
+
+                let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
+                cg.builder.build_store(var_ptr, value).unwrap();
+                proc_cg.local_vars[local_id.index()] = Some(var_ptr);
             }
             hir::Stmt::Assign(_) => todo!("codegen `assign` not supported"),
             hir::Stmt::ExprSemi(expr) => {
                 //@are expressions like `5;` valid when output as llvm ir? probably yes
-                codegen_expr(cg, proc_cg, expr);
+                codegen_expr(cg, proc_cg, false, expr);
             }
             hir::Stmt::ExprTail(expr) => {
                 //@assumed to be last code in the block
@@ -397,7 +441,7 @@ fn codegen_block<'ctx>(
                     stmts.len(),
                     "codegen Stmt::ExprTail must be the last statement of the block"
                 );
-                return codegen_expr(cg, proc_cg, expr);
+                return codegen_expr(cg, proc_cg, expect_ptr, expr);
             }
         }
     }
@@ -412,6 +456,7 @@ fn codegen_match<'ctx>(cg: &Codegen<'ctx>, match_: &hir::Match) -> values::Basic
 fn codegen_union_member<'ctx>(
     cg: &Codegen<'ctx>,
     target: &hir::Expr,
+    union_id: hir::UnionID,
     id: hir::UnionMemberID,
 ) -> values::BasicValueEnum<'ctx> {
     todo!("codegen `union member access` not supported")
@@ -419,18 +464,66 @@ fn codegen_union_member<'ctx>(
 
 fn codegen_struct_field<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     target: &hir::Expr,
+    struct_id: hir::StructID,
     id: hir::StructFieldID,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `struct field access` not supported")
+    let target = codegen_expr(cg, proc_cg, true, target).expect("value");
+    let target_ptr = target.into_pointer_value();
+
+    let struct_ty = cg
+        .type_into_basic(hir::Type::Struct(struct_id))
+        .expect("non void type");
+    let field = cg.hir.struct_data(struct_id).fields[id.index()];
+    let field_ty = cg.type_into_basic(field.ty).expect("value");
+    let field_ptr = cg
+        .builder
+        .build_struct_gep(struct_ty, target_ptr, id.index() as u32, "field_ptr")
+        .unwrap();
+
+    if expect_ptr {
+        field_ptr.into()
+    } else {
+        cg.builder
+            .build_load(field_ty, field_ptr, "field_val")
+            .unwrap()
+    }
 }
 
+#[allow(unsafe_code)]
 fn codegen_index<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     target: &hir::Expr,
     index: &hir::Expr,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `index access` not supported")
+    todo!("codegen `union index` not supported")
+
+    /*
+    let target = codegen_expr(cg, proc_cg, true, target).expect("value");
+    let target_ptr = target.into_pointer_value();
+
+    let index = codegen_expr(cg, proc_cg, false, index)
+        .expect("value")
+        .into_int_value();
+
+    let elem_ptr = unsafe {
+        cg.builder
+            .build_gep(target_ty, target_ptr, &[index], "elem_ptr")
+            .unwrap()
+    };
+
+    if expect_ptr {
+        elem_ptr.into()
+    } else {
+        cg.builder
+            .build_load(elem_ty, elem_ptr, "elem_val")
+            .unwrap()
+    }
+    */
 }
 
 fn codegen_cast<'ctx>(
@@ -440,7 +533,7 @@ fn codegen_cast<'ctx>(
     into: &hir::Type,
     kind: hir::CastKind,
 ) -> values::BasicValueEnum<'ctx> {
-    let target = codegen_expr(cg, proc_cg, target).expect("value");
+    let target = codegen_expr(cg, proc_cg, false, target).expect("value");
     let into = cg.type_into_basic(*into).expect("non void type");
     let op = match kind {
         hir::CastKind::Error => panic!("codegen unexpected hir::CastKind::Error"),
@@ -461,12 +554,18 @@ fn codegen_cast<'ctx>(
 fn codegen_local_var<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     local_id: hir::LocalID,
 ) -> values::BasicValueEnum<'ctx> {
     let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
     let var_ty = cg.type_into_basic(local.ty).expect("non void type");
     let var_ptr = proc_cg.local_vars[local_id.index()].expect("var ptr");
-    cg.builder.build_load(var_ty, var_ptr, "local_val").unwrap()
+
+    if expect_ptr {
+        var_ptr.into()
+    } else {
+        cg.builder.build_load(var_ty, var_ptr, "local_val").unwrap()
+    }
 }
 
 fn codegen_param_var<'ctx>(
@@ -506,7 +605,7 @@ fn codegen_proc_call<'ctx>(
 ) -> Option<values::BasicValueEnum<'ctx>> {
     let mut input_values = Vec::with_capacity(input.len());
     for &expr in input {
-        let value = codegen_expr(cg, proc_cg, expr).expect("value");
+        let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
         input_values.push(values::BasicMetadataValueEnum::from(value));
     }
 
@@ -529,6 +628,7 @@ fn codegen_union_init<'ctx>(
 fn codegen_struct_init<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     struct_id: hir::StructID,
     input: &[hir::StructFieldInit],
 ) -> values::BasicValueEnum<'ctx> {
@@ -538,7 +638,7 @@ fn codegen_struct_init<'ctx>(
     let struct_ptr = cg.builder.build_alloca(struct_ty, "struct_temp").unwrap();
 
     for field_init in input {
-        let value = codegen_expr(cg, proc_cg, field_init.expr).expect("value");
+        let value = codegen_expr(cg, proc_cg, false, field_init.expr).expect("value");
         let field_idx = field_init.field_id.index() as u32;
         let field_ptr = cg
             .builder
@@ -547,15 +647,20 @@ fn codegen_struct_init<'ctx>(
         cg.builder.build_store(field_ptr, value).unwrap();
     }
 
-    cg.builder
-        .build_load(struct_ty, struct_ptr, "struct_val")
-        .unwrap()
+    if expect_ptr {
+        struct_ptr.into()
+    } else {
+        cg.builder
+            .build_load(struct_ty, struct_ptr, "struct_val")
+            .unwrap()
+    }
 }
 
 #[allow(unsafe_code)]
 fn codegen_array_init<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     array_init: &hir::ArrayInit,
 ) -> values::BasicValueEnum<'ctx> {
     let elem_ty = cg
@@ -566,7 +671,7 @@ fn codegen_array_init<'ctx>(
     let index_type = cg.pointer_sized_int_type();
 
     for (idx, &expr) in array_init.input.iter().enumerate() {
-        let value = codegen_expr(cg, proc_cg, expr).expect("value");
+        let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
         let index_value = index_type.const_int(idx as u64, false);
         let elem_ptr = unsafe {
             cg.builder
@@ -576,9 +681,13 @@ fn codegen_array_init<'ctx>(
         cg.builder.build_store(elem_ptr, value).unwrap();
     }
 
-    cg.builder
-        .build_load(array_ty, array_ptr, "array_val")
-        .unwrap()
+    if expect_ptr {
+        array_ptr.into()
+    } else {
+        cg.builder
+            .build_load(array_ty, array_ptr, "array_val")
+            .unwrap()
+    }
 }
 
 fn codegen_array_repeat<'ctx>(
