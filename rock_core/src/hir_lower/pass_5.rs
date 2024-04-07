@@ -421,6 +421,8 @@ fn typecheck_field<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
 
+    //@auto deref should be included in final hir @07.04.24
+    // with current codegen pointer gep will run, without loading from pointer first.
     let (field_ty, kind) = match target_res.ty {
         hir::Type::Reference(ref_ty, mutt) => verify_type_field(hir, emit, proc, *ref_ty, name),
         _ => verify_type_field(hir, emit, proc, target_res.ty, name),
@@ -782,18 +784,12 @@ fn typecheck_item<'hir>(
         ValueID::None => {
             return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
         }
-        ValueID::Enum(id) => {
-            //@resolve variant, based on remaining path names
-            // still returning enum type as temp solution
-            emit.error(
-                ErrorComp::error("enum variants in path are not yet resolved (todo)").context(
-                    hir.src(
-                        proc.origin(),
-                        path.names.first().expect("non empty path").range,
-                    ),
-                ),
-            );
-            return TypeResult::new(hir::Type::Enum(id), emit.arena.alloc(hir::Expr::Error));
+        ValueID::Enum(enum_id, variant_id) => {
+            let enum_variant = hir::Expr::EnumVariant {
+                enum_id,
+                id: variant_id,
+            };
+            TypeResult::new(hir::Type::Enum(enum_id), emit.arena.alloc(enum_variant))
         }
         ValueID::Const(id) => {
             //@resolve potential field access chain
@@ -1720,6 +1716,8 @@ fn path_resolve<'hir>(
     }
 }
 
+//@duplication issue with other path resolve procs
+// mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1728,9 +1726,29 @@ pub fn path_resolve_type<'hir>(
     path: &ast::Path,
 ) -> hir::Type<'hir> {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
-    match resolved {
+
+    let ty = match resolved {
         ResolvedPath::None => hir::Type::Error,
-        ResolvedPath::Variable(_) => hir::Type::Error, //@missing error message
+        ResolvedPath::Variable(variable) => {
+            let name = path.names[name_idx];
+
+            let proc = proc.expect("proc context");
+            let source = match variable {
+                VariableID::Local(id) => hir.src(proc.origin(), proc.get_local(id).name.range),
+                VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
+            };
+            //@calling this `local` for both params and locals, validate wording consistency
+            // by maybe extracting all error formats to separate module @07.04.24
+            emit.error(
+                ErrorComp::error(format!(
+                    "expected type, found local `{}`",
+                    hir.name_str(name.id)
+                ))
+                .context(hir.src(origin_id, name.range))
+                .context_info("defined here", source),
+            );
+            return hir::Type::Error;
+        }
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Enum(id) => hir::Type::Enum(id),
             SymbolKind::Union(id) => hir::Type::Union(id),
@@ -1746,12 +1764,26 @@ pub fn path_resolve_type<'hir>(
                     .context(hir.src(origin_id, name.range))
                     .context_info("defined here", source),
                 );
-                hir::Type::Error
+                return hir::Type::Error;
             }
         },
+    };
+
+    if let Some(remaining) = path.names.get(name_idx + 1..) {
+        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
+            let range = TextRange::new(first.range.start(), last.range.end());
+            emit.error(
+                ErrorComp::error(format!("unexpected path segment",))
+                    .context(hir.src(origin_id, range)),
+            );
+        }
     }
+
+    ty
 }
 
+//@duplication issue with other path resolve procs
+// mainly due to bad scope / symbol design
 fn path_resolve_proc<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1760,9 +1792,29 @@ fn path_resolve_proc<'hir>(
     path: &ast::Path,
 ) -> Option<hir::ProcID> {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
-    match resolved {
+
+    let proc_id = match resolved {
         ResolvedPath::None => None,
-        ResolvedPath::Variable(_) => None, //@missing error message
+        ResolvedPath::Variable(variable) => {
+            let name = path.names[name_idx];
+
+            let proc = proc.expect("proc context");
+            let source = match variable {
+                VariableID::Local(id) => hir.src(proc.origin(), proc.get_local(id).name.range),
+                VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
+            };
+            //@calling this `local` for both params and locals, validate wording consistency
+            // by maybe extracting all error formats to separate module @07.04.24
+            emit.error(
+                ErrorComp::error(format!(
+                    "expected procedure, found local `{}`",
+                    hir.name_str(name.id)
+                ))
+                .context(hir.src(origin_id, name.range))
+                .context_info("defined here", source),
+            );
+            return None;
+        }
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Proc(id) => Some(id),
             _ => {
@@ -1776,10 +1828,22 @@ fn path_resolve_proc<'hir>(
                     .context(hir.src(origin_id, name.range))
                     .context_info("defined here", source),
                 );
-                None
+                return None;
             }
         },
+    };
+
+    if let Some(remaining) = path.names.get(name_idx + 1..) {
+        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
+            let range = TextRange::new(first.range.start(), last.range.end());
+            emit.error(
+                ErrorComp::error(format!("unexpected path segment",))
+                    .context(hir.src(origin_id, range)),
+            );
+        }
     }
+
+    proc_id
 }
 
 enum StructureID {
@@ -1788,6 +1852,8 @@ enum StructureID {
     Struct(hir::StructID),
 }
 
+//@duplication issue with other path resolve procs
+// mainly due to bad scope / symbol design
 fn path_resolve_structure<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1796,9 +1862,29 @@ fn path_resolve_structure<'hir>(
     path: &ast::Path,
 ) -> StructureID {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
-    match resolved {
+
+    let structure_id = match resolved {
         ResolvedPath::None => StructureID::None,
-        ResolvedPath::Variable(_) => StructureID::None, //@missing error message
+        ResolvedPath::Variable(variable) => {
+            let name = path.names[name_idx];
+
+            let proc = proc.expect("proc context");
+            let source = match variable {
+                VariableID::Local(id) => hir.src(proc.origin(), proc.get_local(id).name.range),
+                VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
+            };
+            //@calling this `local` for both params and locals, validate wording consistency
+            // by maybe extracting all error formats to separate module @07.04.24
+            emit.error(
+                ErrorComp::error(format!(
+                    "expected struct or union, found local `{}`",
+                    hir.name_str(name.id)
+                ))
+                .context(hir.src(origin_id, name.range))
+                .context_info("defined here", source),
+            );
+            return StructureID::None;
+        }
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Union(id) => StructureID::Union(id),
             SymbolKind::Struct(id) => StructureID::Struct(id),
@@ -1813,15 +1899,27 @@ fn path_resolve_structure<'hir>(
                     .context(hir.src(origin_id, name.range))
                     .context_info("defined here", source),
                 );
-                StructureID::None
+                return StructureID::None;
             }
         },
+    };
+
+    if let Some(remaining) = path.names.get(name_idx + 1..) {
+        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
+            let range = TextRange::new(first.range.start(), last.range.end());
+            emit.error(
+                ErrorComp::error(format!("unexpected path segment",))
+                    .context(hir.src(origin_id, range)),
+            );
+        }
     }
+
+    structure_id
 }
 
 enum ValueID {
     None,
-    Enum(hir::EnumID),
+    Enum(hir::EnumID, hir::EnumVariantID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
     Local(hir::LocalID),
@@ -1843,7 +1941,46 @@ fn path_resolve_value<'hir>(
             VariableID::Param(id) => ValueID::Param(id),
         },
         ResolvedPath::Symbol(kind, source) => match kind {
-            SymbolKind::Enum(id) => ValueID::Enum(id),
+            SymbolKind::Enum(id) => {
+                if let Some(variant_name) = path.names.get(name_idx + 1) {
+                    let enum_data = hir.enum_data(id);
+                    if let Some((variant_id, ..)) = enum_data.find_variant(variant_name.id) {
+                        if let Some(remaining) = path.names.get(name_idx + 2..) {
+                            if let (Some(first), Some(last)) = (remaining.first(), remaining.last())
+                            {
+                                let range = TextRange::new(first.range.start(), last.range.end());
+                                emit.error(
+                                    ErrorComp::error(format!("unexpected path segment",))
+                                        .context(hir.src(origin_id, range)),
+                                );
+                            }
+                        }
+                        ValueID::Enum(id, variant_id)
+                    } else {
+                        emit.error(
+                            ErrorComp::error(format!(
+                                "enum variant `{}` is not found",
+                                hir.name_str(variant_name.id)
+                            ))
+                            .context(hir.src(origin_id, variant_name.range))
+                            .context_info("enum defined here", source),
+                        );
+                        ValueID::None
+                    }
+                } else {
+                    let name = path.names[name_idx];
+                    emit.error(
+                        ErrorComp::error(format!(
+                            "expected value, found {} `{}`",
+                            HirData::symbol_kind_name(kind),
+                            hir.name_str(name.id)
+                        ))
+                        .context(hir.src(origin_id, name.range))
+                        .context_info("defined here", source),
+                    );
+                    ValueID::None
+                }
+            }
             SymbolKind::Const(id) => ValueID::Const(id),
             SymbolKind::Global(id) => ValueID::Global(id),
             _ => {
