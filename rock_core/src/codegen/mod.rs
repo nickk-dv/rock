@@ -121,7 +121,7 @@ impl<'ctx> Codegen<'ctx> {
                 let basic = self.hir.enum_data(id).basic.expect("enum basic type");
                 self.type_into_any(hir::Type::Basic(basic))
             }
-            hir::Type::Union(_) => todo!(),
+            hir::Type::Union(_) => todo!("codegen: union type is not supported"),
             hir::Type::Struct(id) => self.struct_types[id.index()].into(),
             hir::Type::Reference(_, _) => self.ptr_type().into(),
             hir::Type::ArraySlice(_) => {
@@ -337,8 +337,13 @@ fn codegen_expr<'ctx>(
             Some(codegen_array_init(cg, proc_cg, expect_ptr, array_init))
         }
         Expr::ArrayRepeat { array_repeat } => Some(codegen_array_repeat(cg, proc_cg, array_repeat)),
-        Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
-        Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
+        Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
+        Expr::Binary {
+            op,
+            lhs,
+            rhs,
+            signed_int,
+        } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs, signed_int)),
     }
 }
 
@@ -361,6 +366,15 @@ fn codegen_lit_int<'ctx>(
 ) -> values::BasicValueEnum<'ctx> {
     //@unsigned values bigger that signed max of that type get flipped (skill issue, 2s compliment)
     let int_type = cg.type_into_any(hir::Type::Basic(ty)).into_int_type();
+    //@signed check is repeated code in a lot of places some is_signed_int() method would be good
+    let signed = matches!(
+        ty,
+        ast::BasicType::S8
+            | ast::BasicType::S16
+            | ast::BasicType::S32
+            | ast::BasicType::S64
+            | ast::BasicType::Ssize,
+    );
     int_type.const_int(val, false).into()
 }
 
@@ -751,17 +765,344 @@ fn codegen_array_repeat<'ctx>(
 
 fn codegen_unary<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+
     op: ast::UnOp,
     rhs: &hir::Expr,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `unary` not supported")
+    //@semantics arent known, some values need to be allocated
+    // some remain as pointers
+    let expect_ptr = matches!(op, ast::UnOp::Addr(_));
+    let rhs = codegen_expr(cg, proc_cg, expect_ptr, rhs).expect("value");
+
+    match op {
+        ast::UnOp::Neg => match rhs {
+            values::BasicValueEnum::IntValue(value) => {
+                cg.builder.build_int_neg(value, "un_temp").unwrap().into()
+            }
+            values::BasicValueEnum::FloatValue(value) => {
+                cg.builder.build_float_neg(value, "un_temp").unwrap().into()
+            }
+            _ => panic!("codegen: unary `-` can only be applied to int, float"),
+        },
+        ast::UnOp::BitNot | ast::UnOp::LogicNot => cg
+            .builder
+            .build_not(rhs.into_int_value(), "un_temp")
+            .unwrap()
+            .into(),
+        ast::UnOp::Deref => {
+            panic!("codegen: unary deref is not supported, pointee_ty is not available");
+            /*
+            cg
+                .builder
+                .build_load(pointee_ty, rhs.into_pointer_value(), "un_temp")
+                .unwrap(),
+            */
+        }
+        //@addr can sometimes be adress of a value, or of temporary @08.04.24
+        // constant values wont behave correctly: &5, 5 needs to be stack allocated
+        // this addr of temporaries need to be supported with explicit stack allocation
+        // (this might just work, since pointer values are still on the stack) eg: `&value.x.y`
+
+        //@multiple adresses get shrinked into 1, which isnt how type system threats this eg: `& &[1, 2, 3]`
+        ast::UnOp::Addr(_) => {
+            if rhs.is_pointer_value() {
+                return rhs.into();
+            }
+            let ty = rhs.get_type();
+            let ptr = cg.builder.build_alloca(ty, "temp_addr_val").unwrap();
+            cg.builder.build_store(ptr, rhs).unwrap();
+            ptr.into()
+        }
+    }
 }
 
 fn codegen_binary<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     op: ast::BinOp,
     lhs: &hir::Expr,
     rhs: &hir::Expr,
+    signed_int: bool,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `binary` not supported")
+    let lhs = codegen_expr(cg, proc_cg, false, lhs).expect("value");
+    let rhs = codegen_expr(cg, proc_cg, false, rhs).expect("value");
+
+    match op {
+        ast::BinOp::Add => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_add(lhs, rhs.into_int_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_add(lhs, rhs.into_float_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `+` can only be applied to int, float"),
+        },
+        ast::BinOp::Sub => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_sub(lhs, rhs.into_int_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_sub(lhs, rhs.into_float_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `-` can only be applied to int, float"),
+        },
+        ast::BinOp::Mul => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_mul(lhs, rhs.into_int_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_mul(lhs, rhs.into_float_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `*` can only be applied to int, float"),
+        },
+        ast::BinOp::Div => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => {
+                if signed_int {
+                    cg.builder
+                        .build_int_signed_div(lhs, rhs.into_int_value(), "bin_temp")
+                        .unwrap()
+                        .into()
+                } else {
+                    cg.builder
+                        .build_int_unsigned_div(lhs, rhs.into_int_value(), "bin_temp")
+                        .unwrap()
+                        .into()
+                }
+            }
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_div(lhs, rhs.into_float_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `/` can only be applied to int, float"),
+        },
+        ast::BinOp::Rem => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => {
+                if signed_int {
+                    cg.builder
+                        .build_int_signed_rem(lhs, rhs.into_int_value(), "bin_temp")
+                        .unwrap()
+                        .into()
+                } else {
+                    cg.builder
+                        .build_int_unsigned_rem(lhs, rhs.into_int_value(), "bin_temp")
+                        .unwrap()
+                        .into()
+                }
+            }
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_rem(lhs, rhs.into_float_value(), "bin_temp")
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `%` can only be applied to int, float"),
+        },
+        ast::BinOp::BitAnd => cg
+            .builder
+            .build_and(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .unwrap()
+            .into(),
+        ast::BinOp::BitOr => cg
+            .builder
+            .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .unwrap()
+            .into(),
+        ast::BinOp::BitXor => cg
+            .builder
+            .build_xor(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .unwrap()
+            .into(),
+        ast::BinOp::BitShl => cg
+            .builder
+            .build_left_shift(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .unwrap()
+            .into(),
+        ast::BinOp::BitShr => cg
+            .builder
+            .build_right_shift(
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                signed_int,
+                "bin_temp",
+            )
+            .unwrap()
+            .into(),
+        ast::BinOp::CmpIsEq => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    lhs,
+                    rhs.into_int_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_compare(
+                    inkwell::FloatPredicate::OEQ,
+                    lhs,
+                    rhs.into_float_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `==` can only be applied to int, float"),
+        },
+        ast::BinOp::CmpNotEq => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::NE,
+                    lhs,
+                    rhs.into_int_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_compare(
+                    inkwell::FloatPredicate::ONE,
+                    lhs,
+                    rhs.into_float_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `!=` can only be applied to int, float"),
+        },
+        ast::BinOp::CmpLt => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    if signed_int {
+                        inkwell::IntPredicate::SLT
+                    } else {
+                        inkwell::IntPredicate::ULT
+                    },
+                    lhs,
+                    rhs.into_int_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_compare(
+                    inkwell::FloatPredicate::OLT,
+                    lhs,
+                    rhs.into_float_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `<` can only be applied to int, float"),
+        },
+        ast::BinOp::CmpLtEq => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    if signed_int {
+                        inkwell::IntPredicate::SLE
+                    } else {
+                        inkwell::IntPredicate::ULE
+                    },
+                    lhs,
+                    rhs.into_int_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_compare(
+                    inkwell::FloatPredicate::OLE,
+                    lhs,
+                    rhs.into_float_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `<=` can only be applied to int, float"),
+        },
+        ast::BinOp::CmpGt => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    if signed_int {
+                        inkwell::IntPredicate::SGT
+                    } else {
+                        inkwell::IntPredicate::UGT
+                    },
+                    lhs,
+                    rhs.into_int_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_compare(
+                    inkwell::FloatPredicate::OGT,
+                    lhs,
+                    rhs.into_float_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `>` can only be applied to int, float"),
+        },
+        ast::BinOp::CmpGtEq => match lhs {
+            values::BasicValueEnum::IntValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    if signed_int {
+                        inkwell::IntPredicate::SGE
+                    } else {
+                        inkwell::IntPredicate::UGE
+                    },
+                    lhs,
+                    rhs.into_int_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            values::BasicValueEnum::FloatValue(lhs) => cg
+                .builder
+                .build_float_compare(
+                    inkwell::FloatPredicate::OGE,
+                    lhs,
+                    rhs.into_float_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `>=` can only be applied to int, float"),
+        },
+        ast::BinOp::LogicAnd => cg
+            .builder
+            .build_and(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .unwrap()
+            .into(),
+        ast::BinOp::LogicOr => cg
+            .builder
+            .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .unwrap()
+            .into(),
+    }
 }

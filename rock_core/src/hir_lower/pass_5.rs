@@ -1127,7 +1127,7 @@ fn typecheck_unary<'hir>(
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
-
+    //@not generating anything if type is invalid
     if let hir::Type::Error = rhs_res.ty {
         return TypeResult::new(hir::Type::Error, rhs_res.expr);
     }
@@ -1168,7 +1168,11 @@ fn typecheck_unary<'hir>(
             hir::Type::Reference(ref_ty, ..) => *ref_ty,
             _ => hir::Type::Error,
         },
-        ast::UnOp::Addr(mutt) => hir::Type::Error, // @todo
+        //@consider mutt and maybe dont allow & of constants, but value could be copied so technically it works
+        ast::UnOp::Addr(mutt) => {
+            let ref_ty = emit.arena.alloc(rhs_res.ty);
+            hir::Type::Reference(ref_ty, mutt)
+        }
     };
 
     if let hir::Type::Error = unary_ty {
@@ -1301,10 +1305,17 @@ fn typecheck_binary<'hir>(
         }
     };
 
+    let signed_int = match binary_ty {
+        hir::Type::Basic(basic) => {
+            matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
+        }
+        _ => false,
+    };
     let binary_expr = hir::Expr::Binary {
         op,
         lhs: lhs_expr,
         rhs: rhs_expr,
+        signed_int,
     };
     TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
 }
@@ -1658,7 +1669,7 @@ fn verify_is_expr_assignable(expr: &hir::Expr) -> bool {
         hir::Expr::Index { target, .. } => verify_is_expr_assignable(target),
         hir::Expr::LocalVar { .. } => true,
         hir::Expr::ParamVar { .. } => true,
-        hir::Expr::GlobalVar { .. } => true,
+        hir::Expr::GlobalVar { .. } => true, //@add mut to globals
         hir::Expr::Unary { op, .. } => matches!(op, ast::UnOp::Deref),
         _ => false,
     }
