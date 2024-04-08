@@ -6,6 +6,29 @@ use crate::hir;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+struct ConstID(u32);
+
+#[rustfmt::skip]
+enum ConstValue<'hir> {
+    Bool   { val: bool },
+    Int    { val: u64, neg: bool },
+    Float  { val: f64 },
+    Char   { val: char },
+    Struct { struct_: &'hir ConstStruct<'hir> },
+    Array  { array: &'hir ConstArray<'hir> },
+}
+
+struct ConstArray<'hir> {
+    len: u64,
+    values: &'hir [ConstID],
+}
+
+struct ConstStruct<'hir> {
+    struct_id: hir::StructID,
+    fields: &'hir [ConstID],
+}
+
 pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.proc_ids() {
         typecheck_proc(hir, emit, id)
@@ -778,9 +801,9 @@ fn typecheck_item<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
 ) -> TypeResult<'hir> {
-    let value_id = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
+    let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
 
-    match value_id {
+    let item_res = match value_id {
         ValueID::None => {
             return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
         }
@@ -789,37 +812,58 @@ fn typecheck_item<'hir>(
                 enum_id,
                 id: variant_id,
             };
-            TypeResult::new(hir::Type::Enum(enum_id), emit.arena.alloc(enum_variant))
+            return TypeResult::new(hir::Type::Enum(enum_id), emit.arena.alloc(enum_variant));
         }
-        ValueID::Const(id) => {
-            //@resolve potential field access chain
-            return TypeResult::new(
-                hir.const_data(id).ty,
-                emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
-            );
-        }
-        ValueID::Global(id) => {
-            //@resolve potential field access chain
-            return TypeResult::new(
-                hir.global_data(id).ty,
-                emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
-            );
-        }
-        ValueID::Local(id) => {
-            //@resolve potential field access chain
-            return TypeResult::new(
-                proc.get_local(id).ty,
-                emit.arena.alloc(hir::Expr::LocalVar { local_id: id }),
-            );
-        }
-        ValueID::Param(id) => {
-            //@resolve potential field access chain
-            return TypeResult::new(
-                proc.get_param(id).ty,
-                emit.arena.alloc(hir::Expr::ParamVar { param_id: id }),
-            );
+        ValueID::Const(id) => TypeResult::new(
+            hir.const_data(id).ty,
+            emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
+        ),
+        ValueID::Global(id) => TypeResult::new(
+            hir.global_data(id).ty,
+            emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
+        ),
+        ValueID::Local(id) => TypeResult::new(
+            proc.get_local(id).ty, //@type of local var might not be known
+            emit.arena.alloc(hir::Expr::LocalVar { local_id: id }),
+        ),
+        ValueID::Param(id) => TypeResult::new(
+            proc.get_param(id).ty,
+            emit.arena.alloc(hir::Expr::ParamVar { param_id: id }),
+        ),
+    };
+
+    let mut target = item_res.expr;
+    let mut target_ty = item_res.ty;
+
+    for &name in field_names {
+        //@same code duplicated code as typecheck_field
+        let (field_ty, kind) = match target_ty {
+            hir::Type::Reference(ref_ty, mutt) => verify_type_field(hir, emit, proc, *ref_ty, name),
+            _ => verify_type_field(hir, emit, proc, target_ty, name),
+        };
+
+        match kind {
+            FieldExprKind::None => return TypeResult::new(hir::Type::Error, target),
+            FieldExprKind::Member(union_id, id) => {
+                target_ty = field_ty;
+                target = emit.arena.alloc(hir::Expr::UnionMember {
+                    target,
+                    union_id,
+                    id,
+                });
+            }
+            FieldExprKind::Field(struct_id, id) => {
+                target_ty = field_ty;
+                target = emit.arena.alloc(hir::Expr::StructField {
+                    target,
+                    struct_id,
+                    id,
+                });
+            }
         }
     }
+
+    TypeResult::new(target_ty, target)
 }
 
 fn typecheck_proc_call<'hir>(
@@ -1937,13 +1981,13 @@ enum ValueID {
     Param(hir::ProcParamID),
 }
 
-fn path_resolve_value<'hir>(
-    hir: &HirData<'hir, '_>,
+fn path_resolve_value<'hir, 'ast>(
+    hir: &HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,
-    path: &ast::Path,
-) -> ValueID {
+    path: &'ast ast::Path<'ast>,
+) -> (ValueID, &'ast [ast::Name]) {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let value_id = match resolved {
@@ -1967,7 +2011,7 @@ fn path_resolve_value<'hir>(
                                 );
                             }
                         }
-                        return ValueID::Enum(id, variant_id);
+                        return (ValueID::Enum(id, variant_id), &[]);
                     } else {
                         emit.error(
                             ErrorComp::error(format!(
@@ -1977,7 +2021,7 @@ fn path_resolve_value<'hir>(
                             .context(hir.src(origin_id, variant_name.range))
                             .context_info("enum defined here", source),
                         );
-                        return ValueID::None;
+                        return (ValueID::None, &[]);
                     }
                 } else {
                     let name = path.names[name_idx];
@@ -1990,7 +2034,7 @@ fn path_resolve_value<'hir>(
                         .context(hir.src(origin_id, name.range))
                         .context_info("defined here", source),
                     );
-                    return ValueID::None;
+                    return (ValueID::None, &[]);
                 }
             }
             SymbolKind::Const(id) => ValueID::Const(id),
@@ -2006,10 +2050,11 @@ fn path_resolve_value<'hir>(
                     .context(hir.src(origin_id, name.range))
                     .context_info("defined here", source),
                 );
-                return ValueID::None;
+                return (ValueID::None, &[]);
             }
         },
     };
 
-    value_id
+    let field_names = &path.names[name_idx + 1..];
+    (value_id, field_names)
 }
