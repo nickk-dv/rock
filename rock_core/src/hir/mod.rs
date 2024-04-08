@@ -82,7 +82,7 @@ hir_id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
 pub struct EnumVariant<'hir> {
     pub name: ast::Name,
-    pub value: Option<ConstExpr<'hir>>,
+    pub value: ConstExpr<'hir>,
 }
 
 hir_id_impl!(UnionID);

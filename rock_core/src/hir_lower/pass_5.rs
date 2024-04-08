@@ -1934,7 +1934,8 @@ fn path_resolve_value<'hir>(
     path: &ast::Path,
 ) -> ValueID {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
-    match resolved {
+
+    let value_id = match resolved {
         ResolvedPath::None => ValueID::None,
         ResolvedPath::Variable(var) => match var {
             VariableID::Local(id) => ValueID::Local(id),
@@ -1955,7 +1956,7 @@ fn path_resolve_value<'hir>(
                                 );
                             }
                         }
-                        ValueID::Enum(id, variant_id)
+                        return ValueID::Enum(id, variant_id);
                     } else {
                         emit.error(
                             ErrorComp::error(format!(
@@ -1965,7 +1966,7 @@ fn path_resolve_value<'hir>(
                             .context(hir.src(origin_id, variant_name.range))
                             .context_info("enum defined here", source),
                         );
-                        ValueID::None
+                        return ValueID::None;
                     }
                 } else {
                     let name = path.names[name_idx];
@@ -1978,7 +1979,7 @@ fn path_resolve_value<'hir>(
                         .context(hir.src(origin_id, name.range))
                         .context_info("defined here", source),
                     );
-                    ValueID::None
+                    return ValueID::None;
                 }
             }
             SymbolKind::Const(id) => ValueID::Const(id),
@@ -1994,8 +1995,10 @@ fn path_resolve_value<'hir>(
                     .context(hir.src(origin_id, name.range))
                     .context_info("defined here", source),
                 );
-                ValueID::None
+                return ValueID::None;
             }
         },
-    }
+    };
+
+    value_id
 }

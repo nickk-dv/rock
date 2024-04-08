@@ -117,7 +117,10 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::Char => self.context.i32_type().into(),
                 ast::BasicType::Rawptr => self.ptr_type().into(),
             },
-            hir::Type::Enum(_) => todo!(),
+            hir::Type::Enum(id) => {
+                let basic = self.hir.enum_data(id).basic.expect("enum basic type");
+                self.type_into_any(hir::Type::Basic(basic))
+            }
             hir::Type::Union(_) => todo!(),
             hir::Type::Struct(id) => self.struct_types[id.index()].into(),
             hir::Type::Reference(_, _) => self.ptr_type().into(),
@@ -324,7 +327,7 @@ fn codegen_expr<'ctx>(
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
-        Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, enum_id, id)),
+        Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, proc_cg, enum_id, id)),
         Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
         Expr::StructInit { struct_id, input } => Some(codegen_struct_init(
@@ -633,10 +636,15 @@ fn codegen_global_var<'ctx>(
 
 fn codegen_enum_variant<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
     enum_id: hir::EnumID,
     id: hir::EnumVariantID,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `enum variant` not supported")
+    //@generating value for that variant each time
+    // this might be fine when constants are folded to single constant value
+    // (current impl only supports single literals) @08.04.24
+    let variant = cg.hir.enum_data(enum_id).variants[id.index()];
+    codegen_expr(cg, proc_cg, false, variant.value.0).expect("value")
 }
 
 fn codegen_proc_call<'ctx>(

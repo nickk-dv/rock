@@ -97,6 +97,8 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
     let origin_id = hir.enum_data(id).origin_id;
     let mut unique = Vec::<hir::EnumVariant>::new();
 
+    let mut implicit_value: u64 = 0;
+
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
             emit.error(
@@ -108,11 +110,20 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
                 .context_info("existing variant", hir.src(origin_id, existing.name.range)),
             );
         } else {
+            let value = if let Some(value) = variant.value {
+                super::pass_4::const_expr_resolve(hir, emit, origin_id, value)
+            } else {
+                let expr = emit.arena.alloc(hir::Expr::LitInt {
+                    val: implicit_value,
+                    ty: ast::BasicType::U64, //@not considering specified type
+                });
+                implicit_value += 1; //@not considering prev. user defined values
+                hir::ConstExpr(expr)
+            };
+
             unique.push(hir::EnumVariant {
                 name: variant.name,
-                value: variant
-                    .value
-                    .map(|value| super::pass_4::const_expr_resolve(hir, emit, origin_id, value)),
+                value,
             });
         }
     }
