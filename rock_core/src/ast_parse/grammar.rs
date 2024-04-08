@@ -383,6 +383,12 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Stmt<'ast>, String> {
             StmtKind::ForLoop(for_loop(p)?)
         }
         T![let] | T![mut] => StmtKind::Local(local(p)?),
+        T![->] => {
+            p.bump();
+            let expr = expr(p)?;
+            p.expect(T![;])?;
+            StmtKind::ExprTail(expr)
+        }
         _ => {
             let lhs = expr(p)?;
             if let Some(op) = p.peek().as_assign_op() {
@@ -390,10 +396,9 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Stmt<'ast>, String> {
                 let rhs = expr(p)?;
                 p.expect(T![;])?;
                 StmtKind::Assign(p.state.arena.alloc(Assign { op, lhs, rhs }))
-            } else if p.eat(T![;]) {
-                StmtKind::ExprSemi(lhs)
             } else {
-                StmtKind::ExprTail(lhs)
+                p.expect(T![;])?;
+                StmtKind::ExprSemi(lhs)
             }
         }
     };
