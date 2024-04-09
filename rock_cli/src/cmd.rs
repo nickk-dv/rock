@@ -82,25 +82,25 @@ pub mod new {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
         {
-            return Err(ErrorComp::error("package name must consist only of alphanumeric characters, underscores `_` or hyphens `-`"));
+            return Err(ErrorComp::message("package name must consist only of alphanumeric characters, underscores `_` or hyphens `-`"));
         }
         Ok(())
     }
 
     fn make_dir(path: &PathBuf) -> Result<(), ErrorComp> {
         std::fs::create_dir(path).map_err(|io_error| {
-            ErrorComp::error(format!("failed to create directory: {}", io_error))
+            ErrorComp::message(format!("failed to create directory: {}", io_error))
         })
     }
 
     fn make_file(path: &PathBuf, text: &str) -> Result<(), ErrorComp> {
         std::fs::write(path, text)
-            .map_err(|io_error| ErrorComp::error(format!("failed to create file: {}", io_error)))
+            .map_err(|io_error| ErrorComp::message(format!("failed to create file: {}", io_error)))
     }
 
     fn git_init(package_dir: &PathBuf) -> Result<(), ErrorComp> {
         std::env::set_current_dir(package_dir).map_err(|io_error| {
-            ErrorComp::error(format!("failed to set working directory: {}", io_error))
+            ErrorComp::message(format!("failed to set working directory: {}", io_error))
         })?;
         std::process::Command::new("git")
             .arg("init")
@@ -108,7 +108,7 @@ pub mod new {
             .stderr(std::process::Stdio::null())
             .status()
             .map_err(|io_error| {
-                ErrorComp::error(format!("failed to initialize git repository: {}", io_error))
+                ErrorComp::message(format!("failed to initialize git repository: {}", io_error))
             })?;
         Ok(())
     }
@@ -124,7 +124,7 @@ pub mod check {
     pub fn cmd() -> Result<(), Vec<ErrorComp>> {
         let session = Session::new()?;
         if let Err(errors) = check(&session) {
-            error_format::print_errors(Some(&session), &errors);
+            error_format::print_errors(Some(&session), errors);
         }
         Ok(())
     }
@@ -148,7 +148,7 @@ pub mod build {
     pub fn cmd(data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
         let session = Session::new()?;
         if let Err(errors) = build(&session) {
-            error_format::print_errors(Some(&session), &errors);
+            error_format::print_errors(Some(&session), errors);
         }
         Ok(())
     }
@@ -173,7 +173,7 @@ pub mod run {
     pub fn cmd(data: CommandRun) -> Result<(), Vec<ErrorComp>> {
         let session = Session::new()?;
         if let Err(errors) = run(&session) {
-            error_format::print_errors(Some(&session), &errors);
+            error_format::print_errors(Some(&session), errors);
         }
         Ok(())
     }

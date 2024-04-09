@@ -68,17 +68,17 @@ fn process_proc_data<'hir>(
 
     for param in item.params.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == param.name.id) {
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "parameter `{}` is defined multiple times",
                     hir.name_str(param.name.id)
-                ))
-                .context(hir.src(origin_id, param.name.range))
-                .context_info(
+                ),
+                hir.src(origin_id, param.name.range),
+                ErrorComp::info(
                     "existing parameter",
                     hir.src(origin_id, existing.name.range),
                 ),
-            );
+            ));
         } else {
             unique.push(hir::ProcParam {
                 mutt: param.mutt,
@@ -109,14 +109,14 @@ fn process_enum_data<'hir>(
 
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "variant `{}` is defined multiple times",
                     hir.name_str(variant.name.id)
-                ))
-                .context(hir.src(origin_id, variant.name.range))
-                .context_info("existing variant", hir.src(origin_id, existing.name.range)),
-            );
+                ),
+                hir.src(origin_id, variant.name.range),
+                ErrorComp::info("existing variant", hir.src(origin_id, existing.name.range)),
+            ));
         } else {
             let value = if let Some(value) = variant.value {
                 super::pass_4::const_expr_resolve(hir, emit, origin_id, value)
@@ -149,14 +149,14 @@ fn process_union_data<'hir>(
 
     for member in item.members.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == member.name.id) {
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "member `{}` is defined multiple times",
                     hir.name_str(member.name.id)
-                ))
-                .context(hir.src(origin_id, member.name.range))
-                .context_info("existing member", hir.src(origin_id, existing.name.range)),
-            );
+                ),
+                hir.src(origin_id, member.name.range),
+                ErrorComp::info("existing member", hir.src(origin_id, existing.name.range)),
+            ));
         } else {
             unique.push(hir::UnionMember {
                 name: member.name,
@@ -178,14 +178,14 @@ fn process_struct_data<'hir>(
 
     for field in item.fields.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == field.name.id) {
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "field `{}` is defined multiple times",
                     hir.name_str(field.name.id)
-                ))
-                .context(hir.src(origin_id, field.name.range))
-                .context_info("existing field", hir.src(origin_id, existing.name.range)),
-            );
+                ),
+                hir.src(origin_id, field.name.range),
+                ErrorComp::info("existing field", hir.src(origin_id, existing.name.range)),
+            ));
         } else {
             unique.push(hir::StructField {
                 vis: field.vis,

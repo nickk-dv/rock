@@ -203,10 +203,11 @@ impl<'src> Lexer<'src> {
                 c
             }
             None => {
-                self.errors.push(
-                    ErrorComp::error("expected character literal")
-                        .context(SourceRange::new(self.token_range(), self.file_id)),
-                );
+                self.errors.push(ErrorComp::error(
+                    "expected character literal",
+                    SourceRange::new(self.token_range(), self.file_id),
+                    None,
+                ));
                 return (' ', self.token_range());
             }
         };
@@ -286,10 +287,11 @@ impl<'src> Lexer<'src> {
         }
 
         if !terminated {
-            self.errors.push(
-                ErrorComp::error("string literal not terminated, missing closing \"")
-                    .context(SourceRange::new(self.token_range(), self.file_id)),
-            );
+            self.errors.push(ErrorComp::error(
+                "string literal not terminated, missing closing \"",
+                SourceRange::new(self.token_range(), self.file_id),
+                None,
+            ));
         }
 
         (string, c_string, self.token_range())
@@ -315,10 +317,11 @@ impl<'src> Lexer<'src> {
         }
 
         if !terminated {
-            self.errors.push(
-                ErrorComp::error("raw string literal not terminated, missing closing `")
-                    .context(SourceRange::new(self.token_range(), self.file_id)),
-            );
+            self.errors.push(ErrorComp::error(
+                "raw string literal not terminated, missing closing `",
+                SourceRange::new(self.token_range(), self.file_id),
+                None,
+            ));
         }
 
         (string, self.token_range())

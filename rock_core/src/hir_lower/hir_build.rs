@@ -152,15 +152,15 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                         self.symbol_kind_vis(kind)
                     };
                     if vis == ast::Vis::Private {
-                        emit.error(
-                            ErrorComp::error(format!(
+                        emit.error(ErrorComp::error(
+                            format!(
                                 "{} `{}` is private",
                                 Self::symbol_kind_name(kind),
                                 self.name_str(name.id)
-                            ))
-                            .context(self.src(origin_id, name.range))
-                            .context_info("defined here", source),
-                        );
+                            ),
+                            self.src(origin_id, name.range),
+                            ErrorComp::info("defined here", source),
+                        ));
                         None
                     } else {
                         Some((kind, source))
@@ -179,13 +179,11 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                 //@sometimes its in self scope
                 // else its in some module.
                 // display module path?
-                emit.error(
-                    ErrorComp::error(format!(
-                        "name `{}` is not found in module",
-                        self.name_str(name.id)
-                    ))
-                    .context(self.src(origin_id, name.range)),
-                );
+                emit.error(ErrorComp::error(
+                    format!("name `{}` is not found in module", self.name_str(name.id)),
+                    self.src(origin_id, name.range),
+                    None,
+                ));
                 None
             }
         }

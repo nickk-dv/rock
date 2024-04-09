@@ -66,13 +66,11 @@ fn typecheck_proc<'hir>(
 
             let directive_name = hir.name_str(directive_tail.name.id);
             if directive_name != "c_call" {
-                emit.error(
-                    ErrorComp::error(format!(
-                        "expected a `c_call` directive, got `{}`",
-                        directive_name
-                    ))
-                    .context(hir.src(data.origin_id, directive_tail.name.range)),
-                )
+                emit.error(ErrorComp::error(
+                    format!("expected a `c_call` directive, got `{}`", directive_name),
+                    hir.src(data.origin_id, directive_tail.name.range),
+                    None,
+                ))
             }
         }
     }
@@ -197,12 +195,15 @@ fn typecheck_expr<'hir>(
     };
 
     if !type_matches(expect, expr_res.ty) {
-        let msg: String = format!(
-            "type mismatch: expected `{}`, found `{}`",
-            type_format(hir, expect),
-            type_format(hir, expr_res.ty)
-        );
-        emit.error(ErrorComp::error(msg).context(hir.src(proc.origin(), expr.range)));
+        emit.error(ErrorComp::error(
+            format!(
+                "type mismatch: expected `{}`, found `{}`",
+                type_format(hir, expect),
+                type_format(hir, expr_res.ty)
+            ),
+            hir.src(proc.origin(), expr.range),
+            None,
+        ));
     }
 
     expr_res
@@ -380,13 +381,14 @@ fn typecheck_match<'hir>(
     let on_res = typecheck_expr(hir, emit, proc, hir::Type::Error, match_.on_expr);
 
     if !verify_can_match(on_res.ty) {
-        emit.error(
-            ErrorComp::error(format!(
+        emit.error(ErrorComp::error(
+            format!(
                 "cannot match on value of type `{}`",
                 type_format(hir, on_res.ty)
-            ))
-            .context(hir.src(proc.origin(), match_.on_expr.range)),
-        );
+            ),
+            hir.src(proc.origin(), match_.on_expr.range),
+            None,
+        ));
     }
 
     //@approx esmitation based on first match block value
@@ -498,14 +500,15 @@ fn verify_type_field<'hir>(
             if let Some((member_id, member)) = data.find_member(name.id) {
                 (member.ty, FieldExprKind::Member(id, member_id))
             } else {
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "no field `{}` exists on union type `{}`",
                         hir.name_str(name.id),
                         hir.name_str(data.name.id),
-                    ))
-                    .context(hir.src(proc.origin(), name.range)),
-                );
+                    ),
+                    hir.src(proc.origin(), name.range),
+                    None,
+                ));
                 (hir::Type::Error, FieldExprKind::None)
             }
         }
@@ -514,27 +517,29 @@ fn verify_type_field<'hir>(
             if let Some((field_id, field)) = data.find_field(name.id) {
                 (field.ty, FieldExprKind::Field(id, field_id))
             } else {
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "no field `{}` exists on struct type `{}`",
                         hir.name_str(name.id),
                         hir.name_str(data.name.id),
-                    ))
-                    .context(hir.src(proc.origin(), name.range)),
-                );
+                    ),
+                    hir.src(proc.origin(), name.range),
+                    None,
+                ));
                 (hir::Type::Error, FieldExprKind::None)
             }
         }
         _ => {
             let ty_format = type_format(hir, ty);
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "no field `{}` exists on value of type {}",
                     hir.name_str(name.id),
                     ty_format,
-                ))
-                .context(hir.src(proc.origin(), name.range)),
-            );
+                ),
+                hir.src(proc.origin(), name.range),
+                None,
+            ));
             (hir::Type::Error, FieldExprKind::None)
         }
     }
@@ -562,13 +567,14 @@ fn typecheck_index<'hir>(
         });
         TypeResult::new(elem_ty, index_expr)
     } else {
-        emit.error(
-            ErrorComp::error(format!(
+        emit.error(ErrorComp::error(
+            format!(
                 "cannot index value of type {}",
                 type_format(hir, target_res.ty)
-            ))
-            .context(hir.src(proc.origin(), index.range)),
-        );
+            ),
+            hir.src(proc.origin(), index.range),
+            None,
+        ));
         TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
     }
 }
@@ -661,14 +667,15 @@ fn typecheck_cast<'hir>(
     // invariant: both types are not Error
     // ensured by early return above
     if type_matches(target_res.ty, into) {
-        emit.error(
-            ErrorComp::warning(format!(
+        emit.error(ErrorComp::warning(
+            format!(
                 "redundant cast from `{}` into `{}`",
                 type_format(hir, target_res.ty),
                 type_format(hir, into)
-            ))
-            .context(hir.src(proc.origin(), range)),
-        );
+            ),
+            hir.src(proc.origin(), range),
+            None,
+        ));
 
         let cast_expr = hir::Expr::Cast {
             target: target_res.expr,
@@ -738,14 +745,15 @@ fn typecheck_cast<'hir>(
         //@cast could be primitive but still invalid
         // wording might be improved
         // or have 2 error types for this
-        emit.error(
-            ErrorComp::error(format!(
+        emit.error(ErrorComp::error(
+            format!(
                 "non primitive cast from `{}` into `{}`",
                 type_format(hir, target_res.ty),
                 type_format(hir, into)
-            ))
-            .context(hir.src(proc.origin(), range)),
-        );
+            ),
+            hir.src(proc.origin(), range),
+            None,
+        ));
     }
 
     let cast_expr = hir::Expr::Cast {
@@ -776,12 +784,11 @@ fn typecheck_sizeof<'hir>(
         hir::Type::Reference(..) => Some(8), //@assume 64bit target
         hir::Type::ArraySlice(..) => Some(16), //@assume 64bit target
         _ => {
-            emit.error(
-                ErrorComp::error(
-                    "sizeof for user defined or static array types is not yet supported",
-                )
-                .context(hir.src(proc.origin(), TextRange::new(start, start + 6.into()))),
-            );
+            emit.error(ErrorComp::error(
+                "sizeof for user defined or static array types is not yet supported",
+                hir.src(proc.origin(), TextRange::new(start, start + 6.into())),
+                None,
+            ));
             None
         }
     };
@@ -895,17 +902,17 @@ fn typecheck_proc_call<'hir>(
     {
         let at_least = if data.is_variadic { " at least" } else { "" };
         //@plular form for argument`s` only needed if != 1
-        emit.error(
-            ErrorComp::error(format!(
+        emit.error(ErrorComp::error(
+            format!(
                 "expected{at_least} {} input arguments, found {}",
                 expected_count, input_count
-            ))
-            .context(hir.src(proc.origin(), expr_range))
-            .context_info(
+            ),
+            hir.src(proc.origin(), expr_range),
+            ErrorComp::info(
                 "calling this procedure",
                 hir.src(data.origin_id, data.name.range),
             ),
-        );
+        ));
     }
 
     let mut input = Vec::with_capacity(proc_call.input.len());
@@ -958,17 +965,14 @@ fn typecheck_struct_init<'hir>(
                     };
                     TypeResult::new(hir::Type::Union(union_id), emit.arena.alloc(union_init))
                 } else {
-                    emit.error(
-                        ErrorComp::error(format!(
-                            "field `{}` is not found",
-                            hir.name_str(first.name.id),
-                        ))
-                        .context(hir.src(proc.origin(), first.name.range))
-                        .context_info(
+                    emit.error(ErrorComp::error(
+                        format!("field `{}` is not found", hir.name_str(first.name.id),),
+                        hir.src(proc.origin(), first.name.range),
+                        ErrorComp::info(
                             "union defined here",
                             hir.src(data.origin_id, data.name.range),
                         ),
-                    );
+                    ));
                     let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, first.expr);
 
                     TypeResult::new(
@@ -978,19 +982,21 @@ fn typecheck_struct_init<'hir>(
                 };
 
                 for input in other {
-                    emit.error(
-                        ErrorComp::error("union initializer must have exactly one field")
-                            .context(hir.src(proc.origin(), input.name.range)),
-                    );
+                    emit.error(ErrorComp::error(
+                        "union initializer must have exactly one field",
+                        hir.src(proc.origin(), input.name.range),
+                        None,
+                    ));
                     let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, input.expr);
                 }
 
                 type_res
             } else {
-                emit.error(
-                    ErrorComp::error("union initializer must have exactly one field")
-                        .context(hir.src(proc.origin(), structure_name.range)),
-                );
+                emit.error(ErrorComp::error(
+                    "union initializer must have exactly one field",
+                    hir.src(proc.origin(), structure_name.range),
+                    None,
+                ));
 
                 TypeResult::new(
                     hir::Type::Union(union_id),
@@ -1017,14 +1023,14 @@ fn typecheck_struct_init<'hir>(
                     let input_res = typecheck_expr(hir, emit, proc, field.ty, input.expr);
 
                     if let FieldStatus::Init(range) = field_status[field_id.index()] {
-                        emit.error(
-                            ErrorComp::error(format!(
+                        emit.error(ErrorComp::error(
+                            format!(
                                 "field `{}` was already initialized",
                                 hir.name_str(input.name.id),
-                            ))
-                            .context(hir.src(proc.origin(), input.name.range))
-                            .context_info("initialized here", hir.src(data.origin_id, range)),
-                        );
+                            ),
+                            hir.src(proc.origin(), input.name.range),
+                            ErrorComp::info("initialized here", hir.src(data.origin_id, range)),
+                        ));
                     } else {
                         let field_init = hir::StructFieldInit {
                             field_id,
@@ -1035,17 +1041,14 @@ fn typecheck_struct_init<'hir>(
                         init_count += 1;
                     }
                 } else {
-                    emit.error(
-                        ErrorComp::error(format!(
-                            "field `{}` is not found",
-                            hir.name_str(input.name.id),
-                        ))
-                        .context(hir.src(proc.origin(), input.name.range))
-                        .context_info(
+                    emit.error(ErrorComp::error(
+                        format!("field `{}` is not found", hir.name_str(input.name.id),),
+                        hir.src(proc.origin(), input.name.range),
+                        ErrorComp::info(
                             "struct defined here",
                             hir.src(data.origin_id, data.name.range),
                         ),
-                    );
+                    ));
                     let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, input.expr);
                 }
             }
@@ -1066,14 +1069,14 @@ fn typecheck_struct_init<'hir>(
                     }
                 }
 
-                emit.error(
-                    ErrorComp::error(message)
-                        .context(hir.src(proc.origin(), structure_name.range))
-                        .context_info(
-                            "struct defined here",
-                            hir.src(data.origin_id, data.name.range),
-                        ),
-                );
+                emit.error(ErrorComp::error(
+                    message,
+                    hir.src(proc.origin(), structure_name.range),
+                    ErrorComp::info(
+                        "struct defined here",
+                        hir.src(data.origin_id, data.name.range),
+                    ),
+                ));
             }
 
             let input = emit.arena.alloc_slice(&field_inits);
@@ -1236,13 +1239,14 @@ fn typecheck_unary<'hir>(
                 ast::Mut::Immutable => "&",
             },
         };
-        emit.error(
-            ErrorComp::error(format!(
+        emit.error(ErrorComp::error(
+            format!(
                 "unary operator `{op_str}` cannot be applied to `{}`",
                 type_format(hir, rhs_res.ty)
-            ))
-            .context(hir.src(proc.origin(), rhs.range)),
-        );
+            ),
+            hir.src(proc.origin(), rhs.range),
+            None,
+        ));
     }
 
     let unary_expr = hir::Expr::Unary {
@@ -1269,13 +1273,14 @@ fn typecheck_binary<'hir>(
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
             let binary_ty = if !check_type_allow_math_ops(lhs_res.ty) {
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "cannot use math operator on value of type `{}`",
                         type_format(hir, lhs_res.ty)
-                    ))
-                    .context(hir.src(proc.origin(), lhs.range)),
-                );
+                    ),
+                    hir.src(proc.origin(), lhs.range),
+                    None,
+                ));
                 lhs_res.ty
             } else {
                 hir::Type::Error
@@ -1288,13 +1293,14 @@ fn typecheck_binary<'hir>(
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
             let binary_ty = if !check_type_allow_remainder(lhs_res.ty) {
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "cannot use remainder operator on value of type `{}`",
                         type_format(hir, lhs_res.ty)
-                    ))
-                    .context(hir.src(proc.origin(), lhs.range)),
-                );
+                    ),
+                    hir.src(proc.origin(), lhs.range),
+                    None,
+                ));
                 lhs_res.ty
             } else {
                 hir::Type::Error
@@ -1318,13 +1324,14 @@ fn typecheck_binary<'hir>(
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
             if !check_type_allow_compare_eq(lhs_res.ty) {
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "cannot compare equality for value of type `{}`",
                         type_format(hir, lhs_res.ty)
-                    ))
-                    .context(hir.src(proc.origin(), lhs.range)),
-                );
+                    ),
+                    hir.src(proc.origin(), lhs.range),
+                    None,
+                ));
             }
 
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
@@ -1334,13 +1341,14 @@ fn typecheck_binary<'hir>(
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
             if !check_type_allow_compare_ord(lhs_res.ty) {
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "cannot compare order for value of type `{}`",
                         type_format(hir, lhs_res.ty)
-                    ))
-                    .context(hir.src(proc.origin(), lhs.range)),
-                );
+                    ),
+                    hir.src(proc.origin(), lhs.range),
+                    None,
+                ));
             }
 
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
@@ -1527,10 +1535,11 @@ fn typecheck_break<'hir>(
     range: TextRange,
 ) -> hir::Stmt<'hir> {
     if !proc.get_block().in_loop {
-        emit.error(
-            ErrorComp::error("cannot use `break` outside of a loop")
-                .context(hir.src(proc.origin(), range)),
-        );
+        emit.error(ErrorComp::error(
+            "cannot use `break` outside of a loop",
+            hir.src(proc.origin(), range),
+            None,
+        ));
     }
 
     hir::Stmt::Break
@@ -1543,10 +1552,11 @@ fn typecheck_continue<'hir>(
     range: TextRange,
 ) -> hir::Stmt<'hir> {
     if !proc.get_block().in_loop {
-        emit.error(
-            ErrorComp::error("cannot use `continue` outside of a loop")
-                .context(hir.src(proc.origin(), range)),
-        );
+        emit.error(ErrorComp::error(
+            "cannot use `continue` outside of a loop",
+            hir.src(proc.origin(), range),
+            None,
+        ));
     }
 
     hir::Stmt::Continue
@@ -1570,17 +1580,17 @@ fn typecheck_return<'hir>(
         if !type_matches(expect, found) {
             let expect_format = type_format(hir, expect);
             let found_format = type_format(hir, found);
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "type mismatch: expected `{}`, found `{}`",
                     expect_format, found_format,
-                ))
-                .context(hir.src(proc.origin(), range))
-                .context_info(
+                ),
+                hir.src(proc.origin(), range),
+                ErrorComp::info(
                     format!("procedure returns `{expect_format}`"),
                     hir.src(proc.origin(), proc.data().name.range),
                 ),
-            );
+            ));
         }
         hir::Stmt::Return(None)
     }
@@ -1596,10 +1606,11 @@ fn typecheck_defer<'hir>(
     block: &ast::Expr<'_>,
 ) -> hir::Stmt<'hir> {
     if proc.get_block().in_defer {
-        emit.error(
-            ErrorComp::error("`defer` statements cannot be nested")
-                .context(hir.src(proc.origin(), TextRange::new(start, start + 5.into()))),
-        );
+        emit.error(ErrorComp::error(
+            "`defer` statements cannot be nested",
+            hir.src(proc.origin(), TextRange::new(start, start + 5.into())),
+            None,
+        ));
     }
 
     let block_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Unit), block);
@@ -1697,10 +1708,11 @@ fn typecheck_assign<'hir>(
         if verify_is_expr_assignable(lhs_res.expr) {
             lhs_res.ty
         } else {
-            emit.error(
-                ErrorComp::error("cannot assign to this expression")
-                    .context(hir.src(proc.origin(), assign.lhs.range)),
-            );
+            emit.error(ErrorComp::error(
+                "cannot assign to this expression",
+                hir.src(proc.origin(), assign.lhs.range),
+                None,
+            ));
             hir::Type::Error
         }
     };
@@ -1804,14 +1816,11 @@ pub fn path_resolve_type<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(
-                ErrorComp::error(format!(
-                    "expected type, found local `{}`",
-                    hir.name_str(name.id)
-                ))
-                .context(hir.src(origin_id, name.range))
-                .context_info("defined here", source),
-            );
+            emit.error(ErrorComp::error(
+                format!("expected type, found local `{}`", hir.name_str(name.id)),
+                hir.src(origin_id, name.range),
+                ErrorComp::info("defined here", source),
+            ));
             return hir::Type::Error;
         }
         ResolvedPath::Symbol(kind, source) => match kind {
@@ -1820,15 +1829,15 @@ pub fn path_resolve_type<'hir>(
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "expected type, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
-                    ))
-                    .context(hir.src(origin_id, name.range))
-                    .context_info("defined here", source),
-                );
+                    ),
+                    hir.src(origin_id, name.range),
+                    ErrorComp::info("defined here", source),
+                ));
                 return hir::Type::Error;
             }
         },
@@ -1837,10 +1846,11 @@ pub fn path_resolve_type<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(
-                ErrorComp::error(format!("unexpected path segment",))
-                    .context(hir.src(origin_id, range)),
-            );
+            emit.error(ErrorComp::error(
+                format!("unexpected path segment"),
+                hir.src(origin_id, range),
+                None,
+            ));
         }
     }
 
@@ -1870,29 +1880,29 @@ fn path_resolve_proc<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "expected procedure, found local `{}`",
                     hir.name_str(name.id)
-                ))
-                .context(hir.src(origin_id, name.range))
-                .context_info("defined here", source),
-            );
+                ),
+                hir.src(origin_id, name.range),
+                ErrorComp::info("defined here", source),
+            ));
             return None;
         }
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Proc(id) => Some(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "expected procedure, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
-                    ))
-                    .context(hir.src(origin_id, name.range))
-                    .context_info("defined here", source),
-                );
+                    ),
+                    hir.src(origin_id, name.range),
+                    ErrorComp::info("defined here", source),
+                ));
                 return None;
             }
         },
@@ -1901,10 +1911,11 @@ fn path_resolve_proc<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(
-                ErrorComp::error(format!("unexpected path segment",))
-                    .context(hir.src(origin_id, range)),
-            );
+            emit.error(ErrorComp::error(
+                format!("unexpected path segment"),
+                hir.src(origin_id, range),
+                None,
+            ));
         }
     }
 
@@ -1940,14 +1951,14 @@ fn path_resolve_structure<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "expected struct or union, found local `{}`",
                     hir.name_str(name.id)
-                ))
-                .context(hir.src(origin_id, name.range))
-                .context_info("defined here", source),
-            );
+                ),
+                hir.src(origin_id, name.range),
+                ErrorComp::info("defined here", source),
+            ));
             return StructureID::None;
         }
         ResolvedPath::Symbol(kind, source) => match kind {
@@ -1955,15 +1966,15 @@ fn path_resolve_structure<'hir>(
             SymbolKind::Struct(id) => StructureID::Struct(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "expected struct or union, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
-                    ))
-                    .context(hir.src(origin_id, name.range))
-                    .context_info("defined here", source),
-                );
+                    ),
+                    hir.src(origin_id, name.range),
+                    ErrorComp::info("defined here", source),
+                ));
                 return StructureID::None;
             }
         },
@@ -1972,10 +1983,11 @@ fn path_resolve_structure<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(
-                ErrorComp::error(format!("unexpected path segment",))
-                    .context(hir.src(origin_id, range)),
-            );
+            emit.error(ErrorComp::error(
+                format!("unexpected path segment"),
+                hir.src(origin_id, range),
+                None,
+            ));
         }
     }
 
@@ -2015,35 +2027,36 @@ fn path_resolve_value<'hir, 'ast>(
                             if let (Some(first), Some(last)) = (remaining.first(), remaining.last())
                             {
                                 let range = TextRange::new(first.range.start(), last.range.end());
-                                emit.error(
-                                    ErrorComp::error(format!("unexpected path segment",))
-                                        .context(hir.src(origin_id, range)),
-                                );
+                                emit.error(ErrorComp::error(
+                                    format!("unexpected path segment"),
+                                    hir.src(origin_id, range),
+                                    None,
+                                ));
                             }
                         }
                         return (ValueID::Enum(id, variant_id), &[]);
                     } else {
-                        emit.error(
-                            ErrorComp::error(format!(
+                        emit.error(ErrorComp::error(
+                            format!(
                                 "enum variant `{}` is not found",
                                 hir.name_str(variant_name.id)
-                            ))
-                            .context(hir.src(origin_id, variant_name.range))
-                            .context_info("enum defined here", source),
-                        );
+                            ),
+                            hir.src(origin_id, variant_name.range),
+                            ErrorComp::info("enum defined here", source),
+                        ));
                         return (ValueID::None, &[]);
                     }
                 } else {
                     let name = path.names[name_idx];
-                    emit.error(
-                        ErrorComp::error(format!(
+                    emit.error(ErrorComp::error(
+                        format!(
                             "expected value, found {} `{}`",
                             HirData::symbol_kind_name(kind),
                             hir.name_str(name.id)
-                        ))
-                        .context(hir.src(origin_id, name.range))
-                        .context_info("defined here", source),
-                    );
+                        ),
+                        hir.src(origin_id, name.range),
+                        ErrorComp::info("defined here", source),
+                    ));
                     return (ValueID::None, &[]);
                 }
             }
@@ -2051,15 +2064,15 @@ fn path_resolve_value<'hir, 'ast>(
             SymbolKind::Global(id) => ValueID::Global(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(
-                    ErrorComp::error(format!(
+                emit.error(ErrorComp::error(
+                    format!(
                         "expected value, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
-                    ))
-                    .context(hir.src(origin_id, name.range))
-                    .context_info("defined here", source),
-                );
+                    ),
+                    hir.src(origin_id, name.range),
+                    ErrorComp::info("defined here", source),
+                ));
                 return (ValueID::None, &[]);
             }
         },

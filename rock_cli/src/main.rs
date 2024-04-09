@@ -23,6 +23,6 @@ pub fn main() {
         Err(errors) => Err(errors),
     };
     if let Err(errors) = cmd_result {
-        error_format::print_errors(None, &errors);
+        error_format::print_errors(None, errors);
     }
 }

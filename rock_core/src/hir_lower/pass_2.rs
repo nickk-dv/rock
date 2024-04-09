@@ -22,38 +22,38 @@ fn resolve_import<'hir, 'ast>(
     let target_id = match hir.get_module_id(import.module.id) {
         Some(it) => it,
         None => {
-            emit.error(
-                ErrorComp::error(format!(
+            emit.error(ErrorComp::error(
+                format!(
                     "module `{}` is not found in current package",
                     hir.name_str(import.module.id)
-                ))
-                .context(hir.src(origin_id, import.module.range)),
-            );
+                ),
+                hir.src(origin_id, import.module.range),
+                None,
+            ));
             return;
         }
     };
 
     if target_id == origin_id {
-        emit.error(
-            ErrorComp::error(format!(
+        emit.error(ErrorComp::error(
+            format!(
                 "importing module `{}` into itself is redundant, remove this import",
                 hir.name_str(import.module.id)
-            ))
-            .context(hir.src(origin_id, import.module.range)),
-        );
+            ),
+            hir.src(origin_id, import.module.range),
+            None,
+        ));
         return;
     }
 
     let alias_name = match import.alias {
         Some(alias) => {
             if import.module.id == alias.id {
-                emit.error(
-                    ErrorComp::warning(format!(
-                        "name alias `{}` is redundant",
-                        hir.name_str(alias.id)
-                    ))
-                    .context(hir.src(origin_id, alias.range)),
-                );
+                emit.error(ErrorComp::warning(
+                    format!("name alias `{}` is redundant", hir.name_str(alias.id)),
+                    hir.src(origin_id, alias.range),
+                    None,
+                ));
             }
             alias
         }
@@ -73,13 +73,11 @@ fn resolve_import<'hir, 'ast>(
         let alias_name = match symbol.alias {
             Some(alias) => {
                 if symbol.name.id == alias.id {
-                    emit.error(
-                        ErrorComp::warning(format!(
-                            "name alias `{}` is redundant",
-                            hir.name_str(alias.id)
-                        ))
-                        .context(hir.src(origin_id, alias.range)),
-                    );
+                    emit.error(ErrorComp::warning(
+                        format!("name alias `{}` is redundant", hir.name_str(alias.id),),
+                        hir.src(origin_id, alias.range),
+                        None,
+                    ));
                 }
                 alias
             }

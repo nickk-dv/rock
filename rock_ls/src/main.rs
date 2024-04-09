@@ -121,7 +121,7 @@ fn handle_notification(conn: &Connection, not: lsp_server::Notification) {
 }
 
 use rock_core::ast_parse;
-use rock_core::error::{ErrorComp, ErrorSeverity};
+use rock_core::error::{ErrorComp, ErrorData, ErrorSeverity, SourceRange};
 use rock_core::hir_lower;
 use rock_core::session::Session;
 use rock_core::text;
@@ -138,11 +138,27 @@ fn run_check(session: &Session) -> Result<(), Vec<ErrorComp>> {
     Ok(())
 }
 
-fn url_from_path(path: PathBuf) -> lsp_types::Url {
+fn url_from_path(path: &PathBuf) -> lsp_types::Url {
     match lsp_types::Url::from_file_path(&path) {
         Ok(url) => url,
         Err(()) => panic!("failed to convert `{}` to url", path.to_string_lossy()),
     }
+}
+
+fn source_to_range_and_path(session: &Session, source: SourceRange) -> (Range, &PathBuf) {
+    let file = session.file(source.file_id());
+
+    let (start_location, _) =
+        text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
+    let (end_location, _) =
+        text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
+
+    let range = Range::new(
+        Position::new(start_location.line() - 1, start_location.col() - 1),
+        Position::new(end_location.line() - 1, end_location.col() - 1),
+    );
+
+    (range, &file.path)
 }
 
 fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
@@ -168,47 +184,35 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
 
     // generate diagnostics
     for error in errors {
-        let (main_message, main_seveiry) = error.main_message();
-        let mut diagnostic = Diagnostic::new_simple(Range::default(), "DEFAULT MESSAGE".into());
-        let mut main_path = PathBuf::from("");
-        let mut related_info = Vec::new();
+        let message = error.get_message();
+        let severity = error.get_severity();
+        let (main, info) = match error.get_data() {
+            ErrorData::None => continue,
+            ErrorData::Context { main, info } => (main, info),
+        };
 
-        for context in error.context_iter() {
-            let source = context.source();
-            let file = session.file(source.file_id());
+        let (main_range, main_path) = source_to_range_and_path(&session, main.source());
 
-            let (start_location, _) =
-                text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
-            let (end_location, _) =
-                text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
-            let range = Range::new(
-                Position::new(start_location.line() - 1, start_location.col() - 1),
-                Position::new(end_location.line() - 1, end_location.col() - 1),
-            );
+        let mut diagnostic = Diagnostic::new_simple(main_range, message.to_string());
+        diagnostic.severity = match severity {
+            ErrorSeverity::Info => Some(DiagnosticSeverity::HINT),
+            ErrorSeverity::Error => Some(DiagnosticSeverity::ERROR),
+            ErrorSeverity::Warning => Some(DiagnosticSeverity::WARNING),
+        };
 
-            if context.severity() == main_seveiry {
-                main_path = file.path.clone();
-                diagnostic = Diagnostic::new_simple(range, main_message.to_string());
-                diagnostic.severity = match context.severity() {
-                    ErrorSeverity::Error => Some(DiagnosticSeverity::ERROR),
-                    ErrorSeverity::Warning => Some(DiagnosticSeverity::WARNING),
-                    ErrorSeverity::InfoHint => Some(DiagnosticSeverity::HINT),
-                };
-            } else {
-                related_info.push(DiagnosticRelatedInformation {
-                    location: Location::new(url_from_path(file.path.clone()), range),
-                    message: context.message().into(),
-                });
-            }
+        if let Some(info) = info {
+            let (info_range, info_path) = source_to_range_and_path(&session, info.source());
+
+            diagnostic.related_information = Some(vec![DiagnosticRelatedInformation {
+                location: Location::new(url_from_path(info_path), info_range),
+                message: info.message().to_string(),
+            }]);
         }
 
-        diagnostic.related_information = Some(related_info);
-        match diagnostics_map.get_mut(&main_path) {
-            Some(diagnostics) => {
-                diagnostics.push(diagnostic);
-            }
+        match diagnostics_map.get_mut(main_path) {
+            Some(diagnostics) => diagnostics.push(diagnostic),
             None => {
-                diagnostics_map.insert(main_path, vec![diagnostic]);
+                diagnostics_map.insert(main_path.clone(), vec![diagnostic]);
             }
         }
     }
@@ -217,7 +221,7 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
     diagnostics_map
         .into_iter()
         .map(|(path, diagnostics)| {
-            PublishDiagnosticsParams::new(url_from_path(path), diagnostics, None)
+            PublishDiagnosticsParams::new(url_from_path(&path), diagnostics, None)
         })
         .collect()
 }

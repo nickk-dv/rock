@@ -55,7 +55,7 @@ impl FileID {
 // e.g: src/main.rock or ./src/main.rock
 fn create_session() -> Result<Session, ErrorComp> {
     let cwd = std::env::current_dir().map_err(|io_error| {
-        ErrorComp::error(format!(
+        ErrorComp::message(format!(
             "failed to get current working directory, reason: {}",
             io_error
         ))
@@ -65,9 +65,9 @@ fn create_session() -> Result<Session, ErrorComp> {
 
     let name = cwd
         .file_name()
-        .ok_or_else(|| ErrorComp::error("failed to get current working directory name"))?
+        .ok_or_else(|| ErrorComp::message("failed to get current working directory name"))?
         .to_str()
-        .ok_or_else(|| ErrorComp::error("current working directory name is not valid utf-8"))?
+        .ok_or_else(|| ErrorComp::message("current working directory name is not valid utf-8"))?
         .to_string();
 
     let package = PackageData {
@@ -76,7 +76,7 @@ fn create_session() -> Result<Session, ErrorComp> {
     };
 
     let read_dir = std::fs::read_dir(&src_dir).map_err(|io_error| {
-        ErrorComp::error(format!(
+        ErrorComp::message(format!(
             "failed to read directory: `{}`, reason: {}",
             src_dir.to_string_lossy(),
             io_error
@@ -90,7 +90,7 @@ fn create_session() -> Result<Session, ErrorComp> {
 
         if path.is_file() && path.extension().unwrap_or_default() == "rock" {
             let source = std::fs::read_to_string(&path).map_err(|io_error| {
-                ErrorComp::error(format!(
+                ErrorComp::message(format!(
                     "failed to read file: `{}`, reason: {}",
                     path.to_string_lossy(),
                     io_error

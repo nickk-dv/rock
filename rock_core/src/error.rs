@@ -4,25 +4,19 @@ use crate::text::TextRange;
 pub struct ErrorComp {
     message: ErrorMessage,
     severity: ErrorSeverity,
-    context: Vec<ErrorContext>,
-}
-
-pub struct ErrorContext {
-    message: Option<ErrorMessage>,
-    severity: ErrorSeverity,
-    source: SourceRange,
+    data: ErrorData,
 }
 
 pub enum ErrorMessage {
+    Str(&'static str),
     String(String),
-    Static(&'static str),
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum ErrorSeverity {
+    Info,
     Error,
     Warning,
-    InfoHint,
 }
 
 #[derive(Copy, Clone)]
@@ -31,103 +25,119 @@ pub struct SourceRange {
     file_id: FileID,
 }
 
-impl ErrorComp {
-    pub fn error<Message: Into<ErrorMessage>>(message: Message) -> Self {
-        Self {
-            message: message.into(),
-            severity: ErrorSeverity::Error,
-            context: Vec::new(),
-        }
-    }
-
-    pub fn warning<Message: Into<ErrorMessage>>(message: Message) -> Self {
-        Self {
-            message: message.into(),
-            severity: ErrorSeverity::Warning,
-            context: Vec::new(),
-        }
-    }
-
-    pub fn context(mut self, source: SourceRange) -> Self {
-        self.push_context(None, self.severity, source);
-        self
-    }
-
-    pub fn context_msg<Message: Into<ErrorMessage>>(
-        mut self,
-        message: Message,
-        source: SourceRange,
-    ) -> Self {
-        self.push_context(Some(message.into()), self.severity, source);
-        self
-    }
-
-    pub fn context_info<Message: Into<ErrorMessage>>(
-        mut self,
-        message: Message,
-        source: SourceRange,
-    ) -> Self {
-        self.push_context(Some(message.into()), ErrorSeverity::InfoHint, source);
-        self
-    }
-
-    fn push_context(
-        &mut self,
-        message: Option<ErrorMessage>,
-        severity: ErrorSeverity,
-        source: SourceRange,
-    ) {
-        self.context.push(ErrorContext {
-            message,
-            severity,
-            source,
-        });
-    }
-
-    pub fn main_message(&self) -> (&str, ErrorSeverity) {
-        (&self.message.as_str(), self.severity)
-    }
-    pub fn severity(&self) -> ErrorSeverity {
-        self.severity
-    }
-    pub fn context_iter(&self) -> impl Iterator<Item = &ErrorContext> {
-        self.context.iter()
-    }
+pub struct ErrorContext {
+    message: ErrorMessage,
+    source: SourceRange,
 }
 
-impl ErrorContext {
-    pub fn message(&self) -> &str {
-        match &self.message {
-            Some(m) => m.as_str(),
-            None => "",
+pub enum ErrorData {
+    None,
+    Context {
+        main: ErrorContext,
+        info: Option<ErrorContext>,
+    },
+}
+
+impl ErrorComp {
+    pub fn message(msg: impl Into<ErrorMessage>) -> ErrorComp {
+        ErrorComp {
+            message: msg.into(),
+            severity: ErrorSeverity::Error,
+            data: ErrorData::None,
         }
     }
-    pub fn severity(&self) -> ErrorSeverity {
+
+    pub fn info(msg: impl Into<ErrorMessage>, src: SourceRange) -> Option<ErrorContext> {
+        Some(ErrorContext {
+            message: msg.into(),
+            source: src,
+        })
+    }
+
+    pub fn error(
+        msg: impl Into<ErrorMessage>,
+        src: SourceRange,
+        info: Option<ErrorContext>,
+    ) -> ErrorComp {
+        ErrorComp::new_internal(ErrorSeverity::Error, msg, None::<&str>, src, info)
+    }
+
+    pub fn error_detailed(
+        msg: impl Into<ErrorMessage>,
+        src_msg: impl Into<ErrorMessage>,
+        src: SourceRange,
+        info: Option<ErrorContext>,
+    ) -> ErrorComp {
+        ErrorComp::new_internal(ErrorSeverity::Error, msg, Some(src_msg), src, info)
+    }
+
+    pub fn warning(
+        msg: impl Into<ErrorMessage>,
+        src: SourceRange,
+        info: Option<ErrorContext>,
+    ) -> ErrorComp {
+        ErrorComp::new_internal(ErrorSeverity::Warning, msg, None::<&str>, src, info)
+    }
+
+    pub fn warning_detailed(
+        msg: impl Into<ErrorMessage>,
+        src_msg: impl Into<ErrorMessage>,
+        src: SourceRange,
+        info: Option<ErrorContext>,
+    ) -> ErrorComp {
+        ErrorComp::new_internal(ErrorSeverity::Warning, msg, Some(src_msg), src, info)
+    }
+
+    fn new_internal(
+        severity: ErrorSeverity,
+        msg: impl Into<ErrorMessage>,
+        src_msg: Option<impl Into<ErrorMessage>>,
+        src: SourceRange,
+        info: Option<ErrorContext>,
+    ) -> ErrorComp {
+        let main_ctx = ErrorContext {
+            message: src_msg.map(|m| m.into()).unwrap_or_else(|| "".into()),
+            source: src,
+        };
+        ErrorComp {
+            message: msg.into(),
+            severity,
+            data: ErrorData::Context {
+                main: main_ctx,
+                info,
+            },
+        }
+    }
+
+    pub fn get_message(&self) -> &str {
+        self.message.as_str()
+    }
+    pub fn get_severity(&self) -> ErrorSeverity {
         self.severity
     }
-    pub fn source(&self) -> SourceRange {
-        self.source
+    pub fn get_data(&self) -> &ErrorData {
+        &self.data
     }
 }
 
 impl ErrorMessage {
     fn as_str(&self) -> &str {
         match self {
+            ErrorMessage::Str(string) => string,
             ErrorMessage::String(string) => string,
-            ErrorMessage::Static(string) => string,
         }
     }
 }
 
-impl From<String> for ErrorMessage {
-    fn from(value: String) -> Self {
-        ErrorMessage::String(value)
+impl From<&'static str> for ErrorMessage {
+    fn from(value: &'static str) -> ErrorMessage {
+        ErrorMessage::Str(value)
     }
 }
 
-impl From<&'static str> for ErrorMessage {
-    fn from(value: &'static str) -> Self {
-        ErrorMessage::Static(value)
+impl From<String> for ErrorMessage {
+    fn from(value: String) -> ErrorMessage {
+        ErrorMessage::String(value)
     }
 }
 
@@ -140,5 +150,14 @@ impl SourceRange {
     }
     pub fn file_id(&self) -> FileID {
         self.file_id
+    }
+}
+
+impl ErrorContext {
+    pub fn message(&self) -> &str {
+        self.message.as_str()
+    }
+    pub fn source(&self) -> SourceRange {
+        self.source
     }
 }

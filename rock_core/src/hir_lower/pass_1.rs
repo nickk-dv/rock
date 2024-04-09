@@ -122,12 +122,9 @@ pub fn name_already_defined_error(
     name: ast::Name,
     existing: SourceRange,
 ) {
-    emit.error(
-        ErrorComp::error(format!(
-            "name `{}` is defined multiple times",
-            hir.name_str(name.id)
-        ))
-        .context(hir.src(origin_id, name.range))
-        .context_info("existing definition", existing),
-    );
+    emit.error(ErrorComp::error(
+        format!("name `{}` is defined multiple times", hir.name_str(name.id)),
+        hir.src(origin_id, name.range),
+        ErrorComp::info("existing definition", existing),
+    ));
 }

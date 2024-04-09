@@ -30,10 +30,11 @@ pub fn const_expr_resolve<'hir, 'ast>(
         ast::ExprKind::LitChar { val } => hir::Expr::LitChar { val },
         ast::ExprKind::LitString { id, c_string } => hir::Expr::LitString { id, c_string },
         _ => {
-            emit.error(
-                ErrorComp::error("constant expressions only support single literals so far")
-                    .context(hir.src(origin_id, expr.0.range)),
-            );
+            emit.error(ErrorComp::error(
+                "constant expressions only support single literals so far",
+                hir.src(origin_id, expr.0.range),
+                None,
+            ));
             hir::Expr::Error
         }
     };
