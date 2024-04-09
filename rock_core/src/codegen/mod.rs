@@ -264,7 +264,9 @@ fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
             cg.builder.position_at_end(entry_block);
 
             if let Some(value) = codegen_expr(cg, &mut proc_cg, false, block) {
-                let entry = function.get_first_basic_block().expect("entry block");
+                //@hack building return of the tail returned value on the last block
+                // last might not be a correct place for it
+                let entry = function.get_last_basic_block().expect("last block");
                 cg.builder.position_at_end(entry);
                 cg.builder.build_return(Some(&value)).unwrap();
             } else {
@@ -273,7 +275,7 @@ fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
                 // cannot detect if `return;` was already written there
                 //@overall all returns must be included in Hir explicitly,
                 //so codegen doesnt need to do any work to get correct outputs
-                let entry = function.get_first_basic_block().expect("entry block");
+                let entry = function.get_last_basic_block().expect("last block");
                 if entry.get_terminator().is_none() {
                     cg.builder.position_at_end(entry);
                     cg.builder.build_return(None).unwrap();
@@ -304,7 +306,7 @@ fn codegen_expr<'ctx>(
         Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty)),
         Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
         Expr::LitString { id, c_string } => Some(codegen_lit_string(cg, id, c_string)),
-        Expr::If { if_ } => Some(codegen_if(cg, if_)),
+        Expr::If { if_ } => codegen_if(cg, proc_cg, if_),
         Expr::Block { stmts } => codegen_block(cg, proc_cg, expect_ptr, stmts),
         Expr::Match { match_ } => Some(codegen_match(cg, match_)),
         Expr::UnionMember {
@@ -366,15 +368,6 @@ fn codegen_lit_int<'ctx>(
 ) -> values::BasicValueEnum<'ctx> {
     //@unsigned values bigger that signed max of that type get flipped (skill issue, 2s compliment)
     let int_type = cg.type_into_any(hir::Type::Basic(ty)).into_int_type();
-    //@signed check is repeated code in a lot of places some is_signed_int() method would be good
-    let signed = matches!(
-        ty,
-        ast::BasicType::S8
-            | ast::BasicType::S16
-            | ast::BasicType::S32
-            | ast::BasicType::S64
-            | ast::BasicType::Ssize,
-    );
     int_type.const_int(val, false).into()
 }
 
@@ -430,8 +423,45 @@ fn codegen_lit_string<'ctx>(
     }
 }
 
-fn codegen_if<'ctx>(cg: &Codegen<'ctx>, if_: &hir::If) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `if` not supported")
+fn codegen_if<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    if_: &hir::If,
+) -> Option<values::BasicValueEnum<'ctx>> {
+    let mut then_block = cg.context.append_basic_block(proc_cg.function, "if_entry");
+    let exit_block = cg.context.append_basic_block(proc_cg.function, "if_exit");
+
+    let mut else_block = if !if_.branches.is_empty() || if_.fallback.is_some() {
+        cg.context.insert_basic_block_after(then_block, "if_else")
+    } else {
+        exit_block
+    };
+
+    let cond = codegen_expr(cg, proc_cg, false, if_.entry.cond).expect("value");
+    cg.builder
+        .build_conditional_branch(cond.into_int_value(), then_block, else_block)
+        .unwrap();
+
+    cg.builder.position_at_end(then_block);
+    codegen_expr(cg, proc_cg, false, if_.entry.block);
+    //@are we still positioned at then_block?
+    cg.builder.build_unconditional_branch(exit_block).unwrap();
+
+    for branch in if_.branches {
+        panic!("codegen: only if / if else is supported, no extra branches");
+        //let cond = codegen_expr(cg, proc_cg, false, branch.cond).expect("value");
+        //codegen_expr(cg, proc_cg, false, branch.block);
+    }
+
+    if let Some(fallback) = if_.fallback {
+        cg.builder.position_at_end(else_block);
+        codegen_expr(cg, proc_cg, false, fallback);
+        cg.builder.build_unconditional_branch(exit_block).unwrap();
+    }
+
+    cg.builder.position_at_end(exit_block);
+
+    None
 }
 
 fn codegen_block<'ctx>(
@@ -444,32 +474,31 @@ fn codegen_block<'ctx>(
         match *stmt {
             hir::Stmt::Break => todo!("codegen `break` not supported"),
             hir::Stmt::Continue => todo!("codegen `continue` not supported"),
-            hir::Stmt::Return => {
-                cg.builder.build_return(None).unwrap();
-            }
-            hir::Stmt::ReturnVal(expr) => {
-                let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
-                cg.builder.build_return(Some(&value)).unwrap();
+            hir::Stmt::Return(expr) => {
+                if let Some(expr) = expr {
+                    let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
+                    cg.builder.build_return(Some(&value)).unwrap();
+                } else {
+                    cg.builder.build_return(None).unwrap();
+                }
             }
             hir::Stmt::Defer(_) => todo!("codegen `defer` not supported"),
-            hir::Stmt::ForLoop(for_) => {
-                match for_.kind {
-                    hir::ForKind::Loop => {}
-                    hir::ForKind::While { cond } => todo!("codegen `for while` not supported"),
-                    hir::ForKind::ForLoop {
-                        local_id,
-                        cond,
-                        assign,
-                    } => todo!("codegen `for c-like` not supported"),
+            hir::Stmt::ForLoop(for_) => match for_.kind {
+                hir::ForKind::Loop => {
+                    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+                    cg.builder.build_unconditional_branch(body_block).unwrap();
+                    cg.builder.position_at_end(body_block);
+                    codegen_expr(cg, proc_cg, false, for_.block);
+                    cg.builder.position_at_end(body_block);
+                    cg.builder.build_unconditional_branch(body_block).unwrap();
                 }
-
-                let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
-                cg.builder.build_unconditional_branch(body_block).unwrap();
-                cg.builder.position_at_end(body_block);
-                codegen_expr(cg, proc_cg, false, for_.block);
-                cg.builder.position_at_end(body_block);
-                cg.builder.build_unconditional_branch(body_block).unwrap();
-            }
+                hir::ForKind::While { cond } => todo!("codegen `for while` not supported"),
+                hir::ForKind::ForLoop {
+                    local_id,
+                    cond,
+                    assign,
+                } => todo!("codegen `for c-like` not supported"),
+            },
             hir::Stmt::Local(local_id) => {
                 let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
                 let var_ty = cg.type_into_basic(local.ty).expect("non void type");
@@ -551,6 +580,8 @@ fn codegen_struct_field<'ctx>(
     }
 }
 
+//@element type and indexed value type isnt known @09.04.24
+// for example is it array or a slice? not known yet
 #[allow(unsafe_code)]
 fn codegen_index<'ctx>(
     cg: &Codegen<'ctx>,

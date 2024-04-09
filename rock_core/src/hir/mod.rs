@@ -162,8 +162,7 @@ pub struct ArrayStatic<'hir> {
 pub enum Stmt<'hir> {
     Break,
     Continue,
-    Return,
-    ReturnVal(&'hir Expr<'hir>),
+    Return(Option<&'hir Expr<'hir>>),
     Defer(&'hir Expr<'hir>),
     ForLoop(&'hir For<'hir>),
     Local(LocalID),

@@ -1563,7 +1563,7 @@ fn typecheck_return<'hir>(
 
     if let Some(expr) = expr {
         let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-        hir::Stmt::ReturnVal(expr_res.expr)
+        hir::Stmt::Return(Some(expr_res.expr))
     } else {
         //@this is modified duplicated typecheck error, special case for empty return @07.04.24
         let found = hir::Type::Basic(BasicType::Unit);
@@ -1582,7 +1582,7 @@ fn typecheck_return<'hir>(
                 ),
             );
         }
-        hir::Stmt::Return
+        hir::Stmt::Return(None)
     }
 }
 
