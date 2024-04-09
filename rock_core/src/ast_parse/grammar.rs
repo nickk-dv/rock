@@ -795,17 +795,23 @@ fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<MatchArm<'ast>, Strin
 impl BinOp {
     pub fn prec(&self) -> u32 {
         match self {
-            BinOp::LogicAnd | BinOp::LogicOr => 1,
-            BinOp::CmpLt
+            BinOp::Range | BinOp::RangeInc => 1,
+            BinOp::LogicOr => 2,
+            BinOp::LogicAnd => 3,
+            BinOp::CmpIsEq
+            | BinOp::CmpNotEq
+            | BinOp::CmpLt
             | BinOp::CmpLtEq
             | BinOp::CmpGt
-            | BinOp::CmpGtEq
-            | BinOp::CmpIsEq
-            | BinOp::CmpNotEq => 2,
-            BinOp::Add | BinOp::Sub => 3,
-            BinOp::Mul | BinOp::Div | BinOp::Rem => 4,
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
-            BinOp::BitShl | BinOp::BitShr => 6,
+            | BinOp::CmpGtEq => 4,
+            BinOp::Add | BinOp::Sub | BinOp::BitOr => 5,
+            BinOp::Mul
+            | BinOp::Div
+            | BinOp::Rem
+            | BinOp::BitAnd
+            | BinOp::BitXor
+            | BinOp::BitShl
+            | BinOp::BitShr => 6,
         }
     }
 }

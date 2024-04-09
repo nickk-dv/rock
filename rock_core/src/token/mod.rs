@@ -102,6 +102,8 @@ token_gen::token_gen! {
     [>=]     | ">="     | GreaterEq    | BIN[BinOp::CmpGtEq]
     [&&]     | "&&"     | LogicAnd     | BIN[BinOp::LogicAnd]
     [||]     | "||"     | LogicOr      | BIN[BinOp::LogicOr]
+    ["..<"]  | "..<"    | Range        | BIN[BinOp::Range]
+    ["..="]  | "..="    | RangeInc     | BIN[BinOp::RangeInc]
 
     // assign op tokens
     [=]      | "="      | Equals       | ASSIGN[AssignOp::Assign]
@@ -176,6 +178,8 @@ token_gen::token_glue_extend! {
 #[rustfmt::skip]
 token_gen::token_glue_extend! {
     glue_triple,
+    (T![..] => T!["..<"]) if '<'
+    (T![..] => T!["..="])
     (T![<<] => T![<<=])
     (T![>>] => T![>>=]) if '='
 }

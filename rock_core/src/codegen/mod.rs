@@ -1104,5 +1104,8 @@ fn codegen_binary<'ctx>(
             .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
             .unwrap()
             .into(),
+        ast::BinOp::Range | ast::BinOp::RangeInc => {
+            panic!("codegen: range binary operators are not implemented");
+        }
     }
 }

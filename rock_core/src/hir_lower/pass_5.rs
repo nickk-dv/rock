@@ -1347,6 +1347,12 @@ fn typecheck_binary<'hir>(
 
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
         }
+        ast::BinOp::Range | ast::BinOp::RangeInc => {
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), rhs);
+
+            panic!("pass_5: ranges dont procude a valid typechecked expression")
+        }
     };
 
     let signed_int = match binary_ty {

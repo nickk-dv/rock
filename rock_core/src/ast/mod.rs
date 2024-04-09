@@ -340,6 +340,8 @@ pub enum BinOp {
     CmpGtEq,
     LogicAnd,
     LogicOr,
+    Range,
+    RangeInc,
 }
 
 #[derive(Copy, Clone)]
