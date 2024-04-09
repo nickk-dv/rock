@@ -3,7 +3,7 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     hir.add_ast_modules();
     for origin_id in hir.scope_ids() {
         add_module_scope(hir, emit, origin_id);
@@ -11,7 +11,7 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
 }
 
 fn add_module_scope<'hir>(
-    hir: &mut HirData<'hir, '_>,
+    hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
 ) {

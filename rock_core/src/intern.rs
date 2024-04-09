@@ -5,15 +5,15 @@ use std::hash::{BuildHasher, Hasher};
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InternID(u32);
 
-pub struct InternPool {
+pub struct InternPool<'intern> {
     next: InternID,
-    arena: Arena<'static>,
-    strings: Vec<&'static str>,
-    intern_map: HashMap<&'static str, InternID, Fnv1aHasher>,
+    arena: Arena<'intern>,
+    strings: Vec<&'intern str>,
+    intern_map: HashMap<&'intern str, InternID, Fnv1aHasher>,
 }
 
-impl InternPool {
-    pub fn new() -> InternPool {
+impl<'intern> InternPool<'intern> {
+    pub fn new() -> InternPool<'intern> {
         InternPool {
             next: InternID(0),
             arena: Arena::new(),
@@ -42,8 +42,8 @@ impl InternPool {
     }
 }
 
-impl Default for InternPool {
-    fn default() -> InternPool {
+impl<'intern> Default for InternPool<'intern> {
+    fn default() -> InternPool<'intern> {
         InternPool::new()
     }
 }

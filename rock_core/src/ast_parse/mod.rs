@@ -10,7 +10,7 @@ use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 
-pub fn parse<'ast>(session: &Session) -> Result<Ast<'ast>, Vec<ErrorComp>> {
+pub fn parse<'ast>(session: &Session) -> Result<Ast<'_, 'ast>, Vec<ErrorComp>> {
     let mut state = ParseState::new();
 
     for file_id in session.file_ids() {
@@ -42,18 +42,18 @@ pub fn parse<'ast>(session: &Session) -> Result<Ast<'ast>, Vec<ErrorComp>> {
     state.finish()
 }
 
-struct Parser<'ast, 'src, 'state> {
+struct Parser<'ast, 'intern, 'src, 'state> {
     cursor: usize,
     tokens: TokenList,
     char_id: u32,
     string_id: u32,
     source: &'src str,
-    state: &'state mut ParseState<'ast>,
+    state: &'state mut ParseState<'ast, 'intern>,
 }
 
-struct ParseState<'ast> {
+struct ParseState<'ast, 'intern> {
     arena: Arena<'ast>,
-    intern: InternPool,
+    intern: InternPool<'intern>,
     modules: Vec<Module<'ast>>,
     errors: Vec<ErrorComp>,
     items: NodeBuffer<Item<'ast>>,
@@ -70,8 +70,12 @@ struct ParseState<'ast> {
     field_inits: NodeBuffer<FieldInit<'ast>>,
 }
 
-impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
-    pub fn new(tokens: TokenList, source: &'src str, state: &'state mut ParseState<'ast>) -> Self {
+impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
+    pub fn new(
+        tokens: TokenList,
+        source: &'src str,
+        state: &'state mut ParseState<'ast, 'intern>,
+    ) -> Self {
         Self {
             cursor: 0,
             tokens,
@@ -130,7 +134,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     }
 }
 
-impl<'ast> ParseState<'ast> {
+impl<'ast, 'intern> ParseState<'ast, 'intern> {
     pub fn new() -> Self {
         Self {
             arena: Arena::new(),
@@ -152,7 +156,7 @@ impl<'ast> ParseState<'ast> {
         }
     }
 
-    pub fn finish(self) -> Result<Ast<'ast>, Vec<ErrorComp>> {
+    pub fn finish(self) -> Result<Ast<'ast, 'intern>, Vec<ErrorComp>> {
         if self.errors.is_empty() {
             Ok(Ast {
                 arena: self.arena,

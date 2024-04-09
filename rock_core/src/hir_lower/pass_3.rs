@@ -3,7 +3,7 @@ use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.proc_ids() {
         process_proc_data(hir, emit, id)
     }
@@ -25,7 +25,7 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
 }
 
 pub fn type_resolve<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
     ast_ty: ast::Type,
@@ -57,7 +57,11 @@ pub fn type_resolve<'hir>(
     }
 }
 
-fn process_proc_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, id: hir::ProcID) {
+fn process_proc_data<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    id: hir::ProcID,
+) {
     let item = hir.proc_ast(id);
     let origin_id = hir.proc_data(id).origin_id;
     let mut unique = Vec::<hir::ProcParam>::new();
@@ -92,7 +96,11 @@ fn process_proc_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
     }
 }
 
-fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, id: hir::EnumID) {
+fn process_enum_data<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    id: hir::EnumID,
+) {
     let item = hir.enum_ast(id);
     let origin_id = hir.enum_data(id).origin_id;
     let mut unique = Vec::<hir::EnumVariant>::new();
@@ -131,7 +139,7 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
 }
 
 fn process_union_data<'hir>(
-    hir: &mut HirData<'hir, '_>,
+    hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::UnionID,
 ) {
@@ -160,7 +168,7 @@ fn process_union_data<'hir>(
 }
 
 fn process_struct_data<'hir>(
-    hir: &mut HirData<'hir, '_>,
+    hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::StructID,
 ) {
@@ -190,7 +198,7 @@ fn process_struct_data<'hir>(
 }
 
 fn process_const_data<'hir>(
-    hir: &mut HirData<'hir, '_>,
+    hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::ConstID,
 ) {
@@ -204,7 +212,7 @@ fn process_const_data<'hir>(
 }
 
 fn process_global_data<'hir>(
-    hir: &mut HirData<'hir, '_>,
+    hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::GlobalID,
 ) {

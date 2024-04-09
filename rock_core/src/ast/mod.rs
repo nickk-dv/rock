@@ -4,9 +4,9 @@ use crate::session::FileID;
 use crate::text::TextRange;
 
 #[derive(Default)]
-pub struct Ast<'ast> {
+pub struct Ast<'ast, 'intern> {
     pub arena: Arena<'ast>,
-    pub intern: InternPool,
+    pub intern: InternPool<'intern>,
     pub modules: Vec<Module<'ast>>,
 }
 

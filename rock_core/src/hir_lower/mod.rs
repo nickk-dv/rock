@@ -11,7 +11,9 @@ use crate::error::ErrorComp;
 use crate::hir;
 use hir_build::{HirData, HirEmit};
 
-pub fn check<'hir>(ast: ast::Ast<'_>) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+pub fn check<'hir, 'ast, 'intern: 'hir>(
+    ast: ast::Ast<'ast, 'intern>,
+) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
     let mut hir = HirData::new(ast);
     let mut emit = HirEmit::new();
     pass_1::run(&mut hir, &mut emit);

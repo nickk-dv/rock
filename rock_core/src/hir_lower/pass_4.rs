@@ -10,7 +10,7 @@ use crate::hir;
 // which isnt possible yet due to apis and code structures constantly changing.
 // leaving this unfinished on purpose.
 pub fn const_expr_resolve<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+    hir: &HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
     expr: ast::ConstExpr<'ast>,

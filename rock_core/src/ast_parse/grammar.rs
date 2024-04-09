@@ -37,7 +37,7 @@ macro_rules! semi_separated_block {
 }
 
 pub fn module<'ast>(
-    mut p: Parser<'ast, '_, '_>,
+    mut p: Parser<'ast, '_, '_, '_>,
     file_id: FileID,
     name_id: InternID,
 ) -> Result<Module<'ast>, ErrorComp> {
@@ -63,7 +63,7 @@ pub fn module<'ast>(
     })
 }
 
-fn item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Item<'ast>, String> {
+fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
     let vis = vis(p); //@not allowing vis with `import` is not enforced right now
     match p.peek() {
         T![proc] => Ok(Item::Proc(proc_item(p, vis)?)),
@@ -77,7 +77,10 @@ fn item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Item<'ast>, String> {
     }
 }
 
-fn proc_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast ProcItem<'ast>, String> {
+fn proc_item<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+    vis: Vis,
+) -> Result<&'ast ProcItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
 
@@ -117,7 +120,7 @@ fn proc_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast ProcI
     }))
 }
 
-fn proc_param<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<ProcParam<'ast>, String> {
+fn proc_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<ProcParam<'ast>, String> {
     let mutt = mutt(p);
     let name = name(p)?;
     p.expect(T![:])?;
@@ -125,7 +128,10 @@ fn proc_param<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<ProcParam<'ast>, Str
     Ok(ProcParam { mutt, name, ty })
 }
 
-fn enum_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast EnumItem<'ast>, String> {
+fn enum_item<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+    vis: Vis,
+) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     let basic = p.peek().as_basic_type();
@@ -141,7 +147,7 @@ fn enum_item<'ast>(p: &mut Parser<'ast, '_, '_>, vis: Vis) -> Result<&'ast EnumI
     }))
 }
 
-fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<EnumVariant<'ast>, String> {
+fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'ast>, String> {
     let name = name(p)?;
     let value = if p.eat(T![=]) {
         Some(ConstExpr(expr(p)?))
@@ -152,7 +158,7 @@ fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<EnumVariant<'ast>,
 }
 
 fn union_item<'ast>(
-    p: &mut Parser<'ast, '_, '_>,
+    p: &mut Parser<'ast, '_, '_, '_>,
     vis: Vis,
 ) -> Result<&'ast UnionItem<'ast>, String> {
     p.bump();
@@ -161,7 +167,7 @@ fn union_item<'ast>(
     Ok(p.state.arena.alloc(UnionItem { vis, name, members }))
 }
 
-fn union_member<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<UnionMember<'ast>, String> {
+fn union_member<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<UnionMember<'ast>, String> {
     let name = name(p)?;
     p.expect(T![:])?;
     let ty = ty(p)?;
@@ -169,7 +175,7 @@ fn union_member<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<UnionMember<'ast>,
 }
 
 fn struct_item<'ast>(
-    p: &mut Parser<'ast, '_, '_>,
+    p: &mut Parser<'ast, '_, '_, '_>,
     vis: Vis,
 ) -> Result<&'ast StructItem<'ast>, String> {
     p.bump();
@@ -178,7 +184,7 @@ fn struct_item<'ast>(
     Ok(p.state.arena.alloc(StructItem { vis, name, fields }))
 }
 
-fn struct_field<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<StructField<'ast>, String> {
+fn struct_field<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<StructField<'ast>, String> {
     let vis = vis(p);
     let name = name(p)?;
     p.expect(T![:])?;
@@ -187,7 +193,7 @@ fn struct_field<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<StructField<'ast>,
 }
 
 fn const_item<'ast>(
-    p: &mut Parser<'ast, '_, '_>,
+    p: &mut Parser<'ast, '_, '_, '_>,
     vis: Vis,
 ) -> Result<&'ast ConstItem<'ast>, String> {
     p.bump();
@@ -207,7 +213,7 @@ fn const_item<'ast>(
 }
 
 fn global_item<'ast>(
-    p: &mut Parser<'ast, '_, '_>,
+    p: &mut Parser<'ast, '_, '_, '_>,
     vis: Vis,
 ) -> Result<&'ast GlobalItem<'ast>, String> {
     p.bump();
@@ -226,7 +232,7 @@ fn global_item<'ast>(
     }))
 }
 
-fn import_item<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast ImportItem<'ast>, String> {
+fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportItem<'ast>, String> {
     p.bump();
     let module = name(p)?;
     let alias = if p.eat(T![as]) { Some(name(p)?) } else { None };
@@ -289,7 +295,7 @@ fn directive(p: &mut Parser) -> Result<Option<Directive>, String> {
     }
 }
 
-fn path<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Path<'ast>, String> {
+fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, String> {
     let start = p.state.names.start();
 
     let first = name(p)?;
@@ -308,7 +314,7 @@ fn path<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Path<'ast>, String> 
     Ok(p.state.arena.alloc(Path { names }))
 }
 
-fn ty<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Type<'ast>, String> {
+fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
     if let Some(basic) = p.peek().as_basic_type() {
         p.bump();
         return Ok(Type::Basic(basic));
@@ -351,7 +357,7 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Type<'ast>, String> {
     }
 }
 
-fn stmt<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Stmt<'ast>, String> {
+fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
     let range_start = p.peek_range_start();
     let kind = match p.peek() {
         T![break] => {
@@ -409,7 +415,7 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Stmt<'ast>, String> {
     })
 }
 
-fn for_loop<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast For<'ast>, String> {
+fn for_loop<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast For<'ast>, String> {
     let kind = match p.peek() {
         T!['{'] => ForKind::Loop,
         T![let] | T![mut] => {
@@ -440,7 +446,7 @@ fn for_loop<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast For<'ast>, Strin
     Ok(p.state.arena.alloc(For { kind, block }))
 }
 
-fn local<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Local<'ast>, String> {
+fn local<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Local<'ast>, String> {
     let mutt = match p.peek() {
         T![mut] => Mut::Mutable,
         T![let] => Mut::Immutable,
@@ -461,11 +467,14 @@ fn local<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Local<'ast>, String
     }))
 }
 
-fn expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
+fn expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
     sub_expr(p, 0)
 }
 
-fn sub_expr<'ast>(p: &mut Parser<'ast, '_, '_>, min_prec: u32) -> Result<&'ast Expr<'ast>, String> {
+fn sub_expr<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+    min_prec: u32,
+) -> Result<&'ast Expr<'ast>, String> {
     let mut expr_lhs = primary_expr(p)?;
     loop {
         let prec: u32;
@@ -491,7 +500,7 @@ fn sub_expr<'ast>(p: &mut Parser<'ast, '_, '_>, min_prec: u32) -> Result<&'ast E
     Ok(expr_lhs)
 }
 
-fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
+fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
     let range_start = p.peek_range_start();
 
     if p.eat(T!['(']) {
@@ -687,7 +696,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
 }
 
 fn tail_expr<'ast>(
-    p: &mut Parser<'ast, '_, '_>,
+    p: &mut Parser<'ast, '_, '_, '_>,
     target: &'ast Expr<'ast>,
 ) -> Result<&'ast Expr<'ast>, String> {
     let mut target = target;
@@ -736,7 +745,7 @@ fn tail_expr<'ast>(
     }
 }
 
-fn if_<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast If<'ast>, String> {
+fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String> {
     p.bump();
     let entry = Branch {
         cond: expr(p)?,
@@ -766,7 +775,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast If<'ast>, String> {
     }))
 }
 
-fn block<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
+fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
     let range_start = p.peek_range_start();
     let stmts = block_stmts(p)?;
     Ok(p.state.arena.alloc(Expr {
@@ -775,7 +784,7 @@ fn block<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, String>
     }))
 }
 
-fn block_stmts<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast [Stmt<'ast>], String> {
+fn block_stmts<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast [Stmt<'ast>], String> {
     let start = p.state.stmts.start();
     p.expect(T!['{'])?;
     while !p.eat(T!['}']) {
@@ -785,7 +794,7 @@ fn block_stmts<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast [Stmt<'ast>],
     Ok(p.state.stmts.take(start, &mut p.state.arena))
 }
 
-fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<MatchArm<'ast>, String> {
+fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<MatchArm<'ast>, String> {
     let pat = if p.eat(T![_]) { None } else { Some(expr(p)?) };
     p.expect(T![->])?;
     let expr = expr(p)?;

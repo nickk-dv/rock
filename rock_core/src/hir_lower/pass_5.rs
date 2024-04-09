@@ -29,13 +29,17 @@ struct ConstStruct<'hir> {
     fields: &'hir [ConstID],
 }
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.proc_ids() {
         typecheck_proc(hir, emit, id)
     }
 }
 
-fn typecheck_proc<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, id: hir::ProcID) {
+fn typecheck_proc<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    id: hir::ProcID,
+) {
     let item = hir.proc_ast(id);
 
     match item.block {
@@ -96,7 +100,7 @@ fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
     }
 }
 
-fn type_format<'hir>(hir: &HirData<'hir, '_>, ty: hir::Type<'hir>) -> String {
+fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String {
     match ty {
         hir::Type::Error => "error".into(),
         hir::Type::Basic(basic) => match basic {
@@ -154,7 +158,7 @@ impl<'hir> TypeResult<'hir> {
 // to better represent partially typed arrays, etc
 #[must_use]
 fn typecheck_expr<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
@@ -305,7 +309,7 @@ fn typecheck_lit_string<'hir>(
 }
 
 fn typecheck_if<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
@@ -367,7 +371,7 @@ fn typecheck_if<'hir>(
 }
 
 fn typecheck_match<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
@@ -436,7 +440,7 @@ fn verify_can_match(ty: hir::Type) -> bool {
 }
 
 fn typecheck_field<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr,
@@ -481,7 +485,7 @@ enum FieldExprKind {
 }
 
 fn verify_type_field<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: hir::Type<'hir>,
@@ -537,7 +541,7 @@ fn verify_type_field<'hir>(
 }
 
 fn typecheck_index<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
@@ -628,7 +632,7 @@ impl BasicTypeKind {
 }
 
 fn typecheck_cast<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
@@ -759,7 +763,7 @@ fn typecheck_cast<'hir>(
 // is complicated due to constant dependency graphs,
 // recursive types also not detected yet.
 fn typecheck_sizeof<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     start: TextOffset,
@@ -796,7 +800,7 @@ fn typecheck_sizeof<'hir>(
 }
 
 fn typecheck_item<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
@@ -867,7 +871,7 @@ fn typecheck_item<'hir>(
 }
 
 fn typecheck_proc_call<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     proc_call: &ast::ProcCall<'_>,
@@ -921,7 +925,7 @@ fn typecheck_proc_call<'hir>(
 }
 
 fn typecheck_struct_init<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     struct_init: &ast::StructInit<'_>,
@@ -1080,7 +1084,7 @@ fn typecheck_struct_init<'hir>(
 }
 
 fn typecheck_array_init<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
@@ -1131,7 +1135,7 @@ fn typecheck_array_init<'hir>(
 }
 
 fn typecheck_array_repeat<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
@@ -1164,7 +1168,7 @@ fn typecheck_array_repeat<'hir>(
 }
 
 fn typecheck_unary<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     op: ast::UnOp,
@@ -1249,7 +1253,7 @@ fn typecheck_unary<'hir>(
 }
 
 fn typecheck_binary<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     op: ast::BinOp,
@@ -1420,7 +1424,7 @@ fn check_type_allow_compare_ord(ty: hir::Type) -> bool {
 }
 
 fn typecheck_block<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
@@ -1517,7 +1521,7 @@ fn typecheck_block<'hir>(
 }
 
 fn typecheck_break<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
@@ -1533,7 +1537,7 @@ fn typecheck_break<'hir>(
 }
 
 fn typecheck_continue<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
@@ -1549,7 +1553,7 @@ fn typecheck_continue<'hir>(
 }
 
 fn typecheck_return<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
@@ -1585,7 +1589,7 @@ fn typecheck_return<'hir>(
 //@allow break and continue from loops that originated within defer itself
 // this can probably be done via resetting the in_loop when entering defer block
 fn typecheck_defer<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     start: TextOffset,
@@ -1603,7 +1607,7 @@ fn typecheck_defer<'hir>(
 }
 
 fn typecheck_local<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     local: &ast::Local,
@@ -1680,7 +1684,7 @@ fn typecheck_local<'hir>(
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
 // clean this up in general
 fn typecheck_assign<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     assign: &ast::Assign,
@@ -1746,7 +1750,7 @@ enum ResolvedPath {
 }
 
 fn path_resolve<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,
@@ -1780,7 +1784,7 @@ fn path_resolve<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,
@@ -1846,7 +1850,7 @@ pub fn path_resolve_type<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 fn path_resolve_proc<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,
@@ -1916,7 +1920,7 @@ enum StructureID {
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 fn path_resolve_structure<'hir>(
-    hir: &HirData<'hir, '_>,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,
@@ -1988,7 +1992,7 @@ enum ValueID {
 }
 
 fn path_resolve_value<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+    hir: &HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ScopeID,

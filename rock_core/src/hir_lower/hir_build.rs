@@ -7,8 +7,8 @@ use crate::text::TextRange;
 use std::collections::HashMap;
 
 #[derive(Default)]
-pub struct HirData<'hir, 'ast> {
-    ast: ast::Ast<'ast>,
+pub struct HirData<'hir, 'ast, 'intern> {
+    ast: ast::Ast<'ast, 'intern>,
     scope_map: HashMap<InternID, hir::ScopeID>,
     scopes: Vec<Scope<'ast>>,
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
@@ -55,8 +55,8 @@ pub struct HirEmit<'hir> {
     errors: Vec<ErrorComp>,
 }
 
-impl<'hir, 'ast> HirData<'hir, 'ast> {
-    pub fn new(ast: ast::Ast<'ast>) -> HirData<'hir, 'ast> {
+impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
+    pub fn new(ast: ast::Ast<'ast, 'intern>) -> HirData<'hir, 'ast, 'intern> {
         HirData {
             ast,
             ..Default::default()
@@ -404,7 +404,10 @@ impl<'hir> HirEmit<'hir> {
         self.errors.push(error);
     }
 
-    pub fn emit<'ast>(self, hir: HirData<'hir, 'ast>) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+    pub fn emit<'ast, 'intern: 'hir>(
+        self,
+        hir: HirData<'hir, 'ast, 'intern>,
+    ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
         if self.errors.is_empty() {
             Ok(hir::Hir {
                 arena: self.arena,

@@ -3,7 +3,7 @@ use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for origin_id in hir.scope_ids() {
         for item in hir.scope_ast_items(origin_id) {
             if let ast::Item::Import(import) = item {
@@ -14,7 +14,7 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
 }
 
 fn resolve_import<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
+    hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ScopeID,
     import: &'ast ast::ImportItem<'ast>,

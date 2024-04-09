@@ -5,7 +5,7 @@ use crate::session::FileID;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
-    pub intern: InternPool,
+    pub intern: InternPool<'hir>,
     pub scopes: Vec<ScopeData>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
