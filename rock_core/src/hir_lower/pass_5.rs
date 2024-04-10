@@ -1442,7 +1442,7 @@ fn typecheck_block<'hir>(
     expect: hir::Type<'hir>,
     stmts: &[ast::Stmt],
 ) -> TypeResult<'hir> {
-    proc.push_block();
+    proc.push_block(false, false);
 
     let mut block_ty = None;
     let mut hir_stmts = Vec::with_capacity(stmts.len());
@@ -1524,7 +1524,7 @@ fn typecheck_break<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
 ) -> hir::Stmt<'hir> {
-    if !proc.get_block().in_loop {
+    if !proc.is_inside_loop() {
         emit.error(ErrorComp::error(
             "cannot use `break` outside of a loop",
             hir.src(proc.origin(), range),
@@ -1541,7 +1541,7 @@ fn typecheck_continue<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
 ) -> hir::Stmt<'hir> {
-    if !proc.get_block().in_loop {
+    if !proc.is_inside_loop() {
         emit.error(ErrorComp::error(
             "cannot use `continue` outside of a loop",
             hir.src(proc.origin(), range),
@@ -1595,11 +1595,11 @@ fn typecheck_defer<'hir>(
     start: TextOffset,
     block: &ast::Expr<'_>,
 ) -> hir::Stmt<'hir> {
-    if proc.get_block().in_defer {
+    if let Some(prev_defer) = proc.is_inside_defer() {
         emit.error(ErrorComp::error(
             "`defer` statements cannot be nested",
             hir.src(proc.origin(), TextRange::new(start, start + 5.into())),
-            None,
+            ErrorComp::info("already in this defer", hir.src(proc.origin(), prev_defer)),
         ));
     }
 

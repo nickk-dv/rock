@@ -1,5 +1,6 @@
 use crate::hir;
 use crate::intern::InternID;
+use crate::text::TextRange;
 
 //@need some way to recognize if loop was started within in defer
 // to allow break / continue to be used there
@@ -8,15 +9,30 @@ use crate::intern::InternID;
 //@re-use same proc scope to avoid frequent re-alloc (not important yet)
 pub struct ProcScope<'hir, 'check> {
     data: &'check hir::ProcData<'hir>,
+    next_block: BlockData,
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
 }
 
 pub struct BlockData {
-    pub in_loop: bool,
-    pub in_defer: bool,
     local_count: u32,
+    loop_status: LoopStatus,
+    defer_status: DeferStatus,
+}
+
+#[derive(Copy, Clone)]
+enum LoopStatus {
+    None,
+    Enter,
+    Inside,
+}
+
+#[derive(Copy, Clone)]
+enum DeferStatus {
+    None,
+    Enter(TextRange),
+    Inside(TextRange),
 }
 
 pub enum VariableID {
@@ -28,12 +44,20 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn new(data: &'check hir::ProcData<'hir>) -> Self {
         ProcScope {
             data,
+            next_block: BlockData {
+                local_count: 0,
+                loop_status: LoopStatus::None,
+                defer_status: DeferStatus::None,
+            },
             blocks: Vec::new(),
             locals: Vec::new(),
             locals_in_scope: Vec::new(),
         }
     }
 
+    pub fn finish(self) -> Vec<&'hir hir::Local<'hir>> {
+        self.locals
+    }
     pub fn origin(&self) -> hir::ScopeID {
         self.data.origin_id
     }
@@ -46,16 +70,31 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn get_param(&self, id: hir::ProcParamID) -> &hir::ProcParam<'hir> {
         &self.data.params[id.index()]
     }
-    pub fn get_block(&self) -> &BlockData {
-        self.blocks.last().expect("block exists")
+
+    //@no way to push correct information into this @10.04.24
+    // since typecheck_expr is called from for / match / if / defer
+    // and theres no way to pass correct flags inside, without making that verbose
+    // store some `next_block` state in ProcScope itself?
+    pub fn push_block(&mut self, enter_loop: bool, enter_defer: bool) {
+        self.blocks.push(BlockData {
+            local_count: 0,
+            loop_status: LoopStatus::None,
+            defer_status: DeferStatus::None,
+        });
     }
 
-    pub fn push_block(&mut self) {
-        self.blocks.push(BlockData {
-            in_loop: false,
-            in_defer: false,
-            local_count: 0,
-        });
+    pub fn is_inside_loop(&self) -> bool {
+        let status = self.blocks.last().expect("block exists").loop_status;
+        matches!(status, LoopStatus::Enter | LoopStatus::Inside)
+    }
+
+    pub fn is_inside_defer(&self) -> Option<TextRange> {
+        let status = self.blocks.last().expect("block exists").defer_status;
+        match status {
+            DeferStatus::None => None,
+            DeferStatus::Enter(range) => Some(range),
+            DeferStatus::Inside(range) => Some(range),
+        }
     }
 
     pub fn push_local(&mut self, local: &'hir hir::Local<'hir>) -> hir::LocalID {
@@ -86,9 +125,5 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
             }
         }
         None
-    }
-
-    pub fn finish(self) -> Vec<&'hir hir::Local<'hir>> {
-        self.locals
     }
 }
