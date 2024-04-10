@@ -143,11 +143,24 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
 struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     expr: &'hir hir::Expr<'hir>,
+    ignore: bool,
 }
 
 impl<'hir> TypeResult<'hir> {
     fn new(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
-        TypeResult { ty, expr }
+        TypeResult {
+            ty,
+            expr,
+            ignore: false,
+        }
+    }
+
+    fn new_ignore_typecheck(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
+        TypeResult {
+            ty,
+            expr,
+            ignore: true,
+        }
     }
 }
 
@@ -194,7 +207,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Binary { op, lhs, rhs } => typecheck_binary(hir, emit, proc, op, lhs, rhs),
     };
 
-    if !type_matches(expect, expr_res.ty) {
+    if !expr_res.ignore && !type_matches(expect, expr_res.ty) {
         emit.error(ErrorComp::error(
             format!(
                 "type mismatch: expected `{}`, found `{}`",
@@ -658,10 +671,7 @@ fn typecheck_cast<'hir>(
             into: emit.arena.alloc(into),
             kind: hir::CastKind::NoOp,
         };
-        return TypeResult {
-            ty: into,
-            expr: emit.arena.alloc(cast_expr),
-        };
+        return TypeResult::new(into, emit.arena.alloc(cast_expr));
     }
 
     // invariant: both types are not Error
@@ -682,10 +692,7 @@ fn typecheck_cast<'hir>(
             into: emit.arena.alloc(into),
             kind: hir::CastKind::NoOp,
         };
-        return TypeResult {
-            ty: into,
-            expr: emit.arena.alloc(cast_expr),
-        };
+        return TypeResult::new(into, emit.arena.alloc(cast_expr));
     }
 
     // invariant: from_size != into_size
@@ -761,10 +768,7 @@ fn typecheck_cast<'hir>(
         into: emit.arena.alloc(into),
         kind: cast_kind,
     };
-    TypeResult {
-        ty: into,
-        expr: emit.arena.alloc(cast_expr),
-    }
+    TypeResult::new(into, emit.arena.alloc(cast_expr))
 }
 
 //@type-sizing not done:
@@ -1443,7 +1447,7 @@ fn typecheck_block<'hir>(
     let mut block_ty = None;
     let mut hir_stmts = Vec::with_capacity(stmts.len());
 
-    for (idx, stmt) in stmts.iter().enumerate() {
+    for stmt in stmts {
         let hir_stmt = match stmt.kind {
             ast::StmtKind::Break => Some(typecheck_break(hir, emit, proc, stmt.range)),
             ast::StmtKind::Continue => Some(typecheck_continue(hir, emit, proc, stmt.range)),
@@ -1481,22 +1485,20 @@ fn typecheck_block<'hir>(
             ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
             ast::StmtKind::Assign(assign) => Some(typecheck_assign(hir, emit, proc, assign)),
             ast::StmtKind::ExprSemi(expr) => {
-                let expr_res = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
+                let expect = if matches!(expr.kind, ast::ExprKind::Block { .. }) {
+                    hir::Type::Basic(BasicType::Unit)
+                } else {
+                    hir::Type::Error
+                };
+                let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 Some(hir::Stmt::ExprSemi(expr_res.expr))
             }
             ast::StmtKind::ExprTail(expr) => {
-                if idx + 1 == stmts.len() {
-                    let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+                let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+                if block_ty.is_none() {
                     block_ty = Some(expr_res.ty);
-                    Some(hir::Stmt::ExprTail(expr_res.expr))
-                } else {
-                    //@decide if semi should enforced on parsing
-                    // or we just expect a unit from that no-semi expression
-                    // when its not a last expression?
-                    let expr_res =
-                        typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Unit), expr);
-                    Some(hir::Stmt::ExprTail(expr_res.expr))
                 }
+                Some(hir::Stmt::ExprTail(expr_res.expr))
             }
         };
         if let Some(hir_stmt) = hir_stmt {
@@ -1506,26 +1508,14 @@ fn typecheck_block<'hir>(
 
     proc.pop_block();
 
-    //@when type expectation was passed to tail expr
-    // return Type::Error to not trigger duplicate type mismatch errors
-    // this propagates typecheck match further down the call stack
-    // without triggering error on each nested block level
-    let block_ty = if block_ty.is_some() {
-        //@this disables other typechecks
-        // this hack of disabling type error also has side effect
-        // of not producing any usefull errors after
-        // this hir::Type::Error value from the block is a lie
-        // the actual type is tail returned experrsion type stored in `block_ty`
-        //hir::Type::Error
-
-        block_ty.unwrap() //@generating more errors, but handling block type correctly
-    } else {
-        hir::Type::Basic(BasicType::Unit)
-    };
-
     let stmts = emit.arena.alloc_slice(&hir_stmts);
     let block_expr = emit.arena.alloc(hir::Expr::Block { stmts });
-    TypeResult::new(block_ty, block_expr)
+
+    if let Some(block_ty) = block_ty {
+        TypeResult::new_ignore_typecheck(block_ty, block_expr)
+    } else {
+        TypeResult::new(hir::Type::Basic(BasicType::Unit), block_expr)
+    }
 }
 
 fn typecheck_break<'hir>(
