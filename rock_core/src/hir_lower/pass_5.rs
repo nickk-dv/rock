@@ -47,7 +47,8 @@ fn typecheck_proc<'hir>(
             let data = hir.proc_data(id);
             let mut proc = ProcScope::new(data);
 
-            let block_res = typecheck_block(hir, emit, &mut proc, data.return_ty, block, false);
+            let block_res =
+                typecheck_block(hir, emit, &mut proc, data.return_ty, block, false, None);
 
             let locals = proc.finish();
             let locals = emit.arena.alloc_slice(&locals);
@@ -184,7 +185,9 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::LitChar { val } => typecheck_lit_char(emit, val),
         ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_),
-        ast::ExprKind::Block { block } => typecheck_block(hir, emit, proc, expect, block, false),
+        ast::ExprKind::Block { block } => {
+            typecheck_block(hir, emit, proc, expect, block, false, None)
+        }
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(hir, emit, proc, target, index),
@@ -339,7 +342,7 @@ fn typecheck_if<'hir>(
     };
 
     let entry_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, if_.entry.cond);
-    let entry_block = typecheck_block(hir, emit, proc, expect, if_.entry.block, false);
+    let entry_block = typecheck_block(hir, emit, proc, expect, if_.entry.block, false, None);
     let entry = hir::Branch {
         cond: entry_cond.expr,
         block: entry_block.expr,
@@ -356,7 +359,7 @@ fn typecheck_if<'hir>(
     let mut branches = Vec::<hir::Branch>::new();
     for &branch in if_.branches {
         let branch_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, branch.cond);
-        let branch_block = typecheck_block(hir, emit, proc, expect, branch.block, false);
+        let branch_block = typecheck_block(hir, emit, proc, expect, branch.block, false, None);
         branches.push(hir::Branch {
             cond: branch_cond.expr,
             block: branch_block.expr,
@@ -365,7 +368,7 @@ fn typecheck_if<'hir>(
 
     let mut fallback = None;
     if let Some(else_block) = if_.else_block {
-        let fallback_block = typecheck_block(hir, emit, proc, expect, else_block, false);
+        let fallback_block = typecheck_block(hir, emit, proc, expect, else_block, false, None);
         fallback = Some(fallback_block.expr);
     }
 
@@ -1442,8 +1445,9 @@ fn typecheck_block<'hir>(
     expect: hir::Type<'hir>,
     block: ast::Block<'_>,
     enter_loop: bool,
+    enter_defer: Option<TextRange>,
 ) -> TypeResult<'hir> {
-    proc.push_block(enter_loop, false);
+    proc.push_block(enter_loop, enter_defer);
 
     let mut block_ty = None;
     let mut hir_stmts = Vec::with_capacity(block.stmts.len());
@@ -1476,6 +1480,7 @@ fn typecheck_block<'hir>(
                     hir::Type::Basic(BasicType::Unit),
                     for_.block,
                     true,
+                    None,
                 );
 
                 let for_ = hir::For {
@@ -1563,6 +1568,14 @@ fn typecheck_return<'hir>(
 ) -> hir::Stmt<'hir> {
     let expect = proc.data().return_ty;
 
+    if let Some(prev_defer) = proc.is_inside_defer() {
+        emit.error(ErrorComp::error(
+            "cannot use `return` inside `defer`",
+            hir.src(proc.origin(), range),
+            ErrorComp::info("in this defer", hir.src(proc.origin(), prev_defer)),
+        ));
+    }
+
     if let Some(expr) = expr {
         let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
         hir::Stmt::Return(Some(expr_res.expr))
@@ -1597,10 +1610,12 @@ fn typecheck_defer<'hir>(
     start: TextOffset,
     block: ast::Block<'_>,
 ) -> hir::Stmt<'hir> {
+    let defer_range = TextRange::new(start, start + 5.into());
+
     if let Some(prev_defer) = proc.is_inside_defer() {
         emit.error(ErrorComp::error(
             "`defer` statements cannot be nested",
-            hir.src(proc.origin(), TextRange::new(start, start + 5.into())),
+            hir.src(proc.origin(), defer_range),
             ErrorComp::info("already in this defer", hir.src(proc.origin(), prev_defer)),
         ));
     }
@@ -1612,6 +1627,7 @@ fn typecheck_defer<'hir>(
         hir::Type::Basic(BasicType::Unit),
         block,
         false,
+        Some(defer_range),
     );
     hir::Stmt::Defer(block_res.expr)
 }

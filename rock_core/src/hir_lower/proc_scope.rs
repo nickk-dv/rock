@@ -9,7 +9,6 @@ use crate::text::TextRange;
 //@re-use same proc scope to avoid frequent re-alloc (not important yet)
 pub struct ProcScope<'hir, 'check> {
     data: &'check hir::ProcData<'hir>,
-    next_block: BlockData,
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
@@ -24,14 +23,12 @@ pub struct BlockData {
 #[derive(Copy, Clone)]
 enum LoopStatus {
     None,
-    Enter,
     Inside,
 }
 
 #[derive(Copy, Clone)]
 enum DeferStatus {
     None,
-    Enter(TextRange),
     Inside(TextRange),
 }
 
@@ -44,11 +41,6 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn new(data: &'check hir::ProcData<'hir>) -> Self {
         ProcScope {
             data,
-            next_block: BlockData {
-                local_count: 0,
-                loop_status: LoopStatus::None,
-                defer_status: DeferStatus::None,
-            },
             blocks: Vec::new(),
             locals: Vec::new(),
             locals_in_scope: Vec::new(),
@@ -71,28 +63,41 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         &self.data.param(id)
     }
 
-    //@no way to push correct information into this @10.04.24
-    // since typecheck_expr is called from for / match / if / defer
-    // and theres no way to pass correct flags inside, without making that verbose
-    // store some `next_block` state in ProcScope itself?
-    pub fn push_block(&mut self, enter_loop: bool, enter_defer: bool) {
+    pub fn push_block(&mut self, enter_loop: bool, enter_defer: Option<TextRange>) {
+        let loop_status = if enter_loop {
+            LoopStatus::Inside
+        } else {
+            self.blocks
+                .last()
+                .map_or(LoopStatus::None, |last| last.loop_status)
+        };
+
+        let defer_status = if let Some(last) = self.blocks.last() {
+            if let DeferStatus::Inside(..) = last.defer_status {
+                last.defer_status
+            } else {
+                enter_defer.map_or(DeferStatus::None, |range| DeferStatus::Inside(range))
+            }
+        } else {
+            enter_defer.map_or(DeferStatus::None, |range| DeferStatus::Inside(range))
+        };
+
         self.blocks.push(BlockData {
             local_count: 0,
-            loop_status: LoopStatus::None,
-            defer_status: DeferStatus::None,
+            loop_status,
+            defer_status,
         });
     }
 
     pub fn is_inside_loop(&self) -> bool {
         let status = self.blocks.last().expect("block exists").loop_status;
-        matches!(status, LoopStatus::Enter | LoopStatus::Inside)
+        matches!(status, LoopStatus::Inside)
     }
 
     pub fn is_inside_defer(&self) -> Option<TextRange> {
         let status = self.blocks.last().expect("block exists").defer_status;
         match status {
             DeferStatus::None => None,
-            DeferStatus::Enter(range) => Some(range),
             DeferStatus::Inside(range) => Some(range),
         }
     }
