@@ -47,7 +47,7 @@ fn typecheck_proc<'hir>(
             let data = hir.proc_data(id);
             let mut proc = ProcScope::new(data);
 
-            let block_res = typecheck_expr(hir, emit, &mut proc, data.return_ty, block);
+            let block_res = typecheck_block(hir, emit, &mut proc, data.return_ty, block, false);
 
             let locals = proc.finish();
             let locals = emit.arena.alloc_slice(&locals);
@@ -184,7 +184,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::LitChar { val } => typecheck_lit_char(emit, val),
         ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_),
-        ast::ExprKind::Block { stmts } => typecheck_block(hir, emit, proc, expect, stmts),
+        ast::ExprKind::Block { block } => typecheck_block(hir, emit, proc, expect, block, false),
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(hir, emit, proc, target, index),
@@ -332,14 +332,14 @@ fn typecheck_if<'hir>(
     //@remove this when theres TypeRepr with shorthand creation functions eg TypeRepr::bool()
     const BOOL_TYPE: hir::Type = hir::Type::Basic(BasicType::Bool);
 
-    let expect = if if_.fallback.is_some() {
+    let expect = if if_.else_block.is_some() {
         expect
     } else {
         hir::Type::Error
     };
 
     let entry_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, if_.entry.cond);
-    let entry_block = typecheck_expr(hir, emit, proc, expect, if_.entry.block);
+    let entry_block = typecheck_block(hir, emit, proc, expect, if_.entry.block, false);
     let entry = hir::Branch {
         cond: entry_cond.expr,
         block: entry_block.expr,
@@ -347,7 +347,7 @@ fn typecheck_if<'hir>(
 
     //@approx esmitation based on first entry block type
     // this is the same typecheck error reporting problem as described below
-    let if_type = if if_.fallback.is_some() {
+    let if_type = if if_.else_block.is_some() {
         entry_block.ty
     } else {
         hir::Type::Basic(BasicType::Unit)
@@ -356,7 +356,7 @@ fn typecheck_if<'hir>(
     let mut branches = Vec::<hir::Branch>::new();
     for &branch in if_.branches {
         let branch_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, branch.cond);
-        let branch_block = typecheck_expr(hir, emit, proc, expect, branch.block);
+        let branch_block = typecheck_block(hir, emit, proc, expect, branch.block, false);
         branches.push(hir::Branch {
             cond: branch_cond.expr,
             block: branch_block.expr,
@@ -364,8 +364,8 @@ fn typecheck_if<'hir>(
     }
 
     let mut fallback = None;
-    if let Some(block) = if_.fallback {
-        let fallback_block = typecheck_expr(hir, emit, proc, expect, block);
+    if let Some(else_block) = if_.else_block {
+        let fallback_block = typecheck_block(hir, emit, proc, expect, else_block, false);
         fallback = Some(fallback_block.expr);
     }
 
@@ -1440,14 +1440,15 @@ fn typecheck_block<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
-    stmts: &[ast::Stmt],
+    block: ast::Block<'_>,
+    enter_loop: bool,
 ) -> TypeResult<'hir> {
-    proc.push_block(false, false);
+    proc.push_block(enter_loop, false);
 
     let mut block_ty = None;
-    let mut hir_stmts = Vec::with_capacity(stmts.len());
+    let mut hir_stmts = Vec::with_capacity(block.stmts.len());
 
-    for stmt in stmts {
+    for stmt in block.stmts {
         let hir_stmt = match stmt.kind {
             ast::StmtKind::Break => Some(typecheck_break(hir, emit, proc, stmt.range)),
             ast::StmtKind::Continue => Some(typecheck_continue(hir, emit, proc, stmt.range)),
@@ -1455,7 +1456,7 @@ fn typecheck_block<'hir>(
                 Some(typecheck_return(hir, emit, proc, stmt.range, expr))
             }
             ast::StmtKind::Defer(block) => {
-                Some(typecheck_defer(hir, emit, proc, stmt.range.start(), block))
+                Some(typecheck_defer(hir, emit, proc, stmt.range.start(), *block))
             }
             ast::StmtKind::ForLoop(for_) => {
                 let kind = match for_.kind {
@@ -1468,12 +1469,13 @@ fn typecheck_block<'hir>(
                     } => todo!("for_loop c-like is not supported"),
                 };
 
-                let block_res = typecheck_expr(
+                let block_res = typecheck_block(
                     hir,
                     emit,
                     proc,
                     hir::Type::Basic(BasicType::Unit),
                     for_.block,
+                    true,
                 );
 
                 let for_ = hir::For {
@@ -1593,7 +1595,7 @@ fn typecheck_defer<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     start: TextOffset,
-    block: &ast::Expr<'_>,
+    block: ast::Block<'_>,
 ) -> hir::Stmt<'hir> {
     if let Some(prev_defer) = proc.is_inside_defer() {
         emit.error(ErrorComp::error(
@@ -1603,7 +1605,14 @@ fn typecheck_defer<'hir>(
         ));
     }
 
-    let block_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Unit), block);
+    let block_res = typecheck_block(
+        hir,
+        emit,
+        proc,
+        hir::Type::Basic(BasicType::Unit),
+        block,
+        false,
+    );
     hir::Stmt::Defer(block_res.expr)
 }
 

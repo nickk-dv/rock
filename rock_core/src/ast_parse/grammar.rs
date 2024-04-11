@@ -386,7 +386,8 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
         }
         T![defer] => {
             p.bump();
-            StmtKind::Defer(block(p)?)
+            let block = block(p)?;
+            StmtKind::Defer(p.state.arena.alloc(block))
         }
         T![for] => {
             p.bump();
@@ -587,9 +588,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             }
         }
         T![if] => ExprKind::If { if_: if_(p)? },
-        T!['{'] => ExprKind::Block {
-            stmts: block_stmts(p)?,
-        },
+        T!['{'] => ExprKind::Block { block: block(p)? },
         T![match] => {
             let start = p.state.match_arms.start();
             p.bump();
@@ -755,7 +754,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
         cond: expr(p)?,
         block: block(p)?,
     };
-    let mut fallback = None;
+    let mut else_block = None;
 
     let start = p.state.branches.start();
     while p.eat(T![else]) {
@@ -766,7 +765,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
             };
             p.state.branches.add(branch);
         } else {
-            fallback = Some(block(p)?);
+            else_block = Some(block(p)?);
             break;
         }
     }
@@ -775,27 +774,21 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
     Ok(p.state.arena.alloc(If {
         entry,
         branches,
-        fallback,
+        else_block,
     }))
 }
 
-fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
-    let range_start = p.peek_range_start();
-    let stmts = block_stmts(p)?;
-    Ok(p.state.arena.alloc(Expr {
-        kind: ExprKind::Block { stmts },
-        range: TextRange::new(range_start, p.peek_range_end()),
-    }))
-}
-
-fn block_stmts<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast [Stmt<'ast>], String> {
+fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> {
     let start = p.state.stmts.start();
+
     p.expect(T!['{'])?;
     while !p.eat(T!['}']) {
         let stmt = stmt(p)?;
         p.state.stmts.add(stmt);
     }
-    Ok(p.state.stmts.take(start, &mut p.state.arena))
+
+    let stmts = p.state.stmts.take(start, &mut p.state.arena);
+    Ok(Block { stmts })
 }
 
 fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<MatchArm<'ast>, String> {

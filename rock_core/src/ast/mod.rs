@@ -36,7 +36,7 @@ pub struct ProcItem<'ast> {
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
     pub directive_tail: Option<Directive>,
-    pub block: Option<&'ast Expr<'ast>>,
+    pub block: Option<Block<'ast>>,
 }
 
 #[derive(Copy, Clone)]
@@ -176,7 +176,7 @@ pub enum StmtKind<'ast> {
     Break,
     Continue,
     Return(Option<&'ast Expr<'ast>>),
-    Defer(&'ast Expr<'ast>),
+    Defer(&'ast Block<'ast>),
     ForLoop(&'ast For<'ast>),
     Local(&'ast Local<'ast>),
     Assign(&'ast Assign<'ast>),
@@ -187,15 +187,20 @@ pub enum StmtKind<'ast> {
 #[derive(Copy, Clone)]
 pub struct For<'ast> {
     pub kind: ForKind<'ast>,
-    pub block: &'ast Expr<'ast>,
+    pub block: Block<'ast>,
 }
 
-#[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ForKind<'ast> {
     Loop,
-    While { cond: &'ast Expr<'ast> },
-    ForLoop { local: &'ast Local<'ast>, cond: &'ast Expr<'ast>, assign: &'ast Assign<'ast> },
+    While {
+        cond: &'ast Expr<'ast>,
+    },
+    ForLoop {
+        local: &'ast Local<'ast>,
+        cond: &'ast Expr<'ast>,
+        assign: &'ast Assign<'ast>,
+    },
 }
 
 #[derive(Copy, Clone)]
@@ -211,6 +216,11 @@ pub struct Assign<'ast> {
     pub op: AssignOp,
     pub lhs: &'ast Expr<'ast>,
     pub rhs: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Block<'ast> {
+    pub stmts: &'ast [Stmt<'ast>],
 }
 
 #[derive(Copy, Clone)]
@@ -233,7 +243,7 @@ pub enum ExprKind<'ast> {
     LitChar     { val: char },
     LitString   { id: InternID, c_string: bool },
     If          { if_: &'ast If<'ast> },
-    Block       { stmts: &'ast [Stmt<'ast>] },
+    Block       { block: Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
@@ -252,13 +262,13 @@ pub enum ExprKind<'ast> {
 pub struct If<'ast> {
     pub entry: Branch<'ast>,
     pub branches: &'ast [Branch<'ast>],
-    pub fallback: Option<&'ast Expr<'ast>>,
+    pub else_block: Option<Block<'ast>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Branch<'ast> {
     pub cond: &'ast Expr<'ast>,
-    pub block: &'ast Expr<'ast>,
+    pub block: Block<'ast>,
 }
 
 #[derive(Copy, Clone)]

@@ -406,6 +406,9 @@ impl<'hir> HirEmit<'hir> {
         self,
         hir: HirData<'hir, 'ast, 'intern>,
     ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+        //@debug info
+        eprintln!("ast mem: {}", hir.ast.arena.mem_usage());
+        eprintln!("hir mem: {}", self.arena.mem_usage());
         if self.errors.is_empty() {
             Ok(hir::Hir {
                 arena: self.arena,
