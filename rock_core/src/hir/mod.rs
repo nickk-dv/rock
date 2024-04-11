@@ -44,7 +44,7 @@ pub struct ProcData<'hir> {
     pub is_variadic: bool,
     pub return_ty: Type<'hir>,
     pub block: Option<&'hir Expr<'hir>>,
-    pub body: ProcBody<'hir>,
+    pub locals: &'hir [&'hir Local<'hir>],
 }
 
 hir_id_impl!(ProcParamID);
@@ -53,20 +53,6 @@ pub struct ProcParam<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-}
-
-hir_id_impl!(LocalID);
-#[derive(Copy, Clone)]
-pub struct ProcBody<'hir> {
-    //@locals design:
-    // storing array of all locals is good to achieve delayed type inference on variable bindings
-    // which is allowed, but not enforced by current design:
-    // (local keeps Type::Error) if no expr or type were specified on binding
-    // if this delayed approach is kept,
-    // statement: Stmt::Local would only need to store LocalID
-    // since exact type isnt known when that statement is generated
-    // and all information about variable binding is stored in Locals of proc_body @06.04.24
-    pub locals: &'hir [&'hir Local<'hir>],
 }
 
 hir_id_impl!(EnumID);
@@ -177,14 +163,20 @@ pub struct For<'hir> {
     pub block: &'hir Expr<'hir>,
 }
 
-#[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ForKind<'hir> {
     Loop,
-    While { cond: &'hir Expr<'hir> },
-    ForLoop { local_id: LocalID, cond: &'hir Expr<'hir>, assign: &'hir Assign<'hir> },
+    While {
+        cond: &'hir Expr<'hir>,
+    },
+    ForLoop {
+        local_id: LocalID,
+        cond: &'hir Expr<'hir>,
+        assign: &'hir Assign<'hir>,
+    },
 }
 
+hir_id_impl!(LocalID);
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
     pub mutt: ast::Mut,
@@ -326,7 +318,47 @@ impl<'hir> Hir<'hir> {
     }
 }
 
+impl<'hir> ProcData<'hir> {
+    pub fn default_from_ast(item: &ast::ProcItem, origin_id: ScopeID) -> ProcData<'hir> {
+        ProcData {
+            origin_id,
+            vis: item.vis,
+            name: item.name,
+            params: &[],
+            is_variadic: item.is_variadic,
+            return_ty: Type::Error,
+            block: None,
+            locals: &[],
+        }
+    }
+
+    pub fn param(&self, id: ProcParamID) -> &'hir ProcParam<'hir> {
+        &self.params[id.index()]
+    }
+    pub fn find_param(&self, id: InternID) -> Option<(ProcParamID, &'hir ProcParam<'hir>)> {
+        for (idx, param) in self.params.iter().enumerate() {
+            if param.name.id == id {
+                return Some((ProcParamID::new(idx), param));
+            }
+        }
+        None
+    }
+}
+
 impl<'hir> EnumData<'hir> {
+    pub fn default_from_ast(item: &ast::EnumItem, origin_id: ScopeID) -> EnumData<'hir> {
+        EnumData {
+            origin_id,
+            vis: item.vis,
+            name: item.name,
+            basic: item.basic,
+            variants: &[],
+        }
+    }
+
+    pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant<'hir> {
+        &self.variants[id.index()]
+    }
     pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant<'hir>)> {
         for (idx, variant) in self.variants.iter().enumerate() {
             if variant.name.id == id {
@@ -338,6 +370,18 @@ impl<'hir> EnumData<'hir> {
 }
 
 impl<'hir> UnionData<'hir> {
+    pub fn default_from_ast(item: &ast::UnionItem, origin_id: ScopeID) -> UnionData<'hir> {
+        UnionData {
+            origin_id,
+            vis: item.vis,
+            name: item.name,
+            members: &[],
+        }
+    }
+
+    pub fn member(&self, id: UnionMemberID) -> &'hir UnionMember<'hir> {
+        &self.members[id.index()]
+    }
     pub fn find_member(&self, id: InternID) -> Option<(UnionMemberID, &'hir UnionMember<'hir>)> {
         for (idx, member) in self.members.iter().enumerate() {
             if member.name.id == id {
@@ -349,6 +393,18 @@ impl<'hir> UnionData<'hir> {
 }
 
 impl<'hir> StructData<'hir> {
+    pub fn default_from_ast(item: &ast::StructItem, origin_id: ScopeID) -> StructData<'hir> {
+        StructData {
+            origin_id,
+            vis: item.vis,
+            name: item.name,
+            fields: &[],
+        }
+    }
+
+    pub fn field(&self, id: StructFieldID) -> &'hir StructField<'hir> {
+        &self.fields[id.index()]
+    }
     pub fn find_field(&self, id: InternID) -> Option<(StructFieldID, &'hir StructField<'hir>)> {
         for (idx, field) in self.fields.iter().enumerate() {
             if field.name.id == id {

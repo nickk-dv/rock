@@ -135,6 +135,7 @@ fn process_enum_data<'hir>(
             });
         }
     }
+
     hir.enum_data_mut(id).variants = emit.arena.alloc_slice(&unique);
 }
 
@@ -164,6 +165,7 @@ fn process_union_data<'hir>(
             });
         }
     }
+
     hir.union_data_mut(id).members = emit.arena.alloc_slice(&unique);
 }
 
@@ -194,6 +196,7 @@ fn process_struct_data<'hir>(
             });
         }
     }
+
     hir.struct_data_mut(id).fields = emit.arena.alloc_slice(&unique);
 }
 

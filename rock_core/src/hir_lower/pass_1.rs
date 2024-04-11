@@ -21,62 +21,25 @@ fn add_module_scope<'hir>(
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
-                None => {
-                    let data = hir::ProcData {
-                        origin_id,
-                        vis: item.vis,
-                        name: item.name,
-                        params: &[],
-                        is_variadic: item.is_variadic,
-                        return_ty: hir::Type::Error,
-                        block: None,
-                        body: hir::ProcBody { locals: &[] },
-                    };
-                    hir.add_proc(origin_id, item, data);
-                }
+                None => hir.add_proc(origin_id, item),
             },
             ast::Item::Enum(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
-                None => {
-                    let data = hir::EnumData {
-                        origin_id,
-                        vis: item.vis,
-                        name: item.name,
-                        basic: item.basic,
-                        variants: &[],
-                    };
-                    hir.add_enum(origin_id, item, data);
-                }
+                None => hir.add_enum(origin_id, item),
             },
             ast::Item::Union(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
-                None => {
-                    let data = hir::UnionData {
-                        origin_id,
-                        vis: item.vis,
-                        name: item.name,
-                        members: &[],
-                    };
-                    hir.add_union(origin_id, item, data);
-                }
+                None => hir.add_union(origin_id, item),
             },
             ast::Item::Struct(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
-                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
+                    name_already_defined_error(hir, emit, origin_id, item.name, existing)
                 }
-                None => {
-                    let data = hir::StructData {
-                        origin_id,
-                        vis: item.vis,
-                        name: item.name,
-                        fields: &[],
-                    };
-                    hir.add_struct(origin_id, item, data);
-                }
+                None => hir.add_struct(origin_id, item),
             },
             ast::Item::Const(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {

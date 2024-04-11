@@ -253,7 +253,7 @@ fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
             let function = cg.function_values[idx];
 
             let mut local_vars = Vec::new();
-            local_vars.resize_with(proc_data.body.locals.len(), || None);
+            local_vars.resize_with(proc_data.locals.len(), || None);
             let mut proc_cg = ProcCodegen {
                 function,
                 proc_id: hir::ProcID::new(idx),
@@ -500,7 +500,7 @@ fn codegen_block<'ctx>(
                 } => todo!("codegen `for c-like` not supported"),
             },
             hir::Stmt::Local(local_id) => {
-                let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
+                let local = cg.hir.proc_data(proc_cg.proc_id).locals[local_id.index()];
                 let var_ty = cg.type_into_basic(local.ty).expect("non void type");
 
                 //@variables without value expression are always zero initialized
@@ -564,7 +564,7 @@ fn codegen_struct_field<'ctx>(
     let struct_ty = cg
         .type_into_basic(hir::Type::Struct(struct_id))
         .expect("non void type");
-    let field = cg.hir.struct_data(struct_id).fields[id.index()];
+    let field = cg.hir.struct_data(struct_id).field(id);
     let field_ty = cg.type_into_basic(field.ty).expect("value");
     let field_ptr = cg
         .builder
@@ -647,7 +647,7 @@ fn codegen_local_var<'ctx>(
     expect_ptr: bool,
     local_id: hir::LocalID,
 ) -> values::BasicValueEnum<'ctx> {
-    let local = cg.hir.proc_data(proc_cg.proc_id).body.locals[local_id.index()];
+    let local = cg.hir.proc_data(proc_cg.proc_id).locals[local_id.index()];
     let var_ty = cg.type_into_basic(local.ty).expect("non void type");
     let var_ptr = proc_cg.local_vars[local_id.index()].expect("var ptr");
 
@@ -688,7 +688,7 @@ fn codegen_enum_variant<'ctx>(
     //@generating value for that variant each time
     // this might be fine when constants are folded to single constant value
     // (current impl only supports single literals) @08.04.24
-    let variant = cg.hir.enum_data(enum_id).variants[id.index()];
+    let variant = cg.hir.enum_data(enum_id).variant(id);
     codegen_expr(cg, proc_cg, false, variant.value.0).expect("value")
 }
 

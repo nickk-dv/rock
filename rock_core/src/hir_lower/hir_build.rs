@@ -307,13 +307,9 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         self.globals.get_mut(id.index()).unwrap()
     }
 
-    pub fn add_proc(
-        &mut self,
-        origin_id: hir::ScopeID,
-        item: &'ast ast::ProcItem<'ast>,
-        data: hir::ProcData<'hir>,
-    ) {
+    pub fn add_proc(&mut self, origin_id: hir::ScopeID, item: &'ast ast::ProcItem<'ast>) {
         let id = hir::ProcID::new(self.ast_procs.len());
+        let data = hir::ProcData::default_from_ast(item, origin_id);
         self.ast_procs.push(item);
         self.procs.push(data);
         let symbol = Symbol::Defined {
@@ -321,13 +317,9 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         };
         self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
-    pub fn add_enum(
-        &mut self,
-        origin_id: hir::ScopeID,
-        item: &'ast ast::EnumItem<'ast>,
-        data: hir::EnumData<'hir>,
-    ) {
+    pub fn add_enum(&mut self, origin_id: hir::ScopeID, item: &'ast ast::EnumItem<'ast>) {
         let id = hir::EnumID::new(self.ast_enums.len());
+        let data = hir::EnumData::default_from_ast(item, origin_id);
         self.ast_enums.push(item);
         self.enums.push(data);
         let symbol = Symbol::Defined {
@@ -335,13 +327,9 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         };
         self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
-    pub fn add_union(
-        &mut self,
-        origin_id: hir::ScopeID,
-        item: &'ast ast::UnionItem<'ast>,
-        data: hir::UnionData<'hir>,
-    ) {
+    pub fn add_union(&mut self, origin_id: hir::ScopeID, item: &'ast ast::UnionItem<'ast>) {
         let id = hir::UnionID::new(self.ast_unions.len());
+        let data = hir::UnionData::default_from_ast(item, origin_id);
         self.ast_unions.push(item);
         self.unions.push(data);
         let symbol = Symbol::Defined {
@@ -349,13 +337,9 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         };
         self.scope_add_symbol(origin_id, item.name.id, symbol);
     }
-    pub fn add_struct(
-        &mut self,
-        origin_id: hir::ScopeID,
-        item: &'ast ast::StructItem<'ast>,
-        data: hir::StructData<'hir>,
-    ) {
+    pub fn add_struct(&mut self, origin_id: hir::ScopeID, item: &'ast ast::StructItem<'ast>) {
         let id = hir::StructID::new(self.ast_structs.len());
+        let data = hir::StructData::default_from_ast(item, origin_id);
         self.ast_structs.push(item);
         self.structs.push(data);
         let symbol = Symbol::Defined {

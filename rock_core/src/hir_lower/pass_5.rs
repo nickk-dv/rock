@@ -54,7 +54,7 @@ fn typecheck_proc<'hir>(
 
             let data = hir.proc_data_mut(id);
             data.block = Some(block_res.expr);
-            data.body.locals = locals;
+            data.locals = locals;
         }
         None => {
             let data = hir.proc_data(id);
@@ -921,8 +921,7 @@ fn typecheck_proc_call<'hir>(
 
     let mut input = Vec::with_capacity(proc_call.input.len());
     for (idx, &expr) in proc_call.input.iter().enumerate() {
-        let param = data.params.get(idx);
-        let expect = match param {
+        let expect = match data.params.get(idx) {
             Some(param) => param.ty,
             None => hir::Type::Error,
         };
@@ -1010,6 +1009,7 @@ fn typecheck_struct_init<'hir>(
         }
         StructureID::Struct(struct_id) => {
             let data = hir.struct_data(struct_id);
+            let field_count = data.fields.len();
 
             enum FieldStatus {
                 None,
@@ -1017,9 +1017,9 @@ fn typecheck_struct_init<'hir>(
             }
 
             //@potentially a lot of allocations (simple solution), same memory could be re-used
-            let mut field_inits = Vec::<hir::StructFieldInit>::with_capacity(data.fields.len());
+            let mut field_inits = Vec::<hir::StructFieldInit>::with_capacity(field_count);
             let mut field_status = Vec::<FieldStatus>::new();
-            field_status.resize_with(data.fields.len(), || FieldStatus::None);
+            field_status.resize_with(field_count, || FieldStatus::None);
             let mut init_count: usize = 0;
 
             for input in struct_init.input {
@@ -1057,15 +1057,15 @@ fn typecheck_struct_init<'hir>(
                 }
             }
 
-            if init_count < data.fields.len() {
+            if init_count < field_count {
                 let mut message = "missing field initializers: ".to_string();
 
                 for (idx, status) in field_status.iter().enumerate() {
                     if let FieldStatus::None = status {
-                        let field = data.fields[idx];
+                        let field = data.field(hir::StructFieldID::new(idx));
                         message.push('`');
                         message.push_str(hir.name_str(field.name.id));
-                        if idx + 1 != data.fields.len() {
+                        if idx + 1 != field_count {
                             message.push_str("`, ");
                         } else {
                             message.push_str("`");

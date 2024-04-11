@@ -68,7 +68,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         self.locals[id.index()]
     }
     pub fn get_param(&self, id: hir::ProcParamID) -> &hir::ProcParam<'hir> {
-        &self.data.params[id.index()]
+        &self.data.param(id)
     }
 
     //@no way to push correct information into this @10.04.24
@@ -113,11 +113,8 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     }
 
     pub fn find_variable(&self, id: InternID) -> Option<VariableID> {
-        for (idx, param) in self.data.params.iter().enumerate() {
-            if param.name.id == id {
-                let id = hir::ProcParamID::new(idx);
-                return Some(VariableID::Param(id));
-            }
+        if let Some((param_id, _)) = self.data.find_param(id) {
+            return Some(VariableID::Param(param_id));
         }
         for local_id in self.locals_in_scope.iter().cloned() {
             if self.get_local(local_id).name.id == id {
