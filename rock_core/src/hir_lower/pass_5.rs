@@ -103,8 +103,6 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
     match ty {
         hir::Type::Error => "error".into(),
         hir::Type::Basic(basic) => match basic {
-            BasicType::Unit => "()".into(),
-            BasicType::Bool => "bool".into(),
             BasicType::S8 => "s8".into(),
             BasicType::S16 => "s16".into(),
             BasicType::S32 => "s32".into(),
@@ -115,10 +113,14 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
             BasicType::U32 => "u32".into(),
             BasicType::U64 => "u64".into(),
             BasicType::Usize => "usize".into(),
+            BasicType::F16 => "f16".into(),
             BasicType::F32 => "f32".into(),
             BasicType::F64 => "f64".into(),
+            BasicType::Bool => "bool".into(),
             BasicType::Char => "char".into(),
             BasicType::Rawptr => "rawptr".into(),
+            BasicType::Void => "void".into(),
+            BasicType::Never => "never".into(),
         },
         hir::Type::Enum(id) => hir.name_str(hir.enum_data(id).name.id).into(),
         hir::Type::Union(id) => hir.name_str(hir.union_data(id).name.id).into(),
@@ -177,7 +179,6 @@ fn typecheck_expr<'hir>(
     expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
     let expr_res = match expr.kind {
-        ast::ExprKind::Unit => typecheck_unit(emit),
         ast::ExprKind::LitNull => typecheck_lit_null(emit),
         ast::ExprKind::LitBool { val } => typecheck_lit_bool(emit, val),
         ast::ExprKind::LitInt { val } => typecheck_lit_int(emit, expect, val),
@@ -223,13 +224,6 @@ fn typecheck_expr<'hir>(
     }
 
     expr_res
-}
-
-fn typecheck_unit<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
-    TypeResult::new(
-        hir::Type::Basic(BasicType::Unit),
-        emit.arena.alloc(hir::Expr::Unit),
-    )
 }
 
 fn typecheck_lit_null<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
@@ -353,7 +347,7 @@ fn typecheck_if<'hir>(
     let if_type = if if_.else_block.is_some() {
         entry_block.ty
     } else {
-        hir::Type::Basic(BasicType::Unit)
+        hir::Type::Basic(BasicType::Void)
     };
 
     let mut branches = Vec::<hir::Branch>::new();
@@ -445,12 +439,8 @@ fn verify_can_match(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
         hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
-            BasicTypeKind::Unit => false,
-            BasicTypeKind::Bool => false,
             BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => true,
-            BasicTypeKind::Float => false,
-            BasicTypeKind::Char => false,
-            BasicTypeKind::Rawptr => false,
+            _ => false,
         },
         hir::Type::Enum(_) => true,
         _ => false,
@@ -606,8 +596,6 @@ fn verify_elem_type(ty: hir::Type) -> Option<hir::Type> {
 
 fn basic_type_size(basic: BasicType) -> u64 {
     match basic {
-        BasicType::Unit => 0,
-        BasicType::Bool => 1,
         BasicType::S8 => 1,
         BasicType::S16 => 2,
         BasicType::S32 => 4,
@@ -618,37 +606,43 @@ fn basic_type_size(basic: BasicType) -> u64 {
         BasicType::U32 => 4,
         BasicType::U64 => 8,
         BasicType::Usize => 8, //@assume 64bit target
+        BasicType::F16 => 2,
         BasicType::F32 => 4,
         BasicType::F64 => 8,
+        BasicType::Bool => 1,
         BasicType::Char => 4,
         BasicType::Rawptr => 8, //@assume 64bit target
+        BasicType::Void => 0,   // @not a value type
+        BasicType::Never => 0,  // @not a value type
     }
 }
 
 enum BasicTypeKind {
-    Unit,
-    Bool,
     SignedInt,
     UnsignedInt,
     Float,
+    Bool,
     Char,
     Rawptr,
+    Void,
+    Never,
 }
 
 impl BasicTypeKind {
     fn from_basic(basic: BasicType) -> BasicTypeKind {
         match basic {
-            BasicType::Unit => BasicTypeKind::Unit,
-            BasicType::Bool => BasicTypeKind::Bool,
             BasicType::S8 | BasicType::S16 | BasicType::S32 | BasicType::S64 | BasicType::Ssize => {
                 BasicTypeKind::SignedInt
             }
             BasicType::U8 | BasicType::U16 | BasicType::U32 | BasicType::U64 | BasicType::Usize => {
                 BasicTypeKind::UnsignedInt
             }
-            BasicType::F32 | BasicType::F64 => BasicTypeKind::Float,
+            BasicType::F16 | BasicType::F32 | BasicType::F64 => BasicTypeKind::Float,
+            BasicType::Bool => BasicTypeKind::Bool,
             BasicType::Char => BasicTypeKind::Char,
             BasicType::Rawptr => BasicTypeKind::Rawptr,
+            BasicType::Void => BasicTypeKind::Void,
+            BasicType::Never => BasicTypeKind::Never,
         }
     }
 }
@@ -708,8 +702,6 @@ fn typecheck_cast<'hir>(
             let into_size = basic_type_size(into);
 
             match from_kind {
-                BasicTypeKind::Unit => hir::CastKind::Error,
-                BasicTypeKind::Bool => hir::CastKind::Error,
                 BasicTypeKind::SignedInt => match into_kind {
                     BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => {
                         if from_size < into_size {
@@ -744,8 +736,11 @@ fn typecheck_cast<'hir>(
                     }
                     _ => hir::CastKind::Error,
                 },
+                BasicTypeKind::Bool => hir::CastKind::Error,
                 BasicTypeKind::Char => hir::CastKind::Error,
                 BasicTypeKind::Rawptr => hir::CastKind::Error,
+                BasicTypeKind::Void => hir::CastKind::Error,
+                BasicTypeKind::Never => hir::CastKind::Error,
             }
         }
         _ => hir::CastKind::Error,
@@ -1477,7 +1472,7 @@ fn typecheck_block<'hir>(
                     hir,
                     emit,
                     proc,
-                    hir::Type::Basic(BasicType::Unit),
+                    hir::Type::Basic(BasicType::Void),
                     for_.block,
                     true,
                     None,
@@ -1493,7 +1488,7 @@ fn typecheck_block<'hir>(
             ast::StmtKind::Assign(assign) => Some(typecheck_assign(hir, emit, proc, assign)),
             ast::StmtKind::ExprSemi(expr) => {
                 let expect = if matches!(expr.kind, ast::ExprKind::Block { .. }) {
-                    hir::Type::Basic(BasicType::Unit)
+                    hir::Type::Basic(BasicType::Void)
                 } else {
                     hir::Type::Error
                 };
@@ -1521,7 +1516,7 @@ fn typecheck_block<'hir>(
     if let Some(block_ty) = block_ty {
         TypeResult::new_ignore_typecheck(block_ty, block_expr)
     } else {
-        TypeResult::new(hir::Type::Basic(BasicType::Unit), block_expr)
+        TypeResult::new(hir::Type::Basic(BasicType::Void), block_expr)
     }
 }
 
@@ -1581,7 +1576,7 @@ fn typecheck_return<'hir>(
         hir::Stmt::Return(Some(expr_res.expr))
     } else {
         //@this is modified duplicated typecheck error, special case for empty return @07.04.24
-        let found = hir::Type::Basic(BasicType::Unit);
+        let found = hir::Type::Basic(BasicType::Void);
         if !type_matches(expect, found) {
             let expect_format = type_format(hir, expect);
             let found_format = type_format(hir, found);
@@ -1624,7 +1619,7 @@ fn typecheck_defer<'hir>(
         hir,
         emit,
         proc,
-        hir::Type::Basic(BasicType::Unit),
+        hir::Type::Basic(BasicType::Void),
         block,
         false,
         Some(defer_range),

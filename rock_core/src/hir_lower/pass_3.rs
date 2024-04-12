@@ -92,7 +92,7 @@ fn process_proc_data<'hir>(
     hir.proc_data_mut(id).return_ty = if let Some(ret_ty) = item.return_ty {
         type_resolve(hir, emit, origin_id, ret_ty)
     } else {
-        hir::Type::Basic(ast::BasicType::Unit)
+        hir::Type::Basic(ast::BasicType::Void)
     }
 }
 

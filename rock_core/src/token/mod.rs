@@ -46,7 +46,6 @@ token_gen::token_gen! {
     [sizeof]   | "sizeof"   | KwSizeof   | KW.
 
     // keyword basic types
-    [bool]     | "bool"     | KwBool     | KW. BASIC[BasicType::Bool]
     [s8]       | "s8"       | KwS8       | KW. BASIC[BasicType::S8]
     [s16]      | "s16"      | KwS16      | KW. BASIC[BasicType::S16]
     [s32]      | "s32"      | KwS32      | KW. BASIC[BasicType::S32]
@@ -57,10 +56,14 @@ token_gen::token_gen! {
     [u32]      | "u32"      | KwU32      | KW. BASIC[BasicType::U32]
     [u64]      | "u64"      | KwU64      | KW. BASIC[BasicType::U64]
     [usize]    | "usize"    | KwUsize    | KW. BASIC[BasicType::Usize]
+    [f16]      | "f16"      | KwF16      | KW. BASIC[BasicType::F16]
     [f32]      | "f32"      | KwF32      | KW. BASIC[BasicType::F32]
     [f64]      | "f64"      | KwF64      | KW. BASIC[BasicType::F64]
+    [bool]     | "bool"     | KwBool     | KW. BASIC[BasicType::Bool]
     [char]     | "char"     | KwChar     | KW. BASIC[BasicType::Char]
-    [rawptr]   | "rawptr"   | Rawptr     | KW. BASIC[BasicType::Rawptr]
+    [rawptr]   | "rawptr"   | KwRawptr   | KW. BASIC[BasicType::Rawptr]
+    [void]     | "void"     | KwVoid     | KW. BASIC[BasicType::Void]
+    [never]    | "never"    | KwNever    | KW. BASIC[BasicType::Never]
 
     // single punctuation
     [.]      | "."      | Dot          |

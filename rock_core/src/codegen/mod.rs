@@ -100,8 +100,6 @@ impl<'ctx> Codegen<'ctx> {
         match ty {
             hir::Type::Error => panic!("codegen unexpected hir::Type::Error"),
             hir::Type::Basic(basic) => match basic {
-                ast::BasicType::Unit => self.context.void_type().into(),
-                ast::BasicType::Bool => self.context.bool_type().into(),
                 ast::BasicType::S8 => self.context.i8_type().into(),
                 ast::BasicType::S16 => self.context.i16_type().into(),
                 ast::BasicType::S32 => self.context.i32_type().into(),
@@ -112,10 +110,14 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::U32 => self.context.i32_type().into(),
                 ast::BasicType::U64 => self.context.i64_type().into(),
                 ast::BasicType::Usize => self.pointer_sized_int_type().into(),
+                ast::BasicType::F16 => self.context.f16_type().into(),
                 ast::BasicType::F32 => self.context.f32_type().into(),
                 ast::BasicType::F64 => self.context.f64_type().into(),
+                ast::BasicType::Bool => self.context.bool_type().into(),
                 ast::BasicType::Char => self.context.i32_type().into(),
                 ast::BasicType::Rawptr => self.ptr_type().into(),
+                ast::BasicType::Void => panic!("codegen unexpected BasicType::Void"),
+                ast::BasicType::Never => panic!("codegen unexpected BasicType::Never"),
             },
             hir::Type::Enum(id) => {
                 let basic = self.hir.enum_data(id).basic.expect("enum basic type");

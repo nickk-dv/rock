@@ -16,7 +16,6 @@ pub fn const_expr_resolve<'hir, 'ast>(
     expr: ast::ConstExpr<'ast>,
 ) -> hir::ConstExpr<'hir> {
     let hir_expr = match expr.0.kind {
-        ast::ExprKind::Unit => hir::Expr::Unit, //@ units are no-ops, should they be stripped fully before LLVM ?
         ast::ExprKind::LitNull => hir::Expr::LitNull,
         ast::ExprKind::LitBool { val } => hir::Expr::LitBool { val },
         ast::ExprKind::LitInt { val } => hir::Expr::LitInt {

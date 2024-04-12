@@ -324,11 +324,6 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
         return Ok(Type::Basic(basic));
     }
     match p.peek() {
-        T!['('] => {
-            p.bump();
-            p.expect(T![')'])?;
-            Ok(Type::Basic(BasicType::Unit))
-        }
         T![ident] => Ok(Type::Custom(path(p)?)),
         T![*] => {
             p.bump();
@@ -509,13 +504,6 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
     let range_start = p.peek_range_start();
 
     if p.eat(T!['(']) {
-        if p.eat(T![')']) {
-            let expr = p.state.arena.alloc(Expr {
-                kind: ExprKind::Unit,
-                range: TextRange::new(range_start, p.peek_range_end()),
-            });
-            return tail_expr(p, expr);
-        }
         let expr = sub_expr(p, 0)?;
         p.expect(T![')'])?;
         return tail_expr(p, expr);

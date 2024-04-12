@@ -235,7 +235,6 @@ pub struct ConstExpr<'ast>(pub &'ast Expr<'ast>);
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ExprKind<'ast> {
-    Unit,
     LitNull,
     LitBool     { val: bool },
     LitInt      { val: u64 },
@@ -303,8 +302,6 @@ pub struct FieldInit<'ast> {
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum BasicType {
-    Unit,
-    Bool,
     S8,
     S16,
     S32,
@@ -315,10 +312,14 @@ pub enum BasicType {
     U32,
     U64,
     Usize,
+    F16,
     F32,
     F64,
+    Bool,
     Char,
     Rawptr,
+    Void,
+    Never,
 }
 
 #[derive(Copy, Clone, PartialEq)]
