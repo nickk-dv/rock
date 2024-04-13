@@ -199,7 +199,6 @@ pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
 #[derive(Copy, Clone)]
 pub enum Expr<'hir> {
     Error,
-    Unit,
     LitNull,
     LitBool     { val: bool },
     LitInt      { val: u64, ty: ast::BasicType },

@@ -17,6 +17,7 @@ struct Codegen<'ctx> {
     builder: builder::Builder<'ctx>,
     target_machine: targets::TargetMachine,
     struct_types: Vec<types::StructType<'ctx>>,
+    globals: Vec<values::GlobalValue<'ctx>>,
     function_values: Vec<values::FunctionValue<'ctx>>,
     hir: hir::Hir<'ctx>,
 }
@@ -53,6 +54,7 @@ impl<'ctx> Codegen<'ctx> {
             builder,
             target_machine,
             struct_types: Vec::new(),
+            globals: Vec::new(),
             function_values: Vec::new(),
             hir,
         }
@@ -173,6 +175,7 @@ pub fn codegen(hir: hir::Hir) {
     let context = context::Context::create();
     let mut cg = Codegen::new(&context, hir);
     codegen_struct_types(&mut cg);
+    codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&mut cg);
     cg.build_object();
@@ -210,6 +213,20 @@ fn codegen_struct_types(cg: &mut Codegen) {
         let opaque = cg.struct_types[idx];
         opaque.set_body(&field_types, false);
         eprintln!("{}", opaque.print_to_string());
+    }
+}
+
+fn codegen_globals(cg: &mut Codegen) {
+    cg.globals.reserve_exact(cg.hir.globals.len());
+
+    for global_data in cg.hir.globals.iter() {
+        let global_ty = cg.type_into_basic(global_data.ty).expect("non void type");
+        let global = cg.module.add_global(global_ty, None, "global");
+        //@set is_constant based on mutability of the global (not yet supported or checked) @13.04.24
+        global.set_constant(false);
+        global.set_linkage(module::Linkage::Private);
+        global.set_initializer(&codegen_const_expr(cg, global_data.value));
+        cg.globals.push(global);
     }
 }
 
@@ -295,6 +312,26 @@ fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
     }
 }
 
+//@other potentially contant expressions arent supported yet @13.04.24
+// to support arrays structs unions etc
+// there should be dedicated constant values produced at analysis stage
+// hir also currently only supports literal constants for the same reason
+fn codegen_const_expr<'ctx>(
+    cg: &Codegen<'ctx>,
+    expr: hir::ConstExpr,
+) -> values::BasicValueEnum<'ctx> {
+    match *expr.0 {
+        hir::Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
+        hir::Expr::LitNull => codegen_lit_null(cg),
+        hir::Expr::LitBool { val } => codegen_lit_bool(cg, val),
+        hir::Expr::LitInt { val, ty } => codegen_lit_int(cg, val, ty),
+        hir::Expr::LitFloat { val, ty } => codegen_lit_float(cg, val, ty),
+        hir::Expr::LitChar { val } => codegen_lit_char(cg, val),
+        hir::Expr::LitString { id, c_string } => codegen_lit_string(cg, id, c_string),
+        _ => panic!("codegen unexpected constant expression kind"),
+    }
+}
+
 //@hir still has tail returned expressions in statements,  and block is an expression
 // this results in need to return Optional values from codegen_expr()
 // and a lot of unwrap() or expect() calls on always expected values
@@ -309,7 +346,6 @@ fn codegen_expr<'ctx>(
     use hir::Expr;
     match *expr {
         Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
-        Expr::Unit => panic!("codegen unexpected hir::Expr::Unit (unit semantics arent done)"),
         Expr::LitNull => Some(codegen_lit_null(cg)),
         Expr::LitBool { val } => Some(codegen_lit_bool(cg, val)),
         Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty)),
@@ -340,7 +376,7 @@ fn codegen_expr<'ctx>(
         Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
-        Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
+        Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect_ptr, global_id)),
         Expr::EnumVariant {
             enum_id,
             variant_id,
@@ -531,7 +567,18 @@ fn codegen_block<'ctx>(
                 cg.builder.build_store(var_ptr, value).unwrap();
                 proc_cg.local_vars[local_id.index()] = Some(var_ptr);
             }
-            hir::Stmt::Assign(_) => todo!("codegen `assign` not supported"),
+            hir::Stmt::Assign(assign) => {
+                let lhs = codegen_expr(cg, proc_cg, true, assign.lhs).expect("value");
+                let rhs = codegen_expr(cg, proc_cg, false, assign.rhs).expect("value");
+                match assign.op {
+                    ast::AssignOp::Assign => {
+                        cg.builder
+                            .build_store(lhs.into_pointer_value(), rhs)
+                            .unwrap();
+                    }
+                    ast::AssignOp::Bin(_) => todo!("codegen `bin op` assign not supported"),
+                }
+            }
             hir::Stmt::ExprSemi(expr) => {
                 //@are expressions like `5;` valid when output as llvm ir? probably yes
                 codegen_expr(cg, proc_cg, false, expr);
@@ -712,9 +759,20 @@ fn codegen_const_var<'ctx>(
 
 fn codegen_global_var<'ctx>(
     cg: &Codegen<'ctx>,
+    expect_ptr: bool,
     global_id: hir::GlobalID,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `global var` not supported")
+    let global = cg.globals[global_id.index()];
+    let global_ptr = global.as_pointer_value();
+
+    if expect_ptr {
+        global_ptr.into()
+    } else {
+        let global_ty = global.get_initializer().expect("initialized").get_type();
+        cg.builder
+            .build_load(global_ty, global_ptr, "global_val")
+            .unwrap()
+    }
 }
 
 fn codegen_enum_variant<'ctx>(
