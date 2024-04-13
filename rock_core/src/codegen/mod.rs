@@ -93,6 +93,32 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    fn struct_type(&self, struct_id: hir::StructID) -> types::StructType<'ctx> {
+        self.struct_types[struct_id.index()]
+    }
+
+    fn slice_type(&self) -> types::StructType<'ctx> {
+        //@this slice type could be generated once and referenced every time
+        self.context
+            .struct_type(
+                &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
+                false,
+            )
+            .into()
+    }
+
+    fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
+        //@array static shoudnt always carry expresion inside
+        // when its not declared it might just store u32 or u64 size without allocations
+        // store u32 since its expected size for static arrays @06.04.24
+        let elem_ty = self.type_into_basic(array.ty).expect("non void type");
+        if let hir::Expr::LitInt { val, .. } = *array.size.0 {
+            elem_ty.array_type(val as u32).into()
+        } else {
+            panic!("codegen: invalid array static size expression");
+        }
+    }
+
     //@any is used as general type
     // unit / void is not accepted by enums that wrap
     // struct field types, proc param types.
@@ -124,28 +150,10 @@ impl<'ctx> Codegen<'ctx> {
                 self.type_into_any(hir::Type::Basic(basic))
             }
             hir::Type::Union(_) => todo!("codegen: union type is not supported"),
-            hir::Type::Struct(id) => self.struct_types[id.index()].into(),
+            hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
             hir::Type::Reference(_, _) => self.ptr_type().into(),
-            hir::Type::ArraySlice(_) => {
-                //@this slice type could be generated once and referenced every time
-                self.context
-                    .struct_type(
-                        &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
-                        false,
-                    )
-                    .into()
-            }
-            hir::Type::ArrayStatic(array) => {
-                //@array static shoudnt always carry expresion inside
-                // when its not declared it might just store u32 or u64 size without allocations
-                // store u32 since its expected size for static arrays @06.04.24
-                let elem_ty = self.type_into_basic(array.ty).expect("non void type");
-                if let hir::Expr::LitInt { val, .. } = *array.size.0 {
-                    elem_ty.array_type(val as u32).into()
-                } else {
-                    panic!("codegen: invalid array static size expression");
-                }
-            }
+            hir::Type::ArraySlice(_) => self.slice_type().into(),
+            hir::Type::ArrayStatic(array) => self.array_type(array).into(),
         }
     }
 
@@ -325,14 +333,9 @@ fn codegen_expr<'ctx>(
         } => Some(codegen_struct_field(
             cg, proc_cg, expect_ptr, target, struct_id, field_id, deref,
         )),
-        Expr::Index {
-            target,
-            index,
-            elem_ty,
-            deref,
-        } => Some(codegen_index(
-            cg, proc_cg, expect_ptr, target, index, elem_ty, deref,
-        )),
+        Expr::Index { target, access } => {
+            Some(codegen_index(cg, proc_cg, expect_ptr, target, access))
+        }
         Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
         Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
@@ -582,14 +585,16 @@ fn codegen_struct_field<'ctx>(
         target.into_pointer_value()
     };
 
-    let struct_ty = cg
-        .type_into_basic(hir::Type::Struct(struct_id))
-        .expect("non void type");
     let field = cg.hir.struct_data(struct_id).field(field_id);
     let field_ty = cg.type_into_basic(field.ty).expect("value");
     let field_ptr = cg
         .builder
-        .build_struct_gep(struct_ty, target_ptr, field_id.index() as u32, "field_ptr")
+        .build_struct_gep(
+            cg.struct_type(struct_id),
+            target_ptr,
+            field_id.index() as u32,
+            "field_ptr",
+        )
         .unwrap();
 
     if expect_ptr {
@@ -601,42 +606,52 @@ fn codegen_struct_field<'ctx>(
     }
 }
 
-//@element type and indexed value type isnt known @09.04.24
-// for example is it array or a slice? not known yet
+//@slice access not yet supported @13.04.24
 #[allow(unsafe_code)]
 fn codegen_index<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     expect_ptr: bool,
     target: &hir::Expr,
-    index: &hir::Expr,
-    elem_ty: &hir::Type,
-    deref: bool,
+    access: &hir::IndexAccess,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `union index` not supported")
-
-    /*
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
-    let target_ptr = target.into_pointer_value();
-
-    let index = codegen_expr(cg, proc_cg, false, index)
+    let target_ptr = if access.deref {
+        cg.builder
+            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .unwrap()
+            .into_pointer_value()
+    } else {
+        target.into_pointer_value()
+    };
+    let index = codegen_expr(cg, proc_cg, false, access.index)
         .expect("value")
         .into_int_value();
 
-    let elem_ptr = unsafe {
-        cg.builder
-            .build_gep(target_ty, target_ptr, &[index], "elem_ptr")
-            .unwrap()
+    let elem_ptr = match access.kind {
+        hir::IndexKind::Slice { elem_size } => {
+            todo!("codegen: slice access not implemented")
+        }
+        hir::IndexKind::Array { array } => unsafe {
+            cg.builder
+                .build_in_bounds_gep(
+                    cg.array_type(array),
+                    target_ptr,
+                    &[cg.pointer_sized_int_type().const_zero(), index],
+                    "elem_ptr",
+                )
+                .unwrap()
+        },
     };
 
     if expect_ptr {
         elem_ptr.into()
     } else {
+        let elem_ty = cg.type_into_basic(access.elem_ty).expect("non void type");
         cg.builder
             .build_load(elem_ty, elem_ptr, "elem_val")
             .unwrap()
     }
-    */
 }
 
 fn codegen_cast<'ctx>(
@@ -750,17 +765,19 @@ fn codegen_struct_init<'ctx>(
     struct_id: hir::StructID,
     input: &[hir::StructFieldInit],
 ) -> values::BasicValueEnum<'ctx> {
-    let struct_ty = cg
-        .type_into_basic(hir::Type::Struct(struct_id))
-        .expect("non void type");
+    let struct_ty = cg.struct_type(struct_id);
     let struct_ptr = cg.builder.build_alloca(struct_ty, "struct_temp").unwrap();
 
     for field_init in input {
         let value = codegen_expr(cg, proc_cg, false, field_init.expr).expect("value");
-        let field_idx = field_init.field_id.index() as u32;
         let field_ptr = cg
             .builder
-            .build_struct_gep(struct_ty, struct_ptr, field_idx, "field_ptr")
+            .build_struct_gep(
+                struct_ty,
+                struct_ptr,
+                field_init.field_id.index() as u32,
+                "field_ptr",
+            )
             .unwrap();
         cg.builder.build_store(field_ptr, value).unwrap();
     }
@@ -791,10 +808,15 @@ fn codegen_array_init<'ctx>(
     for (idx, &expr) in array_init.input.iter().enumerate() {
         let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
         //@same possible sign extension problem as with all integers currently
-        let index_value = index_type.const_int(idx as u64, false);
+        let index = index_type.const_int(idx as u64, false);
         let elem_ptr = unsafe {
             cg.builder
-                .build_in_bounds_gep(array_ty, array_ptr, &[index_value], "elem_ptr")
+                .build_in_bounds_gep(
+                    array_ty,
+                    array_ptr,
+                    &[cg.pointer_sized_int_type().const_zero(), index],
+                    "elem_ptr",
+                )
                 .unwrap()
         };
         cg.builder.build_store(elem_ptr, value).unwrap();

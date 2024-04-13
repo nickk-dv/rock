@@ -195,8 +195,6 @@ pub struct Assign<'hir> {
 #[derive(Copy, Clone)]
 pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
 
-//@size was 24, 32 current @13.04.24
-// Expr::Index is 32 bytes
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum Expr<'hir> {
@@ -213,7 +211,7 @@ pub enum Expr<'hir> {
     Match       { match_: &'hir Match<'hir> },
     UnionMember { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
     StructField { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
-    Index       { target: &'hir Expr<'hir>, index: &'hir Expr<'hir>, elem_ty: &'hir Type<'hir>, deref: bool },
+    Index       { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Cast        { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
     LocalVar    { local_id: LocalID },
     ParamVar    { param_id: ProcParamID },
@@ -272,6 +270,20 @@ pub enum CastKind {
     Uint_to_Float,
     Float_Trunc,
     Float_Extend,
+}
+
+#[derive(Copy, Clone)]
+pub struct IndexAccess<'hir> {
+    pub deref: bool,
+    pub elem_ty: Type<'hir>,
+    pub kind: IndexKind<'hir>,
+    pub index: &'hir Expr<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum IndexKind<'hir> {
+    Slice { elem_size: u64 },
+    Array { array: &'hir ArrayStatic<'hir> },
 }
 
 #[derive(Copy, Clone)]

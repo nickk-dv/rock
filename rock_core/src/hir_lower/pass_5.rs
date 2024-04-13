@@ -570,16 +570,14 @@ fn typecheck_index<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
     let index_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), index);
-    let (elem_ty, deref) = check_type_index(hir, emit, proc, target_res.ty, index.range);
-    let elem_ty = emit.arena.alloc(elem_ty);
+    let access = check_type_index(hir, emit, proc, target_res.ty, index_res.expr, index.range);
 
+    let access = emit.arena.alloc(access);
     let index_expr = emit.arena.alloc(hir::Expr::Index {
         target: target_res.expr,
-        index: index_res.expr,
-        elem_ty,
-        deref,
+        access,
     });
-    TypeResult::new(*elem_ty, index_expr)
+    TypeResult::new(access.elem_ty, index_expr)
 }
 
 //@codegen adjustments: @13.04.24
@@ -590,13 +588,14 @@ fn check_type_index<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: hir::Type<'hir>,
-    index: TextRange,
-) -> (hir::Type<'hir>, bool) {
+    index: &'hir hir::Expr<'hir>,
+    index_range: TextRange,
+) -> hir::IndexAccess<'hir> {
     match ty {
         hir::Type::Reference(ref_ty, mutt) => {
-            (type_get_elem(hir, emit, proc, *ref_ty, index), true)
+            type_get_elem(hir, emit, proc, *ref_ty, true, index, index_range)
         }
-        _ => (type_get_elem(hir, emit, proc, ty, index), false),
+        _ => type_get_elem(hir, emit, proc, ty, false, index, index_range),
     }
 }
 
@@ -605,19 +604,41 @@ fn type_get_elem<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: hir::Type<'hir>,
-    index: TextRange,
-) -> hir::Type<'hir> {
+    deref: bool,
+    index: &'hir hir::Expr<'hir>,
+    index_range: TextRange,
+) -> hir::IndexAccess<'hir> {
     match ty {
-        hir::Type::Error => hir::Type::Error,
-        hir::Type::ArraySlice(slice) => slice.ty,
-        hir::Type::ArrayStatic(array) => array.ty,
+        hir::Type::Error => hir::IndexAccess {
+            deref,
+            elem_ty: hir::Type::Error,
+            kind: hir::IndexKind::Slice { elem_size: 0 },
+            index,
+        },
+        hir::Type::ArraySlice(slice) => hir::IndexAccess {
+            deref,
+            elem_ty: slice.ty,
+            kind: hir::IndexKind::Slice { elem_size: 0 }, //@todo size
+            index,
+        },
+        hir::Type::ArrayStatic(array) => hir::IndexAccess {
+            deref,
+            elem_ty: array.ty,
+            kind: hir::IndexKind::Array { array },
+            index,
+        },
         _ => {
             emit.error(ErrorComp::error(
                 format!("cannot index value of type {}", type_format(hir, ty)),
-                hir.src(proc.origin(), index),
+                hir.src(proc.origin(), index_range),
                 None,
             ));
-            hir::Type::Error
+            hir::IndexAccess {
+                deref,
+                elem_ty: hir::Type::Error,
+                kind: hir::IndexKind::Slice { elem_size: 0 },
+                index,
+            }
         }
     }
 }
