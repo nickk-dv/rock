@@ -279,7 +279,7 @@ fn typecheck_lit_float<'hir>(
 
     let lit_type = match expect {
         hir::Type::Basic(basic) => match basic {
-            BasicType::F32 | BasicType::F64 => basic,
+            BasicType::F16 | BasicType::F32 | BasicType::F64 => basic,
             _ => DEFAULT_FLOAT_TYPE,
         },
         _ => DEFAULT_FLOAT_TYPE,
@@ -455,56 +455,66 @@ fn typecheck_field<'hir>(
     name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
-
-    //@auto deref should be included in final hir @07.04.24
-    // with current codegen pointer gep will run, without loading from pointer first.
-    let (field_ty, kind) = match target_res.ty {
-        hir::Type::Reference(ref_ty, mutt) => verify_type_field(hir, emit, proc, *ref_ty, name),
-        _ => verify_type_field(hir, emit, proc, target_res.ty, name),
-    };
+    let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_res.ty, name);
 
     match kind {
-        FieldExprKind::None => {
-            TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
-        }
-        FieldExprKind::Member(union_id, id) => TypeResult::new(
+        FieldKind::Error => TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error)),
+        FieldKind::Member(union_id, member_id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::UnionMember {
                 target: target_res.expr,
                 union_id,
-                id,
+                member_id,
+                deref,
             }),
         ),
-        FieldExprKind::Field(struct_id, id) => TypeResult::new(
+        FieldKind::Field(struct_id, field_id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::StructField {
                 target: target_res.expr,
                 struct_id,
-                id,
+                field_id,
+                deref,
             }),
         ),
     }
 }
 
-enum FieldExprKind {
-    None,
+enum FieldKind {
+    Error,
     Member(hir::UnionID, hir::UnionMemberID),
     Field(hir::StructID, hir::StructFieldID),
 }
 
-fn verify_type_field<'hir>(
+fn check_type_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: hir::Type<'hir>,
     name: ast::Name,
-) -> (hir::Type<'hir>, FieldExprKind) {
+) -> (hir::Type<'hir>, FieldKind, bool) {
+    let field = match ty {
+        hir::Type::Reference(ref_ty, mutt) => {
+            (type_get_field(hir, emit, proc, *ref_ty, name), true)
+        }
+        _ => (type_get_field(hir, emit, proc, ty, name), false),
+    };
+    (field.0 .0, field.0 .1, field.1)
+}
+
+fn type_get_field<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    ty: hir::Type<'hir>,
+    name: ast::Name,
+) -> (hir::Type<'hir>, FieldKind) {
     match ty {
-        hir::Type::Error => (hir::Type::Error, FieldExprKind::None),
+        hir::Type::Error => (hir::Type::Error, FieldKind::Error),
         hir::Type::Union(id) => {
             let data = hir.union_data(id);
             if let Some((member_id, member)) = data.find_member(name.id) {
-                (member.ty, FieldExprKind::Member(id, member_id))
+                (member.ty, FieldKind::Member(id, member_id))
             } else {
                 emit.error(ErrorComp::error(
                     format!(
@@ -515,13 +525,13 @@ fn verify_type_field<'hir>(
                     hir.src(proc.origin(), name.range),
                     None,
                 ));
-                (hir::Type::Error, FieldExprKind::None)
+                (hir::Type::Error, FieldKind::Error)
             }
         }
         hir::Type::Struct(id) => {
             let data = hir.struct_data(id);
             if let Some((field_id, field)) = data.find_field(name.id) {
-                (field.ty, FieldExprKind::Field(id, field_id))
+                (field.ty, FieldKind::Field(id, field_id))
             } else {
                 emit.error(ErrorComp::error(
                     format!(
@@ -532,21 +542,21 @@ fn verify_type_field<'hir>(
                     hir.src(proc.origin(), name.range),
                     None,
                 ));
-                (hir::Type::Error, FieldExprKind::None)
+                (hir::Type::Error, FieldKind::Error)
             }
         }
         _ => {
             let ty_format = type_format(hir, ty);
             emit.error(ErrorComp::error(
                 format!(
-                    "no field `{}` exists on value of type {}",
+                    "no field `{}` exists on value of type `{}`",
                     hir.name_str(name.id),
                     ty_format,
                 ),
                 hir.src(proc.origin(), name.range),
                 None,
             ));
-            (hir::Type::Error, FieldExprKind::None)
+            (hir::Type::Error, FieldKind::Error)
         }
     }
 }
@@ -560,37 +570,55 @@ fn typecheck_index<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
     let index_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), index);
+    let (elem_ty, deref) = check_type_index(hir, emit, proc, target_res.ty, index.range);
+    let elem_ty = emit.arena.alloc(elem_ty);
 
-    let elem_ty = match target_res.ty {
-        hir::Type::Reference(ref_ty, mutt) => verify_elem_type(*ref_ty),
-        _ => verify_elem_type(target_res.ty),
-    };
+    let index_expr = emit.arena.alloc(hir::Expr::Index {
+        target: target_res.expr,
+        index: index_res.expr,
+        elem_ty,
+        deref,
+    });
+    TypeResult::new(*elem_ty, index_expr)
+}
 
-    if let Some(elem_ty) = elem_ty {
-        let index_expr = emit.arena.alloc(hir::Expr::Index {
-            target: target_res.expr,
-            index: index_res.expr,
-        });
-        TypeResult::new(elem_ty, index_expr)
-    } else {
-        emit.error(ErrorComp::error(
-            format!(
-                "cannot index value of type {}",
-                type_format(hir, target_res.ty)
-            ),
-            hir.src(proc.origin(), index.range),
-            None,
-        ));
-        TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+//@codegen adjustments: @13.04.24
+// auto dereference made explicit in hir
+// array vs slice indexing made explicit in hir
+fn check_type_index<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    ty: hir::Type<'hir>,
+    index: TextRange,
+) -> (hir::Type<'hir>, bool) {
+    match ty {
+        hir::Type::Reference(ref_ty, mutt) => {
+            (type_get_elem(hir, emit, proc, *ref_ty, index), true)
+        }
+        _ => (type_get_elem(hir, emit, proc, ty, index), false),
     }
 }
 
-fn verify_elem_type(ty: hir::Type) -> Option<hir::Type> {
+fn type_get_elem<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    ty: hir::Type<'hir>,
+    index: TextRange,
+) -> hir::Type<'hir> {
     match ty {
-        hir::Type::Error => Some(hir::Type::Error),
-        hir::Type::ArraySlice(slice) => Some(slice.ty),
-        hir::Type::ArrayStatic(array) => Some(array.ty),
-        _ => None,
+        hir::Type::Error => hir::Type::Error,
+        hir::Type::ArraySlice(slice) => slice.ty,
+        hir::Type::ArrayStatic(array) => array.ty,
+        _ => {
+            emit.error(ErrorComp::error(
+                format!("cannot index value of type {}", type_format(hir, ty)),
+                hir.src(proc.origin(), index),
+                None,
+            ));
+            hir::Type::Error
+        }
     }
 }
 
@@ -823,7 +851,7 @@ fn typecheck_item<'hir>(
         ValueID::Enum(enum_id, variant_id) => {
             let enum_variant = hir::Expr::EnumVariant {
                 enum_id,
-                id: variant_id,
+                variant_id,
             };
             return TypeResult::new(hir::Type::Enum(enum_id), emit.arena.alloc(enum_variant));
         }
@@ -849,28 +877,26 @@ fn typecheck_item<'hir>(
     let mut target_ty = item_res.ty;
 
     for &name in field_names {
-        //@same code duplicated code as typecheck_field
-        let (field_ty, kind) = match target_ty {
-            hir::Type::Reference(ref_ty, mutt) => verify_type_field(hir, emit, proc, *ref_ty, name),
-            _ => verify_type_field(hir, emit, proc, target_ty, name),
-        };
+        let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_ty, name);
 
         match kind {
-            FieldExprKind::None => return TypeResult::new(hir::Type::Error, target),
-            FieldExprKind::Member(union_id, id) => {
+            FieldKind::Error => return TypeResult::new(hir::Type::Error, target),
+            FieldKind::Member(union_id, member_id) => {
                 target_ty = field_ty;
                 target = emit.arena.alloc(hir::Expr::UnionMember {
                     target,
                     union_id,
-                    id,
+                    member_id,
+                    deref,
                 });
             }
-            FieldExprKind::Field(struct_id, id) => {
+            FieldKind::Field(struct_id, field_id) => {
                 target_ty = field_ty;
                 target = emit.arena.alloc(hir::Expr::StructField {
                     target,
                     struct_id,
-                    id,
+                    field_id,
+                    deref,
                 });
             }
         }

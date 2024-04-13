@@ -195,6 +195,8 @@ pub struct Assign<'hir> {
 #[derive(Copy, Clone)]
 pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
 
+//@size was 24, 32 current @13.04.24
+// Expr::Index is 32 bytes
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum Expr<'hir> {
@@ -209,15 +211,15 @@ pub enum Expr<'hir> {
     If          { if_: &'hir If<'hir> },
     Block       { stmts: &'hir [Stmt<'hir>] },
     Match       { match_: &'hir Match<'hir> },
-    UnionMember { target: &'hir Expr<'hir>, union_id: UnionID, id: UnionMemberID },
-    StructField { target: &'hir Expr<'hir>, struct_id: StructID, id: StructFieldID },
-    Index       { target: &'hir Expr<'hir>, index: &'hir Expr<'hir> },
+    UnionMember { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
+    StructField { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
+    Index       { target: &'hir Expr<'hir>, index: &'hir Expr<'hir>, elem_ty: &'hir Type<'hir>, deref: bool },
     Cast        { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
     LocalVar    { local_id: LocalID },
     ParamVar    { param_id: ProcParamID },
     ConstVar    { const_id: ConstID },
     GlobalVar   { global_id: GlobalID },
-    EnumVariant { enum_id: EnumID, id: EnumVariantID },
+    EnumVariant { enum_id: EnumID, variant_id: EnumVariantID },
     ProcCall    { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     UnionInit   { union_id: UnionID, input: UnionMemberInit<'hir> },
     StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },

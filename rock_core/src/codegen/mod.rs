@@ -116,7 +116,7 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::Bool => self.context.bool_type().into(),
                 ast::BasicType::Char => self.context.i32_type().into(),
                 ast::BasicType::Rawptr => self.ptr_type().into(),
-                ast::BasicType::Void => panic!("codegen unexpected BasicType::Void"),
+                ast::BasicType::Void => self.context.void_type().into(),
                 ast::BasicType::Never => panic!("codegen unexpected BasicType::Never"),
             },
             hir::Type::Enum(id) => {
@@ -314,24 +314,34 @@ fn codegen_expr<'ctx>(
         Expr::UnionMember {
             target,
             union_id,
-            id,
-        } => Some(codegen_union_member(cg, target, union_id, id)),
+            member_id,
+            deref,
+        } => Some(codegen_union_member(cg, target, union_id, member_id, deref)),
         Expr::StructField {
             target,
             struct_id,
-            id,
+            field_id,
+            deref,
         } => Some(codegen_struct_field(
-            cg, proc_cg, expect_ptr, target, struct_id, id,
+            cg, proc_cg, expect_ptr, target, struct_id, field_id, deref,
         )),
-        Expr::Index { target, index } => {
-            Some(codegen_index(cg, proc_cg, expect_ptr, target, index))
-        }
+        Expr::Index {
+            target,
+            index,
+            elem_ty,
+            deref,
+        } => Some(codegen_index(
+            cg, proc_cg, expect_ptr, target, index, elem_ty, deref,
+        )),
         Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
         Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, global_id)),
-        Expr::EnumVariant { enum_id, id } => Some(codegen_enum_variant(cg, proc_cg, enum_id, id)),
+        Expr::EnumVariant {
+            enum_id,
+            variant_id,
+        } => Some(codegen_enum_variant(cg, proc_cg, enum_id, variant_id)),
         Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
         Expr::StructInit { struct_id, input } => Some(codegen_struct_init(
@@ -547,7 +557,8 @@ fn codegen_union_member<'ctx>(
     cg: &Codegen<'ctx>,
     target: &hir::Expr,
     union_id: hir::UnionID,
-    id: hir::UnionMemberID,
+    member_id: hir::UnionMemberID,
+    deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
     todo!("codegen `union member access` not supported")
 }
@@ -558,19 +569,27 @@ fn codegen_struct_field<'ctx>(
     expect_ptr: bool,
     target: &hir::Expr,
     struct_id: hir::StructID,
-    id: hir::StructFieldID,
+    field_id: hir::StructFieldID,
+    deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
-    let target_ptr = target.into_pointer_value();
+    let target_ptr = if deref {
+        cg.builder
+            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .unwrap()
+            .into_pointer_value()
+    } else {
+        target.into_pointer_value()
+    };
 
     let struct_ty = cg
         .type_into_basic(hir::Type::Struct(struct_id))
         .expect("non void type");
-    let field = cg.hir.struct_data(struct_id).field(id);
+    let field = cg.hir.struct_data(struct_id).field(field_id);
     let field_ty = cg.type_into_basic(field.ty).expect("value");
     let field_ptr = cg
         .builder
-        .build_struct_gep(struct_ty, target_ptr, id.index() as u32, "field_ptr")
+        .build_struct_gep(struct_ty, target_ptr, field_id.index() as u32, "field_ptr")
         .unwrap();
 
     if expect_ptr {
@@ -591,6 +610,8 @@ fn codegen_index<'ctx>(
     expect_ptr: bool,
     target: &hir::Expr,
     index: &hir::Expr,
+    elem_ty: &hir::Type,
+    deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
     todo!("codegen `union index` not supported")
 
@@ -685,12 +706,12 @@ fn codegen_enum_variant<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     enum_id: hir::EnumID,
-    id: hir::EnumVariantID,
+    variant_id: hir::EnumVariantID,
 ) -> values::BasicValueEnum<'ctx> {
     //@generating value for that variant each time
     // this might be fine when constants are folded to single constant value
     // (current impl only supports single literals) @08.04.24
-    let variant = cg.hir.enum_data(enum_id).variant(id);
+    let variant = cg.hir.enum_data(enum_id).variant(variant_id);
     codegen_expr(cg, proc_cg, false, variant.value.0).expect("value")
 }
 
@@ -799,7 +820,6 @@ fn codegen_array_repeat<'ctx>(
 fn codegen_unary<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-
     op: ast::UnOp,
     rhs: &hir::Expr,
 ) -> values::BasicValueEnum<'ctx> {
