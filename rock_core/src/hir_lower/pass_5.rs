@@ -207,6 +207,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::ArrayRepeat { expr, size } => {
             typecheck_array_repeat(hir, emit, proc, expect, expr, size)
         }
+        ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
         ast::ExprKind::Unary { op, rhs } => typecheck_unary(hir, emit, proc, op, rhs),
         ast::ExprKind::Binary { op, lhs, rhs } => typecheck_binary(hir, emit, proc, op, lhs, rhs),
     };
@@ -1219,6 +1220,24 @@ fn typecheck_array_repeat<'hir>(
     )
 }
 
+fn typecheck_address<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    mutt: ast::Mut,
+    rhs: &ast::Expr,
+) -> TypeResult<'hir> {
+    let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
+    //@not generating anything if type is invalid
+    if let hir::Type::Error = rhs_res.ty {
+        return TypeResult::new(hir::Type::Error, rhs_res.expr);
+    }
+    //@consider muttability and proper addressability semantics
+    let ref_ty = hir::Type::Reference(emit.arena.alloc(rhs_res.ty), mutt);
+    let address_expr = hir::Expr::Address { rhs: rhs_res.expr };
+    TypeResult::new(ref_ty, emit.arena.alloc(address_expr))
+}
+
 fn typecheck_unary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1268,11 +1287,6 @@ fn typecheck_unary<'hir>(
             hir::Type::Reference(ref_ty, ..) => *ref_ty,
             _ => hir::Type::Error,
         },
-        //@consider mutt and maybe dont allow & of constants, but value could be copied so technically it works
-        ast::UnOp::Addr(mutt) => {
-            let ref_ty = emit.arena.alloc(rhs_res.ty);
-            hir::Type::Reference(ref_ty, mutt)
-        }
     };
 
     if let hir::Type::Error = unary_ty {
@@ -1283,10 +1297,6 @@ fn typecheck_unary<'hir>(
             ast::UnOp::BitNot => "~",
             ast::UnOp::LogicNot => "!",
             ast::UnOp::Deref => "*",
-            ast::UnOp::Addr(mutt) => match mutt {
-                ast::Mut::Mutable => "&mut",
-                ast::Mut::Immutable => "&",
-            },
         };
         emit.error(ErrorComp::error(
             format!(
@@ -1368,7 +1378,7 @@ fn typecheck_binary<'hir>(
 
             (lhs_res.ty, lhs_res.expr, rhs_res.expr)
         }
-        ast::BinOp::CmpIsEq | ast::BinOp::CmpNotEq => {
+        ast::BinOp::IsEq | ast::BinOp::NotEq => {
             let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
@@ -1385,7 +1395,7 @@ fn typecheck_binary<'hir>(
 
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
         }
-        ast::BinOp::CmpLt | ast::BinOp::CmpLtEq | ast::BinOp::CmpGt | ast::BinOp::CmpGtEq => {
+        ast::BinOp::Less | ast::BinOp::LessEq | ast::BinOp::Greater | ast::BinOp::GreaterEq => {
             let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
@@ -1505,6 +1515,9 @@ fn typecheck_block<'hir>(
                 Some(typecheck_defer(hir, emit, proc, stmt.range.start(), *block))
             }
             ast::StmtKind::ForLoop(for_) => {
+                // @alloca in loops should be done outside of a loop @13.04.24
+                // to not cause memory issues and preserve the stack space?
+                // research the topic more
                 let kind = match for_.kind {
                     ast::ForKind::Loop => hir::ForKind::Loop,
                     ast::ForKind::While { cond } => todo!("for_loop while-like is not supported"),

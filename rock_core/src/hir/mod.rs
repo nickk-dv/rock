@@ -222,6 +222,7 @@ pub enum Expr<'hir> {
     StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
     ArrayInit   { array_init: &'hir ArrayInit<'hir> },
     ArrayRepeat { array_repeat: &'hir ArrayRepeat<'hir> },
+    Address     { rhs: &'hir Expr<'hir> },
     Unary       { op: ast::UnOp, rhs: &'hir Expr<'hir> },
     Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir>, signed_int: bool },
 }

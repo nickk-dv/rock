@@ -390,6 +390,7 @@ fn codegen_expr<'ctx>(
             Some(codegen_array_init(cg, proc_cg, expect_ptr, array_init))
         }
         Expr::ArrayRepeat { array_repeat } => Some(codegen_array_repeat(cg, proc_cg, array_repeat)),
+        Expr::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
         Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
         Expr::Binary {
             op,
@@ -897,16 +898,38 @@ fn codegen_array_repeat<'ctx>(
     todo!("codegen `array repeat` not supported")
 }
 
+fn codegen_address<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    rhs: &hir::Expr,
+) -> values::BasicValueEnum<'ctx> {
+    //@semantics arent stable @14.04.24
+    let rhs = codegen_expr(cg, proc_cg, true, rhs).expect("value");
+    if rhs.is_pointer_value() {
+        return rhs.into();
+    }
+    //@addr can sometimes be adress of a value, or of temporary @08.04.24
+    // constant values wont behave correctly: &5, 5 needs to be stack allocated
+    // this addr of temporaries need to be supported with explicit stack allocation
+    // (this might just work, since pointer values are still on the stack) eg: `&value.x.y`
+    //@multiple adresses get shrinked into 1, which isnt how type system threats this eg: `& &[1, 2, 3]`
+    //@temporary allocation and referencing should not be supported @14.04.24
+    // but things like array literals and struct or union literals should work
+    // since those result in allocation already being made
+    // and can be passed by reference seamlessly
+    let ty = rhs.get_type();
+    let ptr = cg.builder.build_alloca(ty, "temp_addr_val").unwrap();
+    cg.builder.build_store(ptr, rhs).unwrap();
+    ptr.into()
+}
+
 fn codegen_unary<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     op: ast::UnOp,
     rhs: &hir::Expr,
 ) -> values::BasicValueEnum<'ctx> {
-    //@semantics arent known, some values need to be allocated
-    // some remain as pointers
-    let expect_ptr = matches!(op, ast::UnOp::Addr(_));
-    let rhs = codegen_expr(cg, proc_cg, expect_ptr, rhs).expect("value");
+    let rhs = codegen_expr(cg, proc_cg, false, rhs).expect("value");
 
     match op {
         ast::UnOp::Neg => match rhs {
@@ -931,21 +954,6 @@ fn codegen_unary<'ctx>(
                 .build_load(pointee_ty, rhs.into_pointer_value(), "un_temp")
                 .unwrap(),
             */
-        }
-        //@addr can sometimes be adress of a value, or of temporary @08.04.24
-        // constant values wont behave correctly: &5, 5 needs to be stack allocated
-        // this addr of temporaries need to be supported with explicit stack allocation
-        // (this might just work, since pointer values are still on the stack) eg: `&value.x.y`
-
-        //@multiple adresses get shrinked into 1, which isnt how type system threats this eg: `& &[1, 2, 3]`
-        ast::UnOp::Addr(_) => {
-            if rhs.is_pointer_value() {
-                return rhs.into();
-            }
-            let ty = rhs.get_type();
-            let ptr = cg.builder.build_alloca(ty, "temp_addr_val").unwrap();
-            cg.builder.build_store(ptr, rhs).unwrap();
-            ptr.into()
         }
     }
 }
@@ -1073,7 +1081,7 @@ fn codegen_binary<'ctx>(
             )
             .unwrap()
             .into(),
-        ast::BinOp::CmpIsEq => match lhs {
+        ast::BinOp::IsEq => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
@@ -1096,7 +1104,7 @@ fn codegen_binary<'ctx>(
                 .into(),
             _ => panic!("codegen: binary `==` can only be applied to int, float"),
         },
-        ast::BinOp::CmpNotEq => match lhs {
+        ast::BinOp::NotEq => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
@@ -1119,7 +1127,7 @@ fn codegen_binary<'ctx>(
                 .into(),
             _ => panic!("codegen: binary `!=` can only be applied to int, float"),
         },
-        ast::BinOp::CmpLt => match lhs {
+        ast::BinOp::Less => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
@@ -1146,7 +1154,7 @@ fn codegen_binary<'ctx>(
                 .into(),
             _ => panic!("codegen: binary `<` can only be applied to int, float"),
         },
-        ast::BinOp::CmpLtEq => match lhs {
+        ast::BinOp::LessEq => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
@@ -1173,7 +1181,7 @@ fn codegen_binary<'ctx>(
                 .into(),
             _ => panic!("codegen: binary `<=` can only be applied to int, float"),
         },
-        ast::BinOp::CmpGt => match lhs {
+        ast::BinOp::Greater => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
@@ -1200,7 +1208,7 @@ fn codegen_binary<'ctx>(
                 .into(),
             _ => panic!("codegen: binary `>` can only be applied to int, float"),
         },
-        ast::BinOp::CmpGtEq => match lhs {
+        ast::BinOp::GreaterEq => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(

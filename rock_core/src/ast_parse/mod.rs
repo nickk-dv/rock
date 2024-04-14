@@ -90,6 +90,8 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         self.peek() == t
     }
 
+    //@would be good to remove the need for forward peeking @14.04.24
+    // used in path -> import -> struct_init parsing with `.{`
     pub fn at_next(&self, t: Token) -> bool {
         self.peek_next() == t
     }
@@ -98,6 +100,8 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         self.tokens.get_token(self.cursor)
     }
 
+    //@would be good to remove the need for forward peeking @14.04.24
+    // used in path -> import -> struct_init parsing with `.{`
     fn peek_next(&self) -> Token {
         self.tokens.get_token(self.cursor + 1)
     }

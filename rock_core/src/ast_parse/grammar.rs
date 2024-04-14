@@ -325,33 +325,34 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
     }
     match p.peek() {
         T![ident] => Ok(Type::Custom(path(p)?)),
-        T![*] => {
+        T![&] => {
             p.bump();
             let mutt = mutt(p);
             let ty = ty(p)?;
             let ty_ref = p.state.arena.alloc(ty);
             Ok(Type::Reference(ty_ref, mutt))
         }
-        T!['['] => match p.peek_next() {
-            T![mut] | T![']'] => {
-                p.bump();
-                let mutt = mutt(p);
-                p.expect(T![']'])?;
-                let ty = ty(p)?;
-                Ok(Type::ArraySlice(
-                    p.state.arena.alloc(ArraySlice { mutt, ty }),
-                ))
+        T!['['] => {
+            p.bump();
+            match p.peek() {
+                T![mut] | T![']'] => {
+                    let mutt = mutt(p);
+                    p.expect(T![']'])?;
+                    let ty = ty(p)?;
+                    Ok(Type::ArraySlice(
+                        p.state.arena.alloc(ArraySlice { mutt, ty }),
+                    ))
+                }
+                _ => {
+                    let size = ConstExpr(expr(p)?);
+                    p.expect(T![']'])?;
+                    let ty = ty(p)?;
+                    Ok(Type::ArrayStatic(
+                        p.state.arena.alloc(ArrayStatic { size, ty }),
+                    ))
+                }
             }
-            _ => {
-                p.bump();
-                let size = ConstExpr(expr(p)?);
-                p.expect(T![']'])?;
-                let ty = ty(p)?;
-                Ok(Type::ArrayStatic(
-                    p.state.arena.alloc(ArrayStatic { size, ty }),
-                ))
-            }
-        },
+        }
         _ => Err("expected type".into()),
     }
 }
@@ -519,6 +520,15 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             kind,
             range: TextRange::new(range_start, p.peek_range_end()),
         }));
+    } else if p.eat(T![&]) {
+        let kind = ExprKind::Address {
+            mutt: mutt(p),
+            rhs: primary_expr(p)?,
+        };
+        return Ok(p.state.arena.alloc(Expr {
+            kind,
+            range: TextRange::new(range_start, p.peek_range_end()),
+        }));
     }
 
     let kind = match p.peek() {
@@ -601,13 +611,13 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
         T![ident] => {
             let path = path(p)?;
 
-            match (p.peek(), p.peek_next()) {
-                (T!['('], ..) => {
+            match p.peek() {
+                T!['('] => {
                     let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
                     let proc_call = p.state.arena.alloc(ProcCall { path, input });
                     ExprKind::ProcCall { proc_call }
                 }
-                (T![.], T!['{']) => {
+                T![.] => {
                     p.bump();
                     p.expect(T!['{'])?;
                     let start = p.state.field_inits.start();
@@ -617,7 +627,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                             let name = name(p)?;
                             let expr = match p.peek() {
                                 T![:] => {
-                                    p.bump(); // ':'
+                                    p.bump();
                                     expr(p)?
                                 }
                                 T![,] | T!['}'] => {
@@ -792,12 +802,12 @@ impl BinOp {
             BinOp::Range | BinOp::RangeInc => 1,
             BinOp::LogicOr => 2,
             BinOp::LogicAnd => 3,
-            BinOp::CmpIsEq
-            | BinOp::CmpNotEq
-            | BinOp::CmpLt
-            | BinOp::CmpLtEq
-            | BinOp::CmpGt
-            | BinOp::CmpGtEq => 4,
+            BinOp::IsEq
+            | BinOp::NotEq
+            | BinOp::Less
+            | BinOp::LessEq
+            | BinOp::Greater
+            | BinOp::GreaterEq => 4,
             BinOp::Add | BinOp::Sub | BinOp::BitOr => 5,
             BinOp::Mul
             | BinOp::Div

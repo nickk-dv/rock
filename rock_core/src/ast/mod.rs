@@ -253,6 +253,7 @@ pub enum ExprKind<'ast> {
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, size: ConstExpr<'ast> },
+    Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Unary       { op: UnOp, rhs: &'ast Expr<'ast> },
     Binary      { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
@@ -328,7 +329,6 @@ pub enum UnOp {
     BitNot,
     LogicNot,
     Deref,
-    Addr(Mut),
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -343,12 +343,12 @@ pub enum BinOp {
     BitXor,
     BitShl,
     BitShr,
-    CmpIsEq,
-    CmpNotEq,
-    CmpLt,
-    CmpLtEq,
-    CmpGt,
-    CmpGtEq,
+    IsEq,
+    NotEq,
+    Less,
+    LessEq,
+    Greater,
+    GreaterEq,
     LogicAnd,
     LogicOr,
     Range,
