@@ -105,6 +105,7 @@ pub struct GlobalItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
+    pub package: Option<Name>,
     pub module: Name,
     pub alias: Option<Name>,
     pub symbols: &'ast [ImportSymbol],

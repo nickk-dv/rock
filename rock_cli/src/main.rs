@@ -7,6 +7,10 @@ mod cmd;
 mod error_format;
 
 pub fn main() {
+    //@debug for simple package management system coming up @14.04.24
+    let current_path = std::env::current_exe().expect("current exe");
+    eprintln!("rock running from: `{}`", current_path.to_string_lossy());
+
     let cmd_result = match args::parse_args() {
         Ok(cmd::Command::New(data)) => cmd::new::cmd(data).map_err(|error| vec![error]),
         Ok(cmd::Command::Check) => cmd::check::cmd(),

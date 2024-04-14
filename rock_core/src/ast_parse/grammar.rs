@@ -238,7 +238,8 @@ fn global_item<'ast>(
 
 fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportItem<'ast>, String> {
     p.bump();
-    let module = name(p)?;
+    let first = name(p)?;
+    let second = if p.eat(T![/]) { Some(name(p)?) } else { None };
     let alias = if p.eat(T![as]) { Some(name(p)?) } else { None };
 
     let symbols = if p.eat(T![.]) {
@@ -251,7 +252,8 @@ fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportIte
     };
 
     Ok(p.state.arena.alloc(ImportItem {
-        module,
+        package: second.map(|_| first),
+        module: second.unwrap_or(first),
         alias,
         symbols,
     }))
