@@ -41,39 +41,52 @@ fn typecheck_proc<'hir>(
     id: hir::ProcID,
 ) {
     let item = hir.proc_ast(id);
+    let data = hir.proc_data(id);
 
-    match item.block {
-        Some(block) => {
-            let data = hir.proc_data(id);
-            let mut proc = ProcScope::new(data);
+    //@also error on variadic in non foreign procedure @15.04.24
+    // since variadic arguments are not supported in language itself only ffi
+    // this prevents ability to break calling convention of rock procedures during codegen
 
-            let block_res =
-                typecheck_block(hir, emit, &mut proc, data.return_ty, block, false, None);
-
-            let locals = proc.finish();
-            let locals = emit.arena.alloc_slice(&locals);
-
-            let data = hir.proc_data_mut(id);
-            data.block = Some(block_res.expr);
-            data.locals = locals;
-        }
+    match item.attr_tail {
+        Some(attr) => match attr.kind {
+            ast::AttributeKind::Ccall => {
+                if item.block.is_some() {
+                    emit.error(ErrorComp::error(
+                        "expected procedure without a body, since tail attribute #[c_call] was used",
+                        hir.src(data.origin_id, attr.range),
+                        None,
+                    ))
+                }
+            }
+            //@this error is shared when more attributes are defined @15.04.24
+            ast::AttributeKind::Unknown => emit.error(ErrorComp::error(
+                "unknown attribute, did you mean to use #[c_call] here?",
+                hir.src(data.origin_id, attr.range),
+                None,
+            )),
+        },
         None => {
-            let data = hir.proc_data(id);
-            //@for now having a tail directive assumes that it must be a #[c_call]
-            // and this directory is only present with no block expression
-            let directive_tail = item
-                .directive_tail
-                .expect("directive expected with no proc block");
-
-            let directive_name = hir.name_str(directive_tail.name.id);
-            if directive_name != "c_call" {
+            if item.block.is_none() {
                 emit.error(ErrorComp::error(
-                    format!("expected a `c_call` directive, got `{}`", directive_name),
-                    hir.src(data.origin_id, directive_tail.name.range),
+                    "expected tail attribute #[c_call], since procedure has no body",
+                    hir.src(data.origin_id, data.name.range),
                     None,
                 ))
             }
         }
+    }
+
+    if let Some(block) = item.block {
+        let mut proc = ProcScope::new(data);
+
+        let block_res = typecheck_block(hir, emit, &mut proc, data.return_ty, block, false, None);
+
+        let locals = proc.finish();
+        let locals = emit.arena.alloc_slice(&locals);
+
+        let data = hir.proc_data_mut(id);
+        data.block = Some(block_res.expr);
+        data.locals = locals;
     }
 }
 

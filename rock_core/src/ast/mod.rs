@@ -35,7 +35,7 @@ pub struct ProcItem<'ast> {
     pub params: &'ast [ProcParam<'ast>],
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
-    pub directive_tail: Option<Directive>,
+    pub attr_tail: Option<Attribute>,
     pub block: Option<Block<'ast>>,
 }
 
@@ -136,8 +136,15 @@ pub struct Name {
 }
 
 #[derive(Copy, Clone)]
-pub struct Directive {
-    pub name: Name,
+pub struct Attribute {
+    pub kind: AttributeKind,
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub enum AttributeKind {
+    Ccall,
+    Unknown,
 }
 
 #[derive(Copy, Clone)]

@@ -106,12 +106,8 @@ fn proc_item<'ast>(
     let params = p.state.proc_params.take(start, &mut p.state.arena);
 
     let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
-    let directive_tail = directive(p)?;
-    let block = if directive_tail.is_none() {
-        Some(block(p)?)
-    } else {
-        None
-    };
+    let attr_tail = attribute(p)?;
+    let block = if p.at(T!['{']) { Some(block(p)?) } else { None };
 
     Ok(p.state.arena.alloc(ProcItem {
         vis,
@@ -119,7 +115,7 @@ fn proc_item<'ast>(
         params,
         is_variadic,
         return_ty,
-        directive_tail,
+        attr_tail,
         block,
     }))
 }
@@ -290,12 +286,23 @@ fn name(p: &mut Parser) -> Result<Name, String> {
     Ok(Name { range, id })
 }
 
-fn directive(p: &mut Parser) -> Result<Option<Directive>, String> {
+fn attribute(p: &mut Parser) -> Result<Option<Attribute>, String> {
+    let range_start = p.peek_range_start();
     if p.eat(T![#]) {
         p.expect(T!['['])?;
-        let name = name(p)?;
+
+        let range = p.peek_range();
+        p.expect(T![ident])?;
+        let string = &p.source[range.as_usize()];
+
+        let kind = match string {
+            "c_call" => AttributeKind::Ccall,
+            _ => AttributeKind::Unknown,
+        };
+
         p.expect(T![']'])?;
-        Ok(Some(Directive { name }))
+        let range = TextRange::new(range_start, p.peek_range_end());
+        Ok(Some(Attribute { kind, range }))
     } else {
         Ok(None)
     }
