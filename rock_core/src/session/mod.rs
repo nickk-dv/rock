@@ -1,16 +1,26 @@
 use crate::error::ErrorComp;
+use crate::package;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
 pub struct Session {
     cwd: PathBuf,
     files: Vec<File>,
-    package: PackageData,
+    package: package::PackageData,
 }
 
-pub struct PackageData {
-    pub name: String,
-    pub is_binary: bool,
+pub enum BuildKind {
+    Debug,
+    Release,
+}
+
+impl BuildKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BuildKind::Debug => "debug",
+            BuildKind::Release => "release",
+        }
+    }
 }
 
 pub struct File {
@@ -36,7 +46,7 @@ impl Session {
     pub fn file_ids(&self) -> impl Iterator<Item = FileID> {
         (0..self.files.len()).map(FileID::new)
     }
-    pub fn package(&self) -> &PackageData {
+    pub fn package(&self) -> &package::PackageData {
         &self.package
     }
 }
@@ -70,10 +80,14 @@ fn create_session() -> Result<Session, ErrorComp> {
         .ok_or_else(|| ErrorComp::message("current working directory name is not valid utf-8"))?
         .to_string();
 
-    let package = PackageData {
-        name,
-        is_binary: src_dir.join("main.rock").exists(),
+    //@temporary values for the manifest package data @16.04.24
+    let kind = if src_dir.join("main.rock").exists() {
+        package::PackageKind::Bin
+    } else {
+        package::PackageKind::Lib
     };
+    let package =
+        package::PackageData::new(name, None, kind, package::Semver::new(0, 1, 0), Vec::new());
 
     let read_dir = std::fs::read_dir(&src_dir).map_err(|io_error| {
         ErrorComp::message(format!(

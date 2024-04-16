@@ -70,6 +70,7 @@ impl<'ctx> Codegen<'ctx> {
             return;
         }
 
+        //@temp name of object file @16.04.24
         let path = Path::new("build/main.o");
         self.target_machine
             .write_to_file(&self.module, targets::FileType::Object, path)

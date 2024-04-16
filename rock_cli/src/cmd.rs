@@ -1,3 +1,6 @@
+use rock_core::package::PackageKind;
+use rock_core::session::BuildKind;
+
 pub enum Command {
     New(CommandNew),
     Check,
@@ -9,7 +12,7 @@ pub enum Command {
 
 pub struct CommandNew {
     pub name: String,
-    pub kind: ProjectKind,
+    pub kind: PackageKind,
     pub no_git: bool,
 }
 
@@ -22,18 +25,9 @@ pub struct CommandRun {
     pub args: Vec<String>,
 }
 
-pub enum ProjectKind {
-    Lib,
-    Bin,
-}
-
-pub enum BuildKind {
-    Debug,
-    Release,
-}
-
 pub mod new {
-    use super::{CommandNew, ProjectKind};
+    use super::CommandNew;
+    use super::PackageKind;
     use crate::ansi;
     use rock_core::error::ErrorComp;
     use std::path::PathBuf;
@@ -50,8 +44,8 @@ pub mod new {
         make_dir(&build_dir)?;
 
         match data.kind {
-            ProjectKind::Lib => make_file(&src_dir.join("lib.rock"), "")?,
-            ProjectKind::Bin => make_file(
+            PackageKind::Lib => make_file(&src_dir.join("lib.rock"), "")?,
+            PackageKind::Bin => make_file(
                 &src_dir.join("main.rock"),
                 "\nproc main() -> s32 {\n\treturn 0;\n}\n",
             )?,
@@ -64,14 +58,11 @@ pub mod new {
             git_init(&root_dir)?;
         }
 
-        let kind_name = match data.kind {
-            ProjectKind::Lib => "library",
-            ProjectKind::Bin => "executable",
-        };
         println!(
-            "  {}Created{} {kind_name} `{}` package",
+            "  {}Created{} {} `{}` package",
             ansi::GREEN_BOLD,
             ansi::CLEAR,
+            data.kind.as_str_full(),
             data.name,
         );
         Ok(())
@@ -228,31 +219,13 @@ r#"
 
 pub mod version {
     use crate::ansi;
-    use std::fmt;
 
     pub fn cmd() {
         println!(
-            "  {}Rock version:{} {VERSION}",
+            "  {}Rock version:{} {}",
             ansi::GREEN_BOLD,
-            ansi::CLEAR
+            ansi::CLEAR,
+            rock_core::VERSION,
         );
-    }
-
-    const VERSION: Version = Version {
-        major: 0,
-        minor: 1,
-        patch: 0,
-    };
-
-    struct Version {
-        major: u32,
-        minor: u32,
-        patch: u32,
-    }
-
-    impl fmt::Display for Version {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
-        }
     }
 }

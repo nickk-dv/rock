@@ -1,5 +1,7 @@
-use crate::cmd::{BuildKind, Command, CommandBuild, CommandNew, CommandRun, ProjectKind};
+use crate::cmd::{Command, CommandBuild, CommandNew, CommandRun};
 use rock_core::error::ErrorComp;
+use rock_core::package::PackageKind;
+use rock_core::session::BuildKind;
 
 pub fn parse_args() -> Result<Command, Vec<ErrorComp>> {
     let parser = Parser::new();
@@ -74,7 +76,7 @@ impl Parser {
         Ok(Command::New(CommandNew {
             name,
             //@not parsed
-            kind: ProjectKind::Bin,
+            kind: PackageKind::Bin,
             no_git: false,
         }))
     }
