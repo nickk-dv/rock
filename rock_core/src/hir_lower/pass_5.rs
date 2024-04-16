@@ -6,6 +6,16 @@ use crate::hir;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
 
+//@evaludate and design constant value system @16.04.24
+// constant dependency graphs and folding of constant values is a priority
+// the goal is to re-use as much of existing infra in constant expressions
+// current typechecking module needs to be split up to maintain a better separation
+// (eg. path resolve, is very much related to hir data maps, and proc scope only)
+
+//@is constant interning worth it? @16.04.24
+// potentially less memory usage to references same integer and float constants
+// array and struct de-dup might also be usefull
+// current string intern is already partially a constant interner
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 struct ConstID(u32);
 
@@ -452,10 +462,10 @@ fn typecheck_match<'hir>(
 fn verify_can_match(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
-        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => true,
-            _ => false,
-        },
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+        ),
         hir::Type::Enum(_) => true,
         _ => false,
     }
@@ -1127,7 +1137,7 @@ fn typecheck_struct_init<'hir>(
                         if idx + 1 != field_count {
                             message.push_str("`, ");
                         } else {
-                            message.push_str("`");
+                            message.push('`');
                         }
                     }
                 }
@@ -1457,10 +1467,10 @@ fn typecheck_binary<'hir>(
 fn check_type_allow_math_ops(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
-        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float => true,
-            _ => false,
-        },
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float
+        ),
         _ => false,
     }
 }
@@ -1468,10 +1478,10 @@ fn check_type_allow_math_ops(ty: hir::Type) -> bool {
 fn check_type_allow_remainder(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
-        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt => true,
-            _ => false,
-        },
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+        ),
         _ => false,
     }
 }
@@ -1479,15 +1489,15 @@ fn check_type_allow_remainder(ty: hir::Type) -> bool {
 fn check_type_allow_compare_eq(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
-        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
             BasicTypeKind::Bool
-            | BasicTypeKind::SignedInt
-            | BasicTypeKind::UnsignedInt
-            | BasicTypeKind::Float
-            | BasicTypeKind::Char
-            | BasicTypeKind::Rawptr => true,
-            _ => false,
-        },
+                | BasicTypeKind::SignedInt
+                | BasicTypeKind::UnsignedInt
+                | BasicTypeKind::Float
+                | BasicTypeKind::Char
+                | BasicTypeKind::Rawptr
+        ),
         _ => false,
     }
 }
@@ -1495,10 +1505,10 @@ fn check_type_allow_compare_eq(ty: hir::Type) -> bool {
 fn check_type_allow_compare_ord(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
-        hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float => true,
-            _ => false,
-        },
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float
+        ),
         _ => false,
     }
 }
@@ -1787,17 +1797,15 @@ fn typecheck_assign<'hir>(
 
     let expect = if matches!(lhs_res.ty, hir::Type::Error) {
         hir::Type::Error
+    } else if verify_is_expr_assignable(lhs_res.expr) {
+        lhs_res.ty
     } else {
-        if verify_is_expr_assignable(lhs_res.expr) {
-            lhs_res.ty
-        } else {
-            emit.error(ErrorComp::error(
-                "cannot assign to this expression",
-                hir.src(proc.origin(), assign.lhs.range),
-                None,
-            ));
-            hir::Type::Error
-        }
+        emit.error(ErrorComp::error(
+            "cannot assign to this expression",
+            hir.src(proc.origin(), assign.lhs.range),
+            None,
+        ));
+        hir::Type::Error
     };
 
     let rhs_res = typecheck_expr(hir, emit, proc, expect, assign.rhs);
@@ -1872,7 +1880,7 @@ fn path_resolve<'hir>(
 
     match hir.symbol_from_scope(emit, origin_id, module_id, name) {
         Some((kind, source)) => (ResolvedPath::Symbol(kind, source), 1),
-        None => return (ResolvedPath::None, 1),
+        None => (ResolvedPath::None, 1),
     }
 }
 
@@ -1930,7 +1938,7 @@ pub fn path_resolve_type<'hir>(
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
             emit.error(ErrorComp::error(
-                format!("unexpected path segment"),
+                "unexpected path segment",
                 hir.src(origin_id, range),
                 None,
             ));
@@ -1995,7 +2003,7 @@ fn path_resolve_proc<'hir>(
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
             emit.error(ErrorComp::error(
-                format!("unexpected path segment"),
+                "unexpected path segment",
                 hir.src(origin_id, range),
                 None,
             ));
@@ -2067,7 +2075,7 @@ fn path_resolve_structure<'hir>(
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
             emit.error(ErrorComp::error(
-                format!("unexpected path segment"),
+                "unexpected path segment",
                 hir.src(origin_id, range),
                 None,
             ));
@@ -2111,7 +2119,7 @@ fn path_resolve_value<'hir, 'ast>(
                             {
                                 let range = TextRange::new(first.range.start(), last.range.end());
                                 emit.error(ErrorComp::error(
-                                    format!("unexpected path segment"),
+                                    "unexpected path segment",
                                     hir.src(origin_id, range),
                                     None,
                                 ));

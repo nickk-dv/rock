@@ -8,7 +8,7 @@ use std::error::Error;
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     let (connection, io_threads) = Connection::stdio();
 
-    let server_capabilities = serde_json::to_value(&lsp_types::ServerCapabilities {
+    let server_capabilities = serde_json::to_value(lsp_types::ServerCapabilities {
         text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
             lsp_types::TextDocumentSyncKind::INCREMENTAL,
         )),
@@ -139,7 +139,7 @@ fn run_check(session: &Session) -> Result<(), Vec<ErrorComp>> {
 }
 
 fn url_from_path(path: &PathBuf) -> lsp_types::Url {
-    match lsp_types::Url::from_file_path(&path) {
+    match lsp_types::Url::from_file_path(path) {
         Ok(url) => url,
         Err(()) => panic!("failed to convert `{}` to url", path.to_string_lossy()),
     }

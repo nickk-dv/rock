@@ -60,7 +60,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         self.locals[id.index()]
     }
     pub fn get_param(&self, id: hir::ProcParamID) -> &hir::ProcParam<'hir> {
-        &self.data.param(id)
+        self.data.param(id)
     }
 
     pub fn push_block(&mut self, enter_loop: bool, enter_defer: Option<TextRange>) {
@@ -76,10 +76,10 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
             if let DeferStatus::Inside(..) = last.defer_status {
                 last.defer_status
             } else {
-                enter_defer.map_or(DeferStatus::None, |range| DeferStatus::Inside(range))
+                enter_defer.map_or(DeferStatus::None, DeferStatus::Inside)
             }
         } else {
-            enter_defer.map_or(DeferStatus::None, |range| DeferStatus::Inside(range))
+            enter_defer.map_or(DeferStatus::None, DeferStatus::Inside)
         };
 
         self.blocks.push(BlockData {

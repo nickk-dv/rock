@@ -1,7 +1,7 @@
 mod token_gen;
 pub mod token_list;
 
-use crate::ast::{AssignOp, BasicType, BinOp, Mut, UnOp};
+use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
 
 #[rustfmt::skip]
 token_gen::token_gen! {

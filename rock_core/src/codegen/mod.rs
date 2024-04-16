@@ -72,7 +72,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let path = Path::new("build/main.o");
         self.target_machine
-            .write_to_file(&self.module, targets::FileType::Object, &path)
+            .write_to_file(&self.module, targets::FileType::Object, path)
             .expect("llvm write object")
     }
 
@@ -81,7 +81,6 @@ impl<'ctx> Codegen<'ctx> {
     fn pointer_sized_int_type(&self) -> types::IntType<'ctx> {
         self.context
             .ptr_sized_int_type(&self.target_machine.get_target_data(), None)
-            .into()
     }
 
     //@this is a hack untill inkwell pr is merged https://github.com/TheDan64/inkwell/pull/468 @07.04.24
@@ -101,12 +100,10 @@ impl<'ctx> Codegen<'ctx> {
 
     fn slice_type(&self) -> types::StructType<'ctx> {
         //@this slice type could be generated once and referenced every time
-        self.context
-            .struct_type(
-                &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
-                false,
-            )
-            .into()
+        self.context.struct_type(
+            &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
+            false,
+        )
     }
 
     fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
@@ -115,7 +112,7 @@ impl<'ctx> Codegen<'ctx> {
         // store u32 since its expected size for static arrays @06.04.24
         let elem_ty = self.type_into_basic(array.ty).expect("non void type");
         if let hir::Expr::LitInt { val, .. } = *array.size.0 {
-            elem_ty.array_type(val as u32).into()
+            elem_ty.array_type(val as u32)
         } else {
             panic!("codegen: invalid array static size expression");
         }
@@ -177,7 +174,7 @@ pub fn codegen(hir: hir::Hir) {
     codegen_struct_types(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
-    codegen_function_bodies(&mut cg);
+    codegen_function_bodies(&cg);
     cg.build_object();
 }
 
@@ -202,11 +199,10 @@ fn codegen_struct_types(cg: &mut Codegen) {
         field_types.clear();
 
         for field in struct_data.fields {
-            //@unit types being ignored, they cannot be passed via inkwell api
-            // which might be correct with llvm spec, void only used as procedure return type
-            match cg.type_into_basic(field.ty) {
-                Some(ty) => field_types.push(ty),
-                None => {}
+            //@read proc param type_into_basic() info message @16.04.24
+            // (this field type isnt optional, else FieldIDs are invalidated)
+            if let Some(ty) = cg.type_into_basic(field.ty) {
+                field_types.push(ty);
             }
         }
 
@@ -238,11 +234,11 @@ fn codegen_function_values(cg: &mut Codegen) {
         param_types.clear();
 
         for param in proc_data.params {
-            //@unit types being ignored, they cannot be passed via inkwell api
-            // which might be correct with llvm spec, void only used as procedure return type
-            match cg.type_into_basic_metadata(param.ty) {
-                Some(ty) => param_types.push(ty),
-                None => {}
+            //@correct disallowing of void and never type would allow to rely on this being a valid value type,
+            // clean up llvm type apis after this guarantee is satisfied
+            // hir typechecker doesnt do that yet @16.04.24
+            if let Some(ty) = cg.type_into_basic_metadata(param.ty) {
+                param_types.push(ty);
             }
         }
 
@@ -260,21 +256,22 @@ fn codegen_function_values(cg: &mut Codegen) {
         //@temporary condition to determine if its entry point or not @06.04.24
 
         let name = cg.hir.intern.get_str(proc_data.name.id);
-        let name = if proc_data.block.is_none() {
-            name
-        } else if proc_data.origin_id == hir::ScopeID::new(0) && name == "main" {
+        let name = if proc_data.block.is_none()
+            || (proc_data.origin_id == hir::ScopeID::new(0) && name == "main")
+        {
             name
         } else {
             "rock_proc"
         };
 
-        //@specify linkage and name based on function kind and attributes #[c_call], etc.
-        let function = cg.module.add_function(&name, function_ty, None);
+        //@specify correct linkage kind (most things should be internal) @16.04.24
+        // and c_calls must be correctly linked (currently just leaving default behavior)
+        let function = cg.module.add_function(name, function_ty, None);
         cg.function_values.push(function);
     }
 }
 
-fn codegen_function_bodies<'ctx>(cg: &Codegen<'ctx>) {
+fn codegen_function_bodies(cg: &Codegen) {
     for (idx, proc_data) in cg.hir.procs.iter().enumerate() {
         if let Some(block) = proc_data.block {
             let function = cg.function_values[idx];
@@ -480,10 +477,10 @@ fn codegen_if<'ctx>(
     proc_cg: &mut ProcCodegen<'ctx>,
     if_: &hir::If,
 ) -> Option<values::BasicValueEnum<'ctx>> {
-    let mut then_block = cg.context.append_basic_block(proc_cg.function, "if_entry");
+    let then_block = cg.context.append_basic_block(proc_cg.function, "if_entry");
     let exit_block = cg.context.append_basic_block(proc_cg.function, "if_exit");
 
-    let mut else_block = if !if_.branches.is_empty() || if_.fallback.is_some() {
+    let else_block = if !if_.branches.is_empty() || if_.fallback.is_some() {
         cg.context.insert_basic_block_after(then_block, "if_else")
     } else {
         exit_block
@@ -499,7 +496,7 @@ fn codegen_if<'ctx>(
     //@are we still positioned at then_block?
     cg.builder.build_unconditional_branch(exit_block).unwrap();
 
-    for branch in if_.branches {
+    if if_.branches.len() > 0 {
         panic!("codegen: only if / if else is supported, no extra branches");
         //let cond = codegen_expr(cg, proc_cg, false, branch.cond).expect("value");
         //codegen_expr(cg, proc_cg, false, branch.block);
@@ -906,7 +903,7 @@ fn codegen_address<'ctx>(
     //@semantics arent stable @14.04.24
     let rhs = codegen_expr(cg, proc_cg, true, rhs).expect("value");
     if rhs.is_pointer_value() {
-        return rhs.into();
+        return rhs;
     }
     //@addr can sometimes be adress of a value, or of temporary @08.04.24
     // constant values wont behave correctly: &5, 5 needs to be stack allocated

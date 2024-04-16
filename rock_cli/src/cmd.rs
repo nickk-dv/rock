@@ -130,7 +130,7 @@ pub mod check {
     }
 
     fn check(session: &Session) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(&session)?;
+        let ast = ast_parse::parse(session)?;
         let _ = hir_lower::check(ast)?;
         Ok(())
     }
@@ -154,7 +154,7 @@ pub mod build {
     }
 
     fn build(session: &Session) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(&session)?;
+        let ast = ast_parse::parse(session)?;
         let hir = hir_lower::check(ast)?;
         codegen::codegen(hir);
         Ok(())
@@ -179,7 +179,7 @@ pub mod run {
     }
 
     fn run(session: &Session) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(&session)?;
+        let ast = ast_parse::parse(session)?;
         let hir = hir_lower::check(ast)?;
         codegen::codegen(hir);
         Ok(())

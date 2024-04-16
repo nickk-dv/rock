@@ -84,16 +84,15 @@ fn resolve_import<'hir, 'ast>(
             None => symbol.name,
         };
 
-        match hir.symbol_from_scope(emit, origin_id, target_id, item_name) {
-            Some((kind, source)) => match hir.scope_name_defined(origin_id, alias_name.id) {
+        if let Some((kind, source)) = hir.symbol_from_scope(emit, origin_id, target_id, item_name) {
+            match hir.scope_name_defined(origin_id, alias_name.id) {
                 Some(existing) => {
                     super::pass_1::name_already_defined_error(
                         hir, emit, origin_id, alias_name, existing,
                     );
                 }
                 None => hir.scope_add_imported(origin_id, alias_name, kind),
-            },
-            None => {}
+            }
         }
     }
 }
