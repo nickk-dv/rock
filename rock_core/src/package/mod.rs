@@ -1,23 +1,28 @@
-pub struct PackageData {
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Serialize, Deserialize)]
+pub struct Manifest {
+    package: PackageManifest,
+    build: Option<BuildManifest>,
+    dependencies: BTreeMap<String, Semver>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PackageManifest {
     name: String,
-    bin_name: Option<String>,
     kind: PackageKind,
     version: Semver,
-    dependencies: Vec<PackageDependency>,
 }
 
-pub struct PackageDependency {
-    name: String,
-    version: Semver,
-}
-
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum PackageKind {
+    #[serde(rename = "bin")]
     Bin,
+    #[serde(rename = "lib")]
     Lib,
 }
 
-/// https://semver.org/
 #[derive(Copy, Clone)]
 pub struct Semver {
     major: u32,
@@ -25,53 +30,54 @@ pub struct Semver {
     patch: u32,
 }
 
-impl PackageData {
-    pub fn new(
-        name: String,
-        bin_name: Option<String>,
-        kind: PackageKind,
-        version: Semver,
-        dependencies: Vec<PackageDependency>,
-    ) -> PackageData {
-        PackageData {
-            name,
-            bin_name,
-            kind,
-            version,
-            dependencies,
-        }
-    }
+#[derive(Serialize, Deserialize)]
+pub struct BuildManifest {
+    bin_name: String,
+}
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-    pub fn bin_name(&self) -> &str {
-        match self.bin_name.as_ref() {
-            Some(name) => name,
-            None => self.name(),
+impl std::str::FromStr for Semver {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('.').collect();
+        if parts.len() != 3 {
+            return Err("Invalid Semver format");
         }
-    }
-    pub fn kind(&self) -> PackageKind {
-        self.kind
-    }
-    pub fn version(&self) -> Semver {
-        self.version
-    }
-    pub fn dependencies(&self) -> &[PackageDependency] {
-        &self.dependencies
+
+        let major = parts[0]
+            .parse::<u32>()
+            .map_err(|_| "Invalid major version")?;
+        let minor = parts[1]
+            .parse::<u32>()
+            .map_err(|_| "Invalid minor version")?;
+        let patch = parts[2]
+            .parse::<u32>()
+            .map_err(|_| "Invalid patch version")?;
+
+        Ok(Semver {
+            major,
+            minor,
+            patch,
+        })
     }
 }
 
-impl PackageDependency {
-    pub fn new(name: String, version: Semver) -> PackageDependency {
-        PackageDependency { name, version }
+impl Serialize for Semver {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
+}
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-    pub fn version(&self) -> Semver {
-        self.version
+impl<'de> Deserialize<'de> for Semver {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse::<Semver>().map_err(serde::de::Error::custom)
     }
 }
 

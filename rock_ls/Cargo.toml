@@ -6,5 +6,5 @@ edition = "2021"
 rock_core = { path = "../rock_core" }
 lsp-server = "0.7.6"
 lsp-types = "0.95.1"
-serde = "1.0.197"
+serde = "1.0.198"
 serde_json = "1.0.114"

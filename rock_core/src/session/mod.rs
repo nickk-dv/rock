@@ -6,7 +6,7 @@ use std::path::PathBuf;
 pub struct Session {
     cwd: PathBuf,
     files: Vec<File>,
-    package: package::PackageData,
+    manifest: package::Manifest,
 }
 
 pub enum BuildKind {
@@ -46,8 +46,8 @@ impl Session {
     pub fn file_ids(&self) -> impl Iterator<Item = FileID> {
         (0..self.files.len()).map(FileID::new)
     }
-    pub fn package(&self) -> &package::PackageData {
-        &self.package
+    pub fn manifest(&self) -> &package::Manifest {
+        &self.manifest
     }
 }
 
@@ -71,23 +71,38 @@ fn create_session() -> Result<Session, ErrorComp> {
         ))
     })?;
 
-    let src_dir = cwd.join("src");
+    let manifest_path = cwd.join("Rock.toml");
+    if !manifest_path.exists() {
+        return Err(ErrorComp::message(format!(
+            "could not find manifest file `Rock.toml` in current directory\npath: `{}`",
+            manifest_path.to_string_lossy()
+        )));
+    }
 
+    let manifest = std::fs::read_to_string(&manifest_path).map_err(|io_error| {
+        ErrorComp::message(format!(
+            "failed to read file: `{}`, reason: {}",
+            manifest_path.to_string_lossy(),
+            io_error
+        ))
+    })?;
+    let manifest: package::Manifest = match basic_toml::from_str(&manifest) {
+        Ok(value) => value,
+        Err(error) => {
+            return Err(ErrorComp::message(format!(
+                "could not parse manifest file, reason:\n{}",
+                error
+            )));
+        }
+    };
+
+    let src_dir = cwd.join("src");
     let name = cwd
         .file_name()
         .ok_or_else(|| ErrorComp::message("failed to get current working directory name"))?
         .to_str()
         .ok_or_else(|| ErrorComp::message("current working directory name is not valid utf-8"))?
         .to_string();
-
-    //@temporary values for the manifest package data @16.04.24
-    let kind = if src_dir.join("main.rock").exists() {
-        package::PackageKind::Bin
-    } else {
-        package::PackageKind::Lib
-    };
-    let package =
-        package::PackageData::new(name, None, kind, package::Semver::new(0, 1, 0), Vec::new());
 
     let read_dir = std::fs::read_dir(&src_dir).map_err(|io_error| {
         ErrorComp::message(format!(
@@ -127,6 +142,6 @@ fn create_session() -> Result<Session, ErrorComp> {
     Ok(Session {
         cwd,
         files,
-        package,
+        manifest,
     })
 }
