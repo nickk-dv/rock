@@ -30,6 +30,8 @@ pub mod new {
     use super::PackageKind;
     use crate::ansi;
     use rock_core::error::ErrorComp;
+    use rock_core::package::{BuildManifest, Manifest, PackageManifest, Semver};
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     pub fn cmd(data: CommandNew) -> Result<(), ErrorComp> {
@@ -50,6 +52,24 @@ pub mod new {
                 "\nproc main() -> s32 {\n\treturn 0;\n}\n",
             )?,
         }
+
+        let manifest = Manifest {
+            package: PackageManifest {
+                name: data.name.clone(),
+                kind: data.kind,
+                version: Semver::new(0, 1, 0),
+            },
+            build: if matches!(data.kind, PackageKind::Bin) {
+                Some(BuildManifest {
+                    bin_name: data.name.clone(),
+                })
+            } else {
+                None
+            },
+            dependencies: BTreeMap::new(),
+        };
+        let manifest = manifest.serialize()?;
+        make_file(&root_dir.join("Rock.toml"), &manifest)?;
 
         if !data.no_git {
             make_file(&root_dir.join(".gitattributes"), "* text eol=lf\n")?;

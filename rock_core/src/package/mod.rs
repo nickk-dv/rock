@@ -1,18 +1,19 @@
+use crate::error::ErrorComp;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifest {
-    package: PackageManifest,
-    build: Option<BuildManifest>,
-    dependencies: BTreeMap<String, Semver>,
+    pub package: PackageManifest,
+    pub build: Option<BuildManifest>,
+    pub dependencies: BTreeMap<String, Semver>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PackageManifest {
-    name: String,
-    kind: PackageKind,
-    version: Semver,
+    pub name: String,
+    pub kind: PackageKind,
+    pub version: Semver,
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -32,7 +33,7 @@ pub struct Semver {
 
 #[derive(Serialize, Deserialize)]
 pub struct BuildManifest {
-    bin_name: String,
+    pub bin_name: String,
 }
 
 impl std::str::FromStr for Semver {
@@ -109,5 +110,16 @@ impl Semver {
 impl std::fmt::Display for Semver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+impl Manifest {
+    pub fn serialize(&self) -> Result<String, ErrorComp> {
+        basic_toml::to_string(self).map_err(|error| {
+            ErrorComp::message(format!(
+                "failed to serialize manifest file, reason:\n{}",
+                error
+            ))
+        })
     }
 }
