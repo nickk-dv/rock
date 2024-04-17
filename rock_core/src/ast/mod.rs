@@ -3,7 +3,6 @@ use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
 use crate::text::TextRange;
 
-#[derive(Default)]
 pub struct Ast<'ast, 'intern> {
     pub arena: Arena<'ast>,
     pub intern: InternPool<'intern>,
@@ -26,6 +25,17 @@ pub enum Item<'ast> {
     Const(&'ast ConstItem<'ast>),
     Global(&'ast GlobalItem<'ast>),
     Import(&'ast ImportItem<'ast>),
+}
+
+#[derive(Default)]
+pub struct ItemCount {
+    pub modules: u32,
+    pub procs: u32,
+    pub enums: u32,
+    pub unions: u32,
+    pub structs: u32,
+    pub consts: u32,
+    pub globals: u32,
 }
 
 #[derive(Copy, Clone)]

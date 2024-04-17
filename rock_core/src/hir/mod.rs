@@ -6,7 +6,7 @@ use crate::session::FileID;
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
     pub intern: InternPool<'hir>,
-    pub scopes: Vec<ScopeData>,
+    pub modules: Vec<ModuleData>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
     pub unions: Vec<UnionData<'hir>>,
@@ -31,7 +31,7 @@ macro_rules! hir_id_impl {
 }
 
 hir_id_impl!(ScopeID);
-pub struct ScopeData {
+pub struct ModuleData {
     pub file_id: FileID,
 }
 
@@ -333,19 +333,6 @@ impl<'hir> Hir<'hir> {
 }
 
 impl<'hir> ProcData<'hir> {
-    pub fn default_from_ast(item: &ast::ProcItem, origin_id: ScopeID) -> ProcData<'hir> {
-        ProcData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            params: &[],
-            is_variadic: item.is_variadic,
-            return_ty: Type::Error,
-            block: None,
-            locals: &[],
-        }
-    }
-
     pub fn param(&self, id: ProcParamID) -> &'hir ProcParam<'hir> {
         &self.params[id.index()]
     }
@@ -360,16 +347,6 @@ impl<'hir> ProcData<'hir> {
 }
 
 impl<'hir> EnumData<'hir> {
-    pub fn default_from_ast(item: &ast::EnumItem, origin_id: ScopeID) -> EnumData<'hir> {
-        EnumData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            basic: item.basic,
-            variants: &[],
-        }
-    }
-
     pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant<'hir> {
         &self.variants[id.index()]
     }
@@ -384,15 +361,6 @@ impl<'hir> EnumData<'hir> {
 }
 
 impl<'hir> UnionData<'hir> {
-    pub fn default_from_ast(item: &ast::UnionItem, origin_id: ScopeID) -> UnionData<'hir> {
-        UnionData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            members: &[],
-        }
-    }
-
     pub fn member(&self, id: UnionMemberID) -> &'hir UnionMember<'hir> {
         &self.members[id.index()]
     }
@@ -407,15 +375,6 @@ impl<'hir> UnionData<'hir> {
 }
 
 impl<'hir> StructData<'hir> {
-    pub fn default_from_ast(item: &ast::StructItem, origin_id: ScopeID) -> StructData<'hir> {
-        StructData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            fields: &[],
-        }
-    }
-
     pub fn field(&self, id: StructFieldID) -> &'hir StructField<'hir> {
         &self.fields[id.index()]
     }

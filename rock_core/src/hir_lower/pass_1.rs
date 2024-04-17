@@ -1,4 +1,4 @@
-use super::hir_build::{HirData, HirEmit};
+use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
@@ -21,25 +21,61 @@ fn add_module_scope<'hir>(
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
-                None => hir.add_proc(origin_id, item),
+                None => {
+                    let id = hir.registry_mut().add_proc(item, origin_id);
+                    hir.add_symbol(
+                        origin_id,
+                        item.name.id,
+                        Symbol::Defined {
+                            kind: SymbolKind::Proc(id),
+                        },
+                    );
+                }
             },
             ast::Item::Enum(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
-                None => hir.add_enum(origin_id, item),
+                None => {
+                    let id = hir.registry_mut().add_enum(item, origin_id);
+                    hir.add_symbol(
+                        origin_id,
+                        item.name.id,
+                        Symbol::Defined {
+                            kind: SymbolKind::Enum(id),
+                        },
+                    );
+                }
             },
             ast::Item::Union(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
-                None => hir.add_union(origin_id, item),
+                None => {
+                    let id = hir.registry_mut().add_union(item, origin_id);
+                    hir.add_symbol(
+                        origin_id,
+                        item.name.id,
+                        Symbol::Defined {
+                            kind: SymbolKind::Union(id),
+                        },
+                    );
+                }
             },
             ast::Item::Struct(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing)
                 }
-                None => hir.add_struct(origin_id, item),
+                None => {
+                    let id = hir.registry_mut().add_struct(item, origin_id);
+                    hir.add_symbol(
+                        origin_id,
+                        item.name.id,
+                        Symbol::Defined {
+                            kind: SymbolKind::Struct(id),
+                        },
+                    );
+                }
             },
             ast::Item::Const(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
@@ -54,7 +90,14 @@ fn add_module_scope<'hir>(
                         ty: hir::Type::Error,
                         value,
                     };
-                    hir.add_const(origin_id, item, data);
+                    let id = hir.registry_mut().add_const(item, data);
+                    hir.add_symbol(
+                        origin_id,
+                        item.name.id,
+                        Symbol::Defined {
+                            kind: SymbolKind::Const(id),
+                        },
+                    );
                 }
             },
             ast::Item::Global(item) => match hir.scope_name_defined(origin_id, item.name.id) {
@@ -70,7 +113,14 @@ fn add_module_scope<'hir>(
                         ty: hir::Type::Error,
                         value,
                     };
-                    hir.add_global(origin_id, item, data);
+                    let id = hir.registry_mut().add_global(item, data);
+                    hir.add_symbol(
+                        origin_id,
+                        item.name.id,
+                        Symbol::Defined {
+                            kind: SymbolKind::Global(id),
+                        },
+                    );
                 }
             },
             ast::Item::Import(..) => {}

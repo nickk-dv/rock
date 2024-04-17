@@ -40,7 +40,7 @@ struct ConstStruct<'hir> {
 }
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    for id in hir.proc_ids() {
+    for id in hir.registry().proc_ids() {
         typecheck_proc(hir, emit, id)
     }
 }
@@ -50,8 +50,8 @@ fn typecheck_proc<'hir>(
     emit: &mut HirEmit<'hir>,
     id: hir::ProcID,
 ) {
-    let item = hir.proc_ast(id);
-    let data = hir.proc_data(id);
+    let item = hir.registry().proc_item(id);
+    let data = hir.registry().proc_data(id);
 
     //@also error on variadic in non foreign procedure @15.04.24
     // since variadic arguments are not supported in language itself only ffi
@@ -94,7 +94,7 @@ fn typecheck_proc<'hir>(
         let locals = proc.finish();
         let locals = emit.arena.alloc_slice(&locals);
 
-        let data = hir.proc_data_mut(id);
+        let data = hir.registry_mut().proc_data_mut(id);
         data.block = Some(block_res.expr);
         data.locals = locals;
     }
@@ -145,9 +145,9 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
             BasicType::Void => "void".into(),
             BasicType::Never => "never".into(),
         },
-        hir::Type::Enum(id) => hir.name_str(hir.enum_data(id).name.id).into(),
-        hir::Type::Union(id) => hir.name_str(hir.union_data(id).name.id).into(),
-        hir::Type::Struct(id) => hir.name_str(hir.struct_data(id).name.id).into(),
+        hir::Type::Enum(id) => hir.name_str(hir.registry().enum_data(id).name.id).into(),
+        hir::Type::Union(id) => hir.name_str(hir.registry().union_data(id).name.id).into(),
+        hir::Type::Struct(id) => hir.name_str(hir.registry().struct_data(id).name.id).into(),
         hir::Type::Reference(ref_ty, mutt) => {
             let mut_str = match mutt {
                 ast::Mut::Mutable => "mut ",
@@ -536,7 +536,7 @@ fn type_get_field<'hir>(
     match ty {
         hir::Type::Error => (hir::Type::Error, FieldKind::Error),
         hir::Type::Union(id) => {
-            let data = hir.union_data(id);
+            let data = hir.registry().union_data(id);
             if let Some((member_id, member)) = data.find_member(name.id) {
                 (member.ty, FieldKind::Member(id, member_id))
             } else {
@@ -553,7 +553,7 @@ fn type_get_field<'hir>(
             }
         }
         hir::Type::Struct(id) => {
-            let data = hir.struct_data(id);
+            let data = hir.registry().struct_data(id);
             if let Some((field_id, field)) = data.find_field(name.id) {
                 (field.ty, FieldKind::Field(id, field_id))
             } else {
@@ -901,11 +901,11 @@ fn typecheck_item<'hir>(
             return TypeResult::new(hir::Type::Enum(enum_id), emit.arena.alloc(enum_variant));
         }
         ValueID::Const(id) => TypeResult::new(
-            hir.const_data(id).ty,
+            hir.registry().const_data(id).ty,
             emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
         ),
         ValueID::Global(id) => TypeResult::new(
-            hir.global_data(id).ty,
+            hir.registry().global_data(id).ty,
             emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
         ),
         ValueID::Local(id) => TypeResult::new(
@@ -966,7 +966,7 @@ fn typecheck_proc_call<'hir>(
             return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
         }
     };
-    let data = hir.proc_data(proc_id);
+    let data = hir.registry().proc_data(proc_id);
     let input_count = proc_call.input.len();
     let expected_count = data.params.len();
 
@@ -1021,7 +1021,7 @@ fn typecheck_struct_init<'hir>(
             TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
         }
         StructureID::Union(union_id) => {
-            let data = hir.union_data(union_id);
+            let data = hir.registry().union_data(union_id);
 
             if let Some((first, other)) = struct_init.input.split_first() {
                 let type_res = if let Some((member_id, member)) = data.find_member(first.name.id) {
@@ -1077,7 +1077,7 @@ fn typecheck_struct_init<'hir>(
             }
         }
         StructureID::Struct(struct_id) => {
-            let data = hir.struct_data(struct_id);
+            let data = hir.registry().struct_data(struct_id);
             let field_count = data.fields.len();
 
             enum FieldStatus {
@@ -2112,7 +2112,7 @@ fn path_resolve_value<'hir, 'ast>(
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Enum(id) => {
                 if let Some(variant_name) = path.names.get(name_idx + 1) {
-                    let enum_data = hir.enum_data(id);
+                    let enum_data = hir.registry().enum_data(id);
                     if let Some((variant_id, ..)) = enum_data.find_variant(variant_name.id) {
                         if let Some(remaining) = path.names.get(name_idx + 2..) {
                             if let (Some(first), Some(last)) = (remaining.first(), remaining.last())

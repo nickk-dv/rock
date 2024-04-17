@@ -1,4 +1,4 @@
-use super::hir_build::{HirData, HirEmit, SymbolKind};
+use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
@@ -64,8 +64,15 @@ fn resolve_import<'hir, 'ast>(
         Some(existing) => {
             super::pass_1::name_already_defined_error(hir, emit, origin_id, alias_name, existing);
             return;
-        }
-        None => hir.scope_add_imported(origin_id, alias_name, SymbolKind::Module(target_id)),
+        } //None => hir.scope_add_imported(origin_id, alias_name, SymbolKind::Module(target_id)),
+        None => hir.add_symbol(
+            origin_id,
+            alias_name.id,
+            Symbol::Imported {
+                kind: SymbolKind::Module(target_id),
+                import_range: alias_name.range,
+            },
+        ),
     }
 
     for symbol in import.symbols {
@@ -91,7 +98,14 @@ fn resolve_import<'hir, 'ast>(
                         hir, emit, origin_id, alias_name, existing,
                     );
                 }
-                None => hir.scope_add_imported(origin_id, alias_name, kind),
+                None => hir.add_symbol(
+                    origin_id,
+                    alias_name.id,
+                    Symbol::Imported {
+                        kind,
+                        import_range: alias_name.range,
+                    },
+                ),
             }
         }
     }
