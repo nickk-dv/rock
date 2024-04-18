@@ -1,9 +1,11 @@
-use crate::cmd::{Command, CommandBuild, CommandNew, CommandRun};
+use super::format::CommandFormat;
+use super::{Command, CommandBuild, CommandNew, CommandRun};
 use rock_core::error::ErrorComp;
 use rock_core::package::PackageKind;
 use rock_core::session::BuildKind;
 
-pub fn parse_args() -> Result<Command, Vec<ErrorComp>> {
+//@this is temporary parser, use format @18.04.24
+pub fn parse_args(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
     let parser = Parser::new();
     parser.parse()
 }

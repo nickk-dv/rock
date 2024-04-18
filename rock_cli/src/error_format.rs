@@ -5,7 +5,7 @@ use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
 
-pub fn print_errors(session: Option<&Session>, errors: Vec<ErrorComp>) {
+pub fn print_errors(session: Option<&Session>, errors: &[ErrorComp]) {
     let handle = &mut BufWriter::new(std::io::stderr());
     for error in errors.iter() {
         if error.get_severity() == ErrorSeverity::Warning {
@@ -69,7 +69,7 @@ fn print_error(session: Option<&Session>, error: &ErrorComp, handle: &mut BufWri
         severity_color(severiry),
         severity_name(severiry),
         ansi::WHITE_BOLD,
-        ansi::CLEAR
+        ansi::RESET
     );
 
     let (main, info) = match error.get_data() {
@@ -102,7 +102,7 @@ fn print_error(session: Option<&Session>, error: &ErrorComp, handle: &mut BufWri
 }
 
 fn print_line_bar(handle: &mut BufWriter<Stderr>, line_pad: &str) {
-    let _ = writeln!(handle, "{line_pad} {}│{}", ansi::CYAN, ansi::CLEAR);
+    let _ = writeln!(handle, "{line_pad} {}│{}", ansi::CYAN, ansi::RESET);
 }
 
 fn print_file_link(handle: &mut BufWriter<Stderr>, line_pad: &str, fmt: &ContextFmt, last: bool) {
@@ -113,7 +113,7 @@ fn print_file_link(handle: &mut BufWriter<Stderr>, line_pad: &str, fmt: &Context
         ansi::CYAN,
         fmt.path.to_string_lossy(),
         fmt.location,
-        ansi::CLEAR
+        ansi::RESET
     );
     if !last {
         print_line_bar(handle, line_pad);
@@ -148,10 +148,10 @@ fn print_context(
 {line_pad} │ {marker_pad}{}{marker} {message}{}"#,
         ansi::CYAN,
         fmt.line_num,
-        ansi::CLEAR,
+        ansi::RESET,
         ansi::CYAN,
         severity_color(severity),
-        ansi::CLEAR,
+        ansi::RESET,
     );
 }
 

@@ -1,4 +1,4 @@
-pub const CLEAR: &str = "\x1B[0m";
+pub const RESET: &str = "\x1B[0m";
 pub const BLACK: &str = "\x1B[0;30m";
 pub const BLACK_BOLD: &str = "\x1B[1;30m";
 pub const RED: &str = "\x1B[0;31m";
