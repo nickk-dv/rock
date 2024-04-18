@@ -1,4 +1,5 @@
 use crate::error::ErrorComp;
+use crate::fs_env;
 use crate::package;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
@@ -64,67 +65,43 @@ impl FileID {
 // both in errors here, and diagnostic cli formats
 // e.g: src/main.rock or ./src/main.rock
 fn create_session() -> Result<Session, ErrorComp> {
-    let cwd = std::env::current_dir().map_err(|io_error| {
-        ErrorComp::message(format!(
-            "failed to get current working directory, reason: {}",
-            io_error
-        ))
-    })?;
+    let cwd = fs_env::dir_get_current()?;
 
     let manifest_path = cwd.join("Rock.toml");
     if !manifest_path.exists() {
         return Err(ErrorComp::message(format!(
-            "could not find manifest file `Rock.toml` in current directory\npath: `{}`",
+            "could not find manifest `Rock.toml` in current directory\npath: `{}`",
             manifest_path.to_string_lossy()
         )));
     }
+    let manifest = fs_env::file_read_to_string(&manifest_path)?;
 
-    let manifest = std::fs::read_to_string(&manifest_path).map_err(|io_error| {
-        ErrorComp::message(format!(
-            "failed to read file: `{}`, reason: {}",
-            manifest_path.to_string_lossy(),
-            io_error
-        ))
-    })?;
     let manifest: package::Manifest = match basic_toml::from_str(&manifest) {
         Ok(value) => value,
         Err(error) => {
             return Err(ErrorComp::message(format!(
-                "could not parse manifest file, reason:\n{}",
+                "could not parse manifest `{}`\nreason: {}",
+                manifest_path.to_string_lossy(),
                 error
             )));
         }
     };
 
     let src_dir = cwd.join("src");
-    let name = cwd
-        .file_name()
-        .ok_or_else(|| ErrorComp::message("failed to get current working directory name"))?
-        .to_str()
-        .ok_or_else(|| ErrorComp::message("current working directory name is not valid utf-8"))?
-        .to_string();
-
-    let read_dir = std::fs::read_dir(&src_dir).map_err(|io_error| {
-        ErrorComp::message(format!(
-            "failed to read directory: `{}`, reason: {}",
-            src_dir.to_string_lossy(),
-            io_error
-        ))
-    })?;
+    if !src_dir.exists() {
+        return Err(ErrorComp::message(format!(
+            "could not find `src` directory in current directory\npath: `{}`",
+            src_dir.to_string_lossy()
+        )));
+    }
+    let src_dir = fs_env::dir_read(&src_dir)?;
 
     let mut files = Vec::new();
-
-    for entry in read_dir.flatten() {
+    for entry in src_dir.flatten() {
         let path = entry.path();
 
         if path.is_file() && path.extension().unwrap_or_default() == "rock" {
-            let source = std::fs::read_to_string(&path).map_err(|io_error| {
-                ErrorComp::message(format!(
-                    "failed to read file: `{}`, reason: {}",
-                    path.to_string_lossy(),
-                    io_error
-                ))
-            })?;
+            let source = fs_env::file_read_to_string(&path)?;
             let line_ranges = text::find_line_ranges(&source);
             files.push(File {
                 path,

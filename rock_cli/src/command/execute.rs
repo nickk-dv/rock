@@ -4,6 +4,7 @@ use crate::error_format;
 use rock_core::ast_parse;
 use rock_core::codegen;
 use rock_core::error::ErrorComp;
+use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package::{BuildManifest, Manifest, PackageKind, PackageManifest, Semver};
 use rock_core::session::Session;
@@ -114,19 +115,20 @@ r#"
 }
 
 pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = fs_env::dir_get_current()?;
     let root_dir = cwd.join(&data.name);
     let src_dir = root_dir.join("src");
     let build_dir = root_dir.join("build");
 
-    check_name(&data.name)?;
-    make_dir(&root_dir)?;
-    make_dir(&src_dir)?;
-    make_dir(&build_dir)?;
+    package_name_check(&data.name)?;
+    fs_env::dir_create(&root_dir)?;
+    fs_env::dir_create(&src_dir)?;
+    fs_env::dir_create(&build_dir)?;
 
+    //@print project name in both when core library imports are working @18.04.24
     match data.kind {
-        PackageKind::Lib => make_file(&src_dir.join("lib.rock"), "")?,
-        PackageKind::Bin => make_file(
+        PackageKind::Lib => fs_env::file_create_or_rewrite(&src_dir.join("lib.rock"), "")?,
+        PackageKind::Bin => fs_env::file_create_or_rewrite(
             &src_dir.join("main.rock"),
             "\nproc main() -> s32 {\n\treturn 0;\n}\n",
         )?,
@@ -151,13 +153,23 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
         dependencies,
     };
     let manifest = manifest.serialize()?;
-    make_file(&root_dir.join("Rock.toml"), &manifest)?;
+    fs_env::file_create_or_rewrite(&root_dir.join("Rock.toml"), &manifest)?;
 
     if !data.no_git {
-        make_file(&root_dir.join(".gitattributes"), "* text eol=lf\n")?;
-        make_file(&root_dir.join(".gitignore"), "build/\n")?;
-        make_file(&root_dir.join("README.md"), &format!("# {}\n", data.name))?;
-        git_init(&root_dir)?;
+        fs_env::file_create_or_rewrite(&root_dir.join(".gitignore"), "build/\n")?;
+        fs_env::file_create_or_rewrite(&root_dir.join("README.md"), &format!("# {}\n", data.name))?;
+        fs_env::dir_set_current(&root_dir)?;
+        std::process::Command::new("git")
+            .arg("init")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|io_error| {
+                ErrorComp::message(format!(
+                    "failed to initialize git repository\nreason:{}",
+                    io_error
+                ))
+            })?;
     }
 
     let g = ansi::GREEN_BOLD;
@@ -167,41 +179,26 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
         data.kind.as_str_full(),
         data.name,
     );
-    return Ok(());
+    Ok(())
+}
 
-    fn check_name(name: &str) -> Result<(), ErrorComp> {
-        if !name
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-        {
-            return Err(ErrorComp::message("package name must consist only of alphanumeric characters, underscores `_` or hyphens `-`"));
+fn package_name_check(name: &str) -> Result<(), ErrorComp> {
+    let mut chars = name.chars();
+    if let Some(c) = chars.next() {
+        if !(c == '_' || c.is_alphabetic()) {
+            return Err(ErrorComp::message(format!(
+                "package name must be a valid identifier, first `{}` is not allowed",
+                c
+            )));
         }
-        Ok(())
     }
-
-    fn make_dir(path: &PathBuf) -> Result<(), ErrorComp> {
-        std::fs::create_dir(path).map_err(|io_error| {
-            ErrorComp::message(format!("failed to create directory: {}", io_error))
-        })
+    for c in chars {
+        if !(c == '_' || c.is_alphabetic() || c.is_ascii_digit()) {
+            return Err(ErrorComp::message(format!(
+                "package name must be a valid identifier, inner `{}` is not allowed",
+                c
+            )));
+        }
     }
-
-    fn make_file(path: &PathBuf, text: &str) -> Result<(), ErrorComp> {
-        std::fs::write(path, text)
-            .map_err(|io_error| ErrorComp::message(format!("failed to create file: {}", io_error)))
-    }
-
-    fn git_init(package_dir: &PathBuf) -> Result<(), ErrorComp> {
-        std::env::set_current_dir(package_dir).map_err(|io_error| {
-            ErrorComp::message(format!("failed to set working directory: {}", io_error))
-        })?;
-        std::process::Command::new("git")
-            .arg("init")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map_err(|io_error| {
-                ErrorComp::message(format!("failed to initialize git repository: {}", io_error))
-            })?;
-        Ok(())
-    }
+    Ok(())
 }

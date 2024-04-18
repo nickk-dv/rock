@@ -6,6 +6,7 @@ mod ast;
 pub mod ast_parse;
 pub mod codegen;
 pub mod error;
+pub mod fs_env;
 mod hir;
 pub mod hir_lower;
 mod intern;

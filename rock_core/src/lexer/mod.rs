@@ -356,6 +356,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    /// note: update `rock_cli::command::execute::package_name_check_identifier()` if this is changed
     fn lex_ident(&mut self) -> (Token, TextRange) {
         while let Some(c) = self.peek() {
             if c == '_' || c.is_ascii_digit() || c.is_alphabetic() {
