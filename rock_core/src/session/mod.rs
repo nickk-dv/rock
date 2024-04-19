@@ -10,6 +10,7 @@ pub struct Session {
     manifest: package::Manifest,
 }
 
+#[derive(Copy, Clone)]
 pub enum BuildKind {
     Debug,
     Release,
@@ -74,18 +75,15 @@ fn create_session() -> Result<Session, ErrorComp> {
             manifest_path.to_string_lossy()
         )));
     }
-    let manifest = fs_env::file_read_to_string(&manifest_path)?;
 
-    let manifest: package::Manifest = match basic_toml::from_str(&manifest) {
-        Ok(value) => value,
-        Err(error) => {
-            return Err(ErrorComp::message(format!(
-                "could not parse manifest `{}`\nreason: {}",
-                manifest_path.to_string_lossy(),
-                error
-            )));
-        }
-    };
+    let manifest = fs_env::file_read_to_string(&manifest_path)?;
+    let manifest: package::Manifest = basic_toml::from_str(&manifest).map_err(|error| {
+        ErrorComp::message(format!(
+            "could not parse manifest `{}`\nreason: {}",
+            manifest_path.to_string_lossy(),
+            error
+        ))
+    })?;
 
     let src_dir = cwd.join("src");
     if !src_dir.exists() {

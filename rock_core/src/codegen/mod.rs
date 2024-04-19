@@ -11,6 +11,12 @@ use inkwell::types::BasicType;
 use inkwell::values;
 use std::path::Path;
 
+use crate::session::BuildKind;
+pub enum BuildConfig {
+    Build(BuildKind),
+    Run(BuildKind, Vec<String>),
+}
+
 struct Codegen<'ctx> {
     context: &'ctx context::Context,
     module: module::Module<'ctx>,
@@ -60,21 +66,47 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    //@debug printing module,
-    // handle build directory missing properly:
-    // currently its created by LLVM when requesting the file output
-    fn build_object(self) {
+    // @handle build directories creation properly, @19.04.24
+    // currently they may be created by LLVM when requesting the file output
+    // but not for nested ones
+    fn build_object(self, config: BuildConfig) {
         self.module.print_to_stderr();
         if let Err(error) = self.module.verify() {
             eprintln!("codegen module verify failed: \n{}", error);
             return;
         }
 
-        //@temp name of object file @16.04.24
-        let path = Path::new("build/main.o");
+        //@delete object file after comp is done? @19.04.24
+        // current out paths are temporary
+        let path = match config {
+            BuildConfig::Build(kind) => match kind {
+                BuildKind::Debug => Path::new("build/build.o"),
+                BuildKind::Release => Path::new("build/build.o"),
+            },
+            BuildConfig::Run(kind, _) => match kind {
+                BuildKind::Debug => Path::new("build/build.o"),
+                BuildKind::Release => Path::new("build/build.o"),
+            },
+        };
+
         self.target_machine
             .write_to_file(&self.module, targets::FileType::Object, path)
-            .expect("llvm write object")
+            .expect("llvm write object");
+
+        let status = std::process::Command::new("clang")
+            .arg(path.to_str().expect("utf8 build object path"))
+            .arg("-o")
+            .arg("main.exe")
+            .status()
+            .expect("clang link");
+
+        if let BuildConfig::Run(_, args) = config {
+            //@doesnt work
+            let status = std::process::Command::new("main")
+                .args(args)
+                .status()
+                .expect("executable run");
+        }
     }
 
     //@perf, could be cached once to avoid llvm calls and extra checks
@@ -169,14 +201,14 @@ impl<'ctx> Codegen<'ctx> {
     }
 }
 
-pub fn codegen(hir: hir::Hir) {
+pub fn codegen(hir: hir::Hir, config: BuildConfig) {
     let context = context::Context::create();
     let mut cg = Codegen::new(&context, hir);
     codegen_struct_types(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&cg);
-    cg.build_object();
+    cg.build_object(config);
 }
 
 //@breaking issue inkwell api takes in BasicTypeEnum for struct body creation

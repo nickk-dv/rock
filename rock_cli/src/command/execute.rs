@@ -9,7 +9,6 @@ use rock_core::hir_lower;
 use rock_core::package::{BuildManifest, Manifest, PackageKind, PackageManifest, Semver};
 use rock_core::session::Session;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 pub fn command(command: Command) -> Result<(), Vec<ErrorComp>> {
     match command {
@@ -44,30 +43,30 @@ fn check() -> Result<(), Vec<ErrorComp>> {
 
 fn build(data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
     let session = Session::new()?;
-    if let Err(errors) = inner(&session) {
+    if let Err(errors) = inner(&session, data) {
         error_format::print_errors(Some(&session), &errors);
     }
     return Ok(());
 
-    fn inner(session: &Session) -> Result<(), Vec<ErrorComp>> {
+    fn inner(session: &Session, data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
         let hir = hir_lower::check(ast)?;
-        codegen::codegen(hir);
+        codegen::codegen(hir, codegen::BuildConfig::Build(data.kind));
         Ok(())
     }
 }
 
 fn run(data: CommandRun) -> Result<(), Vec<ErrorComp>> {
     let session = Session::new()?;
-    if let Err(errors) = inner(&session) {
+    if let Err(errors) = inner(&session, data) {
         error_format::print_errors(Some(&session), &errors);
     }
     return Ok(());
 
-    fn inner(session: &Session) -> Result<(), Vec<ErrorComp>> {
+    fn inner(session: &Session, data: CommandRun) -> Result<(), Vec<ErrorComp>> {
         let ast = ast_parse::parse(&session)?;
         let hir = hir_lower::check(ast)?;
-        codegen::codegen(hir);
+        codegen::codegen(hir, codegen::BuildConfig::Run(data.kind, data.args));
         Ok(())
     }
 }
