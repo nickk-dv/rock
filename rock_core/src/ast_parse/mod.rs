@@ -5,38 +5,52 @@ use crate::ast::*;
 use crate::error::ErrorComp;
 use crate::intern::InternPool;
 use crate::lexer::Lexer;
-use crate::session::Session;
+use crate::session::{FileID, Session};
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 
 pub fn parse<'ast>(session: &Session) -> Result<Ast<'_, 'ast>, Vec<ErrorComp>> {
     let mut state = ParseState::new();
+    let mut file_idx: usize = 0;
 
-    for file_id in session.file_ids() {
-        let file = session.file(file_id);
-        let filename = file
-            .path
-            .file_stem()
-            .expect("filename")
-            .to_str()
-            .expect("utf-8");
-        let name_id = state.intern.intern(filename);
+    for package_id in session.package_ids() {
+        let package = session.package(package_id);
+        let package_name_id = state.intern.intern(&package.manifest().package.name);
+        let mut modules = Vec::<Module>::new();
 
-        let lexer = Lexer::new(&file.source, file_id, false);
-        let tokens = match lexer.lex() {
-            Ok(it) => it,
-            Err(errors) => {
-                state.errors.extend(errors);
-                continue;
+        for idx in file_idx..file_idx + package.file_count() {
+            let file_id = FileID::new(idx);
+            let file = session.file(file_id);
+            let filename = file
+                .path
+                .file_stem()
+                .expect("filename")
+                .to_str()
+                .expect("utf-8");
+            let module_name_id = state.intern.intern(filename);
+
+            let lexer = Lexer::new(&file.source, file_id, false);
+            let tokens = match lexer.lex() {
+                Ok(it) => it,
+                Err(errors) => {
+                    state.errors.extend(errors);
+                    continue;
+                }
+            };
+            let parser = Parser::new(tokens, &file.source, &mut state);
+
+            match grammar::module(parser, file_id, module_name_id) {
+                Ok(it) => modules.push(it),
+                Err(error) => state.errors.push(error),
             }
-        };
-        let parser = Parser::new(tokens, &file.source, &mut state);
-
-        match grammar::module(parser, file_id, name_id) {
-            Ok(it) => state.modules.push(it),
-            Err(error) => state.errors.push(error),
         }
+
+        file_idx += package.file_count();
+        state.packages.push(Package {
+            name_id: package_name_id,
+            modules,
+        })
     }
 
     state.finish()
@@ -54,7 +68,7 @@ struct Parser<'ast, 'intern, 'src, 'state> {
 struct ParseState<'ast, 'intern> {
     arena: Arena<'ast>,
     intern: InternPool<'intern>,
-    modules: Vec<Module<'ast>>,
+    packages: Vec<Package<'ast>>,
     errors: Vec<ErrorComp>,
     items: NodeBuffer<Item<'ast>>,
     proc_params: NodeBuffer<ProcParam<'ast>>,
@@ -143,7 +157,7 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
         Self {
             arena: Arena::new(),
             intern: InternPool::new(),
-            modules: Vec::new(),
+            packages: Vec::new(),
             errors: Vec::new(),
             items: NodeBuffer::new(),
             proc_params: NodeBuffer::new(),
@@ -165,7 +179,7 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
             Ok(Ast {
                 arena: self.arena,
                 intern: self.intern,
-                modules: self.modules,
+                packages: self.packages,
             })
         } else {
             Err(self.errors)

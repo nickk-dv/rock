@@ -35,7 +35,8 @@ impl<'src> ContextFmt<'src> {
         let path = file
             .path
             .strip_prefix(session.cwd())
-            .expect("cwd prefix path");
+            .unwrap_or_else(|_| &file.path);
+
         let range = context.source().range();
         let (location, line_range) =
             text::find_text_location(&file.source, range.start(), &file.line_ranges);

@@ -6,6 +6,11 @@ use crate::text::TextRange;
 pub struct Ast<'ast, 'intern> {
     pub arena: Arena<'ast>,
     pub intern: InternPool<'intern>,
+    pub packages: Vec<Package<'ast>>,
+}
+
+pub struct Package<'ast> {
+    pub name_id: InternID,
     pub modules: Vec<Module<'ast>>,
 }
 

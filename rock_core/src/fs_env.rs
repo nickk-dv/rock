@@ -1,6 +1,15 @@
 use crate::error::ErrorComp;
 use std::path::PathBuf;
 
+pub fn current_exe_path() -> Result<PathBuf, ErrorComp> {
+    std::env::current_exe().map_err(|io_error| {
+        ErrorComp::message(format!(
+            "failed to get current executable path\nreason: {}",
+            io_error
+        ))
+    })
+}
+
 pub fn dir_get_current() -> Result<PathBuf, ErrorComp> {
     std::env::current_dir().map_err(|io_error| {
         ErrorComp::message(format!(

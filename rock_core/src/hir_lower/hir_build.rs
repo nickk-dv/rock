@@ -89,7 +89,8 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     }
 
     pub fn add_ast_modules(&mut self) {
-        for module in self.ast.modules.iter() {
+        //@getting package 0 temporarely, no hir package support is done yet @19.04.24
+        for module in self.ast.packages[0].modules.iter() {
             let id = hir::ScopeID::new(self.scopes.len());
             let scope = Scope {
                 module: *module,
