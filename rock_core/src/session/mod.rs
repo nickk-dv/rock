@@ -83,6 +83,15 @@ impl Session {
     pub fn package_ids(&self) -> impl Iterator<Item = PackageID> {
         (0..self.packages.len()).map(PackageID::new)
     }
+
+    pub fn root_package_bin_name(&self) -> String {
+        let manifest = &self.packages[0].manifest;
+        if let Some(build) = &manifest.build {
+            build.bin_name.clone()
+        } else {
+            manifest.package.name.clone()
+        }
+    }
 }
 
 impl PackageData {

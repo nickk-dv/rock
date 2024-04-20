@@ -1,4 +1,5 @@
 use crate::ast;
+use crate::error::ErrorComp;
 use crate::hir;
 use crate::intern::InternID;
 use inkwell::builder;
@@ -9,12 +10,20 @@ use inkwell::targets;
 use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
-use std::path::Path;
 
 use crate::session::BuildKind;
 pub enum BuildConfig {
     Build(BuildKind),
     Run(BuildKind, Vec<String>),
+}
+
+impl BuildConfig {
+    fn kind(&self) -> BuildKind {
+        match *self {
+            BuildConfig::Build(kind) => kind,
+            BuildConfig::Run(kind, _) => kind,
+        }
+    }
 }
 
 struct Codegen<'ctx> {
@@ -66,47 +75,72 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    // @handle build directories creation properly, @19.04.24
-    // currently they may be created by LLVM when requesting the file output
-    // but not for nested ones
-    fn build_object(self, config: BuildConfig) {
+    fn build_object(self, bin_name: &str, config: BuildConfig) -> Result<(), ErrorComp> {
         self.module.print_to_stderr();
         if let Err(error) = self.module.verify() {
-            eprintln!("codegen module verify failed: \n{}", error);
-            return;
+            return Err(ErrorComp::message(format!(
+                "internal codegen error: llvm module verify failed\nreason: {}",
+                error
+            )));
         }
 
-        //@delete object file after comp is done? @19.04.24
-        // current out paths are temporary
-        let path = match config {
-            BuildConfig::Build(kind) => match kind {
-                BuildKind::Debug => Path::new("build/build.o"),
-                BuildKind::Release => Path::new("build/build.o"),
-            },
-            BuildConfig::Run(kind, _) => match kind {
-                BuildKind::Debug => Path::new("build/build.o"),
-                BuildKind::Release => Path::new("build/build.o"),
-            },
-        };
+        let mut build_dir = std::env::current_dir().expect("cwd");
+        build_dir.push("build");
+        let _ = std::fs::create_dir(&build_dir);
 
+        let kind = config.kind();
+        match kind {
+            BuildKind::Debug => build_dir.push("debug"),
+            BuildKind::Release => build_dir.push("release"),
+        }
+        let _ = std::fs::create_dir(&build_dir);
+
+        let mut object_path = build_dir.clone();
+        object_path.push(format!("{}.o", bin_name));
         self.target_machine
-            .write_to_file(&self.module, targets::FileType::Object, path)
-            .expect("llvm write object");
+            .write_to_file(&self.module, targets::FileType::Object, &object_path)
+            .map_err(|error| {
+                ErrorComp::message(format!(
+                    "failed to write llvm module as object file\nreason: {}",
+                    error
+                ))
+            })?;
 
-        let status = std::process::Command::new("clang")
-            .arg(path.to_str().expect("utf8 build object path"))
-            .arg("-o")
-            .arg("main.exe")
+        let mut executable_path = build_dir.clone();
+        executable_path.push(bin_name);
+        #[cfg(windows)]
+        executable_path.set_extension("exe");
+
+        //@libcmt.lib is only valid for windows @20.04.24
+        // also lld-link is called system wide, and requires llvm being installed
+        // test and use bundled lld-link instead
+        let _ = std::process::Command::new("lld-link")
+            .arg(object_path.as_os_str())
+            .arg(format!("/OUT:{}", executable_path.to_string_lossy()))
+            .arg("/DEFAULTLIB:libcmt.lib")
             .status()
-            .expect("clang link");
+            .map_err(|io_error| {
+                ErrorComp::message(format!(
+                    "failed to link object file `{}`\nreason: {}",
+                    object_path.to_string_lossy(),
+                    io_error
+                ))
+            })?;
+        let _ = std::fs::remove_file(object_path);
 
         if let BuildConfig::Run(_, args) = config {
-            //@doesnt work
-            let status = std::process::Command::new("main")
+            std::process::Command::new(executable_path.as_os_str())
                 .args(args)
                 .status()
-                .expect("executable run");
+                .map_err(|io_error| {
+                    ErrorComp::message(format!(
+                        "failed to run executable `{}`\nreason: {}",
+                        executable_path.to_string_lossy(),
+                        io_error
+                    ))
+                })?;
         }
+        Ok(())
     }
 
     //@perf, could be cached once to avoid llvm calls and extra checks
@@ -201,14 +235,14 @@ impl<'ctx> Codegen<'ctx> {
     }
 }
 
-pub fn codegen(hir: hir::Hir, config: BuildConfig) {
+pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> Result<(), ErrorComp> {
     let context = context::Context::create();
     let mut cg = Codegen::new(&context, hir);
     codegen_struct_types(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&cg);
-    cg.build_object(config);
+    cg.build_object(bin_name, config)
 }
 
 //@breaking issue inkwell api takes in BasicTypeEnum for struct body creation
