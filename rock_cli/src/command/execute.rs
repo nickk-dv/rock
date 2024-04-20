@@ -134,13 +134,34 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     fs_env::dir_create(&src_dir)?;
     fs_env::dir_create(&build_dir)?;
 
-    //@print project name in both when core library imports are working @18.04.24
+    let main_content: String = format!(
+        r#"import core/io;
+
+proc main() -> s32 {{
+    io.printf(c"Hello from {}\n");
+    return 0;
+}}
+"#,
+        data.name
+    );
+
+    let lib_content: String = format!(
+        r#"import core/io;
+
+proc test() {{
+    io.printf(c"Lib {} works\n");
+}}
+"#,
+        data.name
+    );
+
     match data.kind {
-        PackageKind::Lib => fs_env::file_create_or_rewrite(&src_dir.join("lib.rock"), "")?,
-        PackageKind::Bin => fs_env::file_create_or_rewrite(
-            &src_dir.join("main.rock"),
-            "\nproc main() -> s32 {\n\treturn 0;\n}\n",
-        )?,
+        PackageKind::Lib => {
+            fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
+        }
+        PackageKind::Bin => {
+            fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &main_content)?
+        }
     }
 
     let mut dependencies = BTreeMap::new();
