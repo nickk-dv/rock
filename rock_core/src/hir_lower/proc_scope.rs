@@ -50,7 +50,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn finish(self) -> Vec<&'hir hir::Local<'hir>> {
         self.locals
     }
-    pub fn origin(&self) -> hir::ScopeID {
+    pub fn origin(&self) -> hir::ModuleID {
         self.data.origin_id
     }
     pub fn data(&self) -> &hir::ProcData<'hir> {

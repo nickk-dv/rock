@@ -12,7 +12,7 @@ use crate::hir;
 pub fn const_expr_resolve<'hir, 'ast>(
     hir: &HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     expr: ast::ConstExpr<'ast>,
 ) -> hir::ConstExpr<'hir> {
     let hir_expr = match expr.0.kind {

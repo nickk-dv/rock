@@ -2,12 +2,15 @@ use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
+use crate::session::PackageID;
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    for origin_id in hir.scope_ids() {
-        for item in hir.scope_ast_items(origin_id) {
+    for origin_id in hir.module_ids() {
+        let package_id = hir.module_package_id(origin_id);
+
+        for item in hir.module_ast_items(origin_id) {
             if let ast::Item::Import(import) = item {
-                resolve_import(hir, emit, origin_id, import);
+                resolve_import(hir, emit, package_id, origin_id, import);
             }
         }
     }
@@ -16,23 +19,44 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
 fn resolve_import<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ScopeID,
+    package_id: PackageID,
+    origin_id: hir::ModuleID,
     import: &'ast ast::ImportItem<'ast>,
 ) {
-    let target_id = match hir.get_module_id(import.module.id) {
-        Some(it) => it,
-        None => {
+    let target_package_id = if let Some(name) = import.package {
+        if let Some(dep_id) = hir.get_package_dep_id(package_id, name) {
+            dep_id
+        } else {
             emit.error(ErrorComp::error(
                 format!(
-                    "module `{}` is not found in current package",
+                    "package `{}` is not found in dependencies",
+                    hir.name_str(name.id)
+                ),
+                hir.src(origin_id, name.range),
+                None,
+            ));
+            return;
+        }
+    } else {
+        package_id
+    };
+
+    let target_id =
+        if let Some(target_id) = hir.get_package_module_id(target_package_id, import.module) {
+            target_id
+        } else {
+            emit.error(ErrorComp::error(
+                //@mention in which package we were looking into?
+                // currently not fully descriptive @20.04.24
+                format!(
+                    "module `{}` is not found in package",
                     hir.name_str(import.module.id)
                 ),
                 hir.src(origin_id, import.module.range),
                 None,
             ));
             return;
-        }
-    };
+        };
 
     if target_id == origin_id {
         emit.error(ErrorComp::error(

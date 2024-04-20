@@ -134,7 +134,7 @@ use std::path::PathBuf;
 
 fn run_check(session: &Session) -> Result<(), Vec<ErrorComp>> {
     let ast = ast_parse::parse(session)?;
-    let _ = hir_lower::check(ast)?;
+    let _ = hir_lower::check(ast, session)?;
     Ok(())
 }
 

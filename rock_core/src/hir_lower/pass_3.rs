@@ -27,7 +27,7 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
 pub fn type_resolve<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     ast_ty: ast::Type,
 ) -> hir::Type<'hir> {
     match ast_ty {

@@ -9,12 +9,14 @@ mod proc_scope;
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
+use crate::session::Session;
 use hir_build::{HirData, HirEmit};
 
 pub fn check<'hir, 'ast, 'intern: 'hir>(
     ast: ast::Ast<'ast, 'intern>,
+    session: &Session,
 ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
-    let mut hir = HirData::new(ast);
+    let mut hir = HirData::new(ast, session);
     let mut emit = HirEmit::new();
     pass_1::run(&mut hir, &mut emit);
     pass_2::run(&mut hir, &mut emit);

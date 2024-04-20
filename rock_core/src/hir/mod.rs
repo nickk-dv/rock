@@ -30,14 +30,14 @@ macro_rules! hir_id_impl {
     };
 }
 
-hir_id_impl!(ScopeID);
+hir_id_impl!(ModuleID);
 pub struct ModuleData {
     pub file_id: FileID,
 }
 
 hir_id_impl!(ProcID);
 pub struct ProcData<'hir> {
-    pub origin_id: ScopeID,
+    pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub params: &'hir [ProcParam<'hir>],
@@ -57,7 +57,7 @@ pub struct ProcParam<'hir> {
 
 hir_id_impl!(EnumID);
 pub struct EnumData<'hir> {
-    pub origin_id: ScopeID,
+    pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub basic: Option<ast::BasicType>,
@@ -73,7 +73,7 @@ pub struct EnumVariant<'hir> {
 
 hir_id_impl!(UnionID);
 pub struct UnionData<'hir> {
-    pub origin_id: ScopeID,
+    pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub members: &'hir [UnionMember<'hir>],
@@ -88,7 +88,7 @@ pub struct UnionMember<'hir> {
 
 hir_id_impl!(StructID);
 pub struct StructData<'hir> {
-    pub origin_id: ScopeID,
+    pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub fields: &'hir [StructField<'hir>],
@@ -104,7 +104,7 @@ pub struct StructField<'hir> {
 
 hir_id_impl!(ConstID);
 pub struct ConstData<'hir> {
-    pub origin_id: ScopeID,
+    pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
@@ -113,7 +113,7 @@ pub struct ConstData<'hir> {
 
 hir_id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
-    pub origin_id: ScopeID,
+    pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,

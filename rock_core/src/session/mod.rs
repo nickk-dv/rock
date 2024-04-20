@@ -19,6 +19,9 @@ impl BuildKind {
     }
 }
 
+//@package dependencies must be only lib packages @20.04.24
+// bin package is the root package being compiled / checked
+// currently bin deps are allowed, but their main() doesnt do anything special
 pub struct Session {
     cwd: PathBuf,
     files: Vec<File>,
@@ -52,10 +55,10 @@ impl FileID {
 pub struct PackageID(u32);
 
 impl PackageID {
-    fn new(index: usize) -> PackageID {
+    pub fn new(index: usize) -> PackageID {
         PackageID(index as u32)
     }
-    fn index(self) -> usize {
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }

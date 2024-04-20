@@ -3,34 +3,25 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::intern::InternID;
+use crate::session::{PackageID, Session};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
 pub struct HirData<'hir, 'ast, 'intern> {
+    packages: Vec<Package>,
+    modules: Vec<Module<'ast>>,
     ast: ast::Ast<'ast, 'intern>,
-    scope_map: HashMap<InternID, hir::ScopeID>,
-    scopes: Vec<Scope<'ast>>,
     registry: Registry<'hir, 'ast>,
 }
 
-pub struct Registry<'hir, 'ast> {
-    ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
-    ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
-    ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
-    ast_structs: Vec<&'ast ast::StructItem<'ast>>,
-    ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
-    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
-    hir_modules: Vec<hir::ModuleData>,
-    hir_procs: Vec<hir::ProcData<'hir>>,
-    hir_enums: Vec<hir::EnumData<'hir>>,
-    hir_unions: Vec<hir::UnionData<'hir>>,
-    hir_structs: Vec<hir::StructData<'hir>>,
-    hir_consts: Vec<hir::ConstData<'hir>>,
-    hir_globals: Vec<hir::GlobalData<'hir>>,
+pub struct Package {
+    pub module_map: HashMap<InternID, hir::ModuleID>,
+    pub dependency_map: HashMap<InternID, PackageID>,
 }
 
-pub struct Scope<'ast> {
-    module: ast::Module<'ast>,
+pub struct Module<'ast> {
+    package_id: PackageID,
+    ast_module: ast::Module<'ast>,
     symbols: HashMap<InternID, Symbol>,
 }
 
@@ -49,7 +40,23 @@ pub enum SymbolKind {
     Struct(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
-    Module(hir::ScopeID),
+    Module(hir::ModuleID),
+}
+
+pub struct Registry<'hir, 'ast> {
+    ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
+    ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
+    ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
+    ast_structs: Vec<&'ast ast::StructItem<'ast>>,
+    ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
+    ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
+    hir_modules: Vec<hir::ModuleData>,
+    hir_procs: Vec<hir::ProcData<'hir>>,
+    hir_enums: Vec<hir::EnumData<'hir>>,
+    hir_unions: Vec<hir::UnionData<'hir>>,
+    hir_structs: Vec<hir::StructData<'hir>>,
+    hir_consts: Vec<hir::ConstData<'hir>>,
+    hir_globals: Vec<hir::GlobalData<'hir>>,
 }
 
 pub struct HirEmit<'hir> {
@@ -58,21 +65,78 @@ pub struct HirEmit<'hir> {
 }
 
 impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
-    pub fn new(ast: ast::Ast<'ast, 'intern>) -> HirData<'hir, 'ast, 'intern> {
+    pub fn new(
+        mut ast: ast::Ast<'ast, 'intern>,
+        session: &Session,
+    ) -> HirData<'hir, 'ast, 'intern> {
+        let mut packages = Vec::<Package>::new();
+        let mut modules = Vec::<Module>::new();
+
+        for ast_package in ast.packages.iter() {
+            let package_id = PackageID::new(packages.len());
+            let mut module_map: HashMap<InternID, hir::ModuleID> = HashMap::new();
+            let mut dependency_map: HashMap<InternID, PackageID> = HashMap::new();
+
+            for ast_module in ast_package.modules.iter() {
+                let module_id = hir::ModuleID::new(modules.len());
+                modules.push(Module {
+                    package_id,
+                    ast_module: *ast_module,
+                    symbols: HashMap::new(),
+                });
+                module_map.insert(ast_module.name_id, module_id);
+            }
+
+            let manifest = session.package(package_id).manifest();
+            for dep in manifest.dependencies.keys() {
+                //@identify dep packages by ID earlier? @20.04.24
+                // have to seach for this package in ast by name id, to get the dep PackageID
+                let dep_name_id = ast.intern.intern(dep.as_str());
+                let dep_package_id = ast
+                    .packages
+                    .iter()
+                    .enumerate()
+                    .find_map(|(idx, pkg)| {
+                        (pkg.name_id == dep_name_id).then(|| PackageID::new(idx))
+                    })
+                    .expect("package dependency name must be in ast packages");
+                dependency_map.insert(dep_name_id, dep_package_id);
+            }
+
+            packages.push(Package {
+                module_map,
+                dependency_map,
+            })
+        }
+
         HirData {
+            modules,
+            packages,
             ast,
-            scope_map: HashMap::new(),
-            scopes: Vec::new(),
             //@item count isnt implemented on ast level, so using default 0 initialized on @17.04.24
             registry: Registry::new(ast::ItemCount::default()),
         }
     }
 
-    pub fn src(&self, id: hir::ScopeID, range: TextRange) -> SourceRange {
-        SourceRange::new(range, self.scope(id).module.file_id)
+    pub fn src(&self, id: hir::ModuleID, range: TextRange) -> SourceRange {
+        SourceRange::new(range, self.module(id).ast_module.file_id)
     }
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern.get_str(id)
+    }
+
+    pub fn get_package_dep_id(&self, package_id: PackageID, name: ast::Name) -> Option<PackageID> {
+        self.package(package_id)
+            .dependency_map
+            .get(&name.id)
+            .copied()
+    }
+    pub fn get_package_module_id(
+        &self,
+        package_id: PackageID,
+        name: ast::Name,
+    ) -> Option<hir::ModuleID> {
+        self.package(package_id).module_map.get(&name.id).copied()
     }
 
     pub fn registry(&self) -> &Registry<'hir, 'ast> {
@@ -84,44 +148,38 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
 
     /// this inserts symbol into the map assuming that duplicate was already checked  
     /// this api can be error prone, but may the only option so far  @`17.04.24`
-    pub fn add_symbol(&mut self, origin_id: hir::ScopeID, id: InternID, symbol: Symbol) {
-        self.scope_mut(origin_id).symbols.insert(id, symbol);
+    pub fn add_symbol(&mut self, origin_id: hir::ModuleID, id: InternID, symbol: Symbol) {
+        self.module_mut(origin_id).symbols.insert(id, symbol);
     }
 
-    pub fn add_ast_modules(&mut self) {
-        //@getting package 0 temporarely, no hir package support is done yet @19.04.24
-        for module in self.ast.packages[0].modules.iter() {
-            let id = hir::ScopeID::new(self.scopes.len());
-            let scope = Scope {
-                module: *module,
-                symbols: HashMap::new(),
-            };
-            self.scopes.push(scope);
-            self.registry.add_module(hir::ModuleData {
-                file_id: module.file_id,
-            });
-            self.scope_map.insert(module.name_id, id);
-        }
+    pub fn module_ids(&self) -> impl Iterator<Item = hir::ModuleID> {
+        (0..self.modules.len()).map(hir::ModuleID::new)
+    }
+    pub fn module_package_id(&self, id: hir::ModuleID) -> PackageID {
+        self.module(id).package_id
+    }
+    pub fn module_ast_items(&self, id: hir::ModuleID) -> impl Iterator<Item = ast::Item<'ast>> {
+        self.module(id).ast_module.items.iter().cloned()
     }
 
-    pub fn scope_ids(&self) -> impl Iterator<Item = hir::ScopeID> {
-        (0..self.scopes.len()).map(hir::ScopeID::new)
+    fn package(&self, id: PackageID) -> &Package {
+        &self.packages[id.index()]
     }
-    fn scope(&self, id: hir::ScopeID) -> &Scope<'ast> {
-        &self.scopes[id.index()]
+    fn module(&self, id: hir::ModuleID) -> &Module<'ast> {
+        &self.modules[id.index()]
     }
-    fn scope_mut(&mut self, id: hir::ScopeID) -> &mut Scope<'ast> {
-        &mut self.scopes[id.index()]
-    }
-
-    pub fn get_module_id(&self, id: InternID) -> Option<hir::ScopeID> {
-        self.scope_map.get(&id).cloned()
+    fn module_mut(&mut self, id: hir::ModuleID) -> &mut Module<'ast> {
+        &mut self.modules[id.index()]
     }
 
-    pub fn scope_name_defined(&self, origin_id: hir::ScopeID, id: InternID) -> Option<SourceRange> {
-        let origin = self.scope(origin_id);
+    pub fn scope_name_defined(
+        &self,
+        origin_id: hir::ModuleID,
+        id: InternID,
+    ) -> Option<SourceRange> {
+        let origin = self.module(origin_id);
         if let Some(symbol) = origin.symbols.get(&id).cloned() {
-            let file_id = origin.module.file_id;
+            let file_id = origin.ast_module.file_id;
             match symbol {
                 Symbol::Defined { kind } => {
                     Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
@@ -135,23 +193,19 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         }
     }
 
-    pub fn scope_ast_items(&self, id: hir::ScopeID) -> impl Iterator<Item = ast::Item<'ast>> {
-        self.scope(id).module.items.iter().cloned()
-    }
-
     pub fn symbol_from_scope(
         &self,
         emit: &mut HirEmit<'hir>,
-        origin_id: hir::ScopeID,
-        target_id: hir::ScopeID,
+        origin_id: hir::ModuleID,
+        target_id: hir::ModuleID,
         name: ast::Name,
     ) -> Option<(SymbolKind, SourceRange)> {
-        let target = self.scope(target_id);
+        let target = self.module(target_id);
         match target.symbols.get(&name.id).cloned() {
             Some(symbol) => match symbol {
                 Symbol::Defined { kind } => {
                     let source =
-                        SourceRange::new(self.symbol_kind_range(kind), target.module.file_id);
+                        SourceRange::new(self.symbol_kind_range(kind), target.ast_module.file_id);
                     let vis = if origin_id == target_id {
                         ast::Vis::Public
                     } else {
@@ -174,7 +228,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                 }
                 Symbol::Imported { kind, import_range } => {
                     if origin_id == target_id {
-                        let source = SourceRange::new(import_range, target.module.file_id);
+                        let source = SourceRange::new(import_range, target.ast_module.file_id);
                         Some((kind, source))
                     } else {
                         None
@@ -257,7 +311,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_proc(
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
-        origin_id: hir::ScopeID,
+        origin_id: hir::ModuleID,
     ) -> hir::ProcID {
         let id = hir::ProcID::new(self.hir_procs.len());
         let data = hir::ProcData {
@@ -277,7 +331,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_enum(
         &mut self,
         item: &'ast ast::EnumItem<'ast>,
-        origin_id: hir::ScopeID,
+        origin_id: hir::ModuleID,
     ) -> hir::EnumID {
         let id = hir::EnumID::new(self.hir_enums.len());
         let data = hir::EnumData {
@@ -294,7 +348,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_union(
         &mut self,
         item: &'ast ast::UnionItem<'ast>,
-        origin_id: hir::ScopeID,
+        origin_id: hir::ModuleID,
     ) -> hir::UnionID {
         let id = hir::UnionID::new(self.hir_unions.len());
         let data = hir::UnionData {
@@ -310,7 +364,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_struct(
         &mut self,
         item: &'ast ast::StructItem<'ast>,
-        origin_id: hir::ScopeID,
+        origin_id: hir::ModuleID,
     ) -> hir::StructID {
         let id = hir::StructID::new(self.hir_structs.len());
         let data = hir::StructData {

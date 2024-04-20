@@ -1856,7 +1856,7 @@ fn path_resolve<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     path: &ast::Path,
 ) -> (ResolvedPath, usize) {
     let name = path.names.first().cloned().expect("non empty path");
@@ -1890,7 +1890,7 @@ pub fn path_resolve_type<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
@@ -1954,7 +1954,7 @@ fn path_resolve_proc<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     path: &ast::Path,
 ) -> Option<hir::ProcID> {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
@@ -2025,7 +2025,7 @@ fn path_resolve_structure<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     path: &ast::Path,
 ) -> StructureID {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
@@ -2098,7 +2098,7 @@ fn path_resolve_value<'hir, 'ast>(
     hir: &HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     path: &'ast ast::Path<'ast>,
 ) -> (ValueID, &'ast [ast::Name]) {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);

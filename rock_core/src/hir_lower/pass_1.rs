@@ -4,8 +4,7 @@ use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    hir.add_ast_modules();
-    for origin_id in hir.scope_ids() {
+    for origin_id in hir.module_ids() {
         add_module_scope(hir, emit, origin_id);
     }
 }
@@ -13,9 +12,9 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
 fn add_module_scope<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
 ) {
-    for item in hir.scope_ast_items(origin_id) {
+    for item in hir.module_ast_items(origin_id) {
         match item {
             ast::Item::Proc(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
@@ -131,7 +130,7 @@ fn add_module_scope<'hir>(
 pub fn name_already_defined_error(
     hir: &HirData,
     emit: &mut HirEmit,
-    origin_id: hir::ScopeID,
+    origin_id: hir::ModuleID,
     name: ast::Name,
     existing: SourceRange,
 ) {

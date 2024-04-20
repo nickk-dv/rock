@@ -290,7 +290,7 @@ fn codegen_function_values(cg: &mut Codegen) {
 
         let name = cg.hir.intern.get_str(proc_data.name.id);
         let name = if proc_data.block.is_none()
-            || (proc_data.origin_id == hir::ScopeID::new(0) && name == "main")
+            || (proc_data.origin_id == hir::ModuleID::new(0) && name == "main")
         {
             name
         } else {
