@@ -608,7 +608,24 @@ fn codegen_block<'ctx>(
                     cg.builder.position_at_end(body_block);
                     cg.builder.build_unconditional_branch(body_block).unwrap();
                 }
-                hir::ForKind::While { cond } => todo!("codegen `for while` not supported"),
+                hir::ForKind::While { cond } => {
+                    let cond_block = cg.context.append_basic_block(proc_cg.function, "loop_cond");
+                    cg.builder.build_unconditional_branch(cond_block).unwrap();
+                    cg.builder.position_at_end(cond_block);
+                    let cond = codegen_expr(cg, proc_cg, false, cond).expect("value");
+
+                    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+                    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
+                    cg.builder
+                        .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
+                        .unwrap();
+
+                    cg.builder.position_at_end(body_block);
+                    codegen_expr(cg, proc_cg, false, for_.block);
+                    cg.builder.build_unconditional_branch(cond_block).unwrap();
+
+                    cg.builder.position_at_end(exit_block);
+                }
                 hir::ForKind::ForLoop {
                     local_id,
                     cond,

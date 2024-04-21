@@ -1541,31 +1541,56 @@ fn typecheck_block<'hir>(
                 // @alloca in loops should be done outside of a loop @13.04.24
                 // to not cause memory issues and preserve the stack space?
                 // research the topic more
-                let kind = match for_.kind {
-                    ast::ForKind::Loop => hir::ForKind::Loop,
-                    ast::ForKind::While { cond } => todo!("for_loop while-like is not supported"),
+                match for_.kind {
+                    ast::ForKind::Loop => {
+                        let block_res = typecheck_block(
+                            hir,
+                            emit,
+                            proc,
+                            hir::Type::Basic(BasicType::Void),
+                            for_.block,
+                            true,
+                            None,
+                        );
+
+                        let for_ = hir::For {
+                            kind: hir::ForKind::Loop,
+                            block: block_res.expr,
+                        };
+                        Some(hir::Stmt::ForLoop(emit.arena.alloc(for_)))
+                    }
+                    ast::ForKind::While { cond } => {
+                        let cond_res = typecheck_expr(
+                            hir,
+                            emit,
+                            proc,
+                            hir::Type::Basic(BasicType::Bool),
+                            cond,
+                        );
+                        let block_res = typecheck_block(
+                            hir,
+                            emit,
+                            proc,
+                            hir::Type::Basic(BasicType::Void),
+                            for_.block,
+                            true,
+                            None,
+                        );
+
+                        let for_ = hir::For {
+                            kind: hir::ForKind::While {
+                                cond: cond_res.expr,
+                            },
+                            block: block_res.expr,
+                        };
+                        Some(hir::Stmt::ForLoop(emit.arena.alloc(for_)))
+                    }
                     ast::ForKind::ForLoop {
                         local,
                         cond,
                         assign,
                     } => todo!("for_loop c-like is not supported"),
-                };
-
-                let block_res = typecheck_block(
-                    hir,
-                    emit,
-                    proc,
-                    hir::Type::Basic(BasicType::Void),
-                    for_.block,
-                    true,
-                    None,
-                );
-
-                let for_ = hir::For {
-                    kind,
-                    block: block_res.expr,
-                };
-                Some(hir::Stmt::ForLoop(emit.arena.alloc(for_))) //@placeholder
+                }
             }
             ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
             ast::StmtKind::Assign(assign) => Some(typecheck_assign(hir, emit, proc, assign)),
