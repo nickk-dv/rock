@@ -544,33 +544,52 @@ fn codegen_if<'ctx>(
     proc_cg: &mut ProcCodegen<'ctx>,
     if_: &hir::If,
 ) -> Option<values::BasicValueEnum<'ctx>> {
-    let then_block = cg.context.append_basic_block(proc_cg.function, "if_entry");
+    let cond_block = cg.context.append_basic_block(proc_cg.function, "if_cond");
+    let mut body_block = cg.context.append_basic_block(proc_cg.function, "if_body");
     let exit_block = cg.context.append_basic_block(proc_cg.function, "if_exit");
 
-    let else_block = if !if_.branches.is_empty() || if_.fallback.is_some() {
-        cg.context.insert_basic_block_after(then_block, "if_else")
+    // next if_cond or if_else block
+    let mut next_block = if !if_.branches.is_empty() || if_.fallback.is_some() {
+        cg.context.insert_basic_block_after(body_block, "if_next")
     } else {
         exit_block
     };
 
+    cg.builder.build_unconditional_branch(cond_block).unwrap();
+    cg.builder.position_at_end(cond_block);
     let cond = codegen_expr(cg, proc_cg, false, if_.entry.cond).expect("value");
     cg.builder
-        .build_conditional_branch(cond.into_int_value(), then_block, else_block)
+        .build_conditional_branch(cond.into_int_value(), body_block, next_block)
         .unwrap();
 
-    cg.builder.position_at_end(then_block);
+    cg.builder.position_at_end(body_block);
     codegen_expr(cg, proc_cg, false, if_.entry.block);
-    //@are we still positioned at then_block?
     cg.builder.build_unconditional_branch(exit_block).unwrap();
 
-    if if_.branches.len() > 0 {
-        panic!("codegen: only if / if else is supported, no extra branches");
-        //let cond = codegen_expr(cg, proc_cg, false, branch.cond).expect("value");
-        //codegen_expr(cg, proc_cg, false, branch.block);
+    for (idx, branch) in if_.branches.iter().enumerate() {
+        let last = idx + 1 == if_.branches.len();
+        let create_next = !last || if_.fallback.is_some();
+
+        body_block = cg.context.insert_basic_block_after(next_block, "if_body");
+
+        cg.builder.position_at_end(next_block);
+        let cond = codegen_expr(cg, proc_cg, false, branch.cond).expect("value");
+        next_block = if create_next {
+            cg.context.insert_basic_block_after(body_block, "if_next")
+        } else {
+            exit_block
+        };
+        cg.builder
+            .build_conditional_branch(cond.into_int_value(), body_block, next_block)
+            .unwrap();
+
+        cg.builder.position_at_end(body_block);
+        codegen_expr(cg, proc_cg, false, branch.block);
+        cg.builder.build_unconditional_branch(exit_block).unwrap();
     }
 
     if let Some(fallback) = if_.fallback {
-        cg.builder.position_at_end(else_block);
+        cg.builder.position_at_end(next_block);
         codegen_expr(cg, proc_cg, false, fallback);
         cg.builder.build_unconditional_branch(exit_block).unwrap();
     }
