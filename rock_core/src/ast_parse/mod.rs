@@ -4,7 +4,7 @@ use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::ErrorComp;
 use crate::intern::InternPool;
-use crate::lexer::Lexer;
+use crate::lexer;
 use crate::session::{FileID, Session};
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
@@ -30,8 +30,7 @@ pub fn parse<'ast>(session: &Session) -> Result<Ast<'_, 'ast>, Vec<ErrorComp>> {
                 .expect("utf-8");
             let module_name_id = state.intern.intern(filename);
 
-            let lexer = Lexer::new(&file.source, file_id, false);
-            let tokens = match lexer.lex() {
+            let tokens = match lexer::lex(&file.source, file_id, false) {
                 Ok(it) => it,
                 Err(errors) => {
                     state.errors.extend(errors);

@@ -41,6 +41,10 @@ impl TextRange {
         (self.end.0 - self.start.0) as usize
     }
     #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+    #[inline]
     pub fn as_usize(self) -> std::ops::Range<usize> {
         self.start.into()..self.end.into()
     }
@@ -50,7 +54,9 @@ impl TextRange {
     }
     #[inline]
     pub const fn contains_offset(self, offset: TextOffset) -> bool {
-        self.start.0 <= offset.0 && offset.0 < self.end.0
+        //@changed end to <= to fix by 1 overflow when finding text location 23.04.24
+        // potentially wrong?
+        self.start.0 <= offset.0 && offset.0 <= self.end.0
     }
 }
 
@@ -156,5 +162,9 @@ pub fn find_text_location(
         }
     }
     //@can fail (most often in current lsp that runs full check pass, and can de-sync), handle gracefully
-    panic!("text location not found");
+    panic!(
+        "text location not found, offset: {:?} text len: {}",
+        offset,
+        text.len()
+    );
 }
