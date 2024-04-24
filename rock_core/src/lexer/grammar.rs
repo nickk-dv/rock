@@ -142,7 +142,7 @@ fn lex_char(lex: &mut Lexer) {
         }
     };
 
-    let mut terminated = false;
+    let mut inner_tick = false;
     let char = match fc {
         '\\' => {
             //@self.eat(fc); figure out escape handling later 23.04.24
@@ -157,30 +157,49 @@ fn lex_char(lex: &mut Lexer) {
             }
         }
         '\'' => {
-            terminated = true;
+            inner_tick = true;
             fc
         }
         _ => fc,
     };
 
-    let has_escape = matches!(lex.peek(), Some('\''));
-    if has_escape {
+    let terminated = matches!(lex.peek(), Some('\''));
+    if terminated {
         lex.eat('\'');
     }
-    if terminated && !has_escape {
-        // example [ '' ]
-        panic!("char literal cannot be empty");
-    }
-    if terminated && has_escape {
-        // example [ ''' ]
-        panic!("char literal `'` must be escaped: `\\'`");
-    }
-    if !terminated && !has_escape {
-        // example [ 'x ]
-        panic!("char literal not terminated, missing closing `'`");
+    let range = lex.make_range(start);
+
+    match (inner_tick, terminated) {
+        (true, false) => {
+            // example [ '' ]
+            lex.error(ErrorComp::error(
+                "character literal cannot be empty",
+                SourceRange::new(range, lex.file_id),
+                None,
+            ));
+        }
+        (true, true) => {
+            // example [ ''' ]
+            lex.error(ErrorComp::error(
+                "character literal `'` must be escaped: `\\'`",
+                SourceRange::new(range, lex.file_id),
+                None,
+            ));
+        }
+        (false, false) => {
+            // example [ 'x, '\n ]
+            lex.error(ErrorComp::error(
+                "character literal not terminated, missing closing `'`",
+                SourceRange::new(range, lex.file_id),
+                None,
+            ));
+        }
+        (false, true) => {
+            // example [ 'x', '\n' ]
+            // correctly terminated without inner tick
+        }
     }
 
-    let range = lex.make_range(start);
     lex.tokens.add_char(char, range);
 }
 
