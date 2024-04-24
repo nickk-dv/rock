@@ -1,12 +1,11 @@
 use super::Lexer;
 use crate::error::{ErrorComp, SourceRange};
-use crate::text::{TextOffset, TextRange};
+use crate::text::TextRange;
 use crate::token::Token;
 
-//@validate missing \0 in c_strings with precise error report 23.04.24
 pub fn source_file(lex: &mut Lexer) {
     while lex.peek().is_some() {
-        skip_whitespace(lex);
+        lex_whitespace(lex);
         if let Some(c) = lex.peek() {
             match c {
                 '\'' => lex_char(lex),
@@ -30,40 +29,62 @@ pub fn source_file(lex: &mut Lexer) {
         }
     }
 
-    //@parser doesnt lookahead by more then by 1 token, using 4 as failsafe 23.04.24
-    for _ in 0..4 {
-        let dummy_range = TextRange::empty_at(0.into());
-        lex.tokens.add_token(Token::Eof, dummy_range);
-    }
+    let dummy_range = TextRange::empty_at(0.into());
+    lex.tokens.add_token(Token::Eof, dummy_range);
+    lex.tokens.add_token(Token::Eof, dummy_range);
 }
 
-//@might want to split tokens into line comments / whitescape / block comments
-// for use in formatting the syntax tree 23.04.24
-fn skip_whitespace(lex: &mut Lexer) {
-    let start = lex.start_range();
-
+fn lex_whitespace(lex: &mut Lexer) {
     while let Some(c) = lex.peek() {
         if c.is_ascii_whitespace() {
+            let start = lex.start_range();
             lex.eat(c);
+            skip_whitespace(lex);
+
+            if lex.with_whitespace {
+                let range = lex.make_range(start);
+                lex.tokens.add_token(Token::Whitespace, range);
+            }
         } else if c == '/' && matches!(lex.peek_next(), Some('/')) {
+            let start = lex.start_range();
             lex.eat(c);
             lex.eat('/');
             skip_line_comment(lex);
+
+            if lex.with_whitespace {
+                let range = lex.make_range(start);
+                lex.tokens.add_token(Token::LineComment, range);
+            }
         } else if c == '/' && matches!(lex.peek_next(), Some('*')) {
             let start = lex.start_range();
             lex.eat(c);
             lex.eat('*');
-            skip_block_comment(lex, start);
+            let depth = skip_block_comment(lex);
+
+            if depth != 0 {
+                let range = lex.make_range(start);
+                lex.error(ErrorComp::error(
+                    format!("missing {} block comment terminators `*/`", depth),
+                    SourceRange::new(range, lex.file_id),
+                    None,
+                ));
+            }
+            if lex.with_whitespace {
+                let range = lex.make_range(start);
+                lex.tokens.add_token(Token::BlockComment, range);
+            }
         } else {
             break;
         }
     }
+}
 
-    if lex.with_whitespace {
-        let range = lex.make_range(start);
-        if !range.is_empty() {
-            lex.tokens.add_token(Token::Whitespace, range)
+fn skip_whitespace(lex: &mut Lexer) {
+    while let Some(c) = lex.peek() {
+        if !c.is_ascii_whitespace() {
+            return;
         }
+        lex.eat(c);
     }
 }
 
@@ -76,9 +97,8 @@ fn skip_line_comment(lex: &mut Lexer) {
     }
 }
 
-fn skip_block_comment(lex: &mut Lexer, start: TextOffset) {
+fn skip_block_comment(lex: &mut Lexer) -> i32 {
     let mut depth: i32 = 1;
-
     while let Some(c) = lex.peek() {
         lex.eat(c);
         if c == '/' && matches!(lex.peek(), Some('*')) {
@@ -89,36 +109,10 @@ fn skip_block_comment(lex: &mut Lexer, start: TextOffset) {
             depth -= 1;
         }
         if depth == 0 {
-            return;
+            return depth;
         }
     }
-
-    if depth != 0 {
-        let range = lex.make_range(start);
-        lex.error(ErrorComp::error(
-            format!("missing {} block comment terminators `*/`", depth),
-            SourceRange::new(range, lex.file_id),
-            None,
-        ));
-    }
-}
-
-fn lex_escape(lex: &mut Lexer) -> Result<char, bool> {
-    if let Some(c) = lex.peek() {
-        lex.eat(c); //@always eat?
-        match c {
-            'n' => Ok('\n'),
-            't' => Ok('\t'),
-            'r' => Ok('\r'),
-            '0' => Ok('\0'),
-            '\'' => Ok('\''),
-            '\"' => Ok('\"'),
-            '\\' => Ok('\\'),
-            _ => Err(true),
-        }
-    } else {
-        Err(false)
-    }
+    depth
 }
 
 fn lex_char(lex: &mut Lexer) {
@@ -127,40 +121,51 @@ fn lex_char(lex: &mut Lexer) {
 
     let fc = match lex.peek() {
         Some(c) => {
-            lex.eat(c);
+            if c == '\n' || c == '\r' {
+                let range = lex.make_range(start);
+                lex.error(ErrorComp::error(
+                    "character literal is incomplete",
+                    SourceRange::new(range, lex.file_id),
+                    None,
+                ));
+                return;
+            }
             c
         }
         None => {
             let range = lex.make_range(start);
             lex.error(ErrorComp::error(
-                "expected character literal",
+                "character literal is incomplete",
                 SourceRange::new(range, lex.file_id),
                 None,
             ));
-            lex.tokens.add_char(' ', range);
             return;
         }
     };
 
     let mut inner_tick = false;
     let char = match fc {
-        '\\' => {
-            //@self.eat(fc); figure out escape handling later 23.04.24
-            match lex_escape(lex) {
-                Ok(char) => char,
-                Err(invalid) => {
-                    if invalid {
-                        panic!("char lit invalid escape sequence");
-                    }
-                    panic!("char lit incomplete escape sequence");
-                }
-            }
-        }
+        '\\' => lex_escape(lex),
         '\'' => {
             inner_tick = true;
+            lex.eat(fc);
             fc
         }
-        _ => fc,
+        '\t' => {
+            let start = lex.start_range();
+            lex.eat(fc);
+            let range = lex.make_range(start);
+            lex.error(ErrorComp::error(
+                "charater literal tab must be escaped: `\\t`",
+                SourceRange::new(range, lex.file_id),
+                None,
+            ));
+            fc
+        }
+        _ => {
+            lex.eat(fc);
+            fc
+        }
     };
 
     let terminated = matches!(lex.peek(), Some('\''));
@@ -215,27 +220,19 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
 
     while let Some(c) = lex.peek() {
         match c {
-            '\r' | '\n' => break,
+            '\n' | '\r' => break,
             '\"' => {
                 lex.eat(c);
                 terminated = true;
                 break;
             }
             '\\' => {
-                lex.eat(c); // @is this correct?
-                let char = match lex_escape(lex) {
-                    Ok(char) => char,
-                    Err(invalid) => {
-                        if invalid {
-                            //@report errors directly in lex_escape 23.04.24
-                            let range = lex.make_range(start);
-                            eprintln!("at range: {}", &lex.source[range.as_usize()]);
-                            panic!("string lit invalid escape sequence");
-                        }
-                        panic!("string lit incomplete escape sequence");
-                    }
+                let escape = if c_string {
+                    lex_escape_c_string(lex)
+                } else {
+                    lex_escape(lex)
                 };
-                string.push(char);
+                string.push(escape);
             }
             _ => {
                 lex.eat(c);
@@ -268,7 +265,7 @@ fn lex_raw_string(lex: &mut Lexer, c_string: bool) {
 
     while let Some(c) = lex.peek() {
         match c {
-            '\r' | '\n' => break,
+            '\n' | '\r' => break,
             '`' => {
                 lex.eat(c);
                 terminated = true;
@@ -291,6 +288,66 @@ fn lex_raw_string(lex: &mut Lexer, c_string: bool) {
             None,
         ));
     }
+}
+
+fn lex_escape(lex: &mut Lexer) -> char {
+    let start = lex.start_range();
+    lex.eat('\\');
+
+    if let Some(c) = lex.peek() {
+        let escaped = match c {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '0' => '\0',
+            '\'' => '\'',
+            '\"' => '\"',
+            '\\' => '\\',
+            _ => {
+                let mut range = lex.make_range(start);
+                if c.is_ascii_whitespace() {
+                    lex.error(ErrorComp::error(
+                        "escape sequence is incomplete\nif you meant `\\`, escape it: `\\\\`",
+                        SourceRange::new(range, lex.file_id),
+                        None,
+                    ));
+                } else {
+                    range.extend_by((c.len_utf8() as u32).into());
+                    lex.error(ErrorComp::error(
+                        format!("escape sequence `\\{}` is not supported", c),
+                        SourceRange::new(range, lex.file_id),
+                        None,
+                    ));
+                }
+                '\\'
+            }
+        };
+
+        lex.eat(c);
+        escaped
+    } else {
+        let range = lex.make_range(start);
+        lex.error(ErrorComp::error(
+            "escape sequence is incomplete\nif you meant `\\`, escape it: `\\\\`",
+            SourceRange::new(range, lex.file_id),
+            None,
+        ));
+        '\\'
+    }
+}
+
+fn lex_escape_c_string(lex: &mut Lexer) -> char {
+    let start = lex.start_range();
+    let escape = lex_escape(lex);
+    if escape == '\0' {
+        let range = lex.make_range(start);
+        lex.error(ErrorComp::error(
+            "c string literals cannot contain any `\\0`\nnull terminator is automatically included",
+            SourceRange::new(range, lex.file_id),
+            None,
+        ));
+    }
+    escape
 }
 
 fn lex_number(lex: &mut Lexer, fc: char) {
