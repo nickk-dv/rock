@@ -1921,7 +1921,7 @@ pub fn path_resolve_type<'hir>(
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let ty = match resolved {
-        ResolvedPath::None => hir::Type::Error,
+        ResolvedPath::None => return hir::Type::Error,
         ResolvedPath::Variable(variable) => {
             let name = path.names[name_idx];
 
@@ -1985,7 +1985,7 @@ fn path_resolve_proc<'hir>(
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let proc_id = match resolved {
-        ResolvedPath::None => None,
+        ResolvedPath::None => return None,
         ResolvedPath::Variable(variable) => {
             let name = path.names[name_idx];
 
@@ -2056,7 +2056,7 @@ fn path_resolve_structure<'hir>(
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let structure_id = match resolved {
-        ResolvedPath::None => StructureID::None,
+        ResolvedPath::None => return StructureID::None,
         ResolvedPath::Variable(variable) => {
             let name = path.names[name_idx];
 
@@ -2129,7 +2129,7 @@ fn path_resolve_value<'hir, 'ast>(
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let value_id = match resolved {
-        ResolvedPath::None => ValueID::None,
+        ResolvedPath::None => return (ValueID::None, &[]),
         ResolvedPath::Variable(var) => match var {
             VariableID::Local(id) => ValueID::Local(id),
             VariableID::Param(id) => ValueID::Param(id),
