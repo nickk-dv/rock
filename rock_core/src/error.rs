@@ -47,6 +47,14 @@ impl ErrorComp {
         }
     }
 
+    pub fn message_warning(msg: impl Into<ErrorMessage>) -> ErrorComp {
+        ErrorComp {
+            message: msg.into(),
+            severity: ErrorSeverity::Warning,
+            data: ErrorData::None,
+        }
+    }
+
     pub fn info(msg: impl Into<ErrorMessage>, src: SourceRange) -> Option<ErrorContext> {
         Some(ErrorContext {
             message: msg.into(),

@@ -37,7 +37,7 @@ pub fn run() {
             return error_format::print_errors(None, &[error]);
         }
     };
-    let command = match parse::parse_args(format) {
+    let command = match parse::command(format) {
         Ok(command) => command,
         Err(errors) => {
             return error_format::print_errors(None, &errors);

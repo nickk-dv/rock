@@ -1,18 +1,18 @@
 use rock_core::error::ErrorComp;
+use std::collections::{HashMap, HashSet};
 
 pub struct CommandFormat {
     pub name: String,
     pub args: Vec<String>,
-    pub options: Vec<OptionFormat>,
-}
-
-pub struct OptionFormat {
-    pub name: String,
-    pub args: Vec<String>,
+    pub options: HashMap<String, Vec<String>>,
+    pub trail_args: Vec<String>,
 }
 
 pub fn parse() -> Result<CommandFormat, ErrorComp> {
     let mut p = FormatParser::new();
+    // maybe report duplicates as warnings when proper warning support is done @25.04.24
+    // currently duplicate options are ignored
+    let mut duplicates = HashSet::new();
 
     let cmd_name = if let Some(name) = p.peek_arg() {
         name
@@ -27,7 +27,7 @@ pub fn parse() -> Result<CommandFormat, ErrorComp> {
         cmd_args.push(arg);
     }
 
-    let mut cmd_options = Vec::new();
+    let mut cmd_options = HashMap::new();
     while let Some(name) = p.peek_option() {
         let opt_name = name;
 
@@ -36,16 +36,18 @@ pub fn parse() -> Result<CommandFormat, ErrorComp> {
             opt_args.push(arg);
         }
 
-        cmd_options.push(OptionFormat {
-            name: opt_name,
-            args: opt_args,
-        })
+        if let Some(..) = cmd_options.get(&opt_name) {
+            duplicates.insert(opt_name);
+        } else {
+            cmd_options.insert(opt_name, opt_args);
+        }
     }
 
     Ok(CommandFormat {
         name: cmd_name,
         args: cmd_args,
         options: cmd_options,
+        trail_args: p.trail_args(),
     })
 }
 
@@ -65,11 +67,11 @@ impl FormatParser {
     fn peek_arg(&mut self) -> Option<String> {
         match self.args.get(self.cursor) {
             Some(arg) => {
-                if arg.starts_with("-") || arg.starts_with("--") {
-                    None
-                } else {
+                if !arg.starts_with("-") {
                     self.cursor += 1;
                     Some(arg.clone())
+                } else {
+                    None
                 }
             }
             None => None,
@@ -79,10 +81,17 @@ impl FormatParser {
     fn peek_option(&mut self) -> Option<String> {
         match self.args.get(self.cursor) {
             Some(arg) => {
-                if let Some(option) = arg.strip_prefix("-") {
+                if let Some(option) = arg.strip_prefix("--") {
                     self.cursor += 1;
-                    Some(option.to_string())
-                } else if let Some(option) = arg.strip_prefix("--") {
+                    if option.is_empty() {
+                        None
+                    } else {
+                        Some(option.to_string())
+                    }
+                } else if let Some(option) = arg.strip_prefix("-") {
+                    // how to deal with empty `-` options? @25.04.24
+                    // potentially dont allow single `-` options and always go with `--`
+                    // and empty -- will mean start of trailing args
                     self.cursor += 1;
                     Some(option.to_string())
                 } else {
@@ -91,5 +100,9 @@ impl FormatParser {
             }
             None => None,
         }
+    }
+
+    fn trail_args(mut self) -> Vec<String> {
+        self.args.split_off(self.cursor)
     }
 }

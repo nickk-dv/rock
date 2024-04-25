@@ -99,27 +99,27 @@ r#"
   {c}rock <command> [options]
 
 {g}Commands:
-  {c}n, new <name>   {r}Create new package
-  {c}c, check        {r}Check the program
-  {c}b, build        {r}Build the program
-  {c}r, run          {r}Build and run the program
-  {c}h, help         {r}Print help information
-  {c}v, version      {r}Print compiler version
+  {c}n, new <name>  {r}Create new package
+  {c}c, check       {r}Check the program
+  {c}b, build       {r}Build the program
+  {c}r, run         {r}Build and run the program
+  {c}h, help        {r}Print help information
+  {c}v, version     {r}Print compiler version
 
 {g}Options:
   {c}new
-    {c}--lib         {r}Create library package
-    {c}--bin         {r}Create executable package
-    {c}--no_git      {r}Create package without git repo
+    {c}--lib        {r}Create library package
+    {c}--bin        {r}Create executable package
+    {c}--no_git     {r}Create package without git repo
 
   {c}build
-    {c}--debug       {r}Build in debug mode
-    {c}--release     {r}Build in release mode
+    {c}--debug      {r}Build in debug mode
+    {c}--release    {r}Build in release mode
 
   {c}run
-    {c}--debug       {r}Run the debug build
-    {c}--release     {r}Run the release build
-    {c}--args [args] {r}Pass command line arguments
+    {c}--debug      {r}Run the debug build
+    {c}--release    {r}Run the release build
+    {c}-- [args]    {r}Pass command line arguments
 "#);
 }
 
