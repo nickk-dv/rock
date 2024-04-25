@@ -9,19 +9,18 @@ use std::collections::HashMap;
 
 pub struct HirData<'hir, 'ast, 'intern> {
     packages: Vec<Package>,
-    modules: Vec<Module<'ast>>,
-    ast: ast::Ast<'ast, 'intern>,
+    modules: Vec<Module>,
     registry: Registry<'hir, 'ast>,
+    ast: ast::Ast<'ast, 'intern>,
 }
 
 pub struct Package {
-    pub module_map: HashMap<InternID, hir::ModuleID>,
-    pub dependency_map: HashMap<InternID, PackageID>,
+    module_map: HashMap<InternID, hir::ModuleID>,
+    dependency_map: HashMap<InternID, PackageID>,
 }
 
-pub struct Module<'ast> {
+pub struct Module {
     package_id: PackageID,
-    ast_module: ast::Module<'ast>,
     symbols: HashMap<InternID, Symbol>,
 }
 
@@ -34,16 +33,17 @@ pub enum Symbol {
 
 #[derive(Copy, Clone)]
 pub enum SymbolKind {
+    Module(hir::ModuleID),
     Proc(hir::ProcID),
     Enum(hir::EnumID),
     Union(hir::UnionID),
     Struct(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
-    Module(hir::ModuleID),
 }
 
 pub struct Registry<'hir, 'ast> {
+    ast_modules: Vec<ast::Module<'ast>>,
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
     ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
     ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
@@ -71,6 +71,8 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     ) -> HirData<'hir, 'ast, 'intern> {
         let mut packages = Vec::<Package>::new();
         let mut modules = Vec::<Module>::new();
+        //@item count isnt implemented on ast level, so using default 0 initialized on @17.04.24
+        let mut registry = Registry::new(ast::ItemCount::default());
 
         for ast_package in ast.packages.iter() {
             let package_id = PackageID::new(packages.len());
@@ -78,12 +80,11 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
             let mut dependency_map: HashMap<InternID, PackageID> = HashMap::new();
 
             for ast_module in ast_package.modules.iter() {
-                let module_id = hir::ModuleID::new(modules.len());
                 modules.push(Module {
                     package_id,
-                    ast_module: *ast_module,
                     symbols: HashMap::new(),
                 });
+                let module_id = registry.add_module(*ast_module);
                 module_map.insert(ast_module.name_id, module_id);
             }
 
@@ -112,31 +113,39 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         HirData {
             modules,
             packages,
+            registry,
             ast,
-            //@item count isnt implemented on ast level, so using default 0 initialized on @17.04.24
-            registry: Registry::new(ast::ItemCount::default()),
         }
     }
 
     pub fn src(&self, id: hir::ModuleID, range: TextRange) -> SourceRange {
-        SourceRange::new(range, self.module(id).ast_module.file_id)
+        SourceRange::new(range, self.registry().module_ast(id).file_id)
     }
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern.get_str(id)
     }
 
-    pub fn get_package_dep_id(&self, package_id: PackageID, name: ast::Name) -> Option<PackageID> {
-        self.package(package_id)
-            .dependency_map
-            .get(&name.id)
-            .copied()
-    }
     pub fn get_package_module_id(
         &self,
         package_id: PackageID,
         name: ast::Name,
     ) -> Option<hir::ModuleID> {
         self.package(package_id).module_map.get(&name.id).copied()
+    }
+    pub fn get_package_dep_id(&self, package_id: PackageID, name: ast::Name) -> Option<PackageID> {
+        self.package(package_id)
+            .dependency_map
+            .get(&name.id)
+            .copied()
+    }
+
+    /// this inserts symbol into the map assuming that duplicate was already checked  
+    /// this api can be error prone, but may the only option so far  @`17.04.24`
+    pub fn add_symbol(&mut self, origin_id: hir::ModuleID, id: InternID, symbol: Symbol) {
+        self.module_mut(origin_id).symbols.insert(id, symbol);
+    }
+    pub fn module_package_id(&self, id: hir::ModuleID) -> PackageID {
+        self.module(id).package_id
     }
 
     pub fn registry(&self) -> &Registry<'hir, 'ast> {
@@ -146,29 +155,13 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         &mut self.registry
     }
 
-    /// this inserts symbol into the map assuming that duplicate was already checked  
-    /// this api can be error prone, but may the only option so far  @`17.04.24`
-    pub fn add_symbol(&mut self, origin_id: hir::ModuleID, id: InternID, symbol: Symbol) {
-        self.module_mut(origin_id).symbols.insert(id, symbol);
-    }
-
-    pub fn module_ids(&self) -> impl Iterator<Item = hir::ModuleID> {
-        (0..self.modules.len()).map(hir::ModuleID::new)
-    }
-    pub fn module_package_id(&self, id: hir::ModuleID) -> PackageID {
-        self.module(id).package_id
-    }
-    pub fn module_ast_items(&self, id: hir::ModuleID) -> impl Iterator<Item = ast::Item<'ast>> {
-        self.module(id).ast_module.items.iter().cloned()
-    }
-
     fn package(&self, id: PackageID) -> &Package {
         &self.packages[id.index()]
     }
-    fn module(&self, id: hir::ModuleID) -> &Module<'ast> {
+    fn module(&self, id: hir::ModuleID) -> &Module {
         &self.modules[id.index()]
     }
-    fn module_mut(&mut self, id: hir::ModuleID) -> &mut Module<'ast> {
+    fn module_mut(&mut self, id: hir::ModuleID) -> &mut Module {
         &mut self.modules[id.index()]
     }
 
@@ -179,7 +172,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     ) -> Option<SourceRange> {
         let origin = self.module(origin_id);
         if let Some(symbol) = origin.symbols.get(&id).cloned() {
-            let file_id = origin.ast_module.file_id;
+            let file_id = self.registry().module_ast(origin_id).file_id;
             match symbol {
                 Symbol::Defined { kind } => {
                     Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
@@ -204,8 +197,8 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         match target.symbols.get(&name.id).cloned() {
             Some(symbol) => match symbol {
                 Symbol::Defined { kind } => {
-                    let source =
-                        SourceRange::new(self.symbol_kind_range(kind), target.ast_module.file_id);
+                    let file_id = self.registry().module_ast(target_id).file_id;
+                    let source = SourceRange::new(self.symbol_kind_range(kind), file_id);
                     let vis = if origin_id == target_id {
                         ast::Vis::Public
                     } else {
@@ -228,7 +221,8 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                 }
                 Symbol::Imported { kind, import_range } => {
                     if origin_id == target_id {
-                        let source = SourceRange::new(import_range, target.ast_module.file_id);
+                        let file_id = self.registry().module_ast(target_id).file_id;
+                        let source = SourceRange::new(import_range, file_id);
                         Some((kind, source))
                     } else {
                         None
@@ -251,37 +245,37 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
 
     pub fn symbol_kind_name(kind: SymbolKind) -> &'static str {
         match kind {
+            SymbolKind::Module(_) => "module",
             SymbolKind::Proc(_) => "procedure",
             SymbolKind::Enum(_) => "enum",
             SymbolKind::Union(_) => "union",
             SymbolKind::Struct(_) => "struct",
             SymbolKind::Const(_) => "constant",
             SymbolKind::Global(_) => "global",
-            SymbolKind::Module(_) => "module",
         }
     }
 
     fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
         match kind {
+            SymbolKind::Module(..) => unreachable!(),
             SymbolKind::Proc(id) => self.registry.proc_data(id).name.range,
             SymbolKind::Enum(id) => self.registry.enum_data(id).name.range,
             SymbolKind::Union(id) => self.registry.union_data(id).name.range,
             SymbolKind::Struct(id) => self.registry.struct_data(id).name.range,
             SymbolKind::Const(id) => self.registry.const_data(id).name.range,
             SymbolKind::Global(id) => self.registry.global_data(id).name.range,
-            SymbolKind::Module(..) => unreachable!(),
         }
     }
 
     fn symbol_kind_vis(&self, kind: SymbolKind) -> ast::Vis {
         match kind {
+            SymbolKind::Module(..) => unreachable!(),
             SymbolKind::Proc(id) => self.registry.proc_data(id).vis,
             SymbolKind::Enum(id) => self.registry.enum_data(id).vis,
             SymbolKind::Union(id) => self.registry.union_data(id).vis,
             SymbolKind::Struct(id) => self.registry.struct_data(id).vis,
             SymbolKind::Const(id) => self.registry.const_data(id).vis,
             SymbolKind::Global(id) => self.registry.global_data(id).vis,
-            SymbolKind::Module(..) => unreachable!(),
         }
     }
 }
@@ -289,6 +283,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
 impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn new(total: ast::ItemCount) -> Registry<'hir, 'ast> {
         Registry {
+            ast_modules: Vec::with_capacity(total.modules as usize),
             ast_procs: Vec::with_capacity(total.procs as usize),
             ast_enums: Vec::with_capacity(total.enums as usize),
             ast_unions: Vec::with_capacity(total.unions as usize),
@@ -305,8 +300,14 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         }
     }
 
-    pub fn add_module(&mut self, data: hir::ModuleData) {
+    pub fn add_module(&mut self, module: ast::Module<'ast>) -> hir::ModuleID {
+        let id = hir::ModuleID::new(self.hir_modules.len());
+        let data = hir::ModuleData {
+            file_id: module.file_id,
+        };
+        self.ast_modules.push(module);
         self.hir_modules.push(data);
+        id
     }
     pub fn add_proc(
         &mut self,
@@ -398,6 +399,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id
     }
 
+    pub fn module_ids(&self) -> impl Iterator<Item = hir::ModuleID> {
+        (0..self.hir_modules.len()).map(hir::ModuleID::new)
+    }
     pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
         (0..self.hir_procs.len()).map(hir::ProcID::new)
     }
@@ -417,6 +421,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         (0..self.hir_globals.len()).map(hir::GlobalID::new)
     }
 
+    pub fn module_ast(&self, id: hir::ModuleID) -> &ast::Module<'ast> {
+        &self.ast_modules[id.index()]
+    }
     pub fn proc_item(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
         self.ast_procs[id.index()]
     }
@@ -436,6 +443,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.ast_globals[id.index()]
     }
 
+    pub fn module_data(&self, id: hir::ModuleID) -> &hir::ModuleData {
+        &self.hir_modules[id.index()]
+    }
     pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
         &self.hir_procs[id.index()]
     }

@@ -140,7 +140,7 @@ pub fn find_line_ranges(text: &str) -> Vec<TextRange> {
             range = TextRange::empty_at(range.end());
         }
     }
-    if range.len() > 0 {
+    if !range.is_empty() {
         ranges.push(range);
     }
     ranges

@@ -5,10 +5,10 @@ use crate::hir;
 use crate::session::PackageID;
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    for origin_id in hir.module_ids() {
+    for origin_id in hir.registry().module_ids() {
         let package_id = hir.module_package_id(origin_id);
 
-        for item in hir.module_ast_items(origin_id) {
+        for item in hir.registry().module_ast(origin_id).items.iter().cloned() {
             if let ast::Item::Import(import) = item {
                 resolve_import(hir, emit, package_id, origin_id, import);
             }
@@ -88,7 +88,7 @@ fn resolve_import<'hir, 'ast>(
         Some(existing) => {
             super::pass_1::name_already_defined_error(hir, emit, origin_id, alias_name, existing);
             return;
-        } //None => hir.scope_add_imported(origin_id, alias_name, SymbolKind::Module(target_id)),
+        }
         None => hir.add_symbol(
             origin_id,
             alias_name.id,

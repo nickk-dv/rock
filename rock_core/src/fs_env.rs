@@ -50,7 +50,7 @@ pub fn dir_read(path: &PathBuf) -> Result<std::fs::ReadDir, ErrorComp> {
 }
 
 pub fn file_read_to_string(path: &PathBuf) -> Result<String, ErrorComp> {
-    std::fs::read_to_string(&path).map_err(|io_error| {
+    std::fs::read_to_string(path).map_err(|io_error| {
         ErrorComp::message(format!(
             "failed to read file: `{}`\nreason: {}",
             path.to_string_lossy(),

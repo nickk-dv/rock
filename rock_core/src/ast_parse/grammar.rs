@@ -1,4 +1,4 @@
-use super::Parser;
+use super::parser::Parser;
 use crate::ast::*;
 use crate::error::{ErrorComp, SourceRange};
 use crate::intern::InternID;

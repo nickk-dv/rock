@@ -4,17 +4,17 @@ use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    for origin_id in hir.module_ids() {
-        add_module_scope(hir, emit, origin_id);
+    for origin_id in hir.registry().module_ids() {
+        add_module_items(hir, emit, origin_id);
     }
 }
 
-fn add_module_scope<'hir>(
+fn add_module_items<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ModuleID,
 ) {
-    for item in hir.module_ast_items(origin_id) {
+    for item in hir.registry().module_ast(origin_id).items.iter().cloned() {
         match item {
             ast::Item::Proc(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {

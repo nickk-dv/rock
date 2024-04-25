@@ -1,4 +1,4 @@
-use super::Lexer;
+use super::lexer::Lexer;
 use crate::error::{ErrorComp, SourceRange};
 use crate::text::TextRange;
 use crate::token::Token;
@@ -30,8 +30,8 @@ pub fn source_file(lex: &mut Lexer) {
     }
 
     let dummy_range = TextRange::empty_at(0.into());
-    lex.tokens.add_token(Token::Eof, dummy_range);
-    lex.tokens.add_token(Token::Eof, dummy_range);
+    lex.tokens().add_token(Token::Eof, dummy_range);
+    lex.tokens().add_token(Token::Eof, dummy_range);
 }
 
 fn lex_whitespace(lex: &mut Lexer) {
@@ -41,9 +41,9 @@ fn lex_whitespace(lex: &mut Lexer) {
             lex.eat(c);
             skip_whitespace(lex);
 
-            if lex.with_whitespace {
+            if lex.with_whitespace() {
                 let range = lex.make_range(start);
-                lex.tokens.add_token(Token::Whitespace, range);
+                lex.tokens().add_token(Token::Whitespace, range);
             }
         } else if c == '/' && matches!(lex.peek_next(), Some('/')) {
             let start = lex.start_range();
@@ -51,9 +51,9 @@ fn lex_whitespace(lex: &mut Lexer) {
             lex.eat('/');
             skip_line_comment(lex);
 
-            if lex.with_whitespace {
+            if lex.with_whitespace() {
                 let range = lex.make_range(start);
-                lex.tokens.add_token(Token::LineComment, range);
+                lex.tokens().add_token(Token::LineComment, range);
             }
         } else if c == '/' && matches!(lex.peek_next(), Some('*')) {
             let start = lex.start_range();
@@ -65,13 +65,13 @@ fn lex_whitespace(lex: &mut Lexer) {
                 let range = lex.make_range(start);
                 lex.error(ErrorComp::error(
                     format!("missing {} block comment terminators `*/`", depth),
-                    SourceRange::new(range, lex.file_id),
+                    SourceRange::new(range, lex.file_id()),
                     None,
                 ));
             }
-            if lex.with_whitespace {
+            if lex.with_whitespace() {
                 let range = lex.make_range(start);
-                lex.tokens.add_token(Token::BlockComment, range);
+                lex.tokens().add_token(Token::BlockComment, range);
             }
         } else {
             break;
@@ -125,7 +125,7 @@ fn lex_char(lex: &mut Lexer) {
                 let range = lex.make_range(start);
                 lex.error(ErrorComp::error(
                     "character literal is incomplete",
-                    SourceRange::new(range, lex.file_id),
+                    SourceRange::new(range, lex.file_id()),
                     None,
                 ));
                 return;
@@ -136,7 +136,7 @@ fn lex_char(lex: &mut Lexer) {
             let range = lex.make_range(start);
             lex.error(ErrorComp::error(
                 "character literal is incomplete",
-                SourceRange::new(range, lex.file_id),
+                SourceRange::new(range, lex.file_id()),
                 None,
             ));
             return;
@@ -157,7 +157,7 @@ fn lex_char(lex: &mut Lexer) {
             let range = lex.make_range(start);
             lex.error(ErrorComp::error(
                 "charater literal tab must be escaped: `\\t`",
-                SourceRange::new(range, lex.file_id),
+                SourceRange::new(range, lex.file_id()),
                 None,
             ));
             fc
@@ -179,7 +179,7 @@ fn lex_char(lex: &mut Lexer) {
             // example [ '' ]
             lex.error(ErrorComp::error(
                 "character literal cannot be empty",
-                SourceRange::new(range, lex.file_id),
+                SourceRange::new(range, lex.file_id()),
                 None,
             ));
         }
@@ -187,7 +187,7 @@ fn lex_char(lex: &mut Lexer) {
             // example [ ''' ]
             lex.error(ErrorComp::error(
                 "character literal `'` must be escaped: `\\'`",
-                SourceRange::new(range, lex.file_id),
+                SourceRange::new(range, lex.file_id()),
                 None,
             ));
         }
@@ -195,7 +195,7 @@ fn lex_char(lex: &mut Lexer) {
             // example [ 'x, '\n ]
             lex.error(ErrorComp::error(
                 "character literal not terminated, missing closing `'`",
-                SourceRange::new(range, lex.file_id),
+                SourceRange::new(range, lex.file_id()),
                 None,
             ));
         }
@@ -205,7 +205,7 @@ fn lex_char(lex: &mut Lexer) {
         }
     }
 
-    lex.tokens.add_char(char, range);
+    lex.tokens().add_char(char, range);
 }
 
 fn lex_string(lex: &mut Lexer, c_string: bool) {
@@ -242,12 +242,12 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
     }
 
     let range = lex.make_range(start);
-    lex.tokens.add_string(string, c_string, range);
+    lex.tokens().add_string(string, c_string, range);
 
     if !terminated {
         lex.error(ErrorComp::error(
             "string literal not terminated, missing closing \"",
-            SourceRange::new(range, lex.file_id),
+            SourceRange::new(range, lex.file_id()),
             None,
         ));
     }
@@ -279,12 +279,12 @@ fn lex_raw_string(lex: &mut Lexer, c_string: bool) {
     }
 
     let range = lex.make_range(start);
-    lex.tokens.add_string(string, c_string, range);
+    lex.tokens().add_string(string, c_string, range);
 
     if !terminated {
         lex.error(ErrorComp::error(
             "raw string literal not terminated, missing closing `",
-            SourceRange::new(range, lex.file_id),
+            SourceRange::new(range, lex.file_id()),
             None,
         ));
     }
@@ -308,14 +308,14 @@ fn lex_escape(lex: &mut Lexer) -> char {
                 if c.is_ascii_whitespace() {
                     lex.error(ErrorComp::error(
                         "escape sequence is incomplete\nif you meant `\\`, escape it: `\\\\`",
-                        SourceRange::new(range, lex.file_id),
+                        SourceRange::new(range, lex.file_id()),
                         None,
                     ));
                 } else {
                     range.extend_by((c.len_utf8() as u32).into());
                     lex.error(ErrorComp::error(
                         format!("escape sequence `\\{}` is not supported", c),
-                        SourceRange::new(range, lex.file_id),
+                        SourceRange::new(range, lex.file_id()),
                         None,
                     ));
                 }
@@ -329,7 +329,7 @@ fn lex_escape(lex: &mut Lexer) -> char {
         let range = lex.make_range(start);
         lex.error(ErrorComp::error(
             "escape sequence is incomplete\nif you meant `\\`, escape it: `\\\\`",
-            SourceRange::new(range, lex.file_id),
+            SourceRange::new(range, lex.file_id()),
             None,
         ));
         '\\'
@@ -343,7 +343,7 @@ fn lex_escape_c_string(lex: &mut Lexer) -> char {
         let range = lex.make_range(start);
         lex.error(ErrorComp::error(
             "c string literals cannot contain any `\\0`\nnull terminator is automatically included",
-            SourceRange::new(range, lex.file_id),
+            SourceRange::new(range, lex.file_id()),
             None,
         ));
     }
@@ -381,7 +381,7 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     } else {
         Token::IntLit
     };
-    lex.tokens.add_token(token, range);
+    lex.tokens().add_token(token, range);
 }
 
 fn lex_ident(lex: &mut Lexer, fc: char) {
@@ -397,24 +397,30 @@ fn lex_ident(lex: &mut Lexer, fc: char) {
     }
 
     let range = lex.make_range(start);
-    let string = &lex.source[range.as_usize()];
+    let string = &lex.source()[range.as_usize()];
+
     let token = match Token::as_keyword(string) {
         Some(keyword) => keyword,
         None => Token::Ident,
     };
-    lex.tokens.add_token(token, range);
+    lex.tokens().add_token(token, range);
 }
 
 fn lex_symbol(lex: &mut Lexer, fc: char) {
     let start = lex.start_range();
     lex.eat(fc);
 
+    macro_rules! add_token_and_return {
+        ($lex:expr, $start:expr, $token:expr) => {{
+            let range = $lex.make_range($start);
+            $lex.tokens().add_token($token, range);
+            return;
+        }};
+    }
+
     let mut token = match Token::from_char(fc) {
         Some(sym) => sym,
-        None => {
-            lex.tokens.add_token(Token::Error, lex.make_range(start));
-            return;
-        }
+        None => add_token_and_return!(lex, start, Token::Error),
     };
 
     match lex.peek() {
@@ -423,15 +429,9 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
                 lex.eat(c);
                 token = sym;
             }
-            None => {
-                lex.tokens.add_token(token, lex.make_range(start));
-                return;
-            }
+            None => add_token_and_return!(lex, start, token),
         },
-        None => {
-            lex.tokens.add_token(token, lex.make_range(start));
-            return;
-        }
+        None => add_token_and_return!(lex, start, token),
     }
 
     match lex.peek() {
@@ -440,16 +440,10 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
                 lex.eat(c);
                 token = sym;
             }
-            None => {
-                lex.tokens.add_token(token, lex.make_range(start));
-                return;
-            }
+            None => add_token_and_return!(lex, start, token),
         },
-        None => {
-            lex.tokens.add_token(token, lex.make_range(start));
-            return;
-        }
+        None => add_token_and_return!(lex, start, token),
     }
 
-    lex.tokens.add_token(token, lex.make_range(start));
+    add_token_and_return!(lex, start, token);
 }

@@ -35,7 +35,7 @@ fn check() -> Result<(), Vec<ErrorComp>> {
     return Ok(());
 
     fn inner(session: &Session) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(&session)?;
+        let ast = ast_parse::parse(session)?;
         let _ = hir_lower::check(ast, session)?;
         Ok(())
     }
@@ -49,7 +49,7 @@ fn build(data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
     return Ok(());
 
     fn inner(session: &Session, data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(&session)?;
+        let ast = ast_parse::parse(session)?;
         let hir = hir_lower::check(ast, session)?;
         codegen::codegen(
             hir,
@@ -69,7 +69,7 @@ fn run(data: CommandRun) -> Result<(), Vec<ErrorComp>> {
     return Ok(());
 
     fn inner(session: &Session, data: CommandRun) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(&session)?;
+        let ast = ast_parse::parse(session)?;
         let hir = hir_lower::check(ast, session)?;
         codegen::codegen(
             hir,

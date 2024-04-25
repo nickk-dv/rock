@@ -36,7 +36,7 @@ pub fn parse() -> Result<CommandFormat, ErrorComp> {
             opt_args.push(arg);
         }
 
-        if let Some(..) = cmd_options.get(&opt_name) {
+        if cmd_options.get(&opt_name).is_some() {
             duplicates.insert(opt_name);
         } else {
             cmd_options.insert(opt_name, opt_args);
@@ -67,7 +67,7 @@ impl FormatParser {
     fn peek_arg(&mut self) -> Option<String> {
         match self.args.get(self.cursor) {
             Some(arg) => {
-                if !arg.starts_with("-") {
+                if !arg.starts_with('-') {
                     self.cursor += 1;
                     Some(arg.clone())
                 } else {
@@ -88,7 +88,7 @@ impl FormatParser {
                     } else {
                         Some(option.to_string())
                     }
-                } else if let Some(option) = arg.strip_prefix("-") {
+                } else if let Some(option) = arg.strip_prefix('-') {
                     // how to deal with empty `-` options? @25.04.24
                     // potentially dont allow single `-` options and always go with `--`
                     // and empty -- will mean start of trailing args
