@@ -1,4 +1,5 @@
 use super::hir_build::{HirData, HirEmit};
+use super::pass_5;
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
@@ -80,10 +81,14 @@ fn process_proc_data<'hir>(
                 ),
             ));
         } else {
+            let ty = type_resolve(hir, emit, origin_id, param.ty);
+            // types from ast dont have range, so using param name instead, possible change @26.04.24
+            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, param.name.range));
+
             unique.push(hir::ProcParam {
                 mutt: param.mutt,
                 name: param.name,
-                ty: type_resolve(hir, emit, origin_id, param.ty),
+                ty,
             });
         }
     }
@@ -159,9 +164,13 @@ fn process_union_data<'hir>(
                 ErrorComp::info("existing member", hir.src(origin_id, existing.name.range)),
             ));
         } else {
+            let ty = type_resolve(hir, emit, origin_id, member.ty);
+            // types from ast dont have range, so using param name instead, possible change @26.04.24
+            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, member.name.range));
+
             unique.push(hir::UnionMember {
                 name: member.name,
-                ty: type_resolve(hir, emit, origin_id, member.ty),
+                ty,
             });
         }
     }
@@ -189,10 +198,14 @@ fn process_struct_data<'hir>(
                 ErrorComp::info("existing field", hir.src(origin_id, existing.name.range)),
             ));
         } else {
+            let ty = type_resolve(hir, emit, origin_id, field.ty);
+            // types from ast dont have range, so using param name instead, possible change @26.04.24
+            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, field.name.range));
+
             unique.push(hir::StructField {
                 vis: field.vis,
                 name: field.name,
-                ty: type_resolve(hir, emit, origin_id, field.ty),
+                ty,
             });
         }
     }
@@ -209,6 +222,9 @@ fn process_const_data<'hir>(
     let origin_id = hir.registry().const_data(id).origin_id;
 
     let ty = type_resolve(hir, emit, origin_id, item.ty);
+    // types from ast dont have range, so using param name instead, possible change @26.04.24
+    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
+
     let data = hir.registry_mut().const_data_mut(id);
     data.ty = ty;
     //@check const_expr value type with resolved type?
@@ -223,6 +239,9 @@ fn process_global_data<'hir>(
     let origin_id = hir.registry().global_data(id).origin_id;
 
     let ty = type_resolve(hir, emit, origin_id, item.ty);
+    // types from ast dont have range, so using param name instead, possible change @26.04.24
+    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
+
     let data = hir.registry_mut().global_data_mut(id);
     data.ty = ty;
     //@check const_expr value type with resolved type?

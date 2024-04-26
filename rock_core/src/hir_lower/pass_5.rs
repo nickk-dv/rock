@@ -59,7 +59,7 @@ fn typecheck_proc<'hir>(
 
     match item.attr_tail {
         Some(attr) => match attr.kind {
-            ast::AttributeKind::Ccall => {
+            ast::AttributeKind::C_Call => {
                 if item.block.is_some() {
                     emit.error(ErrorComp::error(
                         "expected procedure without a body, since tail attribute #[c_call] was used",
@@ -74,6 +74,7 @@ fn typecheck_proc<'hir>(
                 hir.src(data.origin_id, attr.range),
                 None,
             )),
+            _ => {}
         },
         None => {
             if item.block.is_none() {
@@ -1915,9 +1916,7 @@ fn typecheck_assign<'hir>(
 ) -> hir::Stmt<'hir> {
     let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, assign.lhs);
 
-    let expect = if matches!(lhs_res.ty, hir::Type::Error) {
-        hir::Type::Error
-    } else if verify_is_expr_assignable(lhs_res.expr) {
+    let expect = if verify_is_expr_assignable(lhs_res.expr) {
         lhs_res.ty
     } else {
         emit.error(ErrorComp::error(
@@ -1955,8 +1954,39 @@ fn verify_is_expr_assignable(expr: &hir::Expr) -> bool {
         hir::Expr::LocalVar { .. } => true,
         hir::Expr::ParamVar { .. } => true,
         hir::Expr::GlobalVar { .. } => true, //@add mut to globals
-        hir::Expr::Unary { op, .. } => matches!(op, ast::UnOp::Deref),
+        hir::Expr::Unary { op, .. } => matches!(op, ast::UnOp::Deref), //@support deref assignment properly
         _ => false,
+    }
+}
+
+// these calls are only done for items so far @26.04.24
+// locals or input params etc not checked yet (need to find a reasonable strategy)
+// proc return type is allowed to be never or void unlike other instances where types are used
+pub fn require_value_type<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    ty: hir::Type,
+    source: SourceRange,
+) {
+    if !type_is_value_type(ty) {
+        emit.error(ErrorComp::error(
+            format!("expected value type, found `{}`", type_format(hir, ty)),
+            source,
+            None,
+        ))
+    }
+}
+
+pub fn type_is_value_type(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => !matches!(basic, BasicType::Void | BasicType::Never),
+        hir::Type::Enum(_) => true,
+        hir::Type::Union(_) => true,
+        hir::Type::Struct(_) => true,
+        hir::Type::Reference(ref_ty, _) => type_is_value_type(*ref_ty),
+        hir::Type::ArraySlice(slice) => type_is_value_type(slice.ty),
+        hir::Type::ArrayStatic(array) => type_is_value_type(array.ty),
     }
 }
 

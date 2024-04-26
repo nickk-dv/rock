@@ -108,9 +108,11 @@ fn add_module_items<'hir>(
                     let data = hir::GlobalData {
                         origin_id,
                         vis: item.vis,
+                        mutt: item.mutt,
                         name: item.name,
                         ty: hir::Type::Error,
                         value,
+                        thread_local: false, //@set based on attribute 26.04.24
                     };
                     let id = hir.registry_mut().add_global(item, data);
                     hir.add_symbol(

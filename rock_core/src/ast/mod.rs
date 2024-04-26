@@ -113,6 +113,7 @@ pub struct ConstItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
     pub vis: Vis,
+    pub mutt: Mut,
     pub name: Name,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
@@ -156,10 +157,30 @@ pub struct Attribute {
     pub range: TextRange,
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
 pub enum AttributeKind {
-    Ccall,
+    C_Call,
+    Thread_Local,
     Unknown,
+}
+
+impl AttributeKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            AttributeKind::C_Call => "c_call",
+            AttributeKind::Thread_Local => "thread_local",
+            AttributeKind::Unknown => "unknown",
+        }
+    }
+
+    pub fn from_str(string: &str) -> AttributeKind {
+        match string {
+            "c_call" => AttributeKind::C_Call,
+            "thread_local" => AttributeKind::Thread_Local,
+            _ => AttributeKind::Unknown,
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

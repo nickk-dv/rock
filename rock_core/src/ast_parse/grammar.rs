@@ -217,6 +217,7 @@ fn global_item<'ast>(
     vis: Vis,
 ) -> Result<&'ast GlobalItem<'ast>, String> {
     p.bump();
+    let mutt = mutt(p);
     let name = name(p)?;
     p.expect(T![:])?;
     let ty = ty(p)?;
@@ -226,6 +227,7 @@ fn global_item<'ast>(
 
     Ok(p.state.arena.alloc(GlobalItem {
         vis,
+        mutt,
         name,
         ty,
         value,
@@ -294,11 +296,7 @@ fn attribute(p: &mut Parser) -> Result<Option<Attribute>, String> {
         let range = p.peek_range();
         p.expect(T![ident])?;
         let string = &p.source[range.as_usize()];
-
-        let kind = match string {
-            "c_call" => AttributeKind::Ccall,
-            _ => AttributeKind::Unknown,
-        };
+        let kind = AttributeKind::from_str(string);
 
         p.expect(T![']'])?;
         let range = TextRange::new(range_start, p.peek_range_end());

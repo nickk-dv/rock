@@ -282,13 +282,13 @@ fn codegen_struct_types(cg: &mut Codegen) {
 fn codegen_globals(cg: &mut Codegen) {
     cg.globals.reserve_exact(cg.hir.globals.len());
 
-    for global_data in cg.hir.globals.iter() {
-        let global_ty = cg.type_into_basic(global_data.ty).expect("non void type");
+    for data in cg.hir.globals.iter() {
+        let global_ty = cg.type_into_basic(data.ty).expect("non void type");
         let global = cg.module.add_global(global_ty, None, "global");
-        //@set is_constant based on mutability of the global (not yet supported or checked) @13.04.24
-        global.set_constant(false);
+        global.set_constant(data.mutt == ast::Mut::Immutable);
         global.set_linkage(module::Linkage::Private);
-        global.set_initializer(&codegen_const_expr(cg, global_data.value));
+        global.set_thread_local(data.thread_local);
+        global.set_initializer(&codegen_const_expr(cg, data.value));
         cg.globals.push(global);
     }
 }

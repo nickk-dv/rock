@@ -115,9 +115,11 @@ hir_id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
+    pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstExpr<'hir>,
+    pub thread_local: bool,
 }
 
 #[derive(Copy, Clone)]
