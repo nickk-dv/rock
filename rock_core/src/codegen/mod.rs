@@ -460,8 +460,8 @@ fn codegen_expr<'ctx>(
             op,
             lhs,
             rhs,
-            signed_int,
-        } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs, signed_int)),
+            lhs_signed_int,
+        } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs, lhs_signed_int)),
     }
 }
 
@@ -680,7 +680,8 @@ fn codegen_block<'ctx>(
                         let lhs_ptr = lhs.into_pointer_value();
                         let lhs_ty = cg.type_into_basic(assign.lhs_ty).expect("value type");
                         let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
-                        let bin_value = codegen_bin_op(cg, op, lhs_value, rhs, assign.signed_int);
+                        let bin_value =
+                            codegen_bin_op(cg, op, lhs_value, rhs, assign.lhs_signed_int);
                         cg.builder.build_store(lhs_ptr, bin_value).unwrap();
                     }
                 }
@@ -1069,11 +1070,11 @@ fn codegen_binary<'ctx>(
     op: ast::BinOp,
     lhs: &hir::Expr,
     rhs: &hir::Expr,
-    signed_int: bool,
+    lhs_signed_int: bool,
 ) -> values::BasicValueEnum<'ctx> {
     let lhs = codegen_expr(cg, proc_cg, false, lhs).expect("value");
     let rhs = codegen_expr(cg, proc_cg, false, rhs).expect("value");
-    codegen_bin_op(cg, op, lhs, rhs, signed_int)
+    codegen_bin_op(cg, op, lhs, rhs, lhs_signed_int)
 }
 
 fn codegen_bin_op<'ctx>(
@@ -1081,7 +1082,7 @@ fn codegen_bin_op<'ctx>(
     op: ast::BinOp,
     lhs: values::BasicValueEnum<'ctx>,
     rhs: values::BasicValueEnum<'ctx>,
-    signed_int: bool,
+    lhs_signed_int: bool,
 ) -> values::BasicValueEnum<'ctx> {
     match op {
         ast::BinOp::Add => match lhs {
@@ -1125,7 +1126,7 @@ fn codegen_bin_op<'ctx>(
         },
         ast::BinOp::Div => match lhs {
             values::BasicValueEnum::IntValue(lhs) => {
-                if signed_int {
+                if lhs_signed_int {
                     cg.builder
                         .build_int_signed_div(lhs, rhs.into_int_value(), "bin_temp")
                         .unwrap()
@@ -1146,7 +1147,7 @@ fn codegen_bin_op<'ctx>(
         },
         ast::BinOp::Rem => match lhs {
             values::BasicValueEnum::IntValue(lhs) => {
-                if signed_int {
+                if lhs_signed_int {
                     cg.builder
                         .build_int_signed_rem(lhs, rhs.into_int_value(), "bin_temp")
                         .unwrap()
@@ -1190,7 +1191,7 @@ fn codegen_bin_op<'ctx>(
             .build_right_shift(
                 lhs.into_int_value(),
                 rhs.into_int_value(),
-                signed_int,
+                lhs_signed_int,
                 "bin_temp",
             )
             .unwrap()
@@ -1245,7 +1246,7 @@ fn codegen_bin_op<'ctx>(
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
-                    if signed_int {
+                    if lhs_signed_int {
                         inkwell::IntPredicate::SLT
                     } else {
                         inkwell::IntPredicate::ULT
@@ -1272,7 +1273,7 @@ fn codegen_bin_op<'ctx>(
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
-                    if signed_int {
+                    if lhs_signed_int {
                         inkwell::IntPredicate::SLE
                     } else {
                         inkwell::IntPredicate::ULE
@@ -1299,7 +1300,7 @@ fn codegen_bin_op<'ctx>(
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
-                    if signed_int {
+                    if lhs_signed_int {
                         inkwell::IntPredicate::SGT
                     } else {
                         inkwell::IntPredicate::UGT
@@ -1326,7 +1327,7 @@ fn codegen_bin_op<'ctx>(
             values::BasicValueEnum::IntValue(lhs) => cg
                 .builder
                 .build_int_compare(
-                    if signed_int {
+                    if lhs_signed_int {
                         inkwell::IntPredicate::SGE
                     } else {
                         inkwell::IntPredicate::UGE

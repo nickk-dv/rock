@@ -191,7 +191,7 @@ pub struct Assign<'hir> {
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
     pub lhs_ty: Type<'hir>,
-    pub signed_int: bool,
+    pub lhs_signed_int: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -226,7 +226,7 @@ pub enum Expr<'hir> {
     ArrayRepeat { array_repeat: &'hir ArrayRepeat<'hir> },
     Address     { rhs: &'hir Expr<'hir> },
     Unary       { op: ast::UnOp, rhs: &'hir Expr<'hir> },
-    Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir>, signed_int: bool },
+    Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir>, lhs_signed_int: bool },
 }
 
 #[derive(Copy, Clone)]

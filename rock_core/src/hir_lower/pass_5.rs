@@ -1338,6 +1338,12 @@ fn typecheck_unary<'hir>(
     TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
 }
 
+// @26.04.24
+// operator incompatability messages are bad
+// no as_str() for bin_op is available, only for tokens they come from
+// add range for un_op bin_op and assign_op in the ast?
+// will allow for more precise and clear messages, while using more mem
+
 fn typecheck_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1354,7 +1360,9 @@ fn typecheck_binary<'hir>(
             let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
-            let binary_ty = if !check_type_allow_math_ops(lhs_res.ty) {
+            let binary_ty = if check_type_allow_math_ops(lhs_res.ty) {
+                lhs_res.ty
+            } else {
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot use math operator on value of type `{}`",
@@ -1363,8 +1371,6 @@ fn typecheck_binary<'hir>(
                     hir.src(proc.origin(), lhs.range),
                     None,
                 ));
-                lhs_res.ty
-            } else {
                 hir::Type::Error
             };
 
@@ -1374,7 +1380,9 @@ fn typecheck_binary<'hir>(
             let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
-            let binary_ty = if !check_type_allow_remainder(lhs_res.ty) {
+            let binary_ty = if check_type_allow_remainder(lhs_res.ty) {
+                lhs_res.ty
+            } else {
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot use remainder operator on value of type `{}`",
@@ -1383,23 +1391,88 @@ fn typecheck_binary<'hir>(
                     hir.src(proc.origin(), lhs.range),
                     None,
                 ));
-                lhs_res.ty
-            } else {
                 hir::Type::Error
             };
 
             (binary_ty, lhs_res.expr, rhs_res.expr)
         }
-        ast::BinOp::BitAnd
-        | ast::BinOp::BitOr
-        | ast::BinOp::BitXor
-        | ast::BinOp::BitShl
-        | ast::BinOp::BitShr => {
-            //@binary bit ops are not checked yet
+        ast::BinOp::BitAnd | ast::BinOp::BitOr | ast::BinOp::BitXor => {
             let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
-            (lhs_res.ty, lhs_res.expr, rhs_res.expr)
+            let binary_ty = if check_type_allow_and_or_xor(lhs_res.ty) {
+                lhs_res.ty
+            } else {
+                emit.error(ErrorComp::error(
+                    format!(
+                        "cannot use bit-wise operator on value of type `{}`",
+                        type_format(hir, lhs_res.ty)
+                    ),
+                    hir.src(proc.origin(), lhs.range),
+                    None,
+                ));
+                hir::Type::Error
+            };
+
+            (binary_ty, lhs_res.expr, rhs_res.expr)
+        }
+        ast::BinOp::BitShl | ast::BinOp::BitShr => {
+            let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
+            // this expectation should aim to be integer of same size @26.04.24
+            // but passing lhs_res.ty would result in hard error, eg: i32 >> u32
+            // passing hir::Type::Error will turn literals into default i32 values which isnt always expected
+            let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
+
+            // how to threat arch dependant sizes? @26.04.24
+            // during build we know which size we want
+            // during check no such info is available
+            // same question about folding the sizeof()
+            // size only known when target arch is known
+
+            match (lhs_res.ty, rhs_res.ty) {
+                (hir::Type::Basic(lhs_basic), hir::Type::Basic(rhs_basic)) => {
+                    if matches!(
+                        BasicTypeKind::from_basic(lhs_basic),
+                        BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+                    ) && matches!(
+                        BasicTypeKind::from_basic(rhs_basic),
+                        BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+                    ) {
+                        let lhs_size = basic_type_size(lhs_basic);
+                        let rhs_size = basic_type_size(rhs_basic);
+                        if lhs_size != rhs_size {
+                            emit.error(ErrorComp::error(
+                                format!(
+                                    "cannot use bit-shift operator on integers of different sizes\n`{}` has bitwidth of {}, `{}` has bitwidth of {} ",
+                                    type_format(hir, lhs_res.ty),
+                                    lhs_size * 8,
+                                    type_format(hir, rhs_res.ty),
+                                    rhs_size * 8,
+                                ),
+                                hir.src(proc.origin(), lhs.range),
+                                None,
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            let binary_ty = if check_type_allow_shl_shr(lhs_res.ty) {
+                lhs_res.ty
+            } else {
+                emit.error(ErrorComp::error(
+                    format!(
+                        "cannot use bit-shift operator on value of type `{}`",
+                        type_format(hir, lhs_res.ty)
+                    ),
+                    hir.src(proc.origin(), lhs.range),
+                    None,
+                ));
+                hir::Type::Error
+            };
+
+            (binary_ty, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::IsEq | ast::BinOp::NotEq => {
             let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, lhs);
@@ -1449,7 +1522,7 @@ fn typecheck_binary<'hir>(
         }
     };
 
-    let signed_int = match binary_ty {
+    let lhs_signed_int = match binary_ty {
         hir::Type::Basic(basic) => {
             matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
         }
@@ -1459,7 +1532,7 @@ fn typecheck_binary<'hir>(
         op,
         lhs: lhs_expr,
         rhs: rhs_expr,
-        signed_int,
+        lhs_signed_int,
     };
     TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
 }
@@ -1486,15 +1559,37 @@ fn check_type_allow_remainder(ty: hir::Type) -> bool {
     }
 }
 
+fn check_type_allow_and_or_xor(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+        ),
+        _ => false,
+    }
+}
+
+fn check_type_allow_shl_shr(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+        ),
+        _ => false,
+    }
+}
+
 fn check_type_allow_compare_eq(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
         hir::Type::Basic(basic) => matches!(
             BasicTypeKind::from_basic(basic),
-            BasicTypeKind::Bool
-                | BasicTypeKind::SignedInt
+            BasicTypeKind::SignedInt
                 | BasicTypeKind::UnsignedInt
                 | BasicTypeKind::Float
+                | BasicTypeKind::Bool
                 | BasicTypeKind::Char
                 | BasicTypeKind::Rawptr
         ),
@@ -1835,7 +1930,7 @@ fn typecheck_assign<'hir>(
 
     let rhs_res = typecheck_expr(hir, emit, proc, expect, assign.rhs);
 
-    let signed_int = match lhs_res.ty {
+    let lhs_signed_int = match lhs_res.ty {
         hir::Type::Basic(basic) => {
             matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
         }
@@ -1846,7 +1941,7 @@ fn typecheck_assign<'hir>(
         lhs: lhs_res.expr,
         rhs: rhs_res.expr,
         lhs_ty: lhs_res.ty,
-        signed_int,
+        lhs_signed_int,
     };
     hir::Stmt::Assign(emit.arena.alloc(assign))
 }
