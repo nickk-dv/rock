@@ -1835,10 +1835,18 @@ fn typecheck_assign<'hir>(
 
     let rhs_res = typecheck_expr(hir, emit, proc, expect, assign.rhs);
 
+    let signed_int = match lhs_res.ty {
+        hir::Type::Basic(basic) => {
+            matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
+        }
+        _ => false,
+    };
     let assign = hir::Assign {
         op: assign.op,
         lhs: lhs_res.expr,
         rhs: rhs_res.expr,
+        lhs_ty: lhs_res.ty,
+        signed_int,
     };
     hir::Stmt::Assign(emit.arena.alloc(assign))
 }

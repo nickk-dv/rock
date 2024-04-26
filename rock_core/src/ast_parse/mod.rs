@@ -6,7 +6,7 @@ use crate::error::ErrorComp;
 use crate::lexer;
 use crate::session::{FileID, Session};
 
-pub fn parse<'ast>(session: &Session) -> Result<Ast<'_, 'ast>, Vec<ErrorComp>> {
+pub fn parse(session: &Session) -> Result<Ast, Vec<ErrorComp>> {
     let mut state = parser::ParseState::new();
     let mut file_idx: usize = 0;
 

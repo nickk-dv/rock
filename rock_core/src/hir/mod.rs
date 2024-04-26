@@ -190,6 +190,8 @@ pub struct Assign<'hir> {
     pub op: ast::AssignOp,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
+    pub lhs_ty: Type<'hir>,
+    pub signed_int: bool,
 }
 
 #[derive(Copy, Clone)]

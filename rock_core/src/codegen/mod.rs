@@ -673,11 +673,16 @@ fn codegen_block<'ctx>(
                 let rhs = codegen_expr(cg, proc_cg, false, assign.rhs).expect("value");
                 match assign.op {
                     ast::AssignOp::Assign => {
-                        cg.builder
-                            .build_store(lhs.into_pointer_value(), rhs)
-                            .unwrap();
+                        let lhs_ptr = lhs.into_pointer_value();
+                        cg.builder.build_store(lhs_ptr, rhs).unwrap();
                     }
-                    ast::AssignOp::Bin(_) => todo!("codegen `bin op` assign not supported"),
+                    ast::AssignOp::Bin(op) => {
+                        let lhs_ptr = lhs.into_pointer_value();
+                        let lhs_ty = cg.type_into_basic(assign.lhs_ty).expect("value type");
+                        let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
+                        let bin_value = codegen_bin_op(cg, op, lhs_value, rhs, assign.signed_int);
+                        cg.builder.build_store(lhs_ptr, bin_value).unwrap();
+                    }
                 }
             }
             hir::Stmt::ExprSemi(expr) => {
@@ -1068,7 +1073,16 @@ fn codegen_binary<'ctx>(
 ) -> values::BasicValueEnum<'ctx> {
     let lhs = codegen_expr(cg, proc_cg, false, lhs).expect("value");
     let rhs = codegen_expr(cg, proc_cg, false, rhs).expect("value");
+    codegen_bin_op(cg, op, lhs, rhs, signed_int)
+}
 
+fn codegen_bin_op<'ctx>(
+    cg: &Codegen<'ctx>,
+    op: ast::BinOp,
+    lhs: values::BasicValueEnum<'ctx>,
+    rhs: values::BasicValueEnum<'ctx>,
+    signed_int: bool,
+) -> values::BasicValueEnum<'ctx> {
     match op {
         ast::BinOp::Add => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
