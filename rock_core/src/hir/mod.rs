@@ -45,6 +45,8 @@ pub struct ProcData<'hir> {
     pub return_ty: Type<'hir>,
     pub block: Option<&'hir Expr<'hir>>,
     pub locals: &'hir [&'hir Local<'hir>],
+    pub is_test: bool,
+    pub is_main: bool,
 }
 
 hir_id_impl!(ProcParamID);

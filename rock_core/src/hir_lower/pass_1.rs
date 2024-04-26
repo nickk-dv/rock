@@ -1,4 +1,5 @@
 use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
+use super::pass_5;
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
@@ -21,7 +22,14 @@ fn add_module_items<'hir>(
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
                 None => {
-                    let id = hir.registry_mut().add_proc(item, origin_id);
+                    let is_test = pass_5::check_attribute(
+                        hir,
+                        emit,
+                        origin_id,
+                        item.attr,
+                        ast::AttributeKind::Test,
+                    );
+                    let id = hir.registry_mut().add_proc(item, origin_id, is_test, false); //@determine is_main correctly
                     hir.add_symbol(
                         origin_id,
                         item.name.id,
@@ -105,6 +113,13 @@ fn add_module_items<'hir>(
                 }
                 None => {
                     let value = super::pass_4::const_expr_resolve(hir, emit, origin_id, item.value);
+                    let thread_local = pass_5::check_attribute(
+                        hir,
+                        emit,
+                        origin_id,
+                        item.attr,
+                        ast::AttributeKind::Thread_Local,
+                    );
                     let data = hir::GlobalData {
                         origin_id,
                         vis: item.vis,
@@ -112,7 +127,7 @@ fn add_module_items<'hir>(
                         name: item.name,
                         ty: hir::Type::Error,
                         value,
-                        thread_local: false, //@set based on attribute 26.04.24
+                        thread_local,
                     };
                     let id = hir.registry_mut().add_global(item, data);
                     hir.add_symbol(

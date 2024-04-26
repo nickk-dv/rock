@@ -39,6 +39,49 @@ struct ConstStruct<'hir> {
     fields: &'hir [ConstID],
 }
 
+pub fn check_attribute(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: hir::ModuleID,
+    attr: Option<ast::Attribute>,
+    expected: ast::AttributeKind,
+) -> bool {
+    let attr = if let Some(attr) = attr {
+        attr
+    } else {
+        return false;
+    };
+
+    if attr.kind == expected {
+        return true;
+    }
+
+    match attr.kind {
+        ast::AttributeKind::Unknown => {
+            emit.error(ErrorComp::error(
+                format!(
+                    "unknown attribute, only #[{}] is allowed here",
+                    expected.as_str()
+                ),
+                hir.src(origin_id, attr.range),
+                None,
+            ));
+        }
+        _ => {
+            emit.error(ErrorComp::error(
+                format!(
+                    "unexpected #[{}] attribute, only #[{}] is allowed here",
+                    attr.kind.as_str(),
+                    expected.as_str()
+                ),
+                hir.src(origin_id, attr.range),
+                None,
+            ));
+        }
+    }
+    false
+}
+
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().proc_ids() {
         typecheck_proc(hir, emit, id)
@@ -53,39 +96,66 @@ fn typecheck_proc<'hir>(
     let item = hir.registry().proc_item(id);
     let data = hir.registry().proc_data(id);
 
-    //@also error on variadic in non foreign procedure @15.04.24
-    // since variadic arguments are not supported in language itself only ffi
-    // this prevents ability to break calling convention of rock procedures during codegen
+    let c_call = check_attribute(
+        hir,
+        emit,
+        data.origin_id,
+        item.attr_tail,
+        ast::AttributeKind::C_Call,
+    );
 
-    match item.attr_tail {
-        Some(attr) => match attr.kind {
-            ast::AttributeKind::C_Call => {
-                if item.block.is_some() {
-                    emit.error(ErrorComp::error(
-                        "expected procedure without a body, since tail attribute #[c_call] was used",
-                        hir.src(data.origin_id, attr.range),
-                        None,
-                    ))
-                }
-            }
-            //@this error is shared when more attributes are defined @15.04.24
-            ast::AttributeKind::Unknown => emit.error(ErrorComp::error(
-                "unknown attribute, did you mean to use #[c_call] here?",
-                hir.src(data.origin_id, attr.range),
+    if c_call {
+        if item.block.is_some() {
+            emit.error(ErrorComp::error(
+                "procedures with #[c_call] attribute cannot have a body",
+                hir.src(data.origin_id, data.name.range),
                 None,
-            )),
-            _ => {}
-        },
-        None => {
-            if item.block.is_none() {
-                emit.error(ErrorComp::error(
-                    "expected tail attribute #[c_call], since procedure has no body",
-                    hir.src(data.origin_id, data.name.range),
-                    None,
-                ))
-            }
+            ))
+        }
+    } else {
+        if item.block.is_none() {
+            emit.error(ErrorComp::error(
+                "expected tail attribute #[c_call], since procedure has no body",
+                hir.src(data.origin_id, data.name.range),
+                None,
+            ))
+        }
+        if data.is_variadic {
+            emit.error(ErrorComp::error(
+                "procedures without #[c_call] attribute cannot be variadic, remove `..` from parameter list",
+                hir.src(data.origin_id, data.name.range),
+                None,
+            ))
         }
     }
+
+    if data.is_test {
+        if c_call {
+            emit.error(ErrorComp::error(
+                "procedures with #[test] attribute cannot be external #[c_call]",
+                hir.src(data.origin_id, data.name.range),
+                None,
+            ))
+        }
+        if !data.params.is_empty() {
+            emit.error(ErrorComp::error(
+                "procedures with #[test] attribute cannot have any input parameters",
+                hir.src(data.origin_id, data.name.range),
+                None,
+            ))
+        }
+        // not allowing `never` in test procedures,
+        // panic or exit in test code doesnt make much sence, or does it? @27.04.24
+        if !matches!(data.return_ty, hir::Type::Basic(BasicType::Void)) {
+            emit.error(ErrorComp::error(
+                "procedures with #[test] attribute can only return `void`",
+                hir.src(data.origin_id, data.name.range),
+                None,
+            ))
+        }
+    }
+
+    // main entry point cannot be external or a test (is_main detection isnt done yet) @27.04.24
 
     if let Some(block) = item.block {
         let mut proc = ProcScope::new(data);

@@ -68,14 +68,15 @@ pub fn module<'ast>(
 }
 
 fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
+    let attr = attribute(p)?;
     let vis = vis(p); //@not allowing vis with `import` is not enforced right now
     match p.peek() {
-        T![proc] => Ok(Item::Proc(proc_item(p, vis)?)),
+        T![proc] => Ok(Item::Proc(proc_item(p, attr, vis)?)),
         T![enum] => Ok(Item::Enum(enum_item(p, vis)?)),
         T![union] => Ok(Item::Union(union_item(p, vis)?)),
         T![struct] => Ok(Item::Struct(struct_item(p, vis)?)),
         T![const] => Ok(Item::Const(const_item(p, vis)?)),
-        T![global] => Ok(Item::Global(global_item(p, vis)?)),
+        T![global] => Ok(Item::Global(global_item(p, attr, vis)?)),
         T![import] => Ok(Item::Import(import_item(p)?)),
         _ => Err("expected item".into()),
     }
@@ -83,6 +84,7 @@ fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
 
 fn proc_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
+    attr: Option<Attribute>,
     vis: Vis,
 ) -> Result<&'ast ProcItem<'ast>, String> {
     p.bump();
@@ -106,10 +108,25 @@ fn proc_item<'ast>(
     let params = p.state.proc_params.take(start, &mut p.state.arena);
 
     let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
+    // syntax problem normal attr clashes with tail attr @27.04.24
+    // will need to parse attr_list instead to support any number of attributes before items
+    /*
+    proc foo()
+
+    #[test] // gets pased as tail attr of `foo`
+    proc baz()
+
+    instead try:
+
+    #[c_call]
+    proc foo()
+
+    */
     let attr_tail = attribute(p)?;
     let block = if p.at(T!['{']) { Some(block(p)?) } else { None };
 
     Ok(p.state.arena.alloc(ProcItem {
+        attr,
         vis,
         name,
         params,
@@ -214,6 +231,7 @@ fn const_item<'ast>(
 
 fn global_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
+    attr: Option<Attribute>,
     vis: Vis,
 ) -> Result<&'ast GlobalItem<'ast>, String> {
     p.bump();
@@ -226,6 +244,7 @@ fn global_item<'ast>(
     p.expect(T![;])?;
 
     Ok(p.state.arena.alloc(GlobalItem {
+        attr,
         vis,
         mutt,
         name,

@@ -45,6 +45,7 @@ pub struct ItemCount {
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
+    pub attr: Option<Attribute>,
     pub vis: Vis,
     pub name: Name,
     pub params: &'ast [ProcParam<'ast>],
@@ -112,6 +113,7 @@ pub struct ConstItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
+    pub attr: Option<Attribute>,
     pub vis: Vis,
     pub mutt: Mut,
     pub name: Name,
@@ -158,8 +160,9 @@ pub struct Attribute {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum AttributeKind {
+    Test,
     C_Call,
     Thread_Local,
     Unknown,
@@ -168,6 +171,7 @@ pub enum AttributeKind {
 impl AttributeKind {
     pub const fn as_str(self) -> &'static str {
         match self {
+            AttributeKind::Test => "test",
             AttributeKind::C_Call => "c_call",
             AttributeKind::Thread_Local => "thread_local",
             AttributeKind::Unknown => "unknown",
@@ -176,6 +180,7 @@ impl AttributeKind {
 
     pub fn from_str(string: &str) -> AttributeKind {
         match string {
+            "test" => AttributeKind::Test,
             "c_call" => AttributeKind::C_Call,
             "thread_local" => AttributeKind::Thread_Local,
             _ => AttributeKind::Unknown,

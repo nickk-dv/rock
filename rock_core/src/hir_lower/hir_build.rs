@@ -313,6 +313,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
         origin_id: hir::ModuleID,
+        is_test: bool,
+        is_main: bool,
     ) -> hir::ProcID {
         let id = hir::ProcID::new(self.hir_procs.len());
         let data = hir::ProcData {
@@ -324,6 +326,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             return_ty: hir::Type::Error,
             block: None,
             locals: &[],
+            is_test,
+            is_main,
         };
         self.ast_procs.push(item);
         self.hir_procs.push(data);
