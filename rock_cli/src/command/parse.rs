@@ -29,7 +29,7 @@ pub fn command(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
         "h" | "help" => parse_help(format),
         "v" | "version" => parse_version(format),
         _ => Err(vec![ErrorComp::message(format!(
-            "command `{}` does not exist",
+            "command `{}` does not exist, use `rock help` to learn the usage",
             format.name
         ))]),
     }
@@ -99,7 +99,7 @@ fn parse_new_name(format: &CommandFormat) -> Result<String, Vec<ErrorComp>> {
         Ok(arg.to_string())
     } else {
         Err(vec![ErrorComp::message(
-            "missing package name, use `rock help` to learn the usage",
+            "missing new package name, use `rock help` to learn the usage",
         )])
     }
 }

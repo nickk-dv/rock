@@ -67,11 +67,11 @@ impl FormatParser {
     fn peek_arg(&mut self) -> Option<String> {
         match self.args.get(self.cursor) {
             Some(arg) => {
-                if !arg.starts_with('-') {
+                if arg.starts_with("--") {
+                    None
+                } else {
                     self.cursor += 1;
                     Some(arg.clone())
-                } else {
-                    None
                 }
             }
             None => None,
@@ -88,12 +88,6 @@ impl FormatParser {
                     } else {
                         Some(option.to_string())
                     }
-                } else if let Some(option) = arg.strip_prefix('-') {
-                    // how to deal with empty `-` options? @25.04.24
-                    // potentially dont allow single `-` options and always go with `--`
-                    // and empty -- will mean start of trailing args
-                    self.cursor += 1;
-                    Some(option.to_string())
                 } else {
                     None
                 }
