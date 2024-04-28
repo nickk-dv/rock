@@ -1,12 +1,12 @@
 use std::fmt;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct TextRange {
     start: TextOffset,
     end: TextOffset,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct TextLocation {
     line: u32,
     col: u32,
@@ -167,4 +167,30 @@ pub fn find_text_location(
         offset,
         text.len()
     );
+}
+
+#[test]
+fn test() {
+    let text = "foo\nbaz";
+    let foo_range = TextRange::new(0.into(), 3.into());
+    let baz_range = TextRange::new(4.into(), 7.into());
+    let line_ranges = find_line_ranges(text);
+
+    println!("\ntext: {:?}", text);
+    println!("foo_range: {:?}", foo_range);
+    println!("baz_range: {:?}", baz_range);
+    println!("line ranges {:?}\n", line_ranges);
+
+    let (foo_loc_start, _) = find_text_location(text, foo_range.start(), &line_ranges);
+    let (foo_loc_end, _) = find_text_location(text, foo_range.end(), &line_ranges);
+    let (baz_loc_start, _) = find_text_location(text, baz_range.start(), &line_ranges);
+    let (baz_loc_end, _) = find_text_location(text, baz_range.end(), &line_ranges);
+
+    assert_eq!(line_ranges[0], TextRange::new(0.into(), 4.into()));
+    assert_eq!(line_ranges[1], TextRange::new(4.into(), 7.into()));
+
+    assert_eq!(foo_loc_start, TextLocation::new(1, 1));
+    assert_eq!(foo_loc_end, TextLocation::new(1, 4));
+    assert_eq!(baz_loc_start, TextLocation::new(2, 1));
+    assert_eq!(baz_loc_end, TextLocation::new(2, 4));
 }
