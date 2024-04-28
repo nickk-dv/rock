@@ -1,18 +1,11 @@
 //! Defines a small DSL-like macro that automates token definition and conversions.
 //!
-//! `token_gen` generates `Token` enum itself and various conversions. \
-//! `token_from_char` maps char to token. \
-//! `token_glue_extend` defines token glueing rules. \
+//! `token_gen` generates `Token` enum itself and various conversions.  
+//! `token_from_char` maps char to token.  
+//! `token_glue_extend` defines token glueing rules.
 //!
-//! `T` macro is also generated and allows to reference tokens
-//! without directly using `Token` enum:
-//! ```
-//! match token {
-//!     T![.] => "dot",
-//!     T![:] => "colon",
-//!     T![pub] => "pub",
-//! }
-//! ```
+//! `T` macro is also generated and allows to reference tokens  
+//! without directly using `Token` enum: `T![,] T![:] T![pub]`
 
 #[rustfmt::skip]
 macro_rules! token_gen {

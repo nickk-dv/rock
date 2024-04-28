@@ -53,10 +53,12 @@ impl TextRange {
         self.end += by;
     }
     #[inline]
-    pub const fn contains_offset(self, offset: TextOffset) -> bool {
-        //@changed end to <= to fix by 1 overflow when finding text location 23.04.24
-        // potentially wrong?
-        self.start.0 <= offset.0 && offset.0 <= self.end.0
+    const fn contains_exclusive(self, offset: TextOffset) -> bool {
+        offset.0 >= self.start.0 && offset.0 < self.end.0
+    }
+    #[inline]
+    const fn contains_inclusive(self, offset: TextOffset) -> bool {
+        offset.0 >= self.start.0 && offset.0 <= self.end.0
     }
 }
 
@@ -152,7 +154,13 @@ pub fn find_text_location(
     line_ranges: &[TextRange],
 ) -> (TextLocation, TextRange) {
     for (line, range) in line_ranges.iter().enumerate() {
-        if range.contains_offset(offset) {
+        let contains = if line + 1 == line_ranges.len() {
+            range.contains_inclusive(offset)
+        } else {
+            range.contains_exclusive(offset)
+        };
+
+        if contains {
             let prefix_range = TextRange::new(range.start(), offset);
             let prefix = &text[prefix_range.as_usize()];
             return (
@@ -171,16 +179,19 @@ pub fn find_text_location(
 
 #[test]
 fn test() {
+    use crate::lexer;
+    use crate::session::FileID;
+
     let text = "foo\nbaz";
+    let tokens = if let Ok(tokens) = lexer::lex(text, FileID::new(0), false) {
+        tokens
+    } else {
+        panic!("lex failed");
+    };
+
+    let line_ranges = find_line_ranges(text);
     let foo_range = TextRange::new(0.into(), 3.into());
     let baz_range = TextRange::new(4.into(), 7.into());
-    let line_ranges = find_line_ranges(text);
-
-    println!("\ntext: {:?}", text);
-    println!("foo_range: {:?}", foo_range);
-    println!("baz_range: {:?}", baz_range);
-    println!("line ranges {:?}\n", line_ranges);
-
     let (foo_loc_start, _) = find_text_location(text, foo_range.start(), &line_ranges);
     let (foo_loc_end, _) = find_text_location(text, foo_range.end(), &line_ranges);
     let (baz_loc_start, _) = find_text_location(text, baz_range.start(), &line_ranges);
@@ -188,7 +199,8 @@ fn test() {
 
     assert_eq!(line_ranges[0], TextRange::new(0.into(), 4.into()));
     assert_eq!(line_ranges[1], TextRange::new(4.into(), 7.into()));
-
+    assert_eq!(tokens.get_range(0), foo_range);
+    assert_eq!(tokens.get_range(1), baz_range);
     assert_eq!(foo_loc_start, TextLocation::new(1, 1));
     assert_eq!(foo_loc_end, TextLocation::new(1, 4));
     assert_eq!(baz_loc_start, TextLocation::new(2, 1));
