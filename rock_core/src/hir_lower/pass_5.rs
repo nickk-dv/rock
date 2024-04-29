@@ -39,6 +39,82 @@ struct ConstStruct<'hir> {
     fields: &'hir [ConstID],
 }
 
+struct Tree<T: PartialEq> {
+    nodes: Vec<TreeNode<T>>,
+}
+
+#[derive(Copy, Clone)]
+struct TreeNodeID(u32);
+
+struct TreeNode<T: PartialEq> {
+    value: T,
+    parent: Option<TreeNodeID>,
+    last_child: Option<TreeNodeID>,
+}
+
+impl<T: PartialEq> Tree<T> {
+    fn new_rooted(root: T) -> (Tree<T>, TreeNodeID) {
+        let root_id = TreeNodeID(0);
+        let tree = Tree {
+            nodes: vec![TreeNode {
+                value: root,
+                parent: None,
+                last_child: None,
+            }],
+        };
+        (tree, root_id)
+    }
+
+    #[must_use]
+    fn add_child(&mut self, parent_id: TreeNodeID, value: T) -> TreeNodeID {
+        let id = TreeNodeID::new(self.nodes.len());
+        self.nodes.push(TreeNode {
+            value,
+            parent: Some(parent_id),
+            last_child: None,
+        });
+        let parent = self.get_node_mut(parent_id);
+        parent.last_child = Some(id);
+        id
+    }
+
+    fn find_cycle(&self, node_id: TreeNodeID, value: T) -> Option<TreeNodeID> {
+        let mut node = self.get_node(node_id);
+        while let Some(parent_id) = node.parent {
+            node = self.get_node(parent_id);
+            if node.value == value {
+                return Some(parent_id);
+            }
+        }
+        None
+    }
+
+    fn get_node(&self, id: TreeNodeID) -> &TreeNode<T> {
+        &self.nodes[id.index()]
+    }
+    fn get_node_mut(&mut self, id: TreeNodeID) -> &mut TreeNode<T> {
+        &mut self.nodes[id.index()]
+    }
+}
+
+impl TreeNodeID {
+    const fn new(index: usize) -> TreeNodeID {
+        TreeNodeID(index as u32)
+    }
+    const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+fn test_tree() {
+    let (mut tree, root_id) = Tree::new_rooted(10);
+    let node1 = tree.add_child(root_id, 2);
+    let node2 = tree.add_child(root_id, 3);
+
+    let node3 = tree.add_child(node1, 4);
+    let node4 = tree.add_child(node2, 6);
+}
+
 pub fn check_attribute(
     hir: &HirData,
     emit: &mut HirEmit,
@@ -738,6 +814,21 @@ fn type_get_elem<'hir>(
     }
 }
 
+fn type_size(ty: hir::Type) -> u64 {
+    match ty {
+        hir::Type::Error => panic!("error type size"), // @check ahead of time before using this?
+        hir::Type::Basic(basic) => basic_type_size(basic),
+        hir::Type::Enum(_) => todo!("enum sizing and basic type validation"),
+        hir::Type::Union(_) => todo!("union sizing"),
+        hir::Type::Struct(_) => todo!("struct sizing"),
+        hir::Type::Reference(_, _) => 8, //@assume 64bit target
+        hir::Type::ArraySlice(_) => 16,  //@assume 64bit target
+        hir::Type::ArrayStatic(array) => {
+            todo!("array static sizing (size is const_expr which isnt correct currently)")
+        }
+    }
+}
+
 fn basic_type_size(basic: BasicType) -> u64 {
     match basic {
         BasicType::S8 => 1,
@@ -755,9 +846,9 @@ fn basic_type_size(basic: BasicType) -> u64 {
         BasicType::F64 => 8,
         BasicType::Bool => 1,
         BasicType::Char => 4,
-        BasicType::Rawptr => 8, //@assume 64bit target
-        BasicType::Void => 0,   // @not a value type
-        BasicType::Never => 0,  // @not a value type
+        BasicType::Rawptr => 8,                         //@assume 64bit target
+        BasicType::Void => panic!("void is not sized"), // @check ahead of time before using this?
+        BasicType::Never => panic!("never is not sized"), // @check ahead of time before using this?
     }
 }
 
