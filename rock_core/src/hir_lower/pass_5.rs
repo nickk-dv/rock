@@ -39,6 +39,13 @@ struct ConstStruct<'hir> {
     fields: &'hir [ConstID],
 }
 
+#[derive(Copy, Clone)]
+enum ConstDependency {
+    EnumVariant(hir::EnumID, hir::EnumVariantID),
+    UnionSize(hir::UnionID),
+    StructSize(hir::StructID),
+}
+
 struct Tree<T: PartialEq> {
     nodes: Vec<TreeNode<T>>,
 }
@@ -49,6 +56,7 @@ struct TreeNodeID(u32);
 struct TreeNode<T: PartialEq> {
     value: T,
     parent: Option<TreeNodeID>,
+    first_child: Option<TreeNodeID>,
     last_child: Option<TreeNodeID>,
 }
 
@@ -59,6 +67,7 @@ impl<T: PartialEq> Tree<T> {
             nodes: vec![TreeNode {
                 value: root,
                 parent: None,
+                first_child: None,
                 last_child: None,
             }],
         };
@@ -71,15 +80,21 @@ impl<T: PartialEq> Tree<T> {
         self.nodes.push(TreeNode {
             value,
             parent: Some(parent_id),
+            first_child: None,
             last_child: None,
         });
+
         let parent = self.get_node_mut(parent_id);
+        if parent.first_child.is_none() {
+            parent.first_child = Some(id);
+        }
         parent.last_child = Some(id);
         id
     }
 
-    fn find_cycle(&self, node_id: TreeNodeID, value: T) -> Option<TreeNodeID> {
-        let mut node = self.get_node(node_id);
+    #[must_use]
+    fn find_cycle(&self, id: TreeNodeID, value: T) -> Option<TreeNodeID> {
+        let mut node = self.get_node(id);
         while let Some(parent_id) = node.parent {
             node = self.get_node(parent_id);
             if node.value == value {
