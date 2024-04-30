@@ -39,28 +39,29 @@ struct ConstStruct<'hir> {
     fields: &'hir [ConstID],
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
     EnumVariant(hir::EnumID, hir::EnumVariantID),
     UnionSize(hir::UnionID),
     StructSize(hir::StructID),
 }
 
-struct Tree<T: PartialEq> {
+struct Tree<T: PartialEq + Copy + Clone> {
     nodes: Vec<TreeNode<T>>,
 }
 
-#[derive(Copy, Clone)]
+//@remove debug when stable (using it for asserts) @30.04.24
+#[derive(Copy, Clone, PartialEq, Debug)]
 struct TreeNodeID(u32);
 
-struct TreeNode<T: PartialEq> {
+struct TreeNode<T: PartialEq + Copy + Clone> {
     value: T,
     parent: Option<TreeNodeID>,
     first_child: Option<TreeNodeID>,
     last_child: Option<TreeNodeID>,
 }
 
-impl<T: PartialEq> Tree<T> {
+impl<T: PartialEq + Copy + Clone> Tree<T> {
     fn new_rooted(root: T) -> (Tree<T>, TreeNodeID) {
         let root_id = TreeNodeID(0);
         let tree = Tree {
@@ -95,6 +96,7 @@ impl<T: PartialEq> Tree<T> {
     #[must_use]
     fn find_cycle(&self, id: TreeNodeID, value: T) -> Option<TreeNodeID> {
         let mut node = self.get_node(id);
+
         while let Some(parent_id) = node.parent {
             node = self.get_node(parent_id);
             if node.value == value {
@@ -102,6 +104,34 @@ impl<T: PartialEq> Tree<T> {
             }
         }
         None
+    }
+
+    fn get_parents_up_to_node(&self, from_id: TreeNodeID, up_to: TreeNodeID) -> Vec<T> {
+        assert_ne!(from_id, up_to);
+        let mut node = self.get_node(from_id);
+        let mut parents = vec![node.value];
+
+        while let Some(parent_id) = node.parent {
+            node = self.get_node(parent_id);
+            parents.push(node.value);
+            if parent_id == up_to {
+                return parents;
+            }
+        }
+
+        parents
+    }
+
+    fn get_parents_up_to_root(&self, from_id: TreeNodeID) -> Vec<T> {
+        let mut node = self.get_node(from_id);
+        let mut parents = vec![node.value];
+
+        while let Some(parent_id) = node.parent {
+            node = self.get_node(parent_id);
+            parents.push(node.value);
+        }
+
+        parents
     }
 
     fn get_node(&self, id: TreeNodeID) -> &TreeNode<T> {
@@ -121,13 +151,88 @@ impl TreeNodeID {
     }
 }
 
-fn test_tree() {
-    let (mut tree, root_id) = Tree::new_rooted(10);
-    let node1 = tree.add_child(root_id, 2);
-    let node2 = tree.add_child(root_id, 3);
+fn check_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
+    for id in hir.registry().struct_ids() {
+        let data = hir.registry().struct_data(id);
 
-    let node3 = tree.add_child(node1, 4);
-    let node4 = tree.add_child(node2, 6);
+        if let hir::Size::Unresolved = data.size {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
+            if let Ok(()) = check_struct_size_const_dependency(hir, emit, &mut tree, root_id, id) {
+                //@resolve all nodes in const dep tree 30.04.24
+                // in bottom up order (maybe rely on order of nodes in a vector if its stable)
+                //@placeholder sizes
+                let data = hir.registry_mut().struct_data_mut(id);
+                data.size = hir::Size::Resolved { size: 8, align: 8 };
+            }
+        }
+    }
+}
+
+fn check_struct_size_const_dependency(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    struct_id: hir::StructID,
+) -> Result<(), ()> {
+    for field in hir.registry().struct_data(struct_id).fields {
+        match field.ty {
+            hir::Type::Struct(id) => {
+                let dep = ConstDependency::StructSize(id);
+                let node_id = tree.add_child(parent_id, dep);
+
+                if let Some(cycle_id) = tree.find_cycle(node_id, dep) {
+                    //@better alternative would be to have iterators for this purpose @30.04.24
+                    // without any need to get vectors of links twice (they partially overlap)
+                    let cycle = tree.get_parents_up_to_node(node_id, cycle_id);
+                    let parents = tree.get_parents_up_to_root(parent_id);
+
+                    let mut message = String::from("constant dependency cycle found: \n");
+                    for const_dep in cycle {
+                        match const_dep {
+                            ConstDependency::EnumVariant(_, _) => {
+                                panic!("EnumVariant const dependency is not supported")
+                            }
+                            ConstDependency::UnionSize(_) => {
+                                panic!("UnionSize const dependency is not supported")
+                            }
+                            ConstDependency::StructSize(id) => {
+                                let data = hir.registry().struct_data(id);
+                                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
+                            }
+                        }
+                    }
+
+                    for const_dep in parents {
+                        match const_dep {
+                            ConstDependency::EnumVariant(_, _) => {
+                                panic!("EnumVariant const dependency is not supported")
+                            }
+                            ConstDependency::UnionSize(_) => {
+                                panic!("UnionSize const dependency is not supported")
+                            }
+                            ConstDependency::StructSize(id) => {
+                                let data = hir.registry_mut().struct_data_mut(id);
+                                data.size = hir::Size::Error;
+                            }
+                        }
+                    }
+
+                    let data = hir.registry().struct_data(struct_id);
+                    emit.error(ErrorComp::error(
+                        message,
+                        hir.src(data.origin_id, field.name.range),
+                        None,
+                    ));
+                    return Err(());
+                }
+
+                check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 pub fn check_attribute(
@@ -174,6 +279,8 @@ pub fn check_attribute(
 }
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+    check_const_dependencies(hir, emit);
+
     for id in hir.registry().proc_ids() {
         typecheck_proc(hir, emit, id)
     }

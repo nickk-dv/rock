@@ -361,6 +361,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             vis: item.vis,
             name: item.name,
             members: &[],
+            size: hir::Size::Unresolved,
         };
         self.ast_unions.push(item);
         self.hir_unions.push(data);
@@ -377,6 +378,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             vis: item.vis,
             name: item.name,
             fields: &[],
+            size: hir::Size::Unresolved,
         };
         self.ast_structs.push(item);
         self.hir_structs.push(data);

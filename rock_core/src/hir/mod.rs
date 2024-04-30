@@ -79,6 +79,7 @@ pub struct UnionData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub members: &'hir [UnionMember<'hir>],
+    pub size: Size,
 }
 
 hir_id_impl!(UnionMemberID);
@@ -94,6 +95,7 @@ pub struct StructData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub fields: &'hir [StructField<'hir>],
+    pub size: Size,
 }
 
 hir_id_impl!(StructFieldID);
@@ -122,6 +124,13 @@ pub struct GlobalData<'hir> {
     pub ty: Type<'hir>,
     pub value: ConstExpr<'hir>,
     pub thread_local: bool,
+}
+
+#[derive(Copy, Clone)]
+pub enum Size {
+    Error,
+    Unresolved,
+    Resolved { size: u64, align: u32 },
 }
 
 #[derive(Copy, Clone)]
