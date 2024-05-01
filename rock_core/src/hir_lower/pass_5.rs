@@ -151,21 +151,179 @@ impl TreeNodeID {
     }
 }
 
-fn check_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
-    for id in hir.registry().struct_ids() {
-        let data = hir.registry().struct_data(id);
+fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
+    for id in hir.registry().union_ids() {
+        let data = hir.registry().union_data(id);
 
-        if let hir::Size::Unresolved = data.size {
-            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
-            if let Ok(()) = check_struct_size_const_dependency(hir, emit, &mut tree, root_id, id) {
-                //@resolve all nodes in const dep tree 30.04.24
-                // in bottom up order (maybe rely on order of nodes in a vector if its stable)
-                //@placeholder sizes
-                let data = hir.registry_mut().struct_data_mut(id);
-                data.size = hir::Size::Resolved { size: 8, align: 8 };
+        if matches!(data.size, hir::Size::Unresolved) {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::UnionSize(id));
+            if check_union_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
+                resolve_const_dependency_tree(hir, &tree);
             }
         }
     }
+
+    for id in hir.registry().struct_ids() {
+        let data = hir.registry().struct_data(id);
+
+        if matches!(data.size, hir::Size::Unresolved) {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
+            if check_struct_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
+                resolve_const_dependency_tree(hir, &tree);
+            }
+        }
+    }
+}
+
+// is rev order stable when dealing with recursive tree inputs? seems like it @01.05.24
+fn resolve_const_dependency_tree(hir: &mut HirData, tree: &Tree<ConstDependency>) {
+    for node in tree.nodes.iter().rev() {
+        match node.value {
+            ConstDependency::EnumVariant(_, _) => {
+                todo!("EnumVariant const resolve not implemented")
+            }
+            ConstDependency::UnionSize(id) => {
+                let size = resolve_union_size(hir, id);
+                hir.registry_mut().union_data_mut(id).size = size;
+            }
+            ConstDependency::StructSize(id) => {
+                let size = resolve_struct_size(hir, id);
+                hir.registry_mut().struct_data_mut(id).size = size;
+            }
+        }
+    }
+}
+
+//@this is placeholder (not complete size calculation) 01.05.24
+fn resolve_union_size(hir: &HirData, union_id: hir::UnionID) -> hir::Size {
+    let mut size: u64 = 0;
+    let mut align: u32 = 0;
+
+    let data = hir.registry().union_data(union_id);
+    for member in data.members {
+        let member_size = 1;
+        let member_align = 1;
+
+        if member_size < size {
+            size = member_size;
+            align = member_align;
+        }
+    }
+
+    hir::Size::Resolved { size, align }
+}
+
+//@this is placeholder (not complete size calculation) 01.05.24
+fn resolve_struct_size(hir: &HirData, struct_id: hir::StructID) -> hir::Size {
+    let mut size: u64 = 0;
+    let mut align: u32 = 0;
+
+    let data = hir.registry().struct_data(struct_id);
+    for field in data.fields {
+        size += 1;
+        align += 1;
+    }
+
+    hir::Size::Resolved { size, align }
+}
+
+fn check_const_dependency_cycle(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    tree: &Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    node_id: TreeNodeID,
+    dep: ConstDependency,
+    src: SourceRange,
+) -> Result<(), ()> {
+    let cycle_id = match tree.find_cycle(node_id, dep) {
+        Some(cycle_id) => cycle_id,
+        None => return Ok(()),
+    };
+
+    //@better alternative would be to have iterators for this purpose @30.04.24
+    // without any need to get vectors of links twice (they partially overlap)
+    let cycle_deps = tree.get_parents_up_to_node(node_id, cycle_id);
+    let parents_deps = tree.get_parents_up_to_root(parent_id);
+
+    // create error message up to cycle
+    let mut message = String::from("constant dependency cycle found: \n");
+    for const_dep in cycle_deps.iter().cloned().rev() {
+        match const_dep {
+            ConstDependency::EnumVariant(_, _) => {
+                panic!("EnumVariant const dependency is not supported")
+            }
+            ConstDependency::UnionSize(id) => {
+                let data = hir.registry().union_data(id);
+                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
+            }
+            ConstDependency::StructSize(id) => {
+                let data = hir.registry().struct_data(id);
+                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
+            }
+        }
+    }
+
+    // mark as error up to root
+    for const_dep in parents_deps {
+        match const_dep {
+            ConstDependency::EnumVariant(_, _) => {
+                panic!("EnumVariant const dependency is not supported")
+            }
+            ConstDependency::UnionSize(id) => {
+                let data = hir.registry_mut().union_data_mut(id);
+                data.size = hir::Size::Error;
+            }
+            ConstDependency::StructSize(id) => {
+                let data = hir.registry_mut().struct_data_mut(id);
+                data.size = hir::Size::Error;
+            }
+        }
+    }
+
+    emit.error(ErrorComp::error(message, src, None));
+    Err(())
+}
+
+// currently only cycles cause making as Error up to root and returning @01.05.24
+// if dep being added to a tree is already an Error
+// it might be worth doing marking and still looking for cycles?
+// knowing that something is an Error can save processing time on constants up the tree
+// which would eventually be resolved to same Error
+// since they depend on constant which is already known to be Error
+fn check_union_size_const_dependency(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    union_id: hir::UnionID,
+) -> Result<(), ()> {
+    for member in hir.registry().union_data(union_id).members {
+        match member.ty {
+            hir::Type::Union(id) => {
+                let dep = ConstDependency::UnionSize(id);
+                let node_id = tree.add_child(parent_id, dep);
+                let src = hir.src(
+                    hir.registry().union_data(union_id).origin_id,
+                    member.name.range,
+                );
+                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
+                check_union_size_const_dependency(hir, emit, tree, node_id, id)?;
+            }
+            hir::Type::Struct(id) => {
+                let dep = ConstDependency::StructSize(id);
+                let node_id = tree.add_child(parent_id, dep);
+                let src = hir.src(
+                    hir.registry().union_data(union_id).origin_id,
+                    member.name.range,
+                );
+                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
+                check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn check_struct_size_const_dependency(
@@ -177,56 +335,24 @@ fn check_struct_size_const_dependency(
 ) -> Result<(), ()> {
     for field in hir.registry().struct_data(struct_id).fields {
         match field.ty {
+            hir::Type::Union(id) => {
+                let dep = ConstDependency::UnionSize(id);
+                let node_id = tree.add_child(parent_id, dep);
+                let src = hir.src(
+                    hir.registry().struct_data(struct_id).origin_id,
+                    field.name.range,
+                );
+                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
+                check_union_size_const_dependency(hir, emit, tree, node_id, id)?;
+            }
             hir::Type::Struct(id) => {
                 let dep = ConstDependency::StructSize(id);
                 let node_id = tree.add_child(parent_id, dep);
-
-                if let Some(cycle_id) = tree.find_cycle(node_id, dep) {
-                    //@better alternative would be to have iterators for this purpose @30.04.24
-                    // without any need to get vectors of links twice (they partially overlap)
-                    let cycle = tree.get_parents_up_to_node(node_id, cycle_id);
-                    let parents = tree.get_parents_up_to_root(parent_id);
-
-                    let mut message = String::from("constant dependency cycle found: \n");
-                    for const_dep in cycle {
-                        match const_dep {
-                            ConstDependency::EnumVariant(_, _) => {
-                                panic!("EnumVariant const dependency is not supported")
-                            }
-                            ConstDependency::UnionSize(_) => {
-                                panic!("UnionSize const dependency is not supported")
-                            }
-                            ConstDependency::StructSize(id) => {
-                                let data = hir.registry().struct_data(id);
-                                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
-                            }
-                        }
-                    }
-
-                    for const_dep in parents {
-                        match const_dep {
-                            ConstDependency::EnumVariant(_, _) => {
-                                panic!("EnumVariant const dependency is not supported")
-                            }
-                            ConstDependency::UnionSize(_) => {
-                                panic!("UnionSize const dependency is not supported")
-                            }
-                            ConstDependency::StructSize(id) => {
-                                let data = hir.registry_mut().struct_data_mut(id);
-                                data.size = hir::Size::Error;
-                            }
-                        }
-                    }
-
-                    let data = hir.registry().struct_data(struct_id);
-                    emit.error(ErrorComp::error(
-                        message,
-                        hir.src(data.origin_id, field.name.range),
-                        None,
-                    ));
-                    return Err(());
-                }
-
+                let src = hir.src(
+                    hir.registry().struct_data(struct_id).origin_id,
+                    field.name.range,
+                );
+                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
                 check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
             }
             _ => {}
@@ -279,7 +405,7 @@ pub fn check_attribute(
 }
 
 pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    check_const_dependencies(hir, emit);
+    resolve_const_dependencies(hir, emit);
 
     for id in hir.registry().proc_ids() {
         typecheck_proc(hir, emit, id)
