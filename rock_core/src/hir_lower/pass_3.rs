@@ -123,20 +123,9 @@ fn process_enum_data<'hir>(
                 ErrorComp::info("existing variant", hir.src(origin_id, existing.name.range)),
             ));
         } else {
-            let value = if let Some(value) = variant.value {
-                super::pass_4::const_expr_resolve(hir, emit, origin_id, value)
-            } else {
-                let expr = emit.arena.alloc(hir::Expr::LitInt {
-                    val: implicit_value,
-                    ty: ast::BasicType::U64, //@not considering specified type
-                });
-                implicit_value += 1; //@not considering prev. user defined values
-                hir::ConstExpr(expr)
-            };
-
             unique.push(hir::EnumVariant {
                 name: variant.name,
-                value,
+                value: variant.value.map(|_| hir::ConstValueEval::Unresolved),
             });
         }
     }

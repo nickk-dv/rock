@@ -387,9 +387,16 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_const(
         &mut self,
         item: &'ast ast::ConstItem<'ast>,
-        data: hir::ConstData<'hir>,
+        origin_id: hir::ModuleID,
     ) -> hir::ConstID {
         let id = hir::ConstID::new(self.hir_consts.len());
+        let data = hir::ConstData {
+            origin_id,
+            vis: item.vis,
+            name: item.name,
+            ty: hir::Type::Error,
+            value: hir::ConstValueEval::Unresolved,
+        };
         self.ast_consts.push(item);
         self.hir_consts.push(data);
         id
@@ -397,9 +404,19 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_global(
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
-        data: hir::GlobalData<'hir>,
+        origin_id: hir::ModuleID,
+        thread_local: bool,
     ) -> hir::GlobalID {
         let id = hir::GlobalID::new(self.hir_globals.len());
+        let data = hir::GlobalData {
+            origin_id,
+            vis: item.vis,
+            mutt: item.mutt,
+            name: item.name,
+            ty: hir::Type::Error,
+            value: hir::ConstValueEval::Unresolved,
+            thread_local,
+        };
         self.ast_globals.push(item);
         self.hir_globals.push(data);
         id

@@ -6,38 +6,20 @@ use crate::hir;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
 
-//@evaludate and design constant value system @16.04.24
-// constant dependency graphs and folding of constant values is a priority
-// the goal is to re-use as much of existing infra in constant expressions
-// current typechecking module needs to be split up to maintain a better separation
-// (eg. path resolve, is very much related to hir data maps, and proc scope only)
+// @enum cycle example from rust @02.05.24
+// variants without initializers depend on previous variants
+// in case first one its known to be 0 if not specified
 
-//@is constant interning worth it? @16.04.24
-// potentially less memory usage to references same integer and float constants
-// array and struct de-dup might also be usefull
-// current string intern is already partially a constant interner
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-struct ConstID(u32);
-
-#[rustfmt::skip]
-enum ConstValue<'hir> {
-    Bool   { val: bool },
-    Int    { val: u64, neg: bool },
-    Float  { val: f64 },
-    Char   { val: char },
-    Struct { struct_: &'hir ConstStruct<'hir> },
-    Array  { array: &'hir ConstArray<'hir> },
+/* C (EnumTest::D) -> D (EnumTest::C + 1) ->
+#[repr(isize)]
+enum EnumTest {
+    A,
+    B = 2,
+    C = EnumTest::D as isize,
+    D,
+    V,
 }
-
-struct ConstArray<'hir> {
-    len: u64,
-    values: &'hir [ConstID],
-}
-
-struct ConstStruct<'hir> {
-    struct_id: hir::StructID,
-    fields: &'hir [ConstID],
-}
+*/
 
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
@@ -152,6 +134,14 @@ impl TreeNodeID {
 }
 
 fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
+    for id in hir.registry().enum_ids() {
+        let data = hir.registry().enum_data(id);
+
+        for variant in data.variants {
+            //@check & resolve
+        }
+    }
+
     for id in hir.registry().union_ids() {
         let data = hir.registry().union_data(id);
 
@@ -172,6 +162,16 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
                 resolve_const_dependency_tree(hir, &tree);
             }
         }
+    }
+
+    for id in hir.registry().const_ids() {
+        let data = hir.registry().const_data(id);
+        //@check & resolve
+    }
+
+    for id in hir.registry().global_ids() {
+        let data = hir.registry().global_data(id);
+        //@check & resolve
     }
 }
 

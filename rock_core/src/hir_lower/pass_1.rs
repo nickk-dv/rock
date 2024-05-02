@@ -89,15 +89,7 @@ fn add_module_items<'hir>(
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
                 None => {
-                    let value = super::pass_4::const_expr_resolve(hir, emit, origin_id, item.value);
-                    let data = hir::ConstData {
-                        origin_id,
-                        vis: item.vis,
-                        name: item.name,
-                        ty: hir::Type::Error,
-                        value,
-                    };
-                    let id = hir.registry_mut().add_const(item, data);
+                    let id = hir.registry_mut().add_const(item, origin_id);
                     hir.add_symbol(
                         origin_id,
                         item.name.id,
@@ -112,7 +104,6 @@ fn add_module_items<'hir>(
                     name_already_defined_error(hir, emit, origin_id, item.name, existing);
                 }
                 None => {
-                    let value = super::pass_4::const_expr_resolve(hir, emit, origin_id, item.value);
                     let thread_local = pass_5::check_attribute(
                         hir,
                         emit,
@@ -120,16 +111,7 @@ fn add_module_items<'hir>(
                         item.attr,
                         ast::AttributeKind::Thread_Local,
                     );
-                    let data = hir::GlobalData {
-                        origin_id,
-                        vis: item.vis,
-                        mutt: item.mutt,
-                        name: item.name,
-                        ty: hir::Type::Error,
-                        value,
-                        thread_local,
-                    };
-                    let id = hir.registry_mut().add_global(item, data);
+                    let id = hir.registry_mut().add_global(item, origin_id, thread_local);
                     hir.add_symbol(
                         origin_id,
                         item.name.id,

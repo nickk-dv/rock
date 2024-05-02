@@ -70,7 +70,7 @@ hir_id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
 pub struct EnumVariant<'hir> {
     pub name: ast::Name,
-    pub value: ConstExpr<'hir>,
+    pub value: Option<ConstValueEval<'hir>>,
 }
 
 hir_id_impl!(UnionID);
@@ -112,7 +112,7 @@ pub struct ConstData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstExpr<'hir>,
+    pub value: ConstValueEval<'hir>,
 }
 
 hir_id_impl!(GlobalID);
@@ -122,7 +122,7 @@ pub struct GlobalData<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstExpr<'hir>,
+    pub value: ConstValueEval<'hir>,
     pub thread_local: bool,
 }
 
@@ -131,6 +131,13 @@ pub enum Size {
     Error,
     Unresolved,
     Resolved { size: u64, align: u32 },
+}
+
+#[derive(Copy, Clone)]
+pub enum ConstValueEval<'hir> {
+    Error,
+    Unresolved,
+    Resolved { value: ConstValue<'hir> },
 }
 
 #[derive(Copy, Clone)]
@@ -209,6 +216,52 @@ pub struct Assign<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
+
+//@evaludate and design constant value system @16.04.24
+// constant dependency graphs and folding of constant values is a priority
+// the goal is to re-use as much of existing infra in constant expressions
+// current typechecking module needs to be split up to maintain a better separation
+// (eg. path resolve, is very much related to hir data maps, and proc scope only)
+
+//@is constant interning worth it? @16.04.24
+// potentially less memory usage to references same integer and float constants
+// array and struct de-dup might also be usefull
+// current string intern is already partially a constant interner
+
+//@this is untyped and meant for constant folding operations 02.05.24
+// during codegen we want to know the types
+// and for arrays or structs type also must be known
+// introduce something like `float` and `integer` types that are general
+// and narrowed on demand with bounds check on compile time
+
+//@using ConstValueID but theres not storage for them yet
+// might store them by value?
+// interning is better but more compicated
+hir_id_impl!(ConstValueID);
+#[rustfmt::skip]
+#[derive(Copy, Clone)]
+pub enum ConstValue<'hir> {
+    Error,
+    Null,
+    Bool   { val: bool },
+    Int    { val: u64, neg: bool },
+    Float  { val: f64 },
+    Char   { val: char },
+    String { id: InternID, c_string: bool },
+    Struct { struct_: &'hir ConstStruct<'hir> },
+    Array  { array: &'hir ConstArray<'hir> },
+    ArrayRepeat { value: ConstValueID, len: u64 },
+}
+
+pub struct ConstArray<'hir> {
+    len: u64,
+    values: &'hir [ConstValueID],
+}
+
+pub struct ConstStruct<'hir> {
+    struct_id: StructID,
+    fields: &'hir [ConstValueID],
+}
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]

@@ -288,7 +288,13 @@ fn codegen_globals(cg: &mut Codegen) {
         global.set_constant(data.mutt == ast::Mut::Immutable);
         global.set_linkage(module::Linkage::Private);
         global.set_thread_local(data.thread_local);
-        global.set_initializer(&codegen_const_expr(cg, data.value));
+        global.set_initializer(&codegen_const_value(
+            cg,
+            match data.value {
+                hir::ConstValueEval::Resolved { value } => value,
+                _ => panic!("codegen on unresolved const value"),
+            },
+        ));
         cg.globals.push(global);
     }
 }
@@ -396,6 +402,24 @@ fn codegen_const_expr<'ctx>(
     }
 }
 
+fn codegen_const_value<'ctx>(
+    cg: &Codegen<'ctx>,
+    value: hir::ConstValue,
+) -> values::BasicValueEnum<'ctx> {
+    match value {
+        hir::ConstValue::Error => panic!("codegen unexpected ConstValue::Error"),
+        hir::ConstValue::Null => cg.ptr_type().const_zero().into(),
+        hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
+        hir::ConstValue::Int { val, neg } => todo!(),
+        hir::ConstValue::Float { val } => todo!(),
+        hir::ConstValue::Char { val } => todo!(),
+        hir::ConstValue::String { id, c_string } => todo!(),
+        hir::ConstValue::Struct { struct_ } => todo!(),
+        hir::ConstValue::Array { array } => todo!(),
+        hir::ConstValue::ArrayRepeat { value, len } => todo!(),
+    }
+}
+
 //@hir still has tail returned expressions in statements,  and block is an expression
 // this results in need to return Optional values from codegen_expr()
 // and a lot of unwrap() or expect() calls on always expected values
@@ -444,7 +468,7 @@ fn codegen_expr<'ctx>(
         Expr::EnumVariant {
             enum_id,
             variant_id,
-        } => Some(codegen_enum_variant(cg, proc_cg, enum_id, variant_id)),
+        } => Some(codegen_enum_variant(cg, enum_id, variant_id)),
         Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
         Expr::StructInit { struct_id, input } => Some(codegen_struct_init(
@@ -884,7 +908,6 @@ fn codegen_global_var<'ctx>(
 
 fn codegen_enum_variant<'ctx>(
     cg: &Codegen<'ctx>,
-    proc_cg: &mut ProcCodegen<'ctx>,
     enum_id: hir::EnumID,
     variant_id: hir::EnumVariantID,
 ) -> values::BasicValueEnum<'ctx> {
@@ -892,7 +915,13 @@ fn codegen_enum_variant<'ctx>(
     // this might be fine when constants are folded to single constant value
     // (current impl only supports single literals) @08.04.24
     let variant = cg.hir.enum_data(enum_id).variant(variant_id);
-    codegen_expr(cg, proc_cg, false, variant.value.0).expect("value")
+    codegen_const_value(
+        cg,
+        match variant.value.expect("enum variant value") {
+            hir::ConstValueEval::Resolved { value } => value,
+            _ => panic!("codegen on unresolved const value"),
+        },
+    )
 }
 
 fn codegen_proc_call<'ctx>(
