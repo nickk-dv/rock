@@ -212,7 +212,7 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::Never => panic!("codegen unexpected BasicType::Never"),
             },
             hir::Type::Enum(id) => {
-                let basic = self.hir.enum_data(id).basic.expect("enum basic type");
+                let basic = self.hir.enum_data(id).basic;
                 self.type_into_any(hir::Type::Basic(basic))
             }
             hir::Type::Union(_) => todo!("codegen: union type is not supported"),

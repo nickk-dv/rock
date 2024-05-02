@@ -145,7 +145,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
     for id in hir.registry().union_ids() {
         let data = hir.registry().union_data(id);
 
-        if matches!(data.size, hir::Size::Unresolved) {
+        if matches!(data.size_eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::UnionSize(id));
             if check_union_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
                 resolve_const_dependency_tree(hir, &tree);
@@ -156,7 +156,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
     for id in hir.registry().struct_ids() {
         let data = hir.registry().struct_data(id);
 
-        if matches!(data.size, hir::Size::Unresolved) {
+        if matches!(data.size_eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
             if check_struct_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
                 resolve_const_dependency_tree(hir, &tree);
@@ -183,48 +183,58 @@ fn resolve_const_dependency_tree(hir: &mut HirData, tree: &Tree<ConstDependency>
                 todo!("EnumVariant const resolve not implemented")
             }
             ConstDependency::UnionSize(id) => {
-                let size = resolve_union_size(hir, id);
-                hir.registry_mut().union_data_mut(id).size = size;
+                let size_eval = resolve_union_size(hir, id);
+                hir.registry_mut().union_data_mut(id).size_eval = size_eval;
             }
             ConstDependency::StructSize(id) => {
-                let size = resolve_struct_size(hir, id);
-                hir.registry_mut().struct_data_mut(id).size = size;
+                let size_eval = resolve_struct_size(hir, id);
+                hir.registry_mut().struct_data_mut(id).size_eval = size_eval;
             }
         }
     }
 }
 
-//@this is placeholder (not complete size calculation) 01.05.24
-fn resolve_union_size(hir: &HirData, union_id: hir::UnionID) -> hir::Size {
-    let mut size: u64 = 0;
-    let mut align: u32 = 0;
-
-    let data = hir.registry().union_data(union_id);
-    for member in data.members {
-        let member_size = 1;
-        let member_align = 1;
-
-        if member_size < size {
-            size = member_size;
-            align = member_align;
-        }
-    }
-
-    hir::Size::Resolved { size, align }
+//@remove asserts later on when compiler is stable? 02.05.24
+fn aligned_size(size: u64, align: u64) -> u64 {
+    assert!(align != 0);
+    assert!(align.is_power_of_two());
+    size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
 }
 
-//@this is placeholder (not complete size calculation) 01.05.24
-fn resolve_struct_size(hir: &HirData, struct_id: hir::StructID) -> hir::Size {
+fn resolve_union_size(hir: &HirData, union_id: hir::UnionID) -> hir::SizeEval {
+    let data = hir.registry().union_data(union_id);
     let mut size: u64 = 0;
-    let mut align: u32 = 0;
+    let mut align: u64 = 1;
 
-    let data = hir.registry().struct_data(struct_id);
-    for field in data.fields {
-        size += 1;
-        align += 1;
+    for member in data.members {
+        let (member_size, member_align) = match type_size(hir, member.ty) {
+            Some(size) => (size.size(), size.align()),
+            None => return hir::SizeEval::Error,
+        };
+        size = size.max(member_size);
+        align = align.max(member_align);
     }
 
-    hir::Size::Resolved { size, align }
+    hir::SizeEval::Resolved(hir::Size::new(size, align))
+}
+
+fn resolve_struct_size(hir: &HirData, struct_id: hir::StructID) -> hir::SizeEval {
+    let data = hir.registry().struct_data(struct_id);
+    let mut size: u64 = 0;
+    let mut align: u64 = 1;
+
+    for field in data.fields {
+        let (field_size, field_align) = match type_size(hir, field.ty) {
+            Some(size) => (size.size(), size.align()),
+            None => return hir::SizeEval::Error,
+        };
+        size = aligned_size(size, field_align);
+        size += field_size;
+        align = align.max(field_align);
+    }
+
+    size = aligned_size(size, align);
+    hir::SizeEval::Resolved(hir::Size::new(size, align))
 }
 
 fn check_const_dependency_cycle(
@@ -272,11 +282,11 @@ fn check_const_dependency_cycle(
             }
             ConstDependency::UnionSize(id) => {
                 let data = hir.registry_mut().union_data_mut(id);
-                data.size = hir::Size::Error;
+                data.size_eval = hir::SizeEval::Error;
             }
             ConstDependency::StructSize(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
-                data.size = hir::Size::Error;
+                data.size_eval = hir::SizeEval::Error;
             }
         }
     }
@@ -613,7 +623,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
-        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, expr.range.start(), ty),
+        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, ty),
         ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::ProcCall { proc_call } => {
             typecheck_proc_call(hir, emit, proc, proc_call, expr.range)
@@ -1062,41 +1072,41 @@ fn type_get_elem<'hir>(
     }
 }
 
-fn type_size(ty: hir::Type) -> u64 {
+fn type_size(hir: &HirData, ty: hir::Type) -> Option<hir::Size> {
     match ty {
-        hir::Type::Error => panic!("error type size"), // @check ahead of time before using this?
-        hir::Type::Basic(basic) => basic_type_size(basic),
-        hir::Type::Enum(_) => todo!("enum sizing and basic type validation"),
-        hir::Type::Union(_) => todo!("union sizing"),
-        hir::Type::Struct(_) => todo!("struct sizing"),
-        hir::Type::Reference(_, _) => 8, //@assume 64bit target
-        hir::Type::ArraySlice(_) => 16,  //@assume 64bit target
+        hir::Type::Error => return None,
+        hir::Type::Basic(basic) => Some(basic_type_size(basic)),
+        hir::Type::Enum(id) => Some(basic_type_size(hir.registry().enum_data(id).basic)),
+        hir::Type::Union(id) => hir.registry().union_data(id).size_eval.get_size(),
+        hir::Type::Struct(id) => hir.registry().struct_data(id).size_eval.get_size(),
+        hir::Type::Reference(_, _) => Some(hir::Size::new_equal(8)), //@assume 64bit target
+        hir::Type::ArraySlice(_) => Some(hir::Size::new(16, 8)),     //@assume 64bit target
         hir::Type::ArrayStatic(array) => {
             todo!("array static sizing (size is const_expr which isnt correct currently)")
         }
     }
 }
 
-fn basic_type_size(basic: BasicType) -> u64 {
+fn basic_type_size(basic: BasicType) -> hir::Size {
     match basic {
-        BasicType::S8 => 1,
-        BasicType::S16 => 2,
-        BasicType::S32 => 4,
-        BasicType::S64 => 8,
-        BasicType::Ssize => 8, //@assume 64bit target
-        BasicType::U8 => 1,
-        BasicType::U16 => 2,
-        BasicType::U32 => 4,
-        BasicType::U64 => 8,
-        BasicType::Usize => 8, //@assume 64bit target
-        BasicType::F16 => 2,
-        BasicType::F32 => 4,
-        BasicType::F64 => 8,
-        BasicType::Bool => 1,
-        BasicType::Char => 4,
-        BasicType::Rawptr => 8,                         //@assume 64bit target
-        BasicType::Void => panic!("void is not sized"), // @check ahead of time before using this?
-        BasicType::Never => panic!("never is not sized"), // @check ahead of time before using this?
+        BasicType::S8 => hir::Size::new_equal(1),
+        BasicType::S16 => hir::Size::new_equal(2),
+        BasicType::S32 => hir::Size::new_equal(4),
+        BasicType::S64 => hir::Size::new_equal(8),
+        BasicType::Ssize => hir::Size::new_equal(8), //@assume 64bit target
+        BasicType::U8 => hir::Size::new_equal(1),
+        BasicType::U16 => hir::Size::new_equal(2),
+        BasicType::U32 => hir::Size::new_equal(4),
+        BasicType::U64 => hir::Size::new_equal(8),
+        BasicType::Usize => hir::Size::new_equal(8), //@assume 64bit target
+        BasicType::F16 => hir::Size::new_equal(2),
+        BasicType::F32 => hir::Size::new_equal(4),
+        BasicType::F64 => hir::Size::new_equal(8),
+        BasicType::Bool => hir::Size::new_equal(1),
+        BasicType::Char => hir::Size::new_equal(4),
+        BasicType::Rawptr => hir::Size::new_equal(8), //@assume 64bit target
+        BasicType::Void => hir::Size::new(0, 1),
+        BasicType::Never => hir::Size::new(0, 1),
     }
 }
 
@@ -1181,8 +1191,8 @@ fn typecheck_cast<'hir>(
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::from_basic(from);
             let into_kind = BasicTypeKind::from_basic(into);
-            let from_size = basic_type_size(from);
-            let into_size = basic_type_size(into);
+            let from_size = basic_type_size(from).size();
+            let into_size = basic_type_size(into).size();
 
             match from_kind {
                 BasicTypeKind::SignedInt => match into_kind {
@@ -1259,35 +1269,21 @@ fn typecheck_sizeof<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    start: TextOffset,
     ty: ast::Type,
 ) -> TypeResult<'hir> {
     let ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
-
-    let size = match ty {
-        hir::Type::Basic(basic) => Some(basic_type_size(basic)),
-        hir::Type::Reference(..) => Some(8), //@assume 64bit target
-        hir::Type::ArraySlice(..) => Some(16), //@assume 64bit target
-        _ => {
-            emit.error(ErrorComp::error(
-                "sizeof for user defined or static array types is not yet supported",
-                hir.src(proc.origin(), TextRange::new(start, start + 6.into())),
-                None,
-            ));
-            None
-        }
-    };
+    let size = type_size(hir, ty);
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
-    let sizeof_expr = if let Some(size) = size {
-        emit.arena.alloc(hir::Expr::LitInt {
-            val: size,
+    let sizeof_expr = match size {
+        Some(size) => emit.arena.alloc(hir::Expr::LitInt {
+            val: size.size(),
             ty: BasicType::Usize,
-        })
-    } else {
-        emit.arena.alloc(hir::Expr::Error)
+        }),
+        None => emit.arena.alloc(hir::Expr::Error),
     };
+
     TypeResult::new(hir::Type::Basic(BasicType::Usize), sizeof_expr)
 }
 
@@ -1848,8 +1844,8 @@ fn typecheck_binary<'hir>(
                         BasicTypeKind::from_basic(rhs_basic),
                         BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
                     ) {
-                        let lhs_size = basic_type_size(lhs_basic);
-                        let rhs_size = basic_type_size(rhs_basic);
+                        let lhs_size = basic_type_size(lhs_basic).size();
+                        let rhs_size = basic_type_size(rhs_basic).size();
                         if lhs_size != rhs_size {
                             emit.error(ErrorComp::error(
                                 format!(

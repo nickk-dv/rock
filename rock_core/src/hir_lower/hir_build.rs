@@ -343,7 +343,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             origin_id,
             vis: item.vis,
             name: item.name,
-            basic: item.basic,
+            basic: item.basic.unwrap_or(ast::BasicType::S32),
             variants: &[],
         };
         self.ast_enums.push(item);
@@ -361,7 +361,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             vis: item.vis,
             name: item.name,
             members: &[],
-            size: hir::Size::Unresolved,
+            size_eval: hir::SizeEval::Unresolved,
         };
         self.ast_unions.push(item);
         self.hir_unions.push(data);
@@ -378,7 +378,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             vis: item.vis,
             name: item.name,
             fields: &[],
-            size: hir::Size::Unresolved,
+            size_eval: hir::SizeEval::Unresolved,
         };
         self.ast_structs.push(item);
         self.hir_structs.push(data);

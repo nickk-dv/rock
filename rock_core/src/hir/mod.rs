@@ -62,7 +62,7 @@ pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub basic: Option<ast::BasicType>,
+    pub basic: ast::BasicType,
     pub variants: &'hir [EnumVariant<'hir>],
 }
 
@@ -79,7 +79,7 @@ pub struct UnionData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub members: &'hir [UnionMember<'hir>],
-    pub size: Size,
+    pub size_eval: SizeEval,
 }
 
 hir_id_impl!(UnionMemberID);
@@ -95,7 +95,7 @@ pub struct StructData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub fields: &'hir [StructField<'hir>],
-    pub size: Size,
+    pub size_eval: SizeEval,
 }
 
 hir_id_impl!(StructFieldID);
@@ -127,10 +127,44 @@ pub struct GlobalData<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Size {
+pub enum SizeEval {
     Error,
     Unresolved,
-    Resolved { size: u64, align: u32 },
+    Resolved(Size),
+}
+
+impl SizeEval {
+    pub fn get_size(self) -> Option<Size> {
+        match self {
+            SizeEval::Error => None,
+            SizeEval::Unresolved => None,
+            SizeEval::Resolved(size) => Some(size),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct Size {
+    size: u64,
+    align: u64,
+}
+
+impl Size {
+    pub fn new(size: u64, align: u64) -> Size {
+        Size { size, align }
+    }
+    pub fn new_equal(size_align: u64) -> Size {
+        Size {
+            size: size_align,
+            align: size_align,
+        }
+    }
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+    pub fn align(&self) -> u64 {
+        self.align
+    }
 }
 
 #[derive(Copy, Clone)]
