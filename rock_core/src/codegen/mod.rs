@@ -1,3 +1,5 @@
+use std::mem;
+
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
@@ -185,6 +187,14 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    fn union_type(&self, union_id: hir::UnionID) -> types::ArrayType<'ctx> {
+        let data = self.hir.union_data(union_id);
+        let size = data.size_eval.get_size().expect("resolved");
+        self.type_into_basic(hir::Type::Basic(ast::BasicType::U8))
+            .expect("u8")
+            .array_type(size.size() as u32)
+    }
+
     //@any is used as general type
     // unit / void is not accepted by enums that wrap
     // struct field types, proc param types.
@@ -215,7 +225,7 @@ impl<'ctx> Codegen<'ctx> {
                 let basic = self.hir.enum_data(id).basic;
                 self.type_into_any(hir::Type::Basic(basic))
             }
-            hir::Type::Union(_) => todo!("codegen: union type is not supported"),
+            hir::Type::Union(id) => self.union_type(id).into(),
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
             hir::Type::Reference(_, _) => self.ptr_type().into(),
             hir::Type::ArraySlice(_) => self.slice_type().into(),
@@ -470,7 +480,9 @@ fn codegen_expr<'ctx>(
             variant_id,
         } => Some(codegen_enum_variant(cg, enum_id, variant_id)),
         Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
-        Expr::UnionInit { union_id, input } => Some(codegen_union_init(cg, union_id, input)),
+        Expr::UnionInit { union_id, input } => {
+            Some(codegen_union_init(cg, proc_cg, expect_ptr, union_id, input))
+        }
         Expr::StructInit { struct_id, input } => Some(codegen_struct_init(
             cg, proc_cg, expect_ptr, struct_id, input,
         )),
@@ -946,10 +958,24 @@ fn codegen_proc_call<'ctx>(
 
 fn codegen_union_init<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     union_id: hir::UnionID,
     input: hir::UnionMemberInit,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `union init` not supported")
+    let union_ty = cg.union_type(union_id);
+    let union_ptr = cg.builder.build_alloca(union_ty, "union_temp").unwrap();
+
+    let value = codegen_expr(cg, proc_cg, false, input.expr).expect("value");
+    cg.builder.build_store(union_ptr, value).unwrap();
+
+    if expect_ptr {
+        union_ptr.into()
+    } else {
+        cg.builder
+            .build_load(union_ty, union_ptr, "union_val")
+            .unwrap()
+    }
 }
 
 fn codegen_struct_init<'ctx>(

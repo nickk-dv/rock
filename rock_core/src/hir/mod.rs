@@ -414,6 +414,9 @@ pub struct ArrayRepeat<'hir> {
 }
 
 impl<'hir> Hir<'hir> {
+    pub fn module_data(&self, id: ModuleID) -> &ModuleData {
+        &self.modules[id.index()]
+    }
     pub fn proc_data(&self, id: ProcID) -> &ProcData {
         &self.procs[id.index()]
     }
