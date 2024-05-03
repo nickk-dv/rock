@@ -176,9 +176,8 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
-        //@array static shoudnt always carry expresion inside
-        // when its not declared it might just store u32 or u64 size without allocations
-        // store u32 since its expected size for static arrays @06.04.24
+        // @should use LLVMArrayType2 which takes u64, what not exposed 03.05.24
+        //  by inkwell even for llvm 17 (LLVMArrayType was deprecated in this version)
         let elem_ty = self.type_into_basic(array.ty).expect("non void type");
         if let hir::Expr::LitInt { val, .. } = *array.size.0 {
             elem_ty.array_type(val as u32)
@@ -458,7 +457,9 @@ fn codegen_expr<'ctx>(
             union_id,
             member_id,
             deref,
-        } => Some(codegen_union_member(cg, target, union_id, member_id, deref)),
+        } => Some(codegen_union_member(
+            cg, proc_cg, expect_ptr, target, union_id, member_id, deref,
+        )),
         Expr::StructField {
             target,
             struct_id,
@@ -748,12 +749,32 @@ fn codegen_match<'ctx>(cg: &Codegen<'ctx>, match_: &hir::Match) -> values::Basic
 
 fn codegen_union_member<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
     target: &hir::Expr,
     union_id: hir::UnionID,
     member_id: hir::UnionMemberID,
     deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `union member access` not supported")
+    let target = codegen_expr(cg, proc_cg, true, target).expect("value");
+    let target_ptr = if deref {
+        cg.builder
+            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .unwrap()
+            .into_pointer_value()
+    } else {
+        target.into_pointer_value()
+    };
+
+    if expect_ptr {
+        target_ptr.into()
+    } else {
+        let member = cg.hir.union_data(union_id).member(member_id);
+        let member_ty = cg.type_into_basic(member.ty).expect("value");
+        cg.builder
+            .build_load(member_ty, target_ptr, "member_val")
+            .unwrap()
+    }
 }
 
 fn codegen_struct_field<'ctx>(
