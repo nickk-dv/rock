@@ -620,6 +620,11 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(hir, emit, proc, target, index),
+        ast::ExprKind::Slice {
+            target,
+            mutt,
+            range,
+        } => todo!("slice range slicing isnt typechecked yet"),
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }

@@ -747,7 +747,28 @@ fn tail_expr<'ast>(
                     return Ok(target);
                 }
                 p.bump();
+                // when Mutable parse this is slicing expression 04.05.24
+                // else it might be regular index or immutable slicing
+                let mutt = mutt(p);
+                //@will always try to  parse upper bound of slices 04.05.24
+                // make slice not a binary expression and be a separate expr type?
                 let index = expr(p)?;
+
+                //if let ExprKind::Binary { op, lhs, rhs } = index.kind {
+                //    match op {
+                //        ExprKind::Slice { target, mutt, range }
+                //        BinOp::Range => RangeSlice {
+                //            lower: Some(lhs),
+                //            upper: RangeSliceEnd::Exclusive(Some(rhs)),
+                //        },
+                //        BinOp::RangeInc => RangeSlice {
+                //            lower: Some(lhs),
+                //            upper: RangeSliceEnd::Inclusive(rhs),
+                //        },
+                //        _ => todo!(),
+                //    }
+                //}
+
                 p.expect(T![']'])?;
                 target = p.state.arena.alloc(Expr {
                     kind: ExprKind::Index { target, index },
