@@ -623,7 +623,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Slice {
             target,
             mutt,
-            range,
+            slice_range,
         } => todo!("slice range slicing isnt typechecked yet"),
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)

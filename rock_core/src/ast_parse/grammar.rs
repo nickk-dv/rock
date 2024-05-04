@@ -729,14 +729,17 @@ fn tail_expr<'ast>(
     let mut target = target;
     let mut last_cast = false;
     let range_start = target.range.start();
+
     loop {
         match p.peek() {
             T![.] => {
                 if last_cast {
                     return Ok(target);
                 }
+
                 p.bump();
                 let name = name(p)?;
+
                 target = p.state.arena.alloc(Expr {
                     kind: ExprKind::Field { target, name },
                     range: TextRange::new(range_start, p.peek_range_end()),
@@ -746,32 +749,14 @@ fn tail_expr<'ast>(
                 if last_cast {
                     return Ok(target);
                 }
+
                 p.bump();
-                // when Mutable parse this is slicing expression 04.05.24
-                // else it might be regular index or immutable slicing
                 let mutt = mutt(p);
-                //@will always try to  parse upper bound of slices 04.05.24
-                // make slice not a binary expression and be a separate expr type?
-                let index = expr(p)?;
-
-                //if let ExprKind::Binary { op, lhs, rhs } = index.kind {
-                //    match op {
-                //        ExprKind::Slice { target, mutt, range }
-                //        BinOp::Range => RangeSlice {
-                //            lower: Some(lhs),
-                //            upper: RangeSliceEnd::Exclusive(Some(rhs)),
-                //        },
-                //        BinOp::RangeInc => RangeSlice {
-                //            lower: Some(lhs),
-                //            upper: RangeSliceEnd::Inclusive(rhs),
-                //        },
-                //        _ => todo!(),
-                //    }
-                //}
-
+                let kind = index_or_slice_expr(p, target, mutt)?;
                 p.expect(T![']'])?;
+
                 target = p.state.arena.alloc(Expr {
-                    kind: ExprKind::Index { target, index },
+                    kind,
                     range: TextRange::new(range_start, p.peek_range_end()),
                 });
             }
@@ -779,6 +764,7 @@ fn tail_expr<'ast>(
                 p.bump();
                 let ty = ty(p)?;
                 let ty_ref = p.state.arena.alloc(ty);
+
                 target = p.state.arena.alloc(Expr {
                     kind: ExprKind::Cast {
                         target,
@@ -791,6 +777,96 @@ fn tail_expr<'ast>(
             _ => return Ok(target),
         }
     }
+}
+
+fn index_or_slice_expr<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+    target: &'ast Expr<'ast>,
+    mutt: Mut,
+) -> Result<ExprKind<'ast>, String> {
+    let range = match p.peek() {
+        T![..] => {
+            p.bump();
+            Some(SliceRange {
+                lower: None,
+                upper: SliceRangeEnd::Unbounded,
+            })
+        }
+        T!["..<"] => {
+            p.bump();
+            Some(SliceRange {
+                lower: None,
+                upper: SliceRangeEnd::Exclusive(expr(p)?),
+            })
+        }
+        T!["..="] => {
+            p.bump();
+            Some(SliceRange {
+                lower: None,
+                upper: SliceRangeEnd::Inclusive(expr(p)?),
+            })
+        }
+        _ => None,
+    };
+
+    let kind = if let Some(range) = range {
+        ExprKind::Slice {
+            target,
+            mutt,
+            slice_range: p.state.arena.alloc(range),
+        }
+    } else {
+        let expr = expr(p)?;
+        if p.eat(T![..]) {
+            let range = SliceRange {
+                lower: Some(expr),
+                upper: SliceRangeEnd::Unbounded,
+            };
+            ExprKind::Slice {
+                target,
+                mutt,
+                slice_range: p.state.arena.alloc(range),
+            }
+        } else {
+            if let Some(slice_range) = expr_into_slice_range(p, expr) {
+                ExprKind::Slice {
+                    target,
+                    mutt,
+                    slice_range,
+                }
+            } else if mutt == Mut::Mutable {
+                return Err("expected `..<`, `..=` or `..` in slice expression".into());
+            } else {
+                ExprKind::Index {
+                    target,
+                    index: expr,
+                }
+            }
+        }
+    };
+
+    Ok(kind)
+}
+
+fn expr_into_slice_range<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+    expr: &'ast Expr<'ast>,
+) -> Option<&'ast SliceRange<'ast>> {
+    let range = match expr.kind {
+        ExprKind::Binary { op, lhs, rhs } => match op {
+            BinOp::Range => SliceRange {
+                lower: Some(lhs),
+                upper: SliceRangeEnd::Exclusive(rhs),
+            },
+            BinOp::RangeInc => SliceRange {
+                lower: Some(lhs),
+                upper: SliceRangeEnd::Inclusive(rhs),
+            },
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(p.state.arena.alloc(range))
 }
 
 fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String> {

@@ -295,7 +295,7 @@ pub enum ExprKind<'ast> {
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
-    Slice       { target: &'ast Expr<'ast>, mutt: Mut, range: &'ast RangeSlice<'ast> },
+    Slice       { target: &'ast Expr<'ast>, mutt: Mut, slice_range: &'ast SliceRange<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: Type<'ast> },
     Item        { path: &'ast Path<'ast> },
@@ -352,14 +352,15 @@ pub struct FieldInit<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct RangeSlice<'ast> {
+pub struct SliceRange<'ast> {
     pub lower: Option<&'ast Expr<'ast>>,
-    pub upper: RangeSliceEnd<'ast>,
+    pub upper: SliceRangeEnd<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub enum RangeSliceEnd<'ast> {
-    Exclusive(Option<&'ast Expr<'ast>>),
+pub enum SliceRangeEnd<'ast> {
+    Unbounded,
+    Exclusive(&'ast Expr<'ast>),
     Inclusive(&'ast Expr<'ast>),
 }
 
