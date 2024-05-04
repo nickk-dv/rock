@@ -1,9 +1,8 @@
-use std::mem;
-
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 use crate::intern::InternID;
+use crate::session::BuildKind;
 use inkwell::builder;
 use inkwell::context;
 use inkwell::context::AsContextRef;
@@ -12,8 +11,8 @@ use inkwell::targets;
 use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
+use std::collections::HashMap;
 
-use crate::session::BuildKind;
 pub enum BuildConfig {
     Build(BuildKind),
     Run(BuildKind, Vec<String>),
@@ -37,6 +36,7 @@ struct Codegen<'ctx> {
     globals: Vec<values::GlobalValue<'ctx>>,
     function_values: Vec<values::FunctionValue<'ctx>>,
     hir: hir::Hir<'ctx>,
+    c_functions: HashMap<InternID, values::FunctionValue<'ctx>>,
 }
 
 struct ProcCodegen<'ctx> {
@@ -74,6 +74,7 @@ impl<'ctx> Codegen<'ctx> {
             globals: Vec::new(),
             function_values: Vec::new(),
             hir,
+            c_functions: HashMap::new(),
         }
     }
 
@@ -349,6 +350,9 @@ fn codegen_function_values(cg: &mut Codegen) {
         //@specify correct linkage kind (most things should be internal) @16.04.24
         // and c_calls must be correctly linked (currently just leaving default behavior)
         let function = cg.module.add_function(name, function_ty, None);
+        if proc_data.block.is_none() {
+            cg.c_functions.insert(proc_data.name.id, function);
+        }
         cg.function_values.push(function);
     }
 }
@@ -835,6 +839,7 @@ fn codegen_index<'ctx>(
     } else {
         target.into_pointer_value()
     };
+
     let index = codegen_expr(cg, proc_cg, false, access.index)
         .expect("value")
         .into_int_value();
@@ -844,6 +849,57 @@ fn codegen_index<'ctx>(
             todo!("codegen: slice access not implemented")
         }
         hir::IndexKind::Array { array } => unsafe {
+            let len = match *array.size.0 {
+                hir::Expr::LitInt { val, ty } => val,
+                _ => unreachable!("size must be u64"),
+            };
+            let len = cg.pointer_sized_int_type().const_int(len, false);
+
+            let cond = cg
+                .builder
+                .build_int_compare(inkwell::IntPredicate::UGE, index, len, "bounds_check")
+                .unwrap();
+
+            let panic_block = cg
+                .context
+                .append_basic_block(proc_cg.function, "panic_block");
+            let else_block = cg.context.append_basic_block(proc_cg.function, "block");
+            cg.builder
+                .build_conditional_branch(cond, panic_block, else_block)
+                .unwrap();
+
+            let c_exit = cg
+                .c_functions
+                .get(&cg.hir.intern.get_id("exit").expect("exit c function"))
+                .cloned()
+                .expect("exit c function added");
+            let c_printf = cg
+                .c_functions
+                .get(&cg.hir.intern.get_id("printf").expect("printf c function"))
+                .cloned()
+                .expect("printf c function added");
+
+            //@print to stderr instead of stdout & have better panic handling api 04.05.24
+            // this is first draft of working panic messages and exit
+            cg.builder.position_at_end(panic_block);
+            let messsage = cg.builder.build_global_string_ptr("thread `name` panicked at src/some_file.rock:xx:xx\nindex `%llu` out of bounds, array len = `%llu`\n\n", "panic_index_out_of_bounds").unwrap();
+            cg.builder
+                .build_call(
+                    c_printf,
+                    &[messsage.as_pointer_value().into(), index.into(), len.into()],
+                    "",
+                )
+                .unwrap();
+            cg.builder
+                .build_call(
+                    c_exit,
+                    &[cg.context.i32_type().const_int(1, true).into()],
+                    "",
+                )
+                .unwrap();
+            cg.builder.build_unreachable().unwrap();
+
+            cg.builder.position_at_end(else_block);
             cg.builder
                 .build_in_bounds_gep(
                     cg.array_type(array),
