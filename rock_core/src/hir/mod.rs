@@ -444,22 +444,22 @@ impl<'hir> Hir<'hir> {
     pub fn module_data(&self, id: ModuleID) -> &ModuleData {
         &self.modules[id.index()]
     }
-    pub fn proc_data(&self, id: ProcID) -> &ProcData {
+    pub fn proc_data(&self, id: ProcID) -> &ProcData<'hir> {
         &self.procs[id.index()]
     }
-    pub fn enum_data(&self, id: EnumID) -> &EnumData {
+    pub fn enum_data(&self, id: EnumID) -> &EnumData<'hir> {
         &self.enums[id.index()]
     }
-    pub fn union_data(&self, id: UnionID) -> &UnionData {
+    pub fn union_data(&self, id: UnionID) -> &UnionData<'hir> {
         &self.unions[id.index()]
     }
-    pub fn struct_data(&self, id: StructID) -> &StructData {
+    pub fn struct_data(&self, id: StructID) -> &StructData<'hir> {
         &self.structs[id.index()]
     }
-    pub fn const_data(&self, id: ConstID) -> &ConstData {
+    pub fn const_data(&self, id: ConstID) -> &ConstData<'hir> {
         &self.consts[id.index()]
     }
-    pub fn global_data(&self, id: GlobalID) -> &GlobalData {
+    pub fn global_data(&self, id: GlobalID) -> &GlobalData<'hir> {
         &self.globals[id.index()]
     }
 }
