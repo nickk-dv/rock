@@ -65,13 +65,14 @@ impl<'ctx> ProcCodegen<'ctx> {
         self.defer_blocks.push(block);
     }
 
-    fn last_defer_blocks(&self) -> &[&hir::Expr] {
+    fn last_defer_blocks(&self) -> Vec<&'ctx hir::Expr<'ctx>> {
         let total_count = self.defer_blocks.len();
         let last_count = *self.defer_counts.last().unwrap();
         let range = total_count - last_count as usize..total_count;
-        &self.defer_blocks[range]
+        self.defer_blocks[range].to_vec()
     }
 
+    //@lifetime problems, need to clone like this (since codegen_expr can mutate this vec) 05.05.24
     fn all_defer_blocks(&self) -> Vec<&'ctx hir::Expr<'ctx>> {
         self.defer_blocks.clone()
     }
@@ -688,26 +689,7 @@ fn codegen_block<'ctx>(
             hir::Stmt::Break => todo!("codegen `break` not supported"),
             hir::Stmt::Continue => todo!("codegen `continue` not supported"),
             hir::Stmt::Return(expr) => {
-                //@lifetime problems, need to clone like this (since codegen_expr can mutate this vec) 05.05.24
-                let all_defer_blocks = proc_cg.all_defer_blocks();
-                if !all_defer_blocks.is_empty() {
-                    let mut defer_block = cg
-                        .context
-                        .append_basic_block(proc_cg.function, "defer_entry");
-
-                    for block in proc_cg.all_defer_blocks().into_iter().rev() {
-                        cg.builder.build_unconditional_branch(defer_block).unwrap();
-                        cg.builder.position_at_end(defer_block);
-                        codegen_expr(cg, proc_cg, false, block);
-                        defer_block = cg
-                            .context
-                            .append_basic_block(proc_cg.function, "defer_next");
-                    }
-
-                    cg.builder.build_unconditional_branch(defer_block).unwrap();
-                    cg.builder.position_at_end(defer_block);
-                }
-
+                codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
                 if let Some(expr) = expr {
                     let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
                     cg.builder.build_return(Some(&value)).unwrap();
@@ -799,6 +781,7 @@ fn codegen_block<'ctx>(
                     "codegen Stmt::ExprTail must be the last statement of the block"
                 );
 
+                codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
                 let value = codegen_expr(cg, proc_cg, expect_ptr, expr);
                 proc_cg.exit_block();
 
@@ -807,8 +790,35 @@ fn codegen_block<'ctx>(
         }
     }
 
+    codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
     proc_cg.exit_block();
     None
+}
+
+fn codegen_defer_blocks<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    defer_blocks: &[&'ctx hir::Expr<'ctx>],
+) {
+    if defer_blocks.is_empty() {
+        return;
+    }
+
+    let mut defer_block = cg
+        .context
+        .append_basic_block(proc_cg.function, "defer_entry");
+
+    for block in defer_blocks.iter().rev() {
+        cg.builder.build_unconditional_branch(defer_block).unwrap();
+        cg.builder.position_at_end(defer_block);
+        codegen_expr(cg, proc_cg, false, block);
+        defer_block = cg
+            .context
+            .append_basic_block(proc_cg.function, "defer_next");
+    }
+
+    cg.builder.build_unconditional_branch(defer_block).unwrap();
+    cg.builder.position_at_end(defer_block);
 }
 
 fn codegen_match<'ctx>(cg: &Codegen<'ctx>, match_: &hir::Match) -> values::BasicValueEnum<'ctx> {
