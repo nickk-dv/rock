@@ -475,6 +475,7 @@ fn codegen_expr<'ctx>(
         Expr::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect_ptr, target, access))
         }
+        Expr::Slice { target, access } => todo!("codegen slicing"),
         Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
         Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),

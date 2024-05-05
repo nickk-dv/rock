@@ -313,6 +313,7 @@ pub enum Expr<'hir> {
     UnionMember { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
     StructField { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
     Index       { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
+    Slice       { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast        { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
     LocalVar    { local_id: LocalID },
     ParamVar    { param_id: ProcParamID },
@@ -358,6 +359,46 @@ pub struct MatchArm<'hir> {
     pub expr: &'hir Expr<'hir>,
 }
 
+#[derive(Copy, Clone)]
+pub struct IndexAccess<'hir> {
+    pub deref: bool,
+    pub elem_ty: Type<'hir>,
+    pub kind: IndexKind<'hir>,
+    pub index: &'hir Expr<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum IndexKind<'hir> {
+    Slice { elem_size: u64 },
+    Array { array: &'hir ArrayStatic<'hir> },
+}
+
+#[derive(Copy, Clone)]
+pub struct SliceAccess<'hir> {
+    pub deref: bool,
+    pub kind: SliceKind<'hir>,
+    pub range: SliceRange<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum SliceKind<'hir> {
+    Slice,
+    Array { array: &'hir ArrayStatic<'hir> },
+}
+
+#[derive(Copy, Clone)]
+pub struct SliceRange<'hir> {
+    pub lower: Option<&'hir Expr<'hir>>,
+    pub upper: SliceRangeEnd<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum SliceRangeEnd<'hir> {
+    Unbounded,
+    Exclusive(&'hir Expr<'hir>),
+    Inclusive(&'hir Expr<'hir>),
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
 pub enum CastKind {
@@ -372,20 +413,6 @@ pub enum CastKind {
     Uint_to_Float,
     Float_Trunc,
     Float_Extend,
-}
-
-#[derive(Copy, Clone)]
-pub struct IndexAccess<'hir> {
-    pub deref: bool,
-    pub elem_ty: Type<'hir>,
-    pub kind: IndexKind<'hir>,
-    pub index: &'hir Expr<'hir>,
-}
-
-#[derive(Copy, Clone)]
-pub enum IndexKind<'hir> {
-    Slice { elem_size: u64 },
-    Array { array: &'hir ArrayStatic<'hir> },
 }
 
 #[derive(Copy, Clone)]
