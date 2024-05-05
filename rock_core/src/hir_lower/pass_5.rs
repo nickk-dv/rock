@@ -624,7 +624,7 @@ fn typecheck_expr<'hir>(
             target,
             mutt,
             slice_range,
-        } => todo!("slice range slicing isnt typechecked yet"),
+        } => typecheck_slice(hir, emit, proc, target, mutt, slice_range),
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
@@ -1014,9 +1014,19 @@ fn typecheck_index<'hir>(
     TypeResult::new(access.elem_ty, index_expr)
 }
 
-//@codegen adjustments: @13.04.24
-// auto dereference made explicit in hir
-// array vs slice indexing made explicit in hir
+fn typecheck_slice<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    target: &ast::Expr<'_>,
+    mutt: ast::Mut,
+    slice: &ast::SliceRange<'_>,
+) -> TypeResult<'hir> {
+    let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
+
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+}
+
 fn check_type_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1662,14 +1672,116 @@ fn typecheck_address<'hir>(
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
-    //@not generating anything if type is invalid
-    if let hir::Type::Error = rhs_res.ty {
-        return TypeResult::new(hir::Type::Error, rhs_res.expr);
+    let adressability = get_expr_addressability(hir, proc, rhs_res.expr);
+
+    match adressability {
+        Addressability::Unknown => {}
+        Addressability::Constant => {
+            emit.error(ErrorComp::error(
+                "cannot get reference to a constant, you can use `global` instead",
+                hir.src(proc.origin(), rhs.range),
+                None,
+            ));
+        }
+        Addressability::Temporary => {
+            emit.error(ErrorComp::error(
+                "cannot get reference to a temporary value",
+                hir.src(proc.origin(), rhs.range),
+                None,
+            ));
+        }
+        Addressability::TemporaryImmutable => {
+            if mutt == ast::Mut::Mutable {
+                emit.error(ErrorComp::error(
+                    "cannot get mutable reference to this temporary value, only immutable `&` is allowed",
+                    hir.src(proc.origin(), rhs.range),
+                    None,
+                ));
+            }
+        }
+        Addressability::Addressable(rhs_mutt, src) => {
+            if mutt == ast::Mut::Mutable && rhs_mutt == ast::Mut::Immutable {
+                emit.error(ErrorComp::error(
+                    "cannot get mutable reference to an immutable variable",
+                    hir.src(proc.origin(), rhs.range),
+                    ErrorComp::info("variable defined here", src),
+                ));
+            }
+        }
+        Addressability::NotImplemented => {
+            emit.error(ErrorComp::error(
+                "addressability not implemented for this expression",
+                hir.src(proc.origin(), rhs.range),
+                None,
+            ));
+        }
     }
-    //@consider muttability and proper addressability semantics
+
     let ref_ty = hir::Type::Reference(emit.arena.alloc(rhs_res.ty), mutt);
     let address_expr = hir::Expr::Address { rhs: rhs_res.expr };
     TypeResult::new(ref_ty, emit.arena.alloc(address_expr))
+}
+
+enum Addressability {
+    Unknown,
+    Constant,
+    Temporary,
+    TemporaryImmutable,
+    Addressable(ast::Mut, SourceRange),
+    NotImplemented, //@temporary non crashing error 05.05.24
+}
+
+fn get_expr_addressability<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    proc: &ProcScope<'hir, '_>,
+    expr: &'hir hir::Expr<'hir>,
+) -> Addressability {
+    match *expr {
+        hir::Expr::Error => Addressability::Unknown,
+        hir::Expr::LitNull => Addressability::Temporary,
+        hir::Expr::LitBool { .. } => Addressability::Temporary,
+        hir::Expr::LitInt { .. } => Addressability::Temporary,
+        hir::Expr::LitFloat { .. } => Addressability::Temporary,
+        hir::Expr::LitChar { .. } => Addressability::Temporary,
+        hir::Expr::LitString { .. } => Addressability::Temporary,
+        hir::Expr::If { if_ } => Addressability::NotImplemented, //@todo 05.05.24
+        hir::Expr::Block { stmts } => Addressability::NotImplemented, //@todo 05.05.24
+        hir::Expr::Match { match_ } => Addressability::NotImplemented, //@todo 05.05.24
+        hir::Expr::UnionMember { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        // mutability of slicing plays are role: eg:  array[2..<4][mut ..] //@cant take mutable slice from immutable slice 05.05.24
+        hir::Expr::Slice { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        hir::Expr::Cast { .. } => Addressability::Temporary,
+        hir::Expr::LocalVar { local_id } => {
+            let local = proc.get_local(local_id);
+            Addressability::Addressable(local.mutt, hir.src(proc.origin(), local.name.range))
+        }
+        hir::Expr::ParamVar { param_id } => {
+            let param = proc.get_param(param_id);
+            Addressability::Addressable(param.mutt, hir.src(proc.origin(), param.name.range))
+        }
+        hir::Expr::ConstVar { .. } => Addressability::Constant,
+        hir::Expr::GlobalVar { global_id } => {
+            let data = hir.registry().global_data(global_id);
+            Addressability::Addressable(data.mutt, hir.src(data.origin_id, data.name.range))
+        }
+        hir::Expr::EnumVariant { .. } => Addressability::Temporary,
+        hir::Expr::ProcCall { .. } => Addressability::NotImplemented, //@temporary value, but might be slice-able? 05.05.24
+        hir::Expr::UnionInit { .. } => Addressability::TemporaryImmutable,
+        hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
+        hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,
+        hir::Expr::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
+        hir::Expr::Address { .. } => Addressability::Temporary,
+        hir::Expr::Unary { op, .. } => match op {
+            ast::UnOp::Deref => Addressability::NotImplemented, //@todo 05.05.24
+            _ => Addressability::Temporary,
+        },
+        hir::Expr::Binary { op, .. } => match op {
+            ast::BinOp::Range | ast::BinOp::RangeInc => Addressability::TemporaryImmutable,
+            _ => Addressability::Temporary,
+        },
+    }
 }
 
 fn typecheck_unary<'hir>(
@@ -2325,20 +2437,45 @@ fn typecheck_assign<'hir>(
     assign: &ast::Assign,
 ) -> hir::Stmt<'hir> {
     let lhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, assign.lhs);
+    let adressability = get_expr_addressability(hir, proc, lhs_res.expr);
 
-    let expect = if verify_is_expr_assignable(lhs_res.expr) {
-        lhs_res.ty
-    } else {
-        emit.error(ErrorComp::error(
-            "cannot assign to this expression",
-            hir.src(proc.origin(), assign.lhs.range),
-            None,
-        ));
-        hir::Type::Error
-    };
+    match adressability {
+        Addressability::Unknown => {}
+        Addressability::Constant => {
+            emit.error(ErrorComp::error(
+                "cannot assign to a constant",
+                hir.src(proc.origin(), assign.lhs.range),
+                None,
+            ));
+        }
+        Addressability::Temporary | Addressability::TemporaryImmutable => {
+            emit.error(ErrorComp::error(
+                "cannot assign to a temporary value",
+                hir.src(proc.origin(), assign.lhs.range),
+                None,
+            ));
+        }
+        Addressability::Addressable(mutt, src) => {
+            if mutt == ast::Mut::Immutable {
+                emit.error(ErrorComp::error(
+                    "cannot assign to an immutable variable",
+                    hir.src(proc.origin(), assign.lhs.range),
+                    ErrorComp::info("variable defined here", src),
+                ));
+            }
+        }
+        Addressability::NotImplemented => {
+            emit.error(ErrorComp::error(
+                "addressability not implemented for this expression",
+                hir.src(proc.origin(), assign.lhs.range),
+                None,
+            ));
+        }
+    }
 
-    let rhs_res = typecheck_expr(hir, emit, proc, expect, assign.rhs);
+    let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, assign.rhs);
 
+    //@binary assignment ops not checked
     let lhs_signed_int = match lhs_res.ty {
         hir::Type::Basic(basic) => {
             matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
@@ -2353,20 +2490,6 @@ fn typecheck_assign<'hir>(
         lhs_signed_int,
     };
     hir::Stmt::Assign(emit.arena.alloc(assign))
-}
-
-fn verify_is_expr_assignable(expr: &hir::Expr) -> bool {
-    match *expr {
-        hir::Expr::Error => true,
-        hir::Expr::UnionMember { target, .. } => verify_is_expr_assignable(target),
-        hir::Expr::StructField { target, .. } => verify_is_expr_assignable(target),
-        hir::Expr::Index { target, .. } => verify_is_expr_assignable(target),
-        hir::Expr::LocalVar { .. } => true,
-        hir::Expr::ParamVar { .. } => true,
-        hir::Expr::GlobalVar { .. } => true, //@add mut to globals
-        hir::Expr::Unary { op, .. } => matches!(op, ast::UnOp::Deref), //@support deref assignment properly
-        _ => false,
-    }
 }
 
 // these calls are only done for items so far @26.04.24
