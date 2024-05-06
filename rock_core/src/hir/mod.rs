@@ -468,6 +468,9 @@ impl<'hir> ProcData<'hir> {
     pub fn param(&self, id: ProcParamID) -> &'hir ProcParam<'hir> {
         &self.params[id.index()]
     }
+    pub fn local(&self, id: LocalID) -> &'hir Local<'hir> {
+        &self.locals[id.index()]
+    }
     pub fn find_param(&self, id: InternID) -> Option<(ProcParamID, &'hir ProcParam<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {

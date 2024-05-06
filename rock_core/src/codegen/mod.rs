@@ -525,7 +525,7 @@ fn codegen_expr<'ctx>(
         Expr::LitString { id, c_string } => Some(codegen_lit_string(cg, id, c_string)),
         Expr::If { if_ } => codegen_if(cg, proc_cg, if_),
         Expr::Block { stmts } => codegen_block(cg, proc_cg, expect_ptr, stmts),
-        Expr::Match { match_ } => Some(codegen_match(cg, match_)),
+        Expr::Match { match_ } => Some(codegen_match(cg, proc_cg, match_)),
         Expr::UnionMember {
             target,
             union_id,
@@ -733,12 +733,14 @@ fn codegen_block<'ctx>(
             }
             hir::Stmt::Return(expr) => {
                 codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
+
                 if let Some(expr) = expr {
                     let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
                     cg.builder.build_return(Some(&value)).unwrap();
                 } else {
                     cg.builder.build_return(None).unwrap();
                 }
+
                 // prevents defer generation on exit
                 proc_cg.exit_block();
                 return None;
@@ -746,87 +748,73 @@ fn codegen_block<'ctx>(
             hir::Stmt::Defer(block) => {
                 proc_cg.push_defer_block(block);
             }
-            hir::Stmt::ForLoop(for_) => match for_.kind {
-                hir::ForKind::Loop => {
-                    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
-                    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
-                    proc_cg.set_next_loop_info(exit_block, body_block);
+            hir::Stmt::ForLoop(for_) => {
+                let entry_block = cg
+                    .context
+                    .append_basic_block(proc_cg.function, "loop_entry");
+                let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+                let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
 
-                    cg.builder.build_unconditional_branch(body_block).unwrap();
-                    cg.builder.position_at_end(body_block);
+                cg.builder.build_unconditional_branch(entry_block).unwrap();
+                proc_cg.set_next_loop_info(exit_block, entry_block);
 
-                    codegen_expr(cg, proc_cg, false, for_.block);
-
-                    //@might not be valid when break / continue are used 06.05.24
-                    // other cfg will make body_block not the actual block we want
-                    if body_block.get_terminator().is_none() {
-                        cg.builder.position_at_end(body_block);
+                match for_.kind {
+                    hir::ForKind::Loop => {
+                        cg.builder.position_at_end(entry_block);
                         cg.builder.build_unconditional_branch(body_block).unwrap();
+
+                        cg.builder.position_at_end(body_block);
+                        codegen_expr(cg, proc_cg, false, for_.block);
+
+                        //@might not be valid when break / continue are used 06.05.24
+                        // other cfg will make body_block not the actual block we want
+                        if body_block.get_terminator().is_none() {
+                            cg.builder.position_at_end(body_block);
+                            cg.builder.build_unconditional_branch(body_block).unwrap();
+                        }
                     }
-                    cg.builder.position_at_end(exit_block);
+                    hir::ForKind::While { cond } => {
+                        cg.builder.position_at_end(entry_block);
+                        let cond = codegen_expr(cg, proc_cg, false, cond).expect("value");
+                        cg.builder
+                            .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
+                            .unwrap();
+
+                        cg.builder.position_at_end(body_block);
+                        codegen_expr(cg, proc_cg, false, for_.block);
+
+                        //@might not be valid when break / continue are used 06.05.24
+                        cg.builder.build_unconditional_branch(entry_block).unwrap();
+                    }
+                    hir::ForKind::ForLoop {
+                        local_id,
+                        cond,
+                        assign,
+                    } => {
+                        cg.builder.position_at_end(entry_block);
+                        codegen_local(cg, proc_cg, local_id);
+                        let cond = codegen_expr(cg, proc_cg, false, cond).expect("value");
+                        cg.builder
+                            .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
+                            .unwrap();
+
+                        cg.builder.position_at_end(body_block);
+                        codegen_expr(cg, proc_cg, false, for_.block);
+
+                        //@often invalid (this assignment might need special block) if no iterator abstractions are used
+                        // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24
+                        cg.builder.position_at_end(body_block);
+                        codegen_assign(cg, proc_cg, assign);
+
+                        //@might not be valid when break / continue are used 06.05.24
+                        cg.builder.build_unconditional_branch(entry_block).unwrap();
+                    }
                 }
-                hir::ForKind::While { cond } => {
-                    let cond_block = cg.context.append_basic_block(proc_cg.function, "loop_cond");
-                    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
-                    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
-                    proc_cg.set_next_loop_info(exit_block, cond_block);
 
-                    cg.builder.build_unconditional_branch(cond_block).unwrap();
-                    cg.builder.position_at_end(cond_block);
-                    let cond = codegen_expr(cg, proc_cg, false, cond).expect("value");
-
-                    cg.builder
-                        .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
-                        .unwrap();
-                    cg.builder.position_at_end(body_block);
-
-                    codegen_expr(cg, proc_cg, false, for_.block);
-
-                    //@might not be valid when break / continue are used 06.05.24
-                    cg.builder.build_unconditional_branch(cond_block).unwrap();
-                    cg.builder.position_at_end(exit_block);
-                }
-                hir::ForKind::ForLoop {
-                    local_id,
-                    cond,
-                    assign,
-                } => todo!("codegen `for c-like` not supported"),
-            },
-            hir::Stmt::Local(local_id) => {
-                let local = cg.hir.proc_data(proc_cg.proc_id).locals[local_id.index()];
-                let var_ty = cg.type_into_basic(local.ty).expect("non void type");
-
-                //@variables without value expression are always zero initialized
-                // theres no way to detect potentially uninitialized variables
-                // during check and analysis phases, this might change. @06.04.24
-                let value = if let Some(expr) = local.value {
-                    codegen_expr(cg, proc_cg, false, expr).expect("value")
-                } else {
-                    var_ty.const_zero()
-                };
-
-                let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
-                cg.builder.build_store(var_ptr, value).unwrap();
-                proc_cg.local_vars[local_id.index()] = Some(var_ptr);
+                cg.builder.position_at_end(exit_block);
             }
-            hir::Stmt::Assign(assign) => {
-                let lhs = codegen_expr(cg, proc_cg, true, assign.lhs).expect("value");
-                let rhs = codegen_expr(cg, proc_cg, false, assign.rhs).expect("value");
-                match assign.op {
-                    ast::AssignOp::Assign => {
-                        let lhs_ptr = lhs.into_pointer_value();
-                        cg.builder.build_store(lhs_ptr, rhs).unwrap();
-                    }
-                    ast::AssignOp::Bin(op) => {
-                        let lhs_ptr = lhs.into_pointer_value();
-                        let lhs_ty = cg.type_into_basic(assign.lhs_ty).expect("value type");
-                        let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
-                        let bin_value =
-                            codegen_bin_op(cg, op, lhs_value, rhs, assign.lhs_signed_int);
-                        cg.builder.build_store(lhs_ptr, bin_value).unwrap();
-                    }
-                }
-            }
+            hir::Stmt::Local(local_id) => codegen_local(cg, proc_cg, local_id),
+            hir::Stmt::Assign(assign) => codegen_assign(cg, proc_cg, assign),
             hir::Stmt::ExprSemi(expr) => {
                 //@are expressions like `5;` valid when output as llvm ir? probably yes
                 codegen_expr(cg, proc_cg, false, expr);
@@ -854,6 +842,8 @@ fn codegen_block<'ctx>(
     None
 }
 
+//@contents should be generated once, instead of generating all block code each time
+// and only branches to defer blocks should be created? hard to design currently @06.05.24
 fn codegen_defer_blocks<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -880,7 +870,55 @@ fn codegen_defer_blocks<'ctx>(
     cg.builder.position_at_end(defer_block);
 }
 
-fn codegen_match<'ctx>(cg: &Codegen<'ctx>, match_: &hir::Match) -> values::BasicValueEnum<'ctx> {
+fn codegen_local<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    local_id: hir::LocalID,
+) {
+    let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
+    let var_ty = cg.type_into_basic(local.ty).expect("non void type");
+    let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
+    proc_cg.local_vars[local_id.index()] = Some(var_ptr);
+
+    //@variables without value expression are always zero initialized
+    // theres no way to detect potentially uninitialized variables
+    // during check and analysis phases, this might change. @06.04.24
+    let value = if let Some(expr) = local.value {
+        codegen_expr(cg, proc_cg, false, expr).expect("value")
+    } else {
+        var_ty.const_zero()
+    };
+
+    cg.builder.build_store(var_ptr, value).unwrap();
+}
+
+fn codegen_assign<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    assign: &hir::Assign<'ctx>,
+) {
+    let lhs = codegen_expr(cg, proc_cg, true, assign.lhs).expect("value");
+    let rhs = codegen_expr(cg, proc_cg, false, assign.rhs).expect("value");
+    let lhs_ptr = lhs.into_pointer_value();
+
+    match assign.op {
+        ast::AssignOp::Assign => {
+            cg.builder.build_store(lhs_ptr, rhs).unwrap();
+        }
+        ast::AssignOp::Bin(op) => {
+            let lhs_ty = cg.type_into_basic(assign.lhs_ty).expect("value type");
+            let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
+            let bin_value = codegen_bin_op(cg, op, lhs_value, rhs, assign.lhs_signed_int);
+            cg.builder.build_store(lhs_ptr, bin_value).unwrap();
+        }
+    }
+}
+
+fn codegen_match<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    match_: &hir::Match<'ctx>,
+) -> values::BasicValueEnum<'ctx> {
     todo!("codegen `match` not supported")
 }
 
@@ -1085,7 +1123,7 @@ fn codegen_local_var<'ctx>(
     expect_ptr: bool,
     local_id: hir::LocalID,
 ) -> values::BasicValueEnum<'ctx> {
-    let local = cg.hir.proc_data(proc_cg.proc_id).locals[local_id.index()];
+    let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
     let var_ty = cg.type_into_basic(local.ty).expect("non void type");
     let var_ptr = proc_cg.local_vars[local_id.index()].expect("var ptr");
 
