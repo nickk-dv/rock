@@ -3,6 +3,7 @@ use crate::error::ErrorComp;
 use crate::hir;
 use crate::intern::InternID;
 use crate::session::BuildKind;
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder;
 use inkwell::context;
 use inkwell::context::AsContextRef;
@@ -43,31 +44,64 @@ struct ProcCodegen<'ctx> {
     proc_id: hir::ProcID,
     function: values::FunctionValue<'ctx>,
     local_vars: Vec<Option<values::PointerValue<'ctx>>>,
-    defer_counts: Vec<u32>,
+    block_info: Vec<BlockInfo<'ctx>>,
     defer_blocks: Vec<&'ctx hir::Expr<'ctx>>,
+    next_loop_info: Option<LoopInfo<'ctx>>,
+}
+
+#[derive(Copy, Clone)]
+struct BlockInfo<'ctx> {
+    defer_count: u32,
+    loop_info: Option<LoopInfo<'ctx>>,
+}
+
+#[derive(Copy, Clone)]
+struct LoopInfo<'ctx> {
+    break_bb: BasicBlock<'ctx>,
+    continue_bb: BasicBlock<'ctx>,
 }
 
 impl<'ctx> ProcCodegen<'ctx> {
+    fn set_next_loop_info(&mut self, break_bb: BasicBlock<'ctx>, continue_bb: BasicBlock<'ctx>) {
+        self.next_loop_info = Some(LoopInfo {
+            break_bb,
+            continue_bb,
+        });
+    }
+
     fn enter_block(&mut self) {
-        self.defer_counts.push(0);
+        self.block_info.push(BlockInfo {
+            defer_count: 0,
+            loop_info: self.next_loop_info,
+        });
+        self.next_loop_info = None;
     }
 
     fn exit_block(&mut self) {
-        let last_count = *self.defer_counts.last().unwrap();
+        let last_count = self.block_info.last().unwrap().defer_count;
         for _ in 0..last_count {
             assert!(self.defer_blocks.pop().is_some());
         }
-        assert!(self.defer_counts.pop().is_some());
+        assert!(self.block_info.pop().is_some());
     }
 
     fn push_defer_block(&mut self, block: &'ctx hir::Expr<'ctx>) {
-        *self.defer_counts.last_mut().unwrap() += 1;
+        self.block_info.last_mut().unwrap().defer_count += 1;
         self.defer_blocks.push(block);
+    }
+
+    fn last_loop_info(&self) -> LoopInfo<'ctx> {
+        for info in self.block_info.iter().rev() {
+            if let Some(loop_info) = info.loop_info {
+                return loop_info;
+            }
+        }
+        unreachable!("last loop must exist")
     }
 
     fn last_defer_blocks(&self) -> Vec<&'ctx hir::Expr<'ctx>> {
         let total_count = self.defer_blocks.len();
-        let last_count = *self.defer_counts.last().unwrap();
+        let last_count = self.block_info.last().unwrap().defer_count;
         let range = total_count - last_count as usize..total_count;
         self.defer_blocks[range].to_vec()
     }
@@ -401,8 +435,9 @@ fn codegen_function_bodies(cg: &Codegen) {
                 function,
                 proc_id: hir::ProcID::new(idx),
                 local_vars,
-                defer_counts: Vec::new(),
+                block_info: Vec::new(),
                 defer_blocks: Vec::new(),
+                next_loop_info: None,
             };
 
             let entry_block = cg.context.append_basic_block(proc_cg.function, "entry");
@@ -686,8 +721,16 @@ fn codegen_block<'ctx>(
 
     for (idx, stmt) in stmts.iter().enumerate() {
         match *stmt {
-            hir::Stmt::Break => todo!("codegen `break` not supported"),
-            hir::Stmt::Continue => todo!("codegen `continue` not supported"),
+            hir::Stmt::Break => {
+                let break_bb = proc_cg.last_loop_info().break_bb;
+                //@which defer block to generate? 06.05.24
+                cg.builder.build_unconditional_branch(break_bb).unwrap();
+            }
+            hir::Stmt::Continue => {
+                let continue_bb = proc_cg.last_loop_info().continue_bb;
+                //@which defer block to generate? 06.05.24
+                cg.builder.build_unconditional_branch(continue_bb).unwrap();
+            }
             hir::Stmt::Return(expr) => {
                 codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
                 if let Some(expr) = expr {
@@ -696,6 +739,9 @@ fn codegen_block<'ctx>(
                 } else {
                     cg.builder.build_return(None).unwrap();
                 }
+                // prevents defer generation on exit
+                proc_cg.exit_block();
+                return None;
             }
             hir::Stmt::Defer(block) => {
                 proc_cg.push_defer_block(block);
@@ -703,28 +749,41 @@ fn codegen_block<'ctx>(
             hir::Stmt::ForLoop(for_) => match for_.kind {
                 hir::ForKind::Loop => {
                     let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+                    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
+                    proc_cg.set_next_loop_info(exit_block, body_block);
+
                     cg.builder.build_unconditional_branch(body_block).unwrap();
                     cg.builder.position_at_end(body_block);
+
                     codegen_expr(cg, proc_cg, false, for_.block);
-                    cg.builder.position_at_end(body_block);
-                    cg.builder.build_unconditional_branch(body_block).unwrap();
+
+                    //@might not be valid when break / continue are used 06.05.24
+                    // other cfg will make body_block not the actual block we want
+                    if body_block.get_terminator().is_none() {
+                        cg.builder.position_at_end(body_block);
+                        cg.builder.build_unconditional_branch(body_block).unwrap();
+                    }
+                    cg.builder.position_at_end(exit_block);
                 }
                 hir::ForKind::While { cond } => {
                     let cond_block = cg.context.append_basic_block(proc_cg.function, "loop_cond");
+                    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+                    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
+                    proc_cg.set_next_loop_info(exit_block, cond_block);
+
                     cg.builder.build_unconditional_branch(cond_block).unwrap();
                     cg.builder.position_at_end(cond_block);
                     let cond = codegen_expr(cg, proc_cg, false, cond).expect("value");
 
-                    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
-                    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
                     cg.builder
                         .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
                         .unwrap();
-
                     cg.builder.position_at_end(body_block);
-                    codegen_expr(cg, proc_cg, false, for_.block);
-                    cg.builder.build_unconditional_branch(cond_block).unwrap();
 
+                    codegen_expr(cg, proc_cg, false, for_.block);
+
+                    //@might not be valid when break / continue are used 06.05.24
+                    cg.builder.build_unconditional_branch(cond_block).unwrap();
                     cg.builder.position_at_end(exit_block);
                 }
                 hir::ForKind::ForLoop {
