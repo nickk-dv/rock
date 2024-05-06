@@ -43,7 +43,8 @@ struct Codegen<'ctx> {
 struct ProcCodegen<'ctx> {
     proc_id: hir::ProcID,
     function: values::FunctionValue<'ctx>,
-    local_vars: Vec<Option<values::PointerValue<'ctx>>>,
+    param_vars: Vec<values::PointerValue<'ctx>>,
+    local_vars: Vec<values::PointerValue<'ctx>>,
     block_info: Vec<BlockInfo<'ctx>>,
     defer_blocks: Vec<&'ctx hir::Expr<'ctx>>,
     next_loop_info: Option<LoopInfo<'ctx>>,
@@ -429,19 +430,38 @@ fn codegen_function_bodies(cg: &Codegen) {
         if let Some(block) = proc_data.block {
             let function = cg.function_values[idx];
 
-            let mut local_vars = Vec::new();
-            local_vars.resize_with(proc_data.locals.len(), || None);
+            let entry_block = cg.context.append_basic_block(function, "entry");
+            cg.builder.position_at_end(entry_block);
+
+            let mut param_vars = Vec::with_capacity(proc_data.params.len());
+            for param_idx in 0..proc_data.params.len() {
+                let param_value = function
+                    .get_nth_param(param_idx as u32)
+                    .expect("param value");
+                let param_ty = param_value.get_type();
+
+                let param_ptr = cg.builder.build_alloca(param_ty, "param").unwrap();
+                cg.builder.build_store(param_ptr, param_value).unwrap();
+                param_vars.push(param_ptr);
+            }
+
+            let mut local_vars = Vec::with_capacity(proc_data.locals.len());
+            for (local_idx, &local) in proc_data.locals.iter().enumerate() {
+                let local_ty = cg.type_into_basic(local.ty).expect("value type");
+
+                let local_ptr = cg.builder.build_alloca(local_ty, "local").unwrap();
+                local_vars.push(local_ptr);
+            }
+
             let mut proc_cg = ProcCodegen {
                 function,
                 proc_id: hir::ProcID::new(idx),
+                param_vars,
                 local_vars,
                 block_info: Vec::new(),
                 defer_blocks: Vec::new(),
                 next_loop_info: None,
             };
-
-            let entry_block = cg.context.append_basic_block(proc_cg.function, "entry");
-            cg.builder.position_at_end(entry_block);
 
             if let Some(value) = codegen_expr(cg, &mut proc_cg, false, block) {
                 //@hack building return of the tail returned value on the last block
@@ -548,7 +568,7 @@ fn codegen_expr<'ctx>(
         Expr::Slice { target, access } => todo!("codegen slicing"),
         Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
         Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
-        Expr::ParamVar { param_id } => Some(codegen_param_var(cg, param_id)),
+        Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect_ptr, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect_ptr, global_id)),
         Expr::EnumVariant {
@@ -870,25 +890,23 @@ fn codegen_defer_blocks<'ctx>(
     cg.builder.position_at_end(defer_block);
 }
 
+//@variables without value expression are always zero initialized
+// theres no way to detect potentially uninitialized variables
+// during check and analysis phases, this might change. @06.04.24
 fn codegen_local<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     local_id: hir::LocalID,
 ) {
     let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
-    let var_ty = cg.type_into_basic(local.ty).expect("non void type");
-    let var_ptr = cg.builder.build_alloca(var_ty, "local").unwrap();
-    proc_cg.local_vars[local_id.index()] = Some(var_ptr);
+    let var_ptr = proc_cg.local_vars[local_id.index()];
 
-    //@variables without value expression are always zero initialized
-    // theres no way to detect potentially uninitialized variables
-    // during check and analysis phases, this might change. @06.04.24
     let value = if let Some(expr) = local.value {
         codegen_expr(cg, proc_cg, false, expr).expect("value")
     } else {
+        let var_ty = cg.type_into_basic(local.ty).expect("non void type");
         var_ty.const_zero()
     };
-
     cg.builder.build_store(var_ptr, value).unwrap();
 }
 
@@ -1119,26 +1137,40 @@ fn codegen_cast<'ctx>(
 
 fn codegen_local_var<'ctx>(
     cg: &Codegen<'ctx>,
-    proc_cg: &mut ProcCodegen<'ctx>,
+    proc_cg: &ProcCodegen<'ctx>,
     expect_ptr: bool,
     local_id: hir::LocalID,
 ) -> values::BasicValueEnum<'ctx> {
-    let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
-    let var_ty = cg.type_into_basic(local.ty).expect("non void type");
-    let var_ptr = proc_cg.local_vars[local_id.index()].expect("var ptr");
+    let local_ptr = proc_cg.local_vars[local_id.index()];
 
     if expect_ptr {
-        var_ptr.into()
+        local_ptr.into()
     } else {
-        cg.builder.build_load(var_ty, var_ptr, "local_val").unwrap()
+        let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
+        let local_ty = cg.type_into_basic(local.ty).expect("value type");
+        cg.builder
+            .build_load(local_ty, local_ptr, "local_val")
+            .unwrap()
     }
 }
 
 fn codegen_param_var<'ctx>(
     cg: &Codegen<'ctx>,
+    proc_cg: &ProcCodegen<'ctx>,
+    expect_ptr: bool,
     param_id: hir::ProcParamID,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `param var` not supported")
+    let param_ptr = proc_cg.param_vars[param_id.index()];
+
+    if expect_ptr {
+        param_ptr.into()
+    } else {
+        let param = cg.hir.proc_data(proc_cg.proc_id).param(param_id);
+        let param_ty = cg.type_into_basic(param.ty).expect("value type");
+        cg.builder
+            .build_load(param_ty, param_ptr, "param_val")
+            .unwrap()
+    }
 }
 
 fn codegen_const_var<'ctx>(
