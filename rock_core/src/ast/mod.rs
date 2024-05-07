@@ -198,20 +198,28 @@ pub enum Type<'ast> {
     Basic(BasicType),
     Custom(&'ast Path<'ast>),
     Reference(&'ast Type<'ast>, Mut),
+    Procedure(&'ast ProcType<'ast>),
     ArraySlice(&'ast ArraySlice<'ast>),
     ArrayStatic(&'ast ArrayStatic<'ast>),
 }
 
 #[derive(Copy, Clone)]
+pub struct ProcType<'ast> {
+    pub params: &'ast [Type<'ast>],
+    pub return_ty: Option<Type<'ast>>,
+    pub is_variadic: bool,
+}
+
+#[derive(Copy, Clone)]
 pub struct ArraySlice<'ast> {
     pub mutt: Mut,
-    pub ty: Type<'ast>,
+    pub elem_ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic<'ast> {
     pub size: ConstExpr<'ast>,
-    pub ty: Type<'ast>,
+    pub elem_ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]

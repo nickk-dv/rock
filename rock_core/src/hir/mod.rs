@@ -182,20 +182,28 @@ pub enum Type<'hir> {
     Union(UnionID),
     Struct(StructID),
     Reference(&'hir Type<'hir>, ast::Mut),
+    Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
 }
 
 #[derive(Copy, Clone)]
+pub struct ProcType<'hir> {
+    pub params: &'hir [Type<'hir>],
+    pub return_ty: Type<'hir>,
+    pub is_variadic: bool,
+}
+
+#[derive(Copy, Clone)]
 pub struct ArraySlice<'hir> {
     pub mutt: ast::Mut,
-    pub ty: Type<'hir>,
+    pub elem_ty: Type<'hir>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic<'hir> {
     pub size: ConstExpr<'hir>,
-    pub ty: Type<'hir>,
+    pub elem_ty: Type<'hir>,
 }
 
 #[derive(Copy, Clone)]

@@ -38,22 +38,44 @@ pub fn type_resolve<'hir>(
         }
         ast::Type::Reference(ref_ty, mutt) => {
             let ref_ty = type_resolve(hir, emit, origin_id, *ref_ty);
-            let ty = emit.arena.alloc(ref_ty);
-            hir::Type::Reference(ty, mutt)
+            hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
+        }
+        ast::Type::Procedure(proc_ty) => {
+            let mut params = Vec::with_capacity(proc_ty.params.len());
+            for param in proc_ty.params {
+                let ty = type_resolve(hir, emit, origin_id, *param);
+                params.push(ty);
+            }
+            let params = emit.arena.alloc_slice(&params);
+
+            let return_ty = if let Some(return_ty) = proc_ty.return_ty {
+                type_resolve(hir, emit, origin_id, return_ty)
+            } else {
+                hir::Type::Basic(ast::BasicType::Void)
+            };
+
+            let proc_ty = hir::ProcType {
+                params,
+                return_ty,
+                is_variadic: proc_ty.is_variadic,
+            };
+            hir::Type::Procedure(emit.arena.alloc(proc_ty))
         }
         ast::Type::ArraySlice(slice) => {
-            let elem_ty = type_resolve(hir, emit, origin_id, slice.ty);
-            let hir_slice = emit.arena.alloc(hir::ArraySlice {
+            let elem_ty = type_resolve(hir, emit, origin_id, slice.elem_ty);
+
+            let slice = hir::ArraySlice {
                 mutt: slice.mutt,
-                ty: elem_ty,
-            });
-            hir::Type::ArraySlice(hir_slice)
+                elem_ty,
+            };
+            hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::Type::ArrayStatic(array) => {
             let size = super::pass_4::const_expr_resolve(hir, emit, origin_id, array.size);
-            let elem_ty = type_resolve(hir, emit, origin_id, array.ty);
-            let hir_array = emit.arena.alloc(hir::ArrayStatic { size, ty: elem_ty });
-            hir::Type::ArrayStatic(hir_array)
+            let elem_ty = type_resolve(hir, emit, origin_id, array.elem_ty);
+
+            let array = hir::ArrayStatic { size, elem_ty };
+            hir::Type::ArrayStatic(emit.arena.alloc(array))
         }
     }
 }

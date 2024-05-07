@@ -517,16 +517,17 @@ fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
             mutt == mutt2 && type_matches(*ref_ty, *ref_ty2)
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
-            slice.mutt == slice2.mutt && type_matches(slice.ty, slice2.ty)
+            slice.mutt == slice2.mutt && type_matches(slice.elem_ty, slice2.elem_ty)
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
             //@size const_expr is ignored
-            type_matches(array.ty, array2.ty)
+            type_matches(array.elem_ty, array2.elem_ty)
         }
         _ => false,
     }
 }
 
+//@can use &'static str often 07.05.24
 fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String {
     match ty {
         hir::Type::Error => "error".into(),
@@ -560,14 +561,29 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
             };
             format!("&{}{}", mut_str, type_format(hir, *ref_ty))
         }
+        hir::Type::Procedure(proc_ty) => {
+            let mut string = String::from("proc (");
+            for (idx, param) in proc_ty.params.iter().enumerate() {
+                string.push_str(&type_format(hir, *param));
+                if proc_ty.params.len() != idx + 1 {
+                    string.push(',');
+                }
+            }
+            if proc_ty.is_variadic {
+                string.push_str(", ..")
+            }
+            string.push_str(") -> ");
+            string.push_str(&type_format(hir, proc_ty.return_ty));
+            string
+        }
         hir::Type::ArraySlice(slice) => {
             let mut_str = match slice.mutt {
                 ast::Mut::Mutable => "mut",
                 ast::Mut::Immutable => "",
             };
-            format!("[{}]{}", mut_str, type_format(hir, slice.ty))
+            format!("[{}]{}", mut_str, type_format(hir, slice.elem_ty))
         }
-        hir::Type::ArrayStatic(array) => format!("[<SIZE>]{}", type_format(hir, array.ty)),
+        hir::Type::ArrayStatic(array) => format!("[<SIZE>]{}", type_format(hir, array.elem_ty)),
     }
 }
 
@@ -743,7 +759,7 @@ fn typecheck_lit_string<'hir>(
     } else {
         let slice = emit.arena.alloc(hir::ArraySlice {
             mutt: ast::Mut::Immutable,
-            ty: hir::Type::Basic(BasicType::U8),
+            elem_ty: hir::Type::Basic(BasicType::U8),
         });
         hir::Type::ArraySlice(slice)
     };
@@ -1061,13 +1077,13 @@ fn type_get_elem<'hir>(
         },
         hir::Type::ArraySlice(slice) => hir::IndexAccess {
             deref,
-            elem_ty: slice.ty,
+            elem_ty: slice.elem_ty,
             kind: hir::IndexKind::Slice { elem_size: 0 }, //@todo size
             index,
         },
         hir::Type::ArrayStatic(array) => hir::IndexAccess {
             deref,
-            elem_ty: array.ty,
+            elem_ty: array.elem_ty,
             kind: hir::IndexKind::Array { array },
             index,
         },
@@ -1095,6 +1111,7 @@ fn type_size(hir: &HirData, ty: hir::Type) -> Option<hir::Size> {
         hir::Type::Union(id) => hir.registry().union_data(id).size_eval.get_size(),
         hir::Type::Struct(id) => hir.registry().struct_data(id).size_eval.get_size(),
         hir::Type::Reference(_, _) => Some(hir::Size::new_equal(8)), //@assume 64bit target
+        hir::Type::Procedure(_) => Some(hir::Size::new_equal(8)),    //@assume 64bit target
         hir::Type::ArraySlice(_) => Some(hir::Size::new(16, 8)),     //@assume 64bit target
         hir::Type::ArrayStatic(array) => {
             todo!("array static sizing (size is const_expr which isnt correct currently)")
@@ -1595,7 +1612,7 @@ fn typecheck_array_init<'hir>(
     let mut elem_ty = hir::Type::Error;
 
     let expect = match expect {
-        hir::Type::ArrayStatic(array) => array.ty,
+        hir::Type::ArrayStatic(array) => array.elem_ty,
         _ => hir::Type::Error,
     };
 
@@ -1617,7 +1634,7 @@ fn typecheck_array_init<'hir>(
     });
     let array_type = emit.arena.alloc(hir::ArrayStatic {
         size: hir::ConstExpr(size),
-        ty: elem_ty,
+        elem_ty,
     });
 
     let array_init = emit.arena.alloc(hir::ArrayInit {
@@ -1640,7 +1657,7 @@ fn typecheck_array_repeat<'hir>(
     size: ast::ConstExpr,
 ) -> TypeResult<'hir> {
     let expect = match expect {
-        hir::Type::ArrayStatic(array) => array.ty,
+        hir::Type::ArrayStatic(array) => array.elem_ty,
         _ => hir::Type::Error,
     };
 
@@ -1649,7 +1666,7 @@ fn typecheck_array_repeat<'hir>(
 
     let array_type = emit.arena.alloc(hir::ArrayStatic {
         size: size_res,
-        ty: expr_res.ty,
+        elem_ty: expr_res.ty,
     });
 
     let array_repeat = emit.arena.alloc(hir::ArrayRepeat {
@@ -2518,8 +2535,9 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
         hir::Type::Union(_) => true,
         hir::Type::Struct(_) => true,
         hir::Type::Reference(ref_ty, _) => type_is_value_type(*ref_ty),
-        hir::Type::ArraySlice(slice) => type_is_value_type(slice.ty),
-        hir::Type::ArrayStatic(array) => type_is_value_type(array.ty),
+        hir::Type::Procedure(_) => true,
+        hir::Type::ArraySlice(slice) => type_is_value_type(slice.elem_ty),
+        hir::Type::ArrayStatic(array) => type_is_value_type(array.elem_ty),
     }
 }
 

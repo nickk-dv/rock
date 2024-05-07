@@ -364,17 +364,17 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
                 T![mut] | T![']'] => {
                     let mutt = mutt(p);
                     p.expect(T![']'])?;
-                    let ty = ty(p)?;
+                    let elem_ty = ty(p)?;
                     Ok(Type::ArraySlice(
-                        p.state.arena.alloc(ArraySlice { mutt, ty }),
+                        p.state.arena.alloc(ArraySlice { mutt, elem_ty }),
                     ))
                 }
                 _ => {
                     let size = ConstExpr(expr(p)?);
                     p.expect(T![']'])?;
-                    let ty = ty(p)?;
+                    let elem_ty = ty(p)?;
                     Ok(Type::ArrayStatic(
-                        p.state.arena.alloc(ArrayStatic { size, ty }),
+                        p.state.arena.alloc(ArrayStatic { size, elem_ty }),
                     ))
                 }
             }

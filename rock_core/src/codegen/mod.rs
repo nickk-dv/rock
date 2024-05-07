@@ -247,7 +247,7 @@ impl<'ctx> Codegen<'ctx> {
     fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
         // @should use LLVMArrayType2 which takes u64, what not exposed 03.05.24
         //  by inkwell even for llvm 17 (LLVMArrayType was deprecated in this version)
-        let elem_ty = self.type_into_basic(array.ty).expect("non void type");
+        let elem_ty = self.type_into_basic(array.elem_ty).expect("non void type");
         if let hir::Expr::LitInt { val, .. } = *array.size.0 {
             elem_ty.array_type(val as u32)
         } else {
@@ -296,6 +296,7 @@ impl<'ctx> Codegen<'ctx> {
             hir::Type::Union(id) => self.union_type(id).into(),
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
             hir::Type::Reference(_, _) => self.ptr_type().into(),
+            hir::Type::Procedure(_) => self.ptr_type().into(),
             hir::Type::ArraySlice(_) => self.slice_type().into(),
             hir::Type::ArrayStatic(array) => self.array_type(array).into(),
         }
