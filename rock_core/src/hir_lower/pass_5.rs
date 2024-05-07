@@ -562,11 +562,11 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
             format!("&{}{}", mut_str, type_format(hir, *ref_ty))
         }
         hir::Type::Procedure(proc_ty) => {
-            let mut string = String::from("proc (");
+            let mut string = String::from("proc(");
             for (idx, param) in proc_ty.params.iter().enumerate() {
                 string.push_str(&type_format(hir, *param));
                 if proc_ty.params.len() != idx + 1 {
-                    string.push(',');
+                    string.push_str(", ");
                 }
             }
             if proc_ty.is_variadic {

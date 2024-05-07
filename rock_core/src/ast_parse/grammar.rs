@@ -358,6 +358,32 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
             let ty_ref = p.state.arena.alloc(ty);
             Ok(Type::Reference(ty_ref, mutt))
         }
+        T![proc] => {
+            p.bump();
+            p.expect(T!['('])?;
+            let start = p.state.types.start();
+            let mut is_variadic = false;
+            while !p.at(T![')']) && !p.at(T![eof]) {
+                let ty = ty(p)?;
+                p.state.types.add(ty);
+                if !p.eat(T![,]) {
+                    break;
+                }
+                if p.eat(T![..]) {
+                    is_variadic = true;
+                    break;
+                }
+            }
+            p.expect(T![')'])?;
+            let params = p.state.types.take(start, &mut p.state.arena);
+            let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
+
+            Ok(Type::Procedure(p.state.arena.alloc(ProcType {
+                params,
+                return_ty,
+                is_variadic,
+            })))
+        }
         T!['['] => {
             p.bump();
             match p.peek() {
