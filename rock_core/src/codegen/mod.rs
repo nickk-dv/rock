@@ -439,17 +439,16 @@ fn codegen_function_bodies(cg: &Codegen) {
                     .get_nth_param(param_idx as u32)
                     .expect("param value");
                 let param_ty = param_value.get_type();
-
                 let param_ptr = cg.builder.build_alloca(param_ty, "param").unwrap();
                 cg.builder.build_store(param_ptr, param_value).unwrap();
                 param_vars.push(param_ptr);
             }
 
             let mut local_vars = Vec::with_capacity(proc_data.locals.len());
-            for (local_idx, &local) in proc_data.locals.iter().enumerate() {
+            for &local in proc_data.locals {
                 let local_ty = cg.type_into_basic(local.ty).expect("value type");
-
                 let local_ptr = cg.builder.build_alloca(local_ty, "local").unwrap();
+                // locals are initialized when declared
                 local_vars.push(local_ptr);
             }
 
@@ -989,8 +988,6 @@ fn codegen_struct_field<'ctx>(
         target.into_pointer_value()
     };
 
-    let field = cg.hir.struct_data(struct_id).field(field_id);
-    let field_ty = cg.type_into_basic(field.ty).expect("value");
     let field_ptr = cg
         .builder
         .build_struct_gep(
@@ -1004,10 +1001,56 @@ fn codegen_struct_field<'ctx>(
     if expect_ptr {
         field_ptr.into()
     } else {
+        let field = cg.hir.struct_data(struct_id).field(field_id);
+        let field_ty = cg.type_into_basic(field.ty).expect("value");
         cg.builder
             .build_load(field_ty, field_ptr, "field_val")
             .unwrap()
     }
+}
+
+//@change to eprintf, re-use panic message strings (not generated for each panic) 07.05.24
+// panics should be hooks into core library panicking module
+// it could define how panic works (eg: calling epintf + exit + unreachable?)
+fn codegen_panic_conditional<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &ProcCodegen<'ctx>,
+    cond: values::IntValue<'ctx>,
+    printf_args: &[values::BasicMetadataValueEnum<'ctx>],
+) {
+    let panic_block = cg
+        .context
+        .append_basic_block(proc_cg.function, "panic_block");
+    let else_block = cg.context.append_basic_block(proc_cg.function, "block");
+    cg.builder
+        .build_conditional_branch(cond, panic_block, else_block)
+        .unwrap();
+
+    let c_exit = cg
+        .c_functions
+        .get(&cg.hir.intern.get_id("exit").expect("exit c function"))
+        .cloned()
+        .expect("exit c function added");
+    let c_printf = cg
+        .c_functions
+        .get(&cg.hir.intern.get_id("printf").expect("printf c function"))
+        .cloned()
+        .expect("printf c function added");
+
+    //@print to stderr instead of stdout & have better panic handling api 04.05.24
+    // this is first draft of working panic messages and exit
+    cg.builder.position_at_end(panic_block);
+    cg.builder.build_call(c_printf, printf_args, "").unwrap();
+    cg.builder
+        .build_call(
+            c_exit,
+            &[cg.context.i32_type().const_int(1, true).into()],
+            "",
+        )
+        .unwrap();
+    cg.builder.build_unreachable().unwrap();
+
+    cg.builder.position_at_end(else_block);
 }
 
 //@slice access not yet supported @13.04.24
@@ -1035,60 +1078,74 @@ fn codegen_index<'ctx>(
 
     let elem_ptr = match access.kind {
         hir::IndexKind::Slice { elem_size } => {
-            todo!("codegen: slice access not implemented")
+            let slice = cg
+                .builder
+                .build_load(cg.slice_type(), target_ptr, "slice_val")
+                .unwrap()
+                .into_struct_value();
+            let ptr = cg
+                .builder
+                .build_extract_value(slice, 0, "slice_ptr")
+                .unwrap()
+                .into_pointer_value();
+            let len = cg
+                .builder
+                .build_extract_value(slice, 1, "slice_len")
+                .unwrap()
+                .into_int_value();
+
+            let panic_cond = cg
+                .builder
+                .build_int_compare(inkwell::IntPredicate::UGE, index, len, "bounds_check")
+                .unwrap();
+            let message = "thread `name` panicked at src/some_file.rock:xx:xx\nreason: index `%llu` out of bounds, slice len = `%llu`\n\n";
+            let messsage_ptr = cg
+                .builder
+                .build_global_string_ptr(message, "panic_index_out_of_bounds")
+                .unwrap()
+                .as_pointer_value();
+            codegen_panic_conditional(
+                cg,
+                proc_cg,
+                panic_cond,
+                &[messsage_ptr.into(), index.into(), len.into()],
+            );
+
+            //@i64 mul is probably wrong when dealing with non 64bit targets 07.05.24
+            let elem_size = cg.context.i64_type().const_int(elem_size, false);
+            let byte_offset =
+                codegen_bin_op(cg, ast::BinOp::Mul, index.into(), elem_size.into(), false)
+                    .into_int_value();
+            unsafe {
+                cg.builder
+                    .build_in_bounds_gep(cg.context.i8_type(), ptr, &[byte_offset], "elem_ptr")
+                    .unwrap()
+            }
         }
         hir::IndexKind::Array { array } => unsafe {
             let len = match *array.size.0 {
                 hir::Expr::LitInt { val, ty } => val,
-                _ => unreachable!("size must be u64"),
+                _ => unreachable!("array size must be u64"),
             };
             let len = cg.pointer_sized_int_type().const_int(len, false);
 
-            let cond = cg
+            let panic_cond = cg
                 .builder
                 .build_int_compare(inkwell::IntPredicate::UGE, index, len, "bounds_check")
                 .unwrap();
+            let message = "thread `name` panicked at src/some_file.rock:xx:xx\nreason: index `%llu` out of bounds, array len = `%llu`\n\n";
+            let messsage_ptr = cg
+                .builder
+                .build_global_string_ptr(message, "panic_index_out_of_bounds")
+                .unwrap()
+                .as_pointer_value();
+            codegen_panic_conditional(
+                cg,
+                proc_cg,
+                panic_cond,
+                &[messsage_ptr.into(), index.into(), len.into()],
+            );
 
-            let panic_block = cg
-                .context
-                .append_basic_block(proc_cg.function, "panic_block");
-            let else_block = cg.context.append_basic_block(proc_cg.function, "block");
-            cg.builder
-                .build_conditional_branch(cond, panic_block, else_block)
-                .unwrap();
-
-            let c_exit = cg
-                .c_functions
-                .get(&cg.hir.intern.get_id("exit").expect("exit c function"))
-                .cloned()
-                .expect("exit c function added");
-            let c_printf = cg
-                .c_functions
-                .get(&cg.hir.intern.get_id("printf").expect("printf c function"))
-                .cloned()
-                .expect("printf c function added");
-
-            //@print to stderr instead of stdout & have better panic handling api 04.05.24
-            // this is first draft of working panic messages and exit
-            cg.builder.position_at_end(panic_block);
-            let messsage = cg.builder.build_global_string_ptr("thread `name` panicked at src/some_file.rock:xx:xx\nindex `%llu` out of bounds, array len = `%llu`\n\n", "panic_index_out_of_bounds").unwrap();
-            cg.builder
-                .build_call(
-                    c_printf,
-                    &[messsage.as_pointer_value().into(), index.into(), len.into()],
-                    "",
-                )
-                .unwrap();
-            cg.builder
-                .build_call(
-                    c_exit,
-                    &[cg.context.i32_type().const_int(1, true).into()],
-                    "",
-                )
-                .unwrap();
-            cg.builder.build_unreachable().unwrap();
-
-            cg.builder.position_at_end(else_block);
             cg.builder
                 .build_in_bounds_gep(
                     cg.array_type(array),
