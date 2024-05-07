@@ -310,45 +310,47 @@ pub struct ConstStruct<'hir> {
 pub enum Expr<'hir> {
     Error,
     LitNull,
-    LitBool     { val: bool },
-    LitInt      { val: u64, ty: ast::BasicType },
-    LitFloat    { val: f64, ty: ast::BasicType },
-    LitChar     { val: char },
-    LitString   { id: InternID, c_string: bool },
-    If          { if_: &'hir If<'hir> },
-    Block       { stmts: &'hir [Stmt<'hir>] },
-    Match       { match_: &'hir Match<'hir> },
-    UnionMember { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
-    StructField { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
-    Index       { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
-    Slice       { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
-    Cast        { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    LocalVar    { local_id: LocalID },
-    ParamVar    { param_id: ProcParamID },
-    ConstVar    { const_id: ConstID },
-    GlobalVar   { global_id: GlobalID },
-    EnumVariant { enum_id: EnumID, variant_id: EnumVariantID },
-    ProcCall    { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
-    UnionInit   { union_id: UnionID, input: UnionMemberInit<'hir> },
-    StructInit  { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
-    ArrayInit   { array_init: &'hir ArrayInit<'hir> },
-    ArrayRepeat { array_repeat: &'hir ArrayRepeat<'hir> },
-    Address     { rhs: &'hir Expr<'hir> },
-    Unary       { op: ast::UnOp, rhs: &'hir Expr<'hir> },
-    Binary      { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir>, lhs_signed_int: bool },
+    LitBool      { val: bool },
+    LitInt       { val: u64, ty: ast::BasicType },
+    LitFloat     { val: f64, ty: ast::BasicType },
+    LitChar      { val: char },
+    LitString    { id: InternID, c_string: bool },
+    If           { if_: &'hir If<'hir> },
+    Block        { stmts: &'hir [Stmt<'hir>] },
+    Match        { match_: &'hir Match<'hir> },
+    UnionMember  { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
+    StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
+    Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
+    Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
+    Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
+    LocalVar     { local_id: LocalID },
+    ParamVar     { param_id: ProcParamID },
+    ConstVar     { const_id: ConstID },
+    GlobalVar    { global_id: GlobalID },
+    Procedure    { proc_id: ProcID },
+    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
+    CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
+    EnumVariant  { enum_id: EnumID, variant_id: EnumVariantID },
+    UnionInit    { union_id: UnionID, input: UnionMemberInit<'hir> },
+    StructInit   { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
+    ArrayInit    { array_init: &'hir ArrayInit<'hir> },
+    ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
+    Address      { rhs: &'hir Expr<'hir> },
+    Unary        { op: ast::UnOp, rhs: &'hir Expr<'hir> },
+    Binary       { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir>, lhs_signed_int: bool },
 }
 
 #[derive(Copy, Clone)]
-pub struct If<'ast> {
-    pub entry: Branch<'ast>,
-    pub branches: &'ast [Branch<'ast>],
-    pub fallback: Option<&'ast Expr<'ast>>,
+pub struct If<'hir> {
+    pub entry: Branch<'hir>,
+    pub branches: &'hir [Branch<'hir>],
+    pub fallback: Option<&'hir Expr<'hir>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct Branch<'ast> {
-    pub cond: &'ast Expr<'ast>,
-    pub block: &'ast Expr<'ast>,
+pub struct Branch<'hir> {
+    pub cond: &'hir Expr<'hir>,
+    pub block: &'hir Expr<'hir>,
 }
 
 #[derive(Copy, Clone)]
@@ -421,6 +423,12 @@ pub enum CastKind {
     Uint_to_Float,
     Float_Trunc,
     Float_Extend,
+}
+
+#[derive(Copy, Clone)]
+pub struct CallIndirect<'hir> {
+    pub proc_ty: &'hir ProcType<'hir>,
+    pub input: &'hir [&'hir Expr<'hir>],
 }
 
 #[derive(Copy, Clone)]

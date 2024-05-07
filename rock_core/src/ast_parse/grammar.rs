@@ -664,11 +664,6 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             let path = path(p)?;
 
             match p.peek() {
-                T!['('] => {
-                    let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
-                    let proc_call = p.state.arena.alloc(ProcCall { path, input });
-                    ExprKind::ProcCall { proc_call }
-                }
                 T![.] => {
                     p.bump();
                     p.expect(T!['{'])?;
@@ -757,12 +752,12 @@ fn tail_expr<'ast>(
     let range_start = target.range.start();
 
     loop {
+        if last_cast {
+            return Ok(target);
+        }
+
         match p.peek() {
             T![.] => {
-                if last_cast {
-                    return Ok(target);
-                }
-
                 p.bump();
                 let name = name(p)?;
 
@@ -772,10 +767,6 @@ fn tail_expr<'ast>(
                 });
             }
             T!['['] => {
-                if last_cast {
-                    return Ok(target);
-                }
-
                 p.bump();
                 let mutt = mutt(p);
                 let kind = index_or_slice_expr(p, target, mutt)?;
@@ -783,6 +774,15 @@ fn tail_expr<'ast>(
 
                 target = p.state.arena.alloc(Expr {
                     kind,
+                    range: TextRange::new(range_start, p.peek_range_end()),
+                });
+            }
+            T!['('] => {
+                let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
+                let input = p.state.arena.alloc(input);
+
+                target = p.state.arena.alloc(Expr {
+                    kind: ExprKind::Call { target, input },
                     range: TextRange::new(range_start, p.peek_range_end()),
                 });
             }

@@ -304,10 +304,10 @@ pub enum ExprKind<'ast> {
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
     Slice       { target: &'ast Expr<'ast>, mutt: Mut, slice_range: &'ast SliceRange<'ast> },
+    Call        { target: &'ast Expr<'ast>, input: &'ast &'ast [&'ast Expr<'ast>] },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: Type<'ast> },
     Item        { path: &'ast Path<'ast> },
-    ProcCall    { proc_call: &'ast ProcCall<'ast> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, size: ConstExpr<'ast> },
@@ -339,12 +339,6 @@ pub struct Match<'ast> {
 pub struct MatchArm<'ast> {
     pub pat: Option<&'ast Expr<'ast>>,
     pub expr: &'ast Expr<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub struct ProcCall<'ast> {
-    pub path: &'ast Path<'ast>,
-    pub input: &'ast [&'ast Expr<'ast>],
 }
 
 #[derive(Copy, Clone)]

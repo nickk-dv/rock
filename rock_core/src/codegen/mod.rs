@@ -232,8 +232,39 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
+    fn union_type(&self, union_id: hir::UnionID) -> types::ArrayType<'ctx> {
+        let data = self.hir.union_data(union_id);
+        let size = data.size_eval.get_size().expect("resolved");
+        self.type_into_basic(hir::Type::Basic(ast::BasicType::U8))
+            .expect("u8")
+            .array_type(size.size() as u32)
+    }
+
     fn struct_type(&self, struct_id: hir::StructID) -> types::StructType<'ctx> {
         self.struct_types[struct_id.index()]
+    }
+
+    //@duplicated with generation of procedure values and with indirect calls 07.05.24
+    fn function_type(&self, proc_ty: &hir::ProcType) -> types::FunctionType<'ctx> {
+        let mut param_types =
+            Vec::<types::BasicMetadataTypeEnum>::with_capacity(proc_ty.params.len());
+
+        for param in proc_ty.params {
+            //@correct disallowing of void and never type would allow to rely on this being a valid value type,
+            // clean up llvm type apis after this guarantee is satisfied
+            // hir typechecker doesnt do that yet @16.04.24
+            if let Some(ty) = self.type_into_basic_metadata(*param) {
+                param_types.push(ty);
+            }
+        }
+
+        match self.type_into_basic(proc_ty.return_ty) {
+            Some(ty) => ty.fn_type(&param_types, proc_ty.is_variadic),
+            None => self
+                .context
+                .void_type()
+                .fn_type(&param_types, proc_ty.is_variadic),
+        }
     }
 
     fn slice_type(&self) -> types::StructType<'ctx> {
@@ -253,14 +284,6 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             panic!("codegen: invalid array static size expression");
         }
-    }
-
-    fn union_type(&self, union_id: hir::UnionID) -> types::ArrayType<'ctx> {
-        let data = self.hir.union_data(union_id);
-        let size = data.size_eval.get_size().expect("resolved");
-        self.type_into_basic(hir::Type::Basic(ast::BasicType::U8))
-            .expect("u8")
-            .array_type(size.size() as u32)
     }
 
     //@any is used as general type
@@ -571,11 +594,15 @@ fn codegen_expr<'ctx>(
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect_ptr, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect_ptr, global_id)),
+        Expr::Procedure { proc_id } => Some(codegen_procedure(cg, proc_id)),
+        Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, proc_cg, proc_id, input),
+        Expr::CallIndirect { target, indirect } => {
+            codegen_call_indirect(cg, proc_cg, target, indirect)
+        }
         Expr::EnumVariant {
             enum_id,
             variant_id,
         } => Some(codegen_enum_variant(cg, enum_id, variant_id)),
-        Expr::ProcCall { proc_id, input } => codegen_proc_call(cg, proc_cg, proc_id, input),
         Expr::UnionInit { union_id, input } => {
             Some(codegen_union_init(cg, proc_cg, expect_ptr, union_id, input))
         }
@@ -1274,7 +1301,17 @@ fn codegen_enum_variant<'ctx>(
     )
 }
 
-fn codegen_proc_call<'ctx>(
+fn codegen_procedure<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_id: hir::ProcID,
+) -> values::BasicValueEnum<'ctx> {
+    cg.function_values[proc_id.index()]
+        .as_global_value()
+        .as_pointer_value()
+        .into()
+}
+
+fn codegen_call_direct<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     proc_id: hir::ProcID,
@@ -1283,13 +1320,37 @@ fn codegen_proc_call<'ctx>(
     let mut input_values = Vec::with_capacity(input.len());
     for &expr in input {
         let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
-        input_values.push(values::BasicMetadataValueEnum::from(value));
+        input_values.push(value.into());
     }
 
     let function = cg.function_values[proc_id.index()];
     let call_val = cg
         .builder
         .build_direct_call(function, &input_values, "call_val")
+        .unwrap();
+    call_val.try_as_basic_value().left()
+}
+
+fn codegen_call_indirect<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    target: &'ctx hir::Expr,
+    indirect: &'ctx hir::CallIndirect,
+) -> Option<values::BasicValueEnum<'ctx>> {
+    let function_ptr = codegen_expr(cg, proc_cg, false, target)
+        .expect("value")
+        .into_pointer_value();
+
+    let mut input_values = Vec::with_capacity(indirect.input.len());
+    for &expr in indirect.input {
+        let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
+        input_values.push(value.into());
+    }
+
+    let function = cg.function_type(&indirect.proc_ty);
+    let call_val = cg
+        .builder
+        .build_indirect_call(function, function_ptr, &input_values, "call_val")
         .unwrap();
     call_val.try_as_basic_value().left()
 }

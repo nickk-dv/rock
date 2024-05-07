@@ -641,14 +641,14 @@ fn typecheck_expr<'hir>(
             mutt,
             slice_range,
         } => typecheck_slice(hir, emit, proc, target, mutt, slice_range),
+        ast::ExprKind::Call { target, input } => {
+            typecheck_call(hir, emit, proc, target, input, expr.range)
+        }
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, ty),
         ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
-        ast::ExprKind::ProcCall { proc_call } => {
-            typecheck_proc_call(hir, emit, proc, proc_call, expr.range)
-        }
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(hir, emit, proc, struct_init)
         }
@@ -1030,6 +1030,7 @@ fn typecheck_index<'hir>(
     TypeResult::new(access.elem_ty, index_expr)
 }
 
+//@validate mutability rules for slicing 07.05.24
 fn typecheck_slice<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1043,6 +1044,7 @@ fn typecheck_slice<'hir>(
     TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
+//@validate mutability rules for indexing 07.05.24
 fn check_type_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1101,6 +1103,100 @@ fn type_get_elem<'hir>(
             }
         }
     }
+}
+
+fn typecheck_call<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    target: &ast::Expr<'_>,
+    input: &&[&ast::Expr<'_>],
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
+    let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
+
+    match target_res.ty {
+        hir::Type::Error => {}
+        hir::Type::Procedure(proc_ty) => {
+            // both direct and indirect return proc_ty
+            // it can be used for input checks
+
+            let direct_id = match target_res.expr {
+                hir::Expr::Procedure { proc_id } => Some(*proc_id),
+                _ => None,
+            };
+
+            let input_count = input.len();
+            let expected_count = proc_ty.params.len();
+
+            if (proc_ty.is_variadic && (input_count < expected_count))
+                || (!proc_ty.is_variadic && (input_count != expected_count))
+            {
+                let at_least = if proc_ty.is_variadic { " at least" } else { "" };
+
+                let info = if let Some(proc_id) = direct_id {
+                    let data = hir.registry().proc_data(proc_id);
+                    ErrorComp::info(
+                        "calling this procedure",
+                        hir.src(data.origin_id, data.name.range),
+                    )
+                } else {
+                    None
+                };
+
+                //@plular form for argument`s` only needed if != 1
+                emit.error(ErrorComp::error(
+                    format!(
+                        "expected{at_least} {} input arguments, found {}",
+                        expected_count, input_count
+                    ),
+                    hir.src(proc.origin(), expr_range),
+                    info,
+                ));
+            }
+
+            let mut hir_input = Vec::with_capacity(input.len());
+            for (idx, &expr) in input.iter().enumerate() {
+                let expect = match proc_ty.params.get(idx) {
+                    Some(param) => *param,
+                    None => hir::Type::Error,
+                };
+                let input_res = typecheck_expr(hir, emit, proc, expect, expr);
+                hir_input.push(input_res.expr);
+            }
+            let hir_input = emit.arena.alloc_slice(&hir_input);
+
+            let call_expr = match direct_id {
+                Some(proc_id) => hir::Expr::CallDirect {
+                    proc_id,
+                    input: hir_input,
+                },
+                None => hir::Expr::CallIndirect {
+                    target: target_res.expr,
+                    indirect: emit.arena.alloc(hir::CallIndirect {
+                        proc_ty,
+                        input: hir_input,
+                    }),
+                },
+            };
+            return TypeResult::new(proc_ty.return_ty, emit.arena.alloc(call_expr));
+        }
+        _ => {
+            emit.error(ErrorComp::error(
+                format!(
+                    "cannot call value of type `{}`",
+                    type_format(hir, target_res.ty)
+                ),
+                hir.src(proc.origin(), target.range),
+                None,
+            ));
+        }
+    }
+
+    for &expr in input.iter() {
+        let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
+    }
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
 fn type_size(hir: &HirData, ty: hir::Type) -> Option<hir::Size> {
@@ -1331,6 +1427,24 @@ fn typecheck_item<'hir>(
         ValueID::None => {
             return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
         }
+        ValueID::Proc(proc_id) => {
+            let data = hir.registry().proc_data(proc_id);
+
+            let mut param_types = Vec::with_capacity(data.params.len());
+            for param in data.params {
+                param_types.push(param.ty);
+            }
+            let proc_ty = hir::ProcType {
+                params: emit.arena.alloc_slice(&param_types),
+                return_ty: data.return_ty,
+                is_variadic: data.is_variadic,
+            };
+
+            return TypeResult::new(
+                hir::Type::Procedure(emit.arena.alloc(proc_ty)), //@create proc type?
+                emit.arena.alloc(hir::Expr::Procedure { proc_id }),
+            );
+        }
         ValueID::Enum(enum_id, variant_id) => {
             let enum_variant = hir::Expr::EnumVariant {
                 enum_id,
@@ -1386,59 +1500,6 @@ fn typecheck_item<'hir>(
     }
 
     TypeResult::new(target_ty, target)
-}
-
-fn typecheck_proc_call<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    proc_call: &ast::ProcCall<'_>,
-    expr_range: TextRange,
-) -> TypeResult<'hir> {
-    let proc_id = match path_resolve_proc(hir, emit, Some(proc), proc.origin(), proc_call.path) {
-        Some(id) => id,
-        None => {
-            for &expr in proc_call.input {
-                let _ = typecheck_expr(hir, emit, proc, hir::Type::Error, expr);
-            }
-            return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
-        }
-    };
-    let data = hir.registry().proc_data(proc_id);
-    let input_count = proc_call.input.len();
-    let expected_count = data.params.len();
-
-    if (data.is_variadic && (input_count < expected_count))
-        || (!data.is_variadic && (input_count != expected_count))
-    {
-        let at_least = if data.is_variadic { " at least" } else { "" };
-        //@plular form for argument`s` only needed if != 1
-        emit.error(ErrorComp::error(
-            format!(
-                "expected{at_least} {} input arguments, found {}",
-                expected_count, input_count
-            ),
-            hir.src(proc.origin(), expr_range),
-            ErrorComp::info(
-                "calling this procedure",
-                hir.src(data.origin_id, data.name.range),
-            ),
-        ));
-    }
-
-    let mut input = Vec::with_capacity(proc_call.input.len());
-    for (idx, &expr) in proc_call.input.iter().enumerate() {
-        let expect = match data.params.get(idx) {
-            Some(param) => param.ty,
-            None => hir::Type::Error,
-        };
-        let input_res = typecheck_expr(hir, emit, proc, expect, expr);
-        input.push(input_res.expr);
-    }
-
-    let input = emit.arena.alloc_slice(&input);
-    let proc_call = hir::Expr::ProcCall { proc_id, input };
-    TypeResult::new(data.return_ty, emit.arena.alloc(proc_call))
 }
 
 fn typecheck_struct_init<'hir>(
@@ -1783,8 +1844,10 @@ fn get_expr_addressability<'hir>(
             let data = hir.registry().global_data(global_id);
             Addressability::Addressable(data.mutt, hir.src(data.origin_id, data.name.range))
         }
+        hir::Expr::Procedure { .. } => Addressability::Temporary,
+        hir::Expr::CallDirect { .. } => Addressability::NotImplemented, //@temporary value, but might be slice-able? 05.05.24
+        hir::Expr::CallIndirect { .. } => Addressability::NotImplemented, //@temporary value, but might be slice-able? 05.05.24
         hir::Expr::EnumVariant { .. } => Addressability::Temporary,
-        hir::Expr::ProcCall { .. } => Addressability::NotImplemented, //@temporary value, but might be slice-able? 05.05.24
         hir::Expr::UnionInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,
@@ -2657,71 +2720,6 @@ pub fn path_resolve_type<'hir>(
     ty
 }
 
-//@duplication issue with other path resolve procs
-// mainly due to bad scope / symbol design
-fn path_resolve_proc<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: Option<&ProcScope<'hir, '_>>,
-    origin_id: hir::ModuleID,
-    path: &ast::Path,
-) -> Option<hir::ProcID> {
-    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
-
-    let proc_id = match resolved {
-        ResolvedPath::None => return None,
-        ResolvedPath::Variable(variable) => {
-            let name = path.names[name_idx];
-
-            let proc = proc.expect("proc context");
-            let source = match variable {
-                VariableID::Local(id) => hir.src(proc.origin(), proc.get_local(id).name.range),
-                VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
-            };
-            //@calling this `local` for both params and locals, validate wording consistency
-            // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(ErrorComp::error(
-                format!(
-                    "expected procedure, found local `{}`",
-                    hir.name_str(name.id)
-                ),
-                hir.src(origin_id, name.range),
-                ErrorComp::info("defined here", source),
-            ));
-            return None;
-        }
-        ResolvedPath::Symbol(kind, source) => match kind {
-            SymbolKind::Proc(id) => Some(id),
-            _ => {
-                let name = path.names[name_idx];
-                emit.error(ErrorComp::error(
-                    format!(
-                        "expected procedure, found {} `{}`",
-                        HirData::symbol_kind_name(kind),
-                        hir.name_str(name.id)
-                    ),
-                    hir.src(origin_id, name.range),
-                    ErrorComp::info("defined here", source),
-                ));
-                return None;
-            }
-        },
-    };
-
-    if let Some(remaining) = path.names.get(name_idx + 1..) {
-        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
-            let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(ErrorComp::error(
-                "unexpected path segment",
-                hir.src(origin_id, range),
-                None,
-            ));
-        }
-    }
-
-    proc_id
-}
-
 enum StructureID {
     None,
     Union(hir::UnionID),
@@ -2796,6 +2794,7 @@ fn path_resolve_structure<'hir>(
 
 enum ValueID {
     None,
+    Proc(hir::ProcID),
     Enum(hir::EnumID, hir::EnumVariantID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
@@ -2819,6 +2818,19 @@ fn path_resolve_value<'hir, 'ast>(
             VariableID::Param(id) => ValueID::Param(id),
         },
         ResolvedPath::Symbol(kind, source) => match kind {
+            SymbolKind::Proc(id) => {
+                if let Some(remaining) = path.names.get(name_idx + 1..) {
+                    if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
+                        let range = TextRange::new(first.range.start(), last.range.end());
+                        emit.error(ErrorComp::error(
+                            "unexpected path segment",
+                            hir.src(origin_id, range),
+                            None,
+                        ));
+                    }
+                }
+                ValueID::Proc(id)
+            }
             SymbolKind::Enum(id) => {
                 if let Some(variant_name) = path.names.get(name_idx + 1) {
                     let enum_data = hir.registry().enum_data(id);
