@@ -392,7 +392,7 @@ pub struct SliceAccess<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum SliceKind<'hir> {
-    Slice,
+    Slice { elem_size: u64 },
     Array { array: &'hir ArrayStatic<'hir> },
 }
 

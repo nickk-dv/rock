@@ -642,12 +642,14 @@ fn typecheck_expr<'hir>(
         }
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
-        ast::ExprKind::Index { target, index } => typecheck_index(hir, emit, proc, target, index),
+        ast::ExprKind::Index { target, index } => {
+            typecheck_index(hir, emit, proc, target, index, expr.range)
+        }
         ast::ExprKind::Slice {
             target,
             mutt,
             slice_range,
-        } => typecheck_slice(hir, emit, proc, target, mutt, slice_range),
+        } => typecheck_slice(hir, emit, proc, target, mutt, slice_range, expr.range),
         ast::ExprKind::Call { target, input } => {
             typecheck_call(hir, emit, proc, target, input, expr.range)
         }
@@ -1052,7 +1054,7 @@ impl<'hir> CollectionType<'hir> {
         }
 
         match ty {
-            hir::Type::Reference(ref_ty, mutt) => type_collection(*ref_ty, true),
+            hir::Type::Reference(ref_ty, _) => type_collection(*ref_ty, true),
             _ => type_collection(ty, false),
         }
     }
@@ -1064,6 +1066,7 @@ fn typecheck_index<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
     index: &ast::Expr<'_>,
+    expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
     let index_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), index);
@@ -1097,7 +1100,7 @@ fn typecheck_index<'hir>(
                     "cannot index value of type `{}`",
                     type_format(hir, target_res.ty)
                 ),
-                hir.src(proc.origin(), index.range),
+                hir.src(proc.origin(), expr_range),
                 ErrorComp::info(
                     format!("has `{}` type", type_format(hir, target_res.ty)),
                     hir.src(proc.origin(), target.range),
@@ -1108,7 +1111,6 @@ fn typecheck_index<'hir>(
     }
 }
 
-//@validate mutability rules for slicing 07.05.24
 fn typecheck_slice<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1116,6 +1118,7 @@ fn typecheck_slice<'hir>(
     target: &ast::Expr<'_>,
     mutt: ast::Mut,
     slice: &ast::SliceRange<'_>,
+    expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
 
@@ -1136,18 +1139,54 @@ fn typecheck_slice<'hir>(
             hir::SliceRangeEnd::Inclusive(upper_res.expr)
         }
     };
-    let access = hir::SliceAccess {
-        deref: false,                //@not checked
-        kind: hir::SliceKind::Slice, //@not checked
-        range: hir::SliceRange { lower, upper },
-    };
 
-    let access = emit.arena.alloc(access);
-    let slice_expr = hir::Expr::Slice {
-        target: target_res.expr,
-        access,
-    };
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(slice_expr))
+    match CollectionType::from(target_res.ty) {
+        Ok(Some(collection)) => {
+            let access = hir::SliceAccess {
+                deref: collection.deref,
+                kind: match collection.kind {
+                    SliceOrArray::Slice(slice) => hir::SliceKind::Slice {
+                        elem_size: type_size(hir, slice.elem_ty)
+                            .unwrap_or(hir::Size::new(0, 1))
+                            .size(),
+                    },
+                    SliceOrArray::Array(array) => hir::SliceKind::Array { array },
+                },
+                range: hir::SliceRange { lower, upper },
+            };
+
+            //@mutability not checked, use addressability? 08.05.24
+            // or only base type? check different cases (eg:  &slice_var[mut ..] // invalid? )
+            let slice_ty = emit.arena.alloc(hir::ArraySlice {
+                mutt,
+                elem_ty: collection.elem_ty,
+            });
+
+            let slice_expr = hir::Expr::Slice {
+                target: target_res.expr,
+                access: emit.arena.alloc(access),
+            };
+            TypeResult::new(
+                hir::Type::ArraySlice(slice_ty),
+                emit.arena.alloc(slice_expr),
+            )
+        }
+        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
+        Err(()) => {
+            emit.error(ErrorComp::error(
+                format!(
+                    "cannot slice value of type `{}`",
+                    type_format(hir, target_res.ty)
+                ),
+                hir.src(proc.origin(), expr_range),
+                ErrorComp::info(
+                    format!("has `{}` type", type_format(hir, target_res.ty)),
+                    hir.src(proc.origin(), target.range),
+                ),
+            ));
+            TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+        }
+    }
 }
 
 fn typecheck_call<'hir>(
