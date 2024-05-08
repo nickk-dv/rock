@@ -7,6 +7,9 @@ use crate::session::{PackageID, Session};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
+/// Prevents redundant allocation of `hir::Expr::Error` during typechecking
+pub const ERROR_EXPR: &'static hir::Expr = &hir::Expr::Error;
+
 pub struct HirData<'hir, 'ast, 'intern> {
     packages: Vec<Package>,
     modules: Vec<Module>,

@@ -1,4 +1,4 @@
-use super::hir_build::{HirData, HirEmit, SymbolKind};
+use super::hir_build::{self, HirData, HirEmit, SymbolKind};
 use super::proc_scope::{ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, SourceRange};
@@ -1018,6 +1018,46 @@ fn type_get_field<'hir>(
     }
 }
 
+struct CollectionType<'hir> {
+    deref: bool,
+    elem_ty: hir::Type<'hir>,
+    kind: SliceOrArray<'hir>,
+}
+
+enum SliceOrArray<'hir> {
+    Slice(&'hir hir::ArraySlice<'hir>),
+    Array(&'hir hir::ArrayStatic<'hir>),
+}
+
+impl<'hir> CollectionType<'hir> {
+    fn from(ty: hir::Type<'hir>) -> Result<Option<CollectionType<'hir>>, ()> {
+        fn type_collection<'hir>(
+            ty: hir::Type<'hir>,
+            deref: bool,
+        ) -> Result<Option<CollectionType<'hir>>, ()> {
+            match ty {
+                hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
+                    deref,
+                    elem_ty: slice.elem_ty,
+                    kind: SliceOrArray::Slice(slice),
+                })),
+                hir::Type::ArrayStatic(array) => Ok(Some(CollectionType {
+                    deref,
+                    elem_ty: array.elem_ty,
+                    kind: SliceOrArray::Array(array),
+                })),
+                hir::Type::Error => Ok(None),
+                _ => Err(()),
+            }
+        }
+
+        match ty {
+            hir::Type::Reference(ref_ty, mutt) => type_collection(*ref_ty, true),
+            _ => type_collection(ty, false),
+        }
+    }
+}
+
 fn typecheck_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1027,14 +1067,45 @@ fn typecheck_index<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
     let index_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), index);
-    let access = check_type_index(hir, emit, proc, target_res.ty, index_res.expr, index.range);
 
-    let access = emit.arena.alloc(access);
-    let index_expr = emit.arena.alloc(hir::Expr::Index {
-        target: target_res.expr,
-        access,
-    });
-    TypeResult::new(access.elem_ty, index_expr)
+    match CollectionType::from(target_res.ty) {
+        Ok(Some(collection)) => {
+            let access = hir::IndexAccess {
+                deref: collection.deref,
+                elem_ty: collection.elem_ty,
+                kind: match collection.kind {
+                    SliceOrArray::Slice(slice) => hir::IndexKind::Slice {
+                        elem_size: type_size(hir, slice.elem_ty)
+                            .unwrap_or(hir::Size::new(0, 1))
+                            .size(),
+                    },
+                    SliceOrArray::Array(array) => hir::IndexKind::Array { array },
+                },
+                index: index_res.expr,
+            };
+
+            let index_expr = hir::Expr::Index {
+                target: target_res.expr,
+                access: emit.arena.alloc(access),
+            };
+            TypeResult::new(collection.elem_ty, emit.arena.alloc(index_expr))
+        }
+        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
+        Err(()) => {
+            emit.error(ErrorComp::error(
+                format!(
+                    "cannot index value of type `{}`",
+                    type_format(hir, target_res.ty)
+                ),
+                hir.src(proc.origin(), index.range),
+                ErrorComp::info(
+                    format!("has `{}` type", type_format(hir, target_res.ty)),
+                    hir.src(proc.origin(), target.range),
+                ),
+            ));
+            TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+        }
+    }
 }
 
 //@validate mutability rules for slicing 07.05.24
@@ -1077,67 +1148,6 @@ fn typecheck_slice<'hir>(
         access,
     };
     TypeResult::new(hir::Type::Error, emit.arena.alloc(slice_expr))
-}
-
-//@validate mutability rules for indexing 07.05.24
-fn check_type_index<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    ty: hir::Type<'hir>,
-    index: &'hir hir::Expr<'hir>,
-    index_range: TextRange,
-) -> hir::IndexAccess<'hir> {
-    match ty {
-        hir::Type::Reference(ref_ty, mutt) => {
-            type_get_elem(hir, emit, proc, *ref_ty, true, index, index_range)
-        }
-        _ => type_get_elem(hir, emit, proc, ty, false, index, index_range),
-    }
-}
-
-fn type_get_elem<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    ty: hir::Type<'hir>,
-    deref: bool,
-    index: &'hir hir::Expr<'hir>,
-    index_range: TextRange,
-) -> hir::IndexAccess<'hir> {
-    match ty {
-        hir::Type::Error => hir::IndexAccess {
-            deref,
-            elem_ty: hir::Type::Error,
-            kind: hir::IndexKind::Slice { elem_size: 0 },
-            index,
-        },
-        hir::Type::ArraySlice(slice) => hir::IndexAccess {
-            deref,
-            elem_ty: slice.elem_ty,
-            kind: hir::IndexKind::Slice { elem_size: 0 }, //@todo size
-            index,
-        },
-        hir::Type::ArrayStatic(array) => hir::IndexAccess {
-            deref,
-            elem_ty: array.elem_ty,
-            kind: hir::IndexKind::Array { array },
-            index,
-        },
-        _ => {
-            emit.error(ErrorComp::error(
-                format!("cannot index value of type {}", type_format(hir, ty)),
-                hir.src(proc.origin(), index_range),
-                None,
-            ));
-            hir::IndexAccess {
-                deref,
-                elem_ty: hir::Type::Error,
-                kind: hir::IndexKind::Slice { elem_size: 0 },
-                index,
-            }
-        }
-    }
 }
 
 fn typecheck_call<'hir>(
