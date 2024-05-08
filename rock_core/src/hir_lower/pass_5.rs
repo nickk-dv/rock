@@ -1048,7 +1048,35 @@ fn typecheck_slice<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, hir::Type::Error, target);
 
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+    let lower = slice.lower.map(|lower| {
+        let lower_res = typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), lower);
+        lower_res.expr
+    });
+    let upper = match slice.upper {
+        ast::SliceRangeEnd::Unbounded => hir::SliceRangeEnd::Unbounded,
+        ast::SliceRangeEnd::Exclusive(upper) => {
+            let upper_res =
+                typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), upper);
+            hir::SliceRangeEnd::Exclusive(upper_res.expr)
+        }
+        ast::SliceRangeEnd::Inclusive(upper) => {
+            let upper_res =
+                typecheck_expr(hir, emit, proc, hir::Type::Basic(BasicType::Usize), upper);
+            hir::SliceRangeEnd::Inclusive(upper_res.expr)
+        }
+    };
+    let access = hir::SliceAccess {
+        deref: false,                //@not checked
+        kind: hir::SliceKind::Slice, //@not checked
+        range: hir::SliceRange { lower, upper },
+    };
+
+    let access = emit.arena.alloc(access);
+    let slice_expr = hir::Expr::Slice {
+        target: target_res.expr,
+        access,
+    };
+    TypeResult::new(hir::Type::Error, emit.arena.alloc(slice_expr))
 }
 
 //@validate mutability rules for indexing 07.05.24
