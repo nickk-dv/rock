@@ -588,7 +588,9 @@ fn codegen_expr<'ctx>(
         Expr::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect_ptr, target, access))
         }
-        Expr::Slice { target, access } => todo!("codegen slicing"),
+        Expr::Slice { target, access } => {
+            Some(codegen_slice(cg, proc_cg, expect_ptr, target, access))
+        }
         Expr::Cast { target, into, kind } => Some(codegen_cast(cg, proc_cg, target, into, kind)),
         Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect_ptr, local_id)),
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect_ptr, param_id)),
@@ -1081,7 +1083,6 @@ fn codegen_panic_conditional<'ctx>(
     cg.builder.position_at_end(else_block);
 }
 
-//@slice access not yet supported @13.04.24
 #[allow(unsafe_code)]
 fn codegen_index<'ctx>(
     cg: &Codegen<'ctx>,
@@ -1090,6 +1091,8 @@ fn codegen_index<'ctx>(
     target: &'ctx hir::Expr,
     access: &'ctx hir::IndexAccess,
 ) -> values::BasicValueEnum<'ctx> {
+    //@should expect pointer always be true? 08.05.24
+    // in case of slices that just delays the load?
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
     let target_ptr = if access.deref {
         cg.builder
@@ -1152,7 +1155,7 @@ fn codegen_index<'ctx>(
         }
         hir::IndexKind::Array { array } => unsafe {
             let len = match *array.size.0 {
-                hir::Expr::LitInt { val, ty } => val,
+                hir::Expr::LitInt { val, .. } => val,
                 _ => unreachable!("array size must be u64"),
             };
             let len = cg.pointer_sized_int_type().const_int(len, false);
@@ -1192,6 +1195,232 @@ fn codegen_index<'ctx>(
         cg.builder
             .build_load(elem_ty, elem_ptr, "elem_val")
             .unwrap()
+    }
+}
+
+fn codegen_slice<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
+    target: &'ctx hir::Expr,
+    access: &'ctx hir::SliceAccess,
+) -> values::BasicValueEnum<'ctx> {
+    //@should expect pointer always be true? 08.05.24
+    // in case of slices that just delays the load?
+    // causes problem when slicing multiple times into_pointer_value() gets called on new_slice_value that is not a pointer
+    let target = codegen_expr(cg, proc_cg, true, target).expect("value");
+    let target_ptr = if access.deref {
+        cg.builder
+            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .unwrap()
+            .into_pointer_value()
+    } else {
+        target.into_pointer_value()
+    };
+
+    match access.kind {
+        hir::SliceKind::Slice { elem_size } => {
+            let slice = cg
+                .builder
+                .build_load(cg.slice_type(), target_ptr, "slice_val")
+                .unwrap()
+                .into_struct_value();
+            let slice_len = cg
+                .builder
+                .build_extract_value(slice, 1, "slice_len")
+                .unwrap()
+                .into_int_value();
+            let slice_ptr = cg
+                .builder
+                .build_extract_value(slice, 0, "slice_ptr")
+                .unwrap()
+                .into_pointer_value();
+
+            let lower = match access.range.lower {
+                Some(lower) => Some(
+                    codegen_expr(cg, proc_cg, false, lower)
+                        .expect("value")
+                        .into_int_value(),
+                ),
+                None => None,
+            };
+
+            let upper = match access.range.upper {
+                hir::SliceRangeEnd::Unbounded => None,
+                hir::SliceRangeEnd::Exclusive(upper) => Some(
+                    codegen_expr(cg, proc_cg, false, upper)
+                        .expect("value")
+                        .into_int_value(),
+                ),
+                hir::SliceRangeEnd::Inclusive(upper) => Some(
+                    codegen_expr(cg, proc_cg, false, upper)
+                        .expect("value")
+                        .into_int_value(),
+                ),
+            };
+
+            match (lower, upper) {
+                // slice is unchanged
+                //@slice and its components are still extracted above even in this no-op 08.05.24
+                (None, None) => {
+                    return if expect_ptr {
+                        //@returning pointer to same slice? 08.05.24
+                        // that can be misleading? or no-op like this makes sence?
+                        // probably this is valid and will reduce all RangeFull sling operations into one
+                        target_ptr.into()
+                    } else {
+                        slice.into()
+                    };
+                }
+                // upper is provided
+                (None, Some(upper)) => {
+                    let predicate =
+                        if matches!(access.range.upper, hir::SliceRangeEnd::Exclusive(..)) {
+                            inkwell::IntPredicate::UGT // upper > len
+                        } else {
+                            inkwell::IntPredicate::UGE // upper >= len
+                        };
+                    let panic_cond = cg
+                        .builder
+                        .build_int_compare(predicate, upper, slice_len, "slice_upper_bound")
+                        .unwrap();
+                    let message = "thread `name` panicked at src/some_file.rock:xx:xx\nreason: slice upper `%llu` out of bounds, slice len = `%llu`\n\n";
+                    let messsage_ptr = cg
+                        .builder
+                        .build_global_string_ptr(message, "panic_index_out_of_bounds")
+                        .unwrap()
+                        .as_pointer_value();
+                    codegen_panic_conditional(
+                        cg,
+                        proc_cg,
+                        panic_cond,
+                        &[messsage_ptr.into(), upper.into(), slice_len.into()],
+                    );
+
+                    // sub 1 in case of exclusive range
+                    let new_slice_len =
+                        if matches!(access.range.upper, hir::SliceRangeEnd::Exclusive(..)) {
+                            //codegen_bin_op(
+                            //    cg,
+                            //    ast::BinOp::Sub,
+                            //    upper.into(),
+                            //    cg.pointer_sized_int_type().const_int(1, false).into(),
+                            //    false,
+                            //)
+                            //.into_int_value()
+                            upper
+                        } else {
+                            codegen_bin_op(
+                                cg,
+                                ast::BinOp::Add,
+                                upper.into(),
+                                cg.pointer_sized_int_type().const_int(1, false).into(),
+                                false,
+                            )
+                            .into_int_value()
+                        };
+
+                    //@potentially unwanted alloca in loops 08.05.24
+                    let slice_type = cg.slice_type();
+
+                    let new_slice = cg
+                        .builder
+                        .build_alloca(slice_type, "new_slice_ptr")
+                        .unwrap();
+                    let new_slice_0 = cg
+                        .builder
+                        .build_struct_gep(slice_type, new_slice, 0, "new_slice_ptr_ptr")
+                        .unwrap();
+                    cg.builder.build_store(new_slice_0, slice_ptr).unwrap();
+                    let new_slice_1 = cg
+                        .builder
+                        .build_struct_gep(slice_type, new_slice, 1, "new_slice_len_ptr")
+                        .unwrap();
+                    cg.builder.build_store(new_slice_1, new_slice_len).unwrap();
+
+                    if expect_ptr {
+                        new_slice.into()
+                    } else {
+                        cg.builder
+                            .build_load(slice_type, new_slice, "new_slice")
+                            .unwrap()
+                    }
+                }
+                // lower is provided
+                (Some(lower), None) => {
+                    // @temp
+                    panic!("slice slicing lower.. not implemented");
+                }
+                // lower and uppoer are provided
+                (Some(lower), Some(upper)) => {
+                    // @temp
+                    panic!("slice slicing lower..upper not implemented");
+                }
+            }
+        }
+        hir::SliceKind::Array { array } => {
+            let len = match *array.size.0 {
+                hir::Expr::LitInt { val, .. } => val,
+                _ => unreachable!("array size must be u64"),
+            };
+            let len = cg.pointer_sized_int_type().const_int(len, false);
+
+            let lower = match access.range.lower {
+                Some(lower) => Some(
+                    codegen_expr(cg, proc_cg, false, lower)
+                        .expect("value")
+                        .into_int_value(),
+                ),
+                None => None,
+            };
+
+            let upper = match access.range.upper {
+                hir::SliceRangeEnd::Unbounded => None,
+                hir::SliceRangeEnd::Exclusive(upper) => Some(
+                    codegen_expr(cg, proc_cg, false, upper)
+                        .expect("value")
+                        .into_int_value(),
+                ),
+                hir::SliceRangeEnd::Inclusive(upper) => Some(
+                    codegen_expr(cg, proc_cg, false, upper)
+                        .expect("value")
+                        .into_int_value(),
+                ),
+            };
+
+            match (lower, upper) {
+                (None, None) => {
+                    //@potentially unwanted alloca in loops 08.05.24
+                    let slice_type = cg.slice_type();
+
+                    let new_slice = cg
+                        .builder
+                        .build_alloca(slice_type, "new_slice_ptr")
+                        .unwrap();
+                    let new_slice_0 = cg
+                        .builder
+                        .build_struct_gep(slice_type, new_slice, 0, "new_slice_ptr_ptr")
+                        .unwrap();
+                    cg.builder.build_store(new_slice_0, target_ptr).unwrap();
+                    let new_slice_1 = cg
+                        .builder
+                        .build_struct_gep(slice_type, new_slice, 1, "new_slice_len_ptr")
+                        .unwrap();
+                    cg.builder.build_store(new_slice_1, len).unwrap();
+
+                    if expect_ptr {
+                        new_slice.into()
+                    } else {
+                        cg.builder
+                            .build_load(slice_type, new_slice, "new_slice")
+                            .unwrap()
+                    }
+                }
+                (None, Some(_)) => todo!("array slicing ..upper not implemented"),
+                (Some(_), None) => todo!("array slicing lower..upper not implemented"),
+                (Some(_), Some(_)) => todo!("array slicing lower..upper not implemented"),
+            }
+        }
     }
 }
 
