@@ -516,8 +516,15 @@ fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
         (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
             mutt == mutt2 && type_matches(*ref_ty, *ref_ty2)
         }
+        (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
+            (proc_ty.params.len() == proc_ty2.params.len())
+                && (proc_ty.is_variadic == proc_ty2.is_variadic)
+                && type_matches(proc_ty.return_ty, proc_ty2.return_ty)
+                && (0..proc_ty.params.len())
+                    .all(|idx| type_matches(proc_ty.params[idx], proc_ty2.params[idx]))
+        }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
-            slice.mutt == slice2.mutt && type_matches(slice.elem_ty, slice2.elem_ty)
+            (slice.mutt == slice2.mutt) && type_matches(slice.elem_ty, slice2.elem_ty)
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
             //@size const_expr is ignored
