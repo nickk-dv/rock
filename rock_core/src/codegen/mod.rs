@@ -392,10 +392,9 @@ fn codegen_globals(cg: &mut Codegen) {
         global.set_thread_local(data.thread_local);
         global.set_initializer(&codegen_const_value(
             cg,
-            match data.value {
-                hir::ConstValueEval::Resolved { value } => value,
-                _ => panic!("codegen on unresolved const value"),
-            },
+            cg.hir
+                .const_intern
+                .get(cg.hir.const_evals[data.value.index()]),
         ));
         cg.globals.push(global);
     }
@@ -530,7 +529,7 @@ fn codegen_const_expr<'ctx>(
 
 fn codegen_const_value<'ctx>(
     cg: &Codegen<'ctx>,
-    value: hir::ConstValue,
+    value: hir::ConstValue<'ctx>,
 ) -> values::BasicValueEnum<'ctx> {
     match value {
         hir::ConstValue::Error => panic!("codegen unexpected ConstValue::Error"),
@@ -1523,10 +1522,9 @@ fn codegen_enum_variant<'ctx>(
     let variant = cg.hir.enum_data(enum_id).variant(variant_id);
     codegen_const_value(
         cg,
-        match variant.value.expect("enum variant value") {
-            hir::ConstValueEval::Resolved { value } => value,
-            _ => panic!("codegen on unresolved const value"),
-        },
+        cg.hir
+            .const_intern
+            .get(cg.hir.const_evals[variant.value.index()]),
     )
 }
 

@@ -166,11 +166,8 @@ fn enum_item<'ast>(
 
 fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'ast>, String> {
     let name = name(p)?;
-    let value = if p.eat(T![=]) {
-        Some(ConstExpr(expr(p)?))
-    } else {
-        None
-    };
+    p.expect(T![=]);
+    let value = ConstExpr(expr(p)?);
     Ok(EnumVariant { name, value })
 }
 

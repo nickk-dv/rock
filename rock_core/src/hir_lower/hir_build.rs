@@ -2,6 +2,7 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
+use crate::hir::intern::{ConstInternPool, ConstValueID};
 use crate::intern::InternID;
 use crate::session::{PackageID, Session};
 use crate::text::TextRange;
@@ -60,10 +61,12 @@ pub struct Registry<'hir, 'ast> {
     hir_structs: Vec<hir::StructData<'hir>>,
     hir_consts: Vec<hir::ConstData<'hir>>,
     hir_globals: Vec<hir::GlobalData<'hir>>,
+    const_evals: Vec<hir::ConstEval<'hir, 'ast>>,
 }
 
 pub struct HirEmit<'hir> {
     pub arena: Arena<'hir>,
+    pub const_intern: ConstInternPool<'hir>,
     errors: Vec<ErrorComp>,
 }
 
@@ -285,6 +288,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
 
 impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn new(total: ast::ItemCount) -> Registry<'hir, 'ast> {
+        let const_eval_estimate = total.consts + total.globals + total.enums * 4;
         Registry {
             ast_modules: Vec::with_capacity(total.modules as usize),
             ast_procs: Vec::with_capacity(total.procs as usize),
@@ -300,6 +304,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             hir_structs: Vec::with_capacity(total.structs as usize),
             hir_consts: Vec::with_capacity(total.consts as usize),
             hir_globals: Vec::with_capacity(total.globals as usize),
+            const_evals: Vec::with_capacity(const_eval_estimate as usize),
         }
     }
 
@@ -308,10 +313,12 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         let data = hir::ModuleData {
             file_id: module.file_id,
         };
+
         self.ast_modules.push(module);
         self.hir_modules.push(data);
         id
     }
+
     pub fn add_proc(
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
@@ -332,10 +339,12 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             is_test,
             is_main,
         };
+
         self.ast_procs.push(item);
         self.hir_procs.push(data);
         id
     }
+
     pub fn add_enum(
         &mut self,
         item: &'ast ast::EnumItem<'ast>,
@@ -349,10 +358,12 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             basic: item.basic.unwrap_or(ast::BasicType::S32),
             variants: &[],
         };
+
         self.ast_enums.push(item);
         self.hir_enums.push(data);
         id
     }
+
     pub fn add_union(
         &mut self,
         item: &'ast ast::UnionItem<'ast>,
@@ -366,10 +377,12 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             members: &[],
             size_eval: hir::SizeEval::Unresolved,
         };
+
         self.ast_unions.push(item);
         self.hir_unions.push(data);
         id
     }
+
     pub fn add_struct(
         &mut self,
         item: &'ast ast::StructItem<'ast>,
@@ -383,27 +396,32 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             fields: &[],
             size_eval: hir::SizeEval::Unresolved,
         };
+
         self.ast_structs.push(item);
         self.hir_structs.push(data);
         id
     }
+
     pub fn add_const(
         &mut self,
         item: &'ast ast::ConstItem<'ast>,
         origin_id: hir::ModuleID,
     ) -> hir::ConstID {
         let id = hir::ConstID::new(self.hir_consts.len());
+        let value = self.add_const_eval(item.value);
         let data = hir::ConstData {
             origin_id,
             vis: item.vis,
             name: item.name,
             ty: hir::Type::Error,
-            value: hir::ConstValueEval::Unresolved,
+            value,
         };
+
         self.ast_consts.push(item);
         self.hir_consts.push(data);
         id
     }
+
     pub fn add_global(
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
@@ -411,17 +429,26 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         thread_local: bool,
     ) -> hir::GlobalID {
         let id = hir::GlobalID::new(self.hir_globals.len());
+        let value = self.add_const_eval(item.value);
         let data = hir::GlobalData {
             origin_id,
             vis: item.vis,
             mutt: item.mutt,
             name: item.name,
             ty: hir::Type::Error,
-            value: hir::ConstValueEval::Unresolved,
+            value,
             thread_local,
         };
+
         self.ast_globals.push(item);
         self.hir_globals.push(data);
+        id
+    }
+
+    pub fn add_const_eval(&mut self, const_expr: ast::ConstExpr<'ast>) -> hir::ConstEvalID {
+        let id = hir::ConstEvalID::new(self.const_evals.len());
+        self.const_evals
+            .push(hir::ConstEval::Unresolved(const_expr));
         id
     }
 
@@ -490,6 +517,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
         &self.hir_globals[id.index()]
     }
+    pub fn const_eval(&self, id: hir::ConstEvalID) -> &hir::ConstEval<'hir, 'ast> {
+        &self.const_evals[id.index()]
+    }
 
     pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
         &mut self.hir_procs[id.index()]
@@ -509,12 +539,16 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
         &mut self.hir_globals[id.index()]
     }
+    pub fn const_eval_mut(&mut self, id: hir::ConstEvalID) -> &mut hir::ConstEval<'hir, 'ast> {
+        &mut self.const_evals[id.index()]
+    }
 }
 
 impl<'hir> HirEmit<'hir> {
     pub fn new() -> HirEmit<'hir> {
         HirEmit {
             arena: Arena::new(),
+            const_intern: ConstInternPool::new(),
             errors: Vec::new(),
         }
     }
@@ -530,10 +564,28 @@ impl<'hir> HirEmit<'hir> {
         //@debug info
         eprintln!("ast mem: {}", hir.ast.arena.mem_usage());
         eprintln!("hir mem: {}", self.arena.mem_usage());
+
         if self.errors.is_empty() {
+            let mut const_evals = Vec::with_capacity(hir.registry.const_evals.len());
+            for const_eval in hir.registry.const_evals {
+                match const_eval {
+                    hir::ConstEval::Error => {
+                        panic!("hir emit: ConstEval::Error with no errors")
+                    }
+                    hir::ConstEval::Unresolved(_) => {
+                        panic!("hir emit: ConstEval::Unresolved with no errors")
+                    }
+                    hir::ConstEval::ResolvedExpr(_) => {
+                        panic!("hir emit: ConstEval::ResolvedExpr with no errors")
+                    }
+                    hir::ConstEval::Resolved(value_id) => const_evals.push(value_id),
+                }
+            }
+
             Ok(hir::Hir {
                 arena: self.arena,
                 intern: hir.ast.intern,
+                const_intern: self.const_intern,
                 modules: hir.registry.hir_modules,
                 procs: hir.registry.hir_procs,
                 enums: hir.registry.hir_enums,
@@ -541,6 +593,7 @@ impl<'hir> HirEmit<'hir> {
                 structs: hir.registry.hir_structs,
                 consts: hir.registry.hir_consts,
                 globals: hir.registry.hir_globals,
+                const_evals,
             })
         } else {
             Err(self.errors)

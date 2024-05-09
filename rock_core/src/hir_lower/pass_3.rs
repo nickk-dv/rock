@@ -147,7 +147,7 @@ fn process_enum_data<'hir>(
         } else {
             unique.push(hir::EnumVariant {
                 name: variant.name,
-                value: variant.value.map(|_| hir::ConstValueEval::Unresolved),
+                value: hir.registry_mut().add_const_eval(variant.value),
             });
         }
     }

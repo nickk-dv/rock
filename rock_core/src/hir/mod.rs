@@ -1,13 +1,15 @@
-mod intern;
+pub mod intern;
 
 use crate::arena::Arena;
 use crate::ast;
 use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
+use intern::{ConstInternPool, ConstValueID};
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
     pub intern: InternPool<'hir>,
+    pub const_intern: ConstInternPool<'hir>,
     pub modules: Vec<ModuleData>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
@@ -15,6 +17,7 @@ pub struct Hir<'hir> {
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
+    pub const_evals: Vec<ConstValueID>,
 }
 
 macro_rules! hir_id_impl {
@@ -65,14 +68,14 @@ pub struct EnumData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub basic: ast::BasicType,
-    pub variants: &'hir [EnumVariant<'hir>],
+    pub variants: &'hir [EnumVariant],
 }
 
 hir_id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
-pub struct EnumVariant<'hir> {
+pub struct EnumVariant {
     pub name: ast::Name,
-    pub value: Option<ConstValueEval<'hir>>,
+    pub value: ConstEvalID,
 }
 
 hir_id_impl!(UnionID);
@@ -114,7 +117,7 @@ pub struct ConstData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstValueEval<'hir>,
+    pub value: ConstEvalID,
 }
 
 hir_id_impl!(GlobalID);
@@ -124,8 +127,17 @@ pub struct GlobalData<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstValueEval<'hir>,
+    pub value: ConstEvalID,
     pub thread_local: bool,
+}
+
+hir_id_impl!(ConstEvalID);
+#[derive(Copy, Clone)]
+pub enum ConstEval<'hir, 'ast> {
+    Error,
+    Unresolved(ast::ConstExpr<'ast>),
+    ResolvedExpr(&'hir Expr<'hir>),
+    Resolved(ConstValueID),
 }
 
 #[derive(Copy, Clone)]
@@ -167,13 +179,6 @@ impl Size {
     pub fn align(&self) -> u64 {
         self.align
     }
-}
-
-#[derive(Copy, Clone)]
-pub enum ConstValueEval<'hir> {
-    Error,
-    Unresolved,
-    Resolved { value: ConstValue<'hir> },
 }
 
 #[derive(Copy, Clone)]
@@ -282,7 +287,6 @@ pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
 // might store them by value?
 // interning is better but more compicated
 //hir_id_impl!(ConstValueID);
-use intern::ConstValueID;
 
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
@@ -504,10 +508,10 @@ impl<'hir> ProcData<'hir> {
 }
 
 impl<'hir> EnumData<'hir> {
-    pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant<'hir> {
+    pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant {
         &self.variants[id.index()]
     }
-    pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant<'hir>)> {
+    pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant)> {
         for (idx, variant) in self.variants.iter().enumerate() {
             if variant.name.id == id {
                 return Some((EnumVariantID::new(idx), variant));
