@@ -137,7 +137,7 @@ pub enum ConstEval<'hir, 'ast> {
     Error,
     Unresolved(ast::ConstExpr<'ast>),
     ResolvedExpr(&'hir Expr<'hir>),
-    Resolved(ConstValueID),
+    ResolvedValue(ConstValueID),
 }
 
 #[derive(Copy, Clone)]
@@ -209,8 +209,14 @@ pub struct ArraySlice<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic<'hir> {
-    pub size: ConstExpr<'hir>,
+    pub len: ArrayStaticLen,
     pub elem_ty: Type<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ArrayStaticLen {
+    Immediate(Option<u64>),
+    ConstEval(ConstEvalID),
 }
 
 #[derive(Copy, Clone)]
@@ -263,31 +269,12 @@ pub struct Assign<'hir> {
     pub lhs_signed_int: bool,
 }
 
-#[derive(Copy, Clone)]
-pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
-
-//@evaludate and design constant value system @16.04.24
-// constant dependency graphs and folding of constant values is a priority
-// the goal is to re-use as much of existing infra in constant expressions
-// current typechecking module needs to be split up to maintain a better separation
-// (eg. path resolve, is very much related to hir data maps, and proc scope only)
-
-//@is constant interning worth it? @16.04.24
-// potentially less memory usage to references same integer and float constants
-// array and struct de-dup might also be usefull
-// current string intern is already partially a constant interner
-
 //@this is untyped and meant for constant folding operations 02.05.24
 // during codegen we want to know the types
 // and for arrays or structs type also must be known
 // introduce something like `float` and `integer` types that are general
 // and narrowed on demand with bounds check on compile time
-
-//@using ConstValueID but theres not storage for them yet
-// might store them by value?
-// interning is better but more compicated
-//hir_id_impl!(ConstValueID);
-
+//@represent lower sized integers for bitwise and other math operations? 09.05.24
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
 pub enum ConstValue<'hir> {
@@ -463,7 +450,7 @@ pub struct ArrayInit<'hir> {
 pub struct ArrayRepeat<'hir> {
     pub elem_ty: Type<'hir>,
     pub expr: &'hir Expr<'hir>,
-    pub size: ConstExpr<'hir>,
+    pub len: Option<u64>,
 }
 
 impl<'hir> Hir<'hir> {

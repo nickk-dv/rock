@@ -505,7 +505,12 @@ fn typecheck_proc<'hir>(
     }
 }
 
-fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
+fn type_matches<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &HirEmit<'hir>,
+    ty: hir::Type<'hir>,
+    ty2: hir::Type<'hir>,
+) -> bool {
     match (ty, ty2) {
         (hir::Type::Error, ..) => true,
         (.., hir::Type::Error) => true,
@@ -514,28 +519,40 @@ fn type_matches<'hir>(ty: hir::Type<'hir>, ty2: hir::Type<'hir>) -> bool {
         (hir::Type::Union(id), hir::Type::Union(id2)) => id == id2,
         (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
         (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
-            mutt == mutt2 && type_matches(*ref_ty, *ref_ty2)
+            mutt == mutt2 && type_matches(hir, emit, *ref_ty, *ref_ty2)
         }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.params.len() == proc_ty2.params.len())
                 && (proc_ty.is_variadic == proc_ty2.is_variadic)
-                && type_matches(proc_ty.return_ty, proc_ty2.return_ty)
+                && type_matches(hir, emit, proc_ty.return_ty, proc_ty2.return_ty)
                 && (0..proc_ty.params.len())
-                    .all(|idx| type_matches(proc_ty.params[idx], proc_ty2.params[idx]))
+                    .all(|idx| type_matches(hir, emit, proc_ty.params[idx], proc_ty2.params[idx]))
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
-            (slice.mutt == slice2.mutt) && type_matches(slice.elem_ty, slice2.elem_ty)
+            (slice.mutt == slice2.mutt) && type_matches(hir, emit, slice.elem_ty, slice2.elem_ty)
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
-            //@size const_expr is ignored
-            type_matches(array.elem_ty, array2.elem_ty)
+            if let Some(len) = array_static_get_len(hir, emit, array.len) {
+                if let Some(len2) = array_static_get_len(hir, emit, array2.len) {
+                    return (len == len2) && type_matches(hir, emit, array.elem_ty, array2.elem_ty);
+                }
+            }
+            true
+        }
+        (hir::Type::ArrayStatic(array), ..) => array_static_get_len(hir, emit, array.len).is_none(),
+        (.., hir::Type::ArrayStatic(array2)) => {
+            array_static_get_len(hir, emit, array2.len).is_none()
         }
         _ => false,
     }
 }
 
 //@can use &'static str often 07.05.24
-fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String {
+fn type_format<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &HirEmit<'hir>,
+    ty: hir::Type<'hir>,
+) -> String {
     match ty {
         hir::Type::Error => "error".into(),
         hir::Type::Basic(basic) => match basic {
@@ -566,12 +583,12 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
                 ast::Mut::Mutable => "mut ",
                 ast::Mut::Immutable => "",
             };
-            format!("&{}{}", mut_str, type_format(hir, *ref_ty))
+            format!("&{}{}", mut_str, type_format(hir, emit, *ref_ty))
         }
         hir::Type::Procedure(proc_ty) => {
             let mut string = String::from("proc(");
             for (idx, param) in proc_ty.params.iter().enumerate() {
-                string.push_str(&type_format(hir, *param));
+                string.push_str(&type_format(hir, emit, *param));
                 if proc_ty.params.len() != idx + 1 {
                     string.push_str(", ");
                 }
@@ -580,7 +597,7 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
                 string.push_str(", ..")
             }
             string.push_str(") -> ");
-            string.push_str(&type_format(hir, proc_ty.return_ty));
+            string.push_str(&type_format(hir, emit, proc_ty.return_ty));
             string
         }
         hir::Type::ArraySlice(slice) => {
@@ -588,9 +605,42 @@ fn type_format<'hir>(hir: &HirData<'hir, '_, '_>, ty: hir::Type<'hir>) -> String
                 ast::Mut::Mutable => "mut",
                 ast::Mut::Immutable => "",
             };
-            format!("[{}]{}", mut_str, type_format(hir, slice.elem_ty))
+            format!("[{}]{}", mut_str, type_format(hir, emit, slice.elem_ty))
         }
-        hir::Type::ArrayStatic(array) => format!("[<SIZE>]{}", type_format(hir, array.elem_ty)),
+        hir::Type::ArrayStatic(array) => {
+            let len = array_static_get_len(hir, emit, array.len);
+            let elem_format: String = type_format(hir, emit, array.elem_ty);
+            match len {
+                Some(len) => format!("[{len}]{elem_format}"),
+                None => format!("[<unknown>]{elem_format}"),
+            }
+        }
+    }
+}
+
+fn array_static_get_len<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &HirEmit<'hir>,
+    len: hir::ArrayStaticLen,
+) -> Option<u64> {
+    match len {
+        hir::ArrayStaticLen::Immediate(len) => len,
+        hir::ArrayStaticLen::ConstEval(eval_id) => match hir.registry().const_eval(eval_id) {
+            hir::ConstEval::ResolvedValue(value_id) => {
+                let value = emit.const_intern.get(*value_id);
+                match value {
+                    hir::ConstValue::Int { val, neg } => {
+                        if neg {
+                            None
+                        } else {
+                            Some(val)
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        },
     }
 }
 
@@ -662,20 +712,20 @@ fn typecheck_expr<'hir>(
             typecheck_struct_init(hir, emit, proc, struct_init)
         }
         ast::ExprKind::ArrayInit { input } => typecheck_array_init(hir, emit, proc, expect, input),
-        ast::ExprKind::ArrayRepeat { expr, size } => {
-            typecheck_array_repeat(hir, emit, proc, expect, expr, size)
+        ast::ExprKind::ArrayRepeat { expr, len } => {
+            typecheck_array_repeat(hir, emit, proc, expect, expr, len)
         }
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
         ast::ExprKind::Unary { op, rhs } => typecheck_unary(hir, emit, proc, op, rhs),
         ast::ExprKind::Binary { op, lhs, rhs } => typecheck_binary(hir, emit, proc, op, lhs, rhs),
     };
 
-    if !expr_res.ignore && !type_matches(expect, expr_res.ty) {
+    if !expr_res.ignore && !type_matches(hir, emit, expect, expr_res.ty) {
         emit.error(ErrorComp::error(
             format!(
                 "type mismatch: expected `{}`, found `{}`",
-                type_format(hir, expect),
-                type_format(hir, expr_res.ty)
+                type_format(hir, emit, expect),
+                type_format(hir, emit, expr_res.ty)
             ),
             hir.src(proc.origin(), expr.range),
             None,
@@ -853,7 +903,7 @@ fn typecheck_match<'hir>(
         emit.error(ErrorComp::error(
             format!(
                 "cannot match on value of type `{}`",
-                type_format(hir, on_res.ty)
+                type_format(hir, emit, on_res.ty)
             ),
             hir.src(proc.origin(), match_.on_expr.range),
             None,
@@ -1005,7 +1055,7 @@ fn type_get_field<'hir>(
             }
         }
         _ => {
-            let ty_format = type_format(hir, ty);
+            let ty_format = type_format(hir, emit, ty);
             emit.error(ErrorComp::error(
                 format!(
                     "no field `{}` exists on value of type `{}`",
@@ -1098,11 +1148,11 @@ fn typecheck_index<'hir>(
             emit.error(ErrorComp::error(
                 format!(
                     "cannot index value of type `{}`",
-                    type_format(hir, target_res.ty)
+                    type_format(hir, emit, target_res.ty)
                 ),
                 hir.src(proc.origin(), expr_range),
                 ErrorComp::info(
-                    format!("has `{}` type", type_format(hir, target_res.ty)),
+                    format!("has `{}` type", type_format(hir, emit, target_res.ty)),
                     hir.src(proc.origin(), target.range),
                 ),
             ));
@@ -1176,11 +1226,11 @@ fn typecheck_slice<'hir>(
             emit.error(ErrorComp::error(
                 format!(
                     "cannot slice value of type `{}`",
-                    type_format(hir, target_res.ty)
+                    type_format(hir, emit, target_res.ty)
                 ),
                 hir.src(proc.origin(), expr_range),
                 ErrorComp::info(
-                    format!("has `{}` type", type_format(hir, target_res.ty)),
+                    format!("has `{}` type", type_format(hir, emit, target_res.ty)),
                     hir.src(proc.origin(), target.range),
                 ),
             ));
@@ -1269,7 +1319,7 @@ fn typecheck_call<'hir>(
             emit.error(ErrorComp::error(
                 format!(
                     "cannot call value of type `{}`",
-                    type_format(hir, target_res.ty)
+                    type_format(hir, emit, target_res.ty)
                 ),
                 hir.src(proc.origin(), target.range),
                 None,
@@ -1378,12 +1428,12 @@ fn typecheck_cast<'hir>(
 
     // invariant: both types are not Error
     // ensured by early return above
-    if type_matches(target_res.ty, into) {
+    if type_matches(hir, emit, target_res.ty, into) {
         emit.error(ErrorComp::warning(
             format!(
                 "redundant cast from `{}` into `{}`",
-                type_format(hir, target_res.ty),
-                type_format(hir, into)
+                type_format(hir, emit, target_res.ty),
+                type_format(hir, emit, into)
             ),
             hir.src(proc.origin(), range),
             None,
@@ -1458,8 +1508,8 @@ fn typecheck_cast<'hir>(
         emit.error(ErrorComp::error(
             format!(
                 "non primitive cast from `{}` into `{}`",
-                type_format(hir, target_res.ty),
-                type_format(hir, into)
+                type_format(hir, emit, target_res.ty),
+                type_format(hir, emit, into)
             ),
             hir.src(proc.origin(), range),
             None,
@@ -1474,9 +1524,6 @@ fn typecheck_cast<'hir>(
     TypeResult::new(into, emit.arena.alloc(cast_expr))
 }
 
-//@type-sizing not done:
-// is complicated due to constant dependency graphs,
-// recursive types also not detected yet.
 fn typecheck_sizeof<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1484,11 +1531,10 @@ fn typecheck_sizeof<'hir>(
     ty: ast::Type,
 ) -> TypeResult<'hir> {
     let ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
-    let size = type_size(hir, ty);
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
-    let sizeof_expr = match size {
+    let sizeof_expr = match type_size(hir, ty) {
         Some(size) => emit.arena.alloc(hir::Expr::LitInt {
             val: size.size(),
             ty: BasicType::Usize,
@@ -1771,14 +1817,8 @@ fn typecheck_array_init<'hir>(
     }
     let hir_input = emit.arena.alloc_slice(&hir_input);
 
-    //@types used during typechecking shount be a hir::Type
-    // allocating const expr to store array size is temporary
-    let size = emit.arena.alloc(hir::Expr::LitInt {
-        val: input.len() as u64,
-        ty: BasicType::Ssize,
-    });
-    let array_type = emit.arena.alloc(hir::ArrayStatic {
-        size: hir::ConstExpr(size),
+    let array_type: &hir::ArrayStatic = emit.arena.alloc(hir::ArrayStatic {
+        len: hir::ArrayStaticLen::Immediate(Some(input.len() as u64)),
         elem_ty,
     });
 
@@ -1799,7 +1839,7 @@ fn typecheck_array_repeat<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: hir::Type<'hir>,
     expr: &ast::Expr,
-    size: ast::ConstExpr,
+    len: ast::ConstExpr,
 ) -> TypeResult<'hir> {
     let expect = match expect {
         hir::Type::ArrayStatic(array) => array.elem_ty,
@@ -1807,17 +1847,22 @@ fn typecheck_array_repeat<'hir>(
     };
 
     let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-    let size_res = super::pass_4::const_expr_resolve(hir, emit, proc.origin(), size);
 
+    //@this is duplicated here and in pass_3::type_resolve 09.05.24
+    let len_expr = super::pass_4::const_expr_resolve(hir, emit, proc.origin(), len);
+    let len = match len_expr {
+        hir::Expr::LitInt { val, ty } => Some(*val),
+        _ => None,
+    };
     let array_type = emit.arena.alloc(hir::ArrayStatic {
-        size: size_res,
+        len: hir::ArrayStaticLen::Immediate(len),
         elem_ty: expr_res.ty,
     });
 
     let array_repeat = emit.arena.alloc(hir::ArrayRepeat {
         elem_ty: expr_res.ty,
         expr: expr_res.expr,
-        size: size_res,
+        len,
     });
     let array_expr = hir::Expr::ArrayRepeat { array_repeat };
     TypeResult::new(
@@ -2011,7 +2056,7 @@ fn typecheck_unary<'hir>(
         emit.error(ErrorComp::error(
             format!(
                 "unary operator `{op_str}` cannot be applied to `{}`",
-                type_format(hir, rhs_res.ty)
+                type_format(hir, emit, rhs_res.ty)
             ),
             hir.src(proc.origin(), rhs.range),
             None,
@@ -2053,7 +2098,7 @@ fn typecheck_binary<'hir>(
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot use math operator on value of type `{}`",
-                        type_format(hir, lhs_res.ty)
+                        type_format(hir, emit, lhs_res.ty)
                     ),
                     hir.src(proc.origin(), lhs.range),
                     None,
@@ -2073,7 +2118,7 @@ fn typecheck_binary<'hir>(
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot use remainder operator on value of type `{}`",
-                        type_format(hir, lhs_res.ty)
+                        type_format(hir, emit, lhs_res.ty)
                     ),
                     hir.src(proc.origin(), lhs.range),
                     None,
@@ -2093,7 +2138,7 @@ fn typecheck_binary<'hir>(
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot use bit-wise operator on value of type `{}`",
-                        type_format(hir, lhs_res.ty)
+                        type_format(hir, emit, lhs_res.ty)
                     ),
                     hir.src(proc.origin(), lhs.range),
                     None,
@@ -2131,9 +2176,9 @@ fn typecheck_binary<'hir>(
                             emit.error(ErrorComp::error(
                                 format!(
                                     "cannot use bit-shift operator on integers of different sizes\n`{}` has bitwidth of {}, `{}` has bitwidth of {} ",
-                                    type_format(hir, lhs_res.ty),
+                                    type_format(hir, emit, lhs_res.ty),
                                     lhs_size * 8,
-                                    type_format(hir, rhs_res.ty),
+                                    type_format(hir, emit, rhs_res.ty),
                                     rhs_size * 8,
                                 ),
                                 hir.src(proc.origin(), lhs.range),
@@ -2151,7 +2196,7 @@ fn typecheck_binary<'hir>(
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot use bit-shift operator on value of type `{}`",
-                        type_format(hir, lhs_res.ty)
+                        type_format(hir, emit, lhs_res.ty)
                     ),
                     hir.src(proc.origin(), lhs.range),
                     None,
@@ -2169,7 +2214,7 @@ fn typecheck_binary<'hir>(
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot compare equality for value of type `{}`",
-                        type_format(hir, lhs_res.ty)
+                        type_format(hir, emit, lhs_res.ty)
                     ),
                     hir.src(proc.origin(), lhs.range),
                     None,
@@ -2186,7 +2231,7 @@ fn typecheck_binary<'hir>(
                 emit.error(ErrorComp::error(
                     format!(
                         "cannot compare order for value of type `{}`",
-                        type_format(hir, lhs_res.ty)
+                        type_format(hir, emit, lhs_res.ty)
                     ),
                     hir.src(proc.origin(), lhs.range),
                     None,
@@ -2467,9 +2512,9 @@ fn typecheck_return<'hir>(
     } else {
         //@this is modified duplicated typecheck error, special case for empty return @07.04.24
         let found = hir::Type::Basic(BasicType::Void);
-        if !type_matches(expect, found) {
-            let expect_format = type_format(hir, expect);
-            let found_format = type_format(hir, found);
+        if !type_matches(hir, emit, expect, found) {
+            let expect_format = type_format(hir, emit, expect);
+            let found_format = type_format(hir, emit, found);
             emit.error(ErrorComp::error(
                 format!(
                     "type mismatch: expected `{}`, found `{}`",
@@ -2667,7 +2712,10 @@ pub fn require_value_type<'hir>(
 ) {
     if !type_is_value_type(ty) {
         emit.error(ErrorComp::error(
-            format!("expected value type, found `{}`", type_format(hir, ty)),
+            format!(
+                "expected value type, found `{}`",
+                type_format(hir, emit, ty)
+            ),
             source,
             None,
         ))

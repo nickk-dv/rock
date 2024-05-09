@@ -14,7 +14,7 @@ pub fn const_expr_resolve<'hir, 'ast>(
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ModuleID,
     expr: ast::ConstExpr<'ast>,
-) -> hir::ConstExpr<'hir> {
+) -> &'hir hir::Expr<'hir> {
     let hir_expr = match expr.0.kind {
         ast::ExprKind::LitNull => hir::Expr::LitNull,
         ast::ExprKind::LitBool { val } => hir::Expr::LitBool { val },
@@ -37,5 +37,5 @@ pub fn const_expr_resolve<'hir, 'ast>(
             hir::Expr::Error
         }
     };
-    hir::ConstExpr(emit.arena.alloc(hir_expr))
+    emit.arena.alloc(hir_expr)
 }

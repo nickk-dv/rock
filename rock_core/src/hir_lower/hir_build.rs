@@ -2,7 +2,7 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
-use crate::hir::intern::{ConstInternPool, ConstValueID};
+use crate::hir::intern::ConstInternPool;
 use crate::intern::InternID;
 use crate::session::{PackageID, Session};
 use crate::text::TextRange;
@@ -66,7 +66,7 @@ pub struct Registry<'hir, 'ast> {
 
 pub struct HirEmit<'hir> {
     pub arena: Arena<'hir>,
-    pub const_intern: ConstInternPool<'hir>,
+    pub const_intern: ConstInternPool<'hir>, //@consider storing this in HirData insted (doesnt matter for now) 09.05.24
     errors: Vec<ErrorComp>,
 }
 
@@ -568,17 +568,18 @@ impl<'hir> HirEmit<'hir> {
         if self.errors.is_empty() {
             let mut const_evals = Vec::with_capacity(hir.registry.const_evals.len());
             for const_eval in hir.registry.const_evals {
+                //@re-enable panics or errors when const resolve is done 09.05.24
                 match const_eval {
                     hir::ConstEval::Error => {
-                        panic!("hir emit: ConstEval::Error with no errors")
+                        //panic!("hir emit: ConstEval::Error with no errors")
                     }
                     hir::ConstEval::Unresolved(_) => {
-                        panic!("hir emit: ConstEval::Unresolved with no errors")
+                        //panic!("hir emit: ConstEval::Unresolved with no errors")
                     }
                     hir::ConstEval::ResolvedExpr(_) => {
-                        panic!("hir emit: ConstEval::ResolvedExpr with no errors")
+                        //panic!("hir emit: ConstEval::ResolvedExpr with no errors")
                     }
-                    hir::ConstEval::Resolved(value_id) => const_evals.push(value_id),
+                    hir::ConstEval::ResolvedValue(value_id) => const_evals.push(value_id),
                 }
             }
 

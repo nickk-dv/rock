@@ -275,15 +275,25 @@ impl<'ctx> Codegen<'ctx> {
         )
     }
 
+    fn array_static_len(&self, len: hir::ArrayStaticLen) -> u64 {
+        match len {
+            hir::ArrayStaticLen::Immediate(len) => len.expect("array len is known"),
+            hir::ArrayStaticLen::ConstEval(eval_id) => {
+                let value_id = self.hir.const_evals[eval_id.index()];
+                let value = self.hir.const_intern.get(value_id);
+                match value {
+                    hir::ConstValue::Int { val, neg } => val,
+                    _ => panic!("array len must be int"),
+                }
+            }
+        }
+    }
+
     fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
         // @should use LLVMArrayType2 which takes u64, what not exposed 03.05.24
         //  by inkwell even for llvm 17 (LLVMArrayType was deprecated in this version)
         let elem_ty = self.type_into_basic(array.elem_ty).expect("non void type");
-        if let hir::Expr::LitInt { val, .. } = *array.size.0 {
-            elem_ty.array_type(val as u32)
-        } else {
-            panic!("codegen: invalid array static size expression");
-        }
+        elem_ty.array_type(self.array_static_len(array.len) as u32)
     }
 
     //@any is used as general type
@@ -504,26 +514,6 @@ fn codegen_function_bodies(cg: &Codegen) {
                 }
             }
         }
-    }
-}
-
-//@other potentially contant expressions arent supported yet @13.04.24
-// to support arrays structs unions etc
-// there should be dedicated constant values produced at analysis stage
-// hir also currently only supports literal constants for the same reason
-fn codegen_const_expr<'ctx>(
-    cg: &Codegen<'ctx>,
-    expr: hir::ConstExpr,
-) -> values::BasicValueEnum<'ctx> {
-    match *expr.0 {
-        hir::Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
-        hir::Expr::LitNull => codegen_lit_null(cg),
-        hir::Expr::LitBool { val } => codegen_lit_bool(cg, val),
-        hir::Expr::LitInt { val, ty } => codegen_lit_int(cg, val, ty),
-        hir::Expr::LitFloat { val, ty } => codegen_lit_float(cg, val, ty),
-        hir::Expr::LitChar { val } => codegen_lit_char(cg, val),
-        hir::Expr::LitString { id, c_string } => codegen_lit_string(cg, id, c_string),
-        _ => panic!("codegen unexpected constant expression kind"),
     }
 }
 
@@ -1153,10 +1143,7 @@ fn codegen_index<'ctx>(
             }
         }
         hir::IndexKind::Array { array } => unsafe {
-            let len = match *array.size.0 {
-                hir::Expr::LitInt { val, .. } => val,
-                _ => unreachable!("array size must be u64"),
-            };
+            let len = cg.array_static_len(array.len);
             let len = cg.pointer_sized_int_type().const_int(len, false);
 
             let panic_cond = cg
@@ -1358,10 +1345,7 @@ fn codegen_slice<'ctx>(
             }
         }
         hir::SliceKind::Array { array } => {
-            let len = match *array.size.0 {
-                hir::Expr::LitInt { val, .. } => val,
-                _ => unreachable!("array size must be u64"),
-            };
+            let len = cg.array_static_len(array.len);
             let len = cg.pointer_sized_int_type().const_int(len, false);
 
             let lower = match access.range.lower {

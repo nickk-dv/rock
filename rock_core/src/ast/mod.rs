@@ -219,7 +219,7 @@ pub struct ArraySlice<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ArrayStatic<'ast> {
-    pub size: ConstExpr<'ast>,
+    pub len: ConstExpr<'ast>,
     pub elem_ty: Type<'ast>,
 }
 
@@ -311,7 +311,7 @@ pub enum ExprKind<'ast> {
     Item        { path: &'ast Path<'ast> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
-    ArrayRepeat { expr: &'ast Expr<'ast>, size: ConstExpr<'ast> },
+    ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Unary       { op: UnOp, rhs: &'ast Expr<'ast> },
     Binary      { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },

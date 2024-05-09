@@ -71,15 +71,83 @@ pub fn type_resolve<'hir>(
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::Type::ArrayStatic(array) => {
-            let size = super::pass_4::const_expr_resolve(hir, emit, origin_id, array.size);
+            let len_expr = super::pass_4::const_expr_resolve(hir, emit, origin_id, array.len);
+            let len = match len_expr {
+                hir::Expr::LitInt { val, ty } => Some(*val),
+                _ => None,
+            };
             let elem_ty = type_resolve(hir, emit, origin_id, array.elem_ty);
 
-            let array = hir::ArrayStatic { size, elem_ty };
+            let array = hir::ArrayStatic {
+                len: hir::ArrayStaticLen::Immediate(len),
+                elem_ty,
+            };
             hir::Type::ArrayStatic(emit.arena.alloc(array))
         }
     }
 }
 
+pub fn type_resolve_delayed<'hir, 'ast>(
+    hir: &mut HirData<'hir, 'ast, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    ast_ty: ast::Type<'ast>,
+) -> hir::Type<'hir> {
+    match ast_ty {
+        ast::Type::Basic(basic) => hir::Type::Basic(basic),
+        ast::Type::Custom(path) => {
+            super::pass_5::path_resolve_type(hir, emit, None, origin_id, path)
+        }
+        ast::Type::Reference(ref_ty, mutt) => {
+            let ref_ty = type_resolve_delayed(hir, emit, origin_id, *ref_ty);
+            hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
+        }
+        ast::Type::Procedure(proc_ty) => {
+            let mut params = Vec::with_capacity(proc_ty.params.len());
+            for param in proc_ty.params {
+                let ty = type_resolve_delayed(hir, emit, origin_id, *param);
+                params.push(ty);
+            }
+            let params = emit.arena.alloc_slice(&params);
+
+            let return_ty = if let Some(return_ty) = proc_ty.return_ty {
+                type_resolve_delayed(hir, emit, origin_id, return_ty)
+            } else {
+                hir::Type::Basic(ast::BasicType::Void)
+            };
+
+            let proc_ty = hir::ProcType {
+                params,
+                return_ty,
+                is_variadic: proc_ty.is_variadic,
+            };
+            hir::Type::Procedure(emit.arena.alloc(proc_ty))
+        }
+        ast::Type::ArraySlice(slice) => {
+            let elem_ty = type_resolve_delayed(hir, emit, origin_id, slice.elem_ty);
+
+            let slice = hir::ArraySlice {
+                mutt: slice.mutt,
+                elem_ty,
+            };
+            hir::Type::ArraySlice(emit.arena.alloc(slice))
+        }
+        ast::Type::ArrayStatic(array) => {
+            let len = hir.registry_mut().add_const_eval(array.len);
+            let elem_ty = type_resolve_delayed(hir, emit, origin_id, array.elem_ty);
+
+            let array = hir::ArrayStatic {
+                len: hir::ArrayStaticLen::ConstEval(len),
+                elem_ty,
+            };
+            hir::Type::ArrayStatic(emit.arena.alloc(array))
+        }
+    }
+}
+
+//@since procedure array size resolution is supposed to be immediate this must be done 09.05.24
+// AFTER all other items were resolved (including their const eval dependencies and values)
+// now its being done first, which isnt correct order
 fn process_proc_data<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -132,8 +200,6 @@ fn process_enum_data<'hir>(
     let origin_id = hir.registry().enum_data(id).origin_id;
     let mut unique = Vec::<hir::EnumVariant>::new();
 
-    let mut implicit_value: u64 = 0;
-
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
             emit.error(ErrorComp::error(
@@ -175,7 +241,7 @@ fn process_union_data<'hir>(
                 ErrorComp::info("existing member", hir.src(origin_id, existing.name.range)),
             ));
         } else {
-            let ty = type_resolve(hir, emit, origin_id, member.ty);
+            let ty = type_resolve_delayed(hir, emit, origin_id, member.ty);
             // types from ast dont have range, so using param name instead, possible change @26.04.24
             pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, member.name.range));
 
@@ -209,7 +275,7 @@ fn process_struct_data<'hir>(
                 ErrorComp::info("existing field", hir.src(origin_id, existing.name.range)),
             ));
         } else {
-            let ty = type_resolve(hir, emit, origin_id, field.ty);
+            let ty = type_resolve_delayed(hir, emit, origin_id, field.ty);
             // types from ast dont have range, so using param name instead, possible change @26.04.24
             pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, field.name.range));
 
@@ -232,7 +298,7 @@ fn process_const_data<'hir>(
     let item = hir.registry().const_item(id);
     let origin_id = hir.registry().const_data(id).origin_id;
 
-    let ty = type_resolve(hir, emit, origin_id, item.ty);
+    let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
     // types from ast dont have range, so using param name instead, possible change @26.04.24
     pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
 
@@ -249,7 +315,7 @@ fn process_global_data<'hir>(
     let item = hir.registry().global_item(id);
     let origin_id = hir.registry().global_data(id).origin_id;
 
-    let ty = type_resolve(hir, emit, origin_id, item.ty);
+    let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
     // types from ast dont have range, so using param name instead, possible change @26.04.24
     pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
 

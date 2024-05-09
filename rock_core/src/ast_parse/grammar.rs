@@ -166,7 +166,7 @@ fn enum_item<'ast>(
 
 fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'ast>, String> {
     let name = name(p)?;
-    p.expect(T![=]);
+    p.expect(T![=])?;
     let value = ConstExpr(expr(p)?);
     Ok(EnumVariant { name, value })
 }
@@ -393,11 +393,11 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
                     ))
                 }
                 _ => {
-                    let size = ConstExpr(expr(p)?);
+                    let len = ConstExpr(expr(p)?);
                     p.expect(T![']'])?;
                     let elem_ty = ty(p)?;
                     Ok(Type::ArrayStatic(
-                        p.state.arena.alloc(ArrayStatic { size, elem_ty }),
+                        p.state.arena.alloc(ArrayStatic { len, elem_ty }),
                     ))
                 }
             }
@@ -705,11 +705,11 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             } else {
                 let first_expr = expr(p)?;
                 if p.eat(T![;]) {
-                    let size = ConstExpr(expr(p)?);
+                    let len = ConstExpr(expr(p)?);
                     p.expect(T![']'])?;
                     ExprKind::ArrayRepeat {
                         expr: first_expr,
-                        size,
+                        len,
                     }
                 } else {
                     let start = p.state.exprs.start();
