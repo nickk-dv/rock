@@ -1,3 +1,5 @@
+mod intern;
+
 use crate::arena::Arena;
 use crate::ast;
 use crate::intern::{InternID, InternPool};
@@ -279,30 +281,34 @@ pub struct ConstExpr<'hir>(pub &'hir Expr<'hir>);
 //@using ConstValueID but theres not storage for them yet
 // might store them by value?
 // interning is better but more compicated
-hir_id_impl!(ConstValueID);
+//hir_id_impl!(ConstValueID);
+use intern::ConstValueID;
+
 #[rustfmt::skip]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ConstValue<'hir> {
     Error,
     Null,
-    Bool   { val: bool },
-    Int    { val: u64, neg: bool },
-    Float  { val: f64 },
-    Char   { val: char },
-    String { id: InternID, c_string: bool },
-    Struct { struct_: &'hir ConstStruct<'hir> },
-    Array  { array: &'hir ConstArray<'hir> },
+    Bool        { val: bool },
+    Int         { val: u64, neg: bool },
+    Float       { val: f64 },
+    Char        { val: char },
+    String      { id: InternID, c_string: bool },
+    Struct      { struct_: &'hir ConstStruct<'hir> },
+    Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { value: ConstValueID, len: u64 },
 }
 
-pub struct ConstArray<'hir> {
-    len: u64,
-    values: &'hir [ConstValueID],
-}
-
+#[derive(Copy, Clone, PartialEq)]
 pub struct ConstStruct<'hir> {
     struct_id: StructID,
     fields: &'hir [ConstValueID],
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct ConstArray<'hir> {
+    len: u64,
+    values: &'hir [ConstValueID],
 }
 
 #[rustfmt::skip]
