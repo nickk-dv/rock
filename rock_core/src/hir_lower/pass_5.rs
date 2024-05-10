@@ -148,7 +148,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
         if matches!(data.size_eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::UnionSize(id));
             if check_union_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
-                resolve_const_dependency_tree(hir, &tree);
+                resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
     }
@@ -159,7 +159,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
         if matches!(data.size_eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
             if check_struct_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
-                resolve_const_dependency_tree(hir, &tree);
+                resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
     }
@@ -176,18 +176,22 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
 }
 
 // is rev order stable when dealing with recursive tree inputs? seems like it @01.05.24
-fn resolve_const_dependency_tree(hir: &mut HirData, tree: &Tree<ConstDependency>) {
+fn resolve_const_dependency_tree(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    tree: &Tree<ConstDependency>,
+) {
     for node in tree.nodes.iter().rev() {
         match node.value {
             ConstDependency::EnumVariant(_, _) => {
                 todo!("EnumVariant const resolve not implemented")
             }
             ConstDependency::UnionSize(id) => {
-                let size_eval = resolve_union_size(hir, id);
+                let size_eval = resolve_union_size(hir, emit, id);
                 hir.registry_mut().union_data_mut(id).size_eval = size_eval;
             }
             ConstDependency::StructSize(id) => {
-                let size_eval = resolve_struct_size(hir, id);
+                let size_eval = resolve_struct_size(hir, emit, id);
                 hir.registry_mut().struct_data_mut(id).size_eval = size_eval;
             }
         }
@@ -201,13 +205,18 @@ fn aligned_size(size: u64, align: u64) -> u64 {
     size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
 }
 
-fn resolve_union_size(hir: &HirData, union_id: hir::UnionID) -> hir::SizeEval {
+fn resolve_union_size(hir: &HirData, emit: &mut HirEmit, union_id: hir::UnionID) -> hir::SizeEval {
     let data = hir.registry().union_data(union_id);
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for member in data.members {
-        let (member_size, member_align) = match type_size(hir, member.ty) {
+        let (member_size, member_align) = match type_size(
+            hir,
+            emit,
+            member.ty,
+            hir.src(data.origin_id, member.name.range), //@review source range for this type_size error 10.05.24
+        ) {
             Some(size) => (size.size(), size.align()),
             None => return hir::SizeEval::Error,
         };
@@ -218,18 +227,39 @@ fn resolve_union_size(hir: &HirData, union_id: hir::UnionID) -> hir::SizeEval {
     hir::SizeEval::Resolved(hir::Size::new(size, align))
 }
 
-fn resolve_struct_size(hir: &HirData, struct_id: hir::StructID) -> hir::SizeEval {
+fn resolve_struct_size(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    struct_id: hir::StructID,
+) -> hir::SizeEval {
     let data = hir.registry().struct_data(struct_id);
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for field in data.fields {
-        let (field_size, field_align) = match type_size(hir, field.ty) {
+        let (field_size, field_align) = match type_size(
+            hir,
+            emit,
+            field.ty,
+            hir.src(data.origin_id, field.name.range), //@review source range for this type_size error 10.05.24
+        ) {
             Some(size) => (size.size(), size.align()),
             None => return hir::SizeEval::Error,
         };
         size = aligned_size(size, field_align);
-        size += field_size;
+        size = if let Some(new_size) = size.checked_add(field_size) {
+            new_size
+        } else {
+            emit.error(ErrorComp::error(
+                format!(
+                    "struct size overflow: `{}` + `{}` (when computing: total_size + field_size)",
+                    size, field_size
+                ),
+                hir.src(data.origin_id, field.name.range), //@review source range for size overflow error 10.05.24
+                None,
+            ));
+            return hir::SizeEval::Error;
+        };
         align = align.max(field_align);
     }
 
@@ -706,7 +736,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
-        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, ty),
+        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, ty, expr.range),
         ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(hir, emit, proc, struct_init)
@@ -1128,9 +1158,14 @@ fn typecheck_index<'hir>(
                 elem_ty: collection.elem_ty,
                 kind: match collection.kind {
                     SliceOrArray::Slice(slice) => hir::IndexKind::Slice {
-                        elem_size: type_size(hir, slice.elem_ty)
-                            .unwrap_or(hir::Size::new(0, 1))
-                            .size(),
+                        elem_size: type_size(
+                            hir,
+                            emit,
+                            slice.elem_ty,
+                            hir.src(proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
+                        )
+                        .unwrap_or(hir::Size::new(0, 1))
+                        .size(),
                     },
                     SliceOrArray::Array(array) => hir::IndexKind::Array { array },
                 },
@@ -1196,9 +1231,14 @@ fn typecheck_slice<'hir>(
                 deref: collection.deref,
                 kind: match collection.kind {
                     SliceOrArray::Slice(slice) => hir::SliceKind::Slice {
-                        elem_size: type_size(hir, slice.elem_ty)
-                            .unwrap_or(hir::Size::new(0, 1))
-                            .size(),
+                        elem_size: type_size(
+                            hir,
+                            emit,
+                            slice.elem_ty,
+                            hir.src(proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
+                        )
+                        .unwrap_or(hir::Size::new(0, 1))
+                        .size(),
                     },
                     SliceOrArray::Array(array) => hir::SliceKind::Array { array },
                 },
@@ -1333,9 +1373,14 @@ fn typecheck_call<'hir>(
     TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
 }
 
-fn type_size(hir: &HirData, ty: hir::Type) -> Option<hir::Size> {
+fn type_size(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    ty: hir::Type,
+    source: SourceRange,
+) -> Option<hir::Size> {
     match ty {
-        hir::Type::Error => return None,
+        hir::Type::Error => None,
         hir::Type::Basic(basic) => Some(basic_type_size(basic)),
         hir::Type::Enum(id) => Some(basic_type_size(hir.registry().enum_data(id).basic)),
         hir::Type::Union(id) => hir.registry().union_data(id).size_eval.get_size(),
@@ -1344,7 +1389,27 @@ fn type_size(hir: &HirData, ty: hir::Type) -> Option<hir::Size> {
         hir::Type::Procedure(_) => Some(hir::Size::new_equal(8)),    //@assume 64bit target
         hir::Type::ArraySlice(_) => Some(hir::Size::new(16, 8)),     //@assume 64bit target
         hir::Type::ArrayStatic(array) => {
-            todo!("array static sizing (size is const_expr which isnt correct currently)")
+            if let (Some(elem_size), Some(len)) = (
+                type_size(hir, emit, array.elem_ty, source),
+                array_static_get_len(hir, emit, array.len),
+            ) {
+                if let Some(array_size) = elem_size.size().checked_mul(len) {
+                    Some(hir::Size::new(array_size, elem_size.align()))
+                } else {
+                    emit.error(ErrorComp::error(
+                        format!(
+                            "array size overflow: `{}` * `{}` (elem_size * array_len)",
+                            elem_size.size(),
+                            len
+                        ),
+                        source,
+                        None,
+                    ));
+                    None
+                }
+            } else {
+                None
+            }
         }
     }
 }
@@ -1529,12 +1594,14 @@ fn typecheck_sizeof<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: ast::Type,
+    expr_range: TextRange, //@temp? used for array size overflow error
 ) -> TypeResult<'hir> {
     let ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
-    let sizeof_expr = match type_size(hir, ty) {
+    //@review source range for this type_size error 10.05.24
+    let sizeof_expr = match type_size(hir, emit, ty, hir.src(proc.origin(), expr_range)) {
         Some(size) => emit.arena.alloc(hir::Expr::LitInt {
             val: size.size(),
             ty: BasicType::Usize,
@@ -2161,19 +2228,21 @@ fn typecheck_binary<'hir>(
             // same question about folding the sizeof()
             // size only known when target arch is known
 
-            match (lhs_res.ty, rhs_res.ty) {
-                (hir::Type::Basic(lhs_basic), hir::Type::Basic(rhs_basic)) => {
-                    if matches!(
-                        BasicTypeKind::from_basic(lhs_basic),
-                        BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-                    ) && matches!(
-                        BasicTypeKind::from_basic(rhs_basic),
-                        BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-                    ) {
-                        let lhs_size = basic_type_size(lhs_basic).size();
-                        let rhs_size = basic_type_size(rhs_basic).size();
-                        if lhs_size != rhs_size {
-                            emit.error(ErrorComp::error(
+            if let (hir::Type::Basic(lhs_basic), hir::Type::Basic(rhs_basic)) =
+                (lhs_res.ty, rhs_res.ty)
+            {
+                // checks that integers types have same size
+                if matches!(
+                    BasicTypeKind::from_basic(lhs_basic),
+                    BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+                ) && matches!(
+                    BasicTypeKind::from_basic(rhs_basic),
+                    BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
+                ) {
+                    let lhs_size = basic_type_size(lhs_basic).size();
+                    let rhs_size = basic_type_size(rhs_basic).size();
+                    if lhs_size != rhs_size {
+                        emit.error(ErrorComp::error(
                                 format!(
                                     "cannot use bit-shift operator on integers of different sizes\n`{}` has bitwidth of {}, `{}` has bitwidth of {} ",
                                     type_format(hir, emit, lhs_res.ty),
@@ -2184,10 +2253,8 @@ fn typecheck_binary<'hir>(
                                 hir.src(proc.origin(), lhs.range),
                                 None,
                             ));
-                        }
                     }
                 }
-                _ => {}
             }
 
             let binary_ty = if check_type_allow_shl_shr(lhs_res.ty) {
