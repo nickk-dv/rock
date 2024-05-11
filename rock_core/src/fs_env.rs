@@ -10,7 +10,7 @@ pub fn current_exe_path() -> Result<PathBuf, ErrorComp> {
     })
 }
 
-pub fn dir_get_current() -> Result<PathBuf, ErrorComp> {
+pub fn dir_get_current_working() -> Result<PathBuf, ErrorComp> {
     std::env::current_dir().map_err(|io_error| {
         ErrorComp::message(format!(
             "failed to get working directory\nreason: {}",
@@ -19,7 +19,7 @@ pub fn dir_get_current() -> Result<PathBuf, ErrorComp> {
     })
 }
 
-pub fn dir_set_current(path: &PathBuf) -> Result<(), ErrorComp> {
+pub fn dir_set_current_working(path: &PathBuf) -> Result<(), ErrorComp> {
     std::env::set_current_dir(path).map_err(|io_error| {
         ErrorComp::message(format!(
             "failed to set working directory: `{}`\nreason: {}",
@@ -29,7 +29,10 @@ pub fn dir_set_current(path: &PathBuf) -> Result<(), ErrorComp> {
     })
 }
 
-pub fn dir_create(path: &PathBuf) -> Result<(), ErrorComp> {
+pub fn dir_create(path: &PathBuf, force: bool) -> Result<(), ErrorComp> {
+    if !force && path.exists() {
+        return Ok(());
+    }
     std::fs::create_dir(path).map_err(|io_error| {
         ErrorComp::message(format!(
             "failed to create directory: `{}`\nreason: {}",
@@ -63,6 +66,16 @@ pub fn file_create_or_rewrite(path: &PathBuf, text: &str) -> Result<(), ErrorCom
     std::fs::write(path, text).map_err(|io_error| {
         ErrorComp::message(format!(
             "failed to create file: `{}`\nreason: {}",
+            path.to_string_lossy(),
+            io_error
+        ))
+    })
+}
+
+pub fn file_remove(path: &PathBuf) -> Result<(), ErrorComp> {
+    std::fs::remove_file(path).map_err(|io_error| {
+        ErrorComp::message(format!(
+            "failed to remove file: `{}`\nreason: {}",
             path.to_string_lossy(),
             io_error
         ))

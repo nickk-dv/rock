@@ -124,15 +124,15 @@ r#"
 }
 
 pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
-    let cwd = fs_env::dir_get_current()?;
+    let cwd = fs_env::dir_get_current_working()?;
     let root_dir = cwd.join(&data.name);
     let src_dir = root_dir.join("src");
     let build_dir = root_dir.join("build");
 
     package_name_check(&data.name)?;
-    fs_env::dir_create(&root_dir)?;
-    fs_env::dir_create(&src_dir)?;
-    fs_env::dir_create(&build_dir)?;
+    fs_env::dir_create(&root_dir, true)?;
+    fs_env::dir_create(&src_dir, true)?;
+    fs_env::dir_create(&build_dir, true)?;
 
     let main_content: String = format!(
         r#"import core/io;
@@ -188,7 +188,7 @@ proc test() {{
     if !data.no_git {
         fs_env::file_create_or_rewrite(&root_dir.join(".gitignore"), "build/\n")?;
         fs_env::file_create_or_rewrite(&root_dir.join("README.md"), &format!("# {}\n", data.name))?;
-        fs_env::dir_set_current(&root_dir)?;
+        fs_env::dir_set_current_working(&root_dir)?;
         std::process::Command::new("git")
             .arg("init")
             .stdout(std::process::Stdio::null())

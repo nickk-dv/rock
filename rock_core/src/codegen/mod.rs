@@ -1,5 +1,6 @@
 use crate::ast;
 use crate::error::ErrorComp;
+use crate::fs_env;
 use crate::hir;
 use crate::intern::InternID;
 use crate::session::BuildKind;
@@ -155,16 +156,16 @@ impl<'ctx> Codegen<'ctx> {
             )));
         }
 
-        let mut build_dir = std::env::current_dir().expect("cwd");
+        let mut build_dir = fs_env::dir_get_current_working()?;
         build_dir.push("build");
-        let _ = std::fs::create_dir(&build_dir);
+        fs_env::dir_create(&build_dir, false)?;
 
         let kind = config.kind();
         match kind {
             BuildKind::Debug => build_dir.push("debug"),
             BuildKind::Release => build_dir.push("release"),
         }
-        let _ = std::fs::create_dir(&build_dir);
+        fs_env::dir_create(&build_dir, false)?;
 
         let mut object_path = build_dir.clone();
         object_path.push(format!("{}.o", bin_name));
@@ -197,7 +198,7 @@ impl<'ctx> Codegen<'ctx> {
                     io_error
                 ))
             })?;
-        let _ = std::fs::remove_file(object_path);
+        fs_env::file_remove(&object_path)?;
 
         if let BuildConfig::Run(_, args) = config {
             std::process::Command::new(executable_path.as_os_str())

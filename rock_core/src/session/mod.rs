@@ -105,7 +105,7 @@ impl PackageData {
 
 fn create_session() -> Result<Session, ErrorComp> {
     let mut session = Session {
-        cwd: fs_env::dir_get_current()?,
+        cwd: fs_env::dir_get_current_working()?,
         files: Vec::new(),
         packages: Vec::new(),
     };
