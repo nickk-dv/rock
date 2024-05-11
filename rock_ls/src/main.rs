@@ -148,9 +148,9 @@ fn url_from_path(path: &PathBuf) -> lsp_types::Url {
 fn source_to_range_and_path(session: &Session, source: SourceRange) -> (Range, &PathBuf) {
     let file = session.file(source.file_id());
 
-    let (start_location, _) =
+    let start_location =
         text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
-    let (end_location, _) =
+    let end_location =
         text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
 
     let range = Range::new(

@@ -38,8 +38,8 @@ impl<'src> ContextFmt<'src> {
             .unwrap_or_else(|_| &file.path);
 
         let range = context.source().range();
-        let (location, line_range) =
-            text::find_text_location(&file.source, range.start(), &file.line_ranges);
+        let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
+        let line_range = file.line_ranges[location.line_index()];
         let line_num = location.line().to_string();
 
         ContextFmt {

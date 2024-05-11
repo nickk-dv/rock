@@ -1,19 +1,25 @@
 use std::fmt;
 
+/// `TextRange` byte range in text  
+/// Invariant: `start <= end`
 #[derive(Copy, Clone, PartialEq)]
 pub struct TextRange {
     start: TextOffset,
     end: TextOffset,
 }
 
+/// `TextOffset` byte offset in text
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TextOffset(u32);
+
+/// `TextLocation`  
+/// `line` 1 based line number  
+/// `col`  1 based utf8 char number
 #[derive(Copy, Clone, PartialEq)]
 pub struct TextLocation {
     line: u32,
     col: u32,
 }
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TextOffset(u32);
 
 impl TextRange {
     #[inline]
@@ -64,12 +70,16 @@ impl TextRange {
 
 impl TextLocation {
     #[inline]
-    pub const fn new(line: u32, col: u32) -> TextLocation {
+    const fn new(line: u32, col: u32) -> TextLocation {
         TextLocation { line, col }
     }
     #[inline]
     pub const fn line(&self) -> u32 {
         self.line
+    }
+    #[inline]
+    pub const fn line_index(&self) -> usize {
+        (self.line - 1) as usize
     }
     #[inline]
     pub const fn col(&self) -> u32 {
@@ -134,9 +144,11 @@ impl fmt::Debug for TextLocation {
 pub fn find_line_ranges(text: &str) -> Vec<TextRange> {
     let mut ranges = Vec::new();
     let mut range = TextRange::empty_at(0.into());
+
     for c in text.chars() {
         let size: TextOffset = (c.len_utf8() as u32).into();
         range.extend_by(size);
+
         if c == '\n' {
             ranges.push(range);
             range = TextRange::empty_at(range.end());
@@ -145,6 +157,7 @@ pub fn find_line_ranges(text: &str) -> Vec<TextRange> {
     if !range.is_empty() {
         ranges.push(range);
     }
+
     ranges
 }
 
@@ -152,9 +165,16 @@ pub fn find_text_location(
     text: &str,
     offset: TextOffset,
     line_ranges: &[TextRange],
-) -> (TextLocation, TextRange) {
-    for (line, range) in line_ranges.iter().enumerate() {
-        let contains = if line + 1 == line_ranges.len() {
+) -> TextLocation {
+    let mut size = line_ranges.len();
+    let mut left = 0_usize;
+    let mut right = size;
+
+    while left < right {
+        let mid = left + size / 2;
+        let range = line_ranges[mid];
+
+        let contains = if mid + 1 == line_ranges.len() {
             range.contains_inclusive(offset)
         } else {
             range.contains_exclusive(offset)
@@ -163,18 +183,22 @@ pub fn find_text_location(
         if contains {
             let prefix_range = TextRange::new(range.start(), offset);
             let prefix = &text[prefix_range.as_usize()];
-            return (
-                TextLocation::new(line as u32 + 1, prefix.chars().count() as u32 + 1),
-                *range,
-            );
+            let location = TextLocation::new(mid as u32 + 1, prefix.chars().count() as u32 + 1);
+            return location;
+        } else if offset < range.start() {
+            right = mid;
+        } else {
+            left = mid + 1;
         }
+
+        size = right - left;
     }
-    //@can fail (most often in current lsp that runs full check pass, and can de-sync), handle gracefully
-    panic!(
-        "text location not found, offset: {:?} text len: {}",
-        offset,
-        text.len()
+
+    let error = format!(
+        "failed: text::find_text_location()\noffset: {:?}\ntext:\n{}",
+        offset, text
     );
+    panic!("{error}");
 }
 
 #[test]
@@ -183,19 +207,17 @@ fn test() {
     use crate::session::FileID;
 
     let text = "foo\nbaz";
-    let tokens = if let Ok(tokens) = lexer::lex(text, FileID::new(0), false) {
-        tokens
-    } else {
-        panic!("lex failed");
-    };
+    let tokens = lexer::lex(text, FileID::new(0), false)
+        .map_err(|_| "")
+        .unwrap();
 
     let line_ranges = find_line_ranges(text);
     let foo_range = TextRange::new(0.into(), 3.into());
     let baz_range = TextRange::new(4.into(), 7.into());
-    let (foo_loc_start, _) = find_text_location(text, foo_range.start(), &line_ranges);
-    let (foo_loc_end, _) = find_text_location(text, foo_range.end(), &line_ranges);
-    let (baz_loc_start, _) = find_text_location(text, baz_range.start(), &line_ranges);
-    let (baz_loc_end, _) = find_text_location(text, baz_range.end(), &line_ranges);
+    let foo_loc_start = find_text_location(text, foo_range.start(), &line_ranges);
+    let foo_loc_end = find_text_location(text, foo_range.end(), &line_ranges);
+    let baz_loc_start = find_text_location(text, baz_range.start(), &line_ranges);
+    let baz_loc_end = find_text_location(text, baz_range.end(), &line_ranges);
 
     assert_eq!(line_ranges[0], TextRange::new(0.into(), 4.into()));
     assert_eq!(line_ranges[1], TextRange::new(4.into(), 7.into()));
