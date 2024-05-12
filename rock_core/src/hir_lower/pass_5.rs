@@ -26,6 +26,8 @@ enum ConstDependency {
     EnumVariant(hir::EnumID, hir::EnumVariantID),
     UnionSize(hir::UnionID),
     StructSize(hir::StructID),
+    Const(hir::ConstID),
+    Global(hir::GlobalID),
 }
 
 struct Tree<T: PartialEq + Copy + Clone> {
@@ -39,8 +41,15 @@ struct TreeNodeID(u32);
 struct TreeNode<T: PartialEq + Copy + Clone> {
     value: T,
     parent: Option<TreeNodeID>,
-    first_child: Option<TreeNodeID>,
-    last_child: Option<TreeNodeID>,
+}
+
+impl TreeNodeID {
+    const fn new(index: usize) -> TreeNodeID {
+        TreeNodeID(index as u32)
+    }
+    const fn index(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl<T: PartialEq + Copy + Clone> Tree<T> {
@@ -50,8 +59,6 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
             nodes: vec![TreeNode {
                 value: root,
                 parent: None,
-                first_child: None,
-                last_child: None,
             }],
         };
         (tree, root_id)
@@ -63,15 +70,7 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
         self.nodes.push(TreeNode {
             value,
             parent: Some(parent_id),
-            first_child: None,
-            last_child: None,
         });
-
-        let parent = self.get_node_mut(parent_id);
-        if parent.first_child.is_none() {
-            parent.first_child = Some(id);
-        }
-        parent.last_child = Some(id);
         id
     }
 
@@ -119,33 +118,28 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     fn get_node(&self, id: TreeNodeID) -> &TreeNode<T> {
         &self.nodes[id.index()]
     }
-    fn get_node_mut(&mut self, id: TreeNodeID) -> &mut TreeNode<T> {
-        &mut self.nodes[id.index()]
-    }
-}
-
-impl TreeNodeID {
-    const fn new(index: usize) -> TreeNodeID {
-        TreeNodeID(index as u32)
-    }
-    const fn index(self) -> usize {
-        self.0 as usize
-    }
 }
 
 fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
     for id in hir.registry().enum_ids() {
         let data = hir.registry().enum_data(id);
 
-        for variant in data.variants {
-            //@check & resolve
+        for (idx, variant) in data.variants.iter().enumerate() {
+            let eval = hir.registry().const_eval(variant.value);
+            let variant_id = hir::EnumVariantID::new(idx);
+
+            if matches!(eval, hir::ConstEval::Unresolved(expr)) {
+                let (mut tree, root_id) =
+                    Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
+                // check dependencies & resolve tree
+            }
         }
     }
 
     for id in hir.registry().union_ids() {
-        let data = hir.registry().union_data(id);
+        let eval = hir.registry().union_data(id).size_eval;
 
-        if matches!(data.size_eval, hir::SizeEval::Unresolved) {
+        if matches!(eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::UnionSize(id));
             if check_union_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
                 resolve_const_dependency_tree(hir, emit, &tree);
@@ -154,9 +148,9 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
     }
 
     for id in hir.registry().struct_ids() {
-        let data = hir.registry().struct_data(id);
+        let eval = hir.registry().struct_data(id).size_eval;
 
-        if matches!(data.size_eval, hir::SizeEval::Unresolved) {
+        if matches!(eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
             if check_struct_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
                 resolve_const_dependency_tree(hir, emit, &tree);
@@ -166,24 +160,34 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
 
     for id in hir.registry().const_ids() {
         let data = hir.registry().const_data(id);
-        //@check & resolve
+        let eval = hir.registry().const_eval(data.value);
+
+        if matches!(eval, hir::ConstEval::Unresolved(expr)) {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
+            // check dependencies & resolve tree
+        }
     }
 
     for id in hir.registry().global_ids() {
         let data = hir.registry().global_data(id);
-        //@check & resolve
+        let eval = hir.registry().const_eval(data.value);
+
+        if matches!(eval, hir::ConstEval::Unresolved(expr)) {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
+            // check dependencies & resolve tree
+        }
     }
 }
 
-// is rev order stable when dealing with recursive tree inputs? seems like it @01.05.24
 fn resolve_const_dependency_tree(
     hir: &mut HirData,
     emit: &mut HirEmit,
     tree: &Tree<ConstDependency>,
 ) {
+    // reverse iteration allows to resolve dependencies in correct order
     for node in tree.nodes.iter().rev() {
         match node.value {
-            ConstDependency::EnumVariant(_, _) => {
+            ConstDependency::EnumVariant(id, variant_id) => {
                 todo!("EnumVariant const resolve not implemented")
             }
             ConstDependency::UnionSize(id) => {
@@ -193,6 +197,12 @@ fn resolve_const_dependency_tree(
             ConstDependency::StructSize(id) => {
                 let size_eval = resolve_struct_size(hir, emit, id);
                 hir.registry_mut().struct_data_mut(id).size_eval = size_eval;
+            }
+            ConstDependency::Const(id) => {
+                todo!("Const const resolve not implemented")
+            }
+            ConstDependency::Global(id) => {
+                todo!("Global const resolve not implemented")
             }
         }
     }
@@ -290,8 +300,14 @@ fn check_const_dependency_cycle(
     let mut message = String::from("constant dependency cycle found: \n");
     for const_dep in cycle_deps.iter().cloned().rev() {
         match const_dep {
-            ConstDependency::EnumVariant(_, _) => {
-                panic!("EnumVariant const dependency is not supported")
+            ConstDependency::EnumVariant(id, variant_id) => {
+                let data = hir.registry().enum_data(id);
+                let variant = data.variant(variant_id);
+                message.push_str(&format!(
+                    "`{}.{}` -> ",
+                    hir.name_str(data.name.id),
+                    hir.name_str(variant.name.id)
+                ));
             }
             ConstDependency::UnionSize(id) => {
                 let data = hir.registry().union_data(id);
@@ -301,14 +317,25 @@ fn check_const_dependency_cycle(
                 let data = hir.registry().struct_data(id);
                 message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
             }
+            ConstDependency::Const(id) => {
+                let data = hir.registry().const_data(id);
+                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
+            }
+            ConstDependency::Global(id) => {
+                let data = hir.registry().global_data(id);
+                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
+            }
         }
     }
 
     // mark as error up to root
     for const_dep in parents_deps {
         match const_dep {
-            ConstDependency::EnumVariant(_, _) => {
-                panic!("EnumVariant const dependency is not supported")
+            ConstDependency::EnumVariant(id, variant_id) => {
+                let data = hir.registry_mut().enum_data(id);
+                let eval_id = data.variant(variant_id).value;
+                let eval = hir.registry_mut().const_eval_mut(eval_id);
+                *eval = hir::ConstEval::Error;
             }
             ConstDependency::UnionSize(id) => {
                 let data = hir.registry_mut().union_data_mut(id);
@@ -317,6 +344,18 @@ fn check_const_dependency_cycle(
             ConstDependency::StructSize(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
                 data.size_eval = hir::SizeEval::Error;
+            }
+            ConstDependency::Const(id) => {
+                let data = hir.registry().const_data(id);
+                let eval_id = data.value;
+                let eval = hir.registry_mut().const_eval_mut(eval_id);
+                *eval = hir::ConstEval::Error;
+            }
+            ConstDependency::Global(id) => {
+                let data = hir.registry().global_data(id);
+                let eval_id = data.value;
+                let eval = hir.registry_mut().const_eval_mut(eval_id);
+                *eval = hir::ConstEval::Error;
             }
         }
     }
@@ -331,6 +370,10 @@ fn check_const_dependency_cycle(
 // knowing that something is an Error can save processing time on constants up the tree
 // which would eventually be resolved to same Error
 // since they depend on constant which is already known to be Error
+
+//@make a function to add const depepencies and check cycles for any ConstDependency ? @12.05.24
+// instead of doing per type duplication?
+// and extract dependencies or find errors early on types / expressions
 fn check_union_size_const_dependency(
     hir: &mut HirData,
     emit: &mut HirEmit,
