@@ -442,7 +442,7 @@ fn check_union_size_const_dependency(
         hir::SizeEval::Resolved(_) => Ok(()),
         hir::SizeEval::Unresolved => {
             for member in data.members {
-                check_type_const_dependency(hir, emit, tree, parent_id, member.ty)?;
+                check_type_size_const_dependency(hir, emit, tree, parent_id, member.ty)?;
             }
             Ok(())
         }
@@ -465,14 +465,14 @@ fn check_struct_size_const_dependency(
         hir::SizeEval::Resolved(_) => Ok(()),
         hir::SizeEval::Unresolved => {
             for field in data.fields {
-                check_type_const_dependency(hir, emit, tree, parent_id, field.ty)?;
+                check_type_size_const_dependency(hir, emit, tree, parent_id, field.ty)?;
             }
             Ok(())
         }
     }
 }
 
-fn check_type_const_dependency(
+fn check_type_size_const_dependency(
     hir: &mut HirData,
     emit: &mut HirEmit,
     tree: &mut Tree<ConstDependency>,
@@ -480,6 +480,9 @@ fn check_type_const_dependency(
     ty: hir::Type,
 ) -> Result<(), ()> {
     match ty {
+        hir::Type::Error => {}
+        hir::Type::Basic(_) => {}
+        hir::Type::Enum(_) => {}
         hir::Type::Union(id) => {
             let node_id: TreeNodeID = tree.add_child(parent_id, ConstDependency::UnionSize(id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
@@ -490,14 +493,56 @@ fn check_type_const_dependency(
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
             check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
         }
-        hir::Type::ArraySlice(slice) => {
-            check_type_const_dependency(hir, emit, tree, parent_id, slice.elem_ty)?;
-        }
+        hir::Type::Reference(_, _) => {}
+        hir::Type::Procedure(_) => {}
+        hir::Type::ArraySlice(_) => {}
         hir::Type::ArrayStatic(array) => {
             // @size expression dependency
-            check_type_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
+            check_type_size_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
         }
-        _ => {}
+    }
+    Ok(())
+}
+
+fn check_type_usage_const_dependency(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    ty: hir::Type,
+) -> Result<(), ()> {
+    match ty {
+        hir::Type::Error => {}
+        hir::Type::Basic(_) => {}
+        hir::Type::Enum(_) => {}
+        hir::Type::Union(id) => {
+            let data = hir.registry().union_data(id);
+            for member in data.members {
+                check_type_usage_const_dependency(hir, emit, tree, parent_id, member.ty)?
+            }
+        }
+        hir::Type::Struct(id) => {
+            let data = hir.registry().struct_data(id);
+            for field in data.fields {
+                check_type_usage_const_dependency(hir, emit, tree, parent_id, field.ty)?
+            }
+        }
+        hir::Type::Reference(ref_ty, _) => {
+            check_type_usage_const_dependency(hir, emit, tree, parent_id, *ref_ty)?
+        }
+        hir::Type::Procedure(proc_ty) => {
+            for param in proc_ty.params {
+                check_type_usage_const_dependency(hir, emit, tree, parent_id, *param)?
+            }
+            check_type_usage_const_dependency(hir, emit, tree, parent_id, proc_ty.return_ty)?
+        }
+        hir::Type::ArraySlice(slice) => {
+            check_type_usage_const_dependency(hir, emit, tree, parent_id, slice.elem_ty)?;
+        }
+        hir::Type::ArrayStatic(array) => {
+            // @todo size expression dependency
+            check_type_usage_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
+        }
     }
     Ok(())
 }
