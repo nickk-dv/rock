@@ -142,16 +142,16 @@ pub enum ConstEval<'hir, 'ast> {
 
 #[derive(Copy, Clone)]
 pub enum SizeEval {
-    Error,
     Unresolved,
+    ResolvedError,
     Resolved(Size),
 }
 
 impl SizeEval {
     pub fn get_size(self) -> Option<Size> {
         match self {
-            SizeEval::Error => None,
             SizeEval::Unresolved => None,
+            SizeEval::ResolvedError => None,
             SizeEval::Resolved(size) => Some(size),
         }
     }

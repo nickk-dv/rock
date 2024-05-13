@@ -19,6 +19,24 @@ enum EnumTest {
     D,
     V,
 }
+
+Field dependency example:
+(doesnt make sence due to full initializer being needed
+before field is accessed, so keep only full struct size dependency)
+
+// overall Vec3 (sizeof) depends on .y field which depends on COUNT -> cycle
+// but granular field dependencies simplify the problem of overcompensation:
+
+struct Vec3 {
+    x: i32,
+    y: [COUNT]i32, // .y field depends on COUNT
+}
+
+global VEC_VALUE: Vec3 = VEC_VALUE.{ 10, [1, 2, 3] }; // depends on all fields
+const COUNT: usize = VEC_VALUE.y[2]; // depends on VEC_VALUE and .y field
+
+const COUNT_2: usize = VEC_VALUE.x; // does this still error?
+
 */
 
 #[derive(Copy, Clone, PartialEq)]
@@ -75,8 +93,9 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 
     #[must_use]
-    fn find_cycle(&self, id: TreeNodeID, value: T) -> Option<TreeNodeID> {
+    fn find_cycle(&self, id: TreeNodeID) -> Option<TreeNodeID> {
         let mut node = self.get_node(id);
+        let value = node.value;
 
         while let Some(parent_id) = node.parent {
             node = self.get_node(parent_id);
@@ -87,32 +106,30 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
         None
     }
 
-    fn get_parents_up_to_node(&self, from_id: TreeNodeID, up_to: TreeNodeID) -> Vec<T> {
+    fn get_values_up_to_node(&self, from_id: TreeNodeID, up_to: TreeNodeID) -> Vec<T> {
         assert_ne!(from_id, up_to);
         let mut node = self.get_node(from_id);
-        let mut parents = vec![node.value];
+        let mut values = vec![node.value];
 
         while let Some(parent_id) = node.parent {
             node = self.get_node(parent_id);
-            parents.push(node.value);
+            values.push(node.value);
             if parent_id == up_to {
-                return parents;
+                return values;
             }
         }
-
-        parents
+        values
     }
 
-    fn get_parents_up_to_root(&self, from_id: TreeNodeID) -> Vec<T> {
+    fn get_values_up_to_root(&self, from_id: TreeNodeID) -> Vec<T> {
         let mut node = self.get_node(from_id);
-        let mut parents = vec![node.value];
+        let mut values = vec![node.value];
 
         while let Some(parent_id) = node.parent {
             node = self.get_node(parent_id);
-            parents.push(node.value);
+            values.push(node.value);
         }
-
-        parents
+        values
     }
 
     fn get_node(&self, id: TreeNodeID) -> &TreeNode<T> {
@@ -228,7 +245,7 @@ fn resolve_union_size(hir: &HirData, emit: &mut HirEmit, union_id: hir::UnionID)
             hir.src(data.origin_id, member.name.range), //@review source range for this type_size error 10.05.24
         ) {
             Some(size) => (size.size(), size.align()),
-            None => return hir::SizeEval::Error,
+            None => return hir::SizeEval::ResolvedError,
         };
         size = size.max(member_size);
         align = align.max(member_align);
@@ -254,7 +271,7 @@ fn resolve_struct_size(
             hir.src(data.origin_id, field.name.range), //@review source range for this type_size error 10.05.24
         ) {
             Some(size) => (size.size(), size.align()),
-            None => return hir::SizeEval::Error,
+            None => return hir::SizeEval::ResolvedError,
         };
         size = aligned_size(size, field_align);
         size = if let Some(new_size) = size.checked_add(field_size) {
@@ -268,7 +285,7 @@ fn resolve_struct_size(
                 hir.src(data.origin_id, field.name.range), //@review source range for size overflow error 10.05.24
                 None,
             ));
-            return hir::SizeEval::Error;
+            return hir::SizeEval::ResolvedError;
         };
         align = align.max(field_align);
     }
@@ -277,27 +294,32 @@ fn resolve_struct_size(
     hir::SizeEval::Resolved(hir::Size::new(size, align))
 }
 
+//@improve messaging by using Info vectors @13.05.24
+// will require to allow errors to have multiple Info contexts
+// also use: "depends on:" "which depends on:" "... , completing the cycle"
+//@opt reduce vector allocation for cycles? (rarely happens) @13.05.24
 fn check_const_dependency_cycle(
     hir: &mut HirData,
     emit: &mut HirEmit,
     tree: &Tree<ConstDependency>,
     parent_id: TreeNodeID,
     node_id: TreeNodeID,
-    dep: ConstDependency,
-    src: SourceRange,
 ) -> Result<(), ()> {
-    let cycle_id = match tree.find_cycle(node_id, dep) {
+    let cycle_id = match tree.find_cycle(node_id) {
         Some(cycle_id) => cycle_id,
         None => return Ok(()),
     };
 
-    //@better alternative would be to have iterators for this purpose @30.04.24
-    // without any need to get vectors of links twice (they partially overlap)
-    let cycle_deps = tree.get_parents_up_to_node(node_id, cycle_id);
-    let parents_deps = tree.get_parents_up_to_root(parent_id);
+    // node that caused the cycle does not get marked as error
+    //@is this correct? how does this affect error and coverage of marked expressions? @13.05.24
+    //- this prevents duplicate cycle report when evaluating parents
+    //- still might be able to do surface level resolution on "Error" constant expressions
+    // even if they cannot be resolved? (eg: name resolution) without trying to compute values (seems like a correct strategy)
+    const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
 
-    // create error message up to cycle
+    let cycle_deps = tree.get_values_up_to_node(node_id, cycle_id);
     let mut message = String::from("constant dependency cycle found: \n");
+
     for const_dep in cycle_deps.iter().cloned().rev() {
         match const_dep {
             ConstDependency::EnumVariant(id, variant_id) => {
@@ -327,23 +349,57 @@ fn check_const_dependency_cycle(
             }
         }
     }
+    message.push_str("completing the cycle");
 
-    // mark as error up to root
-    for const_dep in parents_deps {
-        match const_dep {
+    let src = match tree.get_node(cycle_id).value {
+        ConstDependency::EnumVariant(id, variant_id) => {
+            let data = hir.registry().enum_data(id);
+            let variant = data.variant(variant_id);
+            hir.src(data.origin_id, variant.name.range)
+        }
+        ConstDependency::UnionSize(id) => {
+            let data = hir.registry().union_data(id);
+            hir.src(data.origin_id, data.name.range)
+        }
+        ConstDependency::StructSize(id) => {
+            let data = hir.registry().struct_data(id);
+            hir.src(data.origin_id, data.name.range)
+        }
+        ConstDependency::Const(id) => {
+            let data = hir.registry().const_data(id);
+            hir.src(data.origin_id, data.name.range)
+        }
+        ConstDependency::Global(id) => {
+            let data = hir.registry().global_data(id);
+            hir.src(data.origin_id, data.name.range)
+        }
+    };
+
+    emit.error(ErrorComp::error(message, src, None));
+    Err(())
+}
+
+fn const_dependencies_mark_error_up_to_root(
+    hir: &mut HirData,
+    tree: &Tree<ConstDependency>,
+    from_id: TreeNodeID,
+) {
+    let const_deps = tree.get_values_up_to_root(from_id);
+    for dep in const_deps {
+        match dep {
             ConstDependency::EnumVariant(id, variant_id) => {
-                let data = hir.registry_mut().enum_data(id);
+                let data = hir.registry().enum_data(id);
                 let eval_id = data.variant(variant_id).value;
                 let eval = hir.registry_mut().const_eval_mut(eval_id);
                 *eval = hir::ConstEval::Error;
             }
             ConstDependency::UnionSize(id) => {
                 let data = hir.registry_mut().union_data_mut(id);
-                data.size_eval = hir::SizeEval::Error;
+                data.size_eval = hir::SizeEval::ResolvedError;
             }
             ConstDependency::StructSize(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
-                data.size_eval = hir::SizeEval::Error;
+                data.size_eval = hir::SizeEval::ResolvedError;
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
@@ -359,9 +415,6 @@ fn check_const_dependency_cycle(
             }
         }
     }
-
-    emit.error(ErrorComp::error(message, src, None));
-    Err(())
 }
 
 // currently only cycles cause making as Error up to root and returning @01.05.24
@@ -373,7 +426,6 @@ fn check_const_dependency_cycle(
 
 //@make a function to add const depepencies and check cycles for any ConstDependency ? @12.05.24
 // instead of doing per type duplication?
-// and extract dependencies or find errors early on types / expressions
 fn check_union_size_const_dependency(
     hir: &mut HirData,
     emit: &mut HirEmit,
@@ -381,32 +433,20 @@ fn check_union_size_const_dependency(
     parent_id: TreeNodeID,
     union_id: hir::UnionID,
 ) -> Result<(), ()> {
-    for member in hir.registry().union_data(union_id).members {
-        match member.ty {
-            hir::Type::Union(id) => {
-                let dep = ConstDependency::UnionSize(id);
-                let node_id = tree.add_child(parent_id, dep);
-                let src = hir.src(
-                    hir.registry().union_data(union_id).origin_id,
-                    member.name.range,
-                );
-                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
-                check_union_size_const_dependency(hir, emit, tree, node_id, id)?;
+    let data = hir.registry().union_data(union_id);
+    match data.size_eval {
+        hir::SizeEval::ResolvedError => {
+            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
+            Err(()) //@potentially return Ok without marking? more coverage if top level will resolve even with some Errors in that tree?
+        }
+        hir::SizeEval::Resolved(_) => Ok(()),
+        hir::SizeEval::Unresolved => {
+            for member in data.members {
+                check_type_const_dependency(hir, emit, tree, parent_id, member.ty)?;
             }
-            hir::Type::Struct(id) => {
-                let dep = ConstDependency::StructSize(id);
-                let node_id = tree.add_child(parent_id, dep);
-                let src = hir.src(
-                    hir.registry().union_data(union_id).origin_id,
-                    member.name.range,
-                );
-                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
-                check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
-            }
-            _ => {}
+            Ok(())
         }
     }
-    Ok(())
 }
 
 fn check_struct_size_const_dependency(
@@ -416,30 +456,48 @@ fn check_struct_size_const_dependency(
     parent_id: TreeNodeID,
     struct_id: hir::StructID,
 ) -> Result<(), ()> {
-    for field in hir.registry().struct_data(struct_id).fields {
-        match field.ty {
-            hir::Type::Union(id) => {
-                let dep = ConstDependency::UnionSize(id);
-                let node_id = tree.add_child(parent_id, dep);
-                let src = hir.src(
-                    hir.registry().struct_data(struct_id).origin_id,
-                    field.name.range,
-                );
-                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
-                check_union_size_const_dependency(hir, emit, tree, node_id, id)?;
-            }
-            hir::Type::Struct(id) => {
-                let dep = ConstDependency::StructSize(id);
-                let node_id = tree.add_child(parent_id, dep);
-                let src = hir.src(
-                    hir.registry().struct_data(struct_id).origin_id,
-                    field.name.range,
-                );
-                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id, dep, src)?;
-                check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
-            }
-            _ => {}
+    let data = hir.registry().struct_data(struct_id);
+    match data.size_eval {
+        hir::SizeEval::ResolvedError => {
+            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
+            Err(()) //@potentially return Ok without marking? more coverage if top level will resolve even with some Errors in that tree?
         }
+        hir::SizeEval::Resolved(_) => Ok(()),
+        hir::SizeEval::Unresolved => {
+            for field in data.fields {
+                check_type_const_dependency(hir, emit, tree, parent_id, field.ty)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn check_type_const_dependency(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    ty: hir::Type,
+) -> Result<(), ()> {
+    match ty {
+        hir::Type::Union(id) => {
+            let node_id: TreeNodeID = tree.add_child(parent_id, ConstDependency::UnionSize(id));
+            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            check_union_size_const_dependency(hir, emit, tree, node_id, id)?;
+        }
+        hir::Type::Struct(id) => {
+            let node_id = tree.add_child(parent_id, ConstDependency::StructSize(id));
+            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            check_struct_size_const_dependency(hir, emit, tree, node_id, id)?;
+        }
+        hir::Type::ArraySlice(slice) => {
+            check_type_const_dependency(hir, emit, tree, parent_id, slice.elem_ty)?;
+        }
+        hir::Type::ArrayStatic(array) => {
+            // @size expression dependency
+            check_type_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
+        }
+        _ => {}
     }
     Ok(())
 }
