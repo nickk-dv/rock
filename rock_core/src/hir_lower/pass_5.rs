@@ -3,6 +3,7 @@ use super::proc_scope::{ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
+use crate::hir::intern::ConstValueID;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
 
@@ -145,10 +146,11 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
             let eval = hir.registry().const_eval(variant.value);
             let variant_id = hir::EnumVariantID::new(idx);
 
-            if matches!(eval, hir::ConstEval::Unresolved(expr)) {
+            if matches!(eval, hir::ConstEval::Unresolved(_)) {
                 let (mut tree, root_id) =
                     Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
-                // check dependencies & resolve tree
+                // check dependencies
+                resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
     }
@@ -179,9 +181,10 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
         let data = hir.registry().const_data(id);
         let eval = hir.registry().const_eval(data.value);
 
-        if matches!(eval, hir::ConstEval::Unresolved(expr)) {
+        if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
-            // check dependencies & resolve tree
+            // check dependencies
+            resolve_const_dependency_tree(hir, emit, &tree);
         }
     }
 
@@ -189,9 +192,10 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
         let data = hir.registry().global_data(id);
         let eval = hir.registry().const_eval(data.value);
 
-        if matches!(eval, hir::ConstEval::Unresolved(expr)) {
+        if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
-            // check dependencies & resolve tree
+            // check dependencies
+            resolve_const_dependency_tree(hir, emit, &tree);
         }
     }
 }
@@ -205,7 +209,10 @@ fn resolve_const_dependency_tree(
     for node in tree.nodes.iter().rev() {
         match node.value {
             ConstDependency::EnumVariant(id, variant_id) => {
-                todo!("EnumVariant const resolve not implemented")
+                let data = hir.registry().enum_data(id);
+                let variant = data.variant(variant_id);
+                let expect = hir::Type::Basic(data.basic);
+                resolve_and_update_const_eval(hir, emit, variant.value, data.origin_id, expect);
             }
             ConstDependency::UnionSize(id) => {
                 let size_eval = resolve_union_size(hir, emit, id);
@@ -216,12 +223,32 @@ fn resolve_const_dependency_tree(
                 hir.registry_mut().struct_data_mut(id).size_eval = size_eval;
             }
             ConstDependency::Const(id) => {
-                todo!("Const const resolve not implemented")
+                let data = hir.registry().const_data(id);
+                resolve_and_update_const_eval(hir, emit, data.value, data.origin_id, data.ty);
             }
             ConstDependency::Global(id) => {
-                todo!("Global const resolve not implemented")
+                let data = hir.registry().global_data(id);
+                resolve_and_update_const_eval(hir, emit, data.value, data.origin_id, data.ty);
             }
         }
+    }
+
+    fn resolve_and_update_const_eval(
+        hir: &mut HirData,
+        emit: &mut HirEmit,
+        eval_id: hir::ConstEvalID,
+        origin_id: hir::ModuleID,
+        expect: hir::Type,
+    ) {
+        let eval = hir.registry().const_eval(eval_id);
+        let value_id = match *eval {
+            hir::ConstEval::Unresolved(expr) => {
+                resolve_const_expr(hir, emit, origin_id, expect, expr)
+            }
+            _ => panic!("calling `resolve_const_expr` on already resolved expr"),
+        };
+        let eval = hir.registry_mut().const_eval_mut(eval_id);
+        *eval = hir::ConstEval::ResolvedValue(value_id);
     }
 }
 
@@ -292,6 +319,100 @@ fn resolve_struct_size(
 
     size = aligned_size(size, align);
     hir::SizeEval::Resolved(hir::Size::new(size, align))
+}
+
+//@check int, float value range constraints 14.05.24
+// same for typecheck_int_lit etc, regular expressions checking
+// should later be merged with this constant resolution / folding flow
+fn resolve_const_expr(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: hir::ModuleID,
+    expect: hir::Type,
+    expr: ast::ConstExpr,
+) -> ConstValueID {
+    let result: Result<(ConstValueID, hir::Type), &'static str> = match expr.0.kind {
+        ast::ExprKind::LitNull => {
+            //@coersion of rawptr `null` should be explicit via cast expression 14.05.24
+            // to make intention clear, same for conversion back to untyped rawptr
+            let value_id = emit.const_intern.intern(hir::ConstValue::Null);
+            Ok((value_id, hir::Type::Basic(BasicType::Rawptr)))
+        }
+        ast::ExprKind::LitBool { val } => {
+            let value_id = emit.const_intern.intern(hir::ConstValue::Bool { val });
+            Ok((value_id, hir::Type::Basic(BasicType::Bool)))
+        }
+        ast::ExprKind::LitInt { val } => {
+            let int_ty = coerce_int_type(expect);
+            let value_id = emit.const_intern.intern(hir::ConstValue::Int {
+                val,
+                neg: false,
+                ty: Some(int_ty),
+            });
+            Ok((value_id, hir::Type::Basic(int_ty)))
+        }
+        ast::ExprKind::LitFloat { val } => {
+            let float_ty = coerce_float_type(expect);
+            let value_id = emit.const_intern.intern(hir::ConstValue::Float {
+                val,
+                ty: Some(float_ty),
+            });
+            Ok((value_id, hir::Type::Basic(float_ty)))
+        }
+        ast::ExprKind::LitChar { val } => {
+            let value_id = emit.const_intern.intern(hir::ConstValue::Char { val });
+            Ok((value_id, hir::Type::Basic(BasicType::Char)))
+        }
+        ast::ExprKind::LitString { id, c_string } => {
+            let value_id = emit
+                .const_intern
+                .intern(hir::ConstValue::String { id, c_string });
+            let string_ty = alloc_string_lit_type(emit, c_string);
+            Ok((value_id, string_ty))
+        }
+        ast::ExprKind::If { .. } => Err("if"),
+        ast::ExprKind::Block { .. } => Err("block"),
+        ast::ExprKind::Match { .. } => Err("match"),
+        ast::ExprKind::Field { .. } => Err("field"),
+        ast::ExprKind::Index { .. } => Err("index"),
+        ast::ExprKind::Slice { .. } => Err("slice"),
+        ast::ExprKind::Call { .. } => Err("procedure call"),
+        ast::ExprKind::Cast { .. } => Err("cast"),
+        ast::ExprKind::Sizeof { .. } => Err("sizeof"),
+        ast::ExprKind::Item { .. } => Err("item"),
+        ast::ExprKind::StructInit { .. } => Err("structure initializer"),
+        ast::ExprKind::ArrayInit { .. } => Err("array initializer"),
+        ast::ExprKind::ArrayRepeat { .. } => Err("array repeat"),
+        ast::ExprKind::Address { .. } => Err("address"),
+        ast::ExprKind::Unary { .. } => Err("unary"),
+        ast::ExprKind::Binary { .. } => Err("binary"),
+    };
+
+    match result {
+        Ok((value_id, value_ty)) => {
+            //@copy paste from regular typecheck, will be used until better design is found 14.05.24
+            if !type_matches(hir, emit, expect, value_ty) {
+                emit.error(ErrorComp::error(
+                    format!(
+                        "type mismatch: expected `{}`, found `{}`",
+                        type_format(hir, emit, expect),
+                        type_format(hir, emit, value_ty)
+                    ),
+                    hir.src(origin_id, expr.0.range),
+                    None,
+                ));
+            }
+            value_id
+        }
+        Err(expr_name) => {
+            emit.error(ErrorComp::error(
+                format!("cannot use `{expr_name}` expression in constants"),
+                hir.src(origin_id, expr.0.range),
+                None,
+            ));
+            emit.const_intern.intern(hir::ConstValue::Error)
+        }
+    }
 }
 
 //@improve messaging by using Info vectors @13.05.24
@@ -497,7 +618,7 @@ fn check_type_size_const_dependency(
         hir::Type::Procedure(_) => {}
         hir::Type::ArraySlice(_) => {}
         hir::Type::ArrayStatic(array) => {
-            // @size expression dependency
+            // @array len expression dependency 14.05.24
             check_type_size_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
         }
     }
@@ -540,7 +661,7 @@ fn check_type_usage_const_dependency(
             check_type_usage_const_dependency(hir, emit, tree, parent_id, slice.elem_ty)?;
         }
         hir::Type::ArrayStatic(array) => {
-            // @todo size expression dependency
+            // @array len expression dependency 14.05.24
             check_type_usage_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
         }
     }
@@ -805,7 +926,7 @@ fn array_static_get_len<'hir>(
             hir::ConstEval::ResolvedValue(value_id) => {
                 let value = emit.const_intern.get(*value_id);
                 match value {
-                    hir::ConstValue::Int { val, neg } => {
+                    hir::ConstValue::Int { val, neg, ty } => {
                         if neg {
                             None
                         } else {
@@ -930,9 +1051,29 @@ fn typecheck_lit_int<'hir>(
     expect: hir::Type<'hir>,
     val: u64,
 ) -> TypeResult<'hir> {
+    let lit_type = coerce_int_type(expect);
+    TypeResult::new(
+        hir::Type::Basic(lit_type),
+        emit.arena.alloc(hir::Expr::LitInt { val, ty: lit_type }),
+    )
+}
+
+fn typecheck_lit_float<'hir>(
+    emit: &mut HirEmit<'hir>,
+    expect: hir::Type<'hir>,
+    val: f64,
+) -> TypeResult<'hir> {
+    let lit_type = coerce_float_type(expect);
+    TypeResult::new(
+        hir::Type::Basic(lit_type),
+        emit.arena.alloc(hir::Expr::LitFloat { val, ty: lit_type }),
+    )
+}
+
+fn coerce_int_type(expect: hir::Type) -> BasicType {
     const DEFAULT_INT_TYPE: BasicType = BasicType::S32;
 
-    let lit_type = match expect {
+    match expect {
         hir::Type::Basic(basic) => match basic {
             BasicType::S8
             | BasicType::S16
@@ -947,33 +1088,19 @@ fn typecheck_lit_int<'hir>(
             _ => DEFAULT_INT_TYPE,
         },
         _ => DEFAULT_INT_TYPE,
-    };
-
-    TypeResult::new(
-        hir::Type::Basic(lit_type),
-        emit.arena.alloc(hir::Expr::LitInt { val, ty: lit_type }),
-    )
+    }
 }
 
-fn typecheck_lit_float<'hir>(
-    emit: &mut HirEmit<'hir>,
-    expect: hir::Type<'hir>,
-    val: f64,
-) -> TypeResult<'hir> {
+fn coerce_float_type(expect: hir::Type) -> BasicType {
     const DEFAULT_FLOAT_TYPE: BasicType = BasicType::F64;
 
-    let lit_type = match expect {
+    match expect {
         hir::Type::Basic(basic) => match basic {
             BasicType::F16 | BasicType::F32 | BasicType::F64 => basic,
             _ => DEFAULT_FLOAT_TYPE,
         },
         _ => DEFAULT_FLOAT_TYPE,
-    };
-
-    TypeResult::new(
-        hir::Type::Basic(lit_type),
-        emit.arena.alloc(hir::Expr::LitFloat { val, ty: lit_type }),
-    )
+    }
 }
 
 fn typecheck_lit_char<'hir>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'hir> {
@@ -988,7 +1115,13 @@ fn typecheck_lit_string<'hir>(
     id: InternID,
     c_string: bool,
 ) -> TypeResult<'hir> {
-    let string_ty = if c_string {
+    let string_ty = alloc_string_lit_type(emit, c_string);
+    let string_expr = hir::Expr::LitString { id, c_string };
+    TypeResult::new(string_ty, emit.arena.alloc(string_expr))
+}
+
+fn alloc_string_lit_type<'hir>(emit: &mut HirEmit<'hir>, c_string: bool) -> hir::Type<'hir> {
+    if c_string {
         let byte = emit.arena.alloc(hir::Type::Basic(BasicType::U8));
         hir::Type::Reference(byte, ast::Mut::Immutable)
     } else {
@@ -997,11 +1130,7 @@ fn typecheck_lit_string<'hir>(
             elem_ty: hir::Type::Basic(BasicType::U8),
         });
         hir::Type::ArraySlice(slice)
-    };
-
-    let string_expr = hir::Expr::LitString { id, c_string };
-
-    TypeResult::new(string_ty, emit.arena.alloc(string_expr))
+    }
 }
 
 fn typecheck_if<'hir>(

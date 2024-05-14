@@ -373,7 +373,7 @@ pub enum SliceRangeEnd<'ast> {
     Inclusive(&'ast Expr<'ast>),
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Hash)]
 pub enum BasicType {
     S8,
     S16,

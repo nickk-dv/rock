@@ -133,10 +133,9 @@ pub struct GlobalData<'hir> {
 
 hir_id_impl!(ConstEvalID);
 #[derive(Copy, Clone)]
-pub enum ConstEval<'hir, 'ast> {
+pub enum ConstEval<'ast> {
     Error,
     Unresolved(ast::ConstExpr<'ast>),
-    ResolvedExpr(&'hir Expr<'hir>),
     ResolvedValue(ConstValueID),
 }
 
@@ -281,8 +280,8 @@ pub enum ConstValue<'hir> {
     Error,
     Null,
     Bool        { val: bool },
-    Int         { val: u64, neg: bool },
-    Float       { val: f64 },
+    Int         { val: u64, neg: bool, ty: Option<ast::BasicType> },
+    Float       { val: f64, ty: Option<ast::BasicType> },
     Char        { val: char },
     String      { id: InternID, c_string: bool },
     Struct      { struct_: &'hir ConstStruct<'hir> },

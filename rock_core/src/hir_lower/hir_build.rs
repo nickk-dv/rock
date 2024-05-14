@@ -61,7 +61,7 @@ pub struct Registry<'hir, 'ast> {
     hir_structs: Vec<hir::StructData<'hir>>,
     hir_consts: Vec<hir::ConstData<'hir>>,
     hir_globals: Vec<hir::GlobalData<'hir>>,
-    const_evals: Vec<hir::ConstEval<'hir, 'ast>>,
+    const_evals: Vec<hir::ConstEval<'ast>>,
 }
 
 pub struct HirEmit<'hir> {
@@ -517,7 +517,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
         &self.hir_globals[id.index()]
     }
-    pub fn const_eval(&self, id: hir::ConstEvalID) -> &hir::ConstEval<'hir, 'ast> {
+    pub fn const_eval(&self, id: hir::ConstEvalID) -> &hir::ConstEval<'ast> {
         &self.const_evals[id.index()]
     }
 
@@ -539,7 +539,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
         &mut self.hir_globals[id.index()]
     }
-    pub fn const_eval_mut(&mut self, id: hir::ConstEvalID) -> &mut hir::ConstEval<'hir, 'ast> {
+    pub fn const_eval_mut(&mut self, id: hir::ConstEvalID) -> &mut hir::ConstEval<'ast> {
         &mut self.const_evals[id.index()]
     }
 }
@@ -558,7 +558,7 @@ impl<'hir> HirEmit<'hir> {
     }
 
     pub fn emit<'ast, 'intern: 'hir>(
-        self,
+        mut self,
         hir: HirData<'hir, 'ast, 'intern>,
     ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
         //@debug info
@@ -568,16 +568,14 @@ impl<'hir> HirEmit<'hir> {
         if self.errors.is_empty() {
             let mut const_evals = Vec::with_capacity(hir.registry.const_evals.len());
             for const_eval in hir.registry.const_evals {
-                //@re-enable panics or errors when const resolve is done 09.05.24
                 match const_eval {
-                    hir::ConstEval::Error => {
-                        //panic!("hir emit: ConstEval::Error with no errors")
-                    }
+                    hir::ConstEval::Error => panic!("hir emit: ConstEval::Error with no errors"),
                     hir::ConstEval::Unresolved(_) => {
-                        //panic!("hir emit: ConstEval::Unresolved with no errors")
-                    }
-                    hir::ConstEval::ResolvedExpr(_) => {
-                        //panic!("hir emit: ConstEval::ResolvedExpr with no errors")
+                        //@temp error to catch unresolved const eval without panicking
+                        self.errors.push(ErrorComp::message(
+                            "compiling with unresolved const eval, source not available",
+                        ));
+                        return Err(self.errors);
                     }
                     hir::ConstEval::ResolvedValue(value_id) => const_evals.push(value_id),
                 }

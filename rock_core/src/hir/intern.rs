@@ -48,12 +48,12 @@ impl<'hir> Eq for ConstValue<'hir> {}
 //@perf: test for hash collision rates and how well this performs in terms of speed 09.05.24
 impl<'hir> Hash for ConstValue<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
+        match *self {
             ConstValue::Error => 0.hash(state),
             ConstValue::Null => 1.hash(state),
             ConstValue::Bool { val } => val.hash(state),
-            ConstValue::Int { val, neg } => (val, neg).hash(state),
-            ConstValue::Float { val } => val.to_bits().hash(state),
+            ConstValue::Int { val, neg, ty } => (val, neg, ty).hash(state),
+            ConstValue::Float { val, ty } => (val.to_bits(), ty).hash(state),
             ConstValue::Char { val } => val.hash(state),
             ConstValue::String { id, c_string } => (id, c_string).hash(state),
             ConstValue::Struct { struct_ } => struct_.hash(state),

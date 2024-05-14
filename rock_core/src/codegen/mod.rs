@@ -283,7 +283,7 @@ impl<'ctx> Codegen<'ctx> {
                 let value_id = self.hir.const_evals[eval_id.index()];
                 let value = self.hir.const_intern.get(value_id);
                 match value {
-                    hir::ConstValue::Int { val, neg } => val,
+                    hir::ConstValue::Int { val, neg, ty } => val,
                     _ => panic!("array len must be int"),
                 }
             }
@@ -526,13 +526,30 @@ fn codegen_const_value<'ctx>(
         hir::ConstValue::Error => panic!("codegen unexpected ConstValue::Error"),
         hir::ConstValue::Null => cg.ptr_type().const_zero().into(),
         hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
-        hir::ConstValue::Int { val, neg } => todo!(),
-        hir::ConstValue::Float { val } => todo!(),
-        hir::ConstValue::Char { val } => todo!(),
-        hir::ConstValue::String { id, c_string } => todo!(),
-        hir::ConstValue::Struct { struct_ } => todo!(),
-        hir::ConstValue::Array { array } => todo!(),
-        hir::ConstValue::ArrayRepeat { value, len } => todo!(),
+        hir::ConstValue::Int { val, neg, ty } => {
+            let ty = ty.expect("codegen const value int must have a type");
+            //@using sign_extend as neg, most likely incorrect (learn how to properly supply integers to llvm const int) 14.05.24
+            cg.type_into_basic(hir::Type::Basic(ty))
+                .expect("int basic type")
+                .into_int_type()
+                .const_int(val, neg)
+                .into()
+        }
+        hir::ConstValue::Float { val, ty } => {
+            let ty = ty.expect("codegen const value float must have a type");
+            cg.type_into_basic(hir::Type::Basic(ty))
+                .expect("float basic type")
+                .into_float_type()
+                .const_float(val)
+                .into()
+        }
+        hir::ConstValue::Char { val } => cg.context.i32_type().const_int(val as u64, false).into(),
+        hir::ConstValue::String { id, c_string } => codegen_lit_string(cg, id, c_string),
+        hir::ConstValue::Struct { struct_ } => todo!("codegen ConstValue::Struct unsupported"),
+        hir::ConstValue::Array { array } => todo!("codegen ConstValue::Array unsupported"),
+        hir::ConstValue::ArrayRepeat { value, len } => {
+            todo!("codegen ConstValue::ArrayRepeat unsupported")
+        }
     }
 }
 
