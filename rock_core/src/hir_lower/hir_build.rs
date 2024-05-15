@@ -477,6 +477,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_ids(&self) -> impl Iterator<Item = hir::GlobalID> {
         (0..self.hir_globals.len()).map(hir::GlobalID::new)
     }
+    pub fn const_eval_ids(&self) -> impl Iterator<Item = hir::ConstEvalID> {
+        (0..self.const_evals.len()).map(hir::ConstEvalID::new)
+    }
 
     pub fn module_ast(&self, id: hir::ModuleID) -> &ast::Module<'ast> {
         &self.ast_modules[id.index()]

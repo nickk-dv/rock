@@ -40,6 +40,7 @@ const COUNT_2: usize = VEC_VALUE.x; // does this still error?
 
 */
 
+//@move the entire const resolve to pass4 when its more complete
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
     EnumVariant(hir::EnumID, hir::EnumVariantID),
@@ -199,6 +200,18 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
             resolve_const_dependency_tree(hir, emit, &tree);
         }
     }
+
+    //@assuming that remaining constevals are array len 15.05.24
+    // that didnt cycle with anything, thus can be resolved in `immediate mode`
+    // this is only true when previos const dependencies and const evals were handled correctly
+    for eval_id in hir.registry().const_eval_ids() {
+        let (eval, _) = hir.registry().const_eval(eval_id);
+
+        if matches!(eval, hir::ConstEval::Unresolved(_)) {
+            let expect = hir::Type::Basic(BasicType::Usize);
+            resolve_and_update_const_eval(hir, emit, eval_id, expect);
+        }
+    }
 }
 
 fn resolve_const_dependency_tree(
@@ -237,23 +250,21 @@ fn resolve_const_dependency_tree(
             }
         }
     }
+}
 
-    fn resolve_and_update_const_eval(
-        hir: &mut HirData,
-        emit: &mut HirEmit,
-        eval_id: hir::ConstEvalID,
-        expect: hir::Type,
-    ) {
-        let (eval, origin_id) = *hir.registry().const_eval(eval_id);
-        let value_id = match eval {
-            hir::ConstEval::Unresolved(expr) => {
-                resolve_const_expr(hir, emit, origin_id, expect, expr)
-            }
-            _ => panic!("calling `resolve_const_expr` on already resolved expr"),
-        };
-        let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-        *eval = hir::ConstEval::ResolvedValue(value_id);
-    }
+fn resolve_and_update_const_eval(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    eval_id: hir::ConstEvalID,
+    expect: hir::Type,
+) {
+    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+    let value_id = match eval {
+        hir::ConstEval::Unresolved(expr) => resolve_const_expr(hir, emit, origin_id, expect, expr),
+        _ => panic!("calling `resolve_const_expr` on already resolved expr"),
+    };
+    let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+    *eval = hir::ConstEval::ResolvedValue(value_id);
 }
 
 //@remove asserts later on when compiler is stable? 02.05.24
