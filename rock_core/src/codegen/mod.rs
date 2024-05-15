@@ -280,7 +280,7 @@ impl<'ctx> Codegen<'ctx> {
         match len {
             hir::ArrayStaticLen::Immediate(len) => len.expect("array len is known"),
             hir::ArrayStaticLen::ConstEval(eval_id) => {
-                let value_id = self.hir.const_evals[eval_id.index()];
+                let value_id = self.hir.const_values[eval_id.index()];
                 let value = self.hir.const_intern.get(value_id);
                 match value {
                     hir::ConstValue::Int { val, neg, ty } => val,
@@ -405,7 +405,7 @@ fn codegen_globals(cg: &mut Codegen) {
             cg,
             cg.hir
                 .const_intern
-                .get(cg.hir.const_evals[data.value.index()]),
+                .get(cg.hir.const_values[data.value.index()]),
         ));
         cg.globals.push(global);
     }
@@ -1526,7 +1526,7 @@ fn codegen_enum_variant<'ctx>(
         cg,
         cg.hir
             .const_intern
-            .get(cg.hir.const_evals[variant.value.index()]),
+            .get(cg.hir.const_values[variant.value.index()]),
     )
 }
 

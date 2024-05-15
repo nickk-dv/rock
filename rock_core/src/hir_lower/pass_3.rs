@@ -133,7 +133,7 @@ pub fn type_resolve_delayed<'hir, 'ast>(
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::Type::ArrayStatic(array) => {
-            let len = hir.registry_mut().add_const_eval(array.len);
+            let len = hir.registry_mut().add_const_eval(array.len, origin_id);
             let elem_ty = type_resolve_delayed(hir, emit, origin_id, array.elem_ty);
 
             let array = hir::ArrayStatic {
@@ -213,7 +213,7 @@ fn process_enum_data<'hir>(
         } else {
             unique.push(hir::EnumVariant {
                 name: variant.name,
-                value: hir.registry_mut().add_const_eval(variant.value),
+                value: hir.registry_mut().add_const_eval(variant.value, origin_id),
             });
         }
     }

@@ -47,6 +47,7 @@ enum ConstDependency {
     StructSize(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
+    ArrayLen(hir::ConstEvalID),
 }
 
 struct Tree<T: PartialEq + Copy + Clone> {
@@ -143,7 +144,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
         let data = hir.registry().enum_data(id);
 
         for (idx, variant) in data.variants.iter().enumerate() {
-            let eval = hir.registry().const_eval(variant.value);
+            let (eval, _) = hir.registry().const_eval(variant.value);
             let variant_id = hir::EnumVariantID::new(idx);
 
             if matches!(eval, hir::ConstEval::Unresolved(_)) {
@@ -179,7 +180,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
 
     for id in hir.registry().const_ids() {
         let data = hir.registry().const_data(id);
-        let eval = hir.registry().const_eval(data.value);
+        let (eval, _) = hir.registry().const_eval(data.value);
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
@@ -190,7 +191,7 @@ fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
 
     for id in hir.registry().global_ids() {
         let data = hir.registry().global_data(id);
-        let eval = hir.registry().const_eval(data.value);
+        let (eval, _) = hir.registry().const_eval(data.value);
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
@@ -212,7 +213,7 @@ fn resolve_const_dependency_tree(
                 let data = hir.registry().enum_data(id);
                 let variant = data.variant(variant_id);
                 let expect = hir::Type::Basic(data.basic);
-                resolve_and_update_const_eval(hir, emit, variant.value, data.origin_id, expect);
+                resolve_and_update_const_eval(hir, emit, variant.value, expect);
             }
             ConstDependency::UnionSize(id) => {
                 let size_eval = resolve_union_size(hir, emit, id);
@@ -224,11 +225,15 @@ fn resolve_const_dependency_tree(
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
-                resolve_and_update_const_eval(hir, emit, data.value, data.origin_id, data.ty);
+                resolve_and_update_const_eval(hir, emit, data.value, data.ty);
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
-                resolve_and_update_const_eval(hir, emit, data.value, data.origin_id, data.ty);
+                resolve_and_update_const_eval(hir, emit, data.value, data.ty);
+            }
+            ConstDependency::ArrayLen(eval_id) => {
+                let expect = hir::Type::Basic(BasicType::Usize);
+                resolve_and_update_const_eval(hir, emit, eval_id, expect);
             }
         }
     }
@@ -237,17 +242,16 @@ fn resolve_const_dependency_tree(
         hir: &mut HirData,
         emit: &mut HirEmit,
         eval_id: hir::ConstEvalID,
-        origin_id: hir::ModuleID,
         expect: hir::Type,
     ) {
-        let eval = hir.registry().const_eval(eval_id);
-        let value_id = match *eval {
+        let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+        let value_id = match eval {
             hir::ConstEval::Unresolved(expr) => {
                 resolve_const_expr(hir, emit, origin_id, expect, expr)
             }
             _ => panic!("calling `resolve_const_expr` on already resolved expr"),
         };
-        let eval = hir.registry_mut().const_eval_mut(eval_id);
+        let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
         *eval = hir::ConstEval::ResolvedValue(value_id);
     }
 }
@@ -431,13 +435,6 @@ fn check_const_dependency_cycle(
         None => return Ok(()),
     };
 
-    // node that caused the cycle does not get marked as error
-    //@is this correct? how does this affect error and coverage of marked expressions? @13.05.24
-    //- this prevents duplicate cycle report when evaluating parents
-    //- still might be able to do surface level resolution on "Error" constant expressions
-    // even if they cannot be resolved? (eg: name resolution) without trying to compute values (seems like a correct strategy)
-    const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-
     let cycle_deps = tree.get_values_up_to_node(node_id, cycle_id);
     let mut message = String::from("constant dependency cycle found: \n");
 
@@ -468,6 +465,10 @@ fn check_const_dependency_cycle(
                 let data = hir.registry().global_data(id);
                 message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
             }
+            ConstDependency::ArrayLen(eval_id) => {
+                //@should be info instead with expression source 15.05.24
+                message.push_str("`array len <expr>` -> ");
+            }
         }
     }
     message.push_str("completing the cycle");
@@ -494,7 +495,20 @@ fn check_const_dependency_cycle(
             let data = hir.registry().global_data(id);
             hir.src(data.origin_id, data.name.range)
         }
+        ConstDependency::ArrayLen(eval_id) => {
+            let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+            if let hir::ConstEval::Unresolved(expr) = eval {
+                hir.src(origin_id, expr.0.range)
+            } else {
+                // access to range information is behind consteval the state
+                // just always store SourceRange instead? 15.05.24
+                panic!("array len consteval range not available");
+            }
+        }
     };
+
+    // marking after message was finished to prevent panic! in ConstDependency::ArrayLen 15.05.24
+    const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
 
     emit.error(ErrorComp::error(message, src, None));
     Err(())
@@ -511,7 +525,7 @@ fn const_dependencies_mark_error_up_to_root(
             ConstDependency::EnumVariant(id, variant_id) => {
                 let data = hir.registry().enum_data(id);
                 let eval_id = data.variant(variant_id).value;
-                let eval = hir.registry_mut().const_eval_mut(eval_id);
+                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
                 *eval = hir::ConstEval::Error;
             }
             ConstDependency::UnionSize(id) => {
@@ -525,13 +539,17 @@ fn const_dependencies_mark_error_up_to_root(
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
                 let eval_id = data.value;
-                let eval = hir.registry_mut().const_eval_mut(eval_id);
+                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
                 *eval = hir::ConstEval::Error;
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
                 let eval_id = data.value;
-                let eval = hir.registry_mut().const_eval_mut(eval_id);
+                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+                *eval = hir::ConstEval::Error;
+            }
+            ConstDependency::ArrayLen(eval_id) => {
+                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
                 *eval = hir::ConstEval::Error;
             }
         }
@@ -618,7 +636,10 @@ fn check_type_size_const_dependency(
         hir::Type::Procedure(_) => {}
         hir::Type::ArraySlice(_) => {}
         hir::Type::ArrayStatic(array) => {
-            // @array len expression dependency 14.05.24
+            if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
+                let node_id = tree.add_child(parent_id, ConstDependency::ArrayLen(eval_id));
+                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            }
             check_type_size_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
         }
     }
@@ -661,7 +682,10 @@ fn check_type_usage_const_dependency(
             check_type_usage_const_dependency(hir, emit, tree, parent_id, slice.elem_ty)?;
         }
         hir::Type::ArrayStatic(array) => {
-            // @array len expression dependency 14.05.24
+            if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
+                let node_id = tree.add_child(parent_id, ConstDependency::ArrayLen(eval_id));
+                check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            }
             check_type_usage_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
         }
     }
@@ -922,22 +946,25 @@ fn array_static_get_len<'hir>(
 ) -> Option<u64> {
     match len {
         hir::ArrayStaticLen::Immediate(len) => len,
-        hir::ArrayStaticLen::ConstEval(eval_id) => match hir.registry().const_eval(eval_id) {
-            hir::ConstEval::ResolvedValue(value_id) => {
-                let value = emit.const_intern.get(*value_id);
-                match value {
-                    hir::ConstValue::Int { val, neg, ty } => {
-                        if neg {
-                            None
-                        } else {
-                            Some(val)
+        hir::ArrayStaticLen::ConstEval(eval_id) => {
+            let (eval, _) = *hir.registry().const_eval(eval_id);
+            match eval {
+                hir::ConstEval::ResolvedValue(value_id) => {
+                    let value = emit.const_intern.get(value_id);
+                    match value {
+                        hir::ConstValue::Int { val, neg, ty } => {
+                            if neg {
+                                None
+                            } else {
+                                Some(val)
+                            }
                         }
+                        _ => None,
                     }
-                    _ => None,
                 }
+                _ => None,
             }
-            _ => None,
-        },
+        }
     }
 }
 

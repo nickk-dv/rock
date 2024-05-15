@@ -61,7 +61,7 @@ pub struct Registry<'hir, 'ast> {
     hir_structs: Vec<hir::StructData<'hir>>,
     hir_consts: Vec<hir::ConstData<'hir>>,
     hir_globals: Vec<hir::GlobalData<'hir>>,
-    const_evals: Vec<hir::ConstEval<'ast>>,
+    const_evals: Vec<(hir::ConstEval<'ast>, hir::ModuleID)>,
 }
 
 pub struct HirEmit<'hir> {
@@ -408,7 +408,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         origin_id: hir::ModuleID,
     ) -> hir::ConstID {
         let id = hir::ConstID::new(self.hir_consts.len());
-        let value = self.add_const_eval(item.value);
+        let value = self.add_const_eval(item.value, origin_id);
         let data = hir::ConstData {
             origin_id,
             vis: item.vis,
@@ -429,7 +429,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         thread_local: bool,
     ) -> hir::GlobalID {
         let id = hir::GlobalID::new(self.hir_globals.len());
-        let value = self.add_const_eval(item.value);
+        let value = self.add_const_eval(item.value, origin_id);
         let data = hir::GlobalData {
             origin_id,
             vis: item.vis,
@@ -445,10 +445,14 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id
     }
 
-    pub fn add_const_eval(&mut self, const_expr: ast::ConstExpr<'ast>) -> hir::ConstEvalID {
+    pub fn add_const_eval(
+        &mut self,
+        const_expr: ast::ConstExpr<'ast>,
+        origin_id: hir::ModuleID,
+    ) -> hir::ConstEvalID {
         let id = hir::ConstEvalID::new(self.const_evals.len());
         self.const_evals
-            .push(hir::ConstEval::Unresolved(const_expr));
+            .push((hir::ConstEval::Unresolved(const_expr), origin_id));
         id
     }
 
@@ -517,7 +521,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
         &self.hir_globals[id.index()]
     }
-    pub fn const_eval(&self, id: hir::ConstEvalID) -> &hir::ConstEval<'ast> {
+    pub fn const_eval(&self, id: hir::ConstEvalID) -> &(hir::ConstEval<'ast>, hir::ModuleID) {
         &self.const_evals[id.index()]
     }
 
@@ -539,7 +543,10 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
         &mut self.hir_globals[id.index()]
     }
-    pub fn const_eval_mut(&mut self, id: hir::ConstEvalID) -> &mut hir::ConstEval<'ast> {
+    pub fn const_eval_mut(
+        &mut self,
+        id: hir::ConstEvalID,
+    ) -> &mut (hir::ConstEval<'ast>, hir::ModuleID) {
         &mut self.const_evals[id.index()]
     }
 }
@@ -566,19 +573,33 @@ impl<'hir> HirEmit<'hir> {
         eprintln!("hir mem: {}", self.arena.mem_usage());
 
         if self.errors.is_empty() {
-            let mut const_evals = Vec::with_capacity(hir.registry.const_evals.len());
-            for const_eval in hir.registry.const_evals {
-                match const_eval {
-                    hir::ConstEval::Error => panic!("hir emit: ConstEval::Error with no errors"),
-                    hir::ConstEval::Unresolved(_) => {
-                        //@temp error to catch unresolved const eval without panicking
+            let mut const_values = Vec::with_capacity(hir.registry.const_evals.len());
+
+            let mut unresolved_consts = false;
+            for (eval, origin_id) in hir.registry.const_evals.iter() {
+                match *eval {
+                    hir::ConstEval::Error => {
+                        unresolved_consts = true;
                         self.errors.push(ErrorComp::message(
-                            "compiling with unresolved const eval, source not available",
+                            "internal: trying to emit hir with ConstEval::Error expression",
                         ));
-                        return Err(self.errors);
                     }
-                    hir::ConstEval::ResolvedValue(value_id) => const_evals.push(value_id),
+                    hir::ConstEval::Unresolved(expr) => {
+                        //@temp error to catch unresolved const eval without panicking
+                        // is always possible in case of some compiler bugs, keep this error? 15.05.24
+                        unresolved_consts = true;
+                        self.errors.push(ErrorComp::error(
+                            "internal: trying to emit hir with ConstEval::Unresolved expression",
+                            hir.src(*origin_id, expr.0.range),
+                            None,
+                        ));
+                    }
+                    hir::ConstEval::ResolvedValue(value_id) => const_values.push(value_id),
                 }
+            }
+
+            if unresolved_consts {
+                return Err(self.errors);
             }
 
             Ok(hir::Hir {
@@ -592,7 +613,7 @@ impl<'hir> HirEmit<'hir> {
                 structs: hir.registry.hir_structs,
                 consts: hir.registry.hir_consts,
                 globals: hir.registry.hir_globals,
-                const_evals,
+                const_values,
             })
         } else {
             Err(self.errors)

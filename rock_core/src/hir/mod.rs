@@ -17,7 +17,7 @@ pub struct Hir<'hir> {
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
-    pub const_evals: Vec<ConstValueID>,
+    pub const_values: Vec<ConstValueID>,
 }
 
 macro_rules! hir_id_impl {
