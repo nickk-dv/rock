@@ -408,6 +408,7 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
 
 fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
     let range_start = p.peek_range_start();
+
     let kind = match p.peek() {
         T![break] => {
             p.bump();
@@ -431,8 +432,16 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
         }
         T![defer] => {
             p.bump();
-            let block = block(p)?;
-            StmtKind::Defer(p.state.arena.alloc(block))
+            let defer_block = if p.at(T!['{']) {
+                block(p)?
+            } else {
+                let start = p.state.stmts.start();
+                let stmt = stmt(p)?;
+                p.state.stmts.add(stmt);
+                let stmts = p.state.stmts.take(start, &mut p.state.arena);
+                Block { stmts }
+            };
+            StmtKind::Defer(p.state.arena.alloc(defer_block))
         }
         T![for] => {
             p.bump();
@@ -453,7 +462,9 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
                 p.expect(T![;])?;
                 StmtKind::Assign(p.state.arena.alloc(Assign { op, lhs, rhs }))
             } else {
-                p.expect(T![;])?;
+                if !p.at_prev(T!['}']) {
+                    p.expect(T![;])?;
+                }
                 StmtKind::ExprSemi(lhs)
             }
         }

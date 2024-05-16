@@ -61,6 +61,10 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         self.peek_next() == t
     }
 
+    pub fn at_prev(&self, t: Token) -> bool {
+        self.tokens.get_token(self.cursor - 1) == t
+    }
+
     pub fn peek(&self) -> Token {
         self.tokens.get_token(self.cursor)
     }
