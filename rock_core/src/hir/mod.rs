@@ -316,6 +316,7 @@ pub enum Expr<'hir> {
     Match        { match_: &'hir Match<'hir> },
     UnionMember  { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
     StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
+    SliceField   { target: &'hir Expr<'hir>, first_ptr: bool, deref: bool },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },

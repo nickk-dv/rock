@@ -1329,6 +1329,14 @@ fn typecheck_field<'hir>(
                 deref,
             }),
         ),
+        FieldKind::Slice { first_ptr } => TypeResult::new(
+            field_ty,
+            emit.arena.alloc(hir::Expr::SliceField {
+                target: target_res.expr,
+                first_ptr,
+                deref,
+            }),
+        ),
     }
 }
 
@@ -1336,6 +1344,7 @@ enum FieldKind {
     Error,
     Member(hir::UnionID, hir::UnionMemberID),
     Field(hir::StructID, hir::StructFieldID),
+    Slice { first_ptr: bool },
 }
 
 fn check_type_field<'hir>(
@@ -1395,6 +1404,32 @@ fn type_get_field<'hir>(
                     None,
                 ));
                 (hir::Type::Error, FieldKind::Error)
+            }
+        }
+        hir::Type::ArraySlice(slice) => {
+            let field_name = hir.name_str(name.id);
+            match field_name {
+                "ptr" => (
+                    hir::Type::Reference(&slice.elem_ty, ast::Mut::Immutable),
+                    FieldKind::Slice { first_ptr: true },
+                ),
+                "len" => (
+                    hir::Type::Basic(BasicType::Usize),
+                    FieldKind::Slice { first_ptr: false },
+                ),
+                _ => {
+                    let ty_format = type_format(hir, emit, ty);
+                    emit.error(ErrorComp::error(
+                        format!(
+                            "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
+                            hir.name_str(name.id),
+                            ty_format,
+                        ),
+                        hir.src(proc.origin(), name.range),
+                        None,
+                    ));
+                    (hir::Type::Error, FieldKind::Error)
+                }
             }
         }
         _ => {
@@ -1980,6 +2015,8 @@ fn typecheck_item<'hir>(
         ),
     };
 
+    //@everything below is copy-paste from regular typecheck field access 16.05.24
+    // de-duplicate later
     let mut target = item_res.expr;
     let mut target_ty = item_res.ty;
 
@@ -2003,6 +2040,14 @@ fn typecheck_item<'hir>(
                     target,
                     struct_id,
                     field_id,
+                    deref,
+                });
+            }
+            FieldKind::Slice { first_ptr } => {
+                target_ty = field_ty;
+                target = emit.arena.alloc(hir::Expr::SliceField {
+                    target,
+                    first_ptr,
                     deref,
                 });
             }
@@ -2262,10 +2307,17 @@ fn typecheck_address<'hir>(
     let adressability = get_expr_addressability(hir, proc, rhs_res.expr);
 
     match adressability {
-        Addressability::Unknown => {}
+        Addressability::Unknown => {} //@ & to error should be also Error? 16.05.24
         Addressability::Constant => {
             emit.error(ErrorComp::error(
                 "cannot get reference to a constant, you can use `global` instead",
+                hir.src(proc.origin(), rhs.range),
+                None,
+            ));
+        }
+        Addressability::SliceField => {
+            emit.error(ErrorComp::error(
+                "cannot get reference to a slice field, slice itself cannot be modified",
                 hir.src(proc.origin(), rhs.range),
                 None,
             ));
@@ -2312,6 +2364,7 @@ fn typecheck_address<'hir>(
 enum Addressability {
     Unknown,
     Constant,
+    SliceField,
     Temporary,
     TemporaryImmutable,
     Addressable(ast::Mut, SourceRange),
@@ -2336,6 +2389,9 @@ fn get_expr_addressability<'hir>(
         hir::Expr::Match { match_ } => Addressability::NotImplemented, //@todo 05.05.24
         hir::Expr::UnionMember { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
         hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        hir::Expr::SliceField { .. } => Addressability::SliceField,
+        // in case of slices depends on slice type mutability itself 16.05.24
+        // also might depend on any & or &mut in the way?
         hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
         // mutability of slicing plays are role: eg:  array[2..<4][mut ..] //@cant take mutable slice from immutable slice 05.05.24
         hir::Expr::Slice { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
@@ -3033,6 +3089,13 @@ fn typecheck_assign<'hir>(
         Addressability::Constant => {
             emit.error(ErrorComp::error(
                 "cannot assign to a constant",
+                hir.src(proc.origin(), assign.lhs.range),
+                None,
+            ));
+        }
+        Addressability::SliceField => {
+            emit.error(ErrorComp::error(
+                "cannot assign to a slice field, slice itself cannot be modified",
                 hir.src(proc.origin(), assign.lhs.range),
                 None,
             ));

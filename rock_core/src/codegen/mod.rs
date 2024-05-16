@@ -321,7 +321,7 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::Char => self.context.i32_type().into(),
                 ast::BasicType::Rawptr => self.ptr_type().into(),
                 ast::BasicType::Void => self.context.void_type().into(),
-                ast::BasicType::Never => panic!("codegen unexpected BasicType::Never"),
+                ast::BasicType::Never => self.context.void_type().into(), // only expected as procedure return type
             },
             hir::Type::Enum(id) => {
                 let basic = self.hir.enum_data(id).basic;
@@ -591,6 +591,13 @@ fn codegen_expr<'ctx>(
             deref,
         } => Some(codegen_struct_field(
             cg, proc_cg, expect_ptr, target, struct_id, field_id, deref,
+        )),
+        Expr::SliceField {
+            target,
+            first_ptr,
+            deref,
+        } => Some(codegen_slice_field(
+            cg, proc_cg, expect_ptr, target, first_ptr, deref,
         )),
         Expr::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect_ptr, target, access))
@@ -1044,6 +1051,53 @@ fn codegen_struct_field<'ctx>(
             .build_load(field_ty, field_ptr, "field_val")
             .unwrap()
     }
+}
+
+fn codegen_slice_field<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
+    target: &'ctx hir::Expr<'ctx>,
+    first_ptr: bool,
+    deref: bool,
+) -> values::BasicValueEnum<'ctx> {
+    assert!(
+        !expect_ptr,
+        "slice access `expect_ptr` cannot be true, slice fields are not addressable"
+    );
+    let target = codegen_expr(cg, proc_cg, true, target).expect("value");
+    let target_ptr = if deref {
+        cg.builder
+            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .unwrap()
+            .into_pointer_value()
+    } else {
+        target.into_pointer_value()
+    };
+
+    let (field_id, field_ty, ptr_name, value_name) = if first_ptr {
+        (
+            0,
+            cg.ptr_type().as_basic_type_enum(),
+            "slice_ptr_ptr",
+            "slice_ptr",
+        )
+    } else {
+        (
+            1,
+            cg.pointer_sized_int_type().as_basic_type_enum(),
+            "slice_len_ptr",
+            "slice_len",
+        )
+    };
+
+    let field_ptr = cg
+        .builder
+        .build_struct_gep(cg.slice_type(), target_ptr, field_id, ptr_name)
+        .unwrap();
+    cg.builder
+        .build_load(field_ty, field_ptr, value_name)
+        .unwrap()
 }
 
 //@change to eprintf, re-use panic message strings (not generated for each panic) 07.05.24
