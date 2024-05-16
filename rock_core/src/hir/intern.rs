@@ -56,6 +56,7 @@ impl<'hir> Hash for ConstValue<'hir> {
             ConstValue::Float { val, ty } => (val.to_bits(), ty).hash(state),
             ConstValue::Char { val } => val.hash(state),
             ConstValue::String { id, c_string } => (id, c_string).hash(state),
+            ConstValue::Procedure { proc_id } => proc_id.0.hash(state),
             ConstValue::Struct { struct_ } => struct_.hash(state),
             ConstValue::Array { array } => array.hash(state),
             ConstValue::ArrayRepeat { value, len } => (value, len).hash(state),

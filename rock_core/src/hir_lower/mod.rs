@@ -18,9 +18,10 @@ pub fn check<'hir, 'ast, 'intern: 'hir>(
 ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
     let mut hir = HirData::new(ast, session);
     let mut emit = HirEmit::new();
-    pass_1::run(&mut hir, &mut emit);
-    pass_2::run(&mut hir, &mut emit);
-    pass_3::run(&mut hir, &mut emit);
-    pass_5::run(&mut hir, &mut emit);
+    pass_1::populate_scopes(&mut hir, &mut emit);
+    pass_2::resolve_imports(&mut hir, &mut emit);
+    pass_3::process_items(&mut hir, &mut emit);
+    pass_4::resolve_const_dependencies(&mut hir, &mut emit);
+    pass_5::typecheck_procedures(&mut hir, &mut emit);
     emit.emit(hir)
 }

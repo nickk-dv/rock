@@ -4,7 +4,7 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+pub fn populate_scopes<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for origin_id in hir.registry().module_ids() {
         add_module_items(hir, emit, origin_id);
     }

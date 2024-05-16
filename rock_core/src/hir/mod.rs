@@ -284,6 +284,7 @@ pub enum ConstValue<'hir> {
     Float       { val: f64, ty: Option<ast::BasicType> },
     Char        { val: char },
     String      { id: InternID, c_string: bool },
+    Procedure   { proc_id: ProcID },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { value: ConstValueID, len: u64 },

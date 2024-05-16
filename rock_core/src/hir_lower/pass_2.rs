@@ -4,7 +4,7 @@ use crate::error::ErrorComp;
 use crate::hir;
 use crate::session::PackageID;
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+pub fn resolve_imports<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for origin_id in hir.registry().module_ids() {
         let package_id = hir.module_package_id(origin_id);
 

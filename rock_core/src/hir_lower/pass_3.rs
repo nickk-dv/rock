@@ -1,10 +1,11 @@
 use super::hir_build::{HirData, HirEmit};
+use super::pass_4;
 use super::pass_5;
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
 
-pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().proc_ids() {
         process_proc_data(hir, emit, id)
     }
@@ -25,6 +26,7 @@ pub fn run<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     }
 }
 
+//@deduplicate with type_resolve_consteval 16.05.24
 pub fn type_resolve<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -71,9 +73,21 @@ pub fn type_resolve<'hir>(
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::Type::ArrayStatic(array) => {
-            let len_expr = super::pass_4::const_expr_resolve(hir, emit, origin_id, array.len);
-            let len = match len_expr {
-                hir::Expr::LitInt { val, ty } => Some(*val),
+            let (value, _) = pass_4::resolve_const_expr(
+                hir,
+                emit,
+                origin_id,
+                hir::Type::Basic(ast::BasicType::Usize),
+                array.len,
+            );
+            let len = match value {
+                hir::ConstValue::Int { val, ty, neg } => {
+                    if neg {
+                        None
+                    } else {
+                        Some(val)
+                    }
+                }
                 _ => None,
             };
             let elem_ty = type_resolve(hir, emit, origin_id, array.elem_ty);
@@ -145,10 +159,7 @@ pub fn type_resolve_delayed<'hir, 'ast>(
     }
 }
 
-//@since procedure array size resolution is supposed to be immediate this must be done 09.05.24
-// AFTER all other items were resolved (including their const eval dependencies and values)
-// now its being done first, which isnt correct order
-fn process_proc_data<'hir>(
+pub fn process_proc_data<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::ProcID,
@@ -171,7 +182,7 @@ fn process_proc_data<'hir>(
                 ),
             ));
         } else {
-            let ty = type_resolve(hir, emit, origin_id, param.ty);
+            let ty = type_resolve_delayed(hir, emit, origin_id, param.ty);
             // types from ast dont have range, so using param name instead, possible change @26.04.24
             pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, param.name.range));
 
@@ -185,7 +196,7 @@ fn process_proc_data<'hir>(
 
     hir.registry_mut().proc_data_mut(id).params = emit.arena.alloc_slice(&unique);
     hir.registry_mut().proc_data_mut(id).return_ty = if let Some(ret_ty) = item.return_ty {
-        type_resolve(hir, emit, origin_id, ret_ty)
+        type_resolve_delayed(hir, emit, origin_id, ret_ty)
     } else {
         hir::Type::Basic(ast::BasicType::Void)
     }
@@ -295,16 +306,13 @@ fn process_const_data<'hir>(
     emit: &mut HirEmit<'hir>,
     id: hir::ConstID,
 ) {
-    let item = hir.registry().const_item(id);
     let origin_id = hir.registry().const_data(id).origin_id;
-
+    let item = hir.registry().const_item(id);
     let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
+
+    hir.registry_mut().const_data_mut(id).ty = ty;
     // types from ast dont have range, so using param name instead, possible change @26.04.24
     pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
-
-    let data = hir.registry_mut().const_data_mut(id);
-    data.ty = ty;
-    //@check const_expr value type with resolved type?
 }
 
 fn process_global_data<'hir>(
@@ -312,14 +320,11 @@ fn process_global_data<'hir>(
     emit: &mut HirEmit<'hir>,
     id: hir::GlobalID,
 ) {
-    let item = hir.registry().global_item(id);
     let origin_id = hir.registry().global_data(id).origin_id;
-
+    let item = hir.registry().global_item(id);
     let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
-    // types from ast dont have range, so using param name instead, possible change @26.04.24
-    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
 
-    let data = hir.registry_mut().global_data_mut(id);
-    data.ty = ty;
-    //@check const_expr value type with resolved type?
+    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
+    // types from ast dont have range, so using param name instead, possible change @26.04.24
+    hir.registry_mut().global_data_mut(id).ty = ty;
 }
