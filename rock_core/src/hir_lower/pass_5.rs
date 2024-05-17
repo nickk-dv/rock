@@ -1752,49 +1752,47 @@ fn typecheck_unary<'hir>(
     let rhs_res = typecheck_expr(hir, emit, proc, hir::Type::Error, rhs);
     //@not generating anything if type is invalid
     if let hir::Type::Error = rhs_res.ty {
-        return TypeResult::new(hir::Type::Error, rhs_res.expr);
+        return TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR);
     }
 
     let unary_ty = match op {
         ast::UnOp::Neg => match rhs_res.ty {
-            hir::Type::Basic(basic) => match basic {
-                BasicType::S8
-                | BasicType::S16
-                | BasicType::S32
-                | BasicType::S64
-                | BasicType::Ssize
-                | BasicType::F32
-                | BasicType::F64 => hir::Type::Basic(basic),
-                _ => hir::Type::Error,
+            hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+                BasicTypeKind::SignedInt | BasicTypeKind::Float => Some(hir::Type::Basic(basic)),
+                _ => None,
             },
-            _ => hir::Type::Error,
+            _ => None,
         },
         ast::UnOp::BitNot => match rhs_res.ty {
-            hir::Type::Basic(basic) => match basic {
-                BasicType::U8
-                | BasicType::U16
-                | BasicType::U32
-                | BasicType::U64
-                | BasicType::Usize => hir::Type::Basic(basic),
-                _ => hir::Type::Error,
+            hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+                BasicTypeKind::UnsignedInt | BasicTypeKind::SignedInt => {
+                    Some(hir::Type::Basic(basic))
+                }
+                _ => None,
             },
-            _ => hir::Type::Error,
+            _ => None,
         },
         ast::UnOp::LogicNot => match rhs_res.ty {
             hir::Type::Basic(basic) => match basic {
-                BasicType::Bool => hir::Type::Basic(basic),
-                _ => hir::Type::Error,
+                BasicType::Bool => Some(hir::Type::Basic(basic)),
+                _ => None,
             },
-            _ => hir::Type::Error,
+            _ => None,
         },
         ast::UnOp::Deref => match rhs_res.ty {
-            hir::Type::Reference(ref_ty, ..) => *ref_ty,
-            _ => hir::Type::Error,
+            hir::Type::Reference(ref_ty, ..) => Some(*ref_ty),
+            _ => None,
         },
     };
 
-    if let hir::Type::Error = unary_ty {
-        //@unary op &str is same as token.to_str()
+    if let Some(unary_ty) = unary_ty {
+        let unary_expr = hir::Expr::Unary {
+            op,
+            rhs: rhs_res.expr,
+        };
+        TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
+    } else {
+        //@unary op &str is same as token.to_str() 17.05.24
         // but those are separate types, this could be de-duplicated
         let op_str = match op {
             ast::UnOp::Neg => "-",
@@ -1802,21 +1800,30 @@ fn typecheck_unary<'hir>(
             ast::UnOp::LogicNot => "!",
             ast::UnOp::Deref => "*",
         };
-        emit.error(ErrorComp::error(
-            format!(
-                "unary operator `{op_str}` cannot be applied to `{}`",
-                type_format(hir, emit, rhs_res.ty)
-            ),
-            hir.src(proc.origin(), rhs.range),
-            None,
-        ));
+        match op {
+            ast::UnOp::Neg | ast::UnOp::BitNot | ast::UnOp::LogicNot => {
+                emit.error(ErrorComp::error(
+                    format!(
+                        "unary operator `{op_str}` cannot be applied to `{}`",
+                        type_format(hir, emit, rhs_res.ty)
+                    ),
+                    hir.src(proc.origin(), rhs.range),
+                    None,
+                ));
+            }
+            ast::UnOp::Deref => {
+                emit.error(ErrorComp::error(
+                    format!(
+                        "cannot dereference value of type `{}`",
+                        type_format(hir, emit, rhs_res.ty)
+                    ),
+                    hir.src(proc.origin(), rhs.range),
+                    None,
+                ));
+            }
+        }
+        TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
     }
-
-    let unary_expr = hir::Expr::Unary {
-        op,
-        rhs: rhs_res.expr,
-    };
-    TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
 }
 
 // @26.04.24
