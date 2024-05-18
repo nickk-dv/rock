@@ -1,6 +1,6 @@
 use super::format::CommandFormat;
 use super::{Command, CommandBuild, CommandNew, CommandRun};
-use rock_core::error::ErrorComp;
+use rock_core::error::{DiagnosticCollection, ErrorComp, WarningComp};
 use rock_core::package::PackageKind;
 use rock_core::session::BuildKind;
 
@@ -28,10 +28,12 @@ pub fn command(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
         "r" | "run" => parse_run(format),
         "h" | "help" => parse_help(format),
         "v" | "version" => parse_version(format),
-        _ => Err(vec![ErrorComp::message(format!(
-            "command `{}` does not exist, use `rock help` to learn the usage",
-            format.name
-        ))]),
+        _ => {
+            return Err(vec![ErrorComp::message(format!(
+                "command `{}` does not exist, use `rock help` to learn the usage",
+                format.name
+            ))]);
+        }
     }
 }
 
@@ -77,10 +79,12 @@ fn parse_simple_command(
     command: Command,
 ) -> Result<Command, Vec<ErrorComp>> {
     if !format.args.is_empty() || !format.options.is_empty() {
-        Err(vec![ErrorComp::message_warning(format!(
-            "`{}` command does not take any options or arguments",
-            full_name
-        ))])
+        return Ok(command);
+        //@todo 18.05.24
+        //Err(vec![ErrorComp::message_warning(format!(
+        //    "`{}` command does not take any options or arguments",
+        //    full_name
+        //))])
     } else {
         Ok(command)
     }

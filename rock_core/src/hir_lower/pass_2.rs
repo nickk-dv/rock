@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use crate::ast;
-use crate::error::ErrorComp;
+use crate::error::{ErrorComp, WarningComp};
 use crate::hir;
 use crate::session::PackageID;
 
@@ -27,7 +27,7 @@ fn resolve_import<'hir, 'ast>(
         if let Some(dep_id) = hir.get_package_dep_id(package_id, name) {
             dep_id
         } else {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "package `{}` is not found in dependencies",
                     hir.name_str(name.id)
@@ -45,7 +45,7 @@ fn resolve_import<'hir, 'ast>(
         if let Some(target_id) = hir.get_package_module_id(target_package_id, import.module) {
             target_id
         } else {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 //@mention in which package we were looking into?
                 // currently not fully descriptive @20.04.24
                 format!(
@@ -59,7 +59,7 @@ fn resolve_import<'hir, 'ast>(
         };
 
     if target_id == origin_id {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             format!(
                 "importing module `{}` into itself is redundant, remove this import",
                 hir.name_str(import.module.id)
@@ -73,7 +73,7 @@ fn resolve_import<'hir, 'ast>(
     let alias_name = match import.alias {
         Some(alias) => {
             if import.module.id == alias.id {
-                emit.error(ErrorComp::warning(
+                emit.warning(WarningComp::new(
                     format!("name alias `{}` is redundant", hir.name_str(alias.id)),
                     hir.src(origin_id, alias.range),
                     None,
@@ -104,7 +104,7 @@ fn resolve_import<'hir, 'ast>(
         let alias_name = match symbol.alias {
             Some(alias) => {
                 if symbol.name.id == alias.id {
-                    emit.error(ErrorComp::warning(
+                    emit.warning(WarningComp::new(
                         format!("name alias `{}` is redundant", hir.name_str(alias.id),),
                         hir.src(origin_id, alias.range),
                         None,

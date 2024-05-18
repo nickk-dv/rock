@@ -130,7 +130,7 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
         }
     }
 
-    pub fn finish(self) -> Result<Ast<'ast, 'intern>, Vec<ErrorComp>> {
+    pub fn result(self) -> Result<Ast<'ast, 'intern>, Vec<ErrorComp>> {
         if self.errors.is_empty() {
             Ok(Ast {
                 arena: self.arena,

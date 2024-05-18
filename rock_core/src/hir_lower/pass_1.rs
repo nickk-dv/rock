@@ -1,7 +1,7 @@
 use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use super::pass_5;
 use crate::ast;
-use crate::error::{ErrorComp, SourceRange};
+use crate::error::{ErrorComp, Info, SourceRange};
 use crate::hir;
 
 pub fn populate_scopes<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
@@ -133,9 +133,9 @@ pub fn name_already_defined_error(
     name: ast::Name,
     existing: SourceRange,
 ) {
-    emit.error(ErrorComp::error(
+    emit.error(ErrorComp::new(
         format!("name `{}` is defined multiple times", hir.name_str(name.id)),
         hir.src(origin_id, name.range),
-        ErrorComp::info("existing definition", existing),
+        Info::new("existing definition", existing),
     ));
 }

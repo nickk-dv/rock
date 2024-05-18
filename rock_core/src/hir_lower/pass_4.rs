@@ -272,7 +272,7 @@ fn check_const_dependency_cycle(
     // marking after message was finished to prevent panic! in ConstDependency::ArrayLen 15.05.24
     const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
 
-    emit.error(ErrorComp::error(message, src, None));
+    emit.error(ErrorComp::new(message, src, None));
     Err(())
 }
 
@@ -559,7 +559,7 @@ fn resolve_struct_size(
         size = if let Some(new_size) = size.checked_add(field_size) {
             new_size
         } else {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "struct size overflow: `{}` + `{}` (when computing: total_size + field_size)",
                     size, field_size
@@ -643,7 +643,7 @@ pub fn resolve_const_expr<'hir>(
         Ok((value, value_ty)) => {
             //@copy paste from regular typecheck, will be used until better design is found 14.05.24
             if !pass_5::type_matches(hir, emit, expect, value_ty) {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "type mismatch: expected `{}`, found `{}`",
                         pass_5::type_format(hir, emit, expect),
@@ -656,7 +656,7 @@ pub fn resolve_const_expr<'hir>(
             (value, emit.const_intern.intern(value))
         }
         Err(expr_name) => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!("cannot use `{expr_name}` expression in constants"),
                 hir.src(origin_id, expr.0.range),
                 None,

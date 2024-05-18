@@ -2,7 +2,7 @@ use super::hir_build::{self, HirData, HirEmit, SymbolKind};
 use super::pass_4;
 use super::proc_scope::{ProcScope, VariableID};
 use crate::ast::{self, BasicType};
-use crate::error::{ErrorComp, SourceRange};
+use crate::error::{ErrorComp, Info, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::InternID;
 use crate::text::{TextOffset, TextRange};
@@ -26,7 +26,7 @@ pub fn check_attribute(
 
     match attr.kind {
         ast::AttributeKind::Unknown => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "unknown attribute, only #[{}] is allowed here",
                     expected.as_str()
@@ -36,7 +36,7 @@ pub fn check_attribute(
             ));
         }
         _ => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "unexpected #[{}] attribute, only #[{}] is allowed here",
                     attr.kind.as_str(),
@@ -74,7 +74,7 @@ fn typecheck_proc<'hir>(
 
     if c_call {
         if item.block.is_some() {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "procedures with #[c_call] attribute cannot have a body",
                 hir.src(data.origin_id, data.name.range),
                 None,
@@ -82,14 +82,14 @@ fn typecheck_proc<'hir>(
         }
     } else {
         if item.block.is_none() {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "expected tail attribute #[c_call], since procedure has no body",
                 hir.src(data.origin_id, data.name.range),
                 None,
             ))
         }
         if data.is_variadic {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "procedures without #[c_call] attribute cannot be variadic, remove `..` from parameter list",
                 hir.src(data.origin_id, data.name.range),
                 None,
@@ -99,14 +99,14 @@ fn typecheck_proc<'hir>(
 
     if data.is_test {
         if c_call {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot be external #[c_call]",
                 hir.src(data.origin_id, data.name.range),
                 None,
             ))
         }
         if !data.params.is_empty() {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot have any input parameters",
                 hir.src(data.origin_id, data.name.range),
                 None,
@@ -115,7 +115,7 @@ fn typecheck_proc<'hir>(
         // not allowing `never` in test procedures,
         // panic or exit in test code doesnt make much sence, or does it? @27.04.24
         if !matches!(data.return_ty, hir::Type::Basic(BasicType::Void)) {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "procedures with #[test] attribute can only return `void`",
                 hir.src(data.origin_id, data.name.range),
                 None,
@@ -358,7 +358,7 @@ fn typecheck_expr<'hir>(
     };
 
     if !expr_res.ignore && !type_matches(hir, emit, expect, expr_res.ty) {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             format!(
                 "type mismatch: expected `{}`, found `{}`",
                 type_format(hir, emit, expect),
@@ -545,7 +545,7 @@ fn typecheck_match<'hir>(
     let on_res = typecheck_expr(hir, emit, proc, hir::Type::Error, match_.on_expr);
 
     if !verify_can_match(on_res.ty) {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             format!(
                 "cannot match on value of type `{}`",
                 type_format(hir, emit, on_res.ty)
@@ -679,7 +679,7 @@ fn type_get_field<'hir>(
             if let Some((member_id, member)) = data.find_member(name.id) {
                 (member.ty, FieldKind::Member(id, member_id))
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "no field `{}` exists on union type `{}`",
                         hir.name_str(name.id),
@@ -696,7 +696,7 @@ fn type_get_field<'hir>(
             if let Some((field_id, field)) = data.find_field(name.id) {
                 (field.ty, FieldKind::Field(id, field_id))
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "no field `{}` exists on struct type `{}`",
                         hir.name_str(name.id),
@@ -721,7 +721,7 @@ fn type_get_field<'hir>(
                 ),
                 _ => {
                     let ty_format = type_format(hir, emit, ty);
-                    emit.error(ErrorComp::error(
+                    emit.error(ErrorComp::new(
                         format!(
                             "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
                             hir.name_str(name.id),
@@ -736,7 +736,7 @@ fn type_get_field<'hir>(
         }
         _ => {
             let ty_format = type_format(hir, emit, ty);
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "no field `{}` exists on value of type `{}`",
                     hir.name_str(name.id),
@@ -830,13 +830,13 @@ fn typecheck_index<'hir>(
         }
         Ok(None) => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
         Err(()) => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "cannot index value of type `{}`",
                     type_format(hir, emit, target_res.ty)
                 ),
                 hir.src(proc.origin(), expr_range),
-                ErrorComp::info(
+                Info::new(
                     format!("has `{}` type", type_format(hir, emit, target_res.ty)),
                     hir.src(proc.origin(), target.range),
                 ),
@@ -913,13 +913,13 @@ fn typecheck_slice<'hir>(
         }
         Ok(None) => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
         Err(()) => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "cannot slice value of type `{}`",
                     type_format(hir, emit, target_res.ty)
                 ),
                 hir.src(proc.origin(), expr_range),
-                ErrorComp::info(
+                Info::new(
                     format!("has `{}` type", type_format(hir, emit, target_res.ty)),
                     hir.src(proc.origin(), target.range),
                 ),
@@ -960,7 +960,7 @@ fn typecheck_call<'hir>(
 
                 let info = if let Some(proc_id) = direct_id {
                     let data = hir.registry().proc_data(proc_id);
-                    ErrorComp::info(
+                    Info::new(
                         "calling this procedure",
                         hir.src(data.origin_id, data.name.range),
                     )
@@ -969,7 +969,7 @@ fn typecheck_call<'hir>(
                 };
 
                 //@plular form for argument`s` only needed if != 1
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "expected{at_least} {} input arguments, found {}",
                         expected_count, input_count
@@ -1006,7 +1006,7 @@ fn typecheck_call<'hir>(
             return TypeResult::new(proc_ty.return_ty, emit.arena.alloc(call_expr));
         }
         _ => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "cannot call value of type `{}`",
                     type_format(hir, emit, target_res.ty)
@@ -1046,7 +1046,7 @@ pub fn type_size(
                 if let Some(array_size) = elem_size.size().checked_mul(len) {
                     Some(hir::Size::new(array_size, elem_size.align()))
                 } else {
-                    emit.error(ErrorComp::error(
+                    emit.error(ErrorComp::new(
                         format!(
                             "array size overflow: `{}` * `{}` (elem_size * array_len)",
                             elem_size.size(),
@@ -1144,7 +1144,7 @@ fn typecheck_cast<'hir>(
     // invariant: both types are not Error
     // ensured by early return above
     if type_matches(hir, emit, target_res.ty, into) {
-        emit.error(ErrorComp::warning(
+        emit.warning(WarningComp::new(
             format!(
                 "redundant cast from `{}` into `{}`",
                 type_format(hir, emit, target_res.ty),
@@ -1220,7 +1220,7 @@ fn typecheck_cast<'hir>(
         //@cast could be primitive but still invalid
         // wording might be improved
         // or have 2 error types for this
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             format!(
                 "non primitive cast from `{}` into `{}`",
                 type_format(hir, emit, target_res.ty),
@@ -1393,10 +1393,10 @@ fn typecheck_struct_init<'hir>(
                     };
                     TypeResult::new(hir::Type::Union(union_id), emit.arena.alloc(union_init))
                 } else {
-                    emit.error(ErrorComp::error(
+                    emit.error(ErrorComp::new(
                         format!("field `{}` is not found", hir.name_str(first.name.id),),
                         hir.src(proc.origin(), first.name.range),
-                        ErrorComp::info(
+                        Info::new(
                             "union defined here",
                             hir.src(data.origin_id, data.name.range),
                         ),
@@ -1410,7 +1410,7 @@ fn typecheck_struct_init<'hir>(
                 };
 
                 for input in other {
-                    emit.error(ErrorComp::error(
+                    emit.error(ErrorComp::new(
                         "union initializer must have exactly one field",
                         hir.src(proc.origin(), input.name.range),
                         None,
@@ -1420,7 +1420,7 @@ fn typecheck_struct_init<'hir>(
 
                 type_res
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     "union initializer must have exactly one field",
                     hir.src(proc.origin(), structure_name.range),
                     None,
@@ -1452,13 +1452,13 @@ fn typecheck_struct_init<'hir>(
                     let input_res = typecheck_expr(hir, emit, proc, field.ty, input.expr);
 
                     if let FieldStatus::Init(range) = field_status[field_id.index()] {
-                        emit.error(ErrorComp::error(
+                        emit.error(ErrorComp::new(
                             format!(
                                 "field `{}` was already initialized",
                                 hir.name_str(input.name.id),
                             ),
                             hir.src(proc.origin(), input.name.range),
-                            ErrorComp::info("initialized here", hir.src(data.origin_id, range)),
+                            Info::new("initialized here", hir.src(data.origin_id, range)),
                         ));
                     } else {
                         let field_init = hir::StructFieldInit {
@@ -1470,10 +1470,10 @@ fn typecheck_struct_init<'hir>(
                         init_count += 1;
                     }
                 } else {
-                    emit.error(ErrorComp::error(
+                    emit.error(ErrorComp::new(
                         format!("field `{}` is not found", hir.name_str(input.name.id),),
                         hir.src(proc.origin(), input.name.range),
-                        ErrorComp::info(
+                        Info::new(
                             "struct defined here",
                             hir.src(data.origin_id, data.name.range),
                         ),
@@ -1498,10 +1498,10 @@ fn typecheck_struct_init<'hir>(
                     }
                 }
 
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     message,
                     hir.src(proc.origin(), structure_name.range),
-                    ErrorComp::info(
+                    Info::new(
                         "struct defined here",
                         hir.src(data.origin_id, data.name.range),
                     ),
@@ -1622,21 +1622,21 @@ fn typecheck_address<'hir>(
     match adressability {
         Addressability::Unknown => {} //@ & to error should be also Error? 16.05.24
         Addressability::Constant => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "cannot get reference to a constant, you can use `global` instead",
                 hir.src(proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::SliceField => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "cannot get reference to a slice field, slice itself cannot be modified",
                 hir.src(proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::Temporary => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "cannot get reference to a temporary value",
                 hir.src(proc.origin(), rhs.range),
                 None,
@@ -1644,7 +1644,7 @@ fn typecheck_address<'hir>(
         }
         Addressability::TemporaryImmutable => {
             if mutt == ast::Mut::Mutable {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     "cannot get mutable reference to this temporary value, only immutable `&` is allowed",
                     hir.src(proc.origin(), rhs.range),
                     None,
@@ -1653,15 +1653,15 @@ fn typecheck_address<'hir>(
         }
         Addressability::Addressable(rhs_mutt, src) => {
             if mutt == ast::Mut::Mutable && rhs_mutt == ast::Mut::Immutable {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     "cannot get mutable reference to an immutable variable",
                     hir.src(proc.origin(), rhs.range),
-                    ErrorComp::info("variable defined here", src),
+                    Info::new("variable defined here", src),
                 ));
             }
         }
         Addressability::NotImplemented => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "addressability not implemented for this expression",
                 hir.src(proc.origin(), rhs.range),
                 None,
@@ -1802,7 +1802,7 @@ fn typecheck_unary<'hir>(
         };
         match op {
             ast::UnOp::Neg | ast::UnOp::BitNot | ast::UnOp::LogicNot => {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "unary operator `{op_str}` cannot be applied to `{}`",
                         type_format(hir, emit, rhs_res.ty)
@@ -1812,7 +1812,7 @@ fn typecheck_unary<'hir>(
                 ));
             }
             ast::UnOp::Deref => {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot dereference value of type `{}`",
                         type_format(hir, emit, rhs_res.ty)
@@ -1851,7 +1851,7 @@ fn typecheck_binary<'hir>(
             let binary_ty = if check_type_allow_math_ops(lhs_res.ty) {
                 lhs_res.ty
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot use math operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
@@ -1871,7 +1871,7 @@ fn typecheck_binary<'hir>(
             let binary_ty = if check_type_allow_remainder(lhs_res.ty) {
                 lhs_res.ty
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot use remainder operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
@@ -1891,7 +1891,7 @@ fn typecheck_binary<'hir>(
             let binary_ty = if check_type_allow_and_or_xor(lhs_res.ty) {
                 lhs_res.ty
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot use bit-wise operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
@@ -1931,7 +1931,7 @@ fn typecheck_binary<'hir>(
                     let lhs_size = basic_type_size(lhs_basic).size();
                     let rhs_size = basic_type_size(rhs_basic).size();
                     if lhs_size != rhs_size {
-                        emit.error(ErrorComp::error(
+                        emit.error(ErrorComp::new(
                                 format!(
                                     "cannot use bit-shift operator on integers of different sizes\n`{}` has bitwidth of {}, `{}` has bitwidth of {} ",
                                     type_format(hir, emit, lhs_res.ty),
@@ -1949,7 +1949,7 @@ fn typecheck_binary<'hir>(
             let binary_ty = if check_type_allow_shl_shr(lhs_res.ty) {
                 lhs_res.ty
             } else {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot use bit-shift operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
@@ -1967,7 +1967,7 @@ fn typecheck_binary<'hir>(
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
             if !check_type_allow_compare_eq(lhs_res.ty) {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot compare equality for value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
@@ -1984,7 +1984,7 @@ fn typecheck_binary<'hir>(
             let rhs_res = typecheck_expr(hir, emit, proc, lhs_res.ty, rhs);
 
             if !check_type_allow_compare_ord(lhs_res.ty) {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "cannot compare order for value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
@@ -2218,7 +2218,7 @@ fn typecheck_break<'hir>(
     range: TextRange,
 ) -> hir::Stmt<'hir> {
     if !proc.is_inside_loop() {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             "cannot use `break` outside of a loop",
             hir.src(proc.origin(), range),
             None,
@@ -2235,7 +2235,7 @@ fn typecheck_continue<'hir>(
     range: TextRange,
 ) -> hir::Stmt<'hir> {
     if !proc.is_inside_loop() {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             "cannot use `continue` outside of a loop",
             hir.src(proc.origin(), range),
             None,
@@ -2255,10 +2255,10 @@ fn typecheck_return<'hir>(
     let expect = proc.data().return_ty;
 
     if let Some(prev_defer) = proc.is_inside_defer() {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             "cannot use `return` inside `defer`",
             hir.src(proc.origin(), range),
-            ErrorComp::info("in this defer", hir.src(proc.origin(), prev_defer)),
+            Info::new("in this defer", hir.src(proc.origin(), prev_defer)),
         ));
     }
 
@@ -2271,13 +2271,13 @@ fn typecheck_return<'hir>(
         if !type_matches(hir, emit, expect, found) {
             let expect_format = type_format(hir, emit, expect);
             let found_format = type_format(hir, emit, found);
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "type mismatch: expected `{}`, found `{}`",
                     expect_format, found_format,
                 ),
                 hir.src(proc.origin(), range),
-                ErrorComp::info(
+                Info::new(
                     format!("procedure returns `{expect_format}`"),
                     hir.src(proc.origin(), proc.data().name.range),
                 ),
@@ -2299,10 +2299,10 @@ fn typecheck_defer<'hir>(
     let defer_range = TextRange::new(start, start + 5.into());
 
     if let Some(prev_defer) = proc.is_inside_defer() {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             "`defer` statements cannot be nested",
             hir.src(proc.origin(), defer_range),
-            ErrorComp::info("already in this defer", hir.src(proc.origin(), prev_defer)),
+            Info::new("already in this defer", hir.src(proc.origin(), prev_defer)),
         ));
     }
 
@@ -2407,21 +2407,21 @@ fn typecheck_assign<'hir>(
     match adressability {
         Addressability::Unknown => {}
         Addressability::Constant => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "cannot assign to a constant",
                 hir.src(proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::SliceField => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "cannot assign to a slice field, slice itself cannot be modified",
                 hir.src(proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::Temporary | Addressability::TemporaryImmutable => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "cannot assign to a temporary value",
                 hir.src(proc.origin(), assign.lhs.range),
                 None,
@@ -2429,15 +2429,15 @@ fn typecheck_assign<'hir>(
         }
         Addressability::Addressable(mutt, src) => {
             if mutt == ast::Mut::Immutable {
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     "cannot assign to an immutable variable",
                     hir.src(proc.origin(), assign.lhs.range),
-                    ErrorComp::info("variable defined here", src),
+                    Info::new("variable defined here", src),
                 ));
             }
         }
         Addressability::NotImplemented => {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "addressability not implemented for this expression",
                 hir.src(proc.origin(), assign.lhs.range),
                 None,
@@ -2474,7 +2474,7 @@ pub fn require_value_type<'hir>(
     source: SourceRange,
 ) {
     if !type_is_value_type(ty) {
-        emit.error(ErrorComp::error(
+        emit.error(ErrorComp::new(
             format!(
                 "expected value type, found `{}`",
                 type_format(hir, emit, ty)
@@ -2574,10 +2574,10 @@ pub fn path_resolve_type<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!("expected type, found local `{}`", hir.name_str(name.id)),
                 hir.src(origin_id, name.range),
-                ErrorComp::info("defined here", source),
+                Info::new("defined here", source),
             ));
             return hir::Type::Error;
         }
@@ -2587,14 +2587,14 @@ pub fn path_resolve_type<'hir>(
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "expected type, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
                     ),
                     hir.src(origin_id, name.range),
-                    ErrorComp::info("defined here", source),
+                    Info::new("defined here", source),
                 ));
                 return hir::Type::Error;
             }
@@ -2604,7 +2604,7 @@ pub fn path_resolve_type<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "unexpected path segment",
                 hir.src(origin_id, range),
                 None,
@@ -2644,13 +2644,13 @@ fn path_resolve_structure<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "expected struct or union, found local `{}`",
                     hir.name_str(name.id)
                 ),
                 hir.src(origin_id, name.range),
-                ErrorComp::info("defined here", source),
+                Info::new("defined here", source),
             ));
             return StructureID::None;
         }
@@ -2659,14 +2659,14 @@ fn path_resolve_structure<'hir>(
             SymbolKind::Struct(id) => StructureID::Struct(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "expected struct or union, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
                     ),
                     hir.src(origin_id, name.range),
-                    ErrorComp::info("defined here", source),
+                    Info::new("defined here", source),
                 ));
                 return StructureID::None;
             }
@@ -2676,7 +2676,7 @@ fn path_resolve_structure<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 "unexpected path segment",
                 hir.src(origin_id, range),
                 None,
@@ -2717,7 +2717,7 @@ fn path_resolve_value<'hir, 'ast>(
                 if let Some(remaining) = path.names.get(name_idx + 1..) {
                     if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
                         let range = TextRange::new(first.range.start(), last.range.end());
-                        emit.error(ErrorComp::error(
+                        emit.error(ErrorComp::new(
                             "unexpected path segment",
                             hir.src(origin_id, range),
                             None,
@@ -2734,7 +2734,7 @@ fn path_resolve_value<'hir, 'ast>(
                             if let (Some(first), Some(last)) = (remaining.first(), remaining.last())
                             {
                                 let range = TextRange::new(first.range.start(), last.range.end());
-                                emit.error(ErrorComp::error(
+                                emit.error(ErrorComp::new(
                                     "unexpected path segment",
                                     hir.src(origin_id, range),
                                     None,
@@ -2743,26 +2743,26 @@ fn path_resolve_value<'hir, 'ast>(
                         }
                         return (ValueID::Enum(id, variant_id), &[]);
                     } else {
-                        emit.error(ErrorComp::error(
+                        emit.error(ErrorComp::new(
                             format!(
                                 "enum variant `{}` is not found",
                                 hir.name_str(variant_name.id)
                             ),
                             hir.src(origin_id, variant_name.range),
-                            ErrorComp::info("enum defined here", source),
+                            Info::new("enum defined here", source),
                         ));
                         return (ValueID::None, &[]);
                     }
                 } else {
                     let name = path.names[name_idx];
-                    emit.error(ErrorComp::error(
+                    emit.error(ErrorComp::new(
                         format!(
                             "expected value, found {} `{}`",
                             HirData::symbol_kind_name(kind),
                             hir.name_str(name.id)
                         ),
                         hir.src(origin_id, name.range),
-                        ErrorComp::info("defined here", source),
+                        Info::new("defined here", source),
                     ));
                     return (ValueID::None, &[]);
                 }
@@ -2771,14 +2771,14 @@ fn path_resolve_value<'hir, 'ast>(
             SymbolKind::Global(id) => ValueID::Global(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!(
                         "expected value, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
                     ),
                     hir.src(origin_id, name.range),
-                    ErrorComp::info("defined here", source),
+                    Info::new("defined here", source),
                 ));
                 return (ValueID::None, &[]);
             }

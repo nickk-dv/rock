@@ -1,21 +1,29 @@
 use crate::ansi;
-use rock_core::error::{ErrorComp, ErrorContext, ErrorData, ErrorSeverity};
+use rock_core::error::{
+    Diagnostic, DiagnosticCollection, DiagnosticContext, DiagnosticKind, DiagnosticSeverity,
+};
 use rock_core::session::{File, Session};
 use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
 
-pub fn print_errors(session: Option<&Session>, errors: &[ErrorComp]) {
+pub fn print_errors(session: Option<&Session>, diagnostics: DiagnosticCollection) {
     let handle = &mut BufWriter::new(std::io::stderr());
-    for error in errors.iter() {
-        if error.get_severity() == ErrorSeverity::Warning {
-            print_error(session, error, handle)
-        }
+    for warning in diagnostics.warnings() {
+        print_diagnostic(
+            session,
+            warning.diagnostic(),
+            DiagnosticSeverity::Warning,
+            handle,
+        );
     }
-    for error in errors.iter() {
-        if error.get_severity() == ErrorSeverity::Error {
-            print_error(session, error, handle)
-        }
+    for error in diagnostics.errors() {
+        print_diagnostic(
+            session,
+            error.diagnostic(),
+            DiagnosticSeverity::Error,
+            handle,
+        );
     }
     let _ = handle.flush();
 }
@@ -30,7 +38,7 @@ struct ContextFmt<'src> {
 }
 
 impl<'src> ContextFmt<'src> {
-    fn new(session: &'src Session, context: &ErrorContext) -> ContextFmt<'src> {
+    fn new(session: &'src Session, context: &DiagnosticContext) -> ContextFmt<'src> {
         let file = session.file(context.source().file_id());
         let path = file
             .path
@@ -60,22 +68,26 @@ impl<'src> ContextFmt<'src> {
     }
 }
 
-fn print_error(session: Option<&Session>, error: &ErrorComp, handle: &mut BufWriter<Stderr>) {
-    let message = error.get_message();
-    let severiry = error.get_severity();
-
+fn print_diagnostic(
+    session: Option<&Session>,
+    diagnostic: &Diagnostic,
+    severity: DiagnosticSeverity,
+    handle: &mut BufWriter<Stderr>,
+) {
+    let message = diagnostic.message().as_str();
     let _ = writeln!(
         handle,
         "\n{}{}: {}{message}{}",
-        severity_color(severiry),
-        severity_name(severiry),
+        severity_color(severity),
+        severity_name(severity),
         ansi::WHITE_BOLD,
         ansi::RESET
     );
 
-    let (main, info) = match error.get_data() {
-        ErrorData::None => return,
-        ErrorData::Context { main, info } => (main, info),
+    let (main, info) = match diagnostic.kind() {
+        DiagnosticKind::Message => return,
+        DiagnosticKind::Context { main, info } => (main, info),
+        DiagnosticKind::ContextVec { main, info } => panic!("diagnostic info vec not supported"),
     };
 
     let session = session.expect("session context");
@@ -89,15 +101,15 @@ fn print_error(session: Option<&Session>, error: &ErrorComp, handle: &mut BufWri
         let line_pad = " ".repeat(main_fmt.line_num.len());
 
         print_line_bar(handle, &line_pad);
-        print_context(handle, &line_pad, &main_fmt, main, severiry);
+        print_context(handle, &line_pad, &main_fmt, main, severity);
         print_file_link(handle, &line_pad, &main_fmt, false);
-        print_context(handle, &line_pad, &info_fmt, info, ErrorSeverity::Info);
+        print_context(handle, &line_pad, &info_fmt, info, DiagnosticSeverity::Info);
         print_file_link(handle, &line_pad, &info_fmt, true);
     } else {
         let line_pad = " ".repeat(main_fmt.line_num.len());
 
         print_line_bar(handle, &line_pad);
-        print_context(handle, &line_pad, &main_fmt, main, severiry);
+        print_context(handle, &line_pad, &main_fmt, main, severity);
         print_file_link(handle, &line_pad, &main_fmt, true);
     }
 }
@@ -128,8 +140,8 @@ fn print_context(
     handle: &mut BufWriter<Stderr>,
     line_pad: &str,
     fmt: &ContextFmt,
-    context: &ErrorContext,
-    severity: ErrorSeverity,
+    context: &DiagnosticContext,
+    severity: DiagnosticSeverity,
 ) {
     let prefix_range = TextRange::new(fmt.line_range.start(), fmt.range.start());
     let source_range = TextRange::new(fmt.range.start(), fmt.line_range.end().min(fmt.range.end()));
@@ -162,26 +174,26 @@ fn normalized_tab_len(text: &str) -> usize {
         .sum::<usize>()
 }
 
-const fn severity_name(severity: ErrorSeverity) -> &'static str {
+const fn severity_name(severity: DiagnosticSeverity) -> &'static str {
     match severity {
-        ErrorSeverity::Info => "info",
-        ErrorSeverity::Error => "error",
-        ErrorSeverity::Warning => "warning",
+        DiagnosticSeverity::Info => "info",
+        DiagnosticSeverity::Error => "error",
+        DiagnosticSeverity::Warning => "warning",
     }
 }
 
-const fn severity_marker(severity: ErrorSeverity) -> &'static str {
+const fn severity_marker(severity: DiagnosticSeverity) -> &'static str {
     match severity {
-        ErrorSeverity::Info => "-",
-        ErrorSeverity::Error => "^",
-        ErrorSeverity::Warning => "^",
+        DiagnosticSeverity::Info => "-",
+        DiagnosticSeverity::Error => "^",
+        DiagnosticSeverity::Warning => "^",
     }
 }
 
-const fn severity_color(severity: ErrorSeverity) -> &'static str {
+const fn severity_color(severity: DiagnosticSeverity) -> &'static str {
     match severity {
-        ErrorSeverity::Info => ansi::GREEN_BOLD,
-        ErrorSeverity::Error => ansi::RED_BOLD,
-        ErrorSeverity::Warning => ansi::YELLOW_BOLD,
+        DiagnosticSeverity::Info => ansi::GREEN_BOLD,
+        DiagnosticSeverity::Error => ansi::RED_BOLD,
+        DiagnosticSeverity::Warning => ansi::YELLOW_BOLD,
     }
 }

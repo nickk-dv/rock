@@ -121,21 +121,23 @@ fn handle_notification(conn: &Connection, not: lsp_server::Notification) {
 }
 
 use rock_core::ast_parse;
-use rock_core::error::{ErrorComp, ErrorData, ErrorSeverity, SourceRange};
+use rock_core::error::{
+    Diagnostic, DiagnosticCollection, DiagnosticKind, DiagnosticSeverity, SourceRange, WarningComp,
+};
 use rock_core::hir_lower;
 use rock_core::session::Session;
 use rock_core::text;
 
 use lsp_types::{
-    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Position,
-    PublishDiagnosticsParams, Range,
+    DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range,
 };
 use std::path::PathBuf;
 
-fn run_check(session: &Session) -> Result<(), Vec<ErrorComp>> {
-    let ast = ast_parse::parse(session)?;
-    let _ = hir_lower::check(ast, session)?;
-    Ok(())
+fn run_check(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
+    let ast = ast_parse::parse(session)
+        .map_err(|errors| DiagnosticCollection::new().join_errors(errors))?;
+    let (_, warnings) = hir_lower::check(ast, session)?;
+    Ok(warnings)
 }
 
 fn url_from_path(path: &PathBuf) -> lsp_types::Url {
@@ -161,6 +163,40 @@ fn source_to_range_and_path(session: &Session, source: SourceRange) -> (Range, &
     (range, &file.path)
 }
 
+fn create_diagnostic<'src>(
+    session: &'src Session,
+    diagnostic: &Diagnostic,
+    severity: DiagnosticSeverity,
+) -> Option<(lsp_types::Diagnostic, &'src PathBuf)> {
+    let message = diagnostic.message();
+
+    let (main, info) = match diagnostic.kind() {
+        DiagnosticKind::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
+        DiagnosticKind::Context { main, info } => (main, info),
+        DiagnosticKind::ContextVec { main, info } => panic!("diagnostic info vec not supported"),
+    };
+
+    let (main_range, main_path) = source_to_range_and_path(&session, main.source());
+
+    let mut diagnostic = lsp_types::Diagnostic::new_simple(main_range, message.as_str().into());
+    diagnostic.severity = match severity {
+        DiagnosticSeverity::Info => Some(lsp_types::DiagnosticSeverity::HINT),
+        DiagnosticSeverity::Error => Some(lsp_types::DiagnosticSeverity::ERROR),
+        DiagnosticSeverity::Warning => Some(lsp_types::DiagnosticSeverity::WARNING),
+    };
+
+    if let Some(info) = info {
+        let (info_range, info_path) = source_to_range_and_path(&session, info.source());
+
+        diagnostic.related_information = Some(vec![DiagnosticRelatedInformation {
+            location: Location::new(url_from_path(info_path), info_range),
+            message: info.message().to_string(),
+        }]);
+    }
+
+    Some((diagnostic, main_path))
+}
+
 fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
     use std::collections::HashMap;
 
@@ -169,10 +205,9 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
     let session = Session::new()
         .map_err(|_| Result::<(), ()>::Err(()))
         .unwrap();
-    let errors = if let Err(errors) = run_check(&session) {
-        errors
-    } else {
-        vec![]
+    let diagnostics = match run_check(&session) {
+        Ok(warnings) => DiagnosticCollection::new().join_warnings(warnings),
+        Err(diagnostics) => diagnostics,
     };
 
     // assign empty diagnostics
@@ -183,36 +218,28 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
     }
 
     // generate diagnostics
-    for error in errors {
-        let message = error.get_message();
-        let severity = error.get_severity();
-        let (main, info) = match error.get_data() {
-            ErrorData::None => continue,
-            ErrorData::Context { main, info } => (main, info),
-        };
-
-        let (main_range, main_path) = source_to_range_and_path(&session, main.source());
-
-        let mut diagnostic = Diagnostic::new_simple(main_range, message.to_string());
-        diagnostic.severity = match severity {
-            ErrorSeverity::Info => Some(DiagnosticSeverity::HINT),
-            ErrorSeverity::Error => Some(DiagnosticSeverity::ERROR),
-            ErrorSeverity::Warning => Some(DiagnosticSeverity::WARNING),
-        };
-
-        if let Some(info) = info {
-            let (info_range, info_path) = source_to_range_and_path(&session, info.source());
-
-            diagnostic.related_information = Some(vec![DiagnosticRelatedInformation {
-                location: Location::new(url_from_path(info_path), info_range),
-                message: info.message().to_string(),
-            }]);
+    for warning in diagnostics.warnings() {
+        if let Some((diagnostic, main_path)) =
+            create_diagnostic(&session, warning.diagnostic(), DiagnosticSeverity::Warning)
+        {
+            match diagnostics_map.get_mut(main_path) {
+                Some(diagnostics) => diagnostics.push(diagnostic),
+                None => {
+                    diagnostics_map.insert(main_path.clone(), vec![diagnostic]);
+                }
+            }
         }
+    }
 
-        match diagnostics_map.get_mut(main_path) {
-            Some(diagnostics) => diagnostics.push(diagnostic),
-            None => {
-                diagnostics_map.insert(main_path.clone(), vec![diagnostic]);
+    for error in diagnostics.errors() {
+        if let Some((diagnostic, main_path)) =
+            create_diagnostic(&session, error.diagnostic(), DiagnosticSeverity::Error)
+        {
+            match diagnostics_map.get_mut(main_path) {
+                Some(diagnostics) => diagnostics.push(diagnostic),
+                None => {
+                    diagnostics_map.insert(main_path.clone(), vec![diagnostic]);
+                }
             }
         }
     }

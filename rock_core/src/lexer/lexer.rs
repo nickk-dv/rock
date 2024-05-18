@@ -27,7 +27,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub fn finish(self) -> Result<TokenList, Vec<ErrorComp>> {
+    pub fn result(self) -> Result<TokenList, Vec<ErrorComp>> {
         if self.errors.is_empty() {
             Ok(self.tokens)
         } else {

@@ -3,81 +3,129 @@ use crate::ansi;
 use crate::error_format;
 use rock_core::ast_parse;
 use rock_core::codegen;
-use rock_core::error::ErrorComp;
+use rock_core::error::{DiagnosticCollection, ErrorComp, WarningComp};
 use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package::{BuildManifest, Manifest, PackageKind, PackageManifest, Semver};
 use rock_core::session::Session;
 use std::collections::BTreeMap;
 
-pub fn command(command: Command) -> Result<(), Vec<ErrorComp>> {
+pub fn command(command: Command) -> Result<((), Vec<WarningComp>), DiagnosticCollection> {
     match command {
-        Command::New(data) => new(data).map_err(|e| vec![e]),
-        Command::Check => check(),
-        Command::Build(data) => build(data),
-        Command::Run(data) => run(data),
+        Command::New(data) => match new(data) {
+            Ok(()) => Ok(((), vec![])),
+            Err(error) => Err(DiagnosticCollection::new().join_errors(vec![error])),
+        },
+        Command::Check => match check() {
+            Ok(()) => Ok(((), vec![])),
+            Err(error) => Err(DiagnosticCollection::new().join_errors(vec![error])),
+        },
+        Command::Build(data) => match build(data) {
+            Ok(()) => Ok(((), vec![])),
+            Err(error) => Err(DiagnosticCollection::new().join_errors(vec![error])),
+        },
+        Command::Run(data) => match run(data) {
+            Ok(()) => Ok(((), vec![])),
+            Err(error) => Err(DiagnosticCollection::new().join_errors(vec![error])),
+        },
         Command::Help => {
             help();
-            Ok(())
+            Ok(((), vec![]))
         }
         Command::Version => {
             version();
-            Ok(())
+            Ok(((), vec![]))
         }
     }
 }
 
-fn check() -> Result<(), Vec<ErrorComp>> {
+fn check() -> Result<(), ErrorComp> {
     let session = Session::new()?;
-    if let Err(errors) = inner(&session) {
-        error_format::print_errors(Some(&session), &errors);
+    match inner(&session) {
+        Ok(((), warnings)) => error_format::print_errors(
+            Some(&session),
+            DiagnosticCollection::new().join_warnings(warnings),
+        ),
+        Err(diagnostics) => {
+            error_format::print_errors(Some(&session), diagnostics);
+        }
     }
     return Ok(());
 
-    fn inner(session: &Session) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(session)?;
-        let _ = hir_lower::check(ast, session)?;
-        Ok(())
+    fn inner(session: &Session) -> Result<((), Vec<WarningComp>), DiagnosticCollection> {
+        let ast = ast_parse::parse(session)
+            .map_err(|errors| DiagnosticCollection::new().join_errors(errors))?;
+        let (_, warnings) = hir_lower::check(ast, session)?;
+        Ok(((), warnings))
     }
 }
 
-fn build(data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
+fn build(data: CommandBuild) -> Result<(), ErrorComp> {
     let session = Session::new()?;
-    if let Err(errors) = inner(&session, data) {
-        error_format::print_errors(Some(&session), &errors);
+    match inner(&session, data) {
+        Ok(((), warnings)) => error_format::print_errors(
+            Some(&session),
+            DiagnosticCollection::new().join_warnings(warnings),
+        ),
+        Err(diagnostics) => {
+            error_format::print_errors(Some(&session), diagnostics);
+        }
     }
     return Ok(());
 
-    fn inner(session: &Session, data: CommandBuild) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(session)?;
-        let hir = hir_lower::check(ast, session)?;
+    fn inner(
+        session: &Session,
+        data: CommandBuild,
+    ) -> Result<((), Vec<WarningComp>), DiagnosticCollection> {
+        let ast = ast_parse::parse(session)
+            .map_err(|errors| DiagnosticCollection::new().join_errors(errors))?;
+        let (hir, warnings_0) = hir_lower::check(ast, session)?;
         codegen::codegen(
             hir,
             &session.root_package_bin_name(),
             codegen::BuildConfig::Build(data.kind),
         )
-        .map_err(|e| vec![e])?;
-        Ok(())
+        .map_err(|error| {
+            DiagnosticCollection::new()
+                .join_errors(vec![error])
+                .join_warnings(warnings_0.clone())
+        })?;
+        Ok(((), warnings_0))
     }
 }
 
-fn run(data: CommandRun) -> Result<(), Vec<ErrorComp>> {
+//@run happens before warnings are printed 18.05.24
+fn run(data: CommandRun) -> Result<(), ErrorComp> {
     let session = Session::new()?;
-    if let Err(errors) = inner(&session, data) {
-        error_format::print_errors(Some(&session), &errors);
+    match inner(&session, data) {
+        Ok(((), warnings)) => error_format::print_errors(
+            Some(&session),
+            DiagnosticCollection::new().join_warnings(warnings),
+        ),
+        Err(diagnostics) => {
+            error_format::print_errors(Some(&session), diagnostics);
+        }
     }
     return Ok(());
 
-    fn inner(session: &Session, data: CommandRun) -> Result<(), Vec<ErrorComp>> {
-        let ast = ast_parse::parse(session)?;
-        let hir = hir_lower::check(ast, session)?;
+    fn inner(
+        session: &Session,
+        data: CommandRun,
+    ) -> Result<((), Vec<WarningComp>), DiagnosticCollection> {
+        let ast = ast_parse::parse(session)
+            .map_err(|errors| DiagnosticCollection::new().join_errors(errors))?;
+        let (hir, warnings_0) = hir_lower::check(ast, session)?;
         codegen::codegen(
             hir,
             &session.root_package_bin_name(),
             codegen::BuildConfig::Run(data.kind, data.args),
         )
-        .map_err(|e| vec![e])?;
-        Ok(())
+        .map_err(|error| {
+            DiagnosticCollection::new()
+                .join_errors(vec![error])
+                .join_warnings(warnings_0.clone())
+        })?;
+        Ok(((), warnings_0))
     }
 }
 

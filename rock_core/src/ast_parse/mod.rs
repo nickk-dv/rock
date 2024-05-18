@@ -48,5 +48,5 @@ pub fn parse(session: &Session) -> Result<Ast, Vec<ErrorComp>> {
         })
     }
 
-    state.finish()
+    state.result()
 }

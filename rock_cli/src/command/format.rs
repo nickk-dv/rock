@@ -1,4 +1,4 @@
-use rock_core::error::ErrorComp;
+use rock_core::error::{DiagnosticCollection, ErrorComp, WarningComp};
 use std::collections::{HashMap, HashSet};
 
 pub struct CommandFormat {
@@ -8,31 +8,32 @@ pub struct CommandFormat {
     pub trail_args: Vec<String>,
 }
 
-pub fn parse() -> Result<CommandFormat, ErrorComp> {
+pub fn parse() -> Result<(CommandFormat, Vec<WarningComp>), DiagnosticCollection> {
     let mut p = FormatParser::new();
-    // maybe report duplicates as warnings when proper warning support is done @25.04.24
-    // currently duplicate options are ignored
-    let mut duplicates = HashSet::new();
+    let mut diagnostics = DiagnosticCollection::new();
 
-    let cmd_name = if let Some(name) = p.peek_arg() {
+    let cmd_name = if let Some(name) = p.eat_arg() {
         name
     } else {
-        return Err(ErrorComp::message(
+        diagnostics.error(ErrorComp::message(
             "command name is missing, use `rock help` to learn the usage",
         ));
+        "error".into()
     };
 
     let mut cmd_args = Vec::new();
-    while let Some(arg) = p.peek_arg() {
+    while let Some(arg) = p.eat_arg() {
         cmd_args.push(arg);
     }
 
+    let mut duplicates = HashSet::new();
     let mut cmd_options = HashMap::new();
-    while let Some(name) = p.peek_option() {
+
+    while let Some(name) = p.eat_option() {
         let opt_name = name;
 
         let mut opt_args = Vec::new();
-        while let Some(arg) = p.peek_arg() {
+        while let Some(arg) = p.eat_arg() {
             opt_args.push(arg);
         }
 
@@ -43,12 +44,21 @@ pub fn parse() -> Result<CommandFormat, ErrorComp> {
         }
     }
 
-    Ok(CommandFormat {
+    // order of elements in hashmap gets random
+    for duplicate in duplicates {
+        diagnostics.warning(WarningComp::message(format!(
+            "duplicate options `--{duplicate}` will be ignored"
+        )));
+    }
+
+    let format = CommandFormat {
         name: cmd_name,
         args: cmd_args,
         options: cmd_options,
         trail_args: p.trail_args(),
-    })
+    };
+
+    diagnostics.result(format)
 }
 
 struct FormatParser {
@@ -64,7 +74,7 @@ impl FormatParser {
         }
     }
 
-    fn peek_arg(&mut self) -> Option<String> {
+    fn eat_arg(&mut self) -> Option<String> {
         match self.args.get(self.cursor) {
             Some(arg) => {
                 if arg.starts_with("--") {
@@ -78,7 +88,7 @@ impl FormatParser {
         }
     }
 
-    fn peek_option(&mut self) -> Option<String> {
+    fn eat_option(&mut self) -> Option<String> {
         match self.args.get(self.cursor) {
             Some(arg) => {
                 if let Some(option) = arg.strip_prefix("--") {

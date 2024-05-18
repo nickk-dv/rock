@@ -3,6 +3,7 @@ mod format;
 mod parse;
 
 use crate::error_format;
+use rock_core::error::DiagnosticCollection;
 use rock_core::package::PackageKind;
 use rock_core::session::BuildKind;
 
@@ -31,19 +32,31 @@ struct CommandRun {
 }
 
 pub fn run() {
-    let format = match format::parse() {
+    let (format, warnings_0) = match format::parse() {
         Ok(format) => format,
-        Err(error) => {
-            return error_format::print_errors(None, &[error]);
+        Err(diagnostics) => {
+            error_format::print_errors(None, diagnostics);
+            return;
         }
     };
     let command = match parse::command(format) {
         Ok(command) => command,
         Err(errors) => {
-            return error_format::print_errors(None, &errors);
+            error_format::print_errors(None, DiagnosticCollection::new().join_errors(errors));
+            return;
         }
     };
-    if let Err(errors) = execute::command(command) {
-        error_format::print_errors(None, &errors);
-    }
+    let ((), warnings_1) = match execute::command(command) {
+        Ok(command) => command,
+        Err(diagnostics) => {
+            error_format::print_errors(None, diagnostics.join_warnings(warnings_0));
+            return;
+        }
+    };
+    error_format::print_errors(
+        None,
+        DiagnosticCollection::new()
+            .join_warnings(warnings_0)
+            .join_warnings(warnings_1),
+    );
 }

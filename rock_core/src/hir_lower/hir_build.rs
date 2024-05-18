@@ -1,6 +1,6 @@
 use crate::arena::Arena;
 use crate::ast;
-use crate::error::{ErrorComp, SourceRange};
+use crate::error::{DiagnosticCollection, ErrorComp, Info, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::intern::ConstInternPool;
 use crate::intern::InternID;
@@ -67,7 +67,7 @@ pub struct Registry<'hir, 'ast> {
 pub struct HirEmit<'hir> {
     pub arena: Arena<'hir>,
     pub const_intern: ConstInternPool<'hir>, //@consider storing this in HirData insted (doesnt matter for now) 09.05.24
-    errors: Vec<ErrorComp>,
+    diagnostics: DiagnosticCollection,
 }
 
 impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
@@ -211,14 +211,14 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                         self.symbol_kind_vis(kind)
                     };
                     if vis == ast::Vis::Private {
-                        emit.error(ErrorComp::error(
+                        emit.error(ErrorComp::new(
                             format!(
                                 "{} `{}` is private",
                                 Self::symbol_kind_name(kind),
                                 self.name_str(name.id)
                             ),
                             self.src(origin_id, name.range),
-                            ErrorComp::info("defined here", source),
+                            Info::new("defined here", source),
                         ));
                         None
                     } else {
@@ -239,7 +239,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                 //@sometimes its in self scope
                 // else its in some module.
                 // display module path?
-                emit.error(ErrorComp::error(
+                emit.error(ErrorComp::new(
                     format!("name `{}` is not found in module", self.name_str(name.id)),
                     self.src(origin_id, name.range),
                     None,
@@ -559,53 +559,52 @@ impl<'hir> HirEmit<'hir> {
         HirEmit {
             arena: Arena::new(),
             const_intern: ConstInternPool::new(),
-            errors: Vec::new(),
+            diagnostics: DiagnosticCollection::new(),
         }
     }
 
+    #[inline]
     pub fn error(&mut self, error: ErrorComp) {
-        self.errors.push(error);
+        self.diagnostics.error(error);
+    }
+
+    #[inline]
+    pub fn warning(&mut self, warning: WarningComp) {
+        self.diagnostics.warning(warning);
     }
 
     pub fn emit<'ast, 'intern: 'hir>(
-        mut self,
+        self,
         hir: HirData<'hir, 'ast, 'intern>,
-    ) -> Result<hir::Hir<'hir>, Vec<ErrorComp>> {
+    ) -> Result<(hir::Hir<'hir>, Vec<WarningComp>), DiagnosticCollection> {
         //@debug info
         eprintln!("ast mem: {}", hir.ast.arena.mem_usage());
         eprintln!("hir mem: {}", self.arena.mem_usage());
 
-        if self.errors.is_empty() {
-            let mut const_values = Vec::with_capacity(hir.registry.const_evals.len());
+        let (_, warnings) = self.diagnostics.result(())?;
+        let mut const_values = Vec::with_capacity(hir.registry.const_evals.len());
+        let mut errors = Vec::new();
 
-            let mut unresolved_consts = false;
-            for (eval, origin_id) in hir.registry.const_evals.iter() {
-                match *eval {
-                    hir::ConstEval::Error => {
-                        unresolved_consts = true;
-                        self.errors.push(ErrorComp::message(
-                            "internal: trying to emit hir with ConstEval::Error expression",
-                        ));
-                    }
-                    hir::ConstEval::Unresolved(expr) => {
-                        //@temp error to catch unresolved const eval without panicking
-                        // is always possible in case of some compiler bugs, keep this error? 15.05.24
-                        unresolved_consts = true;
-                        self.errors.push(ErrorComp::error(
-                            "internal: trying to emit hir with ConstEval::Unresolved expression",
-                            hir.src(*origin_id, expr.0.range),
-                            None,
-                        ));
-                    }
-                    hir::ConstEval::ResolvedValue(value_id) => const_values.push(value_id),
+        for (eval, origin_id) in hir.registry.const_evals.iter() {
+            match *eval {
+                hir::ConstEval::Error => {
+                    errors.push(ErrorComp::message(
+                        "internal: trying to emit hir with ConstEval::Error expression",
+                    ));
                 }
+                hir::ConstEval::Unresolved(expr) => {
+                    errors.push(ErrorComp::new(
+                        "internal: trying to emit hir with ConstEval::Unresolved expression",
+                        hir.src(*origin_id, expr.0.range),
+                        None,
+                    ));
+                }
+                hir::ConstEval::ResolvedValue(value_id) => const_values.push(value_id),
             }
+        }
 
-            if unresolved_consts {
-                return Err(self.errors);
-            }
-
-            Ok(hir::Hir {
+        if errors.is_empty() {
+            let hir = hir::Hir {
                 arena: self.arena,
                 intern: hir.ast.intern,
                 const_intern: self.const_intern,
@@ -617,9 +616,12 @@ impl<'hir> HirEmit<'hir> {
                 consts: hir.registry.hir_consts,
                 globals: hir.registry.hir_globals,
                 const_values,
-            })
+            };
+            Ok((hir, warnings))
         } else {
-            Err(self.errors)
+            Err(DiagnosticCollection::new()
+                .join_errors(errors)
+                .join_warnings(warnings))
         }
     }
 }

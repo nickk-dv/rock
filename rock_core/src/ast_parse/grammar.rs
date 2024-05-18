@@ -50,7 +50,7 @@ pub fn module<'ast>(
                     p.cursor -= 1;
                 }
                 let range = p.peek_range();
-                return Err(ErrorComp::error_detailed(
+                return Err(ErrorComp::new_detailed(
                     error,
                     "unexpected token",
                     SourceRange::new(range, file_id),

@@ -63,7 +63,7 @@ fn lex_whitespace(lex: &mut Lexer) {
 
             if depth != 0 {
                 let range = lex.make_range(start);
-                lex.error(ErrorComp::error(
+                lex.error(ErrorComp::new(
                     format!("missing {} block comment terminators `*/`", depth),
                     SourceRange::new(range, lex.file_id()),
                     None,
@@ -123,7 +123,7 @@ fn lex_char(lex: &mut Lexer) {
         Some(c) => {
             if c == '\n' || c == '\r' {
                 let range = lex.make_range(start);
-                lex.error(ErrorComp::error(
+                lex.error(ErrorComp::new(
                     "character literal is incomplete",
                     SourceRange::new(range, lex.file_id()),
                     None,
@@ -134,7 +134,7 @@ fn lex_char(lex: &mut Lexer) {
         }
         None => {
             let range = lex.make_range(start);
-            lex.error(ErrorComp::error(
+            lex.error(ErrorComp::new(
                 "character literal is incomplete",
                 SourceRange::new(range, lex.file_id()),
                 None,
@@ -155,7 +155,7 @@ fn lex_char(lex: &mut Lexer) {
             let start = lex.start_range();
             lex.eat(fc);
             let range = lex.make_range(start);
-            lex.error(ErrorComp::error(
+            lex.error(ErrorComp::new(
                 "charater literal tab must be escaped: `\\t`",
                 SourceRange::new(range, lex.file_id()),
                 None,
@@ -177,7 +177,7 @@ fn lex_char(lex: &mut Lexer) {
     match (inner_tick, terminated) {
         (true, false) => {
             // example [ '' ]
-            lex.error(ErrorComp::error(
+            lex.error(ErrorComp::new(
                 "character literal cannot be empty",
                 SourceRange::new(range, lex.file_id()),
                 None,
@@ -185,7 +185,7 @@ fn lex_char(lex: &mut Lexer) {
         }
         (true, true) => {
             // example [ ''' ]
-            lex.error(ErrorComp::error(
+            lex.error(ErrorComp::new(
                 "character literal `'` must be escaped: `\\'`",
                 SourceRange::new(range, lex.file_id()),
                 None,
@@ -193,7 +193,7 @@ fn lex_char(lex: &mut Lexer) {
         }
         (false, false) => {
             // example [ 'x, '\n ]
-            lex.error(ErrorComp::error(
+            lex.error(ErrorComp::new(
                 "character literal not terminated, missing closing `'`",
                 SourceRange::new(range, lex.file_id()),
                 None,
@@ -245,7 +245,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
     lex.tokens().add_string(string, c_string, range);
 
     if !terminated {
-        lex.error(ErrorComp::error(
+        lex.error(ErrorComp::new(
             "string literal not terminated, missing closing \"",
             SourceRange::new(range, lex.file_id()),
             None,
@@ -282,7 +282,7 @@ fn lex_raw_string(lex: &mut Lexer, c_string: bool) {
     lex.tokens().add_string(string, c_string, range);
 
     if !terminated {
-        lex.error(ErrorComp::error(
+        lex.error(ErrorComp::new(
             "raw string literal not terminated, missing closing `",
             SourceRange::new(range, lex.file_id()),
             None,
@@ -306,14 +306,14 @@ fn lex_escape(lex: &mut Lexer) -> char {
             _ => {
                 let mut range = lex.make_range(start);
                 if c.is_ascii_whitespace() {
-                    lex.error(ErrorComp::error(
+                    lex.error(ErrorComp::new(
                         "escape sequence is incomplete\nif you meant `\\`, escape it: `\\\\`",
                         SourceRange::new(range, lex.file_id()),
                         None,
                     ));
                 } else {
                     range.extend_by((c.len_utf8() as u32).into());
-                    lex.error(ErrorComp::error(
+                    lex.error(ErrorComp::new(
                         format!("escape sequence `\\{}` is not supported", c),
                         SourceRange::new(range, lex.file_id()),
                         None,
@@ -327,7 +327,7 @@ fn lex_escape(lex: &mut Lexer) -> char {
         escaped
     } else {
         let range = lex.make_range(start);
-        lex.error(ErrorComp::error(
+        lex.error(ErrorComp::new(
             "escape sequence is incomplete\nif you meant `\\`, escape it: `\\\\`",
             SourceRange::new(range, lex.file_id()),
             None,
@@ -341,7 +341,7 @@ fn lex_escape_c_string(lex: &mut Lexer) -> char {
     let escape = lex_escape(lex);
     if escape == '\0' {
         let range = lex.make_range(start);
-        lex.error(ErrorComp::error(
+        lex.error(ErrorComp::new(
             "c string literals cannot contain any `\\0`\nnull terminator is automatically included",
             SourceRange::new(range, lex.file_id()),
             None,

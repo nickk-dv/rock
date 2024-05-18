@@ -12,5 +12,5 @@ pub fn lex(
 ) -> Result<TokenList, Vec<ErrorComp>> {
     let mut lex = lexer::Lexer::new(source, file_id, lex_whitespace);
     grammar::source_file(&mut lex);
-    lex.finish()
+    lex.result()
 }

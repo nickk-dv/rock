@@ -1,19 +1,47 @@
 use crate::session::FileID;
 use crate::text::TextRange;
 
-pub struct ErrorComp {
-    message: ErrorMessage,
-    severity: ErrorSeverity,
-    data: ErrorData,
+//@improve how results work and cleanup joining of errors / warnings 18.05.24
+// it works but tedious to write
+// also warnings when joined in correctly will lose their original order which is important
+pub struct DiagnosticCollection {
+    errors: Vec<ErrorComp>,
+    warnings: Vec<WarningComp>,
 }
 
-pub enum ErrorMessage {
-    Str(&'static str),
-    String(String),
+#[derive(Clone)] //@remove when possible
+pub struct ErrorComp(Diagnostic);
+#[derive(Clone)] //@remove when possible
+pub struct WarningComp(Diagnostic);
+pub struct Info;
+
+#[derive(Clone)] //@remove when possible
+pub struct Diagnostic {
+    message: StringOrStr,
+    kind: DiagnosticKind,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum ErrorSeverity {
+#[derive(Clone)] //@remove when possible
+pub enum DiagnosticKind {
+    Message,
+    Context {
+        main: DiagnosticContext,
+        info: Option<DiagnosticContext>,
+    },
+    ContextVec {
+        main: DiagnosticContext,
+        info: Vec<DiagnosticContext>,
+    },
+}
+
+#[derive(Clone)] //@remove when possible
+pub struct DiagnosticContext {
+    message: StringOrStr,
+    source: SourceRange,
+}
+
+#[derive(Copy, Clone)]
+pub enum DiagnosticSeverity {
     Info,
     Error,
     Warning,
@@ -25,133 +53,170 @@ pub struct SourceRange {
     file_id: FileID,
 }
 
-pub struct ErrorContext {
-    message: ErrorMessage,
-    source: SourceRange,
+#[derive(Clone)] //@remove when possible
+pub enum StringOrStr {
+    String(String),
+    Str(&'static str),
 }
 
-pub enum ErrorData {
-    None,
-    Context {
-        main: ErrorContext,
-        info: Option<ErrorContext>,
-    },
+impl DiagnosticCollection {
+    pub fn new() -> DiagnosticCollection {
+        DiagnosticCollection {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+    pub fn errors(&self) -> &[ErrorComp] {
+        &self.errors
+    }
+    pub fn warnings(&self) -> &[WarningComp] {
+        &self.warnings
+    }
+
+    pub fn error(&mut self, error: ErrorComp) {
+        self.errors.push(error);
+    }
+    pub fn warning(&mut self, warning: WarningComp) {
+        self.warnings.push(warning);
+    }
+
+    #[must_use]
+    pub fn join_errors(mut self, errors: Vec<ErrorComp>) -> DiagnosticCollection {
+        self.errors.extend(errors);
+        self
+    }
+    #[must_use]
+    pub fn join_warnings(mut self, warnings: Vec<WarningComp>) -> DiagnosticCollection {
+        self.warnings.extend(warnings);
+        self
+    }
+    #[must_use]
+    pub fn join_collection(mut self, other: DiagnosticCollection) -> DiagnosticCollection {
+        self.errors.extend(other.errors);
+        self.warnings.extend(other.warnings);
+        self
+    }
+
+    pub fn result<T>(self, value: T) -> Result<(T, Vec<WarningComp>), DiagnosticCollection> {
+        if self.errors.is_empty() {
+            Ok((value, self.warnings))
+        } else {
+            Err(self)
+        }
+    }
 }
 
 impl ErrorComp {
-    pub fn message(msg: impl Into<ErrorMessage>) -> ErrorComp {
-        ErrorComp {
-            message: msg.into(),
-            severity: ErrorSeverity::Error,
-            data: ErrorData::None,
-        }
+    pub fn diagnostic(&self) -> &Diagnostic {
+        &self.0
     }
 
-    pub fn message_warning(msg: impl Into<ErrorMessage>) -> ErrorComp {
-        ErrorComp {
-            message: msg.into(),
-            severity: ErrorSeverity::Warning,
-            data: ErrorData::None,
-        }
+    pub fn message(msg: impl Into<StringOrStr>) -> ErrorComp {
+        ErrorComp(Diagnostic::new(msg.into(), DiagnosticKind::Message))
     }
 
-    pub fn info(msg: impl Into<ErrorMessage>, src: SourceRange) -> Option<ErrorContext> {
-        Some(ErrorContext {
-            message: msg.into(),
-            source: src,
-        })
-    }
-
-    pub fn error(
-        msg: impl Into<ErrorMessage>,
+    pub fn new(
+        msg: impl Into<StringOrStr>,
         src: SourceRange,
-        info: Option<ErrorContext>,
+        info: Option<DiagnosticContext>,
     ) -> ErrorComp {
-        ErrorComp::new_internal(ErrorSeverity::Error, msg, None::<&str>, src, info)
-    }
-
-    pub fn error_detailed(
-        msg: impl Into<ErrorMessage>,
-        src_msg: impl Into<ErrorMessage>,
-        src: SourceRange,
-        info: Option<ErrorContext>,
-    ) -> ErrorComp {
-        ErrorComp::new_internal(ErrorSeverity::Error, msg, Some(src_msg), src, info)
-    }
-
-    pub fn warning(
-        msg: impl Into<ErrorMessage>,
-        src: SourceRange,
-        info: Option<ErrorContext>,
-    ) -> ErrorComp {
-        ErrorComp::new_internal(ErrorSeverity::Warning, msg, None::<&str>, src, info)
-    }
-
-    pub fn warning_detailed(
-        msg: impl Into<ErrorMessage>,
-        src_msg: impl Into<ErrorMessage>,
-        src: SourceRange,
-        info: Option<ErrorContext>,
-    ) -> ErrorComp {
-        ErrorComp::new_internal(ErrorSeverity::Warning, msg, Some(src_msg), src, info)
-    }
-
-    fn new_internal(
-        severity: ErrorSeverity,
-        msg: impl Into<ErrorMessage>,
-        src_msg: Option<impl Into<ErrorMessage>>,
-        src: SourceRange,
-        info: Option<ErrorContext>,
-    ) -> ErrorComp {
-        let main_ctx = ErrorContext {
-            message: src_msg.map(|m| m.into()).unwrap_or_else(|| "".into()),
-            source: src,
-        };
-        ErrorComp {
-            message: msg.into(),
-            severity,
-            data: ErrorData::Context {
-                main: main_ctx,
+        ErrorComp(Diagnostic::new(
+            msg.into(),
+            DiagnosticKind::Context {
+                main: DiagnosticContext::new("".into(), src),
                 info,
             },
-        }
+        ))
     }
 
-    pub fn get_message(&self) -> &str {
+    pub fn new_detailed(
+        msg: impl Into<StringOrStr>,
+        ctx_msg: impl Into<StringOrStr>,
+        src: SourceRange,
+        info: Option<DiagnosticContext>,
+    ) -> ErrorComp {
+        ErrorComp(Diagnostic::new(
+            msg.into(),
+            DiagnosticKind::Context {
+                main: DiagnosticContext::new(ctx_msg.into(), src),
+                info,
+            },
+        ))
+    }
+}
+
+impl WarningComp {
+    pub fn diagnostic(&self) -> &Diagnostic {
+        &self.0
+    }
+
+    pub fn message(msg: impl Into<StringOrStr>) -> WarningComp {
+        WarningComp(Diagnostic::new(msg.into(), DiagnosticKind::Message))
+    }
+
+    pub fn new(
+        msg: impl Into<StringOrStr>,
+        src: SourceRange,
+        info: Option<DiagnosticContext>,
+    ) -> WarningComp {
+        WarningComp(Diagnostic::new(
+            msg.into(),
+            DiagnosticKind::Context {
+                main: DiagnosticContext::new("".into(), src),
+                info,
+            },
+        ))
+    }
+
+    pub fn new_detailed(
+        msg: impl Into<StringOrStr>,
+        ctx_msg: impl Into<StringOrStr>,
+        src: SourceRange,
+        info: Option<DiagnosticContext>,
+    ) -> WarningComp {
+        WarningComp(Diagnostic::new(
+            msg.into(),
+            DiagnosticKind::Context {
+                main: DiagnosticContext::new(ctx_msg.into(), src),
+                info,
+            },
+        ))
+    }
+}
+
+impl Info {
+    pub fn new(msg: impl Into<StringOrStr>, source: SourceRange) -> Option<DiagnosticContext> {
+        Some(DiagnosticContext::new(msg.into(), source))
+    }
+}
+
+impl Diagnostic {
+    fn new(message: StringOrStr, kind: DiagnosticKind) -> Diagnostic {
+        Diagnostic { message, kind }
+    }
+    pub fn message(&self) -> &StringOrStr {
+        &self.message
+    }
+    pub fn kind(&self) -> &DiagnosticKind {
+        &self.kind
+    }
+}
+
+impl DiagnosticContext {
+    fn new(message: StringOrStr, source: SourceRange) -> DiagnosticContext {
+        DiagnosticContext { message, source }
+    }
+    pub fn message(&self) -> &str {
         self.message.as_str()
     }
-    pub fn get_severity(&self) -> ErrorSeverity {
-        self.severity
-    }
-    pub fn get_data(&self) -> &ErrorData {
-        &self.data
-    }
-}
-
-impl ErrorMessage {
-    fn as_str(&self) -> &str {
-        match self {
-            ErrorMessage::Str(string) => string,
-            ErrorMessage::String(string) => string,
-        }
-    }
-}
-
-impl From<&'static str> for ErrorMessage {
-    fn from(value: &'static str) -> ErrorMessage {
-        ErrorMessage::Str(value)
-    }
-}
-
-impl From<String> for ErrorMessage {
-    fn from(value: String) -> ErrorMessage {
-        ErrorMessage::String(value)
+    pub fn source(&self) -> SourceRange {
+        self.source
     }
 }
 
 impl SourceRange {
-    pub fn new(range: TextRange, file_id: FileID) -> Self {
-        Self { range, file_id }
+    pub fn new(range: TextRange, file_id: FileID) -> SourceRange {
+        SourceRange { range, file_id }
     }
     pub fn range(&self) -> TextRange {
         self.range
@@ -161,11 +226,23 @@ impl SourceRange {
     }
 }
 
-impl ErrorContext {
-    pub fn message(&self) -> &str {
-        self.message.as_str()
+impl StringOrStr {
+    pub fn as_str(&self) -> &str {
+        match self {
+            StringOrStr::Str(string) => string,
+            StringOrStr::String(string) => string,
+        }
     }
-    pub fn source(&self) -> SourceRange {
-        self.source
+}
+
+impl From<&'static str> for StringOrStr {
+    fn from(value: &'static str) -> StringOrStr {
+        StringOrStr::Str(value)
+    }
+}
+
+impl From<String> for StringOrStr {
+    fn from(value: String) -> StringOrStr {
+        StringOrStr::String(value)
     }
 }

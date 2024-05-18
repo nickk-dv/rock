@@ -2,7 +2,7 @@ use super::hir_build::{HirData, HirEmit};
 use super::pass_4;
 use super::pass_5;
 use crate::ast;
-use crate::error::ErrorComp;
+use crate::error::{ErrorComp, Info};
 use crate::hir;
 
 pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
@@ -170,13 +170,13 @@ pub fn process_proc_data<'hir>(
 
     for param in item.params.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == param.name.id) {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "parameter `{}` is defined multiple times",
                     hir.name_str(param.name.id)
                 ),
                 hir.src(origin_id, param.name.range),
-                ErrorComp::info(
+                Info::new(
                     "existing parameter",
                     hir.src(origin_id, existing.name.range),
                 ),
@@ -213,13 +213,13 @@ fn process_enum_data<'hir>(
 
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "variant `{}` is defined multiple times",
                     hir.name_str(variant.name.id)
                 ),
                 hir.src(origin_id, variant.name.range),
-                ErrorComp::info("existing variant", hir.src(origin_id, existing.name.range)),
+                Info::new("existing variant", hir.src(origin_id, existing.name.range)),
             ));
         } else {
             unique.push(hir::EnumVariant {
@@ -243,13 +243,13 @@ fn process_union_data<'hir>(
 
     for member in item.members.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == member.name.id) {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "member `{}` is defined multiple times",
                     hir.name_str(member.name.id)
                 ),
                 hir.src(origin_id, member.name.range),
-                ErrorComp::info("existing member", hir.src(origin_id, existing.name.range)),
+                Info::new("existing member", hir.src(origin_id, existing.name.range)),
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, member.ty);
@@ -277,13 +277,13 @@ fn process_struct_data<'hir>(
 
     for field in item.fields.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == field.name.id) {
-            emit.error(ErrorComp::error(
+            emit.error(ErrorComp::new(
                 format!(
                     "field `{}` is defined multiple times",
                     hir.name_str(field.name.id)
                 ),
                 hir.src(origin_id, field.name.range),
-                ErrorComp::info("existing field", hir.src(origin_id, existing.name.range)),
+                Info::new("existing field", hir.src(origin_id, existing.name.range)),
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, field.ty);

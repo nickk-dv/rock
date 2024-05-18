@@ -64,8 +64,8 @@ impl PackageID {
 }
 
 impl Session {
-    pub fn new() -> Result<Session, Vec<ErrorComp>> {
-        create_session().map_err(|error| vec![error])
+    pub fn new() -> Result<Session, ErrorComp> {
+        create_session()
     }
 
     pub fn cwd(&self) -> &PathBuf {
