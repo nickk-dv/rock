@@ -4,6 +4,7 @@
 mod arena;
 mod ast;
 pub mod ast_parse;
+#[cfg(feature = "codegen_llvm")]
 pub mod codegen;
 pub mod error;
 pub mod fs_env;

@@ -7,4 +7,4 @@ name = "rock"
 path = "src/main.rs"
 
 [dependencies]
-rock_core = { path = "../rock_core" }
+rock_core = { path = "../rock_core", features = ["codegen_llvm"] }
