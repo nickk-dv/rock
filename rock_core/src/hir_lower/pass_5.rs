@@ -2391,10 +2391,7 @@ fn typecheck_local<'hir>(
     Some(hir::Stmt::Local(local_id))
 }
 
-//@not checking lhs variable mutability
-//@not emitting any specific errors like when assigning to constants
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
-// clean this up in general
 fn typecheck_assign<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,

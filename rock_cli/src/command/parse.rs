@@ -1,24 +1,8 @@
 use super::format::CommandFormat;
 use super::{Command, CommandBuild, CommandNew, CommandRun};
-use rock_core::error::{DiagnosticCollection, ErrorComp, WarningComp};
+use rock_core::error::ErrorComp;
 use rock_core::package::PackageKind;
 use rock_core::session::BuildKind;
-
-// Result<T, Vec<ErrorComp>> is not correct way to represent errors @25.04.24
-// this applies to the whole compiler, where ErrorComp are used (and warnings are currently fatal)
-// if warnings can be acseptable, something like Result<(T, Vec<WarningComp>), Vec<ErrorComp>>
-// is preferrable, probably create a re-usable struct for this to simplify warning / error handling
-// and optionally implement something like `ErrorCollection` to store warnings and errors separately
-// this may optionally result in split of ErrorComp into it + WarningComp for more clear type situation
-
-// implement optional ansi coloring based on output target (can be checked)
-// so that error logs can be saved to files without ansi colors @25.04.24
-
-// add this postfix to each error or warning? \nuse `rock help` to learn the usage
-// only for new command name currently @25.04.24
-
-// not warning about unexpected args @25.04.24
-// not warning about unexpected trailing args @25.04.24
 
 pub fn command(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
     match format.name.as_str() {

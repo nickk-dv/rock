@@ -358,14 +358,6 @@ pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> Result<(),
     cg.build_object(bin_name, config)
 }
 
-//@breaking issue inkwell api takes in BasicTypeEnum for struct body creation
-// which doesnt allow void type which is represented as unit () in rock language
-// this has a side-effect of shifting field ids in relation to generated StructFieldIDs in hir::Expr
-// llvm doesnt seem to explicitly disallow void_type in structures. @05.04.24
-//@same applies to unit / void types in procedure params, ProcParamIDs would be synced to llvm param ids
-// when unit type params are removed @05.04.24
-//@this is general design problem with unit / void type in the language
-// currently its allowed to be used freely
 fn codegen_struct_types(cg: &mut Codegen) {
     cg.struct_types.reserve_exact(cg.hir.structs.len());
 
@@ -482,7 +474,6 @@ fn codegen_function_bodies(cg: &Codegen) {
             for &local in proc_data.locals {
                 let local_ty = cg.type_into_basic(local.ty).expect("value type");
                 let local_ptr = cg.builder.build_alloca(local_ty, "local").unwrap();
-                // locals are initialized when declared
                 local_vars.push(local_ptr);
             }
 
