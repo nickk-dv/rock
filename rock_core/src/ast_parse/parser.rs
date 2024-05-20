@@ -1,16 +1,16 @@
 use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::ErrorComp;
-use crate::intern::InternPool;
+use crate::intern::{InternID, InternPool};
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 
 pub struct Parser<'ast, 'intern, 'src, 'state> {
     pub cursor: usize,
-    pub tokens: TokenList,
-    pub char_id: u32,
-    pub string_id: u32,
+    tokens: TokenList,
+    char_id: u32,
+    string_id: u32,
     pub source: &'src str,
     pub state: &'state mut ParseState<'ast, 'intern>,
 }
@@ -49,6 +49,21 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
             source,
             state,
         }
+    }
+
+    pub fn start_range(&self) -> TextOffset {
+        self.tokens.get_range(self.cursor).start()
+    }
+
+    /// `start` offset must be result of `start_range()` call  
+    /// and at least one token must be consumed in between
+    pub fn make_range(&self, start: TextOffset) -> TextRange {
+        let end = self.tokens.get_range(self.cursor - 1).end();
+        TextRange::new(start, end)
+    }
+
+    pub fn peek_range(&self) -> TextRange {
+        self.tokens.get_range(self.cursor)
     }
 
     pub fn at(&self, t: Token) -> bool {
@@ -94,16 +109,17 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         Err(format!("expected `{}`", t.as_str()))
     }
 
-    pub fn peek_range(&self) -> TextRange {
-        self.tokens.get_range(self.cursor)
+    pub fn get_char_lit(&mut self) -> char {
+        let value = self.tokens.get_char(self.char_id as usize);
+        self.char_id += 1;
+        value
     }
 
-    pub fn peek_range_start(&self) -> TextOffset {
-        self.tokens.get_range(self.cursor).start()
-    }
-
-    pub fn peek_range_end(&self) -> TextOffset {
-        self.tokens.get_range(self.cursor - 1).end()
+    pub fn get_string_lit(&mut self) -> (InternID, bool) {
+        let (string, c_string) = self.tokens.get_string(self.string_id as usize);
+        let id = self.state.intern.intern(string);
+        self.string_id += 1;
+        (id, c_string)
     }
 }
 

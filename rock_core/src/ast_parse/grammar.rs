@@ -9,7 +9,7 @@ use crate::token::{Token, T};
 macro_rules! comma_separated_list {
     ($p:expr, $parse_function:ident, $node_buffer:ident, $delim_open:expr, $delim_close:expr) => {{
         $p.expect($delim_open)?;
-        let start = $p.state.$node_buffer.start();
+        let start_offset = $p.state.$node_buffer.start();
         while !$p.at($delim_close) && !$p.at(T![eof]) {
             let item = $parse_function($p)?;
             $p.state.$node_buffer.add(item);
@@ -18,21 +18,21 @@ macro_rules! comma_separated_list {
             }
         }
         $p.expect($delim_close)?;
-        $p.state.$node_buffer.take(start, &mut $p.state.arena)
+        $p.state.$node_buffer.take(start_offset, &mut $p.state.arena)
     }};
 }
 
 macro_rules! semi_separated_block {
     ($p:expr, $parse_function:ident, $node_buffer:ident) => {{
         $p.expect(T!['{'])?;
-        let start = $p.state.$node_buffer.start();
+        let start_offset = $p.state.$node_buffer.start();
         while !$p.at(T!['}']) && !$p.at(T![eof]) {
             let item = $parse_function($p)?;
             $p.state.$node_buffer.add(item);
             $p.expect(T![;])?;
         }
         $p.expect(T!['}'])?;
-        $p.state.$node_buffer.take(start, &mut $p.state.arena)
+        $p.state.$node_buffer.take(start_offset, &mut $p.state.arena)
     }};
 }
 
@@ -41,7 +41,7 @@ pub fn module<'ast>(
     file_id: FileID,
     name_id: InternID,
 ) -> Result<Module<'ast>, ErrorComp> {
-    let start = p.state.items.start();
+    let start_offset = p.state.items.start();
     while !p.at(T![eof]) {
         match item(&mut p) {
             Ok(item) => p.state.items.add(item),
@@ -59,7 +59,7 @@ pub fn module<'ast>(
             }
         }
     }
-    let items = p.state.items.take(start, &mut p.state.arena);
+    let items = p.state.items.take(start_offset, &mut p.state.arena);
     Ok(Module {
         file_id,
         name_id,
@@ -91,7 +91,7 @@ fn proc_item<'ast>(
     let name = name(p)?;
 
     p.expect(T!['('])?;
-    let start = p.state.proc_params.start();
+    let start_offset = p.state.proc_params.start();
     let mut is_variadic = false;
     while !p.at(T![')']) && !p.at(T![eof]) {
         let param = proc_param(p)?;
@@ -105,7 +105,7 @@ fn proc_item<'ast>(
         }
     }
     p.expect(T![')'])?;
-    let params = p.state.proc_params.take(start, &mut p.state.arena);
+    let params = p.state.proc_params.take(start_offset, &mut p.state.arena);
 
     let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
     // syntax problem normal attr clashes with tail attr @27.04.24
@@ -305,7 +305,7 @@ fn name(p: &mut Parser) -> Result<Name, String> {
 }
 
 fn attribute(p: &mut Parser) -> Result<Option<Attribute>, String> {
-    let range_start = p.peek_range_start();
+    let start = p.start_range();
     if p.eat(T![#]) {
         p.expect(T!['['])?;
 
@@ -315,15 +315,17 @@ fn attribute(p: &mut Parser) -> Result<Option<Attribute>, String> {
         let kind = AttributeKind::from_str(string);
 
         p.expect(T![']'])?;
-        let range = TextRange::new(range_start, p.peek_range_end());
-        Ok(Some(Attribute { kind, range }))
+        Ok(Some(Attribute {
+            kind,
+            range: p.make_range(start),
+        }))
     } else {
         Ok(None)
     }
 }
 
 fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, String> {
-    let start = p.state.names.start();
+    let start_offset = p.state.names.start();
 
     let first = name(p)?;
     p.state.names.add(first);
@@ -336,19 +338,19 @@ fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, Stri
         let name = name(p)?;
         p.state.names.add(name);
     }
-    let names = p.state.names.take(start, &mut p.state.arena);
+    let names = p.state.names.take(start_offset, &mut p.state.arena);
 
     Ok(p.state.arena.alloc(Path { names }))
 }
 
 fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
-    let range_start = p.peek_range_start();
+    let start = p.start_range();
 
     if let Some(basic) = p.peek().as_basic_type() {
         p.bump();
         return Ok(Type {
             kind: TypeKind::Basic(basic),
-            range: TextRange::new(range_start, p.peek_range_end()),
+            range: p.make_range(start),
         });
     }
 
@@ -364,7 +366,7 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
         T![proc] => {
             p.bump();
             p.expect(T!['('])?;
-            let start = p.state.types.start();
+            let start_offset = p.state.types.start();
             let mut is_variadic = false;
             while !p.at(T![')']) && !p.at(T![eof]) {
                 let ty = ty(p)?;
@@ -378,7 +380,7 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
                 }
             }
             p.expect(T![')'])?;
-            let params = p.state.types.take(start, &mut p.state.arena);
+            let params = p.state.types.take(start_offset, &mut p.state.arena);
             let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
 
             TypeKind::Procedure(p.state.arena.alloc(ProcType {
@@ -411,12 +413,12 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
 
     Ok(Type {
         kind,
-        range: TextRange::new(range_start, p.peek_range_end()),
+        range: p.make_range(start),
     })
 }
 
 fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
-    let range_start = p.peek_range_start();
+    let start = p.start_range();
 
     let kind = match p.peek() {
         T![break] => {
@@ -444,10 +446,10 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
             let defer_block = if p.at(T!['{']) {
                 block(p)?
             } else {
-                let start = p.state.stmts.start();
+                let start_offset = p.state.stmts.start();
                 let stmt = stmt(p)?;
                 p.state.stmts.add(stmt);
-                let stmts = p.state.stmts.take(start, &mut p.state.arena);
+                let stmts = p.state.stmts.take(start_offset, &mut p.state.arena);
                 Block { stmts }
             };
             StmtKind::Defer(p.state.arena.alloc(defer_block))
@@ -481,7 +483,7 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
 
     Ok(Stmt {
         kind,
-        range: TextRange::new(range_start, p.peek_range_end()),
+        range: p.make_range(start),
     })
 }
 
@@ -571,7 +573,7 @@ fn sub_expr<'ast>(
 }
 
 fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
-    let range_start = p.peek_range_start();
+    let start = p.start_range();
 
     if p.eat(T!['(']) {
         let expr = sub_expr(p, 0)?;
@@ -587,7 +589,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
         };
         return Ok(p.state.arena.alloc(Expr {
             kind,
-            range: TextRange::new(range_start, p.peek_range_end()),
+            range: p.make_range(start),
         }));
     } else if p.eat(T![&]) {
         let kind = ExprKind::Address {
@@ -596,7 +598,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
         };
         return Ok(p.state.arena.alloc(Expr {
             kind,
-            range: TextRange::new(range_start, p.peek_range_end()),
+            range: p.make_range(start),
         }));
     }
 
@@ -641,23 +643,18 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
         }
         T![char_lit] => {
             p.bump();
-            let v = p.tokens.get_char(p.char_id as usize);
-            p.char_id += 1;
-            ExprKind::LitChar { val: v }
+            let val = p.get_char_lit();
+            ExprKind::LitChar { val }
         }
         T![string_lit] => {
             p.bump();
-            let (string, c_string) = p.tokens.get_string(p.string_id as usize);
-            p.string_id += 1;
-            ExprKind::LitString {
-                id: p.state.intern.intern(string),
-                c_string,
-            }
+            let (id, c_string) = p.get_string_lit();
+            ExprKind::LitString { id, c_string }
         }
         T![if] => ExprKind::If { if_: if_(p)? },
         T!['{'] => ExprKind::Block { block: block(p)? },
         T![match] => {
-            let start = p.state.match_arms.start();
+            let start_offset = p.state.match_arms.start();
             p.bump();
             let on_expr = expr(p)?;
             p.expect(T!['{'])?;
@@ -666,7 +663,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 p.state.match_arms.add(arm);
             }
 
-            let arms = p.state.match_arms.take(start, &mut p.state.arena);
+            let arms = p.state.match_arms.take(start_offset, &mut p.state.arena);
             let match_ = p.state.arena.alloc(Match { on_expr, arms });
             ExprKind::Match { match_ }
         }
@@ -685,10 +682,10 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 T![.] => {
                     p.bump();
                     p.expect(T!['{'])?;
-                    let start = p.state.field_inits.start();
+                    let start_offset = p.state.field_inits.start();
                     if !p.eat(T!['}']) {
                         loop {
-                            let range_start = p.peek_range_start();
+                            let start = p.start_range();
                             let name = name(p)?;
                             let expr = match p.peek() {
                                 T![:] => {
@@ -700,7 +697,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                                     let path = p.state.arena.alloc(Path { names });
                                     p.state.arena.alloc(Expr {
                                         kind: ExprKind::Item { path },
-                                        range: TextRange::new(range_start, p.peek_range_end()),
+                                        range: p.make_range(start),
                                     })
                                 }
                                 _ => return Err("expected `:`, `}` or `,`".into()),
@@ -712,7 +709,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                         }
                         p.expect(T!['}'])?;
                     }
-                    let input = p.state.field_inits.take(start, &mut p.state.arena);
+                    let input = p.state.field_inits.take(start_offset, &mut p.state.arena);
                     let struct_init = p.state.arena.alloc(StructInit { path, input });
                     ExprKind::StructInit { struct_init }
                 }
@@ -733,7 +730,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                         len,
                     }
                 } else {
-                    let start = p.state.exprs.start();
+                    let start_offset = p.state.exprs.start();
                     p.state.exprs.add(first_expr);
                     if !p.eat(T![']']) {
                         p.expect(T![,])?;
@@ -747,16 +744,17 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                         p.expect(T![']'])?;
                     }
                     ExprKind::ArrayInit {
-                        input: p.state.exprs.take(start, &mut p.state.arena),
+                        input: p.state.exprs.take(start_offset, &mut p.state.arena),
                     }
                 }
             }
         }
         _ => return Err("expected expression".into()),
     };
+
     let expr = p.state.arena.alloc(Expr {
         kind,
-        range: TextRange::new(range_start, p.peek_range_end()),
+        range: p.make_range(start),
     });
     tail_expr(p, expr)
 }
@@ -765,9 +763,9 @@ fn tail_expr<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
     target: &'ast Expr<'ast>,
 ) -> Result<&'ast Expr<'ast>, String> {
+    let start = target.range.start();
     let mut target = target;
     let mut last_cast = false;
-    let range_start = target.range.start();
 
     loop {
         if last_cast {
@@ -781,7 +779,7 @@ fn tail_expr<'ast>(
 
                 target = p.state.arena.alloc(Expr {
                     kind: ExprKind::Field { target, name },
-                    range: TextRange::new(range_start, p.peek_range_end()),
+                    range: p.make_range(start),
                 });
             }
             T!['['] => {
@@ -792,7 +790,7 @@ fn tail_expr<'ast>(
 
                 target = p.state.arena.alloc(Expr {
                     kind,
-                    range: TextRange::new(range_start, p.peek_range_end()),
+                    range: p.make_range(start),
                 });
             }
             T!['('] => {
@@ -801,7 +799,7 @@ fn tail_expr<'ast>(
 
                 target = p.state.arena.alloc(Expr {
                     kind: ExprKind::Call { target, input },
-                    range: TextRange::new(range_start, p.peek_range_end()),
+                    range: p.make_range(start),
                 });
             }
             T![as] => {
@@ -814,7 +812,7 @@ fn tail_expr<'ast>(
                         target,
                         into: ty_ref,
                     },
-                    range: TextRange::new(range_start, p.peek_range_end()),
+                    range: p.make_range(start),
                 });
                 last_cast = true;
             }
@@ -921,7 +919,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
     };
     let mut else_block = None;
 
-    let start = p.state.branches.start();
+    let start_offset = p.state.branches.start();
     while p.eat(T![else]) {
         if p.eat(T![if]) {
             let branch = Branch {
@@ -934,7 +932,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
             break;
         }
     }
-    let branches = p.state.branches.take(start, &mut p.state.arena);
+    let branches = p.state.branches.take(start_offset, &mut p.state.arena);
 
     Ok(p.state.arena.alloc(If {
         entry,
@@ -944,7 +942,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
 }
 
 fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> {
-    let start = p.state.stmts.start();
+    let start_offset = p.state.stmts.start();
 
     p.expect(T!['{'])?;
     while !p.eat(T!['}']) {
@@ -952,7 +950,7 @@ fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> 
         p.state.stmts.add(stmt);
     }
 
-    let stmts = p.state.stmts.take(start, &mut p.state.arena);
+    let stmts = p.state.stmts.take(start_offset, &mut p.state.arena);
     Ok(Block { stmts })
 }
 
