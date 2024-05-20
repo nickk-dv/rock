@@ -343,7 +343,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
-        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, ty, expr.range),
+        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, *ty, expr.range),
         ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(hir, emit, proc, struct_init)

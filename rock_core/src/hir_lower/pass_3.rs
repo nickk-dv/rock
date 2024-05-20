@@ -33,16 +33,16 @@ pub fn type_resolve<'hir>(
     origin_id: hir::ModuleID,
     ast_ty: ast::Type,
 ) -> hir::Type<'hir> {
-    match ast_ty {
-        ast::Type::Basic(basic) => hir::Type::Basic(basic),
-        ast::Type::Custom(path) => {
+    match ast_ty.kind {
+        ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
+        ast::TypeKind::Custom(path) => {
             super::pass_5::path_resolve_type(hir, emit, None, origin_id, path)
         }
-        ast::Type::Reference(ref_ty, mutt) => {
+        ast::TypeKind::Reference(ref_ty, mutt) => {
             let ref_ty = type_resolve(hir, emit, origin_id, *ref_ty);
             hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
         }
-        ast::Type::Procedure(proc_ty) => {
+        ast::TypeKind::Procedure(proc_ty) => {
             let mut params = Vec::with_capacity(proc_ty.params.len());
             for param in proc_ty.params {
                 let ty = type_resolve(hir, emit, origin_id, *param);
@@ -63,7 +63,7 @@ pub fn type_resolve<'hir>(
             };
             hir::Type::Procedure(emit.arena.alloc(proc_ty))
         }
-        ast::Type::ArraySlice(slice) => {
+        ast::TypeKind::ArraySlice(slice) => {
             let elem_ty = type_resolve(hir, emit, origin_id, slice.elem_ty);
 
             let slice = hir::ArraySlice {
@@ -72,7 +72,7 @@ pub fn type_resolve<'hir>(
             };
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
-        ast::Type::ArrayStatic(array) => {
+        ast::TypeKind::ArrayStatic(array) => {
             let (value, _) = pass_4::resolve_const_expr(
                 hir,
                 emit,
@@ -107,16 +107,16 @@ pub fn type_resolve_delayed<'hir, 'ast>(
     origin_id: hir::ModuleID,
     ast_ty: ast::Type<'ast>,
 ) -> hir::Type<'hir> {
-    match ast_ty {
-        ast::Type::Basic(basic) => hir::Type::Basic(basic),
-        ast::Type::Custom(path) => {
+    match ast_ty.kind {
+        ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
+        ast::TypeKind::Custom(path) => {
             super::pass_5::path_resolve_type(hir, emit, None, origin_id, path)
         }
-        ast::Type::Reference(ref_ty, mutt) => {
+        ast::TypeKind::Reference(ref_ty, mutt) => {
             let ref_ty = type_resolve_delayed(hir, emit, origin_id, *ref_ty);
             hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
         }
-        ast::Type::Procedure(proc_ty) => {
+        ast::TypeKind::Procedure(proc_ty) => {
             let mut params = Vec::with_capacity(proc_ty.params.len());
             for param in proc_ty.params {
                 let ty = type_resolve_delayed(hir, emit, origin_id, *param);
@@ -137,7 +137,7 @@ pub fn type_resolve_delayed<'hir, 'ast>(
             };
             hir::Type::Procedure(emit.arena.alloc(proc_ty))
         }
-        ast::Type::ArraySlice(slice) => {
+        ast::TypeKind::ArraySlice(slice) => {
             let elem_ty = type_resolve_delayed(hir, emit, origin_id, slice.elem_ty);
 
             let slice = hir::ArraySlice {
@@ -146,7 +146,7 @@ pub fn type_resolve_delayed<'hir, 'ast>(
             };
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
-        ast::Type::ArrayStatic(array) => {
+        ast::TypeKind::ArrayStatic(array) => {
             let len = hir.registry_mut().add_const_eval(array.len, origin_id);
             let elem_ty = type_resolve_delayed(hir, emit, origin_id, array.elem_ty);
 

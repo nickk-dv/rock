@@ -3,7 +3,6 @@ use super::pass_5;
 use crate::ast::{self, BasicType};
 use crate::error::ErrorComp;
 use crate::hir;
-use crate::hir::intern::ConstValueID;
 
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
@@ -585,7 +584,7 @@ pub fn resolve_const_expr<'hir>(
     origin_id: hir::ModuleID,
     expect: hir::Type,
     expr: ast::ConstExpr,
-) -> (hir::ConstValue<'hir>, ConstValueID) {
+) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
     let result: Result<(hir::ConstValue, hir::Type), &'static str> = match expr.0.kind {
         ast::ExprKind::LitNull => {
             //@coersion of rawptr `null` should be explicit via cast expression 14.05.24

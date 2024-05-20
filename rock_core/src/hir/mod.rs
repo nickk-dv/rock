@@ -2,9 +2,10 @@ pub mod intern;
 
 use crate::arena::Arena;
 use crate::ast;
+use crate::id_impl;
 use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
-use intern::{ConstInternPool, ConstValueID};
+use intern::ConstInternPool;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -20,27 +21,12 @@ pub struct Hir<'hir> {
     pub const_values: Vec<ConstValueID>,
 }
 
-macro_rules! hir_id_impl {
-    ($name:ident) => {
-        #[derive(Copy, Clone, PartialEq)]
-        pub struct $name(u32);
-        impl $name {
-            pub const fn new(index: usize) -> $name {
-                $name(index as u32)
-            }
-            pub const fn index(self) -> usize {
-                self.0 as usize
-            }
-        }
-    };
-}
-
-hir_id_impl!(ModuleID);
+id_impl!(ModuleID);
 pub struct ModuleData {
     pub file_id: FileID,
 }
 
-hir_id_impl!(ProcID);
+id_impl!(ProcID);
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -54,7 +40,7 @@ pub struct ProcData<'hir> {
     pub is_main: bool,
 }
 
-hir_id_impl!(ProcParamID);
+id_impl!(ProcParamID);
 #[derive(Copy, Clone)]
 pub struct ProcParam<'hir> {
     pub mutt: ast::Mut,
@@ -62,7 +48,7 @@ pub struct ProcParam<'hir> {
     pub ty: Type<'hir>,
 }
 
-hir_id_impl!(EnumID);
+id_impl!(EnumID);
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -71,14 +57,14 @@ pub struct EnumData<'hir> {
     pub variants: &'hir [EnumVariant],
 }
 
-hir_id_impl!(EnumVariantID);
+id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
 pub struct EnumVariant {
     pub name: ast::Name,
     pub value: ConstEvalID,
 }
 
-hir_id_impl!(UnionID);
+id_impl!(UnionID);
 pub struct UnionData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -87,14 +73,14 @@ pub struct UnionData<'hir> {
     pub size_eval: SizeEval,
 }
 
-hir_id_impl!(UnionMemberID);
+id_impl!(UnionMemberID);
 #[derive(Copy, Clone)]
 pub struct UnionMember<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
 }
 
-hir_id_impl!(StructID);
+id_impl!(StructID);
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -103,7 +89,7 @@ pub struct StructData<'hir> {
     pub size_eval: SizeEval,
 }
 
-hir_id_impl!(StructFieldID);
+id_impl!(StructFieldID);
 #[derive(Copy, Clone)]
 pub struct StructField<'hir> {
     pub vis: ast::Vis,
@@ -111,7 +97,7 @@ pub struct StructField<'hir> {
     pub ty: Type<'hir>,
 }
 
-hir_id_impl!(ConstID);
+id_impl!(ConstID);
 pub struct ConstData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -120,7 +106,7 @@ pub struct ConstData<'hir> {
     pub value: ConstEvalID,
 }
 
-hir_id_impl!(GlobalID);
+id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -131,7 +117,7 @@ pub struct GlobalData<'hir> {
     pub thread_local: bool,
 }
 
-hir_id_impl!(ConstEvalID);
+id_impl!(ConstEvalID);
 #[derive(Copy, Clone)]
 pub enum ConstEval<'ast> {
     Error,
@@ -250,7 +236,7 @@ pub enum ForKind<'hir> {
     },
 }
 
-hir_id_impl!(LocalID);
+id_impl!(LocalID);
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
     pub mutt: ast::Mut,
@@ -268,18 +254,19 @@ pub struct Assign<'hir> {
     pub lhs_signed_int: bool,
 }
 
-//@this is untyped and meant for constant folding operations 02.05.24
-// during codegen we want to know the types
-// and for arrays or structs type also must be known
-// introduce something like `float` and `integer` types that are general
-// and narrowed on demand with bounds check on compile time
-//@represent lower sized integers for bitwise and other math operations? 09.05.24
+#[derive(Copy, Clone)]
+pub struct Block<'hir> {
+    pub stmts: &'hir [Stmt<'hir>],
+}
+
+id_impl!(ConstValueID);
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
 pub enum ConstValue<'hir> {
     Error,
     Null,
     Bool        { val: bool },
+    /// Option<BasicType> means untyped float or integer currently
     Int         { val: u64, neg: bool, ty: Option<ast::BasicType> },
     Float       { val: f64, ty: Option<ast::BasicType> },
     Char        { val: char },
@@ -453,6 +440,13 @@ pub struct ArrayRepeat<'hir> {
     pub expr: &'hir Expr<'hir>,
     pub len: Option<u64>,
 }
+
+use crate::size_assert;
+size_assert!(16, ConstEval);
+size_assert!(16, ConstValue);
+size_assert!(16, Type);
+size_assert!(16, Stmt);
+size_assert!(24, Expr);
 
 impl<'hir> Hir<'hir> {
     pub fn module_data(&self, id: ModuleID) -> &ModuleData {

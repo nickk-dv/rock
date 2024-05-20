@@ -195,7 +195,13 @@ pub struct Path<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Type<'ast> {
+pub struct Type<'ast> {
+    pub kind: TypeKind<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub enum TypeKind<'ast> {
     Basic(BasicType),
     Custom(&'ast Path<'ast>),
     Reference(&'ast Type<'ast>, Mut),
@@ -307,7 +313,7 @@ pub enum ExprKind<'ast> {
     Slice       { target: &'ast Expr<'ast>, mutt: Mut, slice_range: &'ast SliceRange<'ast> },
     Call        { target: &'ast Expr<'ast>, input: &'ast &'ast [&'ast Expr<'ast>] },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
-    Sizeof      { ty: Type<'ast> },
+    Sizeof      { ty: &'ast Type<'ast> },
     Item        { path: &'ast Path<'ast> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
@@ -433,19 +439,10 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
-#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-mod size_assert {
-    use super::*;
-    macro_rules! size_assert {
-        ($size:expr, $ty:ty) => {
-            const _: [(); $size] = [(); ::std::mem::size_of::<$ty>()];
-        };
-    }
-
-    size_assert!(12, Name);
-    size_assert!(16, Item);
-    size_assert!(16, Path);
-    size_assert!(16, Type);
-    size_assert!(24, Stmt);
-    size_assert!(32, Expr);
-}
+use crate::size_assert;
+size_assert!(16, Item);
+size_assert!(12, Name);
+size_assert!(16, Path);
+size_assert!(24, Type);
+size_assert!(24, Stmt);
+size_assert!(32, Expr);

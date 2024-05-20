@@ -1,10 +1,7 @@
-use super::{ConstArray, ConstStruct, ConstValue};
+use super::{ConstArray, ConstStruct, ConstValue, ConstValueID};
 use crate::arena::Arena;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct ConstValueID(u32);
 
 pub struct ConstInternPool<'hir> {
     next: ConstValueID,
@@ -59,7 +56,7 @@ impl<'hir> Hash for ConstValue<'hir> {
             ConstValue::Procedure { proc_id } => proc_id.0.hash(state),
             ConstValue::Struct { struct_ } => struct_.hash(state),
             ConstValue::Array { array } => array.hash(state),
-            ConstValue::ArrayRepeat { value, len } => (value, len).hash(state),
+            ConstValue::ArrayRepeat { value, len } => (value.0, len).hash(state),
         }
     }
 }

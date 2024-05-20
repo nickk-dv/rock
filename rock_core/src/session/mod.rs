@@ -1,5 +1,6 @@
 use crate::error::ErrorComp;
 use crate::fs_env;
+use crate::id_impl;
 use crate::package;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
@@ -28,39 +29,17 @@ pub struct Session {
     packages: Vec<PackageData>,
 }
 
+id_impl!(FileID);
 pub struct File {
     pub path: PathBuf,
     pub source: String,
     pub line_ranges: Vec<TextRange>,
 }
 
+id_impl!(PackageID);
 pub struct PackageData {
     file_count: usize,
     manifest: package::Manifest,
-}
-
-#[derive(Copy, Clone)]
-pub struct FileID(u32);
-
-impl FileID {
-    pub fn new(index: usize) -> FileID {
-        FileID(index as u32)
-    }
-    fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct PackageID(u32);
-
-impl PackageID {
-    pub fn new(index: usize) -> PackageID {
-        PackageID(index as u32)
-    }
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
 }
 
 impl Session {

@@ -12,6 +12,7 @@ use crate::hir;
 use crate::session::Session;
 use hir_build::{HirData, HirEmit};
 
+//@use ast::Type range in diagnostics, update any work arounds of missing range 20.05.24
 pub fn check<'hir, 'ast, 'intern: 'hir>(
     ast: ast::Ast<'ast, 'intern>,
     session: &Session,

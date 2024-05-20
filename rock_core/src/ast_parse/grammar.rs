@@ -342,18 +342,24 @@ fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, Stri
 }
 
 fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
+    let range_start = p.peek_range_start();
+
     if let Some(basic) = p.peek().as_basic_type() {
         p.bump();
-        return Ok(Type::Basic(basic));
+        return Ok(Type {
+            kind: TypeKind::Basic(basic),
+            range: TextRange::new(range_start, p.peek_range_end()),
+        });
     }
-    match p.peek() {
-        T![ident] => Ok(Type::Custom(path(p)?)),
+
+    let kind = match p.peek() {
+        T![ident] => TypeKind::Custom(path(p)?),
         T![&] => {
             p.bump();
             let mutt = mutt(p);
             let ty = ty(p)?;
             let ty_ref = p.state.arena.alloc(ty);
-            Ok(Type::Reference(ty_ref, mutt))
+            TypeKind::Reference(ty_ref, mutt)
         }
         T![proc] => {
             p.bump();
@@ -375,11 +381,11 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
             let params = p.state.types.take(start, &mut p.state.arena);
             let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
 
-            Ok(Type::Procedure(p.state.arena.alloc(ProcType {
+            TypeKind::Procedure(p.state.arena.alloc(ProcType {
                 params,
                 return_ty,
                 is_variadic,
-            })))
+            }))
         }
         T!['['] => {
             p.bump();
@@ -388,22 +394,25 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
                     let mutt = mutt(p);
                     p.expect(T![']'])?;
                     let elem_ty = ty(p)?;
-                    Ok(Type::ArraySlice(
-                        p.state.arena.alloc(ArraySlice { mutt, elem_ty }),
-                    ))
+                    TypeKind::ArraySlice(p.state.arena.alloc(ArraySlice { mutt, elem_ty }))
                 }
                 _ => {
                     let len = ConstExpr(expr(p)?);
                     p.expect(T![']'])?;
                     let elem_ty = ty(p)?;
-                    Ok(Type::ArrayStatic(
-                        p.state.arena.alloc(ArrayStatic { len, elem_ty }),
-                    ))
+                    TypeKind::ArrayStatic(p.state.arena.alloc(ArrayStatic { len, elem_ty }))
                 }
             }
         }
-        _ => Err("expected type".into()),
-    }
+        _ => {
+            return Err("expected type".into());
+        }
+    };
+
+    Ok(Type {
+        kind,
+        range: TextRange::new(range_start, p.peek_range_end()),
+    })
 }
 
 fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
@@ -666,7 +675,8 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             p.expect(T!['('])?;
             let ty = ty(p)?;
             p.expect(T![')'])?;
-            ExprKind::Sizeof { ty }
+            let ty_ref = p.state.arena.alloc(ty);
+            ExprKind::Sizeof { ty: ty_ref }
         }
         T![ident] => {
             let path = path(p)?;
