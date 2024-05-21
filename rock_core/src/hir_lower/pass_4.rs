@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit};
-use super::pass_5;
-use crate::ast::{self, BasicType};
+use super::pass_5::{self, TypeExpectation};
+use crate::ast::{self, BasicType, Type};
 use crate::error::ErrorComp;
 use crate::hir;
 
@@ -14,7 +14,7 @@ enum ConstDependency {
     ArrayLen(hir::ConstEvalID),
 }
 
-pub fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
+pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().enum_ids() {
         let data = hir.registry().enum_data(id);
 
@@ -82,8 +82,7 @@ pub fn resolve_const_dependencies(hir: &mut HirData, emit: &mut HirEmit) {
         let (eval, _) = hir.registry().const_eval(eval_id);
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
-            let expect = hir::Type::Basic(BasicType::Usize);
-            resolve_and_update_const_eval(hir, emit, eval_id, expect);
+            resolve_and_update_const_eval(hir, emit, eval_id, TypeExpectation::USIZE);
         }
     }
 }
@@ -453,9 +452,9 @@ fn check_type_usage_const_dependency(
     Ok(())
 }
 
-fn resolve_const_dependency_tree(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+fn resolve_const_dependency_tree<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
     tree: &Tree<ConstDependency>,
 ) {
     // reverse iteration allows to resolve dependencies in correct order
@@ -464,7 +463,7 @@ fn resolve_const_dependency_tree(
             ConstDependency::EnumVariant(id, variant_id) => {
                 let data = hir.registry().enum_data(id);
                 let variant = data.variant(variant_id);
-                let expect = hir::Type::Basic(data.basic);
+                let expect = TypeExpectation::new(hir::Type::Basic(data.basic), None); //@add range for basic type on enum
                 resolve_and_update_const_eval(hir, emit, variant.value, expect);
             }
             ConstDependency::UnionSize(id) => {
@@ -477,25 +476,30 @@ fn resolve_const_dependency_tree(
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
-                resolve_and_update_const_eval(hir, emit, data.value, data.ty);
+                let item = hir.registry().const_item(id);
+                let expect =
+                    TypeExpectation::new(data.ty, Some(hir.src(data.origin_id, item.ty.range)));
+                resolve_and_update_const_eval(hir, emit, data.value, expect);
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
-                resolve_and_update_const_eval(hir, emit, data.value, data.ty);
+                let item = hir.registry().global_item(id);
+                let expect =
+                    TypeExpectation::new(data.ty, Some(hir.src(data.origin_id, item.ty.range)));
+                resolve_and_update_const_eval(hir, emit, data.value, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
-                let expect = hir::Type::Basic(BasicType::Usize);
-                resolve_and_update_const_eval(hir, emit, eval_id, expect);
+                resolve_and_update_const_eval(hir, emit, eval_id, TypeExpectation::USIZE);
             }
         }
     }
 }
 
-fn resolve_and_update_const_eval(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+fn resolve_and_update_const_eval<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
     eval_id: hir::ConstEvalID,
-    expect: hir::Type,
+    expect: TypeExpectation<'hir>,
 ) {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
     let (_, value_id) = match eval {
@@ -578,11 +582,12 @@ fn resolve_struct_size(
 //@check int, float value range constraints 14.05.24
 // same for typecheck_int_lit etc, regular expressions checking
 // should later be merged with this constant resolution / folding flow
+//@return type and integrate this with normal expr typecheck?
 pub fn resolve_const_expr<'hir>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
     origin_id: hir::ModuleID,
-    expect: hir::Type,
+    expect: TypeExpectation<'hir>,
     expr: ast::ConstExpr,
 ) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
     let result: Result<(hir::ConstValue, hir::Type), &'static str> = match expr.0.kind {
@@ -596,7 +601,7 @@ pub fn resolve_const_expr<'hir>(
             hir::Type::Basic(BasicType::Bool),
         )),
         ast::ExprKind::LitInt { val } => {
-            let int_ty = pass_5::coerce_int_type(expect);
+            let int_ty = pass_5::coerce_int_type(expect.ty);
             let value = hir::ConstValue::Int {
                 val,
                 neg: false,
@@ -605,7 +610,7 @@ pub fn resolve_const_expr<'hir>(
             Ok((value, hir::Type::Basic(int_ty)))
         }
         ast::ExprKind::LitFloat { val } => {
-            let float_ty = pass_5::coerce_float_type(expect);
+            let float_ty = pass_5::coerce_float_type(expect.ty);
             let value = hir::ConstValue::Float {
                 val,
                 ty: Some(float_ty),
@@ -640,18 +645,7 @@ pub fn resolve_const_expr<'hir>(
 
     match result {
         Ok((value, value_ty)) => {
-            //@copy paste from regular typecheck, will be used until better design is found 14.05.24
-            if !pass_5::type_matches(hir, emit, expect, value_ty) {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "type mismatch: expected `{}`, found `{}`",
-                        pass_5::type_format(hir, emit, expect),
-                        pass_5::type_format(hir, emit, value_ty)
-                    ),
-                    hir.src(origin_id, expr.0.range),
-                    None,
-                ));
-            }
+            pass_5::check_type_expectation(hir, emit, origin_id, expr.0.range, expect, value_ty);
             (value, emit.const_intern.intern(value))
         }
         Err(expr_name) => {

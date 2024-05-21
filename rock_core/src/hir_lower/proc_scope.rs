@@ -1,3 +1,4 @@
+use super::pass_5::TypeExpectation;
 use crate::hir;
 use crate::intern::InternID;
 use crate::text::TextRange;
@@ -12,6 +13,7 @@ pub struct ProcScope<'hir, 'check> {
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
+    return_expect: TypeExpectation<'hir>,
 }
 
 pub struct BlockData {
@@ -38,12 +40,13 @@ pub enum VariableID {
 }
 
 impl<'hir, 'check> ProcScope<'hir, 'check> {
-    pub fn new(data: &'check hir::ProcData<'hir>) -> Self {
+    pub fn new(data: &'check hir::ProcData<'hir>, return_expect: TypeExpectation<'hir>) -> Self {
         ProcScope {
             data,
             blocks: Vec::new(),
             locals: Vec::new(),
             locals_in_scope: Vec::new(),
+            return_expect,
         }
     }
 
@@ -61,6 +64,9 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     }
     pub fn get_param(&self, id: hir::ProcParamID) -> &hir::ProcParam<'hir> {
         self.data.param(id)
+    }
+    pub fn return_expect(&self) -> TypeExpectation<'hir> {
+        self.return_expect
     }
 
     pub fn push_block(&mut self, enter_loop: bool, enter_defer: Option<TextRange>) {

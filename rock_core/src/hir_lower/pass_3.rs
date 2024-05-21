@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_4;
-use super::pass_5;
+use super::pass_5::{self, TypeExpectation};
 use crate::ast;
 use crate::error::{ErrorComp, Info};
 use crate::hir;
@@ -27,6 +27,7 @@ pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'
 }
 
 //@deduplicate with type_resolve_consteval 16.05.24
+#[must_use]
 pub fn type_resolve<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -73,13 +74,8 @@ pub fn type_resolve<'hir>(
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::TypeKind::ArrayStatic(array) => {
-            let (value, _) = pass_4::resolve_const_expr(
-                hir,
-                emit,
-                origin_id,
-                hir::Type::Basic(ast::BasicType::Usize),
-                array.len,
-            );
+            let (value, _) =
+                pass_4::resolve_const_expr(hir, emit, origin_id, TypeExpectation::USIZE, array.len);
             let len = match value {
                 hir::ConstValue::Int { val, ty, neg } => {
                     if neg {
@@ -101,6 +97,7 @@ pub fn type_resolve<'hir>(
     }
 }
 
+#[must_use]
 pub fn type_resolve_delayed<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
