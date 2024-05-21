@@ -47,7 +47,7 @@ struct ProcCodegen<'ctx> {
     param_vars: Vec<values::PointerValue<'ctx>>,
     local_vars: Vec<values::PointerValue<'ctx>>,
     block_info: Vec<BlockInfo<'ctx>>,
-    defer_blocks: Vec<&'ctx hir::Expr<'ctx>>,
+    defer_blocks: Vec<hir::Block<'ctx>>,
     next_loop_info: Option<LoopInfo<'ctx>>,
 }
 
@@ -87,7 +87,7 @@ impl<'ctx> ProcCodegen<'ctx> {
         assert!(self.block_info.pop().is_some());
     }
 
-    fn push_defer_block(&mut self, block: &'ctx hir::Expr<'ctx>) {
+    fn push_defer_block(&mut self, block: hir::Block<'ctx>) {
         self.block_info.last_mut().unwrap().defer_count += 1;
         self.defer_blocks.push(block);
     }
@@ -101,7 +101,7 @@ impl<'ctx> ProcCodegen<'ctx> {
         unreachable!("last loop must exist")
     }
 
-    fn last_defer_blocks(&self) -> Vec<&'ctx hir::Expr<'ctx>> {
+    fn last_defer_blocks(&self) -> Vec<hir::Block<'ctx>> {
         let total_count = self.defer_blocks.len();
         let last_count = self.block_info.last().unwrap().defer_count;
         let range = total_count - last_count as usize..total_count;
@@ -109,7 +109,7 @@ impl<'ctx> ProcCodegen<'ctx> {
     }
 
     //@lifetime problems, need to clone like this (since codegen_expr can mutate this vec) 05.05.24
-    fn all_defer_blocks(&self) -> Vec<&'ctx hir::Expr<'ctx>> {
+    fn all_defer_blocks(&self) -> Vec<hir::Block<'ctx>> {
         self.defer_blocks.clone()
     }
 }
@@ -453,57 +453,61 @@ fn codegen_function_values(cg: &mut Codegen) {
 
 fn codegen_function_bodies(cg: &Codegen) {
     for (idx, proc_data) in cg.hir.procs.iter().enumerate() {
-        if let Some(block) = proc_data.block {
-            let function = cg.function_values[idx];
+        let block = if let Some(block) = proc_data.block {
+            block
+        } else {
+            continue;
+        };
 
-            let entry_block = cg.context.append_basic_block(function, "entry");
-            cg.builder.position_at_end(entry_block);
+        let function = cg.function_values[idx];
 
-            let mut param_vars = Vec::with_capacity(proc_data.params.len());
-            for param_idx in 0..proc_data.params.len() {
-                let param_value = function
-                    .get_nth_param(param_idx as u32)
-                    .expect("param value");
-                let param_ty = param_value.get_type();
-                let param_ptr = cg.builder.build_alloca(param_ty, "param").unwrap();
-                cg.builder.build_store(param_ptr, param_value).unwrap();
-                param_vars.push(param_ptr);
-            }
+        let entry_block = cg.context.append_basic_block(function, "entry");
+        cg.builder.position_at_end(entry_block);
 
-            let mut local_vars = Vec::with_capacity(proc_data.locals.len());
-            for &local in proc_data.locals {
-                let local_ty = cg.type_into_basic(local.ty).expect("value type");
-                let local_ptr = cg.builder.build_alloca(local_ty, "local").unwrap();
-                local_vars.push(local_ptr);
-            }
+        let mut param_vars = Vec::with_capacity(proc_data.params.len());
+        for param_idx in 0..proc_data.params.len() {
+            let param_value = function
+                .get_nth_param(param_idx as u32)
+                .expect("param value");
+            let param_ty = param_value.get_type();
+            let param_ptr = cg.builder.build_alloca(param_ty, "param").unwrap();
+            cg.builder.build_store(param_ptr, param_value).unwrap();
+            param_vars.push(param_ptr);
+        }
 
-            let mut proc_cg = ProcCodegen {
-                function,
-                proc_id: hir::ProcID::new(idx),
-                param_vars,
-                local_vars,
-                block_info: Vec::new(),
-                defer_blocks: Vec::new(),
-                next_loop_info: None,
-            };
+        let mut local_vars = Vec::with_capacity(proc_data.locals.len());
+        for &local in proc_data.locals {
+            let local_ty = cg.type_into_basic(local.ty).expect("value type");
+            let local_ptr = cg.builder.build_alloca(local_ty, "local").unwrap();
+            local_vars.push(local_ptr);
+        }
 
-            if let Some(value) = codegen_expr(cg, &mut proc_cg, false, block) {
-                //@hack building return of the tail returned value on the last block
-                // last might not be a correct place for it
-                let entry = function.get_last_basic_block().expect("last block");
+        let mut proc_cg = ProcCodegen {
+            function,
+            proc_id: hir::ProcID::new(idx),
+            param_vars,
+            local_vars,
+            block_info: Vec::new(),
+            defer_blocks: Vec::new(),
+            next_loop_info: None,
+        };
+
+        if let Some(value) = codegen_block(cg, &mut proc_cg, false, block) {
+            //@hack building return of the tail returned value on the last block
+            // last might not be a correct place for it
+            let entry = function.get_last_basic_block().expect("last block");
+            cg.builder.position_at_end(entry);
+            cg.builder.build_return(Some(&value)).unwrap();
+        } else {
+            //@hack generating implicit return
+            //also generate it on last block on regular void return functions?
+            // cannot detect if `return;` was already written there
+            //@overall all returns must be included in Hir explicitly,
+            //so codegen doesnt need to do any work to get correct outputs
+            let entry = function.get_last_basic_block().expect("last block");
+            if entry.get_terminator().is_none() {
                 cg.builder.position_at_end(entry);
-                cg.builder.build_return(Some(&value)).unwrap();
-            } else {
-                //@hack generating implicit return
-                //also generate it on last block on regular void return functions?
-                // cannot detect if `return;` was already written there
-                //@overall all returns must be included in Hir explicitly,
-                //so codegen doesnt need to do any work to get correct outputs
-                let entry = function.get_last_basic_block().expect("last block");
-                if entry.get_terminator().is_none() {
-                    cg.builder.position_at_end(entry);
-                    cg.builder.build_return(None).unwrap();
-                }
+                cg.builder.build_return(None).unwrap();
             }
         }
     }
@@ -566,7 +570,7 @@ fn codegen_expr<'ctx>(
         Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
         Expr::LitString { id, c_string } => Some(codegen_lit_string(cg, id, c_string)),
         Expr::If { if_ } => codegen_if(cg, proc_cg, if_),
-        Expr::Block { stmts } => codegen_block(cg, proc_cg, expect_ptr, stmts),
+        Expr::Block { block } => codegen_block(cg, proc_cg, expect_ptr, block),
         Expr::Match { match_ } => Some(codegen_match(cg, proc_cg, match_)),
         Expr::UnionMember {
             target,
@@ -716,7 +720,7 @@ fn codegen_if<'ctx>(
     let exit_block = cg.context.append_basic_block(proc_cg.function, "if_exit");
 
     // next if_cond or if_else block
-    let mut next_block = if !if_.branches.is_empty() || if_.fallback.is_some() {
+    let mut next_block = if !if_.branches.is_empty() || if_.else_block.is_some() {
         cg.context.insert_basic_block_after(body_block, "if_next")
     } else {
         exit_block
@@ -730,12 +734,12 @@ fn codegen_if<'ctx>(
         .unwrap();
 
     cg.builder.position_at_end(body_block);
-    codegen_expr(cg, proc_cg, false, if_.entry.block);
+    codegen_block(cg, proc_cg, false, if_.entry.block);
     cg.builder.build_unconditional_branch(exit_block).unwrap();
 
     for (idx, branch) in if_.branches.iter().enumerate() {
         let last = idx + 1 == if_.branches.len();
-        let create_next = !last || if_.fallback.is_some();
+        let create_next = !last || if_.else_block.is_some();
 
         body_block = cg.context.insert_basic_block_after(next_block, "if_body");
 
@@ -751,13 +755,13 @@ fn codegen_if<'ctx>(
             .unwrap();
 
         cg.builder.position_at_end(body_block);
-        codegen_expr(cg, proc_cg, false, branch.block);
+        codegen_block(cg, proc_cg, false, branch.block);
         cg.builder.build_unconditional_branch(exit_block).unwrap();
     }
 
-    if let Some(fallback) = if_.fallback {
+    if let Some(block) = if_.else_block {
         cg.builder.position_at_end(next_block);
-        codegen_expr(cg, proc_cg, false, fallback);
+        codegen_block(cg, proc_cg, false, block);
         cg.builder.build_unconditional_branch(exit_block).unwrap();
     }
 
@@ -770,11 +774,11 @@ fn codegen_block<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     expect_ptr: bool,
-    stmts: &'ctx [hir::Stmt<'ctx>],
+    block: hir::Block<'ctx>,
 ) -> Option<values::BasicValueEnum<'ctx>> {
     proc_cg.enter_block();
 
-    for (idx, stmt) in stmts.iter().enumerate() {
+    for (idx, stmt) in block.stmts.iter().enumerate() {
         match *stmt {
             hir::Stmt::Break => {
                 let break_bb = proc_cg.last_loop_info().break_bb;
@@ -801,7 +805,7 @@ fn codegen_block<'ctx>(
                 return None;
             }
             hir::Stmt::Defer(block) => {
-                proc_cg.push_defer_block(block);
+                proc_cg.push_defer_block(*block);
             }
             hir::Stmt::ForLoop(for_) => {
                 let entry_block = cg
@@ -819,7 +823,7 @@ fn codegen_block<'ctx>(
                         cg.builder.build_unconditional_branch(body_block).unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_expr(cg, proc_cg, false, for_.block);
+                        codegen_block(cg, proc_cg, false, for_.block);
 
                         //@might not be valid when break / continue are used 06.05.24
                         // other cfg will make body_block not the actual block we want
@@ -836,7 +840,7 @@ fn codegen_block<'ctx>(
                             .unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_expr(cg, proc_cg, false, for_.block);
+                        codegen_block(cg, proc_cg, false, for_.block);
 
                         //@might not be valid when break / continue are used 06.05.24
                         cg.builder.build_unconditional_branch(entry_block).unwrap();
@@ -854,7 +858,7 @@ fn codegen_block<'ctx>(
                             .unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_expr(cg, proc_cg, false, for_.block);
+                        codegen_block(cg, proc_cg, false, for_.block);
 
                         //@often invalid (this assignment might need special block) if no iterator abstractions are used
                         // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24
@@ -879,7 +883,7 @@ fn codegen_block<'ctx>(
                 // and is return as block value
                 assert_eq!(
                     idx + 1,
-                    stmts.len(),
+                    block.stmts.len(),
                     "codegen Stmt::ExprTail must be the last statement of the block"
                 );
 
@@ -902,7 +906,7 @@ fn codegen_block<'ctx>(
 fn codegen_defer_blocks<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-    defer_blocks: &[&'ctx hir::Expr<'ctx>],
+    defer_blocks: &[hir::Block<'ctx>],
 ) {
     if defer_blocks.is_empty() {
         return;
@@ -912,10 +916,10 @@ fn codegen_defer_blocks<'ctx>(
         .context
         .append_basic_block(proc_cg.function, "defer_entry");
 
-    for block in defer_blocks.iter().rev() {
+    for block in defer_blocks.iter().copied().rev() {
         cg.builder.build_unconditional_branch(defer_block).unwrap();
         cg.builder.position_at_end(defer_block);
-        codegen_expr(cg, proc_cg, false, block);
+        codegen_block(cg, proc_cg, false, block);
         defer_block = cg
             .context
             .append_basic_block(proc_cg.function, "defer_next");

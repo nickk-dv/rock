@@ -129,12 +129,11 @@ fn typecheck_proc<'hir>(
         let mut proc = ProcScope::new(data);
 
         let block_res = typecheck_block(hir, emit, &mut proc, data.return_ty, block, false, None);
-
         let locals = proc.finish();
         let locals = emit.arena.alloc_slice(&locals);
 
         let data = hir.registry_mut().proc_data_mut(id);
-        data.block = Some(block_res.expr);
+        data.block = Some(block_res.block);
         data.locals = locals;
     }
 }
@@ -295,12 +294,41 @@ impl<'hir> TypeResult<'hir> {
             ignore: false,
         }
     }
-
     fn new_ignore_typecheck(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
         TypeResult {
             ty,
             expr,
             ignore: true,
+        }
+    }
+}
+
+struct BlockResult<'hir> {
+    ty: hir::Type<'hir>,
+    block: hir::Block<'hir>,
+    ignore: bool,
+}
+
+impl<'hir> BlockResult<'hir> {
+    fn new(ty: hir::Type<'hir>, block: hir::Block<'hir>) -> BlockResult<'hir> {
+        BlockResult {
+            ty,
+            block,
+            ignore: false,
+        }
+    }
+    fn new_ignore_typecheck(ty: hir::Type<'hir>, block: hir::Block<'hir>) -> BlockResult<'hir> {
+        BlockResult {
+            ty,
+            block,
+            ignore: true,
+        }
+    }
+    fn into_type_result(self, emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
+        TypeResult {
+            ty: self.ty,
+            expr: emit.arena.alloc(hir::Expr::Block { block: self.block }),
+            ignore: self.ignore,
         }
     }
 }
@@ -325,7 +353,8 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_),
         ast::ExprKind::Block { block } => {
-            typecheck_block(hir, emit, proc, expect, block, false, None)
+            let block_res = typecheck_block(hir, emit, proc, expect, block, false, None);
+            block_res.into_type_result(emit)
         }
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
@@ -489,17 +518,17 @@ fn typecheck_if<'hir>(
         hir::Type::Error
     };
 
-    let entry_cond = typecheck_expr(hir, emit, proc, BOOL_TYPE, if_.entry.cond);
-    let entry_block = typecheck_block(hir, emit, proc, expect, if_.entry.block, false, None);
+    let entry_cond_res = typecheck_expr(hir, emit, proc, BOOL_TYPE, if_.entry.cond);
+    let entry_block_res = typecheck_block(hir, emit, proc, expect, if_.entry.block, false, None);
     let entry = hir::Branch {
-        cond: entry_cond.expr,
-        block: entry_block.expr,
+        cond: entry_cond_res.expr,
+        block: entry_block_res.block,
     };
 
     //@approx esmitation based on first entry block type
     // this is the same typecheck error reporting problem as described below
     let if_type = if if_.else_block.is_some() {
-        entry_block.ty
+        entry_block_res.ty
     } else {
         hir::Type::Basic(BasicType::Void)
     };
@@ -510,21 +539,22 @@ fn typecheck_if<'hir>(
         let branch_block = typecheck_block(hir, emit, proc, expect, branch.block, false, None);
         branches.push(hir::Branch {
             cond: branch_cond.expr,
-            block: branch_block.expr,
+            block: branch_block.block,
         });
     }
 
-    let mut fallback = None;
-    if let Some(else_block) = if_.else_block {
-        let fallback_block = typecheck_block(hir, emit, proc, expect, else_block, false, None);
-        fallback = Some(fallback_block.expr);
-    }
+    let else_block = if let Some(else_block) = if_.else_block {
+        let block_res = typecheck_block(hir, emit, proc, expect, else_block, false, None);
+        Some(block_res.block)
+    } else {
+        None
+    };
 
     let branches = emit.arena.alloc_slice(&branches);
     let if_ = emit.arena.alloc(hir::If {
         entry,
         branches,
-        fallback,
+        else_block,
     });
     let if_expr = emit.arena.alloc(hir::Expr::If { if_ });
 
@@ -1698,7 +1728,7 @@ fn get_expr_addressability<'hir>(
         hir::Expr::LitChar { .. } => Addressability::Temporary,
         hir::Expr::LitString { .. } => Addressability::Temporary,
         hir::Expr::If { if_ } => Addressability::NotImplemented, //@todo 05.05.24
-        hir::Expr::Block { stmts } => Addressability::NotImplemented, //@todo 05.05.24
+        hir::Expr::Block { block } => Addressability::NotImplemented, //@todo 05.05.24
         hir::Expr::Match { match_ } => Addressability::NotImplemented, //@todo 05.05.24
         hir::Expr::UnionMember { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
         hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
@@ -2104,7 +2134,7 @@ fn typecheck_block<'hir>(
     block: ast::Block<'_>,
     enter_loop: bool,
     enter_defer: Option<TextRange>,
-) -> TypeResult<'hir> {
+) -> BlockResult<'hir> {
     proc.push_block(enter_loop, enter_defer);
 
     let mut block_ty = None;
@@ -2138,7 +2168,7 @@ fn typecheck_block<'hir>(
 
                         let for_ = hir::For {
                             kind: hir::ForKind::Loop,
-                            block: block_res.expr,
+                            block: block_res.block,
                         };
                         Some(hir::Stmt::ForLoop(emit.arena.alloc(for_)))
                     }
@@ -2164,7 +2194,7 @@ fn typecheck_block<'hir>(
                             kind: hir::ForKind::While {
                                 cond: cond_res.expr,
                             },
-                            block: block_res.expr,
+                            block: block_res.block,
                         };
                         Some(hir::Stmt::ForLoop(emit.arena.alloc(for_)))
                     }
@@ -2187,6 +2217,8 @@ fn typecheck_block<'hir>(
                 Some(hir::Stmt::ExprSemi(expr_res.expr))
             }
             ast::StmtKind::ExprTail(expr) => {
+                //@type expectation is delegated to tail returned expression instead of this block itself 21.05.24
+                //@check or protect for cases with multiple expr tail, handle type expectation correctly + warn unreachability
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 if block_ty.is_none() {
                     block_ty = Some(expr_res.ty);
@@ -2194,6 +2226,7 @@ fn typecheck_block<'hir>(
                 Some(hir::Stmt::ExprTail(expr_res.expr))
             }
         };
+
         if let Some(hir_stmt) = hir_stmt {
             hir_stmts.push(hir_stmt);
         }
@@ -2202,12 +2235,12 @@ fn typecheck_block<'hir>(
     proc.pop_block();
 
     let stmts = emit.arena.alloc_slice(&hir_stmts);
-    let block_expr = emit.arena.alloc(hir::Expr::Block { stmts });
+    let block = hir::Block { stmts };
 
     if let Some(block_ty) = block_ty {
-        TypeResult::new_ignore_typecheck(block_ty, block_expr)
+        BlockResult::new_ignore_typecheck(block_ty, block)
     } else {
-        TypeResult::new(hir::Type::Basic(BasicType::Void), block_expr)
+        BlockResult::new(hir::Type::Basic(BasicType::Void), block)
     }
 }
 
@@ -2315,7 +2348,9 @@ fn typecheck_defer<'hir>(
         false,
         Some(defer_range),
     );
-    hir::Stmt::Defer(block_res.expr)
+
+    let block_ref = emit.arena.alloc(block_res.block);
+    hir::Stmt::Defer(block_ref)
 }
 
 fn typecheck_local<'hir>(

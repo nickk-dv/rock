@@ -34,7 +34,7 @@ pub struct ProcData<'hir> {
     pub params: &'hir [ProcParam<'hir>],
     pub is_variadic: bool,
     pub return_ty: Type<'hir>,
-    pub block: Option<&'hir Expr<'hir>>,
+    pub block: Option<Block<'hir>>,
     pub locals: &'hir [&'hir Local<'hir>],
     pub is_test: bool,
     pub is_main: bool,
@@ -209,7 +209,7 @@ pub enum Stmt<'hir> {
     Break,
     Continue,
     Return(Option<&'hir Expr<'hir>>),
-    Defer(&'hir Expr<'hir>),
+    Defer(&'hir Block<'hir>),
     ForLoop(&'hir For<'hir>),
     Local(LocalID),
     Assign(&'hir Assign<'hir>),
@@ -220,7 +220,7 @@ pub enum Stmt<'hir> {
 #[derive(Copy, Clone)]
 pub struct For<'hir> {
     pub kind: ForKind<'hir>,
-    pub block: &'hir Expr<'hir>,
+    pub block: Block<'hir>,
 }
 
 #[derive(Copy, Clone)]
@@ -300,7 +300,7 @@ pub enum Expr<'hir> {
     LitChar      { val: char },
     LitString    { id: InternID, c_string: bool },
     If           { if_: &'hir If<'hir> },
-    Block        { stmts: &'hir [Stmt<'hir>] },
+    Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },
     UnionMember  { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
     StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
@@ -329,13 +329,13 @@ pub enum Expr<'hir> {
 pub struct If<'hir> {
     pub entry: Branch<'hir>,
     pub branches: &'hir [Branch<'hir>],
-    pub fallback: Option<&'hir Expr<'hir>>,
+    pub else_block: Option<Block<'hir>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Branch<'hir> {
     pub cond: &'hir Expr<'hir>,
-    pub block: &'hir Expr<'hir>,
+    pub block: Block<'hir>,
 }
 
 #[derive(Copy, Clone)]
