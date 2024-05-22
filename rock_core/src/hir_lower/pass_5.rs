@@ -348,6 +348,7 @@ impl<'hir> TypeResult<'hir> {
             ignore: false,
         }
     }
+
     fn new_ignore_typecheck(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
         TypeResult {
             ty,
@@ -361,7 +362,6 @@ struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
     tail_range: Option<TextRange>,
-    ignore: bool,
 }
 
 impl<'hir> BlockResult<'hir> {
@@ -374,26 +374,14 @@ impl<'hir> BlockResult<'hir> {
             ty,
             block,
             tail_range,
-            ignore: false,
         }
     }
-    fn new_ignore_typecheck(
-        ty: hir::Type<'hir>,
-        block: hir::Block<'hir>,
-        tail_range: Option<TextRange>,
-    ) -> BlockResult<'hir> {
-        BlockResult {
-            ty,
-            block,
-            tail_range,
-            ignore: true,
-        }
-    }
+
     fn into_type_result(self, emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
         TypeResult {
             ty: self.ty,
             expr: emit.arena.alloc(hir::Expr::Block { block: self.block }),
-            ignore: self.ignore,
+            ignore: true,
         }
     }
 }
@@ -418,8 +406,7 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
-            let block_res = typecheck_block(hir, emit, proc, expect, block, false, None);
-            block_res.into_type_result(emit)
+            typecheck_block(hir, emit, proc, expect, *block, false, None).into_type_result(emit)
         }
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
@@ -2358,12 +2345,20 @@ fn typecheck_block<'hir>(
     proc.pop_block();
 
     let stmts = emit.arena.alloc_slice(&hir_stmts);
-    let block = hir::Block { stmts };
+    let hir_block = hir::Block { stmts };
 
     if let Some(block_ty) = block_ty {
-        BlockResult::new_ignore_typecheck(block_ty, block, tail_range)
+        BlockResult::new(block_ty, hir_block, tail_range)
     } else {
-        BlockResult::new(hir::Type::Basic(BasicType::Void), block, tail_range)
+        check_type_expectation(
+            hir,
+            emit,
+            proc.origin(),
+            block.range,
+            expect,
+            hir::Type::Basic(BasicType::Void),
+        );
+        BlockResult::new(hir::Type::Basic(BasicType::Void), hir_block, tail_range)
     }
 }
 

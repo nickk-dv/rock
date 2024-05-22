@@ -446,11 +446,17 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
             let defer_block = if p.at(T!['{']) {
                 block(p)?
             } else {
+                let start = p.start_range();
                 let start_offset = p.state.stmts.start();
+
                 let stmt = stmt(p)?;
                 p.state.stmts.add(stmt);
                 let stmts = p.state.stmts.take(start_offset, &mut p.state.arena);
-                Block { stmts }
+
+                Block {
+                    stmts,
+                    range: p.make_range(start),
+                }
             };
             StmtKind::Defer(p.state.arena.alloc(defer_block))
         }
@@ -652,7 +658,11 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             ExprKind::LitString { id, c_string }
         }
         T![if] => ExprKind::If { if_: if_(p)? },
-        T!['{'] => ExprKind::Block { block: block(p)? },
+        T!['{'] => {
+            let block = block(p)?;
+            let block_ref = p.state.arena.alloc(block);
+            ExprKind::Block { block: block_ref }
+        }
         T![match] => {
             let start_offset = p.state.match_arms.start();
             p.bump();
@@ -942,6 +952,7 @@ fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String>
 }
 
 fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> {
+    let start = p.start_range();
     let start_offset = p.state.stmts.start();
 
     p.expect(T!['{'])?;
@@ -951,7 +962,10 @@ fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> 
     }
 
     let stmts = p.state.stmts.take(start_offset, &mut p.state.arena);
-    Ok(Block { stmts })
+    Ok(Block {
+        stmts,
+        range: p.make_range(start),
+    })
 }
 
 fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<MatchArm<'ast>, String> {

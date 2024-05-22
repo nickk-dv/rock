@@ -285,6 +285,7 @@ pub struct Assign<'ast> {
 #[derive(Copy, Clone)]
 pub struct Block<'ast> {
     pub stmts: &'ast [Stmt<'ast>],
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
@@ -306,7 +307,7 @@ pub enum ExprKind<'ast> {
     LitChar     { val: char },
     LitString   { id: InternID, c_string: bool },
     If          { if_: &'ast If<'ast> },
-    Block       { block: Block<'ast> },
+    Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
