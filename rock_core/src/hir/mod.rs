@@ -179,6 +179,17 @@ pub enum Type<'hir> {
     ArrayStatic(&'hir ArrayStatic<'hir>),
 }
 
+impl<'hir> Type<'hir> {
+    #[inline]
+    pub fn is_error(self) -> bool {
+        matches!(self, Type::Error)
+    }
+    #[inline]
+    pub fn is_void(self) -> bool {
+        matches!(self, Type::Basic(ast::BasicType::Void))
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct ProcType<'hir> {
     pub params: &'hir [Type<'hir>],

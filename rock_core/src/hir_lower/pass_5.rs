@@ -360,21 +360,32 @@ impl<'hir> TypeResult<'hir> {
 struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
+    tail_range: Option<TextRange>,
     ignore: bool,
 }
 
 impl<'hir> BlockResult<'hir> {
-    fn new(ty: hir::Type<'hir>, block: hir::Block<'hir>) -> BlockResult<'hir> {
+    fn new(
+        ty: hir::Type<'hir>,
+        block: hir::Block<'hir>,
+        tail_range: Option<TextRange>,
+    ) -> BlockResult<'hir> {
         BlockResult {
             ty,
             block,
+            tail_range,
             ignore: false,
         }
     }
-    fn new_ignore_typecheck(ty: hir::Type<'hir>, block: hir::Block<'hir>) -> BlockResult<'hir> {
+    fn new_ignore_typecheck(
+        ty: hir::Type<'hir>,
+        block: hir::Block<'hir>,
+        tail_range: Option<TextRange>,
+    ) -> BlockResult<'hir> {
         BlockResult {
             ty,
             block,
+            tail_range,
             ignore: true,
         }
     }
@@ -552,56 +563,71 @@ fn typecheck_if<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    mut expect: TypeExpectation<'hir>,
     if_: &ast::If<'_>,
-    if_range: TextRange,
+    if_expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let expect_bool = TypeExpectation::new(hir::Type::Basic(BasicType::Bool), None);
-
-    //let v: bool = if something {
-    //    Errorrrr
-    //} else if smt {
-    //    10
-    //} else {
-    //    [1, 2]
-    //};
+    let mut if_type: hir::Type;
 
     let entry = {
-        let cond_res = typecheck_expr(hir, emit, proc, expect_bool, if_.entry.cond);
+        let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, if_.entry.cond);
         let block_res = typecheck_block(hir, emit, proc, expect, if_.entry.block, false, None);
+        if_type = block_res.ty;
+        if expect.ty.is_error() {
+            expect = TypeExpectation::new(
+                block_res.ty,
+                block_res
+                    .tail_range
+                    .map(|range| hir.src(proc.origin(), range)),
+            );
+        }
         hir::Branch {
             cond: cond_res.expr,
             block: block_res.block,
         }
     };
 
-    //@approx esmitation based on first entry block type
-    // this is the same typecheck error reporting problem as described below
-    let if_type = if if_.else_block.is_some() {
-        //@temp
-        hir::Type::Basic(BasicType::Void)
-    } else {
-        hir::Type::Basic(BasicType::Void)
-    };
-
     let branches = {
-        let mut branches = Vec::<hir::Branch>::with_capacity(if_.branches.len() + 1);
+        let mut branches = Vec::<hir::Branch>::with_capacity(if_.branches.len());
         for &branch in if_.branches {
-            let branch_cond = typecheck_expr(hir, emit, proc, expect_bool, branch.cond);
-            let branch_block = typecheck_block(hir, emit, proc, expect, branch.block, false, None);
+            let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, branch.cond);
+            let block_res = typecheck_block(hir, emit, proc, expect, branch.block, false, None);
+            if if_type.is_error() {
+                if_type = block_res.ty;
+            }
+            if expect.ty.is_error() {
+                expect = TypeExpectation::new(
+                    block_res.ty,
+                    block_res
+                        .tail_range
+                        .map(|range| hir.src(proc.origin(), range)),
+                );
+            }
             branches.push(hir::Branch {
-                cond: branch_cond.expr,
-                block: branch_block.block,
+                cond: cond_res.expr,
+                block: block_res.block,
             });
         }
         emit.arena.alloc_slice(&branches)
     };
 
     let else_block = if let Some(else_block) = if_.else_block {
-        Some(typecheck_block(hir, emit, proc, expect, else_block, false, None).block)
+        let block_res = typecheck_block(hir, emit, proc, expect, else_block, false, None);
+        if if_type.is_error() {
+            if_type = block_res.ty;
+        }
+        Some(block_res.block)
     } else {
         None
     };
+
+    if else_block.is_none() && !if_type.is_error() && !if_type.is_void() {
+        emit.error(ErrorComp::new(
+            "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
+            hir.src(proc.origin(), if_expr_range),
+            None,
+        ))
+    }
 
     let if_ = emit.arena.alloc(hir::If {
         entry,
@@ -609,12 +635,7 @@ fn typecheck_if<'hir>(
         else_block,
     });
     let if_expr = emit.arena.alloc(hir::Expr::If { if_ });
-
-    //@no idea which type to return for the if expression
-    // too many different permutations, current expectation model doesnt provide enough information
-    // for example caller cannot know if type error occured on that call
-    // this problem applies to block, if, match, array expressions. @02.04.24
-    TypeResult::new(if_type, if_expr)
+    TypeResult::new_ignore_typecheck(if_type, if_expr)
 }
 
 fn typecheck_match<'hir>(
@@ -2236,6 +2257,7 @@ fn typecheck_block<'hir>(
     proc.push_block(enter_loop, enter_defer);
 
     let mut block_ty = None;
+    let mut tail_range = None;
     let mut hir_stmts = Vec::with_capacity(block.stmts.len());
     // @incorrect for higher lvl blocks that also diverged 21.05.24
     // in that case diverges warnings would be emitter again
@@ -2320,6 +2342,7 @@ fn typecheck_block<'hir>(
                 //@type expectation is delegated to tail returned expression instead of this block itself 21.05.24
                 //@check or protect for cases with multiple expr tail, handle type expectation correctly + warn unreachability
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+                tail_range = Some(expr.range);
                 if block_ty.is_none() {
                     block_ty = Some(expr_res.ty);
                 }
@@ -2338,9 +2361,9 @@ fn typecheck_block<'hir>(
     let block = hir::Block { stmts };
 
     if let Some(block_ty) = block_ty {
-        BlockResult::new_ignore_typecheck(block_ty, block)
+        BlockResult::new_ignore_typecheck(block_ty, block, tail_range)
     } else {
-        BlockResult::new(hir::Type::Basic(BasicType::Void), block)
+        BlockResult::new(hir::Type::Basic(BasicType::Void), block, tail_range)
     }
 }
 
