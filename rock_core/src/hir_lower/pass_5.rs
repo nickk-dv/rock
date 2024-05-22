@@ -2200,6 +2200,15 @@ enum DivergeStatus {
     DivergesReported,
 }
 
+impl DivergeStatus {
+    fn diverges(&self) -> bool {
+        matches!(
+            self,
+            DivergeStatus::Diverges(_) | DivergeStatus::DivergesReported
+        )
+    }
+}
+
 fn check_stmt_diverges<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -2243,7 +2252,7 @@ fn typecheck_block<'hir>(
 ) -> BlockResult<'hir> {
     proc.push_block(enter_loop, enter_defer);
 
-    let mut block_ty = None;
+    let mut block_type = None;
     let mut tail_range = None;
     let mut hir_stmts = Vec::with_capacity(block.stmts.len());
     // @incorrect for higher lvl blocks that also diverged 21.05.24
@@ -2268,59 +2277,18 @@ fn typecheck_block<'hir>(
                 Some(typecheck_defer(hir, emit, proc, stmt.range.start(), *block))
             }
             ast::StmtKind::ForLoop(for_) => {
-                //@ check diverges when this is refactored
-                match for_.kind {
-                    ast::ForKind::Loop => {
-                        let block_res = typecheck_block(
-                            hir,
-                            emit,
-                            proc,
-                            TypeExpectation::VOID,
-                            for_.block,
-                            true,
-                            None,
-                        );
-
-                        let for_ = hir::For {
-                            kind: hir::ForKind::Loop,
-                            block: block_res.block,
-                        };
-                        Some(hir::Stmt::ForLoop(emit.arena.alloc(for_)))
-                    }
-                    ast::ForKind::While { cond } => {
-                        let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
-                        let block_res = typecheck_block(
-                            hir,
-                            emit,
-                            proc,
-                            TypeExpectation::VOID,
-                            for_.block,
-                            true,
-                            None,
-                        );
-
-                        let for_ = hir::For {
-                            kind: hir::ForKind::While {
-                                cond: cond_res.expr,
-                            },
-                            block: block_res.block,
-                        };
-                        Some(hir::Stmt::ForLoop(emit.arena.alloc(for_)))
-                    }
-                    ast::ForKind::ForLoop {
-                        local,
-                        cond,
-                        assign,
-                    } => todo!("for_loop c-like is not supported"),
-                }
+                Some(hir::Stmt::ForLoop(typecheck_for(hir, emit, proc, for_)))
             }
             ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
-            ast::StmtKind::Assign(assign) => Some(typecheck_assign(hir, emit, proc, assign)),
+            ast::StmtKind::Assign(assign) => {
+                Some(hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign)))
+            }
             ast::StmtKind::ExprSemi(expr) => {
-                let expect = if matches!(expr.kind, ast::ExprKind::Block { .. }) {
-                    TypeExpectation::VOID
-                } else {
-                    TypeExpectation::NOTHING
+                let expect = match expr.kind {
+                    ast::ExprKind::If { .. }
+                    | ast::ExprKind::Block { .. }
+                    | ast::ExprKind::Match { .. } => TypeExpectation::VOID,
+                    _ => TypeExpectation::NOTHING,
                 };
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 Some(hir::Stmt::ExprSemi(expr_res.expr))
@@ -2328,10 +2296,10 @@ fn typecheck_block<'hir>(
             ast::StmtKind::ExprTail(expr) => {
                 //@type expectation is delegated to tail returned expression instead of this block itself 21.05.24
                 //@check or protect for cases with multiple expr tail, handle type expectation correctly + warn unreachability
-                let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 tail_range = Some(expr.range);
-                if block_ty.is_none() {
-                    block_ty = Some(expr_res.ty);
+                let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+                if block_type.is_none() {
+                    block_type = Some(expr_res.ty);
                 }
                 Some(hir::Stmt::ExprTail(expr_res.expr))
             }
@@ -2347,17 +2315,19 @@ fn typecheck_block<'hir>(
     let stmts = emit.arena.alloc_slice(&hir_stmts);
     let hir_block = hir::Block { stmts };
 
-    if let Some(block_ty) = block_ty {
-        BlockResult::new(block_ty, hir_block, tail_range)
+    if let Some(block_type) = block_type {
+        BlockResult::new(block_type, hir_block, tail_range)
     } else {
-        check_type_expectation(
-            hir,
-            emit,
-            proc.origin(),
-            block.range,
-            expect,
-            hir::Type::Basic(BasicType::Void),
-        );
+        if !diverges.diverges() {
+            check_type_expectation(
+                hir,
+                emit,
+                proc.origin(),
+                block.range,
+                expect,
+                hir::Type::Basic(BasicType::Void),
+            );
+        }
         BlockResult::new(hir::Type::Basic(BasicType::Void), hir_block, tail_range)
     }
 }
@@ -2403,8 +2373,6 @@ fn typecheck_return<'hir>(
     range: TextRange,
     expr: Option<&ast::Expr>,
 ) -> hir::Stmt<'hir> {
-    let expect = proc.data().return_ty;
-
     if let Some(prev_defer) = proc.is_inside_defer() {
         emit.error(ErrorComp::new(
             "cannot use `return` inside `defer`",
@@ -2421,6 +2389,49 @@ fn typecheck_return<'hir>(
         check_type_expectation(hir, emit, proc.origin(), range, proc.return_expect(), void);
         hir::Stmt::Return(None)
     }
+}
+
+fn typecheck_for<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    for_: &ast::For<'_>,
+) -> &'hir hir::For<'hir> {
+    let kind = match for_.kind {
+        ast::ForKind::Loop => hir::ForKind::Loop,
+        ast::ForKind::While { cond } => {
+            let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
+            hir::ForKind::While {
+                cond: cond_res.expr,
+            }
+        }
+        ast::ForKind::ForLoop {
+            local,
+            cond,
+            assign,
+        } => {
+            //let local_id = typecheck_local(hir, emit, proc, local);
+            //let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
+            //let assign = typecheck_assign(hir, emit, proc, assign);
+            //hir::ForKind::ForLoop { local_id: , cond: cond_res.expr, assign }
+            todo!("for loop C-like not typechecked yet")
+        }
+    };
+
+    let block_res = typecheck_block(
+        hir,
+        emit,
+        proc,
+        TypeExpectation::VOID,
+        for_.block,
+        true,
+        None,
+    );
+
+    emit.arena.alloc(hir::For {
+        kind,
+        block: block_res.block,
+    })
 }
 
 //@allow break and continue from loops that originated within defer itself
@@ -2540,7 +2551,7 @@ fn typecheck_assign<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     assign: &ast::Assign,
-) -> hir::Stmt<'hir> {
+) -> &'hir hir::Assign<'hir> {
     let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, assign.lhs);
     let adressability = get_expr_addressability(hir, proc, lhs_res.expr);
 
@@ -2603,7 +2614,7 @@ fn typecheck_assign<'hir>(
         lhs_ty: lhs_res.ty,
         lhs_signed_int,
     };
-    hir::Stmt::Assign(emit.arena.alloc(assign))
+    emit.arena.alloc(assign)
 }
 
 // these calls are only done for items so far @26.04.24

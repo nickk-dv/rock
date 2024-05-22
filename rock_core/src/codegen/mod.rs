@@ -794,8 +794,11 @@ fn codegen_block<'ctx>(
                 codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
 
                 if let Some(expr) = expr {
-                    let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
-                    cg.builder.build_return(Some(&value)).unwrap();
+                    if let Some(value) = codegen_expr(cg, proc_cg, false, expr) {
+                        cg.builder.build_return(Some(&value)).unwrap();
+                    } else {
+                        cg.builder.build_return(None).unwrap();
+                    }
                 } else {
                     cg.builder.build_return(None).unwrap();
                 }
