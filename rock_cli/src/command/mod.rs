@@ -4,7 +4,7 @@ mod parse;
 
 use crate::error_format;
 use rock_core::error::{DiagnosticCollection, WarningComp};
-use rock_core::package::PackageKind;
+use rock_core::package::manifest::PackageKind;
 use rock_core::session::BuildKind;
 
 enum Command {

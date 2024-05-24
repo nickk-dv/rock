@@ -6,7 +6,9 @@ use rock_core::codegen;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::fs_env;
 use rock_core::hir_lower;
-use rock_core::package::{BuildManifest, Manifest, PackageKind, PackageManifest, Semver};
+use rock_core::package;
+use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
+use rock_core::package::semver::Semver;
 use rock_core::session::Session;
 use std::collections::BTreeMap;
 
@@ -132,56 +134,53 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     fs_env::dir_create(&src_dir, true)?;
     fs_env::dir_create(&build_dir, true)?;
 
-    let main_content: String = format!(
-        r#"import core/io;
-
-proc main() -> s32 {{
-    io.printf(c"Hello from {}\n");
-    return 0;
-}}
-"#,
-        data.name
-    );
-
-    let lib_content: String = format!(
-        r#"import core/io;
-
-proc test() {{
-    io.printf(c"Lib {} works\n");
-}}
-"#,
-        data.name
-    );
-
+    const IMPORT_CORE_IO: &'static str = "import core/io;\n\n";
     match data.kind {
-        PackageKind::Lib => {
-            fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
-        }
         PackageKind::Bin => {
-            fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &main_content)?
+            let bin_content = format!(
+                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    io.printf(c\"Lib `{}` works\\n\");\n    return 0;\n}}\n",
+                data.name
+            );
+            fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &bin_content)?
+        }
+        PackageKind::Lib => {
+            let lib_content = format!(
+                "{IMPORT_CORE_IO}proc test() {{\n    io.printf(c\"Lib `{}` works\\n\");\n}}\n",
+                data.name
+            );
+            fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
         }
     }
 
-    let mut dependencies = BTreeMap::new();
-    dependencies.insert("core".to_string(), rock_core::VERSION);
-
-    let manifest = Manifest {
-        package: PackageManifest {
+    {
+        let package = PackageManifest {
             name: data.name.clone(),
             kind: data.kind,
             version: Semver::new(0, 1, 0),
-        },
-        build: if matches!(data.kind, PackageKind::Bin) {
-            Some(BuildManifest {
+            authors: None,
+            repository: None,
+            description: None,
+        };
+
+        let build = match data.kind {
+            PackageKind::Bin => Some(BuildManifest {
                 bin_name: data.name.clone(),
-            })
-        } else {
-            None
-        },
-        dependencies,
-    };
-    let manifest = manifest.serialize()?;
-    fs_env::file_create_or_rewrite(&root_dir.join("Rock.toml"), &manifest)?;
+            }),
+            PackageKind::Lib => None,
+        };
+
+        let mut dependencies = BTreeMap::new();
+        dependencies.insert("core".to_string(), rock_core::VERSION);
+
+        let manifest = Manifest {
+            package,
+            build,
+            dependencies,
+        };
+
+        let manifest_text = package::manifest_serialize(&manifest)?;
+        fs_env::file_create_or_rewrite(&root_dir.join("Rock.toml"), &manifest_text)?;
+    }
 
     if !data.no_git {
         fs_env::file_create_or_rewrite(&root_dir.join(".gitignore"), "build/\n")?;

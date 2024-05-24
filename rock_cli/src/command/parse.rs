@@ -1,7 +1,7 @@
 use super::format::CommandFormat;
 use super::{Command, CommandBuild, CommandNew, CommandRun};
 use rock_core::error::{ErrorComp, ResultComp, WarningComp};
-use rock_core::package::PackageKind;
+use rock_core::package::manifest::PackageKind;
 use rock_core::session::BuildKind;
 
 pub fn command(format: CommandFormat) -> ResultComp<Command> {

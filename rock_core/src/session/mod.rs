@@ -2,6 +2,7 @@ use crate::error::ErrorComp;
 use crate::fs_env;
 use crate::id_impl;
 use crate::package;
+use crate::package::manifest::Manifest;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
@@ -39,7 +40,7 @@ pub struct File {
 id_impl!(PackageID);
 pub struct PackageData {
     file_count: usize,
-    manifest: package::Manifest,
+    manifest: Manifest,
 }
 
 impl Session {
@@ -77,7 +78,7 @@ impl PackageData {
     pub fn file_count(&self) -> usize {
         self.file_count
     }
-    pub fn manifest(&self) -> &package::Manifest {
+    pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }
 }
@@ -114,13 +115,7 @@ fn process_package(session: &mut Session, root: PathBuf) -> Result<(), ErrorComp
     }
 
     let manifest = fs_env::file_read_to_string(&manifest_path)?;
-    let manifest: package::Manifest = basic_toml::from_str(&manifest).map_err(|error| {
-        ErrorComp::message(format!(
-            "could not parse manifest `{}`\nreason: {}",
-            manifest_path.to_string_lossy(),
-            error
-        ))
-    })?;
+    let manifest = package::manifest_deserialize(manifest, &manifest_path)?;
 
     let src_dir = root.join("src");
     if !src_dir.exists() {
