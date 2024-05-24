@@ -1,27 +1,28 @@
 use super::format::CommandFormat;
 use super::{Command, CommandBuild, CommandNew, CommandRun};
-use rock_core::error::ErrorComp;
+use rock_core::error::{ErrorComp, ResultComp, WarningComp};
 use rock_core::package::PackageKind;
 use rock_core::session::BuildKind;
 
-pub fn command(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
+pub fn command(format: CommandFormat) -> ResultComp<Command> {
     match format.name.as_str() {
-        "n" | "new" => parse_new(format),
+        "n" | "new" => ResultComp::from_error(parse_new(format)),
         "c" | "check" => parse_check(format),
-        "b" | "build" => parse_build(format),
-        "r" | "run" => parse_run(format),
+        "b" | "build" => ResultComp::from_errors(parse_build(format)),
+        "r" | "run" => ResultComp::from_errors(parse_run(format)),
         "h" | "help" => parse_help(format),
         "v" | "version" => parse_version(format),
         _ => {
-            return Err(vec![ErrorComp::message(format!(
+            let error = ErrorComp::message(format!(
                 "command `{}` does not exist, use `rock help` to learn the usage",
                 format.name
-            ))]);
+            ));
+            ResultComp::from_error(Err(error))
         }
     }
 }
 
-fn parse_new(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
+fn parse_new(format: CommandFormat) -> Result<Command, ErrorComp> {
     let data = CommandNew {
         name: parse_new_name(&format)?,
         kind: parse_package_kind(&format, PackageKind::Bin),
@@ -30,7 +31,7 @@ fn parse_new(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
     Ok(Command::New(data))
 }
 
-fn parse_check(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
+fn parse_check(format: CommandFormat) -> ResultComp<Command> {
     parse_simple_command(format, "check", Command::Check)
 }
 
@@ -49,11 +50,11 @@ fn parse_run(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
     Ok(Command::Run(data))
 }
 
-fn parse_help(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
+fn parse_help(format: CommandFormat) -> ResultComp<Command> {
     parse_simple_command(format, "help", Command::Help)
 }
 
-fn parse_version(format: CommandFormat) -> Result<Command, Vec<ErrorComp>> {
+fn parse_version(format: CommandFormat) -> ResultComp<Command> {
     parse_simple_command(format, "version", Command::Version)
 }
 
@@ -61,16 +62,15 @@ fn parse_simple_command(
     format: CommandFormat,
     full_name: &str,
     command: Command,
-) -> Result<Command, Vec<ErrorComp>> {
+) -> ResultComp<Command> {
     if !format.args.is_empty() || !format.options.is_empty() {
-        return Ok(command);
-        //@todo 18.05.24
-        //Err(vec![ErrorComp::message_warning(format!(
-        //    "`{}` command does not take any options or arguments",
-        //    full_name
-        //))])
+        let warning = WarningComp::message(format!(
+            "`{}` command does not take any options or arguments",
+            full_name
+        ));
+        ResultComp::Ok((command, vec![warning]))
     } else {
-        Ok(command)
+        ResultComp::Ok((command, vec![]))
     }
 }
 
@@ -82,13 +82,13 @@ fn parse_bool_flag(format: &CommandFormat, name: &str, default: bool) -> bool {
     }
 }
 
-fn parse_new_name(format: &CommandFormat) -> Result<String, Vec<ErrorComp>> {
+fn parse_new_name(format: &CommandFormat) -> Result<String, ErrorComp> {
     if let Some(arg) = format.args.first() {
         Ok(arg.to_string())
     } else {
-        Err(vec![ErrorComp::message(
+        Err(ErrorComp::message(
             "missing new package name, use `rock help` to learn the usage",
-        )])
+        ))
     }
 }
 

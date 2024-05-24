@@ -1,6 +1,6 @@
 use crate::arena::Arena;
 use crate::ast;
-use crate::error::{DiagnosticCollection, ErrorComp, Info, SourceRange, WarningComp};
+use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::intern::ConstInternPool;
 use crate::intern::InternID;
@@ -576,12 +576,15 @@ impl<'hir> HirEmit<'hir> {
     pub fn emit<'ast, 'intern: 'hir>(
         self,
         hir: HirData<'hir, 'ast, 'intern>,
-    ) -> Result<(hir::Hir<'hir>, Vec<WarningComp>), DiagnosticCollection> {
+    ) -> ResultComp<hir::Hir<'hir>> {
         //@debug info
         eprintln!("ast mem: {}", hir.ast.arena.mem_usage());
         eprintln!("hir mem: {}", self.arena.mem_usage());
 
-        let (_, warnings) = self.diagnostics.result(())?;
+        if !self.diagnostics.errors().is_empty() {
+            return ResultComp::Err(self.diagnostics);
+        }
+
         let mut const_values = Vec::with_capacity(hir.registry.const_evals.len());
         let mut errors = Vec::new();
 
@@ -617,11 +620,9 @@ impl<'hir> HirEmit<'hir> {
                 globals: hir.registry.hir_globals,
                 const_values,
             };
-            Ok((hir, warnings))
+            ResultComp::Ok((hir, self.diagnostics.warnings_moveout()))
         } else {
-            Err(DiagnosticCollection::new()
-                .join_errors(errors)
-                .join_warnings(warnings))
+            ResultComp::Err(self.diagnostics.join_errors(errors))
         }
     }
 }

@@ -7,7 +7,7 @@ mod pass_5;
 mod proc_scope;
 
 use crate::ast;
-use crate::error::{DiagnosticCollection, WarningComp};
+use crate::error::ResultComp;
 use crate::hir;
 use crate::session::Session;
 use hir_build::{HirData, HirEmit};
@@ -16,7 +16,7 @@ use hir_build::{HirData, HirEmit};
 pub fn check<'hir, 'ast, 'intern: 'hir>(
     ast: ast::Ast<'ast, 'intern>,
     session: &Session,
-) -> Result<(hir::Hir<'hir>, Vec<WarningComp>), DiagnosticCollection> {
+) -> ResultComp<hir::Hir<'hir>> {
     let mut hir = HirData::new(ast, session);
     let mut emit = HirEmit::new();
     pass_1::populate_scopes(&mut hir, &mut emit);

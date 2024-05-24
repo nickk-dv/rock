@@ -3,7 +3,7 @@ mod format;
 mod parse;
 
 use crate::error_format;
-use rock_core::error::DiagnosticCollection;
+use rock_core::error::{DiagnosticCollection, WarningComp};
 use rock_core::package::PackageKind;
 use rock_core::session::BuildKind;
 
@@ -32,31 +32,15 @@ struct CommandRun {
 }
 
 pub fn run() {
-    let (format, warnings_0) = match format::parse() {
-        Ok(format) => format,
-        Err(diagnostics) => {
-            error_format::print_errors(None, diagnostics);
-            return;
-        }
-    };
-    let command = match parse::command(format) {
-        Ok(command) => command,
-        Err(errors) => {
-            error_format::print_errors(None, DiagnosticCollection::new().join_errors(errors));
-            return;
-        }
-    };
-    let ((), warnings_1) = match execute::command(command) {
-        Ok(command) => command,
-        Err(diagnostics) => {
-            error_format::print_errors(None, diagnostics.join_warnings(warnings_0));
-            return;
-        }
-    };
-    error_format::print_errors(
-        None,
-        DiagnosticCollection::new()
-            .join_warnings(warnings_0)
-            .join_warnings(warnings_1),
-    );
+    let result = run_impl();
+    let diagnostics = DiagnosticCollection::from_result(result);
+    error_format::print_errors(None, diagnostics);
+}
+
+//@format and command parsing warnings get printed after check / build / run diagnostics, fine? 24.05.24
+fn run_impl() -> Result<Vec<WarningComp>, DiagnosticCollection> {
+    let (format, warnings) = format::parse().into_result(vec![])?;
+    let (command, warnings) = parse::command(format).into_result(warnings)?;
+    let ((), warnings) = execute::command(command).into_result(warnings)?;
+    Ok(warnings)
 }

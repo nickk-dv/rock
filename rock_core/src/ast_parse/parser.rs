@@ -1,6 +1,6 @@
 use crate::arena::Arena;
 use crate::ast::*;
-use crate::error::ErrorComp;
+use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use crate::intern::{InternID, InternPool};
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
@@ -146,15 +146,16 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
         }
     }
 
-    pub fn result(self) -> Result<Ast<'ast, 'intern>, Vec<ErrorComp>> {
+    pub fn result(self) -> ResultComp<Ast<'ast, 'intern>> {
+        let ast = Ast {
+            arena: self.arena,
+            intern: self.intern,
+            packages: self.packages,
+        };
         if self.errors.is_empty() {
-            Ok(Ast {
-                arena: self.arena,
-                intern: self.intern,
-                packages: self.packages,
-            })
+            ResultComp::Ok((ast, vec![]))
         } else {
-            Err(self.errors)
+            ResultComp::Err(DiagnosticCollection::new().join_errors(self.errors))
         }
     }
 }

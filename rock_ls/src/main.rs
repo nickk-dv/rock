@@ -133,10 +133,9 @@ use lsp_types::{
 };
 use std::path::PathBuf;
 
-fn run_check(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-    let ast = ast_parse::parse(session)
-        .map_err(|errors| DiagnosticCollection::new().join_errors(errors))?;
-    let (_, warnings) = hir_lower::check(ast, session)?;
+fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
+    let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
+    let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
     Ok(warnings)
 }
 
@@ -204,11 +203,9 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
     // this is a temporary full compilation run
     let session = Session::new()
         .map_err(|_| Result::<(), ()>::Err(()))
-        .unwrap();
-    let diagnostics = match run_check(&session) {
-        Ok(warnings) => DiagnosticCollection::new().join_warnings(warnings),
-        Err(diagnostics) => diagnostics,
-    };
+        .expect("lsp session errors cannot be handled");
+    let check_result = check_impl(&session);
+    let diagnostics = DiagnosticCollection::from_result(check_result);
 
     // assign empty diagnostics
     let mut diagnostics_map = HashMap::new();

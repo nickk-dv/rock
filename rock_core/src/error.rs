@@ -1,27 +1,25 @@
 use crate::session::FileID;
 use crate::text::TextRange;
 
-//@improve how results work and cleanup joining of errors / warnings 18.05.24
-// it works but tedious to write
-// also warnings when joined in correctly will lose their original order which is important
+pub enum ResultComp<T> {
+    Ok((T, Vec<WarningComp>)),
+    Err(DiagnosticCollection),
+}
+
 pub struct DiagnosticCollection {
     errors: Vec<ErrorComp>,
     warnings: Vec<WarningComp>,
 }
 
-#[derive(Clone)] //@remove when possible
 pub struct ErrorComp(Diagnostic);
-#[derive(Clone)] //@remove when possible
 pub struct WarningComp(Diagnostic);
 pub struct Info;
 
-#[derive(Clone)] //@remove when possible
 pub struct Diagnostic {
     message: StringOrStr,
     kind: DiagnosticKind,
 }
 
-#[derive(Clone)] //@remove when possible
 pub enum DiagnosticKind {
     Message,
     Context {
@@ -34,7 +32,6 @@ pub enum DiagnosticKind {
     },
 }
 
-#[derive(Clone)] //@remove when possible
 pub struct DiagnosticContext {
     message: StringOrStr,
     source: SourceRange,
@@ -53,10 +50,66 @@ pub struct SourceRange {
     file_id: FileID,
 }
 
-#[derive(Clone)] //@remove when possible
 pub enum StringOrStr {
     String(String),
     Str(&'static str),
+}
+
+impl<T> ResultComp<T> {
+    pub fn new(value: T, diagnostics: DiagnosticCollection) -> ResultComp<T> {
+        if diagnostics.errors.is_empty() {
+            ResultComp::Ok((value, diagnostics.warnings))
+        } else {
+            ResultComp::Err(diagnostics)
+        }
+    }
+
+    pub fn from_error(result: Result<T, ErrorComp>) -> ResultComp<T> {
+        match result {
+            Ok(value) => ResultComp::Ok((value, vec![])),
+            Err(error) => ResultComp::Err(DiagnosticCollection::new().join_errors(vec![error])),
+        }
+    }
+
+    pub fn from_errors(result: Result<T, Vec<ErrorComp>>) -> ResultComp<T> {
+        match result {
+            Ok(value) => ResultComp::Ok((value, vec![])),
+            Err(errors) => ResultComp::Err(DiagnosticCollection::new().join_errors(errors)),
+        }
+    }
+
+    pub fn into_result(
+        self,
+        mut warnigns_prev: Vec<WarningComp>,
+    ) -> Result<(T, Vec<WarningComp>), DiagnosticCollection> {
+        match self {
+            ResultComp::Ok((value, warnings)) => {
+                if warnigns_prev.is_empty() {
+                    Ok((value, warnings))
+                } else {
+                    warnigns_prev.extend(warnings);
+                    Ok((value, warnigns_prev))
+                }
+            }
+            ResultComp::Err(mut diagnostics) => {
+                if warnigns_prev.is_empty() {
+                    Err(diagnostics)
+                } else {
+                    warnigns_prev.extend(diagnostics.warnings);
+                    diagnostics.warnings = warnigns_prev;
+                    Err(diagnostics)
+                }
+            }
+        }
+    }
+
+    pub fn is_ok(&self) -> bool {
+        matches!(self, ResultComp::Ok(..))
+    }
+
+    pub fn is_err(&self) -> bool {
+        matches!(self, ResultComp::Err(..))
+    }
 }
 
 impl DiagnosticCollection {
@@ -66,11 +119,24 @@ impl DiagnosticCollection {
             warnings: Vec::new(),
         }
     }
+
+    pub fn from_result(
+        result: Result<Vec<WarningComp>, DiagnosticCollection>,
+    ) -> DiagnosticCollection {
+        match result {
+            Ok(warnings) => DiagnosticCollection::new().join_warnings(warnings),
+            Err(diagnostics) => diagnostics,
+        }
+    }
+
     pub fn errors(&self) -> &[ErrorComp] {
         &self.errors
     }
     pub fn warnings(&self) -> &[WarningComp] {
         &self.warnings
+    }
+    pub fn warnings_moveout(self) -> Vec<WarningComp> {
+        self.warnings
     }
 
     pub fn error(&mut self, error: ErrorComp) {
@@ -95,14 +161,6 @@ impl DiagnosticCollection {
         self.errors.extend(other.errors);
         self.warnings.extend(other.warnings);
         self
-    }
-
-    pub fn result<T>(self, value: T) -> Result<(T, Vec<WarningComp>), DiagnosticCollection> {
-        if self.errors.is_empty() {
-            Ok((value, self.warnings))
-        } else {
-            Err(self)
-        }
     }
 }
 

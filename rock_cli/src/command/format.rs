@@ -1,4 +1,4 @@
-use rock_core::error::{DiagnosticCollection, ErrorComp, WarningComp};
+use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use std::collections::{HashMap, HashSet};
 
 pub struct CommandFormat {
@@ -8,7 +8,7 @@ pub struct CommandFormat {
     pub trail_args: Vec<String>,
 }
 
-pub fn parse() -> Result<(CommandFormat, Vec<WarningComp>), DiagnosticCollection> {
+pub fn parse() -> ResultComp<CommandFormat> {
     let mut p = FormatParser::new();
     let mut diagnostics = DiagnosticCollection::new();
 
@@ -57,8 +57,7 @@ pub fn parse() -> Result<(CommandFormat, Vec<WarningComp>), DiagnosticCollection
         options: cmd_options,
         trail_args: p.trail_args(),
     };
-
-    diagnostics.result(format)
+    ResultComp::new(format, diagnostics)
 }
 
 struct FormatParser {

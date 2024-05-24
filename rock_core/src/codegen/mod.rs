@@ -1,5 +1,6 @@
 use crate::ast;
 use crate::error::ErrorComp;
+use crate::error::ResultComp;
 use crate::fs_env;
 use crate::hir;
 use crate::intern::InternID;
@@ -149,6 +150,7 @@ impl<'ctx> Codegen<'ctx> {
 
     fn build_object(self, bin_name: &str, config: BuildConfig) -> Result<(), ErrorComp> {
         self.module.print_to_stderr();
+
         if let Err(error) = self.module.verify() {
             return Err(ErrorComp::message(format!(
                 "internal codegen error: llvm module verify failed\nreason: {}",
@@ -348,14 +350,15 @@ impl<'ctx> Codegen<'ctx> {
     }
 }
 
-pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> Result<(), ErrorComp> {
+pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> ResultComp<()> {
     let context = context::Context::create();
     let mut cg = Codegen::new(&context, hir);
     codegen_struct_types(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&cg);
-    cg.build_object(bin_name, config)
+    let result = cg.build_object(bin_name, config);
+    ResultComp::from_error(result)
 }
 
 fn codegen_struct_types(cg: &mut Codegen) {

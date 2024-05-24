@@ -112,8 +112,7 @@ fn typecheck_proc<'hir>(
                 None,
             ))
         }
-        // not allowing `never` in test procedures,
-        // panic or exit in test code doesnt make much sence, or does it? @27.04.24
+
         if !matches!(data.return_ty, hir::Type::Basic(BasicType::Void)) {
             emit.error(ErrorComp::new(
                 "procedures with #[test] attribute can only return `void`",

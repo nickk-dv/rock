@@ -2,11 +2,11 @@ mod grammar;
 mod parser;
 
 use crate::ast::*;
-use crate::error::ErrorComp;
+use crate::error::ResultComp;
 use crate::lexer;
 use crate::session::{FileID, Session};
 
-pub fn parse(session: &Session) -> Result<Ast, Vec<ErrorComp>> {
+pub fn parse(session: &Session) -> ResultComp<Ast> {
     let mut state = parser::ParseState::new();
     let mut file_idx: usize = 0;
 
