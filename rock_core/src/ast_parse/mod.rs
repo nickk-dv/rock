@@ -33,10 +33,10 @@ pub fn parse(session: &Session) -> ResultComp<Ast> {
                     continue;
                 }
             };
-            let parser = parser::Parser::new(tokens, &file.source, &mut state);
+            let parser = parser::Parser::new(tokens, file_id, &file.source, &mut state);
 
             match grammar::module(parser, file_id, module_name_id) {
-                Ok(it) => modules.push(it),
+                Ok(module) => modules.push(module),
                 Err(error) => state.errors.push(error),
             }
         }

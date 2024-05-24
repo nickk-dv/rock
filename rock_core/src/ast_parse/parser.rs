@@ -2,6 +2,7 @@ use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use crate::intern::{InternID, InternPool};
+use crate::session::FileID;
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
@@ -11,6 +12,7 @@ pub struct Parser<'ast, 'intern, 'src, 'state> {
     tokens: TokenList,
     char_id: u32,
     string_id: u32,
+    file_id: FileID,
     pub source: &'src str,
     pub state: &'state mut ParseState<'ast, 'intern>,
 }
@@ -38,6 +40,7 @@ pub struct ParseState<'ast, 'intern> {
 impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
     pub fn new(
         tokens: TokenList,
+        file_id: FileID,
         source: &'src str,
         state: &'state mut ParseState<'ast, 'intern>,
     ) -> Self {
@@ -46,6 +49,7 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
             tokens,
             char_id: 0,
             string_id: 0,
+            file_id,
             source,
             state,
         }
@@ -120,6 +124,10 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         let id = self.state.intern.intern(string);
         self.string_id += 1;
         (id, c_string)
+    }
+
+    pub fn file_id(&self) -> FileID {
+        self.file_id
     }
 }
 

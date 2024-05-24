@@ -629,7 +629,12 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             let val = match string.parse::<u64>() {
                 Ok(value) => value,
                 Err(error) => {
-                    panic!("parse int error: {}", error); //@handle gracefully, without a panic
+                    p.state.errors.push(ErrorComp::new(
+                        format!("parse int error: {}", error),
+                        SourceRange::new(range, p.file_id()),
+                        None,
+                    ));
+                    0
                 }
             };
             ExprKind::LitInt { val }
@@ -642,7 +647,12 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             let val = match string.parse::<f64>() {
                 Ok(value) => value,
                 Err(error) => {
-                    panic!("parse float error: {}", error); //@handle gracefully, without a panic
+                    p.state.errors.push(ErrorComp::new(
+                        format!("parse float error: {}", error),
+                        SourceRange::new(range, p.file_id()),
+                        None,
+                    ));
+                    0.0
                 }
             };
             ExprKind::LitFloat { val }

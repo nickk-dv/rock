@@ -80,23 +80,23 @@ impl<T> ResultComp<T> {
 
     pub fn into_result(
         self,
-        mut warnigns_prev: Vec<WarningComp>,
+        mut warnings_prev: Vec<WarningComp>,
     ) -> Result<(T, Vec<WarningComp>), DiagnosticCollection> {
         match self {
             ResultComp::Ok((value, warnings)) => {
-                if warnigns_prev.is_empty() {
+                if warnings_prev.is_empty() {
                     Ok((value, warnings))
                 } else {
-                    warnigns_prev.extend(warnings);
-                    Ok((value, warnigns_prev))
+                    warnings_prev.extend(warnings);
+                    Ok((value, warnings_prev))
                 }
             }
             ResultComp::Err(mut diagnostics) => {
-                if warnigns_prev.is_empty() {
+                if warnings_prev.is_empty() {
                     Err(diagnostics)
                 } else {
-                    warnigns_prev.extend(diagnostics.warnings);
-                    diagnostics.warnings = warnigns_prev;
+                    warnings_prev.extend(diagnostics.warnings);
+                    diagnostics.warnings = warnings_prev;
                     Err(diagnostics)
                 }
             }
