@@ -363,9 +363,6 @@ impl<'hir> BlockResult<'hir> {
     }
 }
 
-//@need type_repr instead of allocating hir types
-// and maybe type::unknown, or type::infer type to facilitate better inference
-// to better represent partially typed arrays, etc
 #[must_use]
 fn typecheck_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
@@ -412,10 +409,10 @@ fn typecheck_expr<'hir>(
         }
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
         ast::ExprKind::Unary { op, op_range, rhs } => {
-            typecheck_unary(hir, emit, proc, op, op_range, rhs)
+            typecheck_unary(hir, emit, proc, expect, op, op_range, rhs)
         }
         ast::ExprKind::Binary { op, op_range, bin } => {
-            typecheck_binary(hir, emit, proc, op, op_range, bin)
+            typecheck_binary(hir, emit, proc, expect, op, op_range, bin)
         }
     };
 
@@ -1845,101 +1842,63 @@ fn typecheck_unary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
+    expect: TypeExpectation<'hir>,
     op: ast::UnOp,
     op_range: TextRange,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
-    let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, rhs);
-    //@not generating anything if type is invalid
-    if let hir::Type::Error = rhs_res.ty {
-        return TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR);
-    }
+    let rhs_expect = match op {
+        ast::UnOp::Neg => expect,
+        ast::UnOp::BitNot => expect,
+        ast::UnOp::LogicNot => TypeExpectation::BOOL,
+        ast::UnOp::Deref => TypeExpectation::NOTHING,
+    };
+    let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, rhs);
 
-    let unary_ty = match op {
-        ast::UnOp::Neg => match rhs_res.ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::SignedInt | BasicTypeKind::Float => Some(hir::Type::Basic(basic)),
-                _ => None,
+    let compatable = check_un_op_compatibility(hir, emit, proc.origin(), rhs_res.ty, op, op_range);
+
+    let unary_ty = if compatable {
+        match op {
+            ast::UnOp::Neg => rhs_res.ty,
+            ast::UnOp::BitNot => rhs_res.ty,
+            ast::UnOp::LogicNot => hir::Type::BOOL,
+            ast::UnOp::Deref => match rhs_res.ty {
+                hir::Type::Reference(ref_ty, _) => *ref_ty,
+                _ => hir::Type::Error,
             },
-            _ => None,
-        },
-        ast::UnOp::BitNot => match rhs_res.ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::UnsignedInt | BasicTypeKind::SignedInt => {
-                    Some(hir::Type::Basic(basic))
-                }
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::UnOp::LogicNot => match rhs_res.ty {
-            hir::Type::Basic(basic) => match basic {
-                BasicType::Bool => Some(hir::Type::Basic(basic)),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::UnOp::Deref => match rhs_res.ty {
-            hir::Type::Reference(ref_ty, ..) => Some(*ref_ty),
-            _ => None,
-        },
+        }
+    } else {
+        hir::Type::Error
     };
 
-    if let Some(unary_ty) = unary_ty {
-        let unary_expr = hir::Expr::Unary {
-            op,
-            rhs: rhs_res.expr,
-        };
-        TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
-    } else {
-        //@unary op &str is same as token.to_str() 17.05.24
-        // but those are separate types, this could be de-duplicated
-        let op_str = match op {
-            ast::UnOp::Neg => "-",
-            ast::UnOp::BitNot => "~",
-            ast::UnOp::LogicNot => "!",
-            ast::UnOp::Deref => "*",
-        };
-        match op {
-            ast::UnOp::Neg | ast::UnOp::BitNot | ast::UnOp::LogicNot => {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "unary operator `{op_str}` cannot be applied to `{}`",
-                        type_format(hir, emit, rhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-            }
-            ast::UnOp::Deref => {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot dereference value of type `{}`",
-                        type_format(hir, emit, rhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-            }
-        }
-        TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
-    }
+    let unary_expr = hir::Expr::Unary {
+        op,
+        rhs: rhs_res.expr,
+    };
+    TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
 }
 
-//@bin << >> should allow any integer type on the right?
+//@bin << >> should allow any integer type on the right, same sized int?
 // no type expectation for this is possible 25.05.24
 fn typecheck_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
+    expect: TypeExpectation<'hir>,
     op: ast::BinOp,
     op_range: TextRange,
     bin: &ast::BinExpr<'_>,
 ) -> TypeResult<'hir> {
     let lhs_expect = match op {
+        ast::BinOp::IsEq
+        | ast::BinOp::NotEq
+        | ast::BinOp::Less
+        | ast::BinOp::LessEq
+        | ast::BinOp::Greater
+        | ast::BinOp::GreaterEq => TypeExpectation::NOTHING,
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => TypeExpectation::BOOL,
         ast::BinOp::Range | ast::BinOp::RangeInc => TypeExpectation::USIZE,
-        _ => TypeExpectation::NOTHING,
+        _ => expect,
     };
     let lhs_res = typecheck_expr(hir, emit, proc, lhs_expect, bin.lhs);
 
@@ -1952,9 +1911,7 @@ fn typecheck_binary<'hir>(
     };
     let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, bin.rhs);
 
-    let binary_ty = if !compatable {
-        hir::Type::Error
-    } else {
+    let binary_ty = if compatable {
         match op {
             ast::BinOp::IsEq
             | ast::BinOp::NotEq
@@ -1969,6 +1926,8 @@ fn typecheck_binary<'hir>(
             }
             _ => lhs_res.ty,
         }
+    } else {
+        hir::Type::Error
     };
 
     let lhs_signed_int = match binary_ty {
@@ -1984,24 +1943,38 @@ fn typecheck_binary<'hir>(
     TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
 }
 
-//@todo
 fn check_un_op_compatibility<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ModuleID,
-    lhs_ty: hir::Type,
+    rhs_ty: hir::Type,
     op: ast::UnOp,
     op_range: TextRange,
 ) -> bool {
-    if lhs_ty.is_error() {
-        return true;
+    if rhs_ty.is_error() {
+        return false;
     }
 
     let compatable = match op {
-        ast::UnOp::Neg => true,
-        ast::UnOp::BitNot => true,
-        ast::UnOp::LogicNot => true,
-        ast::UnOp::Deref => true,
+        ast::UnOp::Neg => match rhs_ty {
+            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
+                BasicTypeKind::SignedInt | BasicTypeKind::Float => true,
+                _ => false,
+            },
+            _ => false,
+        },
+        ast::UnOp::BitNot => match rhs_ty {
+            hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_integer(),
+            _ => false,
+        },
+        ast::UnOp::LogicNot => match rhs_ty {
+            hir::Type::Basic(BasicType::Bool) => true,
+            _ => false,
+        },
+        ast::UnOp::Deref => match rhs_ty {
+            hir::Type::Reference(..) => true,
+            _ => false,
+        },
     };
 
     if !compatable {
@@ -2009,7 +1982,7 @@ fn check_un_op_compatibility<'hir>(
             format!(
                 "cannot apply unary operator `{}` on value of type `{}`",
                 op.as_str(),
-                type_format(hir, emit, lhs_ty)
+                type_format(hir, emit, rhs_ty)
             ),
             hir.src(origin_id, op_range),
             None,
@@ -2027,7 +2000,7 @@ fn check_bin_op_compatibility<'hir>(
     op_range: TextRange,
 ) -> bool {
     if lhs_ty.is_error() {
-        return true;
+        return false;
     }
 
     let compatable = match op {
