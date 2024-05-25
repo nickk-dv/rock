@@ -132,38 +132,10 @@ pub enum SizeEval {
     Resolved(Size),
 }
 
-impl SizeEval {
-    pub fn get_size(self) -> Option<Size> {
-        match self {
-            SizeEval::Unresolved => None,
-            SizeEval::ResolvedError => None,
-            SizeEval::Resolved(size) => Some(size),
-        }
-    }
-}
-
 #[derive(Copy, Clone)]
 pub struct Size {
     size: u64,
     align: u64,
-}
-
-impl Size {
-    pub fn new(size: u64, align: u64) -> Size {
-        Size { size, align }
-    }
-    pub fn new_equal(size_align: u64) -> Size {
-        Size {
-            size: size_align,
-            align: size_align,
-        }
-    }
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-    pub fn align(&self) -> u64 {
-        self.align
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -177,17 +149,6 @@ pub enum Type<'hir> {
     Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
-}
-
-impl<'hir> Type<'hir> {
-    #[inline]
-    pub fn is_error(self) -> bool {
-        matches!(self, Type::Error)
-    }
-    #[inline]
-    pub fn is_void(self) -> bool {
-        matches!(self, Type::Basic(ast::BasicType::Void))
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -536,5 +497,46 @@ impl<'hir> StructData<'hir> {
             }
         }
         None
+    }
+}
+
+impl SizeEval {
+    pub fn get_size(self) -> Option<Size> {
+        match self {
+            SizeEval::Unresolved => None,
+            SizeEval::ResolvedError => None,
+            SizeEval::Resolved(size) => Some(size),
+        }
+    }
+}
+
+impl Size {
+    pub fn new(size: u64, align: u64) -> Size {
+        Size { size, align }
+    }
+    pub fn new_equal(size_align: u64) -> Size {
+        Size {
+            size: size_align,
+            align: size_align,
+        }
+    }
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+    pub fn align(&self) -> u64 {
+        self.align
+    }
+}
+
+impl<'hir> Type<'hir> {
+    pub const VOID: Type<'static> = Type::Basic(ast::BasicType::Void);
+    pub const BOOL: Type<'static> = Type::Basic(ast::BasicType::Bool);
+    pub const USIZE: Type<'static> = Type::Basic(ast::BasicType::Usize);
+
+    pub fn is_error(self) -> bool {
+        matches!(self, Type::Error)
+    }
+    pub fn is_void(self) -> bool {
+        matches!(self, Type::Basic(ast::BasicType::Void))
     }
 }

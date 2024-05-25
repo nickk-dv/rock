@@ -169,26 +169,6 @@ pub enum AttributeKind {
     Unknown,
 }
 
-impl AttributeKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            AttributeKind::Test => "test",
-            AttributeKind::C_Call => "c_call",
-            AttributeKind::Thread_Local => "thread_local",
-            AttributeKind::Unknown => "unknown",
-        }
-    }
-
-    pub fn from_str(string: &str) -> AttributeKind {
-        match string {
-            "test" => AttributeKind::Test,
-            "c_call" => AttributeKind::C_Call,
-            "thread_local" => AttributeKind::Thread_Local,
-            _ => AttributeKind::Unknown,
-        }
-    }
-}
-
 #[derive(Copy, Clone)]
 pub struct Path<'ast> {
     pub names: &'ast [Name],
@@ -455,3 +435,86 @@ size_assert!(16, Path);
 size_assert!(24, Type);
 size_assert!(24, Stmt);
 size_assert!(32, Expr);
+
+impl AttributeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AttributeKind::Test => "test",
+            AttributeKind::C_Call => "c_call",
+            AttributeKind::Thread_Local => "thread_local",
+            AttributeKind::Unknown => "unknown",
+        }
+    }
+
+    pub fn from_str(string: &str) -> AttributeKind {
+        match string {
+            "test" => AttributeKind::Test,
+            "c_call" => AttributeKind::C_Call,
+            "thread_local" => AttributeKind::Thread_Local,
+            _ => AttributeKind::Unknown,
+        }
+    }
+}
+
+impl BasicType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BasicType::S8 => "s8",
+            BasicType::S16 => "s16",
+            BasicType::S32 => "s32",
+            BasicType::S64 => "s64",
+            BasicType::Ssize => "ssize",
+            BasicType::U8 => "u8",
+            BasicType::U16 => "u16",
+            BasicType::U32 => "u32",
+            BasicType::U64 => "u64",
+            BasicType::Usize => "usize",
+            BasicType::F16 => "f16",
+            BasicType::F32 => "f32",
+            BasicType::F64 => "f64",
+            BasicType::Bool => "bool",
+            BasicType::Char => "char",
+            BasicType::Rawptr => "rawptr",
+            BasicType::Void => "void",
+            BasicType::Never => "never",
+        }
+    }
+}
+
+impl UnOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UnOp::Neg => "-",
+            UnOp::BitNot => "~",
+            UnOp::LogicNot => "!",
+            UnOp::Deref => "*",
+        }
+    }
+}
+
+impl BinOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::BitShl => "<<",
+            BinOp::BitShr => ">>",
+            BinOp::IsEq => "==",
+            BinOp::NotEq => "!=",
+            BinOp::Less => "<",
+            BinOp::LessEq => "<=",
+            BinOp::Greater => ">",
+            BinOp::GreaterEq => ">=",
+            BinOp::LogicAnd => "&&",
+            BinOp::LogicOr => "||",
+            BinOp::Range => "..<",
+            BinOp::RangeInc => "..=",
+        }
+    }
+}

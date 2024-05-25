@@ -192,26 +192,7 @@ pub fn type_format<'hir>(
 ) -> String {
     match ty {
         hir::Type::Error => "error".into(),
-        hir::Type::Basic(basic) => match basic {
-            BasicType::S8 => "s8".into(),
-            BasicType::S16 => "s16".into(),
-            BasicType::S32 => "s32".into(),
-            BasicType::S64 => "s64".into(),
-            BasicType::Ssize => "ssize".into(),
-            BasicType::U8 => "u8".into(),
-            BasicType::U16 => "u16".into(),
-            BasicType::U32 => "u32".into(),
-            BasicType::U64 => "u64".into(),
-            BasicType::Usize => "usize".into(),
-            BasicType::F16 => "f16".into(),
-            BasicType::F32 => "f32".into(),
-            BasicType::F64 => "f64".into(),
-            BasicType::Bool => "bool".into(),
-            BasicType::Char => "char".into(),
-            BasicType::Rawptr => "rawptr".into(),
-            BasicType::Void => "void".into(),
-            BasicType::Never => "never".into(),
-        },
+        hir::Type::Basic(basic) => basic.as_str().to_string(),
         hir::Type::Enum(id) => hir.name_str(hir.registry().enum_data(id).name.id).into(),
         hir::Type::Union(id) => hir.name_str(hir.registry().union_data(id).name.id).into(),
         hir::Type::Struct(id) => hir.name_str(hir.registry().struct_data(id).name.id).into(),
@@ -291,13 +272,10 @@ pub struct TypeExpectation<'hir> {
 }
 
 impl<'hir> TypeExpectation<'hir> {
+    pub const VOID: TypeExpectation<'static> = TypeExpectation::new(hir::Type::VOID, None);
+    pub const BOOL: TypeExpectation<'static> = TypeExpectation::new(hir::Type::BOOL, None);
+    pub const USIZE: TypeExpectation<'static> = TypeExpectation::new(hir::Type::USIZE, None);
     pub const NOTHING: TypeExpectation<'static> = TypeExpectation::new(hir::Type::Error, None);
-    pub const VOID: TypeExpectation<'static> =
-        TypeExpectation::new(hir::Type::Basic(BasicType::Void), None);
-    pub const BOOL: TypeExpectation<'static> =
-        TypeExpectation::new(hir::Type::Basic(BasicType::Bool), None);
-    pub const USIZE: TypeExpectation<'static> =
-        TypeExpectation::new(hir::Type::Basic(BasicType::Usize), None);
 
     pub const fn new(ty: hir::Type<'hir>, source: Option<SourceRange>) -> TypeExpectation {
         TypeExpectation { ty, source }
@@ -701,7 +679,7 @@ fn verify_can_match(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error => true,
         hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
+            BasicTypeKind::new(basic),
             BasicTypeKind::SignedInt
                 | BasicTypeKind::UnsignedInt
                 | BasicTypeKind::Bool
@@ -1208,7 +1186,7 @@ enum BasicTypeKind {
 }
 
 impl BasicTypeKind {
-    fn from_basic(basic: BasicType) -> BasicTypeKind {
+    fn new(basic: BasicType) -> BasicTypeKind {
         match basic {
             BasicType::S8 | BasicType::S16 | BasicType::S32 | BasicType::S64 | BasicType::Ssize => {
                 BasicTypeKind::SignedInt
@@ -1223,6 +1201,25 @@ impl BasicTypeKind {
             BasicType::Void => BasicTypeKind::Void,
             BasicType::Never => BasicTypeKind::Never,
         }
+    }
+
+    fn is_integer(self) -> bool {
+        matches!(self, BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt)
+    }
+
+    fn is_signed_integer(self) -> bool {
+        matches!(self, BasicTypeKind::SignedInt)
+    }
+
+    fn is_number(self) -> bool {
+        matches!(
+            self,
+            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float
+        )
+    }
+
+    fn is_any_value_type(self) -> bool {
+        !matches!(self, BasicTypeKind::Void | BasicTypeKind::Never)
     }
 }
 
@@ -1275,8 +1272,8 @@ fn typecheck_cast<'hir>(
     // ensured by cast redundancy warning above
     let cast_kind = match (target_res.ty, into) {
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
-            let from_kind = BasicTypeKind::from_basic(from);
-            let into_kind = BasicTypeKind::from_basic(into);
+            let from_kind = BasicTypeKind::new(from);
+            let into_kind = BasicTypeKind::new(into);
             let from_size = basic_type_size(from).size();
             let into_size = basic_type_size(into).size();
 
@@ -1860,14 +1857,14 @@ fn typecheck_unary<'hir>(
 
     let unary_ty = match op {
         ast::UnOp::Neg => match rhs_res.ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
                 BasicTypeKind::SignedInt | BasicTypeKind::Float => Some(hir::Type::Basic(basic)),
                 _ => None,
             },
             _ => None,
         },
         ast::UnOp::BitNot => match rhs_res.ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::from_basic(basic) {
+            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
                 BasicTypeKind::UnsignedInt | BasicTypeKind::SignedInt => {
                     Some(hir::Type::Basic(basic))
                 }
@@ -1929,12 +1926,8 @@ fn typecheck_unary<'hir>(
     }
 }
 
-// @26.04.24
-// operator incompatability messages are bad
-// no as_str() for bin_op is available, only for tokens they come from
-// add range for un_op bin_op and assign_op in the ast?
-// will allow for more precise and clear messages, while using more mem
-
+//@bin << >> should allow any integer type on the right?
+// no type expectation for this is possible 25.05.24
 fn typecheck_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1943,269 +1936,144 @@ fn typecheck_binary<'hir>(
     op_range: TextRange,
     bin: &ast::BinExpr<'_>,
 ) -> TypeResult<'hir> {
-    //@remove this when theres TypeRepr with shorthand creation functions eg TypeRepr::bool()
-    const BOOL_TYPE: hir::Type = hir::Type::Basic(BasicType::Bool);
+    let lhs_expect = match op {
+        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => TypeExpectation::BOOL,
+        ast::BinOp::Range | ast::BinOp::RangeInc => TypeExpectation::USIZE,
+        _ => TypeExpectation::NOTHING,
+    };
+    let lhs_res = typecheck_expr(hir, emit, proc, lhs_expect, bin.lhs);
 
-    let (binary_ty, lhs_expr, rhs_expr) = match op {
-        ast::BinOp::Add | ast::BinOp::Sub | ast::BinOp::Mul | ast::BinOp::Div => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
-            let expect =
-                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
+    let compatable = check_bin_op_compatibility(hir, emit, proc.origin(), lhs_res.ty, op, op_range);
 
-            let binary_ty = if check_type_allow_math_ops(lhs_res.ty) {
-                lhs_res.ty
-            } else {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot use math operator on value of type `{}`",
-                        type_format(hir, emit, lhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-                hir::Type::Error
-            };
+    let rhs_expect = match op {
+        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => TypeExpectation::BOOL,
+        ast::BinOp::Range | ast::BinOp::RangeInc => TypeExpectation::USIZE,
+        _ => TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range))),
+    };
+    let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, bin.rhs);
 
-            (binary_ty, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::Rem => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
-            let expect =
-                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
-
-            let binary_ty = if check_type_allow_remainder(lhs_res.ty) {
-                lhs_res.ty
-            } else {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot use remainder operator on value of type `{}`",
-                        type_format(hir, emit, lhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-                hir::Type::Error
-            };
-
-            (binary_ty, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::BitAnd | ast::BinOp::BitOr | ast::BinOp::BitXor => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
-            let expect =
-                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
-
-            let binary_ty = if check_type_allow_and_or_xor(lhs_res.ty) {
-                lhs_res.ty
-            } else {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot use bit-wise operator on value of type `{}`",
-                        type_format(hir, emit, lhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-                hir::Type::Error
-            };
-
-            (binary_ty, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::BitShl | ast::BinOp::BitShr => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
-            // this expectation should aim to be integer of same size @26.04.24
-            // but passing lhs_res.ty would result in hard error, eg: i32 >> u32
-            // passing hir::Type::Error will turn literals into default i32 values which isnt always expected
-            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.rhs);
-
-            // how to threat arch dependant sizes? @26.04.24
-            // during build we know which size we want
-            // during check no such info is available
-            // same question about folding the sizeof()
-            // size only known when target arch is known
-
-            if let (hir::Type::Basic(lhs_basic), hir::Type::Basic(rhs_basic)) =
-                (lhs_res.ty, rhs_res.ty)
-            {
-                // checks that integers types have same size
-                if matches!(
-                    BasicTypeKind::from_basic(lhs_basic),
-                    BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-                ) && matches!(
-                    BasicTypeKind::from_basic(rhs_basic),
-                    BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-                ) {
-                    let lhs_size = basic_type_size(lhs_basic).size();
-                    let rhs_size = basic_type_size(rhs_basic).size();
-                    if lhs_size != rhs_size {
-                        emit.error(ErrorComp::new(
-                                format!(
-                                    "cannot use bit-shift operator on integers of different sizes\n`{}` has bitwidth of {}, `{}` has bitwidth of {} ",
-                                    type_format(hir, emit, lhs_res.ty),
-                                    lhs_size * 8,
-                                    type_format(hir, emit, rhs_res.ty),
-                                    rhs_size * 8,
-                                ),
-                                hir.src(proc.origin(), op_range),
-                                None,
-                            ));
-                    }
-                }
+    let binary_ty = if !compatable {
+        hir::Type::Error
+    } else {
+        match op {
+            ast::BinOp::IsEq
+            | ast::BinOp::NotEq
+            | ast::BinOp::Less
+            | ast::BinOp::LessEq
+            | ast::BinOp::Greater
+            | ast::BinOp::GreaterEq
+            | ast::BinOp::LogicAnd
+            | ast::BinOp::LogicOr => hir::Type::BOOL,
+            ast::BinOp::Range | ast::BinOp::RangeInc => {
+                panic!("pass5 bin_op range doesnt produce Range struct type yet")
             }
-
-            let binary_ty = if check_type_allow_shl_shr(lhs_res.ty) {
-                lhs_res.ty
-            } else {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot use bit-shift operator on value of type `{}`",
-                        type_format(hir, emit, lhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-                hir::Type::Error
-            };
-
-            (binary_ty, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::IsEq | ast::BinOp::NotEq => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
-            let expect =
-                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
-
-            if !check_type_allow_compare_eq(lhs_res.ty) {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot compare equality for value of type `{}`",
-                        type_format(hir, emit, lhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-            }
-
-            (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::Less | ast::BinOp::LessEq | ast::BinOp::Greater | ast::BinOp::GreaterEq => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
-            let expect =
-                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
-
-            if !check_type_allow_compare_ord(lhs_res.ty) {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "cannot compare order for value of type `{}`",
-                        type_format(hir, emit, lhs_res.ty)
-                    ),
-                    hir.src(proc.origin(), op_range),
-                    None,
-                ));
-            }
-
-            (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, bin.lhs);
-            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, bin.rhs);
-
-            (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
-        }
-        ast::BinOp::Range | ast::BinOp::RangeInc => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, bin.lhs);
-            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, bin.rhs);
-            panic!("pass_5: ranges dont produce a valid typechecked expression yet")
+            _ => lhs_res.ty,
         }
     };
 
     let lhs_signed_int = match binary_ty {
-        hir::Type::Basic(basic) => {
-            matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
-        }
+        hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_signed_integer(),
         _ => false,
     };
     let binary_expr = hir::Expr::Binary {
         op,
-        lhs: lhs_expr,
-        rhs: rhs_expr,
+        lhs: lhs_res.expr,
+        rhs: rhs_res.expr,
         lhs_signed_int,
     };
     TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
 }
 
-fn check_type_allow_math_ops(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float
-        ),
-        _ => false,
+//@todo
+fn check_un_op_compatibility<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    lhs_ty: hir::Type,
+    op: ast::UnOp,
+    op_range: TextRange,
+) -> bool {
+    if lhs_ty.is_error() {
+        return true;
     }
+
+    let compatable = match op {
+        ast::UnOp::Neg => true,
+        ast::UnOp::BitNot => true,
+        ast::UnOp::LogicNot => true,
+        ast::UnOp::Deref => true,
+    };
+
+    if !compatable {
+        emit.error(ErrorComp::new(
+            format!(
+                "cannot apply unary operator `{}` on value of type `{}`",
+                op.as_str(),
+                type_format(hir, emit, lhs_ty)
+            ),
+            hir.src(origin_id, op_range),
+            None,
+        ));
+    }
+    compatable
 }
 
-fn check_type_allow_remainder(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-        ),
-        _ => false,
+fn check_bin_op_compatibility<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    lhs_ty: hir::Type,
+    op: ast::BinOp,
+    op_range: TextRange,
+) -> bool {
+    if lhs_ty.is_error() {
+        return true;
     }
-}
 
-fn check_type_allow_and_or_xor(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-        ),
-        _ => false,
-    }
-}
+    let compatable = match op {
+        ast::BinOp::Add | ast::BinOp::Sub | ast::BinOp::Mul | ast::BinOp::Div => match lhs_ty {
+            hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_number(),
+            _ => false,
+        },
+        ast::BinOp::Rem
+        | ast::BinOp::BitAnd
+        | ast::BinOp::BitOr
+        | ast::BinOp::BitXor
+        | ast::BinOp::BitShl
+        | ast::BinOp::BitShr => match lhs_ty {
+            hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_integer(),
+            _ => false,
+        },
+        ast::BinOp::IsEq | ast::BinOp::NotEq => match lhs_ty {
+            hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_any_value_type(),
+            _ => false,
+        },
+        ast::BinOp::Less | ast::BinOp::LessEq | ast::BinOp::Greater | ast::BinOp::GreaterEq => {
+            match lhs_ty {
+                hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_number(),
+                _ => false,
+            }
+        }
+        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
+            matches!(lhs_ty, hir::Type::Basic(BasicType::Bool))
+        }
+        ast::BinOp::Range | ast::BinOp::RangeInc => {
+            matches!(lhs_ty, hir::Type::Basic(BasicType::Usize))
+        }
+    };
 
-fn check_type_allow_shl_shr(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt
-        ),
-        _ => false,
+    if !compatable {
+        emit.error(ErrorComp::new(
+            format!(
+                "cannot apply binary operator `{}` on value of type `{}`",
+                op.as_str(),
+                type_format(hir, emit, lhs_ty)
+            ),
+            hir.src(origin_id, op_range),
+            None,
+        ));
     }
-}
-
-fn check_type_allow_compare_eq(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
-            BasicTypeKind::SignedInt
-                | BasicTypeKind::UnsignedInt
-                | BasicTypeKind::Float
-                | BasicTypeKind::Bool
-                | BasicTypeKind::Char
-                | BasicTypeKind::Rawptr
-        ),
-        _ => false,
-    }
-}
-
-fn check_type_allow_compare_ord(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::from_basic(basic),
-            BasicTypeKind::SignedInt | BasicTypeKind::UnsignedInt | BasicTypeKind::Float
-        ),
-        _ => false,
-    }
+    compatable
 }
 
 #[derive(Copy, Clone)]
@@ -2343,10 +2211,10 @@ fn typecheck_block<'hir>(
                 proc.origin(),
                 block.range,
                 expect,
-                hir::Type::Basic(BasicType::Void),
+                hir::Type::VOID,
             );
         }
-        BlockResult::new(hir::Type::Basic(BasicType::Void), hir_block, tail_range)
+        BlockResult::new(hir::Type::VOID, hir_block, tail_range)
     }
 }
 
@@ -2403,8 +2271,14 @@ fn typecheck_return<'hir>(
         let expr_res = typecheck_expr(hir, emit, proc, proc.return_expect(), expr);
         hir::Stmt::Return(Some(expr_res.expr))
     } else {
-        let void = hir::Type::Basic(BasicType::Void);
-        check_type_expectation(hir, emit, proc.origin(), range, proc.return_expect(), void);
+        check_type_expectation(
+            hir,
+            emit,
+            proc.origin(),
+            range,
+            proc.return_expect(),
+            hir::Type::VOID,
+        );
         hir::Stmt::Return(None)
     }
 }
@@ -2622,9 +2496,7 @@ fn typecheck_assign<'hir>(
 
     //@binary assignment ops not checked
     let lhs_signed_int = match lhs_res.ty {
-        hir::Type::Basic(basic) => {
-            matches!(BasicTypeKind::from_basic(basic), BasicTypeKind::SignedInt)
-        }
+        hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_signed_integer(),
         _ => false,
     };
     let assign = hir::Assign {
