@@ -341,11 +341,12 @@ pub struct Branch<'ast> {
 pub struct Match<'ast> {
     pub on_expr: &'ast Expr<'ast>,
     pub arms: &'ast [MatchArm<'ast>],
+    pub fallback: Option<&'ast Expr<'ast>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct MatchArm<'ast> {
-    pub pat: Option<&'ast Expr<'ast>>,
+    pub pat: ConstExpr<'ast>,
     pub expr: &'ast Expr<'ast>,
 }
 

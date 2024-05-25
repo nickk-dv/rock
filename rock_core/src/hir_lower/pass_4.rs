@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_5::{self, TypeExpectation};
-use crate::ast::{self, BasicType, Type};
+use crate::ast::{self, BasicType};
 use crate::error::ErrorComp;
 use crate::hir;
 
@@ -583,6 +583,7 @@ fn resolve_struct_size(
 // same for typecheck_int_lit etc, regular expressions checking
 // should later be merged with this constant resolution / folding flow
 //@return type and integrate this with normal expr typecheck?
+#[must_use]
 pub fn resolve_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,

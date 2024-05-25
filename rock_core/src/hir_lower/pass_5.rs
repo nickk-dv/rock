@@ -648,38 +648,49 @@ fn typecheck_match<'hir>(
         ));
     }
 
-    //@approx esmitation based on first match block value
+    //@approx esmitation based on first match arm value
     let mut match_type = hir::Type::Error;
+    let mut match_type_set = false;
     let mut match_arms = Vec::<hir::MatchArm>::with_capacity(match_.arms.len());
 
-    for (idx, arm) in match_.arms.iter().enumerate() {
-        //@pat must also be constant value, which isnt checked
-        // since it will always compile to a switch primitive
-        let pat = if let Some(pat) = arm.pat {
-            let pat_res = typecheck_expr(hir, emit, proc, pat_expect, pat);
-            Some(pat_res.expr)
-        } else {
-            None
-        };
+    for arm in match_.arms.iter() {
+        let (_, pat_value_id) =
+            pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
 
-        let block_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
-        if idx == 0 {
-            match_type = block_res.ty;
+        let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
+        if !match_type_set {
+            match_type_set = true;
+            match_type = value_res.ty;
         }
 
         match_arms.push(hir::MatchArm {
-            pat,
-            expr: block_res.expr,
+            pat: pat_value_id,
+            expr: value_res.expr,
         })
     }
+
+    let fallback = if let Some(fallback) = match_.fallback {
+        let value_res = typecheck_expr(hir, emit, proc, expect, fallback);
+        if !match_type_set {
+            match_type = value_res.ty;
+        }
+        Some(value_res.expr)
+    } else {
+        None
+    };
 
     let match_arms = emit.arena.alloc_slice(&match_arms);
     let match_ = emit.arena.alloc(hir::Match {
         on_expr: on_res.expr,
         arms: match_arms,
+        fallback,
     });
     let match_expr = emit.arena.alloc(hir::Expr::Match { match_ });
-    TypeResult::new(match_type, match_expr)
+
+    // type expectation is always delegated,
+    // or in case of 0 arms and no fallback
+    // exhaustiveness error will be raised
+    TypeResult::new_ignore_typecheck(match_type, match_expr)
 }
 
 fn verify_can_match(ty: hir::Type) -> bool {

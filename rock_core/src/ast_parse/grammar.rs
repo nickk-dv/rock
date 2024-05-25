@@ -673,20 +673,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             let block_ref = p.state.arena.alloc(block);
             ExprKind::Block { block: block_ref }
         }
-        T![match] => {
-            let start_offset = p.state.match_arms.start();
-            p.bump();
-            let on_expr = expr(p)?;
-            p.expect(T!['{'])?;
-            while !p.eat(T!['}']) {
-                let arm = match_arm(p)?;
-                p.state.match_arms.add(arm);
-            }
-
-            let arms = p.state.match_arms.take(start_offset, &mut p.state.arena);
-            let match_ = p.state.arena.alloc(Match { on_expr, arms });
-            ExprKind::Match { match_ }
-        }
+        T![match] => ExprKind::Match { match_: match_(p)? },
         T![sizeof] => {
             p.bump();
             p.expect(T!['('])?;
@@ -978,11 +965,42 @@ fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> 
     })
 }
 
-fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<MatchArm<'ast>, String> {
-    let pat = if p.eat(T![_]) { None } else { Some(expr(p)?) };
-    p.expect(T![->])?;
-    let expr = expr(p)?;
-    Ok(MatchArm { pat, expr })
+fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, String> {
+    p.bump();
+    let start_offset = p.state.match_arms.start();
+    let on_expr = expr(p)?;
+    let mut fallback = None;
+
+    p.expect(T!['{'])?;
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        if p.eat(T![_]) {
+            p.expect(T![->])?;
+            let expr = expr(p)?;
+            fallback = Some(expr);
+        } else {
+            let pat = ConstExpr(expr(p)?);
+            p.expect(T![->])?;
+            let expr = expr(p)?;
+            let arm = MatchArm { pat, expr };
+            p.state.match_arms.add(arm);
+        }
+
+        if !p.at_prev(T!['}']) {
+            p.expect(T![,])?;
+        }
+        if fallback.is_some() {
+            break;
+        }
+    }
+    p.expect(T!['}'])?;
+
+    let arms = p.state.match_arms.take(start_offset, &mut p.state.arena);
+    let match_ = p.state.arena.alloc(Match {
+        on_expr,
+        arms,
+        fallback,
+    });
+    Ok(match_)
 }
 
 impl BinOp {

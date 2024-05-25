@@ -353,15 +353,12 @@ pub struct Branch<'hir> {
 pub struct Match<'hir> {
     pub on_expr: &'hir Expr<'hir>,
     pub arms: &'hir [MatchArm<'hir>],
+    pub fallback: Option<&'hir Expr<'hir>>,
 }
 
-//@fallback `pat` could be stored separately, as optional
-// similar to structure of `if`
-// this removes invariant on resolved match arm list
-// comeback to this when proper match validation is done @03.04.24
 #[derive(Copy, Clone)]
 pub struct MatchArm<'hir> {
-    pub pat: Option<&'hir Expr<'hir>>,
+    pub pat: ConstValueID,
     pub expr: &'hir Expr<'hir>,
 }
 
