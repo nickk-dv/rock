@@ -2289,7 +2289,10 @@ fn typecheck_block<'hir>(
             ast::StmtKind::ForLoop(for_) => {
                 Some(hir::Stmt::ForLoop(typecheck_for(hir, emit, proc, for_)))
             }
-            ast::StmtKind::Local(local) => typecheck_local(hir, emit, proc, local),
+            ast::StmtKind::Local(local) => {
+                let local_id = typecheck_local(hir, emit, proc, local);
+                Some(hir::Stmt::Local(local_id))
+            }
             ast::StmtKind::Assign(assign) => {
                 Some(hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign)))
             }
@@ -2401,49 +2404,6 @@ fn typecheck_return<'hir>(
     }
 }
 
-fn typecheck_for<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    for_: &ast::For<'_>,
-) -> &'hir hir::For<'hir> {
-    let kind = match for_.kind {
-        ast::ForKind::Loop => hir::ForKind::Loop,
-        ast::ForKind::While { cond } => {
-            let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
-            hir::ForKind::While {
-                cond: cond_res.expr,
-            }
-        }
-        ast::ForKind::ForLoop {
-            local,
-            cond,
-            assign,
-        } => {
-            //let local_id = typecheck_local(hir, emit, proc, local);
-            //let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
-            //let assign = typecheck_assign(hir, emit, proc, assign);
-            //hir::ForKind::ForLoop { local_id: , cond: cond_res.expr, assign }
-            todo!("for loop C-like not typechecked yet")
-        }
-    };
-
-    let block_res = typecheck_block(
-        hir,
-        emit,
-        proc,
-        TypeExpectation::VOID,
-        for_.block,
-        true,
-        None,
-    );
-
-    emit.arena.alloc(hir::For {
-        kind,
-        block: block_res.block,
-    })
-}
-
 //@allow break and continue from loops that originated within defer itself
 // this can probably be done via resetting the in_loop when entering defer block
 fn typecheck_defer<'hir>(
@@ -2477,12 +2437,58 @@ fn typecheck_defer<'hir>(
     hir::Stmt::Defer(block_ref)
 }
 
+fn typecheck_for<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    for_: &ast::For<'_>,
+) -> &'hir hir::For<'hir> {
+    let kind = match for_.kind {
+        ast::ForKind::Loop => hir::ForKind::Loop,
+        ast::ForKind::While { cond } => {
+            let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
+            hir::ForKind::While {
+                cond: cond_res.expr,
+            }
+        }
+        ast::ForKind::ForLoop {
+            local,
+            cond,
+            assign,
+        } => {
+            let local_id = typecheck_local(hir, emit, proc, local);
+            let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
+            let assign = typecheck_assign(hir, emit, proc, assign);
+            hir::ForKind::ForLoop {
+                local_id,
+                cond: cond_res.expr,
+                assign,
+            }
+        }
+    };
+
+    let block_res = typecheck_block(
+        hir,
+        emit,
+        proc,
+        TypeExpectation::VOID,
+        for_.block,
+        true,
+        None,
+    );
+
+    emit.arena.alloc(hir::For {
+        kind,
+        block: block_res.block,
+    })
+}
+
 fn typecheck_local<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     local: &ast::Local,
-) -> Option<hir::Stmt<'hir>> {
+) -> hir::LocalID {
     if let Some(existing) = hir.scope_name_defined(proc.origin(), local.name.id) {
         super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
 
@@ -2492,7 +2498,7 @@ fn typecheck_local<'hir>(
         if let Some(expr) = local.value {
             let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, expr);
         }
-        return None;
+        return hir::LocalID::dummy();
     }
 
     //@theres no `nice` way to find both existing name from global (hir) scope
@@ -2512,7 +2518,7 @@ fn typecheck_local<'hir>(
         if let Some(expr) = local.value {
             let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, expr);
         }
-        return None;
+        return hir::LocalID::dummy();
     }
 
     //@local type can be both not specified and not inferred by the expression
@@ -2551,8 +2557,7 @@ fn typecheck_local<'hir>(
         ty: local_ty,
         value: local_value,
     });
-    let local_id = proc.push_local(local);
-    Some(hir::Stmt::Local(local_id))
+    proc.push_local(local)
 }
 
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)

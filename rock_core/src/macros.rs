@@ -20,6 +20,11 @@ macro_rules! id_impl {
             pub const fn new(index: usize) -> $name {
                 $name(index as u32)
             }
+            /// dummy id is u32::MAX and not supposed to be used
+            #[inline(always)]
+            pub const fn dummy() -> $name {
+                $name(u32::MAX)
+            }
             #[inline(always)]
             pub const fn index(self) -> usize {
                 self.0 as usize
