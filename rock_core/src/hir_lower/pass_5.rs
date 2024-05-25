@@ -433,8 +433,12 @@ fn typecheck_expr<'hir>(
             typecheck_array_repeat(hir, emit, proc, expect, expr, len)
         }
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
-        ast::ExprKind::Unary { op, rhs } => typecheck_unary(hir, emit, proc, op, rhs),
-        ast::ExprKind::Binary { op, lhs, rhs } => typecheck_binary(hir, emit, proc, op, lhs, rhs),
+        ast::ExprKind::Unary { op, op_range, rhs } => {
+            typecheck_unary(hir, emit, proc, op, op_range, rhs)
+        }
+        ast::ExprKind::Binary { op, op_range, bin } => {
+            typecheck_binary(hir, emit, proc, op, op_range, bin)
+        }
     };
 
     if !expr_res.ignore {
@@ -719,7 +723,7 @@ fn typecheck_field<'hir>(
     let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_res.ty, name);
 
     match kind {
-        FieldKind::Error => TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error)),
+        FieldKind::Error => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
         FieldKind::Member(union_id, member_id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::UnionMember {
@@ -1125,7 +1129,7 @@ fn typecheck_call<'hir>(
     for &expr in input.iter() {
         let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, expr);
     }
-    TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+    TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
 }
 
 pub fn type_size(
@@ -1361,7 +1365,7 @@ fn typecheck_sizeof<'hir>(
             val: size.size(),
             ty: BasicType::Usize,
         }),
-        None => emit.arena.alloc(hir::Expr::Error),
+        None => hir_build::ERROR_EXPR,
     };
 
     TypeResult::new(hir::Type::Basic(BasicType::Usize), sizeof_expr)
@@ -1377,11 +1381,12 @@ fn typecheck_item<'hir>(
 
     let item_res = match value_id {
         ValueID::None => {
-            return TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error));
+            return TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR);
         }
         ValueID::Proc(proc_id) => {
             let data = hir.registry().proc_data(proc_id);
 
+            //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
             let mut param_types = Vec::with_capacity(data.params.len());
             for param in data.params {
                 param_types.push(param.ty);
@@ -1393,7 +1398,7 @@ fn typecheck_item<'hir>(
             };
 
             return TypeResult::new(
-                hir::Type::Procedure(emit.arena.alloc(proc_ty)), //@create proc type?
+                hir::Type::Procedure(emit.arena.alloc(proc_ty)),
                 emit.arena.alloc(hir::Expr::Procedure { proc_id }),
             );
         }
@@ -1479,7 +1484,7 @@ fn typecheck_struct_init<'hir>(
             for input in struct_init.input {
                 let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
             }
-            TypeResult::new(hir::Type::Error, emit.arena.alloc(hir::Expr::Error))
+            TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
         }
         StructureID::Union(union_id) => {
             let data = hir.registry().union_data(union_id);
@@ -1509,10 +1514,7 @@ fn typecheck_struct_init<'hir>(
                     ));
                     let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, first.expr);
 
-                    TypeResult::new(
-                        hir::Type::Union(union_id),
-                        emit.arena.alloc(hir::Expr::Error),
-                    )
+                    TypeResult::new(hir::Type::Union(union_id), hir_build::ERROR_EXPR)
                 };
 
                 for input in other {
@@ -1532,10 +1534,7 @@ fn typecheck_struct_init<'hir>(
                     None,
                 ));
 
-                TypeResult::new(
-                    hir::Type::Union(union_id),
-                    emit.arena.alloc(hir::Expr::Error),
-                )
+                TypeResult::new(hir::Type::Union(union_id), hir_build::ERROR_EXPR)
             }
         }
         StructureID::Struct(struct_id) => {
@@ -1850,6 +1849,7 @@ fn typecheck_unary<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     op: ast::UnOp,
+    op_range: TextRange,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, rhs);
@@ -1910,7 +1910,7 @@ fn typecheck_unary<'hir>(
                         "unary operator `{op_str}` cannot be applied to `{}`",
                         type_format(hir, emit, rhs_res.ty)
                     ),
-                    hir.src(proc.origin(), rhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
             }
@@ -1920,7 +1920,7 @@ fn typecheck_unary<'hir>(
                         "cannot dereference value of type `{}`",
                         type_format(hir, emit, rhs_res.ty)
                     ),
-                    hir.src(proc.origin(), rhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
             }
@@ -1940,17 +1940,18 @@ fn typecheck_binary<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     op: ast::BinOp,
-    lhs: &ast::Expr,
-    rhs: &ast::Expr,
+    op_range: TextRange,
+    bin: &ast::BinExpr<'_>,
 ) -> TypeResult<'hir> {
     //@remove this when theres TypeRepr with shorthand creation functions eg TypeRepr::bool()
     const BOOL_TYPE: hir::Type = hir::Type::Basic(BasicType::Bool);
 
     let (binary_ty, lhs_expr, rhs_expr) = match op {
         ast::BinOp::Add | ast::BinOp::Sub | ast::BinOp::Mul | ast::BinOp::Div => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, lhs);
-            let expect = TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
+            let expect =
+                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
+            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
 
             let binary_ty = if check_type_allow_math_ops(lhs_res.ty) {
                 lhs_res.ty
@@ -1960,7 +1961,7 @@ fn typecheck_binary<'hir>(
                         "cannot use math operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
                     ),
-                    hir.src(proc.origin(), lhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
                 hir::Type::Error
@@ -1969,9 +1970,10 @@ fn typecheck_binary<'hir>(
             (binary_ty, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::Rem => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, lhs);
-            let expect = TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
+            let expect =
+                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
+            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
 
             let binary_ty = if check_type_allow_remainder(lhs_res.ty) {
                 lhs_res.ty
@@ -1981,7 +1983,7 @@ fn typecheck_binary<'hir>(
                         "cannot use remainder operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
                     ),
-                    hir.src(proc.origin(), lhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
                 hir::Type::Error
@@ -1990,9 +1992,10 @@ fn typecheck_binary<'hir>(
             (binary_ty, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::BitAnd | ast::BinOp::BitOr | ast::BinOp::BitXor => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, lhs);
-            let expect = TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
+            let expect =
+                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
+            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
 
             let binary_ty = if check_type_allow_and_or_xor(lhs_res.ty) {
                 lhs_res.ty
@@ -2002,7 +2005,7 @@ fn typecheck_binary<'hir>(
                         "cannot use bit-wise operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
                     ),
-                    hir.src(proc.origin(), lhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
                 hir::Type::Error
@@ -2011,11 +2014,11 @@ fn typecheck_binary<'hir>(
             (binary_ty, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::BitShl | ast::BinOp::BitShr => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, lhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
             // this expectation should aim to be integer of same size @26.04.24
             // but passing lhs_res.ty would result in hard error, eg: i32 >> u32
             // passing hir::Type::Error will turn literals into default i32 values which isnt always expected
-            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, rhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.rhs);
 
             // how to threat arch dependant sizes? @26.04.24
             // during build we know which size we want
@@ -2045,7 +2048,7 @@ fn typecheck_binary<'hir>(
                                     type_format(hir, emit, rhs_res.ty),
                                     rhs_size * 8,
                                 ),
-                                hir.src(proc.origin(), lhs.range),
+                                hir.src(proc.origin(), op_range),
                                 None,
                             ));
                     }
@@ -2060,7 +2063,7 @@ fn typecheck_binary<'hir>(
                         "cannot use bit-shift operator on value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
                     ),
-                    hir.src(proc.origin(), lhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
                 hir::Type::Error
@@ -2069,9 +2072,10 @@ fn typecheck_binary<'hir>(
             (binary_ty, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::IsEq | ast::BinOp::NotEq => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, lhs);
-            let expect = TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
+            let expect =
+                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
+            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
 
             if !check_type_allow_compare_eq(lhs_res.ty) {
                 emit.error(ErrorComp::new(
@@ -2079,7 +2083,7 @@ fn typecheck_binary<'hir>(
                         "cannot compare equality for value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
                     ),
-                    hir.src(proc.origin(), lhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
             }
@@ -2087,9 +2091,10 @@ fn typecheck_binary<'hir>(
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::Less | ast::BinOp::LessEq | ast::BinOp::Greater | ast::BinOp::GreaterEq => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, lhs);
-            let expect = TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), lhs.range)));
-            let rhs_res = typecheck_expr(hir, emit, proc, expect, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, bin.lhs);
+            let expect =
+                TypeExpectation::new(lhs_res.ty, Some(hir.src(proc.origin(), bin.lhs.range)));
+            let rhs_res = typecheck_expr(hir, emit, proc, expect, bin.rhs);
 
             if !check_type_allow_compare_ord(lhs_res.ty) {
                 emit.error(ErrorComp::new(
@@ -2097,7 +2102,7 @@ fn typecheck_binary<'hir>(
                         "cannot compare order for value of type `{}`",
                         type_format(hir, emit, lhs_res.ty)
                     ),
-                    hir.src(proc.origin(), lhs.range),
+                    hir.src(proc.origin(), op_range),
                     None,
                 ));
             }
@@ -2105,14 +2110,14 @@ fn typecheck_binary<'hir>(
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, lhs);
-            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, bin.lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, bin.rhs);
 
             (BOOL_TYPE, lhs_res.expr, rhs_res.expr)
         }
         ast::BinOp::Range | ast::BinOp::RangeInc => {
-            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, lhs);
-            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, rhs);
+            let lhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, bin.lhs);
+            let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, bin.rhs);
             panic!("pass_5: ranges dont produce a valid typechecked expression yet")
         }
     };

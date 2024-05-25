@@ -474,10 +474,17 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
         _ => {
             let lhs = expr(p)?;
             if let Some(op) = p.peek().as_assign_op() {
+                let op_range = p.peek_range();
                 p.bump();
                 let rhs = expr(p)?;
                 p.expect(T![;])?;
-                StmtKind::Assign(p.state.arena.alloc(Assign { op, lhs, rhs }))
+
+                StmtKind::Assign(p.state.arena.alloc(Assign {
+                    op,
+                    op_range,
+                    lhs,
+                    rhs,
+                }))
             } else {
                 if !p.at_prev(T!['}']) {
                     p.expect(T![;])?;
@@ -503,14 +510,19 @@ fn for_loop<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast For<'ast>, S
 
             let lhs = expr(p)?;
             let op = match p.peek().as_assign_op() {
-                Some(op) => {
-                    p.bump();
-                    op
-                }
+                Some(op) => op,
                 _ => return Err("expected assignment operator".into()),
             };
+            let op_range = p.peek_range();
+            p.bump();
+
             let rhs = expr(p)?;
-            let assign = p.state.arena.alloc(Assign { op, lhs, rhs });
+            let assign = p.state.arena.alloc(Assign {
+                op,
+                op_range,
+                lhs,
+                rhs,
+            });
 
             ForKind::ForLoop {
                 local,
@@ -554,27 +566,34 @@ fn sub_expr<'ast>(
     min_prec: u32,
 ) -> Result<&'ast Expr<'ast>, String> {
     let mut expr_lhs = primary_expr(p)?;
+
     loop {
         let prec: u32;
-        let binary_op: BinOp;
-        if let Some(op) = p.peek().as_bin_op() {
-            binary_op = op;
-            prec = op.prec();
+        let op: BinOp;
+        let op_range: TextRange;
+
+        if let Some(bin_op) = p.peek().as_bin_op() {
+            op = bin_op;
+            prec = bin_op.prec();
             if prec < min_prec {
                 break;
             }
+            op_range = p.peek_range();
             p.bump();
         } else {
             break;
         }
-        let op = binary_op;
+
         let lhs = expr_lhs;
         let rhs = sub_expr(p, prec + 1)?;
+        let bin = p.state.arena.alloc(BinExpr { lhs, rhs });
+
         expr_lhs = p.state.arena.alloc(Expr {
-            kind: ExprKind::Binary { op, lhs, rhs },
+            kind: ExprKind::Binary { op, op_range, bin },
             range: TextRange::new(lhs.range.start(), rhs.range.end()),
         });
     }
+
     Ok(expr_lhs)
 }
 
@@ -588,9 +607,12 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
     }
 
     if let Some(un_op) = p.peek().as_un_op() {
+        let op_range = p.peek_range();
         p.bump();
+
         let kind = ExprKind::Unary {
             op: un_op,
+            op_range,
             rhs: primary_expr(p)?,
         };
         return Ok(p.state.arena.alloc(Expr {
@@ -897,19 +919,20 @@ fn index_or_slice_expr<'ast>(
     Ok(kind)
 }
 
+//@this is bad for grammar, change slice range parsing to avoid this
 fn expr_into_slice_range<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
     expr: &'ast Expr<'ast>,
 ) -> Option<&'ast SliceRange<'ast>> {
     let range = match expr.kind {
-        ExprKind::Binary { op, lhs, rhs } => match op {
+        ExprKind::Binary { op, op_range, bin } => match op {
             BinOp::Range => SliceRange {
-                lower: Some(lhs),
-                upper: SliceRangeEnd::Exclusive(rhs),
+                lower: Some(bin.lhs),
+                upper: SliceRangeEnd::Exclusive(bin.rhs),
             },
             BinOp::RangeInc => SliceRange {
-                lower: Some(lhs),
-                upper: SliceRangeEnd::Inclusive(rhs),
+                lower: Some(bin.lhs),
+                upper: SliceRangeEnd::Inclusive(bin.rhs),
             },
             _ => return None,
         },

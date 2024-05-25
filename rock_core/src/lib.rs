@@ -19,6 +19,7 @@ pub mod text;
 mod token;
 
 use package::semver::Semver;
+
 /// toolchain version used to build both `rock_cli` and `rock_ls`  
 /// increment minor before 1.0.0 release
 pub const VERSION: Semver = Semver::new(0, 1, 0);

@@ -278,6 +278,7 @@ pub struct Local<'ast> {
 #[derive(Copy, Clone)]
 pub struct Assign<'ast> {
     pub op: AssignOp,
+    pub op_range: TextRange,
     pub lhs: &'ast Expr<'ast>,
     pub rhs: &'ast Expr<'ast>,
 }
@@ -320,8 +321,8 @@ pub enum ExprKind<'ast> {
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
-    Unary       { op: UnOp, rhs: &'ast Expr<'ast> },
-    Binary      { op: BinOp, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
+    Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
+    Binary      { op: BinOp, op_range: TextRange, bin: &'ast BinExpr<'ast> },
 }
 
 #[derive(Copy, Clone)]
@@ -379,6 +380,12 @@ pub enum SliceRangeEnd<'ast> {
     Unbounded,
     Exclusive(&'ast Expr<'ast>),
     Inclusive(&'ast Expr<'ast>),
+}
+
+#[derive(Copy, Clone)]
+pub struct BinExpr<'ast> {
+    pub lhs: &'ast Expr<'ast>,
+    pub rhs: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone, PartialEq, Hash)]
