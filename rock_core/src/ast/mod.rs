@@ -210,6 +210,12 @@ pub struct ArrayStatic<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub struct Block<'ast> {
+    pub stmts: &'ast [Stmt<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
 pub struct Stmt<'ast> {
     pub kind: StmtKind<'ast>,
     pub range: TextRange,
@@ -251,8 +257,13 @@ pub enum ForKind<'ast> {
 pub struct Local<'ast> {
     pub mutt: Mut,
     pub name: Name,
-    pub ty: Option<Type<'ast>>,
-    pub value: Option<&'ast Expr<'ast>>,
+    pub kind: LocalKind<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub enum LocalKind<'ast> {
+    Decl(Type<'ast>),
+    Init(Option<Type<'ast>>, &'ast Expr<'ast>),
 }
 
 #[derive(Copy, Clone)]
@@ -261,12 +272,6 @@ pub struct Assign<'ast> {
     pub op_range: TextRange,
     pub lhs: &'ast Expr<'ast>,
     pub rhs: &'ast Expr<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Block<'ast> {
-    pub stmts: &'ast [Stmt<'ast>],
-    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]

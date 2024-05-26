@@ -2377,75 +2377,60 @@ fn typecheck_local<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     local: &ast::Local,
 ) -> hir::LocalID {
-    if let Some(existing) = hir.scope_name_defined(proc.origin(), local.name.id) {
-        super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
-
-        if let Some(ty) = local.ty {
-            let _ = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
-        };
-        if let Some(expr) = local.value {
-            let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, expr);
-        }
-        return hir::LocalID::dummy();
-    }
-
     //@theres no `nice` way to find both existing name from global (hir) scope
     // and proc_scope, those are so far disconnected,
     // some unified model of symbols might be better in the future
     // this also applies to SymbolKind which is separate from VariableID (leads to some issues in path resolve) @1.04.24
-    if let Some(existing_var) = proc.find_variable(local.name.id) {
+    let already_defined = if let Some(existing) =
+        hir.scope_name_defined(proc.origin(), local.name.id)
+    {
+        super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
+        true
+    } else if let Some(existing_var) = proc.find_variable(local.name.id) {
         let existing = match existing_var {
             VariableID::Local(id) => hir.src(proc.origin(), proc.get_local(id).name.range),
             VariableID::Param(id) => hir.src(proc.origin(), proc.get_param(id).name.range),
         };
         super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
-
-        if let Some(ty) = local.ty {
-            let _ = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
-        };
-        if let Some(expr) = local.value {
-            let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, expr);
-        }
-        return hir::LocalID::dummy();
-    }
-
-    //@local type can be both not specified and not inferred by the expression
-    // this is currently being represented as hir::Type::Error
-    // instead of having some UnknownType.
-    // also proc_scope stores hir::Local which are immutable
-    // so type cannot be filled in after the fact.
-    //@this could be adressed by requiring type or expression on local
-    // this could be a valid design choice:
-    // bindings like: `let x; let y;` dont make too much sence, and can be confusing; @1.04.24
-
-    let (mut local_ty, local_ty_src) = match local.ty {
-        Some(ty) => (
-            super::pass_3::type_resolve(hir, emit, proc.origin(), ty),
-            Some(hir.src(proc.origin(), ty.range)),
-        ),
-        None => (hir::Type::Error, None),
+        true
+    } else {
+        false
     };
 
-    let local_value = match local.value {
-        Some(expr) => {
-            let expect = TypeExpectation::new(local_ty, local_ty_src);
-            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+    let (local_ty, local_value) = match local.kind {
+        ast::LocalKind::Decl(ast_ty) => {
+            let hir_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ast_ty);
+            (hir_ty, None)
+        }
+        ast::LocalKind::Init(ast_ty, value) => {
+            let expect = if let Some(ast_ty) = ast_ty {
+                let hir_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ast_ty);
+                TypeExpectation::new(hir_ty, Some(hir.src(proc.origin(), ast_ty.range)))
+            } else {
+                TypeExpectation::NOTHING
+            };
 
-            if local.ty.is_none() {
-                local_ty = expr_res.ty;
+            let value_res = typecheck_expr(hir, emit, proc, expect, value);
+
+            if ast_ty.is_some() {
+                (expect.ty, Some(value_res.expr))
+            } else {
+                (value_res.ty, Some(value_res.expr))
             }
-            Some(expr_res.expr)
         }
-        None => None,
     };
 
-    let local = emit.arena.alloc(hir::Local {
-        mutt: local.mutt,
-        name: local.name,
-        ty: local_ty,
-        value: local_value,
-    });
-    proc.push_local(local)
+    if already_defined {
+        hir::LocalID::dummy()
+    } else {
+        let local = emit.arena.alloc(hir::Local {
+            mutt: local.mutt,
+            name: local.name,
+            ty: local_ty,
+            value: local_value,
+        });
+        proc.push_local(local)
+    }
 }
 
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)

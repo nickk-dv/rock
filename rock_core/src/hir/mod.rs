@@ -177,6 +177,11 @@ pub enum ArrayStaticLen {
 }
 
 #[derive(Copy, Clone)]
+pub struct Block<'hir> {
+    pub stmts: &'hir [Stmt<'hir>],
+}
+
+#[derive(Copy, Clone)]
 pub enum Stmt<'hir> {
     Break,
     Continue,
@@ -224,11 +229,6 @@ pub struct Assign<'hir> {
     pub rhs: &'hir Expr<'hir>,
     pub lhs_ty: Type<'hir>,
     pub lhs_signed_int: bool,
-}
-
-#[derive(Copy, Clone)]
-pub struct Block<'hir> {
-    pub stmts: &'hir [Stmt<'hir>],
 }
 
 id_impl!(ConstValueID);

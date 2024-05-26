@@ -540,21 +540,27 @@ fn local<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Local<'ast>, St
     let mutt = match p.peek() {
         T![mut] => Mut::Mutable,
         T![let] => Mut::Immutable,
-        _ => return Err("expected `let` or `var`".into()),
+        _ => return Err("expected `let` or `mut`".into()),
     };
     p.bump();
 
     let name = name(p)?;
-    let ty = if p.eat(T![:]) { Some(ty(p)?) } else { None };
-    let value = if p.eat(T![=]) { Some(expr(p)?) } else { None };
+    let kind = if p.eat(T![:]) {
+        let ty = ty(p)?;
+        if p.eat(T![=]) {
+            let value = expr(p)?;
+            LocalKind::Init(Some(ty), value)
+        } else {
+            LocalKind::Decl(ty)
+        }
+    } else {
+        p.expect(T![=])?;
+        let value = expr(p)?;
+        LocalKind::Init(None, value)
+    };
     p.expect(T![;])?;
 
-    Ok(p.state.arena.alloc(Local {
-        mutt,
-        name,
-        ty,
-        value,
-    }))
+    Ok(p.state.arena.alloc(Local { mutt, name, kind }))
 }
 
 fn expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'ast>, String> {
@@ -976,10 +982,11 @@ fn block<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Block<'ast>, String> 
     let start_offset = p.state.stmts.start();
 
     p.expect(T!['{'])?;
-    while !p.eat(T!['}']) {
+    while !p.at(T!['}']) && !p.at(T![eof]) {
         let stmt = stmt(p)?;
         p.state.stmts.add(stmt);
     }
+    p.expect(T!['}'])?;
 
     let stmts = p.state.stmts.take(start_offset, &mut p.state.arena);
     Ok(Block {
