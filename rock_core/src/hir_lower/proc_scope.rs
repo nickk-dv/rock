@@ -6,14 +6,13 @@ use crate::text::TextRange;
 //@need some way to recognize if loop was started within in defer
 // to allow break / continue to be used there
 // thats part of current design, otherwise break and continue cannot be part of defer block
-
 //@re-use same proc scope to avoid frequent re-alloc (not important yet)
 pub struct ProcScope<'hir, 'check> {
     data: &'check hir::ProcData<'hir>,
+    return_expect: TypeExpectation<'hir>,
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
-    return_expect: TypeExpectation<'hir>,
 }
 
 pub struct BlockData {
@@ -43,30 +42,27 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn new(data: &'check hir::ProcData<'hir>, return_expect: TypeExpectation<'hir>) -> Self {
         ProcScope {
             data,
+            return_expect,
             blocks: Vec::new(),
             locals: Vec::new(),
             locals_in_scope: Vec::new(),
-            return_expect,
         }
     }
 
-    pub fn finish(self) -> Vec<&'hir hir::Local<'hir>> {
-        self.locals
+    pub fn finish_locals(&self) -> &[&'hir hir::Local<'hir>] {
+        self.locals.as_slice()
     }
     pub fn origin(&self) -> hir::ModuleID {
         self.data.origin_id
     }
-    pub fn data(&self) -> &hir::ProcData<'hir> {
-        self.data
+    pub fn return_expect(&self) -> TypeExpectation<'hir> {
+        self.return_expect
     }
     pub fn get_local(&self, id: hir::LocalID) -> &hir::Local<'hir> {
         self.locals[id.index()]
     }
     pub fn get_param(&self, id: hir::ProcParamID) -> &hir::ProcParam<'hir> {
         self.data.param(id)
-    }
-    pub fn return_expect(&self) -> TypeExpectation<'hir> {
-        self.return_expect
     }
 
     pub fn push_block(&mut self, enter_loop: bool, enter_defer: Option<TextRange>) {
@@ -95,16 +91,10 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         });
     }
 
-    pub fn is_inside_loop(&self) -> bool {
-        let status = self.blocks.last().expect("block exists").loop_status;
-        matches!(status, LoopStatus::Inside)
-    }
-
-    pub fn is_inside_defer(&self) -> Option<TextRange> {
-        let status = self.blocks.last().expect("block exists").defer_status;
-        match status {
-            DeferStatus::None => None,
-            DeferStatus::Inside(range) => Some(range),
+    pub fn pop_block(&mut self) {
+        let block = self.blocks.pop().expect("block exists");
+        for _ in 0..block.local_count {
+            self.locals_in_scope.pop();
         }
     }
 
@@ -114,13 +104,6 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         self.locals_in_scope.push(local_id);
         self.blocks.last_mut().expect("block exists").local_count += 1;
         local_id
-    }
-
-    pub fn pop_block(&mut self) {
-        let block = self.blocks.pop().expect("block exists");
-        for _ in 0..block.local_count {
-            self.locals_in_scope.pop();
-        }
     }
 
     pub fn find_variable(&self, id: InternID) -> Option<VariableID> {
@@ -133,5 +116,18 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
             }
         }
         None
+    }
+
+    pub fn is_inside_loop(&self) -> bool {
+        let status = self.blocks.last().expect("block exists").loop_status;
+        matches!(status, LoopStatus::Inside)
+    }
+
+    pub fn is_inside_defer(&self) -> Option<TextRange> {
+        let status = self.blocks.last().expect("block exists").defer_status;
+        match status {
+            DeferStatus::None => None,
+            DeferStatus::Inside(range) => Some(range),
+        }
     }
 }

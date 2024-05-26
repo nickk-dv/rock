@@ -133,8 +133,7 @@ fn typecheck_proc<'hir>(
 
         let mut proc = ProcScope::new(data, return_expect);
         let block_res = typecheck_block(hir, emit, &mut proc, return_expect, block, false, None);
-        let locals = proc.finish();
-        let locals = emit.arena.alloc_slice(&locals);
+        let locals = emit.arena.alloc_slice(proc.finish_locals());
 
         let data = hir.registry_mut().proc_data_mut(proc_id);
         data.block = Some(block_res.block);

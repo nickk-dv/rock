@@ -1,10 +1,9 @@
 use crate::arena::Arena;
+use crate::id_impl;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct InternID(u32);
-
+id_impl!(InternID);
 pub struct InternPool<'intern> {
     next: InternID,
     arena: Arena<'intern>,
@@ -35,7 +34,7 @@ impl<'intern> InternPool<'intern> {
     }
 
     pub fn get_str(&self, id: InternID) -> &str {
-        self.strings[id.0 as usize]
+        self.strings[id.index()]
     }
     pub fn get_id(&self, string: &str) -> Option<InternID> {
         self.intern_map.get(string).cloned()
