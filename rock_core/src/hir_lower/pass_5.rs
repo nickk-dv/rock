@@ -1,6 +1,6 @@
 use super::hir_build::{self, HirData, HirEmit, SymbolKind};
 use super::pass_4;
-use super::proc_scope::{ProcScope, VariableID};
+use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, Info, SourceRange, WarningComp};
 use crate::hir;
@@ -132,7 +132,8 @@ fn typecheck_proc<'hir>(
         let return_expect = TypeExpectation::new(data.return_ty, Some(expect_source));
 
         let mut proc = ProcScope::new(data, return_expect);
-        let block_res = typecheck_block(hir, emit, &mut proc, return_expect, block, false, None);
+        let block_res =
+            typecheck_block(hir, emit, &mut proc, return_expect, block, BlockEnter::None);
         let locals = emit.arena.alloc_slice(proc.finish_locals());
 
         let data = hir.registry_mut().proc_data_mut(proc_id);
@@ -379,7 +380,8 @@ fn typecheck_expr<'hir>(
         ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
-            typecheck_block(hir, emit, proc, expect, *block, false, None).into_type_result(emit)
+            typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None)
+                .into_type_result(emit)
         }
         ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
@@ -535,7 +537,7 @@ fn typecheck_if<'hir>(
 
     let entry = {
         let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, if_.entry.cond);
-        let block_res = typecheck_block(hir, emit, proc, expect, if_.entry.block, false, None);
+        let block_res = typecheck_block(hir, emit, proc, expect, if_.entry.block, BlockEnter::None);
         if_type = block_res.ty;
         if expect.ty.is_error() {
             expect = TypeExpectation::new(
@@ -555,7 +557,8 @@ fn typecheck_if<'hir>(
         let mut branches = Vec::<hir::Branch>::with_capacity(if_.branches.len());
         for &branch in if_.branches {
             let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, branch.cond);
-            let block_res = typecheck_block(hir, emit, proc, expect, branch.block, false, None);
+            let block_res =
+                typecheck_block(hir, emit, proc, expect, branch.block, BlockEnter::None);
             if if_type.is_error() {
                 if_type = block_res.ty;
             }
@@ -576,7 +579,7 @@ fn typecheck_if<'hir>(
     };
 
     let else_block = if let Some(else_block) = if_.else_block {
-        let block_res = typecheck_block(hir, emit, proc, expect, else_block, false, None);
+        let block_res = typecheck_block(hir, emit, proc, expect, else_block, BlockEnter::None);
         if if_type.is_error() {
             if_type = block_res.ty;
         }
@@ -2082,6 +2085,7 @@ fn check_stmt_diverges<'hir>(
         }
         DivergeStatus::Diverges(diverge_range) => {
             *diverges = DivergeStatus::DivergesReported;
+
             emit.warning(WarningComp::new(
                 "unreachable statement",
                 hir.src(proc.origin(), stmt_range),
@@ -2102,10 +2106,9 @@ fn typecheck_block<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: TypeExpectation<'hir>,
     block: ast::Block<'_>,
-    enter_loop: bool,
-    enter_defer: Option<TextRange>,
+    enter: BlockEnter,
 ) -> BlockResult<'hir> {
-    proc.push_block(enter_loop, enter_defer);
+    proc.push_block(enter);
 
     let mut block_type = None;
     let mut tail_range = None;
@@ -2117,16 +2120,25 @@ fn typecheck_block<'hir>(
     for stmt in block.stmts {
         let hir_stmt = match stmt.kind {
             ast::StmtKind::Break => {
-                let stmt_res = typecheck_break(hir, emit, proc, stmt.range);
-                check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                if let Some(stmt_res) = typecheck_break(hir, emit, proc, stmt.range) {
+                    check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                } else {
+                    None
+                }
             }
             ast::StmtKind::Continue => {
-                let stmt_res = typecheck_continue(hir, emit, proc, stmt.range);
-                check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                if let Some(stmt_res) = typecheck_continue(hir, emit, proc, stmt.range) {
+                    check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                } else {
+                    None
+                }
             }
             ast::StmtKind::Return(expr) => {
-                let stmt_res = typecheck_return(hir, emit, proc, stmt.range, expr);
-                check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                if let Some(stmt_res) = typecheck_return(hir, emit, proc, stmt.range, expr) {
+                    check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                } else {
+                    None
+                }
             }
             ast::StmtKind::Defer(block) => {
                 Some(typecheck_defer(hir, emit, proc, stmt.range.start(), *block))
@@ -2195,16 +2207,26 @@ fn typecheck_break<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
-) -> hir::Stmt<'hir> {
-    if !proc.is_inside_loop() {
-        emit.error(ErrorComp::new(
-            "cannot use `break` outside of a loop",
-            hir.src(proc.origin(), range),
-            None,
-        ));
+) -> Option<hir::Stmt<'hir>> {
+    match proc.loop_status() {
+        LoopStatus::None => {
+            emit.error(ErrorComp::new(
+                "cannot use `break` outside of a loop",
+                hir.src(proc.origin(), range),
+                None,
+            ));
+            None
+        }
+        LoopStatus::Inside_WithDefer => {
+            emit.error(ErrorComp::new(
+                "cannot use `break` in a loop that is outside of `defer`",
+                hir.src(proc.origin(), range),
+                None,
+            ));
+            None
+        }
+        LoopStatus::Inside => Some(hir::Stmt::Break),
     }
-
-    hir::Stmt::Break
 }
 
 fn typecheck_continue<'hir>(
@@ -2212,16 +2234,26 @@ fn typecheck_continue<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
-) -> hir::Stmt<'hir> {
-    if !proc.is_inside_loop() {
-        emit.error(ErrorComp::new(
-            "cannot use `continue` outside of a loop",
-            hir.src(proc.origin(), range),
-            None,
-        ));
+) -> Option<hir::Stmt<'hir>> {
+    match proc.loop_status() {
+        LoopStatus::None => {
+            emit.error(ErrorComp::new(
+                "cannot use `continue` outside of a loop",
+                hir.src(proc.origin(), range),
+                None,
+            ));
+            None
+        }
+        LoopStatus::Inside_WithDefer => {
+            emit.error(ErrorComp::new(
+                "cannot use `continue` in a loop thats started outside of `defer`",
+                hir.src(proc.origin(), range),
+                None,
+            ));
+            None
+        }
+        LoopStatus::Inside => Some(hir::Stmt::Continue),
     }
-
-    hir::Stmt::Continue
 }
 
 fn typecheck_return<'hir>(
@@ -2230,28 +2262,32 @@ fn typecheck_return<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     range: TextRange,
     expr: Option<&ast::Expr>,
-) -> hir::Stmt<'hir> {
-    if let Some(prev_defer) = proc.is_inside_defer() {
-        emit.error(ErrorComp::new(
-            "cannot use `return` inside `defer`",
-            hir.src(proc.origin(), range),
-            Info::new("in this defer", hir.src(proc.origin(), prev_defer)),
-        ));
-    }
-
-    if let Some(expr) = expr {
-        let expr_res = typecheck_expr(hir, emit, proc, proc.return_expect(), expr);
-        hir::Stmt::Return(Some(expr_res.expr))
-    } else {
-        check_type_expectation(
-            hir,
-            emit,
-            proc.origin(),
-            range,
-            proc.return_expect(),
-            hir::Type::VOID,
-        );
-        hir::Stmt::Return(None)
+) -> Option<hir::Stmt<'hir>> {
+    match proc.defer_status() {
+        DeferStatus::None => {
+            if let Some(expr) = expr {
+                let expr_res = typecheck_expr(hir, emit, proc, proc.return_expect(), expr);
+                Some(hir::Stmt::Return(Some(expr_res.expr)))
+            } else {
+                check_type_expectation(
+                    hir,
+                    emit,
+                    proc.origin(),
+                    range,
+                    proc.return_expect(),
+                    hir::Type::VOID,
+                );
+                Some(hir::Stmt::Return(None))
+            }
+        }
+        DeferStatus::Inside(prev_defer) => {
+            emit.error(ErrorComp::new(
+                "cannot use `return` inside `defer`",
+                hir.src(proc.origin(), range),
+                Info::new("in this defer", hir.src(proc.origin(), prev_defer)),
+            ));
+            None
+        }
     }
 }
 
@@ -2266,12 +2302,15 @@ fn typecheck_defer<'hir>(
 ) -> hir::Stmt<'hir> {
     let defer_range = TextRange::new(start, start + 5.into());
 
-    if let Some(prev_defer) = proc.is_inside_defer() {
-        emit.error(ErrorComp::new(
-            "`defer` statements cannot be nested",
-            hir.src(proc.origin(), defer_range),
-            Info::new("already in this defer", hir.src(proc.origin(), prev_defer)),
-        ));
+    match proc.defer_status() {
+        DeferStatus::None => {}
+        DeferStatus::Inside(prev_defer) => {
+            emit.error(ErrorComp::new(
+                "`defer` statements cannot be nested",
+                hir.src(proc.origin(), defer_range),
+                Info::new("already in this defer", hir.src(proc.origin(), prev_defer)),
+            ));
+        }
     }
 
     let block_res = typecheck_block(
@@ -2280,8 +2319,7 @@ fn typecheck_defer<'hir>(
         proc,
         TypeExpectation::VOID,
         block,
-        false,
-        Some(defer_range),
+        BlockEnter::Defer(defer_range),
     );
 
     let block_ref = emit.arena.alloc(block_res.block);
@@ -2324,8 +2362,7 @@ fn typecheck_for<'hir>(
         proc,
         TypeExpectation::VOID,
         for_.block,
-        true,
-        None,
+        BlockEnter::Loop,
     );
 
     emit.arena.alloc(hir::For {
