@@ -243,6 +243,7 @@ pub enum ConstValue<'hir> {
     Char        { val: char },
     String      { id: InternID, c_string: bool },
     Procedure   { proc_id: ProcID },
+    EnumVariant { enum_id: EnumID, variant_id: EnumVariantID },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { len: u64, value: ConstValueID },
@@ -250,14 +251,14 @@ pub enum ConstValue<'hir> {
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstStruct<'hir> {
-    struct_id: StructID,
-    fields: &'hir [ConstValueID],
+    pub struct_id: StructID,
+    pub fields: &'hir [ConstValueID],
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstArray<'hir> {
-    len: u64,
-    values: &'hir [ConstValueID],
+    pub len: u64,
+    pub values: &'hir [ConstValueID],
 }
 
 #[rustfmt::skip]
@@ -281,7 +282,6 @@ pub enum Expr<'hir> {
     Procedure    { proc_id: ProcID },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
-    EnumVariant  { enum_id: EnumID, variant_id: EnumVariantID },
     UnionInit    { union_id: UnionID, input: UnionMemberInit<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },

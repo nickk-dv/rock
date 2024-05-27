@@ -544,6 +544,10 @@ fn codegen_const_value<'ctx>(
         hir::ConstValue::Char { val } => cg.context.i32_type().const_int(val as u64, false).into(),
         hir::ConstValue::String { id, c_string } => codegen_lit_string(cg, id, c_string),
         hir::ConstValue::Procedure { proc_id } => codegen_procedure(cg, proc_id),
+        hir::ConstValue::EnumVariant {
+            enum_id,
+            variant_id,
+        } => codegen_enum_variant(cg, enum_id, variant_id),
         hir::ConstValue::Struct { struct_ } => todo!("codegen ConstValue::Struct unsupported"),
         hir::ConstValue::Array { array } => todo!("codegen ConstValue::Array unsupported"),
         hir::ConstValue::ArrayRepeat { value, len } => {
@@ -609,10 +613,6 @@ fn codegen_expr<'ctx>(
         Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, target, indirect)
         }
-        Expr::EnumVariant {
-            enum_id,
-            variant_id,
-        } => Some(codegen_enum_variant(cg, enum_id, variant_id)),
         Expr::UnionInit { union_id, input } => {
             Some(codegen_union_init(cg, proc_cg, expect_ptr, union_id, input))
         }

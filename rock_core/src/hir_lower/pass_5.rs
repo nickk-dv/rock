@@ -1417,11 +1417,14 @@ fn typecheck_item<'hir>(
             );
         }
         ValueID::Enum(enum_id, variant_id) => {
-            let enum_variant = hir::Expr::EnumVariant {
+            let value = hir::ConstValue::EnumVariant {
                 enum_id,
                 variant_id,
             };
-            return TypeResult::new(hir::Type::Enum(enum_id), emit.arena.alloc(enum_variant));
+            return TypeResult::new(
+                hir::Type::Enum(enum_id),
+                emit.arena.alloc(hir::Expr::Const { value }),
+            );
         }
         ValueID::Const(id) => TypeResult::new(
             hir.registry().const_data(id).ty,
@@ -1833,7 +1836,6 @@ fn get_expr_addressability<'hir>(
         hir::Expr::Procedure { .. } => Addressability::Temporary,
         hir::Expr::CallDirect { .. } => Addressability::Temporary,
         hir::Expr::CallIndirect { .. } => Addressability::Temporary,
-        hir::Expr::EnumVariant { .. } => Addressability::Temporary,
         hir::Expr::UnionInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,

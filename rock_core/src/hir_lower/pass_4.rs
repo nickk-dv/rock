@@ -693,7 +693,41 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::Index { target, access } => {
             let (target_value, _) = fold_const_expr(hir, emit, origin_id, target);
             let (index_value, _) = fold_const_expr(hir, emit, origin_id, access.index);
-            Err("index")
+
+            let index = match index_value {
+                hir::ConstValue::Int { val, neg, ty } => {
+                    if !neg {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            if let Some(index) = index {
+                //@bounds check, same with normal array
+                match target_value {
+                    hir::ConstValue::Array { array } => {
+                        if index >= array.len {
+                            //@no source range available
+                            Ok(hir::ConstValue::Error)
+                        } else {
+                            Ok(emit.const_intern.get(array.values[index as usize]))
+                        }
+                    }
+                    hir::ConstValue::ArrayRepeat { len, value } => {
+                        if index >= len {
+                            //@no source range available
+                            Ok(hir::ConstValue::Error)
+                        } else {
+                            Ok(emit.const_intern.get(value))
+                        }
+                    }
+                    _ => Ok(hir::ConstValue::Error),
+                }
+            } else {
+                Ok(hir::ConstValue::Error)
+            }
         }
         hir::Expr::Slice { target, access } => todo!(),
         hir::Expr::Cast { target, into, kind } => todo!(),
@@ -704,15 +738,34 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::Procedure { proc_id } => todo!(),
         hir::Expr::CallDirect { proc_id, input } => todo!(),
         hir::Expr::CallIndirect { target, indirect } => todo!(),
-        hir::Expr::EnumVariant {
-            enum_id,
-            variant_id,
-        } => todo!(),
         hir::Expr::UnionInit { union_id, input } => todo!(),
         hir::Expr::StructInit { struct_id, input } => todo!(),
-        hir::Expr::ArrayInit { array_init } => todo!(),
-        hir::Expr::ArrayRepeat { array_repeat } => todo!(),
-        hir::Expr::Address { rhs } => todo!(),
+        hir::Expr::ArrayInit { array_init } => {
+            let mut value_ids = Vec::with_capacity(array_init.input.len());
+            for &input in array_init.input {
+                let (_, value_id) = fold_const_expr(hir, emit, origin_id, input);
+                value_ids.push(value_id);
+            }
+
+            let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
+            let array = emit.const_intern.arena().alloc(hir::ConstArray {
+                len: values.len() as u64,
+                values,
+            });
+            Ok(hir::ConstValue::Array { array })
+        }
+        hir::Expr::ArrayRepeat { array_repeat } => {
+            if let Some(len) = array_repeat.len {
+                let (_, value_id) = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
+                Ok(hir::ConstValue::ArrayRepeat {
+                    len,
+                    value: value_id,
+                })
+            } else {
+                Ok(hir::ConstValue::Error)
+            }
+        }
+        hir::Expr::Address { .. } => Err("address"),
         hir::Expr::Unary { op, rhs } => todo!(),
         hir::Expr::Binary {
             op,
