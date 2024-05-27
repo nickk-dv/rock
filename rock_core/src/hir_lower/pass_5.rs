@@ -425,16 +425,18 @@ fn typecheck_expr<'hir>(
 }
 
 fn typecheck_lit_null<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
+    let value = hir::ConstValue::Null;
     TypeResult::new(
         hir::Type::Basic(BasicType::Rawptr),
-        emit.arena.alloc(hir::Expr::LitNull),
+        emit.arena.alloc(hir::Expr::Const { value }),
     )
 }
 
 fn typecheck_lit_bool<'hir>(emit: &mut HirEmit<'hir>, val: bool) -> TypeResult<'hir> {
+    let value = hir::ConstValue::Bool { val };
     TypeResult::new(
         hir::Type::Basic(BasicType::Bool),
-        emit.arena.alloc(hir::Expr::LitBool { val }),
+        emit.arena.alloc(hir::Expr::Const { value }),
     )
 }
 
@@ -444,9 +446,14 @@ fn typecheck_lit_int<'hir>(
     val: u64,
 ) -> TypeResult<'hir> {
     let lit_type = coerce_int_type(expect.ty);
+    let value = hir::ConstValue::Int {
+        val,
+        neg: false,
+        ty: Some(lit_type),
+    };
     TypeResult::new(
         hir::Type::Basic(lit_type),
-        emit.arena.alloc(hir::Expr::LitInt { val, ty: lit_type }),
+        emit.arena.alloc(hir::Expr::Const { value }),
     )
 }
 
@@ -456,9 +463,13 @@ fn typecheck_lit_float<'hir>(
     val: f64,
 ) -> TypeResult<'hir> {
     let lit_type = coerce_float_type(expect.ty);
+    let value = hir::ConstValue::Float {
+        val,
+        ty: Some(lit_type),
+    };
     TypeResult::new(
         hir::Type::Basic(lit_type),
-        emit.arena.alloc(hir::Expr::LitFloat { val, ty: lit_type }),
+        emit.arena.alloc(hir::Expr::Const { value }),
     )
 }
 
@@ -496,9 +507,10 @@ pub fn coerce_float_type(expect: hir::Type) -> BasicType {
 }
 
 fn typecheck_lit_char<'hir>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'hir> {
+    let value = hir::ConstValue::Char { val };
     TypeResult::new(
         hir::Type::Basic(BasicType::Char),
-        emit.arena.alloc(hir::Expr::LitChar { val }),
+        emit.arena.alloc(hir::Expr::Const { value }),
     )
 }
 
@@ -507,9 +519,11 @@ fn typecheck_lit_string<'hir>(
     id: InternID,
     c_string: bool,
 ) -> TypeResult<'hir> {
-    let string_ty = alloc_string_lit_type(emit, c_string);
-    let string_expr = hir::Expr::LitString { id, c_string };
-    TypeResult::new(string_ty, emit.arena.alloc(string_expr))
+    let value = hir::ConstValue::String { id, c_string };
+    TypeResult::new(
+        alloc_string_lit_type(emit, c_string),
+        emit.arena.alloc(hir::Expr::Const { value }),
+    )
 }
 
 pub fn alloc_string_lit_type<'hir>(emit: &mut HirEmit<'hir>, c_string: bool) -> hir::Type<'hir> {
@@ -1357,10 +1371,14 @@ fn typecheck_sizeof<'hir>(
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
     let sizeof_expr = match type_size(hir, emit, ty, hir.src(proc.origin(), expr_range)) {
-        Some(size) => emit.arena.alloc(hir::Expr::LitInt {
-            val: size.size(),
-            ty: BasicType::Usize,
-        }),
+        Some(size) => {
+            let value = hir::ConstValue::Int {
+                val: size.size(),
+                neg: false,
+                ty: Some(BasicType::Usize),
+            };
+            emit.arena.alloc(hir::Expr::Const { value })
+        }
         None => hir_build::ERROR_EXPR,
     };
 
@@ -1789,12 +1807,7 @@ fn get_expr_addressability<'hir>(
 ) -> Addressability {
     match *expr {
         hir::Expr::Error => Addressability::Unknown,
-        hir::Expr::LitNull => Addressability::Temporary,
-        hir::Expr::LitBool { .. } => Addressability::Temporary,
-        hir::Expr::LitInt { .. } => Addressability::Temporary,
-        hir::Expr::LitFloat { .. } => Addressability::Temporary,
-        hir::Expr::LitChar { .. } => Addressability::Temporary,
-        hir::Expr::LitString { .. } => Addressability::Temporary,
+        hir::Expr::Const { .. } => Addressability::Temporary, //@TemporaryImmutable for struct / array? and alloca them
         hir::Expr::If { .. } => Addressability::Temporary,
         hir::Expr::Block { .. } => Addressability::Temporary,
         hir::Expr::Match { .. } => Addressability::Temporary,

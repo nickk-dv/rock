@@ -238,7 +238,6 @@ pub enum ConstValue<'hir> {
     Error,
     Null,
     Bool        { val: bool },
-    /// Option<BasicType> means untyped float or integer currently
     Int         { val: u64, neg: bool, ty: Option<ast::BasicType> },
     Float       { val: f64, ty: Option<ast::BasicType> },
     Char        { val: char },
@@ -246,7 +245,7 @@ pub enum ConstValue<'hir> {
     Procedure   { proc_id: ProcID },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
-    ArrayRepeat { value: ConstValueID, len: u64 },
+    ArrayRepeat { len: u64, value: ConstValueID },
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -265,12 +264,7 @@ pub struct ConstArray<'hir> {
 #[derive(Copy, Clone)]
 pub enum Expr<'hir> {
     Error,
-    LitNull,
-    LitBool      { val: bool },
-    LitInt       { val: u64, ty: ast::BasicType },
-    LitFloat     { val: f64, ty: ast::BasicType },
-    LitChar      { val: char },
-    LitString    { id: InternID, c_string: bool },
+    Const        { value: ConstValue<'hir> },
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },

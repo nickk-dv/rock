@@ -660,3 +660,79 @@ pub fn resolve_const_expr<'hir>(
         }
     }
 }
+
+pub fn fold_const_expr<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    expr: &'hir hir::Expr<'hir>,
+) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
+    let result = match *expr {
+        hir::Expr::Error => Ok(hir::ConstValue::Error),
+        hir::Expr::Const { value } => Ok(value),
+        hir::Expr::If { .. } => Err("if"),
+        hir::Expr::Block { .. } => Err("block"),
+        hir::Expr::Match { .. } => Err("match"),
+        hir::Expr::UnionMember {
+            target,
+            union_id,
+            member_id,
+            deref,
+        } => todo!(),
+        hir::Expr::StructField {
+            target,
+            struct_id,
+            field_id,
+            deref,
+        } => todo!(),
+        hir::Expr::SliceField {
+            target,
+            first_ptr,
+            deref,
+        } => todo!(),
+        hir::Expr::Index { target, access } => {
+            let (target_value, _) = fold_const_expr(hir, emit, origin_id, target);
+            let (index_value, _) = fold_const_expr(hir, emit, origin_id, access.index);
+            Err("index")
+        }
+        hir::Expr::Slice { target, access } => todo!(),
+        hir::Expr::Cast { target, into, kind } => todo!(),
+        hir::Expr::LocalVar { local_id } => todo!(),
+        hir::Expr::ParamVar { param_id } => todo!(),
+        hir::Expr::ConstVar { const_id } => todo!(),
+        hir::Expr::GlobalVar { global_id } => todo!(),
+        hir::Expr::Procedure { proc_id } => todo!(),
+        hir::Expr::CallDirect { proc_id, input } => todo!(),
+        hir::Expr::CallIndirect { target, indirect } => todo!(),
+        hir::Expr::EnumVariant {
+            enum_id,
+            variant_id,
+        } => todo!(),
+        hir::Expr::UnionInit { union_id, input } => todo!(),
+        hir::Expr::StructInit { struct_id, input } => todo!(),
+        hir::Expr::ArrayInit { array_init } => todo!(),
+        hir::Expr::ArrayRepeat { array_repeat } => todo!(),
+        hir::Expr::Address { rhs } => todo!(),
+        hir::Expr::Unary { op, rhs } => todo!(),
+        hir::Expr::Binary {
+            op,
+            lhs,
+            rhs,
+            lhs_signed_int,
+        } => todo!(),
+    };
+
+    match result {
+        Ok(value) => (value, emit.const_intern.intern(value)),
+        Err(expr_name) => {
+            //@range not available
+            //emit.error(ErrorComp::new(
+            //    format!("cannot use `{expr_name}` expression in constants"),
+            //    hir.src(origin_id, expr.0.range),
+            //    None,
+            //));
+            let value = hir::ConstValue::Error;
+            (value, emit.const_intern.intern(value))
+        }
+    }
+}

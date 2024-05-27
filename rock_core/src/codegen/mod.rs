@@ -566,12 +566,7 @@ fn codegen_expr<'ctx>(
     use hir::Expr;
     match *expr {
         Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
-        Expr::LitNull => Some(codegen_lit_null(cg)),
-        Expr::LitBool { val } => Some(codegen_lit_bool(cg, val)),
-        Expr::LitInt { val, ty } => Some(codegen_lit_int(cg, val, ty)),
-        Expr::LitFloat { val, ty } => Some(codegen_lit_float(cg, val, ty)),
-        Expr::LitChar { val } => Some(codegen_lit_char(cg, val)),
-        Expr::LitString { id, c_string } => Some(codegen_lit_string(cg, id, c_string)),
+        Expr::Const { value } => Some(codegen_const_value(cg, value)),
         Expr::If { if_ } => codegen_if(cg, proc_cg, if_),
         Expr::Block { block } => codegen_block(cg, proc_cg, expect_ptr, block),
         Expr::Match { match_ } => Some(codegen_match(cg, proc_cg, match_)),
