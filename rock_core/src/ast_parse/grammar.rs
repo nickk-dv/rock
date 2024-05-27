@@ -738,6 +738,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                                 _ => return Err("expected `:`, `}` or `,`".into()),
                             };
                             p.state.field_inits.add(FieldInit { name, expr });
+                            //@todo allow optional trailing coma after last field
                             if !p.eat(T![,]) {
                                 break;
                             }

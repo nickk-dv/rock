@@ -1795,17 +1795,14 @@ fn get_expr_addressability<'hir>(
         hir::Expr::LitFloat { .. } => Addressability::Temporary,
         hir::Expr::LitChar { .. } => Addressability::Temporary,
         hir::Expr::LitString { .. } => Addressability::Temporary,
-        hir::Expr::If { if_ } => Addressability::NotImplemented, //@todo 05.05.24
-        hir::Expr::Block { block } => Addressability::NotImplemented, //@todo 05.05.24
-        hir::Expr::Match { match_ } => Addressability::NotImplemented, //@todo 05.05.24
-        hir::Expr::UnionMember { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
-        hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        hir::Expr::If { .. } => Addressability::Temporary,
+        hir::Expr::Block { .. } => Addressability::Temporary,
+        hir::Expr::Match { .. } => Addressability::Temporary,
+        hir::Expr::UnionMember { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target),
         hir::Expr::SliceField { .. } => Addressability::SliceField,
-        // in case of slices depends on slice type mutability itself 16.05.24
-        // also might depend on any & or &mut in the way?
-        hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
-        // mutability of slicing plays are role: eg:  array[2..<4][mut ..] //@cant take mutable slice from immutable slice 05.05.24
-        hir::Expr::Slice { target, .. } => get_expr_addressability(hir, proc, target), //@is this correct? even with deref? 05.05.24
+        hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::Expr::Slice { target, .. } => get_expr_addressability(hir, proc, target),
         hir::Expr::Cast { .. } => Addressability::Temporary,
         hir::Expr::LocalVar { local_id } => {
             let local = proc.get_local(local_id);
@@ -1821,15 +1818,15 @@ fn get_expr_addressability<'hir>(
             Addressability::Addressable(data.mutt, hir.src(data.origin_id, data.name.range))
         }
         hir::Expr::Procedure { .. } => Addressability::Temporary,
-        hir::Expr::CallDirect { .. } => Addressability::NotImplemented, //@temporary value, but might be slice-able? 05.05.24
-        hir::Expr::CallIndirect { .. } => Addressability::NotImplemented, //@temporary value, but might be slice-able? 05.05.24
+        hir::Expr::CallDirect { .. } => Addressability::Temporary,
+        hir::Expr::CallIndirect { .. } => Addressability::Temporary,
         hir::Expr::EnumVariant { .. } => Addressability::Temporary,
         hir::Expr::UnionInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
         hir::Expr::Address { .. } => Addressability::Temporary,
-        hir::Expr::Unary { op, .. } => match op {
+        hir::Expr::Unary { op, rhs } => match op {
             ast::UnOp::Deref => Addressability::NotImplemented, //@todo 05.05.24
             _ => Addressability::Temporary,
         },
@@ -2021,6 +2018,7 @@ fn check_bin_op_compatibility<'hir>(
         },
         ast::BinOp::IsEq | ast::BinOp::NotEq => match lhs_ty {
             hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_any_value_type(),
+            hir::Type::Enum(_) => true,
             _ => false,
         },
         ast::BinOp::Less | ast::BinOp::LessEq | ast::BinOp::Greater | ast::BinOp::GreaterEq => {
