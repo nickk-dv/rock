@@ -35,7 +35,8 @@ struct Codegen<'ctx> {
     module: module::Module<'ctx>,
     builder: builder::Builder<'ctx>,
     target_machine: targets::TargetMachine,
-    struct_types: Vec<types::StructType<'ctx>>,
+    structs: Vec<types::StructType<'ctx>>,
+    consts: Vec<values::BasicValueEnum<'ctx>>,
     globals: Vec<values::GlobalValue<'ctx>>,
     function_values: Vec<values::FunctionValue<'ctx>>,
     hir: hir::Hir<'ctx>,
@@ -140,8 +141,9 @@ impl<'ctx> Codegen<'ctx> {
             module,
             builder,
             target_machine,
-            struct_types: Vec::new(),
-            globals: Vec::new(),
+            structs: Vec::with_capacity(hir.structs.len()),
+            consts: Vec::with_capacity(hir.consts.len()),
+            globals: Vec::with_capacity(hir.globals.len()),
             function_values: Vec::new(),
             hir,
             c_functions: HashMap::new(),
@@ -217,65 +219,22 @@ impl<'ctx> Codegen<'ctx> {
         Ok(())
     }
 
-    //@perf, could be cached once to avoid llvm calls and extra checks
-    // profile difference on actual release setup and bigger codebases
-    fn pointer_sized_int_type(&self) -> types::IntType<'ctx> {
-        self.context
-            .ptr_sized_int_type(&self.target_machine.get_target_data(), None)
-    }
-
-    //@this is a hack untill inkwell pr is merged https://github.com/TheDan64/inkwell/pull/468 @07.04.24
-    #[allow(unsafe_code)]
-    fn ptr_type(&self) -> types::PointerType<'ctx> {
-        unsafe {
-            types::PointerType::new(llvm_sys::core::LLVMPointerTypeInContext(
-                self.context.as_ctx_ref(),
-                0,
-            ))
-        }
-    }
-
-    fn union_type(&self, union_id: hir::UnionID) -> types::ArrayType<'ctx> {
-        let data = self.hir.union_data(union_id);
-        let size = data.size_eval.get_size().expect("resolved");
-        self.type_into_basic(hir::Type::Basic(ast::BasicType::U8))
-            .expect("u8")
-            .array_type(size.size() as u32)
-    }
-
-    fn struct_type(&self, struct_id: hir::StructID) -> types::StructType<'ctx> {
-        self.struct_types[struct_id.index()]
-    }
-
     //@duplicated with generation of procedure values and with indirect calls 07.05.24
     fn function_type(&self, proc_ty: &hir::ProcType) -> types::FunctionType<'ctx> {
         let mut param_types =
             Vec::<types::BasicMetadataTypeEnum>::with_capacity(proc_ty.params.len());
 
         for param in proc_ty.params {
-            //@correct disallowing of void and never type would allow to rely on this being a valid value type,
-            // clean up llvm type apis after this guarantee is satisfied
-            // hir typechecker doesnt do that yet @16.04.24
-            if let Some(ty) = self.type_into_basic_metadata(*param) {
-                param_types.push(ty);
-            }
+            param_types.push(self.type_into_basic_metadata(*param));
         }
 
-        match self.type_into_basic(proc_ty.return_ty) {
+        match self.type_into_basic_option(proc_ty.return_ty) {
             Some(ty) => ty.fn_type(&param_types, proc_ty.is_variadic),
             None => self
                 .context
                 .void_type()
                 .fn_type(&param_types, proc_ty.is_variadic),
         }
-    }
-
-    fn slice_type(&self) -> types::StructType<'ctx> {
-        //@this slice type could be generated once and referenced every time
-        self.context.struct_type(
-            &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
-            false,
-        )
     }
 
     fn array_static_len(&self, len: hir::ArrayStaticLen) -> u64 {
@@ -292,16 +251,6 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
-        // @should use LLVMArrayType2 which takes u64, what not exposed 03.05.24
-        //  by inkwell even for llvm 17 (LLVMArrayType was deprecated in this version)
-        let elem_ty = self.type_into_basic(array.elem_ty).expect("non void type");
-        elem_ty.array_type(self.array_static_len(array.len) as u32)
-    }
-
-    //@any is used as general type
-    // unit / void is not accepted by enums that wrap
-    // struct field types, proc param types.
     fn type_into_any(&self, ty: hir::Type) -> types::AnyTypeEnum<'ctx> {
         match ty {
             hir::Type::Error => panic!("codegen unexpected hir::Type::Error"),
@@ -327,7 +276,7 @@ impl<'ctx> Codegen<'ctx> {
             },
             hir::Type::Enum(id) => {
                 let basic = self.hir.enum_data(id).basic;
-                self.type_into_any(hir::Type::Basic(basic))
+                self.basic_type_into_int(basic).into()
             }
             hir::Type::Union(id) => self.union_type(id).into(),
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
@@ -338,52 +287,135 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    fn type_into_basic(&self, ty: hir::Type) -> Option<types::BasicTypeEnum<'ctx>> {
+    //@perf, could be cached once to avoid llvm calls and extra checks
+    // profile difference on actual release setup and bigger codebases
+    fn pointer_sized_int_type(&self) -> types::IntType<'ctx> {
+        self.context
+            .ptr_sized_int_type(&self.target_machine.get_target_data(), None)
+    }
+
+    //@this is a hack untill inkwell pr is merged https://github.com/TheDan64/inkwell/pull/468 @07.04.24
+    #[allow(unsafe_code)]
+    fn ptr_type(&self) -> types::PointerType<'ctx> {
+        unsafe {
+            types::PointerType::new(llvm_sys::core::LLVMPointerTypeInContext(
+                self.context.as_ctx_ref(),
+                0,
+            ))
+        }
+    }
+
+    fn union_type(&self, union_id: hir::UnionID) -> types::ArrayType<'ctx> {
+        let data = self.hir.union_data(union_id);
+        let size = data.size_eval.get_size().expect("resolved");
+        self.basic_type_into_int(ast::BasicType::U8)
+            .array_type(size.size() as u32)
+    }
+
+    fn struct_type(&self, struct_id: hir::StructID) -> types::StructType<'ctx> {
+        self.structs[struct_id.index()]
+    }
+
+    fn slice_type(&self) -> types::StructType<'ctx> {
+        //@this slice type could be generated once and referenced every time
+        self.context.struct_type(
+            &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
+            false,
+        )
+    }
+
+    fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
+        // @should use LLVMArrayType2 which takes u64, what not exposed 03.05.24
+        //  by inkwell even for llvm 17 (LLVMArrayType was deprecated in this version)
+        let elem_ty = self.type_into_basic(array.elem_ty);
+        elem_ty.array_type(self.array_static_len(array.len) as u32)
+    }
+
+    fn basic_type_into_int(&self, basic: ast::BasicType) -> types::IntType<'ctx> {
+        match basic {
+            ast::BasicType::S8 => self.context.i8_type(),
+            ast::BasicType::S16 => self.context.i16_type(),
+            ast::BasicType::S32 => self.context.i32_type(),
+            ast::BasicType::S64 => self.context.i64_type(),
+            ast::BasicType::Ssize => self.pointer_sized_int_type(),
+            ast::BasicType::U8 => self.context.i8_type(),
+            ast::BasicType::U16 => self.context.i16_type(),
+            ast::BasicType::U32 => self.context.i32_type(),
+            ast::BasicType::U64 => self.context.i64_type(),
+            ast::BasicType::Usize => self.pointer_sized_int_type(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn basic_type_into_float(&self, basic: ast::BasicType) -> types::FloatType<'ctx> {
+        match basic {
+            ast::BasicType::F16 => self.context.f16_type(),
+            ast::BasicType::F32 => self.context.f32_type(),
+            ast::BasicType::F64 => self.context.f64_type(),
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn type_into_basic(&self, ty: hir::Type) -> types::BasicTypeEnum<'ctx> {
+        self.type_into_any(ty).try_into().expect("value type")
+    }
+
+    #[inline]
+    fn type_into_basic_option(&self, ty: hir::Type) -> Option<types::BasicTypeEnum<'ctx>> {
         self.type_into_any(ty).try_into().ok()
     }
 
-    fn type_into_basic_metadata(
-        &self,
-        ty: hir::Type,
-    ) -> Option<types::BasicMetadataTypeEnum<'ctx>> {
-        self.type_into_any(ty).try_into().ok()
+    #[inline]
+    fn type_into_basic_metadata(&self, ty: hir::Type) -> types::BasicMetadataTypeEnum<'ctx> {
+        self.type_into_any(ty).try_into().expect("value type")
     }
 }
 
 pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> ResultComp<()> {
     let context = context::Context::create();
     let mut cg = Codegen::new(&context, hir);
+
     codegen_struct_types(&mut cg);
+    codegen_consts(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&cg);
+
     let result = cg.build_object(bin_name, config);
     ResultComp::from_error(result)
 }
 
 fn codegen_struct_types(cg: &mut Codegen) {
-    cg.struct_types.reserve_exact(cg.hir.structs.len());
-
+    // create opaque struct types
     for _ in 0..cg.hir.structs.len() {
         let opaque = cg.context.opaque_struct_type("rock_struct");
-        cg.struct_types.push(opaque);
+        cg.structs.push(opaque);
     }
 
+    // set opaque struct bodies
     let mut field_types = Vec::<types::BasicTypeEnum>::new();
     for (idx, struct_data) in cg.hir.structs.iter().enumerate() {
         field_types.clear();
-
         for field in struct_data.fields {
-            //@read proc param type_into_basic() info message @16.04.24
-            // (this field type isnt optional, else FieldIDs are invalidated)
-            if let Some(ty) = cg.type_into_basic(field.ty) {
-                field_types.push(ty);
-            }
+            field_types.push(cg.type_into_basic(field.ty));
         }
-
-        let opaque = cg.struct_types[idx];
+        let opaque = cg.structs[idx];
         opaque.set_body(&field_types, false);
-        eprintln!("{}", opaque.print_to_string());
+    }
+}
+
+fn codegen_consts(cg: &mut Codegen) {
+    cg.consts.reserve_exact(cg.hir.consts.len());
+
+    for data in cg.hir.consts.iter() {
+        let value = codegen_const_value(
+            cg,
+            cg.hir
+                .const_intern
+                .get(cg.hir.const_values[data.value.index()]),
+        );
+        cg.consts.push(value);
     }
 }
 
@@ -391,7 +423,7 @@ fn codegen_globals(cg: &mut Codegen) {
     cg.globals.reserve_exact(cg.hir.globals.len());
 
     for data in cg.hir.globals.iter() {
-        let global_ty = cg.type_into_basic(data.ty).expect("non void type");
+        let global_ty = cg.type_into_basic(data.ty);
         let global = cg.module.add_global(global_ty, None, "global");
         global.set_constant(data.mutt == ast::Mut::Immutable);
         global.set_linkage(module::Linkage::Private);
@@ -414,15 +446,10 @@ fn codegen_function_values(cg: &mut Codegen) {
         param_types.clear();
 
         for param in proc_data.params {
-            //@correct disallowing of void and never type would allow to rely on this being a valid value type,
-            // clean up llvm type apis after this guarantee is satisfied
-            // hir typechecker doesnt do that yet @16.04.24
-            if let Some(ty) = cg.type_into_basic_metadata(param.ty) {
-                param_types.push(ty);
-            }
+            param_types.push(cg.type_into_basic_metadata(param.ty));
         }
 
-        let function_ty = match cg.type_into_basic(proc_data.return_ty) {
+        let function_ty = match cg.type_into_basic_option(proc_data.return_ty) {
             Some(ty) => ty.fn_type(&param_types, proc_data.is_variadic),
             None => cg
                 .context
@@ -430,11 +457,8 @@ fn codegen_function_values(cg: &mut Codegen) {
                 .fn_type(&param_types, proc_data.is_variadic),
         };
 
-        //@perf when using incremented names llvm can increment it on its own (lots of string allocations here)
-        // main name_id could be cached to avoid string compares and get from pool
         // (switch to explicit main flag on proc_data or in hir instead)
         //@temporary condition to determine if its entry point or not @06.04.24
-
         let name = cg.hir.intern.get_str(proc_data.name.id);
         let name = if proc_data.block.is_none()
             || (proc_data.origin_id == hir::ModuleID::new(0) && name == "main")
@@ -480,7 +504,7 @@ fn codegen_function_bodies(cg: &Codegen) {
 
         let mut local_vars = Vec::with_capacity(proc_data.locals.len());
         for &local in proc_data.locals {
-            let local_ty = cg.type_into_basic(local.ty).expect("value type");
+            let local_ty = cg.type_into_basic(local.ty);
             let local_ptr = cg.builder.build_alloca(local_ty, "local").unwrap();
             local_vars.push(local_ptr);
         }
@@ -525,21 +549,13 @@ fn codegen_const_value<'ctx>(
         hir::ConstValue::Null => cg.ptr_type().const_zero().into(),
         hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
         hir::ConstValue::Int { val, neg, ty } => {
-            let ty = ty.expect("codegen const value int must have a type");
+            let ty = ty.expect("const int type");
             //@using sign_extend as neg, most likely incorrect (learn how to properly supply integers to llvm const int) 14.05.24
-            cg.type_into_basic(hir::Type::Basic(ty))
-                .expect("int basic type")
-                .into_int_type()
-                .const_int(val, neg)
-                .into()
+            cg.basic_type_into_int(ty).const_int(val, neg).into()
         }
         hir::ConstValue::Float { val, ty } => {
-            let ty = ty.expect("codegen const value float must have a type");
-            cg.type_into_basic(hir::Type::Basic(ty))
-                .expect("float basic type")
-                .into_float_type()
-                .const_float(val)
-                .into()
+            let ty = ty.expect("const float type");
+            cg.basic_type_into_float(ty).const_float(val).into()
         }
         hir::ConstValue::Char { val } => cg.context.i32_type().const_int(val as u64, false).into(),
         hir::ConstValue::String { id, c_string } => codegen_lit_string(cg, id, c_string),
@@ -547,12 +563,56 @@ fn codegen_const_value<'ctx>(
         hir::ConstValue::EnumVariant {
             enum_id,
             variant_id,
-        } => codegen_enum_variant(cg, enum_id, variant_id),
+        } => {
+            let variant = cg.hir.enum_data(enum_id).variant(variant_id);
+            codegen_const_value(
+                cg,
+                cg.hir
+                    .const_intern
+                    .get(cg.hir.const_values[variant.value.index()]),
+            )
+        }
         hir::ConstValue::Struct { struct_ } => todo!("codegen ConstValue::Struct unsupported"),
         hir::ConstValue::Array { array } => todo!("codegen ConstValue::Array unsupported"),
         hir::ConstValue::ArrayRepeat { value, len } => {
             todo!("codegen ConstValue::ArrayRepeat unsupported")
         }
+    }
+}
+
+//@current lit string codegen doesnt deduplicate strings
+// by their intern ID, this is temporary.
+// global is created for each occurence of the string literal @07.04.24
+#[allow(unsafe_code)]
+fn codegen_lit_string<'ctx>(
+    cg: &Codegen<'ctx>,
+    id: InternID,
+    c_string: bool,
+) -> values::BasicValueEnum<'ctx> {
+    let string = cg.hir.intern.get_str(id);
+    let array_value = cg.context.const_string(string.as_bytes(), c_string);
+    let array_ty = array_value.get_type();
+
+    let global = cg.module.add_global(array_ty, None, "global_string");
+    global.set_constant(true);
+    global.set_linkage(module::Linkage::Private);
+    global.set_initializer(&array_value);
+    let global_ptr = global.as_pointer_value();
+
+    if c_string {
+        global_ptr.into()
+    } else {
+        //@sign extend would likely ruin any len values about MAX signed of that type
+        // same problem as const integer codegen @07.04.24
+        // also usize from rust, casted int u64, represented by pointer_sized_int is confusing
+        // most likely problems wont show up for strings of reasonable len (especially on 64bit)
+        let bytes_len = cg
+            .pointer_sized_int_type()
+            .const_int(string.len() as u64, false);
+        let slice_value = cg
+            .context
+            .const_struct(&[global_ptr.into(), bytes_len.into()], false);
+        slice_value.into()
     }
 }
 
@@ -631,80 +691,6 @@ fn codegen_expr<'ctx>(
             rhs,
             lhs_signed_int,
         } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs, lhs_signed_int)),
-    }
-}
-
-fn codegen_lit_null<'ctx>(cg: &Codegen<'ctx>) -> values::BasicValueEnum<'ctx> {
-    cg.ptr_type().const_zero().into()
-}
-
-fn codegen_lit_bool<'ctx>(cg: &Codegen<'ctx>, val: bool) -> values::BasicValueEnum<'ctx> {
-    cg.context.bool_type().const_int(val as u64, false).into()
-}
-
-//@since its always u64 value thats not sign extended in 2s compliment form
-// pass sign_extend = false
-// constfolding isnt done yet by the compiler, most overflow errors wont be caught early
-// unary minus should work on this const int conrrectly when llvm const folds it. @06.04.24
-fn codegen_lit_int<'ctx>(
-    cg: &Codegen<'ctx>,
-    val: u64,
-    ty: ast::BasicType,
-) -> values::BasicValueEnum<'ctx> {
-    //@unsigned values bigger that signed max of that type get flipped (skill issue, 2s compliment)
-    let int_type = cg.type_into_any(hir::Type::Basic(ty)).into_int_type();
-    int_type.const_int(val, false).into()
-}
-
-fn codegen_lit_float<'ctx>(
-    cg: &Codegen<'ctx>,
-    val: f64,
-    ty: ast::BasicType,
-) -> values::BasicValueEnum<'ctx> {
-    let float_type = cg.type_into_any(hir::Type::Basic(ty)).into_float_type();
-    float_type.const_float(val).into()
-}
-
-fn codegen_lit_char<'ctx>(cg: &Codegen<'ctx>, val: char) -> values::BasicValueEnum<'ctx> {
-    let char_type = cg
-        .type_into_any(hir::Type::Basic(ast::BasicType::Char))
-        .into_int_type();
-    char_type.const_int(val as u64, false).into()
-}
-
-//@current lit string codegen doesnt deduplicate strings
-// by their intern ID, this is temporary.
-// global is created for each occurence of the string literal @07.04.24
-#[allow(unsafe_code)]
-fn codegen_lit_string<'ctx>(
-    cg: &Codegen<'ctx>,
-    id: InternID,
-    c_string: bool,
-) -> values::BasicValueEnum<'ctx> {
-    let string = cg.hir.intern.get_str(id);
-    let array_value = cg.context.const_string(string.as_bytes(), c_string);
-    let array_ty = array_value.get_type();
-
-    let global = cg.module.add_global(array_ty, None, "global_string");
-    global.set_constant(true);
-    global.set_linkage(module::Linkage::Private);
-    global.set_initializer(&array_value);
-    let global_ptr = global.as_pointer_value();
-
-    if c_string {
-        global_ptr.into()
-    } else {
-        //@sign extend would likely ruin any len values about MAX signed of that type
-        // same problem as const integer codegen @07.04.24
-        // also usize from rust, casted int u64, represented by pointer_sized_int is confusing
-        // most likely problems wont show up for strings of reasonable len (especially on 64bit)
-        let bytes_len = cg
-            .pointer_sized_int_type()
-            .const_int(string.len() as u64, false);
-        let slice_value = cg
-            .context
-            .const_struct(&[global_ptr.into(), bytes_len.into()], false);
-        slice_value.into()
     }
 }
 
@@ -944,7 +930,7 @@ fn codegen_local<'ctx>(
     let value = if let Some(expr) = local.value {
         codegen_expr(cg, proc_cg, false, expr).expect("value")
     } else {
-        let var_ty = cg.type_into_basic(local.ty).expect("non void type");
+        let var_ty = cg.type_into_basic(local.ty);
         var_ty.const_zero()
     };
     cg.builder.build_store(var_ptr, value).unwrap();
@@ -964,7 +950,7 @@ fn codegen_assign<'ctx>(
             cg.builder.build_store(lhs_ptr, rhs).unwrap();
         }
         ast::AssignOp::Bin(op) => {
-            let lhs_ty = cg.type_into_basic(assign.lhs_ty).expect("value type");
+            let lhs_ty = cg.type_into_basic(assign.lhs_ty);
             let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
             let bin_value = codegen_bin_op(cg, op, lhs_value, rhs, assign.lhs_signed_int);
             cg.builder.build_store(lhs_ptr, bin_value).unwrap();
@@ -1003,7 +989,7 @@ fn codegen_union_member<'ctx>(
         target_ptr.into()
     } else {
         let member = cg.hir.union_data(union_id).member(member_id);
-        let member_ty = cg.type_into_basic(member.ty).expect("value");
+        let member_ty = cg.type_into_basic(member.ty);
         cg.builder
             .build_load(member_ty, target_ptr, "member_val")
             .unwrap()
@@ -1043,7 +1029,7 @@ fn codegen_struct_field<'ctx>(
         field_ptr.into()
     } else {
         let field = cg.hir.struct_data(struct_id).field(field_id);
-        let field_ty = cg.type_into_basic(field.ty).expect("value");
+        let field_ty = cg.type_into_basic(field.ty);
         cg.builder
             .build_load(field_ty, field_ptr, "field_val")
             .unwrap()
@@ -1246,7 +1232,7 @@ fn codegen_index<'ctx>(
     if expect_ptr {
         elem_ptr.into()
     } else {
-        let elem_ty = cg.type_into_basic(access.elem_ty).expect("non void type");
+        let elem_ty = cg.type_into_basic(access.elem_ty);
         cg.builder
             .build_load(elem_ty, elem_ptr, "elem_val")
             .unwrap()
@@ -1484,7 +1470,7 @@ fn codegen_cast<'ctx>(
     kind: hir::CastKind,
 ) -> values::BasicValueEnum<'ctx> {
     let target = codegen_expr(cg, proc_cg, false, target).expect("value");
-    let into = cg.type_into_basic(*into).expect("non void type");
+    let into = cg.type_into_basic(*into);
     let op = match kind {
         hir::CastKind::Error => panic!("codegen unexpected hir::CastKind::Error"),
         hir::CastKind::NoOp => return target,
@@ -1513,7 +1499,7 @@ fn codegen_local_var<'ctx>(
         local_ptr.into()
     } else {
         let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
-        let local_ty = cg.type_into_basic(local.ty).expect("value type");
+        let local_ty = cg.type_into_basic(local.ty);
         cg.builder
             .build_load(local_ty, local_ptr, "local_val")
             .unwrap()
@@ -1532,7 +1518,7 @@ fn codegen_param_var<'ctx>(
         param_ptr.into()
     } else {
         let param = cg.hir.proc_data(proc_cg.proc_id).param(param_id);
-        let param_ty = cg.type_into_basic(param.ty).expect("value type");
+        let param_ty = cg.type_into_basic(param.ty);
         cg.builder
             .build_load(param_ty, param_ptr, "param_val")
             .unwrap()
@@ -1543,7 +1529,7 @@ fn codegen_const_var<'ctx>(
     cg: &Codegen<'ctx>,
     const_id: hir::ConstID,
 ) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `const var` not supported")
+    cg.consts[const_id.index()]
 }
 
 fn codegen_global_var<'ctx>(
@@ -1562,23 +1548,6 @@ fn codegen_global_var<'ctx>(
             .build_load(global_ty, global_ptr, "global_val")
             .unwrap()
     }
-}
-
-fn codegen_enum_variant<'ctx>(
-    cg: &Codegen<'ctx>,
-    enum_id: hir::EnumID,
-    variant_id: hir::EnumVariantID,
-) -> values::BasicValueEnum<'ctx> {
-    //@generating value for that variant each time
-    // this might be fine when constants are folded to single constant value
-    // (current impl only supports single literals) @08.04.24
-    let variant = cg.hir.enum_data(enum_id).variant(variant_id);
-    codegen_const_value(
-        cg,
-        cg.hir
-            .const_intern
-            .get(cg.hir.const_values[variant.value.index()]),
-    )
 }
 
 fn codegen_procedure<'ctx>(
@@ -1697,9 +1666,7 @@ fn codegen_array_init<'ctx>(
     expect_ptr: bool,
     array_init: &'ctx hir::ArrayInit<'ctx>,
 ) -> values::BasicValueEnum<'ctx> {
-    let elem_ty = cg
-        .type_into_basic(array_init.elem_ty)
-        .expect("non void type");
+    let elem_ty = cg.type_into_basic(array_init.elem_ty);
     let array_ty = elem_ty.array_type(array_init.input.len() as u32);
     let array_ptr = cg.builder.build_alloca(array_ty, "array_temp").unwrap();
     let index_type = cg.pointer_sized_int_type();
