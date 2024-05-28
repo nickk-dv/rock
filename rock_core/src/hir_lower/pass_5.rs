@@ -311,9 +311,9 @@ pub fn check_type_expectation<'hir>(
     ));
 }
 
-struct TypeResult<'hir> {
+pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
-    expr: &'hir hir::Expr<'hir>,
+    pub expr: &'hir hir::Expr<'hir>,
     ignore: bool,
 }
 
@@ -364,7 +364,7 @@ impl<'hir> BlockResult<'hir> {
 }
 
 #[must_use]
-fn typecheck_expr<'hir>(
+pub fn typecheck_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
@@ -1045,8 +1045,11 @@ fn typecheck_call<'hir>(
             // both direct and indirect return proc_ty
             // it can be used for input checks
 
-            let direct_id = match target_res.expr {
-                hir::Expr::Procedure { proc_id } => Some(*proc_id),
+            let direct_id = match *target_res.expr {
+                hir::Expr::Const { value } => match value {
+                    hir::ConstValue::Procedure { proc_id } => Some(proc_id),
+                    _ => None,
+                },
                 _ => None,
             };
 
@@ -1413,7 +1416,9 @@ fn typecheck_item<'hir>(
 
             return TypeResult::new(
                 hir::Type::Procedure(emit.arena.alloc(proc_ty)),
-                emit.arena.alloc(hir::Expr::Procedure { proc_id }),
+                emit.arena.alloc(hir::Expr::Const {
+                    value: hir::ConstValue::Procedure { proc_id },
+                }),
             );
         }
         ValueID::Enum(enum_id, variant_id) => {
@@ -1833,7 +1838,6 @@ fn get_expr_addressability<'hir>(
             let data = hir.registry().global_data(global_id);
             Addressability::Addressable(data.mutt, hir.src(data.origin_id, data.name.range))
         }
-        hir::Expr::Procedure { .. } => Addressability::Temporary,
         hir::Expr::CallDirect { .. } => Addressability::Temporary,
         hir::Expr::CallIndirect { .. } => Addressability::Temporary,
         hir::Expr::UnionInit { .. } => Addressability::TemporaryImmutable,

@@ -278,7 +278,6 @@ pub enum Expr<'hir> {
     ParamVar     { param_id: ProcParamID },
     ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
-    Procedure    { proc_id: ProcID },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     UnionInit    { union_id: UnionID, input: UnionMemberInit<'hir> },

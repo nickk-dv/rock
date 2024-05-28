@@ -1,8 +1,11 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_5::{self, TypeExpectation};
+use super::proc_scope;
 use crate::ast::{self, BasicType};
 use crate::error::ErrorComp;
 use crate::hir;
+use crate::intern::InternID;
+use crate::text::TextRange;
 
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
@@ -502,12 +505,42 @@ fn resolve_and_update_const_eval<'hir>(
     expect: TypeExpectation<'hir>,
 ) {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+
     let (_, value_id) = match eval {
         hir::ConstEval::Unresolved(expr) => resolve_const_expr(hir, emit, origin_id, expect, expr),
         _ => panic!("calling `resolve_const_expr` on already resolved expr"),
     };
+
     let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
     *eval = hir::ConstEval::ResolvedValue(value_id);
+}
+
+#[must_use]
+pub fn resolve_const_expr<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    expect: TypeExpectation<'hir>,
+    expr: ast::ConstExpr,
+) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
+    let dummy_data = hir::ProcData {
+        origin_id,
+        vis: ast::Vis::Private,
+        name: ast::Name {
+            id: InternID::dummy(),
+            range: TextRange::empty_at(0.into()),
+        },
+        params: &[],
+        is_variadic: false,
+        return_ty: hir::Type::VOID,
+        block: None,
+        locals: &[],
+        is_test: false,
+        is_main: false,
+    };
+    let mut proc = proc_scope::ProcScope::new(&dummy_data, TypeExpectation::NOTHING);
+    let hir_expr = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
+    fold_const_expr(hir, emit, origin_id, hir_expr.expr)
 }
 
 //@remove asserts later on when compiler is stable? 02.05.24
@@ -584,7 +617,7 @@ fn resolve_struct_size(
 // should later be merged with this constant resolution / folding flow
 //@return type and integrate this with normal expr typecheck?
 #[must_use]
-pub fn resolve_const_expr<'hir>(
+fn resolve_const_expr_deprecated<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ModuleID,
@@ -678,18 +711,18 @@ pub fn fold_const_expr<'hir>(
             union_id,
             member_id,
             deref,
-        } => todo!(),
+        } => Err("union member access"),
         hir::Expr::StructField {
             target,
             struct_id,
             field_id,
             deref,
-        } => todo!(),
+        } => Err("struct member access"),
         hir::Expr::SliceField {
             target,
             first_ptr,
             deref,
-        } => todo!(),
+        } => Err("slice field access"),
         hir::Expr::Index { target, access } => {
             let (target_value, _) = fold_const_expr(hir, emit, origin_id, target);
             let (index_value, _) = fold_const_expr(hir, emit, origin_id, access.index);
@@ -729,17 +762,16 @@ pub fn fold_const_expr<'hir>(
                 Ok(hir::ConstValue::Error)
             }
         }
-        hir::Expr::Slice { target, access } => todo!(),
+        hir::Expr::Slice { target, access } => Err("slice"),
         hir::Expr::Cast { target, into, kind } => todo!(),
-        hir::Expr::LocalVar { local_id } => todo!(),
-        hir::Expr::ParamVar { param_id } => todo!(),
-        hir::Expr::ConstVar { const_id } => todo!(),
-        hir::Expr::GlobalVar { global_id } => todo!(),
-        hir::Expr::Procedure { proc_id } => todo!(),
-        hir::Expr::CallDirect { proc_id, input } => todo!(),
-        hir::Expr::CallIndirect { target, indirect } => todo!(),
-        hir::Expr::UnionInit { union_id, input } => todo!(),
-        hir::Expr::StructInit { struct_id, input } => todo!(),
+        hir::Expr::LocalVar { local_id } => Err("local var"),
+        hir::Expr::ParamVar { param_id } => Err("param var"),
+        hir::Expr::ConstVar { const_id } => Err("const var"),
+        hir::Expr::GlobalVar { global_id } => Err("global vall"),
+        hir::Expr::CallDirect { proc_id, input } => Err("call direct"),
+        hir::Expr::CallIndirect { target, indirect } => Err("call indirect"),
+        hir::Expr::UnionInit { union_id, input } => Err("union initializer"),
+        hir::Expr::StructInit { struct_id, input } => Err("struct initializer"),
         hir::Expr::ArrayInit { array_init } => {
             let mut value_ids = Vec::with_capacity(array_init.input.len());
             for &input in array_init.input {
@@ -766,13 +798,32 @@ pub fn fold_const_expr<'hir>(
             }
         }
         hir::Expr::Address { .. } => Err("address"),
-        hir::Expr::Unary { op, rhs } => todo!(),
+        hir::Expr::Unary { op, rhs } => {
+            let (rhs_value, _) = fold_const_expr(hir, emit, origin_id, rhs);
+            match op {
+                ast::UnOp::Neg => match rhs_value {
+                    hir::ConstValue::Int { val, neg, ty } => {
+                        Ok(hir::ConstValue::Int { val, neg: !neg, ty })
+                    }
+                    hir::ConstValue::Float { val, ty } => {
+                        Ok(hir::ConstValue::Float { val: -val, ty })
+                    }
+                    _ => Ok(hir::ConstValue::Error),
+                },
+                ast::UnOp::BitNot => Ok(hir::ConstValue::Error),
+                ast::UnOp::LogicNot => match rhs_value {
+                    hir::ConstValue::Bool { val } => Ok(hir::ConstValue::Bool { val: !val }),
+                    _ => Ok(hir::ConstValue::Error),
+                },
+                ast::UnOp::Deref => Ok(hir::ConstValue::Error), //@disallow with error?
+            }
+        }
         hir::Expr::Binary {
             op,
             lhs,
             rhs,
             lhs_signed_int,
-        } => todo!(),
+        } => Err("binary"),
     };
 
     match result {
@@ -784,6 +835,9 @@ pub fn fold_const_expr<'hir>(
             //    hir.src(origin_id, expr.0.range),
             //    None,
             //));
+            emit.error(ErrorComp::message(format!(
+                "cannot use `{expr_name}` expression in constants"
+            )));
             let value = hir::ConstValue::Error;
             (value, emit.const_intern.intern(value))
         }

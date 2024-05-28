@@ -543,7 +543,10 @@ fn codegen_const_value<'ctx>(
         }
         hir::ConstValue::Char { val } => cg.context.i32_type().const_int(val as u64, false).into(),
         hir::ConstValue::String { id, c_string } => codegen_lit_string(cg, id, c_string),
-        hir::ConstValue::Procedure { proc_id } => codegen_procedure(cg, proc_id),
+        hir::ConstValue::Procedure { proc_id } => cg.function_values[proc_id.index()]
+            .as_global_value()
+            .as_pointer_value()
+            .into(),
         hir::ConstValue::EnumVariant {
             enum_id,
             variant_id,
@@ -650,7 +653,6 @@ fn codegen_expr<'ctx>(
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect_ptr, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect_ptr, global_id)),
-        Expr::Procedure { proc_id } => Some(codegen_procedure(cg, proc_id)),
         Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, proc_cg, proc_id, input),
         Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, target, indirect)
@@ -1530,16 +1532,6 @@ fn codegen_global_var<'ctx>(
             .build_load(global_ty, global_ptr, "global_val")
             .unwrap()
     }
-}
-
-fn codegen_procedure<'ctx>(
-    cg: &Codegen<'ctx>,
-    proc_id: hir::ProcID,
-) -> values::BasicValueEnum<'ctx> {
-    cg.function_values[proc_id.index()]
-        .as_global_value()
-        .as_pointer_value()
-        .into()
 }
 
 fn codegen_call_direct<'ctx>(
