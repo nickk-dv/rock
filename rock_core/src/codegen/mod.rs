@@ -1842,12 +1842,7 @@ fn codegen_bin_op<'ctx>(
                         .into()
                 }
             }
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_rem(lhs, rhs.into_float_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `%` can only be applied to int, float"),
+            _ => panic!("codegen: binary `%` can only be applied to int"),
         },
         ast::BinOp::BitAnd => cg
             .builder
@@ -1900,6 +1895,16 @@ fn codegen_bin_op<'ctx>(
                 )
                 .unwrap()
                 .into(),
+            values::BasicValueEnum::PointerValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::EQ,
+                    lhs,
+                    rhs.into_pointer_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
             _ => panic!("codegen: binary `==` can only be applied to int, float"),
         },
         ast::BinOp::NotEq => match lhs {
@@ -1923,7 +1928,17 @@ fn codegen_bin_op<'ctx>(
                 )
                 .unwrap()
                 .into(),
-            _ => panic!("codegen: binary `!=` can only be applied to int, float"),
+            values::BasicValueEnum::PointerValue(lhs) => cg
+                .builder
+                .build_int_compare(
+                    inkwell::IntPredicate::NE,
+                    lhs,
+                    rhs.into_pointer_value(),
+                    "bin_temp",
+                )
+                .unwrap()
+                .into(),
+            _ => panic!("codegen: binary `!=` can only be applied to int, float, rawptr"),
         },
         ast::BinOp::Less => match lhs {
             values::BasicValueEnum::IntValue(lhs) => cg
