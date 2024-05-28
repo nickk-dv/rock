@@ -776,7 +776,7 @@ fn codegen_block<'ctx>(
             hir::Stmt::Defer(block) => {
                 proc_cg.push_defer_block(*block);
             }
-            hir::Stmt::ForLoop(for_) => {
+            hir::Stmt::Loop(loop_) => {
                 let entry_block = cg
                     .context
                     .append_basic_block(proc_cg.function, "loop_entry");
@@ -786,13 +786,13 @@ fn codegen_block<'ctx>(
                 cg.builder.build_unconditional_branch(entry_block).unwrap();
                 proc_cg.set_next_loop_info(exit_block, entry_block);
 
-                match for_.kind {
-                    hir::ForKind::Loop => {
+                match loop_.kind {
+                    hir::LoopKind::Loop => {
                         cg.builder.position_at_end(entry_block);
                         cg.builder.build_unconditional_branch(body_block).unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, false, for_.block);
+                        codegen_block(cg, proc_cg, false, loop_.block);
 
                         //@might not be valid when break / continue are used 06.05.24
                         // other cfg will make body_block not the actual block we want
@@ -801,7 +801,7 @@ fn codegen_block<'ctx>(
                             cg.builder.build_unconditional_branch(body_block).unwrap();
                         }
                     }
-                    hir::ForKind::While { cond } => {
+                    hir::LoopKind::While { cond } => {
                         cg.builder.position_at_end(entry_block);
                         let cond = codegen_expr(cg, proc_cg, false, cond).expect("value");
                         cg.builder
@@ -809,12 +809,12 @@ fn codegen_block<'ctx>(
                             .unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, false, for_.block);
+                        codegen_block(cg, proc_cg, false, loop_.block);
 
                         //@might not be valid when break / continue are used 06.05.24
                         cg.builder.build_unconditional_branch(entry_block).unwrap();
                     }
-                    hir::ForKind::ForLoop {
+                    hir::LoopKind::ForLoop {
                         local_id,
                         cond,
                         assign,
@@ -827,7 +827,7 @@ fn codegen_block<'ctx>(
                             .unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, false, for_.block);
+                        codegen_block(cg, proc_cg, false, loop_.block);
 
                         //@often invalid (this assignment might need special block) if no iterator abstractions are used
                         // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24

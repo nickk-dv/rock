@@ -157,6 +157,7 @@ pub struct Name {
 #[derive(Copy, Clone)]
 pub struct Attribute {
     pub kind: AttributeKind,
+    pub data: AttributeData,
     pub range: TextRange,
 }
 
@@ -165,8 +166,16 @@ pub struct Attribute {
 pub enum AttributeKind {
     Test,
     C_Call,
+    Inline,
+    Builtin,
     Thread_Local,
     Unknown,
+}
+
+#[derive(Copy, Clone)]
+pub enum AttributeData {
+    None,
+    String { id: InternID, range: TextRange },
 }
 
 #[derive(Copy, Clone)]
@@ -227,7 +236,7 @@ pub enum StmtKind<'ast> {
     Continue,
     Return(Option<&'ast Expr<'ast>>),
     Defer(&'ast Block<'ast>),
-    ForLoop(&'ast For<'ast>),
+    Loop(&'ast Loop<'ast>),
     Local(&'ast Local<'ast>),
     Assign(&'ast Assign<'ast>),
     ExprSemi(&'ast Expr<'ast>),
@@ -235,17 +244,16 @@ pub enum StmtKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct For<'ast> {
-    pub kind: ForKind<'ast>,
+pub struct Loop<'ast> {
+    pub kind: LoopKind<'ast>,
     pub block: Block<'ast>,
 }
 
+#[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum ForKind<'ast> {
+pub enum LoopKind<'ast> {
     Loop,
-    While {
-        cond: &'ast Expr<'ast>,
-    },
+    While { cond: &'ast Expr<'ast> },
     ForLoop {
         local: &'ast Local<'ast>,
         cond: &'ast Expr<'ast>,
@@ -446,6 +454,8 @@ impl AttributeKind {
         match self {
             AttributeKind::Test => "test",
             AttributeKind::C_Call => "c_call",
+            AttributeKind::Inline => "inline",
+            AttributeKind::Builtin => "builtin",
             AttributeKind::Thread_Local => "thread_local",
             AttributeKind::Unknown => "unknown",
         }
@@ -455,6 +465,8 @@ impl AttributeKind {
         match string {
             "test" => AttributeKind::Test,
             "c_call" => AttributeKind::C_Call,
+            "inline" => AttributeKind::Inline,
+            "builtin" => AttributeKind::Builtin,
             "thread_local" => AttributeKind::Thread_Local,
             _ => AttributeKind::Unknown,
         }

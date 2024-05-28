@@ -2156,8 +2156,8 @@ fn typecheck_block<'hir>(
             ast::StmtKind::Defer(block) => {
                 Some(typecheck_defer(hir, emit, proc, stmt.range.start(), *block))
             }
-            ast::StmtKind::ForLoop(for_) => {
-                Some(hir::Stmt::ForLoop(typecheck_for(hir, emit, proc, for_)))
+            ast::StmtKind::Loop(for_) => {
+                Some(hir::Stmt::Loop(typecheck_loop(hir, emit, proc, for_)))
             }
             ast::StmtKind::Local(local) => {
                 let local_id = typecheck_local(hir, emit, proc, local);
@@ -2339,21 +2339,21 @@ fn typecheck_defer<'hir>(
     hir::Stmt::Defer(block_ref)
 }
 
-fn typecheck_for<'hir>(
+fn typecheck_loop<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    for_: &ast::For<'_>,
-) -> &'hir hir::For<'hir> {
-    let kind = match for_.kind {
-        ast::ForKind::Loop => hir::ForKind::Loop,
-        ast::ForKind::While { cond } => {
+    loop_: &ast::Loop<'_>,
+) -> &'hir hir::Loop<'hir> {
+    let kind = match loop_.kind {
+        ast::LoopKind::Loop => hir::LoopKind::Loop,
+        ast::LoopKind::While { cond } => {
             let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
-            hir::ForKind::While {
+            hir::LoopKind::While {
                 cond: cond_res.expr,
             }
         }
-        ast::ForKind::ForLoop {
+        ast::LoopKind::ForLoop {
             local,
             cond,
             assign,
@@ -2361,7 +2361,7 @@ fn typecheck_for<'hir>(
             let local_id = typecheck_local(hir, emit, proc, local);
             let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, cond);
             let assign = typecheck_assign(hir, emit, proc, assign);
-            hir::ForKind::ForLoop {
+            hir::LoopKind::ForLoop {
                 local_id,
                 cond: cond_res.expr,
                 assign,
@@ -2374,11 +2374,11 @@ fn typecheck_for<'hir>(
         emit,
         proc,
         TypeExpectation::VOID,
-        for_.block,
+        loop_.block,
         BlockEnter::Loop,
     );
 
-    emit.arena.alloc(hir::For {
+    emit.arena.alloc(hir::Loop {
         kind,
         block: block_res.block,
     })

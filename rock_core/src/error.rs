@@ -78,6 +78,14 @@ impl<T> ResultComp<T> {
         }
     }
 
+    pub fn is_ok(&self) -> bool {
+        matches!(self, ResultComp::Ok(..))
+    }
+
+    pub fn is_err(&self) -> bool {
+        matches!(self, ResultComp::Err(..))
+    }
+
     pub fn into_result(
         self,
         mut warnings_prev: Vec<WarningComp>,
@@ -101,14 +109,6 @@ impl<T> ResultComp<T> {
                 }
             }
         }
-    }
-
-    pub fn is_ok(&self) -> bool {
-        matches!(self, ResultComp::Ok(..))
-    }
-
-    pub fn is_err(&self) -> bool {
-        matches!(self, ResultComp::Err(..))
     }
 }
 

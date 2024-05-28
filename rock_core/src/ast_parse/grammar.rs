@@ -306,22 +306,32 @@ fn name(p: &mut Parser) -> Result<Name, String> {
 
 fn attribute(p: &mut Parser) -> Result<Option<Attribute>, String> {
     let start = p.start_range();
-    if p.eat(T![#]) {
-        p.expect(T!['['])?;
-
-        let range = p.peek_range();
-        p.expect(T![ident])?;
-        let string = &p.source[range.as_usize()];
-        let kind = AttributeKind::from_str(string);
-
-        p.expect(T![']'])?;
-        Ok(Some(Attribute {
-            kind,
-            range: p.make_range(start),
-        }))
-    } else {
-        Ok(None)
+    if !p.eat(T![#]) {
+        return Ok(None);
     }
+    p.expect(T!['['])?;
+
+    let range = p.peek_range();
+    p.expect(T![ident])?;
+    let string = &p.source[range.as_usize()];
+    let kind = AttributeKind::from_str(string);
+
+    let data = if p.eat(T!['(']) {
+        let range = p.peek_range();
+        p.expect(T![string_lit])?;
+        let (id, _) = p.get_string_lit();
+        p.expect(T![')'])?;
+        AttributeData::String { id, range }
+    } else {
+        AttributeData::None
+    };
+
+    p.expect(T![']'])?;
+    Ok(Some(Attribute {
+        kind,
+        data,
+        range: p.make_range(start),
+    }))
 }
 
 fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, String> {
@@ -460,10 +470,7 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
             };
             StmtKind::Defer(p.state.arena.alloc(defer_block))
         }
-        T![for] => {
-            p.bump();
-            StmtKind::ForLoop(for_loop(p)?)
-        }
+        T![for] => StmtKind::Loop(loop_(p)?),
         T![let] | T![mut] => StmtKind::Local(local(p)?),
         T![->] => {
             p.bump();
@@ -500,9 +507,10 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
     })
 }
 
-fn for_loop<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast For<'ast>, String> {
+fn loop_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Loop<'ast>, String> {
+    p.bump();
     let kind = match p.peek() {
-        T!['{'] => ForKind::Loop,
+        T!['{'] => LoopKind::Loop,
         T![let] | T![mut] => {
             let local = local(p)?;
             let cond = expr(p)?;
@@ -524,16 +532,17 @@ fn for_loop<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast For<'ast>, S
                 rhs,
             });
 
-            ForKind::ForLoop {
+            LoopKind::ForLoop {
                 local,
                 cond,
                 assign,
             }
         }
-        _ => ForKind::While { cond: expr(p)? },
+        _ => LoopKind::While { cond: expr(p)? },
     };
+
     let block = block(p)?;
-    Ok(p.state.arena.alloc(For { kind, block }))
+    Ok(p.state.arena.alloc(Loop { kind, block }))
 }
 
 fn local<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Local<'ast>, String> {
