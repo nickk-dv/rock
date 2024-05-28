@@ -8,7 +8,6 @@ use crate::session::BuildKind;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder;
 use inkwell::context;
-use inkwell::context::AsContextRef;
 use inkwell::module;
 use inkwell::targets;
 use inkwell::types;
@@ -41,6 +40,9 @@ struct Codegen<'ctx> {
     function_values: Vec<values::FunctionValue<'ctx>>,
     hir: hir::Hir<'ctx>,
     c_functions: HashMap<InternID, values::FunctionValue<'ctx>>,
+    ptr_type: types::PointerType<'ctx>,
+    ptr_sized_int_type: types::IntType<'ctx>,
+    slice_type: types::StructType<'ctx>,
 }
 
 struct ProcCodegen<'ctx> {
@@ -136,6 +138,11 @@ impl<'ctx> Codegen<'ctx> {
             )
             .unwrap();
 
+        let ptr_type = context.ptr_type(0.into());
+        let ptr_sized_int_type =
+            context.ptr_sized_int_type(&target_machine.get_target_data(), None);
+        let slice_type = context.struct_type(&[ptr_type.into(), ptr_sized_int_type.into()], false);
+
         Codegen {
             context,
             module,
@@ -147,6 +154,9 @@ impl<'ctx> Codegen<'ctx> {
             function_values: Vec::new(),
             hir,
             c_functions: HashMap::new(),
+            ptr_type,
+            ptr_sized_int_type,
+            slice_type,
         }
     }
 
@@ -253,55 +263,37 @@ impl<'ctx> Codegen<'ctx> {
 
     fn type_into_any(&self, ty: hir::Type) -> types::AnyTypeEnum<'ctx> {
         match ty {
-            hir::Type::Error => panic!("codegen unexpected hir::Type::Error"),
+            hir::Type::Error => unreachable!(),
             hir::Type::Basic(basic) => match basic {
                 ast::BasicType::S8 => self.context.i8_type().into(),
                 ast::BasicType::S16 => self.context.i16_type().into(),
                 ast::BasicType::S32 => self.context.i32_type().into(),
                 ast::BasicType::S64 => self.context.i64_type().into(),
-                ast::BasicType::Ssize => self.pointer_sized_int_type().into(),
+                ast::BasicType::Ssize => self.ptr_sized_int_type.into(),
                 ast::BasicType::U8 => self.context.i8_type().into(),
                 ast::BasicType::U16 => self.context.i16_type().into(),
                 ast::BasicType::U32 => self.context.i32_type().into(),
                 ast::BasicType::U64 => self.context.i64_type().into(),
-                ast::BasicType::Usize => self.pointer_sized_int_type().into(),
+                ast::BasicType::Usize => self.ptr_sized_int_type.into(),
                 ast::BasicType::F16 => self.context.f16_type().into(),
                 ast::BasicType::F32 => self.context.f32_type().into(),
                 ast::BasicType::F64 => self.context.f64_type().into(),
                 ast::BasicType::Bool => self.context.bool_type().into(),
                 ast::BasicType::Char => self.context.i32_type().into(),
-                ast::BasicType::Rawptr => self.ptr_type().into(),
+                ast::BasicType::Rawptr => self.ptr_type.into(),
                 ast::BasicType::Void => self.context.void_type().into(),
                 ast::BasicType::Never => self.context.void_type().into(), // only expected as procedure return type
             },
-            hir::Type::Enum(id) => {
-                let basic = self.hir.enum_data(id).basic;
+            hir::Type::Enum(enum_id) => {
+                let basic = self.hir.enum_data(enum_id).basic;
                 self.basic_type_into_int(basic).into()
             }
-            hir::Type::Union(id) => self.union_type(id).into(),
+            hir::Type::Union(union_id) => self.union_type(union_id).into(),
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
-            hir::Type::Reference(_, _) => self.ptr_type().into(),
-            hir::Type::Procedure(_) => self.ptr_type().into(),
-            hir::Type::ArraySlice(_) => self.slice_type().into(),
+            hir::Type::Reference(_, _) => self.ptr_type.into(),
+            hir::Type::Procedure(_) => self.ptr_type.into(),
+            hir::Type::ArraySlice(_) => self.slice_type.into(),
             hir::Type::ArrayStatic(array) => self.array_type(array).into(),
-        }
-    }
-
-    //@perf, could be cached once to avoid llvm calls and extra checks
-    // profile difference on actual release setup and bigger codebases
-    fn pointer_sized_int_type(&self) -> types::IntType<'ctx> {
-        self.context
-            .ptr_sized_int_type(&self.target_machine.get_target_data(), None)
-    }
-
-    //@this is a hack untill inkwell pr is merged https://github.com/TheDan64/inkwell/pull/468 @07.04.24
-    #[allow(unsafe_code)]
-    fn ptr_type(&self) -> types::PointerType<'ctx> {
-        unsafe {
-            types::PointerType::new(llvm_sys::core::LLVMPointerTypeInContext(
-                self.context.as_ctx_ref(),
-                0,
-            ))
         }
     }
 
@@ -314,14 +306,6 @@ impl<'ctx> Codegen<'ctx> {
 
     fn struct_type(&self, struct_id: hir::StructID) -> types::StructType<'ctx> {
         self.structs[struct_id.index()]
-    }
-
-    fn slice_type(&self) -> types::StructType<'ctx> {
-        //@this slice type could be generated once and referenced every time
-        self.context.struct_type(
-            &[self.ptr_type().into(), self.pointer_sized_int_type().into()],
-            false,
-        )
     }
 
     fn array_type(&self, array: &hir::ArrayStatic) -> types::ArrayType<'ctx> {
@@ -337,12 +321,12 @@ impl<'ctx> Codegen<'ctx> {
             ast::BasicType::S16 => self.context.i16_type(),
             ast::BasicType::S32 => self.context.i32_type(),
             ast::BasicType::S64 => self.context.i64_type(),
-            ast::BasicType::Ssize => self.pointer_sized_int_type(),
+            ast::BasicType::Ssize => self.ptr_sized_int_type,
             ast::BasicType::U8 => self.context.i8_type(),
             ast::BasicType::U16 => self.context.i16_type(),
             ast::BasicType::U32 => self.context.i32_type(),
             ast::BasicType::U64 => self.context.i64_type(),
-            ast::BasicType::Usize => self.pointer_sized_int_type(),
+            ast::BasicType::Usize => self.ptr_sized_int_type,
             _ => unreachable!(),
         }
     }
@@ -546,7 +530,7 @@ fn codegen_const_value<'ctx>(
 ) -> values::BasicValueEnum<'ctx> {
     match value {
         hir::ConstValue::Error => panic!("codegen unexpected ConstValue::Error"),
-        hir::ConstValue::Null => cg.ptr_type().const_zero().into(),
+        hir::ConstValue::Null => cg.ptr_type.const_zero().into(),
         hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
         hir::ConstValue::Int { val, neg, ty } => {
             let ty = ty.expect("const int type");
@@ -606,9 +590,7 @@ fn codegen_lit_string<'ctx>(
         // same problem as const integer codegen @07.04.24
         // also usize from rust, casted int u64, represented by pointer_sized_int is confusing
         // most likely problems wont show up for strings of reasonable len (especially on 64bit)
-        let bytes_len = cg
-            .pointer_sized_int_type()
-            .const_int(string.len() as u64, false);
+        let bytes_len = cg.ptr_sized_int_type.const_int(string.len() as u64, false);
         let slice_value = cg
             .context
             .const_struct(&[global_ptr.into(), bytes_len.into()], false);
@@ -978,7 +960,7 @@ fn codegen_union_member<'ctx>(
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
     let target_ptr = if deref {
         cg.builder
-            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
@@ -1008,7 +990,7 @@ fn codegen_struct_field<'ctx>(
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
     let target_ptr = if deref {
         cg.builder
-            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
@@ -1051,7 +1033,7 @@ fn codegen_slice_field<'ctx>(
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
     let target_ptr = if deref {
         cg.builder
-            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
@@ -1061,14 +1043,14 @@ fn codegen_slice_field<'ctx>(
     let (field_id, field_ty, ptr_name, value_name) = if first_ptr {
         (
             0,
-            cg.ptr_type().as_basic_type_enum(),
+            cg.ptr_type.as_basic_type_enum(),
             "slice_ptr_ptr",
             "slice_ptr",
         )
     } else {
         (
             1,
-            cg.pointer_sized_int_type().as_basic_type_enum(),
+            cg.ptr_sized_int_type.as_basic_type_enum(),
             "slice_len_ptr",
             "slice_len",
         )
@@ -1076,7 +1058,7 @@ fn codegen_slice_field<'ctx>(
 
     let field_ptr = cg
         .builder
-        .build_struct_gep(cg.slice_type(), target_ptr, field_id, ptr_name)
+        .build_struct_gep(cg.slice_type, target_ptr, field_id, ptr_name)
         .unwrap();
     cg.builder
         .build_load(field_ty, field_ptr, value_name)
@@ -1140,7 +1122,7 @@ fn codegen_index<'ctx>(
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
     let target_ptr = if access.deref {
         cg.builder
-            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
@@ -1155,7 +1137,7 @@ fn codegen_index<'ctx>(
         hir::IndexKind::Slice { elem_size } => {
             let slice = cg
                 .builder
-                .build_load(cg.slice_type(), target_ptr, "slice_val")
+                .build_load(cg.slice_type, target_ptr, "slice_val")
                 .unwrap()
                 .into_struct_value();
             let ptr = cg
@@ -1199,7 +1181,7 @@ fn codegen_index<'ctx>(
         }
         hir::IndexKind::Array { array } => unsafe {
             let len = cg.array_static_len(array.len);
-            let len = cg.pointer_sized_int_type().const_int(len, false);
+            let len = cg.ptr_sized_int_type.const_int(len, false);
 
             let panic_cond = cg
                 .builder
@@ -1222,7 +1204,7 @@ fn codegen_index<'ctx>(
                 .build_in_bounds_gep(
                     cg.array_type(array),
                     target_ptr,
-                    &[cg.pointer_sized_int_type().const_zero(), index],
+                    &[cg.ptr_sized_int_type.const_zero(), index],
                     "elem_ptr",
                 )
                 .unwrap()
@@ -1252,7 +1234,7 @@ fn codegen_slice<'ctx>(
     let target = codegen_expr(cg, proc_cg, true, target).expect("value");
     let target_ptr = if access.deref {
         cg.builder
-            .build_load(cg.ptr_type(), target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
@@ -1263,7 +1245,7 @@ fn codegen_slice<'ctx>(
         hir::SliceKind::Slice { elem_size } => {
             let slice = cg
                 .builder
-                .build_load(cg.slice_type(), target_ptr, "slice_val")
+                .build_load(cg.slice_type, target_ptr, "slice_val")
                 .unwrap()
                 .into_struct_value();
             let slice_len = cg
@@ -1345,7 +1327,7 @@ fn codegen_slice<'ctx>(
                             //    cg,
                             //    ast::BinOp::Sub,
                             //    upper.into(),
-                            //    cg.pointer_sized_int_type().const_int(1, false).into(),
+                            //    cg.ptr_sized_int_type.const_int(1, false).into(),
                             //    false,
                             //)
                             //.into_int_value()
@@ -1355,14 +1337,14 @@ fn codegen_slice<'ctx>(
                                 cg,
                                 ast::BinOp::Add,
                                 upper.into(),
-                                cg.pointer_sized_int_type().const_int(1, false).into(),
+                                cg.ptr_sized_int_type.const_int(1, false).into(),
                                 false,
                             )
                             .into_int_value()
                         };
 
                     //@potentially unwanted alloca in loops 08.05.24
-                    let slice_type = cg.slice_type();
+                    let slice_type = cg.slice_type;
 
                     let new_slice = cg
                         .builder
@@ -1401,7 +1383,7 @@ fn codegen_slice<'ctx>(
         }
         hir::SliceKind::Array { array } => {
             let len = cg.array_static_len(array.len);
-            let len = cg.pointer_sized_int_type().const_int(len, false);
+            let len = cg.ptr_sized_int_type.const_int(len, false);
 
             let lower = match access.range.lower {
                 Some(lower) => Some(
@@ -1429,7 +1411,7 @@ fn codegen_slice<'ctx>(
             match (lower, upper) {
                 (None, None) => {
                     //@potentially unwanted alloca in loops 08.05.24
-                    let slice_type = cg.slice_type();
+                    let slice_type = cg.slice_type;
 
                     let new_slice = cg
                         .builder
@@ -1669,7 +1651,7 @@ fn codegen_array_init<'ctx>(
     let elem_ty = cg.type_into_basic(array_init.elem_ty);
     let array_ty = elem_ty.array_type(array_init.input.len() as u32);
     let array_ptr = cg.builder.build_alloca(array_ty, "array_temp").unwrap();
-    let index_type = cg.pointer_sized_int_type();
+    let index_type = cg.ptr_sized_int_type;
 
     for (idx, &expr) in array_init.input.iter().enumerate() {
         let value = codegen_expr(cg, proc_cg, false, expr).expect("value");
@@ -1680,7 +1662,7 @@ fn codegen_array_init<'ctx>(
                 .build_in_bounds_gep(
                     array_ty,
                     array_ptr,
-                    &[cg.pointer_sized_int_type().const_zero(), index],
+                    &[cg.ptr_sized_int_type.const_zero(), index],
                     "elem_ptr",
                 )
                 .unwrap()

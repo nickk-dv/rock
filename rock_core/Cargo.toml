@@ -9,5 +9,5 @@ codegen_llvm = []
 [dependencies]
 basic-toml = "0.1.9"
 serde = { version = "1.0.198", features = ["derive"] }
-inkwell = { version = "0.4.0", features = ["llvm17-0"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm17-0"] }
 llvm-sys = { version = "170.0.1", features = ["no-llvm-linking"]  }
