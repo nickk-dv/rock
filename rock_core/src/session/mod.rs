@@ -6,21 +6,6 @@ use crate::package::manifest::Manifest;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
-#[derive(Copy, Clone)]
-pub enum BuildKind {
-    Debug,
-    Release,
-}
-
-impl BuildKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BuildKind::Debug => "debug",
-            BuildKind::Release => "release",
-        }
-    }
-}
-
 //@package dependencies must be only lib packages @20.04.24
 // bin package is the root package being compiled / checked
 // currently bin deps are allowed, but their main() doesnt do anything special

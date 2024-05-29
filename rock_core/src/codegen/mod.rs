@@ -1,10 +1,8 @@
 use crate::ast;
 use crate::error::ErrorComp;
-use crate::error::ResultComp;
 use crate::fs_env;
 use crate::hir;
 use crate::intern::InternID;
-use crate::session::BuildKind;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder;
 use inkwell::context;
@@ -14,17 +12,26 @@ use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-pub enum BuildConfig {
-    Build(BuildKind),
-    Run(BuildKind, Vec<String>),
+struct BuildContext {
+    bin_name: String,
+    build_kind: BuildKind,
+    build_dir: PathBuf,
+    executable_path: PathBuf,
 }
 
-impl BuildConfig {
-    fn kind(&self) -> BuildKind {
-        match *self {
-            BuildConfig::Build(kind) => kind,
-            BuildConfig::Run(kind, _) => kind,
+#[derive(Copy, Clone)]
+pub enum BuildKind {
+    Debug,
+    Release,
+}
+
+impl BuildKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BuildKind::Debug => "debug",
+            BuildKind::Release => "release",
         }
     }
 }
@@ -120,7 +127,7 @@ impl<'ctx> ProcCodegen<'ctx> {
 }
 
 impl<'ctx> Codegen<'ctx> {
-    fn new(context: &'ctx context::Context, hir: hir::Hir<'ctx>) -> Codegen<'ctx> {
+    fn new(hir: hir::Hir<'ctx>, context: &'ctx context::Context) -> Codegen<'ctx> {
         let module = context.create_module("rock_module");
         let builder = context.create_builder();
 
@@ -162,94 +169,15 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    fn build_object(self, bin_name: &str, config: BuildConfig) -> Result<(), ErrorComp> {
-        self.module.print_to_stderr();
-
+    fn finish_module(self) -> Result<(module::Module<'ctx>, targets::TargetMachine), ErrorComp> {
         if let Err(error) = self.module.verify() {
-            return Err(ErrorComp::message(format!(
+            Err(ErrorComp::message(format!(
                 "internal codegen error: llvm module verify failed\nreason: {}",
                 error
-            )));
-        }
-
-        let mut build_dir = fs_env::dir_get_current_working()?;
-        build_dir.push("build");
-        fs_env::dir_create(&build_dir, false)?;
-
-        let kind = config.kind();
-        match kind {
-            BuildKind::Debug => build_dir.push("debug"),
-            BuildKind::Release => build_dir.push("release"),
-        }
-        fs_env::dir_create(&build_dir, false)?;
-
-        let mut object_path = build_dir.clone();
-        object_path.push(format!("{}.o", bin_name));
-        self.target_machine
-            .write_to_file(&self.module, targets::FileType::Object, &object_path)
-            .map_err(|error| {
-                ErrorComp::message(format!(
-                    "failed to write llvm module as object file\nreason: {}",
-                    error
-                ))
-            })?;
-
-        let mut executable_path = build_dir.clone();
-        executable_path.push(bin_name);
-        #[cfg(windows)]
-        executable_path.set_extension("exe");
-
-        //@assuming windows only build target for now
-        let target_windows = true;
-
-        let arg_obj = object_path.to_string_lossy().to_string();
-        let arg_out = format!("/out:{}", executable_path.to_string_lossy());
-        let mut args = vec![arg_obj, arg_out];
-
-        //@use `no` opt args in debug?
-        args.push("/opt:ref".into());
-        args.push("/opt:lbr".into());
-        args.push("/opt:icf".into());
-
-        if target_windows {
-            //sybsystem needs to be specified on windows (console, windows)
-            //@only console with `main` entry point is supported, support WinMain when such feature is required 29.05.24
-            args.push("/subsystem:console".into());
-            // link with C runtime library: libcmt.lib (static), msvcrt.lib (dynamic)
-            //@always linking with static C runtime library, support attributes or toml configs 29.05.24
-            // to change this if needed, this might be a problem when trying to link C libraries (eg: raylib.lib)
-            args.push("/defaultlib:libcmt.lib".into());
+            )))
         } else {
-            panic!("only windows targets are supported");
+            Ok((self.module, self.target_machine))
         }
-
-        // lld-link is called system wide, and requires llvm being installed @29.05.24
-        // test and use bundled lld-link relative to install path instead
-        let _ = std::process::Command::new("lld-link")
-            .args(args)
-            .status()
-            .map_err(|io_error| {
-                ErrorComp::message(format!(
-                    "failed to link object file `{}`\nreason: {}",
-                    object_path.to_string_lossy(),
-                    io_error
-                ))
-            })?;
-        fs_env::file_remove(&object_path)?;
-
-        if let BuildConfig::Run(_, args) = config {
-            std::process::Command::new(executable_path.as_os_str())
-                .args(args)
-                .status()
-                .map_err(|io_error| {
-                    ErrorComp::message(format!(
-                        "failed to run executable `{}`\nreason: {}",
-                        executable_path.to_string_lossy(),
-                        io_error
-                    ))
-                })?;
-        }
-        Ok(())
     }
 
     //@duplicated with generation of procedure values and with indirect calls 07.05.24
@@ -375,19 +303,137 @@ impl<'ctx> Codegen<'ctx> {
     }
 }
 
-pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> ResultComp<()> {
-    let context = context::Context::create();
-    let mut cg = Codegen::new(&context, hir);
+pub fn codegen(
+    hir: hir::Hir,
+    bin_name: String,
+    build_kind: BuildKind,
+    args: Option<Vec<String>>,
+) -> Result<(), ErrorComp> {
+    let context = create_build_context(bin_name, build_kind)?;
+    let context_llvm = context::Context::create();
+    let (module, machine) = create_llvm_module(hir, &context_llvm)?;
+    build_executable(&context, module, machine)?;
+    run_executable(&context, args)?;
+    Ok(())
+}
 
+fn create_build_context(
+    bin_name: String,
+    build_kind: BuildKind,
+) -> Result<BuildContext, ErrorComp> {
+    let mut build_dir = fs_env::dir_get_current_working()?;
+    build_dir.push("build");
+    fs_env::dir_create(&build_dir, false)?;
+    build_dir.push(build_kind.as_str());
+    fs_env::dir_create(&build_dir, false)?;
+
+    let mut executable_path = build_dir.clone();
+    executable_path.push(&bin_name);
+    executable_path.set_extension("exe"); //@assuming windows
+
+    let context = BuildContext {
+        bin_name,
+        build_kind,
+        build_dir,
+        executable_path,
+    };
+    Ok(context)
+}
+
+fn create_llvm_module<'ctx>(
+    hir: hir::Hir<'ctx>,
+    context_llvm: &'ctx context::Context,
+) -> Result<(module::Module<'ctx>, targets::TargetMachine), ErrorComp> {
+    let mut cg = Codegen::new(hir, &context_llvm);
     codegen_string_literals(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_consts(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&cg);
+    cg.finish_module()
+}
 
-    let result = cg.build_object(bin_name, config);
-    ResultComp::from_error(result)
+fn build_executable<'ctx>(
+    context: &BuildContext,
+    module: module::Module<'ctx>,
+    machine: targets::TargetMachine,
+) -> Result<(), ErrorComp> {
+    let object_path = context.build_dir.join(format!("{}.o", context.bin_name));
+    machine
+        .write_to_file(&module, targets::FileType::Object, &object_path)
+        .map_err(|error| {
+            ErrorComp::message(format!(
+                "failed to write llvm module as object file\nreason: {}",
+                error
+            ))
+        })?;
+
+    let arg_obj = object_path.to_string_lossy().to_string();
+    let arg_out = format!("/out:{}", context.executable_path.to_string_lossy());
+    let mut args = vec![arg_obj, arg_out];
+
+    //@check if they need to be comma separated instead of being separate
+    match context.build_kind {
+        BuildKind::Debug => {
+            args.push("/opt:noref".into());
+            args.push("/opt:noicf".into());
+            args.push("/opt:nolbr".into());
+        }
+        BuildKind::Release => {
+            args.push("/opt:ref".into());
+            args.push("/opt:icf".into());
+            args.push("/opt:lbr".into());
+        }
+    }
+
+    //@assuming windows
+    if true {
+        //sybsystem needs to be specified on windows (console, windows)
+        //@only console with `main` entry point is supported, support WinMain when such feature is required 29.05.24
+        args.push("/subsystem:console".into());
+        // link with C runtime library: libcmt.lib (static), msvcrt.lib (dynamic)
+        //@always linking with static C runtime library, support attributes or toml configs 29.05.24
+        // to change this if needed, this might be a problem when trying to link C libraries (eg: raylib.lib)
+        args.push("/defaultlib:libcmt.lib".into());
+    } else {
+        panic!("only windows targets are supported");
+    }
+
+    // lld-link is called system wide, and requires llvm being installed @29.05.24
+    // test and use bundled lld-link relative to install path instead
+    let _ = std::process::Command::new("lld-link")
+        .args(args)
+        .status()
+        .map_err(|io_error| {
+            ErrorComp::message(format!(
+                "failed to link object file `{}`\nreason: {}",
+                object_path.to_string_lossy(),
+                io_error
+            ))
+        })?;
+    fs_env::file_remove(&object_path)?;
+    Ok(())
+}
+
+fn run_executable(context: &BuildContext, args: Option<Vec<String>>) -> Result<(), ErrorComp> {
+    let args = match args {
+        Some(args) => args,
+        None => return Ok(()),
+    };
+
+    std::process::Command::new(context.executable_path.as_os_str())
+        .args(args)
+        .status()
+        .map_err(|io_error| {
+            ErrorComp::message(format!(
+                "failed to run executable `{}`\nreason: {}",
+                context.executable_path.to_string_lossy(),
+                io_error
+            ))
+        })?;
+
+    Ok(())
 }
 
 fn codegen_string_literals(cg: &mut Codegen) {
@@ -400,7 +446,6 @@ fn codegen_string_literals(cg: &mut Codegen) {
         global.set_linkage(module::Linkage::Internal);
         global.set_constant(true);
         global.set_unnamed_addr(true);
-        global.set_thread_local(false);
         global.set_initializer(&array_value);
         cg.string_lits.push(global);
     }
@@ -435,17 +480,13 @@ fn codegen_consts(cg: &mut Codegen) {
 fn codegen_globals(cg: &mut Codegen) {
     for data in cg.hir.globals.iter() {
         let global_ty = cg.type_into_basic(data.ty);
-        let global = cg.module.add_global(global_ty, None, "global");
+        let value = codegen_const_value(cg, cg.hir.const_eval_value(data.value));
+
+        let global = cg.module.add_global(global_ty, None, "rock_global");
         global.set_linkage(module::Linkage::Internal);
         global.set_constant(data.mutt == ast::Mut::Immutable);
-        global.set_unnamed_addr(false);
         global.set_thread_local(data.thread_local);
-        global.set_initializer(&codegen_const_value(
-            cg,
-            cg.hir
-                .const_intern
-                .get(cg.hir.const_values[data.value.index()]),
-        ));
+        global.set_initializer(&value);
         cg.globals.push(global);
     }
 }

@@ -54,9 +54,9 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
         let (hir, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
-        let pkg_name = &session.root_package_bin_name();
-        let config = codegen::BuildConfig::Build(data.kind);
-        let ((), warnings) = codegen::codegen(hir, pkg_name, config).into_result(warnings)?;
+        let bin_name = session.root_package_bin_name();
+        let result = codegen::codegen(hir, bin_name, data.kind, None);
+        let (_, warnings) = ResultComp::from_error(result).into_result(warnings)?;
         Ok(warnings)
     }
 }
@@ -74,9 +74,9 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
         let (hir, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
-        let pkg_name = &session.root_package_bin_name();
-        let config = codegen::BuildConfig::Run(data.kind, data.args);
-        let ((), warnings) = codegen::codegen(hir, pkg_name, config).into_result(warnings)?;
+        let bin_name = session.root_package_bin_name();
+        let result = codegen::codegen(hir, bin_name, data.kind, Some(data.args));
+        let (_, warnings) = ResultComp::from_error(result).into_result(warnings)?;
         Ok(warnings)
     }
 }
