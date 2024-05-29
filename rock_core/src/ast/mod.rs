@@ -5,7 +5,9 @@ use crate::text::TextRange;
 
 pub struct Ast<'ast, 'intern> {
     pub arena: Arena<'ast>,
-    pub intern: InternPool<'intern>,
+    pub intern_name: InternPool<'intern>,
+    pub intern_string: InternPool<'intern>,
+    pub string_is_cstr: Vec<bool>,
     pub packages: Vec<Package<'ast>>,
 }
 

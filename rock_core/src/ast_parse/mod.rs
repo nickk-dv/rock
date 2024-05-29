@@ -12,7 +12,7 @@ pub fn parse(session: &Session) -> ResultComp<Ast> {
 
     for package_id in session.package_ids() {
         let package = session.package(package_id);
-        let package_name_id = state.intern.intern(&package.manifest().package.name);
+        let package_name_id = state.intern_name.intern(&package.manifest().package.name);
         let mut modules = Vec::<Module>::new();
 
         for idx in file_idx..file_idx + package.file_count() {
@@ -24,7 +24,7 @@ pub fn parse(session: &Session) -> ResultComp<Ast> {
                 .expect("filename")
                 .to_str()
                 .expect("utf-8");
-            let module_name_id = state.intern.intern(filename);
+            let module_name_id = state.intern_name.intern(filename);
 
             let tokens = match lexer::lex(&file.source, file_id, false) {
                 Ok(it) => it,

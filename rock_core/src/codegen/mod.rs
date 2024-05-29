@@ -34,6 +34,7 @@ struct Codegen<'ctx> {
     module: module::Module<'ctx>,
     builder: builder::Builder<'ctx>,
     target_machine: targets::TargetMachine,
+    string_lits: Vec<values::GlobalValue<'ctx>>,
     structs: Vec<types::StructType<'ctx>>,
     consts: Vec<values::BasicValueEnum<'ctx>>,
     globals: Vec<values::GlobalValue<'ctx>>,
@@ -148,10 +149,11 @@ impl<'ctx> Codegen<'ctx> {
             module,
             builder,
             target_machine,
+            string_lits: Vec::with_capacity(hir.intern_string.get_all_strings().len()),
             structs: Vec::with_capacity(hir.structs.len()),
             consts: Vec::with_capacity(hir.consts.len()),
             globals: Vec::with_capacity(hir.globals.len()),
-            function_values: Vec::new(),
+            function_values: Vec::with_capacity(hir.procs.len()),
             hir,
             c_functions: HashMap::new(),
             ptr_type,
@@ -204,9 +206,13 @@ impl<'ctx> Codegen<'ctx> {
         let arg_out = format!("/out:{}", executable_path.to_string_lossy());
         let mut args = vec![arg_obj, arg_out];
 
-        //@add /opt: arguments depending on Release / Debug profile (ref, noref, icf, noicf)
+        //@use `no` opt args in debug?
+        args.push("/opt:ref".into());
+        args.push("/opt:lbr".into());
+        args.push("/opt:icf".into());
+
         if target_windows {
-            //sybsystem needs to be specified on windows (console | windows)
+            //sybsystem needs to be specified on windows (console, windows)
             //@only console with `main` entry point is supported, support WinMain when such feature is required 29.05.24
             args.push("/subsystem:console".into());
             // link with C runtime library: libcmt.lib (static), msvcrt.lib (dynamic)
@@ -267,14 +273,10 @@ impl<'ctx> Codegen<'ctx> {
     fn array_static_len(&self, len: hir::ArrayStaticLen) -> u64 {
         match len {
             hir::ArrayStaticLen::Immediate(len) => len.expect("array len is known"),
-            hir::ArrayStaticLen::ConstEval(eval_id) => {
-                let value_id = self.hir.const_values[eval_id.index()];
-                let value = self.hir.const_intern.get(value_id);
-                match value {
-                    hir::ConstValue::Int { val, neg, ty } => val,
-                    _ => panic!("array len must be int"),
-                }
-            }
+            hir::ArrayStaticLen::ConstEval(eval_id) => match self.hir.const_eval_value(eval_id) {
+                hir::ConstValue::Int { val, neg, ty } => val,
+                _ => panic!("array len must be int"),
+            },
         }
     }
 
@@ -377,6 +379,7 @@ pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> ResultComp
     let context = context::Context::create();
     let mut cg = Codegen::new(&context, hir);
 
+    codegen_string_literals(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_consts(&mut cg);
     codegen_globals(&mut cg);
@@ -387,15 +390,31 @@ pub fn codegen(hir: hir::Hir, bin_name: &str, config: BuildConfig) -> ResultComp
     ResultComp::from_error(result)
 }
 
+fn codegen_string_literals(cg: &mut Codegen) {
+    for (idx, &string) in cg.hir.intern_string.get_all_strings().iter().enumerate() {
+        let c_string = cg.hir.string_is_cstr[idx];
+        let array_value = cg.context.const_string(string.as_bytes(), c_string);
+        let array_ty = array_value.get_type();
+
+        let global = cg.module.add_global(array_ty, None, "rock_string_lit");
+        global.set_linkage(module::Linkage::Internal);
+        global.set_constant(true);
+        global.set_unnamed_addr(true);
+        global.set_thread_local(false);
+        global.set_initializer(&array_value);
+        cg.string_lits.push(global);
+    }
+}
+
 fn codegen_struct_types(cg: &mut Codegen) {
-    // create opaque struct types
     for _ in 0..cg.hir.structs.len() {
         let opaque = cg.context.opaque_struct_type("rock_struct");
         cg.structs.push(opaque);
     }
 
-    // set opaque struct bodies
-    let mut field_types = Vec::<types::BasicTypeEnum>::new();
+    const EXPECT_FIELD_COUNT: usize = 64;
+    let mut field_types = Vec::with_capacity(EXPECT_FIELD_COUNT);
+
     for (idx, struct_data) in cg.hir.structs.iter().enumerate() {
         field_types.clear();
         for field in struct_data.fields {
@@ -407,27 +426,19 @@ fn codegen_struct_types(cg: &mut Codegen) {
 }
 
 fn codegen_consts(cg: &mut Codegen) {
-    cg.consts.reserve_exact(cg.hir.consts.len());
-
     for data in cg.hir.consts.iter() {
-        let value = codegen_const_value(
-            cg,
-            cg.hir
-                .const_intern
-                .get(cg.hir.const_values[data.value.index()]),
-        );
+        let value = codegen_const_value(cg, cg.hir.const_eval_value(data.value));
         cg.consts.push(value);
     }
 }
 
 fn codegen_globals(cg: &mut Codegen) {
-    cg.globals.reserve_exact(cg.hir.globals.len());
-
     for data in cg.hir.globals.iter() {
         let global_ty = cg.type_into_basic(data.ty);
         let global = cg.module.add_global(global_ty, None, "global");
+        global.set_linkage(module::Linkage::Internal);
         global.set_constant(data.mutt == ast::Mut::Immutable);
-        global.set_linkage(module::Linkage::Private);
+        global.set_unnamed_addr(false);
         global.set_thread_local(data.thread_local);
         global.set_initializer(&codegen_const_value(
             cg,
@@ -440,8 +451,6 @@ fn codegen_globals(cg: &mut Codegen) {
 }
 
 fn codegen_function_values(cg: &mut Codegen) {
-    cg.function_values.reserve_exact(cg.hir.structs.len());
-
     let mut param_types = Vec::<types::BasicMetadataTypeEnum>::new();
     for proc_data in cg.hir.procs.iter() {
         param_types.clear();
@@ -459,7 +468,7 @@ fn codegen_function_values(cg: &mut Codegen) {
                 .fn_type(&param_types, proc_data.is_variadic),
         };
 
-        let name = cg.hir.intern.get_str(proc_data.name.id);
+        let name = cg.hir.intern_name.get_str(proc_data.name.id);
 
         //@switch to explicit main flag on proc_data or store ProcID of the entry point in hir instead 29.05.24
         // module of main being 0 is not stable, might put core library as the first Package / Module thats processed
@@ -575,12 +584,7 @@ fn codegen_const_value<'ctx>(
             variant_id,
         } => {
             let variant = cg.hir.enum_data(enum_id).variant(variant_id);
-            codegen_const_value(
-                cg,
-                cg.hir
-                    .const_intern
-                    .get(cg.hir.const_values[variant.value.index()]),
-            )
+            codegen_const_value(cg, cg.hir.const_eval_value(variant.value))
         }
         hir::ConstValue::Struct { struct_ } => todo!("codegen ConstValue::Struct unsupported"),
         hir::ConstValue::Array { array } => todo!("codegen ConstValue::Array unsupported"),
@@ -599,23 +603,12 @@ fn codegen_lit_string<'ctx>(
     id: InternID,
     c_string: bool,
 ) -> values::BasicValueEnum<'ctx> {
-    let string = cg.hir.intern.get_str(id);
-    let array_value = cg.context.const_string(string.as_bytes(), c_string);
-    let array_ty = array_value.get_type();
-
-    let global = cg.module.add_global(array_ty, None, "global_string");
-    global.set_constant(true);
-    global.set_linkage(module::Linkage::Private);
-    global.set_initializer(&array_value);
-    let global_ptr = global.as_pointer_value();
+    let global_ptr = cg.string_lits[id.index()].as_pointer_value();
 
     if c_string {
         global_ptr.into()
     } else {
-        //@sign extend would likely ruin any len values about MAX signed of that type
-        // same problem as const integer codegen @07.04.24
-        // also usize from rust, casted int u64, represented by pointer_sized_int is confusing
-        // most likely problems wont show up for strings of reasonable len (especially on 64bit)
+        let string = cg.hir.intern_string.get_str(id);
         let bytes_len = cg.ptr_sized_int_type.const_int(string.len() as u64, false);
         let slice_value = cg
             .context
@@ -1109,12 +1102,17 @@ fn codegen_panic_conditional<'ctx>(
 
     let c_exit = cg
         .c_functions
-        .get(&cg.hir.intern.get_id("exit").expect("exit c function"))
+        .get(&cg.hir.intern_name.get_id("exit").expect("exit c function"))
         .cloned()
         .expect("exit c function added");
     let c_printf = cg
         .c_functions
-        .get(&cg.hir.intern.get_id("printf").expect("printf c function"))
+        .get(
+            &cg.hir
+                .intern_name
+                .get_id("printf")
+                .expect("printf c function"),
+        )
         .cloned()
         .expect("printf c function added");
 

@@ -98,7 +98,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
             for dep in manifest.dependencies.keys() {
                 //@identify dep packages by ID earlier? @20.04.24
                 // have to seach for this package in ast by name id, to get the dep PackageID
-                let dep_name_id = ast.intern.intern(dep.as_str());
+                let dep_name_id = ast.intern_name.intern(dep.as_str());
                 let dep_package_id = ast
                     .packages
                     .iter()
@@ -128,7 +128,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         SourceRange::new(range, self.registry().module_ast(id).file_id)
     }
     pub fn name_str(&self, id: InternID) -> &str {
-        self.ast.intern.get_str(id)
+        self.ast.intern_name.get_str(id)
     }
 
     pub fn get_package_module_id(
@@ -609,7 +609,9 @@ impl<'hir> HirEmit<'hir> {
         if errors.is_empty() {
             let hir = hir::Hir {
                 arena: self.arena,
-                intern: hir.ast.intern,
+                intern_name: hir.ast.intern_name,
+                intern_string: hir.ast.intern_string,
+                string_is_cstr: hir.ast.string_is_cstr,
                 const_intern: self.const_intern,
                 modules: hir.registry.hir_modules,
                 procs: hir.registry.hir_procs,

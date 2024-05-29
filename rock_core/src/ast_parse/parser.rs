@@ -19,7 +19,9 @@ pub struct Parser<'ast, 'intern, 'src, 'state> {
 
 pub struct ParseState<'ast, 'intern> {
     pub arena: Arena<'ast>,
-    pub intern: InternPool<'intern>,
+    pub intern_name: InternPool<'intern>,
+    pub intern_string: InternPool<'intern>,
+    pub string_is_cstr: Vec<bool>,
     pub packages: Vec<Package<'ast>>,
     pub errors: Vec<ErrorComp>,
     pub items: NodeBuffer<Item<'ast>>,
@@ -121,7 +123,14 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
 
     pub fn get_string_lit(&mut self) -> (InternID, bool) {
         let (string, c_string) = self.tokens.get_string(self.string_id as usize);
-        let id = self.state.intern.intern(string);
+        let id = self.state.intern_string.intern(string);
+
+        if id.index() >= self.state.string_is_cstr.len() {
+            self.state.string_is_cstr.push(c_string);
+        } else if c_string {
+            self.state.string_is_cstr[id.index()] = true;
+        }
+
         self.string_id += 1;
         (id, c_string)
     }
@@ -132,10 +141,12 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
 }
 
 impl<'ast, 'intern> ParseState<'ast, 'intern> {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> ParseState<'ast, 'intern> {
+        ParseState {
             arena: Arena::new(),
-            intern: InternPool::new(),
+            intern_name: InternPool::new(),
+            intern_string: InternPool::new(),
+            string_is_cstr: Vec::with_capacity(1024),
             packages: Vec::new(),
             errors: Vec::new(),
             items: NodeBuffer::new(),
@@ -157,7 +168,9 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
     pub fn result(self) -> ResultComp<Ast<'ast, 'intern>> {
         let ast = Ast {
             arena: self.arena,
-            intern: self.intern,
+            intern_name: self.intern_name,
+            intern_string: self.intern_string,
+            string_is_cstr: self.string_is_cstr,
             packages: self.packages,
         };
         if self.errors.is_empty() {

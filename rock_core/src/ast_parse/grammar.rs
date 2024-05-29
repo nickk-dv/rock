@@ -300,7 +300,7 @@ fn name(p: &mut Parser) -> Result<Name, String> {
     let range = p.peek_range();
     p.expect(T![ident])?;
     let string = &p.source[range.as_usize()];
-    let id = p.state.intern.intern(string);
+    let id = p.state.intern_name.intern(string);
     Ok(Name { range, id })
 }
 

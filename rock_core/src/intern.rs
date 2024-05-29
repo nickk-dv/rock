@@ -39,6 +39,9 @@ impl<'intern> InternPool<'intern> {
     pub fn get_id(&self, string: &str) -> Option<InternID> {
         self.intern_map.get(string).cloned()
     }
+    pub fn get_all_strings(&self) -> &[&str] {
+        &self.strings
+    }
 }
 
 const FNV_OFFSET: u32 = 2166136261;

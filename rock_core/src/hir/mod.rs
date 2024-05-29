@@ -9,7 +9,9 @@ use intern::ConstInternPool;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
-    pub intern: InternPool<'hir>,
+    pub intern_name: InternPool<'hir>,
+    pub intern_string: InternPool<'hir>,
+    pub string_is_cstr: Vec<bool>,
     pub const_intern: ConstInternPool<'hir>,
     pub modules: Vec<ModuleData>,
     pub procs: Vec<ProcData<'hir>>,
@@ -430,6 +432,10 @@ impl<'hir> Hir<'hir> {
     }
     pub fn global_data(&self, id: GlobalID) -> &GlobalData<'hir> {
         &self.globals[id.index()]
+    }
+    pub fn const_eval_value(&self, id: ConstEvalID) -> ConstValue<'hir> {
+        let value_id = self.const_values[id.index()];
+        self.const_intern.get(value_id)
     }
 }
 
