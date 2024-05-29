@@ -197,19 +197,30 @@ impl<'ctx> Codegen<'ctx> {
         #[cfg(windows)]
         executable_path.set_extension("exe");
 
-        //@always windows build so far 29.05.24
-        // use `args` to supply args to lld-link
-        // with platform specific inputs
+        //@assuming windows only build target for now
+        let target_windows = true;
 
-        //@libcmt.lib is only valid for windows @20.04.24
-        // also lld-link is called system wide, and requires llvm being installed
-        // test and use bundled lld-link instead
+        let arg_obj = object_path.to_string_lossy().to_string();
+        let arg_out = format!("/out:{}", executable_path.to_string_lossy());
+        let mut args = vec![arg_obj, arg_out];
 
+        //@add /opt: arguments depending on Release / Debug profile (ref, noref, icf, noicf)
+        if target_windows {
+            //sybsystem needs to be specified on windows (console | windows)
+            //@only console with `main` entry point is supported, support WinMain when such feature is required 29.05.24
+            args.push("/subsystem:console".into());
+            // link with C runtime library: libcmt.lib (static), msvcrt.lib (dynamic)
+            //@always linking with static C runtime library, support attributes or toml configs 29.05.24
+            // to change this if needed, this might be a problem when trying to link C libraries (eg: raylib.lib)
+            args.push("/defaultlib:libcmt.lib".into());
+        } else {
+            panic!("only windows targets are supported");
+        }
+
+        // lld-link is called system wide, and requires llvm being installed @29.05.24
+        // test and use bundled lld-link relative to install path instead
         let _ = std::process::Command::new("lld-link")
-            .arg(object_path.as_os_str())
-            .arg(format!("/out:{}", executable_path.to_string_lossy()))
-            .arg("/subsystem:console")
-            .arg("/defaultlib:libcmt.lib")
+            .args(args)
             .status()
             .map_err(|io_error| {
                 ErrorComp::message(format!(
