@@ -2068,55 +2068,6 @@ fn check_bin_op_compatibility<'hir>(
     compatable
 }
 
-#[derive(Copy, Clone)]
-enum DivergeStatus {
-    None,
-    Diverges(TextRange),
-    DivergesReported,
-}
-
-impl DivergeStatus {
-    fn diverges(&self) -> bool {
-        matches!(
-            self,
-            DivergeStatus::Diverges(_) | DivergeStatus::DivergesReported
-        )
-    }
-}
-
-fn check_stmt_diverges<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    diverges: &mut DivergeStatus,
-    diverge_after: bool,
-    stmt: hir::Stmt<'hir>,
-    stmt_range: TextRange,
-) -> Option<hir::Stmt<'hir>> {
-    match *diverges {
-        DivergeStatus::None => {
-            if diverge_after {
-                *diverges = DivergeStatus::Diverges(stmt_range);
-            }
-            Some(stmt)
-        }
-        DivergeStatus::Diverges(diverge_range) => {
-            *diverges = DivergeStatus::DivergesReported;
-
-            emit.warning(WarningComp::new(
-                "unreachable statement",
-                hir.src(proc.origin(), stmt_range),
-                Info::new(
-                    "all statements after this are unreachable",
-                    hir.src(proc.origin(), diverge_range),
-                ),
-            ));
-            None
-        }
-        DivergeStatus::DivergesReported => None,
-    }
-}
-
 fn typecheck_block<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -2127,50 +2078,56 @@ fn typecheck_block<'hir>(
 ) -> BlockResult<'hir> {
     proc.push_block(enter);
 
-    let mut block_type = None;
-    let mut tail_range = None;
-    let mut hir_stmts = Vec::with_capacity(block.stmts.len());
-    // @incorrect for higher lvl blocks that also diverged 21.05.24
-    // in that case diverges warnings would be emitter again
-    let mut diverges = DivergeStatus::None;
+    let mut block_stmts: Vec<hir::Stmt> = Vec::with_capacity(block.stmts.len());
+    let mut block_ty: Option<hir::Type> = None;
+    let mut tail_range: Option<TextRange> = None;
 
     for stmt in block.stmts {
         let hir_stmt = match stmt.kind {
             ast::StmtKind::Break => {
                 if let Some(stmt_res) = typecheck_break(hir, emit, proc, stmt.range) {
-                    check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                    proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
                 } else {
                     None
                 }
             }
             ast::StmtKind::Continue => {
                 if let Some(stmt_res) = typecheck_continue(hir, emit, proc, stmt.range) {
-                    check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                    proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
                 } else {
                     None
                 }
             }
             ast::StmtKind::Return(expr) => {
                 if let Some(stmt_res) = typecheck_return(hir, emit, proc, stmt.range, expr) {
-                    check_stmt_diverges(hir, emit, proc, &mut diverges, true, stmt_res, stmt.range)
+                    proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
                 } else {
                     None
                 }
             }
             ast::StmtKind::Defer(block) => {
-                Some(typecheck_defer(hir, emit, proc, stmt.range.start(), *block))
+                //@defer can behave strangely with diverges checks since it inherits diverges 29.05.24
+                // from currently top block, while defer itself can be triggered multiple times in different locations
+                let stmt_res = typecheck_defer(hir, emit, proc, stmt.range.start(), *block);
+                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
             }
-            ast::StmtKind::Loop(for_) => {
-                Some(hir::Stmt::Loop(typecheck_loop(hir, emit, proc, for_)))
+            ast::StmtKind::Loop(loop_) => {
+                let stmt_res = hir::Stmt::Loop(typecheck_loop(hir, emit, proc, loop_));
+                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
             }
             ast::StmtKind::Local(local) => {
-                let local_id = typecheck_local(hir, emit, proc, local);
-                Some(hir::Stmt::Local(local_id))
+                let stmt_res = hir::Stmt::Local(typecheck_local(hir, emit, proc, local));
+                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
             }
             ast::StmtKind::Assign(assign) => {
-                Some(hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign)))
+                let stmt_res = hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign));
+                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
             }
             ast::StmtKind::ExprSemi(expr) => {
+                //@error or want on expressions that arent used? 29.05.24
+                // `arent used` would mean that result isnt stored anywhere?
+                // but proc calls might have side effects and should always be allowed
+                // eg: `20 + some_var;` `10.0 != 21.2;` `something[0] + something[1];` `call() + 10;`
                 let expect = match expr.kind {
                     ast::ExprKind::If { .. }
                     | ast::ExprKind::Block { .. }
@@ -2178,34 +2135,38 @@ fn typecheck_block<'hir>(
                     _ => TypeExpectation::NOTHING,
                 };
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-                Some(hir::Stmt::ExprSemi(expr_res.expr))
+                let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
+                //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
+                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
             }
             ast::StmtKind::ExprTail(expr) => {
-                //@type expectation is delegated to tail returned expression instead of this block itself 21.05.24
-                //@check or protect for cases with multiple expr tail, handle type expectation correctly + warn unreachability
-                tail_range = Some(expr.range);
+                // type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-                if block_type.is_none() {
-                    block_type = Some(expr_res.ty);
+                let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
+                // only assigned once, any further `ExprTail` are unreachable
+                if block_ty.is_none() {
+                    block_ty = Some(expr_res.ty);
+                    tail_range = Some(expr.range);
                 }
-                Some(hir::Stmt::ExprTail(expr_res.expr))
+                proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
             }
         };
 
         if let Some(hir_stmt) = hir_stmt {
-            hir_stmts.push(hir_stmt);
+            block_stmts.push(hir_stmt);
         }
     }
 
-    proc.pop_block();
-
-    let stmts = emit.arena.alloc_slice(&hir_stmts);
+    let stmts = emit.arena.alloc_slice(&block_stmts);
     let hir_block = hir::Block { stmts };
 
-    if let Some(block_type) = block_type {
-        BlockResult::new(block_type, hir_block, tail_range)
+    let block_result = if let Some(block_ty) = block_ty {
+        BlockResult::new(block_ty, hir_block, tail_range)
     } else {
-        if !diverges.diverges() {
+        //@potentially incorrect aproach, verify that `void`
+        // as the expectation and block result ty are valid 29.05.24
+        let diverges = proc.diverges();
+        if !diverges.always_diverges() {
             check_type_expectation(
                 hir,
                 emit,
@@ -2216,9 +2177,13 @@ fn typecheck_block<'hir>(
             );
         }
         BlockResult::new(hir::Type::VOID, hir_block, tail_range)
-    }
+    };
+
+    proc.pop_block();
+    return block_result;
 }
 
+/// returns `None` on invalid use of `break`
 fn typecheck_break<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -2246,6 +2211,7 @@ fn typecheck_break<'hir>(
     }
 }
 
+/// returns `None` on invalid use of `continue`
 fn typecheck_continue<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -2273,6 +2239,7 @@ fn typecheck_continue<'hir>(
     }
 }
 
+/// returns `None` on invalid use of `return`
 fn typecheck_return<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -2298,6 +2265,7 @@ fn typecheck_return<'hir>(
             }
         }
         DeferStatus::Inside(prev_defer) => {
+            //@still check whats being returned? for coverage 29.05.24
             emit.error(ErrorComp::new(
                 "cannot use `return` inside `defer`",
                 hir.src(proc.origin(), range),

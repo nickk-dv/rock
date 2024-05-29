@@ -1,4 +1,6 @@
+use super::hir_build::{HirData, HirEmit};
 use super::pass_5::TypeExpectation;
+use crate::error::{Info, WarningComp};
 use crate::hir;
 use crate::intern::InternID;
 use crate::text::TextRange;
@@ -17,6 +19,7 @@ pub struct ProcScope<'hir, 'check> {
 
 pub struct BlockData {
     local_count: u32,
+    diverges: Diverges,
     loop_status: LoopStatus,
     defer_status: DeferStatus,
 }
@@ -26,6 +29,13 @@ pub enum BlockEnter {
     None,
     Loop,
     Defer(TextRange),
+}
+
+#[derive(Copy, Clone)]
+pub enum Diverges {
+    Maybe,
+    Always(TextRange),
+    AlwaysWarned,
 }
 
 #[allow(non_camel_case_types)]
@@ -40,6 +50,12 @@ pub enum LoopStatus {
 pub enum DeferStatus {
     None,
     Inside(TextRange),
+}
+
+impl Diverges {
+    pub fn always_diverges(&self) -> bool {
+        matches!(self, Diverges::Always(_) | Diverges::AlwaysWarned)
+    }
 }
 
 pub enum VariableID {
@@ -73,6 +89,9 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn defer_status(&self) -> DeferStatus {
         self.blocks.last().expect("block exists").defer_status
     }
+    pub fn diverges(&self) -> Diverges {
+        self.blocks.last().expect("block exists").diverges
+    }
     pub fn get_local(&self, id: hir::LocalID) -> &hir::Local<'hir> {
         self.locals[id.index()]
     }
@@ -84,21 +103,32 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         let block_data = match enter {
             BlockEnter::None => BlockData {
                 local_count: 0,
+                diverges: self.inherit_diverges(),
                 loop_status: self.inherit_loop_status(false, false),
                 defer_status: self.inherit_defer_status(None),
             },
             BlockEnter::Loop => BlockData {
                 local_count: 0,
+                diverges: self.inherit_diverges(),
                 loop_status: self.inherit_loop_status(true, false),
                 defer_status: self.inherit_defer_status(None),
             },
             BlockEnter::Defer(range) => BlockData {
                 local_count: 0,
+                diverges: self.inherit_diverges(),
                 loop_status: self.inherit_loop_status(false, true),
                 defer_status: self.inherit_defer_status(Some(range)),
             },
         };
         self.blocks.push(block_data);
+    }
+
+    fn inherit_diverges(&self) -> Diverges {
+        if let Some(last) = self.blocks.last() {
+            last.diverges
+        } else {
+            Diverges::Maybe
+        }
     }
 
     fn inherit_loop_status(&self, enter_loop: bool, enter_defer: bool) -> LoopStatus {
@@ -168,5 +198,38 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
             }
         }
         None
+    }
+
+    pub fn check_stmt_diverges(
+        &mut self,
+        hir: &HirData<'hir, '_, '_>,
+        emit: &mut HirEmit<'hir>,
+        will_diverge: bool,
+        stmt: hir::Stmt<'hir>,
+        stmt_range: TextRange,
+    ) -> Option<hir::Stmt<'hir>> {
+        let diverges = &mut self.blocks.last_mut().expect("block exists").diverges;
+        match *diverges {
+            Diverges::Maybe => {
+                if will_diverge {
+                    *diverges = Diverges::Always(stmt_range);
+                }
+                Some(stmt)
+            }
+            Diverges::Always(diverge_range) => {
+                *diverges = Diverges::AlwaysWarned;
+
+                emit.warning(WarningComp::new(
+                    "unreachable statement",
+                    hir.src(self.origin(), stmt_range),
+                    Info::new(
+                        "all statements after this are unreachable",
+                        hir.src(self.origin(), diverge_range),
+                    ),
+                ));
+                None
+            }
+            Diverges::AlwaysWarned => None,
+        }
     }
 }
