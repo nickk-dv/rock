@@ -197,13 +197,19 @@ impl<'ctx> Codegen<'ctx> {
         #[cfg(windows)]
         executable_path.set_extension("exe");
 
+        //@always windows build so far 29.05.24
+        // use `args` to supply args to lld-link
+        // with platform specific inputs
+
         //@libcmt.lib is only valid for windows @20.04.24
         // also lld-link is called system wide, and requires llvm being installed
         // test and use bundled lld-link instead
+
         let _ = std::process::Command::new("lld-link")
             .arg(object_path.as_os_str())
-            .arg(format!("/OUT:{}", executable_path.to_string_lossy()))
-            .arg("/DEFAULTLIB:libcmt.lib")
+            .arg(format!("/out:{}", executable_path.to_string_lossy()))
+            .arg("/subsystem:console")
+            .arg("/defaultlib:libcmt.lib")
             .status()
             .map_err(|io_error| {
                 ErrorComp::message(format!(
@@ -433,6 +439,7 @@ fn codegen_function_values(cg: &mut Codegen) {
             param_types.push(cg.type_into_basic_metadata(param.ty));
         }
 
+        //@repeated in Codegen ProcType generation 29.05.24
         let function_ty = match cg.type_into_basic_option(proc_data.return_ty) {
             Some(ty) => ty.fn_type(&param_types, proc_data.is_variadic),
             None => cg
@@ -441,20 +448,25 @@ fn codegen_function_values(cg: &mut Codegen) {
                 .fn_type(&param_types, proc_data.is_variadic),
         };
 
-        // (switch to explicit main flag on proc_data or in hir instead)
-        //@temporary condition to determine if its entry point or not @06.04.24
         let name = cg.hir.intern.get_str(proc_data.name.id);
-        let name = if proc_data.block.is_none()
-            || (proc_data.origin_id == hir::ModuleID::new(0) && name == "main")
-        {
+
+        //@switch to explicit main flag on proc_data or store ProcID of the entry point in hir instead 29.05.24
+        // module of main being 0 is not stable, might put core library as the first Package / Module thats processed
+        let is_main = proc_data.origin_id == hir::ModuleID::new(0) && name == "main";
+        let is_c_call = proc_data.block.is_none();
+
+        let name = if is_main || is_c_call {
             name
         } else {
             "rock_proc"
         };
+        let linkage = if is_main || is_c_call {
+            module::Linkage::External
+        } else {
+            module::Linkage::Internal
+        };
 
-        //@specify correct linkage kind (most things should be internal) @16.04.24
-        // and c_calls must be correctly linked (currently just leaving default behavior)
-        let function = cg.module.add_function(name, function_ty, None);
+        let function = cg.module.add_function(name, function_ty, Some(linkage));
         if proc_data.block.is_none() {
             cg.c_functions.insert(proc_data.name.id, function);
         }
