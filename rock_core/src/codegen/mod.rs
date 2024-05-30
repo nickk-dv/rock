@@ -312,6 +312,8 @@ pub fn codegen(
     let context = create_build_context(bin_name, build_kind)?;
     let context_llvm = context::Context::create();
     let (module, machine) = create_llvm_module(hir, &context_llvm)?;
+    let cwd = fs_env::dir_get_current_working()?;
+    module.print_to_file(cwd.join("emit_llvm.ll")).unwrap();
     build_executable(&context, module, machine)?;
     run_executable(&context, args)?;
     Ok(())
@@ -576,7 +578,7 @@ fn codegen_function_bodies(cg: &Codegen) {
             next_loop_info: None,
         };
 
-        if let Some(value) = codegen_block(cg, &mut proc_cg, false, block) {
+        if let Some(value) = codegen_block(cg, &mut proc_cg, false, block, true) {
             //@hack building return of the tail returned value on the last block
             // last might not be a correct place for it
             let entry = function.get_last_basic_block().expect("last block");
@@ -674,7 +676,7 @@ fn codegen_expr<'ctx>(
         Expr::Error => panic!("codegen unexpected hir::Expr::Error"),
         Expr::Const { value } => Some(codegen_const_value(cg, value)),
         Expr::If { if_ } => codegen_if(cg, proc_cg, if_),
-        Expr::Block { block } => codegen_block(cg, proc_cg, expect_ptr, block),
+        Expr::Block { block } => codegen_block(cg, proc_cg, expect_ptr, block, false),
         Expr::Match { match_ } => Some(codegen_match(cg, proc_cg, match_)),
         Expr::UnionMember {
             target,
@@ -759,7 +761,7 @@ fn codegen_if<'ctx>(
         .unwrap();
 
     cg.builder.position_at_end(body_block);
-    codegen_block(cg, proc_cg, false, if_.entry.block);
+    codegen_block(cg, proc_cg, false, if_.entry.block, false);
     cg.builder.build_unconditional_branch(exit_block).unwrap();
 
     for (idx, branch) in if_.branches.iter().enumerate() {
@@ -780,13 +782,13 @@ fn codegen_if<'ctx>(
             .unwrap();
 
         cg.builder.position_at_end(body_block);
-        codegen_block(cg, proc_cg, false, branch.block);
+        codegen_block(cg, proc_cg, false, branch.block, false);
         cg.builder.build_unconditional_branch(exit_block).unwrap();
     }
 
     if let Some(block) = if_.else_block {
         cg.builder.position_at_end(next_block);
-        codegen_block(cg, proc_cg, false, block);
+        codegen_block(cg, proc_cg, false, block, false);
         cg.builder.build_unconditional_branch(exit_block).unwrap();
     }
 
@@ -800,6 +802,7 @@ fn codegen_block<'ctx>(
     proc_cg: &mut ProcCodegen<'ctx>,
     expect_ptr: bool,
     block: hir::Block<'ctx>,
+    is_entry: bool,
 ) -> Option<values::BasicValueEnum<'ctx>> {
     proc_cg.enter_block();
 
@@ -851,7 +854,7 @@ fn codegen_block<'ctx>(
                         cg.builder.build_unconditional_branch(body_block).unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, false, loop_.block);
+                        codegen_block(cg, proc_cg, false, loop_.block, false);
 
                         //@might not be valid when break / continue are used 06.05.24
                         // other cfg will make body_block not the actual block we want
@@ -868,7 +871,7 @@ fn codegen_block<'ctx>(
                             .unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, false, loop_.block);
+                        codegen_block(cg, proc_cg, false, loop_.block, false);
 
                         //@might not be valid when break / continue are used 06.05.24
                         cg.builder.build_unconditional_branch(entry_block).unwrap();
@@ -886,7 +889,7 @@ fn codegen_block<'ctx>(
                             .unwrap();
 
                         cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, false, loop_.block);
+                        codegen_block(cg, proc_cg, false, loop_.block, false);
 
                         //@often invalid (this assignment might need special block) if no iterator abstractions are used
                         // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24
@@ -915,18 +918,30 @@ fn codegen_block<'ctx>(
                     "codegen Stmt::ExprTail must be the last statement of the block"
                 );
 
-                codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
-                let value = codegen_expr(cg, proc_cg, expect_ptr, expr);
-                proc_cg.exit_block();
+                if is_entry {
+                    codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
+                    if let Some(value) = codegen_expr(cg, proc_cg, false, expr) {
+                        cg.builder.build_return(Some(&value)).unwrap();
+                    } else {
+                        cg.builder.build_return(None).unwrap();
+                    }
 
-                return value;
+                    proc_cg.exit_block();
+                    return None;
+                } else {
+                    codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
+                    let value = codegen_expr(cg, proc_cg, expect_ptr, expr);
+
+                    proc_cg.exit_block();
+                    return value;
+                }
             }
         }
     }
 
     codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
     proc_cg.exit_block();
-    None
+    return None;
 }
 
 //@contents should be generated once, instead of generating all block code each time
@@ -947,7 +962,7 @@ fn codegen_defer_blocks<'ctx>(
     for block in defer_blocks.iter().copied().rev() {
         cg.builder.build_unconditional_branch(defer_block).unwrap();
         cg.builder.position_at_end(defer_block);
-        codegen_block(cg, proc_cg, false, block);
+        codegen_block(cg, proc_cg, false, block, false);
         defer_block = cg
             .context
             .append_basic_block(proc_cg.function, "defer_next");
