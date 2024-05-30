@@ -2083,47 +2083,55 @@ fn typecheck_block<'hir>(
     let mut tail_range: Option<TextRange> = None;
 
     for stmt in block.stmts {
-        let hir_stmt = match stmt.kind {
+        let (hir_stmt, diverges) = match stmt.kind {
             ast::StmtKind::Break => {
                 if let Some(stmt_res) = typecheck_break(hir, emit, proc, stmt.range) {
-                    proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
+                    let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                    (stmt_res, diverges)
                 } else {
-                    None
+                    continue;
                 }
             }
             ast::StmtKind::Continue => {
                 if let Some(stmt_res) = typecheck_continue(hir, emit, proc, stmt.range) {
-                    proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
+                    let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                    (stmt_res, diverges)
                 } else {
-                    None
+                    continue;
                 }
             }
             ast::StmtKind::Return(expr) => {
                 if let Some(stmt_res) = typecheck_return(hir, emit, proc, stmt.range, expr) {
-                    proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
+                    let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                    (stmt_res, diverges)
                 } else {
-                    None
+                    continue;
                 }
             }
             ast::StmtKind::Defer(block) => {
                 //@defer can behave strangely with diverges checks since it inherits diverges 29.05.24
                 // from currently top block, while defer itself can be triggered multiple times in different locations
+                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = typecheck_defer(hir, emit, proc, stmt.range.start(), *block);
-                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
+                (stmt_res, diverges)
             }
             ast::StmtKind::Loop(loop_) => {
+                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Loop(typecheck_loop(hir, emit, proc, loop_));
-                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
+                (stmt_res, diverges)
             }
             ast::StmtKind::Local(local) => {
+                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Local(typecheck_local(hir, emit, proc, local));
-                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
+                (stmt_res, diverges)
             }
             ast::StmtKind::Assign(assign) => {
+                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign));
-                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
+                (stmt_res, diverges)
             }
             ast::StmtKind::ExprSemi(expr) => {
+                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 //@error or want on expressions that arent used? 29.05.24
                 // `arent used` would mean that result isnt stored anywhere?
                 // but proc calls might have side effects and should always be allowed
@@ -2134,25 +2142,39 @@ fn typecheck_block<'hir>(
                     | ast::ExprKind::Match { .. } => TypeExpectation::VOID,
                     _ => TypeExpectation::NOTHING,
                 };
+                //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
-                //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
-                proc.check_stmt_diverges(hir, emit, false, stmt_res, stmt.range)
+                (stmt_res, diverges)
             }
             ast::StmtKind::ExprTail(expr) => {
+                /*
+                //@30.05.24
+                proc example() -> s32 {
+                    // incorrect diverges warning since
+                    // block isnt entered untill  typecheck_expr is called
+                    -> { // after this
+                        // warning for this
+                        -> 10;
+                    };
+                }
+                 */
                 // type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
+                // @seems to fix the problem (still a hack)
+                let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+
                 // only assigned once, any further `ExprTail` are unreachable
                 if block_ty.is_none() {
                     block_ty = Some(expr_res.ty);
                     tail_range = Some(expr.range);
                 }
-                proc.check_stmt_diverges(hir, emit, true, stmt_res, stmt.range)
+                (stmt_res, diverges)
             }
         };
 
-        if let Some(hir_stmt) = hir_stmt {
+        if !diverges {
             block_stmts.push(hir_stmt);
         }
     }

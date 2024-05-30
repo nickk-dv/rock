@@ -205,16 +205,15 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         hir: &HirData<'hir, '_, '_>,
         emit: &mut HirEmit<'hir>,
         will_diverge: bool,
-        stmt: hir::Stmt<'hir>,
         stmt_range: TextRange,
-    ) -> Option<hir::Stmt<'hir>> {
+    ) -> bool {
         let diverges = &mut self.blocks.last_mut().expect("block exists").diverges;
         match *diverges {
             Diverges::Maybe => {
                 if will_diverge {
                     *diverges = Diverges::Always(stmt_range);
                 }
-                Some(stmt)
+                false
             }
             Diverges::Always(diverge_range) => {
                 *diverges = Diverges::AlwaysWarned;
@@ -227,9 +226,9 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
                         hir.src(self.origin(), diverge_range),
                     ),
                 ));
-                None
+                true
             }
-            Diverges::AlwaysWarned => None,
+            Diverges::AlwaysWarned => true,
         }
     }
 }
