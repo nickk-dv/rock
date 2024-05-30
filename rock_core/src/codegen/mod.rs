@@ -585,22 +585,15 @@ fn codegen_function_bodies(cg: &Codegen) {
             next_loop_info: None,
         };
 
-        if let Some(value) = codegen_block(cg, &mut proc_cg, false, block, BlockKind::TailReturn) {
-            //@hack building return of the tail returned value on the last block
-            // last might not be a correct place for it
-            let entry = function.get_last_basic_block().expect("last block");
-            cg.builder.position_at_end(entry);
-            cg.builder.build_return(Some(&value)).unwrap();
-        } else {
-            //@hack generating implicit return
-            //also generate it on last block on regular void return functions?
-            // cannot detect if `return;` was already written there
-            //@overall all returns must be included in Hir explicitly,
-            //so codegen doesnt need to do any work to get correct outputs
-            let entry = function.get_last_basic_block().expect("last block");
-            if entry.get_terminator().is_none() {
-                cg.builder.position_at_end(entry);
+        let entry_value = codegen_block(cg, &mut proc_cg, false, block, BlockKind::TailReturn);
+        assert!(entry_value.is_none(), "entry block cannot return a value"); //@sanity check, remove when stable 31.05.24
+
+        //@hack fix-up of single implicit `return void` basic block
+        for block in function.get_basic_block_iter() {
+            if block.get_terminator().is_none() {
+                cg.builder.position_at_end(block);
                 cg.builder.build_return(None).unwrap();
+                break;
             }
         }
     }
@@ -829,6 +822,8 @@ fn codegen_block<'ctx>(
     expect_ptr: bool,
     block: hir::Block<'ctx>,
     kind: BlockKind<'ctx>,
+    //@dont return any value from blocks? 31.05.24
+    // only simulate that effect via BlockKind::TailStore etc.
 ) -> Option<values::BasicValueEnum<'ctx>> {
     proc_cg.enter_block();
 
@@ -895,7 +890,7 @@ fn codegen_block<'ctx>(
                         cg.builder.position_at_end(body_block);
                         codegen_block(cg, proc_cg, false, loop_.block, BlockKind::TailIgnore);
 
-                        //@might not be valid when break / continue are used 06.05.24
+                        //@hack, might not be valid when break / continue are used 06.05.24
                         // other cfg will make body_block not the actual block we want
                         if body_block.get_terminator().is_none() {
                             cg.builder.position_at_end(body_block);
@@ -913,8 +908,16 @@ fn codegen_block<'ctx>(
                         cg.builder.position_at_end(body_block);
                         codegen_block(cg, proc_cg, false, loop_.block, BlockKind::TailIgnore);
 
-                        //@might not be valid when break / continue are used 06.05.24
-                        cg.builder.build_unconditional_branch(entry_block).unwrap();
+                        //@hack, likely wrong if positioned in the wrong place
+                        if cg
+                            .builder
+                            .get_insert_block()
+                            .unwrap()
+                            .get_terminator()
+                            .is_none()
+                        {
+                            cg.builder.build_unconditional_branch(entry_block).unwrap();
+                        }
                     }
                     hir::LoopKind::ForLoop {
                         local_id,
@@ -932,13 +935,21 @@ fn codegen_block<'ctx>(
                         cg.builder.position_at_end(body_block);
                         codegen_block(cg, proc_cg, false, loop_.block, BlockKind::TailIgnore);
 
-                        //@often invalid (this assignment might need special block) if no iterator abstractions are used
+                        //@hack, often invalid (this assignment might need special block) if no iterator abstractions are used
                         // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24
                         cg.builder.position_at_end(body_block);
                         codegen_assign(cg, proc_cg, assign);
 
-                        //@might not be valid when break / continue are used 06.05.24
-                        cg.builder.build_unconditional_branch(entry_block).unwrap();
+                        //@hack, likely wrong if positioned in the wrong place
+                        if cg
+                            .builder
+                            .get_insert_block()
+                            .unwrap()
+                            .get_terminator()
+                            .is_none()
+                        {
+                            cg.builder.build_unconditional_branch(entry_block).unwrap();
+                        }
                     }
                 }
 
@@ -993,7 +1004,13 @@ fn codegen_block<'ctx>(
         }
     }
 
-    codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
+    //@hack partially fix ignoring divergense when generating block exit `defers`
+    // still likely to false generate `defers` in match or if else chains
+    let insert_block = cg.builder.get_insert_block().unwrap();
+    if insert_block.get_terminator().is_none() {
+        codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
+    }
+
     proc_cg.exit_block();
     return None;
 }
