@@ -104,10 +104,16 @@ impl<'ctx> ProcCodegen<'ctx> {
         self.defer_blocks.push(block);
     }
 
-    fn last_loop_info(&self) -> LoopInfo<'ctx> {
+    fn last_loop_info(&self) -> (LoopInfo<'ctx>, Vec<hir::Block<'ctx>>) {
+        let mut defer_count = 0;
         for info in self.block_info.iter().rev() {
+            defer_count += info.defer_count;
+
             if let Some(loop_info) = info.loop_info {
-                return loop_info;
+                let total_count = self.defer_blocks.len();
+                let range = total_count - defer_count as usize..total_count;
+                let defer_blocks = self.defer_blocks[range].to_vec();
+                return (loop_info, defer_blocks);
             }
         }
         unreachable!("last loop must exist")
@@ -115,8 +121,8 @@ impl<'ctx> ProcCodegen<'ctx> {
 
     fn last_defer_blocks(&self) -> Vec<hir::Block<'ctx>> {
         let total_count = self.defer_blocks.len();
-        let last_count = self.block_info.last().unwrap().defer_count;
-        let range = total_count - last_count as usize..total_count;
+        let defer_count = self.block_info.last().unwrap().defer_count;
+        let range = total_count - defer_count as usize..total_count;
         self.defer_blocks[range].to_vec()
     }
 
@@ -826,17 +832,29 @@ fn codegen_block<'ctx>(
 ) -> Option<values::BasicValueEnum<'ctx>> {
     proc_cg.enter_block();
 
+    //@disregarding divergence will lead to trying to generate @31.04.24
+    // exiting defers incorrectly, hard problem not sure what todo
     for stmt in block.stmts {
         match *stmt {
             hir::Stmt::Break => {
-                let break_bb = proc_cg.last_loop_info().break_bb;
-                //@which defer block to generate? 06.05.24
-                cg.builder.build_unconditional_branch(break_bb).unwrap();
+                let (loop_info, defer_blocks) = proc_cg.last_loop_info();
+                codegen_defer_blocks(cg, proc_cg, &defer_blocks);
+                cg.builder
+                    .build_unconditional_branch(loop_info.break_bb)
+                    .unwrap();
+
+                proc_cg.exit_block();
+                return None;
             }
             hir::Stmt::Continue => {
-                let continue_bb = proc_cg.last_loop_info().continue_bb;
-                //@which defer block to generate? 06.05.24
-                cg.builder.build_unconditional_branch(continue_bb).unwrap();
+                let (loop_info, defer_blocks) = proc_cg.last_loop_info();
+                codegen_defer_blocks(cg, proc_cg, &defer_blocks);
+                cg.builder
+                    .build_unconditional_branch(loop_info.continue_bb)
+                    .unwrap();
+
+                proc_cg.exit_block();
+                return None;
             }
             hir::Stmt::Return(expr) => {
                 codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
@@ -853,7 +871,6 @@ fn codegen_block<'ctx>(
                     cg.builder.build_return(None).unwrap();
                 }
 
-                // prevents defer generation on exit
                 proc_cg.exit_block();
                 return None;
             }
