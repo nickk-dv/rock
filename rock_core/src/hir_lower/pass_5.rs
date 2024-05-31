@@ -383,7 +383,9 @@ pub fn typecheck_expr<'hir>(
             typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None)
                 .into_type_result(emit)
         }
-        ast::ExprKind::Match { match_ } => typecheck_match(hir, emit, proc, expect, match_),
+        ast::ExprKind::Match { match_ } => {
+            typecheck_match(hir, emit, proc, expect, match_, expr.range)
+        }
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index { target, index } => {
             typecheck_index(hir, emit, proc, target, index, expr.range)
@@ -545,7 +547,7 @@ fn typecheck_if<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     mut expect: TypeExpectation<'hir>,
     if_: &ast::If<'_>,
-    if_expr_range: TextRange,
+    if_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut if_type: hir::Type;
 
@@ -568,11 +570,17 @@ fn typecheck_if<'hir>(
     };
 
     let branches = {
-        let mut branches = Vec::<hir::Branch>::with_capacity(if_.branches.len());
+        let mut branches = Vec::with_capacity(if_.branches.len());
         for &branch in if_.branches {
             let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, branch.cond);
             let block_res =
                 typecheck_block(hir, emit, proc, expect, branch.block, BlockEnter::None);
+
+            branches.push(hir::Branch {
+                cond: cond_res.expr,
+                block: block_res.block,
+            });
+
             if if_type.is_error() {
                 if_type = block_res.ty;
             }
@@ -584,16 +592,13 @@ fn typecheck_if<'hir>(
                         .map(|range| hir.src(proc.origin(), range)),
                 );
             }
-            branches.push(hir::Branch {
-                cond: cond_res.expr,
-                block: block_res.block,
-            });
         }
         emit.arena.alloc_slice(&branches)
     };
 
     let else_block = if let Some(else_block) = if_.else_block {
         let block_res = typecheck_block(hir, emit, proc, expect, else_block, BlockEnter::None);
+
         if if_type.is_error() {
             if_type = block_res.ty;
         }
@@ -605,9 +610,9 @@ fn typecheck_if<'hir>(
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() {
         emit.error(ErrorComp::new(
             "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
-            hir.src(proc.origin(), if_expr_range),
+            hir.src(proc.origin(), if_range),
             None,
-        ))
+        ));
     }
 
     let if_ = emit.arena.alloc(hir::If {
@@ -623,50 +628,46 @@ fn typecheck_match<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    mut expect: TypeExpectation<'hir>,
     match_: &ast::Match<'_>,
+    match_range: TextRange,
 ) -> TypeResult<'hir> {
     let on_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, match_.on_expr);
+    check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
+
+    let mut match_type = hir::Type::Error;
     let pat_expect = TypeExpectation::new(
         on_res.ty,
         Some(hir.src(proc.origin(), match_.on_expr.range)),
     );
 
-    if !verify_can_match(on_res.ty) {
-        emit.error(ErrorComp::new(
-            format!(
-                "cannot match on value of type `{}`",
-                type_format(hir, emit, on_res.ty)
-            ),
-            hir.src(proc.origin(), match_.on_expr.range),
-            None,
-        ));
-    }
+    let arms = {
+        let mut arms = Vec::with_capacity(match_.arms.len());
+        for arm in match_.arms.iter() {
+            let (_, pat_value_id) =
+                pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
+            let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
-    //@approx esmitation based on first match arm value
-    let mut match_type = hir::Type::Error;
-    let mut match_type_set = false;
-    let mut match_arms = Vec::<hir::MatchArm>::with_capacity(match_.arms.len());
+            arms.push(hir::MatchArm {
+                pat: pat_value_id,
+                expr: value_res.expr,
+            });
 
-    for arm in match_.arms.iter() {
-        let (_, pat_value_id) =
-            pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
-
-        let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
-        if !match_type_set {
-            match_type_set = true;
-            match_type = value_res.ty;
+            if match_type.is_error() {
+                match_type = value_res.ty;
+            }
+            if expect.ty.is_error() {
+                expect =
+                    TypeExpectation::new(value_res.ty, Some(hir.src(proc.origin(), arm.expr.range)))
+            }
         }
-
-        match_arms.push(hir::MatchArm {
-            pat: pat_value_id,
-            expr: value_res.expr,
-        })
-    }
+        emit.arena.alloc_slice(&arms)
+    };
 
     let fallback = if let Some(fallback) = match_.fallback {
         let value_res = typecheck_expr(hir, emit, proc, expect, fallback);
-        if !match_type_set {
+
+        if match_type.is_error() {
             match_type = value_res.ty;
         }
         Some(value_res.expr)
@@ -674,32 +675,18 @@ fn typecheck_match<'hir>(
         None
     };
 
-    let match_arms = emit.arena.alloc_slice(&match_arms);
     let match_ = emit.arena.alloc(hir::Match {
         on_expr: on_res.expr,
-        arms: match_arms,
+        arms,
         fallback,
     });
     let match_expr = emit.arena.alloc(hir::Expr::Match { match_ });
 
-    // type expectation is always delegated,
-    // or in case of 0 arms and no fallback
-    // exhaustiveness error will be raised
-    TypeResult::new_ignore_typecheck(match_type, match_expr)
-}
-
-fn verify_can_match(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::new(basic),
-            BasicTypeKind::SignedInt
-                | BasicTypeKind::UnsignedInt
-                | BasicTypeKind::Bool
-                | BasicTypeKind::Char
-        ),
-        hir::Type::Enum(_) => true,
-        _ => false,
+    if match_.arms.is_empty() && match_.fallback.is_none() {
+        //@diverges always
+        TypeResult::new_ignore_typecheck(hir::Type::Basic(BasicType::Never), match_expr)
+    } else {
+        TypeResult::new_ignore_typecheck(match_type, match_expr)
     }
 }
 
@@ -1920,7 +1907,7 @@ fn typecheck_binary<'hir>(
     };
     let lhs_res = typecheck_expr(hir, emit, proc, lhs_expect, bin.lhs);
 
-    let compatable = check_bin_op_compatibility(hir, emit, proc.origin(), lhs_res.ty, op, op_range);
+    let compatible = check_bin_op_compatibility(hir, emit, proc.origin(), lhs_res.ty, op, op_range);
 
     let rhs_expect = match op {
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => TypeExpectation::BOOL,
@@ -1929,7 +1916,7 @@ fn typecheck_binary<'hir>(
     };
     let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, bin.rhs);
 
-    let binary_ty = if compatable {
+    let binary_ty = if compatible {
         match op {
             ast::BinOp::IsEq
             | ast::BinOp::NotEq
@@ -1961,6 +1948,38 @@ fn typecheck_binary<'hir>(
     TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
 }
 
+fn check_match_compatibility<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    ty: hir::Type,
+    range: TextRange,
+) {
+    let compatible = match ty {
+        hir::Type::Error => true,
+        hir::Type::Basic(basic) => matches!(
+            BasicTypeKind::new(basic),
+            BasicTypeKind::SignedInt
+                | BasicTypeKind::UnsignedInt
+                | BasicTypeKind::Bool
+                | BasicTypeKind::Char
+        ),
+        hir::Type::Enum(_) => true,
+        _ => false,
+    };
+
+    if !compatible {
+        emit.error(ErrorComp::new(
+            format!(
+                "cannot match on value of type `{}`",
+                type_format(hir, emit, ty)
+            ),
+            hir.src(origin_id, range),
+            None,
+        ));
+    }
+}
+
 fn check_un_op_compatibility<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1973,7 +1992,7 @@ fn check_un_op_compatibility<'hir>(
         return false;
     }
 
-    let compatable = match op {
+    let compatible = match op {
         ast::UnOp::Neg => match rhs_ty {
             hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
                 BasicTypeKind::SignedInt | BasicTypeKind::Float => true,
@@ -1995,7 +2014,7 @@ fn check_un_op_compatibility<'hir>(
         },
     };
 
-    if !compatable {
+    if !compatible {
         emit.error(ErrorComp::new(
             format!(
                 "cannot apply unary operator `{}` on value of type `{}`",
@@ -2006,7 +2025,7 @@ fn check_un_op_compatibility<'hir>(
             None,
         ));
     }
-    compatable
+    compatible
 }
 
 fn check_bin_op_compatibility<'hir>(
@@ -2021,7 +2040,7 @@ fn check_bin_op_compatibility<'hir>(
         return false;
     }
 
-    let compatable = match op {
+    let compatible = match op {
         ast::BinOp::Add | ast::BinOp::Sub | ast::BinOp::Mul | ast::BinOp::Div => match lhs_ty {
             hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_number(),
             _ => false,
@@ -2054,7 +2073,7 @@ fn check_bin_op_compatibility<'hir>(
         }
     };
 
-    if !compatable {
+    if !compatible {
         emit.error(ErrorComp::new(
             format!(
                 "cannot apply binary operator `{}` on value of type `{}`",
@@ -2065,7 +2084,7 @@ fn check_bin_op_compatibility<'hir>(
             None,
         ));
     }
-    compatable
+    compatible
 }
 
 fn typecheck_block<'hir>(

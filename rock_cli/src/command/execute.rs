@@ -138,7 +138,7 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     match data.kind {
         PackageKind::Bin => {
             let bin_content = format!(
-                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    io.printf(c\"Lib `{}` works\\n\");\n    return 0;\n}}\n",
+                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    io.printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &bin_content)?
