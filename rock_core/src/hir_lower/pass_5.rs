@@ -406,7 +406,9 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(hir, emit, proc, struct_init)
         }
-        ast::ExprKind::ArrayInit { input } => typecheck_array_init(hir, emit, proc, expect, input),
+        ast::ExprKind::ArrayInit { input } => {
+            typecheck_array_init(hir, emit, proc, expect, input, expr.range)
+        }
         ast::ExprKind::ArrayRepeat { expr, len } => {
             typecheck_array_repeat(hir, emit, proc, expect, expr, len)
         }
@@ -1636,43 +1638,56 @@ fn typecheck_array_init<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     mut expect: TypeExpectation<'hir>,
     input: &[&ast::Expr<'_>],
+    array_range: TextRange,
 ) -> TypeResult<'hir> {
+    let mut expect_array_ty = None;
     expect = match expect.ty {
-        hir::Type::ArrayStatic(array) => TypeExpectation::new(array.elem_ty, expect.source),
+        hir::Type::ArrayStatic(array) => {
+            expect_array_ty = Some(array);
+            TypeExpectation::new(array.elem_ty, expect.source)
+        }
         _ => TypeExpectation::new(hir::Type::Error, None),
     };
-
-    //@unknown type in empty initializers gets ignored
-    // same would be a problem for empty slices: `&[]`
-    // & will be used as slicing syntax most likely
-    // need to properly seaprate Error type and Unknown types
-    // and handle them properly (relates to variables and overall inference flow) @06.04.24
     let mut elem_ty = hir::Type::Error;
 
-    let mut hir_input = Vec::with_capacity(input.len());
-    for (idx, &expr) in input.iter().enumerate() {
-        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-        hir_input.push(expr_res.expr);
-        if idx == 0 {
-            elem_ty = expr_res.ty;
+    let input = {
+        let mut input_res = Vec::with_capacity(input.len());
+        for &expr in input.iter() {
+            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+            input_res.push(expr_res.expr);
+
+            if elem_ty.is_error() {
+                elem_ty = expr_res.ty;
+            }
+            if expect.ty.is_error() {
+                expect = TypeExpectation::new(expr_res.ty, Some(hir.src(proc.origin(), expr.range)))
+            }
         }
-    }
-    let hir_input = emit.arena.alloc_slice(&hir_input);
+        emit.arena.alloc_slice(&input_res)
+    };
+
+    let elem_ty = if input.is_empty() {
+        if let Some(array_ty) = expect_array_ty {
+            array_ty.elem_ty
+        } else {
+            emit.error(ErrorComp::new(
+                "cannot infer type of empty array",
+                hir.src(proc.origin(), array_range),
+                None,
+            ));
+            hir::Type::Error
+        }
+    } else {
+        elem_ty
+    };
 
     let array_type: &hir::ArrayStatic = emit.arena.alloc(hir::ArrayStatic {
         len: hir::ArrayStaticLen::Immediate(Some(input.len() as u64)),
         elem_ty,
     });
-
-    let array_init = emit.arena.alloc(hir::ArrayInit {
-        elem_ty,
-        input: hir_input,
-    });
-    let array_expr = hir::Expr::ArrayInit { array_init };
-    TypeResult::new(
-        hir::Type::ArrayStatic(array_type),
-        emit.arena.alloc(array_expr),
-    )
+    let array_init = emit.arena.alloc(hir::ArrayInit { elem_ty, input });
+    let array_expr = emit.arena.alloc(hir::Expr::ArrayInit { array_init });
+    TypeResult::new(hir::Type::ArrayStatic(array_type), array_expr)
 }
 
 fn typecheck_array_repeat<'hir>(

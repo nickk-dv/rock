@@ -1272,6 +1272,9 @@ fn codegen_panic_conditional<'ctx>(
     cg.builder.position_at_end(else_block);
 }
 
+//@fix how bounds check is done 31.05.24
+// possible feature is to not bounds check indexing with constant values
+// that are proven to be in bounds of static array type, store flag in hir
 #[allow(unsafe_code)]
 fn codegen_index<'ctx>(
     cg: &Codegen<'ctx>,
