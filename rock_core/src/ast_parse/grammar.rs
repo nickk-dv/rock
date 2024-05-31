@@ -1010,9 +1010,11 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
     let start_offset = p.state.match_arms.start();
     let on_expr = expr(p)?;
     let mut fallback = None;
+    let mut fallback_range = TextRange::empty_at(0.into());
 
     p.expect(T!['{'])?;
     while !p.at(T!['}']) && !p.at(T![eof]) {
+        fallback_range = p.peek_range();
         if p.eat(T![_]) {
             p.expect(T![->])?;
             let expr = expr(p)?;
@@ -1039,6 +1041,7 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
         on_expr,
         arms,
         fallback,
+        fallback_range,
     });
     Ok(match_)
 }

@@ -289,9 +289,9 @@ pub fn check_type_expectation<'hir>(
     from_range: TextRange,
     expect: TypeExpectation<'hir>,
     found_ty: hir::Type<'hir>,
-) {
+) -> bool {
     if type_matches(hir, emit, expect.ty, found_ty) {
-        return;
+        return false;
     }
 
     let info = if let Some(source) = expect.source {
@@ -309,12 +309,14 @@ pub fn check_type_expectation<'hir>(
         hir.src(origin_id, from_range),
         info,
     ));
+    return true;
 }
 
 pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     pub expr: &'hir hir::Expr<'hir>,
     ignore: bool,
+    errored: bool,
 }
 
 impl<'hir> TypeResult<'hir> {
@@ -323,6 +325,7 @@ impl<'hir> TypeResult<'hir> {
             ty,
             expr,
             ignore: false,
+            errored: false,
         }
     }
 
@@ -331,6 +334,7 @@ impl<'hir> TypeResult<'hir> {
             ty,
             expr,
             ignore: true,
+            errored: false,
         }
     }
 }
@@ -359,6 +363,7 @@ impl<'hir> BlockResult<'hir> {
             ty: self.ty,
             expr: emit.arena.alloc(hir::Expr::Block { block: self.block }),
             ignore: true,
+            errored: false, //@not used
         }
     }
 }
@@ -371,7 +376,7 @@ pub fn typecheck_expr<'hir>(
     expect: TypeExpectation<'hir>,
     expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
-    let expr_res = match expr.kind {
+    let mut expr_res = match expr.kind {
         ast::ExprKind::LitNull => typecheck_lit_null(emit),
         ast::ExprKind::LitBool { val } => typecheck_lit_bool(emit, val),
         ast::ExprKind::LitInt { val } => typecheck_lit_int(emit, expect, val),
@@ -422,7 +427,8 @@ pub fn typecheck_expr<'hir>(
     };
 
     if !expr_res.ignore {
-        check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
+        expr_res.errored =
+            check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
     }
 
     expr_res
@@ -638,6 +644,7 @@ fn typecheck_match<'hir>(
     check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
 
     let mut match_type = hir::Type::Error;
+    let mut check_exaust = true;
     let pat_expect = TypeExpectation::new(
         on_res.ty,
         Some(hir.src(proc.origin(), match_.on_expr.range)),
@@ -646,12 +653,17 @@ fn typecheck_match<'hir>(
     let arms = {
         let mut arms = Vec::with_capacity(match_.arms.len());
         for arm in match_.arms.iter() {
-            let (_, pat_value_id) =
+            let (value, value_id) =
                 pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
             let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
+            //@check if anything in pattern errored?
+            if value == hir::ConstValue::Error {
+                check_exaust = false;
+            }
+
             arms.push(hir::MatchArm {
-                pat: pat_value_id,
+                pat: value_id,
                 expr: value_res.expr,
             });
 
@@ -677,18 +689,103 @@ fn typecheck_match<'hir>(
         None
     };
 
-    let match_ = emit.arena.alloc(hir::Match {
+    let match_hir = emit.arena.alloc(hir::Match {
         on_expr: on_res.expr,
         arms,
         fallback,
     });
-    let match_expr = emit.arena.alloc(hir::Expr::Match { match_ });
+    let match_expr = emit.arena.alloc(hir::Expr::Match { match_: match_hir });
+    if check_exaust {
+        check_match_exhaust(hir, emit, proc, match_hir, match_, match_range, on_res.ty);
+    }
 
     if match_.arms.is_empty() && match_.fallback.is_none() {
         //@diverges always
         TypeResult::new_ignore_typecheck(hir::Type::Basic(BasicType::Never), match_expr)
     } else {
         TypeResult::new_ignore_typecheck(match_type, match_expr)
+    }
+}
+
+fn check_match_exhaust<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    match_: &hir::Match<'hir>,
+    match_ast: &ast::Match<'_>,
+    match_range: TextRange,
+    on_ty: hir::Type<'hir>,
+) {
+    //@todo int
+    match on_ty {
+        hir::Type::Basic(BasicType::Bool) => {
+            let mut cover_true = false;
+            let mut cover_false = false;
+
+            for (idx, arm) in match_.arms.iter().enumerate() {
+                let value = emit.const_intern.get(arm.pat);
+                match value {
+                    hir::ConstValue::Bool { val } => {
+                        if val {
+                            if cover_true {
+                                let ast_arm = match_ast.arms[idx];
+                                emit.warning(WarningComp::new(
+                                    "unreachable pattern",
+                                    hir.src(proc.origin(), ast_arm.pat.0.range),
+                                    None,
+                                ));
+                            } else {
+                                cover_true = true;
+                            }
+                        } else {
+                            if cover_false {
+                                let ast_arm = match_ast.arms[idx];
+                                emit.warning(WarningComp::new(
+                                    "unreachable pattern",
+                                    hir.src(proc.origin(), ast_arm.pat.0.range),
+                                    None,
+                                ));
+                            } else {
+                                cover_false = true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if match_.fallback.is_some() {
+                if cover_true && cover_false {
+                    emit.warning(WarningComp::new(
+                        "unreachable pattern",
+                        hir.src(proc.origin(), match_ast.fallback_range),
+                        None,
+                    ));
+                }
+            } else {
+                let missing = match (cover_true, cover_false) {
+                    (true, true) => return,
+                    (true, false) => "`false`",
+                    (false, true) => "`true`",
+                    (false, false) => "`true`, `false`",
+                };
+                emit.error(ErrorComp::new(
+                    format!("non-exhaustive match patterns\nmissing: {}", missing),
+                    hir.src(
+                        proc.origin(),
+                        TextRange::new(match_range.start(), match_range.start() + 5.into()),
+                    ),
+                    None,
+                ));
+            }
+        }
+        hir::Type::Basic(BasicType::Char) => {
+            //
+        }
+        hir::Type::Enum(_) => {
+            //
+        }
+        _ => {}
     }
 }
 

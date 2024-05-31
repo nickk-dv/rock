@@ -338,6 +338,7 @@ pub struct Match<'ast> {
     pub on_expr: &'ast Expr<'ast>,
     pub arms: &'ast [MatchArm<'ast>],
     pub fallback: Option<&'ast Expr<'ast>>,
+    pub fallback_range: TextRange,
 }
 
 #[derive(Copy, Clone)]
