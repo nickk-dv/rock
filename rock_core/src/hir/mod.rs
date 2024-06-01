@@ -433,6 +433,9 @@ impl<'hir> Hir<'hir> {
     pub fn global_data(&self, id: GlobalID) -> &GlobalData<'hir> {
         &self.globals[id.index()]
     }
+    pub fn const_value(&self, id: ConstValueID) -> ConstValue<'hir> {
+        self.const_intern.get(id)
+    }
     pub fn const_eval_value(&self, id: ConstEvalID) -> ConstValue<'hir> {
         let value_id = self.const_values[id.index()];
         self.const_intern.get(value_id)

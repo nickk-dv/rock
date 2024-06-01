@@ -678,7 +678,10 @@ fn codegen_expr<'ctx>(
         Expr::Const { value } => Some(codegen_const_value(cg, value)),
         Expr::If { if_ } => codegen_if(cg, proc_cg, if_, kind),
         Expr::Block { block } => codegen_block(cg, proc_cg, expect_ptr, block, kind),
-        Expr::Match { match_ } => Some(codegen_match(cg, proc_cg, match_, kind)),
+        Expr::Match { match_ } => {
+            codegen_match(cg, proc_cg, match_, kind);
+            None
+        }
         Expr::UnionMember {
             target,
             union_id,
@@ -1097,13 +1100,53 @@ fn codegen_assign<'ctx>(
     }
 }
 
+//@since its an expr semantics are not clear 01.06.24
+// will need to store, temp alloca return those values
+// generate hir blocks for non block expressions?
 fn codegen_match<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     match_: &hir::Match<'ctx>,
     kind: BlockKind<'ctx>,
-) -> values::BasicValueEnum<'ctx> {
-    todo!("codegen `match` not supported")
+) {
+    let insert_bb = cg.builder.get_insert_block().unwrap();
+    let on_value =
+        codegen_expr(cg, proc_cg, false, match_.on_expr, BlockKind::TailAlloca).expect("value");
+    let exit_bb = cg
+        .context
+        .append_basic_block(proc_cg.function, "match_exit");
+
+    let mut cases = Vec::with_capacity(match_.arms.len());
+    for arm in match_.arms {
+        let value = codegen_const_value(cg, cg.hir.const_value(arm.pat));
+        let case_bb = cg
+            .context
+            .append_basic_block(proc_cg.function, "match_case");
+        cases.push((value.into_int_value(), case_bb));
+
+        cg.builder.position_at_end(case_bb);
+        codegen_expr(cg, proc_cg, false, arm.expr, kind);
+
+        if cg
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
+            cg.builder.build_unconditional_branch(exit_bb).unwrap();
+        }
+    }
+
+    if let Some(fallback) = match_.fallback {
+        panic!("codegen: match with fallback not supported");
+    } else {
+        cg.builder.position_at_end(insert_bb);
+        cg.builder
+            .build_switch(on_value.into_int_value(), exit_bb, &cases)
+            .unwrap();
+        cg.builder.position_at_end(exit_bb);
+    }
 }
 
 fn codegen_union_member<'ctx>(
