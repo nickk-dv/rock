@@ -8,9 +8,8 @@ use inkwell::builder;
 use inkwell::context;
 use inkwell::module;
 use inkwell::targets;
-use inkwell::types;
-use inkwell::types::BasicType;
-use inkwell::values;
+use inkwell::types::{self, AsTypeRef, BasicType};
+use inkwell::values::{self, AsValueRef};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -597,6 +596,7 @@ fn codegen_function_bodies(cg: &Codegen) {
     }
 }
 
+#[allow(unsafe_code)]
 fn codegen_const_value<'ctx>(
     cg: &Codegen<'ctx>,
     value: hir::ConstValue<'ctx>,
@@ -616,10 +616,10 @@ fn codegen_const_value<'ctx>(
         }
         hir::ConstValue::Char { val } => cg.context.i32_type().const_int(val as u64, false).into(),
         hir::ConstValue::String { id, c_string } => codegen_lit_string(cg, id, c_string),
-        hir::ConstValue::Procedure { proc_id } => cg.function_values[proc_id.index()]
-            .as_global_value()
-            .as_pointer_value()
-            .into(),
+        hir::ConstValue::Procedure { proc_id } => {
+            let function = cg.function_values[proc_id.index()];
+            function.as_global_value().as_pointer_value().into()
+        }
         hir::ConstValue::EnumVariant {
             enum_id,
             variant_id,
@@ -628,24 +628,37 @@ fn codegen_const_value<'ctx>(
             codegen_const_value(cg, cg.hir.const_eval_value(variant.value))
         }
         hir::ConstValue::Struct { struct_ } => {
+            use llvm_sys::core::LLVMConstNamedStruct;
             let mut values = Vec::with_capacity(struct_.fields.len());
-            for field in struct_.fields {
-                let value = codegen_const_value(cg, cg.hir.const_value(*field));
-                values.push(value);
+            let struct_ty = cg.struct_type(struct_.struct_id).as_type_ref();
+
+            for value_id in struct_.fields {
+                let value = codegen_const_value(cg, cg.hir.const_value(*value_id));
+                values.push(value.as_value_ref());
             }
-            let struct_ty = cg.struct_type(struct_.struct_id);
-            struct_ty.const_named_struct(&values).into()
+
+            unsafe {
+                let struct_value =
+                    LLVMConstNamedStruct(struct_ty, values.as_mut_ptr(), values.len() as u32);
+                values::BasicValueEnum::new(struct_value)
+            }
         }
         hir::ConstValue::Array { array } => {
+            use llvm_sys::core::LLVMConstArray2;
             let mut values = Vec::with_capacity(array.values.len());
-            for input in array.values {
-                let value = codegen_const_value(cg, cg.hir.const_value(*input));
-                //@api for const array is wrong? forcing to use array_value for elements?
-                values.push(value.into_array_value());
+            let mut elem_ty = None;
+
+            for value_id in array.values {
+                let value = codegen_const_value(cg, cg.hir.const_value(*value_id));
+                elem_ty = Some(value.get_type().as_type_ref());
+                values.push(value.as_value_ref());
             }
-            //@relying on having a 1+ value to know the type
-            let array_ty = values[0].get_type().array_type(array.values.len() as u32);
-            array_ty.const_array(&values).into()
+
+            unsafe {
+                let array_value =
+                    LLVMConstArray2(elem_ty.unwrap(), values.as_mut_ptr(), values.len() as u64);
+                values::BasicValueEnum::new(array_value)
+            }
         }
         hir::ConstValue::ArrayRepeat { value, len } => {
             todo!("codegen ConstValue::ArrayRepeat unsupported")
