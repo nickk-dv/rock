@@ -757,6 +757,9 @@ fn typecheck_match<'hir>(
     }
 }
 
+//@different enum variants 01.06.24
+// could have same value and result in
+// error in llvm ir generation, not checked currently
 fn check_match_exhaust<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
