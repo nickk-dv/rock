@@ -309,6 +309,48 @@ impl<'ctx> Codegen<'ctx> {
     fn type_into_basic_metadata(&self, ty: hir::Type) -> types::BasicMetadataTypeEnum<'ctx> {
         self.type_into_any(ty).try_into().expect("value type")
     }
+
+    #[inline]
+    #[must_use]
+    fn append_bb(&self, proc_cg: &ProcCodegen<'ctx>, name: &'static str) -> BasicBlock<'ctx> {
+        self.context.append_basic_block(proc_cg.function, name)
+    }
+    #[inline]
+    #[must_use]
+    fn insert_bb(&self, after_bb: BasicBlock<'ctx>, name: &'static str) -> BasicBlock<'ctx> {
+        self.context.insert_basic_block_after(after_bb, name)
+    }
+    #[inline]
+    #[must_use]
+    fn get_insert_bb(&self) -> BasicBlock<'ctx> {
+        self.builder.get_insert_block().unwrap()
+    }
+    #[inline]
+    fn position_at_end(&self, bb: BasicBlock<'ctx>) {
+        self.builder.position_at_end(bb);
+    }
+    #[inline]
+    fn build_br(&self, bb: BasicBlock<'ctx>) {
+        self.builder.build_unconditional_branch(bb).unwrap();
+    }
+    #[inline]
+    fn build_br_no_term(&self, bb: BasicBlock<'ctx>) {
+        let insert_bb = self.get_insert_bb();
+        if insert_bb.get_terminator().is_none() {
+            self.builder.build_unconditional_branch(bb).unwrap();
+        }
+    }
+    #[inline]
+    fn build_cond_br(
+        &self,
+        cond: values::BasicValueEnum<'ctx>,
+        then_bb: BasicBlock<'ctx>,
+        else_bb: BasicBlock<'ctx>,
+    ) {
+        self.builder
+            .build_conditional_branch(cond.into_int_value(), then_bb, else_bb)
+            .unwrap();
+    }
 }
 
 pub fn codegen(
@@ -776,65 +818,57 @@ fn codegen_expr<'ctx>(
     }
 }
 
+//@simplify variable mutation and block flow
 fn codegen_if<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     if_: &'ctx hir::If<'ctx>,
     kind: BlockKind<'ctx>,
 ) {
-    let cond_block = cg.context.append_basic_block(proc_cg.function, "if_cond");
-    let mut body_block = cg.context.append_basic_block(proc_cg.function, "if_body");
-    let exit_block = cg.context.append_basic_block(proc_cg.function, "if_exit");
+    let mut body_bb = cg.append_bb(proc_cg, "if_body");
+    let exit_bb = cg.append_bb(proc_cg, "if_exit");
 
-    // next if_cond or if_else block
-    let mut next_block = if !if_.branches.is_empty() || if_.else_block.is_some() {
-        cg.context.insert_basic_block_after(body_block, "if_next")
+    let mut next_bb = if !if_.branches.is_empty() || if_.else_block.is_some() {
+        cg.insert_bb(body_bb, "if_next")
     } else {
-        exit_block
+        exit_bb
     };
 
-    cg.builder.build_unconditional_branch(cond_block).unwrap();
-    cg.builder.position_at_end(cond_block);
     let cond =
         codegen_expr(cg, proc_cg, false, if_.entry.cond, BlockKind::TailAlloca).expect("value");
-    cg.builder
-        .build_conditional_branch(cond.into_int_value(), body_block, next_block)
-        .unwrap();
+    cg.build_cond_br(cond, body_bb, next_bb);
 
-    cg.builder.position_at_end(body_block);
+    cg.position_at_end(body_bb);
     codegen_block(cg, proc_cg, if_.entry.block, kind);
-    cg.builder.build_unconditional_branch(exit_block).unwrap();
+    cg.build_br_no_term(exit_bb);
 
     for (idx, branch) in if_.branches.iter().enumerate() {
         let last = idx + 1 == if_.branches.len();
         let create_next = !last || if_.else_block.is_some();
 
-        body_block = cg.context.insert_basic_block_after(next_block, "if_body");
+        body_bb = cg.insert_bb(next_bb, "if_body");
+        cg.position_at_end(next_bb);
 
-        cg.builder.position_at_end(next_block);
         let cond =
             codegen_expr(cg, proc_cg, false, branch.cond, BlockKind::TailAlloca).expect("value");
-        next_block = if create_next {
-            cg.context.insert_basic_block_after(body_block, "if_next")
+        next_bb = if create_next {
+            cg.insert_bb(body_bb, "if_next")
         } else {
-            exit_block
+            exit_bb
         };
-        cg.builder
-            .build_conditional_branch(cond.into_int_value(), body_block, next_block)
-            .unwrap();
+        cg.build_cond_br(cond, body_bb, next_bb);
 
-        cg.builder.position_at_end(body_block);
+        cg.position_at_end(body_bb);
         codegen_block(cg, proc_cg, branch.block, kind);
-        cg.builder.build_unconditional_branch(exit_block).unwrap();
+        cg.build_br_no_term(exit_bb);
     }
 
     if let Some(block) = if_.else_block {
-        cg.builder.position_at_end(next_block);
+        cg.position_at_end(next_bb);
         codegen_block(cg, proc_cg, block, kind);
-        cg.builder.build_unconditional_branch(exit_block).unwrap();
+        cg.build_br_no_term(exit_bb);
     }
-
-    cg.builder.position_at_end(exit_block);
+    cg.position_at_end(exit_bb);
 }
 
 #[derive(Copy, Clone)]
@@ -1142,43 +1176,31 @@ fn codegen_match<'ctx>(
     match_: &hir::Match<'ctx>,
     kind: BlockKind<'ctx>,
 ) {
-    let insert_bb = cg.builder.get_insert_block().unwrap();
+    let insert_bb = cg.get_insert_bb();
     let on_value =
         codegen_expr(cg, proc_cg, false, match_.on_expr, BlockKind::TailAlloca).expect("value");
-    let exit_bb = cg
-        .context
-        .append_basic_block(proc_cg.function, "match_exit");
+    let exit_bb = cg.append_bb(proc_cg, "match_exit");
 
     let mut cases = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
         let value = codegen_const_value(cg, cg.hir.const_value(arm.pat));
-        let case_bb = cg
-            .context
-            .append_basic_block(proc_cg.function, "match_case");
+        let case_bb = cg.append_bb(proc_cg, "match_case");
         cases.push((value.into_int_value(), case_bb));
 
-        cg.builder.position_at_end(case_bb);
+        cg.position_at_end(case_bb);
+        //@will emit and use hir block instead of expr
         codegen_expr(cg, proc_cg, false, arm.expr, kind);
-
-        if cg
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_terminator()
-            .is_none()
-        {
-            cg.builder.build_unconditional_branch(exit_bb).unwrap();
-        }
+        cg.build_br_no_term(exit_bb);
     }
 
     if let Some(fallback) = match_.fallback {
         panic!("codegen: match with fallback not supported");
     } else {
-        cg.builder.position_at_end(insert_bb);
+        cg.position_at_end(insert_bb);
         cg.builder
             .build_switch(on_value.into_int_value(), exit_bb, &cases)
             .unwrap();
-        cg.builder.position_at_end(exit_bb);
+        cg.position_at_end(exit_bb);
     }
 }
 
