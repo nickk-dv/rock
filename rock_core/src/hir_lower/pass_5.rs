@@ -156,7 +156,11 @@ pub fn type_matches<'hir>(
         (hir::Type::Union(id), hir::Type::Union(id2)) => id == id2,
         (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
         (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
-            mutt == mutt2 && type_matches(hir, emit, *ref_ty, *ref_ty2)
+            if mutt2 == ast::Mut::Mutable {
+                type_matches(hir, emit, *ref_ty, *ref_ty2)
+            } else {
+                mutt == mutt2 && type_matches(hir, emit, *ref_ty, *ref_ty2)
+            }
         }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.params.len() == proc_ty2.params.len())
@@ -166,7 +170,11 @@ pub fn type_matches<'hir>(
                     .all(|idx| type_matches(hir, emit, proc_ty.params[idx], proc_ty2.params[idx]))
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
-            (slice.mutt == slice2.mutt) && type_matches(hir, emit, slice.elem_ty, slice2.elem_ty)
+            if slice2.mutt == ast::Mut::Mutable {
+                type_matches(hir, emit, slice.elem_ty, slice2.elem_ty)
+            } else {
+                slice.mutt == slice2.mutt && type_matches(hir, emit, slice.elem_ty, slice2.elem_ty)
+            }
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
             if let Some(len) = array_static_get_len(hir, emit, array.len) {
@@ -191,7 +199,7 @@ pub fn type_format<'hir>(
     ty: hir::Type<'hir>,
 ) -> String {
     match ty {
-        hir::Type::Error => "error".into(),
+        hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().to_string(),
         hir::Type::Enum(id) => hir.name_str(hir.registry().enum_data(id).name.id).into(),
         hir::Type::Union(id) => hir.name_str(hir.registry().union_data(id).name.id).into(),
