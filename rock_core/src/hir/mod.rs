@@ -537,4 +537,7 @@ impl<'hir> Type<'hir> {
     pub fn is_void(self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Void))
     }
+    pub fn is_never(self) -> bool {
+        matches!(self, Type::Basic(ast::BasicType::Never))
+    }
 }

@@ -317,6 +317,7 @@ pub struct TypeResult<'hir> {
     pub expr: &'hir hir::Expr<'hir>,
     ignore: bool,
     errored: bool,
+    diverges: bool,
 }
 
 impl<'hir> TypeResult<'hir> {
@@ -326,6 +327,7 @@ impl<'hir> TypeResult<'hir> {
             expr,
             ignore: false,
             errored: false,
+            diverges: false,
         }
     }
 
@@ -335,6 +337,35 @@ impl<'hir> TypeResult<'hir> {
             expr,
             ignore: true,
             errored: false,
+            diverges: false,
+        }
+    }
+
+    fn new_div(
+        ty: hir::Type<'hir>,
+        expr: &'hir hir::Expr<'hir>,
+        diverges: bool,
+    ) -> TypeResult<'hir> {
+        TypeResult {
+            ty,
+            expr,
+            ignore: false,
+            errored: false,
+            diverges,
+        }
+    }
+
+    fn new_ignore_typecheck_div(
+        ty: hir::Type<'hir>,
+        expr: &'hir hir::Expr<'hir>,
+        diverges: bool,
+    ) -> TypeResult<'hir> {
+        TypeResult {
+            ty,
+            expr,
+            ignore: true,
+            errored: false,
+            diverges,
         }
     }
 }
@@ -343,6 +374,7 @@ struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
     tail_range: Option<TextRange>,
+    diverges: bool,
 }
 
 impl<'hir> BlockResult<'hir> {
@@ -350,11 +382,13 @@ impl<'hir> BlockResult<'hir> {
         ty: hir::Type<'hir>,
         block: hir::Block<'hir>,
         tail_range: Option<TextRange>,
+        diverges: bool,
     ) -> BlockResult<'hir> {
         BlockResult {
             ty,
             block,
             tail_range,
+            diverges,
         }
     }
 
@@ -364,6 +398,7 @@ impl<'hir> BlockResult<'hir> {
             expr: emit.arena.alloc(hir::Expr::Block { block: self.block }),
             ignore: true,
             errored: false, //@not used
+            diverges: self.diverges,
         }
     }
 }
@@ -644,6 +679,7 @@ fn typecheck_match<'hir>(
     check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
 
     let mut match_type = hir::Type::Error;
+    let mut diverges = true;
     let mut check_exaust = true;
     let pat_expect = TypeExpectation::new(
         on_res.ty,
@@ -660,6 +696,9 @@ fn typecheck_match<'hir>(
             //@check if anything in pattern errored?
             if value == hir::ConstValue::Error {
                 check_exaust = false;
+            }
+            if !value_res.diverges {
+                diverges = false;
             }
 
             arms.push(hir::MatchArm {
@@ -700,10 +739,13 @@ fn typecheck_match<'hir>(
     }
 
     if match_.arms.is_empty() && match_.fallback.is_none() {
-        //@diverges always
-        TypeResult::new_ignore_typecheck(hir::Type::Basic(BasicType::Never), match_expr)
+        TypeResult::new_ignore_typecheck_div(
+            hir::Type::Basic(BasicType::Never),
+            match_expr,
+            diverges,
+        )
     } else {
-        TypeResult::new_ignore_typecheck(match_type, match_expr)
+        TypeResult::new_ignore_typecheck_div(match_type, match_expr, diverges)
     }
 }
 
@@ -1258,7 +1300,12 @@ fn typecheck_call<'hir>(
                     }),
                 },
             };
-            return TypeResult::new(proc_ty.return_ty, emit.arena.alloc(call_expr));
+
+            return TypeResult::new_div(
+                proc_ty.return_ty,
+                emit.arena.alloc(call_expr),
+                proc_ty.return_ty.is_never(),
+            );
         }
         _ => {
             emit.error(ErrorComp::new(
@@ -2328,7 +2375,6 @@ fn typecheck_block<'hir>(
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprSemi(expr) => {
-                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 //@error or want on expressions that arent used? 29.05.24
                 // `arent used` would mean that result isnt stored anywhere?
                 // but proc calls might have side effects and should always be allowed
@@ -2342,6 +2388,7 @@ fn typecheck_block<'hir>(
                 //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
+                let diverges = proc.check_stmt_diverges(hir, emit, expr_res.diverges, stmt.range);
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprTail(expr) => {
@@ -2380,12 +2427,12 @@ fn typecheck_block<'hir>(
     let hir_block = hir::Block { stmts };
 
     let block_result = if let Some(block_ty) = block_ty {
-        BlockResult::new(block_ty, hir_block, tail_range)
+        BlockResult::new(block_ty, hir_block, tail_range, proc.diverges().is_always())
     } else {
         //@potentially incorrect aproach, verify that `void`
         // as the expectation and block result ty are valid 29.05.24
-        let diverges = proc.diverges();
-        if !diverges.always_diverges() {
+        let diverges = proc.diverges().is_always();
+        if !diverges {
             check_type_expectation(
                 hir,
                 emit,
@@ -2395,7 +2442,7 @@ fn typecheck_block<'hir>(
                 hir::Type::VOID,
             );
         }
-        BlockResult::new(hir::Type::VOID, hir_block, tail_range)
+        BlockResult::new(hir::Type::VOID, hir_block, tail_range, diverges)
     };
 
     proc.pop_block();

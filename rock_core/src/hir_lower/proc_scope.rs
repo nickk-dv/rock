@@ -53,7 +53,7 @@ pub enum DeferStatus {
 }
 
 impl Diverges {
-    pub fn always_diverges(&self) -> bool {
+    pub fn is_always(&self) -> bool {
         matches!(self, Diverges::Always(_) | Diverges::AlwaysWarned)
     }
 }
