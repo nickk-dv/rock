@@ -755,7 +755,8 @@ fn check_match_exhaust<'hir>(
             }
 
             if match_.fallback.is_some() {
-                if cover_true && cover_false {
+                let all_covered = cover_true && cover_false;
+                if all_covered {
                     emit.warning(WarningComp::new(
                         "unreachable pattern",
                         hir.src(proc.origin(), match_ast.fallback_range),
@@ -782,8 +783,73 @@ fn check_match_exhaust<'hir>(
         hir::Type::Basic(BasicType::Char) => {
             //
         }
-        hir::Type::Enum(_) => {
-            //
+        hir::Type::Enum(enum_id) => {
+            let data = hir.registry().enum_data(enum_id);
+
+            let variant_count = data.variants.len();
+            let mut variants_covered = Vec::new();
+            variants_covered.resize(variant_count, false);
+
+            for (idx, arm) in match_.arms.iter().enumerate() {
+                let value = emit.const_intern.get(arm.pat);
+                match value {
+                    //@consider typecheck result of patterns to make sure this is same type 01.06.24
+                    // (dont check when any error were raised or value is Error)
+                    hir::ConstValue::EnumVariant { variant_id, .. } => {
+                        if !variants_covered[variant_id.index()] {
+                            variants_covered[variant_id.index()] = true;
+                        } else {
+                            let ast_arm = match_ast.arms[idx];
+                            emit.warning(WarningComp::new(
+                                "unreachable pattern",
+                                hir.src(proc.origin(), ast_arm.pat.0.range),
+                                None,
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if match_.fallback.is_some() {
+                let all_covered = variants_covered.iter().copied().all(|v| v);
+                if all_covered {
+                    emit.warning(WarningComp::new(
+                        "unreachable pattern",
+                        hir.src(proc.origin(), match_ast.fallback_range),
+                        None,
+                    ));
+                }
+            } else {
+                //@simplify message with a lot of remaining patterns 01.06.24
+                // eg: variants `Thing`, `Kind` and 18 more not covered
+                let mut missing = String::new();
+                let mut missing_count: u32 = 0;
+
+                for idx in 0..data.variants.len() {
+                    let covered = variants_covered[idx];
+                    if !covered {
+                        let variant = data.variant(hir::EnumVariantID::new(idx));
+                        let comma = if missing_count != 0 { ", " } else { "" };
+                        missing.push_str(&format!("{comma}`{}`", hir.name_str(variant.name.id)));
+                        missing_count += 1;
+                    }
+                }
+
+                if missing_count > 0 {
+                    emit.error(ErrorComp::new(
+                        format!(
+                            "non-exhaustive match patterns\nmissing variants: {}",
+                            missing
+                        ),
+                        hir.src(
+                            proc.origin(),
+                            TextRange::new(match_range.start(), match_range.start() + 5.into()),
+                        ),
+                        None,
+                    ));
+                }
+            }
         }
         _ => {}
     }
