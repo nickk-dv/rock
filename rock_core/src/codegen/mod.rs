@@ -351,6 +351,14 @@ impl<'ctx> Codegen<'ctx> {
             .build_conditional_branch(cond.into_int_value(), then_bb, else_bb)
             .unwrap();
     }
+    #[inline]
+    fn build_ret(&self, value: Option<values::BasicValueEnum<'ctx>>) {
+        if let Some(value) = value {
+            self.builder.build_return(Some(&value)).unwrap();
+        } else {
+            self.builder.build_return(None).unwrap();
+        }
+    }
 }
 
 pub fn codegen(
@@ -892,197 +900,54 @@ fn codegen_block<'ctx>(
     proc_cg: &mut ProcCodegen<'ctx>,
     block: hir::Block<'ctx>,
     kind: BlockKind<'ctx>,
-    //@dont return any value from blocks? 31.05.24
-    // only simulate that effect via BlockKind::TailStore etc.
 ) {
     proc_cg.enter_block();
 
-    //@disregarding divergence will lead to trying to generate @31.04.24
-    // exiting defers incorrectly, hard problem not sure what todo
     for stmt in block.stmts {
         match *stmt {
-            hir::Stmt::Break => {
-                let (loop_info, defer_blocks) = proc_cg.last_loop_info();
-                codegen_defer_blocks(cg, proc_cg, &defer_blocks);
-                cg.builder
-                    .build_unconditional_branch(loop_info.break_bb)
-                    .unwrap();
-
-                proc_cg.exit_block();
-                return;
-            }
-            hir::Stmt::Continue => {
-                let (loop_info, defer_blocks) = proc_cg.last_loop_info();
-                codegen_defer_blocks(cg, proc_cg, &defer_blocks);
-                cg.builder
-                    .build_unconditional_branch(loop_info.continue_bb)
-                    .unwrap();
-
-                proc_cg.exit_block();
-                return;
-            }
-            hir::Stmt::Return(expr) => {
-                codegen_defer_blocks(cg, proc_cg, proc_cg.all_defer_blocks().as_slice());
-
-                if let Some(expr) = expr {
-                    if let Some(value) =
-                        codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca)
-                    {
-                        cg.builder.build_return(Some(&value)).unwrap();
-                    } else {
-                        cg.builder.build_return(None).unwrap();
-                    }
-                } else {
-                    cg.builder.build_return(None).unwrap();
-                }
-
-                proc_cg.exit_block();
-                return;
-            }
-            hir::Stmt::Defer(block) => {
-                proc_cg.push_defer_block(*block);
-            }
-            hir::Stmt::Loop(loop_) => {
-                let entry_block = cg
-                    .context
-                    .append_basic_block(proc_cg.function, "loop_entry");
-                let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
-                let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
-
-                cg.builder.build_unconditional_branch(entry_block).unwrap();
-                proc_cg.set_next_loop_info(exit_block, entry_block);
-
-                match loop_.kind {
-                    hir::LoopKind::Loop => {
-                        cg.builder.position_at_end(entry_block);
-                        cg.builder.build_unconditional_branch(body_block).unwrap();
-
-                        cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, loop_.block, BlockKind::TailIgnore);
-
-                        //@hack, might not be valid when break / continue are used 06.05.24
-                        // other cfg will make body_block not the actual block we want
-                        if body_block.get_terminator().is_none() {
-                            cg.builder.position_at_end(body_block);
-                            cg.builder.build_unconditional_branch(body_block).unwrap();
-                        }
-                    }
-                    hir::LoopKind::While { cond } => {
-                        cg.builder.position_at_end(entry_block);
-                        let cond = codegen_expr(cg, proc_cg, false, cond, BlockKind::TailAlloca)
-                            .expect("value");
-                        cg.builder
-                            .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
-                            .unwrap();
-
-                        cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, loop_.block, BlockKind::TailIgnore);
-
-                        //@hack, likely wrong if positioned in the wrong place
-                        if cg
-                            .builder
-                            .get_insert_block()
-                            .unwrap()
-                            .get_terminator()
-                            .is_none()
-                        {
-                            cg.builder.build_unconditional_branch(entry_block).unwrap();
-                        }
-                    }
-                    hir::LoopKind::ForLoop {
-                        local_id,
-                        cond,
-                        assign,
-                    } => {
-                        cg.builder.position_at_end(entry_block);
-                        codegen_local(cg, proc_cg, local_id);
-                        let cond = codegen_expr(cg, proc_cg, false, cond, BlockKind::TailAlloca)
-                            .expect("value");
-                        cg.builder
-                            .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
-                            .unwrap();
-
-                        cg.builder.position_at_end(body_block);
-                        codegen_block(cg, proc_cg, loop_.block, BlockKind::TailIgnore);
-
-                        //@hack, often invalid (this assignment might need special block) if no iterator abstractions are used
-                        // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24
-                        cg.builder.position_at_end(body_block);
-                        codegen_assign(cg, proc_cg, assign);
-
-                        //@hack, likely wrong if positioned in the wrong place
-                        if cg
-                            .builder
-                            .get_insert_block()
-                            .unwrap()
-                            .get_terminator()
-                            .is_none()
-                        {
-                            cg.builder.build_unconditional_branch(entry_block).unwrap();
-                        }
-                    }
-                }
-
-                cg.builder.position_at_end(exit_block);
-            }
+            hir::Stmt::Break => codegen_break(cg, proc_cg),
+            hir::Stmt::Continue => codegen_continue(cg, proc_cg),
+            hir::Stmt::Return(expr) => codegen_return(cg, proc_cg, expr),
+            hir::Stmt::Defer(block) => proc_cg.push_defer_block(*block),
+            hir::Stmt::Loop(loop_) => codegen_loop(cg, proc_cg, loop_),
             hir::Stmt::Local(local_id) => codegen_local(cg, proc_cg, local_id),
             hir::Stmt::Assign(assign) => codegen_assign(cg, proc_cg, assign),
-            hir::Stmt::ExprSemi(expr) => {
-                //@are expressions like `5;` valid when output as llvm ir? probably yes
-                codegen_expr(cg, proc_cg, false, expr, BlockKind::TailIgnore);
-            }
-            hir::Stmt::ExprTail(expr) => {
-                match kind {
-                    BlockKind::TailIgnore => {
-                        codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
-                        let _ = codegen_expr(cg, proc_cg, false, expr, kind);
-
-                        proc_cg.exit_block();
-                        return;
-                    }
-                    BlockKind::TailDissalow => panic!("tail expression is dissalowed"),
-                    BlockKind::TailReturn => {
-                        //@defer might be generated again if tail returns are stacked?
-                        // is this correct? 30.05.24
-                        codegen_defer_blocks(cg, proc_cg, &proc_cg.all_defer_blocks());
-                        //@handle tail return kind differently?
-                        if let Some(value) =
-                            codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca)
-                        {
-                            cg.builder.build_return(Some(&value)).unwrap();
-                        } else {
-                            cg.builder.build_return(None).unwrap();
-                        }
-
-                        proc_cg.exit_block();
-                        return;
-                    }
-                    BlockKind::TailAlloca => {
-                        panic!("tail alloca is not implemented");
-                    }
-                    BlockKind::TailStore(target_ptr) => {
-                        codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
-                        if let Some(value) = codegen_expr(cg, proc_cg, false, expr, kind) {
-                            cg.builder.build_store(target_ptr, value).unwrap();
-                        }
-
-                        proc_cg.exit_block();
-                        return;
-                    }
-                }
-            }
+            hir::Stmt::ExprSemi(expr) => codegen_expr_semi(cg, proc_cg, expr),
+            hir::Stmt::ExprTail(expr) => codegen_expr_tail(cg, proc_cg, expr, kind),
         }
     }
 
-    //@hack partially fix ignoring divergense when generating block exit `defers`
-    // still likely to false generate `defers` in match or if else chains
-    let insert_block = cg.builder.get_insert_block().unwrap();
-    if insert_block.get_terminator().is_none() {
+    let insert_bb = cg.get_insert_bb();
+    if insert_bb.get_terminator().is_none() {
         codegen_defer_blocks(cg, proc_cg, proc_cg.last_defer_blocks().as_slice());
     }
-
     proc_cg.exit_block();
-    return;
+}
+
+fn codegen_break<'ctx>(cg: &Codegen<'ctx>, proc_cg: &mut ProcCodegen<'ctx>) {
+    let (loop_info, defer_blocks) = proc_cg.last_loop_info();
+    codegen_defer_blocks(cg, proc_cg, &defer_blocks);
+    cg.build_br(loop_info.break_bb);
+}
+
+fn codegen_continue<'ctx>(cg: &Codegen<'ctx>, proc_cg: &mut ProcCodegen<'ctx>) {
+    let (loop_info, defer_blocks) = proc_cg.last_loop_info();
+    codegen_defer_blocks(cg, proc_cg, &defer_blocks);
+    cg.build_br(loop_info.continue_bb);
+}
+
+fn codegen_return<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: Option<&'ctx hir::Expr<'ctx>>,
+) {
+    codegen_defer_blocks(cg, proc_cg, &proc_cg.all_defer_blocks());
+    if let Some(expr) = expr {
+        let value = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca);
+        cg.build_ret(value);
+    } else {
+        cg.build_ret(None);
+    }
 }
 
 fn codegen_defer_blocks<'ctx>(
@@ -1102,6 +967,94 @@ fn codegen_defer_blocks<'ctx>(
     let exit_bb = cg.append_bb(proc_cg, "defer_exit");
     cg.build_br(exit_bb);
     cg.position_at_end(exit_bb);
+}
+
+fn codegen_loop<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    loop_: &'ctx hir::Loop<'ctx>,
+) {
+    let entry_block = cg
+        .context
+        .append_basic_block(proc_cg.function, "loop_entry");
+    let body_block = cg.context.append_basic_block(proc_cg.function, "loop_body");
+    let exit_block = cg.context.append_basic_block(proc_cg.function, "loop_exit");
+
+    cg.builder.build_unconditional_branch(entry_block).unwrap();
+    proc_cg.set_next_loop_info(exit_block, entry_block);
+
+    match loop_.kind {
+        hir::LoopKind::Loop => {
+            cg.builder.position_at_end(entry_block);
+            cg.builder.build_unconditional_branch(body_block).unwrap();
+
+            cg.builder.position_at_end(body_block);
+            codegen_block(cg, proc_cg, loop_.block, BlockKind::TailIgnore);
+
+            //@hack, might not be valid when break / continue are used 06.05.24
+            // other cfg will make body_block not the actual block we want
+            if body_block.get_terminator().is_none() {
+                cg.builder.position_at_end(body_block);
+                cg.builder.build_unconditional_branch(body_block).unwrap();
+            }
+        }
+        hir::LoopKind::While { cond } => {
+            cg.builder.position_at_end(entry_block);
+            let cond =
+                codegen_expr(cg, proc_cg, false, cond, BlockKind::TailAlloca).expect("value");
+            cg.builder
+                .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
+                .unwrap();
+
+            cg.builder.position_at_end(body_block);
+            codegen_block(cg, proc_cg, loop_.block, BlockKind::TailIgnore);
+
+            //@hack, likely wrong if positioned in the wrong place
+            if cg
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
+                cg.builder.build_unconditional_branch(entry_block).unwrap();
+            }
+        }
+        hir::LoopKind::ForLoop {
+            local_id,
+            cond,
+            assign,
+        } => {
+            cg.builder.position_at_end(entry_block);
+            codegen_local(cg, proc_cg, local_id);
+            let cond =
+                codegen_expr(cg, proc_cg, false, cond, BlockKind::TailAlloca).expect("value");
+            cg.builder
+                .build_conditional_branch(cond.into_int_value(), body_block, exit_block)
+                .unwrap();
+
+            cg.builder.position_at_end(body_block);
+            codegen_block(cg, proc_cg, loop_.block, BlockKind::TailIgnore);
+
+            //@hack, often invalid (this assignment might need special block) if no iterator abstractions are used
+            // in general loops need to be simplified in Hir, to loops and conditional breaks 06.05.24
+            cg.builder.position_at_end(body_block);
+            codegen_assign(cg, proc_cg, assign);
+
+            //@hack, likely wrong if positioned in the wrong place
+            if cg
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
+                cg.builder.build_unconditional_branch(entry_block).unwrap();
+            }
+        }
+    }
+
+    cg.builder.position_at_end(exit_block);
 }
 
 //@variables without value expression are always zero initialized
@@ -1154,6 +1107,49 @@ fn codegen_assign<'ctx>(
                 codegen_expr(cg, proc_cg, false, assign.rhs, BlockKind::TailAlloca).expect("value");
             let bin_value = codegen_bin_op(cg, op, lhs_value, rhs, assign.lhs_signed_int);
             cg.builder.build_store(lhs_ptr, bin_value).unwrap();
+        }
+    }
+}
+
+fn codegen_expr_semi<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: &'ctx hir::Expr<'ctx>,
+) {
+    codegen_expr(cg, proc_cg, false, expr, BlockKind::TailIgnore);
+}
+
+fn codegen_expr_tail<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: &'ctx hir::Expr<'ctx>,
+    kind: BlockKind<'ctx>,
+) {
+    match kind {
+        BlockKind::TailIgnore => {
+            codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
+            let _ = codegen_expr(cg, proc_cg, false, expr, kind);
+        }
+        BlockKind::TailDissalow => panic!("tail expression is dissalowed"),
+        BlockKind::TailReturn => {
+            //@defer might be generated again if tail returns are stacked?
+            // is this correct? 30.05.24
+            codegen_defer_blocks(cg, proc_cg, &proc_cg.all_defer_blocks());
+            //@handle tail return kind differently?
+            if let Some(value) = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca) {
+                cg.builder.build_return(Some(&value)).unwrap();
+            } else {
+                cg.builder.build_return(None).unwrap();
+            }
+        }
+        BlockKind::TailAlloca => {
+            panic!("tail alloca is not implemented");
+        }
+        BlockKind::TailStore(target_ptr) => {
+            codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
+            if let Some(value) = codegen_expr(cg, proc_cg, false, expr, kind) {
+                cg.builder.build_store(target_ptr, value).unwrap();
+            }
         }
     }
 }
