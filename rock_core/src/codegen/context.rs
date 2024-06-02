@@ -248,6 +248,12 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.get_insert_block().unwrap()
     }
     #[inline]
+    #[must_use]
+    pub fn insert_bb_has_term(&self) -> bool {
+        let insert_bb = self.builder.get_insert_block().unwrap();
+        insert_bb.get_terminator().is_some()
+    }
+    #[inline]
     pub fn position_at_end(&self, bb: BasicBlock<'ctx>) {
         self.builder.position_at_end(bb);
     }
@@ -257,8 +263,7 @@ impl<'ctx> Codegen<'ctx> {
     }
     #[inline]
     pub fn build_br_no_term(&self, bb: BasicBlock<'ctx>) {
-        let insert_bb = self.get_insert_bb();
-        if insert_bb.get_terminator().is_none() {
+        if !self.insert_bb_has_term() {
             self.builder.build_unconditional_branch(bb).unwrap();
         }
     }

@@ -11,6 +11,7 @@ use inkwell::values::{self, AsValueRef};
 // and a lot of unwrap() or expect() calls on always expected values
 //@also top level codegen_procedures builds return from tail expr value  if it exists
 // hir could potentially generate code without tail returns (not sure yet) @06.04.24
+#[must_use]
 pub fn codegen_expr<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -93,6 +94,7 @@ pub fn codegen_expr<'ctx>(
     }
 }
 
+#[must_use]
 #[allow(unsafe_code)]
 pub fn codegen_const_value<'ctx>(
     cg: &Codegen<'ctx>,
@@ -1036,7 +1038,7 @@ fn codegen_address<'ctx>(
     rhs: &'ctx hir::Expr<'ctx>,
 ) -> values::BasicValueEnum<'ctx> {
     //@semantics arent stable @14.04.24
-    let rhs = codegen_expr(cg, proc_cg, true, rhs, BlockKind::TailDissalow).expect("value");
+    let rhs = codegen_expr(cg, proc_cg, true, rhs, BlockKind::TailIgnore).expect("value");
     if rhs.is_pointer_value() {
         return rhs;
     }
