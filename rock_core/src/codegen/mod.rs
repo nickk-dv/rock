@@ -1085,8 +1085,6 @@ fn codegen_block<'ctx>(
     return;
 }
 
-//@contents should be generated once, instead of generating all block code each time
-// and only branches to defer blocks should be created? hard to design currently @06.05.24
 fn codegen_defer_blocks<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -1095,22 +1093,15 @@ fn codegen_defer_blocks<'ctx>(
     if defer_blocks.is_empty() {
         return;
     }
-
-    let mut defer_block = cg
-        .context
-        .append_basic_block(proc_cg.function, "defer_entry");
-
     for block in defer_blocks.iter().copied().rev() {
-        cg.builder.build_unconditional_branch(defer_block).unwrap();
-        cg.builder.position_at_end(defer_block);
+        let defer_bb = cg.append_bb(proc_cg, "defer_block");
+        cg.build_br(defer_bb);
+        cg.position_at_end(defer_bb);
         codegen_block(cg, proc_cg, block, BlockKind::TailIgnore);
-        defer_block = cg
-            .context
-            .append_basic_block(proc_cg.function, "defer_next");
     }
-
-    cg.builder.build_unconditional_branch(defer_block).unwrap();
-    cg.builder.position_at_end(defer_block);
+    let exit_bb = cg.append_bb(proc_cg, "defer_exit");
+    cg.build_br(exit_bb);
+    cg.position_at_end(exit_bb);
 }
 
 //@variables without value expression are always zero initialized
