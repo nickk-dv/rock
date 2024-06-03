@@ -305,9 +305,6 @@ fn codegen_if<'ctx>(
     cg.position_at_end(exit_bb);
 }
 
-//@since its an expr semantics are not clear 01.06.24
-// will need to store, temp alloca return those values
-// generate hir blocks for non block expressions?
 fn codegen_match<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -325,20 +322,25 @@ fn codegen_match<'ctx>(
         cases.push((value.into_int_value(), case_bb));
 
         cg.position_at_end(case_bb);
-        //@will emit and use hir block instead of expr
-        codegen_expr(cg, proc_cg, false, arm.expr, kind);
+        codegen_block(cg, proc_cg, arm.block, kind);
         cg.build_br_no_term(exit_bb);
     }
 
-    if let Some(fallback) = match_.fallback {
-        panic!("codegen: match with fallback not supported");
+    let else_block = if let Some(fallback) = match_.fallback {
+        let fallback_bb = cg.append_bb(proc_cg, "match_fallback");
+        cg.position_at_end(fallback_bb);
+        codegen_block(cg, proc_cg, fallback, kind);
+        cg.build_br_no_term(exit_bb);
+        fallback_bb
     } else {
-        cg.position_at_end(insert_bb);
-        cg.builder
-            .build_switch(on_value.into_int_value(), exit_bb, &cases)
-            .unwrap();
-        cg.position_at_end(exit_bb);
-    }
+        exit_bb
+    };
+
+    cg.position_at_end(insert_bb);
+    cg.builder
+        .build_switch(on_value.into_int_value(), else_block, &cases)
+        .unwrap();
+    cg.position_at_end(exit_bb);
 }
 
 fn codegen_union_member<'ctx>(

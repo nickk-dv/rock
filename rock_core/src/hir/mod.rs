@@ -308,13 +308,13 @@ pub struct Branch<'hir> {
 pub struct Match<'hir> {
     pub on_expr: &'hir Expr<'hir>,
     pub arms: &'hir [MatchArm<'hir>],
-    pub fallback: Option<&'hir Expr<'hir>>,
+    pub fallback: Option<Block<'hir>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct MatchArm<'hir> {
     pub pat: ConstValueID,
-    pub expr: &'hir Expr<'hir>,
+    pub block: Block<'hir>,
 }
 
 #[derive(Copy, Clone)]

@@ -711,7 +711,11 @@ fn typecheck_match<'hir>(
 
             arms.push(hir::MatchArm {
                 pat: value_id,
-                expr: value_res.expr,
+                block: hir::Block {
+                    stmts: emit
+                        .arena
+                        .alloc_slice(&[hir::Stmt::ExprTail(value_res.expr)]),
+                },
             });
 
             if match_type.is_error() {
@@ -731,7 +735,12 @@ fn typecheck_match<'hir>(
         if match_type.is_error() {
             match_type = value_res.ty;
         }
-        Some(value_res.expr)
+
+        Some(hir::Block {
+            stmts: emit
+                .arena
+                .alloc_slice(&[hir::Stmt::ExprTail(value_res.expr)]),
+        })
     } else {
         None
     };
