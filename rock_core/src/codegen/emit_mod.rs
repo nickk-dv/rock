@@ -1,6 +1,5 @@
 use super::context::{Codegen, ProcCodegen};
-use super::emit_expr::codegen_const_value;
-use super::emit_stmt::{codegen_block, BlockKind};
+use super::emit_expr::{codegen_block_value_optional, codegen_const_value};
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::hir;
@@ -162,15 +161,10 @@ fn codegen_function_bodies(cg: &Codegen) {
             next_loop_info: None,
             tail_alloca: Vec::with_capacity(64),
         };
-        codegen_block(cg, &mut proc_cg, block, BlockKind::TailReturn);
 
-        //@hack fix-up of single implicit `return void` basic block
-        for block in function.get_basic_block_iter() {
-            if block.get_terminator().is_none() {
-                cg.builder.position_at_end(block);
-                cg.builder.build_return(None).unwrap();
-                break;
-            }
+        let block_value = codegen_block_value_optional(cg, &mut proc_cg, block);
+        if !cg.insert_bb_has_term() {
+            cg.build_ret(block_value);
         }
     }
 }

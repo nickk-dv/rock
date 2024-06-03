@@ -2,9 +2,11 @@ use super::context::{Codegen, ProcCodegen};
 use super::emit_expr::{
     codegen_bin_op, codegen_expr, codegen_expr_value, codegen_expr_value_optional,
 };
+use crate::ast;
 use crate::hir;
-use crate::{ast, id_impl};
-use inkwell::{types, values};
+use crate::id_impl;
+use inkwell::types;
+use inkwell::values;
 
 pub fn codegen_block<'ctx>(
     cg: &Codegen<'ctx>,
@@ -200,7 +202,6 @@ fn codegen_expr_semi<'ctx>(
 #[derive(Copy, Clone)]
 pub enum BlockKind<'ctx> {
     TailIgnore,
-    TailReturn,
     TailAlloca(TailAllocaID),
     TailStore(values::PointerValue<'ctx>),
 }
@@ -233,6 +234,7 @@ fn codegen_expr_tail<'ctx>(
                         let temp_ptr =
                             cg.entry_insert_alloca(proc_cg, value.get_type(), "temp_tail");
                         cg.builder.build_store(temp_ptr, value).unwrap();
+
                         let status = &mut proc_cg.tail_alloca[alloca_id.index()];
                         *status = TailAllocaStatus::WithValue(temp_ptr, value.get_type());
                     }
@@ -241,17 +243,6 @@ fn codegen_expr_tail<'ctx>(
                     }
                 }
             }
-        }
-        BlockKind::TailReturn => {
-            //@handle tail return kind differently? 03.06.24
-            //@prefer store like behavior before returning?
-            //@defer might be generated again if tail returns are stacked?
-            //@would this work with tail return that might diverge (with `return` in 1 of blocks)?
-
-            //codegen_defer_blocks(cg, proc_cg, &proc_cg.all_defer_blocks());
-            //let value = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca);
-            //cg.build_ret(value);
-            panic!("tail return is not implemented");
         }
         BlockKind::TailStore(target_ptr) => {
             codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());

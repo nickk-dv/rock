@@ -24,24 +24,6 @@ pub fn codegen_expr_value<'ctx>(
     }
 }
 
-pub fn codegen_expr_value_optional<'ctx>(
-    cg: &Codegen<'ctx>,
-    proc_cg: &mut ProcCodegen<'ctx>,
-    expr: &'ctx hir::Expr<'ctx>,
-) -> Option<values::BasicValueEnum<'ctx>> {
-    let alloca_id = proc_cg.push_tail_alloca();
-    if let Some(value) = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca(alloca_id)) {
-        Some(value)
-    } else {
-        match proc_cg.tail_alloca[alloca_id.index()] {
-            TailAllocaStatus::NoValue => None,
-            TailAllocaStatus::WithValue(ptr, ptr_ty) => {
-                Some(cg.builder.build_load(ptr_ty, ptr, "tail_val").unwrap())
-            }
-        }
-    }
-}
-
 pub fn codegen_expr_value_ptr<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -62,11 +44,39 @@ pub fn codegen_expr_value_ptr<'ctx>(
     }
 }
 
-//@hir still has tail returned expressions in statements,  and block is an expression
-// this results in need to return Optional values from codegen_expr()
-// and a lot of unwrap() or expect() calls on always expected values
-//@also top level codegen_procedures builds return from tail expr value  if it exists
-// hir could potentially generate code without tail returns (not sure yet) @06.04.24
+pub fn codegen_expr_value_optional<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: &'ctx hir::Expr<'ctx>,
+) -> Option<values::BasicValueEnum<'ctx>> {
+    let alloca_id = proc_cg.push_tail_alloca();
+    if let Some(value) = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca(alloca_id)) {
+        Some(value)
+    } else {
+        match proc_cg.tail_alloca[alloca_id.index()] {
+            TailAllocaStatus::NoValue => None,
+            TailAllocaStatus::WithValue(ptr, ptr_ty) => {
+                Some(cg.builder.build_load(ptr_ty, ptr, "tail_val").unwrap())
+            }
+        }
+    }
+}
+
+pub fn codegen_block_value_optional<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    block: hir::Block<'ctx>,
+) -> Option<values::BasicValueEnum<'ctx>> {
+    let alloca_id = proc_cg.push_tail_alloca();
+    codegen_block(cg, proc_cg, block, BlockKind::TailAlloca(alloca_id));
+    match proc_cg.tail_alloca[alloca_id.index()] {
+        TailAllocaStatus::NoValue => None,
+        TailAllocaStatus::WithValue(ptr, ptr_ty) => {
+            Some(cg.builder.build_load(ptr_ty, ptr, "tail_val").unwrap())
+        }
+    }
+}
+
 #[must_use]
 pub fn codegen_expr<'ctx>(
     cg: &Codegen<'ctx>,
