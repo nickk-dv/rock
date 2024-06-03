@@ -30,8 +30,7 @@ pub fn codegen_block<'ctx>(
         }
     }
 
-    let last_tail = matches!(block.stmts.last(), Some(hir::Stmt::ExprTail(_)));
-    if !last_tail && !cg.insert_bb_has_term() {
+    if !cg.insert_bb_has_term() {
         codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
     }
     proc_cg.exit_block();
@@ -221,11 +220,9 @@ fn codegen_expr_tail<'ctx>(
 ) {
     match kind {
         BlockKind::TailIgnore => {
-            codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
             let _ = codegen_expr(cg, proc_cg, false, expr, kind);
         }
         BlockKind::TailAlloca(alloca_id) => {
-            codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
             let tail_value = codegen_expr(cg, proc_cg, false, expr, kind);
 
             if let Some(value) = tail_value {
@@ -245,7 +242,6 @@ fn codegen_expr_tail<'ctx>(
             }
         }
         BlockKind::TailStore(target_ptr) => {
-            codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
             if let Some(value) = codegen_expr(cg, proc_cg, false, expr, kind) {
                 cg.builder.build_store(target_ptr, value).unwrap();
             }
