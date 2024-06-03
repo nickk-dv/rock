@@ -1,3 +1,4 @@
+use super::emit_stmt::{TailAllocaID, TailAllocaStatus};
 use crate::ast;
 use crate::error::ErrorComp;
 use crate::fs_env;
@@ -37,6 +38,7 @@ pub struct ProcCodegen<'ctx> {
     pub block_info: Vec<BlockInfo<'ctx>>,
     pub defer_blocks: Vec<hir::Block<'ctx>>,
     pub next_loop_info: Option<LoopInfo<'ctx>>,
+    pub tail_alloca: Vec<TailAllocaStatus<'ctx>>,
 }
 
 #[derive(Copy, Clone)]
@@ -370,5 +372,11 @@ impl<'ctx> ProcCodegen<'ctx> {
     //@lifetime problems, need to clone like this (since codegen_expr can mutate this vec) 05.05.24
     pub fn all_defer_blocks(&self) -> Vec<hir::Block<'ctx>> {
         self.defer_blocks.clone()
+    }
+
+    pub fn push_tail_alloca(&mut self) -> TailAllocaID {
+        let id = TailAllocaID::new(self.tail_alloca.len());
+        self.tail_alloca.push(TailAllocaStatus::NoValue);
+        id
     }
 }

@@ -1,10 +1,66 @@
 use super::context::{Codegen, ProcCodegen};
-use super::emit_stmt::{codegen_block, BlockKind};
+use super::emit_stmt::{codegen_block, BlockKind, TailAllocaStatus};
 use crate::ast;
 use crate::hir;
 use crate::intern::InternID;
 use inkwell::types::{AsTypeRef, BasicType};
 use inkwell::values::{self, AsValueRef};
+
+pub fn codegen_expr_value<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: &'ctx hir::Expr<'ctx>,
+) -> values::BasicValueEnum<'ctx> {
+    let alloca_id = proc_cg.push_tail_alloca();
+    if let Some(value) = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca(alloca_id)) {
+        value
+    } else {
+        match proc_cg.tail_alloca[alloca_id.index()] {
+            TailAllocaStatus::NoValue => panic!("expected tail value"),
+            TailAllocaStatus::WithValue(ptr, ptr_ty) => {
+                cg.builder.build_load(ptr_ty, ptr, "tail_val").unwrap()
+            }
+        }
+    }
+}
+
+pub fn codegen_expr_value_optional<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: &'ctx hir::Expr<'ctx>,
+) -> Option<values::BasicValueEnum<'ctx>> {
+    let alloca_id = proc_cg.push_tail_alloca();
+    if let Some(value) = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca(alloca_id)) {
+        Some(value)
+    } else {
+        match proc_cg.tail_alloca[alloca_id.index()] {
+            TailAllocaStatus::NoValue => None,
+            TailAllocaStatus::WithValue(ptr, ptr_ty) => {
+                Some(cg.builder.build_load(ptr_ty, ptr, "tail_val").unwrap())
+            }
+        }
+    }
+}
+
+pub fn codegen_expr_value_ptr<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expr: &'ctx hir::Expr<'ctx>,
+) -> values::PointerValue<'ctx> {
+    let alloca_id = proc_cg.push_tail_alloca();
+    if let Some(value) = codegen_expr(cg, proc_cg, true, expr, BlockKind::TailAlloca(alloca_id)) {
+        value.into_pointer_value()
+    } else {
+        match proc_cg.tail_alloca[alloca_id.index()] {
+            TailAllocaStatus::NoValue => panic!("expected tail value"),
+            TailAllocaStatus::WithValue(ptr, ptr_ty) => cg
+                .builder
+                .build_load(ptr_ty, ptr, "tail_val")
+                .unwrap()
+                .into_pointer_value(),
+        }
+    }
+}
 
 //@hir still has tail returned expressions in statements,  and block is an expression
 // this results in need to return Optional values from codegen_expr()
@@ -204,8 +260,7 @@ fn codegen_if<'ctx>(
         exit_bb
     };
 
-    let cond =
-        codegen_expr(cg, proc_cg, false, if_.entry.cond, BlockKind::TailAlloca).expect("value");
+    let cond = codegen_expr_value(cg, proc_cg, if_.entry.cond);
     cg.build_cond_br(cond, body_bb, next_bb);
 
     cg.position_at_end(body_bb);
@@ -219,8 +274,7 @@ fn codegen_if<'ctx>(
         body_bb = cg.insert_bb(next_bb, "if_body");
         cg.position_at_end(next_bb);
 
-        let cond =
-            codegen_expr(cg, proc_cg, false, branch.cond, BlockKind::TailAlloca).expect("value");
+        let cond = codegen_expr_value(cg, proc_cg, branch.cond);
         next_bb = if create_next {
             cg.insert_bb(body_bb, "if_next")
         } else {
@@ -251,8 +305,7 @@ fn codegen_match<'ctx>(
     kind: BlockKind<'ctx>,
 ) {
     let insert_bb = cg.get_insert_bb();
-    let on_value =
-        codegen_expr(cg, proc_cg, false, match_.on_expr, BlockKind::TailAlloca).expect("value");
+    let on_value = codegen_expr_value(cg, proc_cg, match_.on_expr);
     let exit_bb = cg.append_bb(proc_cg, "match_exit");
 
     let mut cases = Vec::with_capacity(match_.arms.len());
@@ -287,14 +340,14 @@ fn codegen_union_member<'ctx>(
     member_id: hir::UnionMemberID,
     deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
-    let target = codegen_expr(cg, proc_cg, true, target, BlockKind::TailAlloca).expect("value");
+    let target = codegen_expr_value_ptr(cg, proc_cg, target);
     let target_ptr = if deref {
         cg.builder
-            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target, "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
-        target.into_pointer_value()
+        target
     };
 
     if expect_ptr {
@@ -317,14 +370,14 @@ fn codegen_struct_field<'ctx>(
     field_id: hir::StructFieldID,
     deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
-    let target = codegen_expr(cg, proc_cg, true, target, BlockKind::TailAlloca).expect("value");
+    let target = codegen_expr_value_ptr(cg, proc_cg, target);
     let target_ptr = if deref {
         cg.builder
-            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target, "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
-        target.into_pointer_value()
+        target
     };
 
     let field_ptr = cg
@@ -360,14 +413,14 @@ fn codegen_slice_field<'ctx>(
         !expect_ptr,
         "slice access `expect_ptr` cannot be true, slice fields are not addressable"
     );
-    let target = codegen_expr(cg, proc_cg, true, target, BlockKind::TailAlloca).expect("value");
+    let target = codegen_expr_value_ptr(cg, proc_cg, target);
     let target_ptr = if deref {
         cg.builder
-            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target, "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
-        target.into_pointer_value()
+        target
     };
 
     let (field_id, field_ty, ptr_name, value_name) = if first_ptr {
@@ -457,19 +510,17 @@ fn codegen_index<'ctx>(
 ) -> values::BasicValueEnum<'ctx> {
     //@should expect pointer always be true? 08.05.24
     // in case of slices that just delays the load?
-    let target = codegen_expr(cg, proc_cg, true, target, BlockKind::TailAlloca).expect("value");
+    let target = codegen_expr_value_ptr(cg, proc_cg, target);
     let target_ptr = if access.deref {
         cg.builder
-            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target, "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
-        target.into_pointer_value()
+        target
     };
 
-    let index = codegen_expr(cg, proc_cg, false, access.index, BlockKind::TailAlloca)
-        .expect("value")
-        .into_int_value();
+    let index = codegen_expr_value(cg, proc_cg, access.index).into_int_value();
 
     let elem_ptr = match access.kind {
         hir::IndexKind::Slice { elem_size } => {
@@ -572,14 +623,14 @@ fn codegen_slice<'ctx>(
     //@should expect pointer always be true? 08.05.24
     // in case of slices that just delays the load?
     // causes problem when slicing multiple times into_pointer_value() gets called on new_slice_value that is not a pointer
-    let target = codegen_expr(cg, proc_cg, true, target, BlockKind::TailAlloca).expect("value");
+    let target = codegen_expr_value_ptr(cg, proc_cg, target);
     let target_ptr = if access.deref {
         cg.builder
-            .build_load(cg.ptr_type, target.into_pointer_value(), "deref_ptr")
+            .build_load(cg.ptr_type, target, "deref_ptr")
             .unwrap()
             .into_pointer_value()
     } else {
-        target.into_pointer_value()
+        target
     };
 
     match access.kind {
@@ -601,26 +652,18 @@ fn codegen_slice<'ctx>(
                 .into_pointer_value();
 
             let lower = match access.range.lower {
-                Some(lower) => Some(
-                    codegen_expr(cg, proc_cg, false, lower, BlockKind::TailAlloca)
-                        .expect("value")
-                        .into_int_value(),
-                ),
+                Some(lower) => Some(codegen_expr_value(cg, proc_cg, lower).into_int_value()),
                 None => None,
             };
 
             let upper = match access.range.upper {
                 hir::SliceRangeEnd::Unbounded => None,
-                hir::SliceRangeEnd::Exclusive(upper) => Some(
-                    codegen_expr(cg, proc_cg, false, upper, BlockKind::TailAlloca)
-                        .expect("value")
-                        .into_int_value(),
-                ),
-                hir::SliceRangeEnd::Inclusive(upper) => Some(
-                    codegen_expr(cg, proc_cg, false, upper, BlockKind::TailAlloca)
-                        .expect("value")
-                        .into_int_value(),
-                ),
+                hir::SliceRangeEnd::Exclusive(upper) => {
+                    Some(codegen_expr_value(cg, proc_cg, upper).into_int_value())
+                }
+                hir::SliceRangeEnd::Inclusive(upper) => {
+                    Some(codegen_expr_value(cg, proc_cg, upper).into_int_value())
+                }
             };
 
             match (lower, upper) {
@@ -727,26 +770,18 @@ fn codegen_slice<'ctx>(
             let len = cg.ptr_sized_int_type.const_int(len, false);
 
             let lower = match access.range.lower {
-                Some(lower) => Some(
-                    codegen_expr(cg, proc_cg, false, lower, BlockKind::TailAlloca)
-                        .expect("value")
-                        .into_int_value(),
-                ),
+                Some(lower) => Some(codegen_expr_value(cg, proc_cg, lower).into_int_value()),
                 None => None,
             };
 
             let upper = match access.range.upper {
                 hir::SliceRangeEnd::Unbounded => None,
-                hir::SliceRangeEnd::Exclusive(upper) => Some(
-                    codegen_expr(cg, proc_cg, false, upper, BlockKind::TailAlloca)
-                        .expect("value")
-                        .into_int_value(),
-                ),
-                hir::SliceRangeEnd::Inclusive(upper) => Some(
-                    codegen_expr(cg, proc_cg, false, upper, BlockKind::TailAlloca)
-                        .expect("value")
-                        .into_int_value(),
-                ),
+                hir::SliceRangeEnd::Exclusive(upper) => {
+                    Some(codegen_expr_value(cg, proc_cg, upper).into_int_value())
+                }
+                hir::SliceRangeEnd::Inclusive(upper) => {
+                    Some(codegen_expr_value(cg, proc_cg, upper).into_int_value())
+                }
             };
 
             match (lower, upper) {
@@ -792,7 +827,7 @@ fn codegen_cast<'ctx>(
     into: &'ctx hir::Type,
     kind: hir::CastKind,
 ) -> values::BasicValueEnum<'ctx> {
-    let target = codegen_expr(cg, proc_cg, false, target, BlockKind::TailAlloca).expect("value");
+    let target = codegen_expr_value(cg, proc_cg, target);
     let into = cg.type_into_basic(*into);
     let op = match kind {
         hir::CastKind::Error => panic!("codegen unexpected hir::CastKind::Error"),
@@ -881,7 +916,7 @@ fn codegen_call_direct<'ctx>(
 ) -> Option<values::BasicValueEnum<'ctx>> {
     let mut input_values = Vec::with_capacity(input.len());
     for &expr in input {
-        let value = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca).expect("value");
+        let value = codegen_expr_value(cg, proc_cg, expr);
         input_values.push(value.into());
     }
 
@@ -899,13 +934,11 @@ fn codegen_call_indirect<'ctx>(
     target: &'ctx hir::Expr,
     indirect: &'ctx hir::CallIndirect,
 ) -> Option<values::BasicValueEnum<'ctx>> {
-    let function_ptr = codegen_expr(cg, proc_cg, false, target, BlockKind::TailAlloca)
-        .expect("value")
-        .into_pointer_value();
+    let function_ptr = codegen_expr_value(cg, proc_cg, target).into_pointer_value();
 
     let mut input_values = Vec::with_capacity(indirect.input.len());
     for &expr in indirect.input {
-        let value = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca).expect("value");
+        let value = codegen_expr_value(cg, proc_cg, expr);
         input_values.push(value.into());
     }
 
@@ -1084,7 +1117,7 @@ fn codegen_unary<'ctx>(
     op: ast::UnOp,
     rhs: &'ctx hir::Expr<'ctx>,
 ) -> values::BasicValueEnum<'ctx> {
-    let rhs = codegen_expr(cg, proc_cg, false, rhs, BlockKind::TailAlloca).expect("value");
+    let rhs = codegen_expr_value(cg, proc_cg, rhs);
 
     match op {
         ast::UnOp::Neg => match rhs {
@@ -1121,8 +1154,8 @@ fn codegen_binary<'ctx>(
     rhs: &'ctx hir::Expr<'ctx>,
     lhs_signed_int: bool,
 ) -> values::BasicValueEnum<'ctx> {
-    let lhs = codegen_expr(cg, proc_cg, false, lhs, BlockKind::TailAlloca).expect("value");
-    let rhs = codegen_expr(cg, proc_cg, false, rhs, BlockKind::TailAlloca).expect("value");
+    let lhs = codegen_expr_value(cg, proc_cg, lhs);
+    let rhs = codegen_expr_value(cg, proc_cg, rhs);
     codegen_bin_op(cg, op, lhs, rhs, lhs_signed_int)
 }
 

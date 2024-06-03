@@ -160,6 +160,7 @@ fn codegen_function_bodies(cg: &Codegen) {
             block_info: Vec::new(),
             defer_blocks: Vec::new(),
             next_loop_info: None,
+            tail_alloca: Vec::with_capacity(64),
         };
         codegen_block(cg, &mut proc_cg, block, BlockKind::TailReturn);
 

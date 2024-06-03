@@ -1,8 +1,10 @@
 use super::context::{Codegen, ProcCodegen};
-use super::emit_expr::{codegen_bin_op, codegen_expr};
-use crate::ast;
+use super::emit_expr::{
+    codegen_bin_op, codegen_expr, codegen_expr_value, codegen_expr_value_optional,
+};
 use crate::hir;
-use inkwell::values;
+use crate::{ast, id_impl};
+use inkwell::{types, values};
 
 pub fn codegen_block<'ctx>(
     cg: &Codegen<'ctx>,
@@ -52,7 +54,7 @@ fn codegen_return<'ctx>(
 ) {
     codegen_defer_blocks(cg, proc_cg, &proc_cg.all_defer_blocks());
     if let Some(expr) = expr {
-        let value = codegen_expr(cg, proc_cg, false, expr, BlockKind::TailAlloca);
+        let value = codegen_expr_value_optional(cg, proc_cg, expr);
         cg.build_ret(value);
     } else {
         cg.build_ret(None);
@@ -101,8 +103,7 @@ fn codegen_loop<'ctx>(
         hir::LoopKind::While { cond } => {
             cg.build_br(entry_bb);
             cg.position_at_end(entry_bb);
-            let cond =
-                codegen_expr(cg, proc_cg, false, cond, BlockKind::TailAlloca).expect("value");
+            let cond = codegen_expr_value(cg, proc_cg, cond);
             cg.build_cond_br(cond, body_bb, exit_bb);
 
             cg.position_at_end(body_bb);
@@ -118,8 +119,7 @@ fn codegen_loop<'ctx>(
 
             cg.build_br(entry_bb);
             cg.position_at_end(entry_bb);
-            let cond =
-                codegen_expr(cg, proc_cg, false, cond, BlockKind::TailAlloca).expect("value");
+            let cond = codegen_expr_value(cg, proc_cg, cond);
             cg.build_cond_br(cond, body_bb, exit_bb);
 
             cg.position_at_end(body_bb);
@@ -181,8 +181,7 @@ fn codegen_assign<'ctx>(
         ast::AssignOp::Bin(op) => {
             let lhs_ty = cg.type_into_basic(assign.lhs_ty);
             let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
-            let init_value =
-                codegen_expr(cg, proc_cg, false, assign.rhs, BlockKind::TailAlloca).expect("value");
+            let init_value = codegen_expr_value(cg, proc_cg, assign.rhs);
 
             let bin_value = codegen_bin_op(cg, op, lhs_value, init_value, assign.lhs_signed_int);
             cg.builder.build_store(lhs_ptr, bin_value).unwrap();
@@ -201,9 +200,16 @@ fn codegen_expr_semi<'ctx>(
 #[derive(Copy, Clone)]
 pub enum BlockKind<'ctx> {
     TailIgnore,
-    TailAlloca,
     TailReturn,
+    TailAlloca(TailAllocaID),
     TailStore(values::PointerValue<'ctx>),
+}
+
+id_impl!(TailAllocaID);
+#[derive(Copy, Clone)]
+pub enum TailAllocaStatus<'ctx> {
+    NoValue,
+    WithValue(values::PointerValue<'ctx>, types::BasicTypeEnum<'ctx>),
 }
 
 fn codegen_expr_tail<'ctx>(
@@ -217,9 +223,24 @@ fn codegen_expr_tail<'ctx>(
             codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
             let _ = codegen_expr(cg, proc_cg, false, expr, kind);
         }
-        BlockKind::TailAlloca => {
-            //@implement temp value allocation and retrieval for tail expr 03.06.24
-            panic!("tail alloca is not implemented");
+        BlockKind::TailAlloca(alloca_id) => {
+            codegen_defer_blocks(cg, proc_cg, &proc_cg.last_defer_blocks());
+            let tail_value = codegen_expr(cg, proc_cg, false, expr, kind);
+
+            if let Some(value) = tail_value {
+                match proc_cg.tail_alloca[alloca_id.index()] {
+                    TailAllocaStatus::NoValue => {
+                        let temp_ptr =
+                            cg.entry_insert_alloca(proc_cg, value.get_type(), "temp_tail");
+                        cg.builder.build_store(temp_ptr, value).unwrap();
+                        let status = &mut proc_cg.tail_alloca[alloca_id.index()];
+                        *status = TailAllocaStatus::WithValue(temp_ptr, value.get_type());
+                    }
+                    TailAllocaStatus::WithValue(temp_ptr, _) => {
+                        cg.builder.build_store(temp_ptr, value).unwrap();
+                    }
+                }
+            }
         }
         BlockKind::TailReturn => {
             //@handle tail return kind differently? 03.06.24
