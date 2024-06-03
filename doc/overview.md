@@ -1,178 +1,72 @@
-# Overview is unfinished and out of date 🚧
+# Overview
 
-# Lexical elements & literals
-### Numbers
-```
-2 4096            // integer
-2.0 100.45        // float
-```
+## Introduction
+This is a basic tutorial and overview of the **Rock** programming language.  
+It assumes a basic knowledge of common programming concepts.
 
-### Built-in constants
-```
-null              // null pointer
-true, false       // boolean constants
-```
-
-### Strings and characters
-Raw strings dont process the escape sequences.
-Multi-line strings retain the newline and omit the carriage return characters.
-```
-'c' '🔥'          // char
-"hello world"     // string
-#"multi-line      // multi-line string
-string"
-```
-```
-`home\new\dir`    // raw string
-#`multi-line      // multi-line raw string
-raw string`
-```
-
-### Escape sequences
-```
-\n  - newline
-\t  - tab
-\r  - carriage return
-\0  - null terminator
-\'  - single quote
-\"  - double quote
-\\  - backslash
-```
+## Lexical elements and literals
 
 ### Comments
-Comments begin with //:
-```
-// comment
-```
-Multi-line comments begin with /* and end with */.
-Multi-line comments can be nested:
-```
+Line comments begin with `//`.  
+Multi-line block comments begin with `/*` and end with `/*`.
+```rs
+// line comment
+/* block comment */
 /*
-    /*
-    comment
-    */
+    /* block comments can be nested */
 */
 ```
 
-# Variable declarations
-### Local variables
-Local variables are allocated on the stack in the current scope.
-All stack-allocated variables are zero-initialized by default.
-```
-{
-    x := 10;       // infer the type of 'x'
-    y : s32;       // default initialize 'y' to 0
-    z : s32 = 10;  // declare type of 'z' and set its value
-}
-```
-Local variables within the current scope cannot be 'shadowed' by another variable of the same name:
-```
-{
-    x := s32;
-    x : f32 = 4.0; // error: variable 'x' already exists
-}                  // on scope exit 'x' is deallocated
-x : bool = true;   // variable with name 'x' can be declared again
+### Numbers
+Numeric literals are untyped.  
+Their type is determined during typechecking.
+```rs
+2,   1024         // integer
+3.0, 23.45        // floating point
 ```
 
-# Type system
-### Basic types
-```
-bool                      - 1 byte boolean
-s8, s16, s32, s64, ssize  - signed integers
-u8, u16, u32, u64, usize  - unsigned integers
-f32, f64                  - float types
-char                      - 4 byte unicode code point
-```
-
-### Type signatures
-```
-s32         - basic type
-*u32        - pointer to a type
-Point       - custom struct
-EnumKind    - custom enum
-[5]s32      - static array 
-[5][10]s32  - multi-dimentional static array
-```
-The type signatures are read left to right:
-```
-*Point       - pointer to Point
-[10]Point    - array of 10 Points
-[5]*Point    - array of 5 pointers to Point
-[5][10]bool  - array of 5 arrays of 10 bools
+### Built-in constants
+Keywords are reserved for commonly used constants.  
+`null` is not like `nil` or `undefined` and requires an explicit cast.  
+`null` is mostly used for `C` interop and working with `void*` equivalent `rawptr` type.
+```c#
+null              // null raw pointer
+true, false       // boolean constants
 ```
 
-### Array types
-```
-array : [2]s32;           // default initialize all elements to 0
-multi_array : [2][3]s32;  // default initialize all elements to 0
-```
-Array initialization:
-```
-array := [2]s32{1, 2};
-array : [2]s32 = {1, 2};
-multi_array := [2][3]s32{{1, 2, 3}, {1, 2, 3}};
+### Characters
+Character literals represent 32-bit Unicode code points:
+```go
+`r`, `2`, `\n`, `🔥`
 ```
 
-### Struct type declarations
-Struct fields may include constant expressions, 
-which will apply when instance of that type is default initialized.
-```
-Point :: struct {
-    x: f32;        // default x = 0.0
-    y: f32 = 2.0;  // default y = 2.0
-}
-```
-Struct initialization:
-```
-point : Point;                      // default initialize each field
-point := Point.{x: 2.0, y: 4.0};    // infer the type
-point : Point = .{x: 2.0, y: 4.0};  // define the type separately
-```
-Typename can often be omitted:
-```
-return .{x: 2.0, y: 4.0};           // return type is known
-points[0] = .{x = 2.0, y: 4.0}      // array type is known
-data.point = .{x: 2.0, y: 4.0};     // field type is known
-print_point(.{x: 2.0, y: 4.0});     // procedure parameter type is known
+### Strings
+String literals are UTF-8 encoded byte sequences.  
+Rock provides a flexible way to define string literals:
+```go
+"this is a string \n"      // parse escape sequences
+`this is a raw string \n`  // don't parse escape sequences
+c"this is a C string"      // include null terminator `\0`
 ```
 
-### Enum type declarations
-Enum can have specified basic type, otherwise the type is chosen by the compiler.
-Each enum variant must specify its constant value.
-```
-GeometryKind :: enum u8 {
-    Line = 2;
-    Triangle = 3;
-    Quad = 4;
-}
-```
-Enum literals:
-```
-point : GeometryKind;               // default initialize to the first variant (Line)
-point := GeometryKind.Line;         // infer the type
-point : GeometryKind = .Line;       // define the type separately
-```
-Typename can often be omitted:
-```
-return .Line;                       // return type is known
-geometry[0] = .Line;                // array type is known
-data.geometry = .Line;              // field type is known
-print_geometry(.Line);              // procedure parameter type is known
+Multi-line strings are represented by consecutive string literals:
+```go
+"1. first line"            // new line `\n` will be
+`2. second line`           // inserted after each line,
+"3. third line"            // but not after the last one.
 ```
 
-## Built-in expressions
-
-### 1. as
-Casts expression into the specified type:
-```
-x : f64 = 2.0;
-y := x as u32; // cast x into s32
+These modifiers can be used together.  
+For example, we can define a raw C string:
+```go
+c`C:\\Very\\Scary\\WindowsPath.txt`
 ```
 
-### 2. sizeof
-Returns the size of the type, evaluated at compile time:
-```
-size := sizeof(f32);
-ptr_size = sizeof(*Point);
-buf_size := sizeof([1024]u8);
-```
+### Escape sequences
+- \t  - tab
+- \n  - newline
+- \r  - carriage return
+- \0  - null terminator
+- \\'   - single quote
+- \\"   - double quote
+- \\\\  - backslash
