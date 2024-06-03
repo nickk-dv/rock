@@ -208,41 +208,60 @@ fn lex_char(lex: &mut Lexer) {
     lex.tokens().add_char(char, range);
 }
 
-fn lex_string(lex: &mut Lexer, c_string: bool, raw: bool) {
+fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
     let start = lex.start_range();
-    let mut string = String::new();
-    let mut terminated = false;
-
     if c_string {
         lex.eat('c');
     }
     lex.eat('\"');
 
-    while let Some(c) = lex.peek() {
-        match c {
-            '\r' | '\n' => break,
-            '`' if raw => {
-                lex.eat(c);
-                terminated = true;
-                break;
-            }
-            '"' if !raw => {
-                lex.eat(c);
-                terminated = true;
-                break;
-            }
-            '\\' if !raw => {
-                let escaped = lex_escape(lex, c_string);
-                string.push(escaped);
-            }
-            _ => {
-                lex.eat(c);
-                string.push(c);
+    let mut range;
+    let mut string = String::new();
+    let mut terminated = false;
+
+    loop {
+        while let Some(c) = lex.peek() {
+            match c {
+                '\r' | '\n' => break,
+                '`' if raw => {
+                    lex.eat(c);
+                    terminated = true;
+                    break;
+                }
+                '"' if !raw => {
+                    lex.eat(c);
+                    terminated = true;
+                    break;
+                }
+                '\\' if !raw => {
+                    let escaped = lex_escape(lex, c_string);
+                    string.push(escaped);
+                }
+                _ => {
+                    lex.eat(c);
+                    string.push(c);
+                }
             }
         }
+
+        range = lex.make_range(start);
+        if !terminated {
+            break;
+        }
+
+        lex_whitespace(lex);
+        match lex.peek() {
+            Some('`') => raw = true,
+            Some('"') => raw = false,
+            Some(_) => break,
+            None => break,
+        }
+
+        lex.eat('\"');
+        string.push('\n');
+        terminated = false;
     }
 
-    let range = lex.make_range(start);
     lex.tokens().add_string(string, c_string, range);
 
     if !terminated {
@@ -307,6 +326,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         }
     };
 
+    lex.eat(c);
     if c_string && escaped == '\0' {
         let range = lex.make_range(start);
         lex.error(ErrorComp::new(
@@ -315,8 +335,6 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
             None,
         ));
     }
-
-    lex.eat(c);
     escaped
 }
 
