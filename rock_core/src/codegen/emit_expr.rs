@@ -74,13 +74,13 @@ pub fn codegen_expr<'ctx>(
             codegen_call_indirect(cg, proc_cg, target, indirect)
         }
         Expr::UnionInit { union_id, input } => {
-            Some(codegen_union_init(cg, proc_cg, expect_ptr, union_id, input))
+            codegen_union_init(cg, proc_cg, union_id, input, expect_ptr, kind)
         }
-        Expr::StructInit { struct_id, input } => Some(codegen_struct_init(
-            cg, proc_cg, expect_ptr, struct_id, input,
-        )),
+        Expr::StructInit { struct_id, input } => {
+            codegen_struct_init(cg, proc_cg, struct_id, input, expect_ptr, kind)
+        }
         Expr::ArrayInit { array_init } => {
-            Some(codegen_array_init(cg, proc_cg, expect_ptr, array_init))
+            codegen_array_init(cg, proc_cg, array_init, expect_ptr, kind)
         }
         Expr::ArrayRepeat { array_repeat } => Some(codegen_array_repeat(cg, proc_cg, array_repeat)),
         Expr::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
@@ -559,6 +559,9 @@ fn codegen_index<'ctx>(
     }
 }
 
+//@all of this and index needs to be reworked, consider core library implementation
+// instead of hardcoding llvm ir
+// but index does need to be like an intrinsic with minimal codesize impact?
 fn codegen_slice<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -917,13 +920,20 @@ fn codegen_call_indirect<'ctx>(
 fn codegen_union_init<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-    expect_ptr: bool,
     union_id: hir::UnionID,
     input: hir::UnionMemberInit<'ctx>,
-) -> values::BasicValueEnum<'ctx> {
+    expect_ptr: bool,
+    kind: BlockKind<'ctx>,
+) -> Option<values::BasicValueEnum<'ctx>> {
     let union_ty = cg.union_type(union_id);
-    //@this alloca needs to be in entry block 30.05.24
-    let union_ptr = cg.builder.build_alloca(union_ty, "union_temp").unwrap();
+    let (union_ptr, elided) = if let BlockKind::TailStore(target_ptr) = kind {
+        (target_ptr, true)
+    } else {
+        (
+            cg.entry_insert_alloca(proc_cg, union_ty.into(), "union_init"),
+            false,
+        )
+    };
 
     if let Some(value) = codegen_expr(
         cg,
@@ -936,24 +946,35 @@ fn codegen_union_init<'ctx>(
     }
 
     if expect_ptr {
-        union_ptr.into()
+        Some(union_ptr.into())
+    } else if elided {
+        None
     } else {
-        cg.builder
-            .build_load(union_ty, union_ptr, "union_val")
-            .unwrap()
+        Some(
+            cg.builder
+                .build_load(union_ty, union_ptr, "union_val")
+                .unwrap(),
+        )
     }
 }
 
 fn codegen_struct_init<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-    expect_ptr: bool,
     struct_id: hir::StructID,
     input: &'ctx [hir::StructFieldInit<'ctx>],
-) -> values::BasicValueEnum<'ctx> {
+    expect_ptr: bool,
+    kind: BlockKind<'ctx>,
+) -> Option<values::BasicValueEnum<'ctx>> {
     let struct_ty = cg.struct_type(struct_id);
-    //@this alloca needs to be in entry block 30.05.24
-    let struct_ptr = cg.builder.build_alloca(struct_ty, "struct_temp").unwrap();
+    let (struct_ptr, elided) = if let BlockKind::TailStore(target_ptr) = kind {
+        (target_ptr, true)
+    } else {
+        (
+            cg.entry_insert_alloca(proc_cg, struct_ty.into(), "struct_init"),
+            false,
+        )
+    };
 
     for field_init in input {
         let field_ptr = cg
@@ -977,11 +998,15 @@ fn codegen_struct_init<'ctx>(
     }
 
     if expect_ptr {
-        struct_ptr.into()
+        Some(struct_ptr.into())
+    } else if elided {
+        None
     } else {
-        cg.builder
-            .build_load(struct_ty, struct_ptr, "struct_val")
-            .unwrap()
+        Some(
+            cg.builder
+                .build_load(struct_ty, struct_ptr, "struct_val")
+                .unwrap(),
+        )
     }
 }
 
@@ -989,13 +1014,20 @@ fn codegen_struct_init<'ctx>(
 fn codegen_array_init<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-    expect_ptr: bool,
     array_init: &'ctx hir::ArrayInit<'ctx>,
-) -> values::BasicValueEnum<'ctx> {
+    expect_ptr: bool,
+    kind: BlockKind<'ctx>,
+) -> Option<values::BasicValueEnum<'ctx>> {
     let elem_ty = cg.type_into_basic(array_init.elem_ty);
     let array_ty = elem_ty.array_type(array_init.input.len() as u32);
-    //@this alloca needs to be in entry block 30.05.24
-    let array_ptr = cg.builder.build_alloca(array_ty, "array_temp").unwrap();
+    let (array_ptr, elided) = if let BlockKind::TailStore(target_ptr) = kind {
+        (target_ptr, true)
+    } else {
+        (
+            cg.entry_insert_alloca(proc_cg, array_ty.into(), "array_init"),
+            false,
+        )
+    };
 
     for (idx, &expr) in array_init.input.iter().enumerate() {
         let index = cg.ptr_sized_int_type.const_int(idx as u64, false);
@@ -1016,11 +1048,15 @@ fn codegen_array_init<'ctx>(
     }
 
     if expect_ptr {
-        array_ptr.into()
+        Some(array_ptr.into())
+    } else if elided {
+        None
     } else {
-        cg.builder
-            .build_load(array_ty, array_ptr, "array_val")
-            .unwrap()
+        Some(
+            cg.builder
+                .build_load(array_ty, array_ptr, "array_val")
+                .unwrap(),
+        )
     }
 }
 
@@ -1032,29 +1068,14 @@ fn codegen_array_repeat<'ctx>(
     todo!("codegen `array repeat` not supported")
 }
 
+//@split codegen_expr into codegen_ptr, normal (tail ignore), and value_required (with tail alloca)
+// have current `codegen_expr` as parameterized version, everything else wont need to use expect_ptr?
 fn codegen_address<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     rhs: &'ctx hir::Expr<'ctx>,
 ) -> values::BasicValueEnum<'ctx> {
-    //@semantics arent stable @14.04.24
-    let rhs = codegen_expr(cg, proc_cg, true, rhs, BlockKind::TailIgnore).expect("value");
-    if rhs.is_pointer_value() {
-        return rhs;
-    }
-    //@addr can sometimes be adress of a value, or of temporary @08.04.24
-    // constant values wont behave correctly: &5, 5 needs to be stack allocated
-    // this addr of temporaries need to be supported with explicit stack allocation
-    // (this might just work, since pointer values are still on the stack) eg: `&value.x.y`
-    //@multiple adresses get shrinked into 1, which isnt how type system threats this eg: `& &[1, 2, 3]`
-    //@temporary allocation and referencing should not be supported @14.04.24
-    // but things like array literals and struct or union literals should work
-    // since those result in allocation already being made
-    // and can be passed by reference seamlessly
-    let ty = rhs.get_type();
-    let ptr = cg.builder.build_alloca(ty, "temp_addr_val").unwrap();
-    cg.builder.build_store(ptr, rhs).unwrap();
-    ptr.into()
+    codegen_expr(cg, proc_cg, true, rhs, BlockKind::TailIgnore).expect("value")
 }
 
 fn codegen_unary<'ctx>(

@@ -258,6 +258,10 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.position_at_end(bb);
     }
     #[inline]
+    pub fn position_before_inst(&self, inst: values::InstructionValue<'ctx>) {
+        self.builder.position_before(&inst);
+    }
+    #[inline]
     pub fn build_br(&self, bb: BasicBlock<'ctx>) {
         self.builder.build_unconditional_branch(bb).unwrap();
     }
@@ -285,6 +289,26 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             self.builder.build_return(None).unwrap();
         }
+    }
+
+    pub fn entry_insert_alloca(
+        &self,
+        proc_cg: &mut ProcCodegen<'ctx>,
+        ty: types::BasicTypeEnum<'ctx>,
+        name: &str,
+    ) -> values::PointerValue<'ctx> {
+        let insert_bb = self.get_insert_bb();
+
+        let entry_bb = proc_cg.function.get_first_basic_block().unwrap();
+        if let Some(inst) = entry_bb.get_first_instruction() {
+            self.position_before_inst(inst);
+        } else {
+            self.position_at_end(entry_bb);
+        }
+        let ptr = self.builder.build_alloca(ty, name).unwrap();
+
+        self.position_at_end(insert_bb);
+        ptr
     }
 }
 
