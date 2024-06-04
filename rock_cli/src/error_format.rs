@@ -8,13 +8,16 @@ use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
 
 pub fn print_errors(session: Option<&Session>, diagnostics: DiagnosticCollection) {
-    let handle = &mut BufWriter::new(std::io::stderr());
+    let mut handle = BufWriter::new(std::io::stderr());
+    let mut state = StateFmt::new();
+
     for warning in diagnostics.warnings() {
         print_diagnostic(
             session,
             warning.diagnostic(),
             DiagnosticSeverity::Warning,
-            handle,
+            &mut state,
+            &mut handle,
         );
     }
     for error in diagnostics.errors() {
@@ -22,23 +25,54 @@ pub fn print_errors(session: Option<&Session>, diagnostics: DiagnosticCollection
             session,
             error.diagnostic(),
             DiagnosticSeverity::Error,
-            handle,
+            &mut state,
+            &mut handle,
         );
     }
     let _ = handle.flush();
 }
 
+struct StateFmt<'src> {
+    line_num_offset: usize,
+    context_fmts: Vec<ContextFmt<'src>>,
+}
+
 struct ContextFmt<'src> {
     file: &'src File,
     path: &'src Path,
+    message: &'src str,
     range: TextRange,
     location: TextLocation,
     line_range: TextRange,
     line_num: String,
+    severity: DiagnosticSeverity,
+}
+
+impl<'src> StateFmt<'src> {
+    fn new() -> StateFmt<'src> {
+        StateFmt {
+            line_num_offset: 0,
+            context_fmts: Vec::with_capacity(8),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.line_num_offset = 0;
+        self.context_fmts.clear();
+    }
+
+    fn push(&mut self, fmt: ContextFmt<'src>) {
+        self.line_num_offset = self.line_num_offset.max(fmt.line_num.len());
+        self.context_fmts.push(fmt);
+    }
 }
 
 impl<'src> ContextFmt<'src> {
-    fn new(session: &'src Session, context: &DiagnosticContext) -> ContextFmt<'src> {
+    fn new(
+        session: &'src Session,
+        context: &'src DiagnosticContext,
+        severity: DiagnosticSeverity,
+    ) -> ContextFmt<'src> {
         let file = session.file(context.source().file_id());
         let path = file
             .path
@@ -47,31 +81,27 @@ impl<'src> ContextFmt<'src> {
 
         let range = context.source().range();
         let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
-        let line_range = file.line_ranges[location.line_index()];
         let line_num = location.line().to_string();
+        let line_range = file.line_ranges[location.line_index()];
 
         ContextFmt {
             file,
             path,
+            message: context.message(),
             range,
             location,
             line_range,
             line_num,
-        }
-    }
-
-    fn extend_line_num(&mut self, other: &ContextFmt) {
-        if self.line_num.len() < other.line_num.len() {
-            let pad_len = other.line_num.len() - self.line_num.len();
-            self.line_num.extend(std::iter::repeat(' ').take(pad_len));
+            severity,
         }
     }
 }
 
-fn print_diagnostic(
-    session: Option<&Session>,
-    diagnostic: &Diagnostic,
+fn print_diagnostic<'src>(
+    session: Option<&'src Session>,
+    diagnostic: &'src Diagnostic,
     severity: DiagnosticSeverity,
+    state: &mut StateFmt<'src>,
     handle: &mut BufWriter<Stderr>,
 ) {
     let message = diagnostic.message().as_str();
@@ -84,67 +114,48 @@ fn print_diagnostic(
         ansi::RESET
     );
 
-    let (main, info) = match diagnostic.kind() {
+    match diagnostic.kind() {
         DiagnosticKind::Message => return,
-        DiagnosticKind::Context { main, info } => (main, info),
-        DiagnosticKind::ContextVec { main, info } => panic!("diagnostic info vec not supported"),
+        DiagnosticKind::Context { main, info } => {
+            let session = session.expect("session context");
+            state.reset();
+
+            state.push(ContextFmt::new(session, main, severity));
+            if let Some(info) = info {
+                state.push(ContextFmt::new(session, info, DiagnosticSeverity::Info));
+            }
+        }
+        DiagnosticKind::ContextVec { main, info_vec } => {
+            let session = session.expect("session context");
+            state.reset();
+
+            state.push(ContextFmt::new(session, main, severity));
+            for info in info_vec {
+                state.push(ContextFmt::new(session, info, DiagnosticSeverity::Info));
+            }
+        }
     };
 
-    let session = session.expect("session context");
-    let mut main_fmt = ContextFmt::new(session, main);
-
-    if let Some(info) = info {
-        let mut info_fmt = ContextFmt::new(session, info);
-
-        main_fmt.extend_line_num(&info_fmt);
-        info_fmt.extend_line_num(&main_fmt);
-        let line_pad = " ".repeat(main_fmt.line_num.len());
-
-        print_line_bar(handle, &line_pad);
-        print_context(handle, &line_pad, &main_fmt, main, severity);
-        print_file_link(handle, &line_pad, &main_fmt, false);
-        print_context(handle, &line_pad, &info_fmt, info, DiagnosticSeverity::Info);
-        print_file_link(handle, &line_pad, &info_fmt, true);
-    } else {
-        let line_pad = " ".repeat(main_fmt.line_num.len());
-
-        print_line_bar(handle, &line_pad);
-        print_context(handle, &line_pad, &main_fmt, main, severity);
-        print_file_link(handle, &line_pad, &main_fmt, true);
+    let line_pad = " ".repeat(state.line_num_offset);
+    for (idx, fmt) in state.context_fmts.iter().enumerate() {
+        let last = idx + 1 == state.context_fmts.len();
+        let line_num_pad = " ".repeat(state.line_num_offset - fmt.line_num.len());
+        print_context(handle, fmt, last, &line_pad, &line_num_pad);
     }
 }
-
-fn print_line_bar(handle: &mut BufWriter<Stderr>, line_pad: &str) {
-    let _ = writeln!(handle, "{line_pad} {}│{}", ansi::CYAN, ansi::RESET);
-}
-
-fn print_file_link(handle: &mut BufWriter<Stderr>, line_pad: &str, fmt: &ContextFmt, last: bool) {
-    let box_char = if last { '└' } else { '├' };
-    let _ = writeln!(
-        handle,
-        "{}{line_pad} {box_char}─ {}:{:?}{}",
-        ansi::CYAN,
-        fmt.path.to_string_lossy(),
-        fmt.location,
-        ansi::RESET
-    );
-    if !last {
-        print_line_bar(handle, line_pad);
-    }
-}
-
-const TAB_SPACE_COUNT: usize = 2;
-const TAB_REPLACE_STR: &str = "  ";
 
 fn print_context(
     handle: &mut BufWriter<Stderr>,
-    line_pad: &str,
     fmt: &ContextFmt,
-    context: &DiagnosticContext,
-    severity: DiagnosticSeverity,
+    last: bool,
+    line_pad: &str,
+    line_num_pad: &str,
 ) {
     let prefix_range = TextRange::new(fmt.line_range.start(), fmt.range.start());
-    let source_range = TextRange::new(fmt.range.start(), fmt.line_range.end().min(fmt.range.end()));
+    let source_range = TextRange::new(
+        fmt.range.start(),
+        (fmt.line_range.end() - 1.into()).min(fmt.range.end()),
+    );
 
     let line_str = &fmt.file.source[fmt.line_range.as_usize()];
     let prefix_str = &fmt.file.source[prefix_range.as_usize()];
@@ -152,21 +163,28 @@ fn print_context(
 
     let line = line_str.trim_end().replace('\t', TAB_REPLACE_STR);
     let marker_pad = " ".repeat(normalized_tab_len(prefix_str));
-    let marker = severity_marker(severity).repeat(normalized_tab_len(source_str));
-    let message = context.message();
+    let marker = severity_marker(fmt.severity).repeat(normalized_tab_len(source_str));
+    let message = fmt.message;
+
+    let c = ansi::CYAN;
+    let r = ansi::RESET;
+    let box_char = if last { '└' } else { '├' };
 
     let _ = writeln!(
         handle,
-        r#"{}{} │ {}{line}{}
-{line_pad} │ {marker_pad}{}{marker} {message}{}"#,
-        ansi::CYAN,
+        r#"{line_pad} {c}│
+{}{line_num_pad} │{r} {line}
+{line_pad} {c}│ {marker_pad}{}{marker} {message}
+{line_pad} {c}{box_char}─ {}:{:?}{r}"#,
         fmt.line_num,
-        ansi::RESET,
-        ansi::CYAN,
-        severity_color(severity),
-        ansi::RESET,
+        severity_color(fmt.severity),
+        fmt.path.to_string_lossy(),
+        fmt.location,
     );
 }
+
+const TAB_SPACE_COUNT: usize = 2;
+const TAB_REPLACE_STR: &str = "  ";
 
 fn normalized_tab_len(text: &str) -> usize {
     text.chars()

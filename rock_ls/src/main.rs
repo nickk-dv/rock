@@ -172,7 +172,9 @@ fn create_diagnostic<'src>(
     let (main, info) = match diagnostic.kind() {
         DiagnosticKind::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
         DiagnosticKind::Context { main, info } => (main, info),
-        DiagnosticKind::ContextVec { main, info } => panic!("diagnostic info vec not supported"),
+        DiagnosticKind::ContextVec { main, info_vec } => {
+            panic!("diagnostic info vec not supported")
+        }
     };
 
     let (main_range, main_path) = source_to_range_and_path(&session, main.source());

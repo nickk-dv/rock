@@ -28,7 +28,7 @@ pub enum DiagnosticKind {
     },
     ContextVec {
         main: DiagnosticContext,
-        info: Vec<DiagnosticContext>,
+        info_vec: Vec<DiagnosticContext>,
     },
 }
 

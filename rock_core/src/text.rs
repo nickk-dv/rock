@@ -123,6 +123,14 @@ impl std::ops::AddAssign for TextOffset {
     }
 }
 
+impl std::ops::Sub for TextOffset {
+    type Output = TextOffset;
+    #[inline]
+    fn sub(self, rhs: TextOffset) -> TextOffset {
+        (self.0 - rhs.0).into()
+    }
+}
+
 impl fmt::Debug for TextRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start.0, self.end.0)
