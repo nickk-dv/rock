@@ -1,10 +1,16 @@
 # Overview
+- [Introduction](#introduction)
+- [Lexical elements](#lexical-elements)
+- [Packages](#packages)
+- [Modules](#modules)
+- [Attributes](#attributes)
+- [Command line tool](#command-line-tool)
 
 ## Introduction
 This is a basic tutorial and overview of the **Rock** programming language.  
 It assumes a basic knowledge of common programming concepts.
 
-## Lexical elements and literals
+## Lexical elements
 
 ### Comments
 Line comments begin with `//`.  
@@ -27,7 +33,7 @@ Their type is determined during typechecking.
 
 ### Built-in constants
 Keywords are reserved for commonly used constants.  
-`null` is not like `nil` or `undefined` and requires an explicit cast.  
+`null` is not like `nil` or `undefined` in other languages and requires an explicit cast.  
 `null` is mostly used for `C` interop and working with `void*` equivalent `rawptr` type.
 ```c#
 null              // null raw pointer
@@ -70,3 +76,123 @@ c`C:\\Very\\Scary\\WindowsPath.txt`
 - \\'   - single quote
 - \\"   - double quote
 - \\\\  - backslash
+
+## Packages
+Rock packages consist of `src` directory with `.rock` files  
+and `Rock.toml` manifest, which contains project configuration.
+
+To create a new package use `rock` compiler binary from your terminal.  
+Full specification of the `rock` command line tool will be covered in a [later chapter](#command-line-tool).
+```rs
+rock new my_package        // create `my_package` in current directory
+cd my_package              // cd into created package directory
+rock run                   // build an run executable package
+```
+
+## Modules
+Modules are represented by a single `.rock` file.  
+Executable binary packages are required to have `src/main.rock` file.  
+Modules contain items with private visibility, which can be changed with `pub` keyword.
+
+### Procedures
+Procedures are used to perform computation at runtime,  
+in some other languages they are called *functions* or *methods*.
+
+Procedures are defined with the `proc` keyword:
+```rs
+proc main() -> s32 {
+    return 0;
+}
+```
+Input parameters are defined like this:
+```rs
+proc int_sum(x: s32, y: s32) -> s32 {
+    return x + y;
+}
+```
+Procedures that return `void` can omit the return type:
+```rs
+proc do_nothing() {
+    return;
+}
+```
+
+### Structs
+Structs are record types in Rock.  
+They represent a named collection of **fields**.  
+
+Structs are defined with the `struct` keyword:
+```rs
+struct Vector2 {
+    x: f32;
+    y: f32;
+}
+```
+
+### Enums
+Enums represent a set of integer constants.  
+Each named enum field is called a **variant**.  
+Variants can be assigned with an explicit value or auto incremented.  
+
+Enums are defined with the `enum` keyword:
+```rs
+enum TileKind {
+    Rock;  // 0
+    Grass; // 1
+    Water; // 2
+    Forest = 10;
+}
+```
+
+### Constants
+The constant's value must be able to be evaluated at compile time.  
+Constants don't have a memory address and **cannot be referenced**.
+
+Constants are defined with the `const` keyword:
+```rs
+const CHUNK_SIZE: u32 = 32;
+const ENABLE_GFX: bool = true;
+const ERROR_MESSAGE: []u8 = "out of bounds";
+```
+
+### Globals
+The global's value must be able to be evaluated at compile time.  
+Globals have a memory address and **can be referenced**.  
+It's value can be changed at runtime when declared with `mut` keyword.
+
+Globals are defined with the `global` keyword:
+```rs
+global mut COUNTER: u64 = 0;
+global THE_NUMBERS: [6]s32 = [4, 8, 15, 16, 23, 42];
+```
+
+### Imports
+Imports are used to bring module or item names into scope.  
+Only items declared with the `pub` keyword can be imported.  
+
+Import adds module and optional list of items into current module's scope:
+```go
+import core/mem;             // import `mem` from `core`
+import core/io.{ printf }    // import `io` and `printf` from `core`
+
+proc example() {
+    printf(c"imports");      // use `printf` directly
+    io.printf(c"complete");  // use `io` to access `printf`
+}
+```
+Imported module and items can be renamed.  
+This can be used to avoid name conflicts or make them easier to use.  
+```go
+// import `physics_world_2d` as `world` from `physics`
+import physics/physics_world_2d as world;
+
+proc example() {
+    world.init(0.16);
+    world.simulate();
+    world.deinit();
+}
+```
+
+## Attributes
+
+## Command line tool
