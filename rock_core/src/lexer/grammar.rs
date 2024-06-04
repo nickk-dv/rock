@@ -19,7 +19,7 @@ pub fn source_file(lex: &mut Lexer) {
                 _ => {
                     if c.is_ascii_digit() {
                         lex_number(lex, c);
-                    } else if c == '_' || c.is_alphabetic() {
+                    } else if c == '_' || c.is_ascii_alphabetic() {
                         lex_ident(lex, c);
                     } else {
                         lex_symbol(lex, c)
@@ -377,7 +377,7 @@ fn lex_ident(lex: &mut Lexer, fc: char) {
     lex.eat(fc);
 
     while let Some(c) = lex.peek() {
-        if c == '_' || c.is_ascii_digit() || c.is_alphabetic() {
+        if c == '_' || c.is_ascii_alphanumeric() {
             lex.eat(c);
         } else {
             break;

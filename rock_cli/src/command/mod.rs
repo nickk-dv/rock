@@ -4,7 +4,7 @@ mod parse;
 
 use crate::error_format;
 use rock_core::codegen::BuildKind;
-use rock_core::error::{DiagnosticCollection, WarningComp};
+use rock_core::error::{DiagnosticCollection, ResultComp, WarningComp};
 use rock_core::package::manifest::PackageKind;
 
 enum Command {
@@ -33,14 +33,16 @@ struct CommandRun {
 
 pub fn run() {
     let result = run_impl();
-    let diagnostics = DiagnosticCollection::from_result(result);
-    error_format::print_errors(None, diagnostics);
+    error_format::print_errors(None, DiagnosticCollection::from_result(result));
 }
 
-//@format and command parsing warnings get printed after check / build / run diagnostics, fine? 24.05.24
 fn run_impl() -> Result<Vec<WarningComp>, DiagnosticCollection> {
     let (format, warnings) = format::parse().into_result(vec![])?;
     let (command, warnings) = parse::command(format).into_result(warnings)?;
-    let ((), warnings) = execute::command(command).into_result(warnings)?;
+    let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
+    error_format::print_errors(None, diagnostics);
+
+    let result = execute::command(command);
+    let ((), warnings) = ResultComp::from_error(result).into_result(vec![])?;
     Ok(warnings)
 }

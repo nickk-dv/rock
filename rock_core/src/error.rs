@@ -148,12 +148,20 @@ impl DiagnosticCollection {
 
     #[must_use]
     pub fn join_errors(mut self, errors: Vec<ErrorComp>) -> DiagnosticCollection {
-        self.errors.extend(errors);
+        if self.errors.is_empty() {
+            self.errors = errors;
+        } else {
+            self.errors.extend(errors);
+        }
         self
     }
     #[must_use]
     pub fn join_warnings(mut self, warnings: Vec<WarningComp>) -> DiagnosticCollection {
-        self.warnings.extend(warnings);
+        if self.warnings.is_empty() {
+            self.warnings = warnings
+        } else {
+            self.warnings.extend(warnings);
+        }
         self
     }
     #[must_use]
