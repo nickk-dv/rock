@@ -110,7 +110,7 @@ r#"
   {c}new
     {c}--lib        {r}Create library package
     {c}--bin        {r}Create executable package
-    {c}--no_git     {r}Create package without git repo
+    {c}--no-git     {r}Create package without git repo
 
   {c}build
     {c}--debug      {r}Build in debug mode
