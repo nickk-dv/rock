@@ -2,8 +2,9 @@ use crate::error::ErrorComp;
 use crate::fs_env;
 use crate::id_impl;
 use crate::package;
-use crate::package::manifest::Manifest;
+use crate::package::manifest::{Manifest, PackageKind};
 use crate::text::{self, TextRange};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 //@package dependencies must be only lib packages 20.04.24
@@ -75,23 +76,19 @@ fn create_session() -> Result<Session, ErrorComp> {
         packages: Vec::new(),
     };
 
-    let root: PathBuf = session.cwd.clone();
-    process_package(&mut session, root)?;
+    let root_dir = session.cwd.clone();
+    let mut cache_dir = fs_env::current_exe_path()?;
+    cache_dir.pop();
 
-    //@hardcoded core library dependency which is loaded always @19.04.24
-    // process unique packages based on dependency graph of main package's manifest
-    let mut core_root = fs_env::current_exe_path()?;
-    core_root.pop();
-    core_root.push("core");
-    process_package(&mut session, core_root)?;
-
+    process_package(&mut session, &root_dir)?;
+    process_package(&mut session, &cache_dir.join("core"))?;
     Ok(session)
 }
 
-//@errors arent perfect for core / root / dependency packages @19.04.24
-// no checks if root exists at all, trying to parse manifest right away
-fn process_package(session: &mut Session, root: PathBuf) -> Result<(), ErrorComp> {
-    let manifest_path = root.join("Rock.toml");
+//@errors arent work in progress, no context 06.06.24
+// no checks if root exists before trying to parse the manifest
+fn process_package(session: &mut Session, root_dir: &PathBuf) -> Result<(), ErrorComp> {
+    let manifest_path = root_dir.join("Rock.toml");
     if !manifest_path.exists() {
         return Err(ErrorComp::message(format!(
             "could not find manifest `Rock.toml` in current directory\npath: `{}`",
@@ -101,7 +98,13 @@ fn process_package(session: &mut Session, root: PathBuf) -> Result<(), ErrorComp
     let manifest_text = fs_env::file_read_to_string(&manifest_path)?;
     let manifest = package::manifest_deserialize(manifest_text, &manifest_path)?;
 
-    let src_dir = root.join("src");
+    if manifest.package.kind == PackageKind::Bin {
+        return Err(ErrorComp::message(
+            "cannot depend on executable package, only library dependencies are allowed",
+        ));
+    }
+
+    let src_dir = root_dir.join("src");
     if !src_dir.exists() {
         return Err(ErrorComp::message(format!(
             "could not find `src` directory in current directory\npath: `{}`",

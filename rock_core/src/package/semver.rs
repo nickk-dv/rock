@@ -15,6 +15,16 @@ impl Semver {
             patch,
         }
     }
+
+    pub fn compatible(&self, other: Semver) -> bool {
+        if self.major != other.major {
+            false
+        } else if self.major == 0 {
+            self.minor == other.minor
+        } else {
+            true
+        }
+    }
 }
 
 impl std::fmt::Display for Semver {
