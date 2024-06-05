@@ -177,7 +177,7 @@ fn create_diagnostic<'src>(
         }
     };
 
-    let (main_range, main_path) = source_to_range_and_path(&session, main.source());
+    let (main_range, main_path) = source_to_range_and_path(session, main.source());
 
     let mut diagnostic = lsp_types::Diagnostic::new_simple(main_range, message.as_str().into());
     diagnostic.severity = match severity {
@@ -187,7 +187,7 @@ fn create_diagnostic<'src>(
     };
 
     if let Some(info) = info {
-        let (info_range, info_path) = source_to_range_and_path(&session, info.source());
+        let (info_range, info_path) = source_to_range_and_path(session, info.source());
 
         diagnostic.related_information = Some(vec![DiagnosticRelatedInformation {
             location: Location::new(url_from_path(info_path), info_range),

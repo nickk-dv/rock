@@ -3,9 +3,9 @@ use super::pass_5::{self, TypeExpectation};
 use super::proc_scope;
 use crate::ast::{self, BasicType};
 use crate::error::ErrorComp;
-use crate::hir;
 use crate::intern::InternID;
 use crate::text::TextRange;
+use crate::{hir, id_impl};
 
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
@@ -94,21 +94,10 @@ struct Tree<T: PartialEq + Copy + Clone> {
     nodes: Vec<TreeNode<T>>,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-struct TreeNodeID(u32);
-
+id_impl!(TreeNodeID);
 struct TreeNode<T: PartialEq + Copy + Clone> {
     value: T,
     parent: Option<TreeNodeID>,
-}
-
-impl TreeNodeID {
-    const fn new(index: usize) -> TreeNodeID {
-        TreeNodeID(index as u32)
-    }
-    const fn index(self) -> usize {
-        self.0 as usize
-    }
 }
 
 impl<T: PartialEq + Copy + Clone> Tree<T> {
@@ -150,7 +139,6 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
 
     #[must_use]
     fn get_values_up_to_node(&self, from_id: TreeNodeID, up_to: TreeNodeID) -> Vec<T> {
-        assert_ne!(from_id, up_to);
         let mut node = self.get_node(from_id);
         let mut values = vec![node.value];
 
@@ -615,85 +603,6 @@ fn resolve_struct_size(
 //@check int, float value range constraints 14.05.24
 // same for typecheck_int_lit etc, regular expressions checking
 // should later be merged with this constant resolution / folding flow
-//@return type and integrate this with normal expr typecheck?
-#[must_use]
-fn resolve_const_expr_deprecated<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
-    expect: TypeExpectation<'hir>,
-    expr: ast::ConstExpr,
-) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
-    let result: Result<(hir::ConstValue, hir::Type), &'static str> = match expr.0.kind {
-        ast::ExprKind::LitNull => {
-            //@coersion of rawptr `null` should be explicit via cast expression 14.05.24
-            // to make intention clear, same for conversion back to untyped rawptr
-            Ok((hir::ConstValue::Null, hir::Type::Basic(BasicType::Rawptr)))
-        }
-        ast::ExprKind::LitBool { val } => Ok((
-            hir::ConstValue::Bool { val },
-            hir::Type::Basic(BasicType::Bool),
-        )),
-        ast::ExprKind::LitInt { val } => {
-            let int_ty = pass_5::coerce_int_type(expect.ty);
-            let value = hir::ConstValue::Int {
-                val,
-                neg: false,
-                ty: Some(int_ty),
-            };
-            Ok((value, hir::Type::Basic(int_ty)))
-        }
-        ast::ExprKind::LitFloat { val } => {
-            let float_ty = pass_5::coerce_float_type(expect.ty);
-            let value = hir::ConstValue::Float {
-                val,
-                ty: Some(float_ty),
-            };
-            Ok((value, hir::Type::Basic(float_ty)))
-        }
-        ast::ExprKind::LitChar { val } => Ok((
-            hir::ConstValue::Char { val },
-            hir::Type::Basic(BasicType::Char),
-        )),
-        ast::ExprKind::LitString { id, c_string } => {
-            let string_ty = pass_5::alloc_string_lit_type(emit, c_string);
-            Ok((hir::ConstValue::String { id, c_string }, string_ty))
-        }
-        ast::ExprKind::If { .. } => Err("if"),
-        ast::ExprKind::Block { .. } => Err("block"),
-        ast::ExprKind::Match { .. } => Err("match"),
-        ast::ExprKind::Field { .. } => Err("field"),
-        ast::ExprKind::Index { .. } => Err("index"),
-        ast::ExprKind::Slice { .. } => Err("slice"),
-        ast::ExprKind::Call { .. } => Err("procedure call"),
-        ast::ExprKind::Cast { .. } => Err("cast"),
-        ast::ExprKind::Sizeof { .. } => Err("sizeof"),
-        ast::ExprKind::Item { .. } => Err("item"),
-        ast::ExprKind::StructInit { .. } => Err("structure initializer"),
-        ast::ExprKind::ArrayInit { .. } => Err("array initializer"),
-        ast::ExprKind::ArrayRepeat { .. } => Err("array repeat"),
-        ast::ExprKind::Address { .. } => Err("address"),
-        ast::ExprKind::Unary { .. } => Err("unary"),
-        ast::ExprKind::Binary { .. } => Err("binary"),
-    };
-
-    match result {
-        Ok((value, value_ty)) => {
-            pass_5::check_type_expectation(hir, emit, origin_id, expr.0.range, expect, value_ty);
-            (value, emit.const_intern.intern(value))
-        }
-        Err(expr_name) => {
-            emit.error(ErrorComp::new(
-                format!("cannot use `{expr_name}` expression in constants"),
-                hir.src(origin_id, expr.0.range),
-                None,
-            ));
-            let value = hir::ConstValue::Error;
-            (value, emit.const_intern.intern(value))
-        }
-    }
-}
-
 pub fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,

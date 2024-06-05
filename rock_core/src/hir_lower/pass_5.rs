@@ -1409,6 +1409,7 @@ fn basic_type_size(basic: BasicType) -> hir::Size {
     }
 }
 
+#[derive(Copy, Clone)]
 enum BasicTypeKind {
     SignedInt,
     UnsignedInt,
@@ -2249,14 +2250,8 @@ fn check_un_op_compatibility<'hir>(
             hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_integer(),
             _ => false,
         },
-        ast::UnOp::LogicNot => match rhs_ty {
-            hir::Type::Basic(BasicType::Bool) => true,
-            _ => false,
-        },
-        ast::UnOp::Deref => match rhs_ty {
-            hir::Type::Reference(..) => true,
-            _ => false,
-        },
+        ast::UnOp::LogicNot => matches!(rhs_ty, hir::Type::Basic(BasicType::Bool)),
+        ast::UnOp::Deref => matches!(rhs_ty, hir::Type::Reference(..)),
     };
 
     if !compatible {
@@ -2466,7 +2461,7 @@ fn typecheck_block<'hir>(
     };
 
     proc.pop_block();
-    return block_result;
+    block_result
 }
 
 /// returns `None` on invalid use of `break`

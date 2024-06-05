@@ -5,18 +5,16 @@ use std::hash::{BuildHasher, Hasher};
 
 id_impl!(InternID);
 pub struct InternPool<'intern> {
-    next: InternID,
     arena: Arena<'intern>,
-    strings: Vec<&'intern str>,
+    values: Vec<&'intern str>,
     intern_map: HashMap<&'intern str, InternID, Fnv1aHasher>,
 }
 
 impl<'intern> InternPool<'intern> {
     pub fn new() -> InternPool<'intern> {
         InternPool {
-            next: InternID(0),
             arena: Arena::new(),
-            strings: Vec::with_capacity(1024),
+            values: Vec::with_capacity(1024),
             intern_map: HashMap::with_capacity_and_hasher(1024, Fnv1aHasher),
         }
     }
@@ -25,22 +23,21 @@ impl<'intern> InternPool<'intern> {
         if let Some(id) = self.intern_map.get(string).cloned() {
             return id;
         }
-        let id = self.next;
+        let id = InternID::new(self.values.len());
         let str = self.arena.alloc_str(string);
-        self.next.0 = self.next.0.wrapping_add(1);
-        self.strings.push(str);
+        self.values.push(str);
         self.intern_map.insert(str, id);
         id
     }
 
     pub fn get_str(&self, id: InternID) -> &str {
-        self.strings[id.index()]
+        self.values[id.index()]
     }
     pub fn get_id(&self, string: &str) -> Option<InternID> {
         self.intern_map.get(string).cloned()
     }
     pub fn get_all_strings(&self) -> &[&str] {
-        &self.strings
+        &self.values
     }
 }
 

@@ -151,7 +151,7 @@ fn parse_package_name(format: &CommandFormat, diagnostics: &mut DiagnosticCollec
         diagnostics.error(ErrorComp::message(
             "missing new package name, use `rock help` to learn the usage",
         ));
-        return "error".into();
+        "error".into()
     }
 }
 

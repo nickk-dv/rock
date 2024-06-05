@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 pub struct ConstInternPool<'hir> {
-    next: ConstValueID,
     arena: Arena<'hir>,
     values: Vec<ConstValue<'hir>>,
     intern_map: HashMap<ConstValue<'hir>, ConstValueID>,
@@ -13,7 +12,6 @@ pub struct ConstInternPool<'hir> {
 impl<'hir> ConstInternPool<'hir> {
     pub fn new() -> ConstInternPool<'hir> {
         ConstInternPool {
-            next: ConstValueID(0),
             arena: Arena::new(),
             values: Vec::with_capacity(1024),
             intern_map: HashMap::with_capacity(1024),
@@ -24,17 +22,15 @@ impl<'hir> ConstInternPool<'hir> {
         if let Some(id) = self.intern_map.get(&value).cloned() {
             return id;
         }
-        let id = self.next;
-        self.next.0 = self.next.0.wrapping_add(1);
+        let id = ConstValueID::new(self.values.len());
         self.values.push(value);
         self.intern_map.insert(value, id);
         id
     }
 
     pub fn get(&self, id: ConstValueID) -> ConstValue<'hir> {
-        self.values[id.0 as usize]
+        self.values[id.index()]
     }
-
     pub fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.arena
     }

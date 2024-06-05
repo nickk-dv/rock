@@ -180,8 +180,7 @@ pub fn process_proc_data<'hir>(
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, param.ty);
-            // types from ast dont have range, so using param name instead, possible change @26.04.24
-            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, param.name.range));
+            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, param.ty.range));
 
             unique.push(hir::ProcParam {
                 mutt: param.mutt,
@@ -250,8 +249,7 @@ fn process_union_data<'hir>(
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, member.ty);
-            // types from ast dont have range, so using param name instead, possible change @26.04.24
-            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, member.name.range));
+            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, member.ty.range));
 
             unique.push(hir::UnionMember {
                 name: member.name,
@@ -284,8 +282,7 @@ fn process_struct_data<'hir>(
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, field.ty);
-            // types from ast dont have range, so using param name instead, possible change @26.04.24
-            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, field.name.range));
+            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, field.ty.range));
 
             unique.push(hir::StructField {
                 vis: field.vis,
@@ -307,9 +304,8 @@ fn process_const_data<'hir>(
     let item = hir.registry().const_item(id);
     let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
 
+    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.ty.range));
     hir.registry_mut().const_data_mut(id).ty = ty;
-    // types from ast dont have range, so using param name instead, possible change @26.04.24
-    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
 }
 
 fn process_global_data<'hir>(
@@ -321,7 +317,6 @@ fn process_global_data<'hir>(
     let item = hir.registry().global_item(id);
     let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
 
-    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.name.range));
-    // types from ast dont have range, so using param name instead, possible change @26.04.24
+    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.ty.range));
     hir.registry_mut().global_data_mut(id).ty = ty;
 }

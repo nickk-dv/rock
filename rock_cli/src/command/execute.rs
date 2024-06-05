@@ -38,7 +38,7 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     fs_env::dir_create(&root_dir, true)?;
     fs_env::dir_create(&src_dir, true)?;
 
-    const IMPORT_CORE_IO: &'static str = "import core/libc as io;\n\n";
+    const IMPORT_CORE_IO: &str = "import core/libc as io;\n\n";
     match data.kind {
         PackageKind::Bin => {
             let bin_content = format!(

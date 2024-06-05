@@ -66,7 +66,7 @@ pub struct Registry<'hir, 'ast> {
 
 pub struct HirEmit<'hir> {
     pub arena: Arena<'hir>,
-    pub const_intern: ConstInternPool<'hir>, //@consider storing this in HirData insted (doesnt matter for now) 09.05.24
+    pub const_intern: ConstInternPool<'hir>,
     diagnostics: DiagnosticCollection,
 }
 
@@ -577,10 +577,6 @@ impl<'hir> HirEmit<'hir> {
         self,
         hir: HirData<'hir, 'ast, 'intern>,
     ) -> ResultComp<hir::Hir<'hir>> {
-        //@debug info
-        eprintln!("ast mem: {}", hir.ast.arena.mem_usage());
-        eprintln!("hir mem: {}", self.arena.mem_usage());
-
         if !self.diagnostics.errors().is_empty() {
             return ResultComp::Err(self.diagnostics);
         }

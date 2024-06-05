@@ -231,9 +231,6 @@ pub fn codegen_const_value<'ctx>(
     }
 }
 
-//@current lit string codegen doesnt deduplicate strings
-// by their intern ID, this is temporary.
-// global is created for each occurence of the string literal @07.04.24
 #[allow(unsafe_code)]
 fn codegen_lit_string<'ctx>(
     cg: &Codegen<'ctx>,
@@ -1113,8 +1110,6 @@ fn codegen_array_repeat<'ctx>(
     todo!("codegen `array repeat` not supported")
 }
 
-//@split codegen_expr into codegen_ptr, normal (tail ignore), and value_required (with tail alloca)
-// have current `codegen_expr` as parameterized version, everything else wont need to use expect_ptr?
 fn codegen_address<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
