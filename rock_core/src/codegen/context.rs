@@ -167,20 +167,12 @@ impl<'ctx> Codegen<'ctx> {
                 let basic = self.hir.enum_data(enum_id).basic;
                 self.basic_type_into_int(basic).into()
             }
-            hir::Type::Union(union_id) => self.union_type(union_id).into(),
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
             hir::Type::Reference(_, _) => self.ptr_type.into(),
             hir::Type::Procedure(_) => self.ptr_type.into(),
             hir::Type::ArraySlice(_) => self.slice_type.into(),
             hir::Type::ArrayStatic(array) => self.array_type(array).into(),
         }
-    }
-
-    pub fn union_type(&self, union_id: hir::UnionID) -> types::ArrayType<'ctx> {
-        let data = self.hir.union_data(union_id);
-        let size = data.size_eval.get_size().expect("resolved");
-        self.basic_type_into_int(ast::BasicType::U8)
-            .array_type(size.size() as u32)
     }
 
     pub fn struct_type(&self, struct_id: hir::StructID) -> types::StructType<'ctx> {

@@ -12,9 +12,6 @@ pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'
     for id in hir.registry().enum_ids() {
         process_enum_data(hir, emit, id)
     }
-    for id in hir.registry().union_ids() {
-        process_union_data(hir, emit, id)
-    }
     for id in hir.registry().struct_ids() {
         process_struct_data(hir, emit, id)
     }
@@ -226,39 +223,6 @@ fn process_enum_data<'hir>(
     }
 
     hir.registry_mut().enum_data_mut(id).variants = emit.arena.alloc_slice(&unique);
-}
-
-fn process_union_data<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    id: hir::UnionID,
-) {
-    let item = hir.registry().union_item(id);
-    let origin_id = hir.registry().union_data(id).origin_id;
-    let mut unique = Vec::<hir::UnionMember>::new();
-
-    for member in item.members.iter() {
-        if let Some(existing) = unique.iter().find(|&it| it.name.id == member.name.id) {
-            emit.error(ErrorComp::new(
-                format!(
-                    "member `{}` is defined multiple times",
-                    hir.name_str(member.name.id)
-                ),
-                hir.src(origin_id, member.name.range),
-                Info::new("existing member", hir.src(origin_id, existing.name.range)),
-            ));
-        } else {
-            let ty = type_resolve_delayed(hir, emit, origin_id, member.ty);
-            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, member.ty.range));
-
-            unique.push(hir::UnionMember {
-                name: member.name,
-                ty,
-            });
-        }
-    }
-
-    hir.registry_mut().union_data_mut(id).members = emit.arena.alloc_slice(&unique);
 }
 
 fn process_struct_data<'hir>(

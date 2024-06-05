@@ -27,7 +27,6 @@ pub struct Module<'ast> {
 pub enum Item<'ast> {
     Proc(&'ast ProcItem<'ast>),
     Enum(&'ast EnumItem<'ast>),
-    Union(&'ast UnionItem<'ast>),
     Struct(&'ast StructItem<'ast>),
     Const(&'ast ConstItem<'ast>),
     Global(&'ast GlobalItem<'ast>),
@@ -39,7 +38,6 @@ pub struct ItemCount {
     pub modules: u32,
     pub procs: u32,
     pub enums: u32,
-    pub unions: u32,
     pub structs: u32,
     pub consts: u32,
     pub globals: u32,
@@ -77,19 +75,6 @@ pub struct EnumItem<'ast> {
 pub struct EnumVariant<'ast> {
     pub name: Name,
     pub value: ConstExpr<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub struct UnionItem<'ast> {
-    pub vis: Vis,
-    pub name: Name,
-    pub members: &'ast [UnionMember<'ast>],
-}
-
-#[derive(Copy, Clone)]
-pub struct UnionMember<'ast> {
-    pub name: Name,
-    pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]

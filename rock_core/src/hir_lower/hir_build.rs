@@ -40,7 +40,6 @@ pub enum SymbolKind {
     Module(hir::ModuleID),
     Proc(hir::ProcID),
     Enum(hir::EnumID),
-    Union(hir::UnionID),
     Struct(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
@@ -50,14 +49,12 @@ pub struct Registry<'hir, 'ast> {
     ast_modules: Vec<ast::Module<'ast>>,
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
     ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
-    ast_unions: Vec<&'ast ast::UnionItem<'ast>>,
     ast_structs: Vec<&'ast ast::StructItem<'ast>>,
     ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
     ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
     hir_modules: Vec<hir::ModuleData>,
     hir_procs: Vec<hir::ProcData<'hir>>,
     hir_enums: Vec<hir::EnumData<'hir>>,
-    hir_unions: Vec<hir::UnionData<'hir>>,
     hir_structs: Vec<hir::StructData<'hir>>,
     hir_consts: Vec<hir::ConstData<'hir>>,
     hir_globals: Vec<hir::GlobalData<'hir>>,
@@ -254,7 +251,6 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
             SymbolKind::Module(_) => "module",
             SymbolKind::Proc(_) => "procedure",
             SymbolKind::Enum(_) => "enum",
-            SymbolKind::Union(_) => "union",
             SymbolKind::Struct(_) => "struct",
             SymbolKind::Const(_) => "constant",
             SymbolKind::Global(_) => "global",
@@ -266,7 +262,6 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
             SymbolKind::Module(..) => unreachable!(),
             SymbolKind::Proc(id) => self.registry.proc_data(id).name.range,
             SymbolKind::Enum(id) => self.registry.enum_data(id).name.range,
-            SymbolKind::Union(id) => self.registry.union_data(id).name.range,
             SymbolKind::Struct(id) => self.registry.struct_data(id).name.range,
             SymbolKind::Const(id) => self.registry.const_data(id).name.range,
             SymbolKind::Global(id) => self.registry.global_data(id).name.range,
@@ -278,7 +273,6 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
             SymbolKind::Module(..) => unreachable!(),
             SymbolKind::Proc(id) => self.registry.proc_data(id).vis,
             SymbolKind::Enum(id) => self.registry.enum_data(id).vis,
-            SymbolKind::Union(id) => self.registry.union_data(id).vis,
             SymbolKind::Struct(id) => self.registry.struct_data(id).vis,
             SymbolKind::Const(id) => self.registry.const_data(id).vis,
             SymbolKind::Global(id) => self.registry.global_data(id).vis,
@@ -293,14 +287,12 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             ast_modules: Vec::with_capacity(total.modules as usize),
             ast_procs: Vec::with_capacity(total.procs as usize),
             ast_enums: Vec::with_capacity(total.enums as usize),
-            ast_unions: Vec::with_capacity(total.unions as usize),
             ast_structs: Vec::with_capacity(total.structs as usize),
             ast_consts: Vec::with_capacity(total.consts as usize),
             ast_globals: Vec::with_capacity(total.globals as usize),
             hir_modules: Vec::with_capacity(total.modules as usize),
             hir_procs: Vec::with_capacity(total.procs as usize),
             hir_enums: Vec::with_capacity(total.enums as usize),
-            hir_unions: Vec::with_capacity(total.unions as usize),
             hir_structs: Vec::with_capacity(total.structs as usize),
             hir_consts: Vec::with_capacity(total.consts as usize),
             hir_globals: Vec::with_capacity(total.globals as usize),
@@ -361,25 +353,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
 
         self.ast_enums.push(item);
         self.hir_enums.push(data);
-        id
-    }
-
-    pub fn add_union(
-        &mut self,
-        item: &'ast ast::UnionItem<'ast>,
-        origin_id: hir::ModuleID,
-    ) -> hir::UnionID {
-        let id = hir::UnionID::new(self.hir_unions.len());
-        let data = hir::UnionData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            members: &[],
-            size_eval: hir::SizeEval::Unresolved,
-        };
-
-        self.ast_unions.push(item);
-        self.hir_unions.push(data);
         id
     }
 
@@ -465,9 +438,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn enum_ids(&self) -> impl Iterator<Item = hir::EnumID> {
         (0..self.hir_enums.len()).map(hir::EnumID::new)
     }
-    pub fn union_ids(&self) -> impl Iterator<Item = hir::UnionID> {
-        (0..self.hir_unions.len()).map(hir::UnionID::new)
-    }
     pub fn struct_ids(&self) -> impl Iterator<Item = hir::StructID> {
         (0..self.hir_structs.len()).map(hir::StructID::new)
     }
@@ -490,9 +460,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn enum_item(&self, id: hir::EnumID) -> &'ast ast::EnumItem<'ast> {
         self.ast_enums[id.index()]
     }
-    pub fn union_item(&self, id: hir::UnionID) -> &'ast ast::UnionItem<'ast> {
-        self.ast_unions[id.index()]
-    }
     pub fn struct_item(&self, id: hir::StructID) -> &'ast ast::StructItem<'ast> {
         self.ast_structs[id.index()]
     }
@@ -512,9 +479,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
         &self.hir_enums[id.index()]
     }
-    pub fn union_data(&self, id: hir::UnionID) -> &hir::UnionData<'hir> {
-        &self.hir_unions[id.index()]
-    }
     pub fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
         &self.hir_structs[id.index()]
     }
@@ -533,9 +497,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
     pub fn enum_data_mut(&mut self, id: hir::EnumID) -> &mut hir::EnumData<'hir> {
         &mut self.hir_enums[id.index()]
-    }
-    pub fn union_data_mut(&mut self, id: hir::UnionID) -> &mut hir::UnionData<'hir> {
-        &mut self.hir_unions[id.index()]
     }
     pub fn struct_data_mut(&mut self, id: hir::StructID) -> &mut hir::StructData<'hir> {
         &mut self.hir_structs[id.index()]
@@ -612,7 +573,6 @@ impl<'hir> HirEmit<'hir> {
                 modules: hir.registry.hir_modules,
                 procs: hir.registry.hir_procs,
                 enums: hir.registry.hir_enums,
-                unions: hir.registry.hir_unions,
                 structs: hir.registry.hir_structs,
                 consts: hir.registry.hir_consts,
                 globals: hir.registry.hir_globals,

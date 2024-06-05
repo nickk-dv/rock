@@ -21,7 +21,6 @@ token_gen::token_gen! {
     [pub]      | "pub"      | KwPub      | KW.
     [proc]     | "proc"     | KwProc     | KW.
     [enum]     | "enum"     | KwEnum     | KW.
-    [union]    | "union"    | KwUnion    | KW.
     [struct]   | "struct"   | KwStruct   | KW.
     [const]    | "const"    | KwConst    | KW.
     [global]   | "global"   | KwGlobal   | KW.

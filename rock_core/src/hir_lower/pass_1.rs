@@ -54,21 +54,6 @@ fn add_module_items<'hir>(
                     );
                 }
             },
-            ast::Item::Union(item) => match hir.scope_name_defined(origin_id, item.name.id) {
-                Some(existing) => {
-                    name_already_defined_error(hir, emit, origin_id, item.name, existing);
-                }
-                None => {
-                    let id = hir.registry_mut().add_union(item, origin_id);
-                    hir.add_symbol(
-                        origin_id,
-                        item.name.id,
-                        Symbol::Defined {
-                            kind: SymbolKind::Union(id),
-                        },
-                    );
-                }
-            },
             ast::Item::Struct(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {
                     name_already_defined_error(hir, emit, origin_id, item.name, existing)

@@ -101,14 +101,6 @@ pub fn codegen_expr<'ctx>(
             codegen_match(cg, proc_cg, match_, kind);
             None
         }
-        Expr::UnionMember {
-            target,
-            union_id,
-            member_id,
-            deref,
-        } => Some(codegen_union_member(
-            cg, proc_cg, expect_ptr, target, union_id, member_id, deref,
-        )),
         Expr::StructField {
             target,
             struct_id,
@@ -138,9 +130,6 @@ pub fn codegen_expr<'ctx>(
         Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, proc_cg, proc_id, input),
         Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, target, indirect)
-        }
-        Expr::UnionInit { union_id, input } => {
-            codegen_union_init(cg, proc_cg, union_id, input, expect_ptr, kind)
         }
         Expr::StructInit { struct_id, input } => {
             codegen_struct_init(cg, proc_cg, struct_id, input, expect_ptr, kind)
@@ -338,36 +327,6 @@ fn codegen_match<'ctx>(
         .build_switch(on_value.into_int_value(), else_block, &cases)
         .unwrap();
     cg.position_at_end(exit_bb);
-}
-
-fn codegen_union_member<'ctx>(
-    cg: &Codegen<'ctx>,
-    proc_cg: &mut ProcCodegen<'ctx>,
-    expect_ptr: bool,
-    target: &'ctx hir::Expr,
-    union_id: hir::UnionID,
-    member_id: hir::UnionMemberID,
-    deref: bool,
-) -> values::BasicValueEnum<'ctx> {
-    let target = codegen_expr_value_ptr(cg, proc_cg, target);
-    let target_ptr = if deref {
-        cg.builder
-            .build_load(cg.ptr_type, target, "deref_ptr")
-            .unwrap()
-            .into_pointer_value()
-    } else {
-        target
-    };
-
-    if expect_ptr {
-        target_ptr.into()
-    } else {
-        let member = cg.hir.union_data(union_id).member(member_id);
-        let member_ty = cg.type_into_basic(member.ty);
-        cg.builder
-            .build_load(member_ty, target_ptr, "member_val")
-            .unwrap()
-    }
 }
 
 fn codegen_struct_field<'ctx>(
@@ -957,47 +916,6 @@ fn codegen_call_indirect<'ctx>(
         .build_indirect_call(function, function_ptr, &input_values, "call_val")
         .unwrap();
     call_val.try_as_basic_value().left()
-}
-
-fn codegen_union_init<'ctx>(
-    cg: &Codegen<'ctx>,
-    proc_cg: &mut ProcCodegen<'ctx>,
-    union_id: hir::UnionID,
-    input: hir::UnionMemberInit<'ctx>,
-    expect_ptr: bool,
-    kind: BlockKind<'ctx>,
-) -> Option<values::BasicValueEnum<'ctx>> {
-    let union_ty = cg.union_type(union_id);
-    let (union_ptr, elided) = if let BlockKind::TailStore(target_ptr) = kind {
-        (target_ptr, true)
-    } else {
-        (
-            cg.entry_insert_alloca(proc_cg, union_ty.into(), "union_init"),
-            false,
-        )
-    };
-
-    if let Some(value) = codegen_expr(
-        cg,
-        proc_cg,
-        false,
-        input.expr,
-        BlockKind::TailStore(union_ptr),
-    ) {
-        cg.builder.build_store(union_ptr, value).unwrap();
-    }
-
-    if expect_ptr {
-        Some(union_ptr.into())
-    } else if elided {
-        None
-    } else {
-        Some(
-            cg.builder
-                .build_load(union_ty, union_ptr, "union_val")
-                .unwrap(),
-        )
-    }
 }
 
 fn codegen_struct_init<'ctx>(

@@ -16,7 +16,6 @@ pub struct Hir<'hir> {
     pub modules: Vec<ModuleData>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
-    pub unions: Vec<UnionData<'hir>>,
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
@@ -64,22 +63,6 @@ id_impl!(EnumVariantID);
 pub struct EnumVariant {
     pub name: ast::Name,
     pub value: ConstEvalID,
-}
-
-id_impl!(UnionID);
-pub struct UnionData<'hir> {
-    pub origin_id: ModuleID,
-    pub vis: ast::Vis,
-    pub name: ast::Name,
-    pub members: &'hir [UnionMember<'hir>],
-    pub size_eval: SizeEval,
-}
-
-id_impl!(UnionMemberID);
-#[derive(Copy, Clone)]
-pub struct UnionMember<'hir> {
-    pub name: ast::Name,
-    pub ty: Type<'hir>,
 }
 
 id_impl!(StructID);
@@ -145,7 +128,6 @@ pub enum Type<'hir> {
     Error,
     Basic(ast::BasicType),
     Enum(EnumID),
-    Union(UnionID),
     Struct(StructID),
     Reference(&'hir Type<'hir>, ast::Mut),
     Procedure(&'hir ProcType<'hir>),
@@ -270,7 +252,6 @@ pub enum Expr<'hir> {
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },
-    UnionMember  { target: &'hir Expr<'hir>, union_id: UnionID, member_id: UnionMemberID, deref: bool },
     StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
     SliceField   { target: &'hir Expr<'hir>, first_ptr: bool, deref: bool },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
@@ -282,7 +263,6 @@ pub enum Expr<'hir> {
     GlobalVar    { global_id: GlobalID },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
-    UnionInit    { union_id: UnionID, input: UnionMemberInit<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
@@ -380,12 +360,6 @@ pub struct CallIndirect<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct UnionMemberInit<'hir> {
-    pub member_id: UnionMemberID,
-    pub expr: &'hir Expr<'hir>,
-}
-
-#[derive(Copy, Clone)]
 pub struct StructFieldInit<'hir> {
     pub field_id: StructFieldID,
     pub expr: &'hir Expr<'hir>,
@@ -420,9 +394,6 @@ impl<'hir> Hir<'hir> {
     }
     pub fn enum_data(&self, id: EnumID) -> &EnumData<'hir> {
         &self.enums[id.index()]
-    }
-    pub fn union_data(&self, id: UnionID) -> &UnionData<'hir> {
-        &self.unions[id.index()]
     }
     pub fn struct_data(&self, id: StructID) -> &StructData<'hir> {
         &self.structs[id.index()]
@@ -467,20 +438,6 @@ impl<'hir> EnumData<'hir> {
         for (idx, variant) in self.variants.iter().enumerate() {
             if variant.name.id == id {
                 return Some((EnumVariantID::new(idx), variant));
-            }
-        }
-        None
-    }
-}
-
-impl<'hir> UnionData<'hir> {
-    pub fn member(&self, id: UnionMemberID) -> &'hir UnionMember<'hir> {
-        &self.members[id.index()]
-    }
-    pub fn find_member(&self, id: InternID) -> Option<(UnionMemberID, &'hir UnionMember<'hir>)> {
-        for (idx, member) in self.members.iter().enumerate() {
-            if member.name.id == id {
-                return Some((UnionMemberID::new(idx), member));
             }
         }
         None

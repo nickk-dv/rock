@@ -10,7 +10,6 @@ use crate::{hir, id_impl};
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
     EnumVariant(hir::EnumID, hir::EnumVariantID),
-    UnionSize(hir::UnionID),
     StructSize(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
@@ -29,17 +28,6 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
                 let (mut tree, root_id) =
                     Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
                 // check dependencies
-                resolve_const_dependency_tree(hir, emit, &tree);
-            }
-        }
-    }
-
-    for id in hir.registry().union_ids() {
-        let eval = hir.registry().union_data(id).size_eval;
-
-        if matches!(eval, hir::SizeEval::Unresolved) {
-            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::UnionSize(id));
-            if check_union_size_const_dependency(hir, emit, &mut tree, root_id, id).is_ok() {
                 resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
@@ -200,10 +188,6 @@ fn check_const_dependency_cycle(
                     hir.name_str(variant.name.id)
                 ));
             }
-            ConstDependency::UnionSize(id) => {
-                let data = hir.registry().union_data(id);
-                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
-            }
             ConstDependency::StructSize(id) => {
                 let data = hir.registry().struct_data(id);
                 message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
@@ -229,10 +213,6 @@ fn check_const_dependency_cycle(
             let data = hir.registry().enum_data(id);
             let variant = data.variant(variant_id);
             hir.src(data.origin_id, variant.name.range)
-        }
-        ConstDependency::UnionSize(id) => {
-            let data = hir.registry().union_data(id);
-            hir.src(data.origin_id, data.name.range)
         }
         ConstDependency::StructSize(id) => {
             let data = hir.registry().struct_data(id);
@@ -279,10 +259,6 @@ fn const_dependencies_mark_error_up_to_root(
                 let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
                 *eval = hir::ConstEval::Error;
             }
-            ConstDependency::UnionSize(id) => {
-                let data = hir.registry_mut().union_data_mut(id);
-                data.size_eval = hir::SizeEval::ResolvedError;
-            }
             ConstDependency::StructSize(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
                 data.size_eval = hir::SizeEval::ResolvedError;
@@ -316,28 +292,6 @@ fn const_dependencies_mark_error_up_to_root(
 
 //@make a function to add const depepencies and check cycles for any ConstDependency ? @12.05.24
 // instead of doing per type duplication?
-fn check_union_size_const_dependency(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
-    tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID,
-    union_id: hir::UnionID,
-) -> Result<(), ()> {
-    let data = hir.registry().union_data(union_id);
-    match data.size_eval {
-        hir::SizeEval::ResolvedError => {
-            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-            Err(()) //@potentially return Ok without marking? more coverage if top level will resolve even with some Errors in that tree?
-        }
-        hir::SizeEval::Resolved(_) => Ok(()),
-        hir::SizeEval::Unresolved => {
-            for member in data.members {
-                check_type_size_const_dependency(hir, emit, tree, parent_id, member.ty)?;
-            }
-            Ok(())
-        }
-    }
-}
 
 fn check_struct_size_const_dependency(
     hir: &mut HirData,
@@ -373,11 +327,6 @@ fn check_type_size_const_dependency(
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
         hir::Type::Enum(_) => {}
-        hir::Type::Union(id) => {
-            let node_id: TreeNodeID = tree.add_child(parent_id, ConstDependency::UnionSize(id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
-            check_union_size_const_dependency(hir, emit, tree, node_id, id)?;
-        }
         hir::Type::Struct(id) => {
             let node_id = tree.add_child(parent_id, ConstDependency::StructSize(id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
@@ -408,12 +357,6 @@ fn check_type_usage_const_dependency(
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
         hir::Type::Enum(_) => {}
-        hir::Type::Union(id) => {
-            let data = hir.registry().union_data(id);
-            for member in data.members {
-                check_type_usage_const_dependency(hir, emit, tree, parent_id, member.ty)?
-            }
-        }
         hir::Type::Struct(id) => {
             let data = hir.registry().struct_data(id);
             for field in data.fields {
@@ -456,10 +399,6 @@ fn resolve_const_dependency_tree<'hir>(
                 let variant = data.variant(variant_id);
                 let expect = TypeExpectation::new(hir::Type::Basic(data.basic), None); //@add range for basic type on enum
                 resolve_and_update_const_eval(hir, emit, variant.value, expect);
-            }
-            ConstDependency::UnionSize(id) => {
-                let size_eval = resolve_union_size(hir, emit, id);
-                hir.registry_mut().union_data_mut(id).size_eval = size_eval;
             }
             ConstDependency::StructSize(id) => {
                 let size_eval = resolve_struct_size(hir, emit, id);
@@ -531,35 +470,6 @@ pub fn resolve_const_expr<'hir>(
     fold_const_expr(hir, emit, origin_id, hir_expr.expr)
 }
 
-//@remove asserts later on when compiler is stable? 02.05.24
-fn aligned_size(size: u64, align: u64) -> u64 {
-    assert!(align != 0);
-    assert!(align.is_power_of_two());
-    size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
-}
-
-fn resolve_union_size(hir: &HirData, emit: &mut HirEmit, union_id: hir::UnionID) -> hir::SizeEval {
-    let data = hir.registry().union_data(union_id);
-    let mut size: u64 = 0;
-    let mut align: u64 = 1;
-
-    for member in data.members {
-        let (member_size, member_align) = match pass_5::type_size(
-            hir,
-            emit,
-            member.ty,
-            hir.src(data.origin_id, member.name.range), //@review source range for this type_size error 10.05.24
-        ) {
-            Some(size) => (size.size(), size.align()),
-            None => return hir::SizeEval::ResolvedError,
-        };
-        size = size.max(member_size);
-        align = align.max(member_align);
-    }
-
-    hir::SizeEval::Resolved(hir::Size::new(size, align))
-}
-
 fn resolve_struct_size(
     hir: &HirData,
     emit: &mut HirEmit,
@@ -600,6 +510,13 @@ fn resolve_struct_size(
     hir::SizeEval::Resolved(hir::Size::new(size, align))
 }
 
+//@remove asserts later on when compiler is stable? 02.05.24
+fn aligned_size(size: u64, align: u64) -> u64 {
+    assert!(align != 0);
+    assert!(align.is_power_of_two());
+    size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
+}
+
 //@check int, float value range constraints 14.05.24
 // same for typecheck_int_lit etc, regular expressions checking
 // should later be merged with this constant resolution / folding flow
@@ -615,12 +532,6 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::If { .. } => Err("if"),
         hir::Expr::Block { .. } => Err("block"),
         hir::Expr::Match { .. } => Err("match"),
-        hir::Expr::UnionMember {
-            target,
-            union_id,
-            member_id,
-            deref,
-        } => Err("union member access"),
         hir::Expr::StructField {
             target,
             struct_id,
@@ -679,7 +590,6 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::GlobalVar { global_id } => Err("global vall"),
         hir::Expr::CallDirect { proc_id, input } => Err("call direct"),
         hir::Expr::CallIndirect { target, indirect } => Err("call indirect"),
-        hir::Expr::UnionInit { union_id, input } => Err("union initializer"),
         hir::Expr::StructInit { struct_id, input } => Err("struct initializer"),
         hir::Expr::ArrayInit { array_init } => {
             let mut value_ids = Vec::with_capacity(array_init.input.len());

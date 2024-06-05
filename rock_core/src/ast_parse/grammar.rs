@@ -73,7 +73,6 @@ fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
     match p.peek() {
         T![proc] => Ok(Item::Proc(proc_item(p, attr, vis)?)),
         T![enum] => Ok(Item::Enum(enum_item(p, vis)?)),
-        T![union] => Ok(Item::Union(union_item(p, vis)?)),
         T![struct] => Ok(Item::Struct(struct_item(p, vis)?)),
         T![const] => Ok(Item::Const(const_item(p, vis)?)),
         T![global] => Ok(Item::Global(global_item(p, attr, vis)?)),
@@ -169,23 +168,6 @@ fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'a
     p.expect(T![=])?;
     let value = ConstExpr(expr(p)?);
     Ok(EnumVariant { name, value })
-}
-
-fn union_item<'ast>(
-    p: &mut Parser<'ast, '_, '_, '_>,
-    vis: Vis,
-) -> Result<&'ast UnionItem<'ast>, String> {
-    p.bump();
-    let name = name(p)?;
-    let members = semi_separated_block!(p, union_member, union_members);
-    Ok(p.state.arena.alloc(UnionItem { vis, name, members }))
-}
-
-fn union_member<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<UnionMember<'ast>, String> {
-    let name = name(p)?;
-    p.expect(T![:])?;
-    let ty = ty(p)?;
-    Ok(UnionMember { name, ty })
 }
 
 fn struct_item<'ast>(

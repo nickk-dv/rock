@@ -153,7 +153,6 @@ pub fn type_matches<'hir>(
         (.., hir::Type::Error) => true,
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
         (hir::Type::Enum(id), hir::Type::Enum(id2)) => id == id2,
-        (hir::Type::Union(id), hir::Type::Union(id2)) => id == id2,
         (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
         (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
             if mutt2 == ast::Mut::Mutable {
@@ -202,7 +201,6 @@ pub fn type_format<'hir>(
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().to_string(),
         hir::Type::Enum(id) => hir.name_str(hir.registry().enum_data(id).name.id).into(),
-        hir::Type::Union(id) => hir.name_str(hir.registry().union_data(id).name.id).into(),
         hir::Type::Struct(id) => hir.name_str(hir.registry().struct_data(id).name.id).into(),
         hir::Type::Reference(ref_ty, mutt) => {
             let mut_str = match mutt {
@@ -929,15 +927,6 @@ fn typecheck_field<'hir>(
 
     match kind {
         FieldKind::Error => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
-        FieldKind::Member(union_id, member_id) => TypeResult::new(
-            field_ty,
-            emit.arena.alloc(hir::Expr::UnionMember {
-                target: target_res.expr,
-                union_id,
-                member_id,
-                deref,
-            }),
-        ),
         FieldKind::Field(struct_id, field_id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::StructField {
@@ -960,7 +949,6 @@ fn typecheck_field<'hir>(
 
 enum FieldKind {
     Error,
-    Member(hir::UnionID, hir::UnionMemberID),
     Field(hir::StructID, hir::StructFieldID),
     Slice { first_ptr: bool },
 }
@@ -990,23 +978,6 @@ fn type_get_field<'hir>(
 ) -> (hir::Type<'hir>, FieldKind) {
     match ty {
         hir::Type::Error => (hir::Type::Error, FieldKind::Error),
-        hir::Type::Union(id) => {
-            let data = hir.registry().union_data(id);
-            if let Some((member_id, member)) = data.find_member(name.id) {
-                (member.ty, FieldKind::Member(id, member_id))
-            } else {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "no field `{}` exists on union type `{}`",
-                        hir.name_str(name.id),
-                        hir.name_str(data.name.id),
-                    ),
-                    hir.src(proc.origin(), name.range),
-                    None,
-                ));
-                (hir::Type::Error, FieldKind::Error)
-            }
-        }
         hir::Type::Struct(id) => {
             let data = hir.registry().struct_data(id);
             if let Some((field_id, field)) = data.find_field(name.id) {
@@ -1355,7 +1326,6 @@ pub fn type_size(
         hir::Type::Error => None,
         hir::Type::Basic(basic) => Some(basic_type_size(basic)),
         hir::Type::Enum(id) => Some(basic_type_size(hir.registry().enum_data(id).basic)),
-        hir::Type::Union(id) => hir.registry().union_data(id).size_eval.get_size(),
         hir::Type::Struct(id) => hir.registry().struct_data(id).size_eval.get_size(),
         hir::Type::Reference(_, _) => Some(hir::Size::new_equal(8)), //@assume 64bit target
         hir::Type::Procedure(_) => Some(hir::Size::new_equal(8)),    //@assume 64bit target
@@ -1679,15 +1649,6 @@ fn typecheck_item<'hir>(
 
         match kind {
             FieldKind::Error => return TypeResult::new(hir::Type::Error, target),
-            FieldKind::Member(union_id, member_id) => {
-                target_ty = field_ty;
-                target = emit.arena.alloc(hir::Expr::UnionMember {
-                    target,
-                    union_id,
-                    member_id,
-                    deref,
-                });
-            }
             FieldKind::Field(struct_id, field_id) => {
                 target_ty = field_ty;
                 target = emit.arena.alloc(hir::Expr::StructField {
@@ -1717,69 +1678,17 @@ fn typecheck_struct_init<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     struct_init: &ast::StructInit<'_>,
 ) -> TypeResult<'hir> {
-    let structure_id =
-        path_resolve_structure(hir, emit, Some(proc), proc.origin(), struct_init.path);
-    let structure_name = *struct_init.path.names.last().expect("non empty path");
+    let struct_id = path_resolve_struct(hir, emit, Some(proc), proc.origin(), struct_init.path);
+    let struct_name = *struct_init.path.names.last().expect("non empty path");
 
-    match structure_id {
-        StructureID::None => {
+    match struct_id {
+        None => {
             for input in struct_init.input {
                 let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
             }
             TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
         }
-        StructureID::Union(union_id) => {
-            let data = hir.registry().union_data(union_id);
-
-            if let Some((first, other)) = struct_init.input.split_first() {
-                let type_res = if let Some((member_id, member)) = data.find_member(first.name.id) {
-                    let expect = TypeExpectation::new(member.ty, None);
-                    let input_res = typecheck_expr(hir, emit, proc, expect, first.expr);
-
-                    let member_init = hir::UnionMemberInit {
-                        member_id,
-                        expr: input_res.expr,
-                    };
-                    let union_init = hir::Expr::UnionInit {
-                        union_id,
-                        input: member_init,
-                    };
-                    TypeResult::new(hir::Type::Union(union_id), emit.arena.alloc(union_init))
-                } else {
-                    emit.error(ErrorComp::new(
-                        format!("field `{}` is not found", hir.name_str(first.name.id),),
-                        hir.src(proc.origin(), first.name.range),
-                        Info::new(
-                            "union defined here",
-                            hir.src(data.origin_id, data.name.range),
-                        ),
-                    ));
-                    let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, first.expr);
-
-                    TypeResult::new(hir::Type::Union(union_id), hir_build::ERROR_EXPR)
-                };
-
-                for input in other {
-                    emit.error(ErrorComp::new(
-                        "union initializer must have exactly one field",
-                        hir.src(proc.origin(), input.name.range),
-                        None,
-                    ));
-                    let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
-                }
-
-                type_res
-            } else {
-                emit.error(ErrorComp::new(
-                    "union initializer must have exactly one field",
-                    hir.src(proc.origin(), structure_name.range),
-                    None,
-                ));
-
-                TypeResult::new(hir::Type::Union(union_id), hir_build::ERROR_EXPR)
-            }
-        }
-        StructureID::Struct(struct_id) => {
+        Some(struct_id) => {
             let data = hir.registry().struct_data(struct_id);
             let field_count = data.fields.len();
 
@@ -1848,7 +1757,7 @@ fn typecheck_struct_init<'hir>(
 
                 emit.error(ErrorComp::new(
                     message,
-                    hir.src(proc.origin(), structure_name.range),
+                    hir.src(proc.origin(), struct_name.range),
                     Info::new(
                         "struct defined here",
                         hir.src(data.origin_id, data.name.range),
@@ -2052,7 +1961,6 @@ fn get_expr_addressability<'hir>(
         hir::Expr::If { .. } => Addressability::Temporary,
         hir::Expr::Block { .. } => Addressability::Temporary,
         hir::Expr::Match { .. } => Addressability::Temporary,
-        hir::Expr::UnionMember { target, .. } => get_expr_addressability(hir, proc, target),
         hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target),
         hir::Expr::SliceField { .. } => Addressability::SliceField,
         hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target),
@@ -2073,7 +1981,6 @@ fn get_expr_addressability<'hir>(
         }
         hir::Expr::CallDirect { .. } => Addressability::Temporary,
         hir::Expr::CallIndirect { .. } => Addressability::Temporary,
-        hir::Expr::UnionInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
@@ -2795,7 +2702,6 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
         hir::Type::Error => true,
         hir::Type::Basic(basic) => !matches!(basic, BasicType::Void | BasicType::Never),
         hir::Type::Enum(_) => true,
-        hir::Type::Union(_) => true,
         hir::Type::Struct(_) => true,
         hir::Type::Reference(ref_ty, _) => type_is_value_type(*ref_ty),
         hir::Type::Procedure(_) => true,
@@ -2809,7 +2715,6 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
 module     -> <first?>
 proc       -> [no follow]
 enum       -> <follow?> by single enum variant name
-union      -> [no follow]
 struct     -> [no follow]
 const      -> <follow?> by <chained> field access
 global     -> <follow?> by <chained> field access
@@ -2888,7 +2793,6 @@ pub fn path_resolve_type<'hir>(
         }
         ResolvedPath::Symbol(kind, source) => match kind {
             SymbolKind::Enum(id) => hir::Type::Enum(id),
-            SymbolKind::Union(id) => hir::Type::Union(id),
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
                 let name = path.names[name_idx];
@@ -2920,25 +2824,19 @@ pub fn path_resolve_type<'hir>(
     ty
 }
 
-enum StructureID {
-    None,
-    Union(hir::UnionID),
-    Struct(hir::StructID),
-}
-
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
-fn path_resolve_structure<'hir>(
+fn path_resolve_struct<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: hir::ModuleID,
     path: &ast::Path,
-) -> StructureID {
+) -> Option<hir::StructID> {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
-    let structure_id = match resolved {
-        ResolvedPath::None => return StructureID::None,
+    let struct_id = match resolved {
+        ResolvedPath::None => return None,
         ResolvedPath::Variable(variable) => {
             let name = path.names[name_idx];
 
@@ -2951,29 +2849,28 @@ fn path_resolve_structure<'hir>(
             // by maybe extracting all error formats to separate module @07.04.24
             emit.error(ErrorComp::new(
                 format!(
-                    "expected struct or union, found local `{}`",
+                    "expected struct type, found local `{}`",
                     hir.name_str(name.id)
                 ),
                 hir.src(origin_id, name.range),
                 Info::new("defined here", source),
             ));
-            return StructureID::None;
+            return None;
         }
         ResolvedPath::Symbol(kind, source) => match kind {
-            SymbolKind::Union(id) => StructureID::Union(id),
-            SymbolKind::Struct(id) => StructureID::Struct(id),
+            SymbolKind::Struct(id) => Some(id),
             _ => {
                 let name = path.names[name_idx];
                 emit.error(ErrorComp::new(
                     format!(
-                        "expected struct or union, found {} `{}`",
+                        "expected struct type, found {} `{}`",
                         HirData::symbol_kind_name(kind),
                         hir.name_str(name.id)
                     ),
                     hir.src(origin_id, name.range),
                     Info::new("defined here", source),
                 ));
-                return StructureID::None;
+                return None;
             }
         },
     };
@@ -2988,8 +2885,7 @@ fn path_resolve_structure<'hir>(
             ));
         }
     }
-
-    structure_id
+    struct_id
 }
 
 enum ValueID {
