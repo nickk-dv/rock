@@ -174,18 +174,14 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         id: InternID,
     ) -> Option<SourceRange> {
         let origin = self.module(origin_id);
-        if let Some(symbol) = origin.symbols.get(&id).cloned() {
-            let file_id = self.registry().module_ast(origin_id).file_id;
-            match symbol {
-                Symbol::Defined { kind } => {
-                    Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
-                }
-                Symbol::Imported { import_range, .. } => {
-                    Some(SourceRange::new(import_range, file_id))
-                }
+        let symbol = origin.symbols.get(&id).cloned()?;
+        let file_id = self.registry().module_ast(origin_id).file_id;
+
+        match symbol {
+            Symbol::Defined { kind } => {
+                Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
             }
-        } else {
-            None
+            Symbol::Imported { import_range, .. } => Some(SourceRange::new(import_range, file_id)),
         }
     }
 

@@ -14,7 +14,7 @@ It assumes a basic knowledge of common programming concepts.
 
 ### Comments
 Line comments begin with `//`.  
-Multi-line block comments begin with `/*` and end with `/*`.
+Multi-line block comments begin with `/*` and end with `*/`.
 ```rs
 // line comment
 /* block comment */

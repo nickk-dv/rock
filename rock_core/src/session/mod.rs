@@ -6,7 +6,7 @@ use crate::package::manifest::Manifest;
 use crate::text::{self, TextRange};
 use std::path::PathBuf;
 
-//@package dependencies must be only lib packages @20.04.24
+//@package dependencies must be only lib packages 20.04.24
 // bin package is the root package being compiled / checked
 // currently bin deps are allowed, but their main() doesnt do anything special
 pub struct Session {
@@ -98,9 +98,8 @@ fn process_package(session: &mut Session, root: PathBuf) -> Result<(), ErrorComp
             manifest_path.to_string_lossy()
         )));
     }
-
-    let manifest = fs_env::file_read_to_string(&manifest_path)?;
-    let manifest = package::manifest_deserialize(manifest, &manifest_path)?;
+    let manifest_text = fs_env::file_read_to_string(&manifest_path)?;
+    let manifest = package::manifest_deserialize(manifest_text, &manifest_path)?;
 
     let src_dir = root.join("src");
     if !src_dir.exists() {
@@ -116,9 +115,9 @@ fn process_package(session: &mut Session, root: PathBuf) -> Result<(), ErrorComp
         let path = entry.path();
 
         if path.is_file() && path.extension().unwrap_or_default() == "rock" {
+            file_count += 1;
             let source = fs_env::file_read_to_string(&path)?;
             let line_ranges = text::find_line_ranges(&source);
-            file_count += 1;
             session.files.push(File {
                 path,
                 source,

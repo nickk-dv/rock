@@ -27,13 +27,13 @@ token_gen::token_gen! {
     [import]   | "import"   | KwImport   | KW.
 
     // keyword statements
-    [let]      | "let"      | KwLet      | KW.
-    [mut]      | "mut"      | KwMut      | KW.
     [break]    | "break"    | KwBreak    | KW.
     [continue] | "continue" | KwContinue | KW.
     [return]   | "return"   | KwReturn   | KW.
-    [for]      | "for"      | KwFor      | KW.
     [defer]    | "defer"    | KwDefer    | KW.
+    [for]      | "for"      | KwFor      | KW.
+    [let]      | "let"      | KwLet      | KW.
+    [mut]      | "mut"      | KwMut      | KW.
 
     // keyword expressions
     [null]     | "null"     | KwNull     | KW.
@@ -41,8 +41,8 @@ token_gen::token_gen! {
     [false]    | "false"    | KwFalse    | KW.
     [if]       | "if"       | KwIf       | KW.
     [else]     | "else"     | KwElse     | KW.
-    [_]        | "_"        | KwDiscard  | KW.
     [match]    | "match"    | KwMatch    | KW.
+    [_]        | "_"        | KwDiscard  | KW.
     [as]       | "as"       | KwAs       | KW.
     [sizeof]   | "sizeof"   | KwSizeof   | KW.
 
@@ -158,17 +158,12 @@ token_gen::token_from_char! {
 token_gen::token_glue_extend! {
     glue_double,
     (T![.] => T![..]) if '.'
+    (T![-] => T![->])
+    (T![>] => T![>>]) if '>'
     (T![<] => T![<<]) if '<'
     (T![&] => T![&&]) if '&'
     (T![|] => T![||]) if '|'
 
-    (T![-] => T![->])
-    (T![>] => T![>>]) if '>'
-
-    (T![=] => T![==])
-    (T![!] => T![!=])
-    (T![<] => T![<=])
-    (T![>] => T![>=])
     (T![+] => T![+=])
     (T![-] => T![-=])
     (T![*] => T![*=])
@@ -176,7 +171,11 @@ token_gen::token_glue_extend! {
     (T![%] => T![%=])
     (T![&] => T![&=])
     (T![|] => T![|=])
-    (T![^] => T![^=]) if '='
+    (T![^] => T![^=])
+    (T![=] => T![==])
+    (T![!] => T![!=])
+    (T![<] => T![<=])
+    (T![>] => T![>=]) if '='
 }
 
 #[rustfmt::skip]

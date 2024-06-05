@@ -270,13 +270,13 @@ pub struct Assign<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub struct ConstExpr<'ast>(pub &'ast Expr<'ast>);
+
+#[derive(Copy, Clone)]
 pub struct Expr<'ast> {
     pub kind: ExprKind<'ast>,
     pub range: TextRange,
 }
-
-#[derive(Copy, Clone)]
-pub struct ConstExpr<'ast>(pub &'ast Expr<'ast>);
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
