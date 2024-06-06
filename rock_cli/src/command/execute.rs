@@ -106,14 +106,13 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     let g = ansi::GREEN_BOLD;
     let r = ansi::RESET;
     println!(
-        "\n{g}Created{r} {} `{}` package\n",
+        "  {g}Created{r} {} `{}` package\n",
         data.kind.as_str_full(),
         data.name,
     );
     Ok(())
 }
 
-//@allow hyphemes and replace with underscores when used?
 fn package_name_check(name: &str) -> Result<(), ErrorComp> {
     let mut chars = name.chars();
     if let Some(c) = chars.next() {
@@ -198,9 +197,7 @@ fn help() {
     let r = ansi::RESET;
 
     #[rustfmt::skip]
-        println!(
-r#"
-{g}Usage:
+    println!(r#"{g}Usage:
   {c}rock <command> [options]
 
 {g}Commands:
@@ -231,5 +228,5 @@ r#"
 fn version() {
     let g = ansi::GREEN_BOLD;
     let r = ansi::RESET;
-    println!("\n{g}Rock version:{r} {}\n", rock_core::VERSION);
+    println!("  {g}Rock version:{r} {}\n", rock_core::VERSION);
 }

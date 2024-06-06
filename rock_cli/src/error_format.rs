@@ -107,7 +107,7 @@ fn print_diagnostic<'src>(
     let message = diagnostic.message().as_str();
     let _ = writeln!(
         handle,
-        "\n{}{}: {}{message}{}",
+        "{}{}: {}{message}{}",
         severity_color(severity),
         severity_name(severity),
         ansi::WHITE_BOLD,
@@ -115,7 +115,10 @@ fn print_diagnostic<'src>(
     );
 
     match diagnostic.kind() {
-        DiagnosticKind::Message => return,
+        DiagnosticKind::Message => {
+            let _ = write!(handle, "\n");
+            return;
+        }
         DiagnosticKind::Context { main, info } => {
             let session = session.expect("session context");
             state.reset();
@@ -142,6 +145,7 @@ fn print_diagnostic<'src>(
         let line_num_pad = " ".repeat(state.line_num_offset - fmt.line_num.len());
         print_context(handle, fmt, last, &line_pad, &line_num_pad);
     }
+    let _ = write!(handle, "\n");
 }
 
 fn print_context(

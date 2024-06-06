@@ -36,6 +36,7 @@ pub fn run() {
     error_format::print_errors(None, DiagnosticCollection::from_result(result));
 }
 
+//@feedback print after check / build / run, possibly with timer
 fn run_impl() -> Result<Vec<WarningComp>, DiagnosticCollection> {
     let (format, warnings) = format::parse().into_result(vec![])?;
     let (command, warnings) = parse::command(format).into_result(warnings)?;
