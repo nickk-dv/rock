@@ -4,12 +4,8 @@ use crate::id_impl;
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
 use crate::text::{self, TextRange};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
-//@package dependencies must be only lib packages 20.04.24
-// bin package is the root package being compiled / checked
-// currently bin deps are allowed, but their main() doesnt do anything special
 pub struct Session {
     cwd: PathBuf,
     files: Vec<File>,
@@ -79,26 +75,50 @@ fn create_session() -> Result<Session, ErrorComp> {
     let root_dir = session.cwd.clone();
     let mut cache_dir = fs_env::current_exe_path()?;
     cache_dir.pop();
+    cache_dir.push("packages");
 
-    process_package(&mut session, &root_dir)?;
-    process_package(&mut session, &cache_dir.join("core"))?;
+    let mut all_packages = Vec::with_capacity(32);
+    let mut all_files = Vec::with_capacity(32);
+
+    let (root_data, files) = process_package(&root_dir, false)?;
+    all_files.extend(files);
+
+    for (name, _) in root_data.manifest.dependencies.iter() {
+        let (data, files) = process_package(&cache_dir.join(name), true)?;
+        all_packages.push(data);
+        all_files.extend(files);
+    }
+
+    session.files.extend(all_files);
+    session.packages.push(root_data);
+    session.packages.extend(all_packages);
     Ok(session)
 }
 
-//@errors arent work in progress, no context 06.06.24
-// no checks if root exists before trying to parse the manifest
-fn process_package(session: &mut Session, root_dir: &PathBuf) -> Result<(), ErrorComp> {
+fn process_package(
+    root_dir: &PathBuf,
+    dependency: bool,
+) -> Result<(PackageData, Vec<File>), ErrorComp> {
+    if dependency && !root_dir.exists() {
+        return Err(ErrorComp::message(format!(
+            "could not find package directory, package fetch is not yet implemented\nexpected path: `{}`",
+            root_dir.to_string_lossy()
+        )));
+    }
+
     let manifest_path = root_dir.join("Rock.toml");
     if !manifest_path.exists() {
+        let in_message = if dependency { "dependency" } else { "current" };
         return Err(ErrorComp::message(format!(
-            "could not find manifest `Rock.toml` in current directory\npath: `{}`",
+            "could not find manifest `Rock.toml` in {in_message} directory\npath: `{}`",
             manifest_path.to_string_lossy()
         )));
     }
+
     let manifest_text = fs_env::file_read_to_string(&manifest_path)?;
     let manifest = package::manifest_deserialize(manifest_text, &manifest_path)?;
 
-    if manifest.package.kind == PackageKind::Bin {
+    if dependency && manifest.package.kind == PackageKind::Bin {
         return Err(ErrorComp::message(
             "cannot depend on executable package, only library dependencies are allowed",
         ));
@@ -106,14 +126,17 @@ fn process_package(session: &mut Session, root_dir: &PathBuf) -> Result<(), Erro
 
     let src_dir = root_dir.join("src");
     if !src_dir.exists() {
+        let in_message = if dependency { "dependency" } else { "current" };
         return Err(ErrorComp::message(format!(
-            "could not find `src` directory in current directory\npath: `{}`",
+            "could not find `src` directory in {in_message} directory\npath: `{}`",
             src_dir.to_string_lossy()
         )));
     }
     let src_dir = fs_env::dir_read(&src_dir)?;
 
+    let mut files = Vec::new();
     let mut file_count: usize = 0;
+
     for entry in src_dir.flatten() {
         let path = entry.path();
 
@@ -121,7 +144,7 @@ fn process_package(session: &mut Session, root_dir: &PathBuf) -> Result<(), Erro
             file_count += 1;
             let source = fs_env::file_read_to_string(&path)?;
             let line_ranges = text::find_line_ranges(&source);
-            session.files.push(File {
+            files.push(File {
                 path,
                 source,
                 line_ranges,
@@ -129,9 +152,9 @@ fn process_package(session: &mut Session, root_dir: &PathBuf) -> Result<(), Erro
         }
     }
 
-    session.packages.push(PackageData {
+    let package = PackageData {
         file_count,
         manifest,
-    });
-    Ok(())
+    };
+    Ok((package, files))
 }
