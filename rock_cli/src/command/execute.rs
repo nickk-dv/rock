@@ -163,7 +163,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
         error_format::print_errors(Some(session), diagnostics);
 
         let bin_name = session.root_package_bin_name();
-        let result = codegen::codegen(hir, bin_name, data.kind, None);
+        let result = codegen::codegen(hir, bin_name, data.kind, data.emit_llvm, None);
         let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
         Ok(warnings)
     }
@@ -185,7 +185,7 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
         error_format::print_errors(Some(session), diagnostics);
 
         let bin_name = session.root_package_bin_name();
-        let result = codegen::codegen(hir, bin_name, data.kind, Some(data.args));
+        let result = codegen::codegen(hir, bin_name, data.kind, data.emit_llvm, Some(data.args));
         let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
         Ok(warnings)
     }
@@ -214,13 +214,12 @@ fn help() {
     {c}--bin        {r}Create executable package
     {c}--no-git     {r}Create package without git repo
 
-  {c}build
+  {c}build, run
     {c}--debug      {r}Build in debug mode
     {c}--release    {r}Build in release mode
+    {c}--emit-llvm  {r}Save llvm module to file
 
   {c}run
-    {c}--debug      {r}Run the debug build
-    {c}--release    {r}Run the release build
     {c}-- [args]    {r}Pass command line arguments
 "#);
 }

@@ -36,11 +36,13 @@ pub fn codegen(
     hir: hir::Hir,
     bin_name: String,
     build_kind: BuildKind,
+    emit_llvm: bool,
     args: Option<Vec<String>>,
 ) -> Result<(), ErrorComp> {
     let context_llvm = inkwell::context::Context::create();
-    let (module, machine) = emit_mod::codegen_module(hir, &context_llvm)?;
+    let (module, machine) = emit_mod::codegen_module(hir, &context_llvm);
     let context = create_build_context(bin_name, build_kind)?;
+    module_verify(&context, &module, emit_llvm)?;
     build_executable(&context, module, machine)?;
     run_executable(&context, args)?;
     Ok(())
@@ -52,6 +54,7 @@ fn create_build_context(
 ) -> Result<BuildContext, ErrorComp> {
     let mut build_dir = fs_env::dir_get_current_working()?;
     build_dir.push("build");
+
     fs_env::dir_create(&build_dir, false)?;
     build_dir.push(build_kind.as_str());
     fs_env::dir_create(&build_dir, false)?;
@@ -67,6 +70,28 @@ fn create_build_context(
         executable_path,
     };
     Ok(context)
+}
+
+fn module_verify<'ctx>(
+    context: &BuildContext,
+    module: &module::Module<'ctx>,
+    emit_llvm: bool,
+) -> Result<(), ErrorComp> {
+    let emit_path = context.build_dir.join(format!("{}.ll", context.bin_name));
+
+    if emit_llvm {
+        module.print_to_file(&emit_path).unwrap();
+    } else {
+        fs_env::file_remove(&emit_path, false)?;
+    }
+
+    if let Err(error) = module.verify() {
+        return Err(ErrorComp::message(format!(
+            "internal codegen error: llvm module verify failed\nreason: {}",
+            error
+        )));
+    }
+    Ok(())
 }
 
 fn build_executable<'ctx>(
@@ -127,7 +152,7 @@ fn build_executable<'ctx>(
                 io_error
             ))
         })?;
-    fs_env::file_remove(&object_path)?;
+    fs_env::file_remove(&object_path, false)?;
     Ok(())
 }
 

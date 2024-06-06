@@ -1,7 +1,6 @@
 use super::context::{Codegen, ProcCodegen};
 use super::emit_expr::{codegen_block_value_optional, codegen_const_value};
 use crate::ast;
-use crate::error::ErrorComp;
 use crate::hir;
 use inkwell::module;
 use inkwell::targets;
@@ -10,7 +9,7 @@ use inkwell::types::BasicType;
 pub fn codegen_module<'ctx>(
     hir: hir::Hir<'ctx>,
     context_llvm: &'ctx inkwell::context::Context,
-) -> Result<(module::Module<'ctx>, targets::TargetMachine), ErrorComp> {
+) -> (module::Module<'ctx>, targets::TargetMachine) {
     let mut cg = Codegen::new(hir, &context_llvm);
     codegen_string_literals(&mut cg);
     codegen_struct_types(&mut cg);
@@ -18,7 +17,7 @@ pub fn codegen_module<'ctx>(
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&cg);
-    cg.finish_module()
+    cg.finish()
 }
 
 fn codegen_string_literals(cg: &mut Codegen) {

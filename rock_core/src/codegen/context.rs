@@ -96,20 +96,8 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    pub fn finish_module(
-        self,
-    ) -> Result<(module::Module<'ctx>, targets::TargetMachine), ErrorComp> {
-        let cwd = fs_env::dir_get_current_working()?;
-        self.module.print_to_file(cwd.join("emit_llvm.ll")).unwrap();
-
-        if let Err(error) = self.module.verify() {
-            Err(ErrorComp::message(format!(
-                "internal codegen error: llvm module verify failed\nreason: {}",
-                error
-            )))
-        } else {
-            Ok((self.module, self.target_machine))
-        }
+    pub fn finish(self) -> (module::Module<'ctx>, targets::TargetMachine) {
+        (self.module, self.target_machine)
     }
 
     //@duplicated with generation of procedure values and with indirect calls 07.05.24

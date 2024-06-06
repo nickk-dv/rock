@@ -38,23 +38,34 @@ fn parse_new(format: CommandFormat) -> ResultComp<Command> {
 fn parse_build(format: CommandFormat) -> ResultComp<Command> {
     let mut diagnostics = DiagnosticCollection::new();
     check_command_args(&format, &mut diagnostics, "build", false, false);
-    check_expected_option_set(&format, &mut diagnostics, &["debug", "release"]);
+    check_expected_option_set(
+        &format,
+        &mut diagnostics,
+        &["debug", "release", "emit-llvm"],
+    );
 
     let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
+    let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
 
-    let data = CommandBuild { kind };
+    let data = CommandBuild { kind, emit_llvm };
     ResultComp::new(Command::Build(data), diagnostics)
 }
 
 fn parse_run(format: CommandFormat) -> ResultComp<Command> {
     let mut diagnostics: DiagnosticCollection = DiagnosticCollection::new();
     check_command_args(&format, &mut diagnostics, "run", false, true);
-    check_expected_option_set(&format, &mut diagnostics, &["debug", "release"]);
+    check_expected_option_set(
+        &format,
+        &mut diagnostics,
+        &["debug", "release", "emit-llvm"],
+    );
 
     let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
+    let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
 
     let data = CommandRun {
         kind,
+        emit_llvm,
         args: format.trail_args,
     };
     ResultComp::new(Command::Run(data), diagnostics)

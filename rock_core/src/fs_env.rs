@@ -72,7 +72,10 @@ pub fn file_create_or_rewrite(path: &PathBuf, text: &str) -> Result<(), ErrorCom
     })
 }
 
-pub fn file_remove(path: &PathBuf) -> Result<(), ErrorComp> {
+pub fn file_remove(path: &PathBuf, force: bool) -> Result<(), ErrorComp> {
+    if !force && !path.exists() {
+        return Ok(());
+    }
     std::fs::remove_file(path).map_err(|io_error| {
         ErrorComp::message(format!(
             "failed to remove file: `{}`\nreason: {}",

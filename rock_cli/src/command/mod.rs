@@ -24,10 +24,12 @@ struct CommandNew {
 
 struct CommandBuild {
     kind: BuildKind,
+    emit_llvm: bool,
 }
 
 struct CommandRun {
     kind: BuildKind,
+    emit_llvm: bool,
     args: Vec<String>,
 }
 
