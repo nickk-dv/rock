@@ -692,42 +692,40 @@ fn typecheck_match<'hir>(
         Some(hir.src(proc.origin(), match_.on_expr.range)),
     );
 
-    let arms = {
-        let mut arms = Vec::with_capacity(match_.arms.len());
-        for arm in match_.arms.iter() {
-            let (value, value_id) =
-                pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
-            let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
+    let mut arms = Vec::with_capacity(match_.arms.len());
+    for arm in match_.arms.iter() {
+        let (value, value_id) =
+            pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
+        let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
-            //@check if anything in pattern errored?
-            if value == hir::ConstValue::Error {
-                check_exaust = false;
-            }
-            if !value_res.diverges {
-                diverges = false;
-            }
-
-            arms.push(hir::MatchArm {
-                pat: value_id,
-                block: hir::Block {
-                    stmts: emit
-                        .arena
-                        .alloc_slice(&[hir::Stmt::ExprTail(value_res.expr)]),
-                },
-            });
-
-            if match_type.is_error() {
-                match_type = value_res.ty;
-            }
-            if expect.ty.is_error() {
-                expect =
-                    TypeExpectation::new(value_res.ty, Some(hir.src(proc.origin(), arm.expr.range)))
-            }
+        //@check if anything in pattern errored?
+        if value == hir::ConstValue::Error {
+            check_exaust = false;
         }
-        emit.arena.alloc_slice(&arms)
-    };
+        if !value_res.diverges {
+            diverges = false;
+        }
 
-    let fallback = if let Some(fallback) = match_.fallback {
+        arms.push(hir::MatchArm {
+            pat: value_id,
+            block: hir::Block {
+                stmts: emit
+                    .arena
+                    .alloc_slice(&[hir::Stmt::ExprTail(value_res.expr)]),
+            },
+            unreachable: false,
+        });
+
+        if match_type.is_error() {
+            match_type = value_res.ty;
+        }
+        if expect.ty.is_error() {
+            expect =
+                TypeExpectation::new(value_res.ty, Some(hir.src(proc.origin(), arm.expr.range)))
+        }
+    }
+
+    let mut fallback = if let Some(fallback) = match_.fallback {
         let value_res = typecheck_expr(hir, emit, proc, expect, fallback);
 
         if match_type.is_error() {
@@ -743,15 +741,26 @@ fn typecheck_match<'hir>(
         None
     };
 
+    if check_exaust {
+        check_match_exhaust(
+            hir,
+            emit,
+            proc,
+            &mut arms,
+            &mut fallback,
+            match_,
+            match_range,
+            on_res.ty,
+        );
+    }
+    let arms = emit.arena.alloc_slice(&arms);
+
     let match_hir = emit.arena.alloc(hir::Match {
         on_expr: on_res.expr,
         arms,
         fallback,
     });
     let match_expr = emit.arena.alloc(hir::Expr::Match { match_: match_hir });
-    if check_exaust {
-        check_match_exhaust(hir, emit, proc, match_hir, match_, match_range, on_res.ty);
-    }
 
     if match_.arms.is_empty() && match_.fallback.is_none() {
         TypeResult::new_ignore_typecheck_div(
@@ -771,7 +780,8 @@ fn check_match_exhaust<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    match_: &hir::Match<'hir>,
+    arms: &mut Vec<hir::MatchArm<'hir>>,
+    fallback: &mut Option<hir::Block<'hir>>,
     match_ast: &ast::Match<'_>,
     match_range: TextRange,
     on_ty: hir::Type<'hir>,
@@ -782,13 +792,14 @@ fn check_match_exhaust<'hir>(
             let mut cover_true = false;
             let mut cover_false = false;
 
-            for (idx, arm) in match_.arms.iter().enumerate() {
+            for (idx, arm) in arms.iter_mut().enumerate() {
                 let value = emit.const_intern.get(arm.pat);
                 match value {
                     hir::ConstValue::Bool { val } => {
                         if val {
                             if cover_true {
                                 let ast_arm = match_ast.arms[idx];
+                                arm.unreachable = true;
                                 emit.warning(WarningComp::new(
                                     "unreachable pattern",
                                     hir.src(proc.origin(), ast_arm.pat.0.range),
@@ -800,6 +811,7 @@ fn check_match_exhaust<'hir>(
                         } else {
                             if cover_false {
                                 let ast_arm = match_ast.arms[idx];
+                                arm.unreachable = true;
                                 emit.warning(WarningComp::new(
                                     "unreachable pattern",
                                     hir.src(proc.origin(), ast_arm.pat.0.range),
@@ -814,9 +826,10 @@ fn check_match_exhaust<'hir>(
                 }
             }
 
-            if match_.fallback.is_some() {
+            if fallback.is_some() {
                 let all_covered = cover_true && cover_false;
                 if all_covered {
+                    *fallback = None;
                     emit.warning(WarningComp::new(
                         "unreachable pattern",
                         hir.src(proc.origin(), match_ast.fallback_range),
@@ -850,7 +863,7 @@ fn check_match_exhaust<'hir>(
             let mut variants_covered = Vec::new();
             variants_covered.resize(variant_count, false);
 
-            for (idx, arm) in match_.arms.iter().enumerate() {
+            for (idx, arm) in arms.iter_mut().enumerate() {
                 let value = emit.const_intern.get(arm.pat);
                 match value {
                     //@consider typecheck result of patterns to make sure this is same type 01.06.24
@@ -860,6 +873,7 @@ fn check_match_exhaust<'hir>(
                             variants_covered[variant_id.index()] = true;
                         } else {
                             let ast_arm = match_ast.arms[idx];
+                            arm.unreachable = true;
                             emit.warning(WarningComp::new(
                                 "unreachable pattern",
                                 hir.src(proc.origin(), ast_arm.pat.0.range),
@@ -871,9 +885,10 @@ fn check_match_exhaust<'hir>(
                 }
             }
 
-            if match_.fallback.is_some() {
+            if fallback.is_some() {
                 let all_covered = variants_covered.iter().copied().all(|v| v);
                 if all_covered {
+                    *fallback = None;
                     emit.warning(WarningComp::new(
                         "unreachable pattern",
                         hir.src(proc.origin(), match_ast.fallback_range),

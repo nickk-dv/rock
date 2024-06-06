@@ -303,6 +303,9 @@ fn codegen_match<'ctx>(
 
     let mut cases = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
+        if arm.unreachable {
+            continue;
+        }
         let value = codegen_const_value(cg, cg.hir.const_value(arm.pat));
         let case_bb = cg.append_bb(proc_cg, "match_case");
         cases.push((value.into_int_value(), case_bb));

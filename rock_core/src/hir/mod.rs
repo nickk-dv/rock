@@ -295,6 +295,7 @@ pub struct Match<'hir> {
 pub struct MatchArm<'hir> {
     pub pat: ConstValueID,
     pub block: Block<'hir>,
+    pub unreachable: bool,
 }
 
 #[derive(Copy, Clone)]
