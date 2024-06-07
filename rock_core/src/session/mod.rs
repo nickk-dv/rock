@@ -46,6 +46,10 @@ impl Session {
         (0..self.packages.len()).map(PackageID::new)
     }
 
+    pub fn is_executable(&self) -> bool {
+        self.packages[0].manifest.package.kind == PackageKind::Bin
+    }
+
     pub fn root_package_bin_name(&self) -> String {
         let manifest = &self.packages[0].manifest;
         if let Some(build) = &manifest.build {

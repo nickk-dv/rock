@@ -42,7 +42,7 @@ fn resolve_import<'hir, 'ast>(
     };
 
     let target_id =
-        if let Some(target_id) = hir.get_package_module_id(target_package_id, import.module) {
+        if let Some(target_id) = hir.get_package_module_id(target_package_id, import.module.id) {
             target_id
         } else {
             emit.error(ErrorComp::new(

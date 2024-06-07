@@ -77,7 +77,7 @@ fn typecheck_proc<'hir>(
     }
 
     if data.is_test {
-        if data.block.is_none() {
+        if item.block.is_none() {
             emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot be external",
                 hir.src(data.origin_id, data.name.range),

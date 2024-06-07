@@ -4,6 +4,7 @@ mod pass_2;
 mod pass_3;
 mod pass_4;
 mod pass_5;
+mod pass_6;
 mod proc_scope;
 
 use crate::ast;
@@ -12,7 +13,6 @@ use crate::hir;
 use crate::session::Session;
 use hir_build::{HirData, HirEmit};
 
-//@use ast::Type range in diagnostics, update any work arounds of missing range 20.05.24
 pub fn check<'hir, 'ast, 'intern: 'hir>(
     ast: ast::Ast<'ast, 'intern>,
     session: &Session,
@@ -24,5 +24,6 @@ pub fn check<'hir, 'ast, 'intern: 'hir>(
     pass_3::process_items(&mut hir, &mut emit);
     pass_4::resolve_const_dependencies(&mut hir, &mut emit);
     pass_5::typecheck_procedures(&mut hir, &mut emit);
+    pass_6::check_entry_point(&mut hir, &mut emit, session.is_executable());
     emit.emit(hir)
 }

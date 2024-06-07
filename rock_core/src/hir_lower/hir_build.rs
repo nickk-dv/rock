@@ -3,7 +3,7 @@ use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::intern::ConstInternPool;
-use crate::intern::InternID;
+use crate::intern::{InternID, InternPool};
 use crate::session::{PackageID, Session};
 use crate::text::TextRange;
 use std::collections::HashMap;
@@ -127,13 +127,16 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern_name.get_str(id)
     }
+    pub fn intern(&self) -> &InternPool<'intern> {
+        &self.ast.intern_name
+    }
 
     pub fn get_package_module_id(
         &self,
         package_id: PackageID,
-        name: ast::Name,
+        name_id: InternID,
     ) -> Option<hir::ModuleID> {
-        self.package(package_id).module_map.get(&name.id).copied()
+        self.package(package_id).module_map.get(&name_id).copied()
     }
     pub fn get_package_dep_id(&self, package_id: PackageID, name: ast::Name) -> Option<PackageID> {
         self.package(package_id)
@@ -182,6 +185,14 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                 Some(SourceRange::new(self.symbol_kind_range(kind), file_id))
             }
             Symbol::Imported { import_range, .. } => Some(SourceRange::new(import_range, file_id)),
+        }
+    }
+
+    pub fn symbol_get_defined(&self, origin_id: hir::ModuleID, id: InternID) -> Option<SymbolKind> {
+        let target = self.module(origin_id);
+        match target.symbols.get(&id).cloned() {
+            Some(Symbol::Defined { kind }) => Some(kind),
+            _ => None,
         }
     }
 
