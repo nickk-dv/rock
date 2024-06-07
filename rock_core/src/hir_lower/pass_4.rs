@@ -1,8 +1,8 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_5::{self, TypeExpectation};
 use super::proc_scope;
-use crate::ast::{self, BasicType};
-use crate::error::ErrorComp;
+use crate::ast;
+use crate::error::{ErrorComp, Info, StringOrStr};
 use crate::intern::InternID;
 use crate::text::TextRange;
 use crate::{hir, id_impl};
@@ -158,10 +158,6 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 }
 
-//@improve messaging by using Info vectors @13.05.24
-// will require to allow errors to have multiple Info contexts
-// also use: "depends on:" "which depends on:" "... , completing the cycle"
-//@opt reduce vector allocation for cycles? (rarely happens) @13.05.24
 fn check_const_dependency_cycle(
     hir: &mut HirData,
     emit: &mut HirEmit,
@@ -173,40 +169,6 @@ fn check_const_dependency_cycle(
         Some(cycle_id) => cycle_id,
         None => return Ok(()),
     };
-
-    let cycle_deps = tree.get_values_up_to_node(node_id, cycle_id);
-    let mut message = String::from("constant dependency cycle found: \n");
-
-    for const_dep in cycle_deps.iter().cloned().rev() {
-        match const_dep {
-            ConstDependency::EnumVariant(id, variant_id) => {
-                let data = hir.registry().enum_data(id);
-                let variant = data.variant(variant_id);
-                message.push_str(&format!(
-                    "`{}.{}` -> ",
-                    hir.name_str(data.name.id),
-                    hir.name_str(variant.name.id)
-                ));
-            }
-            ConstDependency::StructSize(id) => {
-                let data = hir.registry().struct_data(id);
-                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
-            }
-            ConstDependency::Const(id) => {
-                let data = hir.registry().const_data(id);
-                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
-            }
-            ConstDependency::Global(id) => {
-                let data = hir.registry().global_data(id);
-                message.push_str(&format!("`{}` -> ", hir.name_str(data.name.id)));
-            }
-            ConstDependency::ArrayLen(eval_id) => {
-                //@should be info instead with expression source 15.05.24
-                message.push_str("`array len <expr>` -> ");
-            }
-        }
-    }
-    message.push_str("completing the cycle");
 
     let src = match tree.get_node(cycle_id).value {
         ConstDependency::EnumVariant(id, variant_id) => {
@@ -231,17 +193,100 @@ fn check_const_dependency_cycle(
             if let hir::ConstEval::Unresolved(expr) = eval {
                 hir.src(origin_id, expr.0.range)
             } else {
-                // access to range information is behind consteval the state
-                // just always store SourceRange instead? 15.05.24
+                //@access to range information is behind consteval the state
+                // just always store SourceRange instead? 06.06.24
                 panic!("array len consteval range not available");
             }
         }
     };
 
+    let cycle_deps = tree.get_values_up_to_node(node_id, cycle_id);
+    let mut ctx_msg: StringOrStr = "".into();
+    let mut info_vec = Vec::with_capacity(cycle_deps.len());
+    let mut info_src = src;
+
+    for (idx, const_dep) in cycle_deps.iter().cloned().rev().skip(1).enumerate() {
+        let first = idx == 0;
+        let last = idx + 2 == cycle_deps.len();
+
+        let prefix = if first { "" } else { "whitch " };
+        let postfix = if last {
+            ", completing the cycle..."
+        } else {
+            ""
+        };
+
+        let (msg, src) = match const_dep {
+            ConstDependency::EnumVariant(id, variant_id) => {
+                let data = hir.registry().enum_data(id);
+                let variant = data.variant(variant_id);
+                let msg = format!(
+                    "{prefix}depends on `{}.{}` enum variant{postfix}",
+                    hir.name_str(data.name.id),
+                    hir.name_str(variant.name.id)
+                );
+                let src = hir.src(data.origin_id, variant.name.range);
+                (msg, src)
+            }
+            ConstDependency::StructSize(id) => {
+                let data = hir.registry().struct_data(id);
+                let msg = format!(
+                    "{prefix}depends on size of `{}`{postfix}",
+                    hir.name_str(data.name.id)
+                );
+                let src = hir.src(data.origin_id, data.name.range);
+                (msg, src)
+            }
+            ConstDependency::Const(id) => {
+                let data = hir.registry().const_data(id);
+                let msg = format!(
+                    "{prefix}depends on `{}` const value{postfix}",
+                    hir.name_str(data.name.id)
+                );
+                let src = hir.src(data.origin_id, data.name.range);
+                (msg, src)
+            }
+            ConstDependency::Global(id) => {
+                let data = hir.registry().global_data(id);
+                let msg = format!(
+                    "{prefix}depends on `{}` global value{postfix}",
+                    hir.name_str(data.name.id)
+                );
+                let src = hir.src(data.origin_id, data.name.range);
+                (msg, src)
+            }
+            ConstDependency::ArrayLen(eval_id) => {
+                let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+                if let hir::ConstEval::Unresolved(expr) = eval {
+                    let msg = format!("{prefix}depends on array length{postfix}");
+                    let src = hir.src(origin_id, expr.0.range);
+                    (msg, src)
+                } else {
+                    //@access to range information is behind consteval the state
+                    // just always store SourceRange instead? 06.06.24
+                    panic!("array len consteval range not available");
+                }
+            }
+        };
+
+        if first {
+            ctx_msg = msg.into();
+        } else {
+            info_vec.push(Info::new_value(msg, info_src));
+        }
+
+        info_src = src;
+    }
+
+    emit.error(ErrorComp::new_detailed_info_vec(
+        "constant dependency cycle found:",
+        ctx_msg,
+        src,
+        info_vec,
+    ));
+
     // marking after message was finished to prevent panic! in ConstDependency::ArrayLen 15.05.24
     const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-
-    emit.error(ErrorComp::new(message, src, None));
     Err(())
 }
 

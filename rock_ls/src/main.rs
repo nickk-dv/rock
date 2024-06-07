@@ -146,6 +146,14 @@ fn url_from_path(path: &PathBuf) -> lsp_types::Url {
     }
 }
 
+fn severity_convert(severity: DiagnosticSeverity) -> Option<lsp_types::DiagnosticSeverity> {
+    match severity {
+        DiagnosticSeverity::Info => Some(lsp_types::DiagnosticSeverity::HINT),
+        DiagnosticSeverity::Error => Some(lsp_types::DiagnosticSeverity::ERROR),
+        DiagnosticSeverity::Warning => Some(lsp_types::DiagnosticSeverity::WARNING),
+    }
+}
+
 fn source_to_range_and_path(session: &Session, source: SourceRange) -> (Range, &PathBuf) {
     let file = session.file(source.file_id());
 
@@ -167,33 +175,51 @@ fn create_diagnostic<'src>(
     diagnostic: &Diagnostic,
     severity: DiagnosticSeverity,
 ) -> Option<(lsp_types::Diagnostic, &'src PathBuf)> {
-    let message = diagnostic.message();
-
-    let (main, info) = match diagnostic.kind() {
+    let (main, related_info) = match diagnostic.kind() {
         DiagnosticKind::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
-        DiagnosticKind::Context { main, info } => (main, info),
+        DiagnosticKind::Context { main, info } => {
+            if let Some(info) = info {
+                let (info_range, info_path) = source_to_range_and_path(session, info.source());
+                let related_info = DiagnosticRelatedInformation {
+                    location: Location::new(url_from_path(info_path), info_range),
+                    message: info.message().to_string(),
+                };
+                (main, Some(vec![related_info]))
+            } else {
+                (main, None)
+            }
+        }
         DiagnosticKind::ContextVec { main, info_vec } => {
-            panic!("diagnostic info vec not supported")
+            let mut related_infos = Vec::with_capacity(info_vec.len());
+            for info in info_vec {
+                let (info_range, info_path) = source_to_range_and_path(session, info.source());
+                let related_info = DiagnosticRelatedInformation {
+                    location: Location::new(url_from_path(info_path), info_range),
+                    message: info.message().to_string(),
+                };
+                related_infos.push(related_info);
+            }
+            (main, Some(related_infos))
         }
     };
 
     let (main_range, main_path) = source_to_range_and_path(session, main.source());
 
-    let mut diagnostic = lsp_types::Diagnostic::new_simple(main_range, message.as_str().into());
-    diagnostic.severity = match severity {
-        DiagnosticSeverity::Info => Some(lsp_types::DiagnosticSeverity::HINT),
-        DiagnosticSeverity::Error => Some(lsp_types::DiagnosticSeverity::ERROR),
-        DiagnosticSeverity::Warning => Some(lsp_types::DiagnosticSeverity::WARNING),
-    };
-
-    if let Some(info) = info {
-        let (info_range, info_path) = source_to_range_and_path(session, info.source());
-
-        diagnostic.related_information = Some(vec![DiagnosticRelatedInformation {
-            location: Location::new(url_from_path(info_path), info_range),
-            message: info.message().to_string(),
-        }]);
+    let mut message = diagnostic.message().as_str().to_string();
+    if !main.message().is_empty() {
+        message.push('\n');
+        message += main.message();
     }
+
+    let diagnostic = lsp_types::Diagnostic::new(
+        main_range,
+        severity_convert(severity),
+        None,
+        None,
+        message,
+        related_info,
+        None,
+    );
 
     Some((diagnostic, main_path))
 }

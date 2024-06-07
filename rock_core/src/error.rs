@@ -209,6 +209,21 @@ impl ErrorComp {
             },
         ))
     }
+
+    pub fn new_detailed_info_vec(
+        msg: impl Into<StringOrStr>,
+        ctx_msg: impl Into<StringOrStr>,
+        src: SourceRange,
+        info_vec: Vec<DiagnosticContext>,
+    ) -> ErrorComp {
+        ErrorComp(Diagnostic::new(
+            msg.into(),
+            DiagnosticKind::ContextVec {
+                main: DiagnosticContext::new(ctx_msg.into(), src),
+                info_vec,
+            },
+        ))
+    }
 }
 
 impl WarningComp {
@@ -253,6 +268,9 @@ impl WarningComp {
 impl Info {
     pub fn new(msg: impl Into<StringOrStr>, source: SourceRange) -> Option<DiagnosticContext> {
         Some(DiagnosticContext::new(msg.into(), source))
+    }
+    pub fn new_value(msg: impl Into<StringOrStr>, source: SourceRange) -> DiagnosticContext {
+        DiagnosticContext::new(msg.into(), source)
     }
 }
 
