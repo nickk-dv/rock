@@ -64,33 +64,12 @@ fn typecheck_proc<'hir>(
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
 
-    let c_call = check_attribute(
-        hir,
-        emit,
-        data.origin_id,
-        item.attr_tail,
-        ast::AttributeKind::C_Call,
-    );
-
-    if c_call {
-        if item.block.is_some() {
-            emit.error(ErrorComp::new(
-                "procedures with #[c_call] attribute cannot have a body",
-                hir.src(data.origin_id, data.name.range),
-                None,
-            ))
-        }
-    } else {
-        if item.block.is_none() {
-            emit.error(ErrorComp::new(
-                "expected tail attribute #[c_call], since procedure has no body",
-                hir.src(data.origin_id, data.name.range),
-                None,
-            ))
-        }
+    //@procedure attibutes and flag checks are fragile, rework and stabilize 06.06.24
+    // think about #[builtin] will it require empty block? probably to differentiate from external
+    if item.block.is_some() {
         if data.is_variadic {
             emit.error(ErrorComp::new(
-                "procedures without #[c_call] attribute cannot be variadic, remove `..` from parameter list",
+                "only external procedures can be variadic, remove `..` from parameter list",
                 hir.src(data.origin_id, data.name.range),
                 None,
             ))
@@ -98,9 +77,9 @@ fn typecheck_proc<'hir>(
     }
 
     if data.is_test {
-        if c_call {
+        if data.block.is_none() {
             emit.error(ErrorComp::new(
-                "procedures with #[test] attribute cannot be external #[c_call]",
+                "procedures with #[test] attribute cannot be external",
                 hir.src(data.origin_id, data.name.range),
                 None,
             ))
@@ -112,7 +91,6 @@ fn typecheck_proc<'hir>(
                 None,
             ))
         }
-
         if !matches!(data.return_ty, hir::Type::Basic(BasicType::Void)) {
             emit.error(ErrorComp::new(
                 "procedures with #[test] attribute can only return `void`",

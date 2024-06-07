@@ -26,8 +26,8 @@ pub struct PackageData {
 }
 
 impl Session {
-    pub fn new() -> Result<Session, ErrorComp> {
-        create_session()
+    pub fn new(building: bool) -> Result<Session, ErrorComp> {
+        create_session(building)
     }
 
     pub fn cwd(&self) -> &PathBuf {
@@ -65,7 +65,7 @@ impl PackageData {
     }
 }
 
-fn create_session() -> Result<Session, ErrorComp> {
+fn create_session(building: bool) -> Result<Session, ErrorComp> {
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
         files: Vec::new(),
@@ -82,6 +82,14 @@ fn create_session() -> Result<Session, ErrorComp> {
 
     let (root_data, files) = process_package(&root_dir, false)?;
     all_files.extend(files);
+
+    if building && root_data.manifest.package.kind == PackageKind::Lib {
+        return Err(ErrorComp::message(
+            r#"cannot build or run a library package
+use `rock check` to check your library package,
+or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
+        ));
+    }
 
     for (name, _) in root_data.manifest.dependencies.iter() {
         let (data, files) = process_package(&cache_dir.join(name), true)?;

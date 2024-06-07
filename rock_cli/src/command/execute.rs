@@ -135,7 +135,7 @@ fn package_name_check(name: &str) -> Result<(), ErrorComp> {
 }
 
 fn check() -> Result<(), ErrorComp> {
-    let session = Session::new()?;
+    let session = Session::new(false)?;
     let result = check_impl(&session);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -148,7 +148,7 @@ fn check() -> Result<(), ErrorComp> {
 }
 
 fn build(data: CommandBuild) -> Result<(), ErrorComp> {
-    let session = Session::new()?;
+    let session = Session::new(true)?;
     let result = build_impl(&session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -170,7 +170,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 }
 
 fn run(data: CommandRun) -> Result<(), ErrorComp> {
-    let session = Session::new()?;
+    let session = Session::new(true)?;
     let result = run_impl(&session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -210,8 +210,8 @@ fn help() {
 
 {g}Options:
   {c}new
-    {c}--lib        {r}Create library package
-    {c}--bin        {r}Create executable package
+    {c}--lib        {r}Create {} package
+    {c}--bin        {r}Create {} package
     {c}--no-git     {r}Create package without git repo
 
   {c}build, run
@@ -221,7 +221,9 @@ fn help() {
 
   {c}run
     {c}-- [args]    {r}Pass command line arguments
-"#);
+"#,
+    PackageKind::Lib.as_str_full(),
+    PackageKind::Bin.as_str_full());
 }
 
 fn version() {

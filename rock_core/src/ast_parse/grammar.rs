@@ -105,24 +105,15 @@ fn proc_item<'ast>(
     }
     p.expect(T![')'])?;
     let params = p.state.proc_params.take(start_offset, &mut p.state.arena);
-
     let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
-    // syntax problem normal attr clashes with tail attr @27.04.24
-    // will need to parse attr_list instead to support any number of attributes before items
-    /*
-    proc foo()
 
-    #[test] // gets pased as tail attr of `foo`
-    proc baz()
-
-    instead try:
-
-    #[c_call]
-    proc foo()
-
-    */
-    let attr_tail = attribute(p)?;
-    let block = if p.at(T!['{']) { Some(block(p)?) } else { None };
+    let block = if p.at(T!['{']) {
+        Some(block(p)?)
+    } else if p.eat(T![;]) {
+        None
+    } else {
+        return Err("expected `{` or `;`".into());
+    };
 
     Ok(p.state.arena.alloc(ProcItem {
         attr,
@@ -131,7 +122,6 @@ fn proc_item<'ast>(
         params,
         is_variadic,
         return_ty,
-        attr_tail,
         block,
     }))
 }

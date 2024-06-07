@@ -203,7 +203,7 @@ fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
 
     //@session errors ignored, its not a correct way to have context in ls server
     // this is a temporary full compilation run
-    let session = Session::new()
+    let session = Session::new(false)
         .map_err(|_| Result::<(), ()>::Err(()))
         .expect("lsp session errors cannot be handled");
     let check_result = check_impl(&session);

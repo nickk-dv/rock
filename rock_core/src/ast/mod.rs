@@ -51,7 +51,6 @@ pub struct ProcItem<'ast> {
     pub params: &'ast [ProcParam<'ast>],
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
-    pub attr_tail: Option<Attribute>,
     pub block: Option<Block<'ast>>,
 }
 
@@ -152,7 +151,6 @@ pub struct Attribute {
 #[derive(Copy, Clone, PartialEq)]
 pub enum AttributeKind {
     Test,
-    C_Call,
     Inline,
     Builtin,
     Thread_Local,
@@ -441,7 +439,6 @@ impl AttributeKind {
     pub fn as_str(self) -> &'static str {
         match self {
             AttributeKind::Test => "test",
-            AttributeKind::C_Call => "c_call",
             AttributeKind::Inline => "inline",
             AttributeKind::Builtin => "builtin",
             AttributeKind::Thread_Local => "thread_local",
@@ -452,7 +449,6 @@ impl AttributeKind {
     pub fn from_str(string: &str) -> AttributeKind {
         match string {
             "test" => AttributeKind::Test,
-            "c_call" => AttributeKind::C_Call,
             "inline" => AttributeKind::Inline,
             "builtin" => AttributeKind::Builtin,
             "thread_local" => AttributeKind::Thread_Local,
