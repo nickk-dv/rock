@@ -23,7 +23,7 @@ impl MessageBuffer {
         let message = if self.messages.is_empty() {
             conn.receiver.recv().ok()
         } else {
-            let pause = Duration::from_millis(100);
+            let pause = Duration::from_millis(150);
             conn.receiver.recv_timeout(pause).ok()
         };
 

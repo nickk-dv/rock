@@ -7,6 +7,7 @@ use lsp_server as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Message, Notification, Request};
 use message_buffer::{Action, MessageBuffer};
+use std::collections::HashMap;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
@@ -14,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
 
     let server_capabilities = serde_json::to_value(lsp_types::ServerCapabilities {
         text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
-            lsp_types::TextDocumentSyncKind::INCREMENTAL,
+            lsp_types::TextDocumentSyncKind::FULL,
         )),
         completion_provider: Some(lsp_types::CompletionOptions {
             ..Default::default()
@@ -40,28 +41,42 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     Ok(())
 }
 
+struct ServerContext {
+    files_in_memory: HashMap<PathBuf, String>,
+}
+
+impl ServerContext {
+    fn new() -> ServerContext {
+        ServerContext {
+            files_in_memory: HashMap::new(),
+        }
+    }
+}
+
 fn main_loop(conn: &lsp::Connection) {
     let mut buffer = MessageBuffer::new();
+    let mut context = ServerContext::new();
+
     loop {
         match buffer.receive(&conn) {
             Action::Stop => break,
             Action::Collect => continue,
-            Action::Handle(messages) => handle_messages(&conn, messages),
+            Action::Handle(messages) => handle_messages(&conn, &mut context, messages),
         }
     }
 }
 
-fn handle_messages(conn: &lsp::Connection, messages: Vec<Message>) {
-    for message in messages.iter() {
+fn handle_messages(conn: &lsp::Connection, context: &mut ServerContext, messages: Vec<Message>) {
+    for message in messages {
         match message {
             Message::Request(id, req) => handle_request(conn, id.clone(), req),
-            Message::Notification(not) => handle_notification(conn, not),
-            Message::CompileProject => handle_compile_project(conn),
+            Message::Notification(not) => handle_notification(context, not),
+            Message::CompileProject => handle_compile_project(conn, context),
         }
     }
 }
 
-fn handle_request(conn: &lsp::Connection, id: lsp_server::RequestId, req: &Request) {
+fn handle_request(conn: &lsp::Connection, id: lsp_server::RequestId, req: Request) {
     match req {
         Request::Completion(params) => {}
         Request::GotoDefinition(params) => {}
@@ -70,15 +85,27 @@ fn handle_request(conn: &lsp::Connection, id: lsp_server::RequestId, req: &Reque
     }
 }
 
-fn handle_notification(conn: &lsp::Connection, not: &Notification) {
+fn handle_notification(context: &mut ServerContext, not: Notification) {
     match not {
-        Notification::SourceFileChanged { path, text } => {}
-        Notification::SourceFileClosed { path } => {}
+        Notification::SourceFileChanged { path, text } => {
+            context.files_in_memory.insert(path, text);
+        }
+        Notification::SourceFileClosed { path } => {
+            context.files_in_memory.remove(&path);
+        }
     }
 }
 
-fn handle_compile_project(conn: &lsp::Connection) {
-    let publish_diagnostics = run_diagnostics();
+fn handle_compile_project(conn: &lsp::Connection, context: &ServerContext) {
+    use std::time::Instant;
+    let start_time = Instant::now();
+    let publish_diagnostics = run_diagnostics(context);
+    let elapsed_time = start_time.elapsed();
+    eprintln!(
+        "run diagnostics: {} ms",
+        elapsed_time.as_secs_f64() * 1000.0
+    );
+
     for publish in publish_diagnostics.iter() {
         send(
             conn,
@@ -199,12 +226,10 @@ fn create_diagnostic<'src>(
     Some((diagnostic, main_path))
 }
 
-fn run_diagnostics() -> Vec<PublishDiagnosticsParams> {
-    use std::collections::HashMap;
-
+fn run_diagnostics(context: &ServerContext) -> Vec<PublishDiagnosticsParams> {
     //@session errors ignored, its not a correct way to have context in ls server
     // this is a temporary full compilation run
-    let session = Session::new(false)
+    let session = Session::new(false, Some(&context.files_in_memory))
         .map_err(|_| Result::<(), ()>::Err(()))
         .expect("lsp session errors cannot be handled");
     let check_result = check_impl(&session);

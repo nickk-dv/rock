@@ -4,6 +4,7 @@ use crate::id_impl;
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
 use crate::text::{self, TextRange};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct Session {
@@ -26,8 +27,11 @@ pub struct PackageData {
 }
 
 impl Session {
-    pub fn new(building: bool) -> Result<Session, ErrorComp> {
-        create_session(building)
+    pub fn new(
+        building: bool,
+        files_in_memory: Option<&HashMap<PathBuf, String>>,
+    ) -> Result<Session, ErrorComp> {
+        create_session(building, files_in_memory)
     }
 
     pub fn cwd(&self) -> &PathBuf {
@@ -69,7 +73,10 @@ impl PackageData {
     }
 }
 
-fn create_session(building: bool) -> Result<Session, ErrorComp> {
+fn create_session(
+    building: bool,
+    files_in_memory: Option<&HashMap<PathBuf, String>>,
+) -> Result<Session, ErrorComp> {
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
         files: Vec::new(),
@@ -84,7 +91,7 @@ fn create_session(building: bool) -> Result<Session, ErrorComp> {
     let mut all_packages = Vec::with_capacity(32);
     let mut all_files = Vec::with_capacity(32);
 
-    let (root_data, files) = process_package(&root_dir, false)?;
+    let (root_data, files) = process_package(&root_dir, files_in_memory, false)?;
     all_files.extend(files);
 
     if building && root_data.manifest.package.kind == PackageKind::Lib {
@@ -96,7 +103,7 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
     }
 
     for (name, _) in root_data.manifest.dependencies.iter() {
-        let (data, files) = process_package(&cache_dir.join(name), true)?;
+        let (data, files) = process_package(&cache_dir.join(name), files_in_memory, true)?;
         all_packages.push(data);
         all_files.extend(files);
     }
@@ -109,6 +116,7 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
 
 fn process_package(
     root_dir: &PathBuf,
+    files_in_memory: Option<&HashMap<PathBuf, String>>,
     dependency: bool,
 ) -> Result<(PackageData, Vec<File>), ErrorComp> {
     if dependency && !root_dir.exists() {
@@ -154,7 +162,17 @@ fn process_package(
 
         if path.is_file() && path.extension().unwrap_or_default() == "rock" {
             file_count += 1;
-            let source = fs_env::file_read_to_string(&path)?;
+
+            let source = if let Some(files_in_memory) = files_in_memory {
+                if let Some(source) = files_in_memory.get(&path) {
+                    source.clone()
+                } else {
+                    fs_env::file_read_to_string(&path)?
+                }
+            } else {
+                fs_env::file_read_to_string(&path)?
+            };
+
             let line_ranges = text::find_line_ranges(&source);
             files.push(File {
                 path,

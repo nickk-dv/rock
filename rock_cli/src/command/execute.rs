@@ -135,7 +135,7 @@ fn package_name_check(name: &str) -> Result<(), ErrorComp> {
 }
 
 fn check() -> Result<(), ErrorComp> {
-    let session = Session::new(false)?;
+    let session = Session::new(false, None)?;
     let result = check_impl(&session);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -148,7 +148,7 @@ fn check() -> Result<(), ErrorComp> {
 }
 
 fn build(data: CommandBuild) -> Result<(), ErrorComp> {
-    let session = Session::new(true)?;
+    let session = Session::new(true, None)?;
     let result = build_impl(&session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -170,7 +170,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 }
 
 fn run(data: CommandRun) -> Result<(), ErrorComp> {
-    let session = Session::new(true)?;
+    let session = Session::new(true, None)?;
     let result = run_impl(&session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
