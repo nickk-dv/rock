@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod message;
+
 use lsp_server::{Connection, ExtractError, Message, Response};
 use lsp_types::notification::{self, Notification};
 use lsp_types::request::{self, Request};
@@ -137,6 +139,10 @@ fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollectio
     let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
     let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
     Ok(warnings)
+}
+
+fn uri_to_path(uri: lsp_types::Url) -> PathBuf {
+    uri.to_file_path().expect("uri to pathbuf")
 }
 
 fn url_from_path(path: &PathBuf) -> lsp_types::Url {
