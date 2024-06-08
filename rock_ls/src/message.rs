@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub enum Message {
     Request(lsp::RequestId, Request),
     Notification(Notification),
+    CompileProject,
 }
 
 pub enum Request {

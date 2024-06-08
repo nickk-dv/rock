@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 
 mod message;
+mod message_buffer;
 
 use lsp_server::{Connection, ExtractError, Message, Response};
 use lsp_types::notification::{self, Notification};
 use lsp_types::request::{self, Request};
+use message_buffer::{Action, MessageBuffer};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
@@ -38,23 +40,35 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     Ok(())
 }
 
-fn main_loop(connection: Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
-    for msg in &connection.receiver {
+fn main_loop(conn: Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
+    let mut buffer = MessageBuffer::new();
+
+    loop {
+        match buffer.receive(&conn) {
+            Action::Stop => break,
+            Action::Collect => continue,
+            Action::Handle(messages) => eprintln!("HANDLING: {} messages\n", messages.len()),
+        }
+    }
+
+    return Ok(());
+
+    for msg in &conn.receiver {
         match msg {
             Message::Request(req) => {
-                if connection.handle_shutdown(&req)? {
+                if conn.handle_shutdown(&req)? {
                     return Ok(());
                 }
                 eprintln!("\nGOT REQUEST: {req:?}\n");
-                handle_request(&connection, req);
+                handle_request(&conn, req);
             }
             Message::Response(resp) => {
                 eprintln!("\nGOT RESPONSE: {resp:?}\n");
-                handle_responce(&connection, resp);
+                handle_responce(&conn, resp);
             }
             Message::Notification(not) => {
                 eprintln!("\nGOT NOTIFICATION: {not:?}\n");
-                handle_notification(&connection, not);
+                handle_notification(&conn, not);
             }
         }
     }
