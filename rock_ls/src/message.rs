@@ -18,6 +18,7 @@ pub enum Request {
 
 pub enum Notification {
     SourceFileChanged { path: PathBuf, text: String },
+    SourceFileClosed { path: PathBuf },
 }
 
 impl Request {
@@ -50,7 +51,7 @@ impl Request {
 
 impl Notification {
     pub fn new(notification: lsp::Notification) -> Option<Message> {
-        use notification::{DidChangeTextDocument, DidOpenTextDocument};
+        use notification::{DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument};
 
         let notification = match notification.method.as_str() {
             DidOpenTextDocument::METHOD => {
@@ -65,6 +66,12 @@ impl Notification {
                 Notification::SourceFileChanged {
                     path: super::uri_to_path(params.text_document.uri),
                     text: params.content_changes.into_iter().last()?.text,
+                }
+            }
+            DidCloseTextDocument::METHOD => {
+                let params = cast_notification::<DidCloseTextDocument>(notification);
+                Notification::SourceFileClosed {
+                    path: super::uri_to_path(params.text_document.uri),
                 }
             }
             _ => return None,

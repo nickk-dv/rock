@@ -3,14 +3,14 @@
 mod message;
 mod message_buffer;
 
-use lsp_server::{Connection, ExtractError, Message, Response};
-use lsp_types::notification::{self, Notification};
-use lsp_types::request::{self, Request};
+use lsp_server as lsp;
+use lsp_types::notification::{self, Notification as NotificationTrait};
+use message::{Message, Notification, Request};
 use message_buffer::{Action, MessageBuffer};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
-    let (connection, io_threads) = Connection::stdio();
+    let (conn, io_threads) = lsp::Connection::stdio();
 
     let server_capabilities = serde_json::to_value(lsp_types::ServerCapabilities {
         text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     })
     .unwrap();
 
-    let initialization_params = match connection.initialize(server_capabilities) {
+    let initialization_params = match conn.initialize(server_capabilities) {
         Ok(it) => it,
         Err(e) => {
             if e.channel_is_disconnected() {
@@ -35,105 +35,60 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     let params: lsp_types::InitializeParams =
         serde_json::from_value(initialization_params).unwrap();
 
-    main_loop(connection)?;
+    main_loop(&conn);
     io_threads.join()?;
     Ok(())
 }
 
-fn main_loop(conn: Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
+fn main_loop(conn: &lsp::Connection) {
     let mut buffer = MessageBuffer::new();
-
     loop {
         match buffer.receive(&conn) {
             Action::Stop => break,
             Action::Collect => continue,
-            Action::Handle(messages) => eprintln!("HANDLING: {} messages\n", messages.len()),
+            Action::Handle(messages) => handle_messages(&conn, messages),
         }
     }
-
-    return Ok(());
-
-    for msg in &conn.receiver {
-        match msg {
-            Message::Request(req) => {
-                if conn.handle_shutdown(&req)? {
-                    return Ok(());
-                }
-                eprintln!("\nGOT REQUEST: {req:?}\n");
-                handle_request(&conn, req);
-            }
-            Message::Response(resp) => {
-                eprintln!("\nGOT RESPONSE: {resp:?}\n");
-                handle_responce(&conn, resp);
-            }
-            Message::Notification(not) => {
-                eprintln!("\nGOT NOTIFICATION: {not:?}\n");
-                handle_notification(&conn, not);
-            }
-        }
-    }
-    Ok(())
 }
 
-fn send<Content: Into<Message>>(conn: &Connection, msg: Content) {
+fn handle_messages(conn: &lsp::Connection, messages: Vec<Message>) {
+    for message in messages.iter() {
+        match message {
+            Message::Request(id, req) => handle_request(conn, id.clone(), req),
+            Message::Notification(not) => handle_notification(conn, not),
+            Message::CompileProject => handle_compile_project(conn),
+        }
+    }
+}
+
+fn handle_request(conn: &lsp::Connection, id: lsp_server::RequestId, req: &Request) {
+    match req {
+        Request::Completion(params) => {}
+        Request::GotoDefinition(params) => {}
+        Request::Format(params) => {}
+        Request::Hover(params) => {}
+    }
+}
+
+fn handle_notification(conn: &lsp::Connection, not: &Notification) {
+    match not {
+        Notification::SourceFileChanged { path, text } => {}
+        Notification::SourceFileClosed { path } => {}
+    }
+}
+
+fn handle_compile_project(conn: &lsp::Connection) {
+    let publish_diagnostics = run_diagnostics();
+    for publish in publish_diagnostics.iter() {
+        send(
+            conn,
+            lsp_server::Notification::new(notification::PublishDiagnostics::METHOD.into(), publish),
+        );
+    }
+}
+
+fn send<Content: Into<lsp_server::Message>>(conn: &lsp::Connection, msg: Content) {
     conn.sender.send(msg.into()).expect("send failed");
-}
-
-fn cast_req<P>(
-    req: lsp_server::Request,
-) -> Result<(lsp_server::RequestId, P::Params), ExtractError<lsp_server::Request>>
-where
-    P: lsp_types::request::Request,
-    P::Params: serde::de::DeserializeOwned,
-{
-    req.extract(P::METHOD)
-}
-
-fn cast_not<P>(
-    not: lsp_server::Notification,
-) -> Result<P::Params, ExtractError<lsp_server::Notification>>
-where
-    P: notification::Notification,
-    P::Params: serde::de::DeserializeOwned,
-{
-    not.extract(P::METHOD)
-}
-
-fn handle_request(conn: &Connection, req: lsp_server::Request) {
-    match req.method.as_str() {
-        request::Completion::METHOD => {
-            let (id, params) = cast_req::<request::Completion>(req).unwrap();
-        }
-        _ => {}
-    }
-}
-
-fn handle_responce(conn: &Connection, resp: lsp_server::Response) {}
-
-fn handle_notification(conn: &Connection, not: lsp_server::Notification) {
-    match not.method.as_str() {
-        notification::Cancel::METHOD => {
-            let params = cast_not::<notification::Cancel>(not).unwrap();
-        }
-        notification::DidChangeTextDocument::METHOD => {
-            let params = cast_not::<notification::DidChangeTextDocument>(not).unwrap();
-        }
-        notification::DidSaveTextDocument::METHOD => {
-            let params = cast_not::<notification::DidSaveTextDocument>(not).unwrap();
-
-            let publish_diagnostics = run_diagnostics();
-            for publish in publish_diagnostics.iter() {
-                send(
-                    conn,
-                    lsp_server::Notification::new(
-                        notification::PublishDiagnostics::METHOD.into(),
-                        publish,
-                    ),
-                );
-            }
-        }
-        _ => {}
-    }
 }
 
 use rock_core::ast_parse;
