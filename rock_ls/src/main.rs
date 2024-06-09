@@ -1,44 +1,83 @@
 #![forbid(unsafe_code)]
 
 mod message;
-mod message_buffer;
 
-use lsp_server as lsp;
+use lsp_server::{Connection, RequestId};
+use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
-use message::{Message, Notification, Request};
-use message_buffer::{Action, MessageBuffer};
+use message::{Action, Message, MessageBuffer, Notification, Request};
 use std::collections::HashMap;
-use std::error::Error;
 
-fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
-    let (conn, io_threads) = lsp::Connection::stdio();
+fn main() {
+    let (conn, io_threads) = Connection::stdio();
+    let _ = initialize_handshake(&conn);
 
-    let server_capabilities = serde_json::to_value(lsp_types::ServerCapabilities {
-        text_document_sync: Some(lsp_types::TextDocumentSyncCapability::Kind(
-            lsp_types::TextDocumentSyncKind::FULL,
+    server_loop(&conn);
+
+    drop(conn);
+    io_threads.join().expect("io_threads joined");
+}
+
+fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
+    let capabilities = lsp::ServerCapabilities {
+        position_encoding: None,
+        text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(
+            lsp::TextDocumentSyncOptions {
+                open_close: Some(true),
+                change: Some(lsp::TextDocumentSyncKind::FULL),
+                will_save: Some(false),
+                will_save_wait_until: Some(false),
+                save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(
+                    lsp::SaveOptions {
+                        include_text: Some(false),
+                    },
+                )),
+            },
         )),
-        completion_provider: Some(lsp_types::CompletionOptions {
-            ..Default::default()
+        selection_range_provider: None,
+        hover_provider: Some(lsp::HoverProviderCapability::Simple(true)),
+        completion_provider: Some(lsp::CompletionOptions {
+            resolve_provider: None,
+            trigger_characters: Some(vec![".".into()]),
+            all_commit_characters: None,
+            work_done_progress_options: lsp::WorkDoneProgressOptions {
+                work_done_progress: None,
+            },
+            completion_item: None,
         }),
-        ..Default::default()
-    })
-    .unwrap();
-
-    let initialization_params = match conn.initialize(server_capabilities) {
-        Ok(it) => it,
-        Err(e) => {
-            if e.channel_is_disconnected() {
-                io_threads.join()?;
-            }
-            return Err(e.into());
-        }
+        signature_help_provider: None,
+        definition_provider: Some(lsp::OneOf::Left(true)),
+        type_definition_provider: None,
+        implementation_provider: None,
+        references_provider: None,
+        document_highlight_provider: None,
+        document_symbol_provider: None,
+        workspace_symbol_provider: None,
+        code_action_provider: None,
+        code_lens_provider: None,
+        document_formatting_provider: Some(lsp::OneOf::Left(true)),
+        document_range_formatting_provider: None,
+        document_on_type_formatting_provider: None,
+        rename_provider: None,
+        document_link_provider: None,
+        color_provider: None,
+        folding_range_provider: None,
+        declaration_provider: None,
+        execute_command_provider: None,
+        workspace: None,
+        call_hierarchy_provider: None,
+        semantic_tokens_provider: None,
+        moniker_provider: None,
+        linked_editing_range_provider: None,
+        inline_value_provider: None,
+        inlay_hint_provider: None,
+        diagnostic_provider: None,
+        experimental: None,
     };
-    let params: lsp_types::InitializeParams =
-        serde_json::from_value(initialization_params).unwrap();
 
-    main_loop(&conn);
-    io_threads.join()?;
-    Ok(())
+    let capabilities_json = serde_json::to_value(capabilities).expect("capabilities to json");
+    let initialize_params_json = conn.initialize(capabilities_json).expect("lsp initialize");
+    serde_json::from_value(initialize_params_json).expect("initialize_params from json")
 }
 
 struct ServerContext {
@@ -53,7 +92,7 @@ impl ServerContext {
     }
 }
 
-fn main_loop(conn: &lsp::Connection) {
+fn server_loop(conn: &Connection) {
     let mut buffer = MessageBuffer::new();
     let mut context = ServerContext::new();
 
@@ -66,7 +105,7 @@ fn main_loop(conn: &lsp::Connection) {
     }
 }
 
-fn handle_messages(conn: &lsp::Connection, context: &mut ServerContext, messages: Vec<Message>) {
+fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec<Message>) {
     for message in messages {
         match message {
             Message::Request(id, req) => handle_request(conn, id.clone(), req),
@@ -76,7 +115,7 @@ fn handle_messages(conn: &lsp::Connection, context: &mut ServerContext, messages
     }
 }
 
-fn handle_request(conn: &lsp::Connection, id: lsp_server::RequestId, req: Request) {
+fn handle_request(conn: &Connection, id: RequestId, req: Request) {
     match req {
         Request::Completion(params) => {}
         Request::GotoDefinition(params) => {}
@@ -96,7 +135,7 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
     }
 }
 
-fn handle_compile_project(conn: &lsp::Connection, context: &ServerContext) {
+fn handle_compile_project(conn: &Connection, context: &ServerContext) {
     use std::time::Instant;
     let start_time = Instant::now();
     let publish_diagnostics = run_diagnostics(context);
@@ -114,7 +153,7 @@ fn handle_compile_project(conn: &lsp::Connection, context: &ServerContext) {
     }
 }
 
-fn send<Content: Into<lsp_server::Message>>(conn: &lsp::Connection, msg: Content) {
+fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
     conn.sender.send(msg.into()).expect("send failed");
 }
 
@@ -126,9 +165,7 @@ use rock_core::hir_lower;
 use rock_core::session::Session;
 use rock_core::text;
 
-use lsp_types::{
-    DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range,
-};
+use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
 
 fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
@@ -137,22 +174,22 @@ fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollectio
     Ok(warnings)
 }
 
-fn uri_to_path(uri: lsp_types::Url) -> PathBuf {
+fn uri_to_path(uri: lsp::Url) -> PathBuf {
     uri.to_file_path().expect("uri to pathbuf")
 }
 
-fn url_from_path(path: &PathBuf) -> lsp_types::Url {
-    match lsp_types::Url::from_file_path(path) {
+fn url_from_path(path: &PathBuf) -> lsp::Url {
+    match lsp::Url::from_file_path(path) {
         Ok(url) => url,
         Err(()) => panic!("failed to convert `{}` to url", path.to_string_lossy()),
     }
 }
 
-fn severity_convert(severity: DiagnosticSeverity) -> Option<lsp_types::DiagnosticSeverity> {
+fn severity_convert(severity: DiagnosticSeverity) -> Option<lsp::DiagnosticSeverity> {
     match severity {
-        DiagnosticSeverity::Info => Some(lsp_types::DiagnosticSeverity::HINT),
-        DiagnosticSeverity::Error => Some(lsp_types::DiagnosticSeverity::ERROR),
-        DiagnosticSeverity::Warning => Some(lsp_types::DiagnosticSeverity::WARNING),
+        DiagnosticSeverity::Info => Some(lsp::DiagnosticSeverity::HINT),
+        DiagnosticSeverity::Error => Some(lsp::DiagnosticSeverity::ERROR),
+        DiagnosticSeverity::Warning => Some(lsp::DiagnosticSeverity::WARNING),
     }
 }
 
@@ -176,7 +213,7 @@ fn create_diagnostic<'src>(
     session: &'src Session,
     diagnostic: &Diagnostic,
     severity: DiagnosticSeverity,
-) -> Option<(lsp_types::Diagnostic, &'src PathBuf)> {
+) -> Option<(lsp::Diagnostic, &'src PathBuf)> {
     let (main, related_info) = match diagnostic.kind() {
         DiagnosticKind::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
         DiagnosticKind::Context { main, info } => {
@@ -213,7 +250,7 @@ fn create_diagnostic<'src>(
         message += main.message();
     }
 
-    let diagnostic = lsp_types::Diagnostic::new(
+    let diagnostic = lsp::Diagnostic::new(
         main_range,
         severity_convert(severity),
         None,

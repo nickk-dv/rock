@@ -570,6 +570,10 @@ fn aligned_size(size: u64, align: u64) -> u64 {
 //@check int, float value range constraints 14.05.24
 // same for typecheck_int_lit etc, regular expressions checking
 // should later be merged with this constant resolution / folding flow
+
+//@ban globals being mentioned in constant expressions (immutable / mut doesnt matter)
+// also ajust const dependencies since globals wont be a dependency anymore they are not allowed
+//@more refined message for each incompatible expression type
 pub fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
