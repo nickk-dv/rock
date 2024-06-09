@@ -215,7 +215,19 @@ pub fn codegen_const_value<'ctx>(
             }
         }
         hir::ConstValue::ArrayRepeat { value, len } => {
-            todo!("codegen ConstValue::ArrayRepeat unsupported")
+            use llvm_sys::core::LLVMConstArray2;
+            let value = codegen_const_value(cg, cg.hir.const_value(value));
+            let elem_ty = value.get_type().as_type_ref();
+
+            //@find more optimal way to initialize const array with repeated values? 09.06.24
+            let mut values = Vec::new();
+            values.resize(len as usize, value.as_value_ref());
+
+            unsafe {
+                let array_value =
+                    LLVMConstArray2(elem_ty, values.as_mut_ptr(), values.len() as u64);
+                values::BasicValueEnum::new(array_value)
+            }
         }
     }
 }
