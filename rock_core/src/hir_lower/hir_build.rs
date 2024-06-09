@@ -127,8 +127,11 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern_name.get_str(id)
     }
-    pub fn intern(&self) -> &InternPool<'intern> {
+    pub fn intern_name(&self) -> &InternPool<'intern> {
         &self.ast.intern_name
+    }
+    pub fn intern_string(&self) -> &InternPool<'intern> {
+        &self.ast.intern_string
     }
 
     pub fn get_package_module_id(

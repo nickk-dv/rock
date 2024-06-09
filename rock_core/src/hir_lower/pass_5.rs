@@ -1853,19 +1853,23 @@ fn typecheck_array_repeat<'hir>(
         _ => None,
     };
 
-    let array_type = emit.arena.alloc(hir::ArrayStatic {
-        len: hir::ArrayStaticLen::Immediate(len),
-        elem_ty: expr_res.ty,
-    });
-    let array_repeat = emit.arena.alloc(hir::ArrayRepeat {
-        elem_ty: expr_res.ty,
-        expr: expr_res.expr,
-        len,
-    });
-    TypeResult::new(
-        hir::Type::ArrayStatic(array_type),
-        emit.arena.alloc(hir::Expr::ArrayRepeat { array_repeat }),
-    )
+    if let Some(len) = len {
+        let array_type = emit.arena.alloc(hir::ArrayStatic {
+            len: hir::ArrayStaticLen::Immediate(Some(len)), //@move to always specified size? else error 09.06.24
+            elem_ty: expr_res.ty,
+        });
+        let array_repeat = emit.arena.alloc(hir::ArrayRepeat {
+            elem_ty: expr_res.ty,
+            expr: expr_res.expr,
+            len,
+        });
+        TypeResult::new(
+            hir::Type::ArrayStatic(array_type),
+            emit.arena.alloc(hir::Expr::ArrayRepeat { array_repeat }),
+        )
+    } else {
+        TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+    }
 }
 
 fn typecheck_address<'hir>(

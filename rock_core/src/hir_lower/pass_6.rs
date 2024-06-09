@@ -13,7 +13,7 @@ pub fn check_entry_point<'hir>(
         return;
     }
 
-    if let Some(main_id) = hir.intern().get_id("main") {
+    if let Some(main_id) = hir.intern_name().get_id("main") {
         if let Some(module_id) = hir.get_package_module_id(PackageID::new(0), main_id) {
             let defined = hir.symbol_get_defined(module_id, main_id);
             match defined {

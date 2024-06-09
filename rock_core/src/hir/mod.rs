@@ -229,7 +229,7 @@ pub enum ConstValue<'hir> {
     EnumVariant { enum_id: EnumID, variant_id: EnumVariantID },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
-    ArrayRepeat { len: u64, value: ConstValueID },
+    ArrayRepeat { value: ConstValueID, len: u64 },
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -376,7 +376,7 @@ pub struct ArrayInit<'hir> {
 pub struct ArrayRepeat<'hir> {
     pub elem_ty: Type<'hir>,
     pub expr: &'hir Expr<'hir>,
-    pub len: Option<u64>,
+    pub len: u64,
 }
 
 use crate::size_assert;

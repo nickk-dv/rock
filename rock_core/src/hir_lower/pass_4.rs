@@ -587,12 +587,43 @@ pub fn fold_const_expr<'hir>(
             struct_id,
             field_id,
             deref,
-        } => Err("struct member access"),
+        } => {
+            //@handle deref with error?
+            let (target, _) = fold_const_expr(hir, emit, origin_id, target);
+            let value = match target {
+                hir::ConstValue::Struct { struct_ } => {
+                    let value_id = struct_.fields[field_id.index()];
+                    emit.const_intern.get(value_id)
+                }
+                _ => hir::ConstValue::Error,
+            };
+            Ok(value)
+        }
         hir::Expr::SliceField {
             target,
             first_ptr,
             deref,
-        } => Err("slice field access"),
+        } => {
+            //@handle deref with error?
+            let (target, _) = fold_const_expr(hir, emit, origin_id, target);
+            let value = match target {
+                hir::ConstValue::String { id, c_string } => {
+                    if !first_ptr && !c_string {
+                        let string = hir.intern_string().get_str(id);
+                        let len = string.len();
+                        hir::ConstValue::Int {
+                            val: len as u64,
+                            neg: false,
+                            ty: Some(ast::BasicType::Usize),
+                        }
+                    } else {
+                        hir::ConstValue::Error
+                    }
+                }
+                _ => hir::ConstValue::Error,
+            };
+            Ok(value)
+        }
         hir::Expr::Index { target, access } => {
             let (target_value, _) = fold_const_expr(hir, emit, origin_id, target);
             let (index_value, _) = fold_const_expr(hir, emit, origin_id, access.index);
@@ -641,44 +672,43 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::CallDirect { proc_id, input } => Err("call direct"),
         hir::Expr::CallIndirect { target, indirect } => Err("call indirect"),
         hir::Expr::StructInit { struct_id, input } => {
-            let mut field_value_ids = Vec::new();
+            let mut value_ids = Vec::new();
             let error_id = emit.const_intern.intern(hir::ConstValue::Error);
-            field_value_ids.resize(input.len(), error_id);
+            value_ids.resize(input.len(), error_id);
 
             for init in input {
                 let (_, value_id) = fold_const_expr(hir, emit, origin_id, init.expr);
-                field_value_ids[init.field_id.index()] = value_id;
+                value_ids[init.field_id.index()] = value_id;
             }
 
-            let fields = emit.const_intern.arena().alloc_slice(&field_value_ids);
+            let fields = emit.const_intern.arena().alloc_slice(&value_ids);
             let const_struct = hir::ConstStruct { struct_id, fields };
             let struct_ = emit.const_intern.arena().alloc(const_struct);
             Ok(hir::ConstValue::Struct { struct_ })
         }
         hir::Expr::ArrayInit { array_init } => {
             let mut value_ids = Vec::with_capacity(array_init.input.len());
-            for &input in array_init.input {
-                let (_, value_id) = fold_const_expr(hir, emit, origin_id, input);
+
+            for &init in array_init.input {
+                let (_, value_id) = fold_const_expr(hir, emit, origin_id, init);
                 value_ids.push(value_id);
             }
 
             let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
-            let array = emit.const_intern.arena().alloc(hir::ConstArray {
+            let const_array = hir::ConstArray {
                 len: values.len() as u64,
                 values,
-            });
+            };
+            let array = emit.const_intern.arena().alloc(const_array);
             Ok(hir::ConstValue::Array { array })
         }
         hir::Expr::ArrayRepeat { array_repeat } => {
-            if let Some(len) = array_repeat.len {
-                let (_, value_id) = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
-                Ok(hir::ConstValue::ArrayRepeat {
-                    len,
-                    value: value_id,
-                })
-            } else {
-                Ok(hir::ConstValue::Error)
-            }
+            let (_, value_id) = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
+
+            Ok(hir::ConstValue::ArrayRepeat {
+                value: value_id,
+                len: array_repeat.len,
+            })
         }
         hir::Expr::Address { .. } => Err("address"),
         hir::Expr::Unary { op, rhs } => {
