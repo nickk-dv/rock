@@ -17,14 +17,16 @@ pub fn check_entry_point<'hir>(
         if let Some(module_id) = hir.get_package_module_id(PackageID::new(0), main_id) {
             let defined = hir.symbol_get_defined(module_id, main_id);
             match defined {
-                Some(SymbolKind::Proc(proc_id)) => check_main_procedure(hir, emit, proc_id),
+                Some(SymbolKind::Proc(proc_id)) => {
+                    check_main_procedure(hir, emit, proc_id);
+                }
                 _ => {
                     emit.error(ErrorComp::message(
                         "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`",
                     ));
-                    return;
                 }
             }
+            return;
         }
     }
 

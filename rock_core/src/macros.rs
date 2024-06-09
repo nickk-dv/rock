@@ -1,5 +1,5 @@
-/// used to prevent accidental size changes.  
-/// currently only used in `ast` and `hir`.
+/// used to prevent accidental size changes  
+/// currently only used in `ast` and `hir`
 #[macro_export]
 macro_rules! size_assert {
     ($size:expr, $ty:ty) => {
@@ -20,7 +20,7 @@ macro_rules! id_impl {
             pub const fn new(index: usize) -> $name {
                 $name(index as u32)
             }
-            /// dummy id is u32::MAX and not supposed to be used
+            #[allow(unused)]
             #[inline(always)]
             pub const fn dummy() -> $name {
                 $name(u32::MAX)

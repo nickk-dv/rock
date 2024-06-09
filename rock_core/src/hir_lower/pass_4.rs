@@ -27,7 +27,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
             if matches!(eval, hir::ConstEval::Unresolved(_)) {
                 let (mut tree, root_id) =
                     Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
-                // check dependencies
+                //@check expression dependencies
                 resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
@@ -50,8 +50,10 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
-            // check dependencies
-            resolve_const_dependency_tree(hir, emit, &tree);
+            if check_type_usage_const_dependency(hir, emit, &mut tree, root_id, data.ty).is_ok() {
+                //@check expression dependencies
+                resolve_const_dependency_tree(hir, emit, &tree);
+            }
         }
     }
 
@@ -61,8 +63,10 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
-            // check dependencies
-            resolve_const_dependency_tree(hir, emit, &tree);
+            if check_type_usage_const_dependency(hir, emit, &mut tree, root_id, data.ty).is_ok() {
+                //@check expression dependencies
+                resolve_const_dependency_tree(hir, emit, &tree);
+            }
         }
     }
 
@@ -424,6 +428,7 @@ fn check_type_usage_const_dependency(
             if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
                 let node_id = tree.add_child(parent_id, ConstDependency::ArrayLen(eval_id));
                 check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+                //@check expression dependencies
             }
             check_type_usage_const_dependency(hir, emit, tree, parent_id, array.elem_ty)?;
         }
@@ -635,7 +640,21 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::GlobalVar { global_id } => Err("global vall"),
         hir::Expr::CallDirect { proc_id, input } => Err("call direct"),
         hir::Expr::CallIndirect { target, indirect } => Err("call indirect"),
-        hir::Expr::StructInit { struct_id, input } => Err("struct initializer"),
+        hir::Expr::StructInit { struct_id, input } => {
+            let mut field_value_ids = Vec::new();
+            let error_id = emit.const_intern.intern(hir::ConstValue::Error);
+            field_value_ids.resize(input.len(), error_id);
+
+            for init in input {
+                let (_, value_id) = fold_const_expr(hir, emit, origin_id, init.expr);
+                field_value_ids[init.field_id.index()] = value_id;
+            }
+
+            let fields = emit.const_intern.arena().alloc_slice(&field_value_ids);
+            let const_struct = hir::ConstStruct { struct_id, fields };
+            let struct_ = emit.const_intern.arena().alloc(const_struct);
+            Ok(hir::ConstValue::Struct { struct_ })
+        }
         hir::Expr::ArrayInit { array_init } => {
             let mut value_ids = Vec::with_capacity(array_init.input.len());
             for &input in array_init.input {
