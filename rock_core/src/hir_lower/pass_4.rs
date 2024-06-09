@@ -483,13 +483,13 @@ fn resolve_and_update_const_eval<'hir>(
 ) {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
 
-    let (_, value_id) = match eval {
+    let value = match eval {
         hir::ConstEval::Unresolved(expr) => resolve_const_expr(hir, emit, origin_id, expect, expr),
         _ => panic!("calling `resolve_const_expr` on already resolved expr"),
     };
 
     let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-    *eval = hir::ConstEval::ResolvedValue(value_id);
+    *eval = hir::ConstEval::ResolvedValue(emit.const_intern.intern(value));
 }
 
 #[must_use]
@@ -499,7 +499,7 @@ pub fn resolve_const_expr<'hir>(
     origin_id: hir::ModuleID,
     expect: TypeExpectation<'hir>,
     expr: ast::ConstExpr,
-) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
+) -> hir::ConstValue<'hir> {
     let dummy_data = hir::ProcData {
         origin_id,
         vis: ast::Vis::Private,
@@ -575,7 +575,7 @@ pub fn fold_const_expr<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: hir::ModuleID,
     expr: &'hir hir::Expr<'hir>,
-) -> (hir::ConstValue<'hir>, hir::ConstValueID) {
+) -> hir::ConstValue<'hir> {
     let result = match *expr {
         hir::Expr::Error => Ok(hir::ConstValue::Error),
         hir::Expr::Const { value } => Ok(value),
@@ -589,7 +589,7 @@ pub fn fold_const_expr<'hir>(
             deref,
         } => {
             //@handle deref with error?
-            let (target, _) = fold_const_expr(hir, emit, origin_id, target);
+            let target = fold_const_expr(hir, emit, origin_id, target);
             let value = match target {
                 hir::ConstValue::Struct { struct_ } => {
                     let value_id = struct_.fields[field_id.index()];
@@ -605,7 +605,7 @@ pub fn fold_const_expr<'hir>(
             deref,
         } => {
             //@handle deref with error?
-            let (target, _) = fold_const_expr(hir, emit, origin_id, target);
+            let target = fold_const_expr(hir, emit, origin_id, target);
             let value = match target {
                 hir::ConstValue::String { id, c_string } => {
                     if !first_ptr && !c_string {
@@ -625,8 +625,8 @@ pub fn fold_const_expr<'hir>(
             Ok(value)
         }
         hir::Expr::Index { target, access } => {
-            let (target_value, _) = fold_const_expr(hir, emit, origin_id, target);
-            let (index_value, _) = fold_const_expr(hir, emit, origin_id, access.index);
+            let target_value = fold_const_expr(hir, emit, origin_id, target);
+            let index_value = fold_const_expr(hir, emit, origin_id, access.index);
 
             let index = match index_value {
                 hir::ConstValue::Int { val, neg, ty } => {
@@ -667,7 +667,15 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::Cast { target, into, kind } => todo!(),
         hir::Expr::LocalVar { local_id } => Err("local var"),
         hir::Expr::ParamVar { param_id } => Err("param var"),
-        hir::Expr::ConstVar { const_id } => Err("const var"),
+        hir::Expr::ConstVar { const_id } => {
+            let data = hir.registry().const_data(const_id);
+            let (eval, _) = hir.registry().const_eval(data.value);
+            let value = match *eval {
+                hir::ConstEval::ResolvedValue(value_id) => emit.const_intern.get(value_id),
+                _ => panic!("unresolved constant"),
+            };
+            Ok(value)
+        }
         hir::Expr::GlobalVar { global_id } => Err("global vall"),
         hir::Expr::CallDirect { proc_id, input } => Err("call direct"),
         hir::Expr::CallIndirect { target, indirect } => Err("call indirect"),
@@ -677,8 +685,8 @@ pub fn fold_const_expr<'hir>(
             value_ids.resize(input.len(), error_id);
 
             for init in input {
-                let (_, value_id) = fold_const_expr(hir, emit, origin_id, init.expr);
-                value_ids[init.field_id.index()] = value_id;
+                let value = fold_const_expr(hir, emit, origin_id, init.expr);
+                value_ids[init.field_id.index()] = emit.const_intern.intern(value);
             }
 
             let fields = emit.const_intern.arena().alloc_slice(&value_ids);
@@ -690,8 +698,8 @@ pub fn fold_const_expr<'hir>(
             let mut value_ids = Vec::with_capacity(array_init.input.len());
 
             for &init in array_init.input {
-                let (_, value_id) = fold_const_expr(hir, emit, origin_id, init);
-                value_ids.push(value_id);
+                let value = fold_const_expr(hir, emit, origin_id, init);
+                value_ids.push(emit.const_intern.intern(value));
             }
 
             let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
@@ -703,16 +711,16 @@ pub fn fold_const_expr<'hir>(
             Ok(hir::ConstValue::Array { array })
         }
         hir::Expr::ArrayRepeat { array_repeat } => {
-            let (_, value_id) = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
+            let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
 
             Ok(hir::ConstValue::ArrayRepeat {
-                value: value_id,
+                value: emit.const_intern.intern(value),
                 len: array_repeat.len,
             })
         }
         hir::Expr::Address { .. } => Err("address"),
         hir::Expr::Unary { op, rhs } => {
-            let (rhs_value, _) = fold_const_expr(hir, emit, origin_id, rhs);
+            let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
             match op {
                 ast::UnOp::Neg => match rhs_value {
                     hir::ConstValue::Int { val, neg, ty } => {
@@ -740,7 +748,7 @@ pub fn fold_const_expr<'hir>(
     };
 
     match result {
-        Ok(value) => (value, emit.const_intern.intern(value)),
+        Ok(value) => value,
         Err(expr_name) => {
             //@range not available
             //emit.error(ErrorComp::new(
@@ -751,8 +759,7 @@ pub fn fold_const_expr<'hir>(
             emit.error(ErrorComp::message(format!(
                 "cannot use `{expr_name}` expression in constants"
             )));
-            let value = hir::ConstValue::Error;
-            (value, emit.const_intern.intern(value))
+            hir::ConstValue::Error
         }
     }
 }

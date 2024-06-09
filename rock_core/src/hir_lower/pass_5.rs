@@ -672,8 +672,7 @@ fn typecheck_match<'hir>(
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms.iter() {
-        let (value, value_id) =
-            pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
+        let value = pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
         let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
         //@check if anything in pattern errored?
@@ -685,7 +684,7 @@ fn typecheck_match<'hir>(
         }
 
         arms.push(hir::MatchArm {
-            pat: value_id,
+            pat: emit.const_intern.intern(value),
             block: hir::Block {
                 stmts: emit
                     .arena
@@ -1839,9 +1838,7 @@ fn typecheck_array_repeat<'hir>(
     let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
-    let (value, _) =
-        pass_4::resolve_const_expr(hir, emit, proc.origin(), TypeExpectation::USIZE, len);
-
+    let value = pass_4::resolve_const_expr(hir, emit, proc.origin(), TypeExpectation::USIZE, len);
     let len = match value {
         hir::ConstValue::Int { val, ty, neg } => {
             if neg {

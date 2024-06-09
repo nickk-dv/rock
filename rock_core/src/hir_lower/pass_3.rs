@@ -71,7 +71,7 @@ pub fn type_resolve<'hir>(
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::TypeKind::ArrayStatic(array) => {
-            let (value, _) =
+            let value =
                 pass_4::resolve_const_expr(hir, emit, origin_id, TypeExpectation::USIZE, array.len);
             let len = match value {
                 hir::ConstValue::Int { val, ty, neg } => {
