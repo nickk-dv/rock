@@ -588,167 +588,45 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::Match { .. } => Err("match"),
         hir::Expr::StructField {
             target,
-            struct_id,
             field_id,
             deref,
-        } => {
-            //@handle deref with error?
-            let target = fold_const_expr(hir, emit, origin_id, target);
-            let value = match target {
-                hir::ConstValue::Struct { struct_ } => {
-                    let value_id = struct_.fields[field_id.index()];
-                    emit.const_intern.get(value_id)
-                }
-                _ => hir::ConstValue::Error,
-            };
-            Ok(value)
-        }
+            ..
+        } => Ok(fold_struct_field(
+            hir, emit, origin_id, target, field_id, deref,
+        )),
         hir::Expr::SliceField {
             target,
             first_ptr,
             deref,
-        } => {
-            //@handle deref with error?
-            let target = fold_const_expr(hir, emit, origin_id, target);
-            let value = match target {
-                hir::ConstValue::String { id, c_string } => {
-                    if !first_ptr && !c_string {
-                        let string = hir.intern_string().get_str(id);
-                        let len = string.len();
-                        hir::ConstValue::Int {
-                            val: len as u64,
-                            neg: false,
-                            ty: Some(ast::BasicType::Usize),
-                        }
-                    } else {
-                        hir::ConstValue::Error
-                    }
-                }
-                _ => hir::ConstValue::Error,
-            };
-            Ok(value)
-        }
-        hir::Expr::Index { target, access } => {
-            let target_value = fold_const_expr(hir, emit, origin_id, target);
-            let index_value = fold_const_expr(hir, emit, origin_id, access.index);
-
-            let index = match index_value {
-                hir::ConstValue::Int { val, neg, ty } => {
-                    if !neg {
-                        Some(val)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            };
-            if let Some(index) = index {
-                //@bounds check, same with normal array
-                match target_value {
-                    hir::ConstValue::Array { array } => {
-                        if index >= array.len {
-                            //@no source range available
-                            Ok(hir::ConstValue::Error)
-                        } else {
-                            Ok(emit.const_intern.get(array.values[index as usize]))
-                        }
-                    }
-                    hir::ConstValue::ArrayRepeat { len, value } => {
-                        if index >= len {
-                            //@no source range available
-                            Ok(hir::ConstValue::Error)
-                        } else {
-                            Ok(emit.const_intern.get(value))
-                        }
-                    }
-                    _ => Ok(hir::ConstValue::Error),
-                }
-            } else {
-                Ok(hir::ConstValue::Error)
-            }
-        }
-        hir::Expr::Slice { target, access } => Err("slice"),
-        hir::Expr::Cast { target, into, kind } => todo!(),
-        hir::Expr::LocalVar { local_id } => Err("local var"),
-        hir::Expr::ParamVar { param_id } => Err("param var"),
-        hir::Expr::ConstVar { const_id } => {
-            let data = hir.registry().const_data(const_id);
-            let (eval, _) = hir.registry().const_eval(data.value);
-            let value = match *eval {
-                hir::ConstEval::ResolvedValue(value_id) => emit.const_intern.get(value_id),
-                _ => panic!("unresolved constant"),
-            };
-            Ok(value)
-        }
-        hir::Expr::GlobalVar { global_id } => Err("global vall"),
-        hir::Expr::CallDirect { proc_id, input } => Err("call direct"),
-        hir::Expr::CallIndirect { target, indirect } => Err("call indirect"),
+        } => Ok(fold_slice_field(
+            hir, emit, origin_id, target, first_ptr, deref,
+        )),
+        hir::Expr::Index { target, access } => Ok(fold_index(hir, emit, origin_id, target, access)),
+        hir::Expr::Slice { .. } => Err("slice"),
+        hir::Expr::Cast { target, into, kind } => Err("cast"), //@todo cast 10.06.24
+        hir::Expr::LocalVar { .. } => Err("local var"),
+        hir::Expr::ParamVar { .. } => Err("param var"),
+        hir::Expr::ConstVar { const_id } => Ok(fold_const_var(hir, emit, const_id)),
+        hir::Expr::GlobalVar { .. } => Err("global vall"), //@custom message
+        hir::Expr::CallDirect { .. } => Err("call direct"),
+        hir::Expr::CallIndirect { .. } => Err("call indirect"),
         hir::Expr::StructInit { struct_id, input } => {
-            let mut value_ids = Vec::new();
-            let error_id = emit.const_intern.intern(hir::ConstValue::Error);
-            value_ids.resize(input.len(), error_id);
-
-            for init in input {
-                let value = fold_const_expr(hir, emit, origin_id, init.expr);
-                value_ids[init.field_id.index()] = emit.const_intern.intern(value);
-            }
-
-            let fields = emit.const_intern.arena().alloc_slice(&value_ids);
-            let const_struct = hir::ConstStruct { struct_id, fields };
-            let struct_ = emit.const_intern.arena().alloc(const_struct);
-            Ok(hir::ConstValue::Struct { struct_ })
+            Ok(fold_struct_init(hir, emit, origin_id, struct_id, input))
         }
         hir::Expr::ArrayInit { array_init } => {
-            let mut value_ids = Vec::with_capacity(array_init.input.len());
-
-            for &init in array_init.input {
-                let value = fold_const_expr(hir, emit, origin_id, init);
-                value_ids.push(emit.const_intern.intern(value));
-            }
-
-            let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
-            let const_array = hir::ConstArray {
-                len: values.len() as u64,
-                values,
-            };
-            let array = emit.const_intern.arena().alloc(const_array);
-            Ok(hir::ConstValue::Array { array })
+            Ok(fold_array_init(hir, emit, origin_id, array_init))
         }
         hir::Expr::ArrayRepeat { array_repeat } => {
-            let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
-
-            Ok(hir::ConstValue::ArrayRepeat {
-                value: emit.const_intern.intern(value),
-                len: array_repeat.len,
-            })
+            Ok(fold_array_repeat(hir, emit, origin_id, array_repeat))
         }
         hir::Expr::Address { .. } => Err("address"),
-        hir::Expr::Unary { op, rhs } => {
-            let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
-            match op {
-                ast::UnOp::Neg => match rhs_value {
-                    hir::ConstValue::Int { val, neg, ty } => {
-                        Ok(hir::ConstValue::Int { val, neg: !neg, ty })
-                    }
-                    hir::ConstValue::Float { val, ty } => {
-                        Ok(hir::ConstValue::Float { val: -val, ty })
-                    }
-                    _ => Ok(hir::ConstValue::Error),
-                },
-                ast::UnOp::BitNot => Ok(hir::ConstValue::Error),
-                ast::UnOp::LogicNot => match rhs_value {
-                    hir::ConstValue::Bool { val } => Ok(hir::ConstValue::Bool { val: !val }),
-                    _ => Ok(hir::ConstValue::Error),
-                },
-                ast::UnOp::Deref => Ok(hir::ConstValue::Error), //@disallow with error?
-            }
-        }
+        hir::Expr::Unary { op, rhs } => Ok(fold_unary_expr(hir, emit, origin_id, op, rhs)),
         hir::Expr::Binary {
             op,
             lhs,
             rhs,
             lhs_signed_int,
-        } => Err("binary"),
+        } => Err("binary"), //@todo binary 10.06.24
     };
 
     match result {
@@ -765,5 +643,206 @@ pub fn fold_const_expr<'hir>(
             )));
             hir::ConstValue::Error
         }
+    }
+}
+
+fn fold_struct_field<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    target: &'hir hir::Expr<'hir>,
+    field_id: hir::StructFieldID,
+    deref: bool,
+) -> hir::ConstValue<'hir> {
+    if deref {
+        //@expr range required
+        emit.error(ErrorComp::message(
+            "cannot perform implicit dereference in constant expression",
+        ));
+        return hir::ConstValue::Error;
+    }
+
+    let target = fold_const_expr(hir, emit, origin_id, target);
+    match target {
+        hir::ConstValue::Struct { struct_ } => {
+            let value_id = struct_.fields[field_id.index()];
+            emit.const_intern.get(value_id)
+        }
+        _ => hir::ConstValue::Error,
+    }
+}
+
+fn fold_slice_field<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    target: &'hir hir::Expr<'hir>,
+    first_ptr: bool,
+    deref: bool,
+) -> hir::ConstValue<'hir> {
+    if deref {
+        //@expr range required
+        emit.error(ErrorComp::message(
+            "cannot perform implicit dereference in constant expression",
+        ));
+        return hir::ConstValue::Error;
+    }
+
+    let target = fold_const_expr(hir, emit, origin_id, target);
+    match target {
+        hir::ConstValue::String { id, c_string } => {
+            if !first_ptr && !c_string {
+                let string = hir.intern_string().get_str(id);
+                let len = string.len();
+                hir::ConstValue::Int {
+                    val: len as u64,
+                    neg: false,
+                    ty: Some(ast::BasicType::Usize),
+                }
+            } else {
+                hir::ConstValue::Error
+            }
+        }
+        _ => hir::ConstValue::Error,
+    }
+}
+
+fn fold_index<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    target: &'hir hir::Expr<'hir>,
+    access: &'hir hir::IndexAccess<'hir>,
+) -> hir::ConstValue<'hir> {
+    let target_value = fold_const_expr(hir, emit, origin_id, target);
+    let index_value = fold_const_expr(hir, emit, origin_id, access.index);
+
+    let index = match index_value {
+        hir::ConstValue::Int { val, neg, ty } => {
+            if !neg {
+                Some(val)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    if let Some(index) = index {
+        //@bounds check, same with normal array
+        match target_value {
+            hir::ConstValue::Array { array } => {
+                if index >= array.len {
+                    //@no source range available
+                    hir::ConstValue::Error
+                } else {
+                    emit.const_intern.get(array.values[index as usize])
+                }
+            }
+            hir::ConstValue::ArrayRepeat { len, value } => {
+                if index >= len {
+                    //@no source range available
+                    hir::ConstValue::Error
+                } else {
+                    emit.const_intern.get(value)
+                }
+            }
+            _ => hir::ConstValue::Error,
+        }
+    } else {
+        hir::ConstValue::Error
+    }
+}
+
+fn fold_const_var<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    const_id: hir::ConstID,
+) -> hir::ConstValue<'hir> {
+    let data = hir.registry().const_data(const_id);
+    let (eval, _) = hir.registry().const_eval(data.value);
+    match *eval {
+        hir::ConstEval::ResolvedValue(value_id) => emit.const_intern.get(value_id),
+        _ => panic!("unresolved constant"),
+    }
+}
+
+fn fold_struct_init<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    struct_id: hir::StructID,
+    input: &'hir [hir::StructFieldInit<'hir>],
+) -> hir::ConstValue<'hir> {
+    let mut value_ids = Vec::new();
+    let error_id = emit.const_intern.intern(hir::ConstValue::Error);
+    value_ids.resize(input.len(), error_id);
+
+    for init in input {
+        let value = fold_const_expr(hir, emit, origin_id, init.expr);
+        value_ids[init.field_id.index()] = emit.const_intern.intern(value);
+    }
+
+    let fields = emit.const_intern.arena().alloc_slice(&value_ids);
+    let const_struct = hir::ConstStruct { struct_id, fields };
+    let struct_ = emit.const_intern.arena().alloc(const_struct);
+    hir::ConstValue::Struct { struct_ }
+}
+
+fn fold_array_init<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    array_init: &'hir hir::ArrayInit<'hir>,
+) -> hir::ConstValue<'hir> {
+    let mut value_ids = Vec::with_capacity(array_init.input.len());
+
+    for &init in array_init.input {
+        let value = fold_const_expr(hir, emit, origin_id, init);
+        value_ids.push(emit.const_intern.intern(value));
+    }
+
+    let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
+    let const_array = hir::ConstArray {
+        len: values.len() as u64,
+        values,
+    };
+    let array = emit.const_intern.arena().alloc(const_array);
+    hir::ConstValue::Array { array }
+}
+
+fn fold_array_repeat<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    array_repeat: &'hir hir::ArrayRepeat<'hir>,
+) -> hir::ConstValue<'hir> {
+    let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
+
+    hir::ConstValue::ArrayRepeat {
+        value: emit.const_intern.intern(value),
+        len: array_repeat.len,
+    }
+}
+
+fn fold_unary_expr<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: hir::ModuleID,
+    op: ast::UnOp,
+    rhs: &'hir hir::Expr<'hir>,
+) -> hir::ConstValue<'hir> {
+    let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
+    match op {
+        ast::UnOp::Neg => match rhs_value {
+            hir::ConstValue::Int { val, neg, ty } => hir::ConstValue::Int { val, neg: !neg, ty },
+            hir::ConstValue::Float { val, ty } => hir::ConstValue::Float { val: -val, ty },
+            _ => hir::ConstValue::Error,
+        },
+        ast::UnOp::BitNot => hir::ConstValue::Error,
+        ast::UnOp::LogicNot => match rhs_value {
+            hir::ConstValue::Bool { val } => hir::ConstValue::Bool { val: !val },
+            _ => hir::ConstValue::Error,
+        },
+        ast::UnOp::Deref => hir::ConstValue::Error, //@disallow with error?
     }
 }

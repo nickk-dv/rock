@@ -232,7 +232,6 @@ pub fn codegen_const_value<'ctx>(
     }
 }
 
-#[allow(unsafe_code)]
 fn codegen_lit_string<'ctx>(
     cg: &Codegen<'ctx>,
     id: InternID,
