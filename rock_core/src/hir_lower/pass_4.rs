@@ -3,6 +3,7 @@ use super::pass_5::{self, TypeExpectation};
 use super::proc_scope;
 use crate::ast;
 use crate::error::{ErrorComp, Info, StringOrStr};
+use crate::hir::ConstValue;
 use crate::intern::InternID;
 use crate::text::TextRange;
 use crate::{hir, id_impl};
@@ -436,6 +437,83 @@ fn check_type_usage_const_dependency(
     Ok(())
 }
 
+fn check_expr_const_dependency<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    origin_id: hir::ModuleID,
+    expr: &ast::Expr,
+) -> Result<(), ()> {
+    match expr.kind {
+        ast::ExprKind::LitNull => {}
+        ast::ExprKind::LitBool { .. } => {}
+        ast::ExprKind::LitInt { .. } => {}
+        ast::ExprKind::LitFloat { .. } => {}
+        ast::ExprKind::LitChar { .. } => {}
+        ast::ExprKind::LitString { .. } => {}
+        ast::ExprKind::If { .. } => {}
+        ast::ExprKind::Block { .. } => {}
+        ast::ExprKind::Match { .. } => {}
+        ast::ExprKind::Field { target, .. } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, target)?;
+        }
+        ast::ExprKind::Index { target, index } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, target)?;
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, index)?;
+        }
+        ast::ExprKind::Slice {
+            target,
+            mutt,
+            slice_range,
+        } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, target)?;
+        }
+        ast::ExprKind::Call { target, input } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, target)?;
+            for &expr in input.iter() {
+                check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, expr)?;
+            }
+        }
+        ast::ExprKind::Cast { target, .. } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, target)?
+        }
+        ast::ExprKind::Sizeof { ty } => {} //@value type
+        ast::ExprKind::Item { path } => {} //@path
+        ast::ExprKind::StructInit { struct_init } => {
+            if let Some(struct_id) =
+                pass_5::path_resolve_struct(hir, emit, None, origin_id, struct_init.path)
+            {
+                let ty = hir::Type::Struct(struct_id);
+                check_type_usage_const_dependency(hir, emit, tree, parent_id, ty)?;
+            }
+            for init in struct_init.input {
+                check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, init.expr)?;
+            }
+        }
+        ast::ExprKind::ArrayInit { input } => {
+            for &expr in input {
+                check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, expr)?;
+            }
+        }
+        ast::ExprKind::ArrayRepeat { expr, len } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, expr)?;
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, len.0)?;
+        }
+        ast::ExprKind::Address { rhs, .. } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, rhs)?;
+        }
+        ast::ExprKind::Unary { rhs, .. } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, rhs)?;
+        }
+        ast::ExprKind::Binary { bin, .. } => {
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, bin.lhs)?;
+            check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, bin.rhs)?;
+        }
+    }
+    Ok(())
+}
+
 fn resolve_const_dependency_tree<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -697,7 +775,7 @@ fn fold_slice_field<'hir>(
                 hir::ConstValue::Int {
                     val: len as u64,
                     neg: false,
-                    ty: Some(ast::BasicType::Usize),
+                    ty: ast::BasicType::Usize,
                 }
             } else {
                 hir::ConstValue::Error
@@ -844,5 +922,96 @@ fn fold_unary_expr<'hir>(
             _ => hir::ConstValue::Error,
         },
         ast::UnOp::Deref => hir::ConstValue::Error, //@disallow with error?
+    }
+}
+
+impl<'hir> hir::ConstValue<'hir> {
+    fn test() {
+        //const shift_test: i32 = i32::MAX + i32::MAX;
+
+        let lhs: i128 = 10;
+        let rhs: i128 = -10;
+
+        let add = lhs.checked_add(rhs);
+        let sub = lhs.checked_sub(rhs);
+        let mul = lhs.checked_mul(rhs);
+        let div = lhs.checked_div(rhs); //@check / 0 separately
+        let rem = lhs.checked_rem(rhs); //@check / 0 separately
+
+        let shl = lhs.checked_shl(rhs as u32); //@check for positive
+        let shr = lhs.checked_shr(rhs as u32); //@check for positive
+        let is_eq = lhs == rhs;
+        let not_eq = lhs != rhs;
+        let less = lhs < rhs;
+        let less_eq = lhs <= rhs;
+        let greater = lhs > rhs;
+        let greater_eq = lhs >= rhs;
+    }
+
+    fn add(self, other: hir::ConstValue<'hir>) -> hir::ConstValue<'hir> {
+        match (self, other) {
+            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntS(rhs)) => {
+                Self::from_i64_opt(lhs.checked_add(rhs))
+            }
+            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntU(rhs)) => {
+                Self::from_i64_opt(lhs.checked_add_unsigned(rhs))
+            }
+            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntU(rhs)) => {
+                Self::from_u64_opt(lhs.checked_add(rhs))
+            }
+            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntS(rhs)) => {
+                Self::from_u64_opt(lhs.checked_add_signed(rhs))
+            }
+            _ => hir::ConstValue::Error,
+        }
+    }
+
+    fn sub(self, other: hir::ConstValue<'hir>) -> hir::ConstValue<'hir> {
+        match (self, other) {
+            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntS(rhs)) => {
+                Self::from_i64_opt(lhs.checked_sub(rhs))
+            }
+            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntU(rhs)) => {
+                Self::from_i64_opt(lhs.checked_sub_unsigned(rhs))
+            }
+            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntU(rhs)) => {
+                Self::from_u64_opt(lhs.checked_sub(rhs))
+            }
+            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntS(rhs)) => {
+                if let Some(rhs) = Self::i64_to_unsigned(rhs) {
+                    Self::from_u64_opt(lhs.checked_sub(rhs))
+                } else {
+                    eprintln!("error in const sub u - s int operation");
+                    hir::ConstValue::Error
+                }
+            }
+            _ => hir::ConstValue::Error,
+        }
+    }
+
+    fn i64_to_unsigned(val: i64) -> Option<u64> {
+        if val >= 0 {
+            Some(val as u64)
+        } else {
+            None
+        }
+    }
+
+    fn from_i64_opt(val: Option<i64>) -> hir::ConstValue<'hir> {
+        if let Some(val) = val {
+            hir::ConstValue::IntS(val)
+        } else {
+            eprintln!("error in const signed int operation");
+            hir::ConstValue::Error
+        }
+    }
+
+    fn from_u64_opt(val: Option<u64>) -> hir::ConstValue<'hir> {
+        if let Some(val) = val {
+            hir::ConstValue::IntU(val)
+        } else {
+            eprintln!("error in const unsigned int operation");
+            hir::ConstValue::Error
+        }
     }
 }

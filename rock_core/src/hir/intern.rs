@@ -46,6 +46,8 @@ impl<'hir> Hash for ConstValue<'hir> {
             ConstValue::Null => 1.hash(state),
             ConstValue::Bool { val } => val.hash(state),
             ConstValue::Int { val, neg, ty } => (val, neg, ty).hash(state),
+            ConstValue::IntS(val) => val.hash(state),
+            ConstValue::IntU(val) => val.hash(state),
             ConstValue::Float { val, ty } => (val.to_bits(), ty).hash(state),
             ConstValue::Char { val } => val.hash(state),
             ConstValue::String { id, c_string } => (id, c_string).hash(state),

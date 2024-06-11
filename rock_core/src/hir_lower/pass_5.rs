@@ -478,7 +478,7 @@ fn typecheck_lit_int<'hir>(
     let value = hir::ConstValue::Int {
         val,
         neg: false,
-        ty: Some(lit_type),
+        ty: lit_type,
     };
     TypeResult::new(
         hir::Type::Basic(lit_type),
@@ -1560,7 +1560,7 @@ fn typecheck_sizeof<'hir>(
             let value = hir::ConstValue::Int {
                 val: size.size(),
                 neg: false,
-                ty: Some(BasicType::Usize),
+                ty: BasicType::Usize,
             };
             emit.arena.alloc(hir::Expr::Const { value })
         }
@@ -2820,7 +2820,7 @@ pub fn path_resolve_type<'hir>(
 
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
-fn path_resolve_struct<'hir>(
+pub fn path_resolve_struct<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,

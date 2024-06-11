@@ -160,10 +160,11 @@ pub fn codegen_const_value<'ctx>(
         hir::ConstValue::Null => cg.ptr_type.const_zero().into(),
         hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
         hir::ConstValue::Int { val, neg, ty } => {
-            let ty = ty.expect("const int type");
             //@using sign_extend as neg, most likely incorrect (learn how to properly supply integers to llvm const int) 14.05.24
             cg.basic_type_into_int(ty).const_int(val, neg).into()
         }
+        hir::ConstValue::IntS(val) => todo!("codegen: ConstValue::IntSigned"),
+        hir::ConstValue::IntU(val) => todo!("codegen: ConstValue::IntUnsigned"),
         hir::ConstValue::Float { val, ty } => {
             let ty = ty.expect("const float type");
             cg.basic_type_into_float(ty).const_float(val).into()
