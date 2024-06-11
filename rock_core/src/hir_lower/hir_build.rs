@@ -538,10 +538,17 @@ impl<'hir> HirEmit<'hir> {
     pub fn error(&mut self, error: ErrorComp) {
         self.diagnostics.error(error);
     }
-
     #[inline]
     pub fn warning(&mut self, warning: WarningComp) {
         self.diagnostics.warning(warning);
+    }
+    #[inline]
+    pub fn error_count(&self) -> usize {
+        self.diagnostics.errors().len()
+    }
+    #[inline]
+    pub fn did_error(&self, error_count: usize) -> bool {
+        self.error_count() > error_count
     }
 
     pub fn emit<'ast, 'intern: 'hir>(

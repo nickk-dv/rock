@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_5::{self, TypeExpectation};
-use super::proc_scope;
+use super::{pass_3, proc_scope};
 use crate::ast;
 use crate::error::{ErrorComp, Info, StringOrStr};
 use crate::intern::InternID;
@@ -561,13 +561,45 @@ fn add_type_usage_const_dependencies<'hir>(
     Ok(())
 }
 
-fn add_expr_const_dependencies<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+fn error_cannot_use_in_constants(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    origin_id: hir::ModuleID,
+    range: TextRange,
+    name: &str,
+) -> Result<(), ()> {
+    emit.error(ErrorComp::new(
+        format!("cannot use `{name}` expression in constants"),
+        hir.src(origin_id, range),
+        None,
+    ));
+    Err(())
+}
+
+fn error_cannot_refer_to_in_constants(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    origin_id: hir::ModuleID,
+    range: TextRange,
+    name: &str,
+) -> Result<(), ()> {
+    emit.error(ErrorComp::new(
+        format!("cannot refer to `{name}` in constants"),
+        hir.src(origin_id, range),
+        None,
+    ));
+    Err(())
+}
+
+//@ in result return from which node to mark as error?
+// and mark at top lvl? (do that for `error_cannot_use_in_constants`)
+fn add_expr_const_dependencies<'hir, 'ast>(
+    hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     origin_id: hir::ModuleID,
-    expr: &ast::Expr,
+    expr: &'ast ast::Expr<'ast>,
 ) -> Result<(), ()> {
     match expr.kind {
         ast::ExprKind::LitNull => {}
@@ -576,9 +608,15 @@ fn add_expr_const_dependencies<'hir>(
         ast::ExprKind::LitFloat { .. } => {}
         ast::ExprKind::LitChar { .. } => {}
         ast::ExprKind::LitString { .. } => {}
-        ast::ExprKind::If { .. } => {}
-        ast::ExprKind::Block { .. } => {}
-        ast::ExprKind::Match { .. } => {}
+        ast::ExprKind::If { .. } => {
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "if")?;
+        }
+        ast::ExprKind::Block { .. } => {
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "block")?;
+        }
+        ast::ExprKind::Match { .. } => {
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "match")?;
+        }
         ast::ExprKind::Field { target, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
         }
@@ -592,22 +630,35 @@ fn add_expr_const_dependencies<'hir>(
             slice_range,
         } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "slice")?;
         }
         ast::ExprKind::Call { target, input } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
             for &expr in input.iter() {
                 add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;
             }
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "procedure call")?;
         }
         ast::ExprKind::Cast { target, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?
         }
-        ast::ExprKind::Sizeof { ty } => {} //@value type size dep
+        ast::ExprKind::Sizeof { ty } => {
+            let ty = pass_3::type_resolve_delayed(hir, emit, origin_id, *ty);
+            add_type_size_const_dependencies(hir, emit, tree, parent_id, ty)?;
+        }
         ast::ExprKind::Item { path } => {
             let (value_id, _) = pass_5::path_resolve_value(hir, emit, None, origin_id, path);
             match value_id {
                 pass_5::ValueID::None => {}
-                pass_5::ValueID::Proc(_) => {} // deps for each type in this?
+                pass_5::ValueID::Proc(proc_id) => {
+                    //@borrowing hacks, just get data once here
+                    // change the result Err type with delayed mutation of HirData only at top lvl?
+                    for param in hir.registry().proc_data(proc_id).params {
+                        add_type_usage_const_dependencies(hir, emit, tree, parent_id, param.ty)?
+                    }
+                    let data = hir.registry().proc_data(proc_id);
+                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, data.return_ty)?
+                } //@deps for each type in this?
                 pass_5::ValueID::Enum(enum_id, variant_id) => {
                     add_enum_variant_const_dependency(
                         hir, emit, tree, parent_id, enum_id, variant_id,
@@ -616,9 +667,23 @@ fn add_expr_const_dependencies<'hir>(
                 pass_5::ValueID::Const(const_id) => {
                     add_const_var_const_dependency(hir, emit, tree, parent_id, const_id)?;
                 }
-                pass_5::ValueID::Global(_) => {} //@banned
-                pass_5::ValueID::Local(_) => {}  //@banned
-                pass_5::ValueID::Param(_) => {}  //@banned
+                pass_5::ValueID::Global(_) => {
+                    error_cannot_refer_to_in_constants(
+                        hir, emit, origin_id, expr.range, "globals",
+                    )?;
+                }
+                pass_5::ValueID::Local(_) => {
+                    error_cannot_refer_to_in_constants(hir, emit, origin_id, expr.range, "locals")?;
+                }
+                pass_5::ValueID::Param(_) => {
+                    error_cannot_refer_to_in_constants(
+                        hir,
+                        emit,
+                        origin_id,
+                        expr.range,
+                        "parameters",
+                    )?;
+                }
             }
         }
         ast::ExprKind::StructInit { struct_init } => {
@@ -643,6 +708,7 @@ fn add_expr_const_dependencies<'hir>(
         }
         ast::ExprKind::Address { rhs, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, rhs)?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "address")?;
         }
         ast::ExprKind::Unary { rhs, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, rhs)?;
@@ -735,8 +801,14 @@ pub fn resolve_const_expr<'hir>(
         is_main: false,
     };
     let mut proc = proc_scope::ProcScope::new(&dummy_data, TypeExpectation::NOTHING);
+
+    let error_count = emit.error_count();
     let hir_expr = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
-    fold_const_expr(hir, emit, origin_id, hir_expr.expr)
+    if emit.did_error(error_count) {
+        hir::ConstValue::Error
+    } else {
+        fold_const_expr(hir, emit, origin_id, hir_expr.expr)
+    }
 }
 
 fn resolve_struct_size(
@@ -793,6 +865,10 @@ fn aligned_size(size: u64, align: u64) -> u64 {
 //@ban globals being mentioned in constant expressions (immutable / mut doesnt matter)
 // also ajust const dependencies since globals wont be a dependency anymore they are not allowed
 //@more refined message for each incompatible expression type
+
+//@assume invalid expressions to be already checked for?
+// if `force` return ConstValue::Error
+// else panic!("unexpected `name` in constant");
 pub fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
