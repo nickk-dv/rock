@@ -557,16 +557,16 @@ impl<'hir> HirEmit<'hir> {
 
         for (eval, origin_id) in hir.registry.const_evals.iter() {
             match *eval {
-                hir::ConstEval::Error => {
-                    errors.push(ErrorComp::message(
-                        "internal: trying to emit hir with ConstEval::Error expression",
-                    ));
-                }
                 hir::ConstEval::Unresolved(expr) => {
                     errors.push(ErrorComp::new(
                         "internal: trying to emit hir with ConstEval::Unresolved expression",
                         hir.src(*origin_id, expr.0.range),
                         None,
+                    ));
+                }
+                hir::ConstEval::ResolvedError => {
+                    errors.push(ErrorComp::message(
+                        "internal: trying to emit hir with ConstEval::ResolvedError expression",
                     ));
                 }
                 hir::ConstEval::ResolvedValue(value_id) => const_values.push(value_id),

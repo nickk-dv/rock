@@ -105,8 +105,8 @@ pub struct GlobalData<'hir> {
 id_impl!(ConstEvalID);
 #[derive(Copy, Clone)]
 pub enum ConstEval<'ast> {
-    Error,
     Unresolved(ast::ConstExpr<'ast>),
+    ResolvedError,
     ResolvedValue(ConstValueID),
 }
 

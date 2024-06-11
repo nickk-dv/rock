@@ -3,7 +3,6 @@ use super::pass_5::{self, TypeExpectation};
 use super::proc_scope;
 use crate::ast;
 use crate::error::{ErrorComp, Info, StringOrStr};
-use crate::hir::ConstValue;
 use crate::intern::InternID;
 use crate::text::TextRange;
 use crate::{hir, id_impl};
@@ -19,17 +18,30 @@ enum ConstDependency {
 
 pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().enum_ids() {
-        let data = hir.registry().enum_data(id);
-
-        for (idx, variant) in data.variants.iter().enumerate() {
+        for (idx, variant) in hir.registry().enum_data(id).variants.iter().enumerate() {
             let (eval, _) = hir.registry().const_eval(variant.value);
             let variant_id = hir::EnumVariantID::new(idx);
 
-            if matches!(eval, hir::ConstEval::Unresolved(_)) {
-                let (mut tree, root_id) =
-                    Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
-                //@check expression dependencies
-                resolve_const_dependency_tree(hir, emit, &tree);
+            match eval {
+                hir::ConstEval::Unresolved(expr) => {
+                    let (mut tree, root_id) =
+                        Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
+                    let data = hir.registry().enum_data(id);
+                    if check_expr_const_dependency(
+                        hir,
+                        emit,
+                        &mut tree,
+                        root_id,
+                        data.origin_id,
+                        expr.0,
+                    )
+                    .is_ok()
+                    {
+                        resolve_const_dependency_tree(hir, emit, &tree);
+                    }
+                }
+                hir::ConstEval::ResolvedError => {}
+                hir::ConstEval::ResolvedValue(_) => {}
             }
         }
     }
@@ -307,7 +319,7 @@ fn const_dependencies_mark_error_up_to_root(
                 let data = hir.registry().enum_data(id);
                 let eval_id = data.variant(variant_id).value;
                 let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-                *eval = hir::ConstEval::Error;
+                *eval = hir::ConstEval::ResolvedError;
             }
             ConstDependency::StructSize(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
@@ -317,17 +329,17 @@ fn const_dependencies_mark_error_up_to_root(
                 let data = hir.registry().const_data(id);
                 let eval_id = data.value;
                 let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-                *eval = hir::ConstEval::Error;
+                *eval = hir::ConstEval::ResolvedError;
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
                 let eval_id = data.value;
                 let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-                *eval = hir::ConstEval::Error;
+                *eval = hir::ConstEval::ResolvedError;
             }
             ConstDependency::ArrayLen(eval_id) => {
                 let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-                *eval = hir::ConstEval::Error;
+                *eval = hir::ConstEval::ResolvedError;
             }
         }
     }
@@ -478,8 +490,42 @@ fn check_expr_const_dependency<'hir>(
         ast::ExprKind::Cast { target, .. } => {
             check_expr_const_dependency(hir, emit, tree, parent_id, origin_id, target)?
         }
-        ast::ExprKind::Sizeof { ty } => {} //@value type
-        ast::ExprKind::Item { path } => {} //@path
+        ast::ExprKind::Sizeof { ty } => {} //@value type size dep
+        ast::ExprKind::Item { path } => {
+            let (value_id, _) = pass_5::path_resolve_value(hir, emit, None, origin_id, path);
+            match value_id {
+                pass_5::ValueID::None => {}
+                pass_5::ValueID::Proc(_) => {} // deps for each type in this?
+                pass_5::ValueID::Enum(enum_id, variant_id) => {
+                    let eval_id = hir.registry().enum_data(enum_id).variant(variant_id).value;
+                    let (eval, _) = hir.registry().const_eval(eval_id);
+                    match *eval {
+                        hir::ConstEval::Unresolved(ast_expr) => {
+                            let node_id = tree.add_child(
+                                parent_id,
+                                ConstDependency::EnumVariant(enum_id, variant_id),
+                            );
+                            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+                            let data = hir.registry().enum_data(enum_id);
+                            check_expr_const_dependency(
+                                hir,
+                                emit,
+                                tree,
+                                node_id,
+                                data.origin_id,
+                                ast_expr.0,
+                            )?;
+                        }
+                        hir::ConstEval::ResolvedError => {}
+                        hir::ConstEval::ResolvedValue(_) => {}
+                    }
+                }
+                pass_5::ValueID::Const(_) => todo!(), //@dep
+                pass_5::ValueID::Global(_) => todo!(),
+                pass_5::ValueID::Local(_) => {}
+                pass_5::ValueID::Param(_) => {}
+            }
+        }
         ast::ExprKind::StructInit { struct_init } => {
             if let Some(struct_id) =
                 pass_5::path_resolve_struct(hir, emit, None, origin_id, struct_init.path)

@@ -2882,7 +2882,7 @@ pub fn path_resolve_struct<'hir>(
     struct_id
 }
 
-enum ValueID {
+pub enum ValueID {
     None,
     Proc(hir::ProcID),
     Enum(hir::EnumID, hir::EnumVariantID),
@@ -2892,7 +2892,7 @@ enum ValueID {
     Param(hir::ProcParamID),
 }
 
-fn path_resolve_value<'hir, 'ast>(
+pub fn path_resolve_value<'hir, 'ast>(
     hir: &HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
