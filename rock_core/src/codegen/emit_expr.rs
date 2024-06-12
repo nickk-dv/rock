@@ -149,6 +149,22 @@ pub fn codegen_expr<'ctx>(
     }
 }
 
+fn type_is_unsigned_int(ty: ast::BasicType) -> bool {
+    match ty {
+        ast::BasicType::S8
+        | ast::BasicType::S16
+        | ast::BasicType::S32
+        | ast::BasicType::S64
+        | ast::BasicType::Ssize => false,
+        ast::BasicType::U8
+        | ast::BasicType::U16
+        | ast::BasicType::U32
+        | ast::BasicType::U64
+        | ast::BasicType::Usize => true,
+        _ => false,
+    }
+}
+
 #[must_use]
 #[allow(unsafe_code)]
 pub fn codegen_const_value<'ctx>(
@@ -160,8 +176,15 @@ pub fn codegen_const_value<'ctx>(
         hir::ConstValue::Null => cg.ptr_type.const_zero().into(),
         hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
         hir::ConstValue::Int { val, neg, ty } => {
-            //@using sign_extend as neg, most likely incorrect (learn how to properly supply integers to llvm const int) 14.05.24
-            cg.basic_type_into_int(ty).const_int(val, neg).into()
+            let int_type = cg.basic_type_into_int(ty);
+            let unsigned = type_is_unsigned_int(ty);
+
+            if neg {
+                let negative = -(val as i64);
+                int_type.const_int(negative as u64, !unsigned).into()
+            } else {
+                int_type.const_int(val, !unsigned).into()
+            }
         }
         hir::ConstValue::IntS(val) => todo!("codegen: ConstValue::IntSigned"),
         hir::ConstValue::IntU(val) => todo!("codegen: ConstValue::IntUnsigned"),
