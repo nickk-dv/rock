@@ -130,10 +130,7 @@ fn build_executable<'ctx>(
         }
     }
 
-    //@only supporting links and other settings from root manifest 12.06.24
-    let manifest = session.root_manifest();
-
-    //@assuming windows
+    //@windows only
     if true {
         //sybsystem needs to be specified on windows (console, windows)
         //@only console with `main` entry point is supported, support WinMain when such feature is required 29.05.24
@@ -141,26 +138,36 @@ fn build_executable<'ctx>(
         // link with C runtime library: libcmt.lib (static), msvcrt.lib (dynamic)
         //@always linking with static C runtime library, support attributes or toml configs 29.05.24
         // to change this if needed, this might be a problem when trying to link C libraries (eg: raylib.lib)
-
-        match manifest.build.nodefaultlib {
-            Some(true) => {}
-            _ => args.push("/defaultlib:libcmt.lib".into()),
-        }
     } else {
         panic!("only windows targets are supported");
     }
 
-    if let Some(lib_paths) = &manifest.build.lib_paths {
-        for path in lib_paths.iter() {
-            //@assuming relative path from main package root 12.06.24
-            args.push(format!("/libpath:{}", path.to_string_lossy()));
+    let mut nodefaultlib = false;
+
+    for package_id in session.package_ids() {
+        let package = session.package(package_id);
+        let manifest = package.manifest();
+
+        match manifest.build.nodefaultlib {
+            Some(true) => nodefaultlib = true,
+            _ => {}
+        }
+        if let Some(lib_paths) = &manifest.build.lib_paths {
+            for path in lib_paths {
+                let lib_path = package.root_dir().join(path);
+                args.push(format!("/libpath:{}", lib_path.to_string_lossy()));
+            }
+        }
+        if let Some(links) = &manifest.build.links {
+            for link in links {
+                args.push(format!("{}", link));
+            }
         }
     }
 
-    if let Some(links) = &manifest.build.links {
-        for link in links {
-            args.push(format!("{}", link));
-        }
+    if !nodefaultlib {
+        //@windows only
+        args.push("/defaultlib:libcmt.lib".into());
     }
 
     // lld-link is called system wide, and requires llvm being installed @29.05.24

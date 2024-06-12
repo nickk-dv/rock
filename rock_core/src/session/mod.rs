@@ -22,6 +22,7 @@ pub struct File {
 
 id_impl!(PackageID);
 pub struct PackageData {
+    root_dir: PathBuf,
     file_count: usize,
     manifest: Manifest,
 }
@@ -50,7 +51,7 @@ impl Session {
         (0..self.packages.len()).map(PackageID::new)
     }
 
-    pub fn root_manifest(&self) -> &Manifest {
+    fn root_manifest(&self) -> &Manifest {
         &self.packages[0].manifest
     }
     pub fn is_executable(&self) -> bool {
@@ -67,6 +68,9 @@ impl Session {
 }
 
 impl PackageData {
+    pub fn root_dir(&self) -> &PathBuf {
+        &self.root_dir
+    }
     pub fn file_count(&self) -> usize {
         self.file_count
     }
@@ -184,7 +188,37 @@ fn process_package(
         }
     }
 
+    let location = format!(
+        "\nmanifest path: `{}`\nmanifest key: [build] `lib_paths`",
+        manifest_path.to_string_lossy()
+    );
+
+    if let Some(lib_paths) = &manifest.build.lib_paths {
+        for path in lib_paths {
+            if !path.is_relative() {
+                return Err(ErrorComp::message(format!(
+                    "library path `{}` must be relative{location}",
+                    path.to_string_lossy()
+                )));
+            }
+            let lib_path = root_dir.join(path);
+            if !lib_path.exists() {
+                return Err(ErrorComp::message(format!(
+                    "library path `{}` does not exist{location}",
+                    lib_path.to_string_lossy()
+                )));
+            }
+            if !lib_path.is_dir() {
+                return Err(ErrorComp::message(format!(
+                    "library path `{}` must be a directory{location}",
+                    lib_path.to_string_lossy()
+                )));
+            }
+        }
+    }
+
     let package = PackageData {
+        root_dir: root_dir.clone(),
         file_count,
         manifest,
     };
