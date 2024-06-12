@@ -6,6 +6,7 @@ mod emit_stmt;
 use crate::error::ErrorComp;
 use crate::fs_env;
 use crate::hir;
+use crate::session::Session;
 use inkwell::module;
 use inkwell::targets;
 use std::path::PathBuf;
@@ -34,22 +35,22 @@ impl BuildKind {
 
 pub fn codegen(
     hir: hir::Hir,
-    bin_name: String,
+    session: &Session,
     build_kind: BuildKind,
     emit_llvm: bool,
     args: Option<Vec<String>>,
 ) -> Result<(), ErrorComp> {
     let context_llvm = inkwell::context::Context::create();
     let (module, machine) = emit_mod::codegen_module(hir, &context_llvm);
-    let context = create_build_context(bin_name, build_kind)?;
+    let context = create_build_context(session, build_kind)?;
     module_verify(&context, &module, emit_llvm)?;
-    build_executable(&context, module, machine)?;
+    build_executable(&context, module, machine, session)?;
     run_executable(&context, args)?;
     Ok(())
 }
 
 fn create_build_context(
-    bin_name: String,
+    session: &Session,
     build_kind: BuildKind,
 ) -> Result<BuildContext, ErrorComp> {
     let mut build_dir = fs_env::dir_get_current_working()?;
@@ -59,6 +60,7 @@ fn create_build_context(
     build_dir.push(build_kind.as_str());
     fs_env::dir_create(&build_dir, false)?;
 
+    let bin_name = session.root_package_bin_name();
     let mut executable_path = build_dir.clone();
     executable_path.push(&bin_name);
     executable_path.set_extension("exe"); //@assuming windows
@@ -98,6 +100,7 @@ fn build_executable<'ctx>(
     context: &BuildContext,
     module: module::Module<'ctx>,
     machine: targets::TargetMachine,
+    session: &Session,
 ) -> Result<(), ErrorComp> {
     let object_path = context.build_dir.join(format!("{}.o", context.bin_name));
     machine
@@ -116,7 +119,7 @@ fn build_executable<'ctx>(
     //@check if they need to be comma separated instead of being separate
     match context.build_kind {
         BuildKind::Debug => {
-            args.push("/opt:noref".into());
+            args.push("/opt:ref".into());
             args.push("/opt:noicf".into());
             args.push("/opt:nolbr".into());
         }
@@ -127,6 +130,9 @@ fn build_executable<'ctx>(
         }
     }
 
+    //@only supporting links and other settings from root manifest 12.06.24
+    let manifest = session.root_manifest();
+
     //@assuming windows
     if true {
         //sybsystem needs to be specified on windows (console, windows)
@@ -135,9 +141,26 @@ fn build_executable<'ctx>(
         // link with C runtime library: libcmt.lib (static), msvcrt.lib (dynamic)
         //@always linking with static C runtime library, support attributes or toml configs 29.05.24
         // to change this if needed, this might be a problem when trying to link C libraries (eg: raylib.lib)
-        args.push("/defaultlib:libcmt.lib".into());
+
+        match manifest.build.nodefaultlib {
+            Some(true) => {}
+            _ => args.push("/defaultlib:libcmt.lib".into()),
+        }
     } else {
         panic!("only windows targets are supported");
+    }
+
+    if let Some(lib_paths) = &manifest.build.lib_paths {
+        for path in lib_paths.iter() {
+            //@assuming relative path from main package root 12.06.24
+            args.push(format!("/libpath:{}", path.to_string_lossy()));
+        }
+    }
+
+    if let Some(links) = &manifest.build.links {
+        for link in links {
+            args.push(format!("{}", link));
+        }
     }
 
     // lld-link is called system wide, and requires llvm being installed @29.05.24

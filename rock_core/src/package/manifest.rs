@@ -1,11 +1,12 @@
 use super::semver::Semver;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifest {
     pub package: PackageManifest,               // table key [package]
-    pub build: Option<BuildManifest>,           // table key [build]
+    pub build: BuildManifest,                   // table key [build]
     pub dependencies: BTreeMap<String, Semver>, // table key [dependencies]
 }
 
@@ -21,7 +22,10 @@ pub struct PackageManifest {
 
 #[derive(Serialize, Deserialize)]
 pub struct BuildManifest {
-    pub bin_name: String, // executable name
+    pub bin_name: Option<String>,        // executable name
+    pub nodefaultlib: Option<bool>,      // dont link against default lib
+    pub lib_paths: Option<Vec<PathBuf>>, // library search paths
+    pub links: Option<Vec<String>>,      // library names or paths to link against
 }
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]

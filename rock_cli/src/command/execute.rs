@@ -67,10 +67,18 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
         };
 
         let build = match data.kind {
-            PackageKind::Bin => Some(BuildManifest {
-                bin_name: data.name.clone(),
-            }),
-            PackageKind::Lib => None,
+            PackageKind::Bin => BuildManifest {
+                bin_name: Some(data.name.clone()),
+                nodefaultlib: None,
+                lib_paths: None,
+                links: None,
+            },
+            PackageKind::Lib => BuildManifest {
+                bin_name: None,
+                nodefaultlib: None,
+                lib_paths: None,
+                links: None,
+            },
         };
 
         let mut dependencies = BTreeMap::new();
@@ -162,8 +170,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);
 
-        let bin_name = session.root_package_bin_name();
-        let result = codegen::codegen(hir, bin_name, data.kind, data.emit_llvm, None);
+        let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, None);
         let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
         Ok(warnings)
     }
@@ -184,8 +191,7 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);
 
-        let bin_name = session.root_package_bin_name();
-        let result = codegen::codegen(hir, bin_name, data.kind, data.emit_llvm, Some(data.args));
+        let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, Some(data.args));
         let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
         Ok(warnings)
     }
