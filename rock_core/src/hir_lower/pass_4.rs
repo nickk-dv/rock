@@ -200,12 +200,12 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
 }
 
 fn check_const_dependency_cycle(
-    hir: &mut HirData,
+    hir: &HirData,
     emit: &mut HirEmit,
     tree: &Tree<ConstDependency>,
     parent_id: TreeNodeID,
     node_id: TreeNodeID,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     let cycle_id = match tree.find_cycle(node_id) {
         Some(cycle_id) => cycle_id,
         None => return Ok(()),
@@ -235,7 +235,7 @@ fn check_const_dependency_cycle(
                 hir.src(origin_id, expr.0.range)
             } else {
                 //@access to range information is behind consteval the state
-                // just always store SourceRange instead? 06.06.24
+                // always store SourceRange instead? 06.06.24
                 panic!("array len consteval range not available");
             }
         }
@@ -304,7 +304,7 @@ fn check_const_dependency_cycle(
                     (msg, src)
                 } else {
                     //@access to range information is behind consteval the state
-                    // just always store SourceRange instead? 06.06.24
+                    // always store SourceRange instead? 06.06.24
                     panic!("array len consteval range not available");
                 }
             }
@@ -325,10 +325,7 @@ fn check_const_dependency_cycle(
         src,
         info_vec,
     ));
-
-    // marking after message was finished to prevent panic! in ConstDependency::ArrayLen 15.05.24
-    const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-    Err(())
+    Err(parent_id)
 }
 
 fn const_dependencies_mark_error_up_to_root(
@@ -369,21 +366,6 @@ fn const_dependencies_mark_error_up_to_root(
     }
 }
 
-// currently only cycles cause making as Error up to root and returning @01.05.24
-// if dep being added to a tree is already an Error
-// it might be worth doing marking and still looking for cycles?
-// knowing that something is an Error can save processing time on constants up the tree
-// which would eventually be resolved to same Error
-// since they depend on constant which is already known to be Error
-
-//@make a function to add const depepencies and check cycles for any ConstDependency ? @12.05.24
-// instead of doing per type duplication?
-
-// 11.06.24
-//@array expr check dependencies
-//@normalize how all const evals are handled (mark error, do nothing, or check for expr deps)
-//@dont run fold on already errored expression (when path resolve errored)
-
 fn add_enum_variant_const_dependency<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -391,7 +373,7 @@ fn add_enum_variant_const_dependency<'hir>(
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::EnumVariantID,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     let data = hir.registry().enum_data(enum_id);
     let eval_id = data.variant(variant_id).value;
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
@@ -405,10 +387,7 @@ fn add_enum_variant_const_dependency<'hir>(
             add_expr_const_dependencies(hir, emit, tree, node_id, origin_id, expr.0)?;
             Ok(())
         }
-        hir::ConstEval::ResolvedError => {
-            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-            Err(())
-        }
+        hir::ConstEval::ResolvedError => Err(parent_id),
         hir::ConstEval::ResolvedValue(_) => Ok(()),
     }
 }
@@ -419,7 +398,7 @@ fn add_struct_size_const_dependency<'hir>(
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     struct_id: hir::StructID,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     let size_eval = hir.registry().struct_data(struct_id).size_eval;
 
     match size_eval {
@@ -433,10 +412,7 @@ fn add_struct_size_const_dependency<'hir>(
             }
             Ok(())
         }
-        hir::SizeEval::ResolvedError => {
-            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-            Err(())
-        }
+        hir::SizeEval::ResolvedError => Err(parent_id),
         hir::SizeEval::Resolved(_) => Ok(()),
     }
 }
@@ -447,7 +423,7 @@ fn add_const_var_const_dependency<'hir>(
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     const_id: hir::ConstID,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     let data = hir.registry().const_data(const_id);
     let const_ty = data.ty;
     let eval_id = data.value;
@@ -458,14 +434,12 @@ fn add_const_var_const_dependency<'hir>(
             let node_id = tree.add_child(parent_id, ConstDependency::Const(const_id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
 
-            add_type_usage_const_dependencies(hir, emit, tree, parent_id, const_ty)?; //@will order of eval be correct?
+            // @will order of eval be correct? 13.06.24
+            add_type_usage_const_dependencies(hir, emit, tree, parent_id, const_ty)?;
             add_expr_const_dependencies(hir, emit, tree, node_id, origin_id, expr.0)?;
             Ok(())
         }
-        hir::ConstEval::ResolvedError => {
-            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-            Err(())
-        }
+        hir::ConstEval::ResolvedError => Err(parent_id),
         hir::ConstEval::ResolvedValue(_) => Ok(()),
     }
 }
@@ -476,7 +450,7 @@ fn add_array_len_const_dependency<'hir>(
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     eval_id: hir::ConstEvalID,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
 
     match eval {
@@ -487,10 +461,7 @@ fn add_array_len_const_dependency<'hir>(
             add_expr_const_dependencies(hir, emit, tree, node_id, origin_id, expr.0)?;
             Ok(())
         }
-        hir::ConstEval::ResolvedError => {
-            const_dependencies_mark_error_up_to_root(hir, tree, parent_id);
-            Err(())
-        }
+        hir::ConstEval::ResolvedError => Err(parent_id),
         hir::ConstEval::ResolvedValue(_) => Ok(()),
     }
 }
@@ -501,7 +472,7 @@ fn add_type_size_const_dependencies<'hir>(
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     ty: hir::Type,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
@@ -528,7 +499,7 @@ fn add_type_usage_const_dependencies<'hir>(
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     ty: hir::Type,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
@@ -561,38 +532,6 @@ fn add_type_usage_const_dependencies<'hir>(
     Ok(())
 }
 
-fn error_cannot_use_in_constants(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
-    origin_id: hir::ModuleID,
-    range: TextRange,
-    name: &str,
-) -> Result<(), ()> {
-    emit.error(ErrorComp::new(
-        format!("cannot use `{name}` expression in constants"),
-        hir.src(origin_id, range),
-        None,
-    ));
-    Err(())
-}
-
-fn error_cannot_refer_to_in_constants(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
-    origin_id: hir::ModuleID,
-    range: TextRange,
-    name: &str,
-) -> Result<(), ()> {
-    emit.error(ErrorComp::new(
-        format!("cannot refer to `{name}` in constants"),
-        hir.src(origin_id, range),
-        None,
-    ));
-    Err(())
-}
-
-//@ in result return from which node to mark as error?
-// and mark at top lvl? (do that for `error_cannot_use_in_constants`)
 fn add_expr_const_dependencies<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
@@ -600,80 +539,87 @@ fn add_expr_const_dependencies<'hir, 'ast>(
     parent_id: TreeNodeID,
     origin_id: hir::ModuleID,
     expr: &'ast ast::Expr<'ast>,
-) -> Result<(), ()> {
+) -> Result<(), TreeNodeID> {
     match expr.kind {
-        ast::ExprKind::LitNull => {}
-        ast::ExprKind::LitBool { .. } => {}
-        ast::ExprKind::LitInt { .. } => {}
-        ast::ExprKind::LitFloat { .. } => {}
-        ast::ExprKind::LitChar { .. } => {}
-        ast::ExprKind::LitString { .. } => {}
+        ast::ExprKind::LitNull => Ok(()),
+        ast::ExprKind::LitBool { .. } => Ok(()),
+        ast::ExprKind::LitInt { .. } => Ok(()),
+        ast::ExprKind::LitFloat { .. } => Ok(()),
+        ast::ExprKind::LitChar { .. } => Ok(()),
+        ast::ExprKind::LitString { .. } => Ok(()),
         ast::ExprKind::If { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "if")?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "if");
+            Err(parent_id)
         }
         ast::ExprKind::Block { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "block")?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "block");
+            Err(parent_id)
         }
         ast::ExprKind::Match { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "match")?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "match");
+            Err(parent_id)
         }
         ast::ExprKind::Field { target, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
+            Ok(())
         }
         ast::ExprKind::Index { target, index } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, index)?;
+            Ok(())
         }
         ast::ExprKind::Slice {
             target,
             mutt,
             slice_range,
         } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "slice")?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "slice");
+            Err(parent_id)
         }
         ast::ExprKind::Call { target, input } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
-            for &expr in input.iter() {
-                add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;
-            }
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "procedure call")?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "procedure call");
+            Err(parent_id)
         }
         ast::ExprKind::Cast { target, .. } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?
+            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
+            Ok(())
         }
         ast::ExprKind::Sizeof { ty } => {
             let ty = pass_3::type_resolve_delayed(hir, emit, origin_id, *ty);
             add_type_size_const_dependencies(hir, emit, tree, parent_id, ty)?;
+            Ok(())
         }
         ast::ExprKind::Item { path } => {
             let (value_id, _) = pass_5::path_resolve_value(hir, emit, None, origin_id, path);
             match value_id {
-                pass_5::ValueID::None => {}
+                pass_5::ValueID::None => Err(parent_id),
                 pass_5::ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
                     // change the result Err type with delayed mutation of HirData only at top lvl?
                     for param in hir.registry().proc_data(proc_id).params {
-                        add_type_usage_const_dependencies(hir, emit, tree, parent_id, param.ty)?
+                        add_type_usage_const_dependencies(hir, emit, tree, parent_id, param.ty)?;
                     }
                     let data = hir.registry().proc_data(proc_id);
-                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, data.return_ty)?
-                } //@deps for each type in this?
+                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, data.return_ty)?;
+                    Ok(())
+                }
                 pass_5::ValueID::Enum(enum_id, variant_id) => {
                     add_enum_variant_const_dependency(
                         hir, emit, tree, parent_id, enum_id, variant_id,
                     )?;
+                    Ok(())
                 }
                 pass_5::ValueID::Const(const_id) => {
                     add_const_var_const_dependency(hir, emit, tree, parent_id, const_id)?;
+                    Ok(())
                 }
                 pass_5::ValueID::Global(_) => {
-                    error_cannot_refer_to_in_constants(
-                        hir, emit, origin_id, expr.range, "globals",
-                    )?;
+                    error_cannot_refer_to_in_constants(hir, emit, origin_id, expr.range, "globals");
+                    Err(parent_id)
                 }
                 pass_5::ValueID::Local(_) => {
-                    error_cannot_refer_to_in_constants(hir, emit, origin_id, expr.range, "locals")?;
+                    error_cannot_refer_to_in_constants(hir, emit, origin_id, expr.range, "locals");
+                    Err(parent_id)
                 }
                 pass_5::ValueID::Param(_) => {
                     error_cannot_refer_to_in_constants(
@@ -682,7 +628,8 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                         origin_id,
                         expr.range,
                         "parameters",
-                    )?;
+                    );
+                    Err(parent_id)
                 }
             }
         }
@@ -692,33 +639,67 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             {
                 let ty = hir::Type::Struct(struct_id);
                 add_type_usage_const_dependencies(hir, emit, tree, parent_id, ty)?;
-            }
-            for init in struct_init.input {
-                add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, init.expr)?;
+                for init in struct_init.input {
+                    add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, init.expr)?;
+                }
+                Ok(())
+            } else {
+                Err(parent_id)
             }
         }
         ast::ExprKind::ArrayInit { input } => {
             for &expr in input {
                 add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;
             }
+            Ok(())
         }
         ast::ExprKind::ArrayRepeat { expr, len } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, len.0)?;
+            Ok(())
         }
         ast::ExprKind::Address { rhs, .. } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, rhs)?;
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "address")?;
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "address");
+            Err(parent_id)
         }
         ast::ExprKind::Unary { rhs, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, rhs)?;
+            Ok(())
         }
         ast::ExprKind::Binary { bin, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, bin.lhs)?;
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, bin.rhs)?;
+            Ok(())
         }
     }
-    Ok(())
+}
+
+fn error_cannot_use_in_constants(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: hir::ModuleID,
+    range: TextRange,
+    name: &str,
+) {
+    emit.error(ErrorComp::new(
+        format!("cannot use `{name}` expression in constants"),
+        hir.src(origin_id, range),
+        None,
+    ));
+}
+
+fn error_cannot_refer_to_in_constants(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: hir::ModuleID,
+    range: TextRange,
+    name: &str,
+) {
+    emit.error(ErrorComp::new(
+        format!("cannot refer to `{name}` in constants"),
+        hir.src(origin_id, range),
+        None,
+    ));
 }
 
 fn resolve_const_dependency_tree<'hir>(
