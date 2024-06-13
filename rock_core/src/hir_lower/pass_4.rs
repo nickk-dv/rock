@@ -29,9 +29,11 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
                     let (mut tree, root_id) =
                         Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
 
-                    if add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
-                        .is_ok()
-                    {
+                    if let Err(from_id) = add_expr_const_dependencies(
+                        hir, emit, &mut tree, root_id, origin_id, expr.0,
+                    ) {
+                        const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    } else {
                         resolve_const_dependency_tree(hir, emit, &tree);
                     }
                 }
@@ -42,22 +44,22 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
     }
 
     for id in hir.registry().struct_ids() {
-        let eval = hir.registry().struct_data(id).size_eval;
+        let data = hir.registry().struct_data(id);
 
-        if matches!(eval, hir::SizeEval::Unresolved) {
+        if matches!(data.size_eval, hir::SizeEval::Unresolved) {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
+            let mut is_ok = true;
 
-            let data = hir.registry().struct_data(id);
-            let mut errored = false;
             for field in data.fields {
-                if !add_type_size_const_dependencies(hir, emit, &mut tree, root_id, field.ty)
-                    .is_ok()
+                if let Err(from_id) =
+                    add_type_size_const_dependencies(hir, emit, &mut tree, root_id, field.ty)
                 {
-                    errored = true;
+                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    is_ok = false;
                     break;
                 }
             }
-            if !errored {
+            if is_ok {
                 resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
@@ -71,13 +73,16 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
             hir::ConstEval::Unresolved(expr) => {
                 let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
 
-                if add_type_usage_const_dependencies(hir, emit, &mut tree, root_id, data.ty).is_ok()
+                if let Err(from_id) =
+                    add_type_usage_const_dependencies(hir, emit, &mut tree, root_id, data.ty)
                 {
-                    if add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
-                        .is_ok()
-                    {
-                        resolve_const_dependency_tree(hir, emit, &tree);
-                    }
+                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                } else if let Err(from_id) =
+                    add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
+                {
+                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                } else {
+                    resolve_const_dependency_tree(hir, emit, &tree);
                 }
             }
             hir::ConstEval::ResolvedError => {}
@@ -93,13 +98,16 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
             hir::ConstEval::Unresolved(expr) => {
                 let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
 
-                if add_type_usage_const_dependencies(hir, emit, &mut tree, root_id, data.ty).is_ok()
+                if let Err(from_id) =
+                    add_type_usage_const_dependencies(hir, emit, &mut tree, root_id, data.ty)
                 {
-                    if add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
-                        .is_ok()
-                    {
-                        resolve_const_dependency_tree(hir, emit, &tree);
-                    }
+                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                } else if let Err(from_id) =
+                    add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
+                {
+                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                } else {
+                    resolve_const_dependency_tree(hir, emit, &tree);
                 }
             }
             hir::ConstEval::ResolvedError => {}
@@ -110,6 +118,8 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
     //@assuming that remaining constevals are array len 15.05.24
     // that didnt cycle with anything, thus can be resolved in `immediate mode`
     // this is only true when previos const dependencies and const evals were handled correctly
+    //@how will unresolved expressions due to something else erroring earlier behave?
+    // for example struct field with some unresolved array len
     for eval_id in hir.registry().const_eval_ids() {
         let (eval, _) = hir.registry().const_eval(eval_id);
 
@@ -399,14 +409,13 @@ fn add_struct_size_const_dependency<'hir>(
     parent_id: TreeNodeID,
     struct_id: hir::StructID,
 ) -> Result<(), TreeNodeID> {
-    let size_eval = hir.registry().struct_data(struct_id).size_eval;
+    let data = hir.registry().struct_data(struct_id);
 
-    match size_eval {
+    match data.size_eval {
         hir::SizeEval::Unresolved => {
             let node_id = tree.add_child(parent_id, ConstDependency::StructSize(struct_id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
 
-            let data = hir.registry().struct_data(struct_id);
             for field in data.fields {
                 add_type_size_const_dependencies(hir, emit, tree, node_id, field.ty)?;
             }
