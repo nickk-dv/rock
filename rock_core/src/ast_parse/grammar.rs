@@ -22,20 +22,6 @@ macro_rules! comma_separated_list {
     }};
 }
 
-macro_rules! semi_separated_block {
-    ($p:expr, $parse_function:ident, $node_buffer:ident) => {{
-        $p.expect(T!['{'])?;
-        let start_offset = $p.state.$node_buffer.start();
-        while !$p.at(T!['}']) && !$p.at(T![eof]) {
-            let item = $parse_function($p)?;
-            $p.state.$node_buffer.add(item);
-            $p.expect(T![;])?;
-        }
-        $p.expect(T!['}'])?;
-        $p.state.$node_buffer.take(start_offset, &mut $p.state.arena)
-    }};
-}
-
 pub fn module<'ast>(
     mut p: Parser<'ast, '_, '_, '_>,
     file_id: FileID,
@@ -144,7 +130,7 @@ fn enum_item<'ast>(
     if basic.is_some() {
         p.bump();
     }
-    let variants = semi_separated_block!(p, enum_variant, enum_variants);
+    let variants = comma_separated_list!(p, enum_variant, enum_variants, T!['{'], T!['}']);
     Ok(p.state.arena.alloc(EnumItem {
         vis,
         name,
@@ -166,7 +152,7 @@ fn struct_item<'ast>(
 ) -> Result<&'ast StructItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
-    let fields = semi_separated_block!(p, struct_field, struct_fields);
+    let fields = comma_separated_list!(p, struct_field, struct_fields, T!['{'], T!['}']);
     Ok(p.state.arena.alloc(StructItem { vis, name, fields }))
 }
 
