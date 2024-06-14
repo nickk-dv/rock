@@ -1004,9 +1004,7 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
             p.state.match_arms.add(arm);
         }
 
-        if !p.at_prev(T!['}']) {
-            p.expect(T![,])?;
-        }
+        p.expect(T![,])?;
         if fallback.is_some() {
             break;
         }
