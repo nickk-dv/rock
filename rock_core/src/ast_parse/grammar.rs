@@ -691,6 +691,11 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             let ty_ref = p.state.arena.alloc(ty);
             ExprKind::Sizeof { ty: ty_ref }
         }
+        T![.] => {
+            p.bump();
+            let name = name(p)?;
+            ExprKind::Variant { name }
+        }
         T![ident] => {
             let path = path(p)?;
 

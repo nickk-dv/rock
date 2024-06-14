@@ -577,15 +577,11 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, index)?;
             Ok(())
         }
-        ast::ExprKind::Slice {
-            target,
-            mutt,
-            slice_range,
-        } => {
+        ast::ExprKind::Slice { .. } => {
             error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "slice");
             Err(parent_id)
         }
-        ast::ExprKind::Call { target, input } => {
+        ast::ExprKind::Call { .. } => {
             error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "procedure call");
             Err(parent_id)
         }
@@ -597,6 +593,11 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             let ty = pass_3::type_resolve_delayed(hir, emit, origin_id, *ty);
             add_type_size_const_dependencies(hir, emit, tree, parent_id, ty)?;
             Ok(())
+        }
+        ast::ExprKind::Variant { .. } => {
+            //@no type inference on this `ast name resolve` pass thus cannot infer variant type 14.06.24
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "variant selector");
+            Err(parent_id)
         }
         ast::ExprKind::Item { path } => {
             let (value_id, _) = pass_5::path_resolve_value(hir, emit, None, origin_id, path);
@@ -667,7 +668,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
-        ast::ExprKind::Address { rhs, .. } => {
+        ast::ExprKind::Address { .. } => {
             error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "address");
             Err(parent_id)
         }
