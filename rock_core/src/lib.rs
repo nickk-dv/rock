@@ -15,6 +15,7 @@ mod lexer;
 mod macros;
 pub mod package;
 pub mod session;
+mod temp_buffer;
 pub mod text;
 mod token;
 

@@ -3,6 +3,7 @@ use crate::ast::*;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use crate::intern::{InternID, InternPool};
 use crate::session::FileID;
+use crate::temp_buffer::TempBuffer;
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
@@ -24,18 +25,18 @@ pub struct ParseState<'ast, 'intern> {
     pub string_is_cstr: Vec<bool>,
     pub packages: Vec<Package<'ast>>,
     pub errors: Vec<ErrorComp>,
-    pub items: NodeBuffer<Item<'ast>>,
-    pub proc_params: NodeBuffer<ProcParam<'ast>>,
-    pub enum_variants: NodeBuffer<EnumVariant<'ast>>,
-    pub struct_fields: NodeBuffer<StructField<'ast>>,
-    pub import_symbols: NodeBuffer<ImportSymbol>,
-    pub names: NodeBuffer<Name>,
-    pub types: NodeBuffer<Type<'ast>>,
-    pub stmts: NodeBuffer<Stmt<'ast>>,
-    pub branches: NodeBuffer<Branch<'ast>>,
-    pub match_arms: NodeBuffer<MatchArm<'ast>>,
-    pub exprs: NodeBuffer<&'ast Expr<'ast>>,
-    pub field_inits: NodeBuffer<FieldInit<'ast>>,
+    pub items: TempBuffer<Item<'ast>>,
+    pub proc_params: TempBuffer<ProcParam<'ast>>,
+    pub enum_variants: TempBuffer<EnumVariant<'ast>>,
+    pub struct_fields: TempBuffer<StructField<'ast>>,
+    pub import_symbols: TempBuffer<ImportSymbol>,
+    pub names: TempBuffer<Name>,
+    pub types: TempBuffer<Type<'ast>>,
+    pub stmts: TempBuffer<Stmt<'ast>>,
+    pub branches: TempBuffer<Branch<'ast>>,
+    pub match_arms: TempBuffer<MatchArm<'ast>>,
+    pub exprs: TempBuffer<&'ast Expr<'ast>>,
+    pub field_inits: TempBuffer<FieldInit<'ast>>,
 }
 
 impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
@@ -148,18 +149,18 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
             string_is_cstr: Vec::with_capacity(1024),
             packages: Vec::new(),
             errors: Vec::new(),
-            items: NodeBuffer::new(),
-            proc_params: NodeBuffer::new(),
-            enum_variants: NodeBuffer::new(),
-            struct_fields: NodeBuffer::new(),
-            import_symbols: NodeBuffer::new(),
-            names: NodeBuffer::new(),
-            types: NodeBuffer::new(),
-            stmts: NodeBuffer::new(),
-            branches: NodeBuffer::new(),
-            match_arms: NodeBuffer::new(),
-            exprs: NodeBuffer::new(),
-            field_inits: NodeBuffer::new(),
+            items: TempBuffer::new(),
+            proc_params: TempBuffer::new(),
+            enum_variants: TempBuffer::new(),
+            struct_fields: TempBuffer::new(),
+            import_symbols: TempBuffer::new(),
+            names: TempBuffer::new(),
+            types: TempBuffer::new(),
+            stmts: TempBuffer::new(),
+            branches: TempBuffer::new(),
+            match_arms: TempBuffer::new(),
+            exprs: TempBuffer::new(),
+            field_inits: TempBuffer::new(),
         }
     }
 
@@ -176,30 +177,5 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
         } else {
             ResultComp::Err(DiagnosticCollection::new().join_errors(self.errors))
         }
-    }
-}
-
-pub struct NodeOffset(usize);
-pub struct NodeBuffer<T: Copy> {
-    buffer: Vec<T>,
-}
-
-impl<T: Copy> NodeBuffer<T> {
-    fn new() -> Self {
-        Self { buffer: Vec::new() }
-    }
-
-    pub fn start(&self) -> NodeOffset {
-        NodeOffset(self.buffer.len())
-    }
-
-    pub fn add(&mut self, value: T) {
-        self.buffer.push(value);
-    }
-
-    pub fn take<'arena>(&mut self, start: NodeOffset, arena: &mut Arena<'arena>) -> &'arena [T] {
-        let slice = arena.alloc_slice(&self.buffer[start.0..]);
-        self.buffer.truncate(start.0);
-        slice
     }
 }
