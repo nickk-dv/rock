@@ -9,12 +9,12 @@ pub struct SyntaxTree<'syn> {
     tokens: TokenList,
 }
 
-id_impl!(NodeID);
 pub struct Node<'syn> {
     kind: SyntaxKind,
     content: &'syn [NodeOrToken],
 }
 
+id_impl!(NodeID);
 id_impl!(TokenID);
 pub enum NodeOrToken {
     Node(NodeID),
@@ -24,6 +24,8 @@ pub enum NodeOrToken {
 #[allow(non_camel_case_types)]
 pub enum SyntaxKind {
     SOURCE_FILE,
+    TOMBSTONE,
+    ERROR,
 
     PROC_ITEM,
     PARAM_LIST,
