@@ -81,13 +81,14 @@ fn proc_item<'ast>(
     let mut is_variadic = false;
     p.expect(T!['('])?;
     while !p.at(T![')']) && !p.at(T![eof]) {
+        //@allowing variadic first, validate param count >= 1 in hir_lower
+        if p.eat(T![..]) {
+            is_variadic = true;
+            break;
+        }
         let param = proc_param(p)?;
         p.state.proc_params.add(param);
         if !p.eat(T![,]) {
-            break;
-        }
-        if p.eat(T![..]) {
-            is_variadic = true;
             break;
         }
     }

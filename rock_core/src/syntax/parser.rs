@@ -41,6 +41,10 @@ impl Parser {
         self.peek() == token
     }
 
+    pub fn at_next(&self, token: Token) -> bool {
+        self.peek_next() == token
+    }
+
     pub fn at_set(&self, token_set: TokenSet) -> bool {
         token_set.contains(self.peek())
     }
@@ -99,7 +103,7 @@ impl Parser {
         Marker::new(event_pos)
     }
 
-    fn error<S: Into<String>>(&mut self, message: S) {
+    pub fn error<S: Into<String>>(&mut self, message: S) {
         self.push_event(Event::Error {
             message: message.into(),
         });
