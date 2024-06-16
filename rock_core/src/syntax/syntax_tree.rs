@@ -21,6 +21,7 @@ pub enum NodeOrToken {
     Token(TokenID),
 }
 
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub enum SyntaxKind {
     SOURCE_FILE,

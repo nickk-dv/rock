@@ -22,7 +22,7 @@ macro_rules! token_gen {
         macro_rules! T {
             $( [$token] => [Token::$name]; )+
         }
-        #[derive(Copy, Clone, Debug, PartialEq)]
+        #[derive(Copy, Clone, PartialEq)]
         pub enum Token {
             $( $name, )+
         }

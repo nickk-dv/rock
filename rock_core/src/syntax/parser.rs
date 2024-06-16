@@ -67,7 +67,7 @@ impl Parser {
         if self.eat(token) {
             return true;
         }
-        self.error(format!("expected {:?}", token));
+        self.error(format!("expected {}", token.as_str()));
         false
     }
 
@@ -128,7 +128,7 @@ impl Parser {
 
     fn step_bump(&self) {
         self.steps.set(self.steps.get() + 1);
-        assert!(self.steps.get() < 16_000_000, "parser is stuck");
+        assert!(self.steps.get() < 1_000_000, "parser is stuck");
     }
 }
 
