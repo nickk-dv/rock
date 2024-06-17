@@ -22,6 +22,10 @@ fn parse_test() {
     proc something(x: , y ) -> {
         let x: s32 = null;
         let g = (23);
+        if true {
+            let c = 10;
+        } else if false {}
+        else {}
     }
     proc something3 ( -> proc (math.Vec3, s32, ..) -> u64;
     enum TileKind {
@@ -462,7 +466,7 @@ fn stmt(p: &mut Parser) {
             if p.at(T!['{']) {
                 block(p);
             } else {
-                short_block(p);
+                block_short(p);
             }
             m.complete(p, SyntaxKind::STMT_DEFER);
         }
@@ -515,11 +519,7 @@ fn loop_(p: &mut Parser) {
         }
         _ => expr(p),
     }
-    if p.at(T!['{']) {
-        block(p);
-    } else {
-        p.error("expected block");
-    }
+    block_expect(p);
     m.complete(p, SyntaxKind::STMT_LOOP);
 }
 
@@ -645,7 +645,21 @@ fn primary_expr(p: &mut Parser) {
     }
 }
 
-fn if_(p: &mut Parser) {}
+fn if_(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![if]);
+    expr(p);
+    block_expect(p);
+    while p.eat(T![else]) {
+        if p.eat(T![if]) {
+            expr(p);
+            block_expect(p);
+        } else {
+            break;
+        }
+    }
+    m.complete(p, SyntaxKind::EXPR_IF);
+}
 
 fn block(p: &mut Parser) {
     let m = p.start();
@@ -657,16 +671,60 @@ fn block(p: &mut Parser) {
     m.complete(p, SyntaxKind::EXPR_BLOCK);
 }
 
-fn short_block(p: &mut Parser) {
+fn block_expect(p: &mut Parser) {
+    if p.at(T!['{']) {
+        block(p);
+    } else {
+        p.error("expected block");
+    }
+}
+
+fn block_short(p: &mut Parser) {
     let m = p.start();
     stmt(p);
     m.complete(p, SyntaxKind::EXPR_BLOCK);
 }
 
-fn match_(p: &mut Parser) {}
+fn match_(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![match]);
+    expr(p);
+    if p.at(T!['{']) {
+        match_arm_list(p);
+    } else {
+        p.error_bump("expected match arm list");
+    }
+    m.complete(p, SyntaxKind::EXPR_MATCH);
+}
 
-fn match_arm_list(p: &mut Parser) {}
+fn match_arm_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['{']);
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        let fallback = match_arm(p);
+        if !p.at(T!['}']) {
+            p.expect(T![,]);
+        }
+        if fallback {
+            break;
+        }
+    }
+    p.expect(T!['}']);
+    m.complete(p, SyntaxKind::MATCH_ARM_LIST);
+}
 
-fn match_arm(p: &mut Parser) {
-    let x = (2) + (3);
+fn match_arm(p: &mut Parser) -> bool {
+    let m = p.start();
+    if p.eat(T![_]) {
+        p.expect(T![->]);
+        expr(p);
+        m.complete(p, SyntaxKind::MATCH_ARM_FALLBACK);
+        true
+    } else {
+        expr(p);
+        p.expect(T![->]);
+        expr(p);
+        m.complete(p, SyntaxKind::MATCH_ARM);
+        false
+    }
 }

@@ -80,6 +80,7 @@ pub enum SyntaxKind {
     EXPR_MATCH,
     MATCH_ARM_LIST,
     MATCH_ARM,
+    MATCH_ARM_FALLBACK,
     EXPR_FIELD,
     EXPR_INDEX,
     EXPR_SLICE,
