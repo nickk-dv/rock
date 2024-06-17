@@ -18,6 +18,7 @@ pub fn parse(source: &str, file_id: FileID) -> Result<SyntaxTree, Vec<ErrorComp>
 fn parse_test() {
     let source = r#"
     
+    import name.
     proc something(x: , y )
     proc something3 ( -> proc (math.Vec3, s32, ..) -> u64;
     enum TileKind {
@@ -88,6 +89,7 @@ const RECOVER_ITEM: TokenSet = TokenSet::new(&[
 const RECOVER_PARAM_LIST: TokenSet = RECOVER_ITEM.combine(TokenSet::new(&[T![->], T!['{'], T![;]]));
 const RECOVER_VARIANT_LIST: TokenSet = RECOVER_ITEM;
 const RECOVER_FIELD_LIST: TokenSet = RECOVER_ITEM;
+const RECOVER_IMPORT_SYMBOL_LIST: TokenSet = RECOVER_ITEM.combine(TokenSet::new(&[T![;]]));
 
 fn proc_item(p: &mut Parser) {
     let m = p.start();
@@ -245,12 +247,50 @@ fn global_item(p: &mut Parser) {
 fn import_item(p: &mut Parser) {
     let m = p.start();
     p.bump(T![import]);
+    name(p);
+    if p.eat(T![/]) {
+        name(p);
+    }
+    if p.eat(T![as]) {
+        name(p);
+    }
+    if p.eat(T![.]) {
+        if p.at(T!['{']) {
+            import_symbol_list(p);
+        } else {
+            p.error_recover("expected import symbol list", RECOVER_IMPORT_SYMBOL_LIST);
+        }
+        p.eat(T![;]);
+    } else {
+        p.expect(T![;]);
+    }
     m.complete(p, SyntaxKind::IMPORT_ITEM);
 }
 
-fn import_symbol_list(p: &mut Parser) {}
+fn import_symbol_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['{']);
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        if p.at(T![ident]) {
+            import_symbol(p);
+            if !p.at(T!['}']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected import symbol", RECOVER_IMPORT_SYMBOL_LIST);
+            break;
+        }
+    }
+    p.expect(T!['}']);
+    m.complete(p, SyntaxKind::IMPORT_SYMBOL_LIST);
+}
 
-fn import_symbol(p: &mut Parser) {}
+fn import_symbol(p: &mut Parser) {
+    name(p);
+    if p.eat(T![as]) {
+        name(p);
+    }
+}
 
 fn visibility(p: &mut Parser) {}
 
