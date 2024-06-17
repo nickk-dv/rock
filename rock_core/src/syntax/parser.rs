@@ -45,6 +45,10 @@ impl Parser {
         self.peek_next() == token
     }
 
+    pub fn at_prev(&self, token: Token) -> bool {
+        self.input.get_token(self.cursor - 1) == token
+    }
+
     pub fn at_set(&self, token_set: TokenSet) -> bool {
         token_set.contains(self.peek())
     }

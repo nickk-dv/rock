@@ -19,7 +19,9 @@ fn parse_test() {
     let source = r#"
     
     import name.
-    proc something(x: , y )
+    proc something(x: , y ) -> {
+        let x: s32 = null;
+    }
     proc something3 ( -> proc (math.Vec3, s32, ..) -> u64;
     enum TileKind {
         L
@@ -430,14 +432,127 @@ fn type_slice_or_array(p: &mut Parser) {
     }
 }
 
-fn stmt(p: &mut Parser) {}
+fn stmt(p: &mut Parser) {
+    match p.peek() {
+        T![break] => {
+            let m = p.start();
+            p.bump(T![break]);
+            p.expect(T![;]);
+            m.complete(p, SyntaxKind::STMT_BREAK);
+        }
+        T![continue] => {
+            let m = p.start();
+            p.bump(T![continue]);
+            p.expect(T![;]);
+            m.complete(p, SyntaxKind::STMT_CONTINUE);
+        }
+        T![return] => {
+            let m = p.start();
+            p.bump(T![return]);
+            if !p.at(T![;]) {
+                expr(p);
+            }
+            p.expect(T![;]);
+            m.complete(p, SyntaxKind::STMT_RETURN);
+        }
+        T![defer] => {
+            let m = p.start();
+            p.bump(T![defer]);
+            if p.at(T!['{']) {
+                block(p);
+            } else {
+                short_block(p);
+            }
+            m.complete(p, SyntaxKind::STMT_DEFER);
+        }
+        T![for] => loop_(p),
+        T![let] | T![mut] => local(p),
+        T![->] => {
+            let m = p.start();
+            p.bump(T![->]);
+            expr(p);
+            p.expect(T![;]);
+            m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
+        }
+        _ => {
+            let m = p.start();
+            expr(p);
+            if p.peek().as_assign_op().is_some() {
+                p.bump(p.peek());
+                expr(p);
+                p.expect(T![;]);
+                m.complete(p, SyntaxKind::STMT_ASSIGN);
+            } else {
+                if !p.at_prev(T!['}']) {
+                    p.expect(T![;]);
+                }
+                m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
+            }
+        }
+    }
+}
+
+fn loop_(p: &mut Parser) {
+    let m = p.start();
+    match p.peek() {
+        T!['{'] => {}
+        T![let] | T![mut] => {
+            local(p);
+
+            expr(p);
+            p.expect(T![;]);
+
+            let m = p.start();
+            expr(p);
+            if p.peek().as_assign_op().is_some() {
+                p.bump(p.peek());
+                expr(p);
+            } else {
+                p.error("expected assignment operator");
+            }
+            m.complete(p, SyntaxKind::STMT_ASSIGN);
+        }
+        _ => expr(p),
+    }
+    block(p);
+    m.complete(p, SyntaxKind::STMT_LOOP);
+}
+
+fn local(p: &mut Parser) {
+    let m = p.start();
+    match p.peek() {
+        T![let] => p.bump(T![let]),
+        T![mut] => p.bump(T![mut]),
+        _ => unreachable!(),
+    }
+    name(p);
+    if p.eat(T![:]) {
+        ty(p);
+        if p.eat(T![=]) {
+            expr(p);
+        }
+    } else {
+        p.expect(T![=]);
+        expr(p);
+    }
+    p.expect(T![;]);
+    m.complete(p, SyntaxKind::STMT_LOCAL);
+}
 
 fn expr(p: &mut Parser) {}
 
 fn block(p: &mut Parser) {
     let m = p.start();
-    p.bump(T!['{']);
-    //@stmt list
+    p.expect(T!['{']);
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        stmt(p);
+    }
     p.expect(T!['}']);
+    m.complete(p, SyntaxKind::EXPR_BLOCK);
+}
+
+fn short_block(p: &mut Parser) {
+    let m = p.start();
+    stmt(p);
     m.complete(p, SyntaxKind::EXPR_BLOCK);
 }
