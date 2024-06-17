@@ -67,6 +67,7 @@ pub enum SyntaxKind {
     STMT_EXPR_SEMI,
     STMT_EXPR_TAIL,
 
+    EXPR_PAREN,
     EXPR_LIT_NULL,
     EXPR_LIT_BOOL,
     EXPR_LIT_INT,

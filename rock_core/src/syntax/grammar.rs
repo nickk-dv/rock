@@ -21,6 +21,7 @@ fn parse_test() {
     import name.
     proc something(x: , y ) -> {
         let x: s32 = null;
+        let g = (23);
     }
     proc something3 ( -> proc (math.Vec3, s32, ..) -> u64;
     enum TileKind {
@@ -108,7 +109,7 @@ fn proc_item(p: &mut Parser) {
     if p.at(T!['{']) {
         block(p);
     } else if !p.eat(T![;]) {
-        p.error_recover("expected `{` or `;`", RECOVER_ITEM);
+        p.error_recover("expected block or `;`", RECOVER_ITEM);
     }
     m.complete(p, SyntaxKind::PROC_ITEM);
 }
@@ -514,7 +515,11 @@ fn loop_(p: &mut Parser) {
         }
         _ => expr(p),
     }
-    block(p);
+    if p.at(T!['{']) {
+        block(p);
+    } else {
+        p.error("expected block");
+    }
     m.complete(p, SyntaxKind::STMT_LOOP);
 }
 
@@ -539,11 +544,112 @@ fn local(p: &mut Parser) {
     m.complete(p, SyntaxKind::STMT_LOCAL);
 }
 
-fn expr(p: &mut Parser) {}
+fn expr(p: &mut Parser) {
+    sub_expr(p, 0);
+}
+
+fn sub_expr(p: &mut Parser, min_prec: u32) {
+    primary_expr(p);
+    loop {
+        let prec: u32;
+        if let Some(bin_op) = p.peek().as_bin_op() {
+            prec = bin_op.prec();
+            if prec < min_prec {
+                break;
+            }
+            p.bump(p.peek());
+            sub_expr(p, prec + 1);
+        } else {
+            break;
+        }
+    }
+}
+
+fn primary_expr(p: &mut Parser) {
+    if p.at(T!['(']) {
+        let m = p.start();
+        p.bump(T!['(']);
+        expr(p);
+        p.expect(T![')']);
+        m.complete(p, SyntaxKind::EXPR_PAREN);
+        return;
+    }
+
+    if p.peek().as_un_op().is_some() {
+        let m = p.start();
+        p.bump(p.peek());
+        primary_expr(p);
+        m.complete(p, SyntaxKind::EXPR_UNARY);
+        return;
+    }
+
+    match p.peek() {
+        T![null] => {
+            let m = p.start();
+            p.bump(T![null]);
+            m.complete(p, SyntaxKind::EXPR_LIT_NULL);
+        }
+        T![true] | T![false] => {
+            let m = p.start();
+            p.bump(p.peek());
+            m.complete(p, SyntaxKind::EXPR_LIT_BOOL);
+        }
+        T![int_lit] => {
+            let m = p.start();
+            p.bump(T![int_lit]);
+            m.complete(p, SyntaxKind::EXPR_LIT_INT);
+        }
+        T![float_lit] => {
+            let m = p.start();
+            p.bump(T![float_lit]);
+            m.complete(p, SyntaxKind::EXPR_LIT_FLOAT);
+        }
+        T![char_lit] => {
+            let m = p.start();
+            p.bump(T![char_lit]);
+            m.complete(p, SyntaxKind::EXPR_LIT_CHAR);
+        }
+        T![string_lit] => {
+            let m = p.start();
+            p.bump(T![string_lit]);
+            m.complete(p, SyntaxKind::EXPR_LIT_STRING);
+        }
+        T![if] => if_(p),
+        T!['{'] => block(p),
+        T![match] => match_(p),
+        T![sizeof] => {
+            let m = p.start();
+            p.bump(T![sizeof]);
+            p.expect(T!['(']);
+            ty(p);
+            p.expect(T![')']);
+            m.complete(p, SyntaxKind::EXPR_SIZEOF);
+        }
+        T![ident] => {
+            //
+        }
+        T![.] => {
+            //
+        }
+        T!['['] => {
+            //
+        }
+        T![&] => {
+            let m = p.start();
+            p.bump(T![&]);
+            p.eat(T![mut]);
+            expr(p);
+            m.complete(p, SyntaxKind::EXPR_ADDRESS);
+        }
+        _ => p.error_bump("expected expression"),
+    }
+}
+
+fn if_(p: &mut Parser) {}
 
 fn block(p: &mut Parser) {
     let m = p.start();
-    p.expect(T!['{']);
+    p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
         stmt(p);
     }
@@ -555,4 +661,12 @@ fn short_block(p: &mut Parser) {
     let m = p.start();
     stmt(p);
     m.complete(p, SyntaxKind::EXPR_BLOCK);
+}
+
+fn match_(p: &mut Parser) {}
+
+fn match_arm_list(p: &mut Parser) {}
+
+fn match_arm(p: &mut Parser) {
+    let x = (2) + (3);
 }
