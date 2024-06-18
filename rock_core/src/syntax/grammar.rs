@@ -313,16 +313,22 @@ fn attribute(p: &mut Parser) {
     //@todo
 }
 
-fn path(p: &mut Parser) {
+fn path_type(p: &mut Parser) {
     let m = p.start();
     p.bump(T![ident]);
-    while p.at(T![.]) {
-        //@only possible in expr, handle separately?
-        // in custom type this is wrong
-        if p.at_next(T!['{']) {
+    while p.eat(T![.]) {
+        name(p);
+    }
+    m.complete(p, SyntaxKind::PATH);
+}
+
+fn path_expr(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![ident]);
+    while p.eat(T![.]) {
+        if p.at(T!['{']) {
             break;
         }
-        p.bump(T![.]);
         name(p);
     }
     m.complete(p, SyntaxKind::PATH);
@@ -364,7 +370,7 @@ fn ty(p: &mut Parser) {
     match p.peek() {
         T![ident] => {
             let m = p.start();
-            path(p);
+            path_type(p);
             m.complete(p, SyntaxKind::TYPE_CUSTOM);
         }
         T![&] => {
@@ -626,10 +632,25 @@ fn primary_expr(p: &mut Parser) {
             m.complete(p, SyntaxKind::EXPR_SIZEOF);
         }
         T![ident] => {
-            //
+            let m = p.start();
+            path_expr(p);
+            if p.at(T!['{']) {
+                field_init_list(p);
+                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
+            } else {
+                m.complete(p, SyntaxKind::EXPR_ITEM);
+            }
         }
         T![.] => {
-            //
+            let m = p.start();
+            p.bump(T![.]);
+            if p.at(T!['{']) {
+                field_init_list(p);
+                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
+            } else {
+                name(p);
+                m.complete(p, SyntaxKind::EXPR_VARIANT);
+            }
         }
         T!['['] => {
             //
@@ -727,4 +748,33 @@ fn match_arm(p: &mut Parser) -> bool {
         m.complete(p, SyntaxKind::MATCH_ARM);
         false
     }
+}
+
+fn field_init_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['{']);
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        if p.at(T![ident]) {
+            field_init(p);
+            if !p.at(T!['}']) {
+                p.expect(T![,]);
+            }
+        } else {
+            //@bump or not?
+            p.error_bump("expected field initializer");
+            break;
+        }
+    }
+    p.expect(T!['}']);
+    m.complete(p, SyntaxKind::STRUCT_FIELD_INIT_LIST);
+}
+
+fn field_init(p: &mut Parser) {
+    let m = p.start();
+    if p.at_next(T![:]) {
+        p.bump(T![ident]);
+        p.bump(T![:]);
+    }
+    expr(p);
+    m.complete(p, SyntaxKind::STRUCT_FIELD_INIT);
 }

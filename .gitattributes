@@ -1,1 +1,3 @@
 * text eof=lf
+*.exe binary
+*.dll binary
