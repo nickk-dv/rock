@@ -37,6 +37,12 @@ impl Parser {
         self.events
     }
 
+    pub fn sync_to(&mut self, token_set: TokenSet) {
+        while !self.at_set(token_set) && !self.at(Token::Eof) {
+            self.bump_any();
+        }
+    }
+
     pub fn at(&self, token: Token) -> bool {
         self.peek() == token
     }
@@ -99,6 +105,7 @@ impl Parser {
         m.complete(self, SyntaxKind::ERROR);
     }
 
+    #[must_use]
     pub fn start(&mut self) -> Marker {
         let event_pos = self.events.len() as u32;
         self.push_event(Event::StartNode {

@@ -17,9 +17,15 @@ pub fn parse(source: &str, file_id: FileID) -> Result<SyntaxTree, Vec<ErrorComp>
 #[test]
 fn parse_test() {
     let source = r#"
+
+    #
+    some garbage
+    true false } {
     
     import name.
     proc something(x: , y ) -> {
+        let point = math.point.{x: 10, y: 20,};
+        let point2: math. = .{x: 10, y: 20};
         let x: s32 = null;
         let g = (23);
         if true {
@@ -69,17 +75,46 @@ fn pretty_print_events(events: &[Event]) {
 fn source_file(p: &mut Parser) {
     let m = p.start();
     while !p.at(T![eof]) {
-        match p.peek() {
-            T![proc] => proc_item(p),
-            T![enum] => enum_item(p),
-            T![struct] => struct_item(p),
-            T![const] => const_item(p),
-            T![global] => const_item(p),
-            T![import] => import_item(p),
-            _ => p.error_bump("expected item"),
-        }
+        item(p);
     }
     m.complete(p, SyntaxKind::SOURCE_FILE);
+}
+
+//@change attribute, pub, item parsing rules
+fn item(p: &mut Parser) {
+    match p.peek() {
+        T![#] => attribute(p),
+        T![pub] => visibility(p),
+        T![proc] => proc_item(p),
+        T![enum] => enum_item(p),
+        T![struct] => struct_item(p),
+        T![const] => const_item(p),
+        T![global] => const_item(p),
+        T![import] => import_item(p),
+        _ => {
+            p.error("expected item");
+            p.sync_to(RECOVER_ITEM);
+        }
+    }
+}
+
+fn attribute(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![#]);
+    if p.eat(T!['[']) {
+        p.expect(T![ident]);
+        p.expect(T![']']);
+    } else {
+        p.expect(T!['[']);
+        p.sync_to(RECOVER_ITEM);
+    }
+    m.complete(p, SyntaxKind::ATTRIBUTE);
+}
+
+fn visibility(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![pub]);
+    m.complete(p, SyntaxKind::VISIBILITY);
 }
 
 const RECOVER_ITEM: TokenSet = TokenSet::new(&[
@@ -299,18 +334,12 @@ fn import_symbol(p: &mut Parser) {
     }
 }
 
-fn visibility(p: &mut Parser) {}
-
 fn name(p: &mut Parser) {
     p.expect(T![ident]);
 }
 
 fn name_ref(p: &mut Parser) {
     p.expect(T![ident]);
-}
-
-fn attribute(p: &mut Parser) {
-    //@todo
 }
 
 fn path_type(p: &mut Parser) {
@@ -652,9 +681,7 @@ fn primary_expr(p: &mut Parser) {
                 m.complete(p, SyntaxKind::EXPR_VARIANT);
             }
         }
-        T!['['] => {
-            //
-        }
+        T!['['] => array_expr(p),
         T![&] => {
             let m = p.start();
             p.bump(T![&]);
@@ -777,4 +804,23 @@ fn field_init(p: &mut Parser) {
     }
     expr(p);
     m.complete(p, SyntaxKind::STRUCT_FIELD_INIT);
+}
+
+fn array_expr(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['[']);
+    while !p.at(T![']']) && !p.at(T![eof]) {
+        expr(p);
+        if p.eat(T![;]) {
+            expr(p);
+            p.expect(T![']']);
+            m.complete(p, SyntaxKind::EXPR_ARRAY_REPEAT);
+            return;
+        }
+        if !p.at(T![']']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T![']']);
+    m.complete(p, SyntaxKind::EXPR_ARRAY_INIT);
 }
