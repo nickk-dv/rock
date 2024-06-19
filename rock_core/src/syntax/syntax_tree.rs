@@ -95,6 +95,7 @@ pub enum SyntaxKind {
     STRUCT_FIELD_INIT,
     EXPR_ARRAY_INIT,
     EXPR_ARRAY_REPEAT,
+    EXPR_DEREF,
     EXPR_ADDRESS,
     EXPR_UNARY,
     EXPR_BINARY,

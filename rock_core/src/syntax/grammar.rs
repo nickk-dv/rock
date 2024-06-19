@@ -682,6 +682,12 @@ fn primary_expr(p: &mut Parser) {
             }
         }
         T!['['] => array_expr(p),
+        T![*] => {
+            let m = p.start();
+            p.bump(T![*]);
+            expr(p);
+            m.complete(p, SyntaxKind::EXPR_DEREF);
+        }
         T![&] => {
             let m = p.start();
             p.bump(T![&]);
