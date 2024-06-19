@@ -42,6 +42,7 @@ pub fn check_main_procedure<'hir>(
 ) {
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
+    let external = item.block.is_none();
     let name_src = hir.src(data.origin_id, data.name.range);
 
     if !data.params.is_empty() {
@@ -68,7 +69,7 @@ pub fn check_main_procedure<'hir>(
         ));
     }
 
-    if item.block.is_none() {
+    if external {
         emit.error(ErrorComp::new(
             "main procedure cannot be external, define the entry block",
             name_src,

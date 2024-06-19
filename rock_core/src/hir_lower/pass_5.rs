@@ -63,44 +63,53 @@ fn typecheck_proc<'hir>(
 ) {
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
+    let external = item.block.is_none();
 
     //@procedure attibutes and flag checks are fragile, rework and stabilize 06.06.24
     // think about #[builtin] will it require empty block? probably to differentiate from external
-    if item.block.is_some() {
-        if data.is_variadic {
+
+    if data.is_variadic {
+        if !external {
             emit.error(ErrorComp::new(
                 "only external procedures can be variadic, remove `..` from parameter list",
                 hir.src(data.origin_id, data.name.range),
                 None,
-            ))
+            ));
+        } else if data.params.is_empty() {
+            emit.error(ErrorComp::new(
+                "variadic procedures must have at least one named parameter",
+                hir.src(data.origin_id, data.name.range),
+                None,
+            ));
         }
     }
 
     if data.is_test {
-        if item.block.is_none() {
+        if external {
             emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot be external",
                 hir.src(data.origin_id, data.name.range),
                 None,
-            ))
+            ));
         }
         if !data.params.is_empty() {
             emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot have any input parameters",
                 hir.src(data.origin_id, data.name.range),
                 None,
-            ))
+            ));
         }
-        if !matches!(data.return_ty, hir::Type::Basic(BasicType::Void)) {
-            emit.error(ErrorComp::new(
-                "procedures with #[test] attribute can only return `void`",
-                hir.src(data.origin_id, data.name.range),
-                None,
-            ))
+        if !data.return_ty.is_void() {
+            if let Some(return_ty) = item.return_ty {
+                emit.error(ErrorComp::new(
+                    "procedures with #[test] attribute can only return `void`",
+                    hir.src(data.origin_id, return_ty.range),
+                    None,
+                ));
+            }
         }
     }
 
-    // main entry point cannot be external or a test (is_main detection isnt done yet) @27.04.24
     if let Some(block) = item.block {
         let file_id = hir.registry().module_data(data.origin_id).file_id;
         let expect_source = match item.return_ty {
