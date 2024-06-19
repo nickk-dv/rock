@@ -610,6 +610,14 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             kind,
             range: p.make_range(start),
         }));
+    } else if p.eat(T![*]) {
+        let kind = ExprKind::Deref {
+            rhs: primary_expr(p)?,
+        };
+        return Ok(p.state.arena.alloc(Expr {
+            kind,
+            range: p.make_range(start),
+        }));
     }
 
     let kind = match p.peek() {

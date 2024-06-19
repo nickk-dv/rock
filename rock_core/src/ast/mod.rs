@@ -299,6 +299,7 @@ pub enum ExprKind<'ast> {
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
+    Deref       { rhs: &'ast Expr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
     Binary      { op: BinOp, op_range: TextRange, bin: &'ast BinExpr<'ast> },
@@ -395,7 +396,6 @@ pub enum UnOp {
     Neg,
     BitNot,
     LogicNot,
-    Deref,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -489,7 +489,6 @@ impl UnOp {
             UnOp::Neg => "-",
             UnOp::BitNot => "~",
             UnOp::LogicNot => "!",
-            UnOp::Deref => "*",
         }
     }
 }

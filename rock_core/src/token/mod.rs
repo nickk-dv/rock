@@ -90,7 +90,7 @@ token_gen::token_gen! {
     // bin op tokens
     [+]      | "+"      | Plus         | BIN[BinOp::Add]
     [-]      | "-"      | Minus        | BIN[BinOp::Sub] UN[UnOp::Neg]
-    [*]      | "*"      | Star         | BIN[BinOp::Mul] UN[UnOp::Deref]
+    [*]      | "*"      | Star         | BIN[BinOp::Mul]
     [/]      | "/"      | ForwSlash    | BIN[BinOp::Div]
     [%]      | "%"      | Percent      | BIN[BinOp::Rem]
     [&]      | "&"      | Ampersand    | BIN[BinOp::BitAnd]

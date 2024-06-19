@@ -448,6 +448,7 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::ArrayRepeat { expr, len } => {
             typecheck_array_repeat(hir, emit, proc, expect, expr, len)
         }
+        ast::ExprKind::Deref { rhs } => typecheck_deref(hir, emit, proc, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(hir, emit, proc, expect, op, op_range, rhs)
@@ -1928,6 +1929,37 @@ fn typecheck_array_repeat<'hir>(
     }
 }
 
+fn typecheck_deref<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    rhs: &ast::Expr,
+) -> TypeResult<'hir> {
+    let rhs_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, rhs);
+
+    let ptr_ty = match rhs_res.ty {
+        hir::Type::Error => hir::Type::Error,
+        hir::Type::Reference(ref_ty, _) => *ref_ty,
+        _ => {
+            emit.error(ErrorComp::new(
+                format!(
+                    "cannot dereference value of type `{}`",
+                    type_format(hir, emit, rhs_res.ty)
+                ),
+                hir.src(proc.origin(), rhs.range),
+                None,
+            ));
+            hir::Type::Error
+        }
+    };
+
+    let deref_expr = hir::Expr::Deref {
+        rhs: rhs_res.expr,
+        ptr_ty: emit.arena.alloc(ptr_ty),
+    };
+    TypeResult::new(ptr_ty, emit.arena.alloc(deref_expr))
+}
+
 fn typecheck_address<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -2037,11 +2069,9 @@ fn get_expr_addressability<'hir>(
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,
         hir::Expr::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
+        hir::Expr::Deref { rhs, .. } => get_expr_addressability(hir, proc, rhs),
         hir::Expr::Address { .. } => Addressability::Temporary,
-        hir::Expr::Unary { op, rhs } => match op {
-            ast::UnOp::Deref => Addressability::NotImplemented, //@todo 05.05.24
-            _ => Addressability::Temporary,
-        },
+        hir::Expr::Unary { op, rhs } => Addressability::Temporary,
         hir::Expr::Binary { op, .. } => match op {
             ast::BinOp::Range | ast::BinOp::RangeInc => Addressability::TemporaryImmutable,
             _ => Addressability::Temporary,
@@ -2062,7 +2092,6 @@ fn typecheck_unary<'hir>(
         ast::UnOp::Neg => expect,
         ast::UnOp::BitNot => expect,
         ast::UnOp::LogicNot => TypeExpectation::BOOL,
-        ast::UnOp::Deref => TypeExpectation::NOTHING,
     };
     let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, rhs);
 
@@ -2073,10 +2102,6 @@ fn typecheck_unary<'hir>(
             ast::UnOp::Neg => rhs_res.ty,
             ast::UnOp::BitNot => rhs_res.ty,
             ast::UnOp::LogicNot => hir::Type::BOOL,
-            ast::UnOp::Deref => match rhs_res.ty {
-                hir::Type::Reference(ref_ty, _) => *ref_ty,
-                _ => hir::Type::Error,
-            },
         }
     } else {
         hir::Type::Error
@@ -2211,7 +2236,6 @@ fn check_un_op_compatibility<'hir>(
             _ => false,
         },
         ast::UnOp::LogicNot => matches!(rhs_ty, hir::Type::Basic(BasicType::Bool)),
-        ast::UnOp::Deref => matches!(rhs_ty, hir::Type::Reference(..)),
     };
 
     if !compatible {

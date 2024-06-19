@@ -1,7 +1,5 @@
 use super::emit_stmt::{TailAllocaID, TailAllocaStatus};
 use crate::ast;
-use crate::error::ErrorComp;
-use crate::fs_env;
 use crate::hir;
 use crate::intern::InternID;
 use inkwell::basic_block::BasicBlock;

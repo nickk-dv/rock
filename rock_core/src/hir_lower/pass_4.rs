@@ -668,6 +668,10 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
+        ast::ExprKind::Deref { .. } => {
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "deref");
+            Err(parent_id)
+        }
         ast::ExprKind::Address { .. } => {
             error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "address");
             Err(parent_id)
@@ -905,6 +909,7 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::ArrayRepeat { array_repeat } => {
             Ok(fold_array_repeat(hir, emit, origin_id, array_repeat))
         }
+        hir::Expr::Deref { .. } => Err("deref"),
         hir::Expr::Address { .. } => Err("address"),
         hir::Expr::Unary { op, rhs } => Ok(fold_unary_expr(hir, emit, origin_id, op, rhs)),
         hir::Expr::Binary {
@@ -1129,7 +1134,6 @@ fn fold_unary_expr<'hir>(
             hir::ConstValue::Bool { val } => hir::ConstValue::Bool { val: !val },
             _ => hir::ConstValue::Error,
         },
-        ast::UnOp::Deref => hir::ConstValue::Error, //@disallow with error?
     }
 }
 

@@ -138,6 +138,7 @@ pub fn codegen_expr<'ctx>(
             codegen_array_init(cg, proc_cg, array_init, expect_ptr, kind)
         }
         Expr::ArrayRepeat { array_repeat } => Some(codegen_array_repeat(cg, proc_cg, array_repeat)),
+        Expr::Deref { rhs, ptr_ty } => Some(codegen_deref(cg, proc_cg, expect_ptr, rhs, *ptr_ty)),
         Expr::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
         Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
         Expr::Binary {
@@ -1066,6 +1067,25 @@ fn codegen_array_repeat<'ctx>(
     todo!("codegen `array repeat` not supported")
 }
 
+fn codegen_deref<'ctx>(
+    cg: &Codegen<'ctx>,
+    proc_cg: &mut ProcCodegen<'ctx>,
+    expect_ptr: bool,
+    rhs: &'ctx hir::Expr<'ctx>,
+    ptr_ty: hir::Type<'ctx>,
+) -> values::BasicValueEnum<'ctx> {
+    let value = codegen_expr_value(cg, proc_cg, rhs);
+    let value_ptr = value.into_pointer_value();
+
+    if expect_ptr {
+        value_ptr.into()
+    } else {
+        cg.builder
+            .build_load(cg.type_into_basic(ptr_ty), value_ptr, "deref_value")
+            .unwrap()
+    }
+}
+
 fn codegen_address<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
@@ -1097,15 +1117,6 @@ fn codegen_unary<'ctx>(
             .build_not(rhs.into_int_value(), "un_temp")
             .unwrap()
             .into(),
-        ast::UnOp::Deref => {
-            panic!("codegen: unary deref is not supported, pointee_ty is not available");
-            /*
-            cg
-                .builder
-                .build_load(pointee_ty, rhs.into_pointer_value(), "un_temp")
-                .unwrap(),
-            */
-        }
     }
 }
 
