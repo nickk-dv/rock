@@ -3,6 +3,7 @@ mod format;
 mod parse;
 
 use crate::error_format;
+#[cfg(not(target_os = "linux"))]
 use rock_core::codegen::BuildKind;
 use rock_core::error::{DiagnosticCollection, ResultComp, WarningComp};
 use rock_core::package::manifest::PackageKind;
@@ -23,11 +24,13 @@ struct CommandNew {
 }
 
 struct CommandBuild {
+    #[cfg(not(target_os = "linux"))]
     kind: BuildKind,
     emit_llvm: bool,
 }
 
 struct CommandRun {
+    #[cfg(not(target_os = "linux"))]
     kind: BuildKind,
     emit_llvm: bool,
     args: Vec<String>,

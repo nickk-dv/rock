@@ -77,12 +77,10 @@ impl Parser {
         true
     }
 
-    pub fn expect(&mut self, token: Token) -> bool {
-        if self.eat(token) {
-            return true;
+    pub fn expect(&mut self, token: Token) {
+        if !self.eat(token) {
+            self.error(format!("expected {}", token.as_str()));
         }
-        self.error(format!("expected {}", token.as_str()));
-        false
     }
 
     pub fn bump(&mut self, token: Token) {

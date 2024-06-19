@@ -58,15 +58,15 @@ fn pretty_print_events(events: &[Event]) {
         }
         match e {
             Event::StartNode { kind } => {
-                println!("{:?}", kind);
+                println!("[START] {:?}", kind);
                 depth += 1;
             }
             Event::EndNode => {
                 depth -= 1;
             }
-            Event::Token { token } => println!("{}", token.as_str()),
+            Event::Token { token } => println!("TOKEN `{}`", token.as_str()),
             Event::Error { message } => {
-                println!("error event: {}", message)
+                println!("[ERROR] {}", message)
             }
         }
     }
@@ -89,7 +89,7 @@ fn item(p: &mut Parser) {
         T![enum] => enum_item(p),
         T![struct] => struct_item(p),
         T![const] => const_item(p),
-        T![global] => const_item(p),
+        T![global] => global_item(p),
         T![import] => import_item(p),
         _ => {
             p.error("expected item");
@@ -328,10 +328,12 @@ fn import_symbol_list(p: &mut Parser) {
 }
 
 fn import_symbol(p: &mut Parser) {
+    let m = p.start();
     name(p);
     if p.eat(T![as]) {
         name(p);
     }
+    m.complete(p, SyntaxKind::IMPORT_SYMBOL);
 }
 
 fn name(p: &mut Parser) {

@@ -1,5 +1,6 @@
 use super::format::CommandFormat;
 use super::{Command, CommandBuild, CommandNew, CommandRun};
+#[cfg(not(target_os = "linux"))]
 use rock_core::codegen::BuildKind;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::package::manifest::PackageKind;
@@ -44,10 +45,11 @@ fn parse_build(format: CommandFormat) -> ResultComp<Command> {
         &["debug", "release", "emit-llvm"],
     );
 
+    #[cfg(not(target_os = "linux"))]
     let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
     let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
 
-    let data = CommandBuild { kind, emit_llvm };
+    let data = CommandBuild { #[cfg(not(target_os = "linux"))] kind, emit_llvm };
     ResultComp::new(Command::Build(data), diagnostics)
 }
 
@@ -60,10 +62,12 @@ fn parse_run(format: CommandFormat) -> ResultComp<Command> {
         &["debug", "release", "emit-llvm"],
     );
 
+    #[cfg(not(target_os = "linux"))]
     let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
     let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
 
     let data = CommandRun {
+        #[cfg(not(target_os = "linux"))]
         kind,
         emit_llvm,
         args: format.trail_args,
@@ -166,6 +170,7 @@ fn parse_package_name(format: &CommandFormat, diagnostics: &mut DiagnosticCollec
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn parse_build_kind(
     format: &CommandFormat,
     diagnostics: &mut DiagnosticCollection,

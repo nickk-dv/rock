@@ -1,4 +1,5 @@
 fn main() {
+    #[cfg(not(target_os = "linux"))]
     #[cfg(feature = "codegen_llvm")]
     link_llvm_dylib();
 }
