@@ -1,4 +1,4 @@
-use super::parser::{Event, Marker, Parser};
+use super::parser::{Event, MarkerClosed, Parser};
 use super::syntax_tree::{SyntaxKind, SyntaxTree};
 use super::token_set::TokenSet;
 use crate::error::ErrorComp;
@@ -24,7 +24,7 @@ fn parse_test() {
     
     import name.
     proc something(x: , y ) -> {
-        let val = (3).x.y as;
+        let val = 3 + 2 * 5;
         let point = math.point.{x: 10, y: 20,};
         let point2: math. = .{x: 10, y: 20};
         let x: s32 = null;
@@ -594,7 +594,8 @@ fn expr(p: &mut Parser) {
 }
 
 fn sub_expr(p: &mut Parser, min_prec: u32) {
-    primary_expr(p);
+    let mut mc_curr = primary_expr(p);
+
     loop {
         let prec: u32;
         if let Some(bin_op) = p.peek().as_bin_op() {
@@ -602,63 +603,65 @@ fn sub_expr(p: &mut Parser, min_prec: u32) {
             if prec < min_prec {
                 break;
             }
+            let m = p.start_before(mc_curr);
             p.bump(p.peek());
             sub_expr(p, prec + 1);
+            mc_curr = m.complete(p, SyntaxKind::EXPR_BINARY);
         } else {
             break;
         }
     }
 }
 
-fn primary_expr(p: &mut Parser) {
+fn primary_expr(p: &mut Parser) -> MarkerClosed {
     if p.at(T!['(']) {
-        let mut m = p.start();
+        let m = p.start();
         p.bump(T!['(']);
         expr(p);
         p.expect(T![')']);
-        m.complete_retain(p, SyntaxKind::EXPR_PAREN);
-        tail_expr(p, m);
-        return;
+        let mc = m.complete(p, SyntaxKind::EXPR_PAREN);
+        let mc = tail_expr(p, mc);
+        return mc;
     }
 
     if p.peek().as_un_op().is_some() {
         let m = p.start();
         p.bump(p.peek());
         primary_expr(p);
-        m.complete(p, SyntaxKind::EXPR_UNARY);
-        return;
+        let mc = m.complete(p, SyntaxKind::EXPR_UNARY);
+        return mc;
     }
 
-    match p.peek() {
+    let mc = match p.peek() {
         T![null] => {
             let m = p.start();
             p.bump(T![null]);
-            m.complete(p, SyntaxKind::EXPR_LIT_NULL);
+            m.complete(p, SyntaxKind::EXPR_LIT_NULL)
         }
         T![true] | T![false] => {
             let m = p.start();
             p.bump(p.peek());
-            m.complete(p, SyntaxKind::EXPR_LIT_BOOL);
+            m.complete(p, SyntaxKind::EXPR_LIT_BOOL)
         }
         T![int_lit] => {
             let m = p.start();
             p.bump(T![int_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_INT);
+            m.complete(p, SyntaxKind::EXPR_LIT_INT)
         }
         T![float_lit] => {
             let m = p.start();
             p.bump(T![float_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_FLOAT);
+            m.complete(p, SyntaxKind::EXPR_LIT_FLOAT)
         }
         T![char_lit] => {
             let m = p.start();
             p.bump(T![char_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_CHAR);
+            m.complete(p, SyntaxKind::EXPR_LIT_CHAR)
         }
         T![string_lit] => {
             let m = p.start();
             p.bump(T![string_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_STRING);
+            m.complete(p, SyntaxKind::EXPR_LIT_STRING)
         }
         T![if] => if_(p),
         T!['{'] => block(p),
@@ -669,16 +672,16 @@ fn primary_expr(p: &mut Parser) {
             p.expect(T!['(']);
             ty(p);
             p.expect(T![')']);
-            m.complete(p, SyntaxKind::EXPR_SIZEOF);
+            m.complete(p, SyntaxKind::EXPR_SIZEOF)
         }
         T![ident] => {
             let m = p.start();
             path_expr(p);
             if p.at(T!['{']) {
                 field_init_list(p);
-                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
+                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
             } else {
-                m.complete(p, SyntaxKind::EXPR_ITEM);
+                m.complete(p, SyntaxKind::EXPR_ITEM)
             }
         }
         T![.] => {
@@ -686,10 +689,10 @@ fn primary_expr(p: &mut Parser) {
             p.bump(T![.]);
             if p.at(T!['{']) {
                 field_init_list(p);
-                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
+                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
             } else {
                 name(p);
-                m.complete(p, SyntaxKind::EXPR_VARIANT);
+                m.complete(p, SyntaxKind::EXPR_VARIANT)
             }
         }
         T!['['] => array_expr(p),
@@ -697,71 +700,74 @@ fn primary_expr(p: &mut Parser) {
             let m = p.start();
             p.bump(T![*]);
             expr(p);
-            m.complete(p, SyntaxKind::EXPR_DEREF);
+            m.complete(p, SyntaxKind::EXPR_DEREF)
         }
         T![&] => {
             let m = p.start();
             p.bump(T![&]);
             p.eat(T![mut]);
             expr(p);
-            m.complete(p, SyntaxKind::EXPR_ADDRESS);
+            m.complete(p, SyntaxKind::EXPR_ADDRESS)
         }
-        _ => p.error_bump("expected expression"),
-    }
-    //@call tail expr
+        _ => {
+            let m = p.start();
+            p.error_bump("expected expression");
+            m.complete(p, SyntaxKind::ERROR)
+        }
+    };
+
+    tail_expr(p, mc)
 }
 
-fn tail_expr(p: &mut Parser, pm: Marker) {
+fn tail_expr(p: &mut Parser, mc: MarkerClosed) -> MarkerClosed {
     let mut last_cast = false;
-    let mut pm_curr = pm;
+    let mut mc_curr = mc;
 
     loop {
         match p.peek() {
             T![.] => {
                 if last_cast {
-                    return;
+                    break;
                 }
-                let mut m = p.start_before(pm_curr);
+                let m = p.start_before(mc_curr);
                 p.bump(T![.]);
                 name(p);
-                m.complete_retain(p, SyntaxKind::EXPR_FIELD);
-                pm_curr = m;
+                mc_curr = m.complete(p, SyntaxKind::EXPR_FIELD);
             }
             T!['['] => {
                 if last_cast {
-                    return;
+                    break;
                 }
-                let mut m = p.start_before(pm_curr);
+                let m = p.start_before(mc_curr);
                 p.bump(T!['[']);
                 //@todo
                 //@index or slice SyntaxKind
-                m.complete_retain(p, SyntaxKind::EXPR_INDEX);
-                pm_curr = m;
+                mc_curr = m.complete(p, SyntaxKind::EXPR_INDEX);
             }
             T!['('] => {
                 if last_cast {
-                    return;
+                    break;
                 }
-                let mut m = p.start_before(pm_curr);
+                let m = p.start_before(mc_curr);
                 p.bump(T!['(']);
                 //@todo
-                m.complete_retain(p, SyntaxKind::EXPR_CALL);
-                pm_curr = m;
+                mc_curr = m.complete(p, SyntaxKind::EXPR_CALL);
             }
             T![as] => {
                 last_cast = true;
-                let mut m = p.start_before(pm_curr);
+                let m = p.start_before(mc_curr);
                 p.bump(T![as]);
-                //@todo
-                m.complete_retain(p, SyntaxKind::EXPR_CAST);
-                pm_curr = m;
+                ty(p);
+                mc_curr = m.complete(p, SyntaxKind::EXPR_CAST);
             }
-            _ => return,
+            _ => break,
         }
     }
+
+    mc_curr
 }
 
-fn if_(p: &mut Parser) {
+fn if_(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![if]);
     expr(p);
@@ -774,17 +780,17 @@ fn if_(p: &mut Parser) {
             break;
         }
     }
-    m.complete(p, SyntaxKind::EXPR_IF);
+    m.complete(p, SyntaxKind::EXPR_IF)
 }
 
-fn block(p: &mut Parser) {
+fn block(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
         stmt(p);
     }
     p.expect(T!['}']);
-    m.complete(p, SyntaxKind::EXPR_BLOCK);
+    m.complete(p, SyntaxKind::EXPR_BLOCK)
 }
 
 fn block_expect(p: &mut Parser) {
@@ -801,7 +807,7 @@ fn block_short(p: &mut Parser) {
     m.complete(p, SyntaxKind::EXPR_BLOCK);
 }
 
-fn match_(p: &mut Parser) {
+fn match_(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![match]);
     expr(p);
@@ -810,7 +816,7 @@ fn match_(p: &mut Parser) {
     } else {
         p.error_bump("expected match arm list");
     }
-    m.complete(p, SyntaxKind::EXPR_MATCH);
+    m.complete(p, SyntaxKind::EXPR_MATCH)
 }
 
 fn match_arm_list(p: &mut Parser) {
@@ -874,7 +880,7 @@ fn field_init(p: &mut Parser) {
     m.complete(p, SyntaxKind::STRUCT_FIELD_INIT);
 }
 
-fn array_expr(p: &mut Parser) {
+fn array_expr(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['[']);
     while !p.at(T![']']) && !p.at(T![eof]) {
@@ -882,13 +888,12 @@ fn array_expr(p: &mut Parser) {
         if p.eat(T![;]) {
             expr(p);
             p.expect(T![']']);
-            m.complete(p, SyntaxKind::EXPR_ARRAY_REPEAT);
-            return;
+            return m.complete(p, SyntaxKind::EXPR_ARRAY_REPEAT);
         }
         if !p.at(T![']']) {
             p.expect(T![,]);
         }
     }
     p.expect(T![']']);
-    m.complete(p, SyntaxKind::EXPR_ARRAY_INIT);
+    m.complete(p, SyntaxKind::EXPR_ARRAY_INIT)
 }

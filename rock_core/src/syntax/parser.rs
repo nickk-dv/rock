@@ -27,7 +27,11 @@ pub enum Event {
 
 pub struct Marker {
     handled: bool,
-    event_index: u32,
+    event_idx: u32,
+}
+
+pub struct MarkerClosed {
+    event_idx: u32,
 }
 
 impl Parser {
@@ -121,13 +125,13 @@ impl Parser {
     }
 
     #[must_use]
-    pub fn start_before(&mut self, m: Marker) -> Marker {
+    pub fn start_before(&mut self, m: MarkerClosed) -> Marker {
         let event_pos = self.events.len() as u32;
         self.push_event(Event::StartNode {
             kind: SyntaxKind::TOMBSTONE,
             forward_parent: None,
         });
-        match &mut self.events[m.event_index as usize] {
+        match &mut self.events[m.event_idx as usize] {
             Event::StartNode { forward_parent, .. } => {
                 assert!(forward_parent.is_none());
                 *forward_parent = Some(event_pos);
@@ -171,30 +175,25 @@ impl Parser {
 }
 
 impl Marker {
-    fn new(event_index: u32) -> Marker {
+    fn new(event_idx: u32) -> Marker {
         Marker {
             handled: false,
-            event_index,
+            event_idx,
         }
     }
 
-    pub fn complete(mut self, p: &mut Parser, kind: SyntaxKind) {
+    fn index(&self) -> usize {
+        self.event_idx as usize
+    }
+
+    pub fn complete(mut self, p: &mut Parser, kind: SyntaxKind) -> MarkerClosed {
         self.handled = true;
         match &mut p.events[self.index()] {
             Event::StartNode { kind: start, .. } => *start = kind,
             _ => unreachable!(),
         }
         p.push_event(Event::EndNode);
-    }
-
-    //@use MarkerClosed that is returned to improve safety + api
-    pub fn complete_retain(&mut self, p: &mut Parser, kind: SyntaxKind) {
-        self.handled = true;
-        match &mut p.events[self.index()] {
-            Event::StartNode { kind: start, .. } => *start = kind,
-            _ => unreachable!(),
-        }
-        p.push_event(Event::EndNode);
+        MarkerClosed::new(self.event_idx)
     }
 
     pub fn abandon(mut self, p: &mut Parser) {
@@ -209,14 +208,20 @@ impl Marker {
             }
         }
     }
-
-    fn index(&self) -> usize {
-        self.event_index as usize
-    }
 }
 
 impl Drop for Marker {
     fn drop(&mut self) {
         assert!(self.handled, "marker must be completed or abandoned");
+    }
+}
+
+impl MarkerClosed {
+    fn new(event_idx: u32) -> MarkerClosed {
+        MarkerClosed { event_idx }
+    }
+
+    fn index(&self) -> usize {
+        self.event_idx as usize
     }
 }
