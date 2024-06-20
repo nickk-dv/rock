@@ -11,6 +11,7 @@ pub struct Parser {
     steps: Cell<u32>,
 }
 
+#[derive(Clone)]
 pub enum Event {
     StartNode {
         kind: SyntaxKind,
@@ -23,6 +24,7 @@ pub enum Event {
     Error {
         message: String,
     },
+    Ignore,
 }
 
 pub struct Marker {

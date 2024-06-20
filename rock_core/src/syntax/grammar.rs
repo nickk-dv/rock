@@ -2,33 +2,71 @@ use super::parser::{Event, MarkerClosed, Parser};
 use super::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxKind, SyntaxTree, TokenID};
 use super::token_set::TokenSet;
 use crate::arena::Arena;
-use crate::error::ErrorComp;
+use crate::error::{ErrorComp, SourceRange};
 use crate::lexer;
 use crate::session::FileID;
 use crate::temp_buffer::TempBuffer;
 use crate::token::{Token, T};
 
-pub fn parse(source: &str, file_id: FileID) -> Result<SyntaxTree, Vec<ErrorComp>> {
-    let tokens = lexer::lex(source, file_id, false)?;
+pub fn parse(source: &str, file_id: FileID) -> (SyntaxTree, Vec<ErrorComp>) {
+    let tokens = if let Ok(tokens) = lexer::lex(source, file_id, false) {
+        tokens
+    } else {
+        //@temp work-around
+        panic!("lexer failed");
+    };
     let mut parser = Parser::new(tokens);
     source_file(&mut parser);
 
     let mut arena = Arena::new();
     let mut nodes = Vec::new();
-    let (tokens, events) = parser.finish();
+    let (tokens, mut events) = parser.finish();
 
     let mut stack = Vec::new();
+    let mut parent_stack = Vec::with_capacity(8);
     let mut content_buf = TempBuffer::new();
     let mut token_idx = 0;
+    let mut errors = Vec::new();
 
     pretty_print_events(&events);
 
-    for event in events {
-        match event {
+    for event_idx in 0..events.len() {
+        //@clone to get around borrowing,
+        //change the error handling to copy/clone events
+        match events[event_idx].clone() {
             Event::StartNode {
                 kind,
                 forward_parent,
             } => {
+                let mut parent_next = forward_parent;
+                parent_stack.clear();
+
+                while let Some(parent_idx) = parent_next {
+                    let start_event = events[parent_idx as usize].clone();
+
+                    match start_event {
+                        Event::StartNode {
+                            kind,
+                            forward_parent,
+                        } => {
+                            parent_stack.push(kind);
+                            parent_next = forward_parent;
+                            events[parent_idx as usize] = Event::Ignore;
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+                while let Some(kind) = parent_stack.pop() {
+                    let node_id = NodeID::new(nodes.len());
+                    content_buf.add(NodeOrToken::Node(node_id));
+                    let offset = content_buf.start();
+                    stack.push((offset, node_id));
+
+                    let node = Node { kind, content: &[] };
+                    nodes.push(node);
+                }
+
                 let node_id = NodeID::new(nodes.len());
                 content_buf.add(NodeOrToken::Node(node_id));
                 let offset = content_buf.start();
@@ -47,12 +85,16 @@ pub fn parse(source: &str, file_id: FileID) -> Result<SyntaxTree, Vec<ErrorComp>
                 content_buf.add(NodeOrToken::Token(token_id));
             }
             Event::Error { message } => {
-                //
+                let token_id = TokenID::new(token_idx);
+                let range = tokens.get_range(token_id.index());
+                let src = SourceRange::new(range, file_id);
+                errors.push(ErrorComp::new(message, src, None));
             }
+            Event::Ignore => {}
         }
     }
 
-    Ok(SyntaxTree::new(arena, nodes, tokens))
+    (SyntaxTree::new(arena, nodes, tokens), errors)
 }
 
 #[test]
@@ -108,11 +150,9 @@ fn parse_test() {
         }
     }
 
-    let result = parse(source, FileID::dummy());
-    if let Ok(tree) = result {
-        let root = tree.node(NodeID::new(0));
-        print_node(&tree, root, 0);
-    }
+    let (tree, errors) = parse(source, FileID::dummy());
+    let root = tree.node(NodeID::new(0));
+    print_node(&tree, root, 0);
 }
 
 fn pretty_print_events(events: &[Event]) {
@@ -147,6 +187,7 @@ fn pretty_print_events(events: &[Event]) {
             Event::Error { message } => {
                 println!("[ERROR] {}", message)
             }
+            Event::Ignore => println!("[IGNORE]"),
         }
     }
 }
