@@ -1,21 +1,23 @@
 use crate::arena::Arena;
 use crate::id_impl;
+use crate::text::TextRange;
 use crate::token::token_list::TokenList;
+use crate::token::Token;
 
 pub struct SyntaxTree<'syn> {
-    root: Node<'syn>,
     arena: Arena<'syn>,
     nodes: Vec<Node<'syn>>,
     tokens: TokenList,
 }
 
 pub struct Node<'syn> {
-    kind: SyntaxKind,
-    content: &'syn [NodeOrToken],
+    pub kind: SyntaxKind,
+    pub content: &'syn [NodeOrToken],
 }
 
 id_impl!(NodeID);
 id_impl!(TokenID);
+#[derive(Copy, Clone)]
 pub enum NodeOrToken {
     Node(NodeID),
     Token(TokenID),
@@ -99,4 +101,26 @@ pub enum SyntaxKind {
     EXPR_ADDRESS,
     EXPR_UNARY,
     EXPR_BINARY,
+}
+
+impl<'syn> SyntaxTree<'syn> {
+    pub fn new(arena: Arena<'syn>, nodes: Vec<Node<'syn>>, tokens: TokenList) -> SyntaxTree<'syn> {
+        SyntaxTree {
+            arena,
+            nodes,
+            tokens,
+        }
+    }
+
+    pub fn node(&self, id: NodeID) -> &Node {
+        &self.nodes[id.index()]
+    }
+
+    pub fn token(&self, id: TokenID) -> Token {
+        self.tokens.get_token(id.index())
+    }
+
+    pub fn token_range(&self, id: TokenID) -> TextRange {
+        self.tokens.get_range(id.index())
+    }
 }

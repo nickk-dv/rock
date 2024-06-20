@@ -44,14 +44,19 @@ impl Parser {
         }
     }
 
-    pub fn finish(self) -> Vec<Event> {
-        self.events
+    pub fn finish(self) -> (TokenList, Vec<Event>) {
+        (self.input, self.events)
     }
 
     pub fn sync_to(&mut self, token_set: TokenSet) {
+        if self.at_set(token_set) || self.at(Token::Eof) {
+            return;
+        }
+        let m = self.start();
         while !self.at_set(token_set) && !self.at(Token::Eof) {
             self.bump_any();
         }
+        m.complete(self, SyntaxKind::ERROR);
     }
 
     pub fn at(&self, token: Token) -> bool {
@@ -194,19 +199,6 @@ impl Marker {
         }
         p.push_event(Event::EndNode);
         MarkerClosed::new(self.event_idx)
-    }
-
-    pub fn abandon(mut self, p: &mut Parser) {
-        self.handled = true;
-        if self.index() == p.events.len() - 1 {
-            match p.events.pop() {
-                Some(Event::StartNode {
-                    kind: SyntaxKind::TOMBSTONE,
-                    ..
-                }) => {}
-                _ => unreachable!(),
-            }
-        }
     }
 }
 

@@ -1,24 +1,65 @@
 use super::parser::{Event, MarkerClosed, Parser};
-use super::syntax_tree::{SyntaxKind, SyntaxTree};
+use super::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxKind, SyntaxTree, TokenID};
 use super::token_set::TokenSet;
+use crate::arena::Arena;
 use crate::error::ErrorComp;
 use crate::lexer;
 use crate::session::FileID;
+use crate::temp_buffer::TempBuffer;
 use crate::token::{Token, T};
 
 pub fn parse(source: &str, file_id: FileID) -> Result<SyntaxTree, Vec<ErrorComp>> {
     let tokens = lexer::lex(source, file_id, false)?;
     let mut parser = Parser::new(tokens);
     source_file(&mut parser);
-    pretty_print_events(&parser.finish());
-    Err(vec![]) //@todo create tree
+
+    let mut arena = Arena::new();
+    let mut nodes = Vec::new();
+    let (tokens, events) = parser.finish();
+
+    let mut stack = Vec::new();
+    let mut content_buf = TempBuffer::new();
+    let mut token_idx = 0;
+
+    pretty_print_events(&events);
+
+    for event in events {
+        match event {
+            Event::StartNode {
+                kind,
+                forward_parent,
+            } => {
+                let node_id = NodeID::new(nodes.len());
+                content_buf.add(NodeOrToken::Node(node_id));
+                let offset = content_buf.start();
+                stack.push((offset, node_id));
+
+                let node = Node { kind, content: &[] };
+                nodes.push(node);
+            }
+            Event::EndNode => {
+                let (offset, node_id) = stack.pop().unwrap();
+                nodes[node_id.index()].content = content_buf.take(offset, &mut arena);
+            }
+            Event::Token { token } => {
+                let token_id = TokenID::new(token_idx);
+                token_idx += 1;
+                content_buf.add(NodeOrToken::Token(token_id));
+            }
+            Event::Error { message } => {
+                //
+            }
+        }
+    }
+
+    Ok(SyntaxTree::new(arena, nodes, tokens))
 }
 
 #[test]
 fn parse_test() {
     let source = r#"
 
-    #
+    # import
     some garbage
     true false } {
     
@@ -41,7 +82,37 @@ fn parse_test() {
     }
     
     "#;
-    let _ = parse(source, FileID::dummy());
+
+    fn print_depth(depth: u32) {
+        for _ in 0..depth {
+            print!("  ");
+        }
+    }
+
+    fn print_node(tree: &SyntaxTree, node: &Node, depth: u32) {
+        print_depth(depth);
+        println!("[{:?}]", node.kind);
+
+        for node_or_token in node.content {
+            match *node_or_token {
+                NodeOrToken::Node(node_id) => {
+                    print_node(tree, tree.node(node_id), depth + 1);
+                }
+                NodeOrToken::Token(token_id) => {
+                    let token = tree.token(token_id);
+                    let range = tree.token_range(token_id);
+                    print_depth(depth + 1);
+                    println!("`{}`@{:?}", token.as_str(), range);
+                }
+            }
+        }
+    }
+
+    let result = parse(source, FileID::dummy());
+    if let Ok(tree) = result {
+        let root = tree.node(NodeID::new(0));
+        print_node(&tree, root, 0);
+    }
 }
 
 fn pretty_print_events(events: &[Event]) {
