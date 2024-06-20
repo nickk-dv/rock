@@ -12,10 +12,17 @@ pub struct Parser {
 }
 
 pub enum Event {
-    StartNode { kind: SyntaxKind },
+    StartNode {
+        kind: SyntaxKind,
+        forward_parent: Option<u32>,
+    },
     EndNode,
-    Token { token: Token },
-    Error { message: String },
+    Token {
+        token: Token,
+    },
+    Error {
+        message: String,
+    },
 }
 
 pub struct Marker {
@@ -108,7 +115,25 @@ impl Parser {
         let event_pos = self.events.len() as u32;
         self.push_event(Event::StartNode {
             kind: SyntaxKind::TOMBSTONE,
+            forward_parent: None,
         });
+        Marker::new(event_pos)
+    }
+
+    #[must_use]
+    pub fn start_before(&mut self, m: Marker) -> Marker {
+        let event_pos = self.events.len() as u32;
+        self.push_event(Event::StartNode {
+            kind: SyntaxKind::TOMBSTONE,
+            forward_parent: None,
+        });
+        match &mut self.events[m.event_index as usize] {
+            Event::StartNode { forward_parent, .. } => {
+                assert!(forward_parent.is_none());
+                *forward_parent = Some(event_pos);
+            }
+            _ => unreachable!(),
+        }
         Marker::new(event_pos)
     }
 
@@ -156,7 +181,17 @@ impl Marker {
     pub fn complete(mut self, p: &mut Parser, kind: SyntaxKind) {
         self.handled = true;
         match &mut p.events[self.index()] {
-            Event::StartNode { kind: start } => *start = kind,
+            Event::StartNode { kind: start, .. } => *start = kind,
+            _ => unreachable!(),
+        }
+        p.push_event(Event::EndNode);
+    }
+
+    //@use MarkerClosed that is returned to improve safety + api
+    pub fn complete_retain(&mut self, p: &mut Parser, kind: SyntaxKind) {
+        self.handled = true;
+        match &mut p.events[self.index()] {
+            Event::StartNode { kind: start, .. } => *start = kind,
             _ => unreachable!(),
         }
         p.push_event(Event::EndNode);
@@ -168,6 +203,7 @@ impl Marker {
             match p.events.pop() {
                 Some(Event::StartNode {
                     kind: SyntaxKind::TOMBSTONE,
+                    ..
                 }) => {}
                 _ => unreachable!(),
             }

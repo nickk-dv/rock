@@ -1,4 +1,4 @@
-use super::parser::{Event, Parser};
+use super::parser::{Event, Marker, Parser};
 use super::syntax_tree::{SyntaxKind, SyntaxTree};
 use super::token_set::TokenSet;
 use crate::error::ErrorComp;
@@ -24,6 +24,7 @@ fn parse_test() {
     
     import name.
     proc something(x: , y ) -> {
+        let val = (3).x.y as;
         let point = math.point.{x: 10, y: 20,};
         let point2: math. = .{x: 10, y: 20};
         let x: s32 = null;
@@ -57,8 +58,15 @@ fn pretty_print_events(events: &[Event]) {
             _ => print_depth(depth),
         }
         match e {
-            Event::StartNode { kind } => {
-                println!("[START] {:?}", kind);
+            Event::StartNode {
+                kind,
+                forward_parent,
+            } => {
+                if let Some(idx) = *forward_parent {
+                    println!("[START] {:?} [FORWARD_PARENT] {}", kind, idx);
+                } else {
+                    println!("[START] {:?}", kind);
+                }
                 depth += 1;
             }
             Event::EndNode => {
@@ -604,11 +612,12 @@ fn sub_expr(p: &mut Parser, min_prec: u32) {
 
 fn primary_expr(p: &mut Parser) {
     if p.at(T!['(']) {
-        let m = p.start();
+        let mut m = p.start();
         p.bump(T!['(']);
         expr(p);
         p.expect(T![')']);
-        m.complete(p, SyntaxKind::EXPR_PAREN);
+        m.complete_retain(p, SyntaxKind::EXPR_PAREN);
+        tail_expr(p, m);
         return;
     }
 
@@ -698,6 +707,57 @@ fn primary_expr(p: &mut Parser) {
             m.complete(p, SyntaxKind::EXPR_ADDRESS);
         }
         _ => p.error_bump("expected expression"),
+    }
+    //@call tail expr
+}
+
+fn tail_expr(p: &mut Parser, pm: Marker) {
+    let mut last_cast = false;
+    let mut pm_curr = pm;
+
+    loop {
+        match p.peek() {
+            T![.] => {
+                if last_cast {
+                    return;
+                }
+                let mut m = p.start_before(pm_curr);
+                p.bump(T![.]);
+                name(p);
+                m.complete_retain(p, SyntaxKind::EXPR_FIELD);
+                pm_curr = m;
+            }
+            T!['['] => {
+                if last_cast {
+                    return;
+                }
+                let mut m = p.start_before(pm_curr);
+                p.bump(T!['[']);
+                //@todo
+                //@index or slice SyntaxKind
+                m.complete_retain(p, SyntaxKind::EXPR_INDEX);
+                pm_curr = m;
+            }
+            T!['('] => {
+                if last_cast {
+                    return;
+                }
+                let mut m = p.start_before(pm_curr);
+                p.bump(T!['(']);
+                //@todo
+                m.complete_retain(p, SyntaxKind::EXPR_CALL);
+                pm_curr = m;
+            }
+            T![as] => {
+                last_cast = true;
+                let mut m = p.start_before(pm_curr);
+                p.bump(T![as]);
+                //@todo
+                m.complete_retain(p, SyntaxKind::EXPR_CAST);
+                pm_curr = m;
+            }
+            _ => return,
+        }
     }
 }
 

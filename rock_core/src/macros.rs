@@ -25,7 +25,6 @@ macro_rules! id_impl {
             #[inline(always)]
             pub const fn dummy() -> $name {
                 $name(u32::MAX)
-
             }
             #[allow(unused)]
             #[inline(always)]

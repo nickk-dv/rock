@@ -49,7 +49,11 @@ fn parse_build(format: CommandFormat) -> ResultComp<Command> {
     let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
     let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
 
-    let data = CommandBuild { #[cfg(not(target_os = "linux"))] kind, emit_llvm };
+    let data = CommandBuild {
+        #[cfg(not(target_os = "linux"))]
+        kind,
+        emit_llvm,
+    };
     ResultComp::new(Command::Build(data), diagnostics)
 }
 
