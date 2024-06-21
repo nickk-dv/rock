@@ -1,3 +1,4 @@
+mod ast_layer;
 mod grammar;
 mod parser;
 mod syntax_kind;

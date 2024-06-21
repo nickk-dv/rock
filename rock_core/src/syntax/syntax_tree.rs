@@ -37,9 +37,7 @@ impl<'syn> SyntaxTree<'syn> {
             tokens,
         }
     }
-    pub fn root(&self) -> &Node {
-        self.node(NodeID::new(0))
-    }
+
     pub fn node(&self, id: NodeID) -> &Node {
         &self.nodes[id.index()]
     }
