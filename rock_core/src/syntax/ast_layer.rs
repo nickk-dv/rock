@@ -113,6 +113,37 @@ ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
 ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
 ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
 
+ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
+ast_node_impl!(ExprLitNull, SyntaxKind::EXPR_LIT_NULL);
+ast_node_impl!(ExprLitBool, SyntaxKind::EXPR_LIT_BOOL);
+ast_node_impl!(ExprLitInt, SyntaxKind::EXPR_LIT_INT);
+ast_node_impl!(ExprLitFloat, SyntaxKind::EXPR_LIT_FLOAT);
+ast_node_impl!(ExprLitChar, SyntaxKind::EXPR_LIT_CHAR);
+ast_node_impl!(ExprLitString, SyntaxKind::EXPR_LIT_STRING);
+ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
+ast_node_impl!(ExprBlock, SyntaxKind::EXPR_BLOCK);
+ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
+ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
+ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
+ast_node_impl!(MatchArmFallback, SyntaxKind::MATCH_ARM_FALLBACK);
+ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
+ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
+ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
+ast_node_impl!(CallArgumentList, SyntaxKind::CALL_ARGUMENT_LIST);
+ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
+ast_node_impl!(ExprSizeof, SyntaxKind::EXPR_SIZEOF);
+ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
+ast_node_impl!(ExprVariant, SyntaxKind::EXPR_VARIANT);
+ast_node_impl!(ExprStructInit, SyntaxKind::EXPR_STRUCT_INIT);
+ast_node_impl!(StructFieldInitList, SyntaxKind::STRUCT_FIELD_INIT_LIST);
+ast_node_impl!(StructFieldInit, SyntaxKind::STRUCT_FIELD_INIT);
+ast_node_impl!(ExprArrayInit, SyntaxKind::EXPR_ARRAY_INIT);
+ast_node_impl!(ExprArrayRepeat, SyntaxKind::EXPR_ARRAY_REPEAT);
+ast_node_impl!(ExprDeref, SyntaxKind::EXPR_DEREF);
+ast_node_impl!(ExprAddress, SyntaxKind::EXPR_ADDRESS);
+ast_node_impl!(ExprUnary, SyntaxKind::EXPR_UNARY);
+ast_node_impl!(ExprBinary, SyntaxKind::EXPR_BINARY);
+
 pub enum Item<'syn> {
     Proc(ProcItem<'syn>),
     Enum(EnumItem<'syn>),
@@ -197,6 +228,68 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
     }
 }
 
+pub enum Expr<'syn> {
+    Paren(ExprParen<'syn>),
+    LitNull(ExprLitNull<'syn>),
+    LitBool(ExprLitBool<'syn>),
+    LitInt(ExprLitInt<'syn>),
+    LitFloat(ExprLitFloat<'syn>),
+    LitChar(ExprLitChar<'syn>),
+    LitString(ExprLitString<'syn>),
+    If(ExprIf<'syn>),
+    Block(ExprBlock<'syn>),
+    Match(ExprMatch<'syn>),
+    Field(ExprField<'syn>),
+    Index(ExprIndex<'syn>),
+    Call(ExprCall<'syn>),
+    Cast(ExprCast<'syn>),
+    Sizeof(ExprSizeof<'syn>),
+    Item(ExprItem<'syn>),
+    Variant(ExprVariant<'syn>),
+    StructInit(ExprStructInit<'syn>),
+    ArrayInit(ExprArrayInit<'syn>),
+    ArrayRepeat(ExprArrayRepeat<'syn>),
+    Deref(ExprDeref<'syn>),
+    Address(ExprAddress<'syn>),
+    Unary(ExprUnary<'syn>),
+    Binary(ExprBinary<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Expr<'syn> {
+    fn cast(node: &'syn Node) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match node.kind {
+            SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
+            SyntaxKind::EXPR_LIT_NULL => Some(Expr::LitNull(ExprLitNull(node))),
+            SyntaxKind::EXPR_LIT_BOOL => Some(Expr::LitBool(ExprLitBool(node))),
+            SyntaxKind::EXPR_LIT_INT => Some(Expr::LitInt(ExprLitInt(node))),
+            SyntaxKind::EXPR_LIT_FLOAT => Some(Expr::LitFloat(ExprLitFloat(node))),
+            SyntaxKind::EXPR_LIT_CHAR => Some(Expr::LitChar(ExprLitChar(node))),
+            SyntaxKind::EXPR_LIT_STRING => Some(Expr::LitString(ExprLitString(node))),
+            SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
+            SyntaxKind::EXPR_BLOCK => Some(Expr::Block(ExprBlock(node))),
+            SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
+            SyntaxKind::EXPR_FIELD => Some(Expr::Field(ExprField(node))),
+            SyntaxKind::EXPR_INDEX => Some(Expr::Index(ExprIndex(node))),
+            SyntaxKind::EXPR_CALL => Some(Expr::Call(ExprCall(node))),
+            SyntaxKind::EXPR_CAST => Some(Expr::Cast(ExprCast(node))),
+            SyntaxKind::EXPR_SIZEOF => Some(Expr::Sizeof(ExprSizeof(node))),
+            SyntaxKind::EXPR_ITEM => Some(Expr::Item(ExprItem(node))),
+            SyntaxKind::EXPR_VARIANT => Some(Expr::Variant(ExprVariant(node))),
+            SyntaxKind::EXPR_STRUCT_INIT => Some(Expr::StructInit(ExprStructInit(node))),
+            SyntaxKind::EXPR_ARRAY_INIT => Some(Expr::ArrayInit(ExprArrayInit(node))),
+            SyntaxKind::EXPR_ARRAY_REPEAT => Some(Expr::ArrayRepeat(ExprArrayRepeat(node))),
+            SyntaxKind::EXPR_DEREF => Some(Expr::Deref(ExprDeref(node))),
+            SyntaxKind::EXPR_ADDRESS => Some(Expr::Address(ExprAddress(node))),
+            SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
+            SyntaxKind::EXPR_BINARY => Some(Expr::Binary(ExprBinary(node))),
+            _ => None,
+        }
+    }
+}
+
 impl<'syn> SourceFile<'syn> {
     pub fn items(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Item<'syn>> {
         AstNodeIterator::new(tree, self.0)
@@ -214,7 +307,9 @@ impl<'syn> ProcItem<'syn> {
     pub fn return_ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
         self.0.find_first(tree)
     }
-    //@optional block
+    pub fn block(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ExprBlock<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> ParamList<'syn> {
@@ -252,7 +347,9 @@ impl<'syn> Variant<'syn> {
     pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
         self.0.find_first(tree)
     }
-    //@optional value
+    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> StructItem<'syn> {
@@ -286,7 +383,9 @@ impl<'syn> ConstItem<'syn> {
     pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
         self.0.find_first(tree)
     }
-    //@value
+    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> GlobalItem<'syn> {
@@ -297,7 +396,9 @@ impl<'syn> GlobalItem<'syn> {
     pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
         self.0.find_first(tree)
     }
-    //@value
+    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> ImportItem<'syn> {
@@ -378,7 +479,9 @@ impl<'syn> TypeArraySlice<'syn> {
 }
 
 impl<'syn> TypeArrayStatic<'syn> {
-    //@len expr
+    pub fn len(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
     pub fn elem_ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
         self.0.find_first(tree)
     }
@@ -389,11 +492,15 @@ impl<'syn> StmtBreak<'syn> {}
 impl<'syn> StmtContinue<'syn> {}
 
 impl<'syn> StmtReturn<'syn> {
-    //@expr
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> StmtDefer<'syn> {
-    //@block? differentiate with short block
+    pub fn block(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ExprBlock<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> StmtLoop<'syn> {
@@ -409,9 +516,207 @@ impl<'syn> StmtAssign<'syn> {
 }
 
 impl<'syn> StmtExprSemi<'syn> {
-    //@expr
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
 }
 
 impl<'syn> StmtExprTail<'syn> {
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprParen<'syn> {
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprLitNull<'syn> {}
+
+impl<'syn> ExprLitBool<'syn> {
+    //@true of false token
+}
+
+impl<'syn> ExprLitInt<'syn> {
+    //@int token
+}
+
+impl<'syn> ExprLitFloat<'syn> {
+    //@float token
+}
+
+impl<'syn> ExprLitChar<'syn> {
+    //@char token
+}
+
+impl<'syn> ExprLitString<'syn> {
+    //@string lit token
+}
+
+impl<'syn> ExprIf<'syn> {
+    //@branches
+    //@fallback, add new fallback node?
+}
+
+impl<'syn> ExprBlock<'syn> {
+    pub fn stmts(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Stmt<'syn>> {
+        AstNodeIterator::new(tree, self.0)
+    }
+}
+
+impl<'syn> ExprMatch<'syn> {
+    pub fn on_expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+    pub fn match_arm_list(&self, tree: &'syn SyntaxTree<'syn>) -> Option<MatchArmList<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> MatchArmList<'syn> {
+    pub fn match_arms(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+    ) -> AstNodeIterator<'syn, MatchArm<'syn>> {
+        AstNodeIterator::new(tree, self.0)
+    }
+    pub fn fallback(&self, tree: &'syn SyntaxTree<'syn>) -> Option<MatchArmFallback<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> MatchArm<'syn> {
+    //@how to separate pat and expr?
+    // find_first `before` some token pattern?
+    // what if -> is missing?
+}
+
+impl<'syn> MatchArmFallback<'syn> {
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprField<'syn> {
+    pub fn target(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprIndex<'syn> {
+    pub fn target(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+    //@index or slice range
+}
+
+impl<'syn> ExprCall<'syn> {
+    pub fn target(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+    pub fn call_argument_list(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+    ) -> Option<CallArgumentList<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> CallArgumentList<'syn> {
+    pub fn input(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Expr<'syn>> {
+        AstNodeIterator::new(tree, self.0)
+    }
+}
+
+impl<'syn> ExprCast<'syn> {
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprSizeof<'syn> {
+    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprItem<'syn> {
+    pub fn path(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Path<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprVariant<'syn> {
+    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprStructInit<'syn> {
+    pub fn path(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Path<'syn>> {
+        self.0.find_first(tree)
+    }
+    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<StructFieldInitList<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> StructFieldInitList<'syn> {
+    pub fn field_inits(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+    ) -> AstNodeIterator<'syn, StructFieldInit<'syn>> {
+        AstNodeIterator::new(tree, self.0)
+    }
+}
+
+impl<'syn> StructFieldInit<'syn> {
+    //@differentiate name, and name: expr
+    //@name
+    //@expr init
+}
+
+impl<'syn> ExprArrayInit<'syn> {
+    pub fn input(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Expr<'syn>> {
+        AstNodeIterator::new(tree, self.0)
+    }
+}
+
+impl<'syn> ExprArrayRepeat<'syn> {
     //@expr
+    //@repeat count
+}
+
+impl<'syn> ExprDeref<'syn> {
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprAddress<'syn> {
+    //@mut
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprUnary<'syn> {
+    //@unary op
+    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
+        self.0.find_first(tree)
+    }
+}
+
+impl<'syn> ExprBinary<'syn> {
+    //@binary op
+    //@lhs
+    //@rhs
 }
