@@ -75,6 +75,25 @@ macro_rules! ast_node_impl {
     };
 }
 
+macro_rules! find_first {
+    ($fn_name:ident, $find_ty:ident) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.find_first(tree)
+        }
+    };
+}
+
+macro_rules! node_iter {
+    ($fn_name:ident, $node_ty:ident) => {
+        pub fn $fn_name(
+            &self,
+            tree: &'syn SyntaxTree<'syn>,
+        ) -> AstNodeIterator<'syn, $node_ty<'syn>> {
+            AstNodeIterator::new(tree, self.0)
+        }
+    };
+}
+
 ast_node_impl!(SourceFile, SyntaxKind::SOURCE_FILE);
 
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
@@ -291,140 +310,80 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
 }
 
 impl<'syn> SourceFile<'syn> {
-    pub fn items(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Item<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(items, Item);
 }
 
 impl<'syn> ProcItem<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn param_list(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ParamList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
+    find_first!(param_list, ParamList);
     //@is variadic
-    pub fn return_ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn block(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ExprBlock<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(return_ty, Type);
+    find_first!(block, ExprBlock);
 }
 
 impl<'syn> ParamList<'syn> {
-    pub fn params(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Param<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(params, Param);
 }
 
 impl<'syn> Param<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
+    find_first!(ty, Type);
 }
 
 impl<'syn> EnumItem<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
     //@optional basic type
-    pub fn variant_list(&self, tree: &'syn SyntaxTree<'syn>) -> Option<VariantList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(variant_list, VariantList);
 }
 
 impl<'syn> VariantList<'syn> {
-    pub fn variants(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Variant<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(variants, Variant);
 }
 
 impl<'syn> Variant<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
+    find_first!(value, Expr);
 }
 
 impl<'syn> StructItem<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn field_list(&self, tree: &'syn SyntaxTree<'syn>) -> Option<FieldList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
+    find_first!(field_list, FieldList);
 }
 
 impl<'syn> FieldList<'syn> {
-    pub fn fields(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Field<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(fields, Field);
 }
 
 impl<'syn> Field<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
+    find_first!(ty, Type);
 }
 
 impl<'syn> ConstItem<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
+    find_first!(ty, Type);
+    find_first!(value, Expr);
 }
 
 impl<'syn> GlobalItem<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
     //@mut
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(ty, Type);
+    find_first!(value, Expr);
 }
 
 impl<'syn> ImportItem<'syn> {
     //@import `/` separated path (add separate node)
     //@alias (need separate node for `as` part)
-    pub fn import_symbol_list(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-    ) -> Option<ImportSymbolList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(import_symbol_list, ImportSymbolList);
 }
 
 impl<'syn> ImportSymbolList<'syn> {
-    pub fn import_symbols(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-    ) -> AstNodeIterator<'syn, ImportSymbol<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(import_symbols, ImportSymbol);
 }
 
 impl<'syn> ImportSymbol<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
     //@alias (need separate node for `as` part)
 }
 
@@ -433,9 +392,7 @@ impl<'syn> Name<'syn> {
 }
 
 impl<'syn> Path<'syn> {
-    pub fn names(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Name<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(names, Name);
 }
 
 impl<'syn> TypeBasic<'syn> {
@@ -443,48 +400,32 @@ impl<'syn> TypeBasic<'syn> {
 }
 
 impl<'syn> TypeCustom<'syn> {
-    pub fn path(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Path<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(path, Path);
 }
 
 impl<'syn> TypeReference<'syn> {
     //@mut
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(ty, Type);
 }
 
 impl<'syn> TypeProcedure<'syn> {
-    pub fn param_type_list(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ParamTypeList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(param_type_list, ParamTypeList);
     //@is variadic
-    pub fn return_ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(return_ty, Type);
 }
 
 impl<'syn> ParamTypeList<'syn> {
-    pub fn param_types(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Type<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(param_types, Type);
 }
 
 impl<'syn> TypeArraySlice<'syn> {
     //@mut
-    pub fn elem_ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(elem_ty, Type);
 }
 
 impl<'syn> TypeArrayStatic<'syn> {
-    pub fn len(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn elem_ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(len, Expr);
+    find_first!(elem_ty, Type);
 }
 
 impl<'syn> StmtBreak<'syn> {}
@@ -492,15 +433,11 @@ impl<'syn> StmtBreak<'syn> {}
 impl<'syn> StmtContinue<'syn> {}
 
 impl<'syn> StmtReturn<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> StmtDefer<'syn> {
-    pub fn block(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ExprBlock<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(block, ExprBlock);
 }
 
 impl<'syn> StmtLoop<'syn> {
@@ -516,21 +453,15 @@ impl<'syn> StmtAssign<'syn> {
 }
 
 impl<'syn> StmtExprSemi<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> StmtExprTail<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprParen<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprLitNull<'syn> {}
@@ -561,30 +492,17 @@ impl<'syn> ExprIf<'syn> {
 }
 
 impl<'syn> ExprBlock<'syn> {
-    pub fn stmts(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Stmt<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(stmts, Stmt);
 }
 
 impl<'syn> ExprMatch<'syn> {
-    pub fn on_expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn match_arm_list(&self, tree: &'syn SyntaxTree<'syn>) -> Option<MatchArmList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(on_expr, Expr);
+    find_first!(match_arm_list, MatchArmList);
 }
 
 impl<'syn> MatchArmList<'syn> {
-    pub fn match_arms(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-    ) -> AstNodeIterator<'syn, MatchArm<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
-    pub fn fallback(&self, tree: &'syn SyntaxTree<'syn>) -> Option<MatchArmFallback<'syn>> {
-        self.0.find_first(tree)
-    }
+    node_iter!(match_arms, MatchArm);
+    find_first!(fallback, MatchArmFallback);
 }
 
 impl<'syn> MatchArm<'syn> {
@@ -594,88 +512,52 @@ impl<'syn> MatchArm<'syn> {
 }
 
 impl<'syn> MatchArmFallback<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprField<'syn> {
-    pub fn target(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(target, Expr);
+    find_first!(name, Name);
 }
 
 impl<'syn> ExprIndex<'syn> {
-    pub fn target(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(target, Expr);
     //@index or slice range
 }
 
 impl<'syn> ExprCall<'syn> {
-    pub fn target(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn call_argument_list(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-    ) -> Option<CallArgumentList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(target, Expr);
+    find_first!(call_argument_list, CallArgumentList);
 }
 
 impl<'syn> CallArgumentList<'syn> {
-    pub fn input(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Expr<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(inputs, Expr);
 }
 
 impl<'syn> ExprCast<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
+    find_first!(into_ty, Type);
 }
 
 impl<'syn> ExprSizeof<'syn> {
-    pub fn ty(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Type<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(ty, Type);
 }
 
 impl<'syn> ExprItem<'syn> {
-    pub fn path(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Path<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(path, Path);
 }
 
 impl<'syn> ExprVariant<'syn> {
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Name<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(name, Name);
 }
 
 impl<'syn> ExprStructInit<'syn> {
-    pub fn path(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Path<'syn>> {
-        self.0.find_first(tree)
-    }
-    pub fn name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<StructFieldInitList<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(path, Path);
+    find_first!(field_init_list, StructFieldInitList);
 }
 
 impl<'syn> StructFieldInitList<'syn> {
-    pub fn field_inits(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-    ) -> AstNodeIterator<'syn, StructFieldInit<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(field_inits, StructFieldInit);
 }
 
 impl<'syn> StructFieldInit<'syn> {
@@ -685,9 +567,7 @@ impl<'syn> StructFieldInit<'syn> {
 }
 
 impl<'syn> ExprArrayInit<'syn> {
-    pub fn input(&self, tree: &'syn SyntaxTree<'syn>) -> AstNodeIterator<'syn, Expr<'syn>> {
-        AstNodeIterator::new(tree, self.0)
-    }
+    node_iter!(inputs, Expr);
 }
 
 impl<'syn> ExprArrayRepeat<'syn> {
@@ -696,23 +576,17 @@ impl<'syn> ExprArrayRepeat<'syn> {
 }
 
 impl<'syn> ExprDeref<'syn> {
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprAddress<'syn> {
     //@mut
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprUnary<'syn> {
     //@unary op
-    pub fn expr(&self, tree: &'syn SyntaxTree<'syn>) -> Option<Expr<'syn>> {
-        self.0.find_first(tree)
-    }
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprBinary<'syn> {
