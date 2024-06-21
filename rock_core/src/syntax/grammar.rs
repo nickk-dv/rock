@@ -1,198 +1,9 @@
-use super::parser::{Event, MarkerClosed, Parser};
-use super::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxKind, SyntaxTree, TokenID};
+use super::parser::{MarkerClosed, Parser};
+use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
-use crate::arena::Arena;
-use crate::error::{ErrorComp, SourceRange};
-use crate::lexer;
-use crate::session::FileID;
-use crate::temp_buffer::TempBuffer;
 use crate::token::{Token, T};
 
-pub fn parse(source: &str, file_id: FileID) -> (SyntaxTree, Vec<ErrorComp>) {
-    let tokens = if let Ok(tokens) = lexer::lex(source, file_id, false) {
-        tokens
-    } else {
-        //@temp work-around
-        panic!("lexer failed");
-    };
-    let mut parser = Parser::new(tokens);
-    source_file(&mut parser);
-
-    let mut arena = Arena::new();
-    let mut nodes = Vec::new();
-    let (tokens, mut events) = parser.finish();
-
-    let mut stack = Vec::new();
-    let mut parent_stack = Vec::with_capacity(8);
-    let mut content_buf = TempBuffer::new();
-    let mut token_idx = 0;
-    let mut errors = Vec::new();
-
-    pretty_print_events(&events);
-
-    for event_idx in 0..events.len() {
-        //@clone to get around borrowing,
-        //change the error handling to copy/clone events
-        match events[event_idx].clone() {
-            Event::StartNode {
-                kind,
-                forward_parent,
-            } => {
-                let mut parent_next = forward_parent;
-                parent_stack.clear();
-
-                while let Some(parent_idx) = parent_next {
-                    let start_event = events[parent_idx as usize].clone();
-
-                    match start_event {
-                        Event::StartNode {
-                            kind,
-                            forward_parent,
-                        } => {
-                            parent_stack.push(kind);
-                            parent_next = forward_parent;
-                            events[parent_idx as usize] = Event::Ignore;
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-
-                while let Some(kind) = parent_stack.pop() {
-                    let node_id = NodeID::new(nodes.len());
-                    content_buf.add(NodeOrToken::Node(node_id));
-                    let offset = content_buf.start();
-                    stack.push((offset, node_id));
-
-                    let node = Node { kind, content: &[] };
-                    nodes.push(node);
-                }
-
-                let node_id = NodeID::new(nodes.len());
-                content_buf.add(NodeOrToken::Node(node_id));
-                let offset = content_buf.start();
-                stack.push((offset, node_id));
-
-                let node = Node { kind, content: &[] };
-                nodes.push(node);
-            }
-            Event::EndNode => {
-                let (offset, node_id) = stack.pop().unwrap();
-                nodes[node_id.index()].content = content_buf.take(offset, &mut arena);
-            }
-            Event::Token { token } => {
-                let token_id = TokenID::new(token_idx);
-                token_idx += 1;
-                content_buf.add(NodeOrToken::Token(token_id));
-            }
-            Event::Error { message } => {
-                let token_id = TokenID::new(token_idx);
-                let range = tokens.get_range(token_id.index());
-                let src = SourceRange::new(range, file_id);
-                errors.push(ErrorComp::new(message, src, None));
-            }
-            Event::Ignore => {}
-        }
-    }
-
-    (SyntaxTree::new(arena, nodes, tokens), errors)
-}
-
-#[test]
-fn parse_test() {
-    let source = r#"
-
-    # import
-    some garbage
-    true false } {
-    
-    import name.
-    proc something(x: , y ) -> {
-        let val = 3 + 2 * 5;
-        let point = math.point.{x: 10, y: 20,};
-        let point2: math. = .{x: 10, y: 20};
-        let x: s32 = null;
-        let g = (23);
-        if true {
-            let c = 10;
-        } else if false {}
-        else {}
-    }
-    proc something3 ( -> proc (math.Vec3, s32, ..) -> u64;
-    enum TileKind {
-        L
-        B,,
-    }
-    
-    "#;
-
-    fn print_depth(depth: u32) {
-        for _ in 0..depth {
-            print!("  ");
-        }
-    }
-
-    fn print_node(tree: &SyntaxTree, node: &Node, depth: u32) {
-        print_depth(depth);
-        println!("[{:?}]", node.kind);
-
-        for node_or_token in node.content {
-            match *node_or_token {
-                NodeOrToken::Node(node_id) => {
-                    print_node(tree, tree.node(node_id), depth + 1);
-                }
-                NodeOrToken::Token(token_id) => {
-                    let token = tree.token(token_id);
-                    let range = tree.token_range(token_id);
-                    print_depth(depth + 1);
-                    println!("`{}`@{:?}", token.as_str(), range);
-                }
-            }
-        }
-    }
-
-    let (tree, errors) = parse(source, FileID::dummy());
-    let root = tree.node(NodeID::new(0));
-    print_node(&tree, root, 0);
-}
-
-fn pretty_print_events(events: &[Event]) {
-    println!("EVENTS:");
-    let mut depth = 0;
-    fn print_depth(depth: i32) {
-        for _ in 0..depth {
-            print!("  ");
-        }
-    }
-    for e in events {
-        match e {
-            Event::EndNode => {}
-            _ => print_depth(depth),
-        }
-        match e {
-            Event::StartNode {
-                kind,
-                forward_parent,
-            } => {
-                if let Some(idx) = *forward_parent {
-                    println!("[START] {:?} [FORWARD_PARENT] {}", kind, idx);
-                } else {
-                    println!("[START] {:?}", kind);
-                }
-                depth += 1;
-            }
-            Event::EndNode => {
-                depth -= 1;
-            }
-            Event::Token { token } => println!("TOKEN `{}`", token.as_str()),
-            Event::Error { message } => {
-                println!("[ERROR] {}", message)
-            }
-            Event::Ignore => println!("[IGNORE]"),
-        }
-    }
-}
-
-fn source_file(p: &mut Parser) {
+pub fn source_file(p: &mut Parser) {
     let m = p.start();
     while !p.at(T![eof]) {
         item(p);
@@ -222,7 +33,7 @@ fn attribute(p: &mut Parser) {
     let m = p.start();
     p.bump(T![#]);
     if p.eat(T!['[']) {
-        p.expect(T![ident]);
+        name(p);
         p.expect(T![']']);
     } else {
         p.expect(T!['[']);
@@ -295,7 +106,7 @@ fn param_list(p: &mut Parser) {
 
 fn param(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![ident]);
+    name(p);
     p.expect(T![:]);
     ty(p);
     m.complete(p, SyntaxKind::PARAM);
@@ -336,7 +147,7 @@ fn variant_list(p: &mut Parser) {
 
 fn variant(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![ident]);
+    name(p);
     if p.eat(T![=]) {
         expr(p);
     }
@@ -375,7 +186,7 @@ fn field_list(p: &mut Parser) {
 
 fn field(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![ident]);
+    name(p);
     p.expect(T![:]);
     ty(p);
     m.complete(p, SyntaxKind::FIELD);
@@ -457,16 +268,14 @@ fn import_symbol(p: &mut Parser) {
 }
 
 fn name(p: &mut Parser) {
+    let m = p.start();
     p.expect(T![ident]);
-}
-
-fn name_ref(p: &mut Parser) {
-    p.expect(T![ident]);
+    m.complete(p, SyntaxKind::NAME);
 }
 
 fn path_type(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![ident]);
+    name(p);
     while p.eat(T![.]) {
         name(p);
     }
@@ -475,7 +284,7 @@ fn path_type(p: &mut Parser) {
 
 fn path_expr(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![ident]);
+    name(p);
     while p.eat(T![.]) {
         if p.at(T!['{']) {
             break;
@@ -532,10 +341,7 @@ fn ty(p: &mut Parser) {
         }
         T![proc] => type_proc(p),
         T!['['] => type_slice_or_array(p),
-        _ => {
-            //@no bump no recovery?
-            p.error("expected type");
-        }
+        _ => p.error("expected type"),
     }
 }
 
@@ -852,8 +658,15 @@ fn tail_expr(p: &mut Parser, mc: MarkerClosed) -> MarkerClosed {
                 }
                 let m = p.start_before(mc_curr);
                 p.bump(T!['[']);
-                //@todo
-                //@index or slice SyntaxKind
+                if !p.at(T![..]) {
+                    expr(p);
+                }
+                if p.eat(T![..]) {
+                    if !p.at(T![']']) {
+                        expr(p);
+                    }
+                }
+                p.expect(T![']']);
                 mc_curr = m.complete(p, SyntaxKind::EXPR_INDEX);
             }
             T!['('] => {
@@ -861,8 +674,7 @@ fn tail_expr(p: &mut Parser, mc: MarkerClosed) -> MarkerClosed {
                     break;
                 }
                 let m = p.start_before(mc_curr);
-                p.bump(T!['(']);
-                //@todo
+                call_argument_list(p);
                 mc_curr = m.complete(p, SyntaxKind::EXPR_CALL);
             }
             T![as] => {
@@ -963,6 +775,19 @@ fn match_arm(p: &mut Parser) -> bool {
     }
 }
 
+fn call_argument_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        expr(p);
+        if !p.at(T![')']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::CALL_ARGUMENT_LIST);
+}
+
 fn field_init_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['{']);
@@ -985,7 +810,7 @@ fn field_init_list(p: &mut Parser) {
 fn field_init(p: &mut Parser) {
     let m = p.start();
     if p.at_next(T![:]) {
-        p.bump(T![ident]);
+        name(p);
         p.bump(T![:]);
     }
     expr(p);

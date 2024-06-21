@@ -1,4 +1,4 @@
-use super::syntax_tree::SyntaxKind;
+use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
 use crate::token::token_list::TokenList;
 use crate::token::Token;
@@ -11,6 +11,7 @@ pub struct Parser {
     steps: Cell<u32>,
 }
 
+//@change error handling method
 #[derive(Clone)]
 pub enum Event {
     StartNode {
@@ -18,9 +19,7 @@ pub enum Event {
         forward_parent: Option<u32>,
     },
     EndNode,
-    Token {
-        token: Token,
-    },
+    Token,
     Error {
         message: String,
     },
@@ -48,17 +47,6 @@ impl Parser {
 
     pub fn finish(self) -> (TokenList, Vec<Event>) {
         (self.input, self.events)
-    }
-
-    pub fn sync_to(&mut self, token_set: TokenSet) {
-        if self.at_set(token_set) || self.at(Token::Eof) {
-            return;
-        }
-        let m = self.start();
-        while !self.at_set(token_set) && !self.at(Token::Eof) {
-            self.bump_any();
-        }
-        m.complete(self, SyntaxKind::ERROR);
     }
 
     pub fn at(&self, token: Token) -> bool {
@@ -91,13 +79,13 @@ impl Parser {
         if !self.at(token) {
             return false;
         }
-        self.do_bump(token);
+        self.do_bump();
         true
     }
 
     pub fn expect(&mut self, token: Token) {
         if !self.eat(token) {
-            self.error(format!("expected {}", token.as_str()));
+            self.error(format!("expected `{}`", token.as_str()));
         }
     }
 
@@ -121,31 +109,15 @@ impl Parser {
         m.complete(self, SyntaxKind::ERROR);
     }
 
-    #[must_use]
-    pub fn start(&mut self) -> Marker {
-        let event_pos = self.events.len() as u32;
-        self.push_event(Event::StartNode {
-            kind: SyntaxKind::TOMBSTONE,
-            forward_parent: None,
-        });
-        Marker::new(event_pos)
-    }
-
-    #[must_use]
-    pub fn start_before(&mut self, m: MarkerClosed) -> Marker {
-        let event_pos = self.events.len() as u32;
-        self.push_event(Event::StartNode {
-            kind: SyntaxKind::TOMBSTONE,
-            forward_parent: None,
-        });
-        match &mut self.events[m.event_idx as usize] {
-            Event::StartNode { forward_parent, .. } => {
-                assert!(forward_parent.is_none());
-                *forward_parent = Some(event_pos);
-            }
-            _ => unreachable!(),
+    pub fn sync_to(&mut self, token_set: TokenSet) {
+        if self.at_set(token_set) || self.at(Token::Eof) {
+            return;
         }
-        Marker::new(event_pos)
+        let m = self.start();
+        while !self.at_set(token_set) && !self.at(Token::Eof) {
+            self.bump_any();
+        }
+        m.complete(self, SyntaxKind::ERROR);
     }
 
     pub fn error<S: Into<String>>(&mut self, message: S) {
@@ -158,13 +130,40 @@ impl Parser {
         if self.peek() == Token::Eof {
             return;
         }
-        self.do_bump(self.peek());
+        self.do_bump();
     }
 
-    fn do_bump(&mut self, token: Token) {
+    fn do_bump(&mut self) {
         self.cursor += 1;
         self.step_reset();
-        self.push_event(Event::Token { token });
+        self.push_event(Event::Token);
+    }
+
+    #[must_use]
+    pub fn start(&mut self) -> Marker {
+        let event_idx = self.events.len() as u32;
+        self.push_event(Event::StartNode {
+            kind: SyntaxKind::TOMBSTONE,
+            forward_parent: None,
+        });
+        Marker::new(event_idx)
+    }
+
+    #[must_use]
+    pub fn start_before(&mut self, m: MarkerClosed) -> Marker {
+        let event_idx = self.events.len() as u32;
+        self.push_event(Event::StartNode {
+            kind: SyntaxKind::TOMBSTONE,
+            forward_parent: None,
+        });
+        match &mut self.events[m.index()] {
+            Event::StartNode { forward_parent, .. } => {
+                assert!(forward_parent.is_none());
+                *forward_parent = Some(event_idx);
+            }
+            _ => unreachable!(),
+        }
+        Marker::new(event_idx)
     }
 
     fn push_event(&mut self, event: Event) {
