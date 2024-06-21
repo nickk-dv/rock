@@ -1,4 +1,4 @@
-use super::parser::{MarkerClosed, Parser};
+use super::parser::{Marker, MarkerClosed, Parser};
 use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
 use crate::token::{Token, T};
@@ -6,30 +6,57 @@ use crate::token::{Token, T};
 pub fn source_file(p: &mut Parser) {
     let m = p.start();
     while !p.at(T![eof]) {
-        item(p);
+        if p.at_set(FIRST_ITEM) {
+            item(p);
+        } else {
+            //@is this sync useful?
+            p.error("expected item");
+            p.sync_to(FIRST_ITEM);
+        }
     }
     m.complete(p, SyntaxKind::SOURCE_FILE);
 }
 
-//@change attribute, pub, item parsing rules
 fn item(p: &mut Parser) {
+    let mut mc = None;
+
+    //@allow attr vecs?
+    if p.at(T![#]) {
+        let mc_attr = attribute(p);
+        if mc.is_none() {
+            mc = Some(mc_attr);
+        }
+    }
+
+    if p.at(T![pub]) {
+        let mc_vis = visibility(p);
+        if mc.is_none() {
+            mc = Some(mc_vis);
+        }
+    }
+
+    let m = if let Some(mc) = mc {
+        p.start_before(mc)
+    } else {
+        p.start()
+    };
+
     match p.peek() {
-        T![#] => attribute(p),
-        T![pub] => visibility(p),
-        T![proc] => proc_item(p),
-        T![enum] => enum_item(p),
-        T![struct] => struct_item(p),
-        T![const] => const_item(p),
-        T![global] => global_item(p),
-        T![import] => import_item(p),
+        T![proc] => proc_item(p, m),
+        T![enum] => enum_item(p, m),
+        T![struct] => struct_item(p, m),
+        T![const] => const_item(p, m),
+        T![global] => global_item(p, m),
+        T![import] => import_item(p, m),
         _ => {
             p.error("expected item");
-            p.sync_to(RECOVER_ITEM);
+            p.sync_to(FIRST_ITEM);
+            m.complete(p, SyntaxKind::ERROR);
         }
     }
 }
 
-fn attribute(p: &mut Parser) {
+fn attribute(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![#]);
     if p.eat(T!['[']) {
@@ -37,18 +64,17 @@ fn attribute(p: &mut Parser) {
         p.expect(T![']']);
     } else {
         p.expect(T!['[']);
-        p.sync_to(RECOVER_ITEM);
     }
-    m.complete(p, SyntaxKind::ATTRIBUTE);
+    m.complete(p, SyntaxKind::ATTRIBUTE)
 }
 
-fn visibility(p: &mut Parser) {
+fn visibility(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![pub]);
-    m.complete(p, SyntaxKind::VISIBILITY);
+    m.complete(p, SyntaxKind::VISIBILITY)
 }
 
-const RECOVER_ITEM: TokenSet = TokenSet::new(&[
+const FIRST_ITEM: TokenSet = TokenSet::new(&[
     T![#],
     T![pub],
     T![proc],
@@ -59,13 +85,13 @@ const RECOVER_ITEM: TokenSet = TokenSet::new(&[
     T![import],
 ]);
 
-const RECOVER_PARAM_LIST: TokenSet = RECOVER_ITEM.combine(TokenSet::new(&[T![->], T!['{'], T![;]]));
-const RECOVER_VARIANT_LIST: TokenSet = RECOVER_ITEM;
-const RECOVER_FIELD_LIST: TokenSet = RECOVER_ITEM;
-const RECOVER_IMPORT_SYMBOL_LIST: TokenSet = RECOVER_ITEM.combine(TokenSet::new(&[T![;]]));
+const RECOVER_PARAM_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![->], T!['{'], T![;]]));
+const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
+const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;
+const RECOVER_IMPORT_PATH: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![as], T![.], T![;]]));
+const RECOVER_IMPORT_SYMBOL_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![;]]));
 
-fn proc_item(p: &mut Parser) {
-    let m = p.start();
+fn proc_item(p: &mut Parser, m: Marker) {
     p.bump(T![proc]);
     name(p);
     if p.at(T!['(']) {
@@ -79,7 +105,7 @@ fn proc_item(p: &mut Parser) {
     if p.at(T!['{']) {
         block(p);
     } else if !p.eat(T![;]) {
-        p.error_recover("expected block or `;`", RECOVER_ITEM);
+        p.error_recover("expected block or `;`", FIRST_ITEM);
     }
     m.complete(p, SyntaxKind::PROC_ITEM);
 }
@@ -112,8 +138,7 @@ fn param(p: &mut Parser) {
     m.complete(p, SyntaxKind::PARAM);
 }
 
-fn enum_item(p: &mut Parser) {
-    let m = p.start();
+fn enum_item(p: &mut Parser, m: Marker) {
     p.bump(T![enum]);
     name(p);
     if p.peek().as_basic_type().is_some() {
@@ -156,8 +181,7 @@ fn variant(p: &mut Parser) {
     m.complete(p, SyntaxKind::VARIANT);
 }
 
-fn struct_item(p: &mut Parser) {
-    let m = p.start();
+fn struct_item(p: &mut Parser, m: Marker) {
     p.bump(T![struct]);
     name(p);
     if p.at(T!['{']) {
@@ -194,8 +218,7 @@ fn field(p: &mut Parser) {
     m.complete(p, SyntaxKind::FIELD);
 }
 
-fn const_item(p: &mut Parser) {
-    let m = p.start();
+fn const_item(p: &mut Parser, m: Marker) {
     p.bump(T![const]);
     name(p);
     p.expect(T![:]);
@@ -206,11 +229,10 @@ fn const_item(p: &mut Parser) {
     m.complete(p, SyntaxKind::CONST_ITEM);
 }
 
-fn global_item(p: &mut Parser) {
-    let m = p.start();
+fn global_item(p: &mut Parser, m: Marker) {
     p.bump(T![global]);
-    name(p);
     p.eat(T![mut]);
+    name(p);
     p.expect(T![:]);
     ty(p);
     p.expect(T![=]);
@@ -219,12 +241,12 @@ fn global_item(p: &mut Parser) {
     m.complete(p, SyntaxKind::GLOBAL_ITEM);
 }
 
-fn import_item(p: &mut Parser) {
-    let m = p.start();
+fn import_item(p: &mut Parser, m: Marker) {
     p.bump(T![import]);
-    name(p);
-    if p.eat(T![/]) {
-        name(p);
+    if p.at(T![ident]) {
+        import_path(p);
+    } else {
+        p.error_recover("expected import path", RECOVER_IMPORT_PATH);
     }
     if p.at(T![as]) {
         name_alias(p);
@@ -240,6 +262,15 @@ fn import_item(p: &mut Parser) {
         p.expect(T![;]);
     }
     m.complete(p, SyntaxKind::IMPORT_ITEM);
+}
+
+fn import_path(p: &mut Parser) {
+    let m = p.start();
+    name(p);
+    while p.eat(T![/]) {
+        name(p);
+    }
+    m.complete(p, SyntaxKind::IMPORT_PATH);
 }
 
 fn import_symbol_list(p: &mut Parser) {

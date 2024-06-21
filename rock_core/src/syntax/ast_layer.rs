@@ -1,6 +1,7 @@
 use super::syntax_kind::SyntaxKind;
 use super::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxTree};
 use crate::ast;
+use crate::text::TextRange;
 use crate::token::{Token, T};
 use std::marker::PhantomData;
 
@@ -123,6 +124,17 @@ macro_rules! find_token_rev {
     };
 }
 
+macro_rules! token_range {
+    () => {
+        pub fn token_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+            match self.0.content[0] {
+                NodeOrToken::Node(_) => unreachable!(),
+                NodeOrToken::Token(token_id) => tree.token_range(token_id),
+            }
+        }
+    };
+}
+
 macro_rules! node_iter {
     ($fn_name:ident, $node_ty:ident) => {
         pub fn $fn_name(
@@ -136,6 +148,8 @@ macro_rules! node_iter {
 
 ast_node_impl!(SourceFile, SyntaxKind::SOURCE_FILE);
 
+ast_node_impl!(Attribute, SyntaxKind::ATTRIBUTE);
+ast_node_impl!(Visibility, SyntaxKind::VISIBILITY);
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
 ast_node_impl!(ParamList, SyntaxKind::PARAM_LIST);
 ast_node_impl!(Param, SyntaxKind::PARAM);
@@ -148,6 +162,7 @@ ast_node_impl!(Field, SyntaxKind::FIELD);
 ast_node_impl!(ConstItem, SyntaxKind::CONST_ITEM);
 ast_node_impl!(GlobalItem, SyntaxKind::GLOBAL_ITEM);
 ast_node_impl!(ImportItem, SyntaxKind::IMPORT_ITEM);
+ast_node_impl!(ImportPath, SyntaxKind::IMPORT_PATH);
 ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
 ast_node_impl!(NameAlias, SyntaxKind::NAME_ALIAS);
@@ -354,7 +369,17 @@ impl<'syn> SourceFile<'syn> {
     node_iter!(items, Item);
 }
 
+impl<'syn> Attribute<'syn> {
+    find_first!(name, Name);
+}
+
+impl<'syn> Visibility<'syn> {
+    find_token!(is_pub, T![pub]);
+}
+
 impl<'syn> ProcItem<'syn> {
+    find_first!(attribute, Attribute);
+    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(param_list, ParamList);
     find_first!(return_ty, Type);
@@ -372,6 +397,8 @@ impl<'syn> Param<'syn> {
 }
 
 impl<'syn> EnumItem<'syn> {
+    find_first!(attribute, Attribute);
+    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(type_basic, TypeBasic);
     find_first!(variant_list, VariantList);
@@ -387,6 +414,8 @@ impl<'syn> Variant<'syn> {
 }
 
 impl<'syn> StructItem<'syn> {
+    find_first!(attribute, Attribute);
+    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(field_list, FieldList);
 }
@@ -401,22 +430,32 @@ impl<'syn> Field<'syn> {
 }
 
 impl<'syn> ConstItem<'syn> {
+    find_first!(attribute, Attribute);
+    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(ty, Type);
     find_first!(value, Expr);
 }
 
 impl<'syn> GlobalItem<'syn> {
-    find_first!(name, Name);
+    find_first!(attribute, Attribute);
+    find_first!(visiblity, Visibility);
     find_token!(is_mut, T![mut]);
+    find_first!(name, Name);
     find_first!(ty, Type);
     find_first!(value, Expr);
 }
 
 impl<'syn> ImportItem<'syn> {
-    //@import `/` separated path (add separate node)
+    find_first!(attribute, Attribute);
+    find_first!(visiblity, Visibility);
+    find_first!(import_path, ImportPath);
     find_first!(name_alias, NameAlias);
     find_first!(import_symbol_list, ImportSymbolList);
+}
+
+impl<'syn> ImportPath<'syn> {
+    node_iter!(names, Name);
 }
 
 impl<'syn> ImportSymbolList<'syn> {
@@ -433,7 +472,7 @@ impl<'syn> NameAlias<'syn> {
 }
 
 impl<'syn> Name<'syn> {
-    //@identifier token
+    token_range!();
 }
 
 impl<'syn> Path<'syn> {
@@ -521,23 +560,23 @@ impl<'syn> ExprParen<'syn> {
 impl<'syn> ExprLitNull<'syn> {}
 
 impl<'syn> ExprLitBool<'syn> {
-    //@true of false token
+    token_range!();
 }
 
 impl<'syn> ExprLitInt<'syn> {
-    //@int token
+    token_range!();
 }
 
 impl<'syn> ExprLitFloat<'syn> {
-    //@float token
+    token_range!();
 }
 
 impl<'syn> ExprLitChar<'syn> {
-    //@char token
+    token_range!();
 }
 
 impl<'syn> ExprLitString<'syn> {
-    //@string lit token
+    token_range!();
 }
 
 impl<'syn> ExprIf<'syn> {

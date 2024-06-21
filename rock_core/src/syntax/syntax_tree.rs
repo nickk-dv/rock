@@ -38,14 +38,14 @@ impl<'syn> SyntaxTree<'syn> {
         }
     }
 
-    pub fn node(&self, id: NodeID) -> &Node {
-        &self.nodes[id.index()]
+    pub fn node(&self, node_id: NodeID) -> &Node {
+        &self.nodes[node_id.index()]
     }
-    pub fn token(&self, id: TokenID) -> Token {
-        self.tokens.get_token(id.index())
+    pub fn token(&self, token_id: TokenID) -> Token {
+        self.tokens.get_token(token_id.index())
     }
-    pub fn token_range(&self, id: TokenID) -> TextRange {
-        self.tokens.get_range(id.index())
+    pub fn token_range(&self, token_id: TokenID) -> TextRange {
+        self.tokens.get_range(token_id.index())
     }
 }
 
@@ -128,4 +128,33 @@ pub fn tree_build<'syn>(
     }
 
     (SyntaxTree::new(arena, nodes, tokens), errors)
+}
+
+pub fn tree_print(tree: &SyntaxTree, source: &str) {
+    print_node(tree, source, tree.node(NodeID::new(0)), 0);
+
+    fn print_depth(depth: u32) {
+        for _ in 0..depth {
+            print!("  ");
+        }
+    }
+
+    fn print_node(tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
+        print_depth(depth);
+        println!("[{:?}]", node.kind);
+
+        for node_or_token in node.content {
+            match *node_or_token {
+                NodeOrToken::Node(node_id) => {
+                    let node = tree.node(node_id);
+                    print_node(tree, source, node, depth + 1);
+                }
+                NodeOrToken::Token(token_id) => {
+                    let range = tree.token_range(token_id);
+                    print_depth(depth + 1);
+                    println!("@{:?} `{}`", range, &source[range.as_usize()]);
+                }
+            }
+        }
+    }
 }

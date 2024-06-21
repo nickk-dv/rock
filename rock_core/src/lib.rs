@@ -8,6 +8,7 @@ pub mod ast_parse;
 #[cfg(feature = "codegen_llvm")]
 pub mod codegen;
 pub mod error;
+pub mod format;
 pub mod fs_env;
 mod hir;
 pub mod hir_lower;

@@ -19,6 +19,7 @@ pub enum SyntaxKind {
     CONST_ITEM,
     GLOBAL_ITEM,
     IMPORT_ITEM,
+    IMPORT_PATH,
     IMPORT_SYMBOL_LIST,
     IMPORT_SYMBOL,
     NAME_ALIAS,
