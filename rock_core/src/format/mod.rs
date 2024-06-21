@@ -1,3 +1,4 @@
+use crate::ast::BinOp;
 use crate::error::ErrorComp;
 use crate::session::FileID;
 use crate::syntax;
@@ -25,7 +26,7 @@ fn format_test() {
     main (
         x : s32 , y : s32  ) ->  u32 ;
 
-    proc p_empty( );
+    proc p_empty( ) { break; return 5; }
     proc p_var (..);
     proc p_var_a (x: s32, ..);
     proc p_arg (x: s32,);
@@ -48,6 +49,33 @@ fn format_test() {
     import s/g as smth;
     import s.{ };
     import s/g as smth.{mem, mem2 as other,};
+
+    struct TypeTest {
+        f: u32,
+        f: Custom.Type,
+        f: & u32,
+        f: &mut u32,
+        f: proc(u32, s32, ..) -> bool,
+        f: []G,
+        f: [mut]G,
+        f: [10][50]Custom.Type,
+    }
+
+    const STRUCT: Vec2 = (&mut G.name   (1, 3, 4,));
+
+    proc stuff() {
+        let x: s32;
+        let x: s32 = 2 +    3;
+        let x=(  
+        
+        15  
+        - 8 
+        ) ..< (55);
+        x.field = y - g * 5;
+        defer {
+            let x = 10;
+        }
+    }
     "#;
 
     if let Ok(formatted) = format(source, FileID::dummy()) {
@@ -61,6 +89,7 @@ fn format_test() {
 struct Formatter<'syn> {
     tree: &'syn SyntaxTree<'syn>,
     source: &'syn str,
+    tab_depth: u32,
     buffer: String,
 }
 
@@ -69,6 +98,7 @@ impl<'syn> Formatter<'syn> {
         Formatter {
             tree,
             source,
+            tab_depth: 0,
             buffer: String::with_capacity(source.len()),
         }
     }
@@ -85,20 +115,35 @@ impl<'syn> Formatter<'syn> {
         self.buffer.push(c);
     }
 
-    fn space(&mut self) {
-        self.buffer.push(' ');
+    fn write_range(&mut self, range: TextRange) {
+        let string = &self.source[range.as_usize()];
+        self.write(string);
     }
 
-    fn tab(&mut self) {
-        self.write("    ");
+    fn space(&mut self) {
+        self.buffer.push(' ');
     }
 
     fn new_line(&mut self) {
         self.buffer.push('\n');
     }
 
-    fn get_str(&self, range: TextRange) -> &'syn str {
-        &self.source[range.as_usize()]
+    fn tab(&mut self) {
+        self.write("    ");
+    }
+
+    fn tab_depth(&mut self) {
+        for _ in 0..self.tab_depth {
+            self.tab();
+        }
+    }
+
+    fn depth_increment(&mut self) {
+        self.tab_depth += 1;
+    }
+
+    fn depth_decrement(&mut self) {
+        self.tab_depth -= 1;
     }
 }
 
@@ -158,8 +203,7 @@ fn proc_item(fmt: &mut Formatter, item: ast::ProcItem) {
         type_fmt(fmt, ty);
     }
     if let Some(block) = item.block(fmt.tree) {
-        fmt.space();
-        fmt.write("{ @todo }");
+        expr_block(fmt, block);
     } else {
         fmt.write_c(';');
     }
@@ -188,6 +232,10 @@ fn param_list(fmt: &mut Formatter, param_list: ast::ParamList) {
 }
 
 fn param_fmt(fmt: &mut Formatter, param: ast::Param) {
+    if param.is_mut(fmt.tree) {
+        fmt.write("mut");
+        fmt.space();
+    }
     name_fmt(fmt, param.name(fmt.tree).unwrap());
     fmt.write_c(':');
     fmt.space();
@@ -360,12 +408,10 @@ fn name_alias_fmt(fmt: &mut Formatter, name_alias: ast::NameAlias) {
 }
 
 fn name_fmt(fmt: &mut Formatter, name: ast::Name) {
-    let range = name.token_range(fmt.tree);
-    let string = fmt.get_str(range);
-    fmt.write(string);
+    fmt.write_range(name.token_range(fmt.tree));
 }
 
-fn path(fmt: &mut Formatter, path: ast::Path) {
+fn path_fmt(fmt: &mut Formatter, path: ast::Path) {
     let mut first = true;
     for name in path.names(fmt.tree) {
         if !first {
@@ -393,25 +439,320 @@ fn type_basic(fmt: &mut Formatter, ty: ast::TypeBasic) {
 }
 
 fn type_custom(fmt: &mut Formatter, ty: ast::TypeCustom) {
-    path(fmt, ty.path(fmt.tree).unwrap());
+    path_fmt(fmt, ty.path(fmt.tree).unwrap());
 }
 
 fn type_reference(fmt: &mut Formatter, ty: ast::TypeReference) {
-    //
+    fmt.write_c('&');
+    if ty.is_mut(fmt.tree) {
+        fmt.write("mut");
+        fmt.space();
+    }
+    type_fmt(fmt, ty.ref_ty(fmt.tree).unwrap());
 }
 
 fn type_procedure(fmt: &mut Formatter, ty: ast::TypeProcedure) {
-    //
+    fmt.write("proc");
+    param_type_list(fmt, ty.param_type_list(fmt.tree).unwrap());
+    if let Some(ty) = ty.return_ty(fmt.tree) {
+        fmt.space();
+        fmt.write("->");
+        fmt.space();
+        type_fmt(fmt, ty);
+    }
+}
+
+fn param_type_list(fmt: &mut Formatter, param_type_list: ast::ParamTypeList) {
+    fmt.write_c('(');
+    let mut first = true;
+    for ty in param_type_list.param_types(fmt.tree) {
+        if !first {
+            fmt.write_c(',');
+            fmt.space();
+        }
+        type_fmt(fmt, ty);
+        first = false;
+    }
+    if param_type_list.is_variadic(fmt.tree) {
+        if !first {
+            fmt.write_c(',');
+            fmt.space();
+        }
+        fmt.write("..");
+    }
+    fmt.write_c(')');
 }
 
 fn type_array_slice(fmt: &mut Formatter, ty: ast::TypeArraySlice) {
-    //
+    fmt.write_c('[');
+    if ty.is_mut(fmt.tree) {
+        fmt.write("mut");
+    }
+    fmt.write_c(']');
+    type_fmt(fmt, ty.elem_ty(fmt.tree).unwrap());
 }
 
 fn type_array_static(fmt: &mut Formatter, ty: ast::TypeArrayStatic) {
-    //
+    fmt.write_c('[');
+    expr_fmt(fmt, ty.len(fmt.tree).unwrap());
+    fmt.write_c(']');
+    type_fmt(fmt, ty.elem_ty(fmt.tree).unwrap());
+}
+
+fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
+    match stmt {
+        ast::Stmt::Break(_) => {
+            fmt.write("break");
+            fmt.write_c(';');
+        }
+        ast::Stmt::Continue(_) => {
+            fmt.write("continue");
+            fmt.write_c(';');
+        }
+        ast::Stmt::Return(stmt_return) => {
+            fmt.write("return");
+            if let Some(expr) = stmt_return.expr(fmt.tree) {
+                fmt.space();
+                expr_fmt(fmt, expr);
+            }
+            fmt.write_c(';');
+        }
+        ast::Stmt::Defer(defer) => {
+            fmt.write("defer");
+            //@allow short blocks, need separate SHORT_BLOCK node?
+            expr_block(fmt, defer.block(fmt.tree).unwrap());
+        }
+        ast::Stmt::Loop(loop_) => {
+            //@todo no api
+            fmt.write("<@loop>");
+        }
+        ast::Stmt::Local(local) => local_fmt(fmt, local),
+        ast::Stmt::Assign(assign) => assign_fmt(fmt, assign),
+        ast::Stmt::ExprSemi(expr_semi) => {
+            expr_fmt(fmt, expr_semi.expr(fmt.tree).unwrap());
+            //@semi is optional (isnt added after `}`)
+            fmt.write_c(';');
+        }
+        ast::Stmt::ExprTail(expr_tail) => {
+            fmt.write("->");
+            expr_fmt(fmt, expr_tail.expr(fmt.tree).unwrap());
+            fmt.write_c(';');
+        }
+    }
+}
+
+fn local_fmt(fmt: &mut Formatter, local: ast::StmtLocal) {
+    if local.is_mut(fmt.tree) {
+        fmt.write("mut");
+    } else {
+        fmt.write("let");
+    }
+    fmt.space();
+    name_fmt(fmt, local.name(fmt.tree).unwrap());
+
+    if let Some(ty) = local.ty(fmt.tree) {
+        fmt.write_c(':');
+        fmt.space();
+        type_fmt(fmt, ty);
+        if let Some(expr) = local.expr(fmt.tree) {
+            fmt.space();
+            fmt.write_c('=');
+            fmt.space();
+            expr_fmt(fmt, expr);
+        }
+    } else {
+        fmt.space();
+        fmt.write_c('=');
+        fmt.space();
+        expr_fmt(fmt, local.expr(fmt.tree).unwrap());
+    }
+    fmt.write_c(';');
+}
+
+fn assign_fmt(fmt: &mut Formatter, assign: ast::StmtAssign) {
+    let mut lhs_rhs = assign.lhs_rhs_iter(fmt.tree);
+    expr_fmt(fmt, lhs_rhs.next().unwrap());
+
+    fmt.space();
+    match assign.assign_op(fmt.tree) {
+        crate::ast::AssignOp::Assign => fmt.write_c('='),
+        crate::ast::AssignOp::Bin(bin_op) => {
+            fmt.write_c('=');
+            fmt.write(bin_op.as_str());
+        }
+    }
+    fmt.space();
+
+    expr_fmt(fmt, lhs_rhs.next().unwrap());
+    fmt.write_c(';');
 }
 
 fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
-    fmt.write("<@expr>")
+    match expr {
+        ast::Expr::Paren(expr_paren) => {
+            fmt.write_c('(');
+            expr_fmt(fmt, expr_paren.expr(fmt.tree).unwrap());
+            fmt.write_c(')');
+        }
+        ast::Expr::LitNull(_) => fmt.write("null"),
+        ast::Expr::LitBool(lit) => fmt.write_range(lit.token_range(fmt.tree)),
+        ast::Expr::LitInt(lit) => fmt.write_range(lit.token_range(fmt.tree)),
+        ast::Expr::LitFloat(lit) => fmt.write_range(lit.token_range(fmt.tree)),
+        ast::Expr::LitChar(lit) => fmt.write_range(lit.token_range(fmt.tree)),
+        ast::Expr::LitString(lit) => fmt.write_range(lit.token_range(fmt.tree)),
+        ast::Expr::If(_) => {
+            //@todo no branch / fallback api
+            fmt.write("<@if>");
+        }
+        ast::Expr::Block(block) => expr_block(fmt, block),
+        ast::Expr::Match(_) => {
+            //@todo no match arm api
+            fmt.write("<@match>");
+        }
+        ast::Expr::Field(field) => {
+            expr_fmt(fmt, field.target(fmt.tree).unwrap());
+            fmt.write_c('.');
+            name_fmt(fmt, field.name(fmt.tree).unwrap());
+        }
+        ast::Expr::Index(index) => {
+            expr_fmt(fmt, index.target(fmt.tree).unwrap());
+            fmt.write_c('[');
+            if index.is_mut(fmt.tree) {
+                fmt.write("mut");
+                fmt.space();
+            }
+            //@todo no slicing / index expr api
+            fmt.write("<@index_or_slice>");
+            fmt.write_c(']');
+        }
+        ast::Expr::Call(call) => {
+            expr_fmt(fmt, call.target(fmt.tree).unwrap());
+            fmt.write_c('(');
+            let mut first = true;
+            let call_argument_list = call.call_argument_list(fmt.tree).unwrap();
+            for expr in call_argument_list.inputs(fmt.tree) {
+                if !first {
+                    fmt.write_c(',');
+                    fmt.space();
+                }
+                expr_fmt(fmt, expr);
+                first = false;
+            }
+            fmt.write_c(')');
+        }
+        ast::Expr::Cast(cast) => {
+            expr_fmt(fmt, cast.expr(fmt.tree).unwrap());
+            fmt.space();
+            fmt.write("as");
+            fmt.space();
+            type_fmt(fmt, cast.into_ty(fmt.tree).unwrap());
+        }
+        ast::Expr::Sizeof(sizeof) => {
+            fmt.write("sizeof");
+            fmt.write_c('(');
+            type_fmt(fmt, sizeof.ty(fmt.tree).unwrap());
+            fmt.write_c(')');
+        }
+        ast::Expr::Item(item) => {
+            path_fmt(fmt, item.path(fmt.tree).unwrap());
+        }
+        ast::Expr::Variant(variant) => {
+            fmt.write_c('.');
+            name_fmt(fmt, variant.name(fmt.tree).unwrap());
+        }
+        ast::Expr::StructInit(struct_init) => {
+            if let Some(path) = struct_init.path(fmt.tree) {
+                path_fmt(fmt, path);
+            }
+            fmt.write_c('.');
+            fmt.write_c('{');
+            let mut first = true;
+            let field_init_list = struct_init.field_init_list(fmt.tree).unwrap();
+            for field_init in field_init_list.field_inits(fmt.tree) {
+                if !first {
+                    fmt.write_c(',');
+                    fmt.space();
+                }
+                if let Some(name) = field_init.name(fmt.tree) {
+                    name_fmt(fmt, name);
+                    fmt.write_c(':');
+                    fmt.space();
+                }
+                expr_fmt(fmt, field_init.expr(fmt.tree).unwrap());
+                first = false;
+            }
+            fmt.write_c('}');
+        }
+        ast::Expr::ArrayInit(array_init) => {
+            fmt.write_c('[');
+            let mut first = true;
+            for expr in array_init.inputs(fmt.tree) {
+                if !first {
+                    fmt.write_c(',');
+                    fmt.space();
+                }
+                expr_fmt(fmt, expr);
+                first = false;
+            }
+            fmt.write_c(']');
+        }
+        ast::Expr::ArrayRepeat(array_repeat) => {
+            let mut expr_len = array_repeat.expr_len_iter(fmt.tree);
+            fmt.write_c('[');
+            expr_fmt(fmt, expr_len.next().unwrap());
+            fmt.write_c(';');
+            fmt.space();
+            expr_fmt(fmt, expr_len.next().unwrap());
+            fmt.write_c(']');
+        }
+        ast::Expr::Deref(deref) => {
+            fmt.write_c('*');
+            expr_fmt(fmt, deref.expr(fmt.tree).unwrap());
+        }
+        ast::Expr::Address(address) => {
+            fmt.write_c('&');
+            if address.is_mut(fmt.tree) {
+                fmt.write("mut");
+                fmt.space();
+            }
+            expr_fmt(fmt, address.expr(fmt.tree).unwrap());
+        }
+        ast::Expr::Unary(unary) => {
+            let un_op = unary.un_op(fmt.tree);
+            fmt.write(un_op.as_str());
+            expr_fmt(fmt, unary.expr(fmt.tree).unwrap());
+        }
+        ast::Expr::Binary(binary) => {
+            let mut lhs_rhs = binary.lhs_rhs_iter(fmt.tree);
+            expr_fmt(fmt, lhs_rhs.next().unwrap());
+
+            let bin_op = binary.bin_op(fmt.tree);
+            if matches!(bin_op, BinOp::Range | BinOp::RangeInc) {
+                fmt.write(bin_op.as_str());
+            } else {
+                fmt.space();
+                fmt.write(bin_op.as_str());
+                fmt.space();
+            }
+
+            expr_fmt(fmt, lhs_rhs.next().unwrap());
+        }
+    }
+}
+
+fn expr_block(fmt: &mut Formatter, block: ast::ExprBlock) {
+    fmt.space();
+    fmt.write_c('{');
+    fmt.new_line();
+
+    fmt.depth_increment();
+    for stmt in block.stmts(fmt.tree) {
+        fmt.tab_depth();
+        stmt_fmt(fmt, stmt);
+        fmt.new_line();
+    }
+    fmt.depth_decrement();
+
+    fmt.tab_depth();
+    fmt.write_c('}');
 }

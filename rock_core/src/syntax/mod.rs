@@ -35,6 +35,10 @@ fn test_tree() {
         Variant = 
         Variant2,
     }
+
+    const VAL: &u32 = (&mut G.name(1, 3, 4));
+
+    const V: s32 = if true { } else if false {} else {};
     
     "#;
 

@@ -85,6 +85,8 @@ const FIRST_ITEM: TokenSet = TokenSet::new(&[
     T![import],
 ]);
 
+const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
+
 const RECOVER_PARAM_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![->], T!['{'], T![;]]));
 const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
 const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;
@@ -114,7 +116,7 @@ fn param_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at(T![ident]) {
+        if p.at_set(FIRST_PARAM) {
             param(p);
             if !p.at(T![')']) {
                 p.expect(T![,]);
@@ -132,6 +134,7 @@ fn param_list(p: &mut Parser) {
 
 fn param(p: &mut Parser) {
     let m = p.start();
+    p.eat(T![mut]);
     name(p);
     p.expect(T![:]);
     ty(p);
@@ -379,6 +382,7 @@ fn ty(p: &mut Parser) {
         }
         T![&] => {
             let m = p.start();
+            p.bump(T![&]);
             p.eat(T![mut]);
             ty(p);
             m.complete(p, SyntaxKind::TYPE_REFERENCE);
@@ -746,6 +750,7 @@ fn if_(p: &mut Parser) -> MarkerClosed {
             expr(p);
             block_expect(p);
         } else {
+            block_expect(p);
             break;
         }
     }

@@ -17,6 +17,39 @@ impl<'syn> Node<'syn> {
         AstNodeIterator::new(tree, self).next()
     }
 
+    fn find_un_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::UnOp> {
+        for node_or_token in self.content.iter().copied() {
+            if let NodeOrToken::Token(token_id) = node_or_token {
+                if let Some(op) = tree.token(token_id).as_un_op() {
+                    return Some(op);
+                }
+            }
+        }
+        None
+    }
+
+    fn find_bin_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::BinOp> {
+        for node_or_token in self.content.iter().copied() {
+            if let NodeOrToken::Token(token_id) = node_or_token {
+                if let Some(op) = tree.token(token_id).as_bin_op() {
+                    return Some(op);
+                }
+            }
+        }
+        None
+    }
+
+    fn find_assign_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::AssignOp> {
+        for node_or_token in self.content.iter().copied() {
+            if let NodeOrToken::Token(token_id) = node_or_token {
+                if let Some(op) = tree.token(token_id).as_assign_op() {
+                    return Some(op);
+                }
+            }
+        }
+        None
+    }
+
     fn find_token(&'syn self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
@@ -392,6 +425,7 @@ impl<'syn> ParamList<'syn> {
 }
 
 impl<'syn> Param<'syn> {
+    find_token!(is_mut, T![mut]);
     find_first!(name, Name);
     find_first!(ty, Type);
 }
@@ -538,11 +572,19 @@ impl<'syn> StmtLoop<'syn> {
 }
 
 impl<'syn> StmtLocal<'syn> {
-    //@todo
+    find_token!(is_mut, T![mut]);
+    find_first!(name, Name);
+    find_first!(ty, Type);
+    find_first!(expr, Expr);
 }
 
 impl<'syn> StmtAssign<'syn> {
-    //@todo
+    pub fn assign_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::AssignOp {
+        self.0.find_assign_op(tree).unwrap()
+    }
+    //@when lhs is error rhs might be mistaken for lhs
+    // not a problem on a valid tree
+    node_iter!(lhs_rhs_iter, Expr);
 }
 
 impl<'syn> StmtExprSemi<'syn> {
@@ -630,7 +672,7 @@ impl<'syn> CallArgumentList<'syn> {
 
 impl<'syn> ExprCast<'syn> {
     find_first!(expr, Expr);
-    find_first!(into, Type);
+    find_first!(into_ty, Type);
 }
 
 impl<'syn> ExprSizeof<'syn> {
@@ -664,8 +706,9 @@ impl<'syn> ExprArrayInit<'syn> {
 }
 
 impl<'syn> ExprArrayRepeat<'syn> {
-    //@expr
-    //@repeat count
+    //@when expr is error len might be mistaken for expr
+    // not a problem on a valid tree
+    node_iter!(expr_len_iter, Expr);
 }
 
 impl<'syn> ExprDeref<'syn> {
@@ -678,12 +721,17 @@ impl<'syn> ExprAddress<'syn> {
 }
 
 impl<'syn> ExprUnary<'syn> {
-    //@unary op
+    pub fn un_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::UnOp {
+        self.0.find_un_op(tree).unwrap()
+    }
     find_first!(expr, Expr);
 }
 
 impl<'syn> ExprBinary<'syn> {
-    //@binary op
-    //@lhs
-    //@rhs
+    pub fn bin_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BinOp {
+        self.0.find_bin_op(tree).unwrap()
+    }
+    //@when lhs is error rhs might be mistaken for lhs
+    // not a problem on a valid tree
+    node_iter!(lhs_rhs_iter, Expr);
 }
