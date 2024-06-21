@@ -1,5 +1,7 @@
 use super::syntax_kind::SyntaxKind;
 use super::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxTree};
+use crate::ast;
+use crate::token::{Token, T};
 use std::marker::PhantomData;
 
 impl<'syn> SyntaxTree<'syn> {
@@ -12,6 +14,28 @@ impl<'syn> SyntaxTree<'syn> {
 impl<'syn> Node<'syn> {
     fn find_first<T: AstNode<'syn>>(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<T> {
         AstNodeIterator::new(tree, self).next()
+    }
+
+    fn find_token(&'syn self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
+        for node_or_token in self.content.iter().copied() {
+            if let NodeOrToken::Token(token_id) = node_or_token {
+                if token == tree.token(token_id) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn find_token_rev(&'syn self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
+        for node_or_token in self.content.iter().rev().copied() {
+            if let NodeOrToken::Token(token_id) = node_or_token {
+                if token == tree.token(token_id) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -83,6 +107,22 @@ macro_rules! find_first {
     };
 }
 
+macro_rules! find_token {
+    ($fn_name:ident, $find_token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
+            self.0.find_token(tree, $find_token)
+        }
+    };
+}
+
+macro_rules! find_token_rev {
+    ($fn_name:ident, $find_token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
+            self.0.find_token_rev(tree, $find_token)
+        }
+    };
+}
+
 macro_rules! node_iter {
     ($fn_name:ident, $node_ty:ident) => {
         pub fn $fn_name(
@@ -110,6 +150,7 @@ ast_node_impl!(GlobalItem, SyntaxKind::GLOBAL_ITEM);
 ast_node_impl!(ImportItem, SyntaxKind::IMPORT_ITEM);
 ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
+ast_node_impl!(NameAlias, SyntaxKind::NAME_ALIAS);
 
 ast_node_impl!(Name, SyntaxKind::NAME);
 ast_node_impl!(Path, SyntaxKind::PATH);
@@ -316,13 +357,13 @@ impl<'syn> SourceFile<'syn> {
 impl<'syn> ProcItem<'syn> {
     find_first!(name, Name);
     find_first!(param_list, ParamList);
-    //@is variadic
     find_first!(return_ty, Type);
     find_first!(block, ExprBlock);
 }
 
 impl<'syn> ParamList<'syn> {
     node_iter!(params, Param);
+    find_token_rev!(is_variadic, T![..]);
 }
 
 impl<'syn> Param<'syn> {
@@ -332,7 +373,7 @@ impl<'syn> Param<'syn> {
 
 impl<'syn> EnumItem<'syn> {
     find_first!(name, Name);
-    //@optional basic type
+    find_first!(type_basic, TypeBasic);
     find_first!(variant_list, VariantList);
 }
 
@@ -367,14 +408,14 @@ impl<'syn> ConstItem<'syn> {
 
 impl<'syn> GlobalItem<'syn> {
     find_first!(name, Name);
-    //@mut
+    find_token!(is_mut, T![mut]);
     find_first!(ty, Type);
     find_first!(value, Expr);
 }
 
 impl<'syn> ImportItem<'syn> {
     //@import `/` separated path (add separate node)
-    //@alias (need separate node for `as` part)
+    find_first!(name_alias, NameAlias);
     find_first!(import_symbol_list, ImportSymbolList);
 }
 
@@ -384,7 +425,11 @@ impl<'syn> ImportSymbolList<'syn> {
 
 impl<'syn> ImportSymbol<'syn> {
     find_first!(name, Name);
-    //@alias (need separate node for `as` part)
+    find_first!(name_alias, NameAlias);
+}
+
+impl<'syn> NameAlias<'syn> {
+    find_first!(name, Name);
 }
 
 impl<'syn> Name<'syn> {
@@ -396,7 +441,16 @@ impl<'syn> Path<'syn> {
 }
 
 impl<'syn> TypeBasic<'syn> {
-    //@basic type token?
+    //@will break with trivia tokens, use find like approach instead
+    pub fn basic_ty(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
+        match self.0.content[0] {
+            NodeOrToken::Node(_) => unreachable!(),
+            NodeOrToken::Token(token_id) => {
+                let token = tree.token(token_id);
+                token.as_basic_type().unwrap()
+            }
+        }
+    }
 }
 
 impl<'syn> TypeCustom<'syn> {
@@ -404,22 +458,22 @@ impl<'syn> TypeCustom<'syn> {
 }
 
 impl<'syn> TypeReference<'syn> {
-    //@mut
-    find_first!(ty, Type);
+    find_token!(is_mut, T![mut]);
+    find_first!(ref_ty, Type);
 }
 
 impl<'syn> TypeProcedure<'syn> {
     find_first!(param_type_list, ParamTypeList);
-    //@is variadic
     find_first!(return_ty, Type);
 }
 
 impl<'syn> ParamTypeList<'syn> {
     node_iter!(param_types, Type);
+    find_token_rev!(is_variadic, T![..]);
 }
 
 impl<'syn> TypeArraySlice<'syn> {
-    //@mut
+    find_token!(is_mut, T![mut]);
     find_first!(elem_ty, Type);
 }
 
@@ -522,6 +576,7 @@ impl<'syn> ExprField<'syn> {
 
 impl<'syn> ExprIndex<'syn> {
     find_first!(target, Expr);
+    find_token!(is_mut, T![mut]);
     //@index or slice range
 }
 
@@ -536,7 +591,7 @@ impl<'syn> CallArgumentList<'syn> {
 
 impl<'syn> ExprCast<'syn> {
     find_first!(expr, Expr);
-    find_first!(into_ty, Type);
+    find_first!(into, Type);
 }
 
 impl<'syn> ExprSizeof<'syn> {
@@ -561,9 +616,8 @@ impl<'syn> StructFieldInitList<'syn> {
 }
 
 impl<'syn> StructFieldInit<'syn> {
-    //@differentiate name, and name: expr
-    //@name
-    //@expr init
+    find_first!(name, Name);
+    find_first!(expr, Expr);
 }
 
 impl<'syn> ExprArrayInit<'syn> {
@@ -580,7 +634,7 @@ impl<'syn> ExprDeref<'syn> {
 }
 
 impl<'syn> ExprAddress<'syn> {
-    //@mut
+    find_token!(is_mut, T![mut]);
     find_first!(expr, Expr);
 }
 

@@ -117,7 +117,9 @@ fn enum_item(p: &mut Parser) {
     p.bump(T![enum]);
     name(p);
     if p.peek().as_basic_type().is_some() {
+        let m = p.start();
         p.bump(p.peek());
+        m.complete(p, SyntaxKind::TYPE_BASIC);
     }
     if p.at(T!['{']) {
         variant_list(p);
@@ -224,8 +226,8 @@ fn import_item(p: &mut Parser) {
     if p.eat(T![/]) {
         name(p);
     }
-    if p.eat(T![as]) {
-        name(p);
+    if p.at(T![as]) {
+        name_alias(p);
     }
     if p.eat(T![.]) {
         if p.at(T!['{']) {
@@ -261,10 +263,17 @@ fn import_symbol_list(p: &mut Parser) {
 fn import_symbol(p: &mut Parser) {
     let m = p.start();
     name(p);
-    if p.eat(T![as]) {
-        name(p);
+    if p.at(T![as]) {
+        name_alias(p);
     }
     m.complete(p, SyntaxKind::IMPORT_SYMBOL);
+}
+
+fn name_alias(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![as]);
+    name(p);
+    m.complete(p, SyntaxKind::NAME_ALIAS);
 }
 
 fn name(p: &mut Parser) {
@@ -662,6 +671,7 @@ fn tail_expr(p: &mut Parser, mc: MarkerClosed) -> MarkerClosed {
                 }
                 let m = p.start_before(mc_curr);
                 p.bump(T!['[']);
+                p.eat(T![mut]);
                 if !p.at(T![..]) {
                     expr(p);
                 }

@@ -21,6 +21,7 @@ pub enum SyntaxKind {
     IMPORT_ITEM,
     IMPORT_SYMBOL_LIST,
     IMPORT_SYMBOL,
+    NAME_ALIAS,
 
     NAME,
     PATH,
