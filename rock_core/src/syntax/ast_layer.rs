@@ -215,6 +215,7 @@ ast_node_impl!(StmtBreak, SyntaxKind::STMT_BREAK);
 ast_node_impl!(StmtContinue, SyntaxKind::STMT_CONTINUE);
 ast_node_impl!(StmtReturn, SyntaxKind::STMT_RETURN);
 ast_node_impl!(StmtDefer, SyntaxKind::STMT_DEFER);
+ast_node_impl!(ShortBlock, SyntaxKind::SHORT_BLOCK);
 ast_node_impl!(StmtLoop, SyntaxKind::STMT_LOOP);
 ast_node_impl!(StmtLocal, SyntaxKind::STMT_LOCAL);
 ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
@@ -229,11 +230,14 @@ ast_node_impl!(ExprLitFloat, SyntaxKind::EXPR_LIT_FLOAT);
 ast_node_impl!(ExprLitChar, SyntaxKind::EXPR_LIT_CHAR);
 ast_node_impl!(ExprLitString, SyntaxKind::EXPR_LIT_STRING);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
+ast_node_impl!(EntryBranch, SyntaxKind::ENTRY_BRANCH);
+ast_node_impl!(ElseIfBranch, SyntaxKind::ELSE_IF_BRANCH);
+ast_node_impl!(FallbackBranch, SyntaxKind::FALLBACK_BRANCH);
 ast_node_impl!(ExprBlock, SyntaxKind::EXPR_BLOCK);
 ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
-ast_node_impl!(MatchArmFallback, SyntaxKind::MATCH_ARM_FALLBACK);
+ast_node_impl!(MatchFallback, SyntaxKind::MATCH_FALLBACK);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
@@ -243,8 +247,8 @@ ast_node_impl!(ExprSizeof, SyntaxKind::EXPR_SIZEOF);
 ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
 ast_node_impl!(ExprVariant, SyntaxKind::EXPR_VARIANT);
 ast_node_impl!(ExprStructInit, SyntaxKind::EXPR_STRUCT_INIT);
-ast_node_impl!(StructFieldInitList, SyntaxKind::STRUCT_FIELD_INIT_LIST);
-ast_node_impl!(StructFieldInit, SyntaxKind::STRUCT_FIELD_INIT);
+ast_node_impl!(FieldInitList, SyntaxKind::FIELD_INIT_LIST);
+ast_node_impl!(FieldInit, SyntaxKind::FIELD_INIT);
 ast_node_impl!(ExprArrayInit, SyntaxKind::EXPR_ARRAY_INIT);
 ast_node_impl!(ExprArrayRepeat, SyntaxKind::EXPR_ARRAY_REPEAT);
 ast_node_impl!(ExprDeref, SyntaxKind::EXPR_DEREF);
@@ -564,11 +568,16 @@ impl<'syn> StmtReturn<'syn> {
 }
 
 impl<'syn> StmtDefer<'syn> {
+    find_first!(short_block, ShortBlock);
     find_first!(block, ExprBlock);
 }
 
+impl<'syn> ShortBlock<'syn> {
+    find_first!(stmt, Stmt);
+}
+
 impl<'syn> StmtLoop<'syn> {
-    //@todo
+    //@todo api
 }
 
 impl<'syn> StmtLocal<'syn> {
@@ -622,8 +631,24 @@ impl<'syn> ExprLitString<'syn> {
 }
 
 impl<'syn> ExprIf<'syn> {
-    //@branches
-    //@fallback, add new fallback node?
+    find_first!(entry_branch, EntryBranch);
+    node_iter!(else_if_branches, ElseIfBranch);
+    find_first!(fallback, FallbackBranch);
+}
+
+impl<'syn> EntryBranch<'syn> {
+    find_first!(cond, Expr);
+    find_first!(block, ExprBlock);
+}
+
+impl<'syn> ElseIfBranch<'syn> {
+    //@ambiguity in incomplete tree
+    find_first!(cond, Expr);
+    find_first!(block, ExprBlock);
+}
+
+impl<'syn> FallbackBranch<'syn> {
+    find_first!(block, ExprBlock);
 }
 
 impl<'syn> ExprBlock<'syn> {
@@ -637,7 +662,7 @@ impl<'syn> ExprMatch<'syn> {
 
 impl<'syn> MatchArmList<'syn> {
     node_iter!(match_arms, MatchArm);
-    find_first!(fallback, MatchArmFallback);
+    find_first!(fallback, MatchFallback);
 }
 
 impl<'syn> MatchArm<'syn> {
@@ -645,7 +670,7 @@ impl<'syn> MatchArm<'syn> {
     node_iter!(pat_and_expr, Expr);
 }
 
-impl<'syn> MatchArmFallback<'syn> {
+impl<'syn> MatchFallback<'syn> {
     find_first!(expr, Expr);
 }
 
@@ -688,14 +713,14 @@ impl<'syn> ExprVariant<'syn> {
 
 impl<'syn> ExprStructInit<'syn> {
     find_first!(path, Path);
-    find_first!(field_init_list, StructFieldInitList);
+    find_first!(field_init_list, FieldInitList);
 }
 
-impl<'syn> StructFieldInitList<'syn> {
-    node_iter!(field_inits, StructFieldInit);
+impl<'syn> FieldInitList<'syn> {
+    node_iter!(field_inits, FieldInit);
 }
 
-impl<'syn> StructFieldInit<'syn> {
+impl<'syn> FieldInit<'syn> {
     find_first!(name, Name);
     find_first!(expr, Expr);
 }

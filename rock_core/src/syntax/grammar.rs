@@ -479,7 +479,9 @@ fn stmt(p: &mut Parser) {
             if p.at(T!['{']) {
                 block(p);
             } else {
-                block_short(p);
+                let m = p.start();
+                stmt(p);
+                m.complete(p, SyntaxKind::SHORT_BLOCK);
             }
             m.complete(p, SyntaxKind::STMT_DEFER);
         }
@@ -746,18 +748,26 @@ fn tail_expr(p: &mut Parser, mc: MarkerClosed) -> MarkerClosed {
 
 fn if_(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
+
+    let eb = p.start();
     p.bump(T![if]);
     expr(p);
     block_expect(p);
+    eb.complete(p, SyntaxKind::ENTRY_BRANCH);
+
     while p.eat(T![else]) {
+        let mb = p.start();
         if p.eat(T![if]) {
             expr(p);
             block_expect(p);
+            mb.complete(p, SyntaxKind::ELSE_IF_BRANCH);
         } else {
             block_expect(p);
+            mb.complete(p, SyntaxKind::FALLBACK_BRANCH);
             break;
         }
     }
+
     m.complete(p, SyntaxKind::EXPR_IF)
 }
 
@@ -777,12 +787,6 @@ fn block_expect(p: &mut Parser) {
     } else {
         p.error("expected block");
     }
-}
-
-fn block_short(p: &mut Parser) {
-    let m = p.start();
-    stmt(p);
-    m.complete(p, SyntaxKind::EXPR_BLOCK);
 }
 
 fn match_(p: &mut Parser) -> MarkerClosed {
@@ -818,7 +822,7 @@ fn match_arm(p: &mut Parser) -> bool {
     if p.eat(T![_]) {
         p.expect(T![->]);
         expr(p);
-        m.complete(p, SyntaxKind::MATCH_ARM_FALLBACK);
+        m.complete(p, SyntaxKind::MATCH_FALLBACK);
         true
     } else {
         expr(p);
@@ -858,7 +862,7 @@ fn field_init_list(p: &mut Parser) {
         }
     }
     p.expect(T!['}']);
-    m.complete(p, SyntaxKind::STRUCT_FIELD_INIT_LIST);
+    m.complete(p, SyntaxKind::FIELD_INIT_LIST);
 }
 
 fn field_init(p: &mut Parser) {
@@ -868,7 +872,7 @@ fn field_init(p: &mut Parser) {
         p.bump(T![:]);
     }
     expr(p);
-    m.complete(p, SyntaxKind::STRUCT_FIELD_INIT);
+    m.complete(p, SyntaxKind::FIELD_INIT);
 }
 
 fn array_expr(p: &mut Parser) -> MarkerClosed {
