@@ -329,16 +329,18 @@ fn path_type(p: &mut Parser) {
     m.complete(p, SyntaxKind::PATH);
 }
 
-fn path_expr(p: &mut Parser) {
+fn path_expr(p: &mut Parser) -> bool {
     let m = p.start();
     name(p);
     while p.eat(T![.]) {
         if p.at(T!['{']) {
-            break;
+            m.complete(p, SyntaxKind::PATH);
+            return true;
         }
         name(p);
     }
     m.complete(p, SyntaxKind::PATH);
+    false
 }
 
 const FIRST_TYPE_SET: TokenSet = TokenSet::new(&[
@@ -501,6 +503,8 @@ fn stmt(p: &mut Parser) {
             } else {
                 if !p.at_prev(T!['}']) {
                     p.expect(T![;]);
+                } else {
+                    p.eat(T![;]);
                 }
                 m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
             }
@@ -642,8 +646,8 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         }
         T![ident] => {
             let m = p.start();
-            path_expr(p);
-            if p.at(T!['{']) {
+            let field_list = path_expr(p);
+            if field_list && p.at(T!['{']) {
                 field_init_list(p);
                 m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
             } else {

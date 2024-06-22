@@ -462,6 +462,8 @@ fn stmt<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Stmt<'ast>, String> {
             } else {
                 if !p.at_prev(T!['}']) {
                     p.expect(T![;])?;
+                } else {
+                    p.eat(T![;]);
                 }
                 StmtKind::ExprSemi(lhs)
             }

@@ -203,6 +203,7 @@ fn proc_item(fmt: &mut Formatter, item: ast::ProcItem) {
         type_fmt(fmt, ty);
     }
     if let Some(block) = item.block(fmt.tree) {
+        fmt.space();
         expr_block(fmt, block);
     } else {
         fmt.write_c(';');
@@ -218,8 +219,8 @@ fn param_list(fmt: &mut Formatter, param_list: ast::ParamList) {
             fmt.write_c(',');
             fmt.space();
         }
-        param_fmt(fmt, param);
         first = false;
+        param_fmt(fmt, param);
     }
     if param_list.is_variadic(fmt.tree) {
         if !first {
@@ -258,11 +259,11 @@ fn enum_item(fmt: &mut Formatter, item: ast::EnumItem) {
 
 fn variant_list(fmt: &mut Formatter, variant_list: ast::VariantList) {
     fmt.write_c('{');
-    let mut first = true;
+    let mut empty = true;
     for variant in variant_list.variants(fmt.tree) {
-        if first {
+        if empty {
             fmt.new_line();
-            first = false;
+            empty = false;
         }
         fmt.tab();
         variant_fmt(fmt, variant);
@@ -294,11 +295,11 @@ fn struct_item(fmt: &mut Formatter, item: ast::StructItem) {
 
 fn field_list(fmt: &mut Formatter, field_list: ast::FieldList) {
     fmt.write_c('{');
-    let mut first = true;
+    let mut empty = true;
     for field in field_list.fields(fmt.tree) {
-        if first {
+        if empty {
             fmt.new_line();
-            first = false;
+            empty = false;
         }
         fmt.tab();
         field_fmt(fmt, field);
@@ -374,8 +375,8 @@ fn import_path(fmt: &mut Formatter, import_path: ast::ImportPath) {
         if !first {
             fmt.write_c('/');
         }
-        name_fmt(fmt, name);
         first = false;
+        name_fmt(fmt, name);
     }
 }
 
@@ -387,8 +388,8 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbol
             fmt.write_c(',');
             fmt.space();
         }
-        import_symbol_fmt(fmt, import_symbol);
         first = false;
+        import_symbol_fmt(fmt, import_symbol);
     }
     fmt.write_c('}');
 }
@@ -417,8 +418,8 @@ fn path_fmt(fmt: &mut Formatter, path: ast::Path) {
         if !first {
             fmt.write_c('.');
         }
-        name_fmt(fmt, name);
         first = false;
+        name_fmt(fmt, name);
     }
 }
 
@@ -470,8 +471,8 @@ fn param_type_list(fmt: &mut Formatter, param_type_list: ast::ParamTypeList) {
             fmt.write_c(',');
             fmt.space();
         }
-        type_fmt(fmt, ty);
         first = false;
+        type_fmt(fmt, ty);
     }
     if param_type_list.is_variadic(fmt.tree) {
         if !first {
@@ -519,6 +520,7 @@ fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
         }
         ast::Stmt::Defer(defer) => {
             fmt.write("defer");
+            fmt.space();
             //@allow short blocks, need separate SHORT_BLOCK node?
             expr_block(fmt, defer.block(fmt.tree).unwrap());
         }
@@ -606,9 +608,52 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             fmt.write("<@if>");
         }
         ast::Expr::Block(block) => expr_block(fmt, block),
-        ast::Expr::Match(_) => {
-            //@todo no match arm api
-            fmt.write("<@match>");
+        ast::Expr::Match(match_) => {
+            fmt.write("match");
+            fmt.space();
+            expr_fmt(fmt, match_.on_expr(fmt.tree).unwrap());
+            fmt.space();
+            fmt.write_c('{');
+            fmt.depth_increment();
+
+            let mut empty = true;
+            let match_arm_list = match_.match_arm_list(fmt.tree).unwrap();
+            for match_arm in match_arm_list.match_arms(fmt.tree) {
+                if empty {
+                    fmt.new_line();
+                    empty = false;
+                }
+                let mut pat_and_expr = match_arm.pat_and_expr(fmt.tree);
+                fmt.tab_depth();
+                expr_fmt(fmt, pat_and_expr.next().unwrap());
+                fmt.space();
+                fmt.write("->");
+                fmt.space();
+                expr_fmt(fmt, pat_and_expr.next().unwrap());
+                fmt.write_c(',');
+                fmt.new_line();
+            }
+
+            if let Some(fallback) = match_arm_list.fallback(fmt.tree) {
+                if empty {
+                    fmt.new_line();
+                    empty = false;
+                }
+                fmt.tab_depth();
+                fmt.write_c('_');
+                fmt.space();
+                fmt.write("->");
+                fmt.space();
+                expr_fmt(fmt, fallback.expr(fmt.tree).unwrap());
+                fmt.write_c(',');
+                fmt.new_line();
+            }
+
+            fmt.depth_decrement();
+            if !empty {
+                fmt.tab_depth();
+            }
+            fmt.write_c('}');
         }
         ast::Expr::Field(field) => {
             expr_fmt(fmt, field.target(fmt.tree).unwrap());
@@ -636,8 +681,8 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
                     fmt.write_c(',');
                     fmt.space();
                 }
-                expr_fmt(fmt, expr);
                 first = false;
+                expr_fmt(fmt, expr);
             }
             fmt.write_c(')');
         }
@@ -674,13 +719,13 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
                     fmt.write_c(',');
                     fmt.space();
                 }
+                first = false;
                 if let Some(name) = field_init.name(fmt.tree) {
                     name_fmt(fmt, name);
                     fmt.write_c(':');
                     fmt.space();
                 }
                 expr_fmt(fmt, field_init.expr(fmt.tree).unwrap());
-                first = false;
             }
             fmt.write_c('}');
         }
@@ -692,8 +737,8 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
                     fmt.write_c(',');
                     fmt.space();
                 }
-                expr_fmt(fmt, expr);
                 first = false;
+                expr_fmt(fmt, expr);
             }
             fmt.write_c(']');
         }
@@ -742,18 +787,23 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
 }
 
 fn expr_block(fmt: &mut Formatter, block: ast::ExprBlock) {
-    fmt.space();
     fmt.write_c('{');
-    fmt.new_line();
-
     fmt.depth_increment();
+
+    let mut empty = true;
     for stmt in block.stmts(fmt.tree) {
+        if empty {
+            fmt.new_line();
+            empty = false;
+        }
         fmt.tab_depth();
         stmt_fmt(fmt, stmt);
         fmt.new_line();
     }
-    fmt.depth_decrement();
 
-    fmt.tab_depth();
+    fmt.depth_decrement();
+    if !empty {
+        fmt.tab_depth();
+    }
     fmt.write_c('}');
 }

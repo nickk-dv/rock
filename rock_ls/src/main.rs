@@ -35,7 +35,9 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
             },
         )),
         selection_range_provider: None,
-        hover_provider: Some(lsp::HoverProviderCapability::Simple(true)),
+        hover_provider: None,
+        //@re-enable when supported
+        //hover_provider: Some(lsp::HoverProviderCapability::Simple(true)),
         completion_provider: Some(lsp::CompletionOptions {
             resolve_provider: None,
             trigger_characters: Some(vec![".".into()]),
@@ -46,7 +48,9 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
             completion_item: None,
         }),
         signature_help_provider: None,
-        definition_provider: Some(lsp::OneOf::Left(true)),
+        definition_provider: None,
+        //@re-enable when supported
+        //definition_provider: Some(lsp::OneOf::Left(true)),
         type_definition_provider: None,
         implementation_provider: None,
         references_provider: None,
@@ -138,15 +142,12 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                     };
 
                     let json = serde_json::to_value(vec![text_edit]).expect("json value");
-                    send(
-                        conn,
-                        lsp_server::Message::Response(lsp_server::Response {
-                            id,
-                            result: Some(json),
-                            error: None,
-                        }),
-                    );
+                    send_response(conn, id, json);
+                } else {
+                    send_response_error(conn, id, None);
                 }
+            } else {
+                send_response_error(conn, id, None);
             }
         }
         Request::Hover(params) => {}
@@ -180,6 +181,24 @@ fn handle_compile_project(conn: &Connection, context: &ServerContext) {
             lsp_server::Notification::new(notification::PublishDiagnostics::METHOD.into(), publish),
         );
     }
+}
+
+fn send_response(conn: &Connection, id: RequestId, result: serde_json::Value) {
+    let response = lsp_server::Response::new_ok(id, result);
+    send(conn, response);
+}
+
+fn send_response_error(conn: &Connection, id: RequestId, with_message: Option<String>) {
+    let response = if let Some(message) = with_message {
+        lsp_server::Response::new_err(id, lsp_server::ErrorCode::RequestFailed as i32, message)
+    } else {
+        lsp_server::Response::new_err(
+            id,
+            lsp_server::ErrorCode::ServerCancelled as i32,
+            "quiet ignore".into(),
+        )
+    };
+    send(conn, response);
 }
 
 fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {

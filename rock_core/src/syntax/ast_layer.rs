@@ -641,9 +641,8 @@ impl<'syn> MatchArmList<'syn> {
 }
 
 impl<'syn> MatchArm<'syn> {
-    //@how to separate pat and expr?
-    // find_first `before` some token pattern?
-    // what if -> is missing?
+    //@ambiguity in incomplete tree
+    node_iter!(pat_and_expr, Expr);
 }
 
 impl<'syn> MatchArmFallback<'syn> {
@@ -706,8 +705,7 @@ impl<'syn> ExprArrayInit<'syn> {
 }
 
 impl<'syn> ExprArrayRepeat<'syn> {
-    //@when expr is error len might be mistaken for expr
-    // not a problem on a valid tree
+    //@ambiguity in incomplete tree
     node_iter!(expr_len_iter, Expr);
 }
 
@@ -731,7 +729,6 @@ impl<'syn> ExprBinary<'syn> {
     pub fn bin_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BinOp {
         self.0.find_bin_op(tree).unwrap()
     }
-    //@when lhs is error rhs might be mistaken for lhs
-    // not a problem on a valid tree
+    //@ambiguity in incomplete tree
     node_iter!(lhs_rhs_iter, Expr);
 }
