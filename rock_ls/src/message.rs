@@ -123,21 +123,21 @@ fn extract_notification(notification: lsp_server::Notification) -> Option<Messag
         DidOpenTextDocument::METHOD => {
             let params = cast_notification::<DidOpenTextDocument>(notification);
             Notification::SourceFileChanged {
-                path: super::uri_to_path(params.text_document.uri),
+                path: super::uri_to_path(&params.text_document.uri),
                 text: params.text_document.text,
             }
         }
         DidChangeTextDocument::METHOD => {
             let params = cast_notification::<DidChangeTextDocument>(notification);
             Notification::SourceFileChanged {
-                path: super::uri_to_path(params.text_document.uri),
+                path: super::uri_to_path(&params.text_document.uri),
                 text: params.content_changes.into_iter().last()?.text,
             }
         }
         DidCloseTextDocument::METHOD => {
             let params = cast_notification::<DidCloseTextDocument>(notification);
             Notification::SourceFileClosed {
-                path: super::uri_to_path(params.text_document.uri),
+                path: super::uri_to_path(&params.text_document.uri),
             }
         }
         _ => return None,

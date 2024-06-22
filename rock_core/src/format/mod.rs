@@ -535,6 +535,7 @@ fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
         }
         ast::Stmt::ExprTail(expr_tail) => {
             fmt.write("->");
+            fmt.space();
             expr_fmt(fmt, expr_tail.expr(fmt.tree).unwrap());
             fmt.write_c(';');
         }
