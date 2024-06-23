@@ -2,7 +2,7 @@ use crate::ast::{AssignOp, BinOp};
 use crate::error::ErrorComp;
 use crate::session::FileID;
 use crate::syntax;
-use crate::syntax::ast_layer as ast;
+use crate::syntax::ast_layer::{self as ast, AstNodeIterator};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::text::TextRange;
 
@@ -204,7 +204,7 @@ fn proc_item(fmt: &mut Formatter, item: ast::ProcItem) {
     }
     if let Some(block) = item.block(fmt.tree) {
         fmt.space();
-        expr_block(fmt, block);
+        block_fmt(fmt, block);
     } else {
         fmt.write_c(';');
     }
@@ -524,16 +524,22 @@ fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
             if let Some(short_block) = defer.short_block(fmt.tree) {
                 stmt_fmt(fmt, short_block.stmt(fmt.tree).unwrap());
             } else {
-                expr_block(fmt, defer.block(fmt.tree).unwrap());
+                block_fmt(fmt, defer.block(fmt.tree).unwrap());
             }
         }
         ast::Stmt::Loop(loop_) => stmt_loop(fmt, loop_),
         ast::Stmt::Local(local) => stmt_local(fmt, local),
         ast::Stmt::Assign(assign) => stmt_assign(fmt, assign, true),
         ast::Stmt::ExprSemi(expr_semi) => {
-            expr_fmt(fmt, expr_semi.expr(fmt.tree).unwrap());
-            //@semi is optional (isnt added after `}`)
-            fmt.write_c(';');
+            let expr = expr_semi.expr(fmt.tree).unwrap();
+            let semi = !matches!(
+                expr,
+                ast::Expr::If(_) | ast::Expr::Block(_) | ast::Expr::Match(_)
+            );
+            expr_fmt(fmt, expr);
+            if semi {
+                fmt.write_c(';');
+            }
         }
         ast::Stmt::ExprTail(expr_tail) => {
             fmt.write("->");
@@ -561,7 +567,7 @@ fn stmt_loop(fmt: &mut Formatter, loop_: ast::StmtLoop) {
         fmt.space();
     }
 
-    expr_block(fmt, loop_.block(fmt.tree).unwrap());
+    block_fmt(fmt, loop_.block(fmt.tree).unwrap());
 }
 
 fn stmt_local(fmt: &mut Formatter, local: ast::StmtLocal) {
@@ -628,7 +634,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::LitChar(lit) => fmt.write_range(lit.token_range(fmt.tree)),
         ast::Expr::LitString(lit) => fmt.write_range(lit.token_range(fmt.tree)),
         ast::Expr::If(if_) => expr_if(fmt, if_),
-        ast::Expr::Block(block) => expr_block(fmt, block),
+        ast::Expr::Block(block) => block_expr(fmt, block),
         ast::Expr::Match(match_) => expr_match(fmt, match_),
         ast::Expr::Field(field) => {
             expr_fmt(fmt, field.target(fmt.tree).unwrap());
@@ -701,7 +707,7 @@ fn expr_if(fmt: &mut Formatter, if_: ast::ExprIf) {
     fmt.space();
     expr_fmt(fmt, entry.cond(fmt.tree).unwrap());
     fmt.space();
-    expr_block(fmt, entry.block(fmt.tree).unwrap());
+    block_fmt(fmt, entry.block(fmt.tree).unwrap());
 
     for branch in if_.else_if_branches(fmt.tree) {
         fmt.space();
@@ -711,23 +717,34 @@ fn expr_if(fmt: &mut Formatter, if_: ast::ExprIf) {
         fmt.space();
         expr_fmt(fmt, branch.cond(fmt.tree).unwrap());
         fmt.space();
-        expr_block(fmt, branch.block(fmt.tree).unwrap());
+        block_fmt(fmt, branch.block(fmt.tree).unwrap());
     }
 
     if let Some(fallback) = if_.fallback(fmt.tree) {
         fmt.space();
         fmt.write("else");
         fmt.space();
-        expr_block(fmt, fallback.block(fmt.tree).unwrap());
+        block_fmt(fmt, fallback.block(fmt.tree).unwrap());
     }
 }
 
-fn expr_block(fmt: &mut Formatter, block: ast::ExprBlock) {
+fn block_fmt(fmt: &mut Formatter, block: ast::Block) {
+    block_any_fmt(fmt, block.stmts(fmt.tree));
+}
+
+fn block_expr(fmt: &mut Formatter, block: ast::ExprBlock) {
+    block_any_fmt(fmt, block.stmts(fmt.tree));
+}
+
+fn block_any_fmt<'syn>(
+    fmt: &mut Formatter,
+    stmts: AstNodeIterator<'syn, syntax::ast_layer::Stmt<'syn>>,
+) {
     fmt.write_c('{');
     fmt.depth_increment();
 
     let mut empty = true;
-    for stmt in block.stmts(fmt.tree) {
+    for stmt in stmts {
         if empty {
             fmt.new_line();
             empty = false;

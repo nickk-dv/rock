@@ -12,14 +12,8 @@ use parser::Parser;
 use syntax_tree::SyntaxTree;
 
 pub fn parse(source: &str, file_id: FileID) -> (SyntaxTree, Vec<ErrorComp>) {
-    //@dont return result, instead TokenList + Vec<ErrorComp>
-    let tokens = if let Ok(tokens) = lexer::lex(source, file_id, false) {
-        tokens
-    } else {
-        //@temp work-around
-        panic!("lexer failed");
-    };
+    let (tokens, lex_errors) = lexer::lex(source, file_id, false);
     let mut parser = Parser::new(tokens, file_id);
     grammar::source_file(&mut parser);
-    syntax_tree::build(parser.finish())
+    syntax_tree::build(parser.finish(), lex_errors)
 }

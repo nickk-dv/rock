@@ -27,12 +27,8 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub fn result(self) -> Result<TokenList, Vec<ErrorComp>> {
-        if self.errors.is_empty() {
-            Ok(self.tokens)
-        } else {
-            Err(self.errors)
-        }
+    pub fn finish(self) -> (TokenList, Vec<ErrorComp>) {
+        (self.tokens, self.errors)
     }
 
     pub fn start_range(&self) -> TextOffset {

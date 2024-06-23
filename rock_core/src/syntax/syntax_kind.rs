@@ -35,6 +35,7 @@ pub enum SyntaxKind {
     TYPE_ARRAY_SLICE,
     TYPE_ARRAY_STATIC,
 
+    BLOCK,
     STMT_BREAK,
     STMT_CONTINUE,
     STMT_RETURN,

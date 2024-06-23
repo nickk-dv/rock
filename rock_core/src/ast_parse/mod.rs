@@ -26,13 +26,11 @@ pub fn parse(session: &Session) -> ResultComp<Ast> {
                 .expect("utf-8");
             let module_name_id = state.intern_name.intern(filename);
 
-            let tokens = match lexer::lex(&file.source, file_id, false) {
-                Ok(it) => it,
-                Err(errors) => {
-                    state.errors.extend(errors);
-                    continue;
-                }
-            };
+            let (tokens, errors) = lexer::lex(&file.source, file_id, false);
+            if !errors.is_empty() {
+                state.errors.extend(errors);
+                continue;
+            }
             let parser = parser::Parser::new(tokens, file_id, &file.source, &mut state);
 
             match grammar::module(parser, file_id, module_name_id) {

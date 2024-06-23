@@ -215,9 +215,7 @@ fn test() {
     use crate::session::FileID;
 
     let text = "foo\nbaz";
-    let tokens = lexer::lex(text, FileID::new(0), false)
-        .map_err(|_| "")
-        .unwrap();
+    let (tokens, _) = lexer::lex(text, FileID::new(0), false);
 
     let line_ranges = find_line_ranges(text);
     let foo_range = TextRange::new(0.into(), 3.into());

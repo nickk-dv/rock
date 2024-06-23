@@ -50,10 +50,11 @@ impl<'syn> SyntaxTree<'syn> {
 
 pub fn build<'syn>(
     input: (TokenList, Vec<Event>, Vec<ErrorComp>),
+    lex_errors: Vec<ErrorComp>,
 ) -> (SyntaxTree<'syn>, Vec<ErrorComp>) {
     let mut arena = Arena::new();
     let mut nodes = Vec::new();
-    let (tokens, mut events, errors) = input;
+    let (tokens, mut events, mut errors) = input;
 
     let mut stack = Vec::with_capacity(16);
     let mut parent_stack = Vec::with_capacity(16);
@@ -116,6 +117,7 @@ pub fn build<'syn>(
         }
     }
 
+    errors.extend(lex_errors);
     (SyntaxTree::new(arena, nodes, tokens), errors)
 }
 

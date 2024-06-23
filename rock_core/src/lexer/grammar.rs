@@ -156,7 +156,7 @@ fn lex_char(lex: &mut Lexer) {
             lex.eat(fc);
             let range = lex.make_range(start);
             lex.error(ErrorComp::new(
-                "charater literal tab must be escaped: `\\t`",
+                "character literal tab must be escaped: `\\t`",
                 SourceRange::new(range, lex.file_id()),
                 None,
             ));
@@ -408,7 +408,20 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
 
     let mut token = match Token::from_char(fc) {
         Some(sym) => sym,
-        None => add_token_and_return!(lex, start, Token::Error),
+        None => {
+            let range = lex.make_range(start);
+            let extra = if !fc.is_ascii() {
+                "\nonly ascii characters are supported"
+            } else {
+                ""
+            };
+            lex.error(ErrorComp::new(
+                format!("unknown symbol token {:?}{}", fc, extra),
+                SourceRange::new(range, lex.file_id()),
+                None,
+            ));
+            return;
+        }
     };
 
     match lex.peek() {

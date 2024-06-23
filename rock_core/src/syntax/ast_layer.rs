@@ -222,6 +222,7 @@ ast_node_impl!(ParamTypeList, SyntaxKind::PARAM_TYPE_LIST);
 ast_node_impl!(TypeArraySlice, SyntaxKind::TYPE_ARRAY_SLICE);
 ast_node_impl!(TypeArrayStatic, SyntaxKind::TYPE_ARRAY_STATIC);
 
+ast_node_impl!(Block, SyntaxKind::BLOCK);
 ast_node_impl!(StmtBreak, SyntaxKind::STMT_BREAK);
 ast_node_impl!(StmtContinue, SyntaxKind::STMT_CONTINUE);
 ast_node_impl!(StmtReturn, SyntaxKind::STMT_RETURN);
@@ -433,7 +434,7 @@ impl<'syn> ProcItem<'syn> {
     find_first!(name, Name);
     find_first!(param_list, ParamList);
     find_first!(return_ty, Type);
-    find_first!(block, ExprBlock);
+    find_first!(block, Block);
 }
 
 impl<'syn> ParamList<'syn> {
@@ -565,6 +566,10 @@ impl<'syn> TypeArrayStatic<'syn> {
     find_first!(elem_ty, Type);
 }
 
+impl<'syn> Block<'syn> {
+    node_iter!(stmts, Stmt);
+}
+
 impl<'syn> StmtBreak<'syn> {}
 
 impl<'syn> StmtContinue<'syn> {}
@@ -575,7 +580,7 @@ impl<'syn> StmtReturn<'syn> {
 
 impl<'syn> StmtDefer<'syn> {
     find_first!(short_block, ShortBlock);
-    find_first!(block, ExprBlock);
+    find_first!(block, Block);
 }
 
 impl<'syn> ShortBlock<'syn> {
@@ -585,7 +590,7 @@ impl<'syn> ShortBlock<'syn> {
 impl<'syn> StmtLoop<'syn> {
     find_first!(while_header, LoopWhileHeader);
     find_first!(clike_header, LoopCLikeHeader);
-    find_first!(block, ExprBlock);
+    find_first!(block, Block);
 }
 
 impl<'syn> LoopWhileHeader<'syn> {
@@ -655,17 +660,16 @@ impl<'syn> ExprIf<'syn> {
 
 impl<'syn> EntryBranch<'syn> {
     find_first!(cond, Expr);
-    find_first!(block, ExprBlock);
+    find_first!(block, Block);
 }
 
 impl<'syn> ElseIfBranch<'syn> {
-    //@ambiguity in incomplete tree
     find_first!(cond, Expr);
-    find_first!(block, ExprBlock);
+    find_first!(block, Block);
 }
 
 impl<'syn> FallbackBranch<'syn> {
-    find_first!(block, ExprBlock);
+    find_first!(block, Block);
 }
 
 impl<'syn> ExprBlock<'syn> {

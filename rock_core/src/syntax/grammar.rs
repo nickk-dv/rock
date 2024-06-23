@@ -105,7 +105,7 @@ fn proc_item(p: &mut Parser, m: Marker) {
         ty(p);
     }
     if p.at(T!['{']) {
-        block(p);
+        block(p, SyntaxKind::BLOCK);
     } else if !p.eat(T![;]) {
         p.error_recover("expected block or `;`", FIRST_ITEM);
     }
@@ -477,7 +477,7 @@ fn stmt(p: &mut Parser) {
             let m = p.start();
             p.bump(T![defer]);
             if p.at(T!['{']) {
-                block(p);
+                block(p, SyntaxKind::BLOCK);
             } else {
                 let m = p.start();
                 stmt(p);
@@ -644,7 +644,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
             m.complete(p, SyntaxKind::EXPR_LIT_STRING)
         }
         T![if] => if_(p),
-        T!['{'] => block(p),
+        T!['{'] => block(p, SyntaxKind::EXPR_BLOCK),
         T![match] => match_(p),
         T![sizeof] => {
             let m = p.start();
@@ -779,19 +779,19 @@ fn if_(p: &mut Parser) -> MarkerClosed {
     m.complete(p, SyntaxKind::EXPR_IF)
 }
 
-fn block(p: &mut Parser) -> MarkerClosed {
+fn block(p: &mut Parser, kind: SyntaxKind) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
         stmt(p);
     }
     p.expect(T!['}']);
-    m.complete(p, SyntaxKind::EXPR_BLOCK)
+    m.complete(p, kind)
 }
 
 fn block_expect(p: &mut Parser) {
     if p.at(T!['{']) {
-        block(p);
+        block(p, SyntaxKind::BLOCK);
     } else {
         p.error("expected block");
     }
