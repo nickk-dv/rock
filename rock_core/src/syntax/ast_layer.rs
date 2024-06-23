@@ -82,6 +82,44 @@ impl<'syn> Node<'syn> {
         }
         false
     }
+
+    fn find_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        let start;
+        let end;
+        let mut content_curr = self.content;
+
+        'outher: loop {
+            for node_or_token in content_curr.iter().copied() {
+                match node_or_token {
+                    NodeOrToken::Node(node_id) => {
+                        content_curr = tree.node(node_id).content;
+                        continue 'outher;
+                    }
+                    NodeOrToken::Token(token_id) => {
+                        start = tree.token_range(token_id).start();
+                        break 'outher;
+                    }
+                }
+            }
+        }
+
+        'outher: loop {
+            for node_or_token in content_curr.iter().rev().copied() {
+                match node_or_token {
+                    NodeOrToken::Node(node_id) => {
+                        content_curr = tree.node(node_id).content;
+                        continue 'outher;
+                    }
+                    NodeOrToken::Token(token_id) => {
+                        end = tree.token_range(token_id).end();
+                        break 'outher;
+                    }
+                }
+            }
+        }
+
+        TextRange::new(start, end)
+    }
 }
 
 pub trait AstNode<'syn> {
@@ -127,6 +165,7 @@ impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
 
 macro_rules! ast_node_impl {
     ($name:ident, $kind_pat:pat) => {
+        #[derive(Copy, Clone)]
         pub struct $name<'syn>(&'syn Node<'syn>);
 
         impl<'syn> AstNode<'syn> for $name<'syn> {
@@ -139,6 +178,12 @@ macro_rules! ast_node_impl {
                 } else {
                     None
                 }
+            }
+        }
+
+        impl<'syn> $name<'syn> {
+            pub fn range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+                self.0.find_range(tree)
             }
         }
     };
@@ -164,17 +209,6 @@ macro_rules! find_token_rev {
     ($fn_name:ident, $find_token:expr) => {
         pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
             self.0.find_token_rev(tree, $find_token)
-        }
-    };
-}
-
-macro_rules! token_range {
-    () => {
-        pub fn token_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
-            match self.0.content[0] {
-                NodeOrToken::Node(_) => unreachable!(),
-                NodeOrToken::Token(token_id) => tree.token_range(token_id),
-            }
         }
     };
 }
@@ -296,6 +330,20 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
     }
 }
 
+impl<'syn> Item<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Item::Proc(item) => item.range(tree),
+            Item::Enum(item) => item.range(tree),
+            Item::Struct(item) => item.range(tree),
+            Item::Const(item) => item.range(tree),
+            Item::Global(item) => item.range(tree),
+            Item::Import(item) => item.range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 pub enum Type<'syn> {
     Basic(TypeBasic<'syn>),
     Custom(TypeCustom<'syn>),
@@ -322,6 +370,20 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
     }
 }
 
+impl<'syn> Type<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Type::Basic(ty) => ty.range(tree),
+            Type::Custom(ty) => ty.range(tree),
+            Type::Reference(ty) => ty.range(tree),
+            Type::Procedure(ty) => ty.range(tree),
+            Type::ArraySlice(ty) => ty.range(tree),
+            Type::ArrayStatic(ty) => ty.range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 pub enum Stmt<'syn> {
     Break(StmtBreak<'syn>),
     Continue(StmtContinue<'syn>),
@@ -354,6 +416,23 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
     }
 }
 
+impl<'syn> Stmt<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Stmt::Break(stmt) => stmt.range(tree),
+            Stmt::Continue(stmt) => stmt.range(tree),
+            Stmt::Return(stmt) => stmt.range(tree),
+            Stmt::Defer(stmt) => stmt.range(tree),
+            Stmt::Loop(stmt) => stmt.range(tree),
+            Stmt::Local(stmt) => stmt.range(tree),
+            Stmt::Assign(stmt) => stmt.range(tree),
+            Stmt::ExprSemi(stmt) => stmt.range(tree),
+            Stmt::ExprTail(stmt) => stmt.range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 pub enum Expr<'syn> {
     Paren(ExprParen<'syn>),
     LitNull(ExprLitNull<'syn>),
@@ -412,6 +491,37 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
             SyntaxKind::EXPR_BINARY => Some(Expr::Binary(ExprBinary(node))),
             _ => None,
+        }
+    }
+}
+
+impl<'syn> Expr<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Expr::Paren(expr) => expr.range(tree),
+            Expr::LitNull(expr) => expr.range(tree),
+            Expr::LitBool(expr) => expr.range(tree),
+            Expr::LitInt(expr) => expr.range(tree),
+            Expr::LitFloat(expr) => expr.range(tree),
+            Expr::LitChar(expr) => expr.range(tree),
+            Expr::LitString(expr) => expr.range(tree),
+            Expr::If(expr) => expr.range(tree),
+            Expr::Block(expr) => expr.range(tree),
+            Expr::Match(expr) => expr.range(tree),
+            Expr::Field(expr) => expr.range(tree),
+            Expr::Index(expr) => expr.range(tree),
+            Expr::Call(expr) => expr.range(tree),
+            Expr::Cast(expr) => expr.range(tree),
+            Expr::Sizeof(expr) => expr.range(tree),
+            Expr::Item(expr) => expr.range(tree),
+            Expr::Variant(expr) => expr.range(tree),
+            Expr::StructInit(expr) => expr.range(tree),
+            Expr::ArrayInit(expr) => expr.range(tree),
+            Expr::ArrayRepeat(expr) => expr.range(tree),
+            Expr::Deref(expr) => expr.range(tree),
+            Expr::Address(expr) => expr.range(tree),
+            Expr::Unary(expr) => expr.range(tree),
+            Expr::Binary(expr) => expr.range(tree),
         }
     }
 }
@@ -523,9 +633,7 @@ impl<'syn> NameAlias<'syn> {
     find_first!(name, Name);
 }
 
-impl<'syn> Name<'syn> {
-    token_range!();
-}
+impl<'syn> Name<'syn> {}
 
 impl<'syn> Path<'syn> {
     node_iter!(names, Name);
@@ -632,25 +740,15 @@ impl<'syn> ExprParen<'syn> {
 
 impl<'syn> ExprLitNull<'syn> {}
 
-impl<'syn> ExprLitBool<'syn> {
-    token_range!();
-}
+impl<'syn> ExprLitBool<'syn> {}
 
-impl<'syn> ExprLitInt<'syn> {
-    token_range!();
-}
+impl<'syn> ExprLitInt<'syn> {}
 
-impl<'syn> ExprLitFloat<'syn> {
-    token_range!();
-}
+impl<'syn> ExprLitFloat<'syn> {}
 
-impl<'syn> ExprLitChar<'syn> {
-    token_range!();
-}
+impl<'syn> ExprLitChar<'syn> {}
 
-impl<'syn> ExprLitString<'syn> {
-    token_range!();
-}
+impl<'syn> ExprLitString<'syn> {}
 
 impl<'syn> ExprIf<'syn> {
     find_first!(entry_branch, EntryBranch);

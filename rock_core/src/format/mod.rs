@@ -409,7 +409,7 @@ fn name_alias_fmt(fmt: &mut Formatter, name_alias: ast::NameAlias) {
 }
 
 fn name_fmt(fmt: &mut Formatter, name: ast::Name) {
-    fmt.write_range(name.token_range(fmt.tree));
+    fmt.write_range(name.range(fmt.tree));
 }
 
 fn path_fmt(fmt: &mut Formatter, path: ast::Path) {
@@ -628,11 +628,11 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             fmt.write_c(')');
         }
         ast::Expr::LitNull(_) => fmt.write("null"),
-        ast::Expr::LitBool(lit) => fmt.write_range(lit.token_range(fmt.tree)),
-        ast::Expr::LitInt(lit) => fmt.write_range(lit.token_range(fmt.tree)),
-        ast::Expr::LitFloat(lit) => fmt.write_range(lit.token_range(fmt.tree)),
-        ast::Expr::LitChar(lit) => fmt.write_range(lit.token_range(fmt.tree)),
-        ast::Expr::LitString(lit) => fmt.write_range(lit.token_range(fmt.tree)),
+        ast::Expr::LitBool(lit) => fmt.write_range(lit.range(fmt.tree)),
+        ast::Expr::LitInt(lit) => fmt.write_range(lit.range(fmt.tree)),
+        ast::Expr::LitFloat(lit) => fmt.write_range(lit.range(fmt.tree)),
+        ast::Expr::LitChar(lit) => fmt.write_range(lit.range(fmt.tree)),
+        ast::Expr::LitString(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::If(if_) => expr_if(fmt, if_),
         ast::Expr::Block(block) => block_expr(fmt, block),
         ast::Expr::Match(match_) => expr_match(fmt, match_),

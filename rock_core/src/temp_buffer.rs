@@ -30,11 +30,11 @@ impl<T: Copy> TempBuffer<T> {
 
     pub fn take<'arena>(
         &mut self,
-        start: BufferOffset<T>,
+        offset: BufferOffset<T>,
         arena: &mut Arena<'arena>,
     ) -> &'arena [T] {
-        let slice = arena.alloc_slice(&self.buffer[start.idx..]);
-        self.buffer.truncate(start.idx);
+        let slice = arena.alloc_slice(&self.buffer[offset.idx..]);
+        self.buffer.truncate(offset.idx);
         slice
     }
 }
