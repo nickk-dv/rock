@@ -17,6 +17,17 @@ impl<'syn> Node<'syn> {
         AstNodeIterator::new(tree, self).next()
     }
 
+    fn find_basic_ty(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::BasicType> {
+        for node_or_token in self.content.iter().copied() {
+            if let NodeOrToken::Token(token_id) = node_or_token {
+                if let Some(basic) = tree.token(token_id).as_basic_type() {
+                    return Some(basic);
+                }
+            }
+        }
+        None
+    }
+
     fn find_un_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::UnOp> {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
@@ -217,6 +228,8 @@ ast_node_impl!(StmtReturn, SyntaxKind::STMT_RETURN);
 ast_node_impl!(StmtDefer, SyntaxKind::STMT_DEFER);
 ast_node_impl!(ShortBlock, SyntaxKind::SHORT_BLOCK);
 ast_node_impl!(StmtLoop, SyntaxKind::STMT_LOOP);
+ast_node_impl!(LoopWhileHeader, SyntaxKind::LOOP_WHILE_HEADER);
+ast_node_impl!(LoopCLikeHeader, SyntaxKind::LOOP_CLIKE_HEADER);
 ast_node_impl!(StmtLocal, SyntaxKind::STMT_LOCAL);
 ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
 ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
@@ -518,15 +531,8 @@ impl<'syn> Path<'syn> {
 }
 
 impl<'syn> TypeBasic<'syn> {
-    //@will break with trivia tokens, use find like approach instead
     pub fn basic_ty(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
-        match self.0.content[0] {
-            NodeOrToken::Node(_) => unreachable!(),
-            NodeOrToken::Token(token_id) => {
-                let token = tree.token(token_id);
-                token.as_basic_type().unwrap()
-            }
-        }
+        self.0.find_basic_ty(tree).unwrap()
     }
 }
 
@@ -577,7 +583,19 @@ impl<'syn> ShortBlock<'syn> {
 }
 
 impl<'syn> StmtLoop<'syn> {
-    //@todo api
+    find_first!(while_header, LoopWhileHeader);
+    find_first!(clike_header, LoopCLikeHeader);
+    find_first!(block, ExprBlock);
+}
+
+impl<'syn> LoopWhileHeader<'syn> {
+    find_first!(cond, Expr);
+}
+
+impl<'syn> LoopCLikeHeader<'syn> {
+    find_first!(local, StmtLocal);
+    find_first!(cond, Expr);
+    find_first!(assign, StmtAssign);
 }
 
 impl<'syn> StmtLocal<'syn> {
@@ -591,8 +609,7 @@ impl<'syn> StmtAssign<'syn> {
     pub fn assign_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::AssignOp {
         self.0.find_assign_op(tree).unwrap()
     }
-    //@when lhs is error rhs might be mistaken for lhs
-    // not a problem on a valid tree
+    //@ambiguity in incomplete tree
     node_iter!(lhs_rhs_iter, Expr);
 }
 

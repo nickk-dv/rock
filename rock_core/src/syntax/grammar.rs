@@ -516,11 +516,13 @@ fn stmt(p: &mut Parser) {
 
 fn loop_(p: &mut Parser) {
     let m = p.start();
+    p.bump(T![for]);
+
     match p.peek() {
         T!['{'] => {}
         T![let] | T![mut] => {
+            let mh = p.start();
             local(p);
-
             expr(p);
             p.expect(T![;]);
 
@@ -533,9 +535,15 @@ fn loop_(p: &mut Parser) {
                 p.error("expected assignment operator");
             }
             m.complete(p, SyntaxKind::STMT_ASSIGN);
+            mh.complete(p, SyntaxKind::LOOP_CLIKE_HEADER);
         }
-        _ => expr(p),
+        _ => {
+            let mh = p.start();
+            expr(p);
+            mh.complete(p, SyntaxKind::LOOP_WHILE_HEADER);
+        }
     }
+
     block_expect(p);
     m.complete(p, SyntaxKind::STMT_LOOP);
 }

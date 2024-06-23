@@ -41,6 +41,8 @@ pub enum SyntaxKind {
     STMT_DEFER,
     SHORT_BLOCK,
     STMT_LOOP,
+    LOOP_WHILE_HEADER,
+    LOOP_CLIKE_HEADER,
     STMT_LOCAL,
     STMT_ASSIGN,
     STMT_EXPR_SEMI,

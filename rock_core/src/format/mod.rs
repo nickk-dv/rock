@@ -527,12 +527,9 @@ fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
                 expr_block(fmt, defer.block(fmt.tree).unwrap());
             }
         }
-        ast::Stmt::Loop(loop_) => {
-            //@todo no api
-            fmt.write("<@loop>");
-        }
+        ast::Stmt::Loop(loop_) => stmt_loop(fmt, loop_),
         ast::Stmt::Local(local) => stmt_local(fmt, local),
-        ast::Stmt::Assign(assign) => stmt_assign(fmt, assign),
+        ast::Stmt::Assign(assign) => stmt_assign(fmt, assign, true),
         ast::Stmt::ExprSemi(expr_semi) => {
             expr_fmt(fmt, expr_semi.expr(fmt.tree).unwrap());
             //@semi is optional (isnt added after `}`)
@@ -545,6 +542,26 @@ fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
             fmt.write_c(';');
         }
     }
+}
+
+fn stmt_loop(fmt: &mut Formatter, loop_: ast::StmtLoop) {
+    fmt.write("for");
+    fmt.space();
+
+    if let Some(while_header) = loop_.while_header(fmt.tree) {
+        expr_fmt(fmt, while_header.cond(fmt.tree).unwrap());
+        fmt.space();
+    } else if let Some(clike_header) = loop_.clike_header(fmt.tree) {
+        stmt_local(fmt, clike_header.local(fmt.tree).unwrap());
+        fmt.space();
+        expr_fmt(fmt, clike_header.cond(fmt.tree).unwrap());
+        fmt.write_c(';');
+        fmt.space();
+        stmt_assign(fmt, clike_header.assign(fmt.tree).unwrap(), false);
+        fmt.space();
+    }
+
+    expr_block(fmt, loop_.block(fmt.tree).unwrap());
 }
 
 fn stmt_local(fmt: &mut Formatter, local: ast::StmtLocal) {
@@ -575,22 +592,26 @@ fn stmt_local(fmt: &mut Formatter, local: ast::StmtLocal) {
     fmt.write_c(';');
 }
 
-fn stmt_assign(fmt: &mut Formatter, assign: ast::StmtAssign) {
+fn stmt_assign(fmt: &mut Formatter, assign: ast::StmtAssign, semi: bool) {
     let mut lhs_rhs = assign.lhs_rhs_iter(fmt.tree);
     expr_fmt(fmt, lhs_rhs.next().unwrap());
 
     fmt.space();
-    fmt.write_c('=');
     match assign.assign_op(fmt.tree) {
-        AssignOp::Assign => {}
+        AssignOp::Assign => {
+            fmt.write_c('=');
+        }
         AssignOp::Bin(op) => {
             fmt.write(op.as_str());
+            fmt.write_c('=');
         }
     }
     fmt.space();
 
     expr_fmt(fmt, lhs_rhs.next().unwrap());
-    fmt.write_c(';');
+    if semi {
+        fmt.write_c(';');
+    }
 }
 
 fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
