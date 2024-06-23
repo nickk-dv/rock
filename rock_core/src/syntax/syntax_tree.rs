@@ -1,9 +1,8 @@
 use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
 use crate::arena::Arena;
-use crate::error::{ErrorComp, SourceRange};
+use crate::error::ErrorComp;
 use crate::id_impl;
-use crate::session::FileID;
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
 use crate::token::token_list::TokenList;
@@ -49,24 +48,20 @@ impl<'syn> SyntaxTree<'syn> {
     }
 }
 
-pub fn tree_build<'syn>(
-    input: (TokenList, Vec<Event>),
-    file_id: FileID,
+pub fn build<'syn>(
+    input: (TokenList, Vec<Event>, Vec<ErrorComp>),
 ) -> (SyntaxTree<'syn>, Vec<ErrorComp>) {
     let mut arena = Arena::new();
     let mut nodes = Vec::new();
-    let (tokens, mut events) = input;
+    let (tokens, mut events, errors) = input;
 
-    let mut stack = Vec::new();
-    let mut parent_stack = Vec::with_capacity(8);
-    let mut content_buf = TempBuffer::new();
+    let mut stack = Vec::with_capacity(16);
+    let mut parent_stack = Vec::with_capacity(16);
+    let mut content = TempBuffer::new();
     let mut token_idx = 0;
-    let mut errors = Vec::new();
 
     for event_idx in 0..events.len() {
-        //@clone to get around borrowing,
-        //change the error handling to copy/clone events
-        match events[event_idx].clone() {
+        match events[event_idx] {
             Event::StartNode {
                 kind,
                 forward_parent,
@@ -92,8 +87,8 @@ pub fn tree_build<'syn>(
 
                 while let Some(kind) = parent_stack.pop() {
                     let node_id = NodeID::new(nodes.len());
-                    content_buf.add(NodeOrToken::Node(node_id));
-                    let offset = content_buf.start();
+                    content.add(NodeOrToken::Node(node_id));
+                    let offset = content.start();
                     stack.push((offset, node_id));
 
                     let node = Node { kind, content: &[] };
@@ -101,8 +96,8 @@ pub fn tree_build<'syn>(
                 }
 
                 let node_id = NodeID::new(nodes.len());
-                content_buf.add(NodeOrToken::Node(node_id));
-                let offset = content_buf.start();
+                content.add(NodeOrToken::Node(node_id));
+                let offset = content.start();
                 stack.push((offset, node_id));
 
                 let node = Node { kind, content: &[] };
@@ -110,18 +105,12 @@ pub fn tree_build<'syn>(
             }
             Event::EndNode => {
                 let (offset, node_id) = stack.pop().unwrap();
-                nodes[node_id.index()].content = content_buf.take(offset, &mut arena);
+                nodes[node_id.index()].content = content.take(offset, &mut arena);
             }
             Event::Token => {
                 let token_id = TokenID::new(token_idx);
                 token_idx += 1;
-                content_buf.add(NodeOrToken::Token(token_id));
-            }
-            Event::Error { message } => {
-                let token_id = TokenID::new(token_idx);
-                let range = tokens.get_range(token_id.index());
-                let src = SourceRange::new(range, file_id);
-                errors.push(ErrorComp::new(message, src, None));
+                content.add(NodeOrToken::Token(token_id));
             }
             Event::Ignore => {}
         }

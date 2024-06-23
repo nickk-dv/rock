@@ -12,36 +12,14 @@ use parser::Parser;
 use syntax_tree::SyntaxTree;
 
 pub fn parse(source: &str, file_id: FileID) -> (SyntaxTree, Vec<ErrorComp>) {
+    //@dont return result, instead TokenList + Vec<ErrorComp>
     let tokens = if let Ok(tokens) = lexer::lex(source, file_id, false) {
         tokens
     } else {
         //@temp work-around
         panic!("lexer failed");
     };
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(tokens, file_id);
     grammar::source_file(&mut parser);
-    syntax_tree::tree_build(parser.finish(), file_id)
-}
-
-#[test]
-fn test_tree() {
-    let source = r#"
-    import as mem. 
-    
-    #[attr] true
-    pub proc main(x: , ..) -> {}
-
-    enum Something f32 {
-        Variant = 
-        Variant2,
-    }
-
-    const VAL: &u32 = (&mut G.name(1, 3, 4));
-
-    const V: s32 = if true { } else if false {} else {};
-    
-    "#;
-
-    let (tree, _) = parse(source, FileID::dummy());
-    syntax_tree::tree_print(&tree, source);
+    syntax_tree::build(parser.finish())
 }

@@ -1,17 +1,20 @@
 use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
+use crate::error::{ErrorComp, SourceRange, StringOrStr};
+use crate::session::FileID;
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 use std::cell::Cell;
 
 pub struct Parser {
     cursor: usize,
-    input: TokenList,
+    tokens: TokenList,
     events: Vec<Event>,
+    errors: Vec<ErrorComp>,
     steps: Cell<u32>,
+    file_id: FileID,
 }
 
-//@change error handling method
 #[derive(Clone)]
 pub enum Event {
     StartNode {
@@ -20,9 +23,6 @@ pub enum Event {
     },
     EndNode,
     Token,
-    Error {
-        message: String,
-    },
     Ignore,
 }
 
@@ -36,17 +36,19 @@ pub struct MarkerClosed {
 }
 
 impl Parser {
-    pub fn new(input: TokenList) -> Parser {
+    pub fn new(tokens: TokenList, file_id: FileID) -> Parser {
         Parser {
             cursor: 0,
-            input,
+            tokens,
             events: Vec::new(),
+            errors: Vec::new(),
             steps: Cell::new(0),
+            file_id,
         }
     }
 
-    pub fn finish(self) -> (TokenList, Vec<Event>) {
-        (self.input, self.events)
+    pub fn finish(self) -> (TokenList, Vec<Event>, Vec<ErrorComp>) {
+        (self.tokens, self.events, self.errors)
     }
 
     pub fn at(&self, token: Token) -> bool {
@@ -58,7 +60,7 @@ impl Parser {
     }
 
     pub fn at_prev(&self, token: Token) -> bool {
-        self.input.get_token(self.cursor - 1) == token
+        self.tokens.get_token(self.cursor - 1) == token
     }
 
     pub fn at_set(&self, token_set: TokenSet) -> bool {
@@ -67,12 +69,12 @@ impl Parser {
 
     pub fn peek(&self) -> Token {
         self.step_bump();
-        self.input.get_token(self.cursor)
+        self.tokens.get_token(self.cursor)
     }
 
     pub fn peek_next(&self) -> Token {
         self.step_bump();
-        self.input.get_token(self.cursor + 1)
+        self.tokens.get_token(self.cursor + 1)
     }
 
     pub fn eat(&mut self, token: Token) -> bool {
@@ -93,18 +95,18 @@ impl Parser {
         assert!(self.eat(token));
     }
 
-    pub fn error_bump<S: Into<String>>(&mut self, message: S) {
-        self.error_recover(message, TokenSet::EMPTY)
+    pub fn error_bump(&mut self, msg: impl Into<StringOrStr>) {
+        self.error_recover(msg, TokenSet::EMPTY)
     }
 
-    pub fn error_recover<S: Into<String>>(&mut self, message: S, recovery: TokenSet) {
+    pub fn error_recover(&mut self, msg: impl Into<StringOrStr>, recovery: TokenSet) {
         if self.at_set(recovery) {
-            self.error(message);
+            self.error(msg);
             return;
         }
 
         let m = self.start();
-        self.error(message);
+        self.error(msg);
         self.bump_any();
         m.complete(self, SyntaxKind::ERROR);
     }
@@ -120,10 +122,10 @@ impl Parser {
         m.complete(self, SyntaxKind::ERROR);
     }
 
-    pub fn error<S: Into<String>>(&mut self, message: S) {
-        self.push_event(Event::Error {
-            message: message.into(),
-        });
+    pub fn error(&mut self, msg: impl Into<StringOrStr>) {
+        let range = self.tokens.get_range(self.cursor + 1);
+        let src = SourceRange::new(range, self.file_id);
+        self.errors.push(ErrorComp::new(msg, src, None));
     }
 
     fn bump_any(&mut self) {
