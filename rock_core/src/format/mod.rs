@@ -435,7 +435,7 @@ fn type_fmt(fmt: &mut Formatter, ty: ast::Type) {
 }
 
 fn type_basic(fmt: &mut Formatter, ty: ast::TypeBasic) {
-    let basic = ty.basic_ty(fmt.tree);
+    let basic = ty.basic(fmt.tree);
     fmt.write(basic.as_str());
 }
 

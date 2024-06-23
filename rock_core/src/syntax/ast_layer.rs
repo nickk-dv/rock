@@ -532,7 +532,7 @@ impl<'syn> Path<'syn> {
 }
 
 impl<'syn> TypeBasic<'syn> {
-    pub fn basic_ty(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
+    pub fn basic(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
         self.0.find_basic_ty(tree).unwrap()
     }
 }
