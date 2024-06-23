@@ -318,22 +318,102 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_>, ty_cst: cst::Type) -> ast::Type<'ast> 
     ast::Type { kind, range }
 }
 
-fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> {
-    let range = stmt.range(ctx.tree);
+fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {
+    let range = stmt_cst.range(ctx.tree);
 
-    let kind = match stmt {
+    let kind = match stmt_cst {
         cst::Stmt::Break(_) => ast::StmtKind::Break,
         cst::Stmt::Continue(_) => ast::StmtKind::Continue,
-        cst::Stmt::Return(_) => todo!(),
-        cst::Stmt::Defer(_) => todo!(),
-        cst::Stmt::Loop(_) => todo!(),
-        cst::Stmt::Local(_) => todo!(),
-        cst::Stmt::Assign(_) => todo!(),
-        cst::Stmt::ExprSemi(_) => todo!(),
-        cst::Stmt::ExprTail(_) => todo!(),
+        cst::Stmt::Return(ret) => {
+            let expr = ret.expr(ctx.tree).map(|e| expr(ctx, e));
+            ast::StmtKind::Return(expr)
+        }
+        cst::Stmt::Defer(defer) => ast::StmtKind::Defer(stmt_defer(ctx, defer)),
+        cst::Stmt::Loop(loop_) => ast::StmtKind::Loop(stmt_loop(ctx, loop_)),
+        cst::Stmt::Local(local) => ast::StmtKind::Local(stmt_local(ctx, local)),
+        cst::Stmt::Assign(assign) => ast::StmtKind::Assign(stmt_assign(ctx, assign)),
+        cst::Stmt::ExprSemi(semi) => {
+            let expr = expr(ctx, semi.expr(ctx.tree).unwrap());
+            ast::StmtKind::ExprSemi(expr)
+        }
+        cst::Stmt::ExprTail(tail) => {
+            let expr = expr(ctx, tail.expr(ctx.tree).unwrap());
+            ast::StmtKind::ExprTail(expr)
+        }
     };
 
     ast::Stmt { kind, range }
+}
+
+fn stmt_defer<'ast>(ctx: &mut AstBuild<'ast, '_>, defer: cst::StmtDefer) -> &'ast ast::Block<'ast> {
+    if let Some(short_block) = defer.short_block(ctx.tree) {
+        let stmt_cst = short_block.stmt(ctx.tree).unwrap();
+        let stmt = stmt(ctx, stmt_cst);
+
+        let offset = ctx.stmts.start();
+        ctx.stmts.add(stmt);
+        let stmts = ctx.stmts.take(offset, &mut ctx.arena);
+
+        let block = ast::Block {
+            stmts,
+            range: stmt.range,
+        };
+        ctx.arena.alloc(block)
+    } else {
+        let block_cst = defer.block(ctx.tree).unwrap();
+        let block = block(ctx, block_cst);
+        ctx.arena.alloc(block)
+    }
+}
+
+fn stmt_loop<'ast>(ctx: &mut AstBuild<'ast, '_>, loop_: cst::StmtLoop) -> &'ast ast::Loop<'ast> {
+    let kind = if let Some(while_header) = loop_.while_header(ctx.tree) {
+        let cond = expr(ctx, while_header.cond(ctx.tree).unwrap());
+        ast::LoopKind::While { cond }
+    } else if let Some(clike_header) = loop_.clike_header(ctx.tree) {
+        let local = stmt_local(ctx, clike_header.local(ctx.tree).unwrap());
+        let cond = expr(ctx, clike_header.cond(ctx.tree).unwrap());
+        let assign = stmt_assign(ctx, clike_header.assign(ctx.tree).unwrap());
+        ast::LoopKind::ForLoop {
+            local,
+            cond,
+            assign,
+        }
+    } else {
+        ast::LoopKind::Loop
+    };
+
+    let block = block(ctx, loop_.block(ctx.tree).unwrap());
+    let loop_ = ast::Loop { kind, block };
+    ctx.arena.alloc(loop_)
+}
+
+fn stmt_local<'ast>(ctx: &mut AstBuild<'ast, '_>, local: cst::StmtLocal) -> &'ast ast::Local<'ast> {
+    let mutt = mutt(local.is_mut(ctx.tree));
+    let name = name(ctx, local.name(ctx.tree).unwrap());
+
+    let kind = if let Some(ty_cst) = local.ty(ctx.tree) {
+        let ty = ty(ctx, ty_cst);
+        if let Some(expr_cst) = local.expr(ctx.tree) {
+            let expr = expr(ctx, expr_cst);
+            ast::LocalKind::Init(Some(ty), expr)
+        } else {
+            ast::LocalKind::Decl(ty)
+        }
+    } else {
+        let expr = expr(ctx, local.expr(ctx.tree).unwrap());
+        ast::LocalKind::Init(None, expr)
+    };
+
+    let local = ast::Local { mutt, name, kind };
+    ctx.arena.alloc(local)
+}
+
+fn stmt_assign<'ast>(
+    ctx: &mut AstBuild<'ast, '_>,
+    assign: cst::StmtAssign,
+) -> &'ast ast::Assign<'ast> {
+    todo!()
 }
 
 fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr: cst::Expr) -> &'ast ast::Expr<'ast> {
