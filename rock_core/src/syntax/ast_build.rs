@@ -171,7 +171,21 @@ fn attribute<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     attr: Option<cst::Attribute>,
 ) -> Option<ast::Attribute> {
-    None //@hack
+    if let Some(attr) = attr {
+        //@assuming range of ident token without any trivia
+        let name_cst = attr.name(ctx.tree).unwrap();
+        let range = name_cst.range(ctx.tree);
+        let string = &ctx.source[range.as_usize()];
+
+        let attr = ast::Attribute {
+            kind: ast::AttributeKind::from_str(string),
+            data: ast::AttributeData::None, //@remove fully?
+            range: attr.range(ctx.tree),
+        };
+        Some(attr)
+    } else {
+        None
+    }
 }
 
 fn vis(is_pub: bool) -> ast::Vis {
@@ -341,30 +355,57 @@ fn import_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
-    //@add ast::ImportItem attr
-    let import_symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
-        let offset = ctx.s.fields.start();
+    //@add ast::ImportItem attr, and vis?
+    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let vis = vis(item.visiblity(ctx.tree).is_some());
+
+    let offset = ctx.s.names.start();
+    let import_path = item.import_path(ctx.tree).unwrap();
+    for name_cst in import_path.names(ctx.tree) {
+        let name = name(ctx, name_cst);
+        ctx.s.names.add(name);
+    }
+    let names = ctx.s.names.take(offset, &mut ctx.s.arena);
+
+    //@hack support viriable len import paths
+    let (package, module) = if names.len() == 1 {
+        (None, names[0])
+    } else {
+        (Some(names[0]), names[1])
+    };
+    let alias = name_alias(ctx, item.name_alias(ctx.tree));
+
+    let symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
+        let offset = ctx.s.import_symbols.start();
         for symbol_cst in symbol_list.import_symbols(ctx.tree) {
             import_symbol(ctx, symbol_cst);
         }
-        ctx.s.fields.take(offset, &mut ctx.s.arena)
+        ctx.s.import_symbols.take(offset, &mut ctx.s.arena)
     } else {
         &[]
     };
 
-    todo!();
+    let import_item = ast::ImportItem {
+        package,
+        module,
+        alias,
+        symbols,
+    };
+    ctx.s.arena.alloc(import_item)
+}
+
+fn name_alias<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    name_alias: Option<cst::NameAlias>,
+) -> Option<ast::Name> {
+    name_alias.map(|na| name(ctx, na.name(ctx.tree).unwrap()))
 }
 
 fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
-    let name_ast = name(ctx, import_symbol.name(ctx.tree).unwrap());
-    let alias = import_symbol
-        .name_alias(ctx.tree)
-        .map(|a| name(ctx, a.name(ctx.tree).unwrap()));
+    let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
+    let alias = name_alias(ctx, import_symbol.name_alias(ctx.tree));
 
-    let import_symbol = ast::ImportSymbol {
-        name: name_ast,
-        alias,
-    };
+    let import_symbol = ast::ImportSymbol { name, alias };
     ctx.s.import_symbols.add(import_symbol);
 }
 
