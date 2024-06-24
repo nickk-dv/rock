@@ -59,7 +59,6 @@ pub enum SyntaxKind {
     EXPR_IF,
     ENTRY_BRANCH,
     ELSE_IF_BRANCH,
-    FALLBACK_BRANCH,
     EXPR_BLOCK,
     EXPR_MATCH,
     MATCH_ARM_LIST,

@@ -720,11 +720,11 @@ fn expr_if(fmt: &mut Formatter, if_: ast::ExprIf) {
         block_fmt(fmt, branch.block(fmt.tree).unwrap());
     }
 
-    if let Some(fallback) = if_.fallback(fmt.tree) {
+    if let Some(block) = if_.else_block(fmt.tree) {
         fmt.space();
         fmt.write("else");
         fmt.space();
-        block_fmt(fmt, fallback.block(fmt.tree).unwrap());
+        block_fmt(fmt, block);
     }
 }
 

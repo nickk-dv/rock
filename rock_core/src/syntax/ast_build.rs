@@ -6,10 +6,10 @@ use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
 use crate::intern::InternPool;
 use crate::session::{FileID, Session};
 use crate::temp_buffer::TempBuffer;
+use crate::text::TextRange;
 use crate::timer::Timer;
 
 //@rename some ast:: nodes to match ast_layer and syntax names (eg: ProcParam)
-
 struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
     char_id: u32,
@@ -602,6 +602,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
     let kind = match expr_cst {
         cst::Expr::Paren(paren) => {
             //@problem with range and inner expr
+            //@get expr_kind with separate function
             todo!();
         }
         cst::Expr::LitNull(_) => ast::ExprKind::LitNull,
@@ -668,14 +669,72 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
 
             ast::ExprKind::LitString { id, c_string }
         }
-        cst::Expr::If(if_) => todo!(),
+        cst::Expr::If(if_) => {
+            let entry = if_.entry_branch(ctx.tree).unwrap();
+            let entry = ast::Branch {
+                cond: expr(ctx, entry.cond(ctx.tree).unwrap()),
+                block: block(ctx, entry.block(ctx.tree).unwrap()),
+            };
+
+            let offset = ctx.s.branches.start();
+            for branch_cst in if_.else_if_branches(ctx.tree) {
+                let branch = ast::Branch {
+                    cond: expr(ctx, branch_cst.cond(ctx.tree).unwrap()),
+                    block: block(ctx, branch_cst.block(ctx.tree).unwrap()),
+                };
+                ctx.s.branches.add(branch);
+            }
+            let branches = ctx.s.branches.take(offset, &mut ctx.s.arena);
+            let else_block = if_.else_block(ctx.tree).map(|b| block(ctx, b));
+
+            let if_ = ast::If {
+                entry,
+                branches,
+                else_block,
+            };
+            let if_ = ctx.s.arena.alloc(if_);
+            ast::ExprKind::If { if_ }
+        }
         cst::Expr::Block(expr_block) => {
             let block = block(ctx, expr_block.into_block());
 
             let block = ctx.s.arena.alloc(block);
             ast::ExprKind::Block { block }
         }
-        cst::Expr::Match(match_) => todo!(),
+        cst::Expr::Match(match_) => {
+            let on_expr = expr(ctx, match_.on_expr(ctx.tree).unwrap());
+
+            let offset = ctx.s.match_arms.start();
+            let match_arm_lit = match_.match_arm_list(ctx.tree).unwrap();
+            for match_arm_cst in match_arm_lit.match_arms(ctx.tree) {
+                let mut pat_expr_iter = match_arm_cst.pat_expr_iter(ctx.tree);
+                let match_arm = ast::MatchArm {
+                    pat: ast::ConstExpr(expr(ctx, pat_expr_iter.next().unwrap())),
+                    expr: expr(ctx, pat_expr_iter.next().unwrap()),
+                };
+                ctx.s.match_arms.add(match_arm);
+            }
+            let match_arms = ctx.s.match_arms.take(offset, &mut ctx.s.arena);
+
+            let (fallback, fallback_range) = match match_arm_lit.fallback(ctx.tree) {
+                Some(fallback) => {
+                    let expr = expr(ctx, fallback.expr(ctx.tree).unwrap());
+                    let range = fallback.range(ctx.tree);
+                    (Some(expr), range)
+                }
+                None => (None, TextRange::empty_at(0.into())),
+            };
+
+            //@sync names `arms` vs `match_arms`
+            let match_ = ast::Match {
+                on_expr,
+                arms: match_arms,
+                fallback,
+                fallback_range,
+            };
+            let match_ = ctx.s.arena.alloc(match_);
+            ast::ExprKind::Match { match_ }
+        }
         cst::Expr::Field(field) => {
             let target = expr(ctx, field.target(ctx.tree).unwrap());
             let name = name(ctx, field.name(ctx.tree).unwrap());
@@ -763,8 +822,8 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
 
             ast::ExprKind::Address { mutt, rhs: expr }
         }
-        cst::Expr::Unary(_) => todo!(),
-        cst::Expr::Binary(_) => todo!(),
+        cst::Expr::Unary(_) => todo!(),  //@no op range available
+        cst::Expr::Binary(_) => todo!(), //@no op range available
     };
 
     let expr = ast::Expr { kind, range };

@@ -280,7 +280,6 @@ ast_node_impl!(ExprLitString, SyntaxKind::EXPR_LIT_STRING);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
 ast_node_impl!(EntryBranch, SyntaxKind::ENTRY_BRANCH);
 ast_node_impl!(ElseIfBranch, SyntaxKind::ELSE_IF_BRANCH);
-ast_node_impl!(FallbackBranch, SyntaxKind::FALLBACK_BRANCH);
 ast_node_impl!(ExprBlock, SyntaxKind::EXPR_BLOCK);
 ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
@@ -753,7 +752,7 @@ impl<'syn> ExprLitString<'syn> {}
 impl<'syn> ExprIf<'syn> {
     find_first!(entry_branch, EntryBranch);
     node_iter!(else_if_branches, ElseIfBranch);
-    find_first!(fallback, FallbackBranch);
+    find_first!(else_block, Block);
 }
 
 impl<'syn> EntryBranch<'syn> {
@@ -763,10 +762,6 @@ impl<'syn> EntryBranch<'syn> {
 
 impl<'syn> ElseIfBranch<'syn> {
     find_first!(cond, Expr);
-    find_first!(block, Block);
-}
-
-impl<'syn> FallbackBranch<'syn> {
     find_first!(block, Block);
 }
 

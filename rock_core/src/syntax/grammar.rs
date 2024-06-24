@@ -763,15 +763,16 @@ fn if_(p: &mut Parser) -> MarkerClosed {
     block_expect(p);
     eb.complete(p, SyntaxKind::ENTRY_BRANCH);
 
+    //@else not included in ELSE_IF_BRANCH?
     while p.eat(T![else]) {
-        let mb = p.start();
-        if p.eat(T![if]) {
+        if p.at(T![if]) {
+            let mb = p.start();
+            p.bump(T![if]);
             expr(p);
             block_expect(p);
             mb.complete(p, SyntaxKind::ELSE_IF_BRANCH);
         } else {
             block_expect(p);
-            mb.complete(p, SyntaxKind::FALLBACK_BRANCH);
             break;
         }
     }
