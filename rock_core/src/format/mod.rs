@@ -634,7 +634,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::LitChar(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitString(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::If(if_) => expr_if(fmt, if_),
-        ast::Expr::Block(block) => block_expr(fmt, block),
+        ast::Expr::Block(block) => block_fmt(fmt, block.into_block()),
         ast::Expr::Match(match_) => expr_match(fmt, match_),
         ast::Expr::Field(field) => {
             expr_fmt(fmt, field.target(fmt.tree).unwrap());
@@ -644,7 +644,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::Index(index) => expr_index(fmt, index),
         ast::Expr::Call(call) => expr_call(fmt, call),
         ast::Expr::Cast(cast) => {
-            expr_fmt(fmt, cast.expr(fmt.tree).unwrap());
+            expr_fmt(fmt, cast.target(fmt.tree).unwrap());
             fmt.space();
             fmt.write("as");
             fmt.space();
@@ -729,22 +729,11 @@ fn expr_if(fmt: &mut Formatter, if_: ast::ExprIf) {
 }
 
 fn block_fmt(fmt: &mut Formatter, block: ast::Block) {
-    block_any_fmt(fmt, block.stmts(fmt.tree));
-}
-
-fn block_expr(fmt: &mut Formatter, block: ast::ExprBlock) {
-    block_any_fmt(fmt, block.stmts(fmt.tree));
-}
-
-fn block_any_fmt<'syn>(
-    fmt: &mut Formatter,
-    stmts: AstNodeIterator<'syn, syntax::ast_layer::Stmt<'syn>>,
-) {
     fmt.write_c('{');
     fmt.depth_increment();
 
     let mut empty = true;
-    for stmt in stmts {
+    for stmt in block.stmts(fmt.tree) {
         if empty {
             fmt.new_line();
             empty = false;
@@ -776,13 +765,13 @@ fn expr_match(fmt: &mut Formatter, match_: ast::ExprMatch) {
             fmt.new_line();
             empty = false;
         }
-        let mut pat_and_expr = match_arm.pat_and_expr(fmt.tree);
+        let mut pat_expr_iter = match_arm.pat_expr_iter(fmt.tree);
         fmt.tab_depth();
-        expr_fmt(fmt, pat_and_expr.next().unwrap());
+        expr_fmt(fmt, pat_expr_iter.next().unwrap());
         fmt.space();
         fmt.write("->");
         fmt.space();
-        expr_fmt(fmt, pat_and_expr.next().unwrap());
+        expr_fmt(fmt, pat_expr_iter.next().unwrap());
         fmt.write_c(',');
         fmt.new_line();
     }

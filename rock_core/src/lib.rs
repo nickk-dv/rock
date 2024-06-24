@@ -20,6 +20,7 @@ pub mod session;
 pub mod syntax;
 mod temp_buffer;
 pub mod text;
+mod timer;
 mod token;
 
 use package::semver::Semver;

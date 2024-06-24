@@ -772,6 +772,10 @@ impl<'syn> FallbackBranch<'syn> {
 
 impl<'syn> ExprBlock<'syn> {
     node_iter!(stmts, Stmt);
+
+    pub fn into_block(self) -> Block<'syn> {
+        Block(self.0)
+    }
 }
 
 impl<'syn> ExprMatch<'syn> {
@@ -786,7 +790,7 @@ impl<'syn> MatchArmList<'syn> {
 
 impl<'syn> MatchArm<'syn> {
     //@ambiguity in incomplete tree
-    node_iter!(pat_and_expr, Expr);
+    node_iter!(pat_expr_iter, Expr);
 }
 
 impl<'syn> MatchFallback<'syn> {
@@ -814,7 +818,7 @@ impl<'syn> CallArgumentList<'syn> {
 }
 
 impl<'syn> ExprCast<'syn> {
-    find_first!(expr, Expr);
+    find_first!(target, Expr);
     find_first!(into_ty, Type);
 }
 

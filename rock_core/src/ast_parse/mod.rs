@@ -5,8 +5,10 @@ use crate::ast::*;
 use crate::error::ResultComp;
 use crate::lexer;
 use crate::session::{FileID, Session};
+use crate::timer::Timer;
 
 pub fn parse(session: &Session) -> ResultComp<Ast> {
+    let t_total = Timer::new();
     let mut state = parser::ParseState::new();
     let mut file_idx: usize = 0;
 
@@ -46,5 +48,6 @@ pub fn parse(session: &Session) -> ResultComp<Ast> {
         })
     }
 
+    t_total.stop("ast parse (old) total");
     state.result()
 }

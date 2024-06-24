@@ -40,6 +40,9 @@ impl<'syn> SyntaxTree<'syn> {
     pub fn node(&self, node_id: NodeID) -> &Node {
         &self.nodes[node_id.index()]
     }
+    pub fn tokens(&self) -> &TokenList {
+        &self.tokens
+    }
     pub fn token(&self, token_id: TokenID) -> Token {
         self.tokens.get_token(token_id.index())
     }
@@ -58,7 +61,7 @@ pub fn build<'syn>(
 
     let mut stack = Vec::with_capacity(16);
     let mut parent_stack = Vec::with_capacity(16);
-    let mut content = TempBuffer::new();
+    let mut content = TempBuffer::new(128);
     let mut token_idx = 0;
 
     for event_idx in 0..events.len() {

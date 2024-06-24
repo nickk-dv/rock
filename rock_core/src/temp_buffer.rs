@@ -11,8 +11,10 @@ pub struct BufferOffset<T: Copy> {
 }
 
 impl<T: Copy> TempBuffer<T> {
-    pub fn new() -> TempBuffer<T> {
-        TempBuffer { buffer: Vec::new() }
+    pub fn new(cap: usize) -> TempBuffer<T> {
+        TempBuffer {
+            buffer: Vec::with_capacity(cap),
+        }
     }
 
     #[inline]

@@ -1,4 +1,4 @@
-mod ast_build;
+pub mod ast_build;
 pub mod ast_layer;
 mod grammar;
 mod parser;
