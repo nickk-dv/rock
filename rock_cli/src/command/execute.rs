@@ -151,6 +151,7 @@ fn check() -> Result<(), ErrorComp> {
 
     fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
+        let (_, _) = rock_core::syntax::ast_build::parse(session).into_result(vec![])?;
         let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
         Ok(warnings)
     }

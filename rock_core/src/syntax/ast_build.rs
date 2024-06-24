@@ -9,16 +9,20 @@ use crate::temp_buffer::TempBuffer;
 use crate::timer::Timer;
 
 //@rename some ast:: nodes to match ast_layer and syntax names (eg: ProcParam)
-struct AstBuild<'ast, 'syn> {
+
+struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
     char_id: u32,
     string_id: u32,
     file_id: FileID,
-    source: &'ast str, //@hack same as ast lifetime
+    source: &'src str,
+    s: &'state mut AstBuildState<'ast>,
+}
 
+struct AstBuildState<'ast> {
     arena: Arena<'ast>,
-    intern_name: InternPool<'ast>,   //@hack same as ast lifetime
-    intern_string: InternPool<'ast>, //@hack same as ast lifetime
+    intern_name: InternPool<'ast>,
+    intern_string: InternPool<'ast>,
     string_is_cstr: Vec<bool>,
     packages: Vec<ast::Package<'ast>>,
     errors: Vec<ErrorComp>,
@@ -37,15 +41,27 @@ struct AstBuild<'ast, 'syn> {
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
 }
 
-impl<'ast, 'syn> AstBuild<'ast, 'syn> {
-    fn new(tree: &'syn SyntaxTree<'syn>) -> AstBuild<'ast, 'syn> {
+impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
+    fn new(
+        tree: &'syn SyntaxTree<'syn>,
+        file_id: FileID,
+        source: &'src str,
+        state: &'state mut AstBuildState<'ast>,
+    ) -> Self {
         AstBuild {
             tree,
             char_id: 0,
             string_id: 0,
-            file_id: FileID::dummy(),
-            source: "",
+            file_id,
+            source,
+            s: state,
+        }
+    }
+}
 
+impl<'ast> AstBuildState<'ast> {
+    fn new() -> Self {
+        AstBuildState {
             arena: Arena::new(),
             intern_name: InternPool::new(),
             intern_string: InternPool::new(),
@@ -71,13 +87,12 @@ impl<'ast, 'syn> AstBuild<'ast, 'syn> {
 
 pub fn parse(session: &Session) -> ResultComp<ast::Ast> {
     let t_total = Timer::new();
-    let (tree_dummy, _) = super::parse("", FileID::dummy());
-    let mut ctx = AstBuild::new(&tree_dummy);
+    let mut state = AstBuildState::new();
     let mut file_idx: usize = 0;
 
     for package_id in session.package_ids() {
         let package = session.package(package_id);
-        let package_name_id = ctx.intern_name.intern(&package.manifest().package.name);
+        let package_name_id = state.intern_name.intern(&package.manifest().package.name);
         let mut modules = Vec::<ast::Module>::new();
 
         for idx in file_idx..file_idx + package.file_count() {
@@ -89,11 +104,13 @@ pub fn parse(session: &Session) -> ResultComp<ast::Ast> {
                 .expect("filename")
                 .to_str()
                 .expect("utf-8");
-            let module_name_id = ctx.intern_name.intern(filename);
+            let module_name_id = state.intern_name.intern(filename);
 
             let (tree, errors) = super::parse(&file.source, file_id);
             if errors.is_empty() {
+                let mut ctx = AstBuild::new(&tree, file_id, &file.source, &mut state);
                 let items = source_file(&mut ctx, tree.source_file());
+
                 let module = ast::Module {
                     file_id,
                     name_id: module_name_id,
@@ -101,44 +118,44 @@ pub fn parse(session: &Session) -> ResultComp<ast::Ast> {
                 };
                 modules.push(module);
             } else {
-                ctx.errors.extend(errors);
+                state.errors.extend(errors);
             }
         }
 
         file_idx += package.file_count();
-        ctx.packages.push(ast::Package {
+        state.packages.push(ast::Package {
             name_id: package_name_id,
             modules,
         });
     }
 
     t_total.stop("ast parse (new) total");
-    if ctx.errors.is_empty() {
+    if state.errors.is_empty() {
         let ast = ast::Ast {
-            arena: ctx.arena,
-            intern_name: ctx.intern_name,
-            intern_string: ctx.intern_string,
-            string_is_cstr: ctx.string_is_cstr,
-            packages: ctx.packages,
+            arena: state.arena,
+            intern_name: state.intern_name,
+            intern_string: state.intern_string,
+            string_is_cstr: state.string_is_cstr,
+            packages: state.packages,
         };
         ResultComp::Ok((ast, vec![]))
     } else {
-        ResultComp::Err(DiagnosticCollection::new().join_errors(ctx.errors))
+        ResultComp::Err(DiagnosticCollection::new().join_errors(state.errors))
     }
 }
 
 fn source_file<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     source_file: cst::SourceFile,
 ) -> &'ast [ast::Item<'ast>] {
-    let offset = ctx.items.start();
+    let offset = ctx.s.items.start();
     for item_cst in source_file.items(ctx.tree) {
         item(ctx, item_cst);
     }
-    ctx.items.take(offset, &mut ctx.arena)
+    ctx.s.items.take(offset, &mut ctx.s.arena)
 }
 
-fn item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::Item) {
+fn item<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, item: cst::Item) {
     let item = match item {
         cst::Item::Proc(item) => ast::Item::Proc(proc_item(ctx, item)),
         cst::Item::Enum(item) => ast::Item::Enum(enum_item(ctx, item)),
@@ -147,14 +164,14 @@ fn item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::Item) {
         cst::Item::Global(item) => ast::Item::Global(global_item(ctx, item)),
         cst::Item::Import(item) => ast::Item::Import(import_item(ctx, item)),
     };
-    ctx.items.add(item);
+    ctx.s.items.add(item);
 }
 
 fn attribute<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     attr: Option<cst::Attribute>,
 ) -> Option<ast::Attribute> {
-    todo!()
+    None //@hack
 }
 
 fn vis(is_pub: bool) -> ast::Vis {
@@ -173,17 +190,20 @@ fn mutt(is_mut: bool) -> ast::Mut {
     }
 }
 
-fn proc_item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::ProcItem) -> &'ast ast::ProcItem<'ast> {
+fn proc_item<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    item: cst::ProcItem,
+) -> &'ast ast::ProcItem<'ast> {
     let attr = attribute(ctx, item.attribute(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
-    let offset = ctx.params.start();
+    let offset = ctx.s.params.start();
     let param_list = item.param_list(ctx.tree).unwrap();
     for param_cst in param_list.params(ctx.tree) {
         param(ctx, param_cst);
     }
-    let params = ctx.params.take(offset, &mut ctx.arena);
+    let params = ctx.s.params.take(offset, &mut ctx.s.arena);
 
     let is_variadic = param_list.is_variadic(ctx.tree);
     let return_ty = item.return_ty(ctx.tree).map(|t| ty(ctx, t));
@@ -198,31 +218,34 @@ fn proc_item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::ProcItem) -> &'ast a
         return_ty,
         block,
     };
-    ctx.arena.alloc(proc_item)
+    ctx.s.arena.alloc(proc_item)
 }
 
-fn param<'ast>(ctx: &mut AstBuild<'ast, '_>, param: cst::Param) {
+fn param<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, param: cst::Param) {
     let mutt = mutt(param.is_mut(ctx.tree));
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let ty = ty(ctx, param.ty(ctx.tree).unwrap());
 
     let param = ast::ProcParam { mutt, name, ty };
-    ctx.params.add(param);
+    ctx.s.params.add(param);
 }
 
-fn enum_item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::EnumItem) -> &'ast ast::EnumItem<'ast> {
+fn enum_item<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    item: cst::EnumItem,
+) -> &'ast ast::EnumItem<'ast> {
     //@add ast::EnumItem attr
     let attr = attribute(ctx, item.attribute(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let basic = item.type_basic(ctx.tree).map(|tb| tb.basic(ctx.tree));
 
-    let offset = ctx.variants.start();
+    let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();
     for variant_cst in variant_list.variants(ctx.tree) {
         variant(ctx, variant_cst);
     }
-    let variants = ctx.variants.take(offset, &mut ctx.arena);
+    let variants = ctx.s.variants.take(offset, &mut ctx.s.arena);
 
     let enum_item = ast::EnumItem {
         vis,
@@ -230,21 +253,21 @@ fn enum_item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::EnumItem) -> &'ast a
         basic,
         variants,
     };
-    ctx.arena.alloc(enum_item)
+    ctx.s.arena.alloc(enum_item)
 }
 
-fn variant<'ast>(ctx: &mut AstBuild<'ast, '_>, variant: cst::Variant) {
+fn variant<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, variant: cst::Variant) {
     //@value is optional in grammar but required in ast due to
     // const expr resolve limitation, will panic for now
     let name = name(ctx, variant.name(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, variant.value(ctx.tree).unwrap()));
 
     let variant = ast::EnumVariant { name, value };
-    ctx.variants.add(variant);
+    ctx.s.variants.add(variant);
 }
 
 fn struct_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
     //@add ast::StructItem attr
@@ -252,28 +275,28 @@ fn struct_item<'ast>(
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
-    let offset = ctx.fields.start();
+    let offset = ctx.s.fields.start();
     let field_list = item.field_list(ctx.tree).unwrap();
     for field_cst in field_list.fields(ctx.tree) {
         field(ctx, field_cst);
     }
-    let fields = ctx.fields.take(offset, &mut ctx.arena);
+    let fields = ctx.s.fields.take(offset, &mut ctx.s.arena);
 
     let struct_item = ast::StructItem { vis, name, fields };
-    ctx.arena.alloc(struct_item)
+    ctx.s.arena.alloc(struct_item)
 }
 
-fn field<'ast>(ctx: &mut AstBuild<'ast, '_>, field: cst::Field) {
+fn field<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, field: cst::Field) {
     let vis = ast::Vis::Public; //@remove support for field visibility (not checked anyways)?
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
     let field = ast::StructField { vis, name, ty };
-    ctx.fields.add(field);
+    ctx.s.fields.add(field);
 }
 
 fn const_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
     //@add ast::ConstItem attr
@@ -289,11 +312,11 @@ fn const_item<'ast>(
         ty,
         value,
     };
-    ctx.arena.alloc(const_item)
+    ctx.s.arena.alloc(const_item)
 }
 
 fn global_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
     let attr = attribute(ctx, item.attribute(ctx.tree));
@@ -311,20 +334,20 @@ fn global_item<'ast>(
         ty,
         value,
     };
-    ctx.arena.alloc(global_item)
+    ctx.s.arena.alloc(global_item)
 }
 
 fn import_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
     //@add ast::ImportItem attr
     let import_symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
-        let offset = ctx.fields.start();
+        let offset = ctx.s.fields.start();
         for symbol_cst in symbol_list.import_symbols(ctx.tree) {
             import_symbol(ctx, symbol_cst);
         }
-        ctx.fields.take(offset, &mut ctx.arena)
+        ctx.s.fields.take(offset, &mut ctx.s.arena)
     } else {
         &[]
     };
@@ -332,7 +355,7 @@ fn import_item<'ast>(
     todo!();
 }
 
-fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_>, import_symbol: cst::ImportSymbol) {
+fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
     let name_ast = name(ctx, import_symbol.name(ctx.tree).unwrap());
     let alias = import_symbol
         .name_alias(ctx.tree)
@@ -342,28 +365,28 @@ fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_>, import_symbol: cst::ImportS
         name: name_ast,
         alias,
     };
-    ctx.import_symbols.add(import_symbol);
+    ctx.s.import_symbols.add(import_symbol);
 }
 
-fn name<'ast>(ctx: &mut AstBuild<'ast, '_>, name: cst::Name) -> ast::Name {
+fn name<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, name: cst::Name) -> ast::Name {
     let range = name.range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
-    let id = ctx.intern_name.intern(string);
+    let id = ctx.s.intern_name.intern(string);
     ast::Name { range, id }
 }
 
-fn path<'ast>(ctx: &mut AstBuild<'ast, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
-    let offset = ctx.names.start();
+fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
+    let offset = ctx.s.names.start();
     for name_cst in path.names(ctx.tree) {
         let name = name(ctx, name_cst);
-        ctx.names.add(name);
+        ctx.s.names.add(name);
     }
-    let names = ctx.names.take(offset, &mut ctx.arena);
+    let names = ctx.s.names.take(offset, &mut ctx.s.arena);
 
-    ctx.arena.alloc(ast::Path { names })
+    ctx.s.arena.alloc(ast::Path { names })
 }
 
-fn ty<'ast>(ctx: &mut AstBuild<'ast, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
+fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
     let range = ty_cst.range(ctx.tree);
 
     let kind = match ty_cst {
@@ -378,16 +401,16 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_>, ty_cst: cst::Type) -> ast::Type<'ast> 
         cst::Type::Reference(ty_cst) => {
             let mutt = mutt(ty_cst.is_mut(ctx.tree));
             let ref_ty = ty(ctx, ty_cst.ref_ty(ctx.tree).unwrap());
-            ast::TypeKind::Reference(ctx.arena.alloc(ref_ty), mutt)
+            ast::TypeKind::Reference(ctx.s.arena.alloc(ref_ty), mutt)
         }
         cst::Type::Procedure(proc_ty) => {
-            let offset = ctx.types.start();
+            let offset = ctx.s.types.start();
             let param_type_list = proc_ty.param_type_list(ctx.tree).unwrap();
             for ty_cst in param_type_list.param_types(ctx.tree) {
                 let ty = ty(ctx, ty_cst);
-                ctx.types.add(ty);
+                ctx.s.types.add(ty);
             }
-            let param_types = ctx.types.take(offset, &mut ctx.arena);
+            let param_types = ctx.s.types.take(offset, &mut ctx.s.arena);
 
             let is_variadic = param_type_list.is_variadic(ctx.tree);
             let return_ty = proc_ty.return_ty(ctx.tree).map(|t| ty(ctx, t));
@@ -397,28 +420,28 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_>, ty_cst: cst::Type) -> ast::Type<'ast> 
                 return_ty,
                 is_variadic, //@reorder after params
             };
-            ast::TypeKind::Procedure(ctx.arena.alloc(proc_ty))
+            ast::TypeKind::Procedure(ctx.s.arena.alloc(proc_ty))
         }
         cst::Type::ArraySlice(slice) => {
             let mutt = mutt(slice.is_mut(ctx.tree));
             let elem_ty = ty(ctx, slice.elem_ty(ctx.tree).unwrap());
 
             let slice = ast::ArraySlice { mutt, elem_ty };
-            ast::TypeKind::ArraySlice(ctx.arena.alloc(slice))
+            ast::TypeKind::ArraySlice(ctx.s.arena.alloc(slice))
         }
         cst::Type::ArrayStatic(array) => {
             let len = ast::ConstExpr(expr(ctx, array.len(ctx.tree).unwrap()));
             let elem_ty = ty(ctx, array.elem_ty(ctx.tree).unwrap());
 
             let array = ast::ArrayStatic { len, elem_ty };
-            ast::TypeKind::ArrayStatic(ctx.arena.alloc(array))
+            ast::TypeKind::ArrayStatic(ctx.s.arena.alloc(array))
         }
     };
 
     ast::Type { kind, range }
 }
 
-fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> {
+fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> {
     let range = stmt.range(ctx.tree);
 
     let kind = match stmt {
@@ -445,28 +468,34 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> 
     ast::Stmt { kind, range }
 }
 
-fn stmt_defer<'ast>(ctx: &mut AstBuild<'ast, '_>, defer: cst::StmtDefer) -> &'ast ast::Block<'ast> {
+fn stmt_defer<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    defer: cst::StmtDefer,
+) -> &'ast ast::Block<'ast> {
     if let Some(short_block) = defer.short_block(ctx.tree) {
         let stmt_cst = short_block.stmt(ctx.tree).unwrap();
         let stmt = stmt(ctx, stmt_cst);
 
-        let offset = ctx.stmts.start();
-        ctx.stmts.add(stmt);
-        let stmts = ctx.stmts.take(offset, &mut ctx.arena);
+        let offset = ctx.s.stmts.start();
+        ctx.s.stmts.add(stmt);
+        let stmts = ctx.s.stmts.take(offset, &mut ctx.s.arena);
 
         let block = ast::Block {
             stmts,
             range: stmt.range,
         };
-        ctx.arena.alloc(block)
+        ctx.s.arena.alloc(block)
     } else {
         let block_cst = defer.block(ctx.tree).unwrap();
         let block = block(ctx, block_cst);
-        ctx.arena.alloc(block)
+        ctx.s.arena.alloc(block)
     }
 }
 
-fn stmt_loop<'ast>(ctx: &mut AstBuild<'ast, '_>, loop_: cst::StmtLoop) -> &'ast ast::Loop<'ast> {
+fn stmt_loop<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    loop_: cst::StmtLoop,
+) -> &'ast ast::Loop<'ast> {
     let kind = if let Some(while_header) = loop_.while_header(ctx.tree) {
         let cond = expr(ctx, while_header.cond(ctx.tree).unwrap());
         ast::LoopKind::While { cond }
@@ -485,10 +514,13 @@ fn stmt_loop<'ast>(ctx: &mut AstBuild<'ast, '_>, loop_: cst::StmtLoop) -> &'ast 
 
     let block = block(ctx, loop_.block(ctx.tree).unwrap());
     let loop_ = ast::Loop { kind, block };
-    ctx.arena.alloc(loop_)
+    ctx.s.arena.alloc(loop_)
 }
 
-fn stmt_local<'ast>(ctx: &mut AstBuild<'ast, '_>, local: cst::StmtLocal) -> &'ast ast::Local<'ast> {
+fn stmt_local<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    local: cst::StmtLocal,
+) -> &'ast ast::Local<'ast> {
     let mutt = mutt(local.is_mut(ctx.tree));
     let name = name(ctx, local.name(ctx.tree).unwrap());
 
@@ -506,11 +538,11 @@ fn stmt_local<'ast>(ctx: &mut AstBuild<'ast, '_>, local: cst::StmtLocal) -> &'as
     };
 
     let local = ast::Local { mutt, name, kind };
-    ctx.arena.alloc(local)
+    ctx.s.arena.alloc(local)
 }
 
 fn stmt_assign<'ast>(
-    ctx: &mut AstBuild<'ast, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     assign: cst::StmtAssign,
 ) -> &'ast ast::Assign<'ast> {
     let op = assign.assign_op(ctx.tree);
@@ -523,7 +555,7 @@ fn stmt_assign<'ast>(
 }
 
 //@rename expr_cst back to expr when each arm has a function
-fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::Expr<'ast> {
+fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'ast ast::Expr<'ast> {
     let range = expr_cst.range(ctx.tree);
 
     let kind = match expr_cst {
@@ -546,7 +578,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
             let val = match string.parse::<u64>() {
                 Ok(value) => value,
                 Err(error) => {
-                    ctx.errors.push(ErrorComp::new(
+                    ctx.s.errors.push(ErrorComp::new(
                         format!("parse integer error: {}", error),
                         SourceRange::new(range, ctx.file_id),
                         None,
@@ -565,7 +597,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
             let val = match string.parse::<f64>() {
                 Ok(value) => value,
                 Err(error) => {
-                    ctx.errors.push(ErrorComp::new(
+                    ctx.s.errors.push(ErrorComp::new(
                         format!("parse float error: {}", error),
                         SourceRange::new(range, ctx.file_id),
                         None,
@@ -584,13 +616,13 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
         }
         cst::Expr::LitString(_) => {
             let (string, c_string) = ctx.tree.tokens().get_string(ctx.string_id as usize);
-            let id = ctx.intern_string.intern(string);
+            let id = ctx.s.intern_string.intern(string);
             ctx.string_id += 1;
 
-            if id.index() >= ctx.string_is_cstr.len() {
-                ctx.string_is_cstr.push(c_string);
+            if id.index() >= ctx.s.string_is_cstr.len() {
+                ctx.s.string_is_cstr.push(c_string);
             } else if c_string {
-                ctx.string_is_cstr[id.index()] = true;
+                ctx.s.string_is_cstr[id.index()] = true;
             }
 
             ast::ExprKind::LitString { id, c_string }
@@ -599,7 +631,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
         cst::Expr::Block(expr_block) => {
             let block = block(ctx, expr_block.into_block());
 
-            let block = ctx.arena.alloc(block);
+            let block = ctx.s.arena.alloc(block);
             ast::ExprKind::Block { block }
         }
         cst::Expr::Match(match_) => todo!(),
@@ -613,28 +645,28 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());
 
-            let offset = ctx.exprs.start();
+            let offset = ctx.s.exprs.start();
             let argument_list = call.call_argument_list(ctx.tree).unwrap();
             for input in argument_list.inputs(ctx.tree) {
                 let expr = expr(ctx, input);
-                ctx.exprs.add(expr);
+                ctx.s.exprs.add(expr);
             }
-            let input = ctx.exprs.take(offset, &mut ctx.arena);
+            let input = ctx.s.exprs.take(offset, &mut ctx.s.arena);
 
-            let input = ctx.arena.alloc(input);
+            let input = ctx.s.arena.alloc(input);
             ast::ExprKind::Call { target, input }
         }
         cst::Expr::Cast(cast) => {
             let target = expr(ctx, cast.target(ctx.tree).unwrap());
             let into = ty(ctx, cast.into_ty(ctx.tree).unwrap());
 
-            let into = ctx.arena.alloc(into);
+            let into = ctx.s.arena.alloc(into);
             ast::ExprKind::Cast { target, into }
         }
         cst::Expr::Sizeof(sizeof) => {
             let ty = ty(ctx, sizeof.ty(ctx.tree).unwrap());
 
-            let ty_ref = ctx.arena.alloc(ty);
+            let ty_ref = ctx.s.arena.alloc(ty);
             ast::ExprKind::Sizeof { ty: ty_ref }
         }
         cst::Expr::Item(item) => {
@@ -651,24 +683,24 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
             //@optional in grammar, unsupported in ast
             let path = path(ctx, struct_init.path(ctx.tree).unwrap());
 
-            let offset = ctx.field_inits.start();
+            let offset = ctx.s.field_inits.start();
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();
             for field_init in field_init_list.field_inits(ctx.tree) {
                 //@change design, expr is stored always instead of name always and opt expr
             }
-            let input = ctx.field_inits.take(offset, &mut ctx.arena);
+            let input = ctx.s.field_inits.take(offset, &mut ctx.s.arena);
 
             let struct_init = ast::StructInit { path, input };
-            let struct_init = ctx.arena.alloc(struct_init);
+            let struct_init = ctx.s.arena.alloc(struct_init);
             ast::ExprKind::StructInit { struct_init }
         }
         cst::Expr::ArrayInit(array_init) => {
-            let offset = ctx.exprs.start();
+            let offset = ctx.s.exprs.start();
             for input in array_init.inputs(ctx.tree) {
                 let expr = expr(ctx, input);
-                ctx.exprs.add(expr);
+                ctx.s.exprs.add(expr);
             }
-            let input = ctx.exprs.take(offset, &mut ctx.arena);
+            let input = ctx.s.exprs.take(offset, &mut ctx.s.arena);
 
             ast::ExprKind::ArrayInit { input }
         }
@@ -695,16 +727,16 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> &'ast ast::E
     };
 
     let expr = ast::Expr { kind, range };
-    ctx.arena.alloc(expr)
+    ctx.s.arena.alloc(expr)
 }
 
-fn block<'ast>(ctx: &mut AstBuild<'ast, '_>, block: cst::Block) -> ast::Block<'ast> {
-    let offset = ctx.stmts.start();
+fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
+    let offset = ctx.s.stmts.start();
     for stmt_cst in block.stmts(ctx.tree) {
         let stmt = stmt(ctx, stmt_cst);
-        ctx.stmts.add(stmt);
+        ctx.s.stmts.add(stmt);
     }
-    let stmts = ctx.stmts.take(offset, &mut ctx.arena);
+    let stmts = ctx.s.stmts.take(offset, &mut ctx.s.arena);
 
     ast::Block {
         stmts,
