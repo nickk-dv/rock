@@ -1,6 +1,5 @@
 use crate::arena::Arena;
 use crate::intern::{InternID, InternPool};
-use crate::session::FileID;
 use crate::text::TextRange;
 
 pub struct Ast<'ast, 'intern> {
@@ -8,18 +7,11 @@ pub struct Ast<'ast, 'intern> {
     pub intern_name: InternPool<'intern>,
     pub intern_string: InternPool<'intern>,
     pub string_is_cstr: Vec<bool>,
-    pub packages: Vec<Package<'ast>>,
-}
-
-pub struct Package<'ast> {
-    pub name_id: InternID,
     pub modules: Vec<Module<'ast>>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Module<'ast> {
-    pub file_id: FileID,
-    pub name_id: InternID,
     pub items: &'ast [Item<'ast>],
 }
 
@@ -111,7 +103,7 @@ pub struct GlobalItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
     pub package: Option<Name>,
-    pub module: Name,
+    pub import_path: &'ast [Name],
     pub alias: Option<Name>,
     pub symbols: &'ast [ImportSymbol],
 }

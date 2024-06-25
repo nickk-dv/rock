@@ -2,7 +2,7 @@ use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use crate::intern::{InternID, InternPool};
-use crate::session::FileID;
+use crate::session::ModuleID;
 use crate::temp_buffer::TempBuffer;
 use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
@@ -13,7 +13,7 @@ pub struct Parser<'ast, 'intern, 'src, 'state> {
     tokens: TokenList,
     char_id: u32,
     string_id: u32,
-    file_id: FileID,
+    pub module_id: ModuleID,
     pub source: &'src str,
     pub state: &'state mut ParseState<'ast, 'intern>,
 }
@@ -23,7 +23,7 @@ pub struct ParseState<'ast, 'intern> {
     pub intern_name: InternPool<'intern>,
     pub intern_string: InternPool<'intern>,
     pub string_is_cstr: Vec<bool>,
-    pub packages: Vec<Package<'ast>>,
+    pub modules: Vec<Module<'ast>>,
     pub errors: Vec<ErrorComp>,
     pub items: TempBuffer<Item<'ast>>,
     pub proc_params: TempBuffer<ProcParam<'ast>>,
@@ -42,7 +42,7 @@ pub struct ParseState<'ast, 'intern> {
 impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
     pub fn new(
         tokens: TokenList,
-        file_id: FileID,
+        module_id: ModuleID,
         source: &'src str,
         state: &'state mut ParseState<'ast, 'intern>,
     ) -> Self {
@@ -51,7 +51,7 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
             tokens,
             char_id: 0,
             string_id: 0,
-            file_id,
+            module_id,
             source,
             state,
         }
@@ -134,20 +134,16 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         self.string_id += 1;
         (id, c_string)
     }
-
-    pub fn file_id(&self) -> FileID {
-        self.file_id
-    }
 }
 
 impl<'ast, 'intern> ParseState<'ast, 'intern> {
-    pub fn new() -> ParseState<'ast, 'intern> {
+    pub fn new(intern_name: InternPool<'intern>) -> ParseState<'ast, 'intern> {
         ParseState {
             arena: Arena::new(),
-            intern_name: InternPool::new(),
+            intern_name,
             intern_string: InternPool::new(),
             string_is_cstr: Vec::with_capacity(1024),
-            packages: Vec::new(),
+            modules: Vec::new(),
             errors: Vec::new(),
             items: TempBuffer::new(128),
             proc_params: TempBuffer::new(32),
@@ -170,7 +166,7 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
             intern_name: self.intern_name,
             intern_string: self.intern_string,
             string_is_cstr: self.string_is_cstr,
-            packages: self.packages,
+            modules: self.modules,
         };
         if self.errors.is_empty() {
             ResultComp::Ok((ast, vec![]))

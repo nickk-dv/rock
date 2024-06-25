@@ -12,7 +12,7 @@ pub mod format;
 pub mod fs_env;
 mod hir;
 pub mod hir_lower;
-mod intern;
+pub mod intern;
 mod lexer;
 mod macros;
 pub mod package;

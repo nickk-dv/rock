@@ -254,6 +254,10 @@ import (package:)? name (/name/name)? (as name, _)? (.{name (as name)?, ..})?
 
 fn import_item(p: &mut Parser, m: Marker) {
     p.bump(T![import]);
+    if p.at(T![ident]) && p.at_next(T![:]) {
+        name(p);
+        p.bump(T![:]);
+    }
     if p.at(T![ident]) {
         import_path(p);
     } else {

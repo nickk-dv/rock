@@ -128,7 +128,8 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let path = uri_to_path(&uri);
 
             if let Some(source) = context.files_in_memory.get(&path) {
-                if let Ok(formatted) = rock_core::format::format(source, FileID::new(0)) {
+                //@random ModuleID used
+                if let Ok(formatted) = rock_core::format::format(source, ModuleID::new(0)) {
                     let line_count = source.lines().count() as u32;
                     context.files_in_memory.insert(path, formatted.clone());
 
@@ -210,14 +211,18 @@ use rock_core::error::{
     Diagnostic, DiagnosticCollection, DiagnosticKind, DiagnosticSeverity, SourceRange, WarningComp,
 };
 use rock_core::hir_lower;
-use rock_core::session::{FileID, Session};
+use rock_core::intern::InternPool;
+use rock_core::session::{ModuleID, Session};
 use rock_core::text;
 
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
 
-fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-    let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
+fn check_impl(
+    session: &Session,
+    intern_name: InternPool,
+) -> Result<Vec<WarningComp>, DiagnosticCollection> {
+    let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
     let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
     Ok(warnings)
 }
@@ -242,19 +247,19 @@ fn severity_convert(severity: DiagnosticSeverity) -> Option<lsp::DiagnosticSever
 }
 
 fn source_to_range_and_path(session: &Session, source: SourceRange) -> (Range, &PathBuf) {
-    let file = session.file(source.file_id());
+    let module = session.module(source.module_id());
 
     let start_location =
-        text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
+        text::find_text_location(&module.source, source.range().start(), &module.line_ranges);
     let end_location =
-        text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
+        text::find_text_location(&module.source, source.range().end(), &module.line_ranges);
 
     let range = Range::new(
         Position::new(start_location.line() - 1, start_location.col() - 1),
         Position::new(end_location.line() - 1, end_location.col() - 1),
     );
 
-    (range, &file.path)
+    (range, &module.path)
 }
 
 fn create_diagnostic<'src>(
@@ -314,16 +319,17 @@ fn create_diagnostic<'src>(
 fn run_diagnostics(context: &ServerContext) -> Vec<PublishDiagnosticsParams> {
     //@session errors ignored, its not a correct way to have context in ls server
     // this is a temporary full compilation run
-    let session = Session::new(false, Some(&context.files_in_memory))
+    //@those can be displayed as regular messages
+    let (session, intern_name) = Session::new(false, Some(&context.files_in_memory))
         .map_err(|_| Result::<(), ()>::Err(()))
         .expect("lsp session errors cannot be handled");
-    let check_result = check_impl(&session);
+    let check_result = check_impl(&session, intern_name);
     let diagnostics = DiagnosticCollection::from_result(check_result);
 
     // assign empty diagnostics
     let mut diagnostics_map = HashMap::new();
-    for file_id in session.file_ids() {
-        let path = session.file(file_id).path.clone();
+    for module_id in session.module_ids() {
+        let path = session.module(module_id).path.clone();
         diagnostics_map.insert(path, Vec::new());
     }
 

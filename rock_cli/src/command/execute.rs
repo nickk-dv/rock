@@ -7,6 +7,7 @@ use rock_core::codegen;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::fs_env;
 use rock_core::hir_lower;
+use rock_core::intern::InternPool;
 use rock_core::package;
 use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
 use rock_core::package::semver::Semver;
@@ -144,30 +145,34 @@ fn package_name_check(name: &str) -> Result<(), ErrorComp> {
 }
 
 fn check() -> Result<(), ErrorComp> {
-    let session = Session::new(false, None)?;
-    let result = check_impl(&session);
+    let (session, intern_name) = Session::new(false, None)?;
+    let result = check_impl(&session, intern_name);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
 
-    fn check_impl(session: &Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-        let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
-        let (_, _) = rock_core::syntax::ast_build::parse(session).into_result(vec![])?;
+    fn check_impl(
+        session: &Session,
+        intern_name: InternPool,
+    ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
+        let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
+        //@test let (_, _) = rock_core::syntax::ast_build::parse(session, intern_name).into_result(vec![])?;
         let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
         Ok(warnings)
     }
 }
 
 fn build(data: CommandBuild) -> Result<(), ErrorComp> {
-    let session = Session::new(true, None)?;
-    let result = build_impl(&session, data);
+    let (session, intern_name) = Session::new(true, None)?;
+    let result = build_impl(&session, intern_name, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
 
     fn build_impl(
         session: &Session,
+        intern_name: InternPool,
         data: CommandBuild,
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-        let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
+        let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
         let (hir, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);
@@ -183,16 +188,17 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 }
 
 fn run(data: CommandRun) -> Result<(), ErrorComp> {
-    let session = Session::new(true, None)?;
-    let result = run_impl(&session, data);
+    let (session, intern_name) = Session::new(true, None)?;
+    let result = run_impl(&session, intern_name, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
 
     fn run_impl(
         session: &Session,
+        intern_name: InternPool,
         data: CommandRun,
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-        let (ast, warnings) = ast_parse::parse(session).into_result(vec![])?;
+        let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
         let (hir, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);

@@ -2,8 +2,9 @@ use super::hir_build::{HirData, HirEmit};
 use super::pass_5::{self, TypeExpectation};
 use super::{pass_3, proc_scope};
 use crate::ast;
-use crate::error::{ErrorComp, Info, StringOrStr};
+use crate::error::{ErrorComp, Info, SourceRange, StringOrStr};
 use crate::intern::InternID;
+use crate::session::ModuleID;
 use crate::text::TextRange;
 use crate::{hir, id_impl};
 
@@ -225,24 +226,24 @@ fn check_const_dependency_cycle(
         ConstDependency::EnumVariant(id, variant_id) => {
             let data = hir.registry().enum_data(id);
             let variant = data.variant(variant_id);
-            hir.src(data.origin_id, variant.name.range)
+            SourceRange::new(data.origin_id, variant.name.range)
         }
         ConstDependency::StructSize(id) => {
             let data = hir.registry().struct_data(id);
-            hir.src(data.origin_id, data.name.range)
+            SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::Const(id) => {
             let data = hir.registry().const_data(id);
-            hir.src(data.origin_id, data.name.range)
+            SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::Global(id) => {
             let data = hir.registry().global_data(id);
-            hir.src(data.origin_id, data.name.range)
+            SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::ArrayLen(eval_id) => {
             let (eval, origin_id) = *hir.registry().const_eval(eval_id);
             if let hir::ConstEval::Unresolved(expr) = eval {
-                hir.src(origin_id, expr.0.range)
+                SourceRange::new(origin_id, expr.0.range)
             } else {
                 //@access to range information is behind consteval the state
                 // always store SourceRange instead? 06.06.24
@@ -276,7 +277,7 @@ fn check_const_dependency_cycle(
                     hir.name_str(data.name.id),
                     hir.name_str(variant.name.id)
                 );
-                let src = hir.src(data.origin_id, variant.name.range);
+                let src = SourceRange::new(data.origin_id, variant.name.range);
                 (msg, src)
             }
             ConstDependency::StructSize(id) => {
@@ -285,7 +286,7 @@ fn check_const_dependency_cycle(
                     "{prefix}depends on size of `{}`{postfix}",
                     hir.name_str(data.name.id)
                 );
-                let src = hir.src(data.origin_id, data.name.range);
+                let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::Const(id) => {
@@ -294,7 +295,7 @@ fn check_const_dependency_cycle(
                     "{prefix}depends on `{}` const value{postfix}",
                     hir.name_str(data.name.id)
                 );
-                let src = hir.src(data.origin_id, data.name.range);
+                let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::Global(id) => {
@@ -303,14 +304,14 @@ fn check_const_dependency_cycle(
                     "{prefix}depends on `{}` global value{postfix}",
                     hir.name_str(data.name.id)
                 );
-                let src = hir.src(data.origin_id, data.name.range);
+                let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::ArrayLen(eval_id) => {
                 let (eval, origin_id) = *hir.registry().const_eval(eval_id);
                 if let hir::ConstEval::Unresolved(expr) = eval {
                     let msg = format!("{prefix}depends on array length{postfix}");
-                    let src = hir.src(origin_id, expr.0.range);
+                    let src = SourceRange::new(origin_id, expr.0.range);
                     (msg, src)
                 } else {
                     //@access to range information is behind consteval the state
@@ -546,7 +547,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     expr: &'ast ast::Expr<'ast>,
 ) -> Result<(), TreeNodeID> {
     match expr.kind {
@@ -691,13 +692,13 @@ fn add_expr_const_dependencies<'hir, 'ast>(
 fn error_cannot_use_in_constants(
     hir: &HirData,
     emit: &mut HirEmit,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     range: TextRange,
     name: &str,
 ) {
     emit.error(ErrorComp::new(
         format!("cannot use `{name}` expression in constants"),
-        hir.src(origin_id, range),
+        SourceRange::new(origin_id, range),
         None,
     ));
 }
@@ -705,13 +706,13 @@ fn error_cannot_use_in_constants(
 fn error_cannot_refer_to_in_constants(
     hir: &HirData,
     emit: &mut HirEmit,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     range: TextRange,
     name: &str,
 ) {
     emit.error(ErrorComp::new(
         format!("cannot refer to `{name}` in constants"),
-        hir.src(origin_id, range),
+        SourceRange::new(origin_id, range),
         None,
     ));
 }
@@ -737,15 +738,19 @@ fn resolve_const_dependency_tree<'hir>(
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
                 let item = hir.registry().const_item(id);
-                let expect =
-                    TypeExpectation::new(data.ty, Some(hir.src(data.origin_id, item.ty.range)));
+                let expect = TypeExpectation::new(
+                    data.ty,
+                    Some(SourceRange::new(data.origin_id, item.ty.range)),
+                );
                 resolve_and_update_const_eval(hir, emit, data.value, expect);
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
                 let item = hir.registry().global_item(id);
-                let expect =
-                    TypeExpectation::new(data.ty, Some(hir.src(data.origin_id, item.ty.range)));
+                let expect = TypeExpectation::new(
+                    data.ty,
+                    Some(SourceRange::new(data.origin_id, item.ty.range)),
+                );
                 resolve_and_update_const_eval(hir, emit, data.value, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
@@ -776,7 +781,7 @@ fn resolve_and_update_const_eval<'hir>(
 pub fn resolve_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     expect: TypeExpectation<'hir>,
     expr: ast::ConstExpr,
 ) -> hir::ConstValue<'hir> {
@@ -820,7 +825,7 @@ fn resolve_struct_size(
             hir,
             emit,
             field.ty,
-            hir.src(data.origin_id, field.name.range), //@review source range for this type_size error 10.05.24
+            SourceRange::new(data.origin_id, field.name.range), //@review source range for this type_size error 10.05.24
         ) {
             Some(size) => (size.size(), size.align()),
             None => return hir::SizeEval::ResolvedError,
@@ -834,7 +839,7 @@ fn resolve_struct_size(
                     "struct size overflow: `{}` + `{}` (when computing: total_size + field_size)",
                     size, field_size
                 ),
-                hir.src(data.origin_id, field.name.range), //@review source range for size overflow error 10.05.24
+                SourceRange::new(data.origin_id, field.name.range), //@review source range for size overflow error 10.05.24
                 None,
             ));
             return hir::SizeEval::ResolvedError;
@@ -867,7 +872,7 @@ fn aligned_size(size: u64, align: u64) -> u64 {
 pub fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     expr: &'hir hir::Expr<'hir>,
 ) -> hir::ConstValue<'hir> {
     let result = match *expr {
@@ -926,7 +931,7 @@ pub fn fold_const_expr<'hir>(
             //@range not available
             //emit.error(ErrorComp::new(
             //    format!("cannot use `{expr_name}` expression in constants"),
-            //    hir.src(origin_id, expr.0.range),
+            //    SourceRange::new(origin_id, expr.0.range),
             //    None,
             //));
             emit.error(ErrorComp::message(format!(
@@ -940,7 +945,7 @@ pub fn fold_const_expr<'hir>(
 fn fold_struct_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     target: &'hir hir::Expr<'hir>,
     field_id: hir::StructFieldID,
     deref: bool,
@@ -966,7 +971,7 @@ fn fold_struct_field<'hir>(
 fn fold_slice_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     target: &'hir hir::Expr<'hir>,
     first_ptr: bool,
     deref: bool,
@@ -1001,7 +1006,7 @@ fn fold_slice_field<'hir>(
 fn fold_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     target: &'hir hir::Expr<'hir>,
     access: &'hir hir::IndexAccess<'hir>,
 ) -> hir::ConstValue<'hir> {
@@ -1060,7 +1065,7 @@ fn fold_const_var<'hir>(
 fn fold_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     struct_id: hir::StructID,
     input: &'hir [hir::StructFieldInit<'hir>],
 ) -> hir::ConstValue<'hir> {
@@ -1082,7 +1087,7 @@ fn fold_struct_init<'hir>(
 fn fold_array_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     array_init: &'hir hir::ArrayInit<'hir>,
 ) -> hir::ConstValue<'hir> {
     let mut value_ids = Vec::with_capacity(array_init.input.len());
@@ -1104,7 +1109,7 @@ fn fold_array_init<'hir>(
 fn fold_array_repeat<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     array_repeat: &'hir hir::ArrayRepeat<'hir>,
 ) -> hir::ConstValue<'hir> {
     let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
@@ -1118,7 +1123,7 @@ fn fold_array_repeat<'hir>(
 fn fold_unary_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     op: ast::UnOp,
     rhs: &'hir hir::Expr<'hir>,
 ) -> hir::ConstValue<'hir> {

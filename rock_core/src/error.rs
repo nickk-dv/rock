@@ -1,4 +1,4 @@
-use crate::session::FileID;
+use crate::session::ModuleID;
 use crate::text::TextRange;
 
 pub enum ResultComp<T> {
@@ -47,7 +47,7 @@ pub enum DiagnosticSeverity {
 #[derive(Copy, Clone)]
 pub struct SourceRange {
     range: TextRange,
-    file_id: FileID,
+    module_id: ModuleID,
 }
 
 pub enum StringOrStr {
@@ -299,14 +299,14 @@ impl DiagnosticContext {
 }
 
 impl SourceRange {
-    pub fn new(range: TextRange, file_id: FileID) -> SourceRange {
-        SourceRange { range, file_id }
+    pub fn new(module_id: ModuleID, range: TextRange) -> SourceRange {
+        SourceRange { range, module_id }
     }
     pub fn range(&self) -> TextRange {
         self.range
     }
-    pub fn file_id(&self) -> FileID {
-        self.file_id
+    pub fn module_id(&self) -> ModuleID {
+        self.module_id
     }
 }
 

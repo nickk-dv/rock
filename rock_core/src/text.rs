@@ -212,10 +212,10 @@ pub fn find_text_location(
 #[test]
 fn test() {
     use crate::lexer;
-    use crate::session::FileID;
+    use crate::session::ModuleID;
 
     let text = "foo\nbaz";
-    let (tokens, _) = lexer::lex(text, FileID::new(0), false);
+    let (tokens, _) = lexer::lex(text, ModuleID::dummy(), false);
 
     let line_ranges = find_line_ranges(text);
     let foo_range = TextRange::new(0.into(), 3.into());

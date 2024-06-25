@@ -4,7 +4,7 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::id_impl;
 use crate::intern::{InternID, InternPool};
-use crate::session::FileID;
+use crate::session::ModuleID;
 use intern::ConstInternPool;
 
 pub struct Hir<'hir> {
@@ -13,18 +13,12 @@ pub struct Hir<'hir> {
     pub intern_string: InternPool<'hir>,
     pub string_is_cstr: Vec<bool>,
     pub const_intern: ConstInternPool<'hir>,
-    pub modules: Vec<ModuleData>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
     pub const_values: Vec<ConstValueID>,
-}
-
-id_impl!(ModuleID);
-pub struct ModuleData {
-    pub file_id: FileID,
 }
 
 id_impl!(ProcID);
@@ -390,9 +384,6 @@ size_assert!(16, Stmt);
 size_assert!(24, Expr);
 
 impl<'hir> Hir<'hir> {
-    pub fn module_data(&self, id: ModuleID) -> &ModuleData {
-        &self.modules[id.index()]
-    }
     pub fn proc_data(&self, id: ProcID) -> &ProcData<'hir> {
         &self.procs[id.index()]
     }

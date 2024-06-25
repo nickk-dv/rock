@@ -17,13 +17,13 @@ pub fn check<'hir, 'ast, 'intern: 'hir>(
     ast: ast::Ast<'ast, 'intern>,
     session: &Session,
 ) -> ResultComp<hir::Hir<'hir>> {
-    let mut hir = HirData::new(ast, session);
+    let mut hir = HirData::new(ast);
     let mut emit = HirEmit::new();
     pass_1::populate_scopes(&mut hir, &mut emit);
     pass_2::resolve_imports(&mut hir, &mut emit);
     pass_3::process_items(&mut hir, &mut emit);
     pass_4::resolve_const_dependencies(&mut hir, &mut emit);
     pass_5::typecheck_procedures(&mut hir, &mut emit);
-    pass_6::check_entry_point(&mut hir, &mut emit, session.is_executable());
+    pass_6::check_entry_point(&mut hir, &mut emit, session.root_is_executable());
     emit.emit(hir)
 }

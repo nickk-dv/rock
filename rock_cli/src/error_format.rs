@@ -2,7 +2,7 @@ use crate::ansi;
 use rock_core::error::{
     Diagnostic, DiagnosticCollection, DiagnosticContext, DiagnosticKind, DiagnosticSeverity,
 };
-use rock_core::session::{File, Session};
+use rock_core::session::{RockModule, Session};
 use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
@@ -38,7 +38,7 @@ struct StateFmt<'src> {
 }
 
 struct ContextFmt<'src> {
-    file: &'src File,
+    module: &'src RockModule,
     path: &'src Path,
     message: &'src str,
     range: TextRange,
@@ -73,19 +73,19 @@ impl<'src> ContextFmt<'src> {
         context: &'src DiagnosticContext,
         severity: DiagnosticSeverity,
     ) -> ContextFmt<'src> {
-        let file = session.file(context.source().file_id());
-        let path = file
+        let module = session.module(context.source().module_id());
+        let path = module
             .path
             .strip_prefix(session.cwd())
-            .unwrap_or_else(|_| &file.path);
+            .unwrap_or_else(|_| &module.path);
 
         let range = context.source().range();
-        let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
+        let location = text::find_text_location(&module.source, range.start(), &module.line_ranges);
         let line_num = location.line().to_string();
-        let line_range = file.line_ranges[location.line_index()];
+        let line_range = module.line_ranges[location.line_index()];
 
         ContextFmt {
-            file,
+            module,
             path,
             message: context.message(),
             range,
@@ -161,9 +161,9 @@ fn print_context(
         (fmt.line_range.end() - 1.into()).min(fmt.range.end()),
     );
 
-    let line_str = &fmt.file.source[fmt.line_range.as_usize()];
-    let prefix_str = &fmt.file.source[prefix_range.as_usize()];
-    let source_str = &fmt.file.source[source_range.as_usize()];
+    let line_str = &fmt.module.source[fmt.line_range.as_usize()];
+    let prefix_str = &fmt.module.source[prefix_range.as_usize()];
+    let source_str = &fmt.module.source[source_range.as_usize()];
 
     let line = line_str.trim_end().replace('\t', TAB_REPLACE_STR);
     let marker_pad = " ".repeat(normalized_tab_len(prefix_str));

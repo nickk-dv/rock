@@ -1,8 +1,7 @@
 use super::parser::Parser;
 use crate::ast::*;
 use crate::error::{ErrorComp, SourceRange};
-use crate::intern::InternID;
-use crate::session::FileID;
+use crate::session::ModuleID;
 use crate::text::TextRange;
 use crate::token::{Token, T};
 
@@ -24,8 +23,7 @@ macro_rules! comma_separated_list {
 
 pub fn module<'ast>(
     mut p: Parser<'ast, '_, '_, '_>,
-    file_id: FileID,
-    name_id: InternID,
+    module_id: ModuleID,
 ) -> Result<Module<'ast>, ErrorComp> {
     let offset = p.state.items.start();
     while !p.at(T![eof]) {
@@ -39,7 +37,7 @@ pub fn module<'ast>(
                 return Err(ErrorComp::new_detailed(
                     error,
                     "unexpected token",
-                    SourceRange::new(range, file_id),
+                    SourceRange::new(module_id, range),
                     None,
                 ));
             }
@@ -47,11 +45,7 @@ pub fn module<'ast>(
     }
     let items = p.state.items.take(offset, &mut p.state.arena);
 
-    Ok(Module {
-        file_id,
-        name_id,
-        items,
-    })
+    Ok(Module { items })
 }
 
 fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
@@ -216,11 +210,25 @@ fn global_item<'ast>(
     }))
 }
 
-//@rework in the future allowing longer import list
 fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportItem<'ast>, String> {
     p.bump();
+
+    let package = if p.at(T![ident]) && p.at_next(T![:]) {
+        let name = name(p)?;
+        p.bump();
+        Some(name)
+    } else {
+        None
+    };
+
+    let offset = p.state.names.start();
     let first = name(p)?;
-    let second = if p.eat(T![/]) { Some(name(p)?) } else { None };
+    p.state.names.add(first);
+    while p.eat(T![/]) {
+        let name = name(p)?;
+        p.state.names.add(name);
+    }
+    let import_path = p.state.names.take(offset, &mut p.state.arena);
     let alias = if p.eat(T![as]) { Some(name(p)?) } else { None };
 
     let symbols = if p.eat(T![.]) {
@@ -233,8 +241,8 @@ fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportIte
     };
 
     Ok(p.state.arena.alloc(ImportItem {
-        package: second.map(|_| first),
-        module: second.unwrap_or(first),
+        package,
+        import_path,
         alias,
         symbols,
     }))
@@ -645,7 +653,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 Err(error) => {
                     p.state.errors.push(ErrorComp::new(
                         format!("parse int error: {}", error),
-                        SourceRange::new(range, p.file_id()),
+                        SourceRange::new(p.module_id, range),
                         None,
                     ));
                     0
@@ -663,7 +671,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 Err(error) => {
                     p.state.errors.push(ErrorComp::new(
                         format!("parse float error: {}", error),
-                        SourceRange::new(range, p.file_id()),
+                        SourceRange::new(p.module_id, range),
                         None,
                     ));
                     0.0

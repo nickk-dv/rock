@@ -2,8 +2,9 @@ use super::hir_build::{HirData, HirEmit};
 use super::pass_4;
 use super::pass_5::{self, TypeExpectation};
 use crate::ast;
-use crate::error::{ErrorComp, Info};
+use crate::error::{ErrorComp, Info, SourceRange};
 use crate::hir;
+use crate::session::ModuleID;
 
 pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().proc_ids() {
@@ -28,7 +29,7 @@ pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'
 pub fn type_resolve<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     ast_ty: ast::Type,
 ) -> hir::Type<'hir> {
     match ast_ty.kind {
@@ -98,7 +99,7 @@ pub fn type_resolve<'hir>(
 pub fn type_resolve_delayed<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     ast_ty: ast::Type<'ast>,
 ) -> hir::Type<'hir> {
     match ast_ty.kind {
@@ -169,15 +170,15 @@ pub fn process_proc_data<'hir>(
                     "parameter `{}` is defined multiple times",
                     hir.name_str(param.name.id)
                 ),
-                hir.src(origin_id, param.name.range),
+                SourceRange::new(origin_id, param.name.range),
                 Info::new(
                     "existing parameter",
-                    hir.src(origin_id, existing.name.range),
+                    SourceRange::new(origin_id, existing.name.range),
                 ),
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, param.ty);
-            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, param.ty.range));
+            pass_5::require_value_type(hir, emit, ty, SourceRange::new(origin_id, param.ty.range));
 
             unique.push(hir::ProcParam {
                 mutt: param.mutt,
@@ -211,8 +212,11 @@ fn process_enum_data<'hir>(
                     "variant `{}` is defined multiple times",
                     hir.name_str(variant.name.id)
                 ),
-                hir.src(origin_id, variant.name.range),
-                Info::new("existing variant", hir.src(origin_id, existing.name.range)),
+                SourceRange::new(origin_id, variant.name.range),
+                Info::new(
+                    "existing variant",
+                    SourceRange::new(origin_id, existing.name.range),
+                ),
             ));
         } else {
             unique.push(hir::EnumVariant {
@@ -241,12 +245,15 @@ fn process_struct_data<'hir>(
                     "field `{}` is defined multiple times",
                     hir.name_str(field.name.id)
                 ),
-                hir.src(origin_id, field.name.range),
-                Info::new("existing field", hir.src(origin_id, existing.name.range)),
+                SourceRange::new(origin_id, field.name.range),
+                Info::new(
+                    "existing field",
+                    SourceRange::new(origin_id, existing.name.range),
+                ),
             ));
         } else {
             let ty = type_resolve_delayed(hir, emit, origin_id, field.ty);
-            pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, field.ty.range));
+            pass_5::require_value_type(hir, emit, ty, SourceRange::new(origin_id, field.ty.range));
 
             unique.push(hir::StructField {
                 vis: field.vis,
@@ -268,7 +275,7 @@ fn process_const_data<'hir>(
     let item = hir.registry().const_item(id);
     let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
 
-    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.ty.range));
+    pass_5::require_value_type(hir, emit, ty, SourceRange::new(origin_id, item.ty.range));
     hir.registry_mut().const_data_mut(id).ty = ty;
 }
 
@@ -281,6 +288,6 @@ fn process_global_data<'hir>(
     let item = hir.registry().global_item(id);
     let ty = type_resolve_delayed(hir, emit, origin_id, item.ty);
 
-    pass_5::require_value_type(hir, emit, ty, hir.src(origin_id, item.ty.range));
+    pass_5::require_value_type(hir, emit, ty, SourceRange::new(origin_id, item.ty.range));
     hir.registry_mut().global_data_mut(id).ty = ty;
 }

@@ -1,10 +1,11 @@
 use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use crate::ast;
-use crate::error::{ErrorComp, WarningComp};
+use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::hir;
-use crate::session::PackageID;
+use crate::session::{ModuleID, PackageID};
 
 pub fn resolve_imports<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+    /*
     for origin_id in hir.registry().module_ids() {
         let package_id = hir.module_package_id(origin_id);
 
@@ -14,15 +15,17 @@ pub fn resolve_imports<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit
             }
         }
     }
+    */
 }
 
 fn resolve_import<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,
     package_id: PackageID,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     import: &'ast ast::ImportItem<'ast>,
 ) {
+    /*
     let target_package_id = if let Some(name) = import.package {
         if let Some(dep_id) = hir.get_package_dep_id(package_id, name) {
             dep_id
@@ -32,7 +35,7 @@ fn resolve_import<'hir, 'ast>(
                     "package `{}` is not found in dependencies",
                     hir.name_str(name.id)
                 ),
-                hir.src(origin_id, name.range),
+                SourceRange::new(origin_id, name.range),
                 None,
             ));
             return;
@@ -40,7 +43,9 @@ fn resolve_import<'hir, 'ast>(
     } else {
         package_id
     };
+    */
 
+    /*
     let target_id =
         if let Some(target_id) = hir.get_package_module_id(target_package_id, import.module.id) {
             target_id
@@ -52,7 +57,7 @@ fn resolve_import<'hir, 'ast>(
                     "module `{}` is not found in package",
                     hir.name_str(import.module.id)
                 ),
-                hir.src(origin_id, import.module.range),
+                SourceRange::new(origin_id, import.module.range),
                 None,
             ));
             return;
@@ -64,7 +69,7 @@ fn resolve_import<'hir, 'ast>(
                 "importing module `{}` into itself is redundant, remove this import",
                 hir.name_str(import.module.id)
             ),
-            hir.src(origin_id, import.module.range),
+            SourceRange::new(origin_id, import.module.range),
             None,
         ));
         return;
@@ -75,7 +80,7 @@ fn resolve_import<'hir, 'ast>(
             if import.module.id == alias.id {
                 emit.warning(WarningComp::new(
                     format!("name alias `{}` is redundant", hir.name_str(alias.id)),
-                    hir.src(origin_id, alias.range),
+                    SourceRange::new(origin_id, alias.range),
                     None,
                 ));
             }
@@ -106,7 +111,7 @@ fn resolve_import<'hir, 'ast>(
                 if symbol.name.id == alias.id {
                     emit.warning(WarningComp::new(
                         format!("name alias `{}` is redundant", hir.name_str(alias.id),),
-                        hir.src(origin_id, alias.range),
+                        SourceRange::new(origin_id, alias.range),
                         None,
                     ));
                 }
@@ -133,4 +138,5 @@ fn resolve_import<'hir, 'ast>(
             }
         }
     }
+    */
 }

@@ -1,7 +1,7 @@
 use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
 use crate::error::{ErrorComp, SourceRange, StringOrStr};
-use crate::session::FileID;
+use crate::session::ModuleID;
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 use std::cell::Cell;
@@ -12,7 +12,7 @@ pub struct Parser {
     events: Vec<Event>,
     errors: Vec<ErrorComp>,
     steps: Cell<u32>,
-    file_id: FileID,
+    module_id: ModuleID,
 }
 
 #[derive(Clone)]
@@ -36,14 +36,14 @@ pub struct MarkerClosed {
 }
 
 impl Parser {
-    pub fn new(tokens: TokenList, file_id: FileID) -> Parser {
+    pub fn new(tokens: TokenList, module_id: ModuleID) -> Parser {
         Parser {
             cursor: 0,
             tokens,
             events: Vec::new(),
             errors: Vec::new(),
             steps: Cell::new(0),
-            file_id,
+            module_id,
         }
     }
 
@@ -124,7 +124,7 @@ impl Parser {
 
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
         let range = self.tokens.get_range(self.cursor + 1);
-        let src = SourceRange::new(range, self.file_id);
+        let src = SourceRange::new(self.module_id, range);
         self.errors.push(ErrorComp::new(msg, src, None));
     }
 

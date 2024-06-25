@@ -8,42 +8,53 @@ use crate::text::{self, TextRange};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-struct SessionV2 {
+pub struct Session {
     cwd: PathBuf,
-    files: Vec<RockFile>,
+    modules: Vec<RockModule>,
     packages: Vec<RockPackage>,
 }
 
-struct RockPackage {
+id_impl!(PackageID);
+pub struct RockPackage {
     pub name_id: InternID,
     pub root_dir: PathBuf,
     pub src: RockDirectory,
     pub manifest: Manifest,
+    pub dependency_map: HashMap<InternID, PackageID>,
 }
 
-struct RockDirectory {
+pub struct RockDirectory {
     pub name_id: InternID,
     pub path: PathBuf,
-    pub files: Vec<FileID>,
+    pub modules: Vec<ModuleID>,
     pub sub_dirs: Vec<RockDirectory>,
 }
 
-struct RockFile {
+id_impl!(ModuleID);
+pub struct RockModule {
     pub name_id: InternID,
     pub path: PathBuf,
     pub source: String,
     pub line_ranges: Vec<TextRange>,
+    pub package_id: PackageID,
 }
 
-impl SessionV2 {
+impl Session {
+    pub fn new<'intern>(
+        building: bool,
+        file_cache: Option<&HashMap<PathBuf, String>>,
+    ) -> Result<(Session, InternPool<'intern>), ErrorComp> {
+        session_create(building, file_cache)
+    }
+
     pub fn cwd(&self) -> &PathBuf {
         &self.cwd
     }
-    pub fn file(&self, id: FileID) -> &RockFile {
-        &self.files[id.index()]
+    pub fn module(&self, id: ModuleID) -> &RockModule {
+        &self.modules[id.index()]
     }
-    pub fn file_ids(&self) -> impl Iterator<Item = FileID> {
-        (0..self.files.len()).map(FileID::new)
+    pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
+        (0..self.modules.len()).map(ModuleID::new)
     }
     pub fn package(&self, id: PackageID) -> &RockPackage {
         &self.packages[id.index()]
@@ -51,21 +62,37 @@ impl SessionV2 {
     pub fn package_ids(&self) -> impl Iterator<Item = PackageID> {
         (0..self.packages.len()).map(PackageID::new)
     }
+
+    pub fn root_is_executable(&self) -> bool {
+        self.root_manifest().package.kind == PackageKind::Bin
+    }
+    pub fn root_bin_name(&self) -> String {
+        let manifest = self.root_manifest();
+        if let Some(bin_name) = &manifest.build.bin_name {
+            return bin_name.clone();
+        } else {
+            manifest.package.name.clone()
+        }
+    }
+    fn root_manifest(&self) -> &Manifest {
+        &self.package(PackageID::new(0)).manifest
+    }
 }
 
-//@create `dependency_map: HashMap<InternID, PackageID>` for RockPackage
 //@store file_count to be able to iterate over FileIDs or ModuleIDs of specific package
-//@store PackageID in RockFile to know module and file PackageID
-fn session_create<'intern>(building: bool) -> Result<(SessionV2, InternPool<'intern>), ErrorComp> {
-    let mut session = SessionV2 {
+fn session_create<'intern>(
+    building: bool,
+    file_cache: Option<&HashMap<PathBuf, String>>,
+) -> Result<(Session, InternPool<'intern>), ErrorComp> {
+    let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
-        files: Vec::new(),
+        modules: Vec::new(),
         packages: Vec::new(),
     };
     let mut intern_name = InternPool::new();
 
     let root_dir = session.cwd.clone();
-    let root_id = process_package_v2(&mut session, &mut intern_name, &root_dir, false)?;
+    let root_id = process_package(&mut session, &mut intern_name, file_cache, &root_dir, false)?;
     let root_manifest = &session.package(root_id).manifest;
 
     if building && root_manifest.package.kind == PackageKind::Lib {
@@ -87,22 +114,30 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
         .iter()
         .map(|(name, _)| name.clone())
         .collect();
+    let mut root_dependency_map = HashMap::new();
 
     for dependency in root_dependencies.iter() {
-        process_package_v2(
+        let package_id = process_package(
             &mut session,
             &mut intern_name,
+            file_cache,
             &cache_dir.join(dependency),
             true,
         )?;
+        let name_id = session.package(package_id).name_id;
+        root_dependency_map.insert(name_id, package_id);
     }
 
+    //@only creating dependency map for root
+    // package resultion process is not done yet
+    session.packages[0].dependency_map = root_dependency_map;
     Ok((session, intern_name))
 }
 
-fn process_package_v2(
-    session: &mut SessionV2,
+fn process_package(
+    session: &mut Session,
     intern_name: &mut InternPool,
+    file_cache: Option<&HashMap<PathBuf, String>>,
     root_dir: &PathBuf,
     dependency: bool,
 ) -> Result<PackageID, ErrorComp> {
@@ -144,7 +179,8 @@ fn process_package_v2(
             src_dir.to_string_lossy()
         )));
     }
-    let src = process_directory(session, intern_name, src_dir)?;
+    let package_id = PackageID::new(session.packages.len());
+    let src = process_directory(session, intern_name, file_cache, package_id, src_dir)?;
 
     if let Some(lib_paths) = &manifest.build.lib_paths {
         let location = format!(
@@ -181,21 +217,22 @@ fn process_package_v2(
         root_dir: root_dir.clone(),
         src,
         manifest,
+        dependency_map: HashMap::new(), //@no deps are set
     };
-
-    let package_id = PackageID::new(session.packages.len());
     session.packages.push(package);
     Ok(package_id)
 }
 
 fn process_directory(
-    session: &mut SessionV2,
+    session: &mut Session,
     intern_name: &mut InternPool,
+    file_cache: Option<&HashMap<PathBuf, String>>,
+    package_id: PackageID,
     path: PathBuf,
 ) -> Result<RockDirectory, ErrorComp> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = intern_name.intern(filename);
-    let mut files = Vec::new();
+    let mut modules = Vec::new();
     let mut sub_dirs = Vec::new();
 
     let read_dir = fs_env::dir_read(&path)?;
@@ -205,9 +242,21 @@ fn process_directory(
         fs_env::symlink_forbid(&entry_path)?;
 
         if entry_path.is_file() {
-            files.push(process_file(session, intern_name, entry_path)?);
+            modules.push(process_file(
+                session,
+                intern_name,
+                file_cache,
+                package_id,
+                entry_path,
+            )?);
         } else if entry_path.is_dir() {
-            sub_dirs.push(process_directory(session, intern_name, entry_path)?);
+            sub_dirs.push(process_directory(
+                session,
+                intern_name,
+                file_cache,
+                package_id,
+                entry_path,
+            )?);
         } else {
             unreachable!()
         }
@@ -216,252 +265,45 @@ fn process_directory(
     let directory = RockDirectory {
         name_id,
         path,
-        files,
+        modules,
         sub_dirs,
     };
     Ok(directory)
 }
 
 fn process_file(
-    session: &mut SessionV2,
+    session: &mut Session,
     intern_name: &mut InternPool,
+    file_cache: Option<&HashMap<PathBuf, String>>,
+    package_id: PackageID,
     path: PathBuf,
-) -> Result<FileID, ErrorComp> {
+) -> Result<ModuleID, ErrorComp> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = intern_name.intern(filename);
-    let source = fs_env::file_read_to_string(&path)?;
+    let source = read_file(&path, file_cache)?;
     let line_ranges = text::find_line_ranges(&source);
 
-    let file = RockFile {
+    let module = RockModule {
         name_id,
         path,
         source,
         line_ranges,
+        package_id,
     };
 
-    let file_id = FileID::new(session.files.len());
-    session.files.push(file);
-    Ok(file_id)
+    let module_id = ModuleID::new(session.modules.len());
+    session.modules.push(module);
+    Ok(module_id)
 }
 
-//@old session
-
-pub struct Session {
-    cwd: PathBuf,
-    files: Vec<File>,
-    packages: Vec<PackageData>,
-}
-
-id_impl!(FileID);
-pub struct File {
-    pub path: PathBuf,
-    pub source: String,
-    pub line_ranges: Vec<TextRange>,
-}
-
-id_impl!(PackageID);
-pub struct PackageData {
-    root_dir: PathBuf,
-    file_count: usize,
-    manifest: Manifest,
-}
-
-impl Session {
-    pub fn new(
-        building: bool,
-        files_in_memory: Option<&HashMap<PathBuf, String>>,
-    ) -> Result<Session, ErrorComp> {
-        create_session(building, files_in_memory)
-    }
-
-    pub fn cwd(&self) -> &PathBuf {
-        &self.cwd
-    }
-    pub fn file(&self, id: FileID) -> &File {
-        &self.files[id.index()]
-    }
-    pub fn file_ids(&self) -> impl Iterator<Item = FileID> {
-        (0..self.files.len()).map(FileID::new)
-    }
-    pub fn package(&self, id: PackageID) -> &PackageData {
-        &self.packages[id.index()]
-    }
-    pub fn package_ids(&self) -> impl Iterator<Item = PackageID> {
-        (0..self.packages.len()).map(PackageID::new)
-    }
-
-    fn root_manifest(&self) -> &Manifest {
-        &self.packages[0].manifest
-    }
-    pub fn is_executable(&self) -> bool {
-        self.root_manifest().package.kind == PackageKind::Bin
-    }
-    pub fn root_package_bin_name(&self) -> String {
-        let manifest = self.root_manifest();
-        if let Some(bin_name) = &manifest.build.bin_name {
-            return bin_name.clone();
-        } else {
-            manifest.package.name.clone()
+fn read_file(
+    path: &PathBuf,
+    file_cache: Option<&HashMap<PathBuf, String>>,
+) -> Result<String, ErrorComp> {
+    if let Some(file_cache) = file_cache {
+        if let Some(source) = file_cache.get(path) {
+            return Ok(source.clone());
         }
     }
-}
-
-impl PackageData {
-    pub fn root_dir(&self) -> &PathBuf {
-        &self.root_dir
-    }
-    pub fn file_count(&self) -> usize {
-        self.file_count
-    }
-    pub fn manifest(&self) -> &Manifest {
-        &self.manifest
-    }
-}
-
-fn create_session(
-    building: bool,
-    files_in_memory: Option<&HashMap<PathBuf, String>>,
-) -> Result<Session, ErrorComp> {
-    let s2_test = session_create(building)?;
-
-    let mut session = Session {
-        cwd: fs_env::dir_get_current_working()?,
-        files: Vec::new(),
-        packages: Vec::new(),
-    };
-
-    let root_dir = session.cwd.clone();
-    let mut cache_dir = fs_env::current_exe_path()?;
-    cache_dir.pop();
-    cache_dir.push("packages");
-
-    let mut all_packages = Vec::with_capacity(32);
-    let mut all_files = Vec::with_capacity(32);
-
-    let (root_data, files) = process_package(&root_dir, files_in_memory, false)?;
-    all_files.extend(files);
-
-    if building && root_data.manifest.package.kind == PackageKind::Lib {
-        return Err(ErrorComp::message(
-            r#"cannot build or run a library package
-use `rock check` to check your library package,
-or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
-        ));
-    }
-
-    for (name, _) in root_data.manifest.dependencies.iter() {
-        let (data, files) = process_package(&cache_dir.join(name), files_in_memory, true)?;
-        all_packages.push(data);
-        all_files.extend(files);
-    }
-
-    session.files.extend(all_files);
-    session.packages.push(root_data);
-    session.packages.extend(all_packages);
-    Ok(session)
-}
-
-fn process_package(
-    root_dir: &PathBuf,
-    files_in_memory: Option<&HashMap<PathBuf, String>>,
-    dependency: bool,
-) -> Result<(PackageData, Vec<File>), ErrorComp> {
-    if dependency && !root_dir.exists() {
-        return Err(ErrorComp::message(format!(
-            "could not find package directory, package fetch is not yet implemented\nexpected path: `{}`",
-            root_dir.to_string_lossy()
-        )));
-    }
-
-    let manifest_path = root_dir.join("Rock.toml");
-    if !manifest_path.exists() {
-        let in_message = if dependency { "dependency" } else { "current" };
-        return Err(ErrorComp::message(format!(
-            "could not find manifest `Rock.toml` in {in_message} directory\npath: `{}`",
-            manifest_path.to_string_lossy()
-        )));
-    }
-
-    let manifest_text = fs_env::file_read_to_string(&manifest_path)?;
-    let manifest = package::manifest_deserialize(manifest_text, &manifest_path)?;
-
-    if dependency && manifest.package.kind == PackageKind::Bin {
-        return Err(ErrorComp::message(
-            "cannot depend on executable package, only library dependencies are allowed",
-        ));
-    }
-
-    let src_dir = root_dir.join("src");
-    if !src_dir.exists() {
-        let in_message = if dependency { "dependency" } else { "current" };
-        return Err(ErrorComp::message(format!(
-            "could not find `src` directory in {in_message} directory\npath: `{}`",
-            src_dir.to_string_lossy()
-        )));
-    }
-    let src_dir = fs_env::dir_read(&src_dir)?;
-
-    let mut files = Vec::new();
-    let mut file_count: usize = 0;
-
-    for entry in src_dir.flatten() {
-        let path = entry.path();
-
-        if path.is_file() && path.extension().unwrap_or_default() == "rock" {
-            file_count += 1;
-
-            let source = if let Some(files_in_memory) = files_in_memory {
-                if let Some(source) = files_in_memory.get(&path) {
-                    source.clone()
-                } else {
-                    fs_env::file_read_to_string(&path)?
-                }
-            } else {
-                fs_env::file_read_to_string(&path)?
-            };
-
-            let line_ranges = text::find_line_ranges(&source);
-            files.push(File {
-                path,
-                source,
-                line_ranges,
-            });
-        }
-    }
-
-    let location = format!(
-        "\nmanifest path: `{}`\nmanifest key: [build] `lib_paths`",
-        manifest_path.to_string_lossy()
-    );
-
-    if let Some(lib_paths) = &manifest.build.lib_paths {
-        for path in lib_paths {
-            if !path.is_relative() {
-                return Err(ErrorComp::message(format!(
-                    "library path `{}` must be relative{location}",
-                    path.to_string_lossy()
-                )));
-            }
-            let lib_path = root_dir.join(path);
-            if !lib_path.exists() {
-                return Err(ErrorComp::message(format!(
-                    "library path `{}` does not exist{location}",
-                    lib_path.to_string_lossy()
-                )));
-            }
-            if !lib_path.is_dir() {
-                return Err(ErrorComp::message(format!(
-                    "library path `{}` must be a directory{location}",
-                    lib_path.to_string_lossy()
-                )));
-            }
-        }
-    }
-
-    let package = PackageData {
-        root_dir: root_dir.clone(),
-        file_count,
-        manifest,
-    };
-    Ok((package, files))
+    Ok(fs_env::file_read_to_string(&path)?)
 }

@@ -599,8 +599,9 @@ impl<'syn> GlobalItem<'syn> {
 impl<'syn> ImportItem<'syn> {
     find_first!(attribute, Attribute);
     find_first!(visiblity, Visibility);
+    find_first!(package, Name);
     find_first!(import_path, ImportPath);
-    find_first!(name_alias, NameAlias);
+    find_first!(name_alias, NameAlias); //@rename ast to name_alias
     find_first!(import_symbol_list, ImportSymbolList);
 }
 

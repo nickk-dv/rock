@@ -1,14 +1,17 @@
 use crate::ast::{AssignOp, BinOp};
 use crate::error::ErrorComp;
-use crate::session::FileID;
+use crate::session::ModuleID;
 use crate::syntax;
-use crate::syntax::ast_layer::{self as ast, AstNodeIterator};
+use crate::syntax::ast_layer as ast;
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::text::TextRange;
 
+//@conform to ast_build style:
+// _cst postfix in cst nodes with name conflits,
+// remove _fmt postfix from functions
 //@use session?
-pub fn format(source: &str, file_id: FileID) -> Result<String, Vec<ErrorComp>> {
-    let (tree, errors) = syntax::parse(source, file_id);
+pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
+    let (tree, errors) = syntax::parse(source, module_id);
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -18,6 +21,7 @@ pub fn format(source: &str, file_id: FileID) -> Result<String, Vec<ErrorComp>> {
     Ok(fmt.finish())
 }
 
+//@remove, test on real code
 #[test]
 fn format_test() {
     let source = r#"
@@ -78,7 +82,7 @@ fn format_test() {
     }
     "#;
 
-    if let Ok(formatted) = format(source, FileID::dummy()) {
+    if let Ok(formatted) = format(source, ModuleID::dummy()) {
         println!("ORIGINAL SOURCE:\n-----\n{}-----", source);
         println!("FORMATTED SOURCE:\n-----\n{}-----", formatted);
     } else {
@@ -356,6 +360,10 @@ fn import_item(fmt: &mut Formatter, item: ast::ImportItem) {
     item_attr_vis_fmt!(fmt, item);
     fmt.write("import");
     fmt.space();
+    if let Some(name) = item.package(fmt.tree) {
+        name_fmt(fmt, name);
+        fmt.write_c(':');
+    }
     import_path(fmt, item.import_path(fmt.tree).unwrap());
     if let Some(name_alias) = item.name_alias(fmt.tree) {
         name_alias_fmt(fmt, name_alias);

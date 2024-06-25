@@ -4,7 +4,7 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
 use crate::intern::InternPool;
-use crate::session::{FileID, Session};
+use crate::session::{ModuleID, Session};
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
 use crate::timer::Timer;
@@ -14,7 +14,7 @@ struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
     char_id: u32,
     string_id: u32,
-    file_id: FileID,
+    module_id: ModuleID,
     source: &'src str,
     s: &'state mut AstBuildState<'ast>,
 }
@@ -24,7 +24,7 @@ struct AstBuildState<'ast> {
     intern_name: InternPool<'ast>,
     intern_string: InternPool<'ast>,
     string_is_cstr: Vec<bool>,
-    packages: Vec<ast::Package<'ast>>,
+    modules: Vec<ast::Module<'ast>>,
     errors: Vec<ErrorComp>,
 
     items: TempBuffer<ast::Item<'ast>>,
@@ -44,15 +44,15 @@ struct AstBuildState<'ast> {
 impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
     fn new(
         tree: &'syn SyntaxTree<'syn>,
-        file_id: FileID,
         source: &'src str,
+        module_id: ModuleID,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
         AstBuild {
             tree,
             char_id: 0,
             string_id: 0,
-            file_id,
+            module_id,
             source,
             s: state,
         }
@@ -60,13 +60,13 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
 }
 
 impl<'ast> AstBuildState<'ast> {
-    fn new() -> Self {
+    fn new(intern_name: InternPool<'ast>) -> Self {
         AstBuildState {
             arena: Arena::new(),
-            intern_name: InternPool::new(),
+            intern_name,
             intern_string: InternPool::new(),
             string_is_cstr: Vec::with_capacity(128),
-            packages: Vec::new(),
+            modules: Vec::new(),
             errors: Vec::new(),
 
             items: TempBuffer::new(128),
@@ -85,48 +85,25 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-pub fn parse(session: &Session) -> ResultComp<ast::Ast> {
+pub fn parse<'ast, 'intern: 'ast>(
+    session: &Session,
+    intern_name: InternPool<'intern>,
+) -> ResultComp<ast::Ast<'ast, 'intern>> {
     let t_total = Timer::new();
-    let mut state = AstBuildState::new();
-    let mut file_idx: usize = 0;
+    let mut state = AstBuildState::new(intern_name);
+    let mut modules = Vec::new();
 
-    for package_id in session.package_ids() {
-        let package = session.package(package_id);
-        let package_name_id = state.intern_name.intern(&package.manifest().package.name);
-        let mut modules = Vec::<ast::Module>::new();
+    for module_id in session.module_ids() {
+        let module = session.module(module_id);
+        let (tree, errors) = super::parse(&module.source, module_id);
 
-        for idx in file_idx..file_idx + package.file_count() {
-            let file_id = FileID::new(idx);
-            let file = session.file(file_id);
-            let filename = file
-                .path
-                .file_stem()
-                .expect("filename")
-                .to_str()
-                .expect("utf-8");
-            let module_name_id = state.intern_name.intern(filename);
-
-            let (tree, errors) = super::parse(&file.source, file_id);
-            if errors.is_empty() {
-                let mut ctx = AstBuild::new(&tree, file_id, &file.source, &mut state);
-                let items = source_file(&mut ctx, tree.source_file());
-
-                let module = ast::Module {
-                    file_id,
-                    name_id: module_name_id,
-                    items,
-                };
-                modules.push(module);
-            } else {
-                state.errors.extend(errors);
-            }
+        if errors.is_empty() {
+            let mut ctx = AstBuild::new(&tree, &module.source, module_id, &mut state);
+            let items = source_file(&mut ctx, tree.source_file());
+            modules.push(ast::Module { items });
+        } else {
+            state.errors.extend(errors);
         }
-
-        file_idx += package.file_count();
-        state.packages.push(ast::Package {
-            name_id: package_name_id,
-            modules,
-        });
     }
 
     t_total.stop("ast parse (new) total");
@@ -136,7 +113,7 @@ pub fn parse(session: &Session) -> ResultComp<ast::Ast> {
             intern_name: state.intern_name,
             intern_string: state.intern_string,
             string_is_cstr: state.string_is_cstr,
-            packages: state.packages,
+            modules: state.modules,
         };
         ResultComp::Ok((ast, vec![]))
     } else {
@@ -358,6 +335,7 @@ fn import_item<'ast>(
     //@add ast::ImportItem attr, and vis?
     let attr = attribute(ctx, item.attribute(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
+    let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();
     let import_path = item.import_path(ctx.tree).unwrap();
@@ -365,14 +343,7 @@ fn import_item<'ast>(
         let name = name(ctx, name_cst);
         ctx.s.names.add(name);
     }
-    let names = ctx.s.names.take(offset, &mut ctx.s.arena);
-
-    //@hack support viriable len import paths
-    let (package, module) = if names.len() == 1 {
-        (None, names[0])
-    } else {
-        (Some(names[0]), names[1])
-    };
+    let import_path = ctx.s.names.take(offset, &mut ctx.s.arena);
     let alias = name_alias(ctx, item.name_alias(ctx.tree));
 
     let symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
@@ -387,8 +358,8 @@ fn import_item<'ast>(
 
     let import_item = ast::ImportItem {
         package,
-        module,
-        alias,
+        import_path,
+        alias, //@rename everywhere to name_alias?
         symbols,
     };
     ctx.s.arena.alloc(import_item)
@@ -621,7 +592,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
                 Err(error) => {
                     ctx.s.errors.push(ErrorComp::new(
                         format!("parse integer error: {}", error),
-                        SourceRange::new(range, ctx.file_id),
+                        SourceRange::new(ctx.module_id, range),
                         None,
                     ));
                     0
@@ -640,7 +611,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
                 Err(error) => {
                     ctx.s.errors.push(ErrorComp::new(
                         format!("parse float error: {}", error),
-                        SourceRange::new(range, ctx.file_id),
+                        SourceRange::new(ctx.module_id, range),
                         None,
                     ));
                     0.0

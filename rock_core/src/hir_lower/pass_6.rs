@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit, SymbolKind};
 use crate::ast::BasicType;
-use crate::error::ErrorComp;
+use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
 use crate::session::PackageID;
 
@@ -13,6 +13,8 @@ pub fn check_entry_point<'hir>(
         return;
     }
 
+    //@restore (need api to get dirs and find stuff in them)
+    /*
     if let Some(main_id) = hir.intern_name().get_id("main") {
         if let Some(module_id) = hir.get_package_module_id(PackageID::new(0), main_id) {
             let defined = hir.symbol_get_defined(module_id, main_id);
@@ -29,6 +31,7 @@ pub fn check_entry_point<'hir>(
             return;
         }
     }
+    */
 
     emit.error(ErrorComp::message(
         "could not find `main` module, expected `src/main.rock` to exist",
@@ -43,7 +46,7 @@ pub fn check_main_procedure<'hir>(
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
     let external = item.block.is_none();
-    let name_src = hir.src(data.origin_id, data.name.range);
+    let name_src = SourceRange::new(data.origin_id, data.name.range);
 
     if !data.params.is_empty() {
         emit.error(ErrorComp::new(
@@ -64,7 +67,7 @@ pub fn check_main_procedure<'hir>(
         };
         emit.error(ErrorComp::new(
             "main procedure must return `s32`",
-            hir.src(data.origin_id, ty_range),
+            SourceRange::new(data.origin_id, ty_range),
             None,
         ));
     }

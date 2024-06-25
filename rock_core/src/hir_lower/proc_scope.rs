@@ -1,8 +1,9 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_5::TypeExpectation;
-use crate::error::{Info, WarningComp};
+use crate::error::{Info, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::InternID;
+use crate::session::ModuleID;
 use crate::text::TextRange;
 
 //@re-use same proc scope to avoid frequent re-alloc 26.05.24
@@ -77,7 +78,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn finish_locals(&self) -> &[&'hir hir::Local<'hir>] {
         self.locals.as_slice()
     }
-    pub fn origin(&self) -> hir::ModuleID {
+    pub fn origin(&self) -> ModuleID {
         self.data.origin_id
     }
     pub fn return_expect(&self) -> TypeExpectation<'hir> {
@@ -220,10 +221,10 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
 
                 emit.warning(WarningComp::new(
                     "unreachable statement",
-                    hir.src(self.origin(), stmt_range),
+                    SourceRange::new(self.origin(), stmt_range),
                     Info::new(
                         "all statements after this are unreachable",
-                        hir.src(self.origin(), diverge_range),
+                        SourceRange::new(self.origin(), diverge_range),
                     ),
                 ));
                 true

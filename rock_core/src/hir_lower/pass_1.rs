@@ -3,6 +3,7 @@ use super::pass_5;
 use crate::ast;
 use crate::error::{ErrorComp, Info, SourceRange};
 use crate::hir;
+use crate::session::ModuleID;
 
 pub fn populate_scopes<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for origin_id in hir.registry().module_ids() {
@@ -13,7 +14,7 @@ pub fn populate_scopes<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit
 fn add_module_items<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
 ) {
     for item in hir.registry().module_ast(origin_id).items.iter().cloned() {
         match item {
@@ -114,13 +115,13 @@ fn add_module_items<'hir>(
 pub fn name_already_defined_error(
     hir: &HirData,
     emit: &mut HirEmit,
-    origin_id: hir::ModuleID,
+    origin_id: ModuleID,
     name: ast::Name,
     existing: SourceRange,
 ) {
     emit.error(ErrorComp::new(
         format!("name `{}` is defined multiple times", hir.name_str(name.id)),
-        hir.src(origin_id, name.range),
+        SourceRange::new(origin_id, name.range),
         Info::new("existing definition", existing),
     ));
 }
