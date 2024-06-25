@@ -244,6 +244,14 @@ fn global_item(p: &mut Parser, m: Marker) {
     m.complete(p, SyntaxKind::GLOBAL_ITEM);
 }
 
+/*
+old:
+import package (/module)? (as name)? (.{name (as name)?, ..})?
+
+@new:
+import (package:)? name (/name/name)? (as name, _)? (.{name (as name)?, ..})?
+*/
+
 fn import_item(p: &mut Parser, m: Marker) {
     p.bump(T![import]);
     if p.at(T![ident]) {

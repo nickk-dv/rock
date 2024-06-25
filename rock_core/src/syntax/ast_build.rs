@@ -252,7 +252,7 @@ fn enum_item<'ast>(
     let attr = attribute(ctx, item.attribute(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let basic = item.type_basic(ctx.tree).map(|tb| tb.basic(ctx.tree));
+    let basic = item.type_basic(ctx.tree).map(|tb| tb.basic(ctx.tree)); //@not storing basic range
 
     let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();
@@ -607,8 +607,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
         }
         cst::Expr::LitNull(_) => ast::ExprKind::LitNull,
         cst::Expr::LitBool(lit) => {
-            //@add get on actual token type
-            let val = false;
+            let val = lit.value(ctx.tree);
 
             ast::ExprKind::LitBool { val }
         }
@@ -785,8 +784,18 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
 
             let offset = ctx.s.field_inits.start();
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();
-            for field_init in field_init_list.field_inits(ctx.tree) {
-                //@change design, expr is stored always instead of name always and opt expr
+            for field_init_cst in field_init_list.field_inits(ctx.tree) {
+                let expr = expr(ctx, field_init_cst.expr(ctx.tree).unwrap());
+                let name = if let Some(name_cst) = field_init_cst.name(ctx.tree) {
+                    name(ctx, name_cst)
+                } else {
+                    match expr.kind {
+                        ast::ExprKind::Item { path } => path.names[0],
+                        _ => unreachable!(),
+                    }
+                };
+                let field_init = ast::FieldInit { name, expr };
+                ctx.s.field_inits.add(field_init);
             }
             let input = ctx.s.field_inits.take(offset, &mut ctx.s.arena);
 
@@ -822,8 +831,22 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
 
             ast::ExprKind::Address { mutt, rhs: expr }
         }
-        cst::Expr::Unary(_) => todo!(),  //@no op range available
-        cst::Expr::Binary(_) => todo!(), //@no op range available
+        cst::Expr::Unary(unary) => {
+            let (op, op_range) = unary.un_op_with_range(ctx.tree);
+            let rhs = expr(ctx, unary.rhs(ctx.tree).unwrap());
+
+            ast::ExprKind::Unary { op, op_range, rhs }
+        }
+        cst::Expr::Binary(binary) => {
+            let (op, op_range) = binary.bin_op_with_range(ctx.tree);
+            let mut lhs_rhs_iter = binary.lhs_rhs_iter(ctx.tree);
+            let lhs = expr(ctx, lhs_rhs_iter.next().unwrap());
+            let rhs = expr(ctx, lhs_rhs_iter.next().unwrap());
+
+            let bin = ast::BinExpr { lhs, rhs };
+            let bin = ctx.s.arena.alloc(bin);
+            ast::ExprKind::Binary { op, op_range, bin }
+        }
     };
 
     let expr = ast::Expr { kind, range };

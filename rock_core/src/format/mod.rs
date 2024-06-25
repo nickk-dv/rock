@@ -603,7 +603,8 @@ fn stmt_assign(fmt: &mut Formatter, assign: ast::StmtAssign, semi: bool) {
     expr_fmt(fmt, lhs_rhs.next().unwrap());
 
     fmt.space();
-    match assign.assign_op(fmt.tree) {
+    let assign_op = assign.assign_op(fmt.tree).unwrap();
+    match assign_op {
         AssignOp::Assign => {
             fmt.write_c('=');
         }
@@ -628,6 +629,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             fmt.write_c(')');
         }
         ast::Expr::LitNull(_) => fmt.write("null"),
+        //@assuming that lit.rage is single lit token
         ast::Expr::LitBool(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitInt(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitFloat(lit) => fmt.write_range(lit.range(fmt.tree)),
@@ -681,7 +683,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::Unary(unary) => {
             let op = unary.un_op(fmt.tree);
             fmt.write(op.as_str());
-            expr_fmt(fmt, unary.expr(fmt.tree).unwrap());
+            expr_fmt(fmt, unary.rhs(fmt.tree).unwrap());
         }
         ast::Expr::Binary(binary) => {
             let mut lhs_rhs = binary.lhs_rhs_iter(fmt.tree);

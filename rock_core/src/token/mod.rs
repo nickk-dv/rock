@@ -188,3 +188,13 @@ token_gen::token_glue_extend! {
 }
 
 pub(super) use T;
+
+impl Token {
+    pub fn as_bool(self) -> Option<bool> {
+        match self {
+            T![true] => Some(true),
+            T![false] => Some(false),
+            _ => None,
+        }
+    }
+}

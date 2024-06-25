@@ -17,44 +17,32 @@ impl<'syn> Node<'syn> {
         AstNodeIterator::new(tree, self).next()
     }
 
-    fn find_basic_ty(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::BasicType> {
+    fn find_by_token<T, F>(&self, tree: &'syn SyntaxTree<'syn>, predicate: F) -> Option<T>
+    where
+        F: Fn(Token) -> Option<T>,
+    {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(basic) = tree.token(token_id).as_basic_type() {
-                    return Some(basic);
+                if let Some(value) = predicate(tree.token(token_id)) {
+                    return Some(value);
                 }
             }
         }
         None
     }
 
-    fn find_un_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::UnOp> {
+    fn find_by_token_with_range<T, F>(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+        predicate: F,
+    ) -> Option<(T, TextRange)>
+    where
+        F: Fn(Token) -> Option<T>,
+    {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(op) = tree.token(token_id).as_un_op() {
-                    return Some(op);
-                }
-            }
-        }
-        None
-    }
-
-    fn find_bin_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::BinOp> {
-        for node_or_token in self.content.iter().copied() {
-            if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(op) = tree.token(token_id).as_bin_op() {
-                    return Some(op);
-                }
-            }
-        }
-        None
-    }
-
-    fn find_assign_op(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::AssignOp> {
-        for node_or_token in self.content.iter().copied() {
-            if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(op) = tree.token(token_id).as_assign_op() {
-                    return Some(op);
+                if let Some(value) = predicate(tree.token(token_id)) {
+                    return Some((value, tree.token_range(token_id)));
                 }
             }
         }
@@ -640,7 +628,12 @@ impl<'syn> Path<'syn> {
 
 impl<'syn> TypeBasic<'syn> {
     pub fn basic(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
-        self.0.find_basic_ty(tree).unwrap()
+        self.0.find_by_token(tree, Token::as_basic_type).unwrap()
+    }
+    pub fn basic_with_range(&self, tree: &'syn SyntaxTree<'syn>) -> (ast::BasicType, TextRange) {
+        self.0
+            .find_by_token_with_range(tree, Token::as_basic_type)
+            .unwrap()
     }
 }
 
@@ -718,8 +711,14 @@ impl<'syn> StmtLocal<'syn> {
 }
 
 impl<'syn> StmtAssign<'syn> {
-    pub fn assign_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::AssignOp {
-        self.0.find_assign_op(tree).unwrap()
+    pub fn assign_op(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::AssignOp> {
+        self.0.find_by_token(tree, Token::as_assign_op)
+    }
+    pub fn assign_op_with_range(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+    ) -> Option<(ast::AssignOp, TextRange)> {
+        self.0.find_by_token_with_range(tree, Token::as_assign_op)
     }
     //@ambiguity in incomplete tree
     node_iter!(lhs_rhs_iter, Expr);
@@ -739,7 +738,11 @@ impl<'syn> ExprParen<'syn> {
 
 impl<'syn> ExprLitNull<'syn> {}
 
-impl<'syn> ExprLitBool<'syn> {}
+impl<'syn> ExprLitBool<'syn> {
+    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
+        self.0.find_by_token(tree, Token::as_bool).unwrap()
+    }
+}
 
 impl<'syn> ExprLitInt<'syn> {}
 
@@ -863,14 +866,26 @@ impl<'syn> ExprAddress<'syn> {
 
 impl<'syn> ExprUnary<'syn> {
     pub fn un_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::UnOp {
-        self.0.find_un_op(tree).unwrap()
+        self.0.find_by_token(tree, Token::as_un_op).unwrap()
     }
-    find_first!(expr, Expr);
+    pub fn un_op_with_range(&self, tree: &'syn SyntaxTree<'syn>) -> (ast::UnOp, TextRange) {
+        self.0
+            .find_by_token_with_range(tree, Token::as_un_op)
+            .unwrap()
+    }
+    find_first!(rhs, Expr);
 }
 
+//@support no range versions of `find_by_token`?
+// fmt doesnt need ranges and some other uses
 impl<'syn> ExprBinary<'syn> {
     pub fn bin_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BinOp {
-        self.0.find_bin_op(tree).unwrap()
+        self.0.find_by_token(tree, Token::as_bin_op).unwrap()
+    }
+    pub fn bin_op_with_range(&self, tree: &'syn SyntaxTree<'syn>) -> (ast::BinOp, TextRange) {
+        self.0
+            .find_by_token_with_range(tree, Token::as_bin_op)
+            .unwrap()
     }
     //@ambiguity in incomplete tree
     node_iter!(lhs_rhs_iter, Expr);
