@@ -52,6 +52,19 @@ pub fn dir_read(path: &PathBuf) -> Result<std::fs::ReadDir, ErrorComp> {
     })
 }
 
+pub fn dir_entry_validate(
+    origin: &PathBuf,
+    entry_result: Result<std::fs::DirEntry, std::io::Error>,
+) -> Result<std::fs::DirEntry, ErrorComp> {
+    entry_result.map_err(|io_error| {
+        ErrorComp::message(format!(
+            "failed to read directory entry in: `{}`\nreason: {}",
+            origin.to_string_lossy(),
+            io_error
+        ))
+    })
+}
+
 pub fn file_read_to_string(path: &PathBuf) -> Result<String, ErrorComp> {
     std::fs::read_to_string(path).map_err(|io_error| {
         ErrorComp::message(format!(
@@ -83,4 +96,25 @@ pub fn file_remove(path: &PathBuf, force: bool) -> Result<(), ErrorComp> {
             io_error
         ))
     })
+}
+
+pub fn filename_stem(path: &PathBuf) -> Result<&str, ErrorComp> {
+    let file_stem = path.file_stem().ok_or(ErrorComp::message(format!(
+        "failed to get filename from: `{}`",
+        path.to_string_lossy(),
+    )))?;
+    file_stem.to_str().ok_or(ErrorComp::message(format!(
+        "filename is not valid utf-8: `{}`",
+        file_stem.to_string_lossy()
+    )))
+}
+
+pub fn symlink_forbid(path: &PathBuf) -> Result<(), ErrorComp> {
+    if path.is_symlink() {
+        return Err(ErrorComp::message(format!(
+            "symbol links are not supported: `{}`",
+            path.to_string_lossy()
+        )));
+    };
+    Ok(())
 }

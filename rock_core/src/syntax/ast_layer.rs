@@ -49,7 +49,7 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn find_token(&'syn self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
+    fn find_token(&self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
                 if token == tree.token(token_id) {
@@ -60,7 +60,7 @@ impl<'syn> Node<'syn> {
         false
     }
 
-    fn find_token_rev(&'syn self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
+    fn find_token_rev(&self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
         for node_or_token in self.content.iter().rev().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
                 if token == tree.token(token_id) {
@@ -71,6 +71,7 @@ impl<'syn> Node<'syn> {
         false
     }
 
+    //@can get stuck if no tokens are present, which is maybe possible in incomplete tree?
     fn find_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         let start;
         let end;

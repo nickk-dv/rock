@@ -13,7 +13,7 @@ pub struct Manifest {
 #[derive(Serialize, Deserialize)]
 pub struct PackageManifest {
     pub name: String,                 // package name
-    pub kind: PackageKind,            // package kind (bin or lib)
+    pub kind: PackageKind,            // package kind
     pub version: Semver,              // semver version
     pub authors: Option<Vec<String>>, // list of authors
     pub repository: Option<String>,   // repository link
