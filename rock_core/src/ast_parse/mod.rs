@@ -14,7 +14,6 @@ pub fn parse<'ast, 'intern>(
 ) -> ResultComp<Ast<'ast, 'intern>> {
     let t_total = Timer::new();
     let mut state = parser::ParseState::new(intern_name);
-    let mut modules = Vec::new();
 
     for module_id in session.module_ids() {
         let module = session.module(module_id);
@@ -27,7 +26,7 @@ pub fn parse<'ast, 'intern>(
         let parser = parser::Parser::new(tokens, module_id, &module.source, &mut state);
 
         match grammar::module(parser, module_id) {
-            Ok(module) => modules.push(module),
+            Ok(module) => state.modules.push(module),
             Err(error) => state.errors.push(error),
         }
     }

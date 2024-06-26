@@ -109,6 +109,11 @@ pub fn filename_stem(path: &PathBuf) -> Result<&str, ErrorComp> {
     )))
 }
 
+pub fn file_extension(path: &PathBuf) -> Option<&str> {
+    let extension = path.extension()?;
+    extension.to_str()
+}
+
 pub fn symlink_forbid(path: &PathBuf) -> Result<(), ErrorComp> {
     if path.is_symlink() {
         return Err(ErrorComp::message(format!(

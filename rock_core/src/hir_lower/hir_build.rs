@@ -39,8 +39,6 @@ pub enum SymbolKind {
 }
 
 pub struct Registry<'hir, 'ast> {
-    //@potentially useless, can just make method to get it on HirBuild
-    ast_modules: Vec<ast::Module<'ast>>,
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
     ast_enums: Vec<&'ast ast::EnumItem<'ast>>,
     ast_structs: Vec<&'ast ast::StructItem<'ast>>,
@@ -62,8 +60,16 @@ pub struct HirEmit<'hir> {
 
 impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     pub fn new(ast: ast::Ast<'ast, 'intern>) -> Self {
+        let mut modules = Vec::with_capacity(ast.modules.len());
+
+        for _ in ast.modules.iter() {
+            modules.push(Module {
+                symbols: HashMap::with_capacity(64),
+            });
+        }
+
         HirData {
-            modules: Vec::new(),
+            modules,
             registry: Registry::new(ast::ItemCount::default()),
             ast,
         }
@@ -77,6 +83,9 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     }
     pub fn intern_string(&self) -> &InternPool<'intern> {
         &self.ast.intern_string
+    }
+    pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
+        self.ast.modules[module_id.index()]
     }
 
     //@this is search functionaly (previosly single directory)
@@ -238,7 +247,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn new(total: ast::ItemCount) -> Registry<'hir, 'ast> {
         let const_eval_estimate = total.consts + total.globals + total.enums * 4;
         Registry {
-            ast_modules: Vec::with_capacity(total.modules as usize),
             ast_procs: Vec::with_capacity(total.procs as usize),
             ast_enums: Vec::with_capacity(total.enums as usize),
             ast_structs: Vec::with_capacity(total.structs as usize),
@@ -251,10 +259,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             hir_globals: Vec::with_capacity(total.globals as usize),
             const_evals: Vec::with_capacity(const_eval_estimate as usize),
         }
-    }
-
-    pub fn add_module(&mut self, module: ast::Module<'ast>) {
-        self.ast_modules.push(module);
     }
 
     pub fn add_proc(
@@ -375,9 +379,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id
     }
 
-    pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
-        (0..self.ast_modules.len()).map(ModuleID::new)
-    }
     pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
         (0..self.hir_procs.len()).map(hir::ProcID::new)
     }
@@ -397,9 +398,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         (0..self.const_evals.len()).map(hir::ConstEvalID::new)
     }
 
-    pub fn module_ast(&self, id: ModuleID) -> &ast::Module<'ast> {
-        &self.ast_modules[id.index()]
-    }
     pub fn proc_item(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
         self.ast_procs[id.index()]
     }

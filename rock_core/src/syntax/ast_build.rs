@@ -91,7 +91,6 @@ pub fn parse<'ast, 'intern: 'ast>(
 ) -> ResultComp<ast::Ast<'ast, 'intern>> {
     let t_total = Timer::new();
     let mut state = AstBuildState::new(intern_name);
-    let mut modules = Vec::new();
 
     for module_id in session.module_ids() {
         let module = session.module(module_id);
@@ -100,7 +99,7 @@ pub fn parse<'ast, 'intern: 'ast>(
         if errors.is_empty() {
             let mut ctx = AstBuild::new(&tree, &module.source, module_id, &mut state);
             let items = source_file(&mut ctx, tree.source_file());
-            modules.push(ast::Module { items });
+            state.modules.push(ast::Module { items });
         } else {
             state.errors.extend(errors);
         }
@@ -365,19 +364,19 @@ fn import_item<'ast>(
     ctx.s.arena.alloc(import_item)
 }
 
-fn name_alias<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    name_alias: Option<cst::NameAlias>,
-) -> Option<ast::Name> {
-    name_alias.map(|na| name(ctx, na.name(ctx.tree).unwrap()))
-}
-
 fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
     let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
     let alias = name_alias(ctx, import_symbol.name_alias(ctx.tree));
 
     let import_symbol = ast::ImportSymbol { name, alias };
     ctx.s.import_symbols.add(import_symbol);
+}
+
+fn name_alias<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    name_alias: Option<cst::NameAlias>,
+) -> Option<ast::Name> {
+    name_alias.map(|na| name(ctx, na.name(ctx.tree).unwrap()))
 }
 
 fn name<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, name: cst::Name) -> ast::Name {
@@ -557,13 +556,18 @@ fn stmt_assign<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     assign: cst::StmtAssign,
 ) -> &'ast ast::Assign<'ast> {
-    let op = assign.assign_op(ctx.tree);
-    //@api for getting range of ops etc
-
+    let (op, op_range) = assign.assign_op_with_range(ctx.tree).unwrap();
     let mut lhs_rhs_iter: cst::AstNodeIterator<cst::Expr> = assign.lhs_rhs_iter(ctx.tree);
     let lhs = expr(ctx, lhs_rhs_iter.next().unwrap());
     let rhs = expr(ctx, lhs_rhs_iter.next().unwrap());
-    todo!()
+
+    let assign = ast::Assign {
+        op,
+        op_range,
+        lhs,
+        rhs,
+    };
+    ctx.s.arena.alloc(assign)
 }
 
 //@rename expr_cst back to expr when each arm has a function

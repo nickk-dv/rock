@@ -19,15 +19,15 @@ pub struct RockPackage {
     pub name_id: InternID,
     pub root_dir: PathBuf,
     pub src: RockDirectory,
-    pub manifest: Manifest,
-    pub dependency_map: HashMap<InternID, PackageID>,
+    manifest: Manifest,
+    dependency_map: HashMap<InternID, PackageID>,
 }
 
 pub struct RockDirectory {
     pub name_id: InternID,
     pub path: PathBuf,
-    pub modules: Vec<ModuleID>,
-    pub sub_dirs: Vec<RockDirectory>,
+    modules: Vec<ModuleID>,
+    sub_dirs: Vec<RockDirectory>,
 }
 
 id_impl!(ModuleID);
@@ -76,6 +76,38 @@ impl Session {
     }
     fn root_manifest(&self) -> &Manifest {
         &self.package(PackageID::new(0)).manifest
+    }
+}
+
+impl RockPackage {
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+    pub fn dependency(&self, name_id: InternID) -> Option<PackageID> {
+        self.dependency_map.get(&name_id).copied()
+    }
+}
+
+pub enum ModuleOrDirectory<'src> {
+    None,
+    Module(ModuleID),
+    Directory(&'src RockDirectory),
+}
+
+impl RockDirectory {
+    pub fn find(&self, session: &Session, name_id: InternID) -> ModuleOrDirectory {
+        for module_id in self.modules.iter().copied() {
+            let module = session.module(module_id);
+            if module.name_id == name_id {
+                return ModuleOrDirectory::Module(module_id);
+            }
+        }
+        for directory in self.sub_dirs.iter() {
+            if directory.name_id == name_id {
+                return ModuleOrDirectory::Directory(directory);
+            }
+        }
+        ModuleOrDirectory::None
     }
 }
 
@@ -242,13 +274,16 @@ fn process_directory(
         fs_env::symlink_forbid(&entry_path)?;
 
         if entry_path.is_file() {
-            modules.push(process_file(
-                session,
-                intern_name,
-                file_cache,
-                package_id,
-                entry_path,
-            )?);
+            let extension = fs_env::file_extension(&entry_path);
+            if matches!(extension, Some("rock")) {
+                modules.push(process_file(
+                    session,
+                    intern_name,
+                    file_cache,
+                    package_id,
+                    entry_path,
+                )?);
+            }
         } else if entry_path.is_dir() {
             sub_dirs.push(process_directory(
                 session,

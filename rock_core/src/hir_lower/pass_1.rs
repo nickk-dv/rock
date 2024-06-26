@@ -2,11 +2,14 @@ use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
 use super::pass_5;
 use crate::ast;
 use crate::error::{ErrorComp, Info, SourceRange};
-use crate::hir;
-use crate::session::ModuleID;
+use crate::session::{ModuleID, Session};
 
-pub fn populate_scopes<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
-    for origin_id in hir.registry().module_ids() {
+pub fn populate_scopes<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    session: &Session,
+) {
+    for origin_id in session.module_ids() {
         add_module_items(hir, emit, origin_id);
     }
 }
@@ -16,7 +19,8 @@ fn add_module_items<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
 ) {
-    for item in hir.registry().module_ast(origin_id).items.iter().cloned() {
+    let module_ast = hir.ast_module(origin_id);
+    for item in module_ast.items.iter().copied() {
         match item {
             ast::Item::Proc(item) => match hir.scope_name_defined(origin_id, item.name.id) {
                 Some(existing) => {

@@ -19,8 +19,8 @@ pub fn check<'hir, 'ast, 'intern: 'hir>(
 ) -> ResultComp<hir::Hir<'hir>> {
     let mut hir = HirData::new(ast);
     let mut emit = HirEmit::new();
-    pass_1::populate_scopes(&mut hir, &mut emit);
-    pass_2::resolve_imports(&mut hir, &mut emit);
+    pass_1::populate_scopes(&mut hir, &mut emit, session);
+    pass_2::resolve_imports(&mut hir, &mut emit, session);
     pass_3::process_items(&mut hir, &mut emit);
     pass_4::resolve_const_dependencies(&mut hir, &mut emit);
     pass_5::typecheck_procedures(&mut hir, &mut emit);
