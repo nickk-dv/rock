@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 #[allow(non_camel_case_types)]
 pub enum SyntaxKind {
     ERROR,

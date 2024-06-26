@@ -22,10 +22,7 @@ fn item(p: &mut Parser) {
 
     //@allow attr vecs?
     if p.at(T![#]) {
-        let mc_attr = attribute(p);
-        if mc.is_none() {
-            mc = Some(mc_attr);
-        }
+        mc = Some(attribute(p));
     }
 
     //@not used in import, ignored without errors

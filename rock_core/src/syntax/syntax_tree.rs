@@ -74,13 +74,15 @@ pub fn build<'syn>(
                 kind,
                 forward_parent,
             } => {
-                trivia_idx = attach_prepending_trivia(
-                    &tokens,
-                    token_idx,
-                    trivia_idx,
-                    trivia_count,
-                    &mut content,
-                );
+                if kind != SyntaxKind::SOURCE_FILE {
+                    trivia_idx = attach_prepending_trivia(
+                        &tokens,
+                        token_idx,
+                        trivia_idx,
+                        trivia_count,
+                        &mut content,
+                    );
+                }
 
                 let mut parent_next = forward_parent;
                 parent_stack.clear();
@@ -101,6 +103,8 @@ pub fn build<'syn>(
                     }
                 }
 
+                //@insert attached inner trivias after first pop() node (including the origin)
+                // if inner trivias are even required
                 while let Some(kind) = parent_stack.pop() {
                     let node_id = NodeID::new(nodes.len());
                     content.add(NodeOrToken::Node(node_id));
@@ -143,8 +147,6 @@ pub fn build<'syn>(
     (SyntaxTree::new(arena, nodes, tokens), errors)
 }
 
-//@incorrect usage for first SOURCE_FILE node, this trivia
-// is `attached` nothing since no nodes started yet
 #[must_use]
 fn attach_prepending_trivia(
     tokens: &TokenList,
