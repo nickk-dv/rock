@@ -8,9 +8,6 @@ token_gen::token_gen! {
     // special tokens
     [eof]           | "end of file"    | Eof          |
     [error]         | "error token"    | Error        |
-    [whitespace]    | "whitespace"     | Whitespace   |
-    [line_comment]  | "line comment"   | LineComment  |
-    [block_comment] | "block comment"  | BlockComment |
     [ident]         | "identifier"     | Ident        |
     [int_lit]       | "int literal"    | IntLit       |
     [float_lit]     | "float literal"  | FloatLit     |
@@ -197,4 +194,11 @@ impl Token {
             _ => None,
         }
     }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Trivia {
+    Whitespace,
+    LineComment,
+    BlockComment,
 }

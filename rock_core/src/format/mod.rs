@@ -11,7 +11,7 @@ use crate::text::TextRange;
 // remove _fmt postfix from functions
 //@use session?
 pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
-    let (tree, errors) = syntax::parse(source, module_id);
+    let (tree, errors) = syntax::parse(source, module_id, true);
     if !errors.is_empty() {
         return Err(errors);
     }

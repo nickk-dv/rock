@@ -1,7 +1,7 @@
 use super::lexer::Lexer;
 use crate::error::{ErrorComp, SourceRange};
 use crate::text::TextRange;
-use crate::token::Token;
+use crate::token::{Token, Trivia};
 
 pub fn source_file(lex: &mut Lexer) {
     while lex.peek().is_some() {
@@ -41,9 +41,9 @@ fn lex_whitespace(lex: &mut Lexer) {
             lex.eat(c);
             skip_whitespace(lex);
 
-            if lex.with_whitespace {
+            if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens().add_token(Token::Whitespace, range);
+                lex.tokens().add_trivia(Trivia::Whitespace, range);
             }
         } else if c == '/' && matches!(lex.peek_next(), Some('/')) {
             let start = lex.start_range();
@@ -51,9 +51,9 @@ fn lex_whitespace(lex: &mut Lexer) {
             lex.eat('/');
             skip_line_comment(lex);
 
-            if lex.with_whitespace {
+            if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens().add_token(Token::LineComment, range);
+                lex.tokens().add_trivia(Trivia::LineComment, range);
             }
         } else if c == '/' && matches!(lex.peek_next(), Some('*')) {
             let start = lex.start_range();
@@ -69,9 +69,10 @@ fn lex_whitespace(lex: &mut Lexer) {
                     None,
                 ));
             }
-            if lex.with_whitespace {
+
+            if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens().add_token(Token::BlockComment, range);
+                lex.tokens().add_trivia(Trivia::BlockComment, range);
             }
         } else {
             break;
@@ -97,8 +98,8 @@ fn skip_line_comment(lex: &mut Lexer) {
     }
 }
 
-fn skip_block_comment(lex: &mut Lexer) -> i32 {
-    let mut depth: i32 = 1;
+fn skip_block_comment(lex: &mut Lexer) -> u32 {
+    let mut depth: u32 = 1;
     while let Some(c) = lex.peek() {
         lex.eat(c);
         if c == '/' && matches!(lex.peek(), Some('*')) {

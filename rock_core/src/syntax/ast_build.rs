@@ -94,7 +94,7 @@ pub fn parse<'ast, 'intern: 'ast>(
 
     for module_id in session.module_ids() {
         let module = session.module(module_id);
-        let (tree, errors) = super::parse(&module.source, module_id);
+        let (tree, errors) = super::parse(&module.source, module_id, false);
 
         if errors.is_empty() {
             let mut ctx = AstBuild::new(&tree, &module.source, module_id, &mut state);
@@ -625,13 +625,13 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
             ast::ExprKind::LitFloat { val }
         }
         cst::Expr::LitChar(_) => {
-            let val = ctx.tree.tokens().get_char(ctx.char_id as usize);
+            let val = ctx.tree.tokens().char(ctx.char_id as usize);
             ctx.char_id += 1;
 
             ast::ExprKind::LitChar { val }
         }
         cst::Expr::LitString(_) => {
-            let (string, c_string) = ctx.tree.tokens().get_string(ctx.string_id as usize);
+            let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
             let id = ctx.s.intern_string.intern(string);
             ctx.string_id += 1;
 

@@ -58,18 +58,18 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
     }
 
     pub fn start_range(&self) -> TextOffset {
-        self.tokens.get_range(self.cursor).start()
+        self.tokens.token_range(self.cursor).start()
     }
 
     /// `start` offset must be result of `start_range()` call  
     /// and at least one token must be consumed in between
     pub fn make_range(&self, start: TextOffset) -> TextRange {
-        let end = self.tokens.get_range(self.cursor - 1).end();
+        let end = self.tokens.token_range(self.cursor - 1).end();
         TextRange::new(start, end)
     }
 
     pub fn peek_range(&self) -> TextRange {
-        self.tokens.get_range(self.cursor)
+        self.tokens.token_range(self.cursor)
     }
 
     pub fn at(&self, t: Token) -> bool {
@@ -83,17 +83,17 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
     }
 
     pub fn at_prev(&self, t: Token) -> bool {
-        self.tokens.get_token(self.cursor - 1) == t
+        self.tokens.token(self.cursor - 1) == t
     }
 
     pub fn peek(&self) -> Token {
-        self.tokens.get_token(self.cursor)
+        self.tokens.token(self.cursor)
     }
 
     // would be good to remove the need for forward peeking @14.04.24
     // used in path -> import -> struct_init parsing with `.{`
     pub fn peek_next(&self) -> Token {
-        self.tokens.get_token(self.cursor + 1)
+        self.tokens.token(self.cursor + 1)
     }
 
     pub fn eat(&mut self, t: Token) -> bool {
@@ -116,13 +116,13 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
     }
 
     pub fn get_char_lit(&mut self) -> char {
-        let value = self.tokens.get_char(self.char_id as usize);
+        let value = self.tokens.char(self.char_id as usize);
         self.char_id += 1;
         value
     }
 
     pub fn get_string_lit(&mut self) -> (InternID, bool) {
-        let (string, c_string) = self.tokens.get_string(self.string_id as usize);
+        let (string, c_string) = self.tokens.string(self.string_id as usize);
         let id = self.state.intern_string.intern(string);
 
         if id.index() >= self.state.string_is_cstr.len() {

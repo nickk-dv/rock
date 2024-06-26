@@ -60,7 +60,7 @@ impl Parser {
     }
 
     pub fn at_prev(&self, token: Token) -> bool {
-        self.tokens.get_token(self.cursor - 1) == token
+        self.tokens.token(self.cursor - 1) == token
     }
 
     pub fn at_set(&self, token_set: TokenSet) -> bool {
@@ -69,12 +69,12 @@ impl Parser {
 
     pub fn peek(&self) -> Token {
         self.step_bump();
-        self.tokens.get_token(self.cursor)
+        self.tokens.token(self.cursor)
     }
 
     pub fn peek_next(&self) -> Token {
         self.step_bump();
-        self.tokens.get_token(self.cursor + 1)
+        self.tokens.token(self.cursor + 1)
     }
 
     pub fn eat(&mut self, token: Token) -> bool {
@@ -123,7 +123,7 @@ impl Parser {
     }
 
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let range = self.tokens.get_range(self.cursor + 1);
+        let range = self.tokens.token_range(self.cursor + 1);
         let src = SourceRange::new(self.module_id, range);
         self.errors.push(ErrorComp::new(msg, src, None));
     }

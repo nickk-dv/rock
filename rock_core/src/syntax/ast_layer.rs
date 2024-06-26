@@ -88,6 +88,7 @@ impl<'syn> Node<'syn> {
                         start = tree.token_range(token_id).start();
                         break 'outher;
                     }
+                    NodeOrToken::Trivia(_) => {}
                 }
             }
         }
@@ -103,6 +104,7 @@ impl<'syn> Node<'syn> {
                         end = tree.token_range(token_id).end();
                         break 'outher;
                     }
+                    NodeOrToken::Trivia(_) => {}
                 }
             }
         }
@@ -146,6 +148,7 @@ impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
                     }
                 }
                 Some(NodeOrToken::Token(_)) => {}
+                Some(NodeOrToken::Trivia(_)) => {}
                 None => return None,
             }
         }

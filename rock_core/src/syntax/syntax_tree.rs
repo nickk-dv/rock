@@ -22,10 +22,12 @@ pub struct Node<'syn> {
 }
 
 id_impl!(TokenID);
+id_impl!(TriviaID);
 #[derive(Copy, Clone)]
 pub enum NodeOrToken {
     Node(NodeID),
     Token(TokenID),
+    Trivia(TriviaID),
 }
 
 impl<'syn> SyntaxTree<'syn> {
@@ -44,25 +46,27 @@ impl<'syn> SyntaxTree<'syn> {
         &self.tokens
     }
     pub fn token(&self, token_id: TokenID) -> Token {
-        self.tokens.get_token(token_id.index())
+        self.tokens.token(token_id.index())
     }
     pub fn token_range(&self, token_id: TokenID) -> TextRange {
-        self.tokens.get_range(token_id.index())
+        self.tokens.token_range(token_id.index())
     }
 }
 
 pub fn build<'syn>(
     input: (TokenList, Vec<Event>, Vec<ErrorComp>),
-    lex_errors: Vec<ErrorComp>,
 ) -> (SyntaxTree<'syn>, Vec<ErrorComp>) {
     let mut arena = Arena::new();
     let mut nodes = Vec::new();
-    let (tokens, mut events, mut errors) = input;
+    let (tokens, mut events, errors) = input;
 
     let mut stack = Vec::with_capacity(16);
     let mut parent_stack = Vec::with_capacity(16);
     let mut content = TempBuffer::new(128);
+
     let mut token_idx = 0;
+    let mut trivia_idx = 0;
+    let trivia_count = tokens.trivia_count();
 
     for event_idx in 0..events.len() {
         match events[event_idx] {
@@ -70,6 +74,14 @@ pub fn build<'syn>(
                 kind,
                 forward_parent,
             } => {
+                trivia_idx = attach_prepending_trivia(
+                    &tokens,
+                    token_idx,
+                    trivia_idx,
+                    trivia_count,
+                    &mut content,
+                );
+
                 let mut parent_next = forward_parent;
                 parent_stack.clear();
 
@@ -112,6 +124,14 @@ pub fn build<'syn>(
                 nodes[node_id.index()].content = content.take(offset, &mut arena);
             }
             Event::Token => {
+                trivia_idx = attach_prepending_trivia(
+                    &tokens,
+                    token_idx,
+                    trivia_idx,
+                    trivia_count,
+                    &mut content,
+                );
+
                 let token_id = TokenID::new(token_idx);
                 token_idx += 1;
                 content.add(NodeOrToken::Token(token_id));
@@ -120,8 +140,37 @@ pub fn build<'syn>(
         }
     }
 
-    errors.extend(lex_errors);
     (SyntaxTree::new(arena, nodes, tokens), errors)
+}
+
+//@incorrect usage for first SOURCE_FILE node, this trivia
+// is `attached` nothing since no nodes started yet
+#[must_use]
+fn attach_prepending_trivia(
+    tokens: &TokenList,
+    token_idx: usize,
+    mut trivia_idx: usize,
+    trivia_count: usize,
+    content: &mut TempBuffer<NodeOrToken>,
+) -> usize {
+    let pending_token_start = tokens.token_range(token_idx).start();
+
+    let trivia_range = trivia_idx..trivia_count;
+    for idx in trivia_range {
+        let trivia_range = tokens.trivia_range(idx);
+        let before =
+            trivia_range.start() < pending_token_start && trivia_range.end() <= pending_token_start;
+
+        if !before {
+            break;
+        }
+
+        let trivia_id = TriviaID::new(idx);
+        trivia_idx += 1;
+        content.add(NodeOrToken::Trivia(trivia_id));
+    }
+
+    trivia_idx
 }
 
 pub fn tree_print(tree: &SyntaxTree, source: &str) {
@@ -129,13 +178,13 @@ pub fn tree_print(tree: &SyntaxTree, source: &str) {
 
     fn print_depth(depth: u32) {
         for _ in 0..depth {
-            print!("  ");
+            eprint!("  ");
         }
     }
 
     fn print_node(tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
         print_depth(depth);
-        println!("[{:?}]", node.kind);
+        eprintln!("[{:?}]", node.kind);
 
         for node_or_token in node.content {
             match *node_or_token {
@@ -146,7 +195,12 @@ pub fn tree_print(tree: &SyntaxTree, source: &str) {
                 NodeOrToken::Token(token_id) => {
                     let range = tree.token_range(token_id);
                     print_depth(depth + 1);
-                    println!("@{:?} `{}`", range, &source[range.as_usize()]);
+                    eprintln!("@{:?} `{}`", range, &source[range.as_usize()]);
+                }
+                NodeOrToken::Trivia(trivia_id) => {
+                    let range = tree.tokens().trivia_range(trivia_id.index());
+                    print_depth(depth + 1);
+                    eprintln!("@{:?} `{:?}`", range, &source[range.as_usize()]);
                 }
             }
         }

@@ -11,11 +11,11 @@ pub struct Lexer<'src> {
     pub errors: Vec<ErrorComp>,
     pub source: &'src str,
     pub module_id: ModuleID,
-    pub with_whitespace: bool,
+    pub with_trivia: bool,
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(source: &'src str, module_id: ModuleID, with_whitespace: bool) -> Lexer {
+    pub fn new(source: &'src str, module_id: ModuleID, with_trivia: bool) -> Lexer {
         Lexer {
             cursor: 0.into(),
             chars: source.chars().peekable(),
@@ -23,7 +23,7 @@ impl<'src> Lexer<'src> {
             errors: Vec::new(),
             source,
             module_id,
-            with_whitespace,
+            with_trivia,
         }
     }
 

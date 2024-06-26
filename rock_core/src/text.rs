@@ -227,8 +227,8 @@ fn test() {
 
     assert_eq!(line_ranges[0], TextRange::new(0.into(), 4.into()));
     assert_eq!(line_ranges[1], TextRange::new(4.into(), 7.into()));
-    assert_eq!(tokens.get_range(0), foo_range);
-    assert_eq!(tokens.get_range(1), baz_range);
+    assert_eq!(tokens.token_range(0), foo_range);
+    assert_eq!(tokens.token_range(1), baz_range);
     assert_eq!(foo_loc_start, TextLocation::new(1, 1));
     assert_eq!(foo_loc_end, TextLocation::new(1, 4));
     assert_eq!(baz_loc_start, TextLocation::new(2, 1));
