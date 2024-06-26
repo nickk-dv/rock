@@ -131,6 +131,7 @@ fn resolve_import<'hir, 'ast>(
             module_alias.id,
             Symbol::Imported {
                 kind: SymbolKind::Module(target_id),
+                import_vis: ast::Vis::Private, //@always privately imported by design
                 import_range: module_alias.range,
             },
         ),
@@ -157,6 +158,7 @@ fn resolve_import<'hir, 'ast>(
                     symbol_alias.id,
                     Symbol::Imported {
                         kind,
+                        import_vis: symbol.vis,
                         import_range: symbol_alias.range,
                     },
                 ),

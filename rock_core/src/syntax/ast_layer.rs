@@ -598,7 +598,7 @@ impl<'syn> GlobalItem<'syn> {
 
 impl<'syn> ImportItem<'syn> {
     find_first!(attribute, Attribute);
-    find_first!(visiblity, Visibility);
+    find_first!(visiblity, Visibility); //@exists but ignored
     find_first!(package, Name);
     find_first!(import_path, ImportPath);
     find_first!(name_alias, NameAlias); //@rename ast to name_alias
@@ -614,6 +614,7 @@ impl<'syn> ImportSymbolList<'syn> {
 }
 
 impl<'syn> ImportSymbol<'syn> {
+    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(name_alias, NameAlias);
 }

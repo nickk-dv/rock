@@ -333,7 +333,6 @@ fn import_item<'ast>(
 ) -> &'ast ast::ImportItem<'ast> {
     //@add ast::ImportItem attr, and vis?
     let attr = attribute(ctx, item.attribute(ctx.tree));
-    let vis = vis(item.visiblity(ctx.tree).is_some());
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();
@@ -365,10 +364,11 @@ fn import_item<'ast>(
 }
 
 fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
+    let vis = vis(import_symbol.visiblity(ctx.tree).is_some());
     let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
     let alias = name_alias(ctx, import_symbol.name_alias(ctx.tree));
 
-    let import_symbol = ast::ImportSymbol { name, alias };
+    let import_symbol = ast::ImportSymbol { vis, name, alias };
     ctx.s.import_symbols.add(import_symbol);
 }
 

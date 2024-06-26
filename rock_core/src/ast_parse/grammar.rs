@@ -58,7 +58,7 @@ fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
         T![struct] => Ok(Item::Struct(struct_item(p, vis)?)),
         T![const] => Ok(Item::Const(const_item(p, vis)?)),
         T![global] => Ok(Item::Global(global_item(p, attr, vis)?)),
-        T![import] => Ok(Item::Import(import_item(p)?)),
+        T![import] => Ok(Item::Import(import_item(p, vis)?)),
         _ => Err("expected item".into()),
     }
 }
@@ -210,7 +210,10 @@ fn global_item<'ast>(
     }))
 }
 
-fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportItem<'ast>, String> {
+fn import_item<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+    vis: Vis,
+) -> Result<&'ast ImportItem<'ast>, String> {
     p.bump();
 
     let package = if p.at(T![ident]) && p.at_next(T![:]) {
@@ -250,6 +253,7 @@ fn import_item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast ImportIte
 
 fn import_symbol(p: &mut Parser) -> Result<ImportSymbol, String> {
     Ok(ImportSymbol {
+        vis: vis(p),
         name: name(p)?,
         alias: if p.eat(T![as]) { Some(name(p)?) } else { None },
     })

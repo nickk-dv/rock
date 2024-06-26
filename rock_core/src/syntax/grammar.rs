@@ -28,6 +28,7 @@ fn item(p: &mut Parser) {
         }
     }
 
+    //@not used in import, ignored without errors
     if p.at(T![pub]) {
         let mc_vis = visibility(p);
         if mc.is_none() {
@@ -244,14 +245,6 @@ fn global_item(p: &mut Parser, m: Marker) {
     m.complete(p, SyntaxKind::GLOBAL_ITEM);
 }
 
-/*
-old:
-import package (/module)? (as name)? (.{name (as name)?, ..})?
-
-@new:
-import (package:)? name (/name/name)? (as name, _)? (.{name (as name)?, ..})?
-*/
-
 fn import_item(p: &mut Parser, m: Marker) {
     p.bump(T![import]);
     if p.at(T![ident]) && p.at_next(T![:]) {
@@ -292,7 +285,7 @@ fn import_symbol_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
-        if p.at(T![ident]) {
+        if p.at(T![pub]) || p.at(T![ident]) {
             import_symbol(p);
             if !p.at(T!['}']) {
                 p.expect(T![,]);
@@ -308,6 +301,9 @@ fn import_symbol_list(p: &mut Parser) {
 
 fn import_symbol(p: &mut Parser) {
     let m = p.start();
+    if p.at(T![pub]) {
+        visibility(p);
+    }
     name(p);
     if p.at(T![as]) {
         name_alias(p);
@@ -324,12 +320,8 @@ fn name_alias(p: &mut Parser) {
 
 fn name(p: &mut Parser) {
     let m = p.start();
-    if p.eat(T![ident]) {
-        m.complete(p, SyntaxKind::NAME);
-    } else {
-        p.expect(T![ident]);
-        m.complete(p, SyntaxKind::ERROR);
-    }
+    p.expect(T![ident]);
+    m.complete(p, SyntaxKind::NAME);
 }
 
 fn path_type(p: &mut Parser) {
@@ -702,6 +694,8 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
             m.complete(p, SyntaxKind::EXPR_ADDRESS)
         }
         _ => {
+            //@return instead? this is double error node
+            // or pass marker to be closed with error during error_bump
             let m = p.start();
             p.error_bump("expected expression");
             m.complete(p, SyntaxKind::ERROR)

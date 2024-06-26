@@ -25,7 +25,7 @@ pub struct Module {
 #[derive(Copy, Clone)]
 pub enum Symbol {
     Defined  { kind: SymbolKind, },
-    Imported { kind: SymbolKind, import_range: TextRange },
+    Imported { kind: SymbolKind, import_vis: ast::Vis, import_range: TextRange },
 }
 
 #[derive(Copy, Clone)]
@@ -146,6 +146,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
 
     pub fn symbol_get_defined(&self, origin_id: ModuleID, id: InternID) -> Option<SymbolKind> {
         let target = self.module(origin_id);
+
         match target.symbols.get(&id).cloned() {
             Some(Symbol::Defined { kind }) => Some(kind),
             _ => None,
@@ -160,6 +161,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         name: ast::Name,
     ) -> Option<(SymbolKind, SourceRange)> {
         let target = self.module(target_id);
+
         match target.symbols.get(&name.id).cloned() {
             Some(symbol) => match symbol {
                 Symbol::Defined { kind } => {
@@ -186,12 +188,31 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
                         Some((kind, source))
                     }
                 }
-                Symbol::Imported { kind, import_range } => {
+                Symbol::Imported {
+                    kind,
+                    import_vis,
+                    import_range,
+                } => {
+                    //@always return import_source? check usage expectations
+                    let import_source = SourceRange::new(target_id, import_range);
+
                     if origin_id == target_id {
-                        let source = SourceRange::new(target_id, import_range);
-                        Some((kind, source))
+                        Some((kind, import_source))
                     } else {
-                        None
+                        if import_vis == ast::Vis::Private {
+                            emit.error(ErrorComp::new(
+                                format!(
+                                    "{} `{}` is privately imported",
+                                    Self::symbol_kind_name(kind),
+                                    self.name_str(name.id)
+                                ),
+                                SourceRange::new(origin_id, name.range),
+                                Info::new("imported here", import_source),
+                            ));
+                            None
+                        } else {
+                            Some((kind, import_source))
+                        }
                     }
                 }
             },
