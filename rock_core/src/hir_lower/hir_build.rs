@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast;
+use crate::bitset::BitSet;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::intern::ConstInternPool;
@@ -286,21 +287,17 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
         origin_id: ModuleID,
-        is_test: bool,
-        is_main: bool,
     ) -> hir::ProcID {
         let id = hir::ProcID::new(self.hir_procs.len());
         let data = hir::ProcData {
             origin_id,
+            attr_set: BitSet::EMPTY,
             vis: item.vis,
             name: item.name,
             params: &[],
-            is_variadic: item.is_variadic,
             return_ty: hir::Type::Error,
             block: None,
             locals: &[],
-            is_test,
-            is_main,
         };
 
         self.ast_procs.push(item);
@@ -370,18 +367,17 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
         origin_id: ModuleID,
-        thread_local: bool,
     ) -> hir::GlobalID {
         let id = hir::GlobalID::new(self.hir_globals.len());
         let value = self.add_const_eval(item.value, origin_id);
         let data = hir::GlobalData {
             origin_id,
+            attr_set: BitSet::EMPTY,
             vis: item.vis,
             mutt: item.mutt,
             name: item.name,
             ty: hir::Type::Error,
             value,
-            thread_local,
         };
 
         self.ast_globals.push(item);

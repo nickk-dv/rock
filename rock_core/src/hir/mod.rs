@@ -2,6 +2,7 @@ pub mod intern;
 
 use crate::arena::Arena;
 use crate::ast;
+use crate::bitset::BitSet;
 use crate::id_impl;
 use crate::intern::{InternID, InternPool};
 use crate::session::ModuleID;
@@ -24,15 +25,13 @@ pub struct Hir<'hir> {
 id_impl!(ProcID);
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
+    pub attr_set: BitSet,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub params: &'hir [ProcParam<'hir>],
-    pub is_variadic: bool,
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
     pub locals: &'hir [&'hir Local<'hir>],
-    pub is_test: bool,
-    pub is_main: bool,
 }
 
 id_impl!(ProcParamID);
@@ -41,6 +40,17 @@ pub struct ProcParam<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
+}
+
+#[repr(u32)]
+#[derive(Copy, Clone)]
+pub enum ProcFlag {
+    External,
+    Variadic,
+    Main,
+    Test,
+    Builtin,
+    Inline,
 }
 
 id_impl!(EnumID);
@@ -88,12 +98,18 @@ pub struct ConstData<'hir> {
 id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
+    pub attr_set: BitSet,
     pub vis: ast::Vis,
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
-    pub thread_local: bool,
+}
+
+#[repr(u32)]
+#[derive(Copy, Clone)]
+pub enum GlobalFlag {
+    ThreadLocal,
 }
 
 id_impl!(ConstEvalID);

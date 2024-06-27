@@ -144,8 +144,8 @@ pub struct Attribute {
 #[derive(Copy, Clone, PartialEq)]
 pub enum AttributeKind {
     Test,
-    Inline,
     Builtin,
+    Inline,
     Thread_Local,
     Unknown,
 }
@@ -433,8 +433,8 @@ impl AttributeKind {
     pub fn as_str(self) -> &'static str {
         match self {
             AttributeKind::Test => "test",
-            AttributeKind::Inline => "inline",
             AttributeKind::Builtin => "builtin",
+            AttributeKind::Inline => "inline",
             AttributeKind::Thread_Local => "thread_local",
             AttributeKind::Unknown => "unknown",
         }
@@ -443,8 +443,8 @@ impl AttributeKind {
     pub fn from_str(string: &str) -> AttributeKind {
         match string {
             "test" => AttributeKind::Test,
-            "inline" => AttributeKind::Inline,
             "builtin" => AttributeKind::Builtin,
+            "inline" => AttributeKind::Inline,
             "thread_local" => AttributeKind::Thread_Local,
             _ => AttributeKind::Unknown,
         }

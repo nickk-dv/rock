@@ -8,49 +8,6 @@ use crate::intern::InternID;
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 
-pub fn check_attribute(
-    hir: &HirData,
-    emit: &mut HirEmit,
-    origin_id: ModuleID,
-    attr: Option<ast::Attribute>,
-    expected: ast::AttributeKind,
-) -> bool {
-    let attr = if let Some(attr) = attr {
-        attr
-    } else {
-        return false;
-    };
-
-    if attr.kind == expected {
-        return true;
-    }
-
-    match attr.kind {
-        ast::AttributeKind::Unknown => {
-            emit.error(ErrorComp::new(
-                format!(
-                    "unknown attribute, only #[{}] is allowed here",
-                    expected.as_str()
-                ),
-                SourceRange::new(origin_id, attr.range),
-                None,
-            ));
-        }
-        _ => {
-            emit.error(ErrorComp::new(
-                format!(
-                    "unexpected #[{}] attribute, only #[{}] is allowed here",
-                    attr.kind.as_str(),
-                    expected.as_str()
-                ),
-                SourceRange::new(origin_id, attr.range),
-                None,
-            ));
-        }
-    }
-    false
-}
-
 pub fn typecheck_procedures<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for proc_id in hir.registry().proc_ids() {
         typecheck_proc(hir, emit, proc_id)

@@ -131,7 +131,7 @@ fn resolve_import<'hir, 'ast>(
             module_alias.id,
             Symbol::Imported {
                 kind: SymbolKind::Module(target_id),
-                import_vis: ast::Vis::Private, //@always privately imported by design
+                import_vis: ast::Vis::Private,
                 import_range: module_alias.range,
             },
         ),

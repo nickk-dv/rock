@@ -1,7 +1,9 @@
 use super::hir_build::{HirData, HirEmit};
+use super::pass_3;
 use super::pass_5::{self, TypeExpectation};
-use super::{pass_3, proc_scope};
+use super::proc_scope;
 use crate::ast;
+use crate::bitset::BitSet;
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr};
 use crate::intern::InternID;
 use crate::session::ModuleID;
@@ -787,18 +789,16 @@ pub fn resolve_const_expr<'hir>(
 ) -> hir::ConstValue<'hir> {
     let dummy_data = hir::ProcData {
         origin_id,
+        attr_set: BitSet::EMPTY,
         vis: ast::Vis::Private,
         name: ast::Name {
             id: InternID::dummy(),
             range: TextRange::empty_at(0.into()),
         },
         params: &[],
-        is_variadic: false,
         return_ty: hir::Type::VOID,
         block: None,
         locals: &[],
-        is_test: false,
-        is_main: false,
     };
     let mut proc = proc_scope::ProcScope::new(&dummy_data, TypeExpectation::NOTHING);
 
