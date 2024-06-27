@@ -3,7 +3,7 @@ use crate::error::ErrorComp;
 use crate::session::ModuleID;
 use crate::syntax;
 use crate::syntax::ast_layer as ast;
-use crate::syntax::syntax_tree::SyntaxTree;
+use crate::syntax::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 
 //@conform to ast_build style:
@@ -11,6 +11,8 @@ use crate::text::TextRange;
 // remove _fmt postfix from functions
 //@use session?
 pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
+    return format_experiment(source, module_id);
+
     let (tree, errors) = syntax::parse(source, module_id, true);
     if !errors.is_empty() {
         return Err(errors);
@@ -19,6 +21,36 @@ pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp
     let mut fmt = Formatter::new(&tree, source);
     source_file(&mut fmt, tree.source_file());
     Ok(fmt.finish())
+}
+
+//@ 1 to 1 `formatting` without changing anything
+pub fn format_experiment(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
+    let (tree, errors) = syntax::parse(source, module_id, true);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let mut fmt = Formatter::new(&tree, source);
+    node_format(&mut fmt, tree.node(NodeID::new(0)));
+    Ok(fmt.finish())
+}
+
+fn node_format(fmt: &mut Formatter, node: &Node) {
+    for node_or_token in node.content.iter().copied() {
+        match node_or_token {
+            NodeOrToken::Node(node_id) => {
+                node_format(fmt, fmt.tree.node(node_id));
+            }
+            NodeOrToken::Token(token_id) => {
+                let range = fmt.tree.tokens().token_range(token_id.index());
+                fmt.write_range(range);
+            }
+            NodeOrToken::Trivia(trivia_id) => {
+                let range = fmt.tree.tokens().trivia_range(trivia_id.index());
+                fmt.write_range(range);
+            }
+        }
+    }
 }
 
 //@remove, test on real code
@@ -48,7 +80,7 @@ fn format_test() {
     global mut ValG: s32 = 10;
     global ValG2: s.SomeType = 20;
 
-    import s;
+    import // welwpelwpel s;
     import s/g;
     import s/g as smth;
     import s.{ };

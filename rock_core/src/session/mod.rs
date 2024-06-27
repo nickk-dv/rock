@@ -40,6 +40,8 @@ pub struct RockModule {
 }
 
 impl Session {
+    pub const ROOT_ID: PackageID = PackageID::new(0);
+
     pub fn new<'intern>(
         building: bool,
         file_cache: Option<&HashMap<PathBuf, String>>,
@@ -61,21 +63,6 @@ impl Session {
     }
     pub fn package_ids(&self) -> impl Iterator<Item = PackageID> {
         (0..self.packages.len()).map(PackageID::new)
-    }
-
-    pub fn root_is_executable(&self) -> bool {
-        self.root_manifest().package.kind == PackageKind::Bin
-    }
-    pub fn root_bin_name(&self) -> String {
-        let manifest = self.root_manifest();
-        if let Some(bin_name) = &manifest.build.bin_name {
-            return bin_name.clone();
-        } else {
-            manifest.package.name.clone()
-        }
-    }
-    fn root_manifest(&self) -> &Manifest {
-        &self.package(PackageID::new(0)).manifest
     }
 }
 

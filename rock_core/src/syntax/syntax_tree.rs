@@ -125,6 +125,17 @@ pub fn build<'syn>(
             }
             Event::EndNode => {
                 let (offset, node_id) = stack.pop().unwrap();
+
+                // @hack attach all trailing trivia
+                if nodes[node_id.index()].kind == SyntaxKind::SOURCE_FILE {
+                    let trivia_range = trivia_idx..trivia_count;
+                    for idx in trivia_range {
+                        let trivia_id = TriviaID::new(idx);
+                        trivia_idx += 1;
+                        content.add(NodeOrToken::Trivia(trivia_id));
+                    }
+                }
+
                 nodes[node_id.index()].content = content.take(offset, &mut arena);
             }
             Event::Token => {

@@ -60,7 +60,14 @@ fn create_build_context(
     build_dir.push(build_kind.as_str());
     fs_env::dir_create(&build_dir, false)?;
 
-    let bin_name = session.root_package_bin_name();
+    let root_package = session.package(Session::ROOT_ID);
+    let root_manifest = root_package.manifest();
+    let bin_name = if let Some(bin_name) = &root_manifest.build.bin_name {
+        bin_name.clone()
+    } else {
+        root_manifest.package.name.clone()
+    };
+
     let mut executable_path = build_dir.clone();
     executable_path.push(&bin_name);
     executable_path.set_extension("exe"); //@assuming windows

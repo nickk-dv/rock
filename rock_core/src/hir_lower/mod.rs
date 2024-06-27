@@ -24,6 +24,6 @@ pub fn check<'hir, 'ast, 'intern: 'hir>(
     pass_3::process_items(&mut hir, &mut emit);
     pass_4::resolve_const_dependencies(&mut hir, &mut emit);
     pass_5::typecheck_procedures(&mut hir, &mut emit);
-    pass_6::check_entry_point(&mut hir, &mut emit, session.root_is_executable());
+    pass_6::check_entry_point(&mut hir, &mut emit, session);
     emit.emit(hir)
 }

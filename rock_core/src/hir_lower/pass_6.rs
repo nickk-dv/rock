@@ -2,40 +2,43 @@ use super::hir_build::{HirData, HirEmit, SymbolKind};
 use crate::ast::BasicType;
 use crate::error::{ErrorComp, SourceRange};
 use crate::hir;
-use crate::session::PackageID;
+use crate::package::manifest::PackageKind;
+use crate::session::{ModuleOrDirectory, Session};
 
 pub fn check_entry_point<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    executable: bool,
+    session: &Session,
 ) {
-    if !executable {
+    let root_package = session.package(Session::ROOT_ID);
+    let root_manifest = root_package.manifest();
+    if root_manifest.package.kind != PackageKind::Bin {
         return;
     }
 
-    //@restore (need api to get dirs and find stuff in them)
-    /*
-    if let Some(main_id) = hir.intern_name().get_id("main") {
-        if let Some(module_id) = hir.get_package_module_id(PackageID::new(0), main_id) {
-            let defined = hir.symbol_get_defined(module_id, main_id);
-            match defined {
-                Some(SymbolKind::Proc(proc_id)) => {
-                    check_main_procedure(hir, emit, proc_id);
-                }
-                _ => {
-                    emit.error(ErrorComp::message(
-                        "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`",
-                    ));
-                }
-            }
+    let main_id = hir.intern_name().intern("main");
+    let module_or_directory = root_package.src.find(session, main_id);
+    let origin_id = match module_or_directory {
+        ModuleOrDirectory::Module(module_id) => module_id,
+        _ => {
+            emit.error(ErrorComp::message(
+                "could not find `main` module, expected `src/main.rock` to exist",
+            ));
             return;
         }
-    }
-    */
+    };
 
-    emit.error(ErrorComp::message(
-        "could not find `main` module, expected `src/main.rock` to exist",
-    ));
+    let defined = hir.symbol_get_defined(origin_id, main_id);
+    let proc_id = if let Some(SymbolKind::Proc(proc_id)) = defined {
+        proc_id
+    } else {
+        emit.error(ErrorComp::message(
+            "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`",
+        ));
+        return;
+    };
+
+    check_main_procedure(hir, emit, proc_id);
 }
 
 pub fn check_main_procedure<'hir>(
@@ -56,6 +59,7 @@ pub fn check_main_procedure<'hir>(
         ));
     }
 
+    //@allow `never`?
     if !matches!(
         data.return_ty,
         hir::Type::Error | hir::Type::Basic(BasicType::S32)
@@ -72,6 +76,7 @@ pub fn check_main_procedure<'hir>(
         ));
     }
 
+    //@convert those into a bitfield
     if external {
         emit.error(ErrorComp::new(
             "main procedure cannot be external, define the entry block",
