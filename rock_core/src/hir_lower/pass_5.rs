@@ -1,5 +1,4 @@
 use super::hir_build::{self, HirData, HirEmit, SymbolKind};
-use super::pass_4;
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, Info, SourceRange, WarningComp};
@@ -625,7 +624,8 @@ fn typecheck_match<'hir>(
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms.iter() {
-        let value = pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
+        let value =
+            super::pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
         let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
         //@check if anything in pattern errored?
@@ -1843,7 +1843,8 @@ fn typecheck_array_repeat<'hir>(
     let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
-    let value = pass_4::resolve_const_expr(hir, emit, proc.origin(), TypeExpectation::USIZE, len);
+    let value =
+        super::pass_4::resolve_const_expr(hir, emit, proc.origin(), TypeExpectation::USIZE, len);
     let len = match value {
         hir::ConstValue::Int { val, ty, neg } => {
             if neg {
@@ -2594,14 +2595,14 @@ fn typecheck_local<'hir>(
     let already_defined = if let Some(existing) =
         hir.scope_name_defined(proc.origin(), local.name.id)
     {
-        super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
+        super::pass_1::error_name_already_defined(hir, emit, proc.origin(), local.name, existing);
         true
     } else if let Some(existing_var) = proc.find_variable(local.name.id) {
         let existing = match existing_var {
             VariableID::Local(id) => SourceRange::new(proc.origin(), proc.get_local(id).name.range),
             VariableID::Param(id) => SourceRange::new(proc.origin(), proc.get_param(id).name.range),
         };
-        super::pass_1::name_already_defined_error(hir, emit, proc.origin(), local.name, existing);
+        super::pass_1::error_name_already_defined(hir, emit, proc.origin(), local.name, existing);
         true
     } else {
         false

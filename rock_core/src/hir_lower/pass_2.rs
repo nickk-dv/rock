@@ -124,7 +124,7 @@ fn resolve_import<'hir, 'ast>(
 
     match hir.scope_name_defined(origin_id, module_alias.id) {
         Some(existing) => {
-            super::pass_1::name_already_defined_error(hir, emit, origin_id, module_alias, existing);
+            super::pass_1::error_name_already_defined(hir, emit, origin_id, module_alias, existing);
         }
         None => hir.add_symbol(
             origin_id,
@@ -145,7 +145,7 @@ fn resolve_import<'hir, 'ast>(
         if let Some((kind, source)) = found_symbol {
             match hir.scope_name_defined(origin_id, symbol_alias.id) {
                 Some(existing) => {
-                    super::pass_1::name_already_defined_error(
+                    super::pass_1::error_name_already_defined(
                         hir,
                         emit,
                         origin_id,

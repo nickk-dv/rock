@@ -1,6 +1,5 @@
 use crate::arena::Arena;
 use crate::ast;
-use crate::bitset::BitSet;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::intern::ConstInternPool;
@@ -286,22 +285,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_proc(
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
-        origin_id: ModuleID,
-        attr_set: BitSet,
+        data: hir::ProcData<'hir>,
     ) -> hir::ProcID {
         let id = hir::ProcID::new(self.hir_procs.len());
-
-        let data = hir::ProcData {
-            origin_id,
-            attr_set,
-            vis: item.vis,
-            name: item.name,
-            params: &[],
-            return_ty: hir::Type::Error,
-            block: None,
-            locals: &[],
-        };
-
         self.ast_procs.push(item);
         self.hir_procs.push(data);
         id
@@ -310,18 +296,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_enum(
         &mut self,
         item: &'ast ast::EnumItem<'ast>,
-        origin_id: ModuleID,
+        data: hir::EnumData<'hir>,
     ) -> hir::EnumID {
         let id = hir::EnumID::new(self.hir_enums.len());
-
-        let data = hir::EnumData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            basic: item.basic.unwrap_or(ast::BasicType::S32),
-            variants: &[],
-        };
-
         self.ast_enums.push(item);
         self.hir_enums.push(data);
         id
@@ -330,18 +307,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_struct(
         &mut self,
         item: &'ast ast::StructItem<'ast>,
-        origin_id: ModuleID,
+        data: hir::StructData<'hir>,
     ) -> hir::StructID {
         let id = hir::StructID::new(self.hir_structs.len());
-
-        let data = hir::StructData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            fields: &[],
-            size_eval: hir::SizeEval::Unresolved,
-        };
-
         self.ast_structs.push(item);
         self.hir_structs.push(data);
         id
@@ -350,19 +318,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_const(
         &mut self,
         item: &'ast ast::ConstItem<'ast>,
-        origin_id: ModuleID,
+        data: hir::ConstData<'hir>,
     ) -> hir::ConstID {
         let id = hir::ConstID::new(self.hir_consts.len());
-        let value = self.add_const_eval(item.value, origin_id);
-
-        let data = hir::ConstData {
-            origin_id,
-            vis: item.vis,
-            name: item.name,
-            ty: hir::Type::Error,
-            value,
-        };
-
         self.ast_consts.push(item);
         self.hir_consts.push(data);
         id
@@ -371,22 +329,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn add_global(
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
-        origin_id: ModuleID,
-        attr_set: BitSet,
+        data: hir::GlobalData<'hir>,
     ) -> hir::GlobalID {
         let id = hir::GlobalID::new(self.hir_globals.len());
-        let value = self.add_const_eval(item.value, origin_id);
-
-        let data = hir::GlobalData {
-            origin_id,
-            attr_set,
-            vis: item.vis,
-            mutt: item.mutt,
-            name: item.name,
-            ty: hir::Type::Error,
-            value,
-        };
-
         self.ast_globals.push(item);
         self.hir_globals.push(data);
         id
@@ -398,7 +343,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         origin_id: ModuleID,
     ) -> hir::ConstEvalID {
         let id = hir::ConstEvalID::new(self.const_evals.len());
-
         self.const_evals
             .push((hir::ConstEval::Unresolved(const_expr), origin_id));
         id
