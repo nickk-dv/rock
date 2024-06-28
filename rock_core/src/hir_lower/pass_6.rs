@@ -46,15 +46,25 @@ pub fn check_main_procedure<'hir>(
     emit: &mut HirEmit<'hir>,
     proc_id: hir::ProcID,
 ) {
+    let data_mut = hir.registry_mut().proc_data_mut(proc_id);
+    super::pass_1::check_attribute_flag(
+        emit,
+        data_mut.origin_id,
+        data_mut.name,
+        "procedure",
+        None,
+        &mut data_mut.attr_set,
+        hir::ProcFlag::Main,
+        &super::pass_1::PROC_FLAG_ALL,
+    );
+
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
-    let external = item.block.is_none();
-    let name_src = SourceRange::new(data.origin_id, data.name.range);
 
     if !data.params.is_empty() {
         emit.error(ErrorComp::new(
-            "main procedure cannot have any parameters",
-            name_src,
+            "`main` procedure cannot have any parameters",
+            SourceRange::new(data.origin_id, data.name.range),
             None,
         ));
     }
@@ -70,25 +80,8 @@ pub fn check_main_procedure<'hir>(
             data.name.range
         };
         emit.error(ErrorComp::new(
-            "main procedure must return `s32`",
+            "`main` procedure must return `s32`",
             SourceRange::new(data.origin_id, ty_range),
-            None,
-        ));
-    }
-
-    //@convert those into a bitfield
-    if external {
-        emit.error(ErrorComp::new(
-            "main procedure cannot be external, define the entry block",
-            name_src,
-            None,
-        ));
-    }
-
-    if data.is_test {
-        emit.error(ErrorComp::new(
-            "main procedure cannot be a test, remove #[test] attribute",
-            name_src,
             None,
         ));
     }

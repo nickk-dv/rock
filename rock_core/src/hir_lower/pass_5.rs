@@ -21,19 +21,9 @@ fn typecheck_proc<'hir>(
 ) {
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
-    let external = item.block.is_none();
 
-    //@procedure attibutes and flag checks are fragile, rework and stabilize 06.06.24
-    // think about #[builtin] will it require empty block? probably to differentiate from external
-
-    if data.is_variadic {
-        if !external {
-            emit.error(ErrorComp::new(
-                "only external procedures can be variadic, remove `..` from parameter list",
-                SourceRange::new(data.origin_id, data.name.range),
-                None,
-            ));
-        } else if data.params.is_empty() {
+    if data.attr_set.contains(hir::ProcFlag::Variadic) {
+        if data.params.is_empty() {
             emit.error(ErrorComp::new(
                 "variadic procedures must have at least one named parameter",
                 SourceRange::new(data.origin_id, data.name.range),
@@ -42,14 +32,7 @@ fn typecheck_proc<'hir>(
         }
     }
 
-    if data.is_test {
-        if external {
-            emit.error(ErrorComp::new(
-                "procedures with #[test] attribute cannot be external",
-                SourceRange::new(data.origin_id, data.name.range),
-                None,
-            ));
-        }
+    if data.attr_set.contains(hir::ProcFlag::Test) {
         if !data.params.is_empty() {
             emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot have any input parameters",
@@ -1612,7 +1595,7 @@ fn typecheck_item<'hir>(
             let proc_ty = hir::ProcType {
                 params: emit.arena.alloc_slice(&param_types),
                 return_ty: data.return_ty,
-                is_variadic: data.is_variadic,
+                is_variadic: data.attr_set.contains(hir::ProcFlag::Variadic),
             };
 
             return TypeResult::new(

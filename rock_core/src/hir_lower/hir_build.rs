@@ -287,11 +287,13 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
         origin_id: ModuleID,
+        attr_set: BitSet,
     ) -> hir::ProcID {
         let id = hir::ProcID::new(self.hir_procs.len());
+
         let data = hir::ProcData {
             origin_id,
-            attr_set: BitSet::EMPTY,
+            attr_set,
             vis: item.vis,
             name: item.name,
             params: &[],
@@ -311,6 +313,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         origin_id: ModuleID,
     ) -> hir::EnumID {
         let id = hir::EnumID::new(self.hir_enums.len());
+
         let data = hir::EnumData {
             origin_id,
             vis: item.vis,
@@ -330,6 +333,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         origin_id: ModuleID,
     ) -> hir::StructID {
         let id = hir::StructID::new(self.hir_structs.len());
+
         let data = hir::StructData {
             origin_id,
             vis: item.vis,
@@ -350,6 +354,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     ) -> hir::ConstID {
         let id = hir::ConstID::new(self.hir_consts.len());
         let value = self.add_const_eval(item.value, origin_id);
+
         let data = hir::ConstData {
             origin_id,
             vis: item.vis,
@@ -367,12 +372,14 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
         origin_id: ModuleID,
+        attr_set: BitSet,
     ) -> hir::GlobalID {
         let id = hir::GlobalID::new(self.hir_globals.len());
         let value = self.add_const_eval(item.value, origin_id);
+
         let data = hir::GlobalData {
             origin_id,
-            attr_set: BitSet::EMPTY,
+            attr_set,
             vis: item.vis,
             mutt: item.mutt,
             name: item.name,
@@ -391,6 +398,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         origin_id: ModuleID,
     ) -> hir::ConstEvalID {
         let id = hir::ConstEvalID::new(self.const_evals.len());
+
         self.const_evals
             .push((hir::ConstEval::Unresolved(const_expr), origin_id));
         id
