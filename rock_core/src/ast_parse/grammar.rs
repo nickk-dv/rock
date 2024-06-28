@@ -49,23 +49,23 @@ pub fn module<'ast>(
 }
 
 fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
-    let attr = attribute(p)?;
+    let attrs = attribute_list(p)?;
     let vis = vis(p); //@not allowing vis with `import` is not enforced right now
 
     match p.peek() {
-        T![proc] => Ok(Item::Proc(proc_item(p, attr, vis)?)),
-        T![enum] => Ok(Item::Enum(enum_item(p, vis)?)),
-        T![struct] => Ok(Item::Struct(struct_item(p, vis)?)),
-        T![const] => Ok(Item::Const(const_item(p, vis)?)),
-        T![global] => Ok(Item::Global(global_item(p, attr, vis)?)),
-        T![import] => Ok(Item::Import(import_item(p, vis)?)),
+        T![proc] => Ok(Item::Proc(proc_item(p, attrs, vis)?)),
+        T![enum] => Ok(Item::Enum(enum_item(p, attrs, vis)?)),
+        T![struct] => Ok(Item::Struct(struct_item(p, attrs, vis)?)),
+        T![const] => Ok(Item::Const(const_item(p, attrs, vis)?)),
+        T![global] => Ok(Item::Global(global_item(p, attrs, vis)?)),
+        T![import] => Ok(Item::Import(import_item(p, attrs, vis)?)),
         _ => Err("expected item".into()),
     }
 }
 
 fn proc_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attr: Option<Attribute>,
+    attrs: &'ast [Attribute],
     vis: Vis,
 ) -> Result<&'ast ProcItem<'ast>, String> {
     p.bump();
@@ -99,7 +99,7 @@ fn proc_item<'ast>(
     };
 
     Ok(p.state.arena.alloc(ProcItem {
-        attr,
+        attrs,
         vis,
         name,
         params,
@@ -120,6 +120,7 @@ fn proc_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<ProcParam<'ast>,
 
 fn enum_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
+    attrs: &'ast [Attribute],
     vis: Vis,
 ) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
@@ -131,6 +132,7 @@ fn enum_item<'ast>(
     let variants = comma_separated_list!(p, enum_variant, enum_variants, T!['{'], T!['}']);
 
     Ok(p.state.arena.alloc(EnumItem {
+        attrs,
         vis,
         name,
         basic,
@@ -148,13 +150,19 @@ fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'a
 
 fn struct_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
+    attrs: &'ast [Attribute],
     vis: Vis,
 ) -> Result<&'ast StructItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
     let fields = comma_separated_list!(p, struct_field, struct_fields, T!['{'], T!['}']);
 
-    Ok(p.state.arena.alloc(StructItem { vis, name, fields }))
+    Ok(p.state.arena.alloc(StructItem {
+        attrs,
+        vis,
+        name,
+        fields,
+    }))
 }
 
 fn struct_field<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<StructField<'ast>, String> {
@@ -168,6 +176,7 @@ fn struct_field<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<StructField<'a
 
 fn const_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
+    attrs: &'ast [Attribute],
     vis: Vis,
 ) -> Result<&'ast ConstItem<'ast>, String> {
     p.bump();
@@ -179,6 +188,7 @@ fn const_item<'ast>(
     p.expect(T![;])?;
 
     Ok(p.state.arena.alloc(ConstItem {
+        attrs,
         vis,
         name,
         ty,
@@ -188,7 +198,7 @@ fn const_item<'ast>(
 
 fn global_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attr: Option<Attribute>,
+    attrs: &'ast [Attribute],
     vis: Vis,
 ) -> Result<&'ast GlobalItem<'ast>, String> {
     p.bump();
@@ -201,7 +211,7 @@ fn global_item<'ast>(
     p.expect(T![;])?;
 
     Ok(p.state.arena.alloc(GlobalItem {
-        attr,
+        attrs,
         vis,
         mutt,
         name,
@@ -212,6 +222,7 @@ fn global_item<'ast>(
 
 fn import_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
+    attrs: &'ast [Attribute],
     vis: Vis,
 ) -> Result<&'ast ImportItem<'ast>, String> {
     p.bump();
@@ -244,6 +255,7 @@ fn import_item<'ast>(
     };
 
     Ok(p.state.arena.alloc(ImportItem {
+        attrs,
         package,
         import_path,
         alias,
@@ -284,34 +296,28 @@ fn name(p: &mut Parser) -> Result<Name, String> {
     Ok(Name { range, id })
 }
 
-fn attribute(p: &mut Parser) -> Result<Option<Attribute>, String> {
-    let start = p.start_range();
-    if !p.eat(T![#]) {
-        return Ok(None);
-    }
-    p.expect(T!['['])?;
+fn attribute_list<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast [Attribute], String> {
+    let offset = p.state.attrs.start();
 
-    let range = p.peek_range();
-    p.expect(T![ident])?;
-    let string = &p.source[range.as_usize()];
-    let kind = AttributeKind::from_str(string);
+    while p.at(T![#]) {
+        let start = p.start_range();
+        p.expect(T![#])?;
+        p.expect(T!['['])?;
 
-    let data = if p.eat(T!['(']) {
         let range = p.peek_range();
-        p.expect(T![string_lit])?;
-        let (id, _) = p.get_string_lit();
-        p.expect(T![')'])?;
-        AttributeData::String { id, range }
-    } else {
-        AttributeData::None
-    };
+        p.expect(T![ident])?;
+        let string = &p.source[range.as_usize()];
+        let kind = AttributeKind::from_str(string);
 
-    p.expect(T![']'])?;
-    Ok(Some(Attribute {
-        kind,
-        data,
-        range: p.make_range(start),
-    }))
+        p.expect(T![']'])?;
+        let attr = Attribute {
+            kind,
+            range: p.make_range(start),
+        };
+        p.state.attrs.add(attr);
+    }
+
+    Ok(p.state.attrs.take(offset, &mut p.state.arena))
 }
 
 fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, String> {

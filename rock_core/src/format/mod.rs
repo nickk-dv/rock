@@ -201,11 +201,17 @@ fn item_fmt(fmt: &mut Formatter, item: ast::Item) {
     }
 }
 
+fn attribute_list(fmt: &mut Formatter, attr_list: ast::AttributeList) {
+    for attr in attr_list.attrs(fmt.tree) {
+        attribute(fmt, attr);
+        fmt.new_line();
+    }
+}
+
 fn attribute(fmt: &mut Formatter, attr: ast::Attribute) {
     fmt.write("#[");
     name_fmt(fmt, attr.name(fmt.tree).unwrap());
     fmt.write_c(']');
-    fmt.new_line();
 }
 
 fn visibility(fmt: &mut Formatter, vis: ast::Visibility) {
@@ -217,8 +223,8 @@ fn visibility(fmt: &mut Formatter, vis: ast::Visibility) {
 
 macro_rules! item_attr_vis_fmt {
     ($fmt:ident, $item:expr) => {
-        if let Some(attr) = $item.attribute($fmt.tree) {
-            attribute($fmt, attr);
+        if let Some(attr_list) = $item.attr_list($fmt.tree) {
+            attribute_list($fmt, attr_list);
         }
         if let Some(vis) = $item.visiblity($fmt.tree) {
             visibility($fmt, vis);

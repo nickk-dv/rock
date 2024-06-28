@@ -218,6 +218,7 @@ macro_rules! node_iter {
 
 ast_node_impl!(SourceFile, SyntaxKind::SOURCE_FILE);
 
+ast_node_impl!(AttributeList, SyntaxKind::ATTRIBUTE_LIST);
 ast_node_impl!(Attribute, SyntaxKind::ATTRIBUTE);
 ast_node_impl!(Visibility, SyntaxKind::VISIBILITY);
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
@@ -521,6 +522,10 @@ impl<'syn> SourceFile<'syn> {
     node_iter!(items, Item);
 }
 
+impl<'syn> AttributeList<'syn> {
+    node_iter!(attrs, Attribute);
+}
+
 impl<'syn> Attribute<'syn> {
     find_first!(name, Name);
 }
@@ -530,7 +535,7 @@ impl<'syn> Visibility<'syn> {
 }
 
 impl<'syn> ProcItem<'syn> {
-    find_first!(attribute, Attribute);
+    find_first!(attr_list, AttributeList);
     find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(param_list, ParamList);
@@ -550,7 +555,7 @@ impl<'syn> Param<'syn> {
 }
 
 impl<'syn> EnumItem<'syn> {
-    find_first!(attribute, Attribute);
+    find_first!(attr_list, AttributeList);
     find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(type_basic, TypeBasic);
@@ -567,7 +572,7 @@ impl<'syn> Variant<'syn> {
 }
 
 impl<'syn> StructItem<'syn> {
-    find_first!(attribute, Attribute);
+    find_first!(attr_list, AttributeList);
     find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(field_list, FieldList);
@@ -583,7 +588,7 @@ impl<'syn> Field<'syn> {
 }
 
 impl<'syn> ConstItem<'syn> {
-    find_first!(attribute, Attribute);
+    find_first!(attr_list, AttributeList);
     find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(ty, Type);
@@ -591,7 +596,7 @@ impl<'syn> ConstItem<'syn> {
 }
 
 impl<'syn> GlobalItem<'syn> {
-    find_first!(attribute, Attribute);
+    find_first!(attr_list, AttributeList);
     find_first!(visiblity, Visibility);
     find_token!(is_mut, T![mut]);
     find_first!(name, Name);
@@ -600,7 +605,7 @@ impl<'syn> GlobalItem<'syn> {
 }
 
 impl<'syn> ImportItem<'syn> {
-    find_first!(attribute, Attribute);
+    find_first!(attr_list, AttributeList);
     find_first!(visiblity, Visibility); //@exists but ignored
     find_first!(package, Name);
     find_first!(import_path, ImportPath);

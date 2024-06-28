@@ -20,9 +20,12 @@ pub fn source_file(p: &mut Parser) {
 fn item(p: &mut Parser) {
     let mut mc = None;
 
-    //@allow attr vecs?
     if p.at(T![#]) {
-        mc = Some(attribute(p));
+        let m = p.start();
+        while p.at(T![#]) {
+            attribute(p);
+        }
+        mc = Some(m.complete(p, SyntaxKind::ATTRIBUTE_LIST));
     }
 
     //@not used in import, ignored without errors

@@ -44,7 +44,7 @@ fn add_module_items<'hir>(
                 Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
                 None => add_global_item(hir, emit, origin_id, item),
             },
-            ast::Item::Import(_) => {}
+            ast::Item::Import(item) => check_import_item(emit, origin_id, item),
         }
     }
 }
@@ -73,7 +73,7 @@ fn add_proc_item<'hir, 'ast>(
         }
     }
 
-    if let Some(attr) = item.attr {
+    for attr in item.attrs {
         let flag = match attr.kind {
             ast::AttributeKind::Test => Some(ProcFlag::Test),
             ast::AttributeKind::Builtin => Some(ProcFlag::Builtin),
@@ -130,7 +130,12 @@ fn add_enum_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::EnumItem<'ast>,
 ) {
-    //@attr_vec, all unknown or cannot be applied error
+    for attr in item.attrs {
+        match attr.kind {
+            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            _ => error_attribute_cannot_apply(emit, origin_id, attr, "enums"),
+        }
+    }
 
     let data = hir::EnumData {
         origin_id,
@@ -157,7 +162,12 @@ fn add_struct_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::StructItem<'ast>,
 ) {
-    //@attr_vec, all unknown or cannot be applied error
+    for attr in item.attrs {
+        match attr.kind {
+            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            _ => error_attribute_cannot_apply(emit, origin_id, attr, "structs"),
+        }
+    }
 
     let data = hir::StructData {
         origin_id,
@@ -184,7 +194,12 @@ fn add_const_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::ConstItem<'ast>,
 ) {
-    //@attr_vec, all unknown or cannot be applied error
+    for attr in item.attrs {
+        match attr.kind {
+            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            _ => error_attribute_cannot_apply(emit, origin_id, attr, "constants"),
+        }
+    }
 
     let data = hir::ConstData {
         origin_id,
@@ -213,7 +228,7 @@ fn add_global_item<'hir, 'ast>(
 ) {
     let mut attr_set = BitSet::EMPTY;
 
-    if let Some(attr) = item.attr {
+    for attr in item.attrs {
         let flag = match attr.kind {
             ast::AttributeKind::Test | ast::AttributeKind::Builtin | ast::AttributeKind::Inline => {
                 error_attribute_cannot_apply(emit, origin_id, attr, "globals");
@@ -261,6 +276,19 @@ fn add_global_item<'hir, 'ast>(
     );
 }
 
+fn check_import_item<'hir, 'ast>(
+    emit: &mut HirEmit<'hir>,
+    origin_id: ModuleID,
+    item: &'ast ast::ImportItem<'ast>,
+) {
+    for attr in item.attrs {
+        match attr.kind {
+            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            _ => error_attribute_cannot_apply(emit, origin_id, attr, "constants"),
+        }
+    }
+}
+
 pub fn error_name_already_defined(
     hir: &HirData,
     emit: &mut HirEmit,
@@ -275,7 +303,7 @@ pub fn error_name_already_defined(
     ));
 }
 
-fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: ast::Attribute) {
+fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: &ast::Attribute) {
     emit.error(ErrorComp::new(
         format!("attribute is unknown"),
         SourceRange::new(origin_id, attr.range),
@@ -286,7 +314,7 @@ fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: ast::A
 fn error_attribute_cannot_apply(
     emit: &mut HirEmit,
     origin_id: ModuleID,
-    attr: ast::Attribute,
+    attr: &ast::Attribute,
     item_kind: &'static str,
 ) {
     emit.error(ErrorComp::new(
@@ -304,7 +332,7 @@ pub fn check_attribute_flag<FlagT: AttributeFlag + Copy + Clone>(
     origin_id: ModuleID,
     item_name: ast::Name,
     item_kind: &'static str,
-    attr: Option<ast::Attribute>,
+    attr: Option<&ast::Attribute>,
     attr_set: &mut BitSet,
     new_flag: FlagT,
     all_flags: &[FlagT],

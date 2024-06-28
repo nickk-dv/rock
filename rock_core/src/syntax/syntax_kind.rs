@@ -5,6 +5,7 @@ pub enum SyntaxKind {
     TOMBSTONE,
     SOURCE_FILE,
 
+    ATTRIBUTE_LIST,
     ATTRIBUTE,
     VISIBILITY,
     PROC_ITEM,

@@ -27,7 +27,6 @@ pub enum Item<'ast> {
 
 #[derive(Default)]
 pub struct ItemCount {
-    pub modules: u32,
     pub procs: u32,
     pub enums: u32,
     pub structs: u32,
@@ -37,7 +36,7 @@ pub struct ItemCount {
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
-    pub attr: Option<Attribute>,
+    pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
     pub params: &'ast [ProcParam<'ast>],
@@ -55,6 +54,7 @@ pub struct ProcParam<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct EnumItem<'ast> {
+    pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
     pub basic: Option<BasicType>,
@@ -70,6 +70,7 @@ pub struct EnumVariant<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct StructItem<'ast> {
+    pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
     pub fields: &'ast [StructField<'ast>],
@@ -84,6 +85,7 @@ pub struct StructField<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ConstItem<'ast> {
+    pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
     pub ty: Type<'ast>,
@@ -92,7 +94,7 @@ pub struct ConstItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
-    pub attr: Option<Attribute>,
+    pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub mutt: Mut,
     pub name: Name,
@@ -102,6 +104,7 @@ pub struct GlobalItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
+    pub attrs: &'ast [Attribute],
     pub package: Option<Name>,
     pub import_path: &'ast [Name],
     pub alias: Option<Name>,
@@ -136,7 +139,6 @@ pub struct Name {
 #[derive(Copy, Clone)]
 pub struct Attribute {
     pub kind: AttributeKind,
-    pub data: AttributeData,
     pub range: TextRange,
 }
 
@@ -148,12 +150,6 @@ pub enum AttributeKind {
     Inline,
     Thread_Local,
     Unknown,
-}
-
-#[derive(Copy, Clone)]
-pub enum AttributeData {
-    None,
-    String { id: InternID, range: TextRange },
 }
 
 #[derive(Copy, Clone)]

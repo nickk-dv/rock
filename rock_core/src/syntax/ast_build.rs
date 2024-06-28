@@ -28,6 +28,7 @@ struct AstBuildState<'ast> {
     errors: Vec<ErrorComp>,
 
     items: TempBuffer<ast::Item<'ast>>,
+    attrs: TempBuffer<ast::Attribute>,
     params: TempBuffer<ast::ProcParam<'ast>>,
     variants: TempBuffer<ast::EnumVariant<'ast>>,
     fields: TempBuffer<ast::StructField<'ast>>,
@@ -70,6 +71,7 @@ impl<'ast> AstBuildState<'ast> {
             errors: Vec::new(),
 
             items: TempBuffer::new(128),
+            attrs: TempBuffer::new(32),
             params: TempBuffer::new(32),
             variants: TempBuffer::new(32),
             fields: TempBuffer::new(32),
@@ -143,24 +145,31 @@ fn item<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, item: cst::Item) {
     ctx.s.items.add(item);
 }
 
-fn attribute<'ast>(
+fn attribute_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    attr: Option<cst::Attribute>,
-) -> Option<ast::Attribute> {
-    if let Some(attr) = attr {
-        //@assuming range of ident token without any trivia
-        let name_cst = attr.name(ctx.tree).unwrap();
-        let range = name_cst.range(ctx.tree);
-        let string = &ctx.source[range.as_usize()];
-
-        let attr = ast::Attribute {
-            kind: ast::AttributeKind::from_str(string),
-            data: ast::AttributeData::None, //@remove fully?
-            range: attr.range(ctx.tree),
-        };
-        Some(attr)
+    attr_list: Option<cst::AttributeList>,
+) -> &'ast [ast::Attribute] {
+    if let Some(attr_list) = attr_list {
+        let offset = ctx.s.attrs.start();
+        for attr_cst in attr_list.attrs(ctx.tree) {
+            let attr = attribute(ctx, attr_cst);
+            ctx.s.attrs.add(attr);
+        }
+        ctx.s.attrs.take(offset, &mut ctx.s.arena)
     } else {
-        None
+        &[]
+    }
+}
+
+fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, attr: cst::Attribute) -> ast::Attribute {
+    //@assuming range of ident token without any trivia
+    let name_cst = attr.name(ctx.tree).unwrap();
+    let range = name_cst.range(ctx.tree);
+    let string = &ctx.source[range.as_usize()];
+
+    ast::Attribute {
+        kind: ast::AttributeKind::from_str(string),
+        range: attr.range(ctx.tree),
     }
 }
 
@@ -184,7 +193,7 @@ fn proc_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
-    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
@@ -200,7 +209,7 @@ fn proc_item<'ast>(
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
     let proc_item = ast::ProcItem {
-        attr,
+        attrs,
         vis,
         name,
         params,
@@ -224,8 +233,7 @@ fn enum_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
-    //@add ast::EnumItem attr
-    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let basic = item.type_basic(ctx.tree).map(|tb| tb.basic(ctx.tree)); //@not storing basic range
@@ -238,6 +246,7 @@ fn enum_item<'ast>(
     let variants = ctx.s.variants.take(offset, &mut ctx.s.arena);
 
     let enum_item = ast::EnumItem {
+        attrs,
         vis,
         name,
         basic,
@@ -260,8 +269,7 @@ fn struct_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
-    //@add ast::StructItem attr
-    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
@@ -272,7 +280,12 @@ fn struct_item<'ast>(
     }
     let fields = ctx.s.fields.take(offset, &mut ctx.s.arena);
 
-    let struct_item = ast::StructItem { vis, name, fields };
+    let struct_item = ast::StructItem {
+        attrs,
+        vis,
+        name,
+        fields,
+    };
     ctx.s.arena.alloc(struct_item)
 }
 
@@ -289,14 +302,14 @@ fn const_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
-    //@add ast::ConstItem attr
-    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
     let const_item = ast::ConstItem {
+        attrs,
         vis,
         name,
         ty,
@@ -309,7 +322,7 @@ fn global_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
-    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.is_mut(ctx.tree));
@@ -317,7 +330,7 @@ fn global_item<'ast>(
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
     let global_item = ast::GlobalItem {
-        attr,
+        attrs,
         vis,
         name,
         mutt,
@@ -331,8 +344,7 @@ fn import_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
-    //@add ast::ImportItem attr, and vis?
-    let attr = attribute(ctx, item.attribute(ctx.tree));
+    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();
@@ -355,6 +367,7 @@ fn import_item<'ast>(
     };
 
     let import_item = ast::ImportItem {
+        attrs,
         package,
         import_path,
         alias, //@rename everywhere to name_alias?
