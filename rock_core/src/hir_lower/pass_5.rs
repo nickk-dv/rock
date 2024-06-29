@@ -873,7 +873,7 @@ fn typecheck_field<'hir>(
     let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_res.ty, name);
 
     match kind {
-        FieldKind::Error => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
+        FieldKind::Error => TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
         FieldKind::Field(struct_id, field_id) => TypeResult::new(
             field_ty,
             emit.arena.alloc(hir::Expr::StructField {
@@ -1062,7 +1062,7 @@ fn typecheck_index<'hir>(
             };
             TypeResult::new(collection.elem_ty, emit.arena.alloc(index_expr))
         }
-        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
+        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
         Err(()) => {
             emit.error(ErrorComp::new(
                 format!(
@@ -1075,7 +1075,7 @@ fn typecheck_index<'hir>(
                     SourceRange::new(proc.origin(), target.range),
                 ),
             ));
-            TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+            TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
         }
     }
 }
@@ -1143,7 +1143,7 @@ fn typecheck_slice<'hir>(
                 emit.arena.alloc(slice_expr),
             )
         }
-        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
+        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
         Err(()) => {
             emit.error(ErrorComp::new(
                 format!(
@@ -1156,7 +1156,7 @@ fn typecheck_slice<'hir>(
                     SourceRange::new(proc.origin(), target.range),
                 ),
             ));
-            TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+            TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
         }
     }
 }
@@ -1260,7 +1260,7 @@ fn typecheck_call<'hir>(
     for &expr in input.iter() {
         let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, expr);
     }
-    TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+    TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
 }
 
 pub fn type_size(
@@ -1519,7 +1519,7 @@ fn typecheck_sizeof<'hir>(
             };
             emit.arena.alloc(hir::Expr::Const { value })
         }
-        None => hir_build::ERROR_EXPR,
+        None => hir_build::EXPR_ERROR,
     };
 
     TypeResult::new(hir::Type::Basic(BasicType::Usize), sizeof_expr)
@@ -1535,7 +1535,7 @@ fn typecheck_variant<'hir>(
 ) -> TypeResult<'hir> {
     let enum_id = match expect.ty {
         //@no distinction between no expectation and Type::Error
-        hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR),
+        hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
         hir::Type::Enum(enum_id) => enum_id,
         _ => {
             emit.error(ErrorComp::new(
@@ -1546,7 +1546,7 @@ fn typecheck_variant<'hir>(
                 SourceRange::new(proc.origin(), expr_range),
                 None,
             ));
-            return TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR);
+            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
         }
     };
 
@@ -1568,7 +1568,7 @@ fn typecheck_variant<'hir>(
                 SourceRange::new(data.origin_id, data.name.range),
             ),
         ));
-        TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
     }
 }
 
@@ -1582,7 +1582,7 @@ fn typecheck_item<'hir>(
 
     let item_res = match value_id {
         ValueID::None => {
-            return TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR);
+            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
         }
         ValueID::Proc(proc_id) => {
             let data = hir.registry().proc_data(proc_id);
@@ -1680,7 +1680,7 @@ fn typecheck_struct_init<'hir>(
             for input in struct_init.input {
                 let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
             }
-            TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+            TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
         }
         Some(struct_id) => {
             let data = hir.registry().struct_data(struct_id);
@@ -1871,7 +1871,7 @@ fn typecheck_array_repeat<'hir>(
             emit.arena.alloc(hir::Expr::ArrayRepeat { array_repeat }),
         )
     } else {
-        TypeResult::new(hir::Type::Error, hir_build::ERROR_EXPR)
+        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
     }
 }
 
@@ -2593,7 +2593,7 @@ fn typecheck_local<'hir>(
     // some unified model of symbols might be better in the future
     // this also applies to SymbolKind which is separate from VariableID (leads to some issues in path resolve) @1.04.24
     let already_defined = if let Some(existing) =
-        hir.scope_name_defined(proc.origin(), local.name.id)
+        hir.symbol_in_scope_source(proc.origin(), local.name.id)
     {
         super::pass_1::error_name_already_defined(hir, emit, proc.origin(), local.name, existing);
         true
@@ -2784,20 +2784,26 @@ fn path_resolve<'hir>(
         }
     }
 
-    let (module_id, name) = match hir.symbol_from_scope(emit, origin_id, origin_id, name) {
-        Some((kind, source)) => {
+    let (module_id, name) = match hir.symbol_from_scope(origin_id, origin_id, name) {
+        Ok((kind, source)) => {
             let next_name = path.names.get(1).cloned();
             match (kind, next_name) {
                 (SymbolKind::Module(module_id), Some(name)) => (module_id, name),
                 _ => return (ResolvedPath::Symbol(kind, source), 0),
             }
         }
-        None => return (ResolvedPath::None, 0),
+        Err(error) => {
+            emit.error(error);
+            return (ResolvedPath::None, 0);
+        }
     };
 
-    match hir.symbol_from_scope(emit, origin_id, module_id, name) {
-        Some((kind, source)) => (ResolvedPath::Symbol(kind, source), 1),
-        None => (ResolvedPath::None, 1),
+    match hir.symbol_from_scope(origin_id, module_id, name) {
+        Ok((kind, source)) => (ResolvedPath::Symbol(kind, source), 1),
+        Err(error) => {
+            emit.error(error);
+            (ResolvedPath::None, 1)
+        }
     }
 }
 
@@ -2843,7 +2849,7 @@ pub fn path_resolve_type<'hir>(
                 emit.error(ErrorComp::new(
                     format!(
                         "expected type, found {} `{}`",
-                        HirData::symbol_kind_name(kind),
+                        kind.kind_name(),
                         hir.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
@@ -2912,7 +2918,7 @@ pub fn path_resolve_struct<'hir>(
                 emit.error(ErrorComp::new(
                     format!(
                         "expected struct type, found {} `{}`",
-                        HirData::symbol_kind_name(kind),
+                        kind.kind_name(),
                         hir.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
@@ -3007,7 +3013,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                     emit.error(ErrorComp::new(
                         format!(
                             "expected value, found {} `{}`",
-                            HirData::symbol_kind_name(kind),
+                            kind.kind_name(),
                             hir.name_str(name.id)
                         ),
                         SourceRange::new(origin_id, name.range),
@@ -3023,7 +3029,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                 emit.error(ErrorComp::new(
                     format!(
                         "expected value, found {} `{}`",
-                        HirData::symbol_kind_name(kind),
+                        kind.kind_name(),
                         hir.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),

@@ -265,7 +265,6 @@ fn import_item<'ast>(
 
 fn import_symbol(p: &mut Parser) -> Result<ImportSymbol, String> {
     Ok(ImportSymbol {
-        vis: vis(p),
         name: name(p)?,
         alias: if p.eat(T![as]) { Some(name(p)?) } else { None },
     })

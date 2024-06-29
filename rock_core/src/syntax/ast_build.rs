@@ -377,11 +377,10 @@ fn import_item<'ast>(
 }
 
 fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
-    let vis = vis(import_symbol.visiblity(ctx.tree).is_some());
     let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
     let alias = name_alias(ctx, import_symbol.name_alias(ctx.tree));
 
-    let import_symbol = ast::ImportSymbol { vis, name, alias };
+    let import_symbol = ast::ImportSymbol { name, alias };
     ctx.s.import_symbols.add(import_symbol);
 }
 

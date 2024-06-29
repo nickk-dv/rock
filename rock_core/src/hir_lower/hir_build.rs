@@ -8,8 +8,8 @@ use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-/// Prevents redundant allocation of `hir::Expr::Error` during typechecking
-pub const ERROR_EXPR: &'static hir::Expr = &hir::Expr::Error;
+/// prevents allocation of `hir::Expr::Error` during typechecking
+pub const EXPR_ERROR: &hir::Expr = &hir::Expr::Error;
 
 pub struct HirData<'hir, 'ast, 'intern> {
     modules: Vec<Module>,
@@ -25,7 +25,7 @@ pub struct Module {
 #[derive(Copy, Clone)]
 pub enum Symbol {
     Defined  { kind: SymbolKind, },
-    Imported { kind: SymbolKind, import_vis: ast::Vis, import_range: TextRange },
+    Imported { kind: SymbolKind, import_range: TextRange },
 }
 
 #[derive(Copy, Clone)]
@@ -75,6 +75,20 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         }
     }
 
+    fn module(&self, id: ModuleID) -> &Module {
+        &self.modules[id.index()]
+    }
+    fn module_mut(&mut self, id: ModuleID) -> &mut Module {
+        &mut self.modules[id.index()]
+    }
+
+    pub fn registry(&self) -> &Registry<'hir, 'ast> {
+        &self.registry
+    }
+    pub fn registry_mut(&mut self) -> &mut Registry<'hir, 'ast> {
+        &mut self.registry
+    }
+
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern_name.get_str(id)
     }
@@ -88,55 +102,27 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         self.ast.modules[module_id.index()]
     }
 
-    //@this is search functionaly (previosly single directory)
-    /*
-    pub fn get_package_module_id(
-        &self,
-        package_id: PackageID,
-        name_id: InternID,
-    ) -> Option<hir::ModuleID> {
-        self.package(package_id).module_map.get(&name_id).copied()
-    }
-    pub fn get_package_dep_id(&self, package_id: PackageID, name: ast::Name) -> Option<PackageID> {
-        self.package(package_id)
-            .dependency_map
-            .get(&name.id)
-            .copied()
-    }
-    */
-
-    /// this inserts symbol into the map assuming that duplicate was already checked  
-    /// this api can be error prone, but may the only option so far  @`17.04.24`
     pub fn add_symbol(&mut self, origin_id: ModuleID, id: InternID, symbol: Symbol) {
-        self.module_mut(origin_id).symbols.insert(id, symbol);
+        let origin = self.module_mut(origin_id);
+        origin.symbols.insert(id, symbol);
     }
 
-    //@available in session
-    //pub fn module_package_id(&self, id: ModuleID) -> PackageID {
-    //    self.module(id).package_id
-    //}
+    pub fn symbol_defined(&self, origin_id: ModuleID, id: InternID) -> Option<SymbolKind> {
+        let origin = self.module(origin_id);
 
-    pub fn registry(&self) -> &Registry<'hir, 'ast> {
-        &self.registry
-    }
-    pub fn registry_mut(&mut self) -> &mut Registry<'hir, 'ast> {
-        &mut self.registry
+        match origin.symbols.get(&id).cloned() {
+            Some(Symbol::Defined { kind }) => Some(kind),
+            _ => None,
+        }
     }
 
-    fn module(&self, id: ModuleID) -> &Module {
-        &self.modules[id.index()]
-    }
-    fn module_mut(&mut self, id: ModuleID) -> &mut Module {
-        &mut self.modules[id.index()]
-    }
-
-    pub fn scope_name_defined(&self, origin_id: ModuleID, id: InternID) -> Option<SourceRange> {
+    pub fn symbol_in_scope_source(&self, origin_id: ModuleID, id: InternID) -> Option<SourceRange> {
         let origin = self.module(origin_id);
         let symbol = origin.symbols.get(&id).cloned()?;
 
         match symbol {
             Symbol::Defined { kind } => {
-                Some(SourceRange::new(origin_id, self.symbol_kind_range(kind)))
+                Some(SourceRange::new(origin_id, kind.name_range(&self.registry)))
             }
             Symbol::Imported { import_range, .. } => {
                 Some(SourceRange::new(origin_id, import_range))
@@ -144,94 +130,58 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         }
     }
 
-    pub fn symbol_get_defined(&self, origin_id: ModuleID, id: InternID) -> Option<SymbolKind> {
-        let target = self.module(origin_id);
-
-        match target.symbols.get(&id).cloned() {
-            Some(Symbol::Defined { kind }) => Some(kind),
-            _ => None,
-        }
-    }
-
     pub fn symbol_from_scope(
         &self,
-        emit: &mut HirEmit<'hir>,
         origin_id: ModuleID,
         target_id: ModuleID,
         name: ast::Name,
-    ) -> Option<(SymbolKind, SourceRange)> {
+    ) -> Result<(SymbolKind, SourceRange), ErrorComp> {
         let target = self.module(target_id);
 
-        match target.symbols.get(&name.id).cloned() {
-            Some(symbol) => match symbol {
-                Symbol::Defined { kind } => {
-                    let source = SourceRange::new(target_id, self.symbol_kind_range(kind));
+        match target.symbols.get(&name.id).copied() {
+            Some(Symbol::Defined { kind }) => {
+                let source = SourceRange::new(target_id, kind.name_range(&self.registry));
 
-                    let vis = if origin_id == target_id {
-                        ast::Vis::Public
-                    } else {
-                        self.symbol_kind_vis(kind)
-                    };
+                let vis = if origin_id == target_id {
+                    ast::Vis::Public
+                } else {
+                    kind.vis(&self.registry)
+                };
 
-                    if vis == ast::Vis::Private {
-                        emit.error(ErrorComp::new(
-                            format!(
-                                "{} `{}` is private",
-                                Self::symbol_kind_name(kind),
-                                self.name_str(name.id)
-                            ),
-                            SourceRange::new(origin_id, name.range),
-                            Info::new("defined here", source),
-                        ));
-                        None
-                    } else {
-                        Some((kind, source))
-                    }
-                }
-                Symbol::Imported {
-                    kind,
-                    import_vis,
-                    import_range,
-                } => {
-                    //@always return import_source? check usage expectations
-                    let import_source = SourceRange::new(target_id, import_range);
-
-                    if origin_id == target_id {
-                        Some((kind, import_source))
-                    } else {
-                        if import_vis == ast::Vis::Private {
-                            emit.error(ErrorComp::new(
-                                format!(
-                                    "{} `{}` is privately imported",
-                                    Self::symbol_kind_name(kind),
-                                    self.name_str(name.id)
-                                ),
-                                SourceRange::new(origin_id, name.range),
-                                Info::new("imported here", import_source),
-                            ));
-                            None
-                        } else {
-                            Some((kind, import_source))
-                        }
-                    }
-                }
-            },
-            None => {
-                //@sometimes its in self scope
-                // else its in some module.
-                // display module path?
-                emit.error(ErrorComp::new(
-                    format!("name `{}` is not found in module", self.name_str(name.id)),
-                    SourceRange::new(origin_id, name.range),
-                    None,
-                ));
-                None
+                return match vis {
+                    ast::Vis::Public => Ok((kind, source)),
+                    ast::Vis::Private => Err(ErrorComp::new(
+                        format!(
+                            "{} `{}` is private",
+                            kind.kind_name(),
+                            self.name_str(name.id)
+                        ),
+                        SourceRange::new(origin_id, name.range),
+                        Info::new("defined here", source),
+                    )),
+                };
             }
-        }
-    }
+            Some(Symbol::Imported { kind, import_range }) => {
+                let source = SourceRange::new(target_id, import_range);
 
-    pub fn symbol_kind_name(kind: SymbolKind) -> &'static str {
-        match kind {
+                if origin_id == target_id {
+                    return Ok((kind, source));
+                }
+            }
+            None => {}
+        }
+
+        Err(ErrorComp::new(
+            format!("name `{}` is not found in module", self.name_str(name.id)),
+            SourceRange::new(origin_id, name.range),
+            None,
+        ))
+    }
+}
+
+impl SymbolKind {
+    pub const fn kind_name(self) -> &'static str {
+        match self {
             SymbolKind::Module(_) => "module",
             SymbolKind::Proc(_) => "procedure",
             SymbolKind::Enum(_) => "enum",
@@ -241,25 +191,25 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         }
     }
 
-    fn symbol_kind_range(&self, kind: SymbolKind) -> TextRange {
-        match kind {
+    fn vis(self, registry: &Registry) -> ast::Vis {
+        match self {
             SymbolKind::Module(..) => unreachable!(),
-            SymbolKind::Proc(id) => self.registry.proc_data(id).name.range,
-            SymbolKind::Enum(id) => self.registry.enum_data(id).name.range,
-            SymbolKind::Struct(id) => self.registry.struct_data(id).name.range,
-            SymbolKind::Const(id) => self.registry.const_data(id).name.range,
-            SymbolKind::Global(id) => self.registry.global_data(id).name.range,
+            SymbolKind::Proc(id) => registry.proc_data(id).vis,
+            SymbolKind::Enum(id) => registry.enum_data(id).vis,
+            SymbolKind::Struct(id) => registry.struct_data(id).vis,
+            SymbolKind::Const(id) => registry.const_data(id).vis,
+            SymbolKind::Global(id) => registry.global_data(id).vis,
         }
     }
 
-    fn symbol_kind_vis(&self, kind: SymbolKind) -> ast::Vis {
-        match kind {
+    fn name_range(self, registry: &Registry) -> TextRange {
+        match self {
             SymbolKind::Module(..) => unreachable!(),
-            SymbolKind::Proc(id) => self.registry.proc_data(id).vis,
-            SymbolKind::Enum(id) => self.registry.enum_data(id).vis,
-            SymbolKind::Struct(id) => self.registry.struct_data(id).vis,
-            SymbolKind::Const(id) => self.registry.const_data(id).vis,
-            SymbolKind::Global(id) => self.registry.global_data(id).vis,
+            SymbolKind::Proc(id) => registry.proc_data(id).name.range,
+            SymbolKind::Enum(id) => registry.enum_data(id).name.range,
+            SymbolKind::Struct(id) => registry.struct_data(id).name.range,
+            SymbolKind::Const(id) => registry.const_data(id).name.range,
+            SymbolKind::Global(id) => registry.global_data(id).name.range,
         }
     }
 }

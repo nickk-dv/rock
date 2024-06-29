@@ -24,23 +24,23 @@ fn add_module_items<'hir>(
     let module_ast = hir.ast_module(origin_id);
     for item in module_ast.items.iter().copied() {
         match item {
-            ast::Item::Proc(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+            ast::Item::Proc(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
                 Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
                 None => add_proc_item(hir, emit, origin_id, item),
             },
-            ast::Item::Enum(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+            ast::Item::Enum(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
                 Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
                 None => add_enum_item(hir, emit, origin_id, item),
             },
-            ast::Item::Struct(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+            ast::Item::Struct(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
                 Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
                 None => add_struct_item(hir, emit, origin_id, item),
             },
-            ast::Item::Const(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+            ast::Item::Const(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
                 Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
                 None => add_const_item(hir, emit, origin_id, item),
             },
-            ast::Item::Global(item) => match hir.scope_name_defined(origin_id, item.name.id) {
+            ast::Item::Global(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
                 Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
                 None => add_global_item(hir, emit, origin_id, item),
             },

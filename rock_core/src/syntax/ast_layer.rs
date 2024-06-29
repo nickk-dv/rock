@@ -622,7 +622,6 @@ impl<'syn> ImportSymbolList<'syn> {
 }
 
 impl<'syn> ImportSymbol<'syn> {
-    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(name_alias, NameAlias);
 }

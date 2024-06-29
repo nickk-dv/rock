@@ -28,7 +28,7 @@ pub fn check_entry_point<'hir>(
         }
     };
 
-    let defined = hir.symbol_get_defined(origin_id, main_id);
+    let defined = hir.symbol_defined(origin_id, main_id);
     let proc_id = if let Some(SymbolKind::Proc(proc_id)) = defined {
         proc_id
     } else {

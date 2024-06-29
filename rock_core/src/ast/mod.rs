@@ -113,7 +113,6 @@ pub struct ImportItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ImportSymbol {
-    pub vis: Vis,
     pub name: Name,
     pub alias: Option<Name>,
 }

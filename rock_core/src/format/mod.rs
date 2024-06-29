@@ -442,9 +442,6 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbol
 }
 
 fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: ast::ImportSymbol) {
-    if let Some(vis) = import_symbol.visiblity(fmt.tree) {
-        visibility(fmt, vis);
-    }
     name_fmt(fmt, import_symbol.name(fmt.tree).unwrap());
     if let Some(name_alias) = import_symbol.name_alias(fmt.tree) {
         name_alias_fmt(fmt, name_alias);

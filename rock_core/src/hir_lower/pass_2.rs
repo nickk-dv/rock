@@ -122,7 +122,7 @@ fn resolve_import<'hir, 'ast>(
 
     let module_alias = name_alias_check(hir, emit, origin_id, last_name, import.alias);
 
-    match hir.scope_name_defined(origin_id, module_alias.id) {
+    match hir.symbol_in_scope_source(origin_id, module_alias.id) {
         Some(existing) => {
             super::pass_1::error_name_already_defined(hir, emit, origin_id, module_alias, existing);
         }
@@ -131,7 +131,6 @@ fn resolve_import<'hir, 'ast>(
             module_alias.id,
             Symbol::Imported {
                 kind: SymbolKind::Module(target_id),
-                import_vis: ast::Vis::Private,
                 import_range: module_alias.range,
             },
         ),
@@ -139,11 +138,11 @@ fn resolve_import<'hir, 'ast>(
 
     for symbol in import.symbols {
         let symbol_alias = name_alias_check(hir, emit, origin_id, symbol.name, symbol.alias);
-        //@this hides some error reporting in `symbol_from_scope`
-        let found_symbol = hir.symbol_from_scope(emit, origin_id, target_id, symbol.name);
+        let found_symbol = hir.symbol_from_scope(origin_id, target_id, symbol.name);
 
-        if let Some((kind, source)) = found_symbol {
-            match hir.scope_name_defined(origin_id, symbol_alias.id) {
+        match found_symbol {
+            Err(error) => emit.error(error),
+            Ok((kind, _)) => match hir.symbol_in_scope_source(origin_id, symbol_alias.id) {
                 Some(existing) => {
                     super::pass_1::error_name_already_defined(
                         hir,
@@ -158,11 +157,10 @@ fn resolve_import<'hir, 'ast>(
                     symbol_alias.id,
                     Symbol::Imported {
                         kind,
-                        import_vis: symbol.vis,
                         import_range: symbol_alias.range,
                     },
                 ),
-            }
+            },
         }
     }
 }
