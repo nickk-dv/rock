@@ -322,7 +322,7 @@ pub struct MatchArm<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct StructInit<'ast> {
-    pub path: &'ast Path<'ast>,
+    pub path: Option<&'ast Path<'ast>>,
     pub input: &'ast [FieldInit<'ast>],
 }
 

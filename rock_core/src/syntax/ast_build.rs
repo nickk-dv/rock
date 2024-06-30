@@ -766,8 +766,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
             ast::ExprKind::Variant { name }
         }
         cst::Expr::StructInit(struct_init) => {
-            //@optional in grammar, unsupported in ast
-            let path = path(ctx, struct_init.path(ctx.tree).unwrap());
+            let path = struct_init.path(ctx.tree).map(|p| path(ctx, p));
 
             let offset = ctx.s.field_inits.start();
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();

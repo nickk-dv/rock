@@ -597,11 +597,6 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_type_size_const_dependencies(hir, emit, tree, parent_id, ty)?;
             Ok(())
         }
-        ast::ExprKind::Variant { .. } => {
-            //@no type inference on this `ast name resolve` pass thus cannot infer variant type 14.06.24
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "variant selector");
-            Err(parent_id)
-        }
         ast::ExprKind::Item { path } => {
             let (value_id, _) = pass_5::path_resolve_value(hir, emit, None, origin_id, path);
             match value_id {
@@ -646,20 +641,37 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                 }
             }
         }
-        ast::ExprKind::StructInit { struct_init } => {
-            if let Some(struct_id) =
-                pass_5::path_resolve_struct(hir, emit, None, origin_id, struct_init.path)
-            {
-                let ty = hir::Type::Struct(struct_id);
-                add_type_usage_const_dependencies(hir, emit, tree, parent_id, ty)?;
-                for init in struct_init.input {
-                    add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, init.expr)?;
+        ast::ExprKind::Variant { .. } => {
+            //@no type inference on this `ast name resolve` pass thus cannot infer variant type 14.06.24
+            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "variant selector");
+            Err(parent_id)
+        }
+        ast::ExprKind::StructInit { struct_init } => match struct_init.path {
+            //@cannot infer struct / enum variant type in constants
+            Some(path) => {
+                if let Some(struct_id) =
+                    pass_5::path_resolve_struct(hir, emit, None, origin_id, path)
+                {
+                    let ty = hir::Type::Struct(struct_id);
+                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, ty)?;
+                    for init in struct_init.input {
+                        add_expr_const_dependencies(
+                            hir, emit, tree, parent_id, origin_id, init.expr,
+                        )?;
+                    }
+                    Ok(())
+                } else {
+                    Err(parent_id)
                 }
-                Ok(())
-            } else {
+            }
+            None => {
+                pass_5::error_cannot_infer_struct_type(
+                    emit,
+                    SourceRange::new(origin_id, expr.range),
+                );
                 Err(parent_id)
             }
-        }
+        },
         ast::ExprKind::ArrayInit { input } => {
             for &expr in input {
                 add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;

@@ -374,12 +374,12 @@ pub fn typecheck_expr<'hir>(
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, *ty, expr.range),
+        ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::Variant { name } => {
             typecheck_variant(hir, emit, proc, expect, name, expr.range)
         }
-        ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::StructInit { struct_init } => {
-            typecheck_struct_init(hir, emit, proc, struct_init, expr.range)
+            typecheck_struct_init(hir, emit, proc, expect, struct_init, expr.range)
         }
         ast::ExprKind::ArrayInit { input } => {
             typecheck_array_init(hir, emit, proc, expect, input, expr.range)
@@ -1525,53 +1525,6 @@ fn typecheck_sizeof<'hir>(
     TypeResult::new(hir::Type::Basic(BasicType::Usize), sizeof_expr)
 }
 
-fn typecheck_variant<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
-    name: ast::Name,
-    expr_range: TextRange,
-) -> TypeResult<'hir> {
-    let enum_id = match expect.ty {
-        //@no distinction between no expectation and Type::Error
-        hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
-        hir::Type::Enum(enum_id) => enum_id,
-        _ => {
-            emit.error(ErrorComp::new(
-                format!(
-                    "cannot infer enum type of variant `{}`",
-                    hir.name_str(name.id)
-                ),
-                SourceRange::new(proc.origin(), expr_range),
-                None,
-            ));
-            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
-        }
-    };
-
-    let data = hir.registry().enum_data(enum_id);
-    if let Some((variant_id, _)) = data.find_variant(name.id) {
-        let value = hir::ConstValue::EnumVariant {
-            enum_id,
-            variant_id,
-        };
-        let expr = emit.arena.alloc(hir::Expr::Const { value });
-        TypeResult::new(hir::Type::Enum(enum_id), expr)
-    } else {
-        //@duplicate error, same as path resolve 14.06.24
-        emit.error(ErrorComp::new(
-            format!("enum variant `{}` is not found", hir.name_str(name.id)),
-            SourceRange::new(proc.origin(), name.range),
-            Info::new(
-                "enum defined here",
-                SourceRange::new(data.origin_id, data.name.range),
-            ),
-        ));
-        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
-    }
-}
-
 fn typecheck_item<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1683,16 +1636,77 @@ fn typecheck_item<'hir>(
     TypeResult::new(target_ty, target)
 }
 
+fn typecheck_variant<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    expect: TypeExpectation<'hir>,
+    name: ast::Name,
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
+    let enum_id = match expect.ty {
+        //@no distinction between no expectation and Type::Error
+        hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
+        hir::Type::Enum(enum_id) => enum_id,
+        _ => {
+            emit.error(ErrorComp::new(
+                format!(
+                    "cannot infer enum type of variant `{}`",
+                    hir.name_str(name.id)
+                ),
+                SourceRange::new(proc.origin(), expr_range),
+                None,
+            ));
+            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+        }
+    };
+
+    let data = hir.registry().enum_data(enum_id);
+    if let Some((variant_id, _)) = data.find_variant(name.id) {
+        let value = hir::ConstValue::EnumVariant {
+            enum_id,
+            variant_id,
+        };
+        let expr = emit.arena.alloc(hir::Expr::Const { value });
+        TypeResult::new(hir::Type::Enum(enum_id), expr)
+    } else {
+        //@duplicate error, same as path resolve 14.06.24
+        emit.error(ErrorComp::new(
+            format!("enum variant `{}` is not found", hir.name_str(name.id)),
+            SourceRange::new(proc.origin(), name.range),
+            Info::new(
+                "enum defined here",
+                SourceRange::new(data.origin_id, data.name.range),
+            ),
+        ));
+        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+    }
+}
+
+pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
+    emit.error(ErrorComp::new("cannot infer struct type", src, None))
+}
+
 //@support struct type inference
 // infer based on reference types also
 fn typecheck_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
+    expect: TypeExpectation<'hir>,
     struct_init: &ast::StructInit<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let struct_id = path_resolve_struct(hir, emit, Some(proc), proc.origin(), struct_init.path);
+    let struct_id = match struct_init.path {
+        Some(path) => path_resolve_struct(hir, emit, Some(proc), proc.origin(), path),
+        None => match expect.ty {
+            hir::Type::Struct(id) => Some(id),
+            _ => {
+                error_cannot_infer_struct_type(emit, SourceRange::new(proc.origin(), expr_range));
+                None
+            }
+        },
+    };
 
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,

@@ -714,8 +714,16 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
         }
         T![.] => {
             p.bump();
-            let name = name(p)?;
-            ExprKind::Variant { name }
+
+            if p.at(T!['{']) {
+                let input = field_init_list(p)?;
+
+                let struct_init = p.state.arena.alloc(StructInit { path: None, input });
+                ExprKind::StructInit { struct_init }
+            } else {
+                let name = name(p)?;
+                ExprKind::Variant { name }
+            }
         }
         T![ident] => {
             let path = path(p)?;
@@ -723,37 +731,12 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             match p.peek() {
                 T![.] => {
                     p.bump();
-                    p.expect(T!['{'])?;
-                    let offset = p.state.field_inits.start();
-                    if !p.eat(T!['}']) {
-                        loop {
-                            let start = p.start_range();
-                            let name = name(p)?;
-                            let expr = match p.peek() {
-                                T![:] => {
-                                    p.bump();
-                                    expr(p)?
-                                }
-                                T![,] | T!['}'] => {
-                                    let names = p.state.arena.alloc_slice(&[name]);
-                                    let path = p.state.arena.alloc(Path { names });
-                                    p.state.arena.alloc(Expr {
-                                        kind: ExprKind::Item { path },
-                                        range: p.make_range(start),
-                                    })
-                                }
-                                _ => return Err("expected `:`, `}` or `,`".into()),
-                            };
-                            p.state.field_inits.add(FieldInit { name, expr });
-                            //@todo allow optional trailing coma after last field
-                            if !p.eat(T![,]) {
-                                break;
-                            }
-                        }
-                        p.expect(T!['}'])?;
-                    }
-                    let input = p.state.field_inits.take(offset, &mut p.state.arena);
-                    let struct_init = p.state.arena.alloc(StructInit { path, input });
+                    let input = field_init_list(p)?;
+
+                    let struct_init = p.state.arena.alloc(StructInit {
+                        path: Some(path),
+                        input,
+                    });
                     ExprKind::StructInit { struct_init }
                 }
                 _ => ExprKind::Item { path },
@@ -1040,6 +1023,47 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
         fallback_range,
     });
     Ok(match_)
+}
+
+fn field_init_list<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+) -> Result<&'ast [FieldInit<'ast>], String> {
+    p.expect(T!['{'])?;
+
+    let offset = p.state.field_inits.start();
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        if p.at(T![ident]) {
+            let field_init = field_init(p)?;
+            p.state.field_inits.add(field_init);
+        } else {
+            return Err("expected field initializer".into());
+        }
+        if !p.at(T!['}']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T!['}'])?;
+
+    Ok(p.state.field_inits.take(offset, &mut p.state.arena))
+}
+
+fn field_init<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<FieldInit<'ast>, String> {
+    let start = p.start_range();
+    let name = name(p)?;
+
+    let expr = if p.at(T![:]) {
+        p.bump();
+        expr(p)?
+    } else {
+        let names = p.state.arena.alloc_slice(&[name]);
+        let path = p.state.arena.alloc(Path { names });
+        p.state.arena.alloc(Expr {
+            kind: ExprKind::Item { path },
+            range: p.make_range(start),
+        })
+    };
+
+    Ok(FieldInit { name, expr })
 }
 
 impl BinOp {
