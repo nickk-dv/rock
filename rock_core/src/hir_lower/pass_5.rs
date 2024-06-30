@@ -379,7 +379,7 @@ pub fn typecheck_expr<'hir>(
         }
         ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
         ast::ExprKind::StructInit { struct_init } => {
-            typecheck_struct_init(hir, emit, proc, struct_init)
+            typecheck_struct_init(hir, emit, proc, struct_init, expr.range)
         }
         ast::ExprKind::ArrayInit { input } => {
             typecheck_array_init(hir, emit, proc, expect, input, expr.range)
@@ -1644,6 +1644,23 @@ fn typecheck_item<'hir>(
         match kind {
             FieldKind::Error => return TypeResult::new(hir::Type::Error, target),
             FieldKind::Field(struct_id, field_id) => {
+                //@duplicated field vis check, other one is in typecheck_struct_init
+                let data = hir.registry().struct_data(struct_id);
+                let field = data.field(field_id);
+
+                if proc.origin() != data.origin_id {
+                    if field.vis == ast::Vis::Private {
+                        emit.error(ErrorComp::new(
+                            format!("field `{}` is private", hir.name_str(field.name.id),),
+                            SourceRange::new(proc.origin(), name.range),
+                            Info::new(
+                                "defined here",
+                                SourceRange::new(data.origin_id, field.name.range),
+                            ),
+                        ));
+                    }
+                }
+
                 target_ty = field_ty;
                 target = emit.arena.alloc(hir::Expr::StructField {
                     target,
@@ -1666,104 +1683,124 @@ fn typecheck_item<'hir>(
     TypeResult::new(target_ty, target)
 }
 
+//@support struct type inference
+// infer based on reference types also
 fn typecheck_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     struct_init: &ast::StructInit<'_>,
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_id = path_resolve_struct(hir, emit, Some(proc), proc.origin(), struct_init.path);
-    let struct_name = *struct_init.path.names.last().expect("non empty path");
 
-    match struct_id {
+    let struct_id = match struct_id {
+        Some(struct_id) => struct_id,
         None => {
             for input in struct_init.input {
                 let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
             }
-            TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
         }
-        Some(struct_id) => {
-            let data = hir.registry().struct_data(struct_id);
-            let field_count = data.fields.len();
+    };
 
-            enum FieldStatus {
-                None,
-                Init(TextRange),
-            }
+    let data = hir.registry().struct_data(struct_id);
+    let field_count = data.fields.len();
 
-            //@potentially a lot of allocations (simple solution), same memory could be re-used
-            let mut field_inits = Vec::<hir::StructFieldInit>::with_capacity(field_count);
-            let mut field_status = Vec::<FieldStatus>::new();
-            field_status.resize_with(field_count, || FieldStatus::None);
-            let mut init_count: usize = 0;
+    enum FieldStatus {
+        None,
+        Init(TextRange),
+    }
 
-            for input in struct_init.input {
-                if let Some((field_id, field)) = data.find_field(input.name.id) {
-                    let expect = TypeExpectation::new(field.ty, None);
-                    let input_res = typecheck_expr(hir, emit, proc, expect, input.expr);
+    //@potentially a lot of allocations (simple solution), same memory could be re-used
+    let mut field_inits = Vec::<hir::StructFieldInit>::with_capacity(field_count);
+    let mut field_status = Vec::<FieldStatus>::new();
+    field_status.resize_with(field_count, || FieldStatus::None);
+    let mut init_count: usize = 0;
 
-                    if let FieldStatus::Init(range) = field_status[field_id.index()] {
-                        emit.error(ErrorComp::new(
-                            format!(
-                                "field `{}` was already initialized",
-                                hir.name_str(input.name.id),
-                            ),
-                            SourceRange::new(proc.origin(), input.name.range),
-                            Info::new("initialized here", SourceRange::new(data.origin_id, range)),
-                        ));
-                    } else {
-                        let field_init = hir::StructFieldInit {
-                            field_id,
-                            expr: input_res.expr,
-                        };
-                        field_inits.push(field_init);
-                        field_status[field_id.index()] = FieldStatus::Init(input.name.range);
-                        init_count += 1;
-                    }
-                } else {
-                    emit.error(ErrorComp::new(
-                        format!("field `{}` is not found", hir.name_str(input.name.id),),
-                        SourceRange::new(proc.origin(), input.name.range),
-                        Info::new(
-                            "struct defined here",
-                            SourceRange::new(data.origin_id, data.name.range),
-                        ),
-                    ));
-                    let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
-                }
-            }
+    for input in struct_init.input {
+        if let Some((field_id, field)) = data.find_field(input.name.id) {
+            let expect = TypeExpectation::new(field.ty, None);
+            let input_res = typecheck_expr(hir, emit, proc, expect, input.expr);
 
-            if init_count < field_count {
-                let mut message = "missing field initializers: ".to_string();
-
-                for (idx, status) in field_status.iter().enumerate() {
-                    if let FieldStatus::None = status {
-                        let field = data.field(hir::StructFieldID::new(idx));
-                        message.push('`');
-                        message.push_str(hir.name_str(field.name.id));
-                        if idx + 1 != field_count {
-                            message.push_str("`, ");
-                        } else {
-                            message.push('`');
-                        }
-                    }
-                }
-
+            if let FieldStatus::Init(range) = field_status[field_id.index()] {
                 emit.error(ErrorComp::new(
-                    message,
-                    SourceRange::new(proc.origin(), struct_name.range),
-                    Info::new(
-                        "struct defined here",
-                        SourceRange::new(data.origin_id, data.name.range),
+                    format!(
+                        "field `{}` was already initialized",
+                        hir.name_str(input.name.id),
                     ),
+                    SourceRange::new(proc.origin(), input.name.range),
+                    Info::new("initialized here", SourceRange::new(data.origin_id, range)),
                 ));
-            }
+            } else {
+                if proc.origin() != data.origin_id {
+                    if field.vis == ast::Vis::Private {
+                        emit.error(ErrorComp::new(
+                            format!("field `{}` is private", hir.name_str(field.name.id),),
+                            SourceRange::new(proc.origin(), input.name.range),
+                            Info::new(
+                                "defined here",
+                                SourceRange::new(data.origin_id, field.name.range),
+                            ),
+                        ));
+                    }
+                }
 
-            let input = emit.arena.alloc_slice(&field_inits);
-            let struct_init = hir::Expr::StructInit { struct_id, input };
-            TypeResult::new(hir::Type::Struct(struct_id), emit.arena.alloc(struct_init))
+                let field_init = hir::StructFieldInit {
+                    field_id,
+                    expr: input_res.expr,
+                };
+                field_inits.push(field_init);
+                field_status[field_id.index()] = FieldStatus::Init(input.name.range);
+                init_count += 1;
+            }
+        } else {
+            emit.error(ErrorComp::new(
+                format!(
+                    "field `{}` is not found in `{}`",
+                    hir.name_str(input.name.id),
+                    hir.name_str(data.name.id)
+                ),
+                SourceRange::new(proc.origin(), input.name.range),
+                Info::new(
+                    "struct defined here",
+                    SourceRange::new(data.origin_id, data.name.range),
+                ),
+            ));
+            let _ = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, input.expr);
         }
     }
+
+    if init_count < field_count {
+        //@change message to list limited number of fields based on their name len()
+        let mut message = "missing field initializers: ".to_string();
+
+        for (idx, status) in field_status.iter().enumerate() {
+            if let FieldStatus::None = status {
+                let field = data.field(hir::StructFieldID::new(idx));
+                message.push('`');
+                message.push_str(hir.name_str(field.name.id));
+                if idx + 1 != field_count {
+                    message.push_str("`, ");
+                } else {
+                    message.push('`');
+                }
+            }
+        }
+
+        emit.error(ErrorComp::new(
+            message,
+            SourceRange::new(proc.origin(), expr_range),
+            Info::new(
+                "struct defined here",
+                SourceRange::new(data.origin_id, data.name.range),
+            ),
+        ));
+    }
+
+    let input = emit.arena.alloc_slice(&field_inits);
+    let struct_init = hir::Expr::StructInit { struct_id, input };
+    TypeResult::new(hir::Type::Struct(struct_id), emit.arena.alloc(struct_init))
 }
 
 fn typecheck_array_init<'hir>(

@@ -583,6 +583,7 @@ impl<'syn> FieldList<'syn> {
 }
 
 impl<'syn> Field<'syn> {
+    find_first!(visiblity, Visibility);
     find_first!(name, Name);
     find_first!(ty, Type);
 }

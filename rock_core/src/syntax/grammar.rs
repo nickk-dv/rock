@@ -200,7 +200,7 @@ fn field_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
-        if p.at(T![ident]) {
+        if p.at(T![ident]) || p.at(T![pub]) {
             field(p);
             if !p.at(T!['}']) {
                 p.expect(T![,]);
@@ -216,6 +216,9 @@ fn field_list(p: &mut Parser) {
 
 fn field(p: &mut Parser) {
     let m = p.start();
+    if p.at(T![pub]) {
+        visibility(p);
+    }
     name(p);
     p.expect(T![:]);
     ty(p);

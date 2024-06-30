@@ -290,7 +290,7 @@ fn struct_item<'ast>(
 }
 
 fn field<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, field: cst::Field) {
-    let vis = ast::Vis::Public; //@remove support for field visibility (not checked anyways)?
+    let vis = vis(field.visiblity(ctx.tree).is_some());
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
