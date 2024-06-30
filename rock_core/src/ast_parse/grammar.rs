@@ -75,7 +75,6 @@ fn proc_item<'ast>(
     let mut is_variadic = false;
     p.expect(T!['('])?;
     while !p.at(T![')']) && !p.at(T![eof]) {
-        //@allowing variadic first, validate param count >= 1 in hir_lower
         if p.eat(T![..]) {
             is_variadic = true;
             break;
@@ -1055,14 +1054,9 @@ impl BinOp {
             | BinOp::LessEq
             | BinOp::Greater
             | BinOp::GreaterEq => 4,
-            BinOp::Add | BinOp::Sub | BinOp::BitOr => 5, //@why BitOr is same as + - ?
-            BinOp::Mul
-            | BinOp::Div
-            | BinOp::Rem
-            | BinOp::BitAnd
-            | BinOp::BitXor
-            | BinOp::BitShl
-            | BinOp::BitShr => 6,
+            BinOp::Add | BinOp::Sub => 5,
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 6,
+            BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitShl | BinOp::BitShr => 7,
         }
     }
 }

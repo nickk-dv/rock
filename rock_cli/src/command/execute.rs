@@ -155,7 +155,6 @@ fn check() -> Result<(), ErrorComp> {
         intern_name: InternPool,
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
-        //@test let (_, _) = rock_core::syntax::ast_build::parse(session, intern_name).into_result(vec![])?;
         let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
         Ok(warnings)
     }

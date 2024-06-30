@@ -23,7 +23,6 @@ pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp
     Ok(fmt.finish())
 }
 
-//@ 1 to 1 `formatting` without changing anything
 pub fn format_experiment(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
     let (tree, errors) = syntax::parse(source, module_id, true);
     if !errors.is_empty() {
