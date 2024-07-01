@@ -1039,7 +1039,7 @@ fn field_init_list<'ast>(
             return Err("expected field initializer".into());
         }
         if !p.at(T!['}']) {
-            p.expect(T![,]);
+            p.expect(T![,])?;
         }
     }
     p.expect(T!['}'])?;
