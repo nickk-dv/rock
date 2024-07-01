@@ -58,8 +58,14 @@ fn typecheck_proc<'hir>(
         let return_expect = TypeExpectation::new(data.return_ty, Some(expect_source));
 
         let mut proc = ProcScope::new(data, return_expect);
-        let block_res =
-            typecheck_block(hir, emit, &mut proc, return_expect, block, BlockEnter::None);
+        let block_res = typecheck_block(
+            hir,
+            emit,
+            &mut proc,
+            Some(return_expect),
+            block,
+            BlockEnter::None,
+        );
         let locals = emit.arena.alloc_slice(proc.finish_locals());
 
         let data = hir.registry_mut().proc_data_mut(proc_id);
@@ -340,7 +346,7 @@ pub fn typecheck_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
     let mut expr_res = match expr.kind {
@@ -407,6 +413,7 @@ pub fn typecheck_expr<'hir>(
 
 fn typecheck_lit_null<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
     let value = hir::ConstValue::Null;
+
     TypeResult::new(
         hir::Type::Basic(BasicType::Rawptr),
         emit.arena.alloc(hir::Expr::Const { value }),
@@ -415,6 +422,7 @@ fn typecheck_lit_null<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
 
 fn typecheck_lit_bool<'hir>(emit: &mut HirEmit<'hir>, val: bool) -> TypeResult<'hir> {
     let value = hir::ConstValue::Bool { val };
+
     TypeResult::new(
         hir::Type::Basic(BasicType::Bool),
         emit.arena.alloc(hir::Expr::Const { value }),
@@ -423,15 +431,16 @@ fn typecheck_lit_bool<'hir>(emit: &mut HirEmit<'hir>, val: bool) -> TypeResult<'
 
 fn typecheck_lit_int<'hir>(
     emit: &mut HirEmit<'hir>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     val: u64,
 ) -> TypeResult<'hir> {
-    let lit_type = coerce_int_type(expect.ty);
+    let lit_type = coerce_int_type(expect);
     let value = hir::ConstValue::Int {
         val,
         neg: false,
         ty: lit_type,
     };
+
     TypeResult::new(
         hir::Type::Basic(lit_type),
         emit.arena.alloc(hir::Expr::Const { value }),
@@ -440,50 +449,57 @@ fn typecheck_lit_int<'hir>(
 
 fn typecheck_lit_float<'hir>(
     emit: &mut HirEmit<'hir>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     val: f64,
 ) -> TypeResult<'hir> {
-    let lit_type = coerce_float_type(expect.ty);
+    let lit_type = coerce_float_type(expect);
     let value = hir::ConstValue::Float {
         val,
         ty: Some(lit_type),
     };
+
     TypeResult::new(
         hir::Type::Basic(lit_type),
         emit.arena.alloc(hir::Expr::Const { value }),
     )
 }
 
-pub fn coerce_int_type(expect: hir::Type) -> BasicType {
+pub fn coerce_int_type(expect: Option<TypeExpectation>) -> BasicType {
     const DEFAULT_INT_TYPE: BasicType = BasicType::S32;
 
     match expect {
-        hir::Type::Basic(basic) => match basic {
-            BasicType::S8
-            | BasicType::S16
-            | BasicType::S32
-            | BasicType::S64
-            | BasicType::Ssize
-            | BasicType::U8
-            | BasicType::U16
-            | BasicType::U32
-            | BasicType::U64
-            | BasicType::Usize => basic,
+        Some(expect) => match expect.ty {
+            hir::Type::Basic(basic) => match basic {
+                BasicType::S8
+                | BasicType::S16
+                | BasicType::S32
+                | BasicType::S64
+                | BasicType::Ssize
+                | BasicType::U8
+                | BasicType::U16
+                | BasicType::U32
+                | BasicType::U64
+                | BasicType::Usize => basic,
+                _ => DEFAULT_INT_TYPE,
+            },
             _ => DEFAULT_INT_TYPE,
         },
-        _ => DEFAULT_INT_TYPE,
+        None => DEFAULT_INT_TYPE,
     }
 }
 
-pub fn coerce_float_type(expect: hir::Type) -> BasicType {
+pub fn coerce_float_type(expect: Option<TypeExpectation>) -> BasicType {
     const DEFAULT_FLOAT_TYPE: BasicType = BasicType::F64;
 
     match expect {
-        hir::Type::Basic(basic) => match basic {
-            BasicType::F16 | BasicType::F32 | BasicType::F64 => basic,
+        Some(expect) => match expect.ty {
+            hir::Type::Basic(basic) => match basic {
+                BasicType::F16 | BasicType::F32 | BasicType::F64 => basic,
+                _ => DEFAULT_FLOAT_TYPE,
+            },
             _ => DEFAULT_FLOAT_TYPE,
         },
-        _ => DEFAULT_FLOAT_TYPE,
+        None => DEFAULT_FLOAT_TYPE,
     }
 }
 
@@ -524,24 +540,30 @@ fn typecheck_if<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    mut expect: TypeExpectation<'hir>,
+    mut expect: Option<TypeExpectation<'hir>>,
     if_: &ast::If<'_>,
     if_range: TextRange,
 ) -> TypeResult<'hir> {
-    let mut if_type: hir::Type;
+    //@todo this error default is temporary
+    let mut if_type: hir::Type = hir::Type::Error;
 
     let entry = {
-        let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, if_.entry.cond);
+        let cond_res = typecheck_expr(hir, emit, proc, Some(TypeExpectation::BOOL), if_.entry.cond);
         let block_res = typecheck_block(hir, emit, proc, expect, if_.entry.block, BlockEnter::None);
-        if_type = block_res.ty;
-        if expect.ty.is_error() {
-            expect = TypeExpectation::new(
-                block_res.ty,
-                block_res
-                    .tail_range
-                    .map(|range| SourceRange::new(proc.origin(), range)),
-            );
+
+        if expect.is_none() && !block_res.ty.is_never() {
+            let expect_src = block_res
+                .tail_range
+                .map(|range| SourceRange::new(proc.origin(), range));
+            let block_expect = TypeExpectation::new(block_res.ty, expect_src);
+            expect = Some(block_expect);
         }
+
+        //@todo how to update if_type
+        if !block_res.ty.is_never() {
+            if_type = block_res.ty;
+        }
+
         hir::Branch {
             cond: cond_res.expr,
             block: block_res.block,
@@ -551,7 +573,8 @@ fn typecheck_if<'hir>(
     let branches = {
         let mut branches = Vec::with_capacity(if_.branches.len());
         for &branch in if_.branches {
-            let cond_res = typecheck_expr(hir, emit, proc, TypeExpectation::BOOL, branch.cond);
+            let cond_res =
+                typecheck_expr(hir, emit, proc, Some(TypeExpectation::BOOL), branch.cond);
             let block_res =
                 typecheck_block(hir, emit, proc, expect, branch.block, BlockEnter::None);
 
@@ -560,16 +583,17 @@ fn typecheck_if<'hir>(
                 block: block_res.block,
             });
 
+            if expect.is_none() && !block_res.ty.is_never() {
+                let expect_src = block_res
+                    .tail_range
+                    .map(|range| SourceRange::new(proc.origin(), range));
+                let block_expect = TypeExpectation::new(block_res.ty, expect_src);
+                expect = Some(block_expect);
+            }
+
+            //@todo how to update if_type
             if if_type.is_error() {
                 if_type = block_res.ty;
-            }
-            if expect.ty.is_error() {
-                expect = TypeExpectation::new(
-                    block_res.ty,
-                    block_res
-                        .tail_range
-                        .map(|range| SourceRange::new(proc.origin(), range)),
-                );
             }
         }
         emit.arena.alloc_slice(&branches)
@@ -578,6 +602,7 @@ fn typecheck_if<'hir>(
     let else_block = if let Some(else_block) = if_.else_block {
         let block_res = typecheck_block(hir, emit, proc, expect, else_block, BlockEnter::None);
 
+        //@todo how to update if_type
         if if_type.is_error() {
             if_type = block_res.ty;
         }
@@ -586,6 +611,7 @@ fn typecheck_if<'hir>(
         None
     };
 
+    //@also never check, when if type is never else block is not required
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() {
         emit.error(ErrorComp::new(
             "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
@@ -594,12 +620,14 @@ fn typecheck_if<'hir>(
         ));
     }
 
-    let if_ = emit.arena.alloc(hir::If {
+    let if_ = hir::If {
         entry,
         branches,
         else_block,
-    });
-    let if_expr = emit.arena.alloc(hir::Expr::If { if_ });
+    };
+    let if_ = emit.arena.alloc(if_);
+    let if_expr = hir::Expr::If { if_ };
+    let if_expr = emit.arena.alloc(if_expr);
     TypeResult::new_ignore_typecheck(if_type, if_expr)
 }
 
@@ -607,11 +635,11 @@ fn typecheck_match<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    mut expect: TypeExpectation<'hir>,
+    mut expect: Option<TypeExpectation<'hir>>,
     match_: &ast::Match<'_>,
     match_range: TextRange,
 ) -> TypeResult<'hir> {
-    let on_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, match_.on_expr);
+    let on_res = typecheck_expr(hir, emit, proc, None, match_.on_expr);
     check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
 
     let mut match_type = hir::Type::Error;
@@ -869,7 +897,7 @@ fn typecheck_field<'hir>(
     target: &ast::Expr,
     name: ast::Name,
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, target);
+    let target_res = typecheck_expr(hir, emit, proc, None, target);
     let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_res.ty, name);
 
     match kind {
@@ -1032,7 +1060,7 @@ fn typecheck_index<'hir>(
     index: &ast::Expr<'_>,
     expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, target);
+    let target_res = typecheck_expr(hir, emit, proc, None, target);
     let index_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, index);
 
     match CollectionType::from(target_res.ty) {
@@ -1089,7 +1117,7 @@ fn typecheck_slice<'hir>(
     slice: &ast::SliceRange<'_>,
     expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, target);
+    let target_res = typecheck_expr(hir, emit, proc, None, target);
 
     let lower = slice.lower.map(|lower| {
         let lower_res = typecheck_expr(hir, emit, proc, TypeExpectation::USIZE, lower);
@@ -1169,7 +1197,7 @@ fn typecheck_call<'hir>(
     input: &&[&ast::Expr<'_>],
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, TypeExpectation::NOTHING, target);
+    let target_res = typecheck_expr(hir, emit, proc, None, target);
 
     match target_res.ty {
         hir::Type::Error => {}
@@ -1640,15 +1668,22 @@ fn typecheck_variant<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     name: ast::Name,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let enum_id = match expect.ty {
-        //@no distinction between no expectation and Type::Error
-        hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
-        hir::Type::Enum(enum_id) => enum_id,
-        _ => {
+    let enum_id = match expect {
+        Some(expect) => match expect.ty {
+            hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
+            hir::Type::Enum(enum_id) => Some(enum_id),
+            _ => None,
+        },
+        _ => None,
+    };
+
+    let enum_id = match enum_id {
+        Some(enum_id) => enum_id,
+        None => {
             emit.error(ErrorComp::new(
                 format!(
                     "cannot infer enum type of variant `{}`",
@@ -1662,25 +1697,29 @@ fn typecheck_variant<'hir>(
     };
 
     let data = hir.registry().enum_data(enum_id);
-    if let Some((variant_id, _)) = data.find_variant(name.id) {
-        let value = hir::ConstValue::EnumVariant {
-            enum_id,
-            variant_id,
-        };
-        let expr = emit.arena.alloc(hir::Expr::Const { value });
-        TypeResult::new(hir::Type::Enum(enum_id), expr)
-    } else {
-        //@duplicate error, same as path resolve 14.06.24
-        emit.error(ErrorComp::new(
-            format!("enum variant `{}` is not found", hir.name_str(name.id)),
-            SourceRange::new(proc.origin(), name.range),
-            Info::new(
-                "enum defined here",
-                SourceRange::new(data.origin_id, data.name.range),
-            ),
-        ));
-        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
-    }
+    let variant_id = match data.find_variant(name.id) {
+        Some((variant_id, _)) => variant_id,
+        None => {
+            //@duplicate error, same as path resolve 1.07.24
+            emit.error(ErrorComp::new(
+                format!("enum variant `{}` is not found", hir.name_str(name.id)),
+                SourceRange::new(proc.origin(), name.range),
+                Info::new(
+                    "enum defined here",
+                    SourceRange::new(data.origin_id, data.name.range),
+                ),
+            ));
+            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+        }
+    };
+
+    let value = hir::ConstValue::EnumVariant {
+        enum_id,
+        variant_id,
+    };
+    let expr = hir::Expr::Const { value };
+    let expr = emit.arena.alloc(expr);
+    TypeResult::new(hir::Type::Enum(enum_id), expr)
 }
 
 pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
@@ -1693,7 +1732,7 @@ fn typecheck_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     struct_init: &ast::StructInit<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
@@ -1821,7 +1860,7 @@ fn typecheck_array_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    mut expect: TypeExpectation<'hir>,
+    mut expect: Option<TypeExpectation<'hir>>,
     input: &[&ast::Expr<'_>],
     array_range: TextRange,
 ) -> TypeResult<'hir> {
@@ -1882,7 +1921,7 @@ fn typecheck_array_repeat<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    mut expect: TypeExpectation<'hir>,
+    mut expect: Option<TypeExpectation<'hir>>,
     expr: &ast::Expr,
     len: ast::ConstExpr,
 ) -> TypeResult<'hir> {
@@ -2089,7 +2128,7 @@ fn typecheck_unary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     op: ast::UnOp,
     op_range: TextRange,
     rhs: &ast::Expr,
@@ -2097,7 +2136,7 @@ fn typecheck_unary<'hir>(
     let rhs_expect = match op {
         ast::UnOp::Neg => expect,
         ast::UnOp::BitNot => expect,
-        ast::UnOp::LogicNot => TypeExpectation::BOOL,
+        ast::UnOp::LogicNot => Some(TypeExpectation::BOOL),
     };
     let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, rhs);
 
@@ -2126,7 +2165,7 @@ fn typecheck_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     op: ast::BinOp,
     op_range: TextRange,
     bin: &ast::BinExpr<'_>,
@@ -2324,7 +2363,7 @@ fn typecheck_block<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    expect: TypeExpectation<'hir>,
+    expect: Option<TypeExpectation<'hir>>,
     block: ast::Block<'_>,
     enter: BlockEnter,
 ) -> BlockResult<'hir> {
