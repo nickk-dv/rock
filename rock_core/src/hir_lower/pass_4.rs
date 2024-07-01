@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_3;
-use super::pass_5::{self, TypeExpectation};
+use super::pass_5::{self, Expectation};
 use super::proc_scope;
 use crate::ast;
 use crate::bitset::BitSet;
@@ -127,7 +127,8 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
         let (eval, _) = hir.registry().const_eval(eval_id);
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
-            resolve_and_update_const_eval(hir, emit, eval_id, TypeExpectation::USIZE);
+            let expect = Expectation::HasType(hir::Type::USIZE, None);
+            resolve_and_update_const_eval(hir, emit, eval_id, expect);
         }
     }
 }
@@ -742,7 +743,8 @@ fn resolve_const_dependency_tree<'hir>(
             ConstDependency::EnumVariant(id, variant_id) => {
                 let data = hir.registry().enum_data(id);
                 let variant = data.variant(variant_id);
-                let expect = TypeExpectation::new(hir::Type::Basic(data.basic), None); //@add range for basic type on enum
+
+                let expect = Expectation::HasType(hir::Type::Basic(data.basic), None); //@add range for basic type on enum
                 resolve_and_update_const_eval(hir, emit, variant.value, expect);
             }
             ConstDependency::StructSize(id) => {
@@ -752,23 +754,22 @@ fn resolve_const_dependency_tree<'hir>(
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
                 let item = hir.registry().const_item(id);
-                let expect = TypeExpectation::new(
-                    data.ty,
-                    Some(SourceRange::new(data.origin_id, item.ty.range)),
-                );
+
+                let expect_src = SourceRange::new(data.origin_id, item.ty.range);
+                let expect = Expectation::HasType(data.ty, Some(expect_src));
                 resolve_and_update_const_eval(hir, emit, data.value, expect);
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
                 let item = hir.registry().global_item(id);
-                let expect = TypeExpectation::new(
-                    data.ty,
-                    Some(SourceRange::new(data.origin_id, item.ty.range)),
-                );
+
+                let expect_src = SourceRange::new(data.origin_id, item.ty.range);
+                let expect = Expectation::HasType(data.ty, Some(expect_src));
                 resolve_and_update_const_eval(hir, emit, data.value, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
-                resolve_and_update_const_eval(hir, emit, eval_id, TypeExpectation::USIZE);
+                let expect = Expectation::HasType(hir::Type::USIZE, None);
+                resolve_and_update_const_eval(hir, emit, eval_id, expect);
             }
         }
     }
@@ -778,7 +779,7 @@ fn resolve_and_update_const_eval<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     eval_id: hir::ConstEvalID,
-    expect: TypeExpectation<'hir>,
+    expect: Expectation<'hir>,
 ) {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
 
@@ -796,7 +797,7 @@ pub fn resolve_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    expect: TypeExpectation<'hir>,
+    expect: Expectation<'hir>,
     expr: ast::ConstExpr,
 ) -> hir::ConstValue<'hir> {
     let dummy_data = hir::ProcData {
@@ -812,10 +813,11 @@ pub fn resolve_const_expr<'hir>(
         block: None,
         locals: &[],
     };
-    let mut proc = proc_scope::ProcScope::new(&dummy_data, TypeExpectation::NOTHING);
 
+    let mut proc = proc_scope::ProcScope::new(&dummy_data, Expectation::None);
     let error_count = emit.error_count();
     let hir_expr = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
+
     if emit.did_error(error_count) {
         hir::ConstValue::Error
     } else {

@@ -1,6 +1,6 @@
 use super::hir_build::{HirData, HirEmit};
 use super::pass_4;
-use super::pass_5::{self, TypeExpectation};
+use super::pass_5::{self, Expectation};
 use crate::ast;
 use crate::error::{ErrorComp, Info, SourceRange};
 use crate::hir;
@@ -72,8 +72,9 @@ pub fn type_resolve<'hir>(
             hir::Type::ArraySlice(emit.arena.alloc(slice))
         }
         ast::TypeKind::ArrayStatic(array) => {
-            let value =
-                pass_4::resolve_const_expr(hir, emit, origin_id, TypeExpectation::USIZE, array.len);
+            let expect = Expectation::HasType(hir::Type::USIZE, None);
+            let value = pass_4::resolve_const_expr(hir, emit, origin_id, expect, array.len);
+
             let len = match value {
                 hir::ConstValue::Int { val, ty, neg } => {
                     if neg {

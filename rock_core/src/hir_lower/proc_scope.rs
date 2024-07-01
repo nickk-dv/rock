@@ -1,5 +1,5 @@
 use super::hir_build::{HirData, HirEmit};
-use super::pass_5::TypeExpectation;
+use super::pass_5::Expectation;
 use crate::error::{Info, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::InternID;
@@ -12,7 +12,7 @@ use crate::text::TextRange;
 // not re-using will re allocate each of 3 vectors multiple times for EACH procedure being typechecked
 pub struct ProcScope<'hir, 'check> {
     data: &'check hir::ProcData<'hir>,
-    return_expect: TypeExpectation<'hir>,
+    return_expect: Expectation<'hir>,
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
@@ -65,7 +65,7 @@ pub enum VariableID {
 }
 
 impl<'hir, 'check> ProcScope<'hir, 'check> {
-    pub fn new(data: &'check hir::ProcData<'hir>, return_expect: TypeExpectation<'hir>) -> Self {
+    pub fn new(data: &'check hir::ProcData<'hir>, return_expect: Expectation<'hir>) -> Self {
         ProcScope {
             data,
             return_expect,
@@ -81,7 +81,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn origin(&self) -> ModuleID {
         self.data.origin_id
     }
-    pub fn return_expect(&self) -> TypeExpectation<'hir> {
+    pub fn return_expect(&self) -> Expectation<'hir> {
         self.return_expect
     }
     pub fn loop_status(&self) -> LoopStatus {
