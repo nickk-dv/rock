@@ -542,11 +542,13 @@ fn typecheck_if<'hir>(
     let else_block = match if_.else_block {
         Some(block) => {
             let block_res = typecheck_block(hir, emit, proc, expect, block, BlockEnter::None);
+
             // never -> anything
             // error -> anything except never
             if if_type.is_never() || (if_type.is_error() && !block_res.ty.is_never()) {
                 if_type = block_res.ty;
             }
+
             Some(block_res.block)
         }
         None => None,
@@ -621,64 +623,59 @@ fn typecheck_match<'hir>(
     let on_res = typecheck_expr(hir, emit, proc, Expectation::None, match_.on_expr);
     check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
 
-    let mut match_type = hir::Type::Error;
-    let mut diverges = true;
+    let mut match_type = hir::Type::Basic(BasicType::Never);
     let mut check_exaust = true;
 
     let pat_expect_src = SourceRange::new(proc.origin(), match_.on_expr.range);
     let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
 
     let mut arms = Vec::with_capacity(match_.arms.len());
-    for arm in match_.arms.iter() {
+    for arm in match_.arms {
         let value =
             super::pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
         let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
-        //@check if anything in pattern errored?
-        if value == hir::ConstValue::Error {
-            check_exaust = false;
-        }
-        if !value_res.diverges {
-            diverges = false;
-        }
-
-        arms.push(hir::MatchArm {
-            pat: emit.const_intern.intern(value),
-            block: hir::Block {
-                stmts: emit
-                    .arena
-                    .alloc_slice(&[hir::Stmt::ExprTail(value_res.expr)]),
-            },
-            unreachable: false,
-        });
-
-        if match_type.is_error() {
+        // never -> anything
+        // error -> anything except never
+        if match_type.is_never() || (match_type.is_error() && !value_res.ty.is_never()) {
             match_type = value_res.ty;
         }
 
-        //@restore similar to `if`
-        /*
-        if expect.ty.is_error() {
-            expect = TypeExpectation::new(
-                value_res.ty,
-                Some(SourceRange::new(proc.origin(), arm.expr.range)),
-            )
+        if let Expectation::None = expect {
+            if !value_res.ty.is_error() && !value_res.ty.is_never() {
+                let expect_src = SourceRange::new(proc.origin(), arm.expr.range);
+                expect = Expectation::HasType(value_res.ty, Some(expect_src));
+            }
         }
-        */
+
+        if value == hir::ConstValue::Error {
+            check_exaust = false;
+        }
+
+        let pat_value_id = emit.const_intern.intern(value);
+        let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
+        let stmts = emit.arena.alloc_slice(&[tail_stmt]);
+
+        let arm = hir::MatchArm {
+            pat: pat_value_id,
+            block: hir::Block { stmts },
+            unreachable: false,
+        };
+        arms.push(arm);
     }
 
     let mut fallback = if let Some(fallback) = match_.fallback {
         let value_res = typecheck_expr(hir, emit, proc, expect, fallback);
 
-        if match_type.is_error() {
+        // never -> anything
+        // error -> anything except never
+        if match_type.is_never() || (match_type.is_error() && !value_res.ty.is_never()) {
             match_type = value_res.ty;
         }
 
-        Some(hir::Block {
-            stmts: emit
-                .arena
-                .alloc_slice(&[hir::Stmt::ExprTail(value_res.expr)]),
-        })
+        let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
+        let stmts = emit.arena.alloc_slice(&[tail_stmt]);
+        Some(hir::Block { stmts })
     } else {
         None
     };
@@ -695,24 +692,18 @@ fn typecheck_match<'hir>(
             on_res.ty,
         );
     }
-    let arms = emit.arena.alloc_slice(&arms);
 
-    let match_hir = emit.arena.alloc(hir::Match {
+    let arms = emit.arena.alloc_slice(&arms);
+    let match_ = hir::Match {
         on_expr: on_res.expr,
         arms,
         fallback,
-    });
-    let match_expr = emit.arena.alloc(hir::Expr::Match { match_: match_hir });
-
-    if match_.arms.is_empty() && match_.fallback.is_none() {
-        TypeResult::new_ignore_typecheck_div(
-            hir::Type::Basic(BasicType::Never),
-            match_expr,
-            diverges,
-        )
-    } else {
-        TypeResult::new_ignore_typecheck_div(match_type, match_expr, diverges)
-    }
+    };
+    let match_ = emit.arena.alloc(match_);
+    let match_expr = hir::Expr::Match { match_ };
+    let match_expr = emit.arena.alloc(match_expr);
+    //@cannot tell when to ignore typecheck or not
+    TypeResult::new(match_type, match_expr)
 }
 
 //@different enum variants 01.06.24
