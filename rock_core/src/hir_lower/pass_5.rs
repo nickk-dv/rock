@@ -527,11 +527,9 @@ fn typecheck_if<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     mut expect: Expectation<'hir>,
     if_: &ast::If<'_>,
-    if_range: TextRange,
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    //@todo temporary default to error
-    let mut if_type: hir::Type = hir::Type::Error;
-
+    let mut if_type = hir::Type::Basic(BasicType::Never);
     let entry = typecheck_branch(hir, emit, proc, &mut expect, &mut if_type, &if_.entry);
 
     let mut branches = Vec::with_capacity(if_.branches.len());
@@ -544,23 +542,27 @@ fn typecheck_if<'hir>(
     let else_block = match if_.else_block {
         Some(block) => {
             let block_res = typecheck_block(hir, emit, proc, expect, block, BlockEnter::None);
-            //@update if_type correctly
+            // never -> anything
+            // error -> anything except never
+            if if_type.is_never() || (if_type.is_error() && !block_res.ty.is_never()) {
+                if_type = block_res.ty;
+            }
             Some(block_res.block)
         }
         None => None,
     };
 
-    //@also never check, when if type is never else block is not required
-    if else_block.is_none() && !if_type.is_error() && !if_type.is_void() {
+    if else_block.is_none() && if_type.is_never() {
+        if_type = hir::Type::VOID;
+    }
+
+    if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
         emit.error(ErrorComp::new(
             "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
-            SourceRange::new(proc.origin(), if_range),
+            SourceRange::new(proc.origin(), expr_range),
             None,
         ));
     }
-
-    //@all diverge without else produces `void`
-    //@with else `never`
 
     let if_ = hir::If {
         entry,
@@ -570,7 +572,9 @@ fn typecheck_if<'hir>(
     let if_ = emit.arena.alloc(if_);
     let if_expr = hir::Expr::If { if_ };
     let if_expr = emit.arena.alloc(if_expr);
-    TypeResult::new_ignore_typecheck(if_type, if_expr)
+    //@diverges bool is not needed `never` type serves that role
+    //@cannot tell when to ignore typecheck or not (in cases where never is in the blocks)
+    TypeResult::new_div(if_type, if_expr, if_type.is_never())
 }
 
 fn typecheck_branch<'hir>(
@@ -585,6 +589,12 @@ fn typecheck_branch<'hir>(
     let cond_res = typecheck_expr(hir, emit, proc, expect_bool, branch.cond);
     let block_res = typecheck_block(hir, emit, proc, *expect, branch.block, BlockEnter::None);
 
+    // never -> anything
+    // error -> anything except never
+    if if_type.is_never() || (if_type.is_error() && !block_res.ty.is_never()) {
+        *if_type = block_res.ty;
+    }
+
     if let Expectation::None = expect {
         if !block_res.ty.is_error() && !block_res.ty.is_never() {
             let expect_src = block_res
@@ -593,8 +603,6 @@ fn typecheck_branch<'hir>(
             *expect = Expectation::HasType(block_res.ty, expect_src);
         }
     }
-
-    //@update if_type correctly
 
     hir::Branch {
         cond: cond_res.expr,
@@ -2441,7 +2449,10 @@ fn typecheck_block<'hir>(
                 //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
-                let diverges = proc.check_stmt_diverges(hir, emit, expr_res.diverges, stmt.range);
+
+                //@migrate to using never type instead of diverges bool flags
+                let will_diverge = expr_res.ty.is_never();
+                let diverges = proc.check_stmt_diverges(hir, emit, will_diverge, stmt.range);
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprTail(expr) => {
