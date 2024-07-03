@@ -241,8 +241,6 @@ pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     pub expr: &'hir hir::Expr<'hir>,
     ignore: bool,
-    errored: bool,
-    diverges: bool,
 }
 
 impl<'hir> TypeResult<'hir> {
@@ -251,46 +249,14 @@ impl<'hir> TypeResult<'hir> {
             ty,
             expr,
             ignore: false,
-            errored: false,
-            diverges: false,
         }
     }
 
-    fn new_ignore_typecheck(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
+    fn new_ignore(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
         TypeResult {
             ty,
             expr,
             ignore: true,
-            errored: false,
-            diverges: false,
-        }
-    }
-
-    fn new_div(
-        ty: hir::Type<'hir>,
-        expr: &'hir hir::Expr<'hir>,
-        diverges: bool,
-    ) -> TypeResult<'hir> {
-        TypeResult {
-            ty,
-            expr,
-            ignore: false,
-            errored: false,
-            diverges,
-        }
-    }
-
-    fn new_ignore_typecheck_div(
-        ty: hir::Type<'hir>,
-        expr: &'hir hir::Expr<'hir>,
-        diverges: bool,
-    ) -> TypeResult<'hir> {
-        TypeResult {
-            ty,
-            expr,
-            ignore: true,
-            errored: false,
-            diverges,
         }
     }
 }
@@ -299,7 +265,6 @@ struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
     tail_range: Option<TextRange>,
-    diverges: bool,
 }
 
 impl<'hir> BlockResult<'hir> {
@@ -307,23 +272,21 @@ impl<'hir> BlockResult<'hir> {
         ty: hir::Type<'hir>,
         block: hir::Block<'hir>,
         tail_range: Option<TextRange>,
-        diverges: bool,
     ) -> BlockResult<'hir> {
         BlockResult {
             ty,
             block,
             tail_range,
-            diverges,
         }
     }
 
     fn into_type_result(self, emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
+        let block_expr = hir::Expr::Block { block: self.block };
+        let block_expr = emit.arena.alloc(block_expr);
         TypeResult {
             ty: self.ty,
-            expr: emit.arena.alloc(hir::Expr::Block { block: self.block }),
-            ignore: true,
-            errored: false, //@not used
-            diverges: self.diverges,
+            expr: block_expr,
+            ignore: true, //@ignoring with manual expectation check in blocks, might change 03.07.24
         }
     }
 }
@@ -336,7 +299,7 @@ pub fn typecheck_expr<'hir>(
     expect: Expectation<'hir>,
     expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
-    let mut expr_res = match expr.kind {
+    let expr_res = match expr.kind {
         ast::ExprKind::LitNull => typecheck_lit_null(emit),
         ast::ExprKind::LitBool { val } => typecheck_lit_bool(emit, val),
         ast::ExprKind::LitInt { val } => typecheck_lit_int(emit, expect, val),
@@ -392,8 +355,7 @@ pub fn typecheck_expr<'hir>(
 
     //@if `errored` is usefull it can be done via emit error count api
     if !expr_res.ignore {
-        expr_res.errored =
-            check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
+        check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
     }
 
     expr_res
@@ -574,9 +536,8 @@ fn typecheck_if<'hir>(
     let if_ = emit.arena.alloc(if_);
     let if_expr = hir::Expr::If { if_ };
     let if_expr = emit.arena.alloc(if_expr);
-    //@diverges bool is not needed `never` type serves that role
-    //@cannot tell when to ignore typecheck or not (in cases where never is in the blocks)
-    TypeResult::new_div(if_type, if_expr, if_type.is_never())
+    //@cannot tell when to ignore typecheck or not
+    TypeResult::new(if_type, if_expr)
 }
 
 fn typecheck_branch<'hir>(
@@ -1243,11 +1204,7 @@ fn typecheck_call<'hir>(
                 },
             };
 
-            return TypeResult::new_div(
-                proc_ty.return_ty,
-                emit.arena.alloc(call_expr),
-                proc_ty.return_ty.is_never(),
-            );
+            return TypeResult::new(proc_ty.return_ty, emit.arena.alloc(call_expr));
         }
         _ => {
             emit.error(ErrorComp::new(
@@ -2481,8 +2438,9 @@ fn typecheck_block<'hir>(
     let stmts = emit.arena.alloc_slice(&block_stmts);
     let hir_block = hir::Block { stmts };
 
+    //@wip approach, will change 03.07.24
     let block_result = if let Some(block_ty) = block_ty {
-        BlockResult::new(block_ty, hir_block, tail_range, proc.diverges().is_always())
+        BlockResult::new(block_ty, hir_block, tail_range)
     } else {
         //@potentially incorrect aproach, verify that `void`
         // as the expectation and block result ty are valid 29.05.24
@@ -2497,7 +2455,13 @@ fn typecheck_block<'hir>(
                 hir::Type::VOID,
             );
         }
-        BlockResult::new(hir::Type::VOID, hir_block, tail_range, diverges)
+        //@hack but should be correct
+        let block_ty = if diverges {
+            hir::Type::Basic(BasicType::Never)
+        } else {
+            hir::Type::VOID
+        };
+        BlockResult::new(block_ty, hir_block, tail_range)
     };
 
     proc.pop_block();
