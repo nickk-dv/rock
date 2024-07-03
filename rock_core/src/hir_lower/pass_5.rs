@@ -1,11 +1,11 @@
 use super::hir_build::{self, HirData, HirEmit, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
-use crate::error::{ErrorComp, Info, SourceRange, WarningComp};
+use crate::error::{ErrorComp, Info, SourceRange, StringOrStr, WarningComp};
 use crate::hir;
 use crate::intern::InternID;
 use crate::session::ModuleID;
-use crate::text::{TextOffset, TextRange};
+use crate::text::TextRange;
 
 pub fn typecheck_procedures<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for proc_id in hir.registry().proc_ids() {
@@ -74,8 +74,8 @@ pub fn type_matches<'hir>(
     ty2: hir::Type<'hir>,
 ) -> bool {
     match (ty, ty2) {
-        (hir::Type::Error, ..) => true,
-        (.., hir::Type::Error) => true,
+        (hir::Type::Error, _) => true,
+        (_, hir::Type::Error) => true,
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
         (hir::Type::Enum(id), hir::Type::Enum(id2)) => id == id2,
         (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
@@ -101,73 +101,83 @@ pub fn type_matches<'hir>(
             }
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
-            if let Some(len) = array_static_get_len(hir, emit, array.len) {
-                if let Some(len2) = array_static_get_len(hir, emit, array2.len) {
+            if let Some(len) = array_static_len(hir, emit, array.len) {
+                if let Some(len2) = array_static_len(hir, emit, array2.len) {
                     return (len == len2) && type_matches(hir, emit, array.elem_ty, array2.elem_ty);
                 }
             }
             true
         }
-        (hir::Type::ArrayStatic(array), ..) => array_static_get_len(hir, emit, array.len).is_none(),
-        (.., hir::Type::ArrayStatic(array2)) => {
-            array_static_get_len(hir, emit, array2.len).is_none()
-        }
+        (hir::Type::ArrayStatic(array), _) => array_static_len(hir, emit, array.len).is_none(),
+        (_, hir::Type::ArrayStatic(array2)) => array_static_len(hir, emit, array2.len).is_none(),
         _ => false,
     }
 }
 
-//@can use &'static str often 07.05.24
 pub fn type_format<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &HirEmit<'hir>,
     ty: hir::Type<'hir>,
-) -> String {
+) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
-        hir::Type::Basic(basic) => basic.as_str().to_string(),
-        hir::Type::Enum(id) => hir.name_str(hir.registry().enum_data(id).name.id).into(),
-        hir::Type::Struct(id) => hir.name_str(hir.registry().struct_data(id).name.id).into(),
+        hir::Type::Basic(basic) => basic.as_str().into(),
+        hir::Type::Enum(id) => {
+            let name = hir.name_str(hir.registry().enum_data(id).name.id);
+            name.to_string().into()
+        }
+        hir::Type::Struct(id) => {
+            let name = hir.name_str(hir.registry().struct_data(id).name.id);
+            name.to_string().into()
+        }
         hir::Type::Reference(ref_ty, mutt) => {
             let mut_str = match mutt {
                 ast::Mut::Mutable => "mut ",
                 ast::Mut::Immutable => "",
             };
-            format!("&{}{}", mut_str, type_format(hir, emit, *ref_ty))
+            let ref_ty_format = type_format(hir, emit, *ref_ty);
+            let format = format!("&{}{}", mut_str, ref_ty_format.as_str());
+            format.into()
         }
         hir::Type::Procedure(proc_ty) => {
-            let mut string = String::from("proc(");
+            let mut format = String::from("proc(");
             for (idx, param) in proc_ty.params.iter().enumerate() {
-                string.push_str(&type_format(hir, emit, *param));
+                let param_format = type_format(hir, emit, *param);
+                format.push_str(param_format.as_str());
                 if proc_ty.params.len() != idx + 1 {
-                    string.push_str(", ");
+                    format.push_str(", ");
                 }
             }
             if proc_ty.is_variadic {
-                string.push_str(", ..")
+                format.push_str(", ..")
             }
-            string.push_str(") -> ");
-            string.push_str(&type_format(hir, emit, proc_ty.return_ty));
-            string
+            format.push_str(") -> ");
+            let return_format = type_format(hir, emit, proc_ty.return_ty);
+            format.push_str(return_format.as_str());
+            format.into()
         }
         hir::Type::ArraySlice(slice) => {
             let mut_str = match slice.mutt {
                 ast::Mut::Mutable => "mut",
                 ast::Mut::Immutable => "",
             };
-            format!("[{}]{}", mut_str, type_format(hir, emit, slice.elem_ty))
+            let elem_format = type_format(hir, emit, slice.elem_ty);
+            let format = format!("[{}]{}", mut_str, elem_format.as_str());
+            format.into()
         }
         hir::Type::ArrayStatic(array) => {
-            let len = array_static_get_len(hir, emit, array.len);
-            let elem_format: String = type_format(hir, emit, array.elem_ty);
-            match len {
-                Some(len) => format!("[{len}]{elem_format}"),
-                None => format!("[<unknown>]{elem_format}"),
-            }
+            let len = array_static_len(hir, emit, array.len);
+            let elem_format = type_format(hir, emit, array.elem_ty);
+            let format = match len {
+                Some(len) => format!("[{}]{}", len, elem_format.as_str()),
+                None => format!("[<unknown>]{}", elem_format.as_str()),
+            };
+            format.into()
         }
     }
 }
 
-fn array_static_get_len<'hir>(
+fn array_static_len<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &HirEmit<'hir>,
     len: hir::ArrayStaticLen,
@@ -225,8 +235,8 @@ pub fn check_type_expectation<'hir>(
         emit.error(ErrorComp::new(
             format!(
                 "type mismatch: expected `{}`, found `{}`",
-                type_format(hir, emit, expect_ty),
-                type_format(hir, emit, found_ty)
+                type_format(hir, emit, expect_ty).as_str(),
+                type_format(hir, emit, found_ty).as_str()
             ),
             SourceRange::new(origin_id, from_range),
             info,
@@ -241,6 +251,12 @@ pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     pub expr: &'hir hir::Expr<'hir>,
     ignore: bool,
+}
+
+struct BlockResult<'hir> {
+    ty: hir::Type<'hir>,
+    block: hir::Block<'hir>,
+    tail_range: Option<TextRange>,
 }
 
 impl<'hir> TypeResult<'hir> {
@@ -259,12 +275,6 @@ impl<'hir> TypeResult<'hir> {
             ignore: true,
         }
     }
-}
-
-struct BlockResult<'hir> {
-    ty: hir::Type<'hir>,
-    block: hir::Block<'hir>,
-    tail_range: Option<TextRange>,
 }
 
 impl<'hir> BlockResult<'hir> {
@@ -921,7 +931,7 @@ fn type_get_field<'hir>(
                         format!(
                             "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
                             hir.name_str(name.id),
-                            ty_format,
+                            ty_format.as_str(),
                         ),
                         SourceRange::new(proc.origin(), name.range),
                         None,
@@ -936,7 +946,7 @@ fn type_get_field<'hir>(
                 format!(
                     "no field `{}` exists on value of type `{}`",
                     hir.name_str(name.id),
-                    ty_format,
+                    ty_format.as_str(),
                 ),
                 SourceRange::new(proc.origin(), name.range),
                 None,
@@ -1030,11 +1040,14 @@ fn typecheck_index<'hir>(
             emit.error(ErrorComp::new(
                 format!(
                     "cannot index value of type `{}`",
-                    type_format(hir, emit, target_res.ty)
+                    type_format(hir, emit, target_res.ty).as_str()
                 ),
                 SourceRange::new(proc.origin(), expr_range),
                 Info::new(
-                    format!("has `{}` type", type_format(hir, emit, target_res.ty)),
+                    format!(
+                        "has `{}` type",
+                        type_format(hir, emit, target_res.ty).as_str()
+                    ),
                     SourceRange::new(proc.origin(), target.range),
                 ),
             ));
@@ -1112,11 +1125,14 @@ fn typecheck_slice<'hir>(
             emit.error(ErrorComp::new(
                 format!(
                     "cannot slice value of type `{}`",
-                    type_format(hir, emit, target_res.ty)
+                    type_format(hir, emit, target_res.ty).as_str()
                 ),
                 SourceRange::new(proc.origin(), expr_range),
                 Info::new(
-                    format!("has `{}` type", type_format(hir, emit, target_res.ty)),
+                    format!(
+                        "has `{}` type",
+                        type_format(hir, emit, target_res.ty).as_str()
+                    ),
                     SourceRange::new(proc.origin(), target.range),
                 ),
             ));
@@ -1210,7 +1226,7 @@ fn typecheck_call<'hir>(
             emit.error(ErrorComp::new(
                 format!(
                     "cannot call value of type `{}`",
-                    type_format(hir, emit, target_res.ty)
+                    type_format(hir, emit, target_res.ty).as_str()
                 ),
                 SourceRange::new(proc.origin(), target.range),
                 None,
@@ -1241,7 +1257,7 @@ pub fn type_size(
         hir::Type::ArrayStatic(array) => {
             if let (Some(elem_size), Some(len)) = (
                 type_size(hir, emit, array.elem_ty, source),
-                array_static_get_len(hir, emit, array.len),
+                array_static_len(hir, emit, array.len),
             ) {
                 if let Some(array_size) = elem_size.size().checked_mul(len) {
                     Some(hir::Size::new(array_size, elem_size.align()))
@@ -1367,8 +1383,8 @@ fn typecheck_cast<'hir>(
         emit.warning(WarningComp::new(
             format!(
                 "redundant cast from `{}` into `{}`",
-                type_format(hir, emit, target_res.ty),
-                type_format(hir, emit, into)
+                type_format(hir, emit, target_res.ty).as_str(),
+                type_format(hir, emit, into).as_str()
             ),
             SourceRange::new(proc.origin(), range),
             None,
@@ -1443,8 +1459,8 @@ fn typecheck_cast<'hir>(
         emit.error(ErrorComp::new(
             format!(
                 "non primitive cast from `{}` into `{}`",
-                type_format(hir, emit, target_res.ty),
-                type_format(hir, emit, into)
+                type_format(hir, emit, target_res.ty).as_str(),
+                type_format(hir, emit, into).as_str()
             ),
             SourceRange::new(proc.origin(), range),
             None,
@@ -1942,7 +1958,7 @@ fn typecheck_deref<'hir>(
             emit.error(ErrorComp::new(
                 format!(
                     "cannot dereference value of type `{}`",
-                    type_format(hir, emit, rhs_res.ty)
+                    type_format(hir, emit, rhs_res.ty).as_str()
                 ),
                 SourceRange::new(proc.origin(), rhs.range),
                 None,
@@ -2213,7 +2229,7 @@ fn check_match_compatibility<'hir>(
         emit.error(ErrorComp::new(
             format!(
                 "cannot match on value of type `{}`",
-                type_format(hir, emit, ty)
+                type_format(hir, emit, ty).as_str()
             ),
             SourceRange::new(origin_id, range),
             None,
@@ -2253,7 +2269,7 @@ fn check_un_op_compatibility<'hir>(
             format!(
                 "cannot apply unary operator `{}` on value of type `{}`",
                 op.as_str(),
-                type_format(hir, emit, rhs_ty)
+                type_format(hir, emit, rhs_ty).as_str()
             ),
             SourceRange::new(origin_id, op_range),
             None,
@@ -2312,7 +2328,7 @@ fn check_bin_op_compatibility<'hir>(
             format!(
                 "cannot apply binary operator `{}` on value of type `{}`",
                 op.as_str(),
-                type_format(hir, emit, lhs_ty)
+                type_format(hir, emit, lhs_ty).as_str()
             ),
             SourceRange::new(origin_id, op_range),
             None,
@@ -2361,12 +2377,14 @@ fn typecheck_block<'hir>(
                     continue;
                 }
             }
+            //@defer block divergence should be simulated to correctly handle block_ty and divergence warnings 03.07.24
             ast::StmtKind::Defer(block) => {
-                //@defer can behave strangely with diverges checks since it inherits diverges 29.05.24
-                // from currently top block, while defer itself can be triggered multiple times in different locations
-                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
-                let stmt_res = typecheck_defer(hir, emit, proc, *block, stmt.range);
-                (stmt_res, diverges)
+                if let Some(stmt_res) = typecheck_defer(hir, emit, proc, *block, stmt.range) {
+                    let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
+                    (stmt_res, diverges)
+                } else {
+                    continue;
+                }
             }
             ast::StmtKind::Loop(loop_) => {
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
@@ -2572,18 +2590,17 @@ fn typecheck_return<'hir>(
     }
 }
 
-//@also return optional?
-// will matter if defers play a role in control flow checks
+/// returns `None` on invalid use of `defer`
 fn typecheck_defer<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     block: ast::Block<'_>,
     stmt_range: TextRange,
-) -> hir::Stmt<'hir> {
+) -> Option<hir::Stmt<'hir>> {
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
 
-    if let DeferStatus::Inside(prev_defer) = proc.defer_status() {
+    let valid = if let DeferStatus::Inside(prev_defer) = proc.defer_status() {
         emit.error(ErrorComp::new(
             "`defer` statements cannot be nested",
             SourceRange::new(proc.origin(), kw_range),
@@ -2592,7 +2609,10 @@ fn typecheck_defer<'hir>(
                 SourceRange::new(proc.origin(), prev_defer),
             ),
         ));
-    }
+        false
+    } else {
+        true
+    };
 
     let block_res = typecheck_block(
         hir,
@@ -2603,8 +2623,12 @@ fn typecheck_defer<'hir>(
         BlockEnter::Defer(kw_range),
     );
 
-    let block = emit.arena.alloc(block_res.block);
-    hir::Stmt::Defer(block)
+    if valid {
+        let block = emit.arena.alloc(block_res.block);
+        Some(hir::Stmt::Defer(block))
+    } else {
+        None
+    }
 }
 
 fn typecheck_loop<'hir>(
@@ -2815,7 +2839,7 @@ pub fn require_value_type<'hir>(
         emit.error(ErrorComp::new(
             format!(
                 "expected value type, found `{}`",
-                type_format(hir, emit, ty)
+                type_format(hir, emit, ty).as_str()
             ),
             source,
             None,
