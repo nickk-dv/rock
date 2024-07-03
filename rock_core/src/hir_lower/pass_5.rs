@@ -2338,7 +2338,7 @@ fn typecheck_block<'hir>(
     for stmt in block.stmts {
         let (hir_stmt, diverges) = match stmt.kind {
             ast::StmtKind::Break => {
-                if let Some(stmt_res) = typecheck_break(hir, emit, proc, stmt.range) {
+                if let Some(stmt_res) = typecheck_break(emit, proc, stmt.range) {
                     let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
@@ -2346,7 +2346,7 @@ fn typecheck_block<'hir>(
                 }
             }
             ast::StmtKind::Continue => {
-                if let Some(stmt_res) = typecheck_continue(hir, emit, proc, stmt.range) {
+                if let Some(stmt_res) = typecheck_continue(emit, proc, stmt.range) {
                     let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
@@ -2354,7 +2354,7 @@ fn typecheck_block<'hir>(
                 }
             }
             ast::StmtKind::Return(expr) => {
-                if let Some(stmt_res) = typecheck_return(hir, emit, proc, stmt.range, expr) {
+                if let Some(stmt_res) = typecheck_return(hir, emit, proc, expr, stmt.range) {
                     let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
@@ -2365,7 +2365,7 @@ fn typecheck_block<'hir>(
                 //@defer can behave strangely with diverges checks since it inherits diverges 29.05.24
                 // from currently top block, while defer itself can be triggered multiple times in different locations
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
-                let stmt_res = typecheck_defer(hir, emit, proc, stmt.range.start(), *block);
+                let stmt_res = typecheck_defer(hir, emit, proc, *block, stmt.range);
                 (stmt_res, diverges)
             }
             ast::StmtKind::Loop(loop_) => {
@@ -2470,24 +2470,25 @@ fn typecheck_block<'hir>(
 
 /// returns `None` on invalid use of `break`
 fn typecheck_break<'hir>(
-    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    range: TextRange,
+    stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
     match proc.loop_status() {
         LoopStatus::None => {
+            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
             emit.error(ErrorComp::new(
-                "cannot use `break` outside of a loop",
-                SourceRange::new(proc.origin(), range),
+                "cannot use `break` outside of loop",
+                SourceRange::new(proc.origin(), kw_range),
                 None,
             ));
             None
         }
         LoopStatus::Inside_WithDefer => {
+            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
             emit.error(ErrorComp::new(
-                "cannot use `break` in a loop that is outside of `defer`",
-                SourceRange::new(proc.origin(), range),
+                "cannot use `break` in loop started outside of `defer`",
+                SourceRange::new(proc.origin(), kw_range),
                 None,
             ));
             None
@@ -2498,24 +2499,25 @@ fn typecheck_break<'hir>(
 
 /// returns `None` on invalid use of `continue`
 fn typecheck_continue<'hir>(
-    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    range: TextRange,
+    stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
     match proc.loop_status() {
         LoopStatus::None => {
+            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
             emit.error(ErrorComp::new(
-                "cannot use `continue` outside of a loop",
-                SourceRange::new(proc.origin(), range),
+                "cannot use `continue` outside of loop",
+                SourceRange::new(proc.origin(), kw_range),
                 None,
             ));
             None
         }
         LoopStatus::Inside_WithDefer => {
+            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
             emit.error(ErrorComp::new(
-                "cannot use `continue` in a loop thats started outside of `defer`",
-                SourceRange::new(proc.origin(), range),
+                "cannot use `continue` in loop started outside of `defer`",
+                SourceRange::new(proc.origin(), kw_range),
                 None,
             ));
             None
@@ -2529,61 +2531,67 @@ fn typecheck_return<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    range: TextRange,
     expr: Option<&ast::Expr>,
+    stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
-    match proc.defer_status() {
-        DeferStatus::None => {
-            if let Some(expr) = expr {
-                let expr_res = typecheck_expr(hir, emit, proc, proc.return_expect(), expr);
-                Some(hir::Stmt::Return(Some(expr_res.expr)))
-            } else {
-                check_type_expectation(
-                    hir,
-                    emit,
-                    proc.origin(),
-                    range,
-                    proc.return_expect(),
-                    hir::Type::VOID,
-                );
-                Some(hir::Stmt::Return(None))
-            }
+    let valid = if let DeferStatus::Inside(prev_defer) = proc.defer_status() {
+        let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
+        emit.error(ErrorComp::new(
+            "cannot use `return` inside `defer`",
+            SourceRange::new(proc.origin(), kw_range),
+            Info::new("in this defer", SourceRange::new(proc.origin(), prev_defer)),
+        ));
+        false
+    } else {
+        true
+    };
+
+    let expr = match expr {
+        Some(expr) => {
+            let expr_res = typecheck_expr(hir, emit, proc, proc.return_expect(), expr);
+            Some(expr_res.expr)
         }
-        DeferStatus::Inside(prev_defer) => {
-            //@still check whats being returned? for coverage 29.05.24
-            emit.error(ErrorComp::new(
-                "cannot use `return` inside `defer`",
-                SourceRange::new(proc.origin(), range),
-                Info::new("in this defer", SourceRange::new(proc.origin(), prev_defer)),
-            ));
+        None => {
+            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
+            check_type_expectation(
+                hir,
+                emit,
+                proc.origin(),
+                kw_range,
+                proc.return_expect(),
+                hir::Type::VOID,
+            );
             None
         }
+    };
+
+    if valid {
+        Some(hir::Stmt::Return(expr))
+    } else {
+        None
     }
 }
 
-//@allow break and continue from loops that originated within defer itself
-// this can probably be done via resetting the in_loop when entering defer block
+//@also return optional?
+// will matter if defers play a role in control flow checks
 fn typecheck_defer<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    start: TextOffset,
     block: ast::Block<'_>,
+    stmt_range: TextRange,
 ) -> hir::Stmt<'hir> {
-    let defer_range = TextRange::new(start, start + 5.into());
+    let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
 
-    match proc.defer_status() {
-        DeferStatus::None => {}
-        DeferStatus::Inside(prev_defer) => {
-            emit.error(ErrorComp::new(
-                "`defer` statements cannot be nested",
-                SourceRange::new(proc.origin(), defer_range),
-                Info::new(
-                    "already in this defer",
-                    SourceRange::new(proc.origin(), prev_defer),
-                ),
-            ));
-        }
+    if let DeferStatus::Inside(prev_defer) = proc.defer_status() {
+        emit.error(ErrorComp::new(
+            "`defer` statements cannot be nested",
+            SourceRange::new(proc.origin(), kw_range),
+            Info::new(
+                "already in this defer",
+                SourceRange::new(proc.origin(), prev_defer),
+            ),
+        ));
     }
 
     let block_res = typecheck_block(
@@ -2592,7 +2600,7 @@ fn typecheck_defer<'hir>(
         proc,
         Expectation::HasType(hir::Type::VOID, None),
         block,
-        BlockEnter::Defer(defer_range),
+        BlockEnter::Defer(kw_range),
     );
 
     let block = emit.arena.alloc(block_res.block);
@@ -2650,10 +2658,11 @@ fn typecheck_loop<'hir>(
         BlockEnter::Loop,
     );
 
-    emit.arena.alloc(hir::Loop {
+    let loop_ = hir::Loop {
         kind,
         block: block_res.block,
-    })
+    };
+    emit.arena.alloc(loop_)
 }
 
 fn typecheck_local<'hir>(
