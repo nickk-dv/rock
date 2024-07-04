@@ -7,6 +7,7 @@ use crate::error::ErrorComp;
 use crate::fs_env;
 use crate::hir;
 use crate::session::Session;
+use crate::timer::Timer;
 use inkwell::module;
 use inkwell::targets;
 use std::path::PathBuf;
@@ -40,11 +41,25 @@ pub fn codegen(
     emit_llvm: bool,
     args: Option<Vec<String>>,
 ) -> Result<(), ErrorComp> {
+    let timer = Timer::new();
+    let timer_1 = Timer::new();
     let context_llvm = inkwell::context::Context::create();
     let (module, machine) = emit_mod::codegen_module(hir, &context_llvm);
+    timer_1.stop("llvm module create");
+
+    let timer_2 = Timer::new();
     let context = create_build_context(session, build_kind)?;
+    timer_2.stop("create build context & directories");
+
+    let timer_3 = Timer::new();
     module_verify(&context, &module, emit_llvm)?;
+    timer_3.stop("module_verify & maybe print to file");
+
+    let timer_4 = Timer::new();
     build_executable(&context, module, machine, session)?;
+    timer_4.stop("build_executable total");
+    timer.stop("build total");
+
     run_executable(&context, args)?;
     Ok(())
 }
@@ -110,6 +125,8 @@ fn build_executable<'ctx>(
     session: &Session,
 ) -> Result<(), ErrorComp> {
     let object_path = context.build_dir.join(format!("{}.o", context.bin_name));
+
+    let timer_1 = Timer::new();
     machine
         .write_to_file(&module, targets::FileType::Object, &object_path)
         .map_err(|error| {
@@ -118,6 +135,7 @@ fn build_executable<'ctx>(
                 error
             ))
         })?;
+    timer_1.stop("build executable: write object to file");
 
     let arg_obj = object_path.to_string_lossy().to_string();
     let arg_out = format!("/out:{}", context.executable_path.to_string_lossy());
@@ -177,6 +195,7 @@ fn build_executable<'ctx>(
         args.push("/defaultlib:libcmt.lib".into());
     }
 
+    let timer_2 = Timer::new();
     // lld-link is called system wide, and requires llvm being installed @29.05.24
     // test and use bundled lld-link relative to install path instead
     let _ = std::process::Command::new("lld-link")
@@ -189,6 +208,7 @@ fn build_executable<'ctx>(
                 io_error
             ))
         })?;
+    timer_2.stop("build executable: lld-link command run");
     fs_env::file_remove(&object_path, false)?;
     Ok(())
 }
