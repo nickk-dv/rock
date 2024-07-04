@@ -69,7 +69,7 @@ fn codegen_globals(cg: &mut Codegen) {
         let global = cg.module.add_global(global_ty, None, "rock_global");
         global.set_linkage(module::Linkage::Internal);
         global.set_constant(data.mutt == ast::Mut::Immutable);
-        global.set_thread_local(data.thread_local);
+        global.set_thread_local(data.attr_set.contains(hir::GlobalFlag::ThreadLocal));
         global.set_initializer(&value);
         cg.globals.push(global);
     }
@@ -85,27 +85,23 @@ fn codegen_function_values(cg: &mut Codegen) {
         }
 
         //@repeated in Codegen ProcType generation 29.05.24
+        let is_variadic = proc_data.attr_set.contains(hir::ProcFlag::Variadic);
         let function_ty = match cg.type_into_basic_option(proc_data.return_ty) {
-            Some(ty) => ty.fn_type(&param_types, proc_data.is_variadic),
-            None => cg
-                .context
-                .void_type()
-                .fn_type(&param_types, proc_data.is_variadic),
+            Some(ty) => ty.fn_type(&param_types, is_variadic),
+            None => cg.context.void_type().fn_type(&param_types, is_variadic),
         };
 
         let name = cg.hir.intern_name.get_str(proc_data.name.id);
 
-        //@switch to explicit main flag on proc_data or store ProcID of the entry point in hir instead 29.05.24
-        // module of main being 0 is not stable, might put core library as the first Package / Module thats processed
-        let is_main = proc_data.origin_id == hir::ModuleID::new(0) && name == "main";
-        let is_c_call = proc_data.block.is_none();
+        let is_main = proc_data.attr_set.contains(hir::ProcFlag::Main);
+        let is_external = proc_data.attr_set.contains(hir::ProcFlag::External);
 
-        let name = if is_main || is_c_call {
+        let name = if is_main || is_external {
             name
         } else {
             "rock_proc"
         };
-        let linkage = if is_main || is_c_call {
+        let linkage = if is_main || is_external {
             module::Linkage::External
         } else {
             module::Linkage::Internal
