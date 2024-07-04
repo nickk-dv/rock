@@ -8,6 +8,7 @@ mod bitset;
 #[cfg(not(target_os = "linux"))]
 #[cfg(feature = "codegen_llvm")]
 pub mod codegen;
+pub mod codegen_ll;
 pub mod error;
 pub mod format;
 pub mod fs_env;

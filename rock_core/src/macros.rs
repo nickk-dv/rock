@@ -28,6 +28,11 @@ macro_rules! id_impl {
             }
             #[allow(unused)]
             #[inline(always)]
+            pub const fn raw(self) -> u32 {
+                self.0
+            }
+            #[allow(unused)]
+            #[inline(always)]
             pub const fn index(self) -> usize {
                 self.0 as usize
             }

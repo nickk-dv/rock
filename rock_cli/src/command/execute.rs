@@ -4,6 +4,7 @@ use crate::error_format;
 use rock_core::ast_parse;
 #[cfg(not(target_os = "linux"))]
 use rock_core::codegen;
+use rock_core::codegen_ll;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::fs_env;
 use rock_core::hir_lower;
@@ -178,9 +179,11 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, None);
-            let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
-            return Ok(warnings);
+            //@temp test
+            codegen_ll::codegen_module(hir);
+            //let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, None);
+            //let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
+            //return Ok(warnings);
         }
         Ok(vec![])
     }
