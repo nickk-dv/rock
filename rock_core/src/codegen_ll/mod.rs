@@ -43,6 +43,9 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     let mut cg = Codegen::new();
     timer1.measure();
 
+    //@set appropriate target triple (still passed to clang so it doesnt really matter)
+    //@set correct dat_layout
+
     let mut timer2 = Timer::new();
     codegen_string_literals(&mut cg, &hir);
     timer2.measure();
@@ -71,11 +74,17 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
 
     let mut timer7 = Timer::new();
     let args = vec![
-        module_path.to_string_lossy().to_string(),
+        "--target=x86_64-pc-windows-msvc".to_string(),
+        "-Wno-override-module".into(),
+        "-fuse-ld=lld".to_string(),
+        "-O0".into(),
+        module_path.to_string_lossy().into(),
         "-o".into(),
-        "codegen_ll_test.exe".into(),
+        debug_dir
+            .join("codegen_ll_test.exe")
+            .to_string_lossy()
+            .into(),
     ];
-
     let _ = std::process::Command::new("clang")
         .args(args)
         .status()
