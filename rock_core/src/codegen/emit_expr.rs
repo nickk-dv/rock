@@ -227,6 +227,7 @@ pub fn codegen_const_value<'ctx>(
             let mut values = Vec::with_capacity(array.values.len());
             let mut elem_ty = None;
 
+            //@fails on empty array due to how elem_ty is inferred
             for value_id in array.values {
                 let value = codegen_const_value(cg, cg.hir.const_value(*value_id));
                 elem_ty = Some(value.get_type().as_type_ref());
