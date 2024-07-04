@@ -180,7 +180,9 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
         #[cfg(not(target_os = "linux"))]
         {
             //@temp test
-            codegen_ll::codegen_module(hir);
+            let result = codegen_ll::codegen_module(session, hir);
+            let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
+            return Ok(warnings);
             //let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, None);
             //let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
             //return Ok(warnings);
