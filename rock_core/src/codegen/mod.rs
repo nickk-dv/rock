@@ -161,7 +161,7 @@ fn build_executable<'ctx>(
         }
         if let Some(lib_paths) = &manifest.build.lib_paths {
             for path in lib_paths {
-                let lib_path = package.root_dir().join(path);
+                let lib_path = package.root_dir.join(path);
                 args.push(format!("/libpath:{}", lib_path.to_string_lossy()));
             }
         }
