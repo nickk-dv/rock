@@ -56,6 +56,10 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     timer4.measure();
 
     let mut timer5 = Timer::new();
+    codegen_procedures(&mut cg, &hir);
+    timer5.measure();
+
+    let mut timer6 = Timer::new();
     let buffer_ll = cg.finish();
     let build_dir = session.cwd().join("build");
     fs_env::dir_create(&build_dir, false)?;
@@ -63,9 +67,9 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     fs_env::dir_create(&debug_dir, false)?;
     let module_path = debug_dir.join("codegen_ll_test.ll");
     fs_env::file_create_or_rewrite(&module_path, &buffer_ll)?;
-    timer5.measure();
+    timer6.measure();
 
-    let mut timer6 = Timer::new();
+    let mut timer7 = Timer::new();
     let args = vec![
         module_path.to_string_lossy().to_string(),
         "-o".into(),
@@ -82,15 +86,16 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
                 io_error
             ))
         })?;
-    timer6.measure();
+    timer7.measure();
 
     total.measure();
     timer1.display("codegen ll: buffer alloc 64kb");
     timer2.display("codegen ll: string_literals  ");
     timer3.display("codegen ll: struct_types     ");
     timer4.display("codegen ll: globals          ");
-    timer5.display("codegen ll: write to file    ");
-    timer6.display("codegen ll: clang build      ");
+    timer5.display("codegen ll: procedures       ");
+    timer6.display("codegen ll: write to file    ");
+    timer7.display("codegen ll: clang build      ");
     total.display("codegen ll: total             ");
     Ok(())
 }
@@ -225,20 +230,13 @@ fn codegen_globals(cg: &mut Codegen, hir: &hir::Hir) {
         );
         cg.new_line();
     }
-    cg.new_line();
-}
-
-fn array_elem_ty(ty: hir::Type) -> Option<hir::Type> {
-    match ty {
-        hir::Type::ArrayStatic(array) => Some(array.elem_ty),
-        _ => None,
-    }
 }
 
 fn codegen_const_value(
     cg: &mut Codegen,
     hir: &hir::Hir,
     value: hir::ConstValue,
+    //@can be inferred instead from first const_value being generated
     elem_ty: Option<hir::Type>,
 ) {
     match value {
@@ -367,6 +365,13 @@ fn codegen_const_value(
     }
 }
 
+fn array_elem_ty(ty: hir::Type) -> Option<hir::Type> {
+    match ty {
+        hir::Type::ArrayStatic(array) => Some(array.elem_ty),
+        _ => None,
+    }
+}
+
 enum IdentifierKind {
     Local,
     Global,
@@ -383,6 +388,22 @@ fn identifier(cg: &mut Codegen, kind: IdentifierKind, name: Option<&str>, versio
         cg.write_str(name);
         // only use dot for globals as llvm does?
         cg.write('.');
+    }
+    cg.write_str(&version.to_string()); //@allocation!
+}
+
+fn identifier_raw(cg: &mut Codegen, kind: IdentifierKind, name: &str) {
+    match kind {
+        IdentifierKind::Local => cg.write('%'),
+        IdentifierKind::Global => cg.write('@'),
+    }
+    cg.write_str(name);
+}
+
+fn identifier_unnamed(cg: &mut Codegen, kind: IdentifierKind, version: u32) {
+    match kind {
+        IdentifierKind::Local => cg.write('%'),
+        IdentifierKind::Global => cg.write('@'),
     }
     cg.write_str(&version.to_string()); //@allocation!
 }
@@ -444,4 +465,69 @@ fn array_type(cg: &mut Codegen, hir: &hir::Hir, array: &hir::ArrayStatic) {
     cg.write_str(" x ");
     ty(cg, hir, array.elem_ty);
     cg.write(']');
+}
+
+fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
+    for (idx, data) in hir.procs.iter().enumerate() {
+        let external = data.attr_set.contains(hir::ProcFlag::External);
+        let variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
+        let main = data.attr_set.contains(hir::ProcFlag::Main);
+
+        //@hack to compile
+        if !main {
+            continue;
+        }
+
+        cg.new_line();
+        if external {
+            cg.write_str("declare");
+        } else {
+            cg.write_str("define");
+            if !main {
+                cg.space();
+                cg.write_str("internal");
+            }
+        }
+
+        cg.space();
+        ty(cg, hir, data.return_ty);
+        cg.space();
+
+        if external || main {
+            let name = hir.intern_name.get_str(data.name.id);
+            identifier_raw(cg, IdentifierKind::Global, name);
+        } else {
+            identifier(cg, IdentifierKind::Global, Some("rock_proc"), idx as u32);
+        }
+
+        cg.write('(');
+        for (param_idx, param) in data.params.iter().enumerate() {
+            ty(cg, hir, param.ty);
+            if !external {
+                cg.space();
+                //@should use incrementing local counter for proc body
+                identifier_unnamed(cg, IdentifierKind::Local, param_idx as u32);
+            }
+            if variadic || param_idx + 1 != data.params.len() {
+                cg.write(',');
+                cg.space();
+            }
+        }
+        if variadic {
+            cg.write_str("...");
+        }
+        cg.write(')');
+
+        //@hack to generate @main body
+        cg.space();
+        cg.write('{');
+        cg.new_line();
+        cg.write_str("entry:");
+        cg.tab();
+        cg.write_str("ret i32 69");
+        cg.new_line();
+        cg.write('}');
+
+        cg.new_line();
+    }
 }
