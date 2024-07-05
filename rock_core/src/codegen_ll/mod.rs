@@ -2,19 +2,18 @@ use crate::ast;
 use crate::error::ErrorComp;
 use crate::fs_env;
 use crate::hir;
+use crate::intern::InternID;
 use crate::session::Session;
 use crate::timer::Timer;
 
 struct Codegen {
     buffer: String,
-    global_version: u32,
 }
 
 impl Codegen {
     fn new() -> Codegen {
         Codegen {
             buffer: String::with_capacity(1024 * 64),
-            global_version: 0,
         }
     }
 
@@ -36,12 +35,6 @@ impl Codegen {
     }
     fn new_line(&mut self) {
         self.buffer.push('\n');
-    }
-
-    fn global_version(&mut self) -> u32 {
-        let version = self.global_version;
-        self.global_version += 1;
-        version
     }
 }
 
@@ -193,12 +186,7 @@ fn codegen_string_literals(cg: &mut Codegen, hir: &hir::Hir) {
             elem_ty: hir::Type::Basic(ast::BasicType::U8),
         };
 
-        identifier(
-            cg,
-            IdentifierKind::Global,
-            Some("rock_string_lit"),
-            idx as u32,
-        );
+        ident_string_lit(cg, InternID::new(idx));
         cg.space();
         cg.write('=');
         cg.space();
@@ -258,9 +246,9 @@ fn nibble_to_hex(nibble: u8) -> u8 {
 }
 
 fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
+    //@have some safer iteration with correct ID being returned instead of using iter().enumerate()?
     for (idx, data) in hir.structs.iter().enumerate() {
-        let name = hir.intern_name.get_str(data.name.id);
-        identifier(cg, IdentifierKind::Local, Some(name), idx as u32);
+        ident_struct(cg, hir, hir::StructID::new(idx));
 
         cg.space();
         cg.write('=');
@@ -287,8 +275,7 @@ fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
 
 fn codegen_globals(cg: &mut Codegen, hir: &hir::Hir) {
     for (idx, data) in hir.globals.iter().enumerate() {
-        let name = hir.intern_name.get_str(data.name.id);
-        identifier(cg, IdentifierKind::Global, Some(name), idx as u32);
+        ident_global(cg, hir, hir::GlobalID::new(idx));
 
         cg.space();
         cg.write('=');
@@ -352,23 +339,13 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
         hir::ConstValue::Char { val } => cg.write_str(&format!("u0x{:x}", val as u32)), //@allocation!
         hir::ConstValue::String { id, c_string } => {
             if c_string {
-                identifier(
-                    cg,
-                    IdentifierKind::Global,
-                    Some("rock_string_lit"),
-                    id.raw(),
-                );
+                ident_string_lit(cg, id);
             } else {
                 cg.write('{');
                 cg.space();
                 cg.write_str("ptr");
                 cg.space();
-                identifier(
-                    cg,
-                    IdentifierKind::Global,
-                    Some("rock_string_lit"),
-                    id.raw(),
-                );
+                ident_string_lit(cg, id);
                 cg.write(',');
                 cg.space();
                 basic_type(cg, ast::BasicType::U64); //@assuming 64bit
@@ -482,40 +459,116 @@ fn const_value_type(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue) {
     }
 }
 
-enum IdentifierKind {
-    Local,
-    Global,
+fn ident_string_lit(cg: &mut Codegen, id: InternID) {
+    cg.write('@');
+    cg.write_str("string");
+    cg.write('.');
+    cg.write('l');
+    cg.write_str(&format!("{}", id.raw())); //@allocation!
 }
 
-//@make sure ident versioning is used correctly
-// in different scopes and no collisions are possible
-fn identifier(cg: &mut Codegen, kind: IdentifierKind, name: Option<&str>, version: u32) {
-    match kind {
-        IdentifierKind::Local => cg.write('%'),
-        IdentifierKind::Global => cg.write('@'),
-    }
-    if let Some(name) = name {
-        cg.write_str(name);
-        // only use dot for globals as llvm does?
+fn ident_struct(cg: &mut Codegen, hir: &hir::Hir, id: hir::StructID) {
+    let name_id = hir.struct_data(id).name.id;
+    let name = hir.intern_name.get_str(name_id);
+    cg.write('%');
+    cg.write_str(name);
+    cg.write('.');
+    cg.write('s');
+    cg.write_str(&format!("{}", id.raw())); //@allocation!
+}
+
+fn ident_global(cg: &mut Codegen, hir: &hir::Hir, id: hir::GlobalID) {
+    let name_id = hir.global_data(id).name.id;
+    let name = hir.intern_name.get_str(name_id);
+    cg.write('@');
+    cg.write_str(name);
+    cg.write('.');
+    cg.write('g');
+    cg.write_str(&format!("{}", id.raw())); //@allocation!
+}
+
+fn ident_procedure(cg: &mut Codegen, hir: &hir::Hir, id: hir::ProcID) {
+    let data = hir.proc_data(id);
+    let name = hir.intern_name.get_str(data.name.id);
+    let raw_name = data.attr_set.contains(hir::ProcFlag::External)
+        || data.attr_set.contains(hir::ProcFlag::Main);
+
+    cg.write('@');
+    cg.write_str(name);
+    if !raw_name {
         cg.write('.');
+        cg.write_str(&format!("{}", id.raw())); //@allocation!
     }
-    cg.write_str(&version.to_string()); //@allocation!
 }
 
-fn identifier_raw(cg: &mut Codegen, kind: IdentifierKind, name: &str) {
-    match kind {
-        IdentifierKind::Local => cg.write('%'),
-        IdentifierKind::Global => cg.write('@'),
-    }
+//@this will probably go away, using as a placeholder
+fn ident_local_named(cg: &mut Codegen, name: &str) {
+    cg.write('%');
     cg.write_str(name);
 }
 
-fn identifier_unnamed(cg: &mut Codegen, kind: IdentifierKind, version: u32) {
-    match kind {
-        IdentifierKind::Local => cg.write('%'),
-        IdentifierKind::Global => cg.write('@'),
+fn ident_local_unnamed(cg: &mut Codegen, version: u32) {
+    cg.write('%');
+    cg.write_str(&format!("{}", version)); //@allocation!
+}
+
+//@test if this is faster for numbers
+trait CodegenWriter {
+    fn write(self, cg: &mut Codegen);
+}
+
+impl CodegenWriter for u32 {
+    #[allow(unsafe_code)]
+    fn write(mut self, cg: &mut Codegen) {
+        const MAX_DIGITS: usize = 10;
+        let mut buffer = [0u8; MAX_DIGITS];
+        let mut i = MAX_DIGITS;
+
+        if self == 0 {
+            buffer[MAX_DIGITS - 1] = b'0';
+            i = MAX_DIGITS - 1;
+        } else {
+            while self > 0 {
+                i -= 1;
+                let digit = b'0' + (self % 10) as u8;
+                unsafe {
+                    *buffer.get_unchecked_mut(i) = digit;
+                }
+                self /= 10;
+            }
+        }
+
+        let bytes = unsafe { buffer.get_unchecked(i..) };
+        let string: &str = unsafe { std::str::from_utf8_unchecked(bytes) };
+        cg.write_str(string)
     }
-    cg.write_str(&version.to_string()); //@allocation!
+}
+
+impl CodegenWriter for u64 {
+    #[allow(unsafe_code)]
+    fn write(mut self, cg: &mut Codegen) {
+        const MAX_DIGITS: usize = 20;
+        let mut buffer = [0u8; MAX_DIGITS];
+        let mut i: usize = MAX_DIGITS;
+
+        if self == 0 {
+            buffer[MAX_DIGITS - 1] = b'0';
+            i = MAX_DIGITS - 1;
+        } else {
+            while self > 0 {
+                i -= 1;
+                let digit = b'0' + (self % 10) as u8;
+                unsafe {
+                    *buffer.get_unchecked_mut(i) = digit;
+                }
+                self /= 10;
+            }
+        }
+
+        let bytes = unsafe { buffer.get_unchecked(i..) };
+        let string: &str = unsafe { std::str::from_utf8_unchecked(bytes) };
+        cg.write_str(string)
+    }
 }
 
 fn ty(cg: &mut Codegen, hir: &hir::Hir, ty: hir::Type) {
@@ -556,9 +609,7 @@ fn basic_type(cg: &mut Codegen, basic: ast::BasicType) {
 }
 
 fn struct_type(cg: &mut Codegen, hir: &hir::Hir, struct_id: hir::StructID) {
-    let data = hir.struct_data(struct_id);
-    let name = hir.intern_name.get_str(data.name.id);
-    identifier(cg, IdentifierKind::Local, Some(name), struct_id.raw());
+    ident_struct(cg, hir, struct_id);
 }
 
 fn slice_type(cg: &mut Codegen) {
@@ -606,13 +657,7 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
         cg.space();
         ty(cg, hir, data.return_ty);
         cg.space();
-
-        if external || main {
-            let name = hir.intern_name.get_str(data.name.id);
-            identifier_raw(cg, IdentifierKind::Global, name);
-        } else {
-            identifier(cg, IdentifierKind::Global, Some("rock_proc"), idx as u32);
-        }
+        ident_procedure(cg, hir, hir::ProcID::new(idx));
 
         cg.write('(');
         for (param_idx, param) in data.params.iter().enumerate() {
@@ -620,7 +665,7 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
             if !external {
                 cg.space();
                 //@should use incrementing local counter for proc body
-                identifier_unnamed(cg, IdentifierKind::Local, param_idx as u32);
+                ident_local_unnamed(cg, param_idx as u32);
             }
             if variadic || param_idx + 1 != data.params.len() {
                 cg.write(',');
@@ -735,7 +780,7 @@ fn inst_return(cg: &mut Codegen, hir: &hir::Hir, expr: Option<&hir::Expr>) {
 fn inst_alloca(cg: &mut Codegen, hir: &hir::Hir, value_ty: hir::Type) {
     cg.tab();
     //@not versioned
-    identifier_raw(cg, IdentifierKind::Local, "local");
+    ident_local_named(cg, "local_alloca");
     cg.write_str(" = ");
     cg.write_str("alloca");
     cg.space();
@@ -746,7 +791,7 @@ fn inst_alloca(cg: &mut Codegen, hir: &hir::Hir, value_ty: hir::Type) {
 fn inst_load(cg: &mut Codegen, hir: &hir::Hir, ptr_ty: hir::Type, ptr_expr: &hir::Expr) {
     cg.tab();
     //@not versioned
-    identifier_raw(cg, IdentifierKind::Local, "local");
+    ident_local_named(cg, "local_load");
     cg.write_str(" = ");
     cg.write_str("load");
     cg.space();
