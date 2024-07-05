@@ -37,14 +37,66 @@ impl Codegen {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum BuildKind {
+    Debug,
+    Release,
+}
+
+impl BuildKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BuildKind::Debug => "debug",
+            BuildKind::Release => "release",
+        }
+    }
+
+    pub fn opt_level(self) -> &'static str {
+        match self {
+            BuildKind::Debug => "O0",
+            BuildKind::Release => "O3",
+        }
+    }
+}
+
+#[allow(unused)]
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone)]
+enum TargetTriple {
+    X86_64_Pc_Windows_Msvc,
+    X86_64_Unknown_Linux_Gnu,
+}
+
+impl TargetTriple {
+    fn as_str(self) -> &'static str {
+        match self {
+            TargetTriple::X86_64_Pc_Windows_Msvc => "x86_64-pc-windows-msvc",
+            TargetTriple::X86_64_Unknown_Linux_Gnu => "x86_64-unknown-linux-gnu",
+        }
+    }
+
+    fn default_host() -> TargetTriple {
+        #[cfg(all(target_arch = "x86_64", target_os = "windows", target_env = "msvc"))]
+        const DEFAULT_HOST: TargetTriple = TargetTriple::X86_64_Pc_Windows_Msvc;
+        #[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
+        const DEFAULT_HOST: TargetTriple = TargetTriple::X86_64_Unknown_Linux_Gnu;
+
+        // build can only succeed when build target
+        // matches one of supported `rock` target triples
+        DEFAULT_HOST
+    }
+}
+
 pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp> {
     let mut total = Timer::new();
     let mut timer1 = Timer::new();
     let mut cg = Codegen::new();
     timer1.measure();
 
-    //@set appropriate target triple (still passed to clang so it doesnt really matter)
-    //@set correct dat_layout
+    //@set correct data_layout? or rely on default?
+    let triple = TargetTriple::default_host();
+    let triple_string = format!("target triple = \"{}\"", triple.as_str());
+    cg.write_str(&triple_string);
 
     let mut timer2 = Timer::new();
     codegen_string_literals(&mut cg, &hir);
@@ -72,19 +124,21 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     fs_env::file_create_or_rewrite(&module_path, &buffer_ll)?;
     timer6.measure();
 
+    //@args and names are not correctly setup, nor the debug, release mode
+    // how to expose -v option when needed?
     let mut timer7 = Timer::new();
     let args = vec![
-        "--target=x86_64-pc-windows-msvc".to_string(),
         "-Wno-override-module".into(),
         "-fuse-ld=lld".to_string(),
         "-O0".into(),
         module_path.to_string_lossy().into(),
         "-o".into(),
         debug_dir
-            .join("codegen_ll_test.exe")
+            .join("codegen_ll_test") //@format not always exe
             .to_string_lossy()
             .into(),
     ];
+
     let _ = std::process::Command::new("clang")
         .args(args)
         .status()
