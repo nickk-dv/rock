@@ -7,12 +7,14 @@ use crate::timer::Timer;
 
 struct Codegen {
     buffer: String,
+    global_version: u32,
 }
 
 impl Codegen {
     fn new() -> Codegen {
         Codegen {
             buffer: String::with_capacity(1024 * 64),
+            global_version: 0,
         }
     }
 
@@ -34,6 +36,12 @@ impl Codegen {
     }
     fn new_line(&mut self) {
         self.buffer.push('\n');
+    }
+
+    fn global_version(&mut self) -> u32 {
+        let version = self.global_version;
+        self.global_version += 1;
+        version
     }
 }
 
@@ -97,6 +105,8 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     let triple = TargetTriple::default_host();
     let triple_string = format!("target triple = \"{}\"", triple.as_str());
     cg.write_str(&triple_string);
+    cg.new_line();
+    cg.new_line();
 
     let mut timer2 = Timer::new();
     codegen_string_literals(&mut cg, &hir);
@@ -124,31 +134,40 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     fs_env::file_create_or_rewrite(&module_path, &buffer_ll)?;
     timer6.measure();
 
+    let executable_path = debug_dir.join("codegen_ll_test"); //@format not always exe
+
     //@args and names are not correctly setup, nor the debug, release mode
-    // how to expose -v option when needed?
+    // how to expose -v option when needed? (--verbose flag to show clang output always?)
     let mut timer7 = Timer::new();
     let args = vec![
-        "-Wno-override-module".into(),
+        "-v".to_string(),
         "-fuse-ld=lld".to_string(),
         "-O0".into(),
         module_path.to_string_lossy().into(),
         "-o".into(),
-        debug_dir
-            .join("codegen_ll_test") //@format not always exe
-            .to_string_lossy()
-            .into(),
+        executable_path.to_string_lossy().into(),
     ];
 
-    let _ = std::process::Command::new("clang")
+    let output = std::process::Command::new("clang")
         .args(args)
-        .status()
+        .output()
         .map_err(|io_error| {
             ErrorComp::message(format!(
-                "failed to build llvm ir module: `{}`\nreason: {}",
+                "failed to build llvm ir module with clang: `{}`\nreason: {}",
                 module_path.to_string_lossy(),
                 io_error
             ))
         })?;
+
+    if !output.status.success() {
+        //assert that stdout is empty and remove stdout: stderr: if clang only prints to stder
+        return Err(ErrorComp::message(format!(
+            "clang build failed\nfull clang and linker output:\n\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        )));
+    }
+
     timer7.measure();
 
     total.measure();
@@ -283,25 +302,17 @@ fn codegen_globals(cg: &mut Codegen, hir: &hir::Hir) {
         }
         cg.space();
 
-        ty(cg, hir, data.ty);
-        cg.space();
-        codegen_const_value(
-            cg,
-            hir,
-            hir.const_eval_value(data.value),
-            array_elem_ty(data.ty),
-        );
+        codegen_const_value(cg, hir, hir.const_eval_value(data.value));
         cg.new_line();
     }
 }
 
-fn codegen_const_value(
-    cg: &mut Codegen,
-    hir: &hir::Hir,
-    value: hir::ConstValue,
-    //@can be inferred instead from first const_value being generated
-    elem_ty: Option<hir::Type>,
-) {
+fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue) {
+    const_value_type(cg, hir, value);
+    if !matches!(value, hir::ConstValue::EnumVariant { .. }) {
+        cg.space();
+    }
+
     match value {
         hir::ConstValue::Error => unreachable!(),
         hir::ConstValue::Null => cg.write_str("null"),
@@ -328,7 +339,7 @@ fn codegen_const_value(
         hir::ConstValue::IntU(_) => todo!("IntU is not implemented"),
         //@why is ty optional?
         hir::ConstValue::Float { val, ty } => {
-            if ty == Some(ast::BasicType::F64) {
+            if ty.unwrap() == ast::BasicType::F64 {
                 cg.write_str(&format!("0x{:x}", val.to_bits())); //@allocation!
             } else {
                 //@test by printf'ing them values are wrong must likely
@@ -378,17 +389,13 @@ fn codegen_const_value(
         } => {
             let variant = hir.enum_data(enum_id).variant(variant_id);
             let value = hir.const_eval_value(variant.value);
-            codegen_const_value(cg, hir, value, None);
+            codegen_const_value(cg, hir, value);
         }
         hir::ConstValue::Struct { struct_ } => {
             cg.write('{');
             cg.space();
-            let data = hir.struct_data(struct_.struct_id);
             for (idx, value_id) in struct_.fields.iter().enumerate() {
-                let field = data.field(hir::StructFieldID::new(idx));
-                ty(cg, hir, field.ty);
-                cg.space();
-                codegen_const_value(cg, hir, hir.const_value(*value_id), array_elem_ty(field.ty));
+                codegen_const_value(cg, hir, hir.const_value(*value_id));
                 if idx + 1 != struct_.fields.len() {
                     cg.write(',');
                 }
@@ -398,11 +405,8 @@ fn codegen_const_value(
         }
         hir::ConstValue::Array { array } => {
             cg.write('[');
-            let elem_ty = elem_ty.unwrap();
             for (idx, value_id) in array.values.iter().enumerate() {
-                ty(cg, hir, elem_ty);
-                cg.space();
-                codegen_const_value(cg, hir, hir.const_value(*value_id), array_elem_ty(elem_ty));
+                codegen_const_value(cg, hir, hir.const_value(*value_id));
                 if idx + 1 != array.values.len() {
                     cg.write(',');
                     cg.space();
@@ -412,12 +416,9 @@ fn codegen_const_value(
         }
         hir::ConstValue::ArrayRepeat { value, len } => {
             cg.write('[');
-            let elem_ty = elem_ty.unwrap();
             for idx in 0..len {
                 //@repeated generation (wasteful, no way to specify array repeat in llvm)
-                ty(cg, hir, elem_ty);
-                cg.space();
-                codegen_const_value(cg, hir, hir.const_value(value), array_elem_ty(elem_ty));
+                codegen_const_value(cg, hir, hir.const_value(value));
                 if idx + 1 != len {
                     cg.write(',');
                     cg.space();
@@ -428,10 +429,56 @@ fn codegen_const_value(
     }
 }
 
-fn array_elem_ty(ty: hir::Type) -> Option<hir::Type> {
-    match ty {
-        hir::Type::ArrayStatic(array) => Some(array.elem_ty),
-        _ => None,
+//@type needs to be inferred from constant itself
+// (problem with empty array types)
+// type is part of the constant value in llvm syntax
+fn const_value_type(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue) {
+    match value {
+        hir::ConstValue::Error => unreachable!(),
+        hir::ConstValue::Null => basic_type(cg, ast::BasicType::Rawptr),
+        hir::ConstValue::Bool { .. } => basic_type(cg, ast::BasicType::Bool),
+        hir::ConstValue::Int { ty, .. } => basic_type(cg, ty),
+        hir::ConstValue::IntS(_) => todo!(),
+        hir::ConstValue::IntU(_) => todo!(),
+        //@type should be not optional
+        hir::ConstValue::Float { ty, .. } => basic_type(cg, ty.unwrap()),
+        hir::ConstValue::Char { .. } => basic_type(cg, ast::BasicType::U32),
+        hir::ConstValue::String { c_string, .. } => {
+            if c_string {
+                basic_type(cg, ast::BasicType::Rawptr);
+            } else {
+                slice_type(cg);
+            }
+        }
+        hir::ConstValue::Procedure { .. } => basic_type(cg, ast::BasicType::Rawptr),
+        hir::ConstValue::EnumVariant { .. } => {}
+        hir::ConstValue::Struct { struct_ } => struct_type(cg, hir, struct_.struct_id),
+        hir::ConstValue::Array { array } => {
+            //@zero sized array types will wont be generated 05.07.24
+            // since type cannot be infered, zero sized arrays are currently
+            // allowed in other parts or the compiler, but they are problematic
+            // and might be removed + array repeat with 0 len is also semantically problematic
+            // since value wont be stored anywere after its evaluated
+            let first_value_id = array.values[0];
+            let value = hir.const_value(first_value_id);
+
+            cg.write('[');
+            cg.write_str(&format!("{}", array.values.len())); //@allocation!
+            cg.write_str(" x ");
+            //@will break with enum variants, fix enum variant generation behavior
+            const_value_type(cg, hir, value);
+            cg.write(']');
+        }
+        hir::ConstValue::ArrayRepeat { value, len } => {
+            let value = hir.const_value(value);
+
+            cg.write('[');
+            cg.write_str(&format!("{}", len)); //@allocation!
+            cg.write_str(" x ");
+            //@will break with enum variants, fix enum variant generation behavior
+            const_value_type(cg, hir, value);
+            cg.write(']');
+        }
     }
 }
 
@@ -479,7 +526,7 @@ fn ty(cg: &mut Codegen, hir: &hir::Hir, ty: hir::Type) {
         hir::Type::Struct(struct_id) => struct_type(cg, hir, struct_id),
         hir::Type::Reference(_, _) => cg.write_str("ptr"),
         hir::Type::Procedure(_) => cg.write_str("ptr"),
-        hir::Type::ArraySlice(_) => cg.write_str("{ ptr, i64 }"),
+        hir::Type::ArraySlice(_) => slice_type(cg),
         hir::Type::ArrayStatic(array) => array_type(cg, hir, array),
     }
 }
@@ -514,6 +561,10 @@ fn struct_type(cg: &mut Codegen, hir: &hir::Hir, struct_id: hir::StructID) {
     identifier(cg, IdentifierKind::Local, Some(name), struct_id.raw());
 }
 
+fn slice_type(cg: &mut Codegen) {
+    cg.write_str("{ ptr, i64 }");
+}
+
 fn array_type(cg: &mut Codegen, hir: &hir::Hir, array: &hir::ArrayStatic) {
     let len = match array.len {
         hir::ArrayStaticLen::Immediate(len) => len.expect("array len is known"),
@@ -537,7 +588,7 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
         let main = data.attr_set.contains(hir::ProcFlag::Main);
 
         //@hack to compile
-        if !main {
+        if !(main || external) {
             continue;
         }
 
@@ -581,16 +632,138 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
         }
         cg.write(')');
 
-        //@hack to generate @main body
-        cg.space();
-        cg.write('{');
-        cg.new_line();
-        cg.write_str("entry:");
-        cg.tab();
-        cg.write_str("ret i32 69");
-        cg.new_line();
-        cg.write('}');
+        if let Some(block) = data.block {
+            cg.space();
+            cg.write('{');
+            cg.new_line();
+
+            basic_block(cg, "entry");
+            let ret_value = hir::Expr::Const {
+                value: hir::ConstValue::Int {
+                    val: 69,
+                    neg: false,
+                    ty: ast::BasicType::S32,
+                },
+            };
+            inst_alloca(cg, hir, hir::Type::USIZE);
+            inst_return(cg, hir, Some(&ret_value));
+            //codegen_block(cg, hir, block); //@temp test
+            cg.write('}');
+        }
 
         cg.new_line();
     }
+}
+
+fn codegen_block(cg: &mut Codegen, hir: &hir::Hir, block: hir::Block) {
+    for stmt in block.stmts {
+        match *stmt {
+            hir::Stmt::Break => todo!(),
+            hir::Stmt::Continue => todo!(),
+            //@defer blocks (all_defer_blocks)
+            hir::Stmt::Return(expr) => inst_return(cg, hir, expr),
+            hir::Stmt::Defer(_) => todo!(),
+            hir::Stmt::Loop(_) => todo!(),
+            hir::Stmt::Local(_) => todo!(),
+            hir::Stmt::Assign(_) => todo!(),
+            hir::Stmt::ExprSemi(_) => todo!(),
+            hir::Stmt::ExprTail(_) => todo!(),
+        }
+    }
+}
+
+fn codegen_expr(cg: &mut Codegen, hir: &hir::Hir, expr: &hir::Expr) {
+    match *expr {
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { value } => codegen_const_value(cg, hir, value),
+        hir::Expr::If { if_ } => todo!(),
+        hir::Expr::Block { block } => codegen_block(cg, hir, block),
+        hir::Expr::Match { match_ } => todo!(),
+        hir::Expr::StructField {
+            target,
+            struct_id,
+            field_id,
+            deref,
+        } => todo!(),
+        hir::Expr::SliceField {
+            target,
+            first_ptr,
+            deref,
+        } => todo!(),
+        hir::Expr::Index { target, access } => todo!(),
+        hir::Expr::Slice { target, access } => todo!(),
+        hir::Expr::Cast { target, into, kind } => todo!(),
+        hir::Expr::LocalVar { local_id } => todo!(),
+        hir::Expr::ParamVar { param_id } => todo!(),
+        hir::Expr::ConstVar { const_id } => todo!(),
+        hir::Expr::GlobalVar { global_id } => todo!(),
+        hir::Expr::CallDirect { proc_id, input } => todo!(),
+        hir::Expr::CallIndirect { target, indirect } => todo!(),
+        hir::Expr::StructInit { struct_id, input } => todo!(),
+        hir::Expr::ArrayInit { array_init } => todo!(),
+        hir::Expr::ArrayRepeat { array_repeat } => todo!(),
+        hir::Expr::Deref { rhs, ptr_ty } => todo!(),
+        hir::Expr::Address { rhs } => todo!(),
+        hir::Expr::Unary { op, rhs } => todo!(),
+        hir::Expr::Binary {
+            op,
+            lhs,
+            rhs,
+            lhs_signed_int,
+        } => todo!(),
+    }
+}
+
+fn basic_block(cg: &mut Codegen, name: &str) {
+    cg.write_str(name);
+    cg.write(':');
+    cg.new_line();
+}
+
+fn inst_return(cg: &mut Codegen, hir: &hir::Hir, expr: Option<&hir::Expr>) {
+    cg.tab();
+    if let Some(expr) = expr {
+        cg.write_str("ret");
+        cg.space();
+        codegen_expr(cg, hir, expr);
+    } else {
+        cg.write_str("ret void");
+    }
+    cg.new_line();
+}
+
+fn inst_alloca(cg: &mut Codegen, hir: &hir::Hir, value_ty: hir::Type) {
+    cg.tab();
+    //@not versioned
+    identifier_raw(cg, IdentifierKind::Local, "local");
+    cg.write_str(" = ");
+    cg.write_str("alloca");
+    cg.space();
+    ty(cg, hir, value_ty);
+    cg.new_line();
+}
+
+fn inst_load(cg: &mut Codegen, hir: &hir::Hir, ptr_ty: hir::Type, ptr_expr: &hir::Expr) {
+    cg.tab();
+    //@not versioned
+    identifier_raw(cg, IdentifierKind::Local, "local");
+    cg.write_str(" = ");
+    cg.write_str("load");
+    cg.space();
+    ty(cg, hir, ptr_ty);
+    cg.write(',');
+    cg.space();
+    codegen_expr(cg, hir, ptr_expr);
+    cg.new_line();
+}
+
+fn inst_store(cg: &mut Codegen, hir: &hir::Hir, value_expr: &hir::Expr, ptr_expr: &hir::Expr) {
+    cg.tab();
+    cg.write_str("store");
+    cg.space();
+    codegen_expr(cg, hir, value_expr);
+    cg.write(',');
+    cg.space();
+    codegen_expr(cg, hir, ptr_expr);
+    cg.new_line();
 }
