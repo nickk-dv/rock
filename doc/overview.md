@@ -3,7 +3,10 @@
 - [Lexical elements](#lexical-elements)
 - [Packages](#packages)
 - [Modules](#modules)
+- [Items](#items)
+- [Basic types](#basic-types)
 - [Attributes](#attributes)
+- [Rock manifest](#rock-manifest)
 - [Command line tool](#command-line-tool)
 
 ## Introduction
@@ -22,6 +25,7 @@ Multi-line block comments begin with `/*` and end with `*/`.
     /* block comments can be nested */
 */
 ```
+---
 
 ### Numbers
 Numeric literals are untyped.  
@@ -30,6 +34,7 @@ Their type is determined during typechecking.
 2,   1024         // integer
 3.0, 23.45        // floating point
 ```
+---
 
 ### Built-in constants
 Keywords are reserved for commonly used constants.  
@@ -39,12 +44,14 @@ Keywords are reserved for commonly used constants.
 null              // null raw pointer
 true, false       // boolean constants
 ```
+---
 
 ### Characters
 Character literals represent 32-bit Unicode code points:
 ```go
 `r`, `2`, `\n`, `🔥`
 ```
+---
 
 ### Strings
 String literals are UTF-8 encoded byte sequences.  
@@ -67,6 +74,7 @@ For example, we can define a raw C string:
 ```go
 c`C:\\Very\\Annoying\\WindowsPath.txt`
 ```
+---
 
 ### Escape sequences
 - \t    - tab
@@ -76,12 +84,14 @@ c`C:\\Very\\Annoying\\WindowsPath.txt`
 - \\'   - single quote
 - \\"   - double quote
 - \\\\  - backslash
+---
 
 ## Packages
-Rock packages consist of `src` directory with `.rock` files and other directories  
-and `Rock.toml` manifest, which contains project configuration.
+Rock packages consist of `src` directory and `Rock.toml` manifest.  
+Directories can contain `.rock` files and nested directories.  
+`Rock.toml` manifest will be covered in a [later chapter](#rock-manifest).
 
-To create a new package use `rock` compiler binary from your terminal.  
+To create a **new package** use `rock` compiler binary from your terminal.  
 Full specification of the `rock` command line tool will be covered in a [later chapter](#command-line-tool).
 ```rs
 rock new my_package        // create `my_package` in current directory
@@ -92,8 +102,13 @@ rock run                   // build and run executable package
 ## Modules
 Modules are represented by a single `.rock` file.  
 Executable binary packages are required to have `src/main.rock` file.  
-Modules contain items with **private visibility** by default.  
-Visibility can be changed by using `pub` keyword.
+Modules contain a list of **items**.  
+
+## Items
+Items are **private** by default.  
+Their **visibility** can be changed via the `pub` keyword.
+
+---
 
 ### Procedures
 Procedures are used to perform computation at runtime,  
@@ -105,18 +120,21 @@ proc main() -> s32 {
     return 0;
 }
 ```
+
 Input **parameters** are defined like this:
 ```rs
 proc int_sum(x: s32, y: s32) -> s32 {
     return x + y;
 }
 ```
+
 Procedures that return `void` can omit the return type:
 ```rs
 proc do_nothing() {
     return;
 }
 ```
+---
 
 ### Structs
 Structs are record types in Rock.  
@@ -130,6 +148,7 @@ struct Vector2 {
     pub y: f32,
 }
 ```
+---
 
 ### Enums
 Enums represent a set of integer constants.  
@@ -145,6 +164,7 @@ enum TileKind {
     Forest = 10,
 }
 ```
+---
 
 ### Constants
 The constant's value must be able to be **evaluated at compile time**.  
@@ -168,37 +188,54 @@ Globals are defined with the `global` keyword:
 global mut COUNTER: u64 = 0;
 global CONSTANT_NUMBERS: [6]s32 = [4, 8, 15, 16, 23, 42];
 ```
+---
 
 ### Imports
-Imports are used to bring module or item names into scope.  
+Imports are used to bring module and item names into scope.  
 Only items declared with the `pub` keyword can be imported.  
 
-Import adds module and optional list of items into current module's scope:
+Imports are defined with the `import` keyword.  
+To specify the source package, use `package_name:`.  
+By default, imports search in the **current package**.  
+Import path is a list of `/` separated names.  
+Import paths must end with the **module name**.
+
 ```go
-import core:mem;               // import `mem` from `core`
-import core:libc.{ printf }    // import `io` and `printf` from `core`
+// import `fs` from `core`
+import core:fs;
+
+// import `libc` and `printf` from `core`
+import core:libc.{ printf }
 
 proc example() {
-    printf(c"imports");        // use `printf` directly
-    libc.printf(c"complete");  // use `io` to access `printf`
+    printf(c"directly use printf");
+    libc.printf(c"access printf from libc");
 }
 ```
-Imported module and items can be renamed.  
-This can be used to avoid name conflicts or make them easier to use.  
+
+Imported modules and items can be renamed.  
+Underscore can be used to ignore imported modules.
+
 ```go
-// import `physics_world_2d` as `world` from `physics`
-import physics/physics_world_2d as world;
+// import `world2D` as `world`
+// from current package path:
+// src/engine/physics/world2D.rock
+import engine/physics/world2D as world;
+
+// import `printf` as `log`
+// from `core` and ignore `libc` by renaming it to `_`
+import core:libc as _.{ printf as log }
 
 proc example() {
+    log(c"creating the world\n");
     world.init(0.16);
+    log(c"simulating the world\n");
     world.simulate();
+    log(c"destroying the world\n");
     world.deinit();
 }
 ```
-
-## Attributes
-
-## Command line tool
+---
 
 ## Basic types
 
@@ -221,3 +258,9 @@ proc example() {
 | `rawptr`    | `void*`               | type-erased pointer            |
 | `void`      | `void`                | zero-sized non-value type      |
 | `never`     | (none)                | represents diverging control flow |
+
+## Attributes
+
+## Rock manifest
+
+## Command line tool
