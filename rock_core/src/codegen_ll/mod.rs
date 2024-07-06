@@ -333,15 +333,17 @@ fn codegen_globals(cg: &mut Codegen, hir: &hir::Hir) {
         }
         cg.space();
 
-        codegen_const_value(cg, hir, hir.const_eval_value(data.value));
+        codegen_const_value(cg, hir, hir.const_eval_value(data.value), true);
         cg.new_line();
     }
 }
 
-fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue) {
-    const_value_type(cg, hir, value);
-    if !matches!(value, hir::ConstValue::EnumVariant { .. }) {
-        cg.space();
+fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue, with_type: bool) {
+    if with_type {
+        const_value_type(cg, hir, value);
+        if !matches!(value, hir::ConstValue::EnumVariant { .. }) {
+            cg.space();
+        }
     }
 
     match value {
@@ -362,7 +364,7 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
         hir::ConstValue::IntS(_) => todo!("IntS is not implemented"),
         hir::ConstValue::IntU(_) => todo!("IntU is not implemented"),
         hir::ConstValue::Float { val, float_ty } => {
-            if float_ty == hir::BasicFloatType::F64 {
+            if float_ty == hir::BasicFloat::F64 {
                 cg.write_str(&format!("0x{:x}", val.to_bits())); //@allocation!
             } else {
                 //@test by printf'ing them values are wrong must likely
@@ -402,13 +404,13 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
         } => {
             let variant = hir.enum_data(enum_id).variant(variant_id);
             let value = hir.const_eval_value(variant.value);
-            codegen_const_value(cg, hir, value);
+            codegen_const_value(cg, hir, value, with_type);
         }
         hir::ConstValue::Struct { struct_ } => {
             cg.write('{');
             cg.space();
             for (idx, value_id) in struct_.fields.iter().enumerate() {
-                codegen_const_value(cg, hir, hir.const_value(*value_id));
+                codegen_const_value(cg, hir, hir.const_value(*value_id), with_type);
                 if idx + 1 != struct_.fields.len() {
                     cg.write(',');
                 }
@@ -419,7 +421,7 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
         hir::ConstValue::Array { array } => {
             cg.write('[');
             for (idx, value_id) in array.values.iter().enumerate() {
-                codegen_const_value(cg, hir, hir.const_value(*value_id));
+                codegen_const_value(cg, hir, hir.const_value(*value_id), with_type);
                 if idx + 1 != array.values.len() {
                     cg.write(',');
                     cg.space();
@@ -431,7 +433,7 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
             cg.write('[');
             for idx in 0..len {
                 //@repeated generation (wasteful, no way to specify array repeat in llvm)
-                codegen_const_value(cg, hir, hir.const_value(value));
+                codegen_const_value(cg, hir, hir.const_value(value), with_type);
                 if idx + 1 != len {
                     cg.write(',');
                     cg.space();
@@ -543,10 +545,10 @@ fn ident_local_value(cg: &mut Codegen, value: LocalValue) {
     cg.write_str(&format!("{}", value.0)); //@allocation!
 }
 
-fn write_value(cg: &mut Codegen, hir: &hir::Hir, value: Value) {
+fn write_value(cg: &mut Codegen, hir: &hir::Hir, value: Value, with_type: bool) {
     match value {
         Value::Local(value) => ident_local_value(cg, value),
-        Value::Const(value) => codegen_const_value(cg, hir, value),
+        Value::Const(value) => codegen_const_value(cg, hir, value, with_type),
     }
 }
 
@@ -806,7 +808,7 @@ fn codegen_expr<'hir>(
         hir::Expr::ArrayRepeat { array_repeat } => todo!(),
         hir::Expr::Deref { rhs, ptr_ty } => todo!(),
         hir::Expr::Address { rhs } => todo!(),
-        hir::Expr::Unary { op, rhs } => todo!(),
+        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, hir, op, rhs)),
         hir::Expr::Binary {
             op,
             lhs,
@@ -866,7 +868,7 @@ fn codegen_call_direct<'hir>(
     cg.write('(');
     for (idx, &expr) in input.iter().enumerate() {
         if let hir::Expr::Const { value } = expr {
-            codegen_const_value(cg, hir, *value);
+            codegen_const_value(cg, hir, *value, true);
         } else {
             panic!("value expr not supported");
         }
@@ -889,6 +891,52 @@ fn codegen_call_indirect(
 ) {
 }
 
+fn codegen_unary<'hir>(
+    cg: &mut Codegen,
+    hir: &hir::Hir,
+    op: hir::UnOp,
+    rhs: &hir::Expr,
+) -> Value<'hir> {
+    let rhs = codegen_expr(cg, hir, rhs).unwrap(); //@expect value
+
+    match op {
+        hir::UnOp::Neg_Int(sint_ty) => {
+            let lhs = Value::Const(hir::ConstValue::Int {
+                val: 0,
+                neg: false,
+                int_ty: sint_ty.into_int(),
+            });
+            inst_bin_common(cg, hir, InstBinary::Sub, sint_ty.into_basic(), lhs, rhs)
+        }
+        hir::UnOp::Neg_Float(float_ty) => inst_fneg(cg, hir, float_ty, rhs),
+        hir::UnOp::BitNot(int_ty) => {
+            let max_value: u64 = match int_ty {
+                hir::BasicInt::S8 => u8::MAX.into(),
+                hir::BasicInt::S16 => u16::MAX.into(),
+                hir::BasicInt::S32 => u32::MAX.into(),
+                hir::BasicInt::S64 => u64::MAX,
+                hir::BasicInt::Ssize => u64::MAX,
+                hir::BasicInt::U8 => u8::MAX.into(),
+                hir::BasicInt::U16 => u16::MAX.into(),
+                hir::BasicInt::U32 => u32::MAX.into(),
+                hir::BasicInt::U64 => u64::MAX,
+                hir::BasicInt::Usize => u64::MAX,
+            };
+
+            let lhs = Value::Const(hir::ConstValue::Int {
+                val: max_value,
+                neg: false,
+                int_ty: int_ty,
+            });
+            inst_bin_common(cg, hir, InstBinary::Xor, int_ty.into_basic(), lhs, rhs)
+        }
+        hir::UnOp::LogicNot => {
+            let lhs = Value::Const(hir::ConstValue::Bool { val: true });
+            inst_bin_common(cg, hir, InstBinary::Xor, ast::BasicType::Bool, lhs, rhs)
+        }
+    }
+}
+
 fn basic_block(cg: &mut Codegen, name: &str) {
     cg.write_str(name);
     cg.write(':');
@@ -900,7 +948,7 @@ fn inst_ret(cg: &mut Codegen, hir: &hir::Hir, value: Option<Value>) {
     cg.write_str("ret");
     cg.space();
     if let Some(value) = value {
-        write_value(cg, hir, value);
+        write_value(cg, hir, value, true);
     } else {
         basic_type(cg, ast::BasicType::Void);
     }
@@ -934,7 +982,7 @@ fn inst_load<'hir>(cg: &mut Codegen, hir: &hir::Hir, ptr_ty: hir::Type, ptr: Val
     ty(cg, hir, ptr_ty);
     cg.write(',');
     cg.space();
-    write_value(cg, hir, ptr);
+    write_value(cg, hir, ptr, true);
 
     cg.new_line();
     Value::Local(value)
@@ -944,10 +992,10 @@ fn inst_store(cg: &mut Codegen, hir: &hir::Hir, ptr: Value, value: Value) {
     cg.tab();
     cg.write_str("store");
     cg.space();
-    write_value(cg, hir, ptr);
+    write_value(cg, hir, ptr, true);
     cg.write(',');
     cg.space();
-    write_value(cg, hir, value);
+    write_value(cg, hir, value, true);
     cg.new_line();
 }
 
@@ -969,12 +1017,9 @@ fn inst_br_cond(cg: &mut Codegen, hir: &hir::Hir, cond: Value, dest_true: &str, 
     cg.tab();
     cg.write_str("br");
     cg.space();
-
-    if let Value::Local(..) = cond {
-        basic_type(cg, ast::BasicType::Bool);
-        cg.space();
-    }
-    write_value(cg, hir, cond);
+    basic_type(cg, ast::BasicType::Bool);
+    cg.space();
+    write_value(cg, hir, cond, false);
 
     cg.write(',');
     cg.space();
@@ -989,4 +1034,67 @@ fn inst_br_cond(cg: &mut Codegen, hir: &hir::Hir, cond: Value, dest_true: &str, 
     cg.write_str(dest_false); //@missing %, use block ident
 
     cg.new_line();
+}
+
+fn inst_fneg<'hir>(
+    cg: &mut Codegen,
+    hir: &hir::Hir,
+    float_ty: hir::BasicFloat,
+    rhs: Value,
+) -> Value<'hir> {
+    cg.tab();
+    let value = cg.builder.build_local();
+    ident_local_value(cg, value);
+    cg.write_str(" = ");
+
+    cg.write_str("fneg");
+    cg.space();
+    basic_type(cg, float_ty.into_basic());
+    cg.space();
+    write_value(cg, hir, rhs, false); //@only false case
+
+    cg.new_line();
+    Value::Local(value)
+}
+
+#[derive(Copy, Clone)]
+enum InstBinary {
+    Xor,
+    Sub,
+}
+
+impl InstBinary {
+    fn as_str(self) -> &'static str {
+        match self {
+            InstBinary::Xor => "xor",
+            InstBinary::Sub => "sub",
+        }
+    }
+}
+
+fn inst_bin_common<'hir>(
+    cg: &mut Codegen,
+    hir: &hir::Hir,
+    inst: InstBinary,
+    basic: ast::BasicType,
+    lhs: Value,
+    rhs: Value,
+) -> Value<'hir> {
+    cg.tab();
+    let value = cg.builder.build_local();
+    ident_local_value(cg, value);
+    cg.write_str(" = ");
+
+    cg.write_str(inst.as_str());
+    cg.space();
+    basic_type(cg, basic);
+    cg.space();
+
+    write_value(cg, hir, lhs, false);
+    cg.write(',');
+    cg.space();
+    write_value(cg, hir, rhs, false);
+
+    cg.new_line();
+    Value::Local(value)
 }

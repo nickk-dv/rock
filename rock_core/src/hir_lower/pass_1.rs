@@ -140,7 +140,7 @@ fn add_enum_item<'hir, 'ast>(
     //@value based default sizing (similar to rust) would be best,
     // harder to typecheck in this `freely` sized approach
     let int_ty = if let Some((basic, basic_range)) = item.basic {
-        if let Some(int_ty) = hir::BasicIntType::from_basic(basic) {
+        if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
             int_ty
         } else {
             emit.error(ErrorComp::new(
@@ -151,10 +151,10 @@ fn add_enum_item<'hir, 'ast>(
                 SourceRange::new(origin_id, basic_range),
                 None,
             ));
-            hir::BasicIntType::S32
+            hir::BasicInt::S32
         }
     } else {
-        hir::BasicIntType::S32
+        hir::BasicInt::S32
     };
 
     //@use new hir::BasicIntType and error on invalid basic type usage

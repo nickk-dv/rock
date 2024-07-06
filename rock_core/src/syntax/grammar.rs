@@ -260,7 +260,7 @@ fn import_item(p: &mut Parser, m: Marker) {
         p.error_recover("expected import path", RECOVER_IMPORT_PATH);
     }
     if p.at(T![as]) {
-        name_alias(p);
+        symbol_rename(p);
     }
     if p.eat(T![.]) {
         if p.at(T!['{']) {
@@ -306,16 +306,18 @@ fn import_symbol(p: &mut Parser) {
     let m = p.start();
     name(p);
     if p.at(T![as]) {
-        name_alias(p);
+        symbol_rename(p);
     }
     m.complete(p, SyntaxKind::IMPORT_SYMBOL);
 }
 
-fn name_alias(p: &mut Parser) {
+fn symbol_rename(p: &mut Parser) {
     let m = p.start();
     p.bump(T![as]);
-    name(p);
-    m.complete(p, SyntaxKind::NAME_ALIAS);
+    if !p.eat(T![_]) {
+        name(p);
+    }
+    m.complete(p, SyntaxKind::SYMBOL_RENAME);
 }
 
 fn name(p: &mut Parser) {

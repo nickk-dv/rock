@@ -248,7 +248,7 @@ fn import_item<'ast>(
         p.state.names.add(name);
     }
     let import_path = p.state.names.take(offset, &mut p.state.arena);
-    let alias = if p.eat(T![as]) { Some(name(p)?) } else { None };
+    let rename = symbol_rename(p)?;
 
     let symbols = if p.eat(T![.]) {
         let symbols = comma_separated_list!(p, import_symbol, import_symbols, T!['{'], T!['}']);
@@ -263,16 +263,30 @@ fn import_item<'ast>(
         attrs,
         package,
         import_path,
-        alias,
+        rename,
         symbols,
     }))
 }
 
 fn import_symbol(p: &mut Parser) -> Result<ImportSymbol, String> {
-    Ok(ImportSymbol {
-        name: name(p)?,
-        alias: if p.eat(T![as]) { Some(name(p)?) } else { None },
-    })
+    let name = name(p)?;
+    let rename = symbol_rename(p)?;
+
+    Ok(ImportSymbol { name, rename })
+}
+
+fn symbol_rename(p: &mut Parser) -> Result<SymbolRename, String> {
+    if p.eat(T![as]) {
+        let range = p.peek_range();
+        if p.eat(T![_]) {
+            Ok(SymbolRename::Discard(range))
+        } else {
+            let alias = name(p)?;
+            Ok(SymbolRename::Alias(alias))
+        }
+    } else {
+        Ok(SymbolRename::None)
+    }
 }
 
 fn vis(p: &mut Parser) -> Vis {

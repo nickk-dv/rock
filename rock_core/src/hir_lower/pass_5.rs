@@ -2,7 +2,7 @@ use super::hir_build::{self, HirData, HirEmit, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr, WarningComp};
-use crate::hir::{self, BasicFloatType, BasicIntType};
+use crate::hir::{self, BasicFloat, BasicInt};
 use crate::intern::InternID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
@@ -404,13 +404,13 @@ fn typecheck_lit_int<'hir>(
     TypeResult::new(hir::Type::Basic(int_ty.into_basic()), expr)
 }
 
-pub fn coerce_int_type(expect: Expectation) -> BasicIntType {
-    const DEFAULT_INT_TYPE: BasicIntType = BasicIntType::S32;
+pub fn coerce_int_type(expect: Expectation) -> BasicInt {
+    const DEFAULT_INT_TYPE: BasicInt = BasicInt::S32;
 
     match expect {
         Expectation::None => DEFAULT_INT_TYPE,
         Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Basic(basic) => BasicIntType::from_basic(basic).unwrap_or(DEFAULT_INT_TYPE),
+            hir::Type::Basic(basic) => BasicInt::from_basic(basic).unwrap_or(DEFAULT_INT_TYPE),
             _ => DEFAULT_INT_TYPE,
         },
     }
@@ -429,15 +429,13 @@ fn typecheck_lit_float<'hir>(
     TypeResult::new(hir::Type::Basic(float_ty.into_basic()), expr)
 }
 
-pub fn coerce_float_type(expect: Expectation) -> BasicFloatType {
-    const DEFAULT_FLOAT_TYPE: BasicFloatType = BasicFloatType::F64;
+pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
+    const DEFAULT_FLOAT_TYPE: BasicFloat = BasicFloat::F64;
 
     match expect {
         Expectation::None => DEFAULT_FLOAT_TYPE,
         Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Basic(basic) => {
-                BasicFloatType::from_basic(basic).unwrap_or(DEFAULT_FLOAT_TYPE)
-            }
+            hir::Type::Basic(basic) => BasicFloat::from_basic(basic).unwrap_or(DEFAULT_FLOAT_TYPE),
             _ => DEFAULT_FLOAT_TYPE,
         },
     }
@@ -1482,7 +1480,7 @@ fn typecheck_sizeof<'hir>(
             let value = hir::ConstValue::Int {
                 val: size.size(),
                 neg: false,
-                int_ty: BasicIntType::Usize,
+                int_ty: BasicInt::Usize,
             };
             emit.arena.alloc(hir::Expr::Const { value })
         }
@@ -2108,23 +2106,92 @@ fn typecheck_unary<'hir>(
     };
     let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, rhs);
 
-    let compatable = check_un_op_compatibility(hir, emit, proc.origin(), rhs_res.ty, op, op_range);
+    let un_op = check_un_op_compatibility(hir, emit, proc.origin(), rhs_res.ty, op, op_range);
 
-    let unary_ty = if compatable {
-        match op {
+    if let Some(un_op) = un_op {
+        let unary_type = match op {
             ast::UnOp::Neg => rhs_res.ty,
             ast::UnOp::BitNot => rhs_res.ty,
             ast::UnOp::LogicNot => hir::Type::BOOL,
-        }
+        };
+        let unary_expr = hir::Expr::Unary {
+            op: un_op,
+            rhs: rhs_res.expr,
+        };
+        let unary_expr = emit.arena.alloc(unary_expr);
+        TypeResult::new(unary_type, unary_expr)
     } else {
-        hir::Type::Error
+        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+    }
+}
+
+fn check_un_op_compatibility(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    rhs_ty: hir::Type,
+    op: ast::UnOp,
+    op_range: TextRange,
+) -> Option<hir::UnOp> {
+    let basic = match rhs_ty {
+        hir::Type::Error => return None,
+        hir::Type::Basic(basic) => basic,
+        _ => {
+            error_cannot_apply_unary_op(hir, emit, origin_id, rhs_ty, op, op_range);
+            return None;
+        }
     };
 
-    let unary_expr = hir::Expr::Unary {
-        op,
-        rhs: rhs_res.expr,
+    let un_op = match op {
+        ast::UnOp::Neg => {
+            if let Some(sint_ty) = hir::BasicIntSigned::from_basic(basic) {
+                Some(hir::UnOp::Neg_Int(sint_ty))
+            } else if let Some(float_ty) = hir::BasicFloat::from_basic(basic) {
+                Some(hir::UnOp::Neg_Float(float_ty))
+            } else {
+                None
+            }
+        }
+        ast::UnOp::BitNot => {
+            if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
+                Some(hir::UnOp::BitNot(int_ty))
+            } else {
+                None
+            }
+        }
+        ast::UnOp::LogicNot => {
+            if let ast::BasicType::Bool = basic {
+                Some(hir::UnOp::LogicNot)
+            } else {
+                None
+            }
+        }
     };
-    TypeResult::new(unary_ty, emit.arena.alloc(unary_expr))
+
+    if un_op.is_none() {
+        error_cannot_apply_unary_op(hir, emit, origin_id, rhs_ty, op, op_range);
+    }
+
+    un_op
+}
+
+fn error_cannot_apply_unary_op(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    rhs_ty: hir::Type,
+    op: ast::UnOp,
+    op_range: TextRange,
+) {
+    emit.error(ErrorComp::new(
+        format!(
+            "cannot apply unary operator `{}` on value of type `{}`",
+            op.as_str(),
+            type_format(hir, emit, rhs_ty).as_str()
+        ),
+        SourceRange::new(origin_id, op_range),
+        None,
+    ));
 }
 
 //@bin << >> should allow any integer type on the right, same sized int?
@@ -2225,47 +2292,6 @@ fn check_match_compatibility<'hir>(
             None,
         ));
     }
-}
-
-fn check_un_op_compatibility<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
-    rhs_ty: hir::Type,
-    op: ast::UnOp,
-    op_range: TextRange,
-) -> bool {
-    if rhs_ty.is_error() {
-        return false;
-    }
-
-    let compatible = match op {
-        ast::UnOp::Neg => match rhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::SignedInt | BasicTypeKind::Float => true,
-                _ => false,
-            },
-            _ => false,
-        },
-        ast::UnOp::BitNot => match rhs_ty {
-            hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_integer(),
-            _ => false,
-        },
-        ast::UnOp::LogicNot => matches!(rhs_ty, hir::Type::Basic(BasicType::Bool)),
-    };
-
-    if !compatible {
-        emit.error(ErrorComp::new(
-            format!(
-                "cannot apply unary operator `{}` on value of type `{}`",
-                op.as_str(),
-                type_format(hir, emit, rhs_ty).as_str()
-            ),
-            SourceRange::new(origin_id, op_range),
-            None,
-        ));
-    }
-    compatible
 }
 
 fn check_bin_op_compatibility<'hir>(
