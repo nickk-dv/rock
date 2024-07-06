@@ -1283,7 +1283,6 @@ fn basic_type_size(basic: BasicType) -> hir::Size {
         BasicType::U32 => hir::Size::new_equal(4),
         BasicType::U64 => hir::Size::new_equal(8),
         BasicType::Usize => hir::Size::new_equal(8), //@assume 64bit target
-        BasicType::F16 => hir::Size::new_equal(2),
         BasicType::F32 => hir::Size::new_equal(4),
         BasicType::F64 => hir::Size::new_equal(8),
         BasicType::Bool => hir::Size::new_equal(1),
@@ -1315,7 +1314,7 @@ impl BasicTypeKind {
             BasicType::U8 | BasicType::U16 | BasicType::U32 | BasicType::U64 | BasicType::Usize => {
                 BasicTypeKind::UnsignedInt
             }
-            BasicType::F16 | BasicType::F32 | BasicType::F64 => BasicTypeKind::Float,
+            BasicType::F32 | BasicType::F64 => BasicTypeKind::Float,
             BasicType::Bool => BasicTypeKind::Bool,
             BasicType::Char => BasicTypeKind::Char,
             BasicType::Rawptr => BasicTypeKind::Rawptr,

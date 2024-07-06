@@ -643,7 +643,6 @@ fn basic_type(cg: &mut Codegen, basic: ast::BasicType) {
         ast::BasicType::U32 => "i32",
         ast::BasicType::U64 => "i64",
         ast::BasicType::Usize => "i64", //@assume 64bit
-        ast::BasicType::F16 => "half",
         ast::BasicType::F32 => "float",
         ast::BasicType::F64 => "double",
         ast::BasicType::Bool => "i1",

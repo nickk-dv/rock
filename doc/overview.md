@@ -33,7 +33,7 @@ Their type is determined during typechecking.
 
 ### Built-in constants
 Keywords are reserved for commonly used constants.  
-`null` is not like `nil` or `undefined` in other languages and requires an explicit cast.  
+`null` does not behave like `nil` or `undefined` in other languages and requires an explicit cast.  
 `null` is mostly used for `C` interop and working with `void*` equivalent `rawptr` type.
 ```c#
 null              // null raw pointer
@@ -65,20 +65,20 @@ Multi-line strings are represented by consecutive string literals:
 These modifiers can be used together.  
 For example, we can define a raw C string:
 ```go
-c`C:\\Very\\Scary\\WindowsPath.txt`
+c`C:\\Very\\Annoying\\WindowsPath.txt`
 ```
 
 ### Escape sequences
-- \t  - tab
-- \n  - newline
-- \r  - carriage return
-- \0  - null terminator
+- \t    - tab
+- \n    - newline
+- \r    - carriage return
+- \0    - null terminator
 - \\'   - single quote
 - \\"   - double quote
 - \\\\  - backslash
 
 ## Packages
-Rock packages consist of `src` directory with `.rock` files  
+Rock packages consist of `src` directory with `.rock` files and other directories  
 and `Rock.toml` manifest, which contains project configuration.
 
 To create a new package use `rock` compiler binary from your terminal.  
@@ -86,17 +86,18 @@ Full specification of the `rock` command line tool will be covered in a [later c
 ```rs
 rock new my_package        // create `my_package` in current directory
 cd my_package              // cd into created package directory
-rock run                   // build an run executable package
+rock run                   // build and run executable package
 ```
 
 ## Modules
 Modules are represented by a single `.rock` file.  
 Executable binary packages are required to have `src/main.rock` file.  
-Modules contain items with private visibility, which can be changed with `pub` keyword.
+Modules contain items with **private visibility** by default.  
+Visibility can be changed by using `pub` keyword.
 
 ### Procedures
 Procedures are used to perform computation at runtime,  
-in some other languages they are called *functions* or *methods*.
+in some other languages they are called functions or methods.
 
 Procedures are defined with the `proc` keyword:
 ```rs
@@ -104,7 +105,7 @@ proc main() -> s32 {
     return 0;
 }
 ```
-Input parameters are defined like this:
+Input **parameters** are defined like this:
 ```rs
 proc int_sum(x: s32, y: s32) -> s32 {
     return x + y;
@@ -120,12 +121,13 @@ proc do_nothing() {
 ### Structs
 Structs are record types in Rock.  
 They represent a named collection of **fields**.  
+Visibility rules do apply to struct fields.
 
 Structs are defined with the `struct` keyword:
 ```rs
 struct Vector2 {
-    x: f32;
-    y: f32;
+    pub x: f32,
+    pub y: f32,
 }
 ```
 
@@ -137,16 +139,17 @@ Variants can be assigned with an explicit value or auto incremented.
 Enums are defined with the `enum` keyword:
 ```rs
 enum TileKind {
-    Rock;  // 0
-    Grass; // 1
-    Water; // 2
-    Forest = 10;
+    Rock,  // 0
+    Grass, // 1
+    Water, // 2
+    Forest = 10,
 }
 ```
 
 ### Constants
-The constant's value must be able to be evaluated at compile time.  
-Constants don't have a memory address and **cannot be referenced**.
+The constant's value must be able to be **evaluated at compile time**.  
+Constants don't have a memory address and **cannot be referenced**.  
+It's value cannot be changed at runtime.
 
 Constants are defined with the `const` keyword:
 ```rs
@@ -156,14 +159,14 @@ const ERROR_MESSAGE: []u8 = "out of bounds";
 ```
 
 ### Globals
-The global's value must be able to be evaluated at compile time.  
+The global's value must be able to be **evaluated at compile time**.  
 Globals have a memory address and **can be referenced**.  
 It's value can be changed at runtime when declared with `mut` keyword.
 
 Globals are defined with the `global` keyword:
 ```rs
 global mut COUNTER: u64 = 0;
-global THE_NUMBERS: [6]s32 = [4, 8, 15, 16, 23, 42];
+global CONSTANT_NUMBERS: [6]s32 = [4, 8, 15, 16, 23, 42];
 ```
 
 ### Imports
@@ -172,12 +175,12 @@ Only items declared with the `pub` keyword can be imported.
 
 Import adds module and optional list of items into current module's scope:
 ```go
-import core/mem;             // import `mem` from `core`
-import core/io.{ printf }    // import `io` and `printf` from `core`
+import core:mem;               // import `mem` from `core`
+import core:libc.{ printf }    // import `io` and `printf` from `core`
 
 proc example() {
-    printf(c"imports");      // use `printf` directly
-    io.printf(c"complete");  // use `io` to access `printf`
+    printf(c"imports");        // use `printf` directly
+    libc.printf(c"complete");  // use `io` to access `printf`
 }
 ```
 Imported module and items can be renamed.  
@@ -211,7 +214,6 @@ proc example() {
 | `u32`       | `uint32_t`            | 32-bit unsigned integer        |
 | `u64`       | `uint64_t`            | 64-bit unsigned integer        |
 | `usize`     | `uintptr_t`, `size_t` | pointer-sized unsigned integer |
-| `f16`       | `_Float16`            | 16-bit floating point: IEEE-754-2008 binary16 |
 | `f32`       | `float`               | 32-bit floating point: IEEE-754-2008 binary32 |
 | `f64`       | `double`              | 64-bit floating point: IEEE-754-2008 binary64 |
 | `bool`      | `bool`                | true or false                  |

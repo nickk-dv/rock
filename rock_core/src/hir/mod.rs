@@ -186,7 +186,6 @@ pub enum BasicIntType {
 
 #[derive(Copy, Clone, PartialEq, Hash)]
 pub enum BasicFloatType {
-    F16,
     F32,
     F64,
 }
@@ -581,7 +580,6 @@ impl BasicIntType {
 impl BasicFloatType {
     pub fn from_basic(basic: ast::BasicType) -> Option<BasicFloatType> {
         match basic {
-            ast::BasicType::F16 => Some(BasicFloatType::F16),
             ast::BasicType::F32 => Some(BasicFloatType::F32),
             ast::BasicType::F64 => Some(BasicFloatType::F64),
             _ => None,
@@ -590,7 +588,6 @@ impl BasicFloatType {
 
     pub fn into_basic(self) -> ast::BasicType {
         match self {
-            BasicFloatType::F16 => ast::BasicType::F16,
             BasicFloatType::F32 => ast::BasicType::F32,
             BasicFloatType::F64 => ast::BasicType::F64,
         }

@@ -358,7 +358,6 @@ const FIRST_TYPE_SET: TokenSet = TokenSet::new(&[
     T![u32],
     T![u64],
     T![usize],
-    T![f16],
     T![f32],
     T![f64],
     T![bool],
