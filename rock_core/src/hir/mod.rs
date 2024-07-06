@@ -58,7 +58,7 @@ pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub basic: ast::BasicType,
+    pub int_ty: BasicIntType,
     pub variants: &'hir [EnumVariant],
 }
 
@@ -170,6 +170,27 @@ pub enum ArrayStaticLen {
     ConstEval(ConstEvalID),
 }
 
+#[derive(Copy, Clone, PartialEq, Hash)]
+pub enum BasicIntType {
+    S8,
+    S16,
+    S32,
+    S64,
+    Ssize,
+    U8,
+    U16,
+    U32,
+    U64,
+    Usize,
+}
+
+#[derive(Copy, Clone, PartialEq, Hash)]
+pub enum BasicFloatType {
+    F16,
+    F32,
+    F64,
+}
+
 #[derive(Copy, Clone)]
 pub struct Block<'hir> {
     pub stmts: &'hir [Stmt<'hir>],
@@ -231,10 +252,10 @@ pub enum ConstValue<'hir> {
     Error,
     Null,
     Bool        { val: bool },
-    Int         { val: u64, neg: bool, ty: ast::BasicType },
+    Int         { val: u64, neg: bool, int_ty: BasicIntType },
     IntS (i64),
     IntU (u64),
-    Float       { val: f64, ty: Option<ast::BasicType> },
+    Float       { val: f64, float_ty: BasicFloatType },
     Char        { val: char },
     String      { id: InternID, c_string: bool },
     Procedure   { proc_id: ProcID },
@@ -510,5 +531,68 @@ impl<'hir> Type<'hir> {
     }
     pub fn is_never(self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Never))
+    }
+}
+
+impl BasicIntType {
+    pub fn from_basic(basic: ast::BasicType) -> Option<BasicIntType> {
+        match basic {
+            ast::BasicType::S8 => Some(BasicIntType::S8),
+            ast::BasicType::S16 => Some(BasicIntType::S16),
+            ast::BasicType::S32 => Some(BasicIntType::S32),
+            ast::BasicType::S64 => Some(BasicIntType::S64),
+            ast::BasicType::Ssize => Some(BasicIntType::Ssize),
+            ast::BasicType::U8 => Some(BasicIntType::U8),
+            ast::BasicType::U16 => Some(BasicIntType::U16),
+            ast::BasicType::U32 => Some(BasicIntType::U32),
+            ast::BasicType::U64 => Some(BasicIntType::U64),
+            ast::BasicType::Usize => Some(BasicIntType::Usize),
+            _ => None,
+        }
+    }
+
+    pub fn into_basic(self) -> ast::BasicType {
+        match self {
+            BasicIntType::S8 => ast::BasicType::S8,
+            BasicIntType::S16 => ast::BasicType::S16,
+            BasicIntType::S32 => ast::BasicType::S32,
+            BasicIntType::S64 => ast::BasicType::S64,
+            BasicIntType::Ssize => ast::BasicType::Ssize,
+            BasicIntType::U8 => ast::BasicType::U8,
+            BasicIntType::U16 => ast::BasicType::U16,
+            BasicIntType::U32 => ast::BasicType::U32,
+            BasicIntType::U64 => ast::BasicType::U64,
+            BasicIntType::Usize => ast::BasicType::Usize,
+        }
+    }
+
+    pub fn is_signed(self) -> bool {
+        matches!(
+            self,
+            BasicIntType::S8
+                | BasicIntType::S16
+                | BasicIntType::S32
+                | BasicIntType::S64
+                | BasicIntType::Ssize
+        )
+    }
+}
+
+impl BasicFloatType {
+    pub fn from_basic(basic: ast::BasicType) -> Option<BasicFloatType> {
+        match basic {
+            ast::BasicType::F16 => Some(BasicFloatType::F16),
+            ast::BasicType::F32 => Some(BasicFloatType::F32),
+            ast::BasicType::F64 => Some(BasicFloatType::F64),
+            _ => None,
+        }
+    }
+
+    pub fn into_basic(self) -> ast::BasicType {
+        match self {
+            BasicFloatType::F16 => ast::BasicType::F16,
+            BasicFloatType::F32 => ast::BasicType::F32,
+            BasicFloatType::F64 => ast::BasicType::F64,
+        }
     }
 }

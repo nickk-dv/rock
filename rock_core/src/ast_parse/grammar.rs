@@ -124,10 +124,16 @@ fn enum_item<'ast>(
 ) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
-    let basic = p.peek().as_basic_type();
-    if basic.is_some() {
+
+    let basic_range = p.peek_range();
+    let basic_ty = p.peek().as_basic_type();
+    let basic = if let Some(basic) = basic_ty {
         p.bump();
-    }
+        Some((basic, basic_range))
+    } else {
+        None
+    };
+
     let variants = comma_separated_list!(p, enum_variant, enum_variants, T!['{'], T!['}']);
 
     Ok(p.state.arena.alloc(EnumItem {

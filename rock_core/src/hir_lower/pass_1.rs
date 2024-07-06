@@ -137,11 +137,32 @@ fn add_enum_item<'hir, 'ast>(
         }
     }
 
+    //@value based default sizing (similar to rust) would be best,
+    // harder to typecheck in this `freely` sized approach
+    let int_ty = if let Some((basic, basic_range)) = item.basic {
+        if let Some(int_ty) = hir::BasicIntType::from_basic(basic) {
+            int_ty
+        } else {
+            emit.error(ErrorComp::new(
+                format!(
+                    "enum must be represented by integer type\nfound `{}`, default `s32` will be used",
+                    basic.as_str()
+                ),
+                SourceRange::new(origin_id, basic_range),
+                None,
+            ));
+            hir::BasicIntType::S32
+        }
+    } else {
+        hir::BasicIntType::S32
+    };
+
+    //@use new hir::BasicIntType and error on invalid basic type usage
     let data = hir::EnumData {
         origin_id,
         vis: item.vis,
         name: item.name,
-        basic: item.basic.unwrap_or(ast::BasicType::S32),
+        int_ty,
         variants: &[],
     };
 
