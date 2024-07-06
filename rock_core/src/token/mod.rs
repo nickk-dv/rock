@@ -54,7 +54,6 @@ token_gen::token_gen! {
     [u32]      | "u32"      | KwU32      | KW. BASIC[BasicType::U32]
     [u64]      | "u64"      | KwU64      | KW. BASIC[BasicType::U64]
     [usize]    | "usize"    | KwUsize    | KW. BASIC[BasicType::Usize]
-    [f16]      | "f16"      | KwF16      | KW. BASIC[BasicType::F16]
     [f32]      | "f32"      | KwF32      | KW. BASIC[BasicType::F32]
     [f64]      | "f64"      | KwF64      | KW. BASIC[BasicType::F64]
     [bool]     | "bool"     | KwBool     | KW. BASIC[BasicType::Bool]
