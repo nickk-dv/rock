@@ -354,23 +354,15 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
                 cg.write_str("false");
             }
         }
-        hir::ConstValue::Int { val, ty, .. } => {
-            let unsigned = matches!(
-                ty,
-                ast::BasicType::U8
-                    | ast::BasicType::U16
-                    | ast::BasicType::U32
-                    | ast::BasicType::U64
-                    | ast::BasicType::Usize
-            );
-            let prefix = if unsigned { 'u' } else { 's' };
+        hir::ConstValue::Int { val, int_ty, .. } => {
+            let signed = int_ty.is_signed();
+            let prefix = if signed { 's' } else { 'u' };
             cg.write_str(&format!("{}0x{:x}", prefix, val)); //@allocation!
         }
         hir::ConstValue::IntS(_) => todo!("IntS is not implemented"),
         hir::ConstValue::IntU(_) => todo!("IntU is not implemented"),
-        //@why is ty optional?
-        hir::ConstValue::Float { val, ty } => {
-            if ty.unwrap() == ast::BasicType::F64 {
+        hir::ConstValue::Float { val, float_ty } => {
+            if float_ty == hir::BasicFloatType::F64 {
                 cg.write_str(&format!("0x{:x}", val.to_bits())); //@allocation!
             } else {
                 //@test by printf'ing them values are wrong must likely
@@ -458,11 +450,10 @@ fn const_value_type(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue) {
         hir::ConstValue::Error => unreachable!(),
         hir::ConstValue::Null => basic_type(cg, ast::BasicType::Rawptr),
         hir::ConstValue::Bool { .. } => basic_type(cg, ast::BasicType::Bool),
-        hir::ConstValue::Int { ty, .. } => basic_type(cg, ty),
+        hir::ConstValue::Int { int_ty, .. } => basic_type(cg, int_ty.into_basic()),
         hir::ConstValue::IntS(_) => todo!(),
         hir::ConstValue::IntU(_) => todo!(),
-        //@type should be not optional
-        hir::ConstValue::Float { ty, .. } => basic_type(cg, ty.unwrap()),
+        hir::ConstValue::Float { float_ty, .. } => basic_type(cg, float_ty.into_basic()),
         hir::ConstValue::Char { .. } => basic_type(cg, ast::BasicType::U32),
         hir::ConstValue::String { c_string, .. } => {
             if c_string {
@@ -631,7 +622,7 @@ fn ty(cg: &mut Codegen, hir: &hir::Hir, ty: hir::Type) {
     match ty {
         hir::Type::Error => unreachable!(),
         hir::Type::Basic(basic) => basic_type(cg, basic),
-        hir::Type::Enum(enum_id) => basic_type(cg, hir.enum_data(enum_id).basic),
+        hir::Type::Enum(enum_id) => basic_type(cg, hir.enum_data(enum_id).int_ty.into_basic()),
         hir::Type::Struct(struct_id) => struct_type(cg, hir, struct_id),
         hir::Type::Reference(_, _) => cg.write_str("ptr"),
         hir::Type::Procedure(_) => cg.write_str("ptr"),

@@ -57,7 +57,7 @@ pub struct EnumItem<'ast> {
     pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
-    pub basic: Option<BasicType>,
+    pub basic: Option<(BasicType, TextRange)>,
     pub variants: &'ast [EnumVariant<'ast>],
 }
 

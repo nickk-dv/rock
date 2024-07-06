@@ -76,7 +76,7 @@ pub fn type_resolve<'hir>(
             let value = pass_4::resolve_const_expr(hir, emit, origin_id, expect, array.len);
 
             let len = match value {
-                hir::ConstValue::Int { val, ty, neg } => {
+                hir::ConstValue::Int { val, int_ty, neg } => {
                     if neg {
                         None
                     } else {

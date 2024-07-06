@@ -2,7 +2,7 @@ use super::hir_build::{self, HirData, HirEmit, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr, WarningComp};
-use crate::hir;
+use crate::hir::{self, BasicFloatType, BasicIntType};
 use crate::intern::InternID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
@@ -190,7 +190,7 @@ fn array_static_len<'hir>(
                 hir::ConstEval::ResolvedValue(value_id) => {
                     let value = emit.const_intern.get(value_id);
                     match value {
-                        hir::ConstValue::Int { val, neg, ty } => {
+                        hir::ConstValue::Int { val, neg, int_ty } => {
                             if neg {
                                 None
                             } else {
@@ -392,37 +392,25 @@ fn typecheck_lit_int<'hir>(
     expect: Expectation<'hir>,
     val: u64,
 ) -> TypeResult<'hir> {
-    let lit_type = coerce_int_type(expect);
+    let int_ty = coerce_int_type(expect);
     let value = hir::ConstValue::Int {
         val,
         neg: false,
-        ty: lit_type,
+        int_ty,
     };
 
     let expr = hir::Expr::Const { value };
     let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(lit_type), expr)
+    TypeResult::new(hir::Type::Basic(int_ty.into_basic()), expr)
 }
 
-pub fn coerce_int_type(expect: Expectation) -> BasicType {
-    const DEFAULT_INT_TYPE: BasicType = BasicType::S32;
+pub fn coerce_int_type(expect: Expectation) -> BasicIntType {
+    const DEFAULT_INT_TYPE: BasicIntType = BasicIntType::S32;
 
     match expect {
         Expectation::None => DEFAULT_INT_TYPE,
         Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Basic(basic) => match basic {
-                BasicType::S8
-                | BasicType::S16
-                | BasicType::S32
-                | BasicType::S64
-                | BasicType::Ssize
-                | BasicType::U8
-                | BasicType::U16
-                | BasicType::U32
-                | BasicType::U64
-                | BasicType::Usize => basic,
-                _ => DEFAULT_INT_TYPE,
-            },
+            hir::Type::Basic(basic) => BasicIntType::from_basic(basic).unwrap_or(DEFAULT_INT_TYPE),
             _ => DEFAULT_INT_TYPE,
         },
     }
@@ -433,27 +421,23 @@ fn typecheck_lit_float<'hir>(
     expect: Expectation<'hir>,
     val: f64,
 ) -> TypeResult<'hir> {
-    let lit_type = coerce_float_type(expect);
-    let value = hir::ConstValue::Float {
-        val,
-        ty: Some(lit_type),
-    };
+    let float_ty = coerce_float_type(expect);
+    let value = hir::ConstValue::Float { val, float_ty };
 
     let expr = hir::Expr::Const { value };
     let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(lit_type), expr)
+    TypeResult::new(hir::Type::Basic(float_ty.into_basic()), expr)
 }
 
-pub fn coerce_float_type(expect: Expectation) -> BasicType {
-    const DEFAULT_FLOAT_TYPE: BasicType = BasicType::F64;
+pub fn coerce_float_type(expect: Expectation) -> BasicFloatType {
+    const DEFAULT_FLOAT_TYPE: BasicFloatType = BasicFloatType::F64;
 
     match expect {
         Expectation::None => DEFAULT_FLOAT_TYPE,
         Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Basic(basic) => match basic {
-                BasicType::F16 | BasicType::F32 | BasicType::F64 => basic,
-                _ => DEFAULT_FLOAT_TYPE,
-            },
+            hir::Type::Basic(basic) => {
+                BasicFloatType::from_basic(basic).unwrap_or(DEFAULT_FLOAT_TYPE)
+            }
             _ => DEFAULT_FLOAT_TYPE,
         },
     }
@@ -1249,7 +1233,14 @@ pub fn type_size(
     match ty {
         hir::Type::Error => None,
         hir::Type::Basic(basic) => Some(basic_type_size(basic)),
-        hir::Type::Enum(id) => Some(basic_type_size(hir.registry().enum_data(id).basic)),
+        hir::Type::Enum(id) => {
+            let data = hir.registry().enum_data(id);
+            if data.variants.is_empty() {
+                Some(hir::Size::new(0, 1))
+            } else {
+                Some(basic_type_size(data.int_ty.into_basic()))
+            }
+        }
         hir::Type::Struct(id) => hir.registry().struct_data(id).size_eval.get_size(),
         hir::Type::Reference(_, _) => Some(hir::Size::new_equal(8)), //@assume 64bit target
         hir::Type::Procedure(_) => Some(hir::Size::new_equal(8)),    //@assume 64bit target
@@ -1492,7 +1483,7 @@ fn typecheck_sizeof<'hir>(
             let value = hir::ConstValue::Int {
                 val: size.size(),
                 neg: false,
-                ty: BasicType::Usize,
+                int_ty: BasicIntType::Usize,
             };
             emit.arena.alloc(hir::Expr::Const { value })
         }
@@ -1914,7 +1905,7 @@ fn typecheck_array_repeat<'hir>(
         len,
     );
     let len = match value {
-        hir::ConstValue::Int { val, ty, neg } => {
+        hir::ConstValue::Int { val, neg, int_ty } => {
             if neg {
                 None
             } else {

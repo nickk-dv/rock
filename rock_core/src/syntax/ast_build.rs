@@ -236,7 +236,9 @@ fn enum_item<'ast>(
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visiblity(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let basic = item.type_basic(ctx.tree).map(|tb| tb.basic(ctx.tree)); //@not storing basic range
+    let basic = item
+        .type_basic(ctx.tree)
+        .map(|tb| (tb.basic(ctx.tree), tb.range(ctx.tree)));
 
     let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();

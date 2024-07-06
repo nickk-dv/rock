@@ -742,9 +742,18 @@ fn resolve_const_dependency_tree<'hir>(
         match node.value {
             ConstDependency::EnumVariant(id, variant_id) => {
                 let data = hir.registry().enum_data(id);
+                let item = hir.registry().enum_item(id);
                 let variant = data.variant(variant_id);
 
-                let expect = Expectation::HasType(hir::Type::Basic(data.basic), None); //@add range for basic type on enum
+                let expect_src = if let Some((_, range)) = item.basic {
+                    SourceRange::new(data.origin_id, range)
+                } else {
+                    SourceRange::new(data.origin_id, data.name.range)
+                };
+                let expect = Expectation::HasType(
+                    hir::Type::Basic(data.int_ty.into_basic()),
+                    Some(expect_src),
+                );
                 resolve_and_update_const_eval(hir, emit, variant.value, expect);
             }
             ConstDependency::StructSize(id) => {
@@ -1007,7 +1016,7 @@ fn fold_slice_field<'hir>(
                 hir::ConstValue::Int {
                     val: len as u64,
                     neg: false,
-                    ty: ast::BasicType::Usize,
+                    int_ty: hir::BasicIntType::Usize,
                 }
             } else {
                 hir::ConstValue::Error
@@ -1028,7 +1037,7 @@ fn fold_index<'hir>(
     let index_value = fold_const_expr(hir, emit, origin_id, access.index);
 
     let index = match index_value {
-        hir::ConstValue::Int { val, neg, ty } => {
+        hir::ConstValue::Int { val, neg, int_ty } => {
             if !neg {
                 Some(val)
             } else {
@@ -1144,8 +1153,15 @@ fn fold_unary_expr<'hir>(
     let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
     match op {
         ast::UnOp::Neg => match rhs_value {
-            hir::ConstValue::Int { val, neg, ty } => hir::ConstValue::Int { val, neg: !neg, ty },
-            hir::ConstValue::Float { val, ty } => hir::ConstValue::Float { val: -val, ty },
+            hir::ConstValue::Int { val, neg, int_ty } => hir::ConstValue::Int {
+                val,
+                neg: !neg,
+                int_ty,
+            },
+            hir::ConstValue::Float { val, float_ty } => hir::ConstValue::Float {
+                val: -val,
+                float_ty,
+            },
             _ => hir::ConstValue::Error,
         },
         ast::UnOp::BitNot => hir::ConstValue::Error,
