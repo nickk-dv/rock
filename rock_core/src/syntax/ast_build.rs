@@ -356,7 +356,7 @@ fn import_item<'ast>(
         ctx.s.names.add(name);
     }
     let import_path = ctx.s.names.take(offset, &mut ctx.s.arena);
-    let alias = name_alias(ctx, item.name_alias(ctx.tree));
+    let rename = symbol_rename(ctx, item.rename(ctx.tree));
 
     let symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
         let offset = ctx.s.import_symbols.start();
@@ -372,7 +372,7 @@ fn import_item<'ast>(
         attrs,
         package,
         import_path,
-        alias, //@rename everywhere to name_alias?
+        rename,
         symbols,
     };
     ctx.s.arena.alloc(import_item)
@@ -380,17 +380,26 @@ fn import_item<'ast>(
 
 fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
     let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
-    let alias = name_alias(ctx, import_symbol.name_alias(ctx.tree));
+    let rename = symbol_rename(ctx, import_symbol.rename(ctx.tree));
 
-    let import_symbol = ast::ImportSymbol { name, alias };
+    let import_symbol = ast::ImportSymbol { name, rename };
     ctx.s.import_symbols.add(import_symbol);
 }
 
-fn name_alias<'ast>(
+fn symbol_rename<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    name_alias: Option<cst::NameAlias>,
-) -> Option<ast::Name> {
-    name_alias.map(|na| name(ctx, na.name(ctx.tree).unwrap()))
+    rename: Option<cst::SymbolRename>,
+) -> ast::SymbolRename {
+    if let Some(rename) = rename {
+        if let Some(alias) = rename.alias(ctx.tree) {
+            ast::SymbolRename::Alias(name(ctx, alias))
+        } else {
+            let (_, range) = rename.discard(ctx.tree);
+            ast::SymbolRename::Discard(range)
+        }
+    } else {
+        ast::SymbolRename::None
+    }
 }
 
 fn name<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, name: cst::Name) -> ast::Name {

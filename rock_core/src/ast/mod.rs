@@ -107,14 +107,21 @@ pub struct ImportItem<'ast> {
     pub attrs: &'ast [Attribute],
     pub package: Option<Name>,
     pub import_path: &'ast [Name],
-    pub alias: Option<Name>,
+    pub rename: SymbolRename,
     pub symbols: &'ast [ImportSymbol],
 }
 
 #[derive(Copy, Clone)]
 pub struct ImportSymbol {
     pub name: Name,
-    pub alias: Option<Name>,
+    pub rename: SymbolRename,
+}
+
+#[derive(Copy, Clone)]
+pub enum SymbolRename {
+    None,
+    Alias(Name),
+    Discard(TextRange),
 }
 
 #[derive(Copy, Clone, PartialEq)]

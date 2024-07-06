@@ -3,11 +3,7 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::session::{ModuleID, ModuleOrDirectory, Session};
 
-pub fn resolve_imports<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    session: &Session,
-) {
+pub fn resolve_imports(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
     for origin_id in session.module_ids() {
         let module_ast = hir.ast_module(origin_id);
         for item in module_ast.items.iter().copied() {
@@ -18,12 +14,12 @@ pub fn resolve_imports<'hir>(
     }
 }
 
-fn resolve_import<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
-    emit: &mut HirEmit<'hir>,
+fn resolve_import(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    import: &'ast ast::ImportItem<'ast>,
+    import: &ast::ImportItem,
 ) {
     let mut source_package = session.package(session.module(origin_id).package_id);
 
@@ -47,7 +43,7 @@ fn resolve_import<'hir, 'ast>(
     assert!(!import.import_path.is_empty());
     let directory_count = import.import_path.len() - 1;
     let directory_names = &import.import_path[0..directory_count];
-    let last_name = *import.import_path.last().unwrap();
+    let module_name = *import.import_path.last().unwrap();
     let mut target_dir = &source_package.src;
 
     for name in directory_names {
@@ -81,15 +77,15 @@ fn resolve_import<'hir, 'ast>(
         }
     }
 
-    let target_id = match target_dir.find(session, last_name.id) {
+    let target_id = match target_dir.find(session, module_name.id) {
         ModuleOrDirectory::None => {
             emit.error(ErrorComp::new(
                 format!(
                     "expected module `{}` is not found in `{}`",
-                    hir.name_str(last_name.id),
+                    hir.name_str(module_name.id),
                     hir.name_str(source_package.name_id),
                 ),
-                SourceRange::new(origin_id, last_name.range),
+                SourceRange::new(origin_id, module_name.range),
                 None,
             ));
             return;
@@ -99,9 +95,9 @@ fn resolve_import<'hir, 'ast>(
             emit.error(ErrorComp::new(
                 format!(
                     "expected module, found directory `{}`",
-                    hir.name_str(last_name.id),
+                    hir.name_str(module_name.id),
                 ),
-                SourceRange::new(origin_id, last_name.range),
+                SourceRange::new(origin_id, module_name.range),
                 None,
             ));
             return;
@@ -111,80 +107,114 @@ fn resolve_import<'hir, 'ast>(
     if target_id == origin_id {
         emit.error(ErrorComp::new(
             format!(
-                "importing module `{}` into itself is redundant, remove this import",
-                hir.name_str(last_name.id)
+                "importing module `{}` into itself is not allowed",
+                hir.name_str(module_name.id)
             ),
-            SourceRange::new(origin_id, last_name.range),
+            SourceRange::new(origin_id, module_name.range),
             None,
         ));
         return;
     }
 
-    let module_alias = name_alias_check(hir, emit, origin_id, last_name, import.alias);
-
-    match hir.symbol_in_scope_source(origin_id, module_alias.id) {
-        Some(existing) => {
-            super::pass_1::error_name_already_defined(hir, emit, origin_id, module_alias, existing);
-        }
-        None => hir.add_symbol(
-            origin_id,
-            module_alias.id,
-            Symbol::Imported {
-                kind: SymbolKind::Module(target_id),
-                import_range: module_alias.range,
-            },
-        ),
-    }
-
+    import_module(hir, emit, origin_id, target_id, module_name, import.rename);
     for symbol in import.symbols {
-        let symbol_alias = name_alias_check(hir, emit, origin_id, symbol.name, symbol.alias);
-        let found_symbol = hir.symbol_from_scope(origin_id, target_id, symbol.name);
-
-        match found_symbol {
-            Err(error) => emit.error(error),
-            Ok((kind, _)) => match hir.symbol_in_scope_source(origin_id, symbol_alias.id) {
-                Some(existing) => {
-                    super::pass_1::error_name_already_defined(
-                        hir,
-                        emit,
-                        origin_id,
-                        symbol_alias,
-                        existing,
-                    );
-                }
-                None => hir.add_symbol(
-                    origin_id,
-                    symbol_alias.id,
-                    Symbol::Imported {
-                        kind,
-                        import_range: symbol_alias.range,
-                    },
-                ),
-            },
-        }
+        import_symbol(hir, emit, origin_id, target_id, symbol);
     }
 }
 
-fn name_alias_check(
+fn import_module(
     hir: &mut HirData,
     emit: &mut HirEmit,
     origin_id: ModuleID,
-    name: ast::Name,
-    name_alias: Option<ast::Name>,
-) -> ast::Name {
-    if let Some(alias) = name_alias {
-        if alias.id == name.id {
-            emit.warning(WarningComp::new(
-                format!(
-                    "name alias `{}` is redundant, remove it",
-                    hir.name_str(alias.id)
-                ),
-                SourceRange::new(origin_id, alias.range),
-                None,
-            ));
-        }
-        alias
+    target_id: ModuleID,
+    module_name: ast::Name,
+    rename: ast::SymbolRename,
+) {
+    let module_alias = check_symbol_rename(hir, emit, origin_id, module_name, rename, false);
+    let module_alias = match module_alias {
+        Some(module_alias) => module_alias,
+        None => return,
+    };
+
+    if let Some(existing) = hir.symbol_in_scope_source(origin_id, module_alias.id) {
+        super::pass_1::error_name_already_defined(hir, emit, origin_id, module_alias, existing);
     } else {
-        name
+        let symbol = Symbol::Imported {
+            kind: SymbolKind::Module(target_id),
+            import_range: module_alias.range,
+        };
+        hir.add_symbol(origin_id, module_alias.id, symbol);
+    }
+}
+
+fn import_symbol(
+    hir: &mut HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    target_id: ModuleID,
+    symbol: &ast::ImportSymbol,
+) {
+    let symbol_alias = check_symbol_rename(hir, emit, origin_id, symbol.name, symbol.rename, true);
+    let (symbol_alias, discarded) = match symbol_alias {
+        Some(symbol_alias) => (symbol_alias, false),
+        None => (symbol.name, true),
+    };
+
+    let kind = match hir.symbol_from_scope(origin_id, target_id, symbol.name) {
+        Ok((kind, _)) => kind,
+        Err(error) => {
+            emit.error(error);
+            return;
+        }
+    };
+
+    if discarded {
+        return;
+    }
+
+    if let Some(existing) = hir.symbol_in_scope_source(origin_id, symbol_alias.id) {
+        super::pass_1::error_name_already_defined(hir, emit, origin_id, symbol_alias, existing);
+    } else {
+        let symbol = Symbol::Imported {
+            kind,
+            import_range: symbol_alias.range,
+        };
+        hir.add_symbol(origin_id, symbol_alias.id, symbol);
+    }
+}
+
+fn check_symbol_rename(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    name: ast::Name,
+    rename: ast::SymbolRename,
+    for_symbol: bool,
+) -> Option<ast::Name> {
+    match rename {
+        ast::SymbolRename::None => Some(name),
+        ast::SymbolRename::Alias(alias) => {
+            if name.id == alias.id {
+                emit.warning(WarningComp::new(
+                    format!(
+                        "name alias `{}` is redundant, remove it",
+                        hir.name_str(alias.id)
+                    ),
+                    SourceRange::new(origin_id, alias.range),
+                    None,
+                ));
+            }
+            Some(alias)
+        }
+        ast::SymbolRename::Discard(range) => {
+            if for_symbol {
+                emit.warning(WarningComp::new(
+                    "name discard `_` is redundant, remove it",
+                    SourceRange::new(origin_id, range),
+                    None,
+                ));
+            }
+            None
+        }
     }
 }

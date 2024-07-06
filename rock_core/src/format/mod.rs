@@ -403,8 +403,8 @@ fn import_item(fmt: &mut Formatter, item: ast::ImportItem) {
         fmt.write_c(':');
     }
     import_path(fmt, item.import_path(fmt.tree).unwrap());
-    if let Some(name_alias) = item.name_alias(fmt.tree) {
-        name_alias_fmt(fmt, name_alias);
+    if let Some(rename) = item.rename(fmt.tree) {
+        symbol_rename(fmt, rename);
     }
     if let Some(symbol_list) = item.import_symbol_list(fmt.tree) {
         fmt.write_c('.');
@@ -442,16 +442,20 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbol
 
 fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: ast::ImportSymbol) {
     name_fmt(fmt, import_symbol.name(fmt.tree).unwrap());
-    if let Some(name_alias) = import_symbol.name_alias(fmt.tree) {
-        name_alias_fmt(fmt, name_alias);
+    if let Some(rename) = import_symbol.rename(fmt.tree) {
+        symbol_rename(fmt, rename);
     }
 }
 
-fn name_alias_fmt(fmt: &mut Formatter, name_alias: ast::NameAlias) {
+fn symbol_rename(fmt: &mut Formatter, rename: ast::SymbolRename) {
     fmt.space();
     fmt.write("as");
     fmt.space();
-    name_fmt(fmt, name_alias.name(fmt.tree).unwrap());
+    if let Some(alias) = rename.alias(fmt.tree) {
+        name_fmt(fmt, alias);
+    } else {
+        fmt.write_c('_');
+    }
 }
 
 fn name_fmt(fmt: &mut Formatter, name: ast::Name) {

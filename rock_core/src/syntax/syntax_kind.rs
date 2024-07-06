@@ -23,7 +23,7 @@ pub enum SyntaxKind {
     IMPORT_PATH,
     IMPORT_SYMBOL_LIST,
     IMPORT_SYMBOL,
-    NAME_ALIAS,
+    SYMBOL_RENAME,
 
     NAME,
     PATH,

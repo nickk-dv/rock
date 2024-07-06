@@ -5,10 +5,11 @@ use super::proc_scope;
 use crate::ast;
 use crate::bitset::BitSet;
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr};
+use crate::hir;
+use crate::id_impl;
 use crate::intern::InternID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
-use crate::{hir, id_impl};
 
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
@@ -1016,7 +1017,7 @@ fn fold_slice_field<'hir>(
                 hir::ConstValue::Int {
                     val: len as u64,
                     neg: false,
-                    int_ty: hir::BasicIntType::Usize,
+                    int_ty: hir::BasicInt::Usize,
                 }
             } else {
                 hir::ConstValue::Error
@@ -1147,27 +1148,38 @@ fn fold_unary_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    op: ast::UnOp,
+    op: hir::UnOp,
     rhs: &'hir hir::Expr<'hir>,
 ) -> hir::ConstValue<'hir> {
+    use hir::{ConstValue, UnOp};
+
     let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
+
     match op {
-        ast::UnOp::Neg => match rhs_value {
-            hir::ConstValue::Int { val, neg, int_ty } => hir::ConstValue::Int {
+        hir::UnOp::Neg_Int(_) => match rhs_value {
+            //@can overflow
+            ConstValue::Int { val, neg, int_ty } => ConstValue::Int {
                 val,
                 neg: !neg,
                 int_ty,
             },
-            hir::ConstValue::Float { val, float_ty } => hir::ConstValue::Float {
+            _ => unreachable!(),
+        },
+        hir::UnOp::Neg_Float(_) => match rhs_value {
+            //@can overflow?
+            ConstValue::Float { val, float_ty } => ConstValue::Float {
                 val: -val,
                 float_ty,
             },
-            _ => hir::ConstValue::Error,
+            _ => unreachable!(),
         },
-        ast::UnOp::BitNot => hir::ConstValue::Error,
-        ast::UnOp::LogicNot => match rhs_value {
-            hir::ConstValue::Bool { val } => hir::ConstValue::Bool { val: !val },
-            _ => hir::ConstValue::Error,
+        hir::UnOp::BitNot(_) => {
+            //@can overflow + handle negative ~ correctly
+            hir::ConstValue::Error //@todo
+        }
+        hir::UnOp::LogicNot => match rhs_value {
+            hir::ConstValue::Bool { val } => ConstValue::Bool { val: !val },
+            _ => unreachable!(),
         },
     }
 }

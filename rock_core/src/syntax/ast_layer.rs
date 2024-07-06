@@ -236,7 +236,7 @@ ast_node_impl!(ImportItem, SyntaxKind::IMPORT_ITEM);
 ast_node_impl!(ImportPath, SyntaxKind::IMPORT_PATH);
 ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
-ast_node_impl!(NameAlias, SyntaxKind::NAME_ALIAS);
+ast_node_impl!(SymbolRename, SyntaxKind::SYMBOL_RENAME);
 
 ast_node_impl!(Name, SyntaxKind::NAME);
 ast_node_impl!(Path, SyntaxKind::PATH);
@@ -610,7 +610,7 @@ impl<'syn> ImportItem<'syn> {
     find_first!(visiblity, Visibility); //@exists but ignored
     find_first!(package, Name);
     find_first!(import_path, ImportPath);
-    find_first!(name_alias, NameAlias); //@rename ast to name_alias
+    find_first!(rename, SymbolRename);
     find_first!(import_symbol_list, ImportSymbolList);
 }
 
@@ -624,11 +624,15 @@ impl<'syn> ImportSymbolList<'syn> {
 
 impl<'syn> ImportSymbol<'syn> {
     find_first!(name, Name);
-    find_first!(name_alias, NameAlias);
+    find_first!(rename, SymbolRename);
 }
 
-impl<'syn> NameAlias<'syn> {
-    find_first!(name, Name);
+impl<'syn> SymbolRename<'syn> {
+    find_first!(alias, Name);
+
+    pub fn discard(&self, tree: &'syn SyntaxTree<'syn>) -> ((), TextRange) {
+        self.0.find_by_token_with_range(tree, |_| Some(())).unwrap()
+    }
 }
 
 impl<'syn> Name<'syn> {}
