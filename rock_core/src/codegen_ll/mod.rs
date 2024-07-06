@@ -9,6 +9,7 @@ use crate::timer::Timer;
 struct Codegen {
     buffer: String,
     builder: Builder,
+    context: ProcContext,
 }
 
 struct Builder {
@@ -16,11 +17,17 @@ struct Builder {
     unnamed_version: u32,
 }
 
+struct ProcContext {
+    param_values: Vec<LocalValue>,
+    local_values: Vec<LocalValue>,
+}
+
 impl Codegen {
     fn new() -> Codegen {
         Codegen {
             buffer: String::with_capacity(1024 * 64),
             builder: Builder::new(),
+            context: ProcContext::new(),
         }
     }
 
@@ -58,10 +65,20 @@ impl Builder {
     }
 
     //@only using unnamed_version:
-    fn version_bump(&mut self) -> u32 {
-        let version = self.unnamed_version;
+    #[must_use]
+    fn build_local(&mut self) -> LocalValue {
+        let value = LocalValue(self.unnamed_version);
         self.unnamed_version += 1;
-        version
+        value
+    }
+}
+
+impl ProcContext {
+    fn new() -> ProcContext {
+        ProcContext {
+            param_values: Vec::new(),
+            local_values: Vec::new(),
+        }
     }
 }
 
@@ -530,15 +547,25 @@ fn ident_procedure(cg: &mut Codegen, hir: &hir::Hir, id: hir::ProcID) {
 
 //@fully avoids name conflits with globals
 // have some named variation for named locals
-fn ident_local_unnamed(cg: &mut Codegen) {
+fn ident_local_value(cg: &mut Codegen, value: LocalValue) {
     cg.write('%');
-    let version = cg.builder.version_bump();
-    cg.write_str(&format!("{}", version)); //@allocation!
+    cg.write_str(&format!("{}", value.0)); //@allocation!
 }
 
-fn ident_local_unnamed_raw(cg: &mut Codegen, version: u32) {
-    cg.write('%');
-    cg.write_str(&format!("{}", version)); //@allocation!
+fn write_value(cg: &mut Codegen, hir: &hir::Hir, value: Value) {
+    match value {
+        Value::Local(value) => ident_local_value(cg, value),
+        Value::Const(value) => codegen_const_value(cg, hir, value),
+    }
+}
+
+#[derive(Copy, Clone)]
+struct LocalValue(u32);
+
+#[derive(Copy, Clone)]
+enum Value<'hir> {
+    Local(LocalValue),
+    Const(hir::ConstValue<'hir>),
 }
 
 //@test if this is faster for numbers
@@ -693,7 +720,8 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
             ty(cg, hir, param.ty);
             if !external {
                 cg.space();
-                ident_local_unnamed(cg);
+                let value = cg.builder.build_local();
+                ident_local_value(cg, value);
             }
             if variadic || param_idx + 1 != data.params.len() {
                 cg.write(',');
@@ -711,19 +739,6 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
             cg.new_line();
 
             basic_block(cg, "entry");
-            /*
-            let ret_value = hir::Expr::Const {
-                value: hir::ConstValue::Int {
-                    val: 69,
-                    neg: false,
-                    ty: ast::BasicType::S32,
-                },
-            };
-            inst_alloca(cg, hir, hir::Type::USIZE);
-            inst_alloca(cg, hir, hir::Type::Basic(ast::BasicType::Rawptr));
-            inst_alloca(cg, hir, hir::Type::Basic(ast::BasicType::F32));
-            inst_return(cg, hir, Some(&ret_value));
-            */
             codegen_block(cg, hir, block);
             cg.write('}');
         }
@@ -732,29 +747,49 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
     }
 }
 
+//@might change the approach of how tail alloca works
+// and instead return optional value directly from the block
 fn codegen_block(cg: &mut Codegen, hir: &hir::Hir, block: hir::Block) {
     for stmt in block.stmts {
         match *stmt {
             hir::Stmt::Break => todo!(),
             hir::Stmt::Continue => todo!(),
             //@defer blocks (all_defer_blocks)
-            hir::Stmt::Return(expr) => inst_return(cg, hir, expr),
+            hir::Stmt::Return(expr) => {
+                let value = if let Some(expr) = expr {
+                    codegen_expr(cg, hir, expr) //@value_optional (to support)
+                } else {
+                    None
+                };
+                inst_ret(cg, hir, value);
+            }
             hir::Stmt::Defer(_) => todo!(),
             hir::Stmt::Loop(_) => todo!(),
             hir::Stmt::Local(_) => todo!(),
             hir::Stmt::Assign(_) => todo!(),
-            hir::Stmt::ExprSemi(expr) => codegen_expr(cg, hir, expr),
+            hir::Stmt::ExprSemi(expr) => codegen_expr_semi(cg, hir, expr),
             hir::Stmt::ExprTail(_) => todo!(),
         }
     }
 }
 
-fn codegen_expr(cg: &mut Codegen, hir: &hir::Hir, expr: &hir::Expr) {
+fn codegen_expr_semi(cg: &mut Codegen, hir: &hir::Hir, expr: &hir::Expr) {
+    codegen_expr(cg, hir, expr); // !expect_ptr + tail ignore
+}
+
+fn codegen_expr<'hir>(
+    cg: &mut Codegen,
+    hir: &hir::Hir,
+    expr: &'hir hir::Expr,
+) -> Option<Value<'hir>> {
     match *expr {
         hir::Expr::Error => unreachable!(),
-        hir::Expr::Const { value } => codegen_const_value(cg, hir, value),
+        hir::Expr::Const { value } => Some(Value::Const(value)),
         hir::Expr::If { if_ } => todo!(),
-        hir::Expr::Block { block } => codegen_block(cg, hir, block),
+        hir::Expr::Block { block } => {
+            codegen_block(cg, hir, block);
+            None
+        }
         hir::Expr::Match { match_ } => todo!(),
         hir::Expr::StructField {
             target,
@@ -791,12 +826,12 @@ fn codegen_expr(cg: &mut Codegen, hir: &hir::Hir, expr: &hir::Expr) {
     }
 }
 
-fn codegen_call_direct(
+fn codegen_call_direct<'hir>(
     cg: &mut Codegen,
     hir: &hir::Hir,
     proc_id: hir::ProcID,
     input: &[&hir::Expr],
-) {
+) -> Option<Value<'hir>> {
     let data = hir.proc_data(proc_id);
     let variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
     let returns = !(data.return_ty.is_void() && data.return_ty.is_never());
@@ -811,10 +846,14 @@ fn codegen_call_direct(
     }
 
     cg.tab();
-    if returns {
-        ident_local_unnamed(cg);
+    let value = if returns {
+        let value = cg.builder.build_local();
+        ident_local_value(cg, value);
         cg.write_str(" = ");
-    }
+        Some(Value::Local(value))
+    } else {
+        None
+    };
 
     cg.write_str("call");
     cg.space();
@@ -848,6 +887,8 @@ fn codegen_call_direct(
     }
     cg.write(')');
     cg.new_line();
+
+    value
 }
 
 fn codegen_call_indirect(
@@ -864,49 +905,98 @@ fn basic_block(cg: &mut Codegen, name: &str) {
     cg.new_line();
 }
 
-fn inst_return(cg: &mut Codegen, hir: &hir::Hir, expr: Option<&hir::Expr>) {
+fn inst_ret(cg: &mut Codegen, hir: &hir::Hir, value: Option<Value>) {
     cg.tab();
-    if let Some(expr) = expr {
-        cg.write_str("ret");
-        cg.space();
-        codegen_expr(cg, hir, expr);
+    cg.write_str("ret");
+    cg.space();
+    if let Some(value) = value {
+        write_value(cg, hir, value);
     } else {
-        cg.write_str("ret void");
+        basic_type(cg, ast::BasicType::Void);
     }
     cg.new_line();
 }
 
-fn inst_alloca(cg: &mut Codegen, hir: &hir::Hir, alloc_ty: hir::Type) {
+#[must_use]
+fn inst_alloca<'hir>(cg: &mut Codegen, hir: &hir::Hir, alloc_ty: hir::Type) -> Value<'hir> {
     cg.tab();
-    //@not versioned
-    ident_local_unnamed(cg);
+    let value = cg.builder.build_local();
+    ident_local_value(cg, value);
     cg.write_str(" = ");
+
     cg.write_str("alloca");
     cg.space();
     ty(cg, hir, alloc_ty);
+
     cg.new_line();
+    Value::Local(value)
 }
 
-fn inst_load(cg: &mut Codegen, hir: &hir::Hir, ptr_ty: hir::Type, ptr_expr: &hir::Expr) {
+#[must_use]
+fn inst_load<'hir>(cg: &mut Codegen, hir: &hir::Hir, ptr_ty: hir::Type, ptr: Value) -> Value<'hir> {
     cg.tab();
-    ident_local_unnamed(cg);
+    let value = cg.builder.build_local();
+    ident_local_value(cg, value);
     cg.write_str(" = ");
+
     cg.write_str("load");
     cg.space();
     ty(cg, hir, ptr_ty);
     cg.write(',');
     cg.space();
-    codegen_expr(cg, hir, ptr_expr);
+    write_value(cg, hir, ptr);
+
     cg.new_line();
+    Value::Local(value)
 }
 
-fn inst_store(cg: &mut Codegen, hir: &hir::Hir, value_expr: &hir::Expr, ptr_expr: &hir::Expr) {
+fn inst_store(cg: &mut Codegen, hir: &hir::Hir, ptr: Value, value: Value) {
     cg.tab();
     cg.write_str("store");
     cg.space();
-    codegen_expr(cg, hir, value_expr);
+    write_value(cg, hir, ptr);
     cg.write(',');
     cg.space();
-    codegen_expr(cg, hir, ptr_expr);
+    write_value(cg, hir, value);
+    cg.new_line();
+}
+
+//@temp block name handling
+// use `name.bb3` format
+fn inst_br(cg: &mut Codegen, dest: &str) {
+    cg.tab();
+    cg.write_str("br");
+    cg.space();
+
+    cg.write_str("label");
+    cg.space();
+    cg.write_str(dest); //@missing %, use block ident
+
+    cg.new_line();
+}
+
+fn inst_br_cond(cg: &mut Codegen, hir: &hir::Hir, cond: Value, dest_true: &str, dest_false: &str) {
+    cg.tab();
+    cg.write_str("br");
+    cg.space();
+
+    if let Value::Local(..) = cond {
+        basic_type(cg, ast::BasicType::Bool);
+        cg.space();
+    }
+    write_value(cg, hir, cond);
+
+    cg.write(',');
+    cg.space();
+    cg.write_str("label");
+    cg.space();
+    cg.write_str(dest_true); //@missing %, use block ident
+
+    cg.write(',');
+    cg.space();
+    cg.write_str("label");
+    cg.space();
+    cg.write_str(dest_false); //@missing %, use block ident
+
     cg.new_line();
 }
