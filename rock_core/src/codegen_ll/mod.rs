@@ -8,12 +8,19 @@ use crate::timer::Timer;
 
 struct Codegen {
     buffer: String,
+    builder: Builder,
+}
+
+struct Builder {
+    named_version: u32,
+    unnamed_version: u32,
 }
 
 impl Codegen {
     fn new() -> Codegen {
         Codegen {
             buffer: String::with_capacity(1024 * 64),
+            builder: Builder::new(),
         }
     }
 
@@ -35,6 +42,26 @@ impl Codegen {
     }
     fn new_line(&mut self) {
         self.buffer.push('\n');
+    }
+}
+
+impl Builder {
+    fn new() -> Builder {
+        Builder {
+            named_version: 0,
+            unnamed_version: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = Builder::new();
+    }
+
+    //@only using unnamed_version:
+    fn version_bump(&mut self) -> u32 {
+        let version = self.unnamed_version;
+        self.unnamed_version += 1;
+        version
     }
 }
 
@@ -101,17 +128,19 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
     cg.new_line();
     cg.new_line();
 
-    let mut timer2 = Timer::new();
-    codegen_string_literals(&mut cg, &hir);
-    timer2.measure();
-
     let mut timer3 = Timer::new();
     codegen_struct_types(&mut cg, &hir);
+    cg.new_line();
     timer3.measure();
 
     let mut timer4 = Timer::new();
     codegen_globals(&mut cg, &hir);
+    cg.new_line();
     timer4.measure();
+
+    let mut timer2 = Timer::new();
+    codegen_string_literals(&mut cg, &hir);
+    timer2.measure();
 
     let mut timer5 = Timer::new();
     codegen_procedures(&mut cg, &hir);
@@ -165,9 +194,9 @@ pub fn codegen_module(session: &Session, hir: hir::Hir) -> Result<(), ErrorComp>
 
     total.measure();
     timer1.display("codegen ll: buffer alloc 64kb");
-    timer2.display("codegen ll: string_literals  ");
     timer3.display("codegen ll: struct_types     ");
     timer4.display("codegen ll: globals          ");
+    timer2.display("codegen ll: string_literals  ");
     timer5.display("codegen ll: procedures       ");
     timer6.display("codegen ll: write to file    ");
     timer7.display("codegen ll: clang build      ");
@@ -204,7 +233,6 @@ fn codegen_string_literals(cg: &mut Codegen, hir: &hir::Hir) {
         string_literal(cg, string, c_string);
         cg.new_line();
     }
-    cg.new_line();
 }
 
 fn string_literal(cg: &mut Codegen, string: &str, c_string: bool) {
@@ -270,7 +298,6 @@ fn codegen_struct_types(cg: &mut Codegen, hir: &hir::Hir) {
         cg.write('}');
         cg.new_line();
     }
-    cg.new_line();
 }
 
 fn codegen_globals(cg: &mut Codegen, hir: &hir::Hir) {
@@ -332,7 +359,7 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue)
                 //@test by printf'ing them values are wrong must likely
                 // llvm format for hex floats is busted + no clear docs
                 let val_f32 = val as f32;
-                cg.write_str(&format!("0x{:x}", val_f32.to_bits()));
+                cg.write_str(&format!("0x{:x}", val_f32.to_bits())); //@allocation!
                 cg.write_str("00000000");
             }
         }
@@ -501,13 +528,15 @@ fn ident_procedure(cg: &mut Codegen, hir: &hir::Hir, id: hir::ProcID) {
     }
 }
 
-//@this will probably go away, using as a placeholder
-fn ident_local_named(cg: &mut Codegen, name: &str) {
+//@fully avoids name conflits with globals
+// have some named variation for named locals
+fn ident_local_unnamed(cg: &mut Codegen) {
     cg.write('%');
-    cg.write_str(name);
+    let version = cg.builder.version_bump();
+    cg.write_str(&format!("{}", version)); //@allocation!
 }
 
-fn ident_local_unnamed(cg: &mut Codegen, version: u32) {
+fn ident_local_unnamed_raw(cg: &mut Codegen, version: u32) {
     cg.write('%');
     cg.write_str(&format!("{}", version)); //@allocation!
 }
@@ -664,8 +693,7 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
             ty(cg, hir, param.ty);
             if !external {
                 cg.space();
-                //@should use incrementing local counter for proc body
-                ident_local_unnamed(cg, param_idx as u32);
+                ident_local_unnamed(cg);
             }
             if variadic || param_idx + 1 != data.params.len() {
                 cg.write(',');
@@ -683,6 +711,7 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
             cg.new_line();
 
             basic_block(cg, "entry");
+            /*
             let ret_value = hir::Expr::Const {
                 value: hir::ConstValue::Int {
                     val: 69,
@@ -691,8 +720,11 @@ fn codegen_procedures(cg: &mut Codegen, hir: &hir::Hir) {
                 },
             };
             inst_alloca(cg, hir, hir::Type::USIZE);
+            inst_alloca(cg, hir, hir::Type::Basic(ast::BasicType::Rawptr));
+            inst_alloca(cg, hir, hir::Type::Basic(ast::BasicType::F32));
             inst_return(cg, hir, Some(&ret_value));
-            //codegen_block(cg, hir, block); //@temp test
+            */
+            codegen_block(cg, hir, block);
             cg.write('}');
         }
 
@@ -711,7 +743,7 @@ fn codegen_block(cg: &mut Codegen, hir: &hir::Hir, block: hir::Block) {
             hir::Stmt::Loop(_) => todo!(),
             hir::Stmt::Local(_) => todo!(),
             hir::Stmt::Assign(_) => todo!(),
-            hir::Stmt::ExprSemi(_) => todo!(),
+            hir::Stmt::ExprSemi(expr) => codegen_expr(cg, hir, expr),
             hir::Stmt::ExprTail(_) => todo!(),
         }
     }
@@ -742,7 +774,7 @@ fn codegen_expr(cg: &mut Codegen, hir: &hir::Hir, expr: &hir::Expr) {
         hir::Expr::ParamVar { param_id } => todo!(),
         hir::Expr::ConstVar { const_id } => todo!(),
         hir::Expr::GlobalVar { global_id } => todo!(),
-        hir::Expr::CallDirect { proc_id, input } => todo!(),
+        hir::Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, hir, proc_id, input),
         hir::Expr::CallIndirect { target, indirect } => todo!(),
         hir::Expr::StructInit { struct_id, input } => todo!(),
         hir::Expr::ArrayInit { array_init } => todo!(),
@@ -757,6 +789,73 @@ fn codegen_expr(cg: &mut Codegen, hir: &hir::Hir, expr: &hir::Expr) {
             lhs_signed_int,
         } => todo!(),
     }
+}
+
+fn codegen_call_direct(
+    cg: &mut Codegen,
+    hir: &hir::Hir,
+    proc_id: hir::ProcID,
+    input: &[&hir::Expr],
+) {
+    let data = hir.proc_data(proc_id);
+    let variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
+    let returns = !(data.return_ty.is_void() && data.return_ty.is_never());
+
+    //@collect values (skip constants and directly write them instead)
+    for &expr in input {
+        if let hir::Expr::Const { .. } = expr {
+            continue;
+        } else {
+            panic!("value expr not supported");
+        }
+    }
+
+    cg.tab();
+    if returns {
+        ident_local_unnamed(cg);
+        cg.write_str(" = ");
+    }
+
+    cg.write_str("call");
+    cg.space();
+    ty(cg, hir, data.return_ty);
+    cg.space();
+
+    if variadic {
+        cg.write('(');
+        for param in data.params {
+            ty(cg, hir, param.ty);
+            cg.write(',');
+            cg.space();
+        }
+        cg.write_str("...");
+        cg.write(')');
+        cg.space();
+    }
+    ident_procedure(cg, hir, proc_id);
+
+    cg.write('(');
+    for (idx, &expr) in input.iter().enumerate() {
+        if let hir::Expr::Const { value } = expr {
+            codegen_const_value(cg, hir, *value);
+        } else {
+            panic!("value expr not supported");
+        }
+        if idx + 1 != input.len() {
+            cg.write(',');
+            cg.space();
+        }
+    }
+    cg.write(')');
+    cg.new_line();
+}
+
+fn codegen_call_indirect(
+    cg: &mut Codegen,
+    hir: &hir::Hir,
+    target: &hir::Expr,
+    indirect: &hir::CallIndirect,
+) {
 }
 
 fn basic_block(cg: &mut Codegen, name: &str) {
@@ -777,21 +876,20 @@ fn inst_return(cg: &mut Codegen, hir: &hir::Hir, expr: Option<&hir::Expr>) {
     cg.new_line();
 }
 
-fn inst_alloca(cg: &mut Codegen, hir: &hir::Hir, value_ty: hir::Type) {
+fn inst_alloca(cg: &mut Codegen, hir: &hir::Hir, alloc_ty: hir::Type) {
     cg.tab();
     //@not versioned
-    ident_local_named(cg, "local_alloca");
+    ident_local_unnamed(cg);
     cg.write_str(" = ");
     cg.write_str("alloca");
     cg.space();
-    ty(cg, hir, value_ty);
+    ty(cg, hir, alloc_ty);
     cg.new_line();
 }
 
 fn inst_load(cg: &mut Codegen, hir: &hir::Hir, ptr_ty: hir::Type, ptr_expr: &hir::Expr) {
     cg.tab();
-    //@not versioned
-    ident_local_named(cg, "local_load");
+    ident_local_unnamed(cg);
     cg.write_str(" = ");
     cg.write_str("load");
     cg.space();
