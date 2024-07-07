@@ -356,7 +356,7 @@ The array **length** must **evaluatable at compile time**.
 let array: [3]s32 = [1, 2, 3];
 
 // array of `2` arrays of `3` values of `s32` type
-let array_2d [2][3]s32 = [[1, 2, 3], [2, 4, 6]];
+let array_2d: [2][3]s32 = [[1, 2, 3], [2, 4, 6]];
 
 // array length can be accessed via `len` field
 let array_len = array.len;
