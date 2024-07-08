@@ -25,3 +25,35 @@ pub fn manifest_deserialize(
         ))
     })
 }
+
+pub fn verify_name(name: &str) -> Result<&str, ErrorComp> {
+    const MAX_NAME_LEN: usize = 32;
+
+    if name.len() > MAX_NAME_LEN {
+        return Err(ErrorComp::message(format!(
+            "package name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
+
+    let fc = match name.chars().next() {
+        Some(c) => c,
+        None => return Err(ErrorComp::message("package name cannot be empty")),
+    };
+
+    for c in name.chars() {
+        if !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+            return Err(
+                ErrorComp::message(format!("package name contains invalid character `{c}`\nallowed characters: lowercase `a-z`, digits `0-9` and `_`")),
+            );
+        }
+    }
+
+    if !fc.is_ascii_lowercase() {
+        return Err(ErrorComp::message(format!(
+            "package name cannot start with `{fc}`"
+        )));
+    }
+
+    Ok(name)
+}
