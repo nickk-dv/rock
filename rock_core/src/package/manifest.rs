@@ -28,19 +28,6 @@ pub struct BuildManifest {
     pub links: Option<Vec<String>>,      // library names or paths to link against
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Repository {
-    host: RepositoryHost,
-    user: String,
-    name: String,
-}
-
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub enum RepositoryHost {
-    #[serde(rename = "github")]
-    Github,
-}
-
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PackageKind {
     #[serde(rename = "bin")]
@@ -49,12 +36,16 @@ pub enum PackageKind {
     Lib,
 }
 
-impl RepositoryHost {
-    pub fn domain_name(self) -> &'static str {
-        match self {
-            RepositoryHost::Github => "github.com",
-        }
-    }
+#[derive(Serialize, Deserialize)]
+pub struct Repository {
+    pub host: RepositoryHost,
+    pub user: String,
+}
+
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+pub enum RepositoryHost {
+    #[serde(rename = "github")]
+    Github,
 }
 
 impl PackageKind {
@@ -68,6 +59,14 @@ impl PackageKind {
         match self {
             PackageKind::Bin => "executable",
             PackageKind::Lib => "library",
+        }
+    }
+}
+
+impl RepositoryHost {
+    pub fn domain_name(self) -> &'static str {
+        match self {
+            RepositoryHost::Github => "github.com",
         }
     }
 }
