@@ -412,7 +412,7 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
         None => {
             let range = lex.make_range(start);
             let extra = if !fc.is_ascii() {
-                "\nonly ascii characters are supported"
+                "\nonly ascii symbols are supported"
             } else {
                 ""
             };

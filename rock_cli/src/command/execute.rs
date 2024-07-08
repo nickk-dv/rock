@@ -37,22 +37,22 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     let root_dir = cwd.join(&data.name);
     let src_dir = root_dir.join("src");
 
-    package_name_check(&data.name)?;
+    package::verify_name(&data.name)?;
     fs_env::dir_create(&root_dir, true)?;
     fs_env::dir_create(&src_dir, true)?;
 
-    const IMPORT_CORE_IO: &str = "import core/libc as io;\n\n";
+    const IMPORT_CORE_IO: &str = "import core:libc.{ printf };\n\n";
     match data.kind {
         PackageKind::Bin => {
             let bin_content = format!(
-                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    io.printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
+                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &bin_content)?
         }
         PackageKind::Lib => {
             let lib_content = format!(
-                "{IMPORT_CORE_IO}proc test() {{\n    io.printf(c\"Lib `{}` works\\n\");\n}}\n",
+                "{IMPORT_CORE_IO}proc test() {{\n    printf(c\"Lib `{}` works\\n\");\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
@@ -121,27 +121,6 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
         data.kind.as_str_full(),
         data.name,
     );
-    Ok(())
-}
-
-fn package_name_check(name: &str) -> Result<(), ErrorComp> {
-    let mut chars = name.chars();
-    if let Some(c) = chars.next() {
-        if !(c == '_' || c.is_ascii_alphabetic()) {
-            return Err(ErrorComp::message(format!(
-                "package name must be a valid identifier, first `{}` is not allowed",
-                c
-            )));
-        }
-    }
-    for c in chars {
-        if !(c == '_' || c.is_ascii_alphanumeric()) {
-            return Err(ErrorComp::message(format!(
-                "package name must be a valid identifier, inner `{}` is not allowed",
-                c
-            )));
-        }
-    }
     Ok(())
 }
 
