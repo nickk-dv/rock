@@ -16,6 +16,7 @@ impl Semver {
         }
     }
 
+    //@review patch compatibility rules when on 0.0.P
     pub fn compatible(&self, other: Semver) -> bool {
         if self.major != other.major {
             false

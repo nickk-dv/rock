@@ -12,12 +12,12 @@ pub struct Manifest {
 
 #[derive(Serialize, Deserialize)]
 pub struct PackageManifest {
-    pub name: String,                   // package name
-    pub kind: PackageKind,              // package kind
-    pub version: Semver,                // semver version
-    pub authors: Option<Vec<String>>,   // list of authors
-    pub repository: Option<Repository>, // repository data
-    pub description: Option<String>,    // short package description
+    pub name: String,                 // package name
+    pub kind: PackageKind,            // package kind
+    pub version: Semver,              // semver version
+    pub owner: Option<String>,        // repository owner (github.com username)
+    pub authors: Option<Vec<String>>, // list of authors
+    pub description: Option<String>,  // short package description
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,24 +28,28 @@ pub struct BuildManifest {
     pub links: Option<Vec<String>>,      // library names or paths to link against
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct IndexManifest {
+    #[serde(rename = "v")]
+    pub version: Semver,
+    pub owner: String,
+    #[serde(rename = "deps")]
+    pub dependencies: Vec<IndexDependency>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct IndexDependency {
+    pub name: String,
+    #[serde(rename = "req")]
+    pub version_req: Semver,
+}
+
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PackageKind {
     #[serde(rename = "bin")]
     Bin,
     #[serde(rename = "lib")]
     Lib,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Repository {
-    pub host: RepositoryHost,
-    pub user: String,
-}
-
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub enum RepositoryHost {
-    #[serde(rename = "github")]
-    Github,
 }
 
 impl PackageKind {
@@ -59,14 +63,6 @@ impl PackageKind {
         match self {
             PackageKind::Bin => "executable",
             PackageKind::Lib => "library",
-        }
-    }
-}
-
-impl RepositoryHost {
-    pub fn domain_name(self) -> &'static str {
-        match self {
-            RepositoryHost::Github => "github.com",
         }
     }
 }

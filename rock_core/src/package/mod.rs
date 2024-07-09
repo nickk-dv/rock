@@ -1,5 +1,4 @@
 pub mod manifest;
-pub mod registry;
 pub mod semver;
 
 use crate::error::ErrorComp;
@@ -14,10 +13,10 @@ pub fn manifest_serialize(manifest: &manifest::Manifest) -> Result<String, Error
     })
 }
 
-pub fn registry_manifest_serialize(manifest: &registry::Manifest) -> Result<String, ErrorComp> {
+pub fn index_manifest_serialize(manifest: &manifest::IndexManifest) -> Result<String, ErrorComp> {
     basic_toml::to_string(manifest).map_err(|error| {
         ErrorComp::message(format!(
-            "failed to serialize registry manifest file\nreason: {}",
+            "failed to serialize index manifest file\nreason: {}",
             error
         ))
     })
@@ -36,13 +35,13 @@ pub fn manifest_deserialize(
     })
 }
 
-pub fn registry_manifest_deserialize(
+pub fn index_manifest_deserialize(
     manifest: String,
     manifest_path: &PathBuf,
 ) -> Result<String, ErrorComp> {
     basic_toml::from_str(&manifest).map_err(|error| {
         ErrorComp::message(format!(
-            "failed to parse registry manifest file: `{}`\nreason: {}",
+            "failed to parse index manifest file: `{}`\nreason: {}",
             manifest_path.to_string_lossy(),
             error
         ))
