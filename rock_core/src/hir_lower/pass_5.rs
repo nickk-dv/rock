@@ -2403,21 +2403,25 @@ fn typecheck_block<'hir>(
                 }
             }
             ast::StmtKind::Loop(loop_) => {
+                //@can diverge (inf loop, return, panic)
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Loop(typecheck_loop(hir, emit, proc, loop_));
                 (stmt_res, diverges)
             }
             ast::StmtKind::Local(local) => {
+                //@can diverge any diverging expr inside
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Local(typecheck_local(hir, emit, proc, local));
                 (stmt_res, diverges)
             }
             ast::StmtKind::Assign(assign) => {
+                //@can diverge any diverging expr inside
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign));
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprSemi(expr) => {
+                //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
                 //@error or warn on expressions that arent used? 29.05.24
                 // `arent used` would mean that result isnt stored anywhere?
                 // but proc calls might have side effects and should always be allowed
@@ -2428,13 +2432,18 @@ fn typecheck_block<'hir>(
                     | ast::ExprKind::Match { .. } => Expectation::HasType(hir::Type::VOID, None),
                     _ => Expectation::None,
                 };
-                //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
+
+                let error_count = emit.error_count();
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-                let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
+                if !emit.did_error(error_count) {
+                    check_unused_expr(emit, proc, expr_res.expr, expr.range);
+                }
 
                 //@migrate to using never type instead of diverges bool flags
                 let will_diverge = expr_res.ty.is_never();
                 let diverges = proc.check_stmt_diverges(hir, emit, will_diverge, stmt.range);
+
+                let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprTail(expr) => {
@@ -2500,6 +2509,55 @@ fn typecheck_block<'hir>(
 
     proc.pop_block();
     block_result
+}
+
+fn check_unused_expr(
+    emit: &mut HirEmit,
+    proc: &ProcScope,
+    expr: &hir::Expr,
+    expr_range: TextRange,
+) {
+    enum UnusedExpr {
+        No,
+        Maybe,
+        Yes(&'static str),
+    }
+
+    let unused = match *expr {
+        // when expression errored in any way, its not checked
+        // for being `unused`, see invocations
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { .. } => UnusedExpr::Yes("constant value"),
+        hir::Expr::If { .. } => UnusedExpr::Maybe,
+        hir::Expr::Block { .. } => UnusedExpr::Maybe,
+        hir::Expr::Match { .. } => UnusedExpr::Maybe,
+        hir::Expr::StructField { .. } => UnusedExpr::Yes("field access"),
+        hir::Expr::SliceField { .. } => UnusedExpr::Yes("field access"),
+        hir::Expr::Index { .. } => UnusedExpr::Yes("index access"),
+        hir::Expr::Slice { .. } => UnusedExpr::Yes("slice value"),
+        hir::Expr::Cast { .. } => UnusedExpr::Yes("cast value"),
+        hir::Expr::LocalVar { .. } => UnusedExpr::Yes("local value"),
+        hir::Expr::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
+        hir::Expr::ConstVar { .. } => UnusedExpr::Yes("constant value"),
+        hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
+        hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::Expr::StructInit { .. } => UnusedExpr::Maybe, //@yes, force?
+        hir::Expr::ArrayInit { .. } => UnusedExpr::Maybe, //@yes, force?
+        hir::Expr::ArrayRepeat { .. } => UnusedExpr::Maybe, //@yes, force?
+        hir::Expr::Deref { .. } => UnusedExpr::Yes("dereference"),
+        hir::Expr::Address { .. } => UnusedExpr::Yes("address value"),
+        hir::Expr::Unary { .. } => UnusedExpr::Yes("unary operation"),
+        hir::Expr::Binary { .. } => UnusedExpr::Yes("binary operation"),
+    };
+
+    if let UnusedExpr::Yes(kind) = unused {
+        emit.warning(WarningComp::new(
+            format!("unused {}", kind),
+            SourceRange::new(proc.origin(), expr_range),
+            None,
+        ));
+    }
 }
 
 /// returns `None` on invalid use of `break`
