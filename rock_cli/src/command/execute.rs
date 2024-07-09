@@ -64,8 +64,8 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
             name: data.name.clone(),
             kind: data.kind,
             version: Semver::new(0, 1, 0),
+            owner: None,
             authors: None,
-            repository: None,
             description: None,
         };
 
