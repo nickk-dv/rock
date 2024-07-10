@@ -694,6 +694,23 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
             expr(p);
             m.complete(p, SyntaxKind::EXPR_ADDRESS)
         }
+        T![..] => {
+            let m = p.start();
+            p.bump(T![..]);
+            m.complete(p, SyntaxKind::EXPR_RANGE_FULL)
+        }
+        T!["..<"] => {
+            let m = p.start();
+            p.bump(T!["..<"]);
+            expr(p);
+            m.complete(p, SyntaxKind::EXPR_RANGE_TO)
+        }
+        T!["..="] => {
+            let m = p.start();
+            p.bump(T!["..="]);
+            expr(p);
+            m.complete(p, SyntaxKind::EXPR_RANGE_TO_INCLUSIVE)
+        }
         _ => {
             //@return instead? this is double error node
             // or pass marker to be closed with error during error_bump
@@ -706,59 +723,54 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
     tail_expr(p, mc)
 }
 
-fn tail_expr(p: &mut Parser, mc: MarkerClosed) -> MarkerClosed {
-    let mut last_cast = false;
-    let mut mc_curr = mc;
-
+fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
     loop {
         match p.peek() {
             T![.] => {
-                if last_cast {
-                    break;
-                }
-                let m = p.start_before(mc_curr);
+                let m = p.start_before(mc);
                 p.bump(T![.]);
                 name(p);
-                mc_curr = m.complete(p, SyntaxKind::EXPR_FIELD);
+                mc = m.complete(p, SyntaxKind::EXPR_FIELD);
             }
             T!['['] => {
-                if last_cast {
-                    break;
-                }
-                let m = p.start_before(mc_curr);
+                let m = p.start_before(mc);
                 p.bump(T!['[']);
                 p.eat(T![mut]);
-                if !p.at(T![..]) {
-                    expr(p);
-                }
-                if p.eat(T![..]) {
-                    if !p.at(T![']']) {
-                        expr(p);
-                    }
-                }
+                expr(p);
                 p.expect(T![']']);
-                mc_curr = m.complete(p, SyntaxKind::EXPR_INDEX);
+                mc = m.complete(p, SyntaxKind::EXPR_INDEX);
             }
             T!['('] => {
-                if last_cast {
-                    break;
-                }
-                let m = p.start_before(mc_curr);
+                let m = p.start_before(mc);
                 call_argument_list(p);
-                mc_curr = m.complete(p, SyntaxKind::EXPR_CALL);
+                mc = m.complete(p, SyntaxKind::EXPR_CALL);
             }
             T![as] => {
-                last_cast = true;
-                let m = p.start_before(mc_curr);
+                let m = p.start_before(mc);
                 p.bump(T![as]);
                 ty(p);
-                mc_curr = m.complete(p, SyntaxKind::EXPR_CAST);
+                return m.complete(p, SyntaxKind::EXPR_CAST);
             }
-            _ => break,
+            T![..] => {
+                let m = p.start_before(mc);
+                p.bump(T![..]);
+                mc = m.complete(p, SyntaxKind::EXPR_RANGE_FROM);
+            }
+            T!["..<"] => {
+                let m = p.start_before(mc);
+                p.bump(T!["..<"]);
+                expr(p);
+                mc = m.complete(p, SyntaxKind::EXPR_RANGE);
+            }
+            T!["..="] => {
+                let m = p.start_before(mc);
+                p.bump(T!["..="]);
+                expr(p);
+                mc = m.complete(p, SyntaxKind::EXPR_RANGE_INCLUSIVE);
+            }
+            _ => return mc,
         }
     }
-
-    mc_curr
 }
 
 fn if_(p: &mut Parser) -> MarkerClosed {

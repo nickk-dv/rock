@@ -27,7 +27,7 @@ macro_rules! token_gen {
             $( $name, )+
         }
         impl Token {
-            pub fn as_str(self) -> &'static str {
+            pub const fn as_str(self) -> &'static str {
                 match self {
                     $( Token::$name => $string, )+
                 }
@@ -38,22 +38,22 @@ macro_rules! token_gen {
                     _ => None,
                 }
             }
-            pub fn as_un_op(self) -> Option<UnOp> {
+            pub const fn as_un_op(self) -> Option<UnOp> {
                 match self {
                     $( Token::$name => self::token_gen::token_gen_arms!(@UN_RES $(UN[$un_op])?), )+
                 }
             }
-            pub fn as_bin_op(self) -> Option<BinOp> {
+            pub const fn as_bin_op(self) -> Option<BinOp> {
                 match self {
                     $( Token::$name => self::token_gen::token_gen_arms!(@BIN_RES $(BIN[$bin_op])?), )+
                 }
             }
-            pub fn as_assign_op(self) -> Option<AssignOp> {
+            pub const fn as_assign_op(self) -> Option<AssignOp> {
                 match self {
                     $( Token::$name => self::token_gen::token_gen_arms!(@ASSIGN_RES $(ASSIGN[$assign_op])?), )+
                 }
             }
-            pub fn as_basic_type(self) -> Option<BasicType> {
+            pub const fn as_basic_type(self) -> Option<BasicType> {
                 match self {
                     $( Token::$name => self::token_gen::token_gen_arms!(@BASIC_RES $(BASIC[$basic_ty])?), )+
                 }
@@ -84,7 +84,7 @@ macro_rules! token_from_char {
     )+
     } => {
         impl Token {
-            pub fn from_char(c: char) -> Option<Token> {
+            pub const fn from_char(c: char) -> Option<Token> {
                 match c {
                     $(
                         $ch => Some($to),
@@ -105,7 +105,7 @@ macro_rules! token_glue_extend {
     )+
     } => {
         impl Token {
-            pub fn $name(c: char, token: Token) -> Option<Token> {
+            pub const fn $name(c: char, token: Token) -> Option<Token> {
                 match c {
                     $(
                         $ch => match token {

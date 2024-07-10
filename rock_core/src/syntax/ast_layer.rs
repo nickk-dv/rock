@@ -293,6 +293,12 @@ ast_node_impl!(ExprArrayInit, SyntaxKind::EXPR_ARRAY_INIT);
 ast_node_impl!(ExprArrayRepeat, SyntaxKind::EXPR_ARRAY_REPEAT);
 ast_node_impl!(ExprDeref, SyntaxKind::EXPR_DEREF);
 ast_node_impl!(ExprAddress, SyntaxKind::EXPR_ADDRESS);
+ast_node_impl!(ExprRangeFull, SyntaxKind::EXPR_RANGE_FULL);
+ast_node_impl!(ExprRangeTo, SyntaxKind::EXPR_RANGE_TO);
+ast_node_impl!(ExprRangeToInclusive, SyntaxKind::EXPR_RANGE_TO_INCLUSIVE);
+ast_node_impl!(ExprRangeFrom, SyntaxKind::EXPR_RANGE_FROM);
+ast_node_impl!(ExprRange, SyntaxKind::EXPR_RANGE);
+ast_node_impl!(ExprRangeInclusive, SyntaxKind::EXPR_RANGE_INCLUSIVE);
 ast_node_impl!(ExprUnary, SyntaxKind::EXPR_UNARY);
 ast_node_impl!(ExprBinary, SyntaxKind::EXPR_BINARY);
 
@@ -306,10 +312,7 @@ pub enum Item<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Item<'syn> {
-    fn cast(node: &'syn Node) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn cast(node: &'syn Node) -> Option<Item<'syn>> {
         match node.kind {
             SyntaxKind::PROC_ITEM => Some(Item::Proc(ProcItem(node))),
             SyntaxKind::ENUM_ITEM => Some(Item::Enum(EnumItem(node))),
@@ -346,10 +349,7 @@ pub enum Type<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Type<'syn> {
-    fn cast(node: &'syn Node) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn cast(node: &'syn Node) -> Option<Type<'syn>> {
         match node.kind {
             SyntaxKind::TYPE_BASIC => Some(Type::Basic(TypeBasic(node))),
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
@@ -389,10 +389,7 @@ pub enum Stmt<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Stmt<'syn> {
-    fn cast(node: &'syn Node) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn cast(node: &'syn Node) -> Option<Stmt<'syn>> {
         match node.kind {
             SyntaxKind::STMT_BREAK => Some(Stmt::Break(StmtBreak(node))),
             SyntaxKind::STMT_CONTINUE => Some(Stmt::Continue(StmtContinue(node))),
@@ -448,15 +445,18 @@ pub enum Expr<'syn> {
     ArrayRepeat(ExprArrayRepeat<'syn>),
     Deref(ExprDeref<'syn>),
     Address(ExprAddress<'syn>),
+    RangeFull(ExprRangeFull<'syn>),
+    RangeTo(ExprRangeTo<'syn>),
+    RangeToInclusive(ExprRangeToInclusive<'syn>),
+    RangeFrom(ExprRangeFrom<'syn>),
+    Range(ExprRange<'syn>),
+    RangeInclusive(ExprRangeInclusive<'syn>),
     Unary(ExprUnary<'syn>),
     Binary(ExprBinary<'syn>),
 }
 
 impl<'syn> AstNode<'syn> for Expr<'syn> {
-    fn cast(node: &'syn Node) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn cast(node: &'syn Node) -> Option<Expr<'syn>> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
             SyntaxKind::EXPR_LIT_NULL => Some(Expr::LitNull(ExprLitNull(node))),
@@ -480,6 +480,16 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_ARRAY_REPEAT => Some(Expr::ArrayRepeat(ExprArrayRepeat(node))),
             SyntaxKind::EXPR_DEREF => Some(Expr::Deref(ExprDeref(node))),
             SyntaxKind::EXPR_ADDRESS => Some(Expr::Address(ExprAddress(node))),
+            SyntaxKind::EXPR_RANGE_FULL => Some(Expr::RangeFull(ExprRangeFull(node))),
+            SyntaxKind::EXPR_RANGE_TO => Some(Expr::RangeTo(ExprRangeTo(node))),
+            SyntaxKind::EXPR_RANGE_TO_INCLUSIVE => {
+                Some(Expr::RangeToInclusive(ExprRangeToInclusive(node)))
+            }
+            SyntaxKind::EXPR_RANGE_FROM => Some(Expr::RangeFrom(ExprRangeFrom(node))),
+            SyntaxKind::EXPR_RANGE => Some(Expr::Range(ExprRange(node))),
+            SyntaxKind::EXPR_RANGE_INCLUSIVE => {
+                Some(Expr::RangeInclusive(ExprRangeInclusive(node)))
+            }
             SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
             SyntaxKind::EXPR_BINARY => Some(Expr::Binary(ExprBinary(node))),
             _ => None,
@@ -512,6 +522,12 @@ impl<'syn> Expr<'syn> {
             Expr::ArrayRepeat(expr) => expr.range(tree),
             Expr::Deref(expr) => expr.range(tree),
             Expr::Address(expr) => expr.range(tree),
+            Expr::RangeFull(expr) => expr.range(tree),
+            Expr::RangeTo(expr) => expr.range(tree),
+            Expr::RangeToInclusive(expr) => expr.range(tree),
+            Expr::RangeFrom(expr) => expr.range(tree),
+            Expr::Range(expr) => expr.range(tree),
+            Expr::RangeInclusive(expr) => expr.range(tree),
             Expr::Unary(expr) => expr.range(tree),
             Expr::Binary(expr) => expr.range(tree),
         }
@@ -816,9 +832,8 @@ impl<'syn> ExprField<'syn> {
 }
 
 impl<'syn> ExprIndex<'syn> {
-    find_first!(target, Expr);
+    node_iter!(target_index_iter, Expr);
     find_token!(is_mut, T![mut]);
-    //@index or slice range
 }
 
 impl<'syn> ExprCall<'syn> {
@@ -877,6 +892,28 @@ impl<'syn> ExprDeref<'syn> {
 impl<'syn> ExprAddress<'syn> {
     find_token!(is_mut, T![mut]);
     find_first!(expr, Expr);
+}
+
+impl<'syn> ExprRangeFull<'syn> {}
+
+impl<'syn> ExprRangeTo<'syn> {
+    find_first!(end, Expr);
+}
+
+impl<'syn> ExprRangeToInclusive<'syn> {
+    find_first!(end, Expr);
+}
+
+impl<'syn> ExprRangeFrom<'syn> {
+    find_first!(start, Expr);
+}
+
+impl<'syn> ExprRange<'syn> {
+    node_iter!(start_end_iter, Expr);
+}
+
+impl<'syn> ExprRangeInclusive<'syn> {
+    node_iter!(start_end_iter, Expr);
 }
 
 impl<'syn> ExprUnary<'syn> {

@@ -350,9 +350,9 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::ArrayRepeat { expr, len } => {
             typecheck_array_repeat(hir, emit, proc, expect, expr, len)
         }
-        ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Deref { rhs } => typecheck_deref(hir, emit, proc, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
+        ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(hir, emit, proc, expect, op, op_range, rhs)
         }

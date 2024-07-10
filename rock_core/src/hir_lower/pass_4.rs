@@ -680,7 +680,6 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
-        ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Deref { .. } => {
             error_cannot_use_in_constants(emit, origin_id, expr.range, "deref");
             Err(parent_id)
@@ -689,6 +688,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             error_cannot_use_in_constants(emit, origin_id, expr.range, "address");
             Err(parent_id)
         }
+        ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Unary { rhs, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, rhs)?;
             Ok(())

@@ -730,6 +730,31 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             }
             expr_fmt(fmt, address.expr(fmt.tree).unwrap());
         }
+        ast::Expr::RangeFull(_) => fmt.write(".."),
+        ast::Expr::RangeTo(range) => {
+            fmt.write("..<");
+            expr_fmt(fmt, range.end(fmt.tree).unwrap());
+        }
+        ast::Expr::RangeToInclusive(range) => {
+            fmt.write("..=");
+            expr_fmt(fmt, range.end(fmt.tree).unwrap());
+        }
+        ast::Expr::RangeFrom(range) => {
+            expr_fmt(fmt, range.start(fmt.tree).unwrap());
+            fmt.write("..");
+        }
+        ast::Expr::Range(range) => {
+            let mut start_end_iter = range.start_end_iter(fmt.tree);
+            expr_fmt(fmt, start_end_iter.next().unwrap());
+            fmt.write("..<");
+            expr_fmt(fmt, start_end_iter.next().unwrap());
+        }
+        ast::Expr::RangeInclusive(range) => {
+            let mut start_end_iter = range.start_end_iter(fmt.tree);
+            expr_fmt(fmt, start_end_iter.next().unwrap());
+            fmt.write("..=");
+            expr_fmt(fmt, start_end_iter.next().unwrap());
+        }
         ast::Expr::Unary(unary) => {
             let op = unary.un_op(fmt.tree);
             fmt.write(op.as_str());
@@ -845,14 +870,14 @@ fn expr_match(fmt: &mut Formatter, match_: ast::ExprMatch) {
 }
 
 fn expr_index(fmt: &mut Formatter, index: ast::ExprIndex) {
-    expr_fmt(fmt, index.target(fmt.tree).unwrap());
+    let mut target_index_iter = index.target_index_iter(fmt.tree);
+    expr_fmt(fmt, target_index_iter.next().unwrap());
     fmt.write_c('[');
     if index.is_mut(fmt.tree) {
         fmt.write("mut");
         fmt.space();
     }
-    //@todo no slicing / index expr api
-    fmt.write("<@index_or_slice>");
+    expr_fmt(fmt, target_index_iter.next().unwrap());
     fmt.write_c(']');
 }
 
