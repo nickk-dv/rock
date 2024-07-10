@@ -562,15 +562,15 @@ fn add_expr_const_dependencies<'hir, 'ast>(
         ast::ExprKind::LitChar { .. } => Ok(()),
         ast::ExprKind::LitString { .. } => Ok(()),
         ast::ExprKind::If { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "if");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "if");
             Err(parent_id)
         }
         ast::ExprKind::Block { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "block");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "block");
             Err(parent_id)
         }
         ast::ExprKind::Match { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "match");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "match");
             Err(parent_id)
         }
         ast::ExprKind::Field { target, .. } => {
@@ -588,7 +588,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             Ok(())
         }
         ast::ExprKind::Call { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "procedure call");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "procedure call");
             Err(parent_id)
         }
         ast::ExprKind::Cast { target, .. } => {
@@ -625,28 +625,22 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     Ok(())
                 }
                 pass_5::ValueID::Global(_) => {
-                    error_cannot_refer_to_in_constants(hir, emit, origin_id, expr.range, "globals");
+                    error_cannot_refer_to_in_constants(emit, origin_id, expr.range, "globals");
                     Err(parent_id)
                 }
                 pass_5::ValueID::Local(_) => {
-                    error_cannot_refer_to_in_constants(hir, emit, origin_id, expr.range, "locals");
+                    error_cannot_refer_to_in_constants(emit, origin_id, expr.range, "locals");
                     Err(parent_id)
                 }
                 pass_5::ValueID::Param(_) => {
-                    error_cannot_refer_to_in_constants(
-                        hir,
-                        emit,
-                        origin_id,
-                        expr.range,
-                        "parameters",
-                    );
+                    error_cannot_refer_to_in_constants(emit, origin_id, expr.range, "parameters");
                     Err(parent_id)
                 }
             }
         }
         ast::ExprKind::Variant { .. } => {
             //@no type inference on this `ast name resolve` pass thus cannot infer variant type 14.06.24
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "variant selector");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "variant selector");
             Err(parent_id)
         }
         ast::ExprKind::StructInit { struct_init } => match struct_init.path {
@@ -688,11 +682,11 @@ fn add_expr_const_dependencies<'hir, 'ast>(
         }
         ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Deref { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "deref");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "deref");
             Err(parent_id)
         }
         ast::ExprKind::Address { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "address");
+            error_cannot_use_in_constants(emit, origin_id, expr.range, "address");
             Err(parent_id)
         }
         ast::ExprKind::Unary { rhs, .. } => {
@@ -708,7 +702,6 @@ fn add_expr_const_dependencies<'hir, 'ast>(
 }
 
 fn error_cannot_use_in_constants(
-    hir: &HirData,
     emit: &mut HirEmit,
     origin_id: ModuleID,
     range: TextRange,
@@ -722,7 +715,6 @@ fn error_cannot_use_in_constants(
 }
 
 fn error_cannot_refer_to_in_constants(
-    hir: &HirData,
     emit: &mut HirEmit,
     origin_id: ModuleID,
     range: TextRange,

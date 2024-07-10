@@ -130,8 +130,8 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
     //@no version resolution or transitive dependencies (only root deps)
     let root_dependencies: Vec<String> = root_manifest
         .dependencies
-        .iter()
-        .map(|(name, _)| name.clone())
+        .keys()
+        .map(|name| name.clone())
         .collect();
     let mut root_dependency_map = HashMap::new();
 
@@ -327,5 +327,5 @@ fn read_file(
             return Ok(source.clone());
         }
     }
-    Ok(fs_env::file_read_to_string(&path)?)
+    fs_env::file_read_to_string(path)
 }

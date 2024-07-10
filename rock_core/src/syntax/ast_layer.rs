@@ -130,7 +130,7 @@ impl<'syn, T: AstNode<'syn>> AstNodeIterator<'syn, T> {
         AstNodeIterator {
             tree,
             iter: node.content.iter(),
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         }
     }
 }

@@ -339,25 +339,6 @@ pub struct FieldInit<'ast> {
     pub expr: &'ast Expr<'ast>,
 }
 
-//@this syntax doesnt allow expressions that might be Range or RangeInc 07.05.24
-// eg:
-// let array = [1, 2, 3];
-// let range = 0..<10;
-// let slice: []s32 = array[range];
-
-#[derive(Copy, Clone)]
-pub struct SliceRange<'ast> {
-    pub lower: Option<&'ast Expr<'ast>>,
-    pub upper: SliceRangeEnd<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub enum SliceRangeEnd<'ast> {
-    Unbounded,
-    Exclusive(&'ast Expr<'ast>),
-    Inclusive(&'ast Expr<'ast>),
-}
-
 #[derive(Copy, Clone)]
 pub enum Range<'ast> {
     Full,                                               // ..

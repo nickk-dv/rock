@@ -467,7 +467,7 @@ impl<'hir> ProcData<'hir> {
         &self.params[id.index()]
     }
     pub fn local(&self, id: LocalID) -> &'hir Local<'hir> {
-        &self.locals[id.index()]
+        self.locals[id.index()]
     }
     pub fn find_param(&self, id: InternID) -> Option<(ProcParamID, &'hir ProcParam<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {

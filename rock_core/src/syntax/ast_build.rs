@@ -133,7 +133,7 @@ fn source_file<'ast>(
     ctx.s.items.take(offset, &mut ctx.s.arena)
 }
 
-fn item<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, item: cst::Item) {
+fn item(ctx: &mut AstBuild, item: cst::Item) {
     let item = match item {
         cst::Item::Proc(item) => ast::Item::Proc(proc_item(ctx, item)),
         cst::Item::Enum(item) => ast::Item::Enum(enum_item(ctx, item)),
@@ -161,7 +161,7 @@ fn attribute_list<'ast>(
     }
 }
 
-fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, attr: cst::Attribute) -> ast::Attribute {
+fn attribute(ctx: &mut AstBuild, attr: cst::Attribute) -> ast::Attribute {
     //@assuming range of ident token without any trivia
     let name_cst = attr.name(ctx.tree).unwrap();
     let range = name_cst.range(ctx.tree);
@@ -220,7 +220,7 @@ fn proc_item<'ast>(
     ctx.s.arena.alloc(proc_item)
 }
 
-fn param<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, param: cst::Param) {
+fn param(ctx: &mut AstBuild, param: cst::Param) {
     let mutt = mutt(param.is_mut(ctx.tree));
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let ty = ty(ctx, param.ty(ctx.tree).unwrap());
@@ -257,7 +257,7 @@ fn enum_item<'ast>(
     ctx.s.arena.alloc(enum_item)
 }
 
-fn variant<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, variant: cst::Variant) {
+fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
     //@value is optional in grammar but required in ast due to
     // const expr resolve limitation, will panic for now
     let name = name(ctx, variant.name(ctx.tree).unwrap());
@@ -291,7 +291,7 @@ fn struct_item<'ast>(
     ctx.s.arena.alloc(struct_item)
 }
 
-fn field<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, field: cst::Field) {
+fn field(ctx: &mut AstBuild, field: cst::Field) {
     let vis = vis(field.visiblity(ctx.tree).is_some());
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
@@ -378,7 +378,7 @@ fn import_item<'ast>(
     ctx.s.arena.alloc(import_item)
 }
 
-fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst::ImportSymbol) {
+fn import_symbol(ctx: &mut AstBuild, import_symbol: cst::ImportSymbol) {
     let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
     let rename = symbol_rename(ctx, import_symbol.rename(ctx.tree));
 
@@ -386,10 +386,7 @@ fn import_symbol<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, import_symbol: cst:
     ctx.s.import_symbols.add(import_symbol);
 }
 
-fn symbol_rename<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    rename: Option<cst::SymbolRename>,
-) -> ast::SymbolRename {
+fn symbol_rename(ctx: &mut AstBuild, rename: Option<cst::SymbolRename>) -> ast::SymbolRename {
     if let Some(rename) = rename {
         if let Some(alias) = rename.alias(ctx.tree) {
             ast::SymbolRename::Alias(name(ctx, alias))
@@ -402,7 +399,7 @@ fn symbol_rename<'ast>(
     }
 }
 
-fn name<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, name: cst::Name) -> ast::Name {
+fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
     let range = name.range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
     let id = ctx.s.intern_name.intern(string);

@@ -101,10 +101,10 @@ fn server_loop(conn: &Connection) {
     let mut context = ServerContext::new();
 
     loop {
-        match buffer.receive(&conn) {
+        match buffer.receive(conn) {
             Action::Stop => break,
             Action::Collect => continue,
-            Action::Handle(messages) => handle_messages(&conn, &mut context, messages),
+            Action::Handle(messages) => handle_messages(conn, &mut context, messages),
         }
     }
 }
