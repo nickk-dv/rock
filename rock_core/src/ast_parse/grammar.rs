@@ -795,6 +795,26 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 }
             }
         }
+        T![..] => {
+            p.bump();
+            let range = Range::Full;
+            let range = p.state.arena.alloc(range);
+            ExprKind::Range { range }
+        }
+        T!["..<"] => {
+            p.bump();
+            let end = expr(p)?;
+            let range = Range::RangeTo(end);
+            let range = p.state.arena.alloc(range);
+            ExprKind::Range { range }
+        }
+        T!["..="] => {
+            p.bump();
+            let end = expr(p)?;
+            let range = Range::RangeToInclusive(end);
+            let range = p.state.arena.alloc(range);
+            ExprKind::Range { range }
+        }
         _ => return Err("expected expression".into()),
     };
 
@@ -811,151 +831,98 @@ fn tail_expr<'ast>(
 ) -> Result<&'ast Expr<'ast>, String> {
     let start = target.range.start();
     let mut target = target;
-    let mut last_cast = false;
 
     loop {
-        if last_cast {
-            return Ok(target);
-        }
-
         match p.peek() {
             T![.] => {
                 p.bump();
                 let name = name(p)?;
 
-                target = p.state.arena.alloc(Expr {
+                let expr = Expr {
                     kind: ExprKind::Field { target, name },
                     range: p.make_range(start),
-                });
+                };
+                target = p.state.arena.alloc(expr);
             }
             T!['['] => {
                 p.bump();
                 let mutt = mutt(p);
-                let kind = index_or_slice_expr(p, target, mutt)?;
+                let index = expr(p)?;
                 p.expect(T![']'])?;
 
-                target = p.state.arena.alloc(Expr {
-                    kind,
+                let expr = Expr {
+                    kind: ExprKind::Index {
+                        target,
+                        mutt,
+                        index,
+                    },
                     range: p.make_range(start),
-                });
+                };
+                target = p.state.arena.alloc(expr);
             }
             T!['('] => {
                 let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
                 let input = p.state.arena.alloc(input);
 
-                target = p.state.arena.alloc(Expr {
+                let expr = Expr {
                     kind: ExprKind::Call { target, input },
                     range: p.make_range(start),
-                });
+                };
+                target = p.state.arena.alloc(expr);
             }
             T![as] => {
                 p.bump();
                 let ty = ty(p)?;
                 let ty_ref = p.state.arena.alloc(ty);
 
-                target = p.state.arena.alloc(Expr {
+                let expr = Expr {
                     kind: ExprKind::Cast {
                         target,
                         into: ty_ref,
                     },
                     range: p.make_range(start),
-                });
-                last_cast = true;
+                };
+                target = p.state.arena.alloc(expr);
+                return Ok(target);
+            }
+            T![..] => {
+                p.bump();
+                let range = Range::RangeFrom(target);
+                let range = p.state.arena.alloc(range);
+
+                let expr = Expr {
+                    kind: ExprKind::Range { range },
+                    range: p.make_range(start),
+                };
+                target = p.state.arena.alloc(expr);
+            }
+            T!["..<"] => {
+                p.bump();
+                let end = expr(p)?;
+                let range = Range::Range(target, end);
+                let range = p.state.arena.alloc(range);
+
+                let expr = Expr {
+                    kind: ExprKind::Range { range },
+                    range: p.make_range(start),
+                };
+                target = p.state.arena.alloc(expr);
+            }
+            T!["..="] => {
+                p.bump();
+                let end = expr(p)?;
+                let range = Range::RangeInclusive(target, end);
+                let range = p.state.arena.alloc(range);
+
+                let expr = Expr {
+                    kind: ExprKind::Range { range },
+                    range: p.make_range(start),
+                };
+                target = p.state.arena.alloc(expr);
             }
             _ => return Ok(target),
         }
     }
-}
-
-fn index_or_slice_expr<'ast>(
-    p: &mut Parser<'ast, '_, '_, '_>,
-    target: &'ast Expr<'ast>,
-    mutt: Mut,
-) -> Result<ExprKind<'ast>, String> {
-    let range = match p.peek() {
-        T![..] => {
-            p.bump();
-            Some(SliceRange {
-                lower: None,
-                upper: SliceRangeEnd::Unbounded,
-            })
-        }
-        T!["..<"] => {
-            p.bump();
-            Some(SliceRange {
-                lower: None,
-                upper: SliceRangeEnd::Exclusive(expr(p)?),
-            })
-        }
-        T!["..="] => {
-            p.bump();
-            Some(SliceRange {
-                lower: None,
-                upper: SliceRangeEnd::Inclusive(expr(p)?),
-            })
-        }
-        _ => None,
-    };
-
-    let kind = if let Some(range) = range {
-        ExprKind::Slice {
-            target,
-            mutt,
-            slice_range: p.state.arena.alloc(range),
-        }
-    } else {
-        let expr = expr(p)?;
-        if p.eat(T![..]) {
-            let range = SliceRange {
-                lower: Some(expr),
-                upper: SliceRangeEnd::Unbounded,
-            };
-            ExprKind::Slice {
-                target,
-                mutt,
-                slice_range: p.state.arena.alloc(range),
-            }
-        } else {
-            if let Some(slice_range) = expr_into_slice_range(p, expr) {
-                ExprKind::Slice {
-                    target,
-                    mutt,
-                    slice_range,
-                }
-            } else if mutt == Mut::Mutable {
-                return Err("expected `..<`, `..=` or `..` in slice expression".into());
-            } else {
-                ExprKind::Index {
-                    target,
-                    index: expr,
-                }
-            }
-        }
-    };
-
-    Ok(kind)
-}
-
-//@this is bad for grammar, change slice range parsing to avoid this
-fn expr_into_slice_range<'ast>(
-    p: &mut Parser<'ast, '_, '_, '_>,
-    expr: &'ast Expr<'ast>,
-) -> Option<&'ast SliceRange<'ast>> {
-    let range = match expr.kind {
-        ExprKind::Binary { op, op_range, bin } => match op {
-            BinOp::Range => SliceRange {
-                lower: Some(bin.lhs),
-                upper: SliceRangeEnd::Exclusive(bin.rhs),
-            },
-            BinOp::RangeInc => SliceRange {
-                lower: Some(bin.lhs),
-                upper: SliceRangeEnd::Inclusive(bin.rhs),
-            },
-            _ => return None,
-        },
-        _ => return None,
-    };
-    Some(p.state.arena.alloc(range))
 }
 
 fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String> {
@@ -1089,18 +1056,17 @@ fn field_init<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<FieldInit<'ast>,
 impl BinOp {
     pub fn prec(&self) -> u32 {
         match self {
-            BinOp::Range | BinOp::RangeInc => 1,
-            BinOp::LogicOr => 2,
-            BinOp::LogicAnd => 3,
+            BinOp::LogicOr => 1,
+            BinOp::LogicAnd => 2,
             BinOp::IsEq
             | BinOp::NotEq
             | BinOp::Less
             | BinOp::LessEq
             | BinOp::Greater
-            | BinOp::GreaterEq => 4,
-            BinOp::Add | BinOp::Sub => 5,
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 6,
-            BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitShl | BinOp::BitShr => 7,
+            | BinOp::GreaterEq => 3,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
+            BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitShl | BinOp::BitShr => 6,
         }
     }
 }

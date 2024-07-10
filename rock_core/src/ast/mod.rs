@@ -284,8 +284,7 @@ pub enum ExprKind<'ast> {
     Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
-    Index       { target: &'ast Expr<'ast>, index: &'ast Expr<'ast> },
-    Slice       { target: &'ast Expr<'ast>, mutt: Mut, slice_range: &'ast SliceRange<'ast> },
+    Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
     Call        { target: &'ast Expr<'ast>, input: &'ast &'ast [&'ast Expr<'ast>] },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: &'ast Type<'ast> },
@@ -294,6 +293,7 @@ pub enum ExprKind<'ast> {
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
+    Range       { range: &'ast Range<'ast> },
     Deref       { rhs: &'ast Expr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
@@ -359,6 +359,16 @@ pub enum SliceRangeEnd<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub enum Range<'ast> {
+    Full,                                               // ..
+    RangeTo(&'ast Expr<'ast>),                          // ..<2
+    RangeToInclusive(&'ast Expr<'ast>),                 // ..=2
+    RangeFrom(&'ast Expr<'ast>),                        // 0..
+    Range(&'ast Expr<'ast>, &'ast Expr<'ast>),          // 0..<2
+    RangeInclusive(&'ast Expr<'ast>, &'ast Expr<'ast>), // 0..=2
+}
+
+#[derive(Copy, Clone)]
 pub struct BinExpr<'ast> {
     pub lhs: &'ast Expr<'ast>,
     pub rhs: &'ast Expr<'ast>,
@@ -412,8 +422,6 @@ pub enum BinOp {
     GreaterEq,
     LogicAnd,
     LogicOr,
-    Range,
-    RangeInc,
 }
 
 #[derive(Copy, Clone)]
@@ -507,8 +515,6 @@ impl BinOp {
             BinOp::GreaterEq => ">=",
             BinOp::LogicAnd => "&&",
             BinOp::LogicOr => "||",
-            BinOp::Range => "..<",
-            BinOp::RangeInc => "..=",
         }
     }
 }

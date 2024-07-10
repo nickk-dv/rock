@@ -577,14 +577,15 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
             Ok(())
         }
-        ast::ExprKind::Index { target, index } => {
+        //@index or slicing
+        ast::ExprKind::Index {
+            target,
+            mutt,
+            index,
+        } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, index)?;
             Ok(())
-        }
-        ast::ExprKind::Slice { .. } => {
-            error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "slice");
-            Err(parent_id)
         }
         ast::ExprKind::Call { .. } => {
             error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "procedure call");
@@ -685,6 +686,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
+        ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Deref { .. } => {
             error_cannot_use_in_constants(hir, emit, origin_id, expr.range, "deref");
             Err(parent_id)

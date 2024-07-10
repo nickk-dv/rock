@@ -738,16 +738,10 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::Binary(binary) => {
             let mut lhs_rhs = binary.lhs_rhs_iter(fmt.tree);
             expr_fmt(fmt, lhs_rhs.next().unwrap());
-
             let op = binary.bin_op(fmt.tree);
-            if matches!(op, BinOp::Range | BinOp::RangeInc) {
-                fmt.write(op.as_str());
-            } else {
-                fmt.space();
-                fmt.write(op.as_str());
-                fmt.space();
-            }
-
+            fmt.space();
+            fmt.write(op.as_str());
+            fmt.space();
             expr_fmt(fmt, lhs_rhs.next().unwrap());
         }
     }

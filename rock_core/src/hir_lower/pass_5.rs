@@ -325,14 +325,11 @@ pub fn typecheck_expr<'hir>(
             typecheck_match(hir, emit, proc, expect, match_, expr.range)
         }
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
-        ast::ExprKind::Index { target, index } => {
-            typecheck_index(hir, emit, proc, target, index, expr.range)
-        }
-        ast::ExprKind::Slice {
+        ast::ExprKind::Index {
             target,
             mutt,
-            slice_range,
-        } => typecheck_slice(hir, emit, proc, target, mutt, slice_range, expr.range),
+            index,
+        } => typecheck_index(hir, emit, proc, target, mutt, index, expr.range),
         ast::ExprKind::Call { target, input } => {
             typecheck_call(hir, emit, proc, target, input, expr.range)
         }
@@ -353,6 +350,7 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::ArrayRepeat { expr, len } => {
             typecheck_array_repeat(hir, emit, proc, expect, expr, len)
         }
+        ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Deref { rhs } => typecheck_deref(hir, emit, proc, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
         ast::ExprKind::Unary { op, op_range, rhs } => {
@@ -978,11 +976,13 @@ impl<'hir> CollectionType<'hir> {
     }
 }
 
+//@index or slice, desugar correctly
 fn typecheck_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
+    mutt: ast::Mut,
     index: &ast::Expr<'_>,
     expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {
@@ -1025,91 +1025,7 @@ fn typecheck_index<'hir>(
                     type_format(hir, emit, target_res.ty).as_str()
                 ),
                 SourceRange::new(proc.origin(), expr_range),
-                Info::new(
-                    format!(
-                        "has `{}` type",
-                        type_format(hir, emit, target_res.ty).as_str()
-                    ),
-                    SourceRange::new(proc.origin(), target.range),
-                ),
-            ));
-            TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
-        }
-    }
-}
-
-fn typecheck_slice<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    target: &ast::Expr<'_>,
-    mutt: ast::Mut,
-    slice: &ast::SliceRange<'_>,
-    expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
-) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    let expect_usize = Expectation::HasType(hir::Type::USIZE, None);
-
-    let lower = slice.lower.map(|lower| {
-        let lower_res = typecheck_expr(hir, emit, proc, expect_usize, lower);
-        lower_res.expr
-    });
-    let upper = match slice.upper {
-        ast::SliceRangeEnd::Unbounded => hir::SliceRangeEnd::Unbounded,
-        ast::SliceRangeEnd::Exclusive(upper) => {
-            let upper_res = typecheck_expr(hir, emit, proc, expect_usize, upper);
-            hir::SliceRangeEnd::Exclusive(upper_res.expr)
-        }
-        ast::SliceRangeEnd::Inclusive(upper) => {
-            let upper_res = typecheck_expr(hir, emit, proc, expect_usize, upper);
-            hir::SliceRangeEnd::Inclusive(upper_res.expr)
-        }
-    };
-
-    match CollectionType::from(target_res.ty) {
-        Ok(Some(collection)) => {
-            let access = hir::SliceAccess {
-                deref: collection.deref,
-                kind: match collection.kind {
-                    SliceOrArray::Slice(slice) => hir::SliceKind::Slice {
-                        elem_size: type_size(
-                            hir,
-                            emit,
-                            slice.elem_ty,
-                            SourceRange::new(proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
-                        )
-                        .unwrap_or(hir::Size::new(0, 1))
-                        .size(),
-                    },
-                    SliceOrArray::Array(array) => hir::SliceKind::Array { array },
-                },
-                range: hir::SliceRange { lower, upper },
-            };
-
-            //@mutability not checked, use addressability? 08.05.24
-            // or only base type? check different cases (eg:  &slice_var[mut ..] // invalid? )
-            let slice_ty = emit.arena.alloc(hir::ArraySlice {
-                mutt,
-                elem_ty: collection.elem_ty,
-            });
-
-            let slice_expr = hir::Expr::Slice {
-                target: target_res.expr,
-                access: emit.arena.alloc(access),
-            };
-            TypeResult::new(
-                hir::Type::ArraySlice(slice_ty),
-                emit.arena.alloc(slice_expr),
-            )
-        }
-        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
-        Err(()) => {
-            emit.error(ErrorComp::new(
-                format!(
-                    "cannot slice value of type `{}`",
-                    type_format(hir, emit, target_res.ty).as_str()
-                ),
-                SourceRange::new(proc.origin(), expr_range),
+                // is this info needed? test if its useful
                 Info::new(
                     format!(
                         "has `{}` type",
@@ -2082,11 +1998,8 @@ fn get_expr_addressability<'hir>(
         hir::Expr::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
         hir::Expr::Deref { rhs, .. } => get_expr_addressability(hir, proc, rhs),
         hir::Expr::Address { .. } => Addressability::Temporary,
-        hir::Expr::Unary { op, rhs } => Addressability::Temporary,
-        hir::Expr::Binary { op, .. } => match op {
-            ast::BinOp::Range | ast::BinOp::RangeInc => Addressability::TemporaryImmutable,
-            _ => Addressability::Temporary,
-        },
+        hir::Expr::Unary { .. } => Addressability::Temporary,
+        hir::Expr::Binary { .. } => Addressability::Temporary,
     }
 }
 
@@ -2213,7 +2126,6 @@ fn typecheck_binary<'hir>(
         | ast::BinOp::Greater
         | ast::BinOp::GreaterEq => Expectation::None,
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => Expectation::HasType(hir::Type::BOOL, None),
-        ast::BinOp::Range | ast::BinOp::RangeInc => Expectation::HasType(hir::Type::USIZE, None),
         _ => expect,
     };
     let lhs_res = typecheck_expr(hir, emit, proc, lhs_expect, bin.lhs);
@@ -2222,7 +2134,6 @@ fn typecheck_binary<'hir>(
 
     let rhs_expect = match op {
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => Expectation::HasType(hir::Type::BOOL, None),
-        ast::BinOp::Range | ast::BinOp::RangeInc => Expectation::HasType(hir::Type::USIZE, None),
         _ => {
             let rhs_expect_src = SourceRange::new(proc.origin(), bin.lhs.range);
             Expectation::HasType(lhs_res.ty, Some(rhs_expect_src))
@@ -2240,9 +2151,6 @@ fn typecheck_binary<'hir>(
             | ast::BinOp::GreaterEq
             | ast::BinOp::LogicAnd
             | ast::BinOp::LogicOr => hir::Type::BOOL,
-            ast::BinOp::Range | ast::BinOp::RangeInc => {
-                panic!("pass5 bin_op range doesnt produce Range struct type yet")
-            }
             _ => lhs_res.ty,
         }
     } else {
@@ -2333,9 +2241,6 @@ fn check_bin_op_compatibility<'hir>(
         }
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
             matches!(lhs_ty, hir::Type::Basic(BasicType::Bool))
-        }
-        ast::BinOp::Range | ast::BinOp::RangeInc => {
-            matches!(lhs_ty, hir::Type::Basic(BasicType::Usize))
         }
     };
 
@@ -2436,7 +2341,7 @@ fn typecheck_block<'hir>(
                 let error_count = emit.error_count();
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 if !emit.did_error(error_count) {
-                    check_unused_expr(emit, proc, expr_res.expr, expr.range);
+                    check_unused_expr_semi(emit, proc, expr_res.expr, expr.range);
                 }
 
                 //@migrate to using never type instead of diverges bool flags
@@ -2511,7 +2416,7 @@ fn typecheck_block<'hir>(
     block_result
 }
 
-fn check_unused_expr(
+fn check_unused_expr_semi(
     emit: &mut HirEmit,
     proc: &ProcScope,
     expr: &hir::Expr,
@@ -2524,8 +2429,7 @@ fn check_unused_expr(
     }
 
     let unused = match *expr {
-        // when expression errored in any way, its not checked
-        // for being `unused`, see invocations
+        // errored expressions are not allowed to be checked
         hir::Expr::Error => unreachable!(),
         hir::Expr::Const { .. } => UnusedExpr::Yes("constant value"),
         hir::Expr::If { .. } => UnusedExpr::Maybe,
@@ -2542,9 +2446,9 @@ fn check_unused_expr(
         hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
         hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
-        hir::Expr::StructInit { .. } => UnusedExpr::Maybe, //@yes, force?
-        hir::Expr::ArrayInit { .. } => UnusedExpr::Maybe, //@yes, force?
-        hir::Expr::ArrayRepeat { .. } => UnusedExpr::Maybe, //@yes, force?
+        hir::Expr::StructInit { .. } => UnusedExpr::Yes("struct value"),
+        hir::Expr::ArrayInit { .. } => UnusedExpr::Yes("array value"),
+        hir::Expr::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
         hir::Expr::Deref { .. } => UnusedExpr::Yes("dereference"),
         hir::Expr::Address { .. } => UnusedExpr::Yes("address value"),
         hir::Expr::Unary { .. } => UnusedExpr::Yes("unary operation"),
