@@ -54,7 +54,7 @@ fn parse_options(
             opt_args.push(arg);
         }
 
-        if cmd_options.get(&opt_name).is_some() {
+        if cmd_options.contains_key(&opt_name) {
             duplicates.insert(opt_name);
         } else {
             cmd_options.insert(opt_name, opt_args);

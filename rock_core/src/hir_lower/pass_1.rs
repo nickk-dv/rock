@@ -326,7 +326,7 @@ pub fn error_name_already_defined(
 
 fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: &ast::Attribute) {
     emit.error(ErrorComp::new(
-        format!("attribute is unknown"),
+        "attribute is unknown",
         SourceRange::new(origin_id, attr.range),
         None,
     ));

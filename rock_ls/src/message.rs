@@ -82,7 +82,7 @@ impl MessageBuffer {
 
     fn handle_user_pause(&mut self) -> Action {
         self.messages.push(Message::CompileProject);
-        return Action::Handle(self.take_messages());
+        Action::Handle(self.take_messages())
     }
 
     fn take_messages(&mut self) -> Vec<Message> {

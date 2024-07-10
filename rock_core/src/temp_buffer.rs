@@ -21,7 +21,7 @@ impl<T: Copy> TempBuffer<T> {
     pub fn start(&self) -> BufferOffset<T> {
         BufferOffset {
             idx: self.buffer.len(),
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         }
     }
 

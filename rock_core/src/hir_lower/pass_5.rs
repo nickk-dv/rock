@@ -241,9 +241,9 @@ pub fn check_type_expectation<'hir>(
             SourceRange::new(origin_id, from_range),
             info,
         ));
-        return true;
+        true
     } else {
-        return false;
+        false
     }
 }
 
@@ -664,7 +664,7 @@ fn check_match_exhaust<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    arms: &mut Vec<hir::MatchArm<'hir>>,
+    arms: &mut [hir::MatchArm<'hir>],
     fallback: &mut Option<hir::Block<'hir>>,
     match_ast: &ast::Match<'_>,
     match_range: TextRange,
@@ -949,10 +949,7 @@ enum SliceOrArray<'hir> {
 
 impl<'hir> CollectionType<'hir> {
     fn from(ty: hir::Type<'hir>) -> Result<Option<CollectionType<'hir>>, ()> {
-        fn type_collection<'hir>(
-            ty: hir::Type<'hir>,
-            deref: bool,
-        ) -> Result<Option<CollectionType<'hir>>, ()> {
+        fn type_collection(ty: hir::Type, deref: bool) -> Result<Option<CollectionType>, ()> {
             match ty {
                 hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
                     deref,

@@ -116,7 +116,7 @@ fn print_diagnostic<'src>(
 
     match diagnostic.kind() {
         DiagnosticKind::Message => {
-            let _ = write!(handle, "\n");
+            let _ = writeln!(handle);
             return;
         }
         DiagnosticKind::Context { main, info } => {
@@ -145,7 +145,7 @@ fn print_diagnostic<'src>(
         let line_num_pad = " ".repeat(state.line_num_offset - fmt.line_num.len());
         print_context(handle, fmt, last, &line_pad, &line_num_pad);
     }
-    let _ = write!(handle, "\n");
+    let _ = writeln!(handle);
 }
 
 fn print_context(
@@ -207,8 +207,7 @@ const fn severity_name(severity: DiagnosticSeverity) -> &'static str {
 const fn severity_marker(severity: DiagnosticSeverity) -> &'static str {
     match severity {
         DiagnosticSeverity::Info => "-",
-        DiagnosticSeverity::Error => "^",
-        DiagnosticSeverity::Warning => "^",
+        DiagnosticSeverity::Error | DiagnosticSeverity::Warning => "^",
     }
 }
 
