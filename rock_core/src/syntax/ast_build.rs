@@ -735,7 +735,18 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
 
             ast::ExprKind::Field { target, name }
         }
-        cst::Expr::Index(index) => todo!(), //@syntax / api imcomplete
+        cst::Expr::Index(index) => {
+            let mut target_index_iter = index.target_index_iter(ctx.tree);
+            let target = expr(ctx, target_index_iter.next().unwrap());
+            let mutt = mutt(index.is_mut(ctx.tree));
+            let index = expr(ctx, target_index_iter.next().unwrap());
+
+            ast::ExprKind::Index {
+                target,
+                mutt,
+                index,
+            }
+        }
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());
 
@@ -824,6 +835,50 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
             let expr = expr(ctx, address.expr(ctx.tree).unwrap());
 
             ast::ExprKind::Address { mutt, rhs: expr }
+        }
+        cst::Expr::RangeFull(_) => {
+            let range = ast::Range::Full;
+            let range = ctx.s.arena.alloc(range);
+            ast::ExprKind::Range { range }
+        }
+        cst::Expr::RangeTo(range) => {
+            let end = expr(ctx, range.end(ctx.tree).unwrap());
+
+            let range = ast::Range::RangeTo(end);
+            let range = ctx.s.arena.alloc(range);
+            ast::ExprKind::Range { range }
+        }
+        cst::Expr::RangeToInclusive(range) => {
+            let end = expr(ctx, range.end(ctx.tree).unwrap());
+
+            let range = ast::Range::RangeToInclusive(end);
+            let range = ctx.s.arena.alloc(range);
+            ast::ExprKind::Range { range }
+        }
+        cst::Expr::RangeFrom(range) => {
+            let start = expr(ctx, range.start(ctx.tree).unwrap());
+
+            let range = ast::Range::RangeFrom(start);
+            let range = ctx.s.arena.alloc(range);
+            ast::ExprKind::Range { range }
+        }
+        cst::Expr::Range(range) => {
+            let mut start_end_iter = range.start_end_iter(ctx.tree);
+            let start = expr(ctx, start_end_iter.next().unwrap());
+            let end = expr(ctx, start_end_iter.next().unwrap());
+
+            let range = ast::Range::Range(start, end);
+            let range = ctx.s.arena.alloc(range);
+            ast::ExprKind::Range { range }
+        }
+        cst::Expr::RangeInclusive(range) => {
+            let mut start_end_iter = range.start_end_iter(ctx.tree);
+            let start = expr(ctx, start_end_iter.next().unwrap());
+            let end = expr(ctx, start_end_iter.next().unwrap());
+
+            let range = ast::Range::RangeInclusive(start, end);
+            let range = ctx.s.arena.alloc(range);
+            ast::ExprKind::Range { range }
         }
         cst::Expr::Unary(unary) => {
             let (op, op_range) = unary.un_op_with_range(ctx.tree);
