@@ -79,6 +79,10 @@ token_gen::token_gen! {
     [..]     | ".."     | DotDot       |
     [->]     | "->"     | ArrowThin    |
 
+    // triple punctuation 
+    ["..<"]  | "..<"    | Range        |
+    ["..="]  | "..="    | RangeInc     |
+
     // un op tokens
     [~]      | "~"      | Tilde        | UN[UnOp::BitNot]
     [!]      | "!"      | Bang         | UN[UnOp::LogicNot]
@@ -102,8 +106,6 @@ token_gen::token_gen! {
     [>=]     | ">="     | GreaterEq    | BIN[BinOp::GreaterEq]
     [&&]     | "&&"     | LogicAnd     | BIN[BinOp::LogicAnd]
     [||]     | "||"     | LogicOr      | BIN[BinOp::LogicOr]
-    ["..<"]  | "..<"    | Range        | BIN[BinOp::Range]
-    ["..="]  | "..="    | RangeInc     | BIN[BinOp::RangeInc]
 
     // assign op tokens
     [=]      | "="      | Equals       | ASSIGN[AssignOp::Assign]
