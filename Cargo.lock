@@ -206,6 +206,7 @@ dependencies = [
  "inkwell",
  "llvm-sys",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
