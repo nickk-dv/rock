@@ -1,7 +1,8 @@
+use super::manifest::IndexManifest;
 use super::semver::Semver;
 use crate::error::ErrorComp;
 use crate::fs_env;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -17,6 +18,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
     fs_env::dir_create(&cache_dir, false)?;
 
     //@on errors still set back correct cwd!
+    //@dont git pull each time, takes time
     if !index_dir.exists() {
         fs_env::dir_set_current_working(&registry_dir)?;
         const INDEX_LINK: &str = "https://github.com/nickk-dv/rock-index";
@@ -41,21 +43,46 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
         fs_env::dir_set_current_working(&cwd)?;
     }
 
-    for (package_name, &version) in dependencies {
-        let index_manifest_path = registry_package_path(&index_dir, package_name);
+    let mut selected_packages: HashMap<String, Semver> = HashMap::new();
 
-        //@wip error, dep of which package etc...
-        if !index_manifest_path.exists() {
+    for (package_name, &version) in dependencies {
+        let manifest_path = registry_package_path(&index_dir, package_name);
+
+        if !manifest_path.exists() {
+            //@wip error, dep of which package etc...
             return Err(ErrorComp::message(format!(
                 "package `{}` is not found in rock-index",
                 package_name
             )));
         }
 
-        //@assuming single toml file, change to line based json manifest
-        let index_manifest = fs_env::file_read_to_string(&index_manifest_path)?;
-        let index_manifest =
-            super::index_manifest_deserialize(index_manifest, &index_manifest_path)?;
+        let index_manifest = fs_env::file_read_to_string(&manifest_path)?;
+        let index_manifests = super::index_manifest_deserialize(index_manifest, &manifest_path)?;
+
+        let mut selected_manifest = None;
+        for manifest in index_manifests {
+            if version == manifest.version {
+                selected_manifest = Some(manifest);
+                break;
+            }
+        }
+
+        if let Some(selected) = selected_manifest {
+            if let Some(&version) = selected_packages.get(package_name) {
+                //@conflict or newer version not handled
+                return Err(ErrorComp::message(format!(
+                    "package `{}` version conflict {} and {}\nconflict handling not implemented",
+                    package_name, version, selected.version,
+                )));
+            } else {
+                selected_packages.insert(package_name.clone(), selected.version);
+            }
+        } else {
+            return Err(ErrorComp::message(format!(
+                "dependency package `{}` version {} was not found",
+                package_name, version,
+            )));
+        }
     }
 
     Ok(())
