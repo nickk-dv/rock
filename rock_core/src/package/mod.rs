@@ -1,4 +1,5 @@
 pub mod manifest;
+pub mod resolver;
 pub mod semver;
 
 use crate::error::ErrorComp;
@@ -38,7 +39,7 @@ pub fn manifest_deserialize(
 pub fn index_manifest_deserialize(
     manifest: String,
     manifest_path: &PathBuf,
-) -> Result<String, ErrorComp> {
+) -> Result<manifest::IndexManifest, ErrorComp> {
     basic_toml::from_str(&manifest).map_err(|error| {
         ErrorComp::message(format!(
             "failed to parse index manifest file: `{}`\nreason: {}",

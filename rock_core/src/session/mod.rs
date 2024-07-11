@@ -122,6 +122,9 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
         ));
     }
 
+    //@experimental resolver usage
+    package::resolver::resolve_dependencies(&root_manifest.dependencies)?;
+
     //@no package fetch (only using `$PATH/packages` directory)
     let mut cache_dir = fs_env::current_exe_path()?;
     cache_dir.pop();
