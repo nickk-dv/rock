@@ -1,4 +1,3 @@
-use super::manifest::IndexManifest;
 use super::semver::Semver;
 use crate::error::ErrorComp;
 use crate::fs_env;

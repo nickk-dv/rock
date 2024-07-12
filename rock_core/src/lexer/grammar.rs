@@ -300,12 +300,62 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
 
     let escaped = match c {
         'n' => '\n',
-        't' => '\t',
         'r' => '\r',
+        't' => '\t',
         '0' => '\0',
         '\'' => '\'',
         '\"' => '\"',
         '\\' => '\\',
+        'x' => {
+            lex.eat(c);
+
+            let mut idx: u32 = 2;
+            let mut hex_char: u32 = 0;
+            while idx > 0 {
+                match lex.peek() {
+                    Some(hc) => {
+                        if hc.is_ascii_hexdigit() {
+                            //@do hex digit edit manually without `to_digit` / unwrap
+                            let hex_value = hc.to_digit(16).unwrap();
+                            hex_char = (hex_char << 4) | hex_value;
+                            lex.eat(hc);
+                        } else {
+                            break;
+                        }
+                    }
+                    _ => break,
+                }
+                idx -= 1;
+            }
+
+            //@can be null character and `return` skips this check
+            // problem with how `lex_eat(c)` is done at the end
+            return if idx != 0 {
+                let range = lex.make_range(start);
+                lex.errors.push(ErrorComp::new(
+                    format!(
+                        "hexadecimal character must have 2 hex digits, found {}",
+                        2 - idx
+                    ),
+                    SourceRange::new(lex.module_id, range),
+                    None,
+                ));
+                '?'
+            } else if let Ok(ecs_c) = hex_char.try_into() {
+                ecs_c
+            } else {
+                let range = lex.make_range(start);
+                lex.errors.push(ErrorComp::new(
+                    format!("hexadecimal character `{}` is not valid UTF-8", hex_char),
+                    SourceRange::new(lex.module_id, range),
+                    None,
+                ));
+                '?'
+            };
+        }
+        'u' => {
+            '?' // @temp
+        }
         _ => {
             if c.is_ascii_whitespace() {
                 let range = lex.make_range(start);
