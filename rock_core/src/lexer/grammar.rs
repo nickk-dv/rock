@@ -1,6 +1,6 @@
 use super::lexer::Lexer;
 use crate::error::{ErrorComp, SourceRange};
-use crate::text::TextRange;
+use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, Trivia};
 
 pub fn source_file(lex: &mut Lexer) {
@@ -298,6 +298,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         return '\\';
     };
 
+    let mut hex_escaped = false;
     let escaped = match c {
         'n' => '\n',
         'r' => '\r',
@@ -308,53 +309,18 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         '\\' => '\\',
         'x' => {
             lex.eat(c);
-
-            let mut idx: u32 = 2;
-            let mut hex_char: u32 = 0;
-            while idx > 0 {
-                match lex.peek() {
-                    Some(hc) => {
-                        if hc.is_ascii_hexdigit() {
-                            //@do hex digit edit manually without `to_digit` / unwrap
-                            let hex_value = hc.to_digit(16).unwrap();
-                            hex_char = (hex_char << 4) | hex_value;
-                            lex.eat(hc);
-                        } else {
-                            break;
-                        }
-                    }
-                    _ => break,
-                }
-                idx -= 1;
-            }
-
-            //@can be null character and `return` skips this check
-            // problem with how `lex_eat(c)` is done at the end
-            return if idx != 0 {
-                let range = lex.make_range(start);
-                lex.errors.push(ErrorComp::new(
-                    format!(
-                        "hexadecimal character must have 2 hex digits, found {}",
-                        2 - idx
-                    ),
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
-                '?'
-            } else if let Ok(ecs_c) = hex_char.try_into() {
-                ecs_c
-            } else {
-                let range = lex.make_range(start);
-                lex.errors.push(ErrorComp::new(
-                    format!("hexadecimal character `{}` is not valid UTF-8", hex_char),
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
-                '?'
-            };
+            hex_escaped = true;
+            lex_escaped_char(lex, start, 2)
         }
         'u' => {
-            '?' // @temp
+            lex.eat(c);
+            hex_escaped = true;
+            lex_escaped_char(lex, start, 4)
+        }
+        'U' => {
+            lex.eat(c);
+            hex_escaped = true;
+            lex_escaped_char(lex, start, 8)
         }
         _ => {
             if c.is_ascii_whitespace() {
@@ -377,7 +343,10 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         }
     };
 
-    lex.eat(c);
+    if !hex_escaped {
+        lex.eat(c);
+    }
+
     if c_string && escaped == '\0' {
         let range = lex.make_range(start);
         lex.errors.push(ErrorComp::new(
@@ -387,6 +356,64 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         ));
     }
     escaped
+}
+
+fn lex_escaped_char(lex: &mut Lexer, start: TextOffset, digit_count: u32) -> char {
+    let mut hex_char: u32 = 0;
+
+    for hex_char_idx in 0..digit_count {
+        let hc = match lex.peek() {
+            Some(hc) => {
+                if hc.is_ascii_whitespace() {
+                    None
+                } else {
+                    Some(hc)
+                }
+            }
+            None => None,
+        };
+
+        if let Some(hc) = hc {
+            let hex_value = match hc {
+                '0'..='9' => hc as u32 - '0' as u32,
+                'A'..='Z' => hc as u32 - 'A' as u32 + 10,
+                _ => {
+                    let range = lex.make_range(start);
+                    lex.errors.push(ErrorComp::new(
+                        format!("hexadecimal digit expected 0-9 or A-F, found `{}`", hc),
+                        SourceRange::new(lex.module_id, range),
+                        None,
+                    ));
+                    return '?';
+                }
+            };
+            lex.eat(hc);
+            hex_char = (hex_char << 4) | hex_value;
+        } else {
+            let range = lex.make_range(start);
+            lex.errors.push(ErrorComp::new(
+                format!(
+                    "hexadecimal character must have {} hex digits, found {}",
+                    digit_count, hex_char_idx
+                ),
+                SourceRange::new(lex.module_id, range),
+                None,
+            ));
+            return '?';
+        }
+    }
+
+    if let Ok(escaped) = hex_char.try_into() {
+        escaped
+    } else {
+        let range = lex.make_range(start);
+        lex.errors.push(ErrorComp::new(
+            format!("hexadecimal character `{}` is not valid UTF-8", hex_char),
+            SourceRange::new(lex.module_id, range),
+            None,
+        ));
+        '?'
+    }
 }
 
 fn lex_number(lex: &mut Lexer, fc: char) {
