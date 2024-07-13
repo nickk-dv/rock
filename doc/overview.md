@@ -78,13 +78,16 @@ c`C:\\Very\\Annoying\\WindowsPath.txt`
 ---
 
 ### Escape sequences
-- \t    - tab
 - \n    - newline
 - \r    - carriage return
+- \t    - tab
 - \0    - null terminator
 - \\'   - single quote
 - \\"   - double quote
 - \\\\  - backslash
+- \\xNN - hexadecimal 8-bit character
+- \\uNNNN - hexadecimal 16-bit Unicode character
+- \\uNNNNNNNN - hexadecimal 32-bit Unicode character
 ---
 
 ## Packages

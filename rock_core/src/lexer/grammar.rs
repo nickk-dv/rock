@@ -420,6 +420,22 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     let start = lex.start_range();
     lex.eat(fc);
 
+    if fc == '0' {
+        match lex.peek() {
+            Some('b') => {
+                lex.eat('b');
+                lex_binary_integer(lex, start);
+                return;
+            }
+            Some('x') => {
+                lex.eat('x');
+                lex_hex_integer(lex, start);
+                return;
+            }
+            _ => {}
+        }
+    }
+
     let mut is_float = false;
     while let Some(c) = lex.peek() {
         if c.is_ascii_digit() {
@@ -448,6 +464,107 @@ fn lex_number(lex: &mut Lexer, fc: char) {
         Token::IntLit
     };
     lex.tokens().add_token(token, range);
+}
+
+fn lex_binary_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
+    const MAX_BITS: u32 = 64;
+    let mut integer: u64 = 0;
+    let mut bit_idx: u32 = 0;
+
+    while let Some(c) = lex.peek() {
+        let bit: u64 = match c {
+            '0' => 0,
+            '1' => 1,
+            '2'..='9' => {
+                let digit_start = lex.start_range();
+                lex.eat(c);
+                let range = lex.make_range(digit_start);
+                lex.errors.push(ErrorComp::new(
+                    format!("invalid digit `{}` for base 2 binary integer", c),
+                    SourceRange::new(lex.module_id, range),
+                    None,
+                ));
+                continue;
+            }
+            '_' => {
+                lex.eat(c);
+                continue;
+            }
+            _ => break,
+        };
+
+        if bit_idx < MAX_BITS {
+            integer = (integer << 1) | bit;
+        }
+        lex.eat(c);
+        bit_idx += 1;
+    }
+
+    if bit_idx == 0 {
+        lex.errors.push(ErrorComp::new(
+            "missing digits after integer base prefix",
+            SourceRange::new(lex.module_id, lex.make_range(start)),
+            None,
+        ));
+    } else if bit_idx > MAX_BITS {
+        lex.errors.push(ErrorComp::new(
+            format!(
+                "binary integer overflow\nexpected maximum of 64 bits, found {}",
+                bit_idx
+            ),
+            SourceRange::new(lex.module_id, lex.make_range(start)),
+            None,
+        ));
+    }
+
+    let range = lex.make_range(start);
+    lex.tokens().add_token(Token::IntLit, range);
+    integer
+}
+
+fn lex_hex_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
+    const MAX_HEX_DIGITS: u32 = 16;
+    let mut integer: u64 = 0;
+    let mut hex_digit_idx: u32 = 0;
+
+    while let Some(c) = lex.peek() {
+        let hex_value: u64 = match c {
+            '0'..='9' => c as u64 - '0' as u64,
+            'A'..='Z' => c as u64 - 'A' as u64 + 10,
+            '_' => {
+                lex.eat(c);
+                continue;
+            }
+            _ => break,
+        };
+
+        if hex_digit_idx < MAX_HEX_DIGITS {
+            integer = (integer << 4) | hex_value;
+        }
+        lex.eat(c);
+        hex_digit_idx += 1;
+    }
+
+    if hex_digit_idx == 0 {
+        lex.errors.push(ErrorComp::new(
+            "missing digits after integer base prefix",
+            SourceRange::new(lex.module_id, lex.make_range(start)),
+            None,
+        ));
+    } else if hex_digit_idx > MAX_HEX_DIGITS {
+        lex.errors.push(ErrorComp::new(
+            format!(
+                "hexadecimal integer overflow\nexpected maximum of 16 hex digits, found {}",
+                hex_digit_idx
+            ),
+            SourceRange::new(lex.module_id, lex.make_range(start)),
+            None,
+        ));
+    }
+
+    let range = lex.make_range(start);
+    lex.tokens().add_token(Token::IntLit, range);
+    integer
 }
 
 fn lex_ident(lex: &mut Lexer, fc: char) {
