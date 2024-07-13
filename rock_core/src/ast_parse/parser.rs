@@ -11,6 +11,7 @@ use crate::token::Token;
 pub struct Parser<'ast, 'intern, 'src, 'state> {
     pub cursor: usize,
     tokens: TokenList,
+    int_id: u32,
     char_id: u32,
     string_id: u32,
     pub module_id: ModuleID,
@@ -50,6 +51,7 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
         Self {
             cursor: 0,
             tokens,
+            int_id: 0,
             char_id: 0,
             string_id: 0,
             module_id,
@@ -114,6 +116,12 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
             return Ok(());
         }
         Err(format!("expected `{}`", t.as_str()))
+    }
+
+    pub fn get_int_lit(&mut self) -> u64 {
+        let value = self.tokens.int(self.int_id as usize);
+        self.int_id += 1;
+        value
     }
 
     pub fn get_char_lit(&mut self) -> char {

@@ -12,6 +12,7 @@ use crate::timer::Timer;
 //@rename some ast:: nodes to match ast_layer and syntax names (eg: ProcParam)
 struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
+    int_id: u32,
     char_id: u32,
     string_id: u32,
     module_id: ModuleID,
@@ -51,6 +52,7 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
     ) -> Self {
         AstBuild {
             tree,
+            int_id: 0,
             char_id: 0,
             string_id: 0,
             module_id,
@@ -606,22 +608,9 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
 
             ast::ExprKind::LitBool { val }
         }
-        cst::Expr::LitInt(lit) => {
-            //@assuming that range of Node == range of Token
-            let range = lit.range(ctx.tree);
-            let string = &ctx.source[range.as_usize()];
-
-            let val = match string.parse::<u64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    ctx.s.errors.push(ErrorComp::new(
-                        format!("parse integer error: {}", error),
-                        SourceRange::new(ctx.module_id, range),
-                        None,
-                    ));
-                    0
-                }
-            };
+        cst::Expr::LitInt(_) => {
+            let val = ctx.tree.tokens().int(ctx.int_id as usize);
+            ctx.int_id += 1;
 
             ast::ExprKind::LitInt { val }
         }
