@@ -32,7 +32,10 @@ Multi-line block comments begin with `/*` and end with `*/`.
 Numeric literals are untyped.  
 Their type is determined during typechecking.
 ```rs
-2,   1024         // integer
+2, 1024           // integer (decimal)
+1_000_000         // underscores can be used
+0b10, 0b1000101   // integer (binary)
+0xA0, 0xFF03A59,  // integer (hexadecimal)
 3.0, 23.45        // floating point
 ```
 ---

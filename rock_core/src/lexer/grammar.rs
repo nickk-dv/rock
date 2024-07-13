@@ -418,16 +418,17 @@ fn lex_escaped_char(lex: &mut Lexer, start: TextOffset, digit_count: u32) -> cha
 
 fn lex_number(lex: &mut Lexer, fc: char) {
     let start = lex.start_range();
-    lex.eat(fc);
 
     if fc == '0' {
         match lex.peek() {
             Some('b') => {
+                lex.eat(fc);
                 lex.eat('b');
                 lex_binary_integer(lex, start);
                 return;
             }
             Some('x') => {
+                lex.eat(fc);
                 lex.eat('x');
                 lex_hex_integer(lex, start);
                 return;
@@ -436,6 +437,13 @@ fn lex_number(lex: &mut Lexer, fc: char) {
         }
     }
 
+    //@float parse not implemented, cannot use `lex_decimal_integer` on its own
+    //let integer_base = lex_decimal_integer(lex, start);
+    //@todo floating point decimal & exponent
+
+    lex.eat(fc);
+
+    //@old number parsing code
     let mut is_float = false;
     while let Some(c) = lex.peek() {
         if c.is_ascii_digit() {
@@ -564,6 +572,52 @@ fn lex_hex_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
 
     let range = lex.make_range(start);
     lex.tokens().add_token(Token::IntLit, range);
+    integer
+}
+
+fn lex_decimal_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
+    const MAX_DECIMAL_DIGITS: u32 = 20;
+    let mut integer: u64 = 0;
+    let mut digit_idx: u32 = 0;
+
+    while let Some(c) = lex.peek() {
+        match c {
+            '0' | '_' => {
+                lex.eat(c);
+                continue;
+            }
+            _ => break,
+        };
+    }
+
+    while let Some(c) = lex.peek() {
+        let digit_value: u64 = match c {
+            '0'..='9' => c as u64 - '0' as u64,
+            '_' => {
+                lex.eat(c);
+                continue;
+            }
+            _ => break,
+        };
+
+        if digit_idx < MAX_DECIMAL_DIGITS {
+            integer = integer * 10 + digit_value;
+        }
+        lex.eat(c);
+        digit_idx += 1;
+    }
+
+    if digit_idx > MAX_DECIMAL_DIGITS {
+        lex.errors.push(ErrorComp::new(
+            format!(
+                "decimal integer overflow\nexpected maximum of 20 digits, found {}",
+                digit_idx
+            ),
+            SourceRange::new(lex.module_id, lex.make_range(start)),
+            None,
+        ));
+    }
+
     integer
 }
 
