@@ -420,61 +420,46 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     let start = lex.start_range();
 
     if fc == '0' {
-        match lex.peek() {
+        match lex.peek_next() {
             Some('b') => {
                 lex.eat(fc);
                 lex.eat('b');
-                lex_binary_integer(lex, start);
+                lex_integer_binary(lex, start);
                 return;
             }
             Some('x') => {
                 lex.eat(fc);
                 lex.eat('x');
-                lex_hex_integer(lex, start);
+                lex_integer_hex(lex, start);
                 return;
             }
             _ => {}
         }
     }
 
-    //@float parse not implemented, cannot use `lex_decimal_integer` on its own
-    //let integer_base = lex_decimal_integer(lex, start);
-    //@todo floating point decimal & exponent
+    let decimal = lex_integer_decimal(lex, start);
 
-    lex.eat(fc);
+    //@float parse at lexing stage not implemented
+    if let Some('.') = lex.peek() {
+        lex.eat('.');
 
-    //@old number parsing code
-    let mut is_float = false;
-    while let Some(c) = lex.peek() {
-        if c.is_ascii_digit() {
-            lex.eat(c);
-        } else if c == '.' && !is_float {
-            match lex.peek_next() {
-                Some(next) => {
-                    if next.is_ascii_digit() {
-                        is_float = true;
-                        lex.eat(c);
-                    } else {
-                        break;
-                    }
-                }
-                None => break,
+        while let Some(c) = lex.peek() {
+            if c.is_ascii_digit() {
+                lex.eat(c);
+            } else {
+                break;
             }
-        } else {
-            break;
         }
-    }
 
-    let range = lex.make_range(start);
-    let token = if is_float {
-        Token::FloatLit
+        let range = lex.make_range(start);
+        lex.tokens().add_token(Token::FloatLit, range);
     } else {
-        Token::IntLit
-    };
-    lex.tokens().add_token(token, range);
+        let range = lex.make_range(start);
+        lex.tokens().add_int(decimal, range);
+    }
 }
 
-fn lex_binary_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
+fn lex_integer_binary(lex: &mut Lexer, start: TextOffset) {
     const MAX_BITS: u32 = 64;
     let mut integer: u64 = 0;
     let mut bit_idx: u32 = 0;
@@ -526,11 +511,10 @@ fn lex_binary_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
     }
 
     let range = lex.make_range(start);
-    lex.tokens().add_token(Token::IntLit, range);
-    integer
+    lex.tokens().add_int(integer, range);
 }
 
-fn lex_hex_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
+fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
     const MAX_HEX_DIGITS: u32 = 16;
     let mut integer: u64 = 0;
     let mut hex_digit_idx: u32 = 0;
@@ -571,11 +555,10 @@ fn lex_hex_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
     }
 
     let range = lex.make_range(start);
-    lex.tokens().add_token(Token::IntLit, range);
-    integer
+    lex.tokens().add_int(integer, range);
 }
 
-fn lex_decimal_integer(lex: &mut Lexer, start: TextOffset) -> u64 {
+fn lex_integer_decimal(lex: &mut Lexer, start: TextOffset) -> u64 {
     const MAX_DECIMAL_DIGITS: u32 = 20;
     let mut integer: u64 = 0;
     let mut digit_idx: u32 = 0;

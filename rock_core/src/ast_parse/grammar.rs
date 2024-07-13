@@ -672,21 +672,8 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             ExprKind::LitBool { val: false }
         }
         T![int_lit] => {
-            let range = p.peek_range();
             p.bump();
-            let string = &p.source[range.as_usize()];
-
-            let val = match string.parse::<u64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    p.state.errors.push(ErrorComp::new(
-                        format!("parse int error: {}", error),
-                        SourceRange::new(p.module_id, range),
-                        None,
-                    ));
-                    0
-                }
-            };
+            let val = p.get_int_lit();
             ExprKind::LitInt { val }
         }
         T![float_lit] => {
