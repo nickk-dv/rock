@@ -98,14 +98,17 @@ pub fn parse<'ast, 'intern: 'ast>(
 
     for module_id in session.module_ids() {
         let module = session.module(module_id);
-        let (tree, errors) = super::parse(&module.source, module_id, false);
+        let tree_result = super::parse_complete(&module.source, module_id, false);
 
-        if errors.is_empty() {
-            let mut ctx = AstBuild::new(&tree, &module.source, module_id, &mut state);
-            let items = source_file(&mut ctx, tree.source_file());
-            state.modules.push(ast::Module { items });
-        } else {
-            state.errors.extend(errors);
+        match tree_result {
+            Ok(tree) => {
+                let mut ctx = AstBuild::new(&tree, &module.source, module_id, &mut state);
+                let items = source_file(&mut ctx, tree.source_file());
+                state.modules.push(ast::Module { items });
+            }
+            Err(errors) => {
+                state.errors.extend(errors);
+            }
         }
     }
 
