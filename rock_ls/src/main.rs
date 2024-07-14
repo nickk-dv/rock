@@ -169,7 +169,7 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
 fn handle_compile_project(conn: &Connection, context: &ServerContext) {
     use std::time::Instant;
     let start_time = Instant::now();
-    let publish_diagnostics = run_diagnostics(context);
+    let publish_diagnostics = run_diagnostics(conn, context);
     let elapsed_time = start_time.elapsed();
     eprintln!(
         "run diagnostics: {} ms",
@@ -316,18 +316,46 @@ fn create_diagnostic<'src>(
     Some((diagnostic, main_path))
 }
 
-fn run_diagnostics(context: &ServerContext) -> Vec<PublishDiagnosticsParams> {
-    //@session errors ignored, its not a correct way to have context in ls server
-    // this is a temporary full compilation run
-    //@those can be displayed as regular messages
-    let (session, intern_name) = Session::new(false, Some(&context.files_in_memory))
-        .map_err(|_| Result::<(), ()>::Err(()))
-        .expect("lsp session errors cannot be handled");
+//@use something like this state later
+//@store compiler diagnostics and convert on send only
+struct Feedback {
+    messages: Vec<lsp::Diagnostic>,
+    diagnostics: HashMap<PathBuf, Vec<lsp::Diagnostic>>,
+}
+
+impl Feedback {
+    fn new() -> Feedback {
+        Feedback {
+            messages: Vec::new(),
+            diagnostics: HashMap::with_capacity(64),
+        }
+    }
+}
+
+fn run_diagnostics(conn: &Connection, context: &ServerContext) -> Vec<PublishDiagnosticsParams> {
+    //@not used now, only sending one session error
+    let mut messages = Vec::<lsp::Diagnostic>::new();
+    let mut diagnostics_map = HashMap::new();
+
+    let (session, intern_name) = match Session::new(false, Some(&context.files_in_memory)) {
+        Ok(value) => value,
+        Err(error) => {
+            let params = lsp::ShowMessageParams {
+                typ: lsp::MessageType::ERROR,
+                message: error.diagnostic().message().as_str().to_string(),
+            };
+            let notification = lsp_server::Notification {
+                method: notification::ShowMessage::METHOD.into(),
+                params: serde_json::to_value(params).unwrap(),
+            };
+            send(conn, notification);
+            return vec![];
+        }
+    };
+
     let check_result = check_impl(&session, intern_name);
     let diagnostics = DiagnosticCollection::from_result(check_result);
 
-    // assign empty diagnostics
-    let mut diagnostics_map = HashMap::new();
     for module_id in session.module_ids() {
         let path = session.module(module_id).path.clone();
         diagnostics_map.insert(path, Vec::new());
@@ -360,7 +388,6 @@ fn run_diagnostics(context: &ServerContext) -> Vec<PublishDiagnosticsParams> {
         }
     }
 
-    //@not using any document versioning
     diagnostics_map
         .into_iter()
         .map(|(path, diagnostics)| {
