@@ -776,16 +776,16 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
 fn if_(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
 
-    let eb = p.start();
+    let me = p.start();
     p.bump(T![if]);
     expr(p);
     block_expect(p);
-    eb.complete(p, SyntaxKind::ENTRY_BRANCH);
+    me.complete(p, SyntaxKind::ENTRY_BRANCH);
 
-    //@else not included in ELSE_IF_BRANCH?
-    while p.eat(T![else]) {
-        if p.at(T![if]) {
+    while p.at(T![else]) {
+        if p.at_next(T![if]) {
             let mb = p.start();
+            p.bump(T![else]);
             p.bump(T![if]);
             expr(p);
             block_expect(p);

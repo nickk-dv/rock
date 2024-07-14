@@ -157,7 +157,6 @@ fn add_enum_item<'hir, 'ast>(
         hir::BasicInt::S32
     };
 
-    //@use new hir::BasicIntType and error on invalid basic type usage
     let data = hir::EnumData {
         origin_id,
         vis: item.vis,
