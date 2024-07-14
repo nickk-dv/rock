@@ -7,7 +7,6 @@ use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
 token_gen::token_gen! {
     // special tokens
     [eof]           | "end of file"    | Eof          |
-    [error]         | "error token"    | Error        |
     [ident]         | "identifier"     | Ident        |
     [int_lit]       | "int literal"    | IntLit       |
     [float_lit]     | "float literal"  | FloatLit     |
