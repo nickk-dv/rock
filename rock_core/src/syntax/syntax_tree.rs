@@ -1,7 +1,6 @@
 use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
 use crate::arena::Arena;
-use crate::error::ErrorComp;
 use crate::id_impl;
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
@@ -53,12 +52,9 @@ impl<'syn> SyntaxTree<'syn> {
     }
 }
 
-pub fn build<'syn>(
-    input: (TokenList, Vec<Event>, Vec<ErrorComp>),
-) -> (SyntaxTree<'syn>, Vec<ErrorComp>) {
+pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn> {
     let mut arena = Arena::new();
     let mut nodes = Vec::new();
-    let (tokens, mut events, errors) = input;
 
     let mut stack = Vec::with_capacity(16);
     let mut parent_stack = Vec::with_capacity(16);
@@ -155,7 +151,7 @@ pub fn build<'syn>(
         }
     }
 
-    (SyntaxTree::new(arena, nodes, tokens), errors)
+    SyntaxTree::new(arena, nodes, tokens)
 }
 
 #[must_use]

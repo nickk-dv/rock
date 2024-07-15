@@ -12,36 +12,41 @@ use crate::session::ModuleID;
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
-//@general de-couple errors and dont pass them in syntax_tree build
-// they are not part of syntax_tree building process
-
-pub fn parse(source: &str, module_id: ModuleID, with_trivia: bool) -> (SyntaxTree, Vec<ErrorComp>) {
+pub fn parse_tree(
+    source: &str,
+    module_id: ModuleID,
+    with_trivia: bool,
+) -> (SyntaxTree, Vec<ErrorComp>) {
     let (tokens, lex_errors) = lexer::lex(source, module_id, with_trivia);
+
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
+    let (tokens, events, mut parse_errors) = parser.finish();
 
-    let (tree, mut parse_errors) = syntax_tree::build(parser.finish());
+    let tree = syntax_tree::build(tokens, events);
+
     parse_errors.extend(lex_errors);
     (tree, parse_errors)
 }
 
-pub fn parse_complete(
+pub fn parse_tree_complete(
     source: &str,
     module_id: ModuleID,
     with_trivia: bool,
 ) -> Result<SyntaxTree, Vec<ErrorComp>> {
     let (tokens, mut lex_errors) = lexer::lex(source, module_id, with_trivia);
+
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
-    let parse_result = parser.finish();
+    let (tokens, events, parse_errors) = parser.finish();
 
-    if !lex_errors.is_empty() || parse_result.2.first().is_some() {
-        if let Some(error) = parse_result.2.into_iter().next() {
-            lex_errors.push(error);
+    if lex_errors.is_empty() && parse_errors.is_empty() {
+        let tree = syntax_tree::build(tokens, events);
+        Ok(tree)
+    } else {
+        if let Some(parse_error) = parse_errors.into_iter().next() {
+            lex_errors.push(parse_error);
         }
         Err(lex_errors)
-    } else {
-        let (tree, _) = syntax_tree::build(parse_result);
-        Ok(tree)
     }
 }

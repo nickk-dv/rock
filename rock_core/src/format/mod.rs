@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, BinOp};
+use crate::ast::AssignOp;
 use crate::error::ErrorComp;
 use crate::session::ModuleID;
 use crate::syntax;
@@ -13,7 +13,7 @@ use crate::text::TextRange;
 pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
     return format_experiment(source, module_id);
 
-    let (tree, errors) = syntax::parse(source, module_id, true);
+    let (tree, errors) = syntax::parse_tree(source, module_id, true);
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -24,7 +24,7 @@ pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp
 }
 
 pub fn format_experiment(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
-    let (tree, errors) = syntax::parse(source, module_id, true);
+    let (tree, errors) = syntax::parse_tree(source, module_id, true);
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -49,75 +49,6 @@ fn node_format(fmt: &mut Formatter, node: &Node) {
                 fmt.write_range(range);
             }
         }
-    }
-}
-
-//@remove, test on real code
-#[test]
-fn format_test() {
-    let source = r#"
-    #[inline]    pub 
-    proc 
-    main (
-        x : s32 , y : s32  ) ->  u32 ;
-
-    proc p_empty( ) { break; return 5; }
-    proc p_var (..);
-    proc p_var_a (x: s32, ..);
-    proc p_arg (x: s32,);
-    proc p_args (x: s32, y: s32,);
-
-    struct Empty {}
-    struct Vec1 {x: f32}
-    struct Vec2 {x: f32, y: f32}
-
-    enum Empty {}
-    enum KindSingle { Variant = 5 }
-    pub enum KindDouble { Variant, Variant2 = 10 }
-
-    const V: s32 = 5;
-    global mut ValG: s32 = 10;
-    global ValG2: s.SomeType = 20;
-
-    import // welwpelwpel s;
-    import s/g;
-    import s/g as smth;
-    import s.{ };
-    import s/g as smth.{mem, mem2 as other,};
-
-    struct TypeTest {
-        f: u32,
-        f: Custom.Type,
-        f: & u32,
-        f: &mut u32,
-        f: proc(u32, s32, ..) -> bool,
-        f: []G,
-        f: [mut]G,
-        f: [10][50]Custom.Type,
-    }
-
-    const STRUCT: Vec2 = (&mut G.name   (1, 3, 4,));
-
-    proc stuff() {
-        let x: s32;
-        let x: s32 = 2 +    3;
-        let x=(  
-        
-        15  
-        - 8 
-        ) ..< (55);
-        x.field = y - g * 5;
-        defer {
-            let x = 10;
-        }
-    }
-    "#;
-
-    if let Ok(formatted) = format(source, ModuleID::dummy()) {
-        println!("ORIGINAL SOURCE:\n-----\n{}-----", source);
-        println!("FORMATTED SOURCE:\n-----\n{}-----", formatted);
-    } else {
-        panic!("incorrect source syntax");
     }
 }
 
@@ -679,8 +610,13 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             fmt.write_c(')');
         }
         ast::Expr::LitNull(_) => fmt.write("null"),
-        //@assuming that lit.rage is single lit token
-        ast::Expr::LitBool(lit) => fmt.write_range(lit.range(fmt.tree)),
+        ast::Expr::LitBool(lit) => {
+            if lit.value(fmt.tree) {
+                fmt.write("true");
+            } else {
+                fmt.write("false");
+            }
+        }
         ast::Expr::LitInt(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitFloat(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitChar(lit) => fmt.write_range(lit.range(fmt.tree)),
