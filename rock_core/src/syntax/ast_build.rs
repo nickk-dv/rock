@@ -98,7 +98,7 @@ pub fn parse<'ast, 'intern: 'ast>(
 
     for module_id in session.module_ids() {
         let module = session.module(module_id);
-        let tree_result = super::parse_complete(&module.source, module_id, false);
+        let tree_result = super::parse_tree_complete(&module.source, module_id, false);
 
         match tree_result {
             Ok(tree) => {
