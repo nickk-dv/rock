@@ -147,7 +147,7 @@ pub enum Type<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ProcType<'hir> {
-    pub params: &'hir [Type<'hir>],
+    pub param_types: &'hir [Type<'hir>],
     pub return_ty: Type<'hir>,
     pub is_variadic: bool,
 }

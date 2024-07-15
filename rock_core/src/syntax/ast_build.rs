@@ -199,7 +199,7 @@ fn proc_item<'ast>(
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visiblity(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.params.start();
@@ -239,7 +239,7 @@ fn enum_item<'ast>(
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visiblity(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let basic = item
         .type_basic(ctx.tree)
@@ -277,7 +277,7 @@ fn struct_item<'ast>(
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visiblity(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.fields.start();
@@ -297,7 +297,7 @@ fn struct_item<'ast>(
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
-    let vis = vis(field.visiblity(ctx.tree).is_some());
+    let vis = vis(field.visibility(ctx.tree).is_some());
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
@@ -310,7 +310,7 @@ fn const_item<'ast>(
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visiblity(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
@@ -330,7 +330,7 @@ fn global_item<'ast>(
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visiblity(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.is_mut(ctx.tree));
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
@@ -441,20 +441,20 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
         }
         cst::Type::Procedure(proc_ty) => {
             let offset = ctx.s.types.start();
-            let param_type_list = proc_ty.param_type_list(ctx.tree).unwrap();
-            for ty_cst in param_type_list.param_types(ctx.tree) {
+            let type_list = proc_ty.type_list(ctx.tree).unwrap();
+            for ty_cst in type_list.types(ctx.tree) {
                 let ty = ty(ctx, ty_cst);
                 ctx.s.types.add(ty);
             }
             let param_types = ctx.s.types.take(offset, &mut ctx.s.arena);
 
-            let is_variadic = param_type_list.is_variadic(ctx.tree);
+            let is_variadic = type_list.is_variadic(ctx.tree);
             let return_ty = proc_ty.return_ty(ctx.tree).map(|t| ty(ctx, t));
 
             let proc_ty = ast::ProcType {
-                params: param_types, //@rename params to param_types
+                param_types,
+                is_variadic,
                 return_ty,
-                is_variadic, //@reorder after params
             };
             ast::TypeKind::Procedure(ctx.s.arena.alloc(proc_ty))
         }

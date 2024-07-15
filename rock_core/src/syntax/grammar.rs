@@ -181,8 +181,31 @@ fn variant(p: &mut Parser) {
     name(p);
     if p.eat(T![=]) {
         expr(p);
+    } else if p.at(T!['(']) {
+        variant_type_list(p);
     }
     m.complete(p, SyntaxKind::VARIANT);
+}
+
+const RECOVER_VARIANT_TYPE_LIST: TokenSet =
+    FIRST_ITEM.combine(TokenSet::new(&[T![,], T![')'], T!['}'], T![ident]]));
+
+fn variant_type_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        if p.at_set(FIRST_TYPE_SET) {
+            ty(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected type", RECOVER_VARIANT_TYPE_LIST);
+            break;
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::VARIANT_TYPE_LIST);
 }
 
 fn struct_item(p: &mut Parser, m: Marker) {

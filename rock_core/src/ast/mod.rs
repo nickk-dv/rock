@@ -69,6 +69,13 @@ pub struct EnumVariant<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub enum VariantKind<'ast> {
+    Default,
+    Constant(ConstExpr<'ast>),
+    HasValues(&'ast [Type<'ast>]),
+}
+
+#[derive(Copy, Clone)]
 pub struct StructItem<'ast> {
     pub attrs: &'ast [Attribute],
     pub vis: Vis,
@@ -181,9 +188,9 @@ pub enum TypeKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ProcType<'ast> {
-    pub params: &'ast [Type<'ast>],
-    pub return_ty: Option<Type<'ast>>,
+    pub param_types: &'ast [Type<'ast>],
     pub is_variadic: bool,
+    pub return_ty: Option<Type<'ast>>,
 }
 
 #[derive(Copy, Clone)]
