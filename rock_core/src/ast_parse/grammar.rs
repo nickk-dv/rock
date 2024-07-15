@@ -147,8 +147,20 @@ fn enum_item<'ast>(
 
 fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'ast>, String> {
     let name = name(p)?;
-    p.expect(T![=])?;
-    let value = ConstExpr(expr(p)?);
+
+    let value = if p.at(T!['(']) {
+        //@not used just parsed
+        let types = comma_separated_list!(p, ty, types, T!['('], T![')']);
+        //@creating fake expr to conform to current variant shape
+        let fake_expr = Expr {
+            kind: ExprKind::LitInt { val: 0 },
+            range: TextRange::empty_at(0.into()),
+        };
+        ConstExpr(p.state.arena.alloc(fake_expr))
+    } else {
+        p.expect(T![=])?;
+        ConstExpr(expr(p)?)
+    };
 
     Ok(EnumVariant { name, value })
 }
@@ -393,13 +405,13 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Type<'ast>, String> {
                 }
             }
             p.expect(T![')'])?;
-            let params = p.state.types.take(offset, &mut p.state.arena);
+            let param_types = p.state.types.take(offset, &mut p.state.arena);
             let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
 
             TypeKind::Procedure(p.state.arena.alloc(ProcType {
-                params,
-                return_ty,
+                param_types,
                 is_variadic,
+                return_ty,
             }))
         }
         T!['['] => {

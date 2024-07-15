@@ -42,12 +42,12 @@ pub fn type_resolve<'hir>(
             hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
         }
         ast::TypeKind::Procedure(proc_ty) => {
-            let mut params = Vec::with_capacity(proc_ty.params.len());
-            for param in proc_ty.params {
-                let ty = type_resolve(hir, emit, origin_id, *param);
-                params.push(ty);
+            let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
+            for param_ty in proc_ty.param_types {
+                let ty = type_resolve(hir, emit, origin_id, *param_ty);
+                param_types.push(ty);
             }
-            let params = emit.arena.alloc_slice(&params);
+            let param_types = emit.arena.alloc_slice(&param_types);
 
             let return_ty = if let Some(return_ty) = proc_ty.return_ty {
                 type_resolve(hir, emit, origin_id, return_ty)
@@ -56,9 +56,9 @@ pub fn type_resolve<'hir>(
             };
 
             let proc_ty = hir::ProcType {
-                params,
-                return_ty,
+                param_types,
                 is_variadic: proc_ty.is_variadic,
+                return_ty,
             };
             hir::Type::Procedure(emit.arena.alloc(proc_ty))
         }
@@ -113,12 +113,12 @@ pub fn type_resolve_delayed<'hir, 'ast>(
             hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
         }
         ast::TypeKind::Procedure(proc_ty) => {
-            let mut params = Vec::with_capacity(proc_ty.params.len());
-            for param in proc_ty.params {
-                let ty = type_resolve_delayed(hir, emit, origin_id, *param);
-                params.push(ty);
+            let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
+            for param_ty in proc_ty.param_types {
+                let ty = type_resolve_delayed(hir, emit, origin_id, *param_ty);
+                param_types.push(ty);
             }
-            let params = emit.arena.alloc_slice(&params);
+            let param_types = emit.arena.alloc_slice(&param_types);
 
             let return_ty = if let Some(return_ty) = proc_ty.return_ty {
                 type_resolve_delayed(hir, emit, origin_id, return_ty)
@@ -127,9 +127,9 @@ pub fn type_resolve_delayed<'hir, 'ast>(
             };
 
             let proc_ty = hir::ProcType {
-                params,
-                return_ty,
+                param_types,
                 is_variadic: proc_ty.is_variadic,
+                return_ty,
             };
             hir::Type::Procedure(emit.arena.alloc(proc_ty))
         }

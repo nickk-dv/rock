@@ -227,6 +227,7 @@ ast_node_impl!(Param, SyntaxKind::PARAM);
 ast_node_impl!(EnumItem, SyntaxKind::ENUM_ITEM);
 ast_node_impl!(VariantList, SyntaxKind::VARIANT_LIST);
 ast_node_impl!(Variant, SyntaxKind::VARIANT);
+ast_node_impl!(VariantTypeList, SyntaxKind::VARIANT_TYPE_LIST);
 ast_node_impl!(StructItem, SyntaxKind::STRUCT_ITEM);
 ast_node_impl!(FieldList, SyntaxKind::FIELD_LIST);
 ast_node_impl!(Field, SyntaxKind::FIELD);
@@ -552,7 +553,7 @@ impl<'syn> Visibility<'syn> {
 
 impl<'syn> ProcItem<'syn> {
     find_first!(attr_list, AttributeList);
-    find_first!(visiblity, Visibility);
+    find_first!(visibility, Visibility);
     find_first!(name, Name);
     find_first!(param_list, ParamList);
     find_first!(return_ty, Type);
@@ -572,7 +573,7 @@ impl<'syn> Param<'syn> {
 
 impl<'syn> EnumItem<'syn> {
     find_first!(attr_list, AttributeList);
-    find_first!(visiblity, Visibility);
+    find_first!(visibility, Visibility);
     find_first!(name, Name);
     find_first!(type_basic, TypeBasic);
     find_first!(variant_list, VariantList);
@@ -585,11 +586,16 @@ impl<'syn> VariantList<'syn> {
 impl<'syn> Variant<'syn> {
     find_first!(name, Name);
     find_first!(value, Expr);
+    find_first!(type_list, VariantTypeList);
+}
+
+impl<'syn> VariantTypeList<'syn> {
+    node_iter!(types, Type);
 }
 
 impl<'syn> StructItem<'syn> {
     find_first!(attr_list, AttributeList);
-    find_first!(visiblity, Visibility);
+    find_first!(visibility, Visibility);
     find_first!(name, Name);
     find_first!(field_list, FieldList);
 }
@@ -599,14 +605,14 @@ impl<'syn> FieldList<'syn> {
 }
 
 impl<'syn> Field<'syn> {
-    find_first!(visiblity, Visibility);
+    find_first!(visibility, Visibility);
     find_first!(name, Name);
     find_first!(ty, Type);
 }
 
 impl<'syn> ConstItem<'syn> {
     find_first!(attr_list, AttributeList);
-    find_first!(visiblity, Visibility);
+    find_first!(visibility, Visibility);
     find_first!(name, Name);
     find_first!(ty, Type);
     find_first!(value, Expr);
@@ -614,7 +620,7 @@ impl<'syn> ConstItem<'syn> {
 
 impl<'syn> GlobalItem<'syn> {
     find_first!(attr_list, AttributeList);
-    find_first!(visiblity, Visibility);
+    find_first!(visibility, Visibility);
     find_token!(is_mut, T![mut]);
     find_first!(name, Name);
     find_first!(ty, Type);
@@ -623,7 +629,7 @@ impl<'syn> GlobalItem<'syn> {
 
 impl<'syn> ImportItem<'syn> {
     find_first!(attr_list, AttributeList);
-    find_first!(visiblity, Visibility); //@exists but ignored
+    find_first!(visibility, Visibility); //@exists but ignored
     find_first!(package, Name);
     find_first!(import_path, ImportPath);
     find_first!(rename, SymbolRename);
@@ -678,12 +684,12 @@ impl<'syn> TypeReference<'syn> {
 }
 
 impl<'syn> TypeProcedure<'syn> {
-    find_first!(param_type_list, ParamTypeList);
+    find_first!(type_list, ParamTypeList);
     find_first!(return_ty, Type);
 }
 
 impl<'syn> ParamTypeList<'syn> {
-    node_iter!(param_types, Type);
+    node_iter!(types, Type);
     find_token_rev!(is_variadic, T![..]);
 }
 

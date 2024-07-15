@@ -14,6 +14,7 @@ pub enum SyntaxKind {
     ENUM_ITEM,
     VARIANT_LIST,
     VARIANT,
+    VARIANT_TYPE_LIST,
     STRUCT_ITEM,
     FIELD_LIST,
     FIELD,

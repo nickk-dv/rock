@@ -87,11 +87,17 @@ pub fn type_matches<'hir>(
             }
         }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
-            (proc_ty.params.len() == proc_ty2.params.len())
+            (proc_ty.param_types.len() == proc_ty2.param_types.len())
                 && (proc_ty.is_variadic == proc_ty2.is_variadic)
                 && type_matches(hir, emit, proc_ty.return_ty, proc_ty2.return_ty)
-                && (0..proc_ty.params.len())
-                    .all(|idx| type_matches(hir, emit, proc_ty.params[idx], proc_ty2.params[idx]))
+                && (0..proc_ty.param_types.len()).all(|idx| {
+                    type_matches(
+                        hir,
+                        emit,
+                        proc_ty.param_types[idx],
+                        proc_ty2.param_types[idx],
+                    )
+                })
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
             if slice2.mutt == ast::Mut::Mutable {
@@ -141,10 +147,10 @@ pub fn type_format<'hir>(
         }
         hir::Type::Procedure(proc_ty) => {
             let mut format = String::from("proc(");
-            for (idx, param) in proc_ty.params.iter().enumerate() {
-                let param_format = type_format(hir, emit, *param);
-                format.push_str(param_format.as_str());
-                if proc_ty.params.len() != idx + 1 {
+            for (idx, param_ty) in proc_ty.param_types.iter().enumerate() {
+                let param_ty_format = type_format(hir, emit, *param_ty);
+                format.push_str(param_ty_format.as_str());
+                if proc_ty.param_types.len() != idx + 1 {
                     format.push_str(", ");
                 }
             }
@@ -1061,7 +1067,7 @@ fn typecheck_call<'hir>(
             };
 
             let input_count = input.len();
-            let expected_count = proc_ty.params.len();
+            let expected_count = proc_ty.param_types.len();
 
             if (proc_ty.is_variadic && (input_count < expected_count))
                 || (!proc_ty.is_variadic && (input_count != expected_count))
@@ -1092,7 +1098,7 @@ fn typecheck_call<'hir>(
             let mut hir_input = Vec::with_capacity(input.len());
             for (idx, &expr) in input.iter().enumerate() {
                 //@expectation could have source?
-                let expect = match proc_ty.params.get(idx) {
+                let expect = match proc_ty.param_types.get(idx) {
                     Some(param) => Expectation::HasType(*param, None),
                     None => Expectation::None,
                 };
@@ -1423,10 +1429,11 @@ fn typecheck_item<'hir>(
             for param in data.params {
                 param_types.push(param.ty);
             }
+
             let proc_ty = hir::ProcType {
-                params: emit.arena.alloc_slice(&param_types),
-                return_ty: data.return_ty,
+                param_types: emit.arena.alloc_slice(&param_types),
                 is_variadic: data.attr_set.contains(hir::ProcFlag::Variadic),
+                return_ty: data.return_ty,
             };
 
             return TypeResult::new(

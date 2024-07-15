@@ -156,7 +156,7 @@ macro_rules! item_attr_vis_fmt {
         if let Some(attr_list) = $item.attr_list($fmt.tree) {
             attribute_list($fmt, attr_list);
         }
-        if let Some(vis) = $item.visiblity($fmt.tree) {
+        if let Some(vis) = $item.visibility($fmt.tree) {
             visibility($fmt, vis);
         }
     };
@@ -435,7 +435,7 @@ fn type_reference(fmt: &mut Formatter, ty: ast::TypeReference) {
 
 fn type_procedure(fmt: &mut Formatter, ty: ast::TypeProcedure) {
     fmt.write("proc");
-    param_type_list(fmt, ty.param_type_list(fmt.tree).unwrap());
+    param_type_list(fmt, ty.type_list(fmt.tree).unwrap());
     if let Some(ty) = ty.return_ty(fmt.tree) {
         fmt.space();
         fmt.write("->");
@@ -444,10 +444,10 @@ fn type_procedure(fmt: &mut Formatter, ty: ast::TypeProcedure) {
     }
 }
 
-fn param_type_list(fmt: &mut Formatter, param_type_list: ast::ParamTypeList) {
+fn param_type_list(fmt: &mut Formatter, type_list: ast::ParamTypeList) {
     fmt.write_c('(');
     let mut first = true;
-    for ty in param_type_list.param_types(fmt.tree) {
+    for ty in type_list.types(fmt.tree) {
         if !first {
             fmt.write_c(',');
             fmt.space();
@@ -455,7 +455,7 @@ fn param_type_list(fmt: &mut Formatter, param_type_list: ast::ParamTypeList) {
         first = false;
         type_fmt(fmt, ty);
     }
-    if param_type_list.is_variadic(fmt.tree) {
+    if type_list.is_variadic(fmt.tree) {
         if !first {
             fmt.write_c(',');
             fmt.space();
