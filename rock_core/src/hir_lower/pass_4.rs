@@ -577,12 +577,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
     expr: &'ast ast::Expr<'ast>,
 ) -> Result<(), TreeNodeID> {
     match expr.kind {
-        ast::ExprKind::LitNull => Ok(()),
-        ast::ExprKind::LitBool { .. } => Ok(()),
-        ast::ExprKind::LitInt { .. } => Ok(()),
-        ast::ExprKind::LitFloat { .. } => Ok(()),
-        ast::ExprKind::LitChar { .. } => Ok(()),
-        ast::ExprKind::LitString { .. } => Ok(()),
+        ast::ExprKind::Lit(_) => Ok(()),
         ast::ExprKind::If { .. } => {
             error_cannot_use_in_constants(emit, origin_id, expr.range, "if");
             Err(parent_id)

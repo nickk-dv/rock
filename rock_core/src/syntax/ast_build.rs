@@ -625,17 +625,17 @@ fn expr_kind<'ast>(
             let inner = paren.expr(ctx.tree).unwrap();
             expr_kind(ctx, inner)
         }
-        cst::Expr::LitNull(_) => ast::ExprKind::LitNull,
+        cst::Expr::LitNull(_) => ast::ExprKind::Lit(ast::Literal::Null),
         cst::Expr::LitBool(lit) => {
             let val = lit.value(ctx.tree);
 
-            ast::ExprKind::LitBool { val }
+            ast::ExprKind::Lit(ast::Literal::Bool(val))
         }
         cst::Expr::LitInt(_) => {
             let val = ctx.tree.tokens().int(ctx.int_id as usize);
             ctx.int_id += 1;
 
-            ast::ExprKind::LitInt { val }
+            ast::ExprKind::Lit(ast::Literal::Int(val))
         }
         cst::Expr::LitFloat(lit) => {
             //@assuming that range of Node == range of Token
@@ -654,13 +654,13 @@ fn expr_kind<'ast>(
                 }
             };
 
-            ast::ExprKind::LitFloat { val }
+            ast::ExprKind::Lit(ast::Literal::Float(val))
         }
         cst::Expr::LitChar(_) => {
             let val = ctx.tree.tokens().char(ctx.char_id as usize);
             ctx.char_id += 1;
 
-            ast::ExprKind::LitChar { val }
+            ast::ExprKind::Lit(ast::Literal::Char(val))
         }
         cst::Expr::LitString(_) => {
             let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
@@ -673,7 +673,7 @@ fn expr_kind<'ast>(
                 ctx.s.string_is_cstr[id.index()] = true;
             }
 
-            ast::ExprKind::LitString { id, c_string }
+            ast::ExprKind::Lit(ast::Literal::String { id, c_string })
         }
         cst::Expr::If(if_) => {
             let entry = if_.entry_branch(ctx.tree).unwrap();
