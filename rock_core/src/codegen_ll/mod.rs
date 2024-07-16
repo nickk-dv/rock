@@ -403,8 +403,10 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue,
             variant_id,
         } => {
             let variant = hir.enum_data(enum_id).variant(variant_id);
-            let value = hir.const_eval_value(variant.value);
-            codegen_const_value(cg, hir, value, with_type);
+            //@disabled
+            todo!("variant codegen");
+            //let value = hir.const_eval_value(variant.value);
+            //codegen_const_value(cg, hir, value, with_type);
         }
         hir::ConstValue::Struct { struct_ } => {
             cg.write('{');

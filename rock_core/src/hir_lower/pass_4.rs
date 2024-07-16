@@ -25,24 +25,32 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
         let data = hir.registry().enum_data(id);
 
         for (idx, variant) in data.variants.iter().enumerate() {
-            let (eval, origin_id) = *hir.registry().const_eval(variant.value);
             let variant_id = hir::EnumVariantID::new(idx);
 
-            match eval {
-                hir::ConstEval::Unresolved(expr) => {
-                    let (mut tree, root_id) =
-                        Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
+            match variant.kind {
+                hir::VariantKind::Default(_) => {}
+                hir::VariantKind::Constant(eval_id) => {
+                    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+                    match eval {
+                        hir::ConstEval::Unresolved(expr) => {
+                            let (mut tree, root_id) =
+                                Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
 
-                    if let Err(from_id) = add_expr_const_dependencies(
-                        hir, emit, &mut tree, root_id, origin_id, expr.0,
-                    ) {
-                        const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
-                    } else {
-                        resolve_const_dependency_tree(hir, emit, &tree);
+                            if let Err(from_id) = add_expr_const_dependencies(
+                                hir, emit, &mut tree, root_id, origin_id, expr.0,
+                            ) {
+                                const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                            } else {
+                                resolve_const_dependency_tree(hir, emit, &tree);
+                            }
+                        }
+                        hir::ConstEval::ResolvedError => {}
+                        hir::ConstEval::ResolvedValue(_) => {}
                     }
                 }
-                hir::ConstEval::ResolvedError => {}
-                hir::ConstEval::ResolvedValue(_) => {}
+                //@resolve automatically at the end of the process?
+                // array lens etc
+                hir::VariantKind::HasValues(_) => {}
             }
         }
     }
@@ -353,9 +361,19 @@ fn const_dependencies_mark_error_up_to_root(
         match dep {
             ConstDependency::EnumVariant(id, variant_id) => {
                 let data = hir.registry().enum_data(id);
-                let eval_id = data.variant(variant_id).value;
-                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-                *eval = hir::ConstEval::ResolvedError;
+                let variant = data.variant(variant_id);
+
+                match variant.kind {
+                    //@unreachable for default?
+                    hir::VariantKind::Default(_) => todo!("mark as error for VariantKind::Default"),
+                    hir::VariantKind::Constant(eval_id) => {
+                        let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+                        *eval = hir::ConstEval::ResolvedError;
+                    }
+                    hir::VariantKind::HasValues(_) => {
+                        todo!("mark as error for VariantKind::HasValues")
+                    }
+                }
             }
             ConstDependency::StructSize(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
@@ -390,7 +408,11 @@ fn add_enum_variant_const_dependency<'hir>(
     variant_id: hir::EnumVariantID,
 ) -> Result<(), TreeNodeID> {
     let data = hir.registry().enum_data(enum_id);
-    let eval_id = data.variant(variant_id).value;
+    let eval_id = match data.variant(variant_id).kind {
+        hir::VariantKind::Default(_) => todo!("enum variant dep VariantKind::Default"),
+        hir::VariantKind::Constant(eval_id) => eval_id,
+        hir::VariantKind::HasValues(_) => todo!("enum variant dep VariantKind::HasValues"),
+    };
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
 
     match eval {
@@ -749,7 +771,14 @@ fn resolve_const_dependency_tree<'hir>(
                     hir::Type::Basic(data.int_ty.into_basic()),
                     Some(expect_src),
                 );
-                resolve_and_update_const_eval(hir, emit, variant.value, expect);
+
+                match variant.kind {
+                    hir::VariantKind::Default(_) => todo!("resolve tree VariantKind::Default"),
+                    hir::VariantKind::Constant(eval_id) => {
+                        resolve_and_update_const_eval(hir, emit, eval_id, expect);
+                    }
+                    hir::VariantKind::HasValues(_) => todo!("resolve tree VariantKind::HasValues"),
+                }
             }
             ConstDependency::StructSize(id) => {
                 let size_eval = resolve_struct_size(hir, emit, id);
