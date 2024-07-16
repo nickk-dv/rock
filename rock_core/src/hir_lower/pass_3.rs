@@ -253,7 +253,6 @@ fn process_enum_data<'hir>(
         }
     }
 
-    //@perf first pass solution
     let any_default = unique
         .iter()
         .any(|v| matches!(v.kind, hir::VariantKind::Default(_)));
@@ -261,8 +260,44 @@ fn process_enum_data<'hir>(
         .iter()
         .any(|v| matches!(v.kind, hir::VariantKind::Constant(_)));
 
+    let int_ty = if let Some((basic, basic_range)) = item.basic {
+        // use defined integer type
+        if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
+            int_ty
+        } else {
+            emit.error(ErrorComp::new(
+                format!(
+                    "enum type must be an integer, found `{}`\ndefault `s32` will be used",
+                    basic.as_str()
+                ),
+                SourceRange::new(origin_id, basic_range),
+                None,
+            ));
+            hir::BasicInt::S32
+        }
+    } else if any_constant {
+        // require integer type
+        emit.error(ErrorComp::new(
+            "enum type must be specified, add it after the enum name\ndefault `s32` will be used",
+            SourceRange::new(origin_id, enum_name.range),
+            None,
+        ));
+        hir::BasicInt::S32
+    } else {
+        // infer type for Default | HasValues variants
+        let variant_count = unique.len() as u64;
+        if variant_count <= u8::MAX as u64 {
+            hir::BasicInt::U8
+        } else if variant_count <= u16::MAX as u64 {
+            hir::BasicInt::U16
+        } else if variant_count <= u32::MAX as u64 {
+            hir::BasicInt::U32
+        } else {
+            hir::BasicInt::U64
+        }
+    };
+
     if any_constant && any_default {
-        //@error: require type if not specified
         let mut info_vec = Vec::new();
         for variant in unique.iter() {
             if matches!(variant.kind, hir::VariantKind::Default(_)) {
@@ -279,22 +314,23 @@ fn process_enum_data<'hir>(
             info_vec,
         ));
     } else {
-        //@infer enum's int_ty if not specified
+        //@tag for HasValues variants is not clear and can only be known after all constants (if any) were resolved
+        // (with just Default | HasValues) it sequential (also HasValues tag value is not stored anywhere!)
+        //@bounds check user defined type for Default | HasValues variants with their tag values
         for (idx, variant) in unique.iter_mut().enumerate() {
             if let hir::VariantKind::Default(value) = &mut variant.kind {
-                //@assign correct int_ty, infer or use explicit one
-                // move int_ty checks from pass1 to pass3 (here)
                 *value = hir::ConstValue::Int {
                     val: idx as u64,
                     neg: false,
-                    //@temp using u32
-                    int_ty: hir::BasicInt::U32,
+                    int_ty,
                 };
             }
         }
     }
 
-    hir.registry_mut().enum_data_mut(id).variants = emit.arena.alloc_slice(&unique);
+    let data = hir.registry_mut().enum_data_mut(id);
+    data.int_ty = int_ty;
+    data.variants = emit.arena.alloc_slice(&unique);
 }
 
 fn process_struct_data<'hir>(
