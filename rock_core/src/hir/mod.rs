@@ -59,14 +59,21 @@ pub struct EnumData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub int_ty: BasicInt,
-    pub variants: &'hir [EnumVariant],
+    pub variants: &'hir [EnumVariant<'hir>],
 }
 
 id_impl!(EnumVariantID);
 #[derive(Copy, Clone)]
-pub struct EnumVariant {
+pub struct EnumVariant<'hir> {
     pub name: ast::Name,
-    pub value: ConstEvalID,
+    pub kind: VariantKind<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum VariantKind<'hir> {
+    Default(ConstValue<'hir>),
+    Constant(ConstEvalID),
+    HasValues(&'hir [Type<'hir>]),
 }
 
 id_impl!(StructID);
