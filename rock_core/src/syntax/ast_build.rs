@@ -263,12 +263,24 @@ fn enum_item<'ast>(
 }
 
 fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
-    //@value is optional in grammar but required in ast due to
-    // const expr resolve limitation, will panic for now
     let name = name(ctx, variant.name(ctx.tree).unwrap());
-    let value = ast::ConstExpr(expr(ctx, variant.value(ctx.tree).unwrap()));
 
-    let variant = ast::EnumVariant { name, value };
+    let kind = if let Some(value) = variant.value(ctx.tree) {
+        let value = ast::ConstExpr(expr(ctx, value));
+        ast::VariantKind::Constant(value)
+    } else if let Some(type_list) = variant.type_list(ctx.tree) {
+        let offset = ctx.s.types.start();
+        for ty_cst in type_list.types(ctx.tree) {
+            let ty = ty(ctx, ty_cst);
+            ctx.s.types.add(ty);
+        }
+        let types = ctx.s.types.take(offset, &mut ctx.s.arena);
+        ast::VariantKind::HasValues(types)
+    } else {
+        ast::VariantKind::Default
+    };
+
+    let variant = ast::EnumVariant { name, kind };
     ctx.s.variants.add(variant);
 }
 
@@ -597,13 +609,21 @@ fn stmt_assign<'ast>(
 
 //@rename expr_cst back to expr when each arm has a function
 fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'ast ast::Expr<'ast> {
+    let kind = expr_kind(ctx, expr_cst);
     let range = expr_cst.range(ctx.tree);
 
-    let kind = match expr_cst {
+    let expr = ast::Expr { kind, range };
+    ctx.s.arena.alloc(expr)
+}
+
+fn expr_kind<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    expr_cst: cst::Expr,
+) -> ast::ExprKind<'ast> {
+    match expr_cst {
         cst::Expr::Paren(paren) => {
-            //@problem with range and inner expr
-            //@get expr_kind with separate function
-            todo!();
+            let inner = paren.expr(ctx.tree).unwrap();
+            expr_kind(ctx, inner)
         }
         cst::Expr::LitNull(_) => ast::ExprKind::LitNull,
         cst::Expr::LitBool(lit) => {
@@ -888,10 +908,7 @@ fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'as
             let bin = ctx.s.arena.alloc(bin);
             ast::ExprKind::Binary { op, op_range, bin }
         }
-    };
-
-    let expr = ast::Expr { kind, range };
-    ctx.s.arena.alloc(expr)
+    }
 }
 
 fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {

@@ -220,9 +220,16 @@ fn process_enum_data<'hir>(
                 ),
             ));
         } else {
+            let value = match variant.kind {
+                ast::VariantKind::Default => todo!("VariantKind::Default not supported"),
+                ast::VariantKind::Constant(value) => value,
+                ast::VariantKind::HasValues(_) => todo!("VariantKind::HasValues not supported"),
+            };
+            let value = hir.registry_mut().add_const_eval(value, origin_id);
+
             unique.push(hir::EnumVariant {
                 name: variant.name,
-                value: hir.registry_mut().add_const_eval(variant.value, origin_id),
+                value,
             });
         }
     }

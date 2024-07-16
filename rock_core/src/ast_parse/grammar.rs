@@ -148,21 +148,17 @@ fn enum_item<'ast>(
 fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'ast>, String> {
     let name = name(p)?;
 
-    let value = if p.at(T!['(']) {
-        //@not used just parsed
+    let kind = if p.eat(T![=]) {
+        let value = ConstExpr(expr(p)?);
+        VariantKind::Constant(value)
+    } else if p.at(T!['(']) {
         let types = comma_separated_list!(p, ty, types, T!['('], T![')']);
-        //@creating fake expr to conform to current variant shape
-        let fake_expr = Expr {
-            kind: ExprKind::LitInt { val: 0 },
-            range: TextRange::empty_at(0.into()),
-        };
-        ConstExpr(p.state.arena.alloc(fake_expr))
+        VariantKind::HasValues(types)
     } else {
-        p.expect(T![=])?;
-        ConstExpr(expr(p)?)
+        VariantKind::Default
     };
 
-    Ok(EnumVariant { name, value })
+    Ok(EnumVariant { name, kind })
 }
 
 fn struct_item<'ast>(

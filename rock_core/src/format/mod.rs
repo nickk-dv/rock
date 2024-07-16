@@ -245,6 +245,7 @@ fn variant_list(fmt: &mut Formatter, variant_list: ast::VariantList) {
     fmt.write_c('}');
 }
 
+//@type list not formatted
 fn variant_fmt(fmt: &mut Formatter, variant: ast::Variant) {
     name_fmt(fmt, variant.name(fmt.tree).unwrap());
     if let Some(expr) = variant.value(fmt.tree) {

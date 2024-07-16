@@ -61,11 +61,10 @@ pub struct EnumItem<'ast> {
     pub variants: &'ast [EnumVariant<'ast>],
 }
 
-//@temporary always specified variant value (to simplify const evaluation) 09.05.24
 #[derive(Copy, Clone)]
 pub struct EnumVariant<'ast> {
     pub name: Name,
-    pub value: ConstExpr<'ast>,
+    pub kind: VariantKind<'ast>,
 }
 
 #[derive(Copy, Clone)]

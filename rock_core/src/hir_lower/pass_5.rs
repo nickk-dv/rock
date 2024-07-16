@@ -1072,8 +1072,6 @@ fn typecheck_call<'hir>(
             if (proc_ty.is_variadic && (input_count < expected_count))
                 || (!proc_ty.is_variadic && (input_count != expected_count))
             {
-                let at_least = if proc_ty.is_variadic { " at least" } else { "" };
-
                 let info = if let Some(proc_id) = direct_id {
                     let data = hir.registry().proc_data(proc_id);
                     Info::new(
@@ -1084,12 +1082,10 @@ fn typecheck_call<'hir>(
                     None
                 };
 
-                //@plular form for argument`s` only needed if != 1
+                let at_least = if proc_ty.is_variadic { " at least" } else { "" };
+                let plural_end = if expected_count == 1 { "s" } else { "" };
                 emit.error(ErrorComp::new(
-                    format!(
-                        "expected{at_least} {} input arguments, found {}",
-                        expected_count, input_count
-                    ),
+                    format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}"),
                     SourceRange::new(proc.origin(), expr_range),
                     info,
                 ));
