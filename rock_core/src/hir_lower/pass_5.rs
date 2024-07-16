@@ -316,12 +316,7 @@ pub fn typecheck_expr<'hir>(
     expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
     let expr_res = match expr.kind {
-        ast::ExprKind::LitNull => typecheck_lit_null(emit),
-        ast::ExprKind::LitBool { val } => typecheck_lit_bool(emit, val),
-        ast::ExprKind::LitInt { val } => typecheck_lit_int(emit, expect, val),
-        ast::ExprKind::LitFloat { val } => typecheck_lit_float(emit, expect, val),
-        ast::ExprKind::LitChar { val } => typecheck_lit_char(emit, val),
-        ast::ExprKind::LitString { id, c_string } => typecheck_lit_string(emit, id, c_string),
+        ast::ExprKind::Lit(literal) => typecheck_lit(emit, expect, literal),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None)
@@ -375,37 +370,48 @@ pub fn typecheck_expr<'hir>(
     expr_res
 }
 
-fn typecheck_lit_null<'hir>(emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
-    let value = hir::ConstValue::Null;
-
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(BasicType::Rawptr), expr)
-}
-
-fn typecheck_lit_bool<'hir>(emit: &mut HirEmit<'hir>, val: bool) -> TypeResult<'hir> {
-    let value = hir::ConstValue::Bool { val };
-
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(BasicType::Bool), expr)
-}
-
-fn typecheck_lit_int<'hir>(
+fn typecheck_lit<'hir>(
     emit: &mut HirEmit<'hir>,
     expect: Expectation<'hir>,
-    val: u64,
+    literal: ast::Literal,
 ) -> TypeResult<'hir> {
-    let int_ty = coerce_int_type(expect);
-    let value = hir::ConstValue::Int {
-        val,
-        neg: false,
-        int_ty,
+    let (value, ty) = match literal {
+        ast::Literal::Null => {
+            let value = hir::ConstValue::Null;
+            (value, hir::Type::Basic(BasicType::Rawptr))
+        }
+        ast::Literal::Bool(val) => {
+            let value = hir::ConstValue::Bool { val };
+            (value, hir::Type::Basic(BasicType::Bool))
+        }
+        ast::Literal::Int(val) => {
+            let int_ty = coerce_int_type(expect);
+            let value = hir::ConstValue::Int {
+                val,
+                neg: false,
+                int_ty,
+            };
+            (value, hir::Type::Basic(int_ty.into_basic()))
+        }
+        ast::Literal::Float(val) => {
+            let float_ty = coerce_float_type(expect);
+            let value = hir::ConstValue::Float { val, float_ty };
+            (value, hir::Type::Basic(float_ty.into_basic()))
+        }
+        ast::Literal::Char(val) => {
+            let value = hir::ConstValue::Char { val };
+            (value, hir::Type::Basic(BasicType::Char))
+        }
+        ast::Literal::String { id, c_string } => {
+            let value = hir::ConstValue::String { id, c_string };
+            let string_ty = alloc_string_lit_type(emit, c_string);
+            (value, string_ty)
+        }
     };
 
     let expr = hir::Expr::Const { value };
     let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(int_ty.into_basic()), expr)
+    TypeResult::new(ty, expr)
 }
 
 pub fn coerce_int_type(expect: Expectation) -> BasicInt {
@@ -420,19 +426,6 @@ pub fn coerce_int_type(expect: Expectation) -> BasicInt {
     }
 }
 
-fn typecheck_lit_float<'hir>(
-    emit: &mut HirEmit<'hir>,
-    expect: Expectation<'hir>,
-    val: f64,
-) -> TypeResult<'hir> {
-    let float_ty = coerce_float_type(expect);
-    let value = hir::ConstValue::Float { val, float_ty };
-
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(float_ty.into_basic()), expr)
-}
-
 pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
     const DEFAULT_FLOAT_TYPE: BasicFloat = BasicFloat::F64;
 
@@ -443,27 +436,6 @@ pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
             _ => DEFAULT_FLOAT_TYPE,
         },
     }
-}
-
-fn typecheck_lit_char<'hir>(emit: &mut HirEmit<'hir>, val: char) -> TypeResult<'hir> {
-    let value = hir::ConstValue::Char { val };
-
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Basic(BasicType::Char), expr)
-}
-
-fn typecheck_lit_string<'hir>(
-    emit: &mut HirEmit<'hir>,
-    id: InternID,
-    c_string: bool,
-) -> TypeResult<'hir> {
-    let value = hir::ConstValue::String { id, c_string };
-
-    let string_ty = alloc_string_lit_type(emit, c_string);
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(string_ty, expr)
 }
 
 pub fn alloc_string_lit_type<'hir>(emit: &mut HirEmit<'hir>, c_string: bool) -> hir::Type<'hir> {

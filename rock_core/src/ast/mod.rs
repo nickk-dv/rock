@@ -280,12 +280,7 @@ pub struct Expr<'ast> {
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ExprKind<'ast> {
-    LitNull,
-    LitBool     { val: bool },
-    LitInt      { val: u64 },
-    LitFloat    { val: f64 },
-    LitChar     { val: char },
-    LitString   { id: InternID, c_string: bool },
+    Lit         (Literal),
     If          { if_: &'ast If<'ast> },
     Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
@@ -304,6 +299,16 @@ pub enum ExprKind<'ast> {
     Range       { range: &'ast Range<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
     Binary      { op: BinOp, op_range: TextRange, bin: &'ast BinExpr<'ast> },
+}
+
+#[derive(Copy, Clone)]
+pub enum Literal {
+    Null,
+    Bool(bool),
+    Int(u64),
+    Float(f64),
+    Char(char),
+    String { id: InternID, c_string: bool },
 }
 
 #[derive(Copy, Clone)]

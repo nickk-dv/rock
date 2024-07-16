@@ -669,20 +669,20 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
     let kind = match p.peek() {
         T![null] => {
             p.bump();
-            ExprKind::LitNull
+            ExprKind::Lit(Literal::Null)
         }
         T![true] => {
             p.bump();
-            ExprKind::LitBool { val: true }
+            ExprKind::Lit(Literal::Bool(true))
         }
         T![false] => {
             p.bump();
-            ExprKind::LitBool { val: false }
+            ExprKind::Lit(Literal::Bool(false))
         }
         T![int_lit] => {
             p.bump();
             let val = p.get_int_lit();
-            ExprKind::LitInt { val }
+            ExprKind::Lit(Literal::Int(val))
         }
         T![float_lit] => {
             let range = p.peek_range();
@@ -700,17 +700,17 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                     0.0
                 }
             };
-            ExprKind::LitFloat { val }
+            ExprKind::Lit(Literal::Float(val))
         }
         T![char_lit] => {
             p.bump();
             let val = p.get_char_lit();
-            ExprKind::LitChar { val }
+            ExprKind::Lit(Literal::Char(val))
         }
         T![string_lit] => {
             p.bump();
             let (id, c_string) = p.get_string_lit();
-            ExprKind::LitString { id, c_string }
+            ExprKind::Lit(Literal::String { id, c_string })
         }
         T![if] => ExprKind::If { if_: if_(p)? },
         T!['{'] => {
