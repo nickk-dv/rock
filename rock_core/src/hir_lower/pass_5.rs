@@ -1489,6 +1489,7 @@ fn typecheck_item<'hir>(
     TypeResult::new(target_ty, target)
 }
 
+//@duplicated input no expectation checking on return
 fn typecheck_variant<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1501,7 +1502,14 @@ fn typecheck_variant<'hir>(
     let enum_id = match expect {
         Expectation::None => None,
         Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Error => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
+            hir::Type::Error => {
+                if let Some(input) = input {
+                    for &expr in input.iter() {
+                        let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+                    }
+                }
+                return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+            }
             hir::Type::Enum(enum_id) => Some(enum_id),
             _ => None,
         },
@@ -1518,6 +1526,11 @@ fn typecheck_variant<'hir>(
                 SourceRange::new(proc.origin(), expr_range),
                 None,
             ));
+            if let Some(input) = input {
+                for &expr in input.iter() {
+                    let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+                }
+            }
             return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
         }
     };
@@ -1535,10 +1548,52 @@ fn typecheck_variant<'hir>(
                     SourceRange::new(data.origin_id, data.name.range),
                 ),
             ));
+            if let Some(input) = input {
+                for &expr in input.iter() {
+                    let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+                }
+            }
             return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
         }
     };
 
+    let variant = data.variant(variant_id);
+    let value_types = match variant.kind {
+        hir::VariantKind::Default(_) => &[],
+        hir::VariantKind::Constant(_) => &[],
+        hir::VariantKind::HasValues(types) => types,
+    };
+
+    let input_count = match input {
+        Some(input) => input.len(),
+        None => 0,
+    };
+    let expected_count = value_types.len();
+
+    if input_count != expected_count {
+        let plural_end = if expected_count == 1 { "s" } else { "" };
+        emit.error(ErrorComp::new(
+            format!("expected {expected_count} argument{plural_end}, found {input_count}"),
+            SourceRange::new(proc.origin(), name.range), //@store range of inputs?
+            Info::new(
+                "variant defined here",
+                SourceRange::new(data.origin_id, variant.name.range),
+            ),
+        ));
+    }
+
+    if let Some(input) = input {
+        for (idx, &expr) in input.iter().enumerate() {
+            //@should have expect_src, get from item type ranges?
+            let expect = match value_types.get(idx) {
+                Some(ty) => Expectation::HasType(*ty, None),
+                None => Expectation::None,
+            };
+            let _ = typecheck_expr(hir, emit, proc, expect, expr);
+        }
+    }
+
+    //@store values correctly in this, and its not always a const
     let value = hir::ConstValue::EnumVariant {
         enum_id,
         variant_id,
