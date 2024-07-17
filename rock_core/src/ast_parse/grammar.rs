@@ -737,7 +737,13 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 ExprKind::StructInit { struct_init }
             } else {
                 let name = name(p)?;
-                ExprKind::Variant { name }
+                let input = if p.at(T!['(']) {
+                    let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
+                    Some(p.state.arena.alloc(input))
+                } else {
+                    None
+                };
+                ExprKind::Variant { name, input }
             }
         }
         T![ident] => {
@@ -754,7 +760,15 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                     });
                     ExprKind::StructInit { struct_init }
                 }
-                _ => ExprKind::Item { path },
+                _ => {
+                    let input = if p.at(T!['(']) {
+                        let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
+                        Some(p.state.arena.alloc(input))
+                    } else {
+                        None
+                    };
+                    ExprKind::Item { path, input }
+                }
             }
         }
         T!['['] => {
@@ -1040,7 +1054,7 @@ fn field_init<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<FieldInit<'ast>,
         let names = p.state.arena.alloc_slice(&[name]);
         let path = p.state.arena.alloc(Path { names });
         p.state.arena.alloc(Expr {
-            kind: ExprKind::Item { path },
+            kind: ExprKind::Item { path, input: None },
             range: p.make_range(start),
         })
     };

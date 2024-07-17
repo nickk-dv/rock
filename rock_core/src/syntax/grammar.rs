@@ -689,6 +689,9 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
                 field_init_list(p);
                 m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
             } else {
+                if p.at(T!['(']) {
+                    argument_list(p);
+                }
                 m.complete(p, SyntaxKind::EXPR_ITEM)
             }
         }
@@ -700,6 +703,9 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
                 m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
             } else {
                 name(p);
+                if p.at(T!['(']) {
+                    argument_list(p);
+                }
                 m.complete(p, SyntaxKind::EXPR_VARIANT)
             }
         }
@@ -765,7 +771,7 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             }
             T!['('] => {
                 let m = p.start_before(mc);
-                call_argument_list(p);
+                argument_list(p);
                 mc = m.complete(p, SyntaxKind::EXPR_CALL);
             }
             T![as] => {
@@ -884,7 +890,7 @@ fn match_arm(p: &mut Parser) -> bool {
     }
 }
 
-fn call_argument_list(p: &mut Parser) {
+fn argument_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
@@ -894,7 +900,7 @@ fn call_argument_list(p: &mut Parser) {
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::CALL_ARGUMENT_LIST);
+    m.complete(p, SyntaxKind::ARGUMENT_LIST);
 }
 
 fn field_init_list(p: &mut Parser) {

@@ -282,7 +282,7 @@ ast_node_impl!(MatchFallback, SyntaxKind::MATCH_FALLBACK);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
-ast_node_impl!(CallArgumentList, SyntaxKind::CALL_ARGUMENT_LIST);
+ast_node_impl!(ArgumentList, SyntaxKind::ARGUMENT_LIST);
 ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
 ast_node_impl!(ExprSizeof, SyntaxKind::EXPR_SIZEOF);
 ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
@@ -844,10 +844,10 @@ impl<'syn> ExprIndex<'syn> {
 
 impl<'syn> ExprCall<'syn> {
     find_first!(target, Expr);
-    find_first!(call_argument_list, CallArgumentList);
+    find_first!(argument_list, ArgumentList);
 }
 
-impl<'syn> CallArgumentList<'syn> {
+impl<'syn> ArgumentList<'syn> {
     node_iter!(inputs, Expr);
 }
 
@@ -862,10 +862,12 @@ impl<'syn> ExprSizeof<'syn> {
 
 impl<'syn> ExprItem<'syn> {
     find_first!(path, Path);
+    find_first!(argument_list, ArgumentList);
 }
 
 impl<'syn> ExprVariant<'syn> {
     find_first!(name, Name);
+    find_first!(argument_list, ArgumentList);
 }
 
 impl<'syn> ExprStructInit<'syn> {

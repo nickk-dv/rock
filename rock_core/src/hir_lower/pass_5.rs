@@ -3,7 +3,6 @@ use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, Variable
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr, WarningComp};
 use crate::hir::{self, BasicFloat, BasicInt};
-use crate::intern::InternID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
@@ -338,9 +337,9 @@ pub fn typecheck_expr<'hir>(
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, *ty, expr.range),
-        ast::ExprKind::Item { path } => typecheck_item(hir, emit, proc, path),
-        ast::ExprKind::Variant { name } => {
-            typecheck_variant(hir, emit, proc, expect, name, expr.range)
+        ast::ExprKind::Item { path, input } => typecheck_item(hir, emit, proc, path, input),
+        ast::ExprKind::Variant { name, input } => {
+            typecheck_variant(hir, emit, proc, expect, name, input, expr.range)
         }
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(hir, emit, proc, expect, struct_init, expr.range)
@@ -1382,6 +1381,7 @@ fn typecheck_item<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
+    input: Option<&&[&ast::Expr]>,
 ) -> TypeResult<'hir> {
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
 
@@ -1495,6 +1495,7 @@ fn typecheck_variant<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
+    input: Option<&&[&ast::Expr]>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let enum_id = match expect {
