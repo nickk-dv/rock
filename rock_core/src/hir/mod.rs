@@ -487,10 +487,10 @@ impl<'hir> ProcData<'hir> {
 }
 
 impl<'hir> EnumData<'hir> {
-    pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant {
+    pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant<'hir> {
         &self.variants[id.index()]
     }
-    pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant)> {
+    pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant<'hir>)> {
         for (idx, variant) in self.variants.iter().enumerate() {
             if variant.name.id == id {
                 return Some((EnumVariantID::new(idx), variant));
