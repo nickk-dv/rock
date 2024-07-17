@@ -10,6 +10,7 @@ use crate::text::TextRange;
 // _cst postfix in cst nodes with name conflits,
 // remove _fmt postfix from functions
 //@use session?
+//@item & variant input exprs not formatted
 pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
     return format_experiment(source, module_id);
 
@@ -822,8 +823,8 @@ fn expr_call(fmt: &mut Formatter, call: ast::ExprCall) {
     expr_fmt(fmt, call.target(fmt.tree).unwrap());
     fmt.write_c('(');
     let mut first = true;
-    let call_argument_list = call.call_argument_list(fmt.tree).unwrap();
-    for expr in call_argument_list.inputs(fmt.tree) {
+    let argument_list = call.argument_list(fmt.tree).unwrap();
+    for expr in argument_list.inputs(fmt.tree) {
         if !first {
             fmt.write_c(',');
             fmt.space();

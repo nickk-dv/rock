@@ -761,14 +761,7 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());
-
-            let offset = ctx.s.exprs.start();
-            let argument_list = call.call_argument_list(ctx.tree).unwrap();
-            for input in argument_list.inputs(ctx.tree) {
-                let expr = expr(ctx, input);
-                ctx.s.exprs.add(expr);
-            }
-            let input = ctx.s.exprs.take(offset, &mut ctx.s.arena);
+            let input = argument_list(ctx, call.argument_list(ctx.tree).unwrap());
 
             let input = ctx.s.arena.alloc(input);
             ast::ExprKind::Call { target, input }
@@ -788,13 +781,25 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Item(item) => {
             let path = path(ctx, item.path(ctx.tree).unwrap());
+            let input = if let Some(input) = item.argument_list(ctx.tree) {
+                let input = argument_list(ctx, input);
+                Some(ctx.s.arena.alloc(input))
+            } else {
+                None
+            };
 
-            ast::ExprKind::Item { path }
+            ast::ExprKind::Item { path, input }
         }
         cst::Expr::Variant(variant) => {
             let name = name(ctx, variant.name(ctx.tree).unwrap());
+            let input = if let Some(input) = variant.argument_list(ctx.tree) {
+                let input = argument_list(ctx, input);
+                Some(ctx.s.arena.alloc(input))
+            } else {
+                None
+            };
 
-            ast::ExprKind::Variant { name }
+            ast::ExprKind::Variant { name, input }
         }
         cst::Expr::StructInit(struct_init) => {
             let path = struct_init.path(ctx.tree).map(|p| path(ctx, p));
@@ -807,7 +812,7 @@ fn expr_kind<'ast>(
                     name(ctx, name_cst)
                 } else {
                     match expr.kind {
-                        ast::ExprKind::Item { path } => path.names[0],
+                        ast::ExprKind::Item { path, .. } => path.names[0],
                         _ => unreachable!(),
                     }
                 };
@@ -923,4 +928,16 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::
         stmts,
         range: block.range(ctx.tree),
     }
+}
+
+fn argument_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    argument_list: cst::ArgumentList,
+) -> &'ast [&'ast ast::Expr<'ast>] {
+    let offset = ctx.s.exprs.start();
+    for input in argument_list.inputs(ctx.tree) {
+        let expr = expr(ctx, input);
+        ctx.s.exprs.add(expr);
+    }
+    ctx.s.exprs.take(offset, &mut ctx.s.arena)
 }

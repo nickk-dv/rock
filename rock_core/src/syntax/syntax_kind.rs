@@ -69,7 +69,7 @@ pub enum SyntaxKind {
     EXPR_FIELD,
     EXPR_INDEX,
     EXPR_CALL,
-    CALL_ARGUMENT_LIST,
+    ARGUMENT_LIST,
     EXPR_CAST,
     EXPR_SIZEOF,
     EXPR_ITEM,
