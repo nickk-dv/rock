@@ -101,10 +101,10 @@ impl<'ctx> Codegen<'ctx> {
     //@duplicated with generation of procedure values and with indirect calls 07.05.24
     pub fn function_type(&self, proc_ty: &hir::ProcType) -> types::FunctionType<'ctx> {
         let mut param_types =
-            Vec::<types::BasicMetadataTypeEnum>::with_capacity(proc_ty.params.len());
+            Vec::<types::BasicMetadataTypeEnum>::with_capacity(proc_ty.param_types.len());
 
-        for param in proc_ty.params {
-            param_types.push(self.type_into_basic_metadata(*param));
+        for param_ty in proc_ty.param_types {
+            param_types.push(self.type_into_basic_metadata(*param_ty));
         }
 
         match self.type_into_basic_option(proc_ty.return_ty) {
@@ -120,7 +120,7 @@ impl<'ctx> Codegen<'ctx> {
         match len {
             hir::ArrayStaticLen::Immediate(len) => len.expect("array len is known"),
             hir::ArrayStaticLen::ConstEval(eval_id) => match self.hir.const_eval_value(eval_id) {
-                hir::ConstValue::Int { val, neg, ty } => val,
+                hir::ConstValue::Int { val, neg, int_ty } => val,
                 _ => panic!("array len must be int"),
             },
         }
@@ -140,7 +140,6 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::U32 => self.context.i32_type().into(),
                 ast::BasicType::U64 => self.context.i64_type().into(),
                 ast::BasicType::Usize => self.ptr_sized_int_type.into(),
-                ast::BasicType::F16 => self.context.f16_type().into(),
                 ast::BasicType::F32 => self.context.f32_type().into(),
                 ast::BasicType::F64 => self.context.f64_type().into(),
                 ast::BasicType::Bool => self.context.bool_type().into(),
@@ -150,7 +149,8 @@ impl<'ctx> Codegen<'ctx> {
                 ast::BasicType::Never => self.context.void_type().into(), // only expected as procedure return type
             },
             hir::Type::Enum(enum_id) => {
-                let basic = self.hir.enum_data(enum_id).basic;
+                //@todo type with values be be [N x u8]
+                let basic = self.hir.enum_data(enum_id).int_ty.into_basic();
                 self.basic_type_into_int(basic).into()
             }
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).into(),
@@ -190,7 +190,6 @@ impl<'ctx> Codegen<'ctx> {
 
     pub fn basic_type_into_float(&self, basic: ast::BasicType) -> types::FloatType<'ctx> {
         match basic {
-            ast::BasicType::F16 => self.context.f16_type(),
             ast::BasicType::F32 => self.context.f32_type(),
             ast::BasicType::F64 => self.context.f64_type(),
             _ => unreachable!(),
