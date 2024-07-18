@@ -802,118 +802,228 @@ fn typecheck_field<'hir>(
     name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_res.ty, name);
+    let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
+    emit_field_expr(emit, target_res.expr, field_result)
+}
 
-    match kind {
-        FieldKind::Error => TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
-        FieldKind::Field(struct_id, field_id) => TypeResult::new(
+struct FieldResult<'hir> {
+    deref: bool,
+    kind: FieldKind<'hir>,
+    field_ty: hir::Type<'hir>,
+}
+
+#[rustfmt::skip]
+enum FieldKind<'hir> {
+    Struct(hir::StructID, hir::StructFieldID),
+    ArraySlice { first_ptr: bool },
+    ArrayStatic { len: hir::ConstValue<'hir> },
+}
+
+impl<'hir> FieldResult<'hir> {
+    fn new(deref: bool, kind: FieldKind<'hir>, field_ty: hir::Type<'hir>) -> FieldResult<'hir> {
+        FieldResult {
+            deref,
+            kind,
             field_ty,
-            emit.arena.alloc(hir::Expr::StructField {
-                target: target_res.expr,
-                struct_id,
-                field_id,
-                deref,
-            }),
-        ),
-        FieldKind::Slice { first_ptr } => TypeResult::new(
-            field_ty,
-            emit.arena.alloc(hir::Expr::SliceField {
-                target: target_res.expr,
-                first_ptr,
-                deref,
-            }),
-        ),
+        }
     }
 }
 
-enum FieldKind {
-    Error,
-    Field(hir::StructID, hir::StructFieldID),
-    Slice { first_ptr: bool },
-}
-
-fn check_type_field<'hir>(
+fn check_field_from_type<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    ty: hir::Type<'hir>,
+    origin_id: ModuleID,
     name: ast::Name,
-) -> (hir::Type<'hir>, FieldKind, bool) {
-    let field = match ty {
-        hir::Type::Reference(ref_ty, mutt) => {
-            (type_get_field(hir, emit, proc, *ref_ty, name), true)
-        }
-        _ => (type_get_field(hir, emit, proc, ty, name), false),
+    ty: hir::Type<'hir>,
+) -> Option<FieldResult<'hir>> {
+    let (ty, deref) = match ty {
+        hir::Type::Reference(ref_ty, _) => (*ref_ty, true),
+        _ => (ty, false),
     };
-    (field.0 .0, field.0 .1, field.1)
-}
 
-fn type_get_field<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    ty: hir::Type<'hir>,
-    name: ast::Name,
-) -> (hir::Type<'hir>, FieldKind) {
     match ty {
-        hir::Type::Error => (hir::Type::Error, FieldKind::Error),
-        hir::Type::Struct(id) => {
-            let data = hir.registry().struct_data(id);
-            if let Some((field_id, field)) = data.find_field(name.id) {
-                (field.ty, FieldKind::Field(id, field_id))
-            } else {
-                emit.error(ErrorComp::new(
-                    format!(
-                        "no field `{}` exists on struct type `{}`",
-                        hir.name_str(name.id),
-                        hir.name_str(data.name.id),
-                    ),
-                    SourceRange::new(proc.origin(), name.range),
-                    None,
-                ));
-                (hir::Type::Error, FieldKind::Error)
+        hir::Type::Error => None,
+        hir::Type::Struct(struct_id) => {
+            let data = hir.registry().struct_data(struct_id);
+            match check_field_from_struct(hir, emit, origin_id, name, data) {
+                Some((field_id, field)) => {
+                    let kind = FieldKind::Struct(struct_id, field_id);
+                    let field_ty = field.ty;
+                    Some(FieldResult::new(deref, kind, field_ty))
+                }
+                None => None,
             }
         }
         hir::Type::ArraySlice(slice) => {
-            let field_name = hir.name_str(name.id);
-            match field_name {
-                "ptr" => (
-                    hir::Type::Reference(&slice.elem_ty, ast::Mut::Immutable),
-                    FieldKind::Slice { first_ptr: true },
-                ),
-                "len" => (
-                    hir::Type::Basic(BasicType::Usize),
-                    FieldKind::Slice { first_ptr: false },
-                ),
-                _ => {
-                    let ty_format = type_format(hir, emit, ty);
-                    emit.error(ErrorComp::new(
-                        format!(
-                            "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
-                            hir.name_str(name.id),
-                            ty_format.as_str(),
-                        ),
-                        SourceRange::new(proc.origin(), name.range),
-                        None,
-                    ));
-                    (hir::Type::Error, FieldKind::Error)
+            match check_field_from_slice(hir, emit, origin_id, name, slice) {
+                Some(first_ptr) => {
+                    let kind = FieldKind::ArraySlice { first_ptr };
+                    let field_ty = match first_ptr {
+                        true => hir::Type::Reference(&slice.elem_ty, slice.mutt),
+                        false => hir::Type::USIZE,
+                    };
+                    Some(FieldResult::new(deref, kind, field_ty))
                 }
+                None => None,
+            }
+        }
+        hir::Type::ArrayStatic(array) => {
+            match check_field_from_array(hir, emit, origin_id, name, array) {
+                Some(len) => {
+                    let kind = FieldKind::ArrayStatic { len };
+                    let field_ty = hir::Type::USIZE;
+                    Some(FieldResult::new(deref, kind, field_ty))
+                }
+                None => None,
             }
         }
         _ => {
-            let ty_format = type_format(hir, emit, ty);
             emit.error(ErrorComp::new(
                 format!(
                     "no field `{}` exists on value of type `{}`",
                     hir.name_str(name.id),
-                    ty_format.as_str(),
+                    type_format(hir, emit, ty).as_str(),
                 ),
-                SourceRange::new(proc.origin(), name.range),
+                SourceRange::new(origin_id, name.range),
                 None,
             ));
-            (hir::Type::Error, FieldKind::Error)
+            None
         }
     }
+}
+
+fn check_field_from_struct<'hir>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    name: ast::Name,
+    data: &hir::StructData<'hir>,
+) -> Option<(hir::StructFieldID, &'hir hir::StructField<'hir>)> {
+    match data.find_field(name.id) {
+        Some((field_id, field)) => {
+            if origin_id != data.origin_id && field.vis == ast::Vis::Private {
+                emit.error(ErrorComp::new(
+                    format!("field `{}` is private", hir.name_str(name.id)),
+                    SourceRange::new(origin_id, name.range),
+                    Info::new(
+                        "defined here",
+                        SourceRange::new(data.origin_id, field.name.range),
+                    ),
+                ));
+            }
+            Some((field_id, field))
+        }
+        None => {
+            emit.error(ErrorComp::new(
+                format!("field `{}` is not found", hir.name_str(name.id)),
+                SourceRange::new(origin_id, name.range),
+                Info::new(
+                    "struct defined here",
+                    SourceRange::new(data.origin_id, data.name.range),
+                ),
+            ));
+            None
+        }
+    }
+}
+
+fn check_field_from_slice<'hir>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    name: ast::Name,
+    slice: &hir::ArraySlice,
+) -> Option<bool> {
+    let field_name = hir.name_str(name.id);
+    match field_name {
+        "ptr" => Some(true),
+        "len" => Some(false),
+        _ => {
+            emit.error(ErrorComp::new(
+                format!(
+                    "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
+                    field_name,
+                    type_format(hir, emit, hir::Type::ArraySlice(slice)).as_str(),
+                ),
+                SourceRange::new(origin_id, name.range),
+                None,
+            ));
+            None
+        }
+    }
+}
+
+fn check_field_from_array<'hir>(
+    hir: &HirData,
+    emit: &mut HirEmit<'hir>,
+    origin_id: ModuleID,
+    name: ast::Name,
+    array: &hir::ArrayStatic,
+) -> Option<hir::ConstValue<'hir>> {
+    let field_name = hir.name_str(name.id);
+    match field_name {
+        "len" => {
+            let len = match array.len {
+                hir::ArrayStaticLen::Immediate(len) => match len {
+                    Some(value) => hir::ConstValue::Int {
+                        val: value,
+                        neg: false,
+                        int_ty: hir::BasicInt::Usize,
+                    },
+                    None => hir::ConstValue::Error,
+                },
+                hir::ArrayStaticLen::ConstEval(eval_id) => {
+                    match hir.registry().const_eval(eval_id).0 {
+                        hir::ConstEval::Unresolved(_) => unreachable!(),
+                        hir::ConstEval::ResolvedError => hir::ConstValue::Error,
+                        hir::ConstEval::ResolvedValue(value_id) => emit.const_intern.get(value_id),
+                    }
+                }
+            };
+            Some(len)
+        }
+        _ => {
+            emit.error(ErrorComp::new(
+                format!(
+                    "no field `{}` exists on array type `{}`\ndid you mean `len`?",
+                    field_name,
+                    type_format(hir, emit, hir::Type::ArrayStatic(array)).as_str(),
+                ),
+                SourceRange::new(origin_id, name.range),
+                None,
+            ));
+            None
+        }
+    }
+}
+
+fn emit_field_expr<'hir>(
+    emit: &mut HirEmit<'hir>,
+    target: &'hir hir::Expr<'hir>,
+    field_result: Option<FieldResult<'hir>>,
+) -> TypeResult<'hir> {
+    let result = match field_result {
+        Some(result) => result,
+        None => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
+    };
+
+    let expr = match result.kind {
+        FieldKind::Struct(struct_id, field_id) => hir::Expr::StructField {
+            target,
+            struct_id,
+            field_id,
+            deref: result.deref,
+        },
+        FieldKind::ArraySlice { first_ptr } => hir::Expr::SliceField {
+            target,
+            first_ptr,
+            deref: result.deref,
+        },
+        FieldKind::ArrayStatic { len } => hir::Expr::Const { value: len },
+    };
+
+    let expr = emit.arena.alloc(expr);
+    TypeResult::new(result.field_ty, expr)
 }
 
 struct CollectionType<'hir> {
@@ -1448,54 +1558,12 @@ fn typecheck_item<'hir>(
         ),
     };
 
-    //@everything below is copy-paste from regular typecheck field access 16.05.24
-    // de-duplicate later
-    let mut target = item_res.expr;
-    let mut target_ty = item_res.ty;
-
+    let mut target_res = item_res;
     for &name in field_names {
-        let (field_ty, kind, deref) = check_type_field(hir, emit, proc, target_ty, name);
-
-        match kind {
-            FieldKind::Error => return TypeResult::new(hir::Type::Error, target),
-            FieldKind::Field(struct_id, field_id) => {
-                //@duplicated field vis check, other one is in typecheck_struct_init
-                let data = hir.registry().struct_data(struct_id);
-                let field = data.field(field_id);
-
-                if proc.origin() != data.origin_id {
-                    if field.vis == ast::Vis::Private {
-                        emit.error(ErrorComp::new(
-                            format!("field `{}` is private", hir.name_str(field.name.id),),
-                            SourceRange::new(proc.origin(), name.range),
-                            Info::new(
-                                "defined here",
-                                SourceRange::new(data.origin_id, field.name.range),
-                            ),
-                        ));
-                    }
-                }
-
-                target_ty = field_ty;
-                target = emit.arena.alloc(hir::Expr::StructField {
-                    target,
-                    struct_id,
-                    field_id,
-                    deref,
-                });
-            }
-            FieldKind::Slice { first_ptr } => {
-                target_ty = field_ty;
-                target = emit.arena.alloc(hir::Expr::SliceField {
-                    target,
-                    first_ptr,
-                    deref,
-                });
-            }
-        }
+        let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
+        target_res = emit_field_expr(emit, target_res.expr, field_result);
     }
-
-    TypeResult::new(target_ty, target)
+    target_res
 }
 
 //@duplicated input no expectation checking on return
