@@ -245,10 +245,17 @@ pub enum ConstValue<'hir> {
     Char        { val: char },
     String      { id: InternID, c_string: bool },
     Procedure   { proc_id: ProcID },
-    EnumVariant { enum_id: EnumID, variant_id: EnumVariantID },
+    EnumVariant { enum_: &'hir ConstEnum<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { value: ConstValueID, len: u64 },
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct ConstEnum<'hir> {
+    pub enum_id: EnumID,
+    pub variant_id: EnumVariantID,
+    pub values: Option<&'hir [ConstValueID]>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -280,6 +287,7 @@ pub enum Expr<'hir> {
     ParamVar     { param_id: ProcParamID },
     ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
+    EnumVariant  { enum_id: EnumID, variant_id: EnumVariantID, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
