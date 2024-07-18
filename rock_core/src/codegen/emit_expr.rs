@@ -127,6 +127,11 @@ pub fn codegen_expr<'ctx>(
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect_ptr, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect_ptr, global_id)),
+        Expr::EnumVariant {
+            enum_id,
+            variant_id,
+            input,
+        } => todo!("enum variant expr"),
         Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, proc_cg, proc_id, input),
         Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, target, indirect)
@@ -176,21 +181,21 @@ pub fn codegen_const_value<'ctx>(
         hir::ConstValue::Error => panic!("codegen unexpected ConstValue::Error"),
         hir::ConstValue::Null => cg.ptr_type.const_zero().into(),
         hir::ConstValue::Bool { val } => cg.context.bool_type().const_int(val as u64, false).into(),
-        hir::ConstValue::Int { val, neg, ty } => {
-            let int_type = cg.basic_type_into_int(ty);
-            let unsigned = type_is_unsigned_int(ty);
+        hir::ConstValue::Int { val, neg, int_ty } => {
+            let int_type = cg.basic_type_into_int(int_ty.into_basic());
+            let signed = int_ty.is_signed();
 
             if neg {
                 let negative = -(val as i64);
-                int_type.const_int(negative as u64, !unsigned).into()
+                int_type.const_int(negative as u64, signed).into()
             } else {
-                int_type.const_int(val, !unsigned).into()
+                int_type.const_int(val, signed).into()
             }
         }
         hir::ConstValue::IntS(val) => todo!("codegen: ConstValue::IntSigned"),
         hir::ConstValue::IntU(val) => todo!("codegen: ConstValue::IntUnsigned"),
-        hir::ConstValue::Float { val, ty } => {
-            let ty = ty.expect("const float type");
+        hir::ConstValue::Float { val, float_ty } => {
+            let ty = float_ty.into_basic();
             cg.basic_type_into_float(ty).const_float(val).into()
         }
         hir::ConstValue::Char { val } => cg.context.i32_type().const_int(val as u64, false).into(),
@@ -199,12 +204,10 @@ pub fn codegen_const_value<'ctx>(
             let function = cg.function_values[proc_id.index()];
             function.as_global_value().as_pointer_value().into()
         }
-        hir::ConstValue::EnumVariant {
-            enum_id,
-            variant_id,
-        } => {
-            let variant = cg.hir.enum_data(enum_id).variant(variant_id);
-            codegen_const_value(cg, cg.hir.const_eval_value(variant.value))
+        hir::ConstValue::EnumVariant { enum_ } => {
+            todo!("enum const");
+            //let variant = cg.hir.enum_data(enum_id).variant(variant_id);
+            //codegen_const_value(cg, cg.hir.const_eval_value(variant.value))
         }
         hir::ConstValue::Struct { struct_ } => {
             use llvm_sys::core::LLVMConstNamedStruct;
@@ -1098,22 +1101,23 @@ fn codegen_address<'ctx>(
 fn codegen_unary<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-    op: ast::UnOp,
+    op: hir::UnOp,
     rhs: &'ctx hir::Expr<'ctx>,
 ) -> values::BasicValueEnum<'ctx> {
     let rhs = codegen_expr_value(cg, proc_cg, rhs);
 
     match op {
-        ast::UnOp::Neg => match rhs {
-            values::BasicValueEnum::IntValue(value) => {
-                cg.builder.build_int_neg(value, "un_temp").unwrap().into()
-            }
-            values::BasicValueEnum::FloatValue(value) => {
-                cg.builder.build_float_neg(value, "un_temp").unwrap().into()
-            }
-            _ => panic!("codegen: unary `-` can only be applied to int, float"),
-        },
-        ast::UnOp::BitNot | ast::UnOp::LogicNot => cg
+        hir::UnOp::Neg_Int(_) => cg
+            .builder
+            .build_int_neg(rhs.into_int_value(), "un_temp")
+            .unwrap()
+            .into(),
+        hir::UnOp::Neg_Float(_) => cg
+            .builder
+            .build_float_neg(rhs.into_float_value(), "un_temp")
+            .unwrap()
+            .into(),
+        hir::UnOp::BitNot(_) | hir::UnOp::LogicNot => cg
             .builder
             .build_not(rhs.into_int_value(), "un_temp")
             .unwrap()
@@ -1432,8 +1436,5 @@ pub fn codegen_bin_op<'ctx>(
             .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
             .unwrap()
             .into(),
-        ast::BinOp::Range | ast::BinOp::RangeInc => {
-            panic!("codegen: range binary operators are not implemented");
-        }
     }
 }
