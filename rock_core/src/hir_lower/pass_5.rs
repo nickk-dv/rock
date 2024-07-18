@@ -729,7 +729,10 @@ fn check_match_exhaust<'hir>(
                 match value {
                     //@consider typecheck result of patterns to make sure this is same type 01.06.24
                     // (dont check when any error were raised or value is Error)
-                    hir::ConstValue::EnumVariant { variant_id, .. } => {
+                    hir::ConstValue::EnumVariant { enum_ } => {
+                        //@match patterns dont support enum values
+                        // and pat wont be a ConstExpr in the future probably
+                        let variant_id = enum_.variant_id;
                         if !variants_covered[variant_id.index()] {
                             variants_covered[variant_id.index()] = true;
                         } else {
@@ -1054,7 +1057,7 @@ fn typecheck_call<'hir>(
                 };
 
                 let at_least = if proc_ty.is_variadic { " at least" } else { "" };
-                let plural_end = if expected_count == 1 { "s" } else { "" };
+                let plural_end = if expected_count == 1 { "" } else { "s" };
                 emit.error(ErrorComp::new(
                     format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}"),
                     SourceRange::new(proc.origin(), expr_range),
@@ -1383,6 +1386,7 @@ fn typecheck_item<'hir>(
     path: &ast::Path,
     input: Option<&&[&ast::Expr]>,
 ) -> TypeResult<'hir> {
+    //@check call inputs correctly
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
 
     let item_res = match value_id {
@@ -1412,14 +1416,19 @@ fn typecheck_item<'hir>(
             );
         }
         ValueID::Enum(enum_id, variant_id) => {
-            let value = hir::ConstValue::EnumVariant {
+            //@check inputs, emit Expr::EnumVariant instead of ConstEnum
+
+            let enum_ = hir::ConstEnum {
                 enum_id,
                 variant_id,
+                values: None,
             };
-            return TypeResult::new(
-                hir::Type::Enum(enum_id),
-                emit.arena.alloc(hir::Expr::Const { value }),
-            );
+            let enum_ = emit.const_intern.arena().alloc(enum_);
+            let value = hir::ConstValue::EnumVariant { enum_ };
+
+            let expr = hir::Expr::Const { value };
+            let expr = emit.arena.alloc(expr);
+            return TypeResult::new(hir::Type::Enum(enum_id), expr);
         }
         ValueID::Const(id) => TypeResult::new(
             hir.registry().const_data(id).ty,
@@ -1571,7 +1580,7 @@ fn typecheck_variant<'hir>(
     let expected_count = value_types.len();
 
     if input_count != expected_count {
-        let plural_end = if expected_count == 1 { "s" } else { "" };
+        let plural_end = if expected_count == 1 { "" } else { "s" };
         emit.error(ErrorComp::new(
             format!("expected {expected_count} argument{plural_end}, found {input_count}"),
             SourceRange::new(proc.origin(), name.range), //@store range of inputs?
@@ -1582,25 +1591,31 @@ fn typecheck_variant<'hir>(
         ));
     }
 
-    if let Some(input) = input {
+    let input = if let Some(input) = input {
+        let mut values = Vec::with_capacity(input.len());
         for (idx, &expr) in input.iter().enumerate() {
             //@should have expect_src, get from item type ranges?
             let expect = match value_types.get(idx) {
                 Some(ty) => Expectation::HasType(*ty, None),
                 None => Expectation::None,
             };
-            let _ = typecheck_expr(hir, emit, proc, expect, expr);
+            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+            values.push(expr_res.expr);
         }
-    }
+        let values = emit.arena.alloc_slice(&values);
+        Some(emit.arena.alloc(values))
+    } else {
+        None
+    };
 
-    //@store values correctly in this, and its not always a const
-    let value = hir::ConstValue::EnumVariant {
+    //@deal with empty value or type list like () both on definition & expression
+    let enum_variant = hir::Expr::EnumVariant {
         enum_id,
         variant_id,
+        input,
     };
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(hir::Type::Enum(enum_id), expr)
+    let enum_variant = emit.arena.alloc(enum_variant);
+    TypeResult::new(hir::Type::Enum(enum_id), enum_variant)
 }
 
 pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
@@ -2019,6 +2034,7 @@ fn get_expr_addressability<'hir>(
                 SourceRange::new(data.origin_id, data.name.range),
             )
         }
+        hir::Expr::EnumVariant { .. } => Addressability::NotImplemented, //@todo
         hir::Expr::CallDirect { .. } => Addressability::Temporary,
         hir::Expr::CallIndirect { .. } => Addressability::Temporary,
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
@@ -2472,6 +2488,7 @@ fn check_unused_expr_semi(
         hir::Expr::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
         hir::Expr::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
+        hir::Expr::EnumVariant { .. } => UnusedExpr::Yes("variant value"),
         hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
         hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
         hir::Expr::StructInit { .. } => UnusedExpr::Yes("struct value"),

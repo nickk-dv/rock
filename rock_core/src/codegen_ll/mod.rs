@@ -398,13 +398,10 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue,
             }
         }
         hir::ConstValue::Procedure { proc_id } => cg.write_str("<const procedure>"),
-        hir::ConstValue::EnumVariant {
-            enum_id,
-            variant_id,
-        } => {
-            let variant = hir.enum_data(enum_id).variant(variant_id);
-            //@disabled
+        hir::ConstValue::EnumVariant { enum_ } => {
             todo!("variant codegen");
+            //let variant = hir.enum_data(enum_id).variant(variant_id);
+            //@disabled
             //let value = hir.const_eval_value(variant.value);
             //codegen_const_value(cg, hir, value, with_type);
         }
@@ -803,6 +800,11 @@ fn codegen_expr<'hir>(
         hir::Expr::ParamVar { param_id } => todo!(),
         hir::Expr::ConstVar { const_id } => todo!(),
         hir::Expr::GlobalVar { global_id } => todo!(),
+        hir::Expr::EnumVariant {
+            enum_id,
+            variant_id,
+            input,
+        } => todo!(),
         hir::Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, hir, proc_id, input),
         hir::Expr::CallIndirect { target, indirect } => todo!(),
         hir::Expr::StructInit { struct_id, input } => todo!(),

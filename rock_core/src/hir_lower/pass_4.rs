@@ -945,7 +945,13 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::LocalVar { .. } => Err("local var"),
         hir::Expr::ParamVar { .. } => Err("param var"),
         hir::Expr::ConstVar { const_id } => Ok(fold_const_var(hir, emit, const_id)),
-        hir::Expr::GlobalVar { .. } => Err("global vall"), //@custom message
+        hir::Expr::GlobalVar { .. } => Err("global var"), //@custom message
+        //@fold not implemented
+        hir::Expr::EnumVariant {
+            enum_id,
+            variant_id,
+            input,
+        } => Err("enum variant"),
         hir::Expr::CallDirect { .. } => Err("call direct"),
         hir::Expr::CallIndirect { .. } => Err("call indirect"),
         hir::Expr::StructInit { struct_id, input } => {
