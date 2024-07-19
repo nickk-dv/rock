@@ -934,11 +934,9 @@ pub fn fold_const_expr<'hir>(
         )),
         hir::Expr::SliceField {
             target,
-            first_ptr,
+            field,
             deref,
-        } => Ok(fold_slice_field(
-            hir, emit, origin_id, target, first_ptr, deref,
-        )),
+        } => Ok(fold_slice_field(hir, emit, origin_id, target, field, deref)),
         hir::Expr::Index { target, access } => Ok(fold_index(hir, emit, origin_id, target, access)),
         hir::Expr::Slice { .. } => Err("slice"),
         hir::Expr::Cast { target, into, kind } => Err("cast"), //@todo cast 10.06.24
@@ -1022,7 +1020,7 @@ fn fold_slice_field<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     target: &'hir hir::Expr<'hir>,
-    first_ptr: bool,
+    field: hir::SliceField,
     deref: bool,
 ) -> hir::ConstValue<'hir> {
     if deref {
@@ -1033,16 +1031,21 @@ fn fold_slice_field<'hir>(
         return hir::ConstValue::Error;
     }
 
+    //@are ConstValue::Error allowed here?
     let target = fold_const_expr(hir, emit, origin_id, target);
     match target {
         hir::ConstValue::String { id, c_string } => {
-            if !first_ptr && !c_string {
-                let string = hir.intern_string().get_str(id);
-                let len = string.len();
-                hir::ConstValue::Int {
-                    val: len as u64,
-                    neg: false,
-                    int_ty: hir::BasicInt::Usize,
+            if let hir::SliceField::Ptr = field {
+                if !c_string {
+                    let string = hir.intern_string().get_str(id);
+                    let len = string.len();
+                    hir::ConstValue::Int {
+                        val: len as u64,
+                        neg: false,
+                        int_ty: hir::BasicInt::Usize,
+                    }
+                } else {
+                    hir::ConstValue::Error
                 }
             } else {
                 hir::ConstValue::Error
