@@ -111,10 +111,10 @@ pub fn codegen_expr<'ctx>(
         )),
         Expr::SliceField {
             target,
-            first_ptr,
+            field,
             deref,
         } => Some(codegen_slice_field(
-            cg, proc_cg, expect_ptr, target, first_ptr, deref,
+            cg, proc_cg, expect_ptr, target, field, deref,
         )),
         Expr::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect_ptr, target, access))
@@ -417,7 +417,7 @@ fn codegen_slice_field<'ctx>(
     proc_cg: &mut ProcCodegen<'ctx>,
     expect_ptr: bool,
     target: &'ctx hir::Expr<'ctx>,
-    first_ptr: bool,
+    field: hir::SliceField,
     deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
     assert!(
@@ -434,20 +434,19 @@ fn codegen_slice_field<'ctx>(
         target
     };
 
-    let (field_id, field_ty, ptr_name, value_name) = if first_ptr {
-        (
+    let (field_id, field_ty, ptr_name, value_name) = match field {
+        hir::SliceField::Ptr => (
             0,
             cg.ptr_type.as_basic_type_enum(),
             "slice_ptr_ptr",
             "slice_ptr",
-        )
-    } else {
-        (
+        ),
+        hir::SliceField::Len => (
             1,
             cg.ptr_sized_int_type.as_basic_type_enum(),
             "slice_len_ptr",
             "slice_len",
-        )
+        ),
     };
 
     let field_ptr = cg

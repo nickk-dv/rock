@@ -790,7 +790,7 @@ fn codegen_expr<'hir>(
         } => todo!(),
         hir::Expr::SliceField {
             target,
-            first_ptr,
+            field,
             deref,
         } => todo!(),
         hir::Expr::Index { target, access } => todo!(),

@@ -815,7 +815,7 @@ struct FieldResult<'hir> {
 #[rustfmt::skip]
 enum FieldKind<'hir> {
     Struct(hir::StructID, hir::StructFieldID),
-    ArraySlice { first_ptr: bool },
+    ArraySlice { field: hir::SliceField },
     ArrayStatic { len: hir::ConstValue<'hir> },
 }
 
@@ -856,11 +856,11 @@ fn check_field_from_type<'hir>(
         }
         hir::Type::ArraySlice(slice) => {
             match check_field_from_slice(hir, emit, origin_id, name, slice) {
-                Some(first_ptr) => {
-                    let kind = FieldKind::ArraySlice { first_ptr };
-                    let field_ty = match first_ptr {
-                        true => hir::Type::Reference(&slice.elem_ty, slice.mutt),
-                        false => hir::Type::USIZE,
+                Some(field) => {
+                    let kind = FieldKind::ArraySlice { field };
+                    let field_ty = match field {
+                        hir::SliceField::Ptr => hir::Type::Reference(&slice.elem_ty, slice.mutt),
+                        hir::SliceField::Len => hir::Type::USIZE,
                     };
                     Some(FieldResult::new(deref, kind, field_ty))
                 }
@@ -933,11 +933,11 @@ fn check_field_from_slice<'hir>(
     origin_id: ModuleID,
     name: ast::Name,
     slice: &hir::ArraySlice,
-) -> Option<bool> {
+) -> Option<hir::SliceField> {
     let field_name = hir.name_str(name.id);
     match field_name {
-        "ptr" => Some(true),
-        "len" => Some(false),
+        "ptr" => Some(hir::SliceField::Ptr),
+        "len" => Some(hir::SliceField::Len),
         _ => {
             emit.error(ErrorComp::new(
                 format!(
@@ -1014,9 +1014,9 @@ fn emit_field_expr<'hir>(
             field_id,
             deref: result.deref,
         },
-        FieldKind::ArraySlice { first_ptr } => hir::Expr::SliceField {
+        FieldKind::ArraySlice { field } => hir::Expr::SliceField {
             target,
-            first_ptr,
+            field,
             deref: result.deref,
         },
         FieldKind::ArrayStatic { len } => hir::Expr::Const { value: len },

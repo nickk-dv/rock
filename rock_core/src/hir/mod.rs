@@ -279,7 +279,7 @@ pub enum Expr<'hir> {
     Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },
     StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
-    SliceField   { target: &'hir Expr<'hir>, first_ptr: bool, deref: bool },
+    SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
@@ -324,6 +324,12 @@ pub struct MatchArm<'hir> {
     pub pat: ConstValueID,
     pub block: Block<'hir>,
     pub unreachable: bool,
+}
+
+#[derive(Copy, Clone)]
+pub enum SliceField {
+    Ptr,
+    Len,
 }
 
 #[derive(Copy, Clone)]
