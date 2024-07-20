@@ -738,8 +738,9 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             } else {
                 let name = name(p)?;
                 let input = if p.at(T!['(']) {
-                    let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
-                    Some(p.state.arena.alloc(input))
+                    let input = input(p)?;
+                    let input = p.state.arena.alloc(input);
+                    Some(input)
                 } else {
                     None
                 };
@@ -762,8 +763,9 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
                 }
                 _ => {
                     let input = if p.at(T!['(']) {
-                        let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
-                        Some(p.state.arena.alloc(input))
+                        let input = input(p)?;
+                        let input = p.state.arena.alloc(input);
+                        Some(input)
                     } else {
                         None
                     };
@@ -870,7 +872,7 @@ fn tail_expr<'ast>(
                 target = p.state.arena.alloc(expr);
             }
             T!['('] => {
-                let input = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
+                let input = input(p)?;
                 let input = p.state.arena.alloc(input);
 
                 let expr = Expr {
@@ -1019,6 +1021,11 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
         fallback_range,
     });
     Ok(match_)
+}
+
+fn input<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Input<'ast>, String> {
+    let exprs = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
+    Ok(Input { exprs })
 }
 
 fn field_init_list<'ast>(
