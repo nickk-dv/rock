@@ -1131,7 +1131,7 @@ fn typecheck_call<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
-    input: &&[&ast::Expr<'_>],
+    input: &ast::Input<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
@@ -1150,7 +1150,7 @@ fn typecheck_call<'hir>(
                 _ => None,
             };
 
-            let input_count = input.len();
+            let input_count = input.exprs.len();
             let expected_count = proc_ty.param_types.len();
 
             if (proc_ty.is_variadic && (input_count < expected_count))
@@ -1175,8 +1175,8 @@ fn typecheck_call<'hir>(
                 ));
             }
 
-            let mut hir_input = Vec::with_capacity(input.len());
-            for (idx, &expr) in input.iter().enumerate() {
+            let mut hir_input = Vec::with_capacity(input.exprs.len());
+            for (idx, &expr) in input.exprs.iter().enumerate() {
                 //@expectation could have source?
                 let expect = match proc_ty.param_types.get(idx) {
                     Some(param) => Expectation::HasType(*param, None),
@@ -1215,7 +1215,7 @@ fn typecheck_call<'hir>(
         }
     }
 
-    for &expr in input.iter() {
+    for &expr in input.exprs.iter() {
         let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
     }
     TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
@@ -1494,7 +1494,7 @@ fn typecheck_item<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
-    input: Option<&&[&ast::Expr]>,
+    input: Option<&ast::Input>,
 ) -> TypeResult<'hir> {
     //@check call inputs correctly
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
@@ -1573,7 +1573,7 @@ fn typecheck_variant<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
-    input: Option<&&[&ast::Expr]>,
+    input: Option<&ast::Input>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let enum_id = match expect {
@@ -1581,7 +1581,7 @@ fn typecheck_variant<'hir>(
         Expectation::HasType(expect_ty, _) => match expect_ty {
             hir::Type::Error => {
                 if let Some(input) = input {
-                    for &expr in input.iter() {
+                    for &expr in input.exprs.iter() {
                         let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
                     }
                 }
@@ -1604,7 +1604,7 @@ fn typecheck_variant<'hir>(
                 None,
             ));
             if let Some(input) = input {
-                for &expr in input.iter() {
+                for &expr in input.exprs.iter() {
                     let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
                 }
             }
@@ -1626,7 +1626,7 @@ fn typecheck_variant<'hir>(
                 ),
             ));
             if let Some(input) = input {
-                for &expr in input.iter() {
+                for &expr in input.exprs.iter() {
                     let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
                 }
             }
@@ -1642,7 +1642,7 @@ fn typecheck_variant<'hir>(
     };
 
     let input_count = match input {
-        Some(input) => input.len(),
+        Some(input) => input.exprs.len(),
         None => 0,
     };
     let expected_count = value_types.len();
@@ -1660,8 +1660,8 @@ fn typecheck_variant<'hir>(
     }
 
     let input = if let Some(input) = input {
-        let mut values = Vec::with_capacity(input.len());
-        for (idx, &expr) in input.iter().enumerate() {
+        let mut values = Vec::with_capacity(input.exprs.len());
+        for (idx, &expr) in input.exprs.iter().enumerate() {
             //@should have expect_src, get from item type ranges?
             let expect = match value_types.get(idx) {
                 Some(ty) => Expectation::HasType(*ty, None),

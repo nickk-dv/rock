@@ -286,11 +286,11 @@ pub enum ExprKind<'ast> {
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
-    Call        { target: &'ast Expr<'ast>, input: &'ast &'ast [&'ast Expr<'ast>] },
+    Call        { target: &'ast Expr<'ast>, input: &'ast Input<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: &'ast Type<'ast> },
-    Item        { path: &'ast Path<'ast>, input: Option<&'ast &'ast [&'ast Expr<'ast>]> },
-    Variant     { name: Name, input: Option<&'ast &'ast [&'ast Expr<'ast>]> },
+    Item        { path: &'ast Path<'ast>, input: Option<&'ast Input<'ast>> },
+    Variant     { name: Name, input: Option<&'ast Input<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
@@ -336,6 +336,11 @@ pub struct Match<'ast> {
 pub struct MatchArm<'ast> {
     pub pat: ConstExpr<'ast>,
     pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Input<'ast> {
+    pub exprs: &'ast [&'ast Expr<'ast>],
 }
 
 #[derive(Copy, Clone)]

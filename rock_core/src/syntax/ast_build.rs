@@ -933,11 +933,13 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::
 fn argument_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     argument_list: cst::ArgumentList,
-) -> &'ast [&'ast ast::Expr<'ast>] {
+) -> ast::Input<'ast> {
     let offset = ctx.s.exprs.start();
     for input in argument_list.inputs(ctx.tree) {
         let expr = expr(ctx, input);
         ctx.s.exprs.add(expr);
     }
-    ctx.s.exprs.take(offset, &mut ctx.s.arena)
+    let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
+
+    ast::Input { exprs }
 }
