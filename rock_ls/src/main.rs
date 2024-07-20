@@ -9,6 +9,9 @@ use message::{Action, Message, MessageBuffer, Notification, Request};
 use std::collections::HashMap;
 
 fn main() {
+    if !check_args() {
+        return;
+    };
     let (conn, io_threads) = Connection::stdio();
     let _ = initialize_handshake(&conn);
 
@@ -16,6 +19,22 @@ fn main() {
 
     drop(conn);
     io_threads.join().expect("io_threads joined");
+}
+
+fn check_args() -> bool {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let started = match args.get(0) {
+        Some(first) => first == "lsp",
+        _ => false,
+    };
+
+    let message = r#"`rock_ls` is a language server
+its started by your editor or editor extension
+you do not need to run `rock_ls` manually"#;
+    if !started {
+        eprintln!("{message}");
+    }
+    started
 }
 
 fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
