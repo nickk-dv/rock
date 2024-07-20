@@ -844,8 +844,7 @@ fn check_field_from_type<'hir>(
     match ty {
         hir::Type::Error => None,
         hir::Type::Struct(struct_id) => {
-            let data = hir.registry().struct_data(struct_id);
-            match check_field_from_struct(hir, emit, origin_id, name, data) {
+            match check_field_from_struct(hir, emit, origin_id, name, struct_id) {
                 Some((field_id, field)) => {
                     let kind = FieldKind::Struct(struct_id, field_id);
                     let field_ty = field.ty;
@@ -893,12 +892,13 @@ fn check_field_from_type<'hir>(
 }
 
 fn check_field_from_struct<'hir>(
-    hir: &HirData,
+    hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit,
     origin_id: ModuleID,
     name: ast::Name,
-    data: &hir::StructData<'hir>,
+    struct_id: hir::StructID,
 ) -> Option<(hir::StructFieldID, &'hir hir::StructField<'hir>)> {
+    let data = hir.registry().struct_data(struct_id);
     match data.find_field(name.id) {
         Some((field_id, field)) => {
             if origin_id != data.origin_id && field.vis == ast::Vis::Private {
