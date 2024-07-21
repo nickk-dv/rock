@@ -1024,8 +1024,13 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
 }
 
 fn input<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Input<'ast>, String> {
+    let start = p.start_range();
     let exprs = comma_separated_list!(p, expr, exprs, T!['('], T![')']);
-    Ok(Input { exprs })
+
+    Ok(Input {
+        exprs,
+        range: p.make_range(start),
+    })
 }
 
 fn field_init_list<'ast>(
