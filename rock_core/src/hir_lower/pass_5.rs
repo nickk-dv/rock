@@ -330,9 +330,7 @@ pub fn typecheck_expr<'hir>(
             mutt,
             index,
         } => typecheck_index(hir, emit, proc, target, mutt, index, expr.range),
-        ast::ExprKind::Call { target, input } => {
-            typecheck_call(hir, emit, proc, target, input, expr.range)
-        }
+        ast::ExprKind::Call { target, input } => typecheck_call(hir, emit, proc, target, input),
         ast::ExprKind::Cast { target, into } => {
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
@@ -1134,96 +1132,9 @@ fn typecheck_call<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
     input: &ast::Input<'_>,
-    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-
-    match target_res.ty {
-        hir::Type::Error => {}
-        hir::Type::Procedure(proc_ty) => {
-            let direct_id = match *target_res.expr {
-                hir::Expr::Const { value } => match value {
-                    hir::ConstValue::Procedure { proc_id } => Some(proc_id),
-                    _ => None,
-                },
-                _ => None,
-            };
-
-            let input_count = input.exprs.len();
-            let expected_count = proc_ty.param_types.len();
-
-            if (proc_ty.is_variadic && (input_count < expected_count))
-                || (!proc_ty.is_variadic && (input_count != expected_count))
-            {
-                let info = if let Some(proc_id) = direct_id {
-                    let data = hir.registry().proc_data(proc_id);
-                    Info::new(
-                        "calling this procedure",
-                        SourceRange::new(data.origin_id, data.name.range),
-                    )
-                } else {
-                    None
-                };
-
-                let at_least = if proc_ty.is_variadic { " at least" } else { "" };
-                let plural_end = if expected_count == 1 { "" } else { "s" };
-                let input_range = if input.exprs.is_empty() {
-                    input.range
-                } else {
-                    TextRange::new(input.range.end() - 1.into(), input.range.end())
-                };
-
-                emit.error(ErrorComp::new(
-                    format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}"),
-                    SourceRange::new(proc.origin(), input_range),
-                    info,
-                ));
-            }
-
-            let mut hir_input = Vec::with_capacity(input.exprs.len());
-            for (idx, &expr) in input.exprs.iter().enumerate() {
-                //@expectation could have source?
-                let expect = match proc_ty.param_types.get(idx) {
-                    Some(param) => Expectation::HasType(*param, None),
-                    None => Expectation::None,
-                };
-                let input_res = typecheck_expr(hir, emit, proc, expect, expr);
-                hir_input.push(input_res.expr);
-            }
-            let hir_input = emit.arena.alloc_slice(&hir_input);
-
-            let call_expr = match direct_id {
-                Some(proc_id) => hir::Expr::CallDirect {
-                    proc_id,
-                    input: hir_input,
-                },
-                None => hir::Expr::CallIndirect {
-                    target: target_res.expr,
-                    indirect: emit.arena.alloc(hir::CallIndirect {
-                        proc_ty,
-                        input: hir_input,
-                    }),
-                },
-            };
-
-            return TypeResult::new(proc_ty.return_ty, emit.arena.alloc(call_expr));
-        }
-        _ => {
-            emit.error(ErrorComp::new(
-                format!(
-                    "cannot call value of type `{}`",
-                    type_format(hir, emit, target_res.ty).as_str()
-                ),
-                SourceRange::new(proc.origin(), target.range),
-                None,
-            ));
-        }
-    }
-
-    for &expr in input.exprs.iter() {
-        let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
-    }
-    TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+    check_call_indirect(hir, emit, proc, target_res, target.range, input)
 }
 
 pub fn type_size(
@@ -1502,7 +1413,6 @@ fn typecheck_item<'hir>(
     input: Option<&ast::Input>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    //@check call inputs correctly (after fieds)
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
 
     let item_res = match value_id {
@@ -1515,11 +1425,9 @@ fn typecheck_item<'hir>(
             // remaining fields in each variant so its known when none can exist
             // instead of hadling the empty slice and assuming its correct
             if let Some(input) = input {
-                //direct call
-                todo!("direct call + return type result");
+                return check_call_direct(hir, emit, proc, proc_id, input);
             } else {
                 let data = hir.registry().proc_data(proc_id);
-
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
                 let mut param_types = Vec::with_capacity(data.params.len());
                 for param in data.params {
@@ -1546,22 +1454,18 @@ fn typecheck_item<'hir>(
                 hir, emit, proc, enum_id, variant_id, input, expr_range,
             );
         }
-        //@maybe call indirect (after fields)
         ValueID::Const(id) => TypeResult::new(
             hir.registry().const_data(id).ty,
             emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
         ),
-        //@maybe call indirect (after fields)
         ValueID::Global(id) => TypeResult::new(
             hir.registry().global_data(id).ty,
             emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
         ),
-        //@maybe call indirect (after fields)
         ValueID::Local(id) => TypeResult::new(
             proc.get_local(id).ty, //@type of local var might not be known
             emit.arena.alloc(hir::Expr::LocalVar { local_id: id }),
         ),
-        //@maybe call indirect (after fields)
         ValueID::Param(id) => TypeResult::new(
             proc.get_param(id).ty,
             emit.arena.alloc(hir::Expr::ParamVar { param_id: id }),
@@ -1573,7 +1477,12 @@ fn typecheck_item<'hir>(
         let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
         target_res = emit_field_expr(emit, target_res.expr, field_result);
     }
-    target_res
+
+    if let Some(input) = input {
+        check_call_indirect(hir, emit, proc, target_res, expr_range, input)
+    } else {
+        target_res
+    }
 }
 
 fn typecheck_variant<'hir>(
@@ -1624,7 +1533,10 @@ fn typecheck_struct_init<'hir>(
     struct_init: &ast::StructInit<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let struct_id = infer_struct_type(emit, expect, SourceRange::new(proc.origin(), expr_range));
+    let struct_id = match struct_init.path {
+        Some(path) => path_resolve_struct(hir, emit, Some(proc), proc.origin(), path),
+        None => infer_struct_type(emit, expect, SourceRange::new(proc.origin(), expr_range)),
+    };
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,
         None => return error_result_default_check_field_init(hir, emit, proc, struct_init.input),
@@ -2866,7 +2778,9 @@ fn infer_enum_type(
             _ => None,
         },
     };
-    emit.error(ErrorComp::new("cannot infer enum type", error_src, None));
+    if enum_id.is_none() {
+        emit.error(ErrorComp::new("cannot infer enum type", error_src, None));
+    }
     enum_id
 }
 
@@ -2883,7 +2797,9 @@ fn infer_struct_type(
             _ => None,
         },
     };
-    emit.error(ErrorComp::new("cannot infer struct type", error_src, None));
+    if struct_id.is_none() {
+        emit.error(ErrorComp::new("cannot infer struct type", error_src, None));
+    }
     struct_id
 }
 
@@ -2946,24 +2862,161 @@ fn input_opt_range(input: Option<&ast::Input>, default: TextRange) -> TextRange 
     }
 }
 
-fn error_unexpected_argument_count(
+fn error_unexpected_variant_arg_count(
     emit: &mut HirEmit,
     origin_id: ModuleID,
     expected_count: usize,
     input_count: usize,
     error_src: SourceRange,
+    info_src: SourceRange,
+    info_msg: &'static str,
+) {
+    let plural_end = if expected_count == 1 { "" } else { "s" };
+    emit.error(ErrorComp::new(
+        format!("expected {expected_count} argument{plural_end}, found {input_count}"),
+        error_src,
+        Info::new(info_msg, info_src),
+    ));
+}
+
+fn error_unexpected_call_arg_count(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    expected_count: usize,
+    input_count: usize,
+    is_variadic: bool,
+    error_src: SourceRange,
     info: Option<(SourceRange, &'static str)>,
 ) {
+    let at_least = if is_variadic { " at least" } else { "" };
     let plural_end = if expected_count == 1 { "" } else { "s" };
     let info = match info {
         Some((src, msg)) => Info::new(msg, src),
         None => None,
     };
     emit.error(ErrorComp::new(
-        format!("expected {expected_count} argument{plural_end}, found {input_count}"),
+        format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}"),
         error_src,
         info,
     ));
+}
+
+fn check_call_direct<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    proc_id: hir::ProcID,
+    input: &ast::Input,
+) -> TypeResult<'hir> {
+    let data = hir.registry().proc_data(proc_id);
+
+    let input_count = input.exprs.len();
+    let expected_count = data.params.len();
+    let is_variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
+    let wrong_count = (is_variadic && (input_count < expected_count))
+        || (!is_variadic && (input_count != expected_count));
+
+    if wrong_count {
+        let input_range = input_range(input);
+        error_unexpected_call_arg_count(
+            emit,
+            proc.origin(),
+            expected_count,
+            input_count,
+            is_variadic,
+            SourceRange::new(proc.origin(), input_range),
+            Some((
+                SourceRange::new(data.origin_id, data.name.range),
+                "procedure defined here",
+            )),
+        );
+    }
+
+    let mut values = Vec::with_capacity(data.params.len());
+    for (idx, &expr) in input.exprs.iter().enumerate() {
+        //@expect src, id with duplicates problem
+        let expect = match data.params.get(idx) {
+            Some(param) => Expectation::HasType(param.ty, None),
+            None => Expectation::None,
+        };
+        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        values.push(expr_res.expr);
+    }
+    let values = emit.arena.alloc_slice(&values);
+
+    let call_direct = hir::Expr::CallDirect {
+        proc_id,
+        input: values,
+    };
+    let call_direct = emit.arena.alloc(call_direct);
+    TypeResult::new(data.return_ty, call_direct)
+}
+
+fn check_call_indirect<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    target_res: TypeResult<'hir>,
+    target_range: TextRange,
+    input: &ast::Input,
+) -> TypeResult<'hir> {
+    let proc_ty = match target_res.ty {
+        hir::Type::Error => return error_result_default_check_input(hir, emit, proc, input),
+        hir::Type::Procedure(proc_ty) => proc_ty,
+        _ => {
+            emit.error(ErrorComp::new(
+                format!(
+                    "cannot call value of type `{}`",
+                    type_format(hir, emit, target_res.ty).as_str()
+                ),
+                SourceRange::new(proc.origin(), target_range),
+                None,
+            ));
+            return error_result_default_check_input(hir, emit, proc, input);
+        }
+    };
+
+    let input_count = input.exprs.len();
+    let expected_count = proc_ty.param_types.len();
+    let is_variadic = proc_ty.is_variadic;
+    let wrong_count = (is_variadic && (input_count < expected_count))
+        || (!is_variadic && (input_count != expected_count));
+
+    if wrong_count {
+        let input_range = input_range(input);
+        error_unexpected_call_arg_count(
+            emit,
+            proc.origin(),
+            expected_count,
+            input_count,
+            is_variadic,
+            SourceRange::new(proc.origin(), input_range),
+            None,
+        );
+    }
+
+    let mut values = Vec::with_capacity(proc_ty.param_types.len());
+    for (idx, &expr) in input.exprs.iter().enumerate() {
+        let expect = match proc_ty.param_types.get(idx) {
+            Some(param_ty) => Expectation::HasType(*param_ty, None),
+            None => Expectation::None,
+        };
+        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        values.push(expr_res.expr);
+    }
+    let values = emit.arena.alloc_slice(&values);
+
+    let indirect = hir::CallIndirect {
+        proc_ty,
+        input: values,
+    };
+    let indirect = emit.arena.alloc(indirect);
+    let call_indirect = hir::Expr::CallIndirect {
+        target: target_res.expr,
+        indirect,
+    };
+    let call_indirect = emit.arena.alloc(call_indirect);
+    TypeResult::new(proc_ty.return_ty, call_indirect)
 }
 
 fn check_variant_input_opt<'hir>(
@@ -2989,24 +3042,21 @@ fn check_variant_input_opt<'hir>(
 
     if input_count != expected_count {
         let input_range = input_opt_range(input, error_range);
-        error_unexpected_argument_count(
+        error_unexpected_variant_arg_count(
             emit,
             proc.origin(),
             expected_count,
             input_count,
             SourceRange::new(proc.origin(), input_range),
-            Some((
-                SourceRange::new(data.origin_id, variant.name.range),
-                "variant defined here",
-            )),
+            SourceRange::new(data.origin_id, variant.name.range),
+            "variant defined here",
         );
     }
 
     let input = if let Some(input) = input {
         let mut values = Vec::with_capacity(input.exprs.len());
         for (idx, &expr) in input.exprs.iter().enumerate() {
-            //@should have expect_src, get from item type ranges?
-            // duplicate variants will cause variant_id to not match ast variant
+            //@expect src, id with duplicates problem
             let expect = match value_types.get(idx) {
                 Some(ty) => Expectation::HasType(*ty, None),
                 None => Expectation::None,
@@ -3036,7 +3086,6 @@ fn check_variant_input_opt<'hir>(
 //@refactor redudant duplication + more type safe leftover fields
 
 /*
-
 module     -> <first?>
 proc       -> [no follow]
 enum       -> <follow?> by single enum variant name
@@ -3045,7 +3094,6 @@ const      -> <follow?> by <chained> field access
 global     -> <follow?> by <chained> field access
 param_var  -> <follow?> by <chained> field access
 local_var  -> <follow?> by <chained> field access
-
 */
 
 enum ResolvedPath {
