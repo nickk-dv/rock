@@ -302,6 +302,34 @@ pub enum ExprKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub struct Match2<'ast> {
+    pub on_expr: &'ast Expr<'ast>,
+    pub arms: &'ast [MatchArm2<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct MatchArm2<'ast> {
+    pub pat: Pat<'ast>,
+    pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Pat<'ast> {
+    pub kind: PatKind<'ast>,
+    pub range: TextRange,
+}
+
+#[rustfmt::skip]
+#[derive(Copy, Clone)]
+pub enum PatKind<'ast> {
+    Wild,
+    Lit       (Literal),
+    Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name]> },
+    Variant   { name: Name, binds: Option<&'ast [Name]> },
+    Or        { patterns: &'ast [Pat<'ast>] },
+}
+
+#[derive(Copy, Clone)]
 pub enum Literal {
     Null,
     Bool(bool),
@@ -329,7 +357,7 @@ pub struct Match<'ast> {
     pub on_expr: &'ast Expr<'ast>,
     pub arms: &'ast [MatchArm<'ast>],
     pub fallback: Option<&'ast Expr<'ast>>,
-    pub fallback_range: TextRange,
+    pub fallback_range: TextRange, //@will be replaced with CatchAll pat
 }
 
 #[derive(Copy, Clone)]
