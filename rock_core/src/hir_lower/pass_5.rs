@@ -337,7 +337,9 @@ pub fn typecheck_expr<'hir>(
             typecheck_cast(hir, emit, proc, target, into, expr.range)
         }
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, *ty, expr.range),
-        ast::ExprKind::Item { path, input } => typecheck_item(hir, emit, proc, path, input),
+        ast::ExprKind::Item { path, input } => {
+            typecheck_item(hir, emit, proc, path, input, expr.range)
+        }
         ast::ExprKind::Variant { name, input } => {
             typecheck_variant(hir, emit, proc, expect, name, input, expr.range)
         }
@@ -1139,9 +1141,6 @@ fn typecheck_call<'hir>(
     match target_res.ty {
         hir::Type::Error => {}
         hir::Type::Procedure(proc_ty) => {
-            // both direct and indirect return proc_ty
-            // it can be used for input checks
-
             let direct_id = match *target_res.expr {
                 hir::Expr::Const { value } => match value {
                     hir::ConstValue::Procedure { proc_id } => Some(proc_id),
@@ -1168,9 +1167,15 @@ fn typecheck_call<'hir>(
 
                 let at_least = if proc_ty.is_variadic { " at least" } else { "" };
                 let plural_end = if expected_count == 1 { "" } else { "s" };
+                let input_range = if input.exprs.is_empty() {
+                    input.range
+                } else {
+                    TextRange::new(input.range.end() - 1.into(), input.range.end())
+                };
+
                 emit.error(ErrorComp::new(
                     format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}"),
-                    SourceRange::new(proc.origin(), expr_range),
+                    SourceRange::new(proc.origin(), input_range),
                     info,
                 ));
             }
@@ -1495,63 +1500,68 @@ fn typecheck_item<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
     input: Option<&ast::Input>,
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    //@check call inputs correctly
+    //@check call inputs correctly (after fieds)
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
 
     let item_res = match value_id {
         ValueID::None => {
-            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+            return error_result_default_check_input_opt(hir, emit, proc, input);
         }
         ValueID::Proc(proc_id) => {
-            let data = hir.registry().proc_data(proc_id);
+            //@where do fields go? none expected?
+            // ValueID or something like it should provide
+            // remaining fields in each variant so its known when none can exist
+            // instead of hadling the empty slice and assuming its correct
+            if let Some(input) = input {
+                //direct call
+                todo!("direct call + return type result");
+            } else {
+                let data = hir.registry().proc_data(proc_id);
 
-            //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
-            let mut param_types = Vec::with_capacity(data.params.len());
-            for param in data.params {
-                param_types.push(param.ty);
+                //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
+                let mut param_types = Vec::with_capacity(data.params.len());
+                for param in data.params {
+                    param_types.push(param.ty);
+                }
+                let proc_ty = hir::ProcType {
+                    param_types: emit.arena.alloc_slice(&param_types),
+                    is_variadic: data.attr_set.contains(hir::ProcFlag::Variadic),
+                    return_ty: data.return_ty,
+                };
+
+                let proc_ty = hir::Type::Procedure(emit.arena.alloc(proc_ty));
+                let proc_value = hir::ConstValue::Procedure { proc_id };
+                let proc_expr = hir::Expr::Const { value: proc_value };
+                let proc_expr = emit.arena.alloc(proc_expr);
+                return TypeResult::new(proc_ty, proc_expr);
             }
-
-            let proc_ty = hir::ProcType {
-                param_types: emit.arena.alloc_slice(&param_types),
-                is_variadic: data.attr_set.contains(hir::ProcFlag::Variadic),
-                return_ty: data.return_ty,
-            };
-
-            return TypeResult::new(
-                hir::Type::Procedure(emit.arena.alloc(proc_ty)),
-                emit.arena.alloc(hir::Expr::Const {
-                    value: hir::ConstValue::Procedure { proc_id },
-                }),
-            );
         }
         ValueID::Enum(enum_id, variant_id) => {
-            //@check inputs, emit Expr::EnumVariant instead of ConstEnum
-
-            let enum_ = hir::ConstEnum {
-                enum_id,
-                variant_id,
-                values: None,
-            };
-            let enum_ = emit.const_intern.arena().alloc(enum_);
-            let value = hir::ConstValue::EnumVariant { enum_ };
-
-            let expr = hir::Expr::Const { value };
-            let expr = emit.arena.alloc(expr);
-            return TypeResult::new(hir::Type::Enum(enum_id), expr);
+            //@no fields is guaranteed by path resolve
+            // remove assert when stable, or path resolve is reworked
+            assert!(field_names.is_empty());
+            return check_variant_input_opt(
+                hir, emit, proc, enum_id, variant_id, input, expr_range,
+            );
         }
+        //@maybe call indirect (after fields)
         ValueID::Const(id) => TypeResult::new(
             hir.registry().const_data(id).ty,
             emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
         ),
+        //@maybe call indirect (after fields)
         ValueID::Global(id) => TypeResult::new(
             hir.registry().global_data(id).ty,
             emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
         ),
+        //@maybe call indirect (after fields)
         ValueID::Local(id) => TypeResult::new(
             proc.get_local(id).ty, //@type of local var might not be known
             emit.arena.alloc(hir::Expr::LocalVar { local_id: id }),
         ),
+        //@maybe call indirect (after fields)
         ValueID::Param(id) => TypeResult::new(
             proc.get_param(id).ty,
             emit.arena.alloc(hir::Expr::ParamVar { param_id: id }),
@@ -1566,7 +1576,6 @@ fn typecheck_item<'hir>(
     target_res
 }
 
-//@duplicated input no expectation checking on return
 fn typecheck_variant<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1576,40 +1585,10 @@ fn typecheck_variant<'hir>(
     input: Option<&ast::Input>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let enum_id = match expect {
-        Expectation::None => None,
-        Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Error => {
-                if let Some(input) = input {
-                    for &expr in input.exprs.iter() {
-                        let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
-                    }
-                }
-                return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
-            }
-            hir::Type::Enum(enum_id) => Some(enum_id),
-            _ => None,
-        },
-    };
-
+    let enum_id = infer_enum_type(emit, expect, SourceRange::new(proc.origin(), expr_range));
     let enum_id = match enum_id {
         Some(enum_id) => enum_id,
-        None => {
-            emit.error(ErrorComp::new(
-                format!(
-                    "cannot infer enum type of variant `{}`",
-                    hir.name_str(name.id)
-                ),
-                SourceRange::new(proc.origin(), expr_range),
-                None,
-            ));
-            if let Some(input) = input {
-                for &expr in input.exprs.iter() {
-                    let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
-                }
-            }
-            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
-        }
+        None => return error_result_default_check_input_opt(hir, emit, proc, input),
     };
 
     let data = hir.registry().enum_data(enum_id);
@@ -1625,73 +1604,18 @@ fn typecheck_variant<'hir>(
                     SourceRange::new(data.origin_id, data.name.range),
                 ),
             ));
-            if let Some(input) = input {
-                for &expr in input.exprs.iter() {
-                    let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
-                }
-            }
-            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+            return error_result_default_check_input_opt(hir, emit, proc, input);
         }
     };
 
-    let variant = data.variant(variant_id);
-    let value_types = match variant.kind {
-        hir::VariantKind::Default(_) => &[],
-        hir::VariantKind::Constant(_) => &[],
-        hir::VariantKind::HasValues(types) => types,
-    };
-
-    let input_count = match input {
-        Some(input) => input.exprs.len(),
-        None => 0,
-    };
-    let expected_count = value_types.len();
-
-    if input_count != expected_count {
-        let plural_end = if expected_count == 1 { "" } else { "s" };
-        emit.error(ErrorComp::new(
-            format!("expected {expected_count} argument{plural_end}, found {input_count}"),
-            SourceRange::new(proc.origin(), name.range), //@store range of inputs?
-            Info::new(
-                "variant defined here",
-                SourceRange::new(data.origin_id, variant.name.range),
-            ),
-        ));
-    }
-
-    let input = if let Some(input) = input {
-        let mut values = Vec::with_capacity(input.exprs.len());
-        for (idx, &expr) in input.exprs.iter().enumerate() {
-            //@should have expect_src, get from item type ranges?
-            let expect = match value_types.get(idx) {
-                Some(ty) => Expectation::HasType(*ty, None),
-                None => Expectation::None,
-            };
-            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-            values.push(expr_res.expr);
-        }
-        let values = emit.arena.alloc_slice(&values);
-        Some(emit.arena.alloc(values))
-    } else {
-        None
-    };
-
-    //@deal with empty value or type list like () both on definition & expression
-    let enum_variant = hir::Expr::EnumVariant {
-        enum_id,
-        variant_id,
-        input,
-    };
-    let enum_variant = emit.arena.alloc(enum_variant);
-    TypeResult::new(hir::Type::Enum(enum_id), enum_variant)
+    check_variant_input_opt(hir, emit, proc, enum_id, variant_id, input, expr_range)
 }
 
+//@still used in pass4
 pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
     emit.error(ErrorComp::new("cannot infer struct type", src, None))
 }
 
-//@support struct type inference
-// infer based on reference types also
 fn typecheck_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1700,35 +1624,10 @@ fn typecheck_struct_init<'hir>(
     struct_init: &ast::StructInit<'_>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let struct_id = match struct_init.path {
-        Some(path) => path_resolve_struct(hir, emit, Some(proc), proc.origin(), path),
-        None => match expect {
-            Expectation::None => {
-                error_cannot_infer_struct_type(emit, SourceRange::new(proc.origin(), expr_range));
-                None
-            }
-            Expectation::HasType(expect_ty, _) => match expect_ty {
-                hir::Type::Error => None,
-                hir::Type::Struct(struct_id) => Some(struct_id),
-                _ => {
-                    error_cannot_infer_struct_type(
-                        emit,
-                        SourceRange::new(proc.origin(), expr_range),
-                    );
-                    None
-                }
-            },
-        },
-    };
-
+    let struct_id = infer_struct_type(emit, expect, SourceRange::new(proc.origin(), expr_range));
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,
-        None => {
-            for input in struct_init.input {
-                let _ = typecheck_expr(hir, emit, proc, Expectation::None, input.expr);
-            }
-            return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
-        }
+        None => return error_result_default_check_field_init(hir, emit, proc, struct_init.input),
     };
 
     let data = hir.registry().struct_data(struct_id);
@@ -2950,6 +2849,191 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
         hir::Type::ArrayStatic(array) => type_is_value_type(array.elem_ty),
     }
 }
+
+//==================== INFERENCE ====================
+//@check if reference expectations need to be accounted for
+
+fn infer_enum_type(
+    emit: &mut HirEmit,
+    expect: Expectation,
+    error_src: SourceRange,
+) -> Option<hir::EnumID> {
+    let enum_id = match expect {
+        Expectation::None => None,
+        Expectation::HasType(ty, _) => match ty {
+            hir::Type::Error => return None,
+            hir::Type::Enum(enum_id) => Some(enum_id),
+            _ => None,
+        },
+    };
+    emit.error(ErrorComp::new("cannot infer enum type", error_src, None));
+    enum_id
+}
+
+fn infer_struct_type(
+    emit: &mut HirEmit,
+    expect: Expectation,
+    error_src: SourceRange,
+) -> Option<hir::StructID> {
+    let struct_id = match expect {
+        Expectation::None => None,
+        Expectation::HasType(ty, _) => match ty {
+            hir::Type::Error => return None,
+            hir::Type::Struct(struct_id) => Some(struct_id),
+            _ => None,
+        },
+    };
+    emit.error(ErrorComp::new("cannot infer struct type", error_src, None));
+    struct_id
+}
+
+//==================== DEFAULT CHECK ====================
+
+fn error_result_default_check_input<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    input: &ast::Input,
+) -> TypeResult<'hir> {
+    for &expr in input.exprs.iter() {
+        let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+    }
+    return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+}
+
+fn error_result_default_check_input_opt<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    input: Option<&ast::Input>,
+) -> TypeResult<'hir> {
+    if let Some(input) = input {
+        for &expr in input.exprs.iter() {
+            let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+        }
+    }
+    return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+}
+
+fn error_result_default_check_field_init<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    input: &[ast::FieldInit],
+) -> TypeResult<'hir> {
+    for field in input.iter() {
+        let _ = typecheck_expr(hir, emit, proc, Expectation::None, field.expr);
+    }
+    return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+}
+
+//==================== CALL-LIKE INPUT CHECK ====================
+
+fn input_range(input: &ast::Input) -> TextRange {
+    if input.exprs.is_empty() {
+        input.range
+    } else {
+        let end = input.range.end();
+        TextRange::new(end - 1.into(), end)
+    }
+}
+
+fn input_opt_range(input: Option<&ast::Input>, default: TextRange) -> TextRange {
+    if let Some(input) = input {
+        input_range(input)
+    } else {
+        default
+    }
+}
+
+fn error_unexpected_argument_count(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    expected_count: usize,
+    input_count: usize,
+    error_src: SourceRange,
+    info: Option<(SourceRange, &'static str)>,
+) {
+    let plural_end = if expected_count == 1 { "" } else { "s" };
+    let info = match info {
+        Some((src, msg)) => Info::new(msg, src),
+        None => None,
+    };
+    emit.error(ErrorComp::new(
+        format!("expected {expected_count} argument{plural_end}, found {input_count}"),
+        error_src,
+        info,
+    ));
+}
+
+fn check_variant_input_opt<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    enum_id: hir::EnumID,
+    variant_id: hir::EnumVariantID,
+    input: Option<&ast::Input>,
+    error_range: TextRange,
+) -> TypeResult<'hir> {
+    let data = hir.registry().enum_data(enum_id);
+    let variant = data.variant(variant_id);
+
+    let value_types = match variant.kind {
+        hir::VariantKind::Default(_) => &[],
+        hir::VariantKind::Constant(_) => &[],
+        hir::VariantKind::HasValues(types) => types,
+    };
+
+    let input_count = input.map(|i| i.exprs.len()).unwrap_or(0);
+    let expected_count = value_types.len();
+
+    if input_count != expected_count {
+        let input_range = input_opt_range(input, error_range);
+        error_unexpected_argument_count(
+            emit,
+            proc.origin(),
+            expected_count,
+            input_count,
+            SourceRange::new(proc.origin(), input_range),
+            Some((
+                SourceRange::new(data.origin_id, variant.name.range),
+                "variant defined here",
+            )),
+        );
+    }
+
+    let input = if let Some(input) = input {
+        let mut values = Vec::with_capacity(input.exprs.len());
+        for (idx, &expr) in input.exprs.iter().enumerate() {
+            //@should have expect_src, get from item type ranges?
+            // duplicate variants will cause variant_id to not match ast variant
+            let expect = match value_types.get(idx) {
+                Some(ty) => Expectation::HasType(*ty, None),
+                None => Expectation::None,
+            };
+            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+            values.push(expr_res.expr);
+        }
+        let values = emit.arena.alloc_slice(&values);
+        let values = emit.arena.alloc(values);
+        Some(values)
+    } else {
+        None
+    };
+
+    //@deal with empty value or type list like () both on definition & expression
+    //@rename to hir::Expr::Variant? mass rename pass later on, also VariantID and FieldID etc..
+    let variant_expr = hir::Expr::EnumVariant {
+        enum_id,
+        variant_id,
+        input,
+    };
+    let variant_expr = emit.arena.alloc(variant_expr);
+    TypeResult::new(hir::Type::Enum(enum_id), variant_expr)
+}
+
+//==================== PATH RESOLVE ====================
+//@refactor redudant duplication + more type safe leftover fields
 
 /*
 

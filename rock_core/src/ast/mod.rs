@@ -341,6 +341,7 @@ pub struct MatchArm<'ast> {
 #[derive(Copy, Clone)]
 pub struct Input<'ast> {
     pub exprs: &'ast [&'ast Expr<'ast>],
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]

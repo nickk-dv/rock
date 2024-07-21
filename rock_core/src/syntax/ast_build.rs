@@ -941,5 +941,8 @@ fn argument_list<'ast>(
     }
     let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
 
-    ast::Input { exprs }
+    ast::Input {
+        exprs,
+        range: argument_list.range(ctx.tree),
+    }
 }
