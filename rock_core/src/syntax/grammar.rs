@@ -674,6 +674,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T![if] => if_(p),
         T!['{'] => block(p, SyntaxKind::EXPR_BLOCK),
         T![match] => match_(p),
+        T![match2] => match_2(p),
         T![sizeof] => {
             let m = p.start();
             p.bump(T![sizeof]);
@@ -741,8 +742,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
             m.complete(p, SyntaxKind::EXPR_RANGE_TO_INCLUSIVE)
         }
         _ => {
-            //@return instead? this is double error node
-            // or pass marker to be closed with error during error_bump
+            //@double error node is created, we still need marker_closed for Error
             let m = p.start();
             p.error_bump("expected expression");
             m.complete(p, SyntaxKind::ERROR)
@@ -888,6 +888,143 @@ fn match_arm(p: &mut Parser) -> bool {
         m.complete(p, SyntaxKind::MATCH_ARM);
         false
     }
+}
+
+fn match_2(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    p.bump(T![match2]);
+    expr(p);
+    if p.at(T!['{']) {
+        match_arm_list_2(p);
+    } else {
+        p.error_bump("expected match arm list");
+    }
+    m.complete(p, SyntaxKind::EXPR_MATCH_2)
+}
+
+fn match_arm_list_2(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['{']);
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        match_arm_2(p);
+        if !p.at(T!['}']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T!['}']);
+    m.complete(p, SyntaxKind::MATCH_ARM_LIST_2);
+}
+
+fn match_arm_2(p: &mut Parser) {
+    let m = p.start();
+    pat(p);
+    p.expect(T![->]);
+    expr(p);
+    m.complete(p, SyntaxKind::MATCH_ARM_2);
+}
+
+fn pat(p: &mut Parser) {
+    let mc = primary_pat(p);
+
+    if p.at(T![|]) {
+        let m = p.start_before(mc);
+        while p.at(T![|]) {
+            p.bump(T![|]);
+            primary_pat(p);
+        }
+        m.complete(p, SyntaxKind::PAT_OR);
+    }
+}
+
+fn primary_pat(p: &mut Parser) -> MarkerClosed {
+    match p.peek() {
+        T![_] => {
+            let m = p.start();
+            p.bump(T![_]);
+            m.complete(p, SyntaxKind::PAT_WILD)
+        }
+        T![null] => {
+            let m = p.start();
+            let me = p.start();
+            p.bump(T![null]);
+            me.complete(p, SyntaxKind::EXPR_LIT_NULL);
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
+        T![true] | T![false] => {
+            let m = p.start();
+            let me = p.start();
+            p.bump(p.peek());
+            me.complete(p, SyntaxKind::EXPR_LIT_BOOL);
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
+        T![int_lit] => {
+            let m = p.start();
+            let me = p.start();
+            p.bump(T![int_lit]);
+            me.complete(p, SyntaxKind::EXPR_LIT_INT);
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
+        T![float_lit] => {
+            let m = p.start();
+            let me = p.start();
+            p.bump(T![float_lit]);
+            me.complete(p, SyntaxKind::EXPR_LIT_FLOAT);
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
+        T![char_lit] => {
+            let m = p.start();
+            let me = p.start();
+            p.bump(T![char_lit]);
+            me.complete(p, SyntaxKind::EXPR_LIT_CHAR);
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
+        T![string_lit] => {
+            let m = p.start();
+            let me = p.start();
+            p.bump(T![string_lit]);
+            me.complete(p, SyntaxKind::EXPR_LIT_STRING);
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
+        T![ident] => {
+            //@rename `path_type`? or rework how path works
+            // special cast for struct init is in path_expr
+            let m = p.start();
+            path_type(p);
+            if p.at(T!['(']) {
+                bind_list(p);
+            }
+            m.complete(p, SyntaxKind::PAT_ITEM)
+        }
+        T![.] => {
+            let m = p.start();
+            p.bump(T![.]);
+            name(p);
+            if p.at(T!['(']) {
+                bind_list(p);
+            }
+            m.complete(p, SyntaxKind::PAT_VARIANT)
+        }
+        _ => {
+            //@double error node is created, we still need marker_closed for Error
+            //@add recovery!
+            let m = p.start();
+            p.error_bump("expected pattern");
+            m.complete(p, SyntaxKind::ERROR)
+        }
+    }
+}
+
+fn bind_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        name(p);
+        if !p.at(T![')']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::BIND_LIST);
 }
 
 fn argument_list(p: &mut Parser) {
