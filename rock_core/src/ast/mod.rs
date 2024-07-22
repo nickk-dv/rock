@@ -284,6 +284,7 @@ pub enum ExprKind<'ast> {
     If          { if_: &'ast If<'ast> },
     Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
+    Match2      { match_2: &'ast Match2<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
     Call        { target: &'ast Expr<'ast>, input: &'ast Input<'ast> },
@@ -299,34 +300,6 @@ pub enum ExprKind<'ast> {
     Range       { range: &'ast Range<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
     Binary      { op: BinOp, op_range: TextRange, bin: &'ast BinExpr<'ast> },
-}
-
-#[derive(Copy, Clone)]
-pub struct Match2<'ast> {
-    pub on_expr: &'ast Expr<'ast>,
-    pub arms: &'ast [MatchArm2<'ast>],
-}
-
-#[derive(Copy, Clone)]
-pub struct MatchArm2<'ast> {
-    pub pat: Pat<'ast>,
-    pub expr: &'ast Expr<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Pat<'ast> {
-    pub kind: PatKind<'ast>,
-    pub range: TextRange,
-}
-
-#[rustfmt::skip]
-#[derive(Copy, Clone)]
-pub enum PatKind<'ast> {
-    Wild,
-    Lit       (Literal),
-    Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name]> },
-    Variant   { name: Name, binds: Option<&'ast [Name]> },
-    Or        { patterns: &'ast [Pat<'ast>] },
 }
 
 #[derive(Copy, Clone)]
@@ -364,6 +337,34 @@ pub struct Match<'ast> {
 pub struct MatchArm<'ast> {
     pub pat: ConstExpr<'ast>,
     pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Match2<'ast> {
+    pub on_expr: &'ast Expr<'ast>,
+    pub arms: &'ast [MatchArm2<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct MatchArm2<'ast> {
+    pub pat: Pat<'ast>,
+    pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct Pat<'ast> {
+    pub kind: PatKind<'ast>,
+    pub range: TextRange,
+}
+
+#[rustfmt::skip]
+#[derive(Copy, Clone)]
+pub enum PatKind<'ast> {
+    Wild,
+    Lit       (Literal),
+    Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name]> },
+    Variant   { name: Name, binds: Option<&'ast [Name]> },
+    Or        { patterns: &'ast [Pat<'ast>] },
 }
 
 #[derive(Copy, Clone)]

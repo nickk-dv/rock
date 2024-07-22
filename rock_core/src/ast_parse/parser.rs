@@ -37,6 +37,8 @@ pub struct ParseState<'ast, 'intern> {
     pub stmts: TempBuffer<Stmt<'ast>>,
     pub branches: TempBuffer<Branch<'ast>>,
     pub match_arms: TempBuffer<MatchArm<'ast>>,
+    pub match_arms_2: TempBuffer<MatchArm2<'ast>>,
+    pub patterns: TempBuffer<Pat<'ast>>,
     pub exprs: TempBuffer<&'ast Expr<'ast>>,
     pub field_inits: TempBuffer<FieldInit<'ast>>,
 }
@@ -165,6 +167,8 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
             stmts: TempBuffer::new(32),
             branches: TempBuffer::new(32),
             match_arms: TempBuffer::new(32),
+            match_arms_2: TempBuffer::new(32),
+            patterns: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
         }

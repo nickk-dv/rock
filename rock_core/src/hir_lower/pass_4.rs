@@ -590,6 +590,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             error_cannot_use_in_constants(emit, origin_id, expr.range, "match");
             Err(parent_id)
         }
+        ast::ExprKind::Match2 { .. } => todo!("match2 `add_expr_const_dependencies`"),
         ast::ExprKind::Field { target, .. } => {
             add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
             Ok(())

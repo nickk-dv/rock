@@ -324,6 +324,7 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::Match { match_ } => {
             typecheck_match(hir, emit, proc, expect, match_, expr.range)
         }
+        ast::ExprKind::Match2 { .. } => todo!("match2 typecheck_expr"),
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index {
             target,
