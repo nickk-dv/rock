@@ -719,6 +719,9 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
             ExprKind::Block { block: block_ref }
         }
         T![match] => ExprKind::Match { match_: match_(p)? },
+        T![match2] => ExprKind::Match2 {
+            match_2: match_2(p)?,
+        },
         T![sizeof] => {
             p.bump();
             p.expect(T!['('])?;
@@ -1021,6 +1024,134 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
         fallback_range,
     });
     Ok(match_)
+}
+
+fn match_2<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match2<'ast>, String> {
+    p.bump();
+    let on_expr = expr(p)?;
+
+    let offset = p.state.match_arms_2.start();
+    p.expect(T!['{'])?;
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        let arm = match_arm_2(p)?;
+        p.state.match_arms_2.add(arm);
+        p.expect(T![,])?;
+    }
+    p.expect(T!['}'])?;
+    let arms = p.state.match_arms_2.take(offset, &mut p.state.arena);
+
+    let match_ = Match2 { on_expr, arms };
+    let match_ = p.state.arena.alloc(match_);
+    Ok(match_)
+}
+
+fn match_arm_2<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<MatchArm2<'ast>, String> {
+    let pat = pat(p)?;
+    p.expect(T![->])?;
+    let expr = expr(p)?;
+
+    let arm = MatchArm2 { pat, expr };
+    Ok(arm)
+}
+
+fn pat<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Pat<'ast>, String> {
+    let start = p.start_range();
+
+    let kind = match p.peek() {
+        T![_] => {
+            p.bump();
+            PatKind::Wild
+        }
+        T![null] => {
+            p.bump();
+            PatKind::Lit(Literal::Null)
+        }
+        T![true] => {
+            p.bump();
+            PatKind::Lit(Literal::Bool(true))
+        }
+        T![false] => {
+            p.bump();
+            PatKind::Lit(Literal::Bool(false))
+        }
+        T![int_lit] => {
+            p.bump();
+            let val = p.get_int_lit();
+            PatKind::Lit(Literal::Int(val))
+        }
+        T![float_lit] => {
+            let range = p.peek_range();
+            p.bump();
+            let string = &p.source[range.as_usize()];
+
+            let val = match string.parse::<f64>() {
+                Ok(value) => value,
+                Err(error) => {
+                    p.state.errors.push(ErrorComp::new(
+                        format!("parse float error: {}", error),
+                        SourceRange::new(p.module_id, range),
+                        None,
+                    ));
+                    0.0
+                }
+            };
+            PatKind::Lit(Literal::Float(val))
+        }
+        T![char_lit] => {
+            p.bump();
+            let val = p.get_char_lit();
+            PatKind::Lit(Literal::Char(val))
+        }
+        T![string_lit] => {
+            p.bump();
+            let (id, c_string) = p.get_string_lit();
+            PatKind::Lit(Literal::String { id, c_string })
+        }
+        T![ident] => {
+            let path = path(p)?;
+            let binds = binds(p)?;
+            PatKind::Item { path, binds }
+        }
+        T![.] => {
+            p.bump();
+            let name = name(p)?;
+            let binds = binds(p)?;
+            PatKind::Variant { name, binds }
+        }
+        _ => return Err("expected pattern".into()),
+    };
+
+    let mut pat_first = Pat {
+        kind,
+        range: p.make_range(start),
+    };
+
+    if p.at(T![|]) {
+        let offset = p.state.patterns.start();
+        p.state.patterns.add(pat_first);
+        while p.at(T![|]) && !p.at(T![eof]) {
+            p.bump();
+            let pat = pat(p)?;
+            p.state.patterns.add(pat);
+        }
+        let patterns = p.state.patterns.take(offset, &mut p.state.arena);
+
+        pat_first = Pat {
+            kind: PatKind::Or { patterns },
+            range: p.make_range(start),
+        };
+    }
+
+    Ok(pat_first)
+}
+
+fn binds<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Option<&'ast [Name]>, String> {
+    if p.at(T!['(']) {
+        let names = comma_separated_list!(p, name, names, T!['('], T![')']);
+        Ok(Some(names))
+    } else {
+        Ok(None)
+    }
 }
 
 fn input<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Input<'ast>, String> {

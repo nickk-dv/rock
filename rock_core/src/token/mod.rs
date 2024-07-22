@@ -38,6 +38,7 @@ token_gen::token_gen! {
     [if]       | "if"       | KwIf       | KW.
     [else]     | "else"     | KwElse     | KW.
     [match]    | "match"    | KwMatch    | KW.
+    [match2]    | "match2"  | KwMatch2    | KW.
     [_]        | "_"        | KwDiscard  | KW.
     [as]       | "as"       | KwAs       | KW.
     [sizeof]   | "sizeof"   | KwSizeof   | KW.
