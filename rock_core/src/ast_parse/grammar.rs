@@ -1056,6 +1056,29 @@ fn match_arm_2<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<MatchArm2<'ast>
 
 fn pat<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Pat<'ast>, String> {
     let start = p.start_range();
+    let mut pat_first = primary_pat(p)?;
+
+    if p.at(T![|]) {
+        let offset = p.state.patterns.start();
+        p.state.patterns.add(pat_first);
+        while p.at(T![|]) {
+            p.bump();
+            let pat = primary_pat(p)?;
+            p.state.patterns.add(pat);
+        }
+        let patterns = p.state.patterns.take(offset, &mut p.state.arena);
+
+        pat_first = Pat {
+            kind: PatKind::Or { patterns },
+            range: p.make_range(start),
+        };
+    }
+
+    Ok(pat_first)
+}
+
+fn primary_pat<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Pat<'ast>, String> {
+    let start = p.start_range();
 
     let kind = match p.peek() {
         T![_] => {
@@ -1121,28 +1144,11 @@ fn pat<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Pat<'ast>, String> {
         _ => return Err("expected pattern".into()),
     };
 
-    let mut pat_first = Pat {
+    let pat = Pat {
         kind,
         range: p.make_range(start),
     };
-
-    if p.at(T![|]) {
-        let offset = p.state.patterns.start();
-        p.state.patterns.add(pat_first);
-        while p.at(T![|]) && !p.at(T![eof]) {
-            p.bump();
-            let pat = pat(p)?;
-            p.state.patterns.add(pat);
-        }
-        let patterns = p.state.patterns.take(offset, &mut p.state.arena);
-
-        pat_first = Pat {
-            kind: PatKind::Or { patterns },
-            range: p.make_range(start),
-        };
-    }
-
-    Ok(pat_first)
+    Ok(pat)
 }
 
 fn binds<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Option<&'ast [Name]>, String> {
