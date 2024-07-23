@@ -279,6 +279,15 @@ ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
 ast_node_impl!(MatchFallback, SyntaxKind::MATCH_FALLBACK);
+ast_node_impl!(ExprMatch2, SyntaxKind::EXPR_MATCH_2);
+ast_node_impl!(MatchArmList2, SyntaxKind::MATCH_ARM_LIST_2);
+ast_node_impl!(MatchArm2, SyntaxKind::MATCH_ARM_2);
+ast_node_impl!(PatWild, SyntaxKind::PAT_WILD);
+ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
+ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
+ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
+ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
+ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
@@ -434,6 +443,7 @@ pub enum Expr<'syn> {
     If(ExprIf<'syn>),
     Block(ExprBlock<'syn>),
     Match(ExprMatch<'syn>),
+    Match2(ExprMatch2<'syn>),
     Field(ExprField<'syn>),
     Index(ExprIndex<'syn>),
     Call(ExprCall<'syn>),
@@ -469,6 +479,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
             SyntaxKind::EXPR_BLOCK => Some(Expr::Block(ExprBlock(node))),
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
+            SyntaxKind::EXPR_MATCH_2 => Some(Expr::Match2(ExprMatch2(node))),
             SyntaxKind::EXPR_FIELD => Some(Expr::Field(ExprField(node))),
             SyntaxKind::EXPR_INDEX => Some(Expr::Index(ExprIndex(node))),
             SyntaxKind::EXPR_CALL => Some(Expr::Call(ExprCall(node))),
@@ -511,6 +522,7 @@ impl<'syn> Expr<'syn> {
             Expr::If(expr) => expr.range(tree),
             Expr::Block(expr) => expr.range(tree),
             Expr::Match(expr) => expr.range(tree),
+            Expr::Match2(expr) => expr.range(tree),
             Expr::Field(expr) => expr.range(tree),
             Expr::Index(expr) => expr.range(tree),
             Expr::Call(expr) => expr.range(tree),
@@ -531,6 +543,40 @@ impl<'syn> Expr<'syn> {
             Expr::RangeInclusive(expr) => expr.range(tree),
             Expr::Unary(expr) => expr.range(tree),
             Expr::Binary(expr) => expr.range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Pat<'syn> {
+    Wild(PatWild<'syn>),
+    Lit(PatLit<'syn>),
+    Item(PatItem<'syn>),
+    Variant(PatVariant<'syn>),
+    Or(PatOr<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Pat<'syn> {
+    fn cast(node: &'syn Node) -> Option<Pat<'syn>> {
+        match node.kind {
+            SyntaxKind::PAT_WILD => Some(Pat::Wild(PatWild(node))),
+            SyntaxKind::PAT_LIT => Some(Pat::Lit(PatLit(node))),
+            SyntaxKind::PAT_ITEM => Some(Pat::Item(PatItem(node))),
+            SyntaxKind::PAT_VARIANT => Some(Pat::Variant(PatVariant(node))),
+            SyntaxKind::PAT_OR => Some(Pat::Or(PatOr(node))),
+            _ => None,
+        }
+    }
+}
+
+impl<'syn> Pat<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Pat::Wild(pat) => pat.range(tree),
+            Pat::Lit(pat) => pat.range(tree),
+            Pat::Item(pat) => pat.range(tree),
+            Pat::Variant(pat) => pat.range(tree),
+            Pat::Or(pat) => pat.range(tree),
         }
     }
 }
@@ -830,6 +876,44 @@ impl<'syn> MatchArm<'syn> {
 
 impl<'syn> MatchFallback<'syn> {
     find_first!(expr, Expr);
+}
+
+impl<'syn> ExprMatch2<'syn> {
+    find_first!(on_expr, Expr);
+    find_first!(match_arm_list, MatchArmList2);
+}
+
+impl<'syn> MatchArmList2<'syn> {
+    node_iter!(match_arms, MatchArm2);
+}
+
+impl<'syn> MatchArm2<'syn> {
+    find_first!(pat, Expr);
+    find_first!(expr, Expr);
+}
+
+impl<'syn> PatWild<'syn> {}
+
+impl<'syn> PatLit<'syn> {
+    //@create literal node
+}
+
+impl<'syn> PatItem<'syn> {
+    find_first!(path, Path);
+    find_first!(bind_list, BindList);
+}
+
+impl<'syn> PatVariant<'syn> {
+    find_first!(name, Name);
+    find_first!(bind_list, BindList);
+}
+
+impl<'syn> PatOr<'syn> {
+    node_iter!(patterns, Pat);
+}
+
+impl<'syn> BindList<'syn> {
+    node_iter!(names, Name);
 }
 
 impl<'syn> ExprField<'syn> {

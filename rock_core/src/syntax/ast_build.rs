@@ -741,6 +741,10 @@ fn expr_kind<'ast>(
             let match_ = ctx.s.arena.alloc(match_);
             ast::ExprKind::Match { match_ }
         }
+        cst::Expr::Match2(match_) => {
+            let on_expr = expr(ctx, match_.on_expr(ctx.tree).unwrap());
+            todo!("ast build match2");
+        }
         cst::Expr::Field(field) => {
             let target = expr(ctx, field.target(ctx.tree).unwrap());
             let name = name(ctx, field.name(ctx.tree).unwrap());

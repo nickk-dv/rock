@@ -626,6 +626,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::If(if_) => expr_if(fmt, if_),
         ast::Expr::Block(block) => block_fmt(fmt, block.into_block()),
         ast::Expr::Match(match_) => expr_match(fmt, match_),
+        ast::Expr::Match2(match_) => {} //@todo match2 fmt
         ast::Expr::Field(field) => {
             expr_fmt(fmt, field.target(fmt.tree).unwrap());
             fmt.write_c('.');
