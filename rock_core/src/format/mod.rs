@@ -611,6 +611,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             expr_fmt(fmt, expr_paren.expr(fmt.tree).unwrap());
             fmt.write_c(')');
         }
+        /*@disabled
         ast::Expr::LitNull(_) => fmt.write("null"),
         ast::Expr::LitBool(lit) => {
             if lit.value(fmt.tree) {
@@ -623,6 +624,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::LitFloat(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitChar(lit) => fmt.write_range(lit.range(fmt.tree)),
         ast::Expr::LitString(lit) => fmt.write_range(lit.range(fmt.tree)),
+        */
         ast::Expr::If(if_) => expr_if(fmt, if_),
         ast::Expr::Block(block) => block_fmt(fmt, block.into_block()),
         ast::Expr::Match(match_) => expr_match(fmt, match_),
@@ -708,6 +710,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
             fmt.space();
             expr_fmt(fmt, lhs_rhs.next().unwrap());
         }
+        _ => todo!("format is not used"),
     }
 }
 

@@ -280,7 +280,7 @@ pub struct Expr<'ast> {
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ExprKind<'ast> {
-    Lit         (Literal),
+    Lit         (Lit),
     If          { if_: &'ast If<'ast> },
     Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
@@ -303,7 +303,7 @@ pub enum ExprKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Literal {
+pub enum Lit {
     Null,
     Bool(bool),
     Int(u64),
@@ -361,7 +361,7 @@ pub struct Pat<'ast> {
 #[derive(Copy, Clone)]
 pub enum PatKind<'ast> {
     Wild,
-    Lit       (Literal),
+    Lit       (Lit),
     Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name]> },
     Variant   { name: Name, binds: Option<&'ast [Name]> },
     Or        { patterns: &'ast [Pat<'ast>] },

@@ -265,12 +265,7 @@ ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
 ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
-ast_node_impl!(ExprLitNull, SyntaxKind::EXPR_LIT_NULL);
-ast_node_impl!(ExprLitBool, SyntaxKind::EXPR_LIT_BOOL);
-ast_node_impl!(ExprLitInt, SyntaxKind::EXPR_LIT_INT);
-ast_node_impl!(ExprLitFloat, SyntaxKind::EXPR_LIT_FLOAT);
-ast_node_impl!(ExprLitChar, SyntaxKind::EXPR_LIT_CHAR);
-ast_node_impl!(ExprLitString, SyntaxKind::EXPR_LIT_STRING);
+ast_node_impl!(ExprLit, SyntaxKind::EXPR_LIT);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
 ast_node_impl!(EntryBranch, SyntaxKind::ENTRY_BRANCH);
 ast_node_impl!(ElseIfBranch, SyntaxKind::ELSE_IF_BRANCH);
@@ -282,12 +277,6 @@ ast_node_impl!(MatchFallback, SyntaxKind::MATCH_FALLBACK);
 ast_node_impl!(ExprMatch2, SyntaxKind::EXPR_MATCH_2);
 ast_node_impl!(MatchArmList2, SyntaxKind::MATCH_ARM_LIST_2);
 ast_node_impl!(MatchArm2, SyntaxKind::MATCH_ARM_2);
-ast_node_impl!(PatWild, SyntaxKind::PAT_WILD);
-ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
-ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
-ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
-ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
-ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
@@ -312,6 +301,21 @@ ast_node_impl!(ExprRangeInclusive, SyntaxKind::EXPR_RANGE_INCLUSIVE);
 ast_node_impl!(ExprUnary, SyntaxKind::EXPR_UNARY);
 ast_node_impl!(ExprBinary, SyntaxKind::EXPR_BINARY);
 
+ast_node_impl!(LitNull, SyntaxKind::LIT_NULL);
+ast_node_impl!(LitBool, SyntaxKind::LIT_BOOL);
+ast_node_impl!(LitInt, SyntaxKind::LIT_INT);
+ast_node_impl!(LitFloat, SyntaxKind::LIT_FLOAT);
+ast_node_impl!(LitChar, SyntaxKind::LIT_CHAR);
+ast_node_impl!(LitString, SyntaxKind::LIT_STRING);
+
+ast_node_impl!(PatWild, SyntaxKind::PAT_WILD);
+ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
+ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
+ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
+ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
+ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
+
+#[derive(Copy, Clone)]
 pub enum Item<'syn> {
     Proc(ProcItem<'syn>),
     Enum(EnumItem<'syn>),
@@ -434,12 +438,7 @@ impl<'syn> Stmt<'syn> {
 #[derive(Copy, Clone)]
 pub enum Expr<'syn> {
     Paren(ExprParen<'syn>),
-    LitNull(ExprLitNull<'syn>),
-    LitBool(ExprLitBool<'syn>),
-    LitInt(ExprLitInt<'syn>),
-    LitFloat(ExprLitFloat<'syn>),
-    LitChar(ExprLitChar<'syn>),
-    LitString(ExprLitString<'syn>),
+    Lit(ExprLit<'syn>),
     If(ExprIf<'syn>),
     Block(ExprBlock<'syn>),
     Match(ExprMatch<'syn>),
@@ -470,12 +469,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
     fn cast(node: &'syn Node) -> Option<Expr<'syn>> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
-            SyntaxKind::EXPR_LIT_NULL => Some(Expr::LitNull(ExprLitNull(node))),
-            SyntaxKind::EXPR_LIT_BOOL => Some(Expr::LitBool(ExprLitBool(node))),
-            SyntaxKind::EXPR_LIT_INT => Some(Expr::LitInt(ExprLitInt(node))),
-            SyntaxKind::EXPR_LIT_FLOAT => Some(Expr::LitFloat(ExprLitFloat(node))),
-            SyntaxKind::EXPR_LIT_CHAR => Some(Expr::LitChar(ExprLitChar(node))),
-            SyntaxKind::EXPR_LIT_STRING => Some(Expr::LitString(ExprLitString(node))),
+            SyntaxKind::EXPR_LIT => Some(Expr::Lit(ExprLit(node))),
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
             SyntaxKind::EXPR_BLOCK => Some(Expr::Block(ExprBlock(node))),
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
@@ -513,12 +507,7 @@ impl<'syn> Expr<'syn> {
     pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
             Expr::Paren(expr) => expr.range(tree),
-            Expr::LitNull(expr) => expr.range(tree),
-            Expr::LitBool(expr) => expr.range(tree),
-            Expr::LitInt(expr) => expr.range(tree),
-            Expr::LitFloat(expr) => expr.range(tree),
-            Expr::LitChar(expr) => expr.range(tree),
-            Expr::LitString(expr) => expr.range(tree),
+            Expr::Lit(expr) => expr.range(tree),
             Expr::If(expr) => expr.range(tree),
             Expr::Block(expr) => expr.range(tree),
             Expr::Match(expr) => expr.range(tree),
@@ -543,6 +532,43 @@ impl<'syn> Expr<'syn> {
             Expr::RangeInclusive(expr) => expr.range(tree),
             Expr::Unary(expr) => expr.range(tree),
             Expr::Binary(expr) => expr.range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Lit<'syn> {
+    Null(LitNull<'syn>),
+    Bool(LitBool<'syn>),
+    Int(LitInt<'syn>),
+    Float(LitFloat<'syn>),
+    Char(LitChar<'syn>),
+    String(LitString<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Lit<'syn> {
+    fn cast(node: &'syn Node) -> Option<Lit<'syn>> {
+        match node.kind {
+            SyntaxKind::LIT_NULL => Some(Lit::Null(LitNull(node))),
+            SyntaxKind::LIT_BOOL => Some(Lit::Bool(LitBool(node))),
+            SyntaxKind::LIT_INT => Some(Lit::Int(LitInt(node))),
+            SyntaxKind::LIT_FLOAT => Some(Lit::Float(LitFloat(node))),
+            SyntaxKind::LIT_CHAR => Some(Lit::Char(LitChar(node))),
+            SyntaxKind::LIT_STRING => Some(Lit::String(LitString(node))),
+            _ => None,
+        }
+    }
+}
+
+impl<'syn> Lit<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Lit::Null(lit) => lit.range(tree),
+            Lit::Bool(lit) => lit.range(tree),
+            Lit::Int(lit) => lit.range(tree),
+            Lit::Float(lit) => lit.range(tree),
+            Lit::Char(lit) => lit.range(tree),
+            Lit::String(lit) => lit.range(tree),
         }
     }
 }
@@ -819,21 +845,9 @@ impl<'syn> ExprParen<'syn> {
     find_first!(expr, Expr);
 }
 
-impl<'syn> ExprLitNull<'syn> {}
-
-impl<'syn> ExprLitBool<'syn> {
-    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
-        self.0.find_by_token(tree, Token::as_bool).unwrap()
-    }
+impl<'syn> ExprLit<'syn> {
+    find_first!(lit, Lit);
 }
-
-impl<'syn> ExprLitInt<'syn> {}
-
-impl<'syn> ExprLitFloat<'syn> {}
-
-impl<'syn> ExprLitChar<'syn> {}
-
-impl<'syn> ExprLitString<'syn> {}
 
 impl<'syn> ExprIf<'syn> {
     find_first!(entry_branch, EntryBranch);
@@ -888,32 +902,8 @@ impl<'syn> MatchArmList2<'syn> {
 }
 
 impl<'syn> MatchArm2<'syn> {
-    find_first!(pat, Expr);
+    find_first!(pat, Pat);
     find_first!(expr, Expr);
-}
-
-impl<'syn> PatWild<'syn> {}
-
-impl<'syn> PatLit<'syn> {
-    //@create literal node
-}
-
-impl<'syn> PatItem<'syn> {
-    find_first!(path, Path);
-    find_first!(bind_list, BindList);
-}
-
-impl<'syn> PatVariant<'syn> {
-    find_first!(name, Name);
-    find_first!(bind_list, BindList);
-}
-
-impl<'syn> PatOr<'syn> {
-    node_iter!(patterns, Pat);
-}
-
-impl<'syn> BindList<'syn> {
-    node_iter!(names, Name);
 }
 
 impl<'syn> ExprField<'syn> {
@@ -1033,4 +1023,44 @@ impl<'syn> ExprBinary<'syn> {
     }
     //@ambiguity in incomplete tree
     node_iter!(lhs_rhs_iter, Expr);
+}
+
+impl<'syn> LitNull<'syn> {}
+
+impl<'syn> LitBool<'syn> {
+    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
+        self.0.find_by_token(tree, Token::as_bool).unwrap()
+    }
+}
+
+impl<'syn> LitInt<'syn> {}
+
+impl<'syn> LitFloat<'syn> {}
+
+impl<'syn> LitChar<'syn> {}
+
+impl<'syn> LitString<'syn> {}
+
+impl<'syn> PatWild<'syn> {}
+
+impl<'syn> PatLit<'syn> {
+    find_first!(lit, Lit);
+}
+
+impl<'syn> PatItem<'syn> {
+    find_first!(path, Path);
+    find_first!(bind_list, BindList);
+}
+
+impl<'syn> PatVariant<'syn> {
+    find_first!(name, Name);
+    find_first!(bind_list, BindList);
+}
+
+impl<'syn> PatOr<'syn> {
+    node_iter!(patterns, Pat);
+}
+
+impl<'syn> BindList<'syn> {
+    node_iter!(names, Name);
 }
