@@ -667,50 +667,15 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Expr<'as
     }
 
     let kind = match p.peek() {
-        T![null] => {
-            p.bump();
-            ExprKind::Lit(Literal::Null)
-        }
-        T![true] => {
-            p.bump();
-            ExprKind::Lit(Literal::Bool(true))
-        }
-        T![false] => {
-            p.bump();
-            ExprKind::Lit(Literal::Bool(false))
-        }
-        T![int_lit] => {
-            p.bump();
-            let val = p.get_int_lit();
-            ExprKind::Lit(Literal::Int(val))
-        }
-        T![float_lit] => {
-            let range = p.peek_range();
-            p.bump();
-            let string = &p.source[range.as_usize()];
-
-            let val = match string.parse::<f64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    p.state.errors.push(ErrorComp::new(
-                        format!("parse float error: {}", error),
-                        SourceRange::new(p.module_id, range),
-                        None,
-                    ));
-                    0.0
-                }
-            };
-            ExprKind::Lit(Literal::Float(val))
-        }
-        T![char_lit] => {
-            p.bump();
-            let val = p.get_char_lit();
-            ExprKind::Lit(Literal::Char(val))
-        }
-        T![string_lit] => {
-            p.bump();
-            let (id, c_string) = p.get_string_lit();
-            ExprKind::Lit(Literal::String { id, c_string })
+        T![null]
+        | T![true]
+        | T![false]
+        | T![int_lit]
+        | T![float_lit]
+        | T![char_lit]
+        | T![string_lit] => {
+            let lit = lit(p)?;
+            ExprKind::Lit(lit)
         }
         T![if] => ExprKind::If { if_: if_(p)? },
         T!['{'] => {
@@ -939,6 +904,57 @@ fn tail_expr<'ast>(
     }
 }
 
+fn lit<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Lit, String> {
+    match p.peek() {
+        T![null] => {
+            p.bump();
+            Ok(Lit::Null)
+        }
+        T![true] => {
+            p.bump();
+            Ok(Lit::Bool(true))
+        }
+        T![false] => {
+            p.bump();
+            Ok(Lit::Bool(false))
+        }
+        T![int_lit] => {
+            p.bump();
+            let val = p.get_int_lit();
+            Ok(Lit::Int(val))
+        }
+        T![float_lit] => {
+            let range = p.peek_range();
+            p.bump();
+            let string = &p.source[range.as_usize()];
+
+            let val = match string.parse::<f64>() {
+                Ok(value) => value,
+                Err(error) => {
+                    p.state.errors.push(ErrorComp::new(
+                        format!("parse float error: {}", error),
+                        SourceRange::new(p.module_id, range),
+                        None,
+                    ));
+                    0.0
+                }
+            };
+            Ok(Lit::Float(val))
+        }
+        T![char_lit] => {
+            p.bump();
+            let val = p.get_char_lit();
+            Ok(Lit::Char(val))
+        }
+        T![string_lit] => {
+            p.bump();
+            let (id, c_string) = p.get_string_lit();
+            Ok(Lit::String { id, c_string })
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn if_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast If<'ast>, String> {
     p.bump();
     let entry = Branch {
@@ -1085,50 +1101,15 @@ fn primary_pat<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Pat<'ast>, Stri
             p.bump();
             PatKind::Wild
         }
-        T![null] => {
-            p.bump();
-            PatKind::Lit(Literal::Null)
-        }
-        T![true] => {
-            p.bump();
-            PatKind::Lit(Literal::Bool(true))
-        }
-        T![false] => {
-            p.bump();
-            PatKind::Lit(Literal::Bool(false))
-        }
-        T![int_lit] => {
-            p.bump();
-            let val = p.get_int_lit();
-            PatKind::Lit(Literal::Int(val))
-        }
-        T![float_lit] => {
-            let range = p.peek_range();
-            p.bump();
-            let string = &p.source[range.as_usize()];
-
-            let val = match string.parse::<f64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    p.state.errors.push(ErrorComp::new(
-                        format!("parse float error: {}", error),
-                        SourceRange::new(p.module_id, range),
-                        None,
-                    ));
-                    0.0
-                }
-            };
-            PatKind::Lit(Literal::Float(val))
-        }
-        T![char_lit] => {
-            p.bump();
-            let val = p.get_char_lit();
-            PatKind::Lit(Literal::Char(val))
-        }
-        T![string_lit] => {
-            p.bump();
-            let (id, c_string) = p.get_string_lit();
-            PatKind::Lit(Literal::String { id, c_string })
+        T![null]
+        | T![true]
+        | T![false]
+        | T![int_lit]
+        | T![float_lit]
+        | T![char_lit]
+        | T![string_lit] => {
+            let lit = lit(p)?;
+            PatKind::Lit(lit)
         }
         T![ident] => {
             let path = path(p)?;

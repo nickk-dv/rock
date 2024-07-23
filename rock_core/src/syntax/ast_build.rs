@@ -625,55 +625,9 @@ fn expr_kind<'ast>(
             let inner = paren.expr(ctx.tree).unwrap();
             expr_kind(ctx, inner)
         }
-        cst::Expr::LitNull(_) => ast::ExprKind::Lit(ast::Literal::Null),
-        cst::Expr::LitBool(lit) => {
-            let val = lit.value(ctx.tree);
-
-            ast::ExprKind::Lit(ast::Literal::Bool(val))
-        }
-        cst::Expr::LitInt(_) => {
-            let val = ctx.tree.tokens().int(ctx.int_id as usize);
-            ctx.int_id += 1;
-
-            ast::ExprKind::Lit(ast::Literal::Int(val))
-        }
-        cst::Expr::LitFloat(lit) => {
-            //@assuming that range of Node == range of Token
-            let range = lit.range(ctx.tree);
-            let string = &ctx.source[range.as_usize()];
-
-            let val = match string.parse::<f64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    ctx.s.errors.push(ErrorComp::new(
-                        format!("parse float error: {}", error),
-                        SourceRange::new(ctx.module_id, range),
-                        None,
-                    ));
-                    0.0
-                }
-            };
-
-            ast::ExprKind::Lit(ast::Literal::Float(val))
-        }
-        cst::Expr::LitChar(_) => {
-            let val = ctx.tree.tokens().char(ctx.char_id as usize);
-            ctx.char_id += 1;
-
-            ast::ExprKind::Lit(ast::Literal::Char(val))
-        }
-        cst::Expr::LitString(_) => {
-            let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
-            let id = ctx.s.intern_string.intern(string);
-            ctx.string_id += 1;
-
-            if id.index() >= ctx.s.string_is_cstr.len() {
-                ctx.s.string_is_cstr.push(c_string);
-            } else if c_string {
-                ctx.s.string_is_cstr[id.index()] = true;
-            }
-
-            ast::ExprKind::Lit(ast::Literal::String { id, c_string })
+        cst::Expr::Lit(expr) => {
+            let lit = lit(ctx, expr.lit(ctx.tree).unwrap());
+            ast::ExprKind::Lit(lit)
         }
         cst::Expr::If(if_) => {
             let entry = if_.entry_branch(ctx.tree).unwrap();
@@ -916,6 +870,61 @@ fn expr_kind<'ast>(
             let bin = ast::BinExpr { lhs, rhs };
             let bin = ctx.s.arena.alloc(bin);
             ast::ExprKind::Binary { op, op_range, bin }
+        }
+    }
+}
+
+fn lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, lit: cst::Lit) -> ast::Lit {
+    match lit {
+        cst::Lit::Null(_) => ast::Lit::Null,
+        cst::Lit::Bool(lit) => {
+            let val = lit.value(ctx.tree);
+
+            ast::Lit::Bool(val)
+        }
+        cst::Lit::Int(_) => {
+            let val = ctx.tree.tokens().int(ctx.int_id as usize);
+            ctx.int_id += 1;
+
+            ast::Lit::Int(val)
+        }
+        cst::Lit::Float(lit) => {
+            //@assuming that range of Node == range of Token
+            let range = lit.range(ctx.tree);
+            let string = &ctx.source[range.as_usize()];
+
+            let val = match string.parse::<f64>() {
+                Ok(value) => value,
+                Err(error) => {
+                    ctx.s.errors.push(ErrorComp::new(
+                        format!("parse float error: {}", error),
+                        SourceRange::new(ctx.module_id, range),
+                        None,
+                    ));
+                    0.0
+                }
+            };
+
+            ast::Lit::Float(val)
+        }
+        cst::Lit::Char(_) => {
+            let val = ctx.tree.tokens().char(ctx.char_id as usize);
+            ctx.char_id += 1;
+
+            ast::Lit::Char(val)
+        }
+        cst::Lit::String(_) => {
+            let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
+            let id = ctx.s.intern_string.intern(string);
+            ctx.string_id += 1;
+
+            if id.index() >= ctx.s.string_is_cstr.len() {
+                ctx.s.string_is_cstr.push(c_string);
+            } else if c_string {
+                ctx.s.string_is_cstr[id.index()] = true;
+            }
+
+            ast::Lit::String { id, c_string }
         }
     }
 }

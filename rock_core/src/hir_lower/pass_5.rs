@@ -373,18 +373,18 @@ pub fn typecheck_expr<'hir>(
 fn typecheck_lit<'hir>(
     emit: &mut HirEmit<'hir>,
     expect: Expectation<'hir>,
-    literal: ast::Literal,
+    lit: ast::Lit,
 ) -> TypeResult<'hir> {
-    let (value, ty) = match literal {
-        ast::Literal::Null => {
+    let (value, ty) = match lit {
+        ast::Lit::Null => {
             let value = hir::ConstValue::Null;
             (value, hir::Type::Basic(BasicType::Rawptr))
         }
-        ast::Literal::Bool(val) => {
+        ast::Lit::Bool(val) => {
             let value = hir::ConstValue::Bool { val };
             (value, hir::Type::Basic(BasicType::Bool))
         }
-        ast::Literal::Int(val) => {
+        ast::Lit::Int(val) => {
             let int_ty = coerce_int_type(expect);
             let value = hir::ConstValue::Int {
                 val,
@@ -393,16 +393,16 @@ fn typecheck_lit<'hir>(
             };
             (value, hir::Type::Basic(int_ty.into_basic()))
         }
-        ast::Literal::Float(val) => {
+        ast::Lit::Float(val) => {
             let float_ty = coerce_float_type(expect);
             let value = hir::ConstValue::Float { val, float_ty };
             (value, hir::Type::Basic(float_ty.into_basic()))
         }
-        ast::Literal::Char(val) => {
+        ast::Lit::Char(val) => {
             let value = hir::ConstValue::Char { val };
             (value, hir::Type::Basic(BasicType::Char))
         }
-        ast::Literal::String { id, c_string } => {
+        ast::Lit::String { id, c_string } => {
             let value = hir::ConstValue::String { id, c_string };
             let string_ty = alloc_string_lit_type(emit, c_string);
             (value, string_ty)

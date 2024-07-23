@@ -641,35 +641,16 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
     }
 
     let mc = match p.peek() {
-        T![null] => {
+        T![null]
+        | T![true]
+        | T![false]
+        | T![int_lit]
+        | T![float_lit]
+        | T![char_lit]
+        | T![string_lit] => {
             let m = p.start();
-            p.bump(T![null]);
-            m.complete(p, SyntaxKind::EXPR_LIT_NULL)
-        }
-        T![true] | T![false] => {
-            let m = p.start();
-            p.bump(p.peek());
-            m.complete(p, SyntaxKind::EXPR_LIT_BOOL)
-        }
-        T![int_lit] => {
-            let m = p.start();
-            p.bump(T![int_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_INT)
-        }
-        T![float_lit] => {
-            let m = p.start();
-            p.bump(T![float_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_FLOAT)
-        }
-        T![char_lit] => {
-            let m = p.start();
-            p.bump(T![char_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_CHAR)
-        }
-        T![string_lit] => {
-            let m = p.start();
-            p.bump(T![string_lit]);
-            m.complete(p, SyntaxKind::EXPR_LIT_STRING)
+            lit(p);
+            m.complete(p, SyntaxKind::EXPR_LIT)
         }
         T![if] => if_(p),
         T!['{'] => block(p, SyntaxKind::EXPR_BLOCK),
@@ -799,6 +780,42 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             }
             _ => return mc,
         }
+    }
+}
+
+fn lit(p: &mut Parser) {
+    match p.peek() {
+        T![null] => {
+            let m = p.start();
+            p.bump(T![null]);
+            m.complete(p, SyntaxKind::LIT_NULL);
+        }
+        T![true] | T![false] => {
+            let m = p.start();
+            p.bump(p.peek());
+            m.complete(p, SyntaxKind::LIT_BOOL);
+        }
+        T![int_lit] => {
+            let m = p.start();
+            p.bump(T![int_lit]);
+            m.complete(p, SyntaxKind::LIT_INT);
+        }
+        T![float_lit] => {
+            let m = p.start();
+            p.bump(T![float_lit]);
+            m.complete(p, SyntaxKind::LIT_FLOAT);
+        }
+        T![char_lit] => {
+            let m = p.start();
+            p.bump(T![char_lit]);
+            m.complete(p, SyntaxKind::LIT_CHAR);
+        }
+        T![string_lit] => {
+            let m = p.start();
+            p.bump(T![string_lit]);
+            m.complete(p, SyntaxKind::LIT_STRING);
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -943,46 +960,15 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             p.bump(T![_]);
             m.complete(p, SyntaxKind::PAT_WILD)
         }
-        T![null] => {
+        T![null]
+        | T![true]
+        | T![false]
+        | T![int_lit]
+        | T![float_lit]
+        | T![char_lit]
+        | T![string_lit] => {
             let m = p.start();
-            let me = p.start();
-            p.bump(T![null]);
-            me.complete(p, SyntaxKind::EXPR_LIT_NULL);
-            m.complete(p, SyntaxKind::PAT_LIT)
-        }
-        T![true] | T![false] => {
-            let m = p.start();
-            let me = p.start();
-            p.bump(p.peek());
-            me.complete(p, SyntaxKind::EXPR_LIT_BOOL);
-            m.complete(p, SyntaxKind::PAT_LIT)
-        }
-        T![int_lit] => {
-            let m = p.start();
-            let me = p.start();
-            p.bump(T![int_lit]);
-            me.complete(p, SyntaxKind::EXPR_LIT_INT);
-            m.complete(p, SyntaxKind::PAT_LIT)
-        }
-        T![float_lit] => {
-            let m = p.start();
-            let me = p.start();
-            p.bump(T![float_lit]);
-            me.complete(p, SyntaxKind::EXPR_LIT_FLOAT);
-            m.complete(p, SyntaxKind::PAT_LIT)
-        }
-        T![char_lit] => {
-            let m = p.start();
-            let me = p.start();
-            p.bump(T![char_lit]);
-            me.complete(p, SyntaxKind::EXPR_LIT_CHAR);
-            m.complete(p, SyntaxKind::PAT_LIT)
-        }
-        T![string_lit] => {
-            let m = p.start();
-            let me = p.start();
-            p.bump(T![string_lit]);
-            me.complete(p, SyntaxKind::EXPR_LIT_STRING);
+            lit(p);
             m.complete(p, SyntaxKind::PAT_LIT)
         }
         T![ident] => {
