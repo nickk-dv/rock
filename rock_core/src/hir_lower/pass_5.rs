@@ -2265,7 +2265,7 @@ fn typecheck_block<'hir>(
                 let error_count = emit.error_count();
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 if !emit.did_error(error_count) {
-                    check_unused_expr_semi(emit, proc, expr_res.expr, expr.range);
+                    check_unused_expr_semi(emit, proc.origin(), expr_res.expr, expr.range);
                 }
 
                 //@migrate to using never type instead of diverges bool flags
@@ -2338,55 +2338,6 @@ fn typecheck_block<'hir>(
 
     proc.pop_block();
     block_result
-}
-
-fn check_unused_expr_semi(
-    emit: &mut HirEmit,
-    proc: &ProcScope,
-    expr: &hir::Expr,
-    expr_range: TextRange,
-) {
-    enum UnusedExpr {
-        No,
-        Maybe,
-        Yes(&'static str),
-    }
-
-    let unused = match *expr {
-        // errored expressions are not allowed to be checked
-        hir::Expr::Error => unreachable!(),
-        hir::Expr::Const { .. } => UnusedExpr::Yes("constant value"),
-        hir::Expr::If { .. } => UnusedExpr::Maybe,
-        hir::Expr::Block { .. } => UnusedExpr::Maybe,
-        hir::Expr::Match { .. } => UnusedExpr::Maybe,
-        hir::Expr::StructField { .. } => UnusedExpr::Yes("field access"),
-        hir::Expr::SliceField { .. } => UnusedExpr::Yes("field access"),
-        hir::Expr::Index { .. } => UnusedExpr::Yes("index access"),
-        hir::Expr::Slice { .. } => UnusedExpr::Yes("slice value"),
-        hir::Expr::Cast { .. } => UnusedExpr::Yes("cast value"),
-        hir::Expr::LocalVar { .. } => UnusedExpr::Yes("local value"),
-        hir::Expr::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
-        hir::Expr::ConstVar { .. } => UnusedExpr::Yes("constant value"),
-        hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
-        hir::Expr::EnumVariant { .. } => UnusedExpr::Yes("variant value"),
-        hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
-        hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
-        hir::Expr::StructInit { .. } => UnusedExpr::Yes("struct value"),
-        hir::Expr::ArrayInit { .. } => UnusedExpr::Yes("array value"),
-        hir::Expr::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
-        hir::Expr::Deref { .. } => UnusedExpr::Yes("dereference"),
-        hir::Expr::Address { .. } => UnusedExpr::Yes("address value"),
-        hir::Expr::Unary { .. } => UnusedExpr::Yes("unary operation"),
-        hir::Expr::Binary { .. } => UnusedExpr::Yes("binary operation"),
-    };
-
-    if let UnusedExpr::Yes(kind) = unused {
-        emit.warning(WarningComp::new(
-            format!("unused {}", kind),
-            SourceRange::new(proc.origin(), expr_range),
-            None,
-        ));
-    }
 }
 
 /// returns `None` on invalid use of `break`
@@ -2763,6 +2714,57 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
     }
 }
 
+//==================== UNUSED CHECK ====================
+
+fn check_unused_expr_semi(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    expr: &hir::Expr,
+    expr_range: TextRange,
+) {
+    enum UnusedExpr {
+        No,
+        Maybe,
+        Yes(&'static str),
+    }
+
+    let unused = match expr {
+        // errored expressions are not allowed to be checked
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { .. } => UnusedExpr::Yes("constant value"),
+        hir::Expr::If { .. } => UnusedExpr::Maybe,
+        hir::Expr::Block { .. } => UnusedExpr::Maybe,
+        hir::Expr::Match { .. } => UnusedExpr::Maybe,
+        hir::Expr::StructField { .. } => UnusedExpr::Yes("field access"),
+        hir::Expr::SliceField { .. } => UnusedExpr::Yes("field access"),
+        hir::Expr::Index { .. } => UnusedExpr::Yes("index access"),
+        hir::Expr::Slice { .. } => UnusedExpr::Yes("slice value"),
+        hir::Expr::Cast { .. } => UnusedExpr::Yes("cast value"),
+        hir::Expr::LocalVar { .. } => UnusedExpr::Yes("local value"),
+        hir::Expr::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
+        hir::Expr::ConstVar { .. } => UnusedExpr::Yes("constant value"),
+        hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
+        hir::Expr::EnumVariant { .. } => UnusedExpr::Yes("variant value"),
+        hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::Expr::StructInit { .. } => UnusedExpr::Yes("struct value"),
+        hir::Expr::ArrayInit { .. } => UnusedExpr::Yes("array value"),
+        hir::Expr::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
+        hir::Expr::Deref { .. } => UnusedExpr::Yes("dereference"),
+        hir::Expr::Address { .. } => UnusedExpr::Yes("address value"),
+        hir::Expr::Unary { .. } => UnusedExpr::Yes("unary operation"),
+        hir::Expr::Binary { .. } => UnusedExpr::Yes("binary operation"),
+    };
+
+    if let UnusedExpr::Yes(kind) = unused {
+        emit.warning(WarningComp::new(
+            format!("unused {}", kind),
+            SourceRange::new(origin_id, expr_range),
+            None,
+        ));
+    }
+}
+
 //==================== INFERENCE ====================
 //@check if reference expectations need to be accounted for
 
@@ -2865,7 +2867,6 @@ fn input_opt_range(input: Option<&ast::Input>, default: TextRange) -> TextRange 
 
 fn error_unexpected_variant_arg_count(
     emit: &mut HirEmit,
-    origin_id: ModuleID,
     expected_count: usize,
     input_count: usize,
     error_src: SourceRange,
@@ -2882,7 +2883,6 @@ fn error_unexpected_variant_arg_count(
 
 fn error_unexpected_call_arg_count(
     emit: &mut HirEmit,
-    origin_id: ModuleID,
     expected_count: usize,
     input_count: usize,
     is_variadic: bool,
@@ -2921,7 +2921,6 @@ fn check_call_direct<'hir>(
         let input_range = input_range(input);
         error_unexpected_call_arg_count(
             emit,
-            proc.origin(),
             expected_count,
             input_count,
             is_variadic,
@@ -2987,7 +2986,6 @@ fn check_call_indirect<'hir>(
         let input_range = input_range(input);
         error_unexpected_call_arg_count(
             emit,
-            proc.origin(),
             expected_count,
             input_count,
             is_variadic,
@@ -3045,7 +3043,6 @@ fn check_variant_input_opt<'hir>(
         let input_range = input_opt_range(input, error_range);
         error_unexpected_variant_arg_count(
             emit,
-            proc.origin(),
             expected_count,
             input_count,
             SourceRange::new(proc.origin(), input_range),
