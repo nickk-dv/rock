@@ -1045,16 +1045,7 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
 fn match_2<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match2<'ast>, String> {
     p.bump();
     let on_expr = expr(p)?;
-
-    let offset = p.state.match_arms_2.start();
-    p.expect(T!['{'])?;
-    while !p.at(T!['}']) && !p.at(T![eof]) {
-        let arm = match_arm_2(p)?;
-        p.state.match_arms_2.add(arm);
-        p.expect(T![,])?;
-    }
-    p.expect(T!['}'])?;
-    let arms = p.state.match_arms_2.take(offset, &mut p.state.arena);
+    let arms = comma_separated_list!(p, match_arm_2, match_arms_2, T!['{'], T!['}']);
 
     let match_ = Match2 { on_expr, arms };
     let match_ = p.state.arena.alloc(match_);
