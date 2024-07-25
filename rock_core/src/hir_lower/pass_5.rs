@@ -324,7 +324,9 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::Match { match_ } => {
             typecheck_match(hir, emit, proc, expect, match_, expr.range)
         }
-        ast::ExprKind::Match2 { .. } => todo!("match2 typecheck_expr"),
+        ast::ExprKind::Match2 { match_2 } => {
+            typecheck_match_2(hir, emit, proc, expect, match_2, expr.range)
+        }
         ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
         ast::ExprKind::Index {
             target,
@@ -569,7 +571,6 @@ fn typecheck_match<'hir>(
         if match_type.is_never() || (match_type.is_error() && !value_res.ty.is_never()) {
             match_type = value_res.ty;
         }
-
         if let Expectation::None = expect {
             if !value_res.ty.is_error() && !value_res.ty.is_never() {
                 let expect_src = SourceRange::new(proc.origin(), arm.expr.range);
@@ -633,6 +634,78 @@ fn typecheck_match<'hir>(
     let match_expr = emit.arena.alloc(match_expr);
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(match_type, match_expr)
+}
+
+fn typecheck_match_2<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    mut expect: Expectation<'hir>,
+    match_: &ast::Match2<'_>,
+    match_range: TextRange,
+) -> TypeResult<'hir> {
+    let mut match_type = hir::Type::Basic(BasicType::Never);
+    let error_count = emit.error_count();
+
+    let on_res = typecheck_expr(hir, emit, proc, Expectation::None, match_.on_expr);
+    let pat_expect_src = SourceRange::new(proc.origin(), match_.on_expr.range);
+    let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
+    check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
+
+    for arm in match_.arms {
+        let pat = typecheck_pat(hir, emit, proc, pat_expect, &arm.pat);
+        let expr_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
+
+        // never -> anything
+        // error -> anything except never
+        if match_type.is_never() || (match_type.is_error() && !expr_res.ty.is_never()) {
+            match_type = expr_res.ty;
+        }
+        if let Expectation::None = expect {
+            if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
+                let expect_src = SourceRange::new(proc.origin(), arm.expr.range);
+                expect = Expectation::HasType(expr_res.ty, Some(expect_src));
+            }
+        }
+
+        //@add pat to the list
+    }
+
+    if !emit.did_error(error_count) {
+        //@pattern analysis / unrechability / exaustiveness
+    }
+
+    //@error result temp
+    TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+}
+
+//@return some hir::Pat
+fn typecheck_pat<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    expect: Expectation<'hir>,
+    pat: &ast::Pat,
+) {
+    match pat.kind {
+        ast::PatKind::Wild => {}
+        ast::PatKind::Lit(lit) => {
+            //@use result
+            let _ = typecheck_lit(emit, expect, lit);
+        }
+        ast::PatKind::Item { path, binds } => {
+            // const + no binds
+            // variant + maybe binds
+        }
+        ast::PatKind::Variant { name, binds } => {
+            // inferred variant + maybe binds
+        }
+        ast::PatKind::Or { patterns } => {
+            for pat in patterns {
+                typecheck_pat(hir, emit, proc, expect, pat);
+            }
+        }
+    }
 }
 
 //@different enum variants 01.06.24
