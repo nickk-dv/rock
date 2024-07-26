@@ -676,10 +676,9 @@ fn typecheck_match_2<'hir>(
     }
 
     //@error result temp
-    TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+    TypeResult::new(match_type, hir_build::EXPR_ERROR)
 }
 
-//@return some hir::Pat
 fn typecheck_pat<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -688,22 +687,129 @@ fn typecheck_pat<'hir>(
     pat: &ast::Pat,
 ) {
     match pat.kind {
-        ast::PatKind::Wild => {}
+        ast::PatKind::Wild => {
+            //@emit hir pat
+        }
         ast::PatKind::Lit(lit) => {
             //@use result
             let _ = typecheck_lit(emit, expect, lit);
+            //@emit hir pat
         }
         ast::PatKind::Item { path, binds } => {
-            // const + no binds
-            // variant + maybe binds
+            let (value_id, field_names) =
+                path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
+            match value_id {
+                ValueID::None => {}
+                ValueID::Enum(enum_id, variant_id) => {
+                    //@fields are guaranteed to be empty (solve by making path resolve more clear)
+
+                    let found_ty = hir::Type::Enum(enum_id);
+                    check_type_expectation(hir, emit, proc.origin(), pat.range, expect, found_ty);
+
+                    let data = hir.registry().enum_data(enum_id);
+                    let variant = data.variant(variant_id);
+
+                    let input_count = binds.map(|names| names.len()).unwrap_or(0);
+                    let expected_count = match variant.kind {
+                        hir::VariantKind::Default(_) => 0,
+                        hir::VariantKind::Constant(_) => 0,
+                        hir::VariantKind::HasValues(values) => values.len(),
+                    };
+
+                    if input_count != expected_count {
+                        //@error src can be improved to not include variant itself if possible (if needed)
+                        error_unexpected_variant_bind_count(
+                            emit,
+                            expected_count,
+                            input_count,
+                            SourceRange::new(proc.origin(), pat.range),
+                            SourceRange::new(data.origin_id, variant.name.range),
+                        )
+                    }
+                }
+                ValueID::Const(const_id) => {
+                    if let Some(name) = field_names.first() {
+                        //@this could be allowed, with const fold field access
+                        emit.error(ErrorComp::new(
+                            "cannot access fields in patterns",
+                            SourceRange::new(proc.origin(), name.range),
+                            None,
+                        ));
+                    } else {
+                        let found_ty = hir.registry().const_data(const_id).ty;
+                        check_type_expectation(
+                            hir,
+                            emit,
+                            proc.origin(),
+                            pat.range,
+                            expect,
+                            found_ty,
+                        );
+                    }
+
+                    let input_count = binds.map(|names| names.len()).unwrap_or(0);
+                    if input_count > 0 {
+                        emit.error(ErrorComp::new(
+                            "cannot destructure constants in patterns",
+                            SourceRange::new(proc.origin(), pat.range),
+                            None,
+                        ));
+                    }
+                }
+                ValueID::Proc(_) => todo!(),
+                ValueID::Global(_) => todo!(),
+                ValueID::Local(_) => todo!(),
+                ValueID::Param(_) => emit.error(ErrorComp::new(
+                    "cannot use runtime values in patterns",
+                    SourceRange::new(proc.origin(), pat.range),
+                    None,
+                )),
+            }
+            //@emit hir pat
         }
         ast::PatKind::Variant { name, binds } => {
-            // inferred variant + maybe binds
+            if let Some(enum_id) =
+                infer_enum_type(emit, expect, SourceRange::new(proc.origin(), name.range))
+            {
+                let data = hir.registry().enum_data(enum_id);
+                if let Some((variant_id, variant)) = data.find_variant(name.id) {
+                    //@duplicate check, same as ast::PatKind::Item check
+                    let input_count = binds.map(|names| names.len()).unwrap_or(0);
+                    let expected_count = match variant.kind {
+                        hir::VariantKind::Default(_) => 0,
+                        hir::VariantKind::Constant(_) => 0,
+                        hir::VariantKind::HasValues(values) => values.len(),
+                    };
+
+                    if input_count != expected_count {
+                        //@error src can be improved to not include variant itself if possible (if needed)
+                        error_unexpected_variant_bind_count(
+                            emit,
+                            expected_count,
+                            input_count,
+                            SourceRange::new(proc.origin(), pat.range),
+                            SourceRange::new(data.origin_id, variant.name.range),
+                        )
+                    }
+                } else {
+                    //@duplicate error, same as path resolve 1.07.24
+                    emit.error(ErrorComp::new(
+                        format!("enum variant `{}` is not found", hir.name_str(name.id)),
+                        SourceRange::new(proc.origin(), name.range),
+                        Info::new(
+                            "enum defined here",
+                            SourceRange::new(data.origin_id, data.name.range),
+                        ),
+                    ));
+                }
+            }
+            //@emit hir pat
         }
         ast::PatKind::Or { patterns } => {
             for pat in patterns {
                 typecheck_pat(hir, emit, proc, expect, pat);
             }
+            //@emit hir pat
         }
     }
 }
@@ -2943,14 +3049,28 @@ fn error_unexpected_variant_arg_count(
     expected_count: usize,
     input_count: usize,
     error_src: SourceRange,
-    info_src: SourceRange,
-    info_msg: &'static str,
+    variant_src: SourceRange,
 ) {
     let plural_end = if expected_count == 1 { "" } else { "s" };
     emit.error(ErrorComp::new(
         format!("expected {expected_count} argument{plural_end}, found {input_count}"),
         error_src,
-        Info::new(info_msg, info_src),
+        Info::new("variant defined here", variant_src),
+    ));
+}
+
+fn error_unexpected_variant_bind_count(
+    emit: &mut HirEmit,
+    expected_count: usize,
+    input_count: usize,
+    error_src: SourceRange,
+    variant_src: SourceRange,
+) {
+    let plural_end = if expected_count == 1 { "" } else { "s" };
+    emit.error(ErrorComp::new(
+        format!("expected {expected_count} binding{plural_end}, found {input_count}"),
+        error_src,
+        Info::new("variant defined here", variant_src),
     ));
 }
 
@@ -2960,12 +3080,12 @@ fn error_unexpected_call_arg_count(
     input_count: usize,
     is_variadic: bool,
     error_src: SourceRange,
-    info: Option<(SourceRange, &'static str)>,
+    info: Option<SourceRange>,
 ) {
     let at_least = if is_variadic { " at least" } else { "" };
     let plural_end = if expected_count == 1 { "" } else { "s" };
     let info = match info {
-        Some((src, msg)) => Info::new(msg, src),
+        Some(proc_src) => Info::new("procedure defined here", proc_src),
         None => None,
     };
     emit.error(ErrorComp::new(
@@ -2998,10 +3118,7 @@ fn check_call_direct<'hir>(
             input_count,
             is_variadic,
             SourceRange::new(proc.origin(), input_range),
-            Some((
-                SourceRange::new(data.origin_id, data.name.range),
-                "procedure defined here",
-            )),
+            Some(SourceRange::new(data.origin_id, data.name.range)),
         );
     }
 
@@ -3120,7 +3237,6 @@ fn check_variant_input_opt<'hir>(
             input_count,
             SourceRange::new(proc.origin(), input_range),
             SourceRange::new(data.origin_id, variant.name.range),
-            "variant defined here",
         );
     }
 
