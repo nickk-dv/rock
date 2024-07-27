@@ -782,6 +782,7 @@ fn codegen_expr<'hir>(
             None
         }
         hir::Expr::Match { match_ } => todo!(),
+        hir::Expr::Match2 { match_ } => todo!(),
         hir::Expr::StructField {
             target,
             struct_id,

@@ -315,7 +315,7 @@ pub fn typecheck_expr<'hir>(
     expr: &ast::Expr<'_>,
 ) -> TypeResult<'hir> {
     let expr_res = match expr.kind {
-        ast::ExprKind::Lit(literal) => typecheck_lit(emit, expect, literal),
+        ast::ExprKind::Lit(lit) => typecheck_lit(emit, expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None)
@@ -652,6 +652,7 @@ fn typecheck_match_2<'hir>(
     let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
     check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
 
+    let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
         let pat = typecheck_pat(hir, emit, proc, pat_expect, &arm.pat);
         let expr_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
@@ -668,15 +669,43 @@ fn typecheck_match_2<'hir>(
             }
         }
 
-        //@add pat to the list
+        let tail_stmt = hir::Stmt::ExprTail(expr_res.expr);
+        let stmts = emit.arena.alloc_slice(&[tail_stmt]);
+        let block = hir::Block { stmts };
+
+        let arm = hir::MatchArm2 {
+            pat,
+            block,
+            unreachable: false,
+        };
+        arms.push(arm);
     }
+    let arms = emit.arena.alloc_slice(&arms);
 
     if !emit.did_error(error_count) {
         //@pattern analysis / unrechability / exaustiveness
     }
 
-    //@error result temp
-    TypeResult::new(match_type, hir_build::EXPR_ERROR)
+    let match_ = hir::Match2 {
+        on_expr: on_res.expr,
+        arms,
+    };
+    let match_ = emit.arena.alloc(match_);
+    let match_expr = hir::Expr::Match2 { match_ };
+    let match_expr = emit.arena.alloc(match_expr);
+    //@cannot tell when to ignore typecheck or not
+    TypeResult::new(match_type, match_expr)
+}
+
+struct PatResult<'hir> {
+    pat: hir::Pat<'hir>,
+    pat_ty: hir::Type<'hir>,
+}
+
+impl<'hir> PatResult<'hir> {
+    fn new(pat: hir::Pat<'hir>, pat_ty: hir::Type<'hir>) -> PatResult<'hir> {
+        PatResult { pat, pat_ty }
+    }
 }
 
 fn typecheck_pat<'hir>(
@@ -685,133 +714,182 @@ fn typecheck_pat<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
     pat: &ast::Pat,
-) {
-    match pat.kind {
-        ast::PatKind::Wild => {
-            //@emit hir pat
-        }
-        ast::PatKind::Lit(lit) => {
-            //@use result
-            let _ = typecheck_lit(emit, expect, lit);
-            //@emit hir pat
-        }
+) -> hir::Pat<'hir> {
+    let pat_res = match pat.kind {
+        ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
+        ast::PatKind::Lit(lit) => typecheck_pat_lit(emit, expect, lit),
         ast::PatKind::Item { path, binds } => {
-            let (value_id, field_names) =
-                path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
-            match value_id {
-                ValueID::None => {}
-                ValueID::Enum(enum_id, variant_id) => {
-                    //@fields are guaranteed to be empty (solve by making path resolve more clear)
-
-                    let found_ty = hir::Type::Enum(enum_id);
-                    check_type_expectation(hir, emit, proc.origin(), pat.range, expect, found_ty);
-
-                    let data = hir.registry().enum_data(enum_id);
-                    let variant = data.variant(variant_id);
-
-                    let input_count = binds.map(|names| names.len()).unwrap_or(0);
-                    let expected_count = match variant.kind {
-                        hir::VariantKind::Default(_) => 0,
-                        hir::VariantKind::Constant(_) => 0,
-                        hir::VariantKind::HasValues(values) => values.len(),
-                    };
-
-                    if input_count != expected_count {
-                        //@error src can be improved to not include variant itself if possible (if needed)
-                        error_unexpected_variant_bind_count(
-                            emit,
-                            expected_count,
-                            input_count,
-                            SourceRange::new(proc.origin(), pat.range),
-                            SourceRange::new(data.origin_id, variant.name.range),
-                        )
-                    }
-                }
-                ValueID::Const(const_id) => {
-                    if let Some(name) = field_names.first() {
-                        //@this could be allowed, with const fold field access
-                        emit.error(ErrorComp::new(
-                            "cannot access fields in patterns",
-                            SourceRange::new(proc.origin(), name.range),
-                            None,
-                        ));
-                    } else {
-                        let found_ty = hir.registry().const_data(const_id).ty;
-                        check_type_expectation(
-                            hir,
-                            emit,
-                            proc.origin(),
-                            pat.range,
-                            expect,
-                            found_ty,
-                        );
-                    }
-
-                    let input_count = binds.map(|names| names.len()).unwrap_or(0);
-                    if input_count > 0 {
-                        emit.error(ErrorComp::new(
-                            "cannot destructure constants in patterns",
-                            SourceRange::new(proc.origin(), pat.range),
-                            None,
-                        ));
-                    }
-                }
-                ValueID::Proc(_) => todo!(),
-                ValueID::Global(_) => todo!(),
-                ValueID::Local(_) => todo!(),
-                ValueID::Param(_) => emit.error(ErrorComp::new(
-                    "cannot use runtime values in patterns",
-                    SourceRange::new(proc.origin(), pat.range),
-                    None,
-                )),
-            }
-            //@emit hir pat
+            typecheck_pat_item(hir, emit, proc, path, binds, pat.range)
         }
         ast::PatKind::Variant { name, binds } => {
-            if let Some(enum_id) =
-                infer_enum_type(emit, expect, SourceRange::new(proc.origin(), name.range))
-            {
-                let data = hir.registry().enum_data(enum_id);
-                if let Some((variant_id, variant)) = data.find_variant(name.id) {
-                    //@duplicate check, same as ast::PatKind::Item check
-                    let input_count = binds.map(|names| names.len()).unwrap_or(0);
-                    let expected_count = match variant.kind {
-                        hir::VariantKind::Default(_) => 0,
-                        hir::VariantKind::Constant(_) => 0,
-                        hir::VariantKind::HasValues(values) => values.len(),
-                    };
-
-                    if input_count != expected_count {
-                        //@error src can be improved to not include variant itself if possible (if needed)
-                        error_unexpected_variant_bind_count(
-                            emit,
-                            expected_count,
-                            input_count,
-                            SourceRange::new(proc.origin(), pat.range),
-                            SourceRange::new(data.origin_id, variant.name.range),
-                        )
-                    }
-                } else {
-                    //@duplicate error, same as path resolve 1.07.24
-                    emit.error(ErrorComp::new(
-                        format!("enum variant `{}` is not found", hir.name_str(name.id)),
-                        SourceRange::new(proc.origin(), name.range),
-                        Info::new(
-                            "enum defined here",
-                            SourceRange::new(data.origin_id, data.name.range),
-                        ),
-                    ));
-                }
-            }
-            //@emit hir pat
+            typecheck_pat_variant(hir, emit, proc, expect, name, binds, pat.range)
         }
-        ast::PatKind::Or { patterns } => {
-            for pat in patterns {
-                typecheck_pat(hir, emit, proc, expect, pat);
+        ast::PatKind::Or { patterns } => typecheck_pat_or(hir, emit, proc, expect, patterns),
+    };
+
+    check_type_expectation(hir, emit, proc.origin(), pat.range, expect, pat_res.pat_ty);
+    pat_res.pat
+}
+
+fn typecheck_pat_lit<'hir>(
+    emit: &mut HirEmit<'hir>,
+    expect: Expectation<'hir>,
+    lit: ast::Lit,
+) -> PatResult<'hir> {
+    let lit_res = typecheck_lit(emit, expect, lit);
+    let value = match lit_res.expr {
+        hir::Expr::Const { value } => *value,
+        _ => unreachable!(),
+    };
+    PatResult::new(hir::Pat::Lit(value), lit_res.ty)
+}
+
+fn typecheck_pat_item<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    path: &ast::Path,
+    binds: Option<&[ast::Name]>,
+    pat_range: TextRange,
+) -> PatResult<'hir> {
+    let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
+
+    match value_id {
+        ValueID::None => PatResult::new(hir::Pat::Error, hir::Type::Error),
+        ValueID::Enum(enum_id, variant_id) => {
+            //@fields are guaranteed to be empty (solve by making path resolve more clear)
+            let data = hir.registry().enum_data(enum_id);
+            let variant = data.variant(variant_id);
+
+            let value_types = match variant.kind {
+                hir::VariantKind::Default(_) => &[],
+                hir::VariantKind::Constant(_) => &[],
+                hir::VariantKind::HasValues(types) => types,
+            };
+
+            let input_count = binds.map(|names| names.len()).unwrap_or(0);
+            let expected_count = value_types.len();
+
+            if input_count != expected_count {
+                //@error src can be improved to not include variant itself if possible (if needed)
+                error_unexpected_variant_bind_count(
+                    emit,
+                    expected_count,
+                    input_count,
+                    SourceRange::new(proc.origin(), pat_range),
+                    SourceRange::new(data.origin_id, variant.name.range),
+                );
             }
-            //@emit hir pat
+
+            PatResult::new(
+                hir::Pat::Variant(enum_id, variant_id),
+                hir::Type::Enum(enum_id),
+            )
+        }
+        ValueID::Const(const_id) => {
+            if let Some(name) = field_names.first() {
+                emit.error(ErrorComp::new(
+                    "cannot access fields in patterns",
+                    SourceRange::new(proc.origin(), name.range),
+                    None,
+                ));
+            }
+
+            let input_count = binds.map(|names| names.len()).unwrap_or(0);
+            if input_count > 0 {
+                //@rephrase error
+                emit.error(ErrorComp::new(
+                    "cannot destructure constants in patterns",
+                    SourceRange::new(proc.origin(), pat_range),
+                    None,
+                ));
+            }
+
+            let data = hir.registry().const_data(const_id);
+            PatResult::new(hir::Pat::Const(const_id), data.ty)
+        }
+        ValueID::Proc(_) | ValueID::Global(_) | ValueID::Local(_) | ValueID::Param(_) => {
+            emit.error(ErrorComp::new(
+                "cannot use runtime values in patterns",
+                SourceRange::new(proc.origin(), pat_range),
+                None,
+            ));
+            PatResult::new(hir::Pat::Error, hir::Type::Error)
         }
     }
+}
+
+fn typecheck_pat_variant<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    expect: Expectation<'hir>,
+    name: ast::Name,
+    binds: Option<&[ast::Name]>,
+    pat_range: TextRange,
+) -> PatResult<'hir> {
+    let enum_id = infer_enum_type(emit, expect, SourceRange::new(proc.origin(), name.range));
+    let enum_id = match enum_id {
+        Some(enum_id) => enum_id,
+        None => return PatResult::new(hir::Pat::Wild, hir::Type::Error),
+    };
+
+    let data = hir.registry().enum_data(enum_id);
+    if let Some((variant_id, variant)) = data.find_variant(name.id) {
+        //@duplicate codeblock, same as ast::PatKind::Item
+        let value_types = match variant.kind {
+            hir::VariantKind::Default(_) => &[],
+            hir::VariantKind::Constant(_) => &[],
+            hir::VariantKind::HasValues(types) => types,
+        };
+
+        let input_count = binds.map(|names| names.len()).unwrap_or(0);
+        let expected_count = value_types.len();
+
+        if input_count != expected_count {
+            //@error src can be improved to not include variant itself if possible (if needed)
+            error_unexpected_variant_bind_count(
+                emit,
+                expected_count,
+                input_count,
+                SourceRange::new(proc.origin(), pat_range),
+                SourceRange::new(data.origin_id, variant.name.range),
+            );
+        }
+
+        PatResult::new(
+            hir::Pat::Variant(enum_id, variant_id),
+            hir::Type::Enum(enum_id),
+        )
+    } else {
+        //@duplicate error, same as path resolve
+        emit.error(ErrorComp::new(
+            format!("enum variant `{}` is not found", hir.name_str(name.id)),
+            SourceRange::new(proc.origin(), name.range),
+            Info::new(
+                "enum defined here",
+                SourceRange::new(data.origin_id, data.name.range),
+            ),
+        ));
+        PatResult::new(hir::Pat::Wild, hir::Type::Error)
+    }
+}
+
+fn typecheck_pat_or<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
+    expect: Expectation<'hir>,
+    patterns: &[ast::Pat],
+) -> PatResult<'hir> {
+    let mut patterns_res = Vec::with_capacity(patterns.len());
+    for pat in patterns {
+        let pat = typecheck_pat(hir, emit, proc, expect, pat);
+        patterns_res.push(pat);
+    }
+    let patterns = emit.arena.alloc_slice(&patterns_res);
+
+    PatResult::new(hir::Pat::Or(patterns), hir::Type::Error)
 }
 
 //@different enum variants 01.06.24
@@ -2066,6 +2144,7 @@ fn get_expr_addressability<'hir>(
         hir::Expr::If { .. } => Addressability::Temporary,
         hir::Expr::Block { .. } => Addressability::Temporary,
         hir::Expr::Match { .. } => Addressability::Temporary,
+        hir::Expr::Match2 { .. } => Addressability::Temporary,
         hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target),
         hir::Expr::SliceField { .. } => Addressability::SliceField,
         hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target),
@@ -2914,6 +2993,7 @@ fn check_unused_expr_semi(
         hir::Expr::If { .. } => UnusedExpr::Maybe,
         hir::Expr::Block { .. } => UnusedExpr::Maybe,
         hir::Expr::Match { .. } => UnusedExpr::Maybe,
+        hir::Expr::Match2 { .. } => UnusedExpr::Maybe,
         hir::Expr::StructField { .. } => UnusedExpr::Yes("field access"),
         hir::Expr::SliceField { .. } => UnusedExpr::Yes("field access"),
         hir::Expr::Index { .. } => UnusedExpr::Yes("index access"),
