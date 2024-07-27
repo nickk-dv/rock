@@ -278,6 +278,7 @@ pub enum Expr<'hir> {
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },
+    Match2       { match_: &'hir Match2<'hir> },
     StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
     SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
@@ -324,6 +325,29 @@ pub struct MatchArm<'hir> {
     pub pat: ConstValueID,
     pub block: Block<'hir>,
     pub unreachable: bool,
+}
+
+#[derive(Copy, Clone)]
+pub struct Match2<'hir> {
+    pub on_expr: &'hir Expr<'hir>,
+    pub arms: &'hir [MatchArm2<'hir>],
+}
+
+#[derive(Copy, Clone)]
+pub struct MatchArm2<'hir> {
+    pub pat: Pat<'hir>,
+    pub block: Block<'hir>,
+    pub unreachable: bool,
+}
+
+#[derive(Copy, Clone)]
+pub enum Pat<'hir> {
+    Error,
+    Wild,
+    Lit(ConstValue<'hir>),
+    Const(ConstID),
+    Variant(EnumID, EnumVariantID), //@binds
+    Or(&'hir [Pat<'hir>]),
 }
 
 #[derive(Copy, Clone)]

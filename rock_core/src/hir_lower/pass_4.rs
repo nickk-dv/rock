@@ -925,6 +925,7 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::If { .. } => Err("if"),
         hir::Expr::Block { .. } => Err("block"),
         hir::Expr::Match { .. } => Err("match"),
+        hir::Expr::Match2 { .. } => Err("match"),
         hir::Expr::StructField {
             target,
             field_id,
