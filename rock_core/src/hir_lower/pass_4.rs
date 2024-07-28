@@ -13,7 +13,7 @@ use crate::text::TextRange;
 
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
-    EnumVariant(hir::EnumID, hir::EnumVariantID),
+    EnumVariant(hir::EnumID, hir::VariantID),
     StructSize(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
@@ -25,7 +25,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
         let data = hir.registry().enum_data(id);
 
         for (idx, variant) in data.variants.iter().enumerate() {
-            let variant_id = hir::EnumVariantID::new(idx);
+            let variant_id = hir::VariantID::new(idx);
 
             match variant.kind {
                 hir::VariantKind::Default(_) => {}
@@ -399,13 +399,13 @@ fn const_dependencies_mark_error_up_to_root(
     }
 }
 
-fn add_enum_variant_const_dependency<'hir>(
+fn add_variant_const_dependency<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
-    variant_id: hir::EnumVariantID,
+    variant_id: hir::VariantID,
 ) -> Result<(), TreeNodeID> {
     let data = hir.registry().enum_data(enum_id);
     let eval_id = match data.variant(variant_id).kind {
@@ -634,9 +634,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     Ok(())
                 }
                 pass_5::ValueID::Enum(enum_id, variant_id) => {
-                    add_enum_variant_const_dependency(
-                        hir, emit, tree, parent_id, enum_id, variant_id,
-                    )?;
+                    add_variant_const_dependency(hir, emit, tree, parent_id, enum_id, variant_id)?;
                     Ok(())
                 }
                 pass_5::ValueID::Const(const_id) => {
@@ -947,7 +945,7 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::ConstVar { const_id } => Ok(fold_const_var(hir, emit, const_id)),
         hir::Expr::GlobalVar { .. } => Err("global var"), //@custom message
         //@fold not implemented
-        hir::Expr::EnumVariant {
+        hir::Expr::Variant {
             enum_id,
             variant_id,
             input,
@@ -996,7 +994,7 @@ fn fold_struct_field<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     target: &'hir hir::Expr<'hir>,
-    field_id: hir::StructFieldID,
+    field_id: hir::FieldID,
     deref: bool,
 ) -> hir::ConstValue<'hir> {
     if deref {
@@ -1121,7 +1119,7 @@ fn fold_struct_init<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     struct_id: hir::StructID,
-    input: &'hir [hir::StructFieldInit<'hir>],
+    input: &'hir [hir::FieldInit<'hir>],
 ) -> hir::ConstValue<'hir> {
     let mut value_ids = Vec::new();
     let error_id = emit.const_intern.intern(hir::ConstValue::Error);

@@ -30,9 +30,9 @@ struct AstBuildState<'ast> {
 
     items: TempBuffer<ast::Item<'ast>>,
     attrs: TempBuffer<ast::Attribute>,
-    params: TempBuffer<ast::ProcParam<'ast>>,
-    variants: TempBuffer<ast::EnumVariant<'ast>>,
-    fields: TempBuffer<ast::StructField<'ast>>,
+    params: TempBuffer<ast::Param<'ast>>,
+    variants: TempBuffer<ast::Variant<'ast>>,
+    fields: TempBuffer<ast::Field<'ast>>,
     import_symbols: TempBuffer<ast::ImportSymbol>,
     names: TempBuffer<ast::Name>,
     types: TempBuffer<ast::Type<'ast>>,
@@ -230,7 +230,7 @@ fn param(ctx: &mut AstBuild, param: cst::Param) {
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let ty = ty(ctx, param.ty(ctx.tree).unwrap());
 
-    let param = ast::ProcParam { mutt, name, ty };
+    let param = ast::Param { mutt, name, ty };
     ctx.s.params.add(param);
 }
 
@@ -280,7 +280,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         ast::VariantKind::Default
     };
 
-    let variant = ast::EnumVariant { name, kind };
+    let variant = ast::Variant { name, kind };
     ctx.s.variants.add(variant);
 }
 
@@ -313,7 +313,7 @@ fn field(ctx: &mut AstBuild, field: cst::Field) {
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
-    let field = ast::StructField { vis, name, ty };
+    let field = ast::Field { vis, name, ty };
     ctx.s.fields.add(field);
 }
 

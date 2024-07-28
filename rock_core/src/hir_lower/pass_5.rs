@@ -1026,7 +1026,7 @@ fn check_match_exhaust<'hir>(
                 for idx in 0..data.variants.len() {
                     let covered = variants_covered[idx];
                     if !covered {
-                        let variant = data.variant(hir::EnumVariantID::new(idx));
+                        let variant = data.variant(hir::VariantID::new(idx));
                         let comma = if missing_count != 0 { ", " } else { "" };
                         missing.push_str(&format!("{comma}`{}`", hir.name_str(variant.name.id)));
                         missing_count += 1;
@@ -1072,7 +1072,7 @@ struct FieldResult<'hir> {
 
 #[rustfmt::skip]
 enum FieldKind<'hir> {
-    Struct(hir::StructID, hir::StructFieldID),
+    Struct(hir::StructID, hir::FieldID),
     ArraySlice { field: hir::SliceField },
     ArrayStatic { len: hir::ConstValue<'hir> },
 }
@@ -1155,7 +1155,7 @@ fn check_field_from_struct<'hir>(
     origin_id: ModuleID,
     name: ast::Name,
     struct_id: hir::StructID,
-) -> Option<(hir::StructFieldID, &'hir hir::StructField<'hir>)> {
+) -> Option<(hir::FieldID, &'hir hir::Field<'hir>)> {
     let data = hir.registry().struct_data(struct_id);
     match data.find_field(name.id) {
         Some((field_id, field)) => {
@@ -1809,7 +1809,7 @@ fn typecheck_struct_init<'hir>(
     }
 
     //@potentially a lot of allocations (simple solution), same memory could be re-used
-    let mut field_inits = Vec::<hir::StructFieldInit>::with_capacity(field_count);
+    let mut field_inits = Vec::<hir::FieldInit>::with_capacity(field_count);
     let mut field_status = Vec::<FieldStatus>::new();
     field_status.resize_with(field_count, || FieldStatus::None);
     let mut init_count: usize = 0;
@@ -1843,7 +1843,7 @@ fn typecheck_struct_init<'hir>(
                     }
                 }
 
-                let field_init = hir::StructFieldInit {
+                let field_init = hir::FieldInit {
                     field_id,
                     expr: input_res.expr,
                 };
@@ -1874,7 +1874,7 @@ fn typecheck_struct_init<'hir>(
 
         for (idx, status) in field_status.iter().enumerate() {
             if let FieldStatus::None = status {
-                let field = data.field(hir::StructFieldID::new(idx));
+                let field = data.field(hir::FieldID::new(idx));
                 message.push('`');
                 message.push_str(hir.name_str(field.name.id));
                 if idx + 1 != field_count {
@@ -2172,7 +2172,7 @@ fn get_expr_addressability<'hir>(
                 SourceRange::new(data.origin_id, data.name.range),
             )
         }
-        hir::Expr::EnumVariant { .. } => Addressability::NotImplemented, //@todo
+        hir::Expr::Variant { .. } => Addressability::NotImplemented, //@todo
         hir::Expr::CallDirect { .. } => Addressability::Temporary,
         hir::Expr::CallIndirect { .. } => Addressability::Temporary,
         hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
@@ -3003,7 +3003,7 @@ fn check_unused_expr_semi(
         hir::Expr::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
         hir::Expr::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
-        hir::Expr::EnumVariant { .. } => UnusedExpr::Yes("variant value"),
+        hir::Expr::Variant { .. } => UnusedExpr::Yes("variant value"),
         hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
         hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
         hir::Expr::StructInit { .. } => UnusedExpr::Yes("struct value"),
@@ -3293,7 +3293,7 @@ fn check_variant_input_opt<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     enum_id: hir::EnumID,
-    variant_id: hir::EnumVariantID,
+    variant_id: hir::VariantID,
     input: Option<&ast::Input>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
@@ -3339,8 +3339,7 @@ fn check_variant_input_opt<'hir>(
     };
 
     //@deal with empty value or type list like () both on definition & expression
-    //@rename to hir::Expr::Variant? mass rename pass later on, also VariantID and FieldID etc..
-    let variant_expr = hir::Expr::EnumVariant {
+    let variant_expr = hir::Expr::Variant {
         enum_id,
         variant_id,
         input,
@@ -3545,11 +3544,11 @@ pub fn path_resolve_struct<'hir>(
 pub enum ValueID {
     None,
     Proc(hir::ProcID),
-    Enum(hir::EnumID, hir::EnumVariantID),
+    Enum(hir::EnumID, hir::VariantID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
     Local(hir::LocalID),
-    Param(hir::ProcParamID),
+    Param(hir::ParamID),
 }
 
 pub fn path_resolve_value<'hir, 'ast>(

@@ -61,16 +61,16 @@ pub struct HirEmit<'hir> {
 impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     pub fn new(ast: ast::Ast<'ast, 'intern>) -> Self {
         let mut modules = Vec::with_capacity(ast.modules.len());
-
         for _ in ast.modules.iter() {
             modules.push(Module {
                 symbols: HashMap::with_capacity(64),
             });
         }
+        let registry = Registry::new(&ast.modules);
 
         HirData {
             modules,
-            registry: Registry::new(ast::ItemCount::default()),
+            registry,
             ast,
         }
     }
@@ -215,20 +215,40 @@ impl SymbolKind {
 }
 
 impl<'hir, 'ast> Registry<'hir, 'ast> {
-    pub fn new(total: ast::ItemCount) -> Registry<'hir, 'ast> {
-        let const_eval_estimate = total.consts + total.globals + total.enums * 4;
+    pub fn new(modules: &[ast::Module<'ast>]) -> Registry<'hir, 'ast> {
+        let mut proc_count = 0;
+        let mut enum_count = 0;
+        let mut struct_count = 0;
+        let mut const_count = 0;
+        let mut global_count = 0;
+
+        for module in modules {
+            for item in module.items {
+                match item {
+                    ast::Item::Proc(_) => proc_count += 1,
+                    ast::Item::Enum(_) => enum_count += 1,
+                    ast::Item::Struct(_) => struct_count += 1,
+                    ast::Item::Const(_) => const_count += 1,
+                    ast::Item::Global(_) => global_count += 1,
+                    ast::Item::Import(_) => {}
+                }
+            }
+        }
+
+        let consteval_count = enum_count * 4 + const_count + global_count;
+
         Registry {
-            ast_procs: Vec::with_capacity(total.procs as usize),
-            ast_enums: Vec::with_capacity(total.enums as usize),
-            ast_structs: Vec::with_capacity(total.structs as usize),
-            ast_consts: Vec::with_capacity(total.consts as usize),
-            ast_globals: Vec::with_capacity(total.globals as usize),
-            hir_procs: Vec::with_capacity(total.procs as usize),
-            hir_enums: Vec::with_capacity(total.enums as usize),
-            hir_structs: Vec::with_capacity(total.structs as usize),
-            hir_consts: Vec::with_capacity(total.consts as usize),
-            hir_globals: Vec::with_capacity(total.globals as usize),
-            const_evals: Vec::with_capacity(const_eval_estimate as usize),
+            ast_procs: Vec::with_capacity(proc_count),
+            ast_enums: Vec::with_capacity(enum_count),
+            ast_structs: Vec::with_capacity(struct_count),
+            ast_consts: Vec::with_capacity(const_count),
+            ast_globals: Vec::with_capacity(global_count),
+            hir_procs: Vec::with_capacity(proc_count),
+            hir_enums: Vec::with_capacity(enum_count),
+            hir_structs: Vec::with_capacity(struct_count),
+            hir_consts: Vec::with_capacity(const_count),
+            hir_globals: Vec::with_capacity(global_count),
+            const_evals: Vec::with_capacity(consteval_count),
         }
     }
 

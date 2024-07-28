@@ -162,7 +162,7 @@ pub fn process_proc_data<'hir>(
 ) {
     let item = hir.registry().proc_item(id);
     let origin_id = hir.registry().proc_data(id).origin_id;
-    let mut unique = Vec::<hir::ProcParam>::new();
+    let mut unique = Vec::<hir::Param>::new();
 
     for param in item.params.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == param.name.id) {
@@ -181,11 +181,12 @@ pub fn process_proc_data<'hir>(
             let ty = type_resolve_delayed(hir, emit, origin_id, param.ty);
             pass_5::require_value_type(hir, emit, ty, SourceRange::new(origin_id, param.ty.range));
 
-            unique.push(hir::ProcParam {
+            let param = hir::Param {
                 mutt: param.mutt,
                 name: param.name,
                 ty,
-            });
+            };
+            unique.push(param);
         }
     }
 
@@ -207,7 +208,7 @@ fn process_enum_data<'hir>(
     let origin_id = hir.registry().enum_data(id).origin_id;
     let enum_name = data.name;
 
-    let mut unique = Vec::<hir::EnumVariant>::new();
+    let mut unique = Vec::<hir::Variant>::new();
 
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
@@ -245,7 +246,7 @@ fn process_enum_data<'hir>(
                 }
             };
 
-            let variant = hir::EnumVariant {
+            let variant = hir::Variant {
                 name: variant.name,
                 kind,
             };
@@ -340,7 +341,7 @@ fn process_struct_data<'hir>(
 ) {
     let item = hir.registry().struct_item(id);
     let origin_id = hir.registry().struct_data(id).origin_id;
-    let mut unique = Vec::<hir::StructField>::new();
+    let mut unique = Vec::<hir::Field>::new();
 
     for field in item.fields.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == field.name.id) {
@@ -359,11 +360,12 @@ fn process_struct_data<'hir>(
             let ty = type_resolve_delayed(hir, emit, origin_id, field.ty);
             pass_5::require_value_type(hir, emit, ty, SourceRange::new(origin_id, field.ty.range));
 
-            unique.push(hir::StructField {
+            let field = hir::Field {
                 vis: field.vis,
                 name: field.name,
                 ty,
-            });
+            };
+            unique.push(field);
         }
     }
 

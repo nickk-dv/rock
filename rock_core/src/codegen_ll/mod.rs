@@ -801,7 +801,7 @@ fn codegen_expr<'hir>(
         hir::Expr::ParamVar { param_id } => todo!(),
         hir::Expr::ConstVar { const_id } => todo!(),
         hir::Expr::GlobalVar { global_id } => todo!(),
-        hir::Expr::EnumVariant {
+        hir::Expr::Variant {
             enum_id,
             variant_id,
             input,

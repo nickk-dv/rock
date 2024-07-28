@@ -61,7 +61,7 @@ impl Diverges {
 
 pub enum VariableID {
     Local(hir::LocalID),
-    Param(hir::ProcParamID),
+    Param(hir::ParamID),
 }
 
 impl<'hir, 'check> ProcScope<'hir, 'check> {
@@ -96,7 +96,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn get_local(&self, id: hir::LocalID) -> &hir::Local<'hir> {
         self.locals[id.index()]
     }
-    pub fn get_param(&self, id: hir::ProcParamID) -> &hir::ProcParam<'hir> {
+    pub fn get_param(&self, id: hir::ParamID) -> &hir::Param<'hir> {
         self.data.param(id)
     }
 
