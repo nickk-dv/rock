@@ -210,6 +210,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rock_llvm"
+version = "0.0.0"
+
+[[package]]
 name = "rock_ls"
 version = "0.0.0"
 dependencies = [
