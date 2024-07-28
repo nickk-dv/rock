@@ -25,28 +25,19 @@ pub enum Item<'ast> {
     Import(&'ast ImportItem<'ast>),
 }
 
-#[derive(Default)]
-pub struct ItemCount {
-    pub procs: u32,
-    pub enums: u32,
-    pub structs: u32,
-    pub consts: u32,
-    pub globals: u32,
-}
-
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
     pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
-    pub params: &'ast [ProcParam<'ast>],
+    pub params: &'ast [Param<'ast>],
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
     pub block: Option<Block<'ast>>,
 }
 
 #[derive(Copy, Clone)]
-pub struct ProcParam<'ast> {
+pub struct Param<'ast> {
     pub mutt: Mut,
     pub name: Name,
     pub ty: Type<'ast>,
@@ -58,11 +49,11 @@ pub struct EnumItem<'ast> {
     pub vis: Vis,
     pub name: Name,
     pub basic: Option<(BasicType, TextRange)>,
-    pub variants: &'ast [EnumVariant<'ast>],
+    pub variants: &'ast [Variant<'ast>],
 }
 
 #[derive(Copy, Clone)]
-pub struct EnumVariant<'ast> {
+pub struct Variant<'ast> {
     pub name: Name,
     pub kind: VariantKind<'ast>,
 }
@@ -79,11 +70,11 @@ pub struct StructItem<'ast> {
     pub attrs: &'ast [Attribute],
     pub vis: Vis,
     pub name: Name,
-    pub fields: &'ast [StructField<'ast>],
+    pub fields: &'ast [Field<'ast>],
 }
 
 #[derive(Copy, Clone)]
-pub struct StructField<'ast> {
+pub struct Field<'ast> {
     pub vis: Vis,
     pub name: Name,
     pub ty: Type<'ast>,

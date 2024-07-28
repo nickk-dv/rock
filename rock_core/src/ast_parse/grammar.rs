@@ -71,7 +71,7 @@ fn proc_item<'ast>(
     p.bump();
     let name = name(p)?;
 
-    let offset = p.state.proc_params.start();
+    let offset = p.state.params.start();
     let mut is_variadic = false;
     p.expect(T!['('])?;
     while !p.at(T![')']) && !p.at(T![eof]) {
@@ -79,14 +79,14 @@ fn proc_item<'ast>(
             is_variadic = true;
             break;
         }
-        let param = proc_param(p)?;
-        p.state.proc_params.add(param);
+        let param = param(p)?;
+        p.state.params.add(param);
         if !p.eat(T![,]) {
             break;
         }
     }
     p.expect(T![')'])?;
-    let params = p.state.proc_params.take(offset, &mut p.state.arena);
+    let params = p.state.params.take(offset, &mut p.state.arena);
     let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
 
     let block = if p.at(T!['{']) {
@@ -108,13 +108,13 @@ fn proc_item<'ast>(
     }))
 }
 
-fn proc_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<ProcParam<'ast>, String> {
+fn param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Param<'ast>, String> {
     let mutt = mutt(p);
     let name = name(p)?;
     p.expect(T![:])?;
     let ty = ty(p)?;
 
-    Ok(ProcParam { mutt, name, ty })
+    Ok(Param { mutt, name, ty })
 }
 
 fn enum_item<'ast>(
@@ -134,7 +134,7 @@ fn enum_item<'ast>(
         None
     };
 
-    let variants = comma_separated_list!(p, enum_variant, enum_variants, T!['{'], T!['}']);
+    let variants = comma_separated_list!(p, variant, variants, T!['{'], T!['}']);
 
     Ok(p.state.arena.alloc(EnumItem {
         attrs,
@@ -145,7 +145,7 @@ fn enum_item<'ast>(
     }))
 }
 
-fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'ast>, String> {
+fn variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Variant<'ast>, String> {
     let name = name(p)?;
 
     let kind = if p.eat(T![=]) {
@@ -158,7 +158,7 @@ fn enum_variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<EnumVariant<'a
         VariantKind::Default
     };
 
-    Ok(EnumVariant { name, kind })
+    Ok(Variant { name, kind })
 }
 
 fn struct_item<'ast>(
@@ -168,7 +168,7 @@ fn struct_item<'ast>(
 ) -> Result<&'ast StructItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
-    let fields = comma_separated_list!(p, struct_field, struct_fields, T!['{'], T!['}']);
+    let fields = comma_separated_list!(p, field, fields, T!['{'], T!['}']);
 
     Ok(p.state.arena.alloc(StructItem {
         attrs,
@@ -178,13 +178,13 @@ fn struct_item<'ast>(
     }))
 }
 
-fn struct_field<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<StructField<'ast>, String> {
+fn field<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Field<'ast>, String> {
     let vis = vis(p);
     let name = name(p)?;
     p.expect(T![:])?;
     let ty = ty(p)?;
 
-    Ok(StructField { vis, name, ty })
+    Ok(Field { vis, name, ty })
 }
 
 fn const_item<'ast>(

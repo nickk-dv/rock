@@ -28,15 +28,15 @@ pub struct ProcData<'hir> {
     pub attr_set: BitSet,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub params: &'hir [ProcParam<'hir>],
+    pub params: &'hir [Param<'hir>],
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
     pub locals: &'hir [&'hir Local<'hir>],
 }
 
-id_impl!(ProcParamID);
+id_impl!(ParamID);
 #[derive(Copy, Clone)]
-pub struct ProcParam<'hir> {
+pub struct Param<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
@@ -59,12 +59,12 @@ pub struct EnumData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub int_ty: BasicInt,
-    pub variants: &'hir [EnumVariant<'hir>],
+    pub variants: &'hir [Variant<'hir>],
 }
 
-id_impl!(EnumVariantID);
+id_impl!(VariantID);
 #[derive(Copy, Clone)]
-pub struct EnumVariant<'hir> {
+pub struct Variant<'hir> {
     pub name: ast::Name,
     pub kind: VariantKind<'hir>,
 }
@@ -81,13 +81,13 @@ pub struct StructData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub fields: &'hir [StructField<'hir>],
+    pub fields: &'hir [Field<'hir>],
     pub size_eval: SizeEval,
 }
 
-id_impl!(StructFieldID);
+id_impl!(FieldID);
 #[derive(Copy, Clone)]
-pub struct StructField<'hir> {
+pub struct Field<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
@@ -254,7 +254,7 @@ pub enum ConstValue<'hir> {
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstEnum<'hir> {
     pub enum_id: EnumID,
-    pub variant_id: EnumVariantID,
+    pub variant_id: VariantID,
     pub values: Option<&'hir [ConstValueID]>,
 }
 
@@ -279,19 +279,19 @@ pub enum Expr<'hir> {
     Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },
     Match2       { match_: &'hir Match2<'hir> },
-    StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: StructFieldID, deref: bool },
+    StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: FieldID, deref: bool },
     SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
     LocalVar     { local_id: LocalID },
-    ParamVar     { param_id: ProcParamID },
+    ParamVar     { param_id: ParamID },
     ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
-    EnumVariant  { enum_id: EnumID, variant_id: EnumVariantID, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
+    Variant      { enum_id: EnumID, variant_id: VariantID, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
-    StructInit   { struct_id: StructID, input: &'hir [StructFieldInit<'hir>] },
+    StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
     Deref        { rhs: &'hir Expr<'hir>, ptr_ty: &'hir Type<'hir> },
@@ -346,7 +346,7 @@ pub enum Pat<'hir> {
     Wild,
     Lit(ConstValue<'hir>),
     Const(ConstID),
-    Variant(EnumID, EnumVariantID), //@binds
+    Variant(EnumID, VariantID), //@binds
     Or(&'hir [Pat<'hir>]),
 }
 
@@ -419,8 +419,8 @@ pub struct CallIndirect<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct StructFieldInit<'hir> {
-    pub field_id: StructFieldID,
+pub struct FieldInit<'hir> {
+    pub field_id: FieldID,
     pub expr: &'hir Expr<'hir>,
 }
 
@@ -508,16 +508,16 @@ impl<'hir> Hir<'hir> {
 }
 
 impl<'hir> ProcData<'hir> {
-    pub fn param(&self, id: ProcParamID) -> &'hir ProcParam<'hir> {
+    pub fn param(&self, id: ParamID) -> &'hir Param<'hir> {
         &self.params[id.index()]
     }
     pub fn local(&self, id: LocalID) -> &'hir Local<'hir> {
         self.locals[id.index()]
     }
-    pub fn find_param(&self, id: InternID) -> Option<(ProcParamID, &'hir ProcParam<'hir>)> {
+    pub fn find_param(&self, id: InternID) -> Option<(ParamID, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
-                return Some((ProcParamID::new(idx), param));
+                return Some((ParamID::new(idx), param));
             }
         }
         None
@@ -525,13 +525,13 @@ impl<'hir> ProcData<'hir> {
 }
 
 impl<'hir> EnumData<'hir> {
-    pub fn variant(&self, id: EnumVariantID) -> &'hir EnumVariant<'hir> {
+    pub fn variant(&self, id: VariantID) -> &'hir Variant<'hir> {
         &self.variants[id.index()]
     }
-    pub fn find_variant(&self, id: InternID) -> Option<(EnumVariantID, &'hir EnumVariant<'hir>)> {
+    pub fn find_variant(&self, id: InternID) -> Option<(VariantID, &'hir Variant<'hir>)> {
         for (idx, variant) in self.variants.iter().enumerate() {
             if variant.name.id == id {
-                return Some((EnumVariantID::new(idx), variant));
+                return Some((VariantID::new(idx), variant));
             }
         }
         None
@@ -539,13 +539,13 @@ impl<'hir> EnumData<'hir> {
 }
 
 impl<'hir> StructData<'hir> {
-    pub fn field(&self, id: StructFieldID) -> &'hir StructField<'hir> {
+    pub fn field(&self, id: FieldID) -> &'hir Field<'hir> {
         &self.fields[id.index()]
     }
-    pub fn find_field(&self, id: InternID) -> Option<(StructFieldID, &'hir StructField<'hir>)> {
+    pub fn find_field(&self, id: InternID) -> Option<(FieldID, &'hir Field<'hir>)> {
         for (idx, field) in self.fields.iter().enumerate() {
             if field.name.id == id {
-                return Some((StructFieldID::new(idx), field));
+                return Some((FieldID::new(idx), field));
             }
         }
         None
