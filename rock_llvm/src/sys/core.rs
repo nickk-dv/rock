@@ -4,9 +4,6 @@ use std::ffi::{c_char, c_double, c_uint, c_ulonglong};
 // core
 extern "C" {
     pub fn LLVMShutdown();
-    pub fn LLVMGetVersion(major: *mut c_uint, minor: *mut c_uint, patch: *mut c_uint);
-    pub fn LLVMCreateMessage(message: *const c_char) -> *mut c_char;
-    pub fn LLVMDisposeMessage(message: *mut c_char);
 }
 
 // context
@@ -70,7 +67,6 @@ extern "C" {
 
 // value
 extern "C" {
-    pub fn LLVMGetUndef(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMConstAllOnes(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMConstInt(
