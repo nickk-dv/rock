@@ -6,6 +6,11 @@ pub struct Codegen<'c> {
     pub context: llvm::IRContext,
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
+    pub procs: Vec<llvm::ValueFn>,
+    pub structs: Vec<llvm::Type>,
+    pub consts: Vec<llvm::Value>,
+    pub globals: Vec<llvm::Value>,
+    pub string_lits: Vec<llvm::Value>,
     pub hir: hir::Hir<'c>,
     cache: CodegenCache,
 }
@@ -34,6 +39,11 @@ impl<'c> Codegen<'c> {
             context,
             module,
             build,
+            procs: Vec::with_capacity(hir.procs.len()),
+            structs: Vec::with_capacity(hir.structs.len()),
+            consts: Vec::with_capacity(hir.consts.len()),
+            globals: Vec::with_capacity(hir.globals.len()),
+            string_lits: Vec::with_capacity(hir.intern_string.get_all_strings().len()),
             hir,
             cache,
         }
@@ -85,7 +95,7 @@ impl<'c> Codegen<'c> {
     pub fn array_type(&self, array: &hir::ArrayStatic) -> llvm::Type {
         let elem_ty = self.ty(array.elem_ty);
         let len = self.array_len(array.len);
-        self.context.array_type(elem_ty, len)
+        llvm::array_type(elem_ty, len)
     }
 
     pub fn array_len(&self, len: hir::ArrayStaticLen) -> u64 {

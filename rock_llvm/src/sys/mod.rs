@@ -98,6 +98,36 @@ pub enum LLVMOpcode {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
+pub enum LLVMLinkage {
+    LLVMExternalLinkage = 0,
+    LLVMAvailableExternallyLinkage = 1,
+    LLVMLinkOnceAnyLinkage = 2,
+    LLVMLinkOnceODRLinkage = 3,
+    LLVMLinkOnceODRAutoHideLinkage = 4,
+    LLVMWeakAnyLinkage = 5,
+    LLVMWeakODRLinkage = 6,
+    LLVMAppendingLinkage = 7,
+    LLVMInternalLinkage = 8,
+    LLVMPrivateLinkage = 9,
+    LLVMDLLImportLinkage = 10,
+    LLVMDLLExportLinkage = 11,
+    LLVMExternalWeakLinkage = 12,
+    LLVMGhostLinkage = 13,
+    LLVMCommonLinkage = 14,
+    LLVMLinkerPrivateLinkage = 15,
+    LLVMLinkerPrivateWeakLinkage = 16,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub enum LLVMUnnamedAddr {
+    LLVMNoUnnamedAddr,     // address of the global is significant
+    LLVMLocalUnnamedAddr,  // address of the global is locally insignificant.
+    LLVMGlobalUnnamedAddr, // address of the global is globally insignificant.
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
 pub enum LLVMIntPredicate {
     LLVMIntEQ = 32,  // equal
     LLVMIntNE = 33,  // not equal

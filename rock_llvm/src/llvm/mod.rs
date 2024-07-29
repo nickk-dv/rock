@@ -19,10 +19,6 @@ pub struct IRBuilder {
 
 struct CStrBuffer(String);
 
-pub type OpCode = sys::LLVMOpcode;
-pub type IntPredicate = sys::LLVMIntPredicate;
-pub type FloatPredicate = sys::LLVMRealPredicate;
-
 #[derive(Copy, Clone)]
 pub struct BasicBlock(sys::LLVMBasicBlockRef);
 
@@ -31,14 +27,17 @@ pub struct Value(sys::LLVMValueRef);
 #[derive(Copy, Clone)]
 pub struct ValueFn(sys::LLVMValueRef);
 #[derive(Copy, Clone)]
-pub struct ValueGlobal(sys::LLVMValueRef);
-#[derive(Copy, Clone)]
 pub struct ValueInstr(sys::LLVMValueRef);
 
 #[derive(Copy, Clone)]
 pub struct Type(sys::LLVMTypeRef);
 #[derive(Copy, Clone)]
 pub struct TypeFn(sys::LLVMTypeRef);
+
+pub type OpCode = sys::LLVMOpcode;
+pub type Linkage = sys::LLVMLinkage;
+pub type IntPredicate = sys::LLVMIntPredicate;
+pub type FloatPredicate = sys::LLVMRealPredicate;
 
 impl IRContext {
     pub fn new() -> IRContext {
@@ -80,25 +79,6 @@ impl IRContext {
     }
     pub fn ptr_type(&self) -> Type {
         Type(unsafe { core::LLVMPointerTypeInContext(self.context, 0) })
-    }
-    pub fn array_type(&self, elem_ty: Type, len: u64) -> Type {
-        Type(unsafe { core::LLVMArrayType2(elem_ty.0, len) })
-    }
-
-    pub fn function_type(
-        &self,
-        return_ty: Type,
-        param_types: &[Type],
-        is_variadic: bool,
-    ) -> TypeFn {
-        TypeFn(unsafe {
-            core::LLVMFunctionType(
-                return_ty.0,
-                param_types.as_ptr() as *mut sys::LLVMTypeRef,
-                param_types.len() as u32,
-                is_variadic as i32,
-            )
-        })
     }
 
     pub fn struct_create_named(&mut self, name: &str) -> Type {
@@ -146,24 +126,38 @@ impl IRModule {
         IRModule { module, cstr_buf }
     }
 
+    #[must_use]
     pub fn add_function(&mut self, name: &str, fn_ty: TypeFn) -> ValueFn {
         let name = self.cstr_buf.cstr(name);
         let fn_val = unsafe { core::LLVMAddFunction(self.module, name, fn_ty.0) };
         ValueFn(fn_val)
     }
 
+    #[must_use]
     pub fn add_global(
         &mut self,
         ty: Type,
         name: &str,
         const_val: Value,
+        constant: bool,
+        unnamed_addr: bool,
         thread_local: bool,
-    ) -> ValueGlobal {
+        linkage: Linkage,
+    ) -> Value {
         let name = self.cstr_buf.cstr(name);
-        let global = unsafe { core::LLVMAddGlobal(self.module, ty.0, name) };
-        unsafe { core::LLVMSetInitializer(global, const_val.0) };
-        unsafe { core::LLVMSetThreadLocal(global, thread_local as i32) };
-        ValueGlobal(global)
+        let global_val = unsafe { core::LLVMAddGlobal(self.module, ty.0, name) };
+        let unnamed_addr = if unnamed_addr {
+            sys::LLVMUnnamedAddr::LLVMGlobalUnnamedAddr
+        } else {
+            sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr
+        };
+
+        unsafe { core::LLVMSetInitializer(global_val, const_val.0) };
+        unsafe { core::LLVMSetGlobalConstant(global_val, constant as i32) };
+        unsafe { core::LLVMSetUnnamedAddress(global_val, unnamed_addr) };
+        unsafe { core::LLVMSetThreadLocal(global_val, thread_local as i32) };
+        unsafe { core::LLVMSetLinkage(global_val, linkage) };
+        Value(global_val)
     }
 }
 
@@ -392,4 +386,23 @@ pub fn const_struct_named(struct_ty: Type, const_vals: &[Value]) -> Value {
             const_vals.len() as u32,
         )
     })
+}
+
+pub fn array_type(elem_ty: Type, len: u64) -> Type {
+    Type(unsafe { core::LLVMArrayType2(elem_ty.0, len) })
+}
+
+pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -> TypeFn {
+    TypeFn(unsafe {
+        core::LLVMFunctionType(
+            return_ty.0,
+            param_types.as_ptr() as *mut sys::LLVMTypeRef,
+            param_types.len() as u32,
+            is_variadic as i32,
+        )
+    })
+}
+
+pub fn typeof_value(val: Value) -> Type {
+    Type(unsafe { core::LLVMTypeOf(val.0) })
 }
