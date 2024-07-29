@@ -23,12 +23,21 @@ pub type OpCode = sys::LLVMOpcode;
 pub type IntPredicate = sys::LLVMIntPredicate;
 pub type FloatPredicate = sys::LLVMRealPredicate;
 
+#[derive(Copy, Clone)]
 pub struct BasicBlock(sys::LLVMBasicBlockRef);
+
+#[derive(Copy, Clone)]
 pub struct Value(sys::LLVMValueRef);
+#[derive(Copy, Clone)]
 pub struct ValueFn(sys::LLVMValueRef);
+#[derive(Copy, Clone)]
 pub struct ValueGlobal(sys::LLVMValueRef);
+#[derive(Copy, Clone)]
 pub struct ValueInstr(sys::LLVMValueRef);
+
+#[derive(Copy, Clone)]
 pub struct Type(sys::LLVMTypeRef);
+#[derive(Copy, Clone)]
 pub struct TypeFn(sys::LLVMTypeRef);
 
 impl IRContext {
@@ -130,10 +139,10 @@ impl Drop for IRContext {
 }
 
 impl IRModule {
-    pub fn new(context: sys::LLVMContextRef, name: &str) -> IRModule {
+    pub fn new(context: &IRContext, name: &str) -> IRModule {
         let mut cstr_buf = CStrBuffer::new();
         let name = cstr_buf.cstr(name);
-        let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context) };
+        let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context.context) };
         IRModule { module, cstr_buf }
     }
 
@@ -165,9 +174,9 @@ impl Drop for IRModule {
 }
 
 impl IRBuilder {
-    pub fn new(context: sys::LLVMContextRef) -> IRBuilder {
+    pub fn new(context: &IRContext) -> IRBuilder {
         IRBuilder {
-            builder: unsafe { core::LLVMCreateBuilderInContext(context) },
+            builder: unsafe { core::LLVMCreateBuilderInContext(context.context) },
             cstr_buf: CStrBuffer::new(),
         }
     }
@@ -185,56 +194,56 @@ impl IRBuilder {
         unsafe { core::LLVMPositionBuilder(self.builder, bb.0, instr.0) }
     }
 
-    pub fn build_ret_void(&self) {
+    pub fn ret_void(&self) {
         let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
     }
-    pub fn build_ret(&self, val: Value) {
+    pub fn ret(&self, val: Value) {
         let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };
     }
-    pub fn build_br(&self, dest_bb: BasicBlock) {
+    pub fn br(&self, dest_bb: BasicBlock) {
         let _ = unsafe { core::LLVMBuildBr(self.builder, dest_bb.0) };
     }
-    pub fn build_cond_br(&self, cond: Value, then_bb: BasicBlock, else_bb: BasicBlock) {
+    pub fn cond_br(&self, cond: Value, then_bb: BasicBlock, else_bb: BasicBlock) {
         let _ = unsafe { core::LLVMBuildCondBr(self.builder, cond.0, then_bb.0, else_bb.0) };
     }
-    pub fn build_switch(&self, val: Value, else_bb: BasicBlock, case_count: u32) -> ValueInstr {
+    pub fn switch(&self, val: Value, else_bb: BasicBlock, case_count: u32) -> ValueInstr {
         ValueInstr(unsafe { core::LLVMBuildSwitch(self.builder, val.0, else_bb.0, case_count) })
     }
-    pub fn build_add_case(&self, switch: ValueInstr, case_val: Value, dest_bb: BasicBlock) {
+    pub fn add_case(&self, switch: ValueInstr, case_val: Value, dest_bb: BasicBlock) {
         unsafe { core::LLVMAddCase(switch.0, case_val.0, dest_bb.0) }
     }
-    pub fn build_unreachable(&self) {
+    pub fn unreachable(&self) {
         let _ = unsafe { core::LLVMBuildUnreachable(self.builder) };
     }
 
-    pub fn build_bin_op(&mut self, op: OpCode, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn bin_op(&mut self, op: OpCode, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildBinOp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn build_neg(&mut self, val: Value, name: &str) -> Value {
+    pub fn neg(&mut self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildNeg(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn build_fneg(&mut self, val: Value, name: &str) -> Value {
+    pub fn fneg(&mut self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildFNeg(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn build_not(&mut self, val: Value, name: &str) -> Value {
+    pub fn not(&mut self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildNot(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
 
-    pub fn build_alloca(&mut self, ty: Type, name: &str) -> Value {
+    pub fn alloca(&mut self, ty: Type, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildAlloca(self.builder, ty.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn build_load(&mut self, ptr_ty: Type, ptr_val: Value, name: &str) -> Value {
+    pub fn load(&mut self, ptr_ty: Type, ptr_val: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildLoad2(self.builder, ptr_ty.0, ptr_val.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn build_store(&self, val: Value, ptr_val: Value) -> Value {
+    pub fn store(&self, val: Value, ptr_val: Value) -> Value {
         Value(unsafe { core::LLVMBuildStore(self.builder, val.0, ptr_val.0) })
     }
 
-    pub fn build_inbounds_gep(
+    pub fn gep_inbounds(
         &mut self,
         ptr_ty: Type,
         ptr_val: Value,
@@ -253,13 +262,7 @@ impl IRBuilder {
         })
     }
 
-    pub fn build_struct_gep(
-        &mut self,
-        ptr_ty: Type,
-        ptr_val: Value,
-        idx: u32,
-        name: &str,
-    ) -> Value {
+    pub fn gep_struct(&mut self, ptr_ty: Type, ptr_val: Value, idx: u32, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildStructGEP2(
                 self.builder,
@@ -271,29 +274,23 @@ impl IRBuilder {
         })
     }
 
-    pub fn build_cast(&mut self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
+    pub fn cast(&mut self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildCast(self.builder, op, val.0, into_ty.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn build_icmp(&mut self, op: IntPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn icmp(&mut self, op: IntPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildICmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn build_fcmp(&mut self, op: FloatPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn fcmp(&mut self, op: FloatPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildFCmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
 
-    pub fn build_call(
-        &mut self,
-        fn_ty: TypeFn,
-        fn_val: ValueFn,
-        args: &[Value],
-        name: &str,
-    ) -> Value {
+    pub fn call(&mut self, fn_ty: TypeFn, fn_val: ValueFn, args: &[Value], name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildCall2(
                 self.builder,

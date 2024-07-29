@@ -101,6 +101,7 @@ pub fn codegen_expr<'ctx>(
             codegen_match(cg, proc_cg, match_, kind);
             None
         }
+        Expr::Match2 { match_ } => todo!("codegen match2"),
         Expr::StructField {
             target,
             struct_id,
@@ -127,7 +128,7 @@ pub fn codegen_expr<'ctx>(
         Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect_ptr, param_id)),
         Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect_ptr, global_id)),
-        Expr::EnumVariant {
+        Expr::Variant {
             enum_id,
             variant_id,
             input,
@@ -378,7 +379,7 @@ fn codegen_struct_field<'ctx>(
     expect_ptr: bool,
     target: &'ctx hir::Expr,
     struct_id: hir::StructID,
-    field_id: hir::StructFieldID,
+    field_id: hir::FieldID,
     deref: bool,
 ) -> values::BasicValueEnum<'ctx> {
     let target = codegen_expr_value_ptr(cg, proc_cg, target);
@@ -878,7 +879,7 @@ fn codegen_param_var<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &ProcCodegen<'ctx>,
     expect_ptr: bool,
-    param_id: hir::ProcParamID,
+    param_id: hir::ParamID,
 ) -> values::BasicValueEnum<'ctx> {
     let param_ptr = proc_cg.param_vars[param_id.index()];
 
@@ -964,7 +965,7 @@ fn codegen_struct_init<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
     struct_id: hir::StructID,
-    input: &'ctx [hir::StructFieldInit<'ctx>],
+    input: &'ctx [hir::FieldInit<'ctx>],
     expect_ptr: bool,
     kind: BlockKind<'ctx>,
 ) -> Option<values::BasicValueEnum<'ctx>> {

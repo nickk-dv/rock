@@ -2,17 +2,16 @@
 
 #[allow(unsafe_code)]
 mod arena;
-mod ast;
+pub mod ast;
 pub mod ast_parse;
 mod bitset;
-#[cfg(not(target_os = "linux"))]
 #[cfg(feature = "codegen_llvm")]
 pub mod codegen;
 pub mod codegen_ll;
 pub mod error;
 pub mod format;
 pub mod fs_env;
-mod hir;
+pub mod hir;
 pub mod hir_lower;
 pub mod intern;
 mod lexer;
