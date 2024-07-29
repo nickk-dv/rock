@@ -2,7 +2,6 @@ use super::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::ansi;
 use crate::error_format;
 use rock_core::ast_parse;
-#[cfg(not(target_os = "linux"))]
 use rock_core::codegen;
 use rock_core::codegen_ll;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
@@ -178,13 +177,9 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);
 
-        #[cfg(not(target_os = "linux"))]
-        {
-            let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, Some(data.args));
-            let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
-            return Ok(warnings);
-        }
-        Ok(vec![])
+        let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, Some(data.args));
+        let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
+        Ok(warnings)
     }
 }
 
