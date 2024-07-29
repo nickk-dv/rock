@@ -67,6 +67,8 @@ extern "C" {
 
 // value
 extern "C" {
+    pub fn LLVMTypeOf(Val: LLVMValueRef) -> LLVMTypeRef;
+
     pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMConstAllOnes(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMConstInt(
@@ -99,9 +101,13 @@ extern "C" {
         count: c_uint,
     ) -> LLVMValueRef;
 
+    pub fn LLVMSetLinkage(global_val: LLVMValueRef, linkage: LLVMLinkage);
+    pub fn LLVMSetUnnamedAddress(global_val: LLVMValueRef, unnamed_addr: LLVMUnnamedAddr);
+
     pub fn LLVMAddGlobal(m: LLVMModuleRef, ty: LLVMTypeRef, name: *const c_char) -> LLVMValueRef;
-    pub fn LLVMSetInitializer(global_var: LLVMValueRef, const_val: LLVMValueRef);
-    pub fn LLVMSetThreadLocal(global_var: LLVMValueRef, thread_local: LLVMBool);
+    pub fn LLVMSetInitializer(global_val: LLVMValueRef, const_val: LLVMValueRef);
+    pub fn LLVMSetThreadLocal(global_val: LLVMValueRef, thread_local: LLVMBool);
+    pub fn LLVMSetGlobalConstant(global_val: LLVMValueRef, constant: LLVMBool);
 }
 
 // basic block
