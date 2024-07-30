@@ -15,6 +15,13 @@ pub struct Codegen<'c> {
     cache: CodegenCache,
 }
 
+pub struct ProcCodegen {
+    pub proc_id: hir::ProcID,
+    pub fn_val: llvm::ValueFn,
+    pub param_ptrs: Vec<llvm::Value>,
+    pub local_ptrs: Vec<llvm::Value>,
+}
+
 struct CodegenCache {
     int_1: llvm::Type,
     int_8: llvm::Type,
