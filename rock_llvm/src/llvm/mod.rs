@@ -1,5 +1,6 @@
 use crate::sys;
 use crate::sys::core;
+use std::cell::UnsafeCell;
 use std::ffi::c_char;
 
 pub struct IRContext {
@@ -17,7 +18,7 @@ pub struct IRBuilder {
     cstr_buf: CStrBuffer,
 }
 
-struct CStrBuffer(String);
+struct CStrBuffer(UnsafeCell<String>);
 
 #[derive(Copy, Clone)]
 pub struct BasicBlock(sys::LLVMBasicBlockRef);
@@ -81,7 +82,7 @@ impl IRContext {
         Type(unsafe { core::LLVMPointerTypeInContext(self.context, 0) })
     }
 
-    pub fn struct_create_named(&mut self, name: &str) -> Type {
+    pub fn struct_create_named(&self, name: &str) -> Type {
         Type(unsafe { core::LLVMStructCreateNamed(self.context, self.cstr_buf.cstr(name)) })
     }
     pub fn struct_set_body(&self, struct_ty: Type, field_types: &[Type], packed: bool) {
@@ -105,7 +106,7 @@ impl IRContext {
         })
     }
 
-    pub fn append_bb(&mut self, fn_val: ValueFn, name: &str) -> BasicBlock {
+    pub fn append_bb(&self, fn_val: ValueFn, name: &str) -> BasicBlock {
         BasicBlock(unsafe {
             core::LLVMAppendBasicBlockInContext(self.context, fn_val.0, self.cstr_buf.cstr(name))
         })
@@ -120,14 +121,14 @@ impl Drop for IRContext {
 
 impl IRModule {
     pub fn new(context: &IRContext, name: &str) -> IRModule {
-        let mut cstr_buf = CStrBuffer::new();
+        let cstr_buf = CStrBuffer::new();
         let name = cstr_buf.cstr(name);
         let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context.context) };
         IRModule { module, cstr_buf }
     }
 
     #[must_use]
-    pub fn add_function(&mut self, name: &str, fn_ty: TypeFn, linkage: Linkage) -> ValueFn {
+    pub fn add_function(&self, name: &str, fn_ty: TypeFn, linkage: Linkage) -> ValueFn {
         let name = self.cstr_buf.cstr(name);
         let fn_val = unsafe { core::LLVMAddFunction(self.module, name, fn_ty.0) };
 
@@ -137,7 +138,7 @@ impl IRModule {
 
     #[must_use]
     pub fn add_global(
-        &mut self,
+        &self,
         ty: Type,
         name: &str,
         const_val: Value,
@@ -212,25 +213,25 @@ impl IRBuilder {
         let _ = unsafe { core::LLVMBuildUnreachable(self.builder) };
     }
 
-    pub fn bin_op(&mut self, op: OpCode, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn bin_op(&self, op: OpCode, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildBinOp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn neg(&mut self, val: Value, name: &str) -> Value {
+    pub fn neg(&self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildNeg(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn fneg(&mut self, val: Value, name: &str) -> Value {
+    pub fn fneg(&self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildFNeg(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn not(&mut self, val: Value, name: &str) -> Value {
+    pub fn not(&self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildNot(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
 
-    pub fn alloca(&mut self, ty: Type, name: &str) -> Value {
+    pub fn alloca(&self, ty: Type, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildAlloca(self.builder, ty.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn load(&mut self, ptr_ty: Type, ptr_val: Value, name: &str) -> Value {
+    pub fn load(&self, ptr_ty: Type, ptr_val: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildLoad2(self.builder, ptr_ty.0, ptr_val.0, self.cstr_buf.cstr(name))
         })
@@ -240,7 +241,7 @@ impl IRBuilder {
     }
 
     pub fn gep_inbounds(
-        &mut self,
+        &self,
         ptr_ty: Type,
         ptr_val: Value,
         indices: &[Value],
@@ -258,7 +259,7 @@ impl IRBuilder {
         })
     }
 
-    pub fn gep_struct(&mut self, ptr_ty: Type, ptr_val: Value, idx: u32, name: &str) -> Value {
+    pub fn gep_struct(&self, ptr_ty: Type, ptr_val: Value, idx: u32, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildStructGEP2(
                 self.builder,
@@ -270,23 +271,23 @@ impl IRBuilder {
         })
     }
 
-    pub fn cast(&mut self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
+    pub fn cast(&self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildCast(self.builder, op, val.0, into_ty.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn icmp(&mut self, op: IntPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn icmp(&self, op: IntPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildICmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn fcmp(&mut self, op: FloatPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn fcmp(&self, op: FloatPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildFCmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
 
-    pub fn call(&mut self, fn_ty: TypeFn, fn_val: ValueFn, args: &[Value], name: &str) -> Value {
+    pub fn call(&self, fn_ty: TypeFn, fn_val: ValueFn, args: &[Value], name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildCall2(
                 self.builder,
@@ -308,13 +309,14 @@ impl Drop for IRBuilder {
 
 impl CStrBuffer {
     fn new() -> CStrBuffer {
-        CStrBuffer(String::with_capacity(64))
+        CStrBuffer(UnsafeCell::new(String::with_capacity(64)))
     }
-    fn cstr(&mut self, string: &str) -> *const c_char {
-        self.0.clear();
-        self.0.push_str(string);
-        self.0.push('\0');
-        self.0.as_ptr() as *const c_char
+    fn cstr(&self, name: &str) -> *const c_char {
+        let string = unsafe { &mut *self.0.get() };
+        string.clear();
+        string.push_str(name);
+        string.push('\0');
+        string.as_ptr() as *const c_char
     }
 }
 

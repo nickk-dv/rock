@@ -1,5 +1,6 @@
 use super::context::{Codegen, ProcCodegen};
 use super::emit_expr;
+use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
@@ -108,7 +109,7 @@ fn codegen_function_values(cg: &mut Codegen) {
 }
 
 //@reuse param & local ptr value vectors
-fn codegen_function_bodies(cg: &mut Codegen) {
+fn codegen_function_bodies(cg: &Codegen) {
     for (idx, data) in cg.hir.procs.iter().enumerate() {
         let block = match data.block {
             Some(block) => block,
@@ -116,35 +117,29 @@ fn codegen_function_bodies(cg: &mut Codegen) {
         };
 
         let fn_val = cg.procs[idx];
-        let entry_bb = cg.context.append_bb(fn_val, "entry");
+        let mut proc_cg = ProcCodegen::new(hir::ProcID::new(idx), fn_val);
+
+        let entry_bb = cg.context.append_bb(fn_val, "entry_bb");
         cg.build.position_at_end(entry_bb);
 
-        let mut param_ptrs = Vec::with_capacity(data.params.len());
         for param_idx in 0..data.params.len() {
             let param_val = fn_val.param_val(param_idx as u32).unwrap();
             let param_ty = llvm::typeof_value(param_val);
 
             let param_ptr = cg.build.alloca(param_ty, "param");
             cg.build.store(param_val, param_ptr);
-            param_ptrs.push(param_ptr);
+            proc_cg.param_ptrs.push(param_ptr);
         }
 
-        let mut local_ptrs = Vec::with_capacity(data.locals.len());
         for &local in data.locals {
             let local_ty = cg.ty(local.ty);
 
             let local_ptr = cg.build.alloca(local_ty, "local");
-            local_ptrs.push(local_ptr);
+            proc_cg.local_ptrs.push(local_ptr);
         }
 
-        let mut proc_cg = ProcCodegen {
-            proc_id: hir::ProcID::new(idx),
-            fn_val,
-            param_ptrs,
-            local_ptrs,
-        };
-
-        //@codegen block
-        //@build ret if not terminated
+        emit_stmt::codegen_block(cg, &mut proc_cg, block);
+        //@block value
+        //@return if not terminated
     }
 }

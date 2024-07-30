@@ -15,11 +15,25 @@ pub struct Codegen<'c> {
     cache: CodegenCache,
 }
 
-pub struct ProcCodegen {
+pub struct ProcCodegen<'c> {
     pub proc_id: hir::ProcID,
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::Value>,
     pub local_ptrs: Vec<llvm::Value>,
+    block_stack: Vec<BlockInfo>,
+    defer_blocks: Vec<hir::Block<'c>>,
+    next_loop_info: Option<LoopInfo>,
+}
+
+struct BlockInfo {
+    defer_count: u32,
+    loop_info: Option<LoopInfo>,
+}
+
+#[derive(Copy, Clone)]
+pub struct LoopInfo {
+    pub break_bb: llvm::BasicBlock,
+    pub continue_bb: llvm::BasicBlock,
 }
 
 struct CodegenCache {
@@ -113,6 +127,97 @@ impl<'c> Codegen<'c> {
                 _ => unreachable!(),
             },
         }
+    }
+
+    #[inline]
+    pub fn append_bb(&self, proc_cg: &ProcCodegen, name: &str) -> llvm::BasicBlock {
+        self.context.append_bb(proc_cg.fn_val, name)
+    }
+    #[inline]
+    pub fn insert_bb_terminated(&self) -> bool {
+        self.build.insert_bb().terminator().is_some()
+    }
+    #[inline]
+    pub fn build_br_no_term(&self, bb: llvm::BasicBlock) {
+        if !self.insert_bb_terminated() {
+            self.build.br(bb);
+        }
+    }
+}
+
+impl<'c> ProcCodegen<'c> {
+    pub fn new(proc_id: hir::ProcID, fn_val: llvm::ValueFn) -> ProcCodegen<'c> {
+        ProcCodegen {
+            proc_id,
+            fn_val,
+            param_ptrs: Vec::with_capacity(8),
+            local_ptrs: Vec::with_capacity(32),
+            block_stack: Vec::with_capacity(16),
+            defer_blocks: Vec::new(),
+            next_loop_info: None,
+        }
+    }
+
+    pub fn block_enter(&mut self) {
+        let block_info = BlockInfo {
+            defer_count: 0,
+            loop_info: self.next_loop_info.take(),
+        };
+        self.block_stack.push(block_info);
+    }
+
+    pub fn block_exit(&mut self) {
+        let defer_count = self.block_stack.last().unwrap().defer_count;
+        for _ in 0..defer_count {
+            self.defer_blocks.pop();
+        }
+        self.block_stack.pop();
+    }
+
+    pub fn add_defer_block(&mut self, block: hir::Block<'c>) {
+        self.block_stack.last_mut().unwrap().defer_count += 1;
+        self.defer_blocks.push(block);
+    }
+
+    pub fn set_next_loop_info(
+        &mut self,
+        break_bb: llvm::BasicBlock,
+        continue_bb: llvm::BasicBlock,
+    ) {
+        let loop_info = LoopInfo {
+            break_bb,
+            continue_bb,
+        };
+        self.next_loop_info = Some(loop_info);
+    }
+
+    pub fn defer_block(&self, block_idx: usize) -> hir::Block<'c> {
+        self.defer_blocks[block_idx]
+    }
+
+    pub fn all_defer_blocks(&self) -> std::ops::Range<usize> {
+        let total_count = self.defer_blocks.len();
+        0..total_count
+    }
+
+    pub fn last_defer_blocks(&self) -> std::ops::Range<usize> {
+        let total_count = self.defer_blocks.len();
+        let defer_count = self.block_stack.last().unwrap().defer_count as usize;
+        (total_count - defer_count)..total_count
+    }
+
+    pub fn last_loop_info(&self) -> (LoopInfo, std::ops::Range<usize>) {
+        let total_count = self.defer_blocks.len();
+        let mut defer_count = 0;
+
+        for block_info in self.block_stack.iter().rev() {
+            defer_count += block_info.defer_count as usize;
+
+            if let Some(loop_info) = block_info.loop_info {
+                return (loop_info, (total_count - defer_count)..total_count);
+            }
+        }
+        unreachable!()
     }
 }
 
