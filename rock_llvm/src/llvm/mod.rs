@@ -127,9 +127,11 @@ impl IRModule {
     }
 
     #[must_use]
-    pub fn add_function(&mut self, name: &str, fn_ty: TypeFn) -> ValueFn {
+    pub fn add_function(&mut self, name: &str, fn_ty: TypeFn, linkage: Linkage) -> ValueFn {
         let name = self.cstr_buf.cstr(name);
         let fn_val = unsafe { core::LLVMAddFunction(self.module, name, fn_ty.0) };
+
+        unsafe { core::LLVMSetLinkage(fn_val, linkage) };
         ValueFn(fn_val)
     }
 
@@ -336,6 +338,13 @@ impl BasicBlock {
 impl ValueFn {
     pub fn entry_bb(&self) -> BasicBlock {
         BasicBlock(unsafe { core::LLVMGetEntryBasicBlock(self.0) })
+    }
+    pub fn param_val(&self, param_idx: u32) -> Option<Value> {
+        if param_idx < unsafe { core::LLVMCountParams(self.0) } {
+            Some(Value(unsafe { core::LLVMGetParam(self.0, param_idx) }))
+        } else {
+            None
+        }
     }
 }
 

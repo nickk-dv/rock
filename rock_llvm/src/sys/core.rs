@@ -108,6 +108,9 @@ extern "C" {
     pub fn LLVMSetInitializer(global_val: LLVMValueRef, const_val: LLVMValueRef);
     pub fn LLVMSetThreadLocal(global_val: LLVMValueRef, thread_local: LLVMBool);
     pub fn LLVMSetGlobalConstant(global_val: LLVMValueRef, constant: LLVMBool);
+
+    pub fn LLVMCountParams(fn_val: LLVMValueRef) -> c_uint;
+    pub fn LLVMGetParam(fn_val: LLVMValueRef, idx: c_uint) -> LLVMValueRef;
 }
 
 // basic block
