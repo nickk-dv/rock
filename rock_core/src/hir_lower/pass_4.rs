@@ -853,6 +853,67 @@ pub fn resolve_const_expr<'hir>(
     }
 }
 
+fn resolve_enum_size(hir: &HirData, emit: &mut HirEmit, enum_id: hir::EnumID) -> hir::SizeEval {
+    let data = hir.registry().enum_data(enum_id);
+    if data.variants.is_empty() {
+        return hir::SizeEval::Resolved(hir::Size::new(0, 1));
+    }
+    let mut size: u64 = 0;
+    let mut align: u64 = 1;
+
+    //@tag size + max variant size
+    // with proper alignment
+
+    //@temp
+    hir::SizeEval::Unresolved
+}
+
+fn resolve_variant_size(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    variant: &hir::Variant,
+) -> Option<hir::Size> {
+    let mut size: u64 = 0;
+    let mut align: u64 = 1;
+
+    match variant.kind {
+        hir::VariantKind::Default(_) => {}
+        hir::VariantKind::Constant(_) => {}
+        hir::VariantKind::HasValues(types) => {
+            for ty in types {
+                let (ty_size, ty_align) = match pass_5::type_size(
+                    hir,
+                    emit,
+                    *ty,
+                    SourceRange::new(origin_id, variant.name.range),
+                ) {
+                    Some(size) => (size.size(), size.align()),
+                    None => return None,
+                };
+
+                size = aligned_size(size, ty_align);
+                size = if let Some(new_size) = size.checked_add(ty_size) {
+                    new_size
+                } else {
+                    emit.error(ErrorComp::new(
+                        format!(
+                            "variant size overflow: `{}` + `{}` (when computing: total_size + value_size)",
+                            size, ty_size
+                        ),
+                        SourceRange::new(origin_id, variant.name.range), //@review source range for size overflow error 10.05.24
+                        None,
+                    ));
+                    return None;
+                };
+                align = align.max(ty_align);
+            }
+        }
+    }
+
+    Some(hir::Size::new(size, align))
+}
+
 fn resolve_struct_size(
     hir: &HirData,
     emit: &mut HirEmit,
@@ -872,6 +933,7 @@ fn resolve_struct_size(
             Some(size) => (size.size(), size.align()),
             None => return hir::SizeEval::ResolvedError,
         };
+
         size = aligned_size(size, field_align);
         size = if let Some(new_size) = size.checked_add(field_size) {
             new_size

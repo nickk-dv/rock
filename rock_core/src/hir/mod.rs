@@ -60,6 +60,7 @@ pub struct EnumData<'hir> {
     pub name: ast::Name,
     pub int_ty: BasicInt,
     pub variants: &'hir [Variant<'hir>],
+    pub size_eval: SizeEval,
 }
 
 id_impl!(VariantID);
