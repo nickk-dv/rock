@@ -110,7 +110,7 @@ impl<'c> Codegen<'c> {
     }
 
     pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::Type {
-        unimplemented!()
+        self.structs[struct_id.index()]
     }
 
     pub fn array_type(&self, array: &hir::ArrayStatic) -> llvm::Type {

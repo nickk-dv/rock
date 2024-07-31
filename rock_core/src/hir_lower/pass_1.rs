@@ -144,6 +144,7 @@ fn add_enum_item<'hir, 'ast>(
         // placeholder, real type is assigned in pass_3
         int_ty: hir::BasicInt::S8,
         variants: &[],
+        size_eval: hir::SizeEval::Unresolved,
     };
 
     let id = hir.registry_mut().add_enum(item, data);
