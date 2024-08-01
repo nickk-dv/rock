@@ -1,5 +1,5 @@
-#[derive(Copy, Clone, PartialEq, Debug)]
 #[allow(non_camel_case_types)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SyntaxKind {
     ERROR,
     TOMBSTONE,

@@ -167,7 +167,7 @@ fn codegen_assign<'ctx>(
         .into_pointer_value();
 
     match assign.op {
-        ast::AssignOp::Assign => {
+        hir::AssignOp::Assign => {
             let init_value = codegen_expr(
                 cg,
                 proc_cg,
@@ -179,12 +179,12 @@ fn codegen_assign<'ctx>(
                 cg.builder.build_store(lhs_ptr, value).unwrap();
             }
         }
-        ast::AssignOp::Bin(op) => {
+        hir::AssignOp::Bin(op) => {
             let lhs_ty = cg.type_into_basic(assign.lhs_ty);
             let lhs_value = cg.builder.build_load(lhs_ty, lhs_ptr, "load_val").unwrap();
             let init_value = codegen_expr_value(cg, proc_cg, assign.rhs);
 
-            let bin_value = codegen_bin_op(cg, op, lhs_value, init_value, assign.lhs_signed_int);
+            let bin_value = codegen_bin_op(cg, op, lhs_value, init_value);
             cg.builder.build_store(lhs_ptr, bin_value).unwrap();
         }
     }

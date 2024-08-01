@@ -225,7 +225,7 @@ pub struct Local<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct Assign<'hir> {
-    pub op: ast::AssignOp,
+    pub op: AssignOp,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
     pub lhs_ty: Type<'hir>,
@@ -298,7 +298,7 @@ pub enum Expr<'hir> {
     Deref        { rhs: &'hir Expr<'hir>, ptr_ty: &'hir Type<'hir> },
     Address      { rhs: &'hir Expr<'hir> },
     Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
-    Binary       { op: ast::BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir>, lhs_signed_int: bool },
+    Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
 #[derive(Copy, Clone)]
@@ -474,6 +474,52 @@ pub enum UnOp {
     Neg_Float(BasicFloat),
     BitNot(BasicInt),
     LogicNot,
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone)]
+pub enum BinOp {
+    Add_Int,
+    Add_Float,
+    Sub_Int,
+    Sub_Float,
+    Mul_Int,
+    Mul_Float,
+    Div_IntS,
+    Div_IntU,
+    Div_Float,
+    Rem_IntS,
+    Rem_IntU,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitShl,
+    BitShr_IntS,
+    BitShr_IntU,
+    IsEq_Int,
+    IsEq_Float,
+    NotEq_Int,
+    NotEq_Float,
+    Less_IntS,
+    Less_IntU,
+    Less_Float,
+    LessEq_IntS,
+    LessEq_IntU,
+    LessEq_Float,
+    Greater_IntS,
+    Greater_IntU,
+    Greater_Float,
+    GreaterEq_IntS,
+    GreaterEq_IntU,
+    GreaterEq_Float,
+    LogicAnd,
+    LogicOr,
+}
+
+#[derive(Copy, Clone)]
+pub enum AssignOp {
+    Assign,
+    Bin(BinOp),
 }
 
 use crate::size_assert;

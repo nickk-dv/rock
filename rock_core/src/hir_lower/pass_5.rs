@@ -2339,15 +2339,10 @@ fn typecheck_binary<'hir>(
         hir::Type::Error
     };
 
-    let lhs_signed_int = match binary_ty {
-        hir::Type::Basic(basic) => BasicTypeKind::new(basic).is_signed_integer(),
-        _ => false,
-    };
     let binary_expr = hir::Expr::Binary {
         op,
         lhs: lhs_res.expr,
         rhs: rhs_res.expr,
-        lhs_signed_int,
     };
     TypeResult::new(binary_ty, emit.arena.alloc(binary_expr))
 }

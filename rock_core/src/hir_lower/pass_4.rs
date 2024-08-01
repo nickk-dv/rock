@@ -1026,12 +1026,7 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::Deref { .. } => Err("deref"),
         hir::Expr::Address { .. } => Err("address"),
         hir::Expr::Unary { op, rhs } => Ok(fold_unary_expr(hir, emit, origin_id, op, rhs)),
-        hir::Expr::Binary {
-            op,
-            lhs,
-            rhs,
-            lhs_signed_int,
-        } => Err("binary"), //@todo binary 10.06.24
+        hir::Expr::Binary { op, lhs, rhs } => Err("binary"), //@todo binary 10.06.24
     };
 
     match result {

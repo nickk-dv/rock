@@ -147,12 +147,7 @@ pub fn codegen_expr<'ctx>(
         Expr::Deref { rhs, ptr_ty } => Some(codegen_deref(cg, proc_cg, expect_ptr, rhs, *ptr_ty)),
         Expr::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
         Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
-        Expr::Binary {
-            op,
-            lhs,
-            rhs,
-            lhs_signed_int,
-        } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs, lhs_signed_int)),
+        Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
     }
 }
 
@@ -571,7 +566,7 @@ fn codegen_index<'ctx>(
             //@i64 mul is probably wrong when dealing with non 64bit targets 07.05.24
             let elem_size = cg.context.i64_type().const_int(elem_size, false);
             let byte_offset =
-                codegen_bin_op(cg, ast::BinOp::Mul, index.into(), elem_size.into(), false)
+                codegen_bin_op(cg, hir::BinOp::Mul_Int, index.into(), elem_size.into())
                     .into_int_value();
             unsafe {
                 cg.builder
@@ -730,10 +725,9 @@ fn codegen_slice<'ctx>(
                         } else {
                             codegen_bin_op(
                                 cg,
-                                ast::BinOp::Add,
+                                hir::BinOp::Add_Int,
                                 upper.into(),
                                 cg.ptr_sized_int_type.const_int(1, false).into(),
-                                false,
                             )
                             .into_int_value()
                         };
@@ -1128,312 +1122,275 @@ fn codegen_unary<'ctx>(
 fn codegen_binary<'ctx>(
     cg: &Codegen<'ctx>,
     proc_cg: &mut ProcCodegen<'ctx>,
-    op: ast::BinOp,
+    op: hir::BinOp,
     lhs: &'ctx hir::Expr<'ctx>,
     rhs: &'ctx hir::Expr<'ctx>,
-    lhs_signed_int: bool,
 ) -> values::BasicValueEnum<'ctx> {
     let lhs = codegen_expr_value(cg, proc_cg, lhs);
     let rhs = codegen_expr_value(cg, proc_cg, rhs);
-    codegen_bin_op(cg, op, lhs, rhs, lhs_signed_int)
+    codegen_bin_op(cg, op, lhs, rhs)
 }
 
 pub fn codegen_bin_op<'ctx>(
     cg: &Codegen<'ctx>,
-    op: ast::BinOp,
+    op: hir::BinOp,
     lhs: values::BasicValueEnum<'ctx>,
     rhs: values::BasicValueEnum<'ctx>,
-    lhs_signed_int: bool,
 ) -> values::BasicValueEnum<'ctx> {
     match op {
-        ast::BinOp::Add => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_add(lhs, rhs.into_int_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_add(lhs, rhs.into_float_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `+` can only be applied to int, float"),
-        },
-        ast::BinOp::Sub => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_sub(lhs, rhs.into_int_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_sub(lhs, rhs.into_float_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `-` can only be applied to int, float"),
-        },
-        ast::BinOp::Mul => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_mul(lhs, rhs.into_int_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_mul(lhs, rhs.into_float_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `*` can only be applied to int, float"),
-        },
-        ast::BinOp::Div => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => {
-                if lhs_signed_int {
-                    cg.builder
-                        .build_int_signed_div(lhs, rhs.into_int_value(), "bin_temp")
-                        .unwrap()
-                        .into()
-                } else {
-                    cg.builder
-                        .build_int_unsigned_div(lhs, rhs.into_int_value(), "bin_temp")
-                        .unwrap()
-                        .into()
-                }
-            }
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_div(lhs, rhs.into_float_value(), "bin_temp")
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `/` can only be applied to int, float"),
-        },
-        ast::BinOp::Rem => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => {
-                if lhs_signed_int {
-                    cg.builder
-                        .build_int_signed_rem(lhs, rhs.into_int_value(), "bin_temp")
-                        .unwrap()
-                        .into()
-                } else {
-                    cg.builder
-                        .build_int_unsigned_rem(lhs, rhs.into_int_value(), "bin_temp")
-                        .unwrap()
-                        .into()
-                }
-            }
-            _ => panic!("codegen: binary `%` can only be applied to int"),
-        },
-        ast::BinOp::BitAnd => cg
+        hir::BinOp::Add_Int => cg
             .builder
-            .build_and(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .build_int_add(lhs.into_int_value(), rhs.into_int_value(), "bin")
             .unwrap()
             .into(),
-        ast::BinOp::BitOr => cg
+        hir::BinOp::Add_Float => cg
             .builder
-            .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .build_float_add(lhs.into_float_value(), rhs.into_float_value(), "bin")
             .unwrap()
             .into(),
-        ast::BinOp::BitXor => cg
+        hir::BinOp::Sub_Int => cg
             .builder
-            .build_xor(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .build_int_sub(lhs.into_int_value(), rhs.into_int_value(), "bin")
             .unwrap()
             .into(),
-        ast::BinOp::BitShl => cg
+        hir::BinOp::Sub_Float => cg
             .builder
-            .build_left_shift(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .build_float_sub(lhs.into_float_value(), rhs.into_float_value(), "bin")
             .unwrap()
             .into(),
-        ast::BinOp::BitShr => cg
+        hir::BinOp::Mul_Int => cg
             .builder
-            .build_right_shift(
+            .build_int_mul(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::Mul_Float => cg
+            .builder
+            .build_float_mul(lhs.into_float_value(), rhs.into_float_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::Div_IntS => cg
+            .builder
+            .build_int_signed_div(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::Div_IntU => cg
+            .builder
+            .build_int_unsigned_div(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::Div_Float => cg
+            .builder
+            .build_float_div(lhs.into_float_value(), rhs.into_float_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::Rem_IntS => cg
+            .builder
+            .build_int_signed_rem(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::Rem_IntU => cg
+            .builder
+            .build_int_unsigned_rem(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::BitAnd => cg
+            .builder
+            .build_and(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::BitOr => cg
+            .builder
+            .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::BitXor => cg
+            .builder
+            .build_xor(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::BitShl => cg
+            .builder
+            .build_left_shift(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::BitShr_IntS => cg
+            .builder
+            .build_right_shift(lhs.into_int_value(), rhs.into_int_value(), true, "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::BitShr_IntU => cg
+            .builder
+            .build_right_shift(lhs.into_int_value(), rhs.into_int_value(), false, "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::IsEq_Int => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
                 lhs.into_int_value(),
                 rhs.into_int_value(),
-                lhs_signed_int,
-                "bin_temp",
+                "bin",
             )
             .unwrap()
             .into(),
-        ast::BinOp::IsEq => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    inkwell::IntPredicate::EQ,
-                    lhs,
-                    rhs.into_int_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_compare(
-                    inkwell::FloatPredicate::OEQ,
-                    lhs,
-                    rhs.into_float_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::PointerValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    inkwell::IntPredicate::EQ,
-                    lhs,
-                    rhs.into_pointer_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `==` can only be applied to int, float"),
-        },
-        ast::BinOp::NotEq => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    inkwell::IntPredicate::NE,
-                    lhs,
-                    rhs.into_int_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_compare(
-                    inkwell::FloatPredicate::ONE,
-                    lhs,
-                    rhs.into_float_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::PointerValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    inkwell::IntPredicate::NE,
-                    lhs,
-                    rhs.into_pointer_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `!=` can only be applied to int, float, rawptr"),
-        },
-        ast::BinOp::Less => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    if lhs_signed_int {
-                        inkwell::IntPredicate::SLT
-                    } else {
-                        inkwell::IntPredicate::ULT
-                    },
-                    lhs,
-                    rhs.into_int_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_compare(
-                    inkwell::FloatPredicate::OLT,
-                    lhs,
-                    rhs.into_float_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `<` can only be applied to int, float"),
-        },
-        ast::BinOp::LessEq => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    if lhs_signed_int {
-                        inkwell::IntPredicate::SLE
-                    } else {
-                        inkwell::IntPredicate::ULE
-                    },
-                    lhs,
-                    rhs.into_int_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_compare(
-                    inkwell::FloatPredicate::OLE,
-                    lhs,
-                    rhs.into_float_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `<=` can only be applied to int, float"),
-        },
-        ast::BinOp::Greater => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    if lhs_signed_int {
-                        inkwell::IntPredicate::SGT
-                    } else {
-                        inkwell::IntPredicate::UGT
-                    },
-                    lhs,
-                    rhs.into_int_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_compare(
-                    inkwell::FloatPredicate::OGT,
-                    lhs,
-                    rhs.into_float_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `>` can only be applied to int, float"),
-        },
-        ast::BinOp::GreaterEq => match lhs {
-            values::BasicValueEnum::IntValue(lhs) => cg
-                .builder
-                .build_int_compare(
-                    if lhs_signed_int {
-                        inkwell::IntPredicate::SGE
-                    } else {
-                        inkwell::IntPredicate::UGE
-                    },
-                    lhs,
-                    rhs.into_int_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            values::BasicValueEnum::FloatValue(lhs) => cg
-                .builder
-                .build_float_compare(
-                    inkwell::FloatPredicate::OGE,
-                    lhs,
-                    rhs.into_float_value(),
-                    "bin_temp",
-                )
-                .unwrap()
-                .into(),
-            _ => panic!("codegen: binary `>=` can only be applied to int, float"),
-        },
-        ast::BinOp::LogicAnd => cg
+        hir::BinOp::IsEq_Float => cg
             .builder
-            .build_and(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .build_float_compare(
+                inkwell::FloatPredicate::OEQ,
+                lhs.into_float_value(),
+                rhs.into_float_value(),
+                "bin",
+            )
             .unwrap()
             .into(),
-        ast::BinOp::LogicOr => cg
+        hir::BinOp::NotEq_Int => cg
             .builder
-            .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin_temp")
+            .build_int_compare(
+                inkwell::IntPredicate::NE,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::NotEq_Float => cg
+            .builder
+            .build_float_compare(
+                inkwell::FloatPredicate::ONE,
+                lhs.into_float_value(),
+                rhs.into_float_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::Less_IntS => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::SLT,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::Less_IntU => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::ULT,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::Less_Float => cg
+            .builder
+            .build_float_compare(
+                inkwell::FloatPredicate::OLT,
+                lhs.into_float_value(),
+                rhs.into_float_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::LessEq_IntS => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::SLE,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::LessEq_IntU => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::ULE,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::LessEq_Float => cg
+            .builder
+            .build_float_compare(
+                inkwell::FloatPredicate::OLE,
+                lhs.into_float_value(),
+                rhs.into_float_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::Greater_IntS => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::SGT,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::Greater_IntU => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::UGT,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::Greater_Float => cg
+            .builder
+            .build_float_compare(
+                inkwell::FloatPredicate::OGT,
+                lhs.into_float_value(),
+                rhs.into_float_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::GreaterEq_IntS => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::SGE,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::GreaterEq_IntU => cg
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::UGE,
+                lhs.into_int_value(),
+                rhs.into_int_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::GreaterEq_Float => cg
+            .builder
+            .build_float_compare(
+                inkwell::FloatPredicate::OGE,
+                lhs.into_float_value(),
+                rhs.into_float_value(),
+                "bin",
+            )
+            .unwrap()
+            .into(),
+        hir::BinOp::LogicAnd => cg
+            .builder
+            .build_and(lhs.into_int_value(), rhs.into_int_value(), "bin")
+            .unwrap()
+            .into(),
+        hir::BinOp::LogicOr => cg
+            .builder
+            .build_or(lhs.into_int_value(), rhs.into_int_value(), "bin")
             .unwrap()
             .into(),
     }
