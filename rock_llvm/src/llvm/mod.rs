@@ -37,8 +37,8 @@ pub struct TypeFn(sys::LLVMTypeRef);
 
 pub type OpCode = sys::LLVMOpcode;
 pub type Linkage = sys::LLVMLinkage;
-pub type IntPredicate = sys::LLVMIntPredicate;
-pub type FloatPredicate = sys::LLVMRealPredicate;
+pub type IntPred = sys::LLVMIntPredicate;
+pub type FloatPred = sys::LLVMRealPredicate;
 
 impl IRContext {
     pub fn new() -> IRContext {

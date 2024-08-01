@@ -174,11 +174,6 @@ impl<'c> ProcCodegen<'c> {
         self.block_stack.pop();
     }
 
-    pub fn add_defer_block(&mut self, block: hir::Block<'c>) {
-        self.block_stack.last_mut().unwrap().defer_count += 1;
-        self.defer_blocks.push(block);
-    }
-
     pub fn set_next_loop_info(
         &mut self,
         break_bb: llvm::BasicBlock,
@@ -189,6 +184,11 @@ impl<'c> ProcCodegen<'c> {
             continue_bb,
         };
         self.next_loop_info = Some(loop_info);
+    }
+
+    pub fn add_defer_block(&mut self, block: hir::Block<'c>) {
+        self.block_stack.last_mut().unwrap().defer_count += 1;
+        self.defer_blocks.push(block);
     }
 
     pub fn defer_block(&self, block_idx: usize) -> hir::Block<'c> {
@@ -212,7 +212,6 @@ impl<'c> ProcCodegen<'c> {
 
         for block_info in self.block_stack.iter().rev() {
             defer_count += block_info.defer_count as usize;
-
             if let Some(loop_info) = block_info.loop_info {
                 return (loop_info, (total_count - defer_count)..total_count);
             }
