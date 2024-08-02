@@ -1,18 +1,30 @@
 use super::context::{Codegen, ProcCodegen};
+use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
 
-pub fn codegen_const_value(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
-    unimplemented!();
+pub fn codegen_expr_value<'c>(
+    cg: &Codegen,
+    proc_cg: &mut ProcCodegen<'c>,
+    expr: &hir::Expr<'c>,
+) -> llvm::Value {
+    codegen_expr(cg, proc_cg, expr).unwrap()
 }
 
-pub fn codegen_expr(cg: &Codegen, proc_cg: &mut ProcCodegen, expr: &hir::Expr) -> llvm::Value {
+fn codegen_expr<'c>(
+    cg: &Codegen,
+    proc_cg: &mut ProcCodegen<'c>,
+    expr: &hir::Expr<'c>,
+) -> Option<llvm::Value> {
     match *expr {
-        hir::Expr::Error => todo!(),
-        hir::Expr::Const { value } => todo!(),
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { value } => Some(codegen_const(cg, value)),
         hir::Expr::If { if_ } => todo!(),
-        hir::Expr::Block { block } => todo!(),
+        hir::Expr::Block { block } => {
+            emit_stmt::codegen_block(cg, proc_cg, block);
+            None
+        }
         hir::Expr::Match { match_ } => todo!(),
         hir::Expr::Match2 { match_ } => todo!(),
         hir::Expr::StructField {
@@ -45,20 +57,45 @@ pub fn codegen_expr(cg: &Codegen, proc_cg: &mut ProcCodegen, expr: &hir::Expr) -
         hir::Expr::ArrayRepeat { array_repeat } => todo!(),
         hir::Expr::Deref { rhs, ptr_ty } => todo!(),
         hir::Expr::Address { rhs } => todo!(),
-        hir::Expr::Unary { op, rhs } => codegen_unary(cg, proc_cg, op, rhs),
-        hir::Expr::Binary { op, lhs, rhs } => codegen_binary(cg, proc_cg, op, lhs, rhs),
+        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
+        hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
     };
 
     unimplemented!();
 }
 
-fn codegen_unary(
+pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
+    match value {
+        hir::ConstValue::Error => unreachable!(),
+        hir::ConstValue::Null => llvm::const_all_zero(cg.ptr_type()),
+        hir::ConstValue::Bool { val } => llvm::const_int(cg.bool_type(), val as u64, false),
+        hir::ConstValue::Int { val, int_ty, .. } => {
+            llvm::const_int(cg.basic_type(int_ty.into_basic()), val, int_ty.is_signed())
+        }
+        hir::ConstValue::IntS(_) => unimplemented!(),
+        hir::ConstValue::IntU(_) => unimplemented!(),
+        hir::ConstValue::Float { val, float_ty } => {
+            llvm::const_float(cg.basic_type(float_ty.into_basic()), val)
+        }
+        hir::ConstValue::Char { val } => {
+            llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
+        }
+        hir::ConstValue::String { id, c_string } => todo!(),
+        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].into(),
+        hir::ConstValue::EnumVariant { enum_ } => todo!(),
+        hir::ConstValue::Struct { struct_ } => todo!(),
+        hir::ConstValue::Array { array } => todo!(),
+        hir::ConstValue::ArrayRepeat { value, len } => todo!(),
+    }
+}
+
+fn codegen_unary<'c>(
     cg: &Codegen,
-    proc_cg: &mut ProcCodegen,
+    proc_cg: &mut ProcCodegen<'c>,
     op: hir::UnOp,
-    rhs: &hir::Expr,
+    rhs: &hir::Expr<'c>,
 ) -> llvm::Value {
-    let rhs = codegen_expr(cg, proc_cg, rhs); //@value
+    let rhs = codegen_expr_value(cg, proc_cg, rhs);
     match op {
         hir::UnOp::Neg_Int => cg.build.neg(rhs, "un"),
         hir::UnOp::Neg_Float => cg.build.fneg(rhs, "un"),
@@ -67,21 +104,20 @@ fn codegen_unary(
     }
 }
 
-fn codegen_binary(
+fn codegen_binary<'c>(
     cg: &Codegen,
-    proc_cg: &mut ProcCodegen,
+    proc_cg: &mut ProcCodegen<'c>,
     op: hir::BinOp,
-    lhs: &hir::Expr,
-    rhs: &hir::Expr,
+    lhs: &hir::Expr<'c>,
+    rhs: &hir::Expr<'c>,
 ) -> llvm::Value {
-    let lhs = codegen_expr(cg, proc_cg, lhs); //@value
-    let rhs = codegen_expr(cg, proc_cg, rhs); //@value
-    codegen_binary_op(cg, proc_cg, op, lhs, rhs)
+    let lhs = codegen_expr_value(cg, proc_cg, lhs);
+    let rhs = codegen_expr_value(cg, proc_cg, rhs);
+    codegen_binary_op(cg, op, lhs, rhs)
 }
 
 fn codegen_binary_op(
     cg: &Codegen,
-    proc_cg: &mut ProcCodegen,
     op: hir::BinOp,
     lhs: llvm::Value,
     rhs: llvm::Value,
