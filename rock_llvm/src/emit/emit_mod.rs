@@ -55,7 +55,7 @@ fn codegen_struct_types(cg: &mut Codegen) {
 //@instead codegen all constants in the pool
 fn codegen_consts(cg: &mut Codegen) {
     for data in cg.hir.consts.iter() {
-        let const_val = emit_expr::codegen_const_value(cg, cg.hir.const_eval_value(data.value));
+        let const_val = emit_expr::codegen_const(cg, cg.hir.const_eval_value(data.value));
         cg.consts.push(const_val);
     }
 }
@@ -63,7 +63,7 @@ fn codegen_consts(cg: &mut Codegen) {
 fn codegen_globals(cg: &mut Codegen) {
     for data in cg.hir.globals.iter() {
         let global_ty = cg.ty(data.ty);
-        let global_val = emit_expr::codegen_const_value(cg, cg.hir.const_eval_value(data.value));
+        let global_val = emit_expr::codegen_const(cg, cg.hir.const_eval_value(data.value));
 
         let global = cg.module.add_global(
             global_ty,

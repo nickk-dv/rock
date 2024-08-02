@@ -90,7 +90,7 @@ fn codegen_loop<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, loop_: &hir::Lo
         hir::LoopKind::While { cond } => {
             cg.build.br(entry_bb);
             cg.build.position_at_end(entry_bb);
-            let cond = emit_expr::codegen_expr(cg, proc_cg, cond); //@value
+            let cond = emit_expr::codegen_expr_value(cg, proc_cg, cond);
             cg.build.cond_br(cond, body_bb, exit_bb);
 
             cg.build.position_at_end(body_bb);
@@ -105,7 +105,7 @@ fn codegen_loop<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, loop_: &hir::Lo
             codegen_local(cg, proc_cg, local_id);
             cg.build.br(entry_bb);
             cg.build.position_at_end(entry_bb);
-            let cond = emit_expr::codegen_expr(cg, proc_cg, cond); //@value
+            let cond = emit_expr::codegen_expr_value(cg, proc_cg, cond);
             cg.build.cond_br(cond, body_bb, exit_bb);
 
             cg.build.position_at_end(body_bb);

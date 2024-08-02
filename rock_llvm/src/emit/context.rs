@@ -105,6 +105,14 @@ impl<'c> Codegen<'c> {
         }
     }
 
+    pub fn bool_type(&self) -> llvm::Type {
+        self.cache.int_1
+    }
+
+    pub fn ptr_type(&self) -> llvm::Type {
+        self.cache.ptr_type
+    }
+
     pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
         unimplemented!()
     }

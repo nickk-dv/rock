@@ -276,12 +276,12 @@ impl IRBuilder {
             core::LLVMBuildCast(self.builder, op, val.0, into_ty.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn icmp(&self, op: IntPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn icmp(&self, op: IntPred, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildICmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn fcmp(&self, op: FloatPredicate, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn fcmp(&self, op: FloatPred, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildFCmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
@@ -347,6 +347,12 @@ impl ValueFn {
         } else {
             None
         }
+    }
+}
+
+impl Into<Value> for ValueFn {
+    fn into(self) -> Value {
+        Value(self.0)
     }
 }
 
