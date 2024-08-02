@@ -813,13 +813,8 @@ fn codegen_expr<'hir>(
         hir::Expr::ArrayRepeat { array_repeat } => todo!(),
         hir::Expr::Deref { rhs, ptr_ty } => todo!(),
         hir::Expr::Address { rhs } => todo!(),
-        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, hir, op, rhs)),
-        hir::Expr::Binary {
-            op,
-            lhs,
-            rhs,
-            lhs_signed_int,
-        } => todo!(),
+        hir::Expr::Unary { op, rhs } => todo!(),
+        hir::Expr::Binary { op, lhs, rhs } => todo!(),
     }
 }
 
@@ -896,6 +891,7 @@ fn codegen_call_indirect(
 ) {
 }
 
+/*
 fn codegen_unary<'hir>(
     cg: &mut Codegen,
     hir: &hir::Hir,
@@ -941,6 +937,7 @@ fn codegen_unary<'hir>(
         }
     }
 }
+*/
 
 fn basic_block(cg: &mut Codegen, name: &str) {
     cg.write_str(name);

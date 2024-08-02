@@ -1236,12 +1236,12 @@ fn fold_unary_expr<'hir>(
     op: hir::UnOp,
     rhs: &'hir hir::Expr<'hir>,
 ) -> hir::ConstValue<'hir> {
-    use hir::{ConstValue, UnOp};
+    use hir::ConstValue;
 
     let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
 
     match op {
-        hir::UnOp::Neg_Int(_) => match rhs_value {
+        hir::UnOp::Neg_Int => match rhs_value {
             //@can overflow
             ConstValue::Int { val, neg, int_ty } => ConstValue::Int {
                 val,
@@ -1250,7 +1250,7 @@ fn fold_unary_expr<'hir>(
             },
             _ => unreachable!(),
         },
-        hir::UnOp::Neg_Float(_) => match rhs_value {
+        hir::UnOp::Neg_Float => match rhs_value {
             //@can overflow?
             ConstValue::Float { val, float_ty } => ConstValue::Float {
                 val: -val,
@@ -1258,7 +1258,7 @@ fn fold_unary_expr<'hir>(
             },
             _ => unreachable!(),
         },
-        hir::UnOp::BitNot(_) => {
+        hir::UnOp::BitNot => {
             //@can overflow + handle negative ~ correctly
             hir::ConstValue::Error //@todo
         }

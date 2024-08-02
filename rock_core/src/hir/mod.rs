@@ -229,7 +229,6 @@ pub struct Assign<'hir> {
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
     pub lhs_ty: Type<'hir>,
-    pub lhs_signed_int: bool,
 }
 
 id_impl!(ConstValueID);
@@ -470,9 +469,9 @@ pub enum BasicFloat {
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
 pub enum UnOp {
-    Neg_Int(BasicIntSigned),
-    Neg_Float(BasicFloat),
-    BitNot(BasicInt),
+    Neg_Int,
+    Neg_Float,
+    BitNot,
     LogicNot,
 }
 

@@ -1101,17 +1101,17 @@ fn codegen_unary<'ctx>(
     let rhs = codegen_expr_value(cg, proc_cg, rhs);
 
     match op {
-        hir::UnOp::Neg_Int(_) => cg
+        hir::UnOp::Neg_Int => cg
             .builder
             .build_int_neg(rhs.into_int_value(), "un_temp")
             .unwrap()
             .into(),
-        hir::UnOp::Neg_Float(_) => cg
+        hir::UnOp::Neg_Float => cg
             .builder
             .build_float_neg(rhs.into_float_value(), "un_temp")
             .unwrap()
             .into(),
-        hir::UnOp::BitNot(_) | hir::UnOp::LogicNot => cg
+        hir::UnOp::BitNot | hir::UnOp::LogicNot => cg
             .builder
             .build_not(rhs.into_int_value(), "un_temp")
             .unwrap()
