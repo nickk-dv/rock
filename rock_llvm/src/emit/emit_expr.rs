@@ -60,9 +60,9 @@ fn codegen_unary(
 ) -> llvm::Value {
     let rhs = codegen_expr(cg, proc_cg, rhs); //@value
     match op {
-        hir::UnOp::Neg_Int(_) => cg.build.neg(rhs, "un"),
-        hir::UnOp::Neg_Float(_) => cg.build.fneg(rhs, "un"),
-        hir::UnOp::BitNot(_) => cg.build.not(rhs, "un"),
+        hir::UnOp::Neg_Int => cg.build.neg(rhs, "un"),
+        hir::UnOp::Neg_Float => cg.build.fneg(rhs, "un"),
+        hir::UnOp::BitNot => cg.build.not(rhs, "un"),
         hir::UnOp::LogicNot => cg.build.not(rhs, "un"),
     }
 }
