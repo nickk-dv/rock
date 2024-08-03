@@ -287,8 +287,14 @@ impl IRBuilder {
         })
     }
 
-    pub fn call(&self, fn_ty: TypeFn, fn_val: ValueFn, args: &[Value], name: &str) -> Value {
-        Value(unsafe {
+    pub fn call(
+        &self,
+        fn_ty: TypeFn,
+        fn_val: ValueFn,
+        args: &[Value],
+        name: &str,
+    ) -> Option<Value> {
+        let call_value = Value(unsafe {
             core::LLVMBuildCall2(
                 self.builder,
                 fn_ty.0,
@@ -297,7 +303,15 @@ impl IRBuilder {
                 args.len() as u32,
                 self.cstr_buf.cstr(name),
             )
-        })
+        });
+
+        let return_ty = unsafe { core::LLVMGetReturnType(fn_ty.0) };
+        let return_kind = unsafe { core::LLVMGetTypeKind(return_ty) };
+
+        match return_kind {
+            sys::LLVMTypeKind::LLVMVoidTypeKind => None,
+            _ => Some(call_value),
+        }
     }
 }
 
@@ -334,6 +348,12 @@ impl BasicBlock {
     }
     pub fn last_instr(&self) -> ValueInstr {
         ValueInstr(unsafe { core::LLVMGetLastInstruction(self.0) })
+    }
+}
+
+impl Value {
+    pub fn into_fn(self) -> ValueFn {
+        ValueFn(self.0)
     }
 }
 

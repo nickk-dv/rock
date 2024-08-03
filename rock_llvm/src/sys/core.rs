@@ -28,6 +28,8 @@ extern "C" {
 
 // types
 extern "C" {
+    pub fn LLVMGetTypeKind(ty: LLVMTypeRef) -> LLVMTypeKind;
+
     pub fn LLVMInt1TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
     pub fn LLVMInt8TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
     pub fn LLVMInt16TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
@@ -49,6 +51,7 @@ extern "C" {
         param_count: c_uint,
         is_variadic: LLVMBool,
     ) -> LLVMTypeRef;
+    pub fn LLVMGetReturnType(fn_ty: LLVMTypeRef) -> LLVMTypeRef;
 
     pub fn LLVMStructCreateNamed(ctx: LLVMContextRef, name: *const c_char) -> LLVMTypeRef;
     pub fn LLVMStructSetBody(

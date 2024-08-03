@@ -104,7 +104,7 @@ fn codegen_function_values(cg: &mut Codegen) {
 
         let fn_ty = llvm::function_type(cg.ty(data.return_ty), &param_types, is_variadic);
         let fn_val = cg.module.add_function(name, fn_ty, linkage);
-        cg.procs.push(fn_val);
+        cg.procs.push((fn_val, fn_ty));
     }
 }
 
@@ -116,7 +116,7 @@ fn codegen_function_bodies(cg: &Codegen) {
             None => continue,
         };
 
-        let fn_val = cg.procs[idx];
+        let fn_val = cg.procs[idx].0;
         let mut proc_cg = ProcCodegen::new(hir::ProcID::new(idx), fn_val);
 
         let entry_bb = cg.context.append_bb(fn_val, "entry_bb");
