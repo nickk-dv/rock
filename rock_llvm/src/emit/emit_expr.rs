@@ -3,6 +3,7 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
+use rock_core::intern::InternID;
 
 pub fn codegen_expr_value<'c>(
     cg: &Codegen,
@@ -67,26 +68,98 @@ fn codegen_expr<'c>(
 pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
     match value {
         hir::ConstValue::Error => unreachable!(),
-        hir::ConstValue::Null => llvm::const_all_zero(cg.ptr_type()),
-        hir::ConstValue::Bool { val } => llvm::const_int(cg.bool_type(), val as u64, false),
-        hir::ConstValue::Int { val, int_ty, .. } => {
-            llvm::const_int(cg.basic_type(int_ty.into_basic()), val, int_ty.is_signed())
-        }
+        hir::ConstValue::Null => codegen_const_null(cg),
+        hir::ConstValue::Bool { val } => codegen_const_bool(cg, val),
+        hir::ConstValue::Int { val, int_ty, .. } => codegen_const_int(cg, val, int_ty),
         hir::ConstValue::IntS(_) => unimplemented!(),
         hir::ConstValue::IntU(_) => unimplemented!(),
-        hir::ConstValue::Float { val, float_ty } => {
-            llvm::const_float(cg.basic_type(float_ty.into_basic()), val)
-        }
-        hir::ConstValue::Char { val } => {
-            llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
-        }
-        hir::ConstValue::String { id, c_string } => todo!(),
+        hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
+        hir::ConstValue::Char { val } => codegen_const_char(cg, val),
+        hir::ConstValue::String { id, c_string } => codegen_const_string(cg, id, c_string),
         hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].into(),
-        hir::ConstValue::EnumVariant { enum_ } => todo!(),
-        hir::ConstValue::Struct { struct_ } => todo!(),
-        hir::ConstValue::Array { array } => todo!(),
-        hir::ConstValue::ArrayRepeat { value, len } => todo!(),
+        hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
+        hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
+        hir::ConstValue::Array { array } => codegen_const_array(cg, array),
+        hir::ConstValue::ArrayRepeat { value, len } => codegen_const_array_repeat(cg, value, len),
     }
+}
+
+#[inline]
+fn codegen_const_null(cg: &Codegen) -> llvm::Value {
+    llvm::const_all_zero(cg.ptr_type())
+}
+
+#[inline]
+fn codegen_const_bool(cg: &Codegen, val: bool) -> llvm::Value {
+    llvm::const_int(cg.bool_type(), val as u64, false)
+}
+
+#[inline]
+fn codegen_const_int(cg: &Codegen, val: u64, int_ty: hir::BasicInt) -> llvm::Value {
+    llvm::const_int(cg.basic_type(int_ty.into_basic()), val, int_ty.is_signed())
+}
+
+#[inline]
+fn codegen_const_float(cg: &Codegen, val: f64, float_ty: hir::BasicFloat) -> llvm::Value {
+    llvm::const_float(cg.basic_type(float_ty.into_basic()), val)
+}
+
+#[inline]
+fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
+    llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
+}
+
+fn codegen_const_string(cg: &Codegen, id: InternID, c_string: bool) -> llvm::Value {
+    let global_ptr = cg.string_lits[id.index()];
+
+    if c_string {
+        global_ptr
+    } else {
+        let string = cg.hir.intern_string.get_str(id);
+        let bytes_len = string.len() as u64;
+        let slice_len = llvm::const_int(cg.ptr_sized_int(), bytes_len, false);
+        let slice_val = llvm::const_struct_inline(&[global_ptr, slice_len], false);
+        slice_val
+    }
+}
+
+fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Value {
+    unimplemented!()
+}
+
+fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
+    let mut values = Vec::with_capacity(struct_.fields.len());
+
+    for &value_id in struct_.fields {
+        let value = codegen_const(cg, cg.hir.const_value(value_id));
+        values.push(value);
+    }
+
+    let struct_ty = cg.struct_type(struct_.struct_id);
+    llvm::const_struct_named(struct_ty, &values)
+}
+
+fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
+    let mut values = Vec::with_capacity(array.len as usize);
+
+    for &value_id in array.values {
+        let value = codegen_const(cg, cg.hir.const_value(value_id));
+        values.push(value);
+    }
+
+    //@type of zero sized arrays is not stored, will cras
+    let elem_ty = llvm::typeof_value(values[0]);
+    llvm::const_array(elem_ty, &values)
+}
+
+fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u64) -> llvm::Value {
+    let mut values = Vec::with_capacity(len as usize);
+    let value = codegen_const(cg, cg.hir.const_value(value_id));
+    values.resize(len as usize, value);
+
+    //@zero sized array repeat is counter intuitive
+    let elem_ty = llvm::typeof_value(values[0]);
+    llvm::const_array(elem_ty, &values)
 }
 
 fn codegen_unary<'c>(

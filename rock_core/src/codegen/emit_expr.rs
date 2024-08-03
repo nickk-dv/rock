@@ -200,7 +200,7 @@ pub fn codegen_const_value<'ctx>(
             let function = cg.function_values[proc_id.index()];
             function.as_global_value().as_pointer_value().into()
         }
-        hir::ConstValue::EnumVariant { enum_ } => {
+        hir::ConstValue::Variant { variant } => {
             todo!("enum const");
             //let variant = cg.hir.enum_data(enum_id).variant(variant_id);
             //codegen_const_value(cg, cg.hir.const_eval_value(variant.value))

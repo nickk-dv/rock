@@ -987,10 +987,10 @@ fn check_match_exhaust<'hir>(
                 match value {
                     //@consider typecheck result of patterns to make sure this is same type 01.06.24
                     // (dont check when any error were raised or value is Error)
-                    hir::ConstValue::EnumVariant { enum_ } => {
+                    hir::ConstValue::Variant { variant } => {
                         //@match patterns dont support enum values
                         // and pat wont be a ConstExpr in the future probably
-                        let variant_id = enum_.variant_id;
+                        let variant_id = variant.variant_id;
                         if !variants_covered[variant_id.index()] {
                             variants_covered[variant_id.index()] = true;
                         } else {
