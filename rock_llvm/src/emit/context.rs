@@ -113,6 +113,11 @@ impl<'c> Codegen<'c> {
         self.cache.ptr_type
     }
 
+    pub fn ptr_sized_int(&self) -> llvm::Type {
+        //@target dependant
+        self.cache.int_64
+    }
+
     pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
         unimplemented!()
     }

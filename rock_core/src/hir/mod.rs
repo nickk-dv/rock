@@ -245,14 +245,14 @@ pub enum ConstValue<'hir> {
     Char        { val: char },
     String      { id: InternID, c_string: bool },
     Procedure   { proc_id: ProcID },
-    EnumVariant { enum_: &'hir ConstEnum<'hir> },
+    Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { value: ConstValueID, len: u64 },
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub struct ConstEnum<'hir> {
+pub struct ConstVariant<'hir> {
     pub enum_id: EnumID,
     pub variant_id: VariantID,
     pub values: Option<&'hir [ConstValueID]>,

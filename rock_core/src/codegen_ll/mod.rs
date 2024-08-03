@@ -341,7 +341,7 @@ fn codegen_globals(cg: &mut Codegen, hir: &hir::Hir) {
 fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue, with_type: bool) {
     if with_type {
         const_value_type(cg, hir, value);
-        if !matches!(value, hir::ConstValue::EnumVariant { .. }) {
+        if !matches!(value, hir::ConstValue::Variant { .. }) {
             cg.space();
         }
     }
@@ -398,7 +398,7 @@ fn codegen_const_value(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue,
             }
         }
         hir::ConstValue::Procedure { proc_id } => cg.write_str("<const procedure>"),
-        hir::ConstValue::EnumVariant { enum_ } => {
+        hir::ConstValue::Variant { variant } => {
             todo!("variant codegen");
             //let variant = hir.enum_data(enum_id).variant(variant_id);
             //@disabled
@@ -464,7 +464,7 @@ fn const_value_type(cg: &mut Codegen, hir: &hir::Hir, value: hir::ConstValue) {
             }
         }
         hir::ConstValue::Procedure { .. } => basic_type(cg, ast::BasicType::Rawptr),
-        hir::ConstValue::EnumVariant { .. } => {}
+        hir::ConstValue::Variant { .. } => {}
         hir::ConstValue::Struct { struct_ } => struct_type(cg, hir, struct_.struct_id),
         hir::ConstValue::Array { array } => {
             //@zero sized array types will wont be generated 05.07.24

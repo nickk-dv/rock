@@ -1,4 +1,4 @@
-use super::{ConstArray, ConstEnum, ConstStruct, ConstValue, ConstValueID};
+use super::{ConstArray, ConstStruct, ConstValue, ConstValueID, ConstVariant};
 use crate::arena::Arena;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -52,7 +52,7 @@ impl<'hir> Hash for ConstValue<'hir> {
             ConstValue::Char { val } => val.hash(state),
             ConstValue::String { id, c_string } => (id, c_string).hash(state),
             ConstValue::Procedure { proc_id } => proc_id.0.hash(state),
-            ConstValue::EnumVariant { enum_ } => enum_.hash(state),
+            ConstValue::Variant { variant } => variant.hash(state),
             ConstValue::Struct { struct_ } => struct_.hash(state),
             ConstValue::Array { array } => array.hash(state),
             ConstValue::ArrayRepeat { value, len } => (value.0, len).hash(state),
@@ -60,7 +60,7 @@ impl<'hir> Hash for ConstValue<'hir> {
     }
 }
 
-impl<'hir> Hash for ConstEnum<'hir> {
+impl<'hir> Hash for ConstVariant<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.enum_id.0, self.variant_id.0, self.values).hash(state);
     }
