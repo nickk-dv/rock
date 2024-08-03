@@ -1,4 +1,4 @@
-use super::context::{Codegen, ProcCodegen};
+use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
@@ -10,12 +10,13 @@ pub fn codegen_expr_value<'c>(
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
 ) -> llvm::Value {
-    codegen_expr(cg, proc_cg, expr).unwrap()
+    codegen_expr(cg, proc_cg, Expect::Value, expr).unwrap()
 }
 
 fn codegen_expr<'c>(
     cg: &Codegen,
     proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
     expr: &hir::Expr<'c>,
 ) -> Option<llvm::Value> {
     match *expr {
@@ -42,17 +43,21 @@ fn codegen_expr<'c>(
         hir::Expr::Index { target, access } => todo!(),
         hir::Expr::Slice { target, access } => todo!(),
         hir::Expr::Cast { target, into, kind } => todo!(),
-        hir::Expr::LocalVar { local_id } => todo!(),
-        hir::Expr::ParamVar { param_id } => todo!(),
-        hir::Expr::ConstVar { const_id } => todo!(),
-        hir::Expr::GlobalVar { global_id } => todo!(),
+        hir::Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect, local_id)),
+        hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect, param_id)),
+        hir::Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
+        hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
         hir::Expr::Variant {
             enum_id,
             variant_id,
             input,
         } => todo!(),
-        hir::Expr::CallDirect { proc_id, input } => todo!(),
-        hir::Expr::CallIndirect { target, indirect } => todo!(),
+        hir::Expr::CallDirect { proc_id, input } => {
+            codegen_call_direct(cg, proc_cg, proc_id, input)
+        }
+        hir::Expr::CallIndirect { target, indirect } => {
+            codegen_call_indirect(cg, proc_cg, target, indirect)
+        }
         hir::Expr::StructInit { struct_id, input } => todo!(),
         hir::Expr::ArrayInit { array_init } => todo!(),
         hir::Expr::ArrayRepeat { array_repeat } => todo!(),
@@ -60,9 +65,7 @@ fn codegen_expr<'c>(
         hir::Expr::Address { rhs } => todo!(),
         hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
         hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
-    };
-
-    unimplemented!();
+    }
 }
 
 pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
@@ -76,7 +79,7 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
         hir::ConstValue::String { id, c_string } => codegen_const_string(cg, id, c_string),
-        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].into(),
+        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.into(),
         hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
@@ -160,6 +163,93 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
     //@zero sized array repeat is counter intuitive
     let elem_ty = llvm::typeof_value(values[0]);
     llvm::const_array(elem_ty, &values)
+}
+
+fn codegen_local_var(
+    cg: &Codegen,
+    proc_cg: &ProcCodegen,
+    expect: Expect,
+    local_id: hir::LocalID,
+) -> llvm::Value {
+    let local_ptr = proc_cg.local_ptrs[local_id.index()];
+
+    match expect {
+        Expect::Value => {
+            let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
+            let local_ty = cg.ty(local.ty);
+            cg.build.load(local_ty, local_ptr, "local_val")
+        }
+        Expect::Pointer => local_ptr,
+    }
+}
+
+fn codegen_param_var(
+    cg: &Codegen,
+    proc_cg: &ProcCodegen,
+    expect: Expect,
+    param_id: hir::ParamID,
+) -> llvm::Value {
+    let param_ptr = proc_cg.param_ptrs[param_id.index()];
+
+    match expect {
+        Expect::Value => {
+            let param = cg.hir.proc_data(proc_cg.proc_id).param(param_id);
+            let param_ty = cg.ty(param.ty);
+            cg.build.load(param_ty, param_ptr, "param_val")
+        }
+        Expect::Pointer => param_ptr,
+    }
+}
+
+fn codegen_const_var(cg: &Codegen, const_id: hir::ConstID) -> llvm::Value {
+    cg.consts[const_id.index()]
+}
+
+fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) -> llvm::Value {
+    let global_ptr = cg.globals[global_id.index()];
+
+    match expect {
+        Expect::Value => {
+            let data = cg.hir.global_data(global_id);
+            let global_ty = cg.ty(data.ty);
+            cg.build.load(global_ty, global_ptr, "global_val")
+        }
+        Expect::Pointer => global_ptr,
+    }
+}
+
+fn codegen_call_direct<'c>(
+    cg: &Codegen,
+    proc_cg: &mut ProcCodegen<'c>,
+    proc_id: hir::ProcID,
+    input: &[&hir::Expr<'c>],
+) -> Option<llvm::Value> {
+    let mut input_values = Vec::with_capacity(input.len());
+    for &expr in input {
+        let value = codegen_expr_value(cg, proc_cg, expr);
+        input_values.push(value);
+    }
+
+    let (fn_val, fn_ty) = cg.procs[proc_id.index()];
+    cg.build.call(fn_ty, fn_val, &input_values, "call_val")
+}
+
+fn codegen_call_indirect<'c>(
+    cg: &Codegen,
+    proc_cg: &mut ProcCodegen<'c>,
+    target: &hir::Expr<'c>,
+    indirect: &hir::CallIndirect<'c>,
+) -> Option<llvm::Value> {
+    let fn_val = codegen_expr_value(cg, proc_cg, target).into_fn();
+
+    let mut input_values = Vec::with_capacity(indirect.input.len());
+    for &expr in indirect.input {
+        let value = codegen_expr_value(cg, proc_cg, expr);
+        input_values.push(value);
+    }
+
+    let fn_ty = cg.proc_type(indirect.proc_ty);
+    cg.build.call(fn_ty, fn_val, &input_values, "call_ival")
 }
 
 fn codegen_unary<'c>(

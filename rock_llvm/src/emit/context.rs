@@ -6,7 +6,7 @@ pub struct Codegen<'c> {
     pub context: llvm::IRContext,
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
-    pub procs: Vec<llvm::ValueFn>,
+    pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
     pub structs: Vec<llvm::Type>,
     pub consts: Vec<llvm::Value>,
     pub globals: Vec<llvm::Value>,
@@ -34,6 +34,11 @@ struct BlockInfo {
 pub struct LoopInfo {
     pub break_bb: llvm::BasicBlock,
     pub continue_bb: llvm::BasicBlock,
+}
+
+pub enum Expect {
+    Value,
+    Pointer,
 }
 
 struct CodegenCache {
@@ -124,6 +129,15 @@ impl<'c> Codegen<'c> {
 
     pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::Type {
         self.structs[struct_id.index()]
+    }
+
+    pub fn proc_type(&self, proc_ty: &hir::ProcType) -> llvm::TypeFn {
+        let mut param_types: Vec<llvm::Type> = Vec::with_capacity(proc_ty.param_types.len());
+        for &param_ty in proc_ty.param_types {
+            param_types.push(self.ty(param_ty));
+        }
+        let return_ty = self.ty(proc_ty.return_ty);
+        llvm::function_type(return_ty, &param_types, proc_ty.is_variadic)
     }
 
     pub fn array_type(&self, array: &hir::ArrayStatic) -> llvm::Type {
