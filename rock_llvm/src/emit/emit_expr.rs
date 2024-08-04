@@ -10,14 +10,45 @@ pub fn codegen_expr_value<'c>(
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
 ) -> llvm::Value {
-    codegen_expr(cg, proc_cg, Expect::Value, expr).unwrap()
+    codegen_expr(cg, proc_cg, expr, Expect::Value).unwrap()
 }
 
-pub fn codegen_expr<'c>(
+pub fn codegen_expr_pointer<'c>(
     cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
-    expect: Expect,
     expr: &hir::Expr<'c>,
+) -> llvm::Value {
+    codegen_expr(cg, proc_cg, expr, Expect::Pointer).unwrap()
+}
+
+pub fn codegen_expr_store<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expr: &hir::Expr<'c>,
+    ptr_val: llvm::Value,
+) {
+    if let Some(value) = codegen_expr(cg, proc_cg, expr, Expect::Store(ptr_val)) {
+        cg.build.store(value, ptr_val);
+    }
+}
+
+pub fn codegen_expr_return<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expr: &hir::Expr<'c>,
+) {
+    if let Some(value) = codegen_expr(cg, proc_cg, expr, Expect::Value) {
+        cg.build.ret(value);
+    } else {
+        cg.build.ret_void();
+    }
+}
+
+fn codegen_expr<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expr: &hir::Expr<'c>,
+    expect: Expect,
 ) -> Option<llvm::Value> {
     match *expr {
         hir::Expr::Error => unreachable!(),
@@ -61,11 +92,9 @@ pub fn codegen_expr<'c>(
             codegen_call_indirect(cg, proc_cg, target, indirect)
         }
         hir::Expr::StructInit { struct_id, input } => {
-            Some(codegen_struct_init(cg, proc_cg, expect, struct_id, input))
+            codegen_struct_init(cg, proc_cg, expect, struct_id, input)
         }
-        hir::Expr::ArrayInit { array_init } => {
-            Some(codegen_array_init(cg, proc_cg, expect, array_init))
-        }
+        hir::Expr::ArrayInit { array_init } => codegen_array_init(cg, proc_cg, expect, array_init),
         hir::Expr::ArrayRepeat { array_repeat } => todo!(),
         hir::Expr::Deref { rhs, ptr_ty } => todo!(),
         hir::Expr::Address { rhs } => todo!(),
@@ -206,7 +235,7 @@ fn codegen_local_var(
     let local_ptr = proc_cg.local_ptrs[local_id.index()];
 
     match expect {
-        Expect::Value => {
+        Expect::Value | Expect::Store(_) => {
             let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
             let local_ty = cg.ty(local.ty);
             cg.build.load(local_ty, local_ptr, "local_val")
@@ -224,7 +253,7 @@ fn codegen_param_var(
     let param_ptr = proc_cg.param_ptrs[param_id.index()];
 
     match expect {
-        Expect::Value => {
+        Expect::Value | Expect::Store(_) => {
             let param = cg.hir.proc_data(proc_cg.proc_id).param(param_id);
             let param_ty = cg.ty(param.ty);
             cg.build.load(param_ty, param_ptr, "param_val")
@@ -241,7 +270,7 @@ fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) ->
     let global_ptr = cg.globals[global_id.index()];
 
     match expect {
-        Expect::Value => {
+        Expect::Value | Expect::Store(_) => {
             let data = cg.hir.global_data(global_id);
             let global_ty = cg.ty(data.ty);
             cg.build.load(global_ty, global_ptr, "global_val")
@@ -284,17 +313,18 @@ fn codegen_call_indirect<'c>(
     cg.build.call(fn_ty, fn_val, &input_values, "call_ival")
 }
 
-//@optional return
 fn codegen_struct_init<'c>(
     cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     struct_id: hir::StructID,
     input: &[hir::FieldInit<'c>],
-) -> llvm::Value {
+) -> Option<llvm::Value> {
     let struct_ty = cg.struct_type(struct_id);
-    //@with tail store, alloca is optional
-    let struct_ptr = cg.entry_alloca(proc_cg, struct_ty, "struct_init");
+    let struct_ptr = match expect {
+        Expect::Value | Expect::Pointer => cg.entry_alloca(proc_cg, struct_ty, "struct_init"),
+        Expect::Store(ptr_val) => ptr_val,
+    };
 
     for field_init in input {
         let field_ptr = cg.build.gep_struct(
@@ -303,30 +333,28 @@ fn codegen_struct_init<'c>(
             field_init.field_id.raw(),
             "field_ptr",
         );
-
-        //@with tail store, store is optional
-        let value = codegen_expr_value(cg, proc_cg, field_init.expr);
-        cg.build.store(value, field_ptr);
+        codegen_expr_store(cg, proc_cg, field_init.expr, field_ptr);
     }
 
-    //@with store load is optional
     match expect {
-        Expect::Value => cg.build.load(struct_ty, struct_ptr, "struct_val"),
-        Expect::Pointer => struct_ptr,
+        Expect::Value => Some(cg.build.load(struct_ty, struct_ptr, "struct_val")),
+        Expect::Pointer => Some(struct_ptr),
+        Expect::Store(_) => None,
     }
 }
 
-//@optional return
 fn codegen_array_init<'c>(
     cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     array_init: &hir::ArrayInit<'c>,
-) -> llvm::Value {
+) -> Option<llvm::Value> {
     let elem_ty = cg.ty(array_init.elem_ty);
     let array_ty = llvm::array_type(elem_ty, array_init.input.len() as u64);
-    //@with tail store, alloca is optional
-    let array_ptr = cg.entry_alloca(proc_cg, array_ty, "array_init");
+    let array_ptr = match expect {
+        Expect::Value | Expect::Pointer => cg.entry_alloca(proc_cg, array_ty, "array_init"),
+        Expect::Store(ptr_val) => ptr_val,
+    };
 
     for (idx, &expr) in array_init.input.iter().enumerate() {
         let indices = [
@@ -336,16 +364,13 @@ fn codegen_array_init<'c>(
         let elem_ptr = cg
             .build
             .gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
-
-        //@store is optional, not always expect value
-        let value = codegen_expr_value(cg, proc_cg, expr);
-        cg.build.store(value, elem_ptr);
+        codegen_expr_store(cg, proc_cg, expr, elem_ptr);
     }
 
-    //@with store load is optional
     match expect {
-        Expect::Value => cg.build.load(array_ty, array_ptr, "array_val"),
-        Expect::Pointer => array_ptr,
+        Expect::Value => Some(cg.build.load(array_ty, array_ptr, "array_val")),
+        Expect::Pointer => Some(array_ptr),
+        Expect::Store(_) => None,
     }
 }
 
