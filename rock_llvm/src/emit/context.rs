@@ -39,6 +39,7 @@ pub struct LoopInfo {
 pub enum Expect {
     Value,
     Pointer,
+    Store(llvm::Value),
 }
 
 struct CodegenCache {

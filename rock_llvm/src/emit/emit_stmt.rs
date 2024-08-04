@@ -1,4 +1,4 @@
-use super::context::{Codegen, Expect, ProcCodegen};
+use super::context::{Codegen, ProcCodegen};
 use super::emit_expr;
 use crate::llvm;
 use rock_core::hir;
@@ -50,8 +50,7 @@ fn codegen_return<'c>(
     codegen_defer_blocks(cg, proc_cg, defer_range);
 
     if let Some(expr) = expr {
-        let value = emit_expr::codegen_expr_value(cg, proc_cg, expr);
-        cg.build.ret(value);
+        emit_expr::codegen_expr_return(cg, proc_cg, expr);
     } else {
         cg.build.ret_void();
     }
@@ -129,9 +128,7 @@ fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: 
     let local_ptr = proc_cg.local_ptrs[local_id.index()];
 
     if let Some(expr) = local.value {
-        //@store expect with optional value
-        let value = emit_expr::codegen_expr_value(cg, proc_cg, expr);
-        cg.build.store(value, local_ptr);
+        emit_expr::codegen_expr_store(cg, proc_cg, expr, local_ptr);
     } else {
         //@can be unsafe on complex types, enums, re-design local init rules
         let local_ty = cg.ty(local.ty);
@@ -141,15 +138,11 @@ fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: 
 }
 
 fn codegen_assign<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, assign: &hir::Assign<'c>) {
-    //@use api instead of unwrap / expect?
-    let lhs_ptr =
-        emit_expr::codegen_expr(cg, proc_cg, Expect::Pointer, assign.lhs).expect("value ptr");
+    let lhs_ptr = emit_expr::codegen_expr_pointer(cg, proc_cg, assign.lhs);
 
     match assign.op {
         hir::AssignOp::Assign => {
-            //@store expect with optional value
-            let rhs_val = emit_expr::codegen_expr_value(cg, proc_cg, assign.rhs);
-            cg.build.store(rhs_val, lhs_ptr);
+            emit_expr::codegen_expr_store(cg, proc_cg, assign.rhs, lhs_ptr);
         }
         hir::AssignOp::Bin(op) => {
             let lhs_ty = cg.ty(assign.lhs_ty);
