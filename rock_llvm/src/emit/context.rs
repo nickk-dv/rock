@@ -170,6 +170,21 @@ impl<'c> Codegen<'c> {
             self.build.br(bb);
         }
     }
+    #[must_use]
+    pub fn entry_alloca(&self, proc_cg: &ProcCodegen, ty: llvm::Type, name: &str) -> llvm::Value {
+        let insert_bb = self.build.insert_bb();
+        let entry_bb = proc_cg.fn_val.entry_bb();
+
+        if let Some(instr) = entry_bb.first_instr() {
+            self.build.position_before_instr(instr);
+        } else {
+            self.build.position_at_end(entry_bb);
+        }
+
+        let ptr_val = self.build.alloca(ty, name);
+        self.build.position_at_end(insert_bb);
+        ptr_val
+    }
 }
 
 impl<'c> ProcCodegen<'c> {
@@ -179,7 +194,7 @@ impl<'c> ProcCodegen<'c> {
             fn_val,
             param_ptrs: Vec::with_capacity(8),
             local_ptrs: Vec::with_capacity(32),
-            block_stack: Vec::with_capacity(16),
+            block_stack: Vec::with_capacity(8),
             defer_blocks: Vec::new(),
             next_loop_info: None,
         }

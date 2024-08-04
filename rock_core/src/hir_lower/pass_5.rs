@@ -1553,28 +1553,28 @@ fn typecheck_cast<'hir>(
                 BasicTypeKind::IntS => match into_kind {
                     BasicTypeKind::IntS | BasicTypeKind::IntU => {
                         if from_size < into_size {
-                            hir::CastKind::Sint_Sign_Extend
+                            hir::CastKind::IntS_Sign_Extend
                         } else {
-                            hir::CastKind::Integer_Trunc
+                            hir::CastKind::Int_Trunc
                         }
                     }
-                    BasicTypeKind::Float => hir::CastKind::Sint_to_Float,
+                    BasicTypeKind::Float => hir::CastKind::IntS_to_Float,
                     _ => hir::CastKind::Error,
                 },
                 BasicTypeKind::IntU => match into_kind {
                     BasicTypeKind::IntS | BasicTypeKind::IntU => {
                         if from_size < into_size {
-                            hir::CastKind::Uint_Zero_Extend
+                            hir::CastKind::IntU_Zero_Extend
                         } else {
-                            hir::CastKind::Integer_Trunc
+                            hir::CastKind::Int_Trunc
                         }
                     }
-                    BasicTypeKind::Float => hir::CastKind::Uint_to_Float,
+                    BasicTypeKind::Float => hir::CastKind::IntU_to_Float,
                     _ => hir::CastKind::Error,
                 },
                 BasicTypeKind::Float => match into_kind {
-                    BasicTypeKind::IntS => hir::CastKind::Float_to_Sint,
-                    BasicTypeKind::IntU => hir::CastKind::Float_to_Uint,
+                    BasicTypeKind::IntS => hir::CastKind::Float_to_IntS,
+                    BasicTypeKind::IntU => hir::CastKind::Float_to_IntU,
                     BasicTypeKind::Float => {
                         if from_size < into_size {
                             hir::CastKind::Float_Extend

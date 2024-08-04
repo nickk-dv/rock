@@ -6,15 +6,15 @@ use rock_core::hir;
 use rock_core::intern::InternID;
 
 pub fn codegen_expr_value<'c>(
-    cg: &Codegen,
+    cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
 ) -> llvm::Value {
     codegen_expr(cg, proc_cg, Expect::Value, expr).unwrap()
 }
 
-fn codegen_expr<'c>(
-    cg: &Codegen,
+pub fn codegen_expr<'c>(
+    cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     expr: &hir::Expr<'c>,
@@ -42,7 +42,9 @@ fn codegen_expr<'c>(
         } => todo!(),
         hir::Expr::Index { target, access } => todo!(),
         hir::Expr::Slice { target, access } => todo!(),
-        hir::Expr::Cast { target, into, kind } => todo!(),
+        hir::Expr::Cast { target, into, kind } => {
+            Some(codegen_cast(cg, proc_cg, target, into, kind))
+        }
         hir::Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect, local_id)),
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect, param_id)),
         hir::Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
@@ -58,8 +60,12 @@ fn codegen_expr<'c>(
         hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, target, indirect)
         }
-        hir::Expr::StructInit { struct_id, input } => todo!(),
-        hir::Expr::ArrayInit { array_init } => todo!(),
+        hir::Expr::StructInit { struct_id, input } => {
+            Some(codegen_struct_init(cg, proc_cg, expect, struct_id, input))
+        }
+        hir::Expr::ArrayInit { array_init } => {
+            Some(codegen_array_init(cg, proc_cg, expect, array_init))
+        }
         hir::Expr::ArrayRepeat { array_repeat } => todo!(),
         hir::Expr::Deref { rhs, ptr_ty } => todo!(),
         hir::Expr::Address { rhs } => todo!(),
@@ -165,6 +171,32 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
     llvm::const_array(elem_ty, &values)
 }
 
+fn codegen_cast<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    target: &hir::Expr<'c>,
+    into: &hir::Type,
+    kind: hir::CastKind,
+) -> llvm::Value {
+    use llvm::OpCode;
+    let val = codegen_expr_value(cg, proc_cg, target);
+    let into_ty = cg.ty(*into);
+
+    match kind {
+        hir::CastKind::Error => unreachable!(),
+        hir::CastKind::NoOp => val,
+        hir::CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
+        hir::CastKind::IntS_Sign_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
+        hir::CastKind::IntU_Zero_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        hir::CastKind::IntS_to_Float => cg.build.cast(OpCode::LLVMSIToFP, val, into_ty, "cast"),
+        hir::CastKind::IntU_to_Float => cg.build.cast(OpCode::LLVMUIToFP, val, into_ty, "cast"),
+        hir::CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into_ty, "cast"),
+        hir::CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "cast"),
+        hir::CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "cast"),
+        hir::CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "cast"),
+    }
+}
+
 fn codegen_local_var(
     cg: &Codegen,
     proc_cg: &ProcCodegen,
@@ -219,7 +251,7 @@ fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) ->
 }
 
 fn codegen_call_direct<'c>(
-    cg: &Codegen,
+    cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
@@ -235,7 +267,7 @@ fn codegen_call_direct<'c>(
 }
 
 fn codegen_call_indirect<'c>(
-    cg: &Codegen,
+    cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     target: &hir::Expr<'c>,
     indirect: &hir::CallIndirect<'c>,
@@ -252,13 +284,79 @@ fn codegen_call_indirect<'c>(
     cg.build.call(fn_ty, fn_val, &input_values, "call_ival")
 }
 
+//@optional return
+fn codegen_struct_init<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    struct_id: hir::StructID,
+    input: &[hir::FieldInit<'c>],
+) -> llvm::Value {
+    let struct_ty = cg.struct_type(struct_id);
+    //@with tail store, alloca is optional
+    let struct_ptr = cg.entry_alloca(proc_cg, struct_ty, "struct_init");
+
+    for field_init in input {
+        let field_ptr = cg.build.gep_struct(
+            struct_ty,
+            struct_ptr,
+            field_init.field_id.raw(),
+            "field_ptr",
+        );
+
+        //@with tail store, store is optional
+        let value = codegen_expr_value(cg, proc_cg, field_init.expr);
+        cg.build.store(value, field_ptr);
+    }
+
+    //@with store load is optional
+    match expect {
+        Expect::Value => cg.build.load(struct_ty, struct_ptr, "struct_val"),
+        Expect::Pointer => struct_ptr,
+    }
+}
+
+//@optional return
+fn codegen_array_init<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    array_init: &hir::ArrayInit<'c>,
+) -> llvm::Value {
+    let elem_ty = cg.ty(array_init.elem_ty);
+    let array_ty = llvm::array_type(elem_ty, array_init.input.len() as u64);
+    //@with tail store, alloca is optional
+    let array_ptr = cg.entry_alloca(proc_cg, array_ty, "array_init");
+
+    for (idx, &expr) in array_init.input.iter().enumerate() {
+        let indices = [
+            llvm::const_int(cg.ptr_sized_int(), 0, false),
+            llvm::const_int(cg.ptr_sized_int(), idx as u64, false),
+        ];
+        let elem_ptr = cg
+            .build
+            .gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
+
+        //@store is optional, not always expect value
+        let value = codegen_expr_value(cg, proc_cg, expr);
+        cg.build.store(value, elem_ptr);
+    }
+
+    //@with store load is optional
+    match expect {
+        Expect::Value => cg.build.load(array_ty, array_ptr, "array_val"),
+        Expect::Pointer => array_ptr,
+    }
+}
+
 fn codegen_unary<'c>(
-    cg: &Codegen,
+    cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     op: hir::UnOp,
     rhs: &hir::Expr<'c>,
 ) -> llvm::Value {
     let rhs = codegen_expr_value(cg, proc_cg, rhs);
+
     match op {
         hir::UnOp::Neg_Int => cg.build.neg(rhs, "un"),
         hir::UnOp::Neg_Float => cg.build.fneg(rhs, "un"),
@@ -268,7 +366,7 @@ fn codegen_unary<'c>(
 }
 
 fn codegen_binary<'c>(
-    cg: &Codegen,
+    cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
     op: hir::BinOp,
     lhs: &hir::Expr<'c>,
@@ -279,7 +377,7 @@ fn codegen_binary<'c>(
     codegen_binary_op(cg, op, lhs, rhs)
 }
 
-fn codegen_binary_op(
+pub fn codegen_binary_op(
     cg: &Codegen,
     op: hir::BinOp,
     lhs: llvm::Value,
