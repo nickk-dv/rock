@@ -337,17 +337,27 @@ impl CStrBuffer {
 impl BasicBlock {
     pub fn terminator(&self) -> Option<ValueInstr> {
         let instr = unsafe { core::LLVMGetBasicBlockTerminator(self.0) };
-        if !instr.is_null() {
-            Some(ValueInstr(instr))
-        } else {
+        if instr.is_null() {
             None
+        } else {
+            Some(ValueInstr(instr))
         }
     }
-    pub fn first_instr(&self) -> ValueInstr {
-        ValueInstr(unsafe { core::LLVMGetFirstInstruction(self.0) })
+    pub fn first_instr(&self) -> Option<ValueInstr> {
+        let instr = unsafe { core::LLVMGetFirstInstruction(self.0) };
+        if instr.is_null() {
+            None
+        } else {
+            Some(ValueInstr(instr))
+        }
     }
-    pub fn last_instr(&self) -> ValueInstr {
-        ValueInstr(unsafe { core::LLVMGetLastInstruction(self.0) })
+    pub fn last_instr(&self) -> Option<ValueInstr> {
+        let instr = unsafe { core::LLVMGetLastInstruction(self.0) };
+        if instr.is_null() {
+            None
+        } else {
+            Some(ValueInstr(instr))
+        }
     }
 }
 

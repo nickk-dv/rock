@@ -1,8 +1,9 @@
-use super::context::{Codegen, ProcCodegen};
+use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
+use crate::llvm;
 use rock_core::hir;
 
-pub fn codegen_block<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, block: hir::Block<'c>) {
+pub fn codegen_block<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, block: hir::Block<'c>) {
     proc_cg.block_enter();
     for stmt in block.stmts {
         codegen_stmt(cg, proc_cg, *stmt);
@@ -14,7 +15,7 @@ pub fn codegen_block<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, block: hir
     proc_cg.block_exit();
 }
 
-fn codegen_stmt<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, stmt: hir::Stmt<'c>) {
+fn codegen_stmt<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, stmt: hir::Stmt<'c>) {
     match stmt {
         hir::Stmt::Break => codegen_break(cg, proc_cg),
         hir::Stmt::Continue => codegen_continue(cg, proc_cg),
@@ -28,32 +29,37 @@ fn codegen_stmt<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, stmt: hir::Stmt
     }
 }
 
-fn codegen_break(cg: &Codegen, proc_cg: &mut ProcCodegen) {
+fn codegen_break<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>) {
     let (loop_info, defer_range) = proc_cg.last_loop_info();
     codegen_defer_blocks(cg, proc_cg, defer_range);
     cg.build.br(loop_info.break_bb);
 }
 
-fn codegen_continue(cg: &Codegen, proc_cg: &mut ProcCodegen) {
+fn codegen_continue<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>) {
     let (loop_info, defer_range) = proc_cg.last_loop_info();
     codegen_defer_blocks(cg, proc_cg, defer_range);
     cg.build.br(loop_info.continue_bb);
 }
 
-fn codegen_return(cg: &Codegen, proc_cg: &mut ProcCodegen, expr: Option<&hir::Expr>) {
+fn codegen_return<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expr: Option<&hir::Expr<'c>>,
+) {
     let defer_range = proc_cg.all_defer_blocks();
     codegen_defer_blocks(cg, proc_cg, defer_range);
 
     if let Some(expr) = expr {
-        unimplemented!();
+        let value = emit_expr::codegen_expr_value(cg, proc_cg, expr);
+        cg.build.ret(value);
     } else {
         cg.build.ret_void();
     }
 }
 
-fn codegen_defer_blocks(
-    cg: &Codegen,
-    proc_cg: &mut ProcCodegen,
+fn codegen_defer_blocks<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
     defer_range: std::ops::Range<usize>,
 ) {
     if defer_range.is_empty() {
@@ -71,7 +77,7 @@ fn codegen_defer_blocks(
     cg.build.position_at_end(exit_bb);
 }
 
-fn codegen_loop<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, loop_: &hir::Loop<'c>) {
+fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir::Loop<'c>) {
     let entry_bb = cg.append_bb(proc_cg, "loop_entry");
     let body_bb = cg.append_bb(proc_cg, "loop_body");
     let exit_bb = cg.append_bb(proc_cg, "loop_exit");
@@ -118,12 +124,41 @@ fn codegen_loop<'c>(cg: &Codegen, proc_cg: &mut ProcCodegen<'c>, loop_: &hir::Lo
     }
 }
 
-fn codegen_local(cg: &Codegen, proc_cg: &mut ProcCodegen, local_id: hir::LocalID) {
-    unimplemented!();
+fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: hir::LocalID) {
+    let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
+    let local_ptr = proc_cg.local_ptrs[local_id.index()];
+
+    if let Some(expr) = local.value {
+        //@store expect with optional value
+        let value = emit_expr::codegen_expr_value(cg, proc_cg, expr);
+        cg.build.store(value, local_ptr);
+    } else {
+        //@can be unsafe on complex types, enums, re-design local init rules
+        let local_ty = cg.ty(local.ty);
+        let zero_init = llvm::const_all_zero(local_ty);
+        cg.build.store(zero_init, local_ptr);
+    }
 }
 
-fn codegen_assign(cg: &Codegen, proc_cg: &mut ProcCodegen, assign: &hir::Assign) {
-    unimplemented!();
+fn codegen_assign<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, assign: &hir::Assign<'c>) {
+    //@use api instead of unwrap / expect?
+    let lhs_ptr =
+        emit_expr::codegen_expr(cg, proc_cg, Expect::Pointer, assign.lhs).expect("value ptr");
+
+    match assign.op {
+        hir::AssignOp::Assign => {
+            //@store expect with optional value
+            let rhs_val = emit_expr::codegen_expr_value(cg, proc_cg, assign.rhs);
+            cg.build.store(rhs_val, lhs_ptr);
+        }
+        hir::AssignOp::Bin(op) => {
+            let lhs_ty = cg.ty(assign.lhs_ty);
+            let lhs_val = cg.build.load(lhs_ty, lhs_ptr, "load_val");
+            let rhs_val = emit_expr::codegen_expr_value(cg, proc_cg, assign.rhs);
+            let bin_val = emit_expr::codegen_binary_op(cg, op, lhs_val, rhs_val);
+            cg.build.store(bin_val, lhs_ptr);
+        }
+    }
 }
 
 fn codegen_expr_semi(cg: &Codegen, proc_cg: &mut ProcCodegen, expr: &hir::Expr) {
