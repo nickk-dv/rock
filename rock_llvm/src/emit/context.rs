@@ -141,6 +141,10 @@ impl<'c> Codegen<'c> {
         llvm::function_type(return_ty, &param_types, proc_ty.is_variadic)
     }
 
+    pub fn slice_type(&self) -> llvm::Type {
+        self.cache.slice_type
+    }
+
     pub fn array_type(&self, array: &hir::ArrayStatic) -> llvm::Type {
         let elem_ty = self.ty(array.elem_ty);
         let len = self.array_len(array.len);
