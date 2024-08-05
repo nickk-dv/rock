@@ -102,8 +102,8 @@ fn codegen_expr<'c>(
         hir::Expr::ArrayRepeat { array_repeat } => {
             codegen_array_repeat(cg, proc_cg, expect, array_repeat)
         }
-        hir::Expr::Deref { rhs, ptr_ty } => unimplemented!(),
-        hir::Expr::Address { rhs } => unimplemented!(),
+        hir::Expr::Deref { rhs, ptr_ty } => Some(codegen_deref(cg, proc_cg, expect, rhs, *ptr_ty)),
+        hir::Expr::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
         hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
         hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
     }
@@ -482,6 +482,32 @@ fn codegen_array_repeat<'c>(
         Expect::Pointer => Some(array_ptr),
         Expect::Store(_) => None,
     }
+}
+
+fn codegen_deref<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    rhs: &hir::Expr<'c>,
+    ptr_ty: hir::Type,
+) -> llvm::Value {
+    let ptr_val = codegen_expr_value(cg, proc_cg, rhs);
+
+    match expect {
+        Expect::Store(_) | Expect::Value => {
+            let ptr_ty = cg.ty(ptr_ty);
+            cg.build.load(ptr_ty, ptr_val, "deref_val")
+        }
+        Expect::Pointer => ptr_val,
+    }
+}
+
+fn codegen_address<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    rhs: &hir::Expr<'c>,
+) -> llvm::Value {
+    codegen_expr_pointer(cg, proc_cg, rhs)
 }
 
 fn codegen_unary<'c>(
