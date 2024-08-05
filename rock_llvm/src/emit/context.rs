@@ -115,6 +115,14 @@ impl<'c> Codegen<'c> {
         self.cache.int_1
     }
 
+    pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
+        unimplemented!()
+    }
+
+    pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::Type {
+        self.structs[struct_id.index()]
+    }
+
     pub fn ptr_type(&self) -> llvm::Type {
         self.cache.ptr_type
     }
@@ -122,14 +130,6 @@ impl<'c> Codegen<'c> {
     pub fn ptr_sized_int(&self) -> llvm::Type {
         //@target dependant
         self.cache.int_64
-    }
-
-    pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
-        unimplemented!()
-    }
-
-    pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::Type {
-        self.structs[struct_id.index()]
     }
 
     pub fn proc_type(&self, proc_ty: &hir::ProcType) -> llvm::TypeFn {
@@ -189,6 +189,19 @@ impl<'c> Codegen<'c> {
         let ptr_val = self.build.alloca(ty, name);
         self.build.position_at_end(insert_bb);
         ptr_val
+    }
+
+    #[inline]
+    pub fn const_usize(&self, val: u64) -> llvm::Value {
+        llvm::const_int(self.ptr_sized_int(), val, false)
+    }
+    #[inline]
+    pub fn const_usize_zero(&self) -> llvm::Value {
+        llvm::const_int(self.ptr_sized_int(), 0, false)
+    }
+    #[inline]
+    pub fn const_usize_one(&self) -> llvm::Value {
+        llvm::const_int(self.ptr_sized_int(), 1, false)
     }
 }
 
