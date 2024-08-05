@@ -65,12 +65,16 @@ fn codegen_expr<'c>(
             struct_id,
             field_id,
             deref,
-        } => todo!(),
+        } => Some(codegen_struct_field(
+            cg, proc_cg, expect, target, struct_id, field_id, deref,
+        )),
         hir::Expr::SliceField {
             target,
             field,
             deref,
-        } => todo!(),
+        } => Some(codegen_slice_field(
+            cg, proc_cg, expect, target, field, deref,
+        )),
         hir::Expr::Index { target, access } => todo!(),
         hir::Expr::Slice { target, access } => todo!(),
         hir::Expr::Cast { target, into, kind } => {
@@ -167,7 +171,6 @@ fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Val
 
 fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
     let mut values = Vec::with_capacity(struct_.fields.len());
-
     for &value_id in struct_.fields {
         let value = codegen_const(cg, cg.hir.const_value(value_id));
         values.push(value);
@@ -179,7 +182,6 @@ fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value
 
 fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
     let mut values = Vec::with_capacity(array.len as usize);
-
     for &value_id in array.values {
         let value = codegen_const(cg, cg.hir.const_value(value_id));
         values.push(value);
@@ -198,6 +200,69 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
     //@zero sized array repeat is counter intuitive
     let elem_ty = llvm::typeof_value(values[0]);
     llvm::const_array(elem_ty, &values)
+}
+
+fn codegen_struct_field<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    target: &hir::Expr<'c>,
+    struct_id: hir::StructID,
+    field_id: hir::FieldID,
+    deref: bool,
+) -> llvm::Value {
+    let target_ptr = codegen_expr_pointer(cg, proc_cg, target);
+    let target_ptr = if deref {
+        cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr")
+    } else {
+        target_ptr
+    };
+
+    let field_ptr = cg.build.gep_struct(
+        cg.struct_type(struct_id),
+        target_ptr,
+        field_id.raw(),
+        "field_ptr",
+    );
+
+    match expect {
+        Expect::Store(_) | Expect::Value => {
+            let field = cg.hir.struct_data(struct_id).field(field_id);
+            let field_ty = cg.ty(field.ty);
+            cg.build.load(field_ty, field_ptr, "field_val")
+        }
+        Expect::Pointer => target_ptr,
+    }
+}
+
+fn codegen_slice_field<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    target: &hir::Expr<'c>,
+    field: hir::SliceField,
+    deref: bool,
+) -> llvm::Value {
+    let target_ptr = codegen_expr_pointer(cg, proc_cg, target);
+    let target_ptr = if deref {
+        cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr")
+    } else {
+        target_ptr
+    };
+
+    let (idx, field_ty, ptr_name, value_name) = match field {
+        hir::SliceField::Ptr => (0, cg.ptr_type(), "slice_ptr_ptr", "slice_ptr"),
+        hir::SliceField::Len => (1, cg.ptr_sized_int(), "slice_len_ptr", "slice_len"),
+    };
+
+    match expect {
+        Expect::Store(_) | Expect::Value => {
+            let slice_ty = cg.slice_type();
+            let field_ptr = cg.build.gep_struct(slice_ty, target_ptr, idx, ptr_name);
+            cg.build.load(field_ty, field_ptr, value_name)
+        }
+        Expect::Pointer => unreachable!(),
+    }
 }
 
 fn codegen_cast<'c>(
