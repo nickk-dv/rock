@@ -53,13 +53,13 @@ fn codegen_expr<'c>(
     match *expr {
         hir::Expr::Error => unreachable!(),
         hir::Expr::Const { value } => Some(codegen_const(cg, value)),
-        hir::Expr::If { if_ } => todo!(),
+        hir::Expr::If { if_ } => unimplemented!(),
         hir::Expr::Block { block } => {
             emit_stmt::codegen_block(cg, proc_cg, block);
             None
         }
-        hir::Expr::Match { match_ } => todo!(),
-        hir::Expr::Match2 { match_ } => todo!(),
+        hir::Expr::Match { match_ } => unimplemented!(),
+        hir::Expr::Match2 { match_ } => unimplemented!(),
         hir::Expr::StructField {
             target,
             struct_id,
@@ -75,8 +75,8 @@ fn codegen_expr<'c>(
         } => Some(codegen_slice_field(
             cg, proc_cg, expect, target, field, deref,
         )),
-        hir::Expr::Index { target, access } => todo!(),
-        hir::Expr::Slice { target, access } => todo!(),
+        hir::Expr::Index { target, access } => unimplemented!(),
+        hir::Expr::Slice { target, access } => unimplemented!(),
         hir::Expr::Cast { target, into, kind } => {
             Some(codegen_cast(cg, proc_cg, target, into, kind))
         }
@@ -88,7 +88,7 @@ fn codegen_expr<'c>(
             enum_id,
             variant_id,
             input,
-        } => todo!(),
+        } => unimplemented!(),
         hir::Expr::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, proc_cg, proc_id, input)
         }
@@ -99,9 +99,11 @@ fn codegen_expr<'c>(
             codegen_struct_init(cg, proc_cg, expect, struct_id, input)
         }
         hir::Expr::ArrayInit { array_init } => codegen_array_init(cg, proc_cg, expect, array_init),
-        hir::Expr::ArrayRepeat { array_repeat } => todo!(),
-        hir::Expr::Deref { rhs, ptr_ty } => todo!(),
-        hir::Expr::Address { rhs } => todo!(),
+        hir::Expr::ArrayRepeat { array_repeat } => {
+            codegen_array_repeat(cg, proc_cg, expect, array_repeat)
+        }
+        hir::Expr::Deref { rhs, ptr_ty } => unimplemented!(),
+        hir::Expr::Address { rhs } => unimplemented!(),
         hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
         hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
     }
@@ -158,10 +160,8 @@ fn codegen_const_string(cg: &Codegen, id: InternID, c_string: bool) -> llvm::Val
         global_ptr
     } else {
         let string = cg.hir.intern_string.get_str(id);
-        let bytes_len = string.len() as u64;
-        let slice_len = llvm::const_int(cg.ptr_sized_int(), bytes_len, false);
-        let slice_val = llvm::const_struct_inline(&[global_ptr, slice_len], false);
-        slice_val
+        let slice_len = cg.const_usize(string.len() as u64);
+        llvm::const_struct_inline(&[global_ptr, slice_len], false)
     }
 }
 
@@ -421,16 +421,61 @@ fn codegen_array_init<'c>(
         Expect::Store(ptr_val) => ptr_val,
     };
 
+    let mut indices = [cg.const_usize_zero(), cg.const_usize_zero()];
     for (idx, &expr) in array_init.input.iter().enumerate() {
-        let indices = [
-            llvm::const_int(cg.ptr_sized_int(), 0, false),
-            llvm::const_int(cg.ptr_sized_int(), idx as u64, false),
-        ];
+        indices[1] = cg.const_usize(idx as u64);
         let elem_ptr = cg
             .build
             .gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
         codegen_expr_store(cg, proc_cg, expr, elem_ptr);
     }
+
+    match expect {
+        Expect::Value => Some(cg.build.load(array_ty, array_ptr, "array_val")),
+        Expect::Pointer => Some(array_ptr),
+        Expect::Store(_) => None,
+    }
+}
+
+fn codegen_array_repeat<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    array_repeat: &hir::ArrayRepeat<'c>,
+) -> Option<llvm::Value> {
+    let elem_ty = cg.ty(array_repeat.elem_ty);
+    let array_ty = llvm::array_type(elem_ty, array_repeat.len);
+    let array_ptr = match expect {
+        Expect::Value | Expect::Pointer => cg.entry_alloca(proc_cg, array_ty, "array_repeat"),
+        Expect::Store(ptr_val) => ptr_val,
+    };
+
+    let copied_val = codegen_expr_value(cg, proc_cg, array_repeat.expr);
+    let count_ptr = cg.entry_alloca(proc_cg, cg.ptr_sized_int(), "rep_count");
+    cg.build.store(cg.const_usize_zero(), count_ptr);
+
+    let entry_bb = cg.append_bb(proc_cg, "rep_entry");
+    let body_bb = cg.append_bb(proc_cg, "rep_body");
+    let exit_bb = cg.append_bb(proc_cg, "rep_exit");
+
+    cg.build.br(entry_bb);
+    cg.build.position_at_end(entry_bb);
+    let count_val = cg.build.load(cg.ptr_sized_int(), count_ptr, "rep_val");
+    let repeat_val = cg.const_usize(array_repeat.len);
+    let cond = codegen_binary_op(cg, hir::BinOp::Less_IntU, count_val, repeat_val);
+    cg.build.cond_br(cond, body_bb, exit_bb);
+
+    cg.build.position_at_end(body_bb);
+    let indices = [cg.const_usize_zero(), count_val];
+    let elem_ptr = cg
+        .build
+        .gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
+    cg.build.store(copied_val, elem_ptr);
+
+    let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize_one());
+    cg.build.store(count_inc, count_ptr);
+    cg.build.br(entry_bb);
+    cg.build.position_at_end(exit_bb);
 
     match expect {
         Expect::Value => Some(cg.build.load(array_ty, array_ptr, "array_val")),

@@ -121,6 +121,8 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
             cg.build_br_no_term(entry_bb);
         }
     }
+
+    cg.build.position_at_end(exit_bb);
 }
 
 fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: hir::LocalID) {
