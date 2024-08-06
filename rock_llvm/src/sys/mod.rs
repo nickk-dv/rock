@@ -1,21 +1,22 @@
 pub mod core;
 
-pub type LLVMBool = std::ffi::c_int;
 pub type LLVMContextRef = *mut LLVMContext;
 pub type LLVMModuleRef = *mut LLVMModule;
+pub type LLVMBuilderRef = *mut LLVMBuilder;
 pub type LLVMTypeRef = *mut LLVMType;
 pub type LLVMValueRef = *mut LLVMValue;
 pub type LLVMBasicBlockRef = *mut LLVMBasicBlock;
-pub type LLVMBuilderRef = *mut LLVMBuilder;
+pub type LLVMBool = std::ffi::c_int;
 
 pub enum LLVMContext {}
 pub enum LLVMModule {}
+pub enum LLVMBuilder {}
 pub enum LLVMType {}
 pub enum LLVMValue {}
 pub enum LLVMBasicBlock {}
-pub enum LLVMBuilder {}
 
 #[repr(C)]
+#[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum LLVMOpcode {
     // terminator
@@ -97,6 +98,7 @@ pub enum LLVMOpcode {
 }
 
 #[repr(C)]
+#[allow(unused)]
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
 pub enum LLVMTypeKind {
@@ -124,6 +126,7 @@ pub enum LLVMTypeKind {
 }
 
 #[repr(C)]
+#[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum LLVMLinkage {
     LLVMExternalLinkage = 0,
@@ -146,6 +149,7 @@ pub enum LLVMLinkage {
 }
 
 #[repr(C)]
+#[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum LLVMUnnamedAddr {
     LLVMNoUnnamedAddr,     // address of the global is significant
@@ -169,6 +173,7 @@ pub enum LLVMIntPredicate {
 }
 
 #[repr(C)]
+#[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum LLVMRealPredicate {
     LLVMRealFalse = 0, // always false

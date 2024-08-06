@@ -35,9 +35,7 @@ extern "C" {
     pub fn LLVMInt16TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
     pub fn LLVMInt32TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
     pub fn LLVMInt64TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
-    pub fn LLVMInt128TypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
 
-    pub fn LLVMHalfTypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
     pub fn LLVMFloatTypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
     pub fn LLVMDoubleTypeInContext(ctx: LLVMContextRef) -> LLVMTypeRef;
 
@@ -73,7 +71,6 @@ extern "C" {
     pub fn LLVMTypeOf(Val: LLVMValueRef) -> LLVMTypeRef;
 
     pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
-    pub fn LLVMConstAllOnes(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMConstInt(
         int_ty: LLVMTypeRef,
         val: c_ulonglong,
@@ -121,7 +118,6 @@ extern "C" {
     pub fn LLVMGetBasicBlockTerminator(bb: LLVMBasicBlockRef) -> LLVMValueRef;
     pub fn LLVMGetEntryBasicBlock(fn_val: LLVMValueRef) -> LLVMBasicBlockRef;
     pub fn LLVMGetFirstInstruction(bb: LLVMBasicBlockRef) -> LLVMValueRef;
-    pub fn LLVMGetLastInstruction(bb: LLVMBasicBlockRef) -> LLVMValueRef;
     pub fn LLVMAppendBasicBlockInContext(
         ctx: LLVMContextRef,
         fn_val: LLVMValueRef,
@@ -136,7 +132,6 @@ extern "C" {
     pub fn LLVMGetInsertBlock(b: LLVMBuilderRef) -> LLVMBasicBlockRef;
     pub fn LLVMPositionBuilderAtEnd(b: LLVMBuilderRef, bb: LLVMBasicBlockRef);
     pub fn LLVMPositionBuilderBefore(b: LLVMBuilderRef, instr: LLVMValueRef);
-    pub fn LLVMPositionBuilder(b: LLVMBuilderRef, bb: LLVMBasicBlockRef, instr: LLVMValueRef);
 
     //terminators
     pub fn LLVMBuildRetVoid(b: LLVMBuilderRef) -> LLVMValueRef;

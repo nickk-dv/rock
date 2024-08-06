@@ -1,6 +1,7 @@
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
+use rock_core::id_impl;
 
 pub struct Codegen<'c> {
     pub context: llvm::IRContext,
@@ -20,6 +21,7 @@ pub struct ProcCodegen<'c> {
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
     pub local_ptrs: Vec<llvm::ValuePtr>,
+    tail_values: Vec<Option<TailValue>>,
     block_stack: Vec<BlockInfo>,
     defer_blocks: Vec<hir::Block<'c>>,
     next_loop_info: Option<LoopInfo>,
@@ -36,10 +38,18 @@ pub struct LoopInfo {
     pub continue_bb: llvm::BasicBlock,
 }
 
+#[derive(Copy, Clone)]
 pub enum Expect {
-    Value,
+    Value(Option<TailValueID>),
     Pointer,
     Store(llvm::ValuePtr),
+}
+
+id_impl!(TailValueID);
+#[derive(Copy, Clone)]
+pub struct TailValue {
+    pub value_ptr: llvm::ValuePtr,
+    pub value_ty: llvm::Type,
 }
 
 struct CodegenCache {
@@ -217,6 +227,7 @@ impl<'c> ProcCodegen<'c> {
             fn_val,
             param_ptrs: Vec::with_capacity(8),
             local_ptrs: Vec::with_capacity(32),
+            tail_values: Vec::with_capacity(32),
             block_stack: Vec::with_capacity(8),
             defer_blocks: Vec::new(),
             next_loop_info: None,
@@ -282,6 +293,16 @@ impl<'c> ProcCodegen<'c> {
             }
         }
         unreachable!()
+    }
+
+    pub fn add_tail_value(&mut self) -> TailValueID {
+        let value_id = TailValueID::new(self.tail_values.len());
+        self.tail_values.push(None);
+        value_id
+    }
+
+    pub fn tail_value(&self, value_id: TailValueID) -> Option<TailValue> {
+        self.tail_values[value_id.index()]
     }
 }
 

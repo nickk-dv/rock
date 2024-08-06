@@ -1,4 +1,4 @@
-use super::context::{Codegen, ProcCodegen};
+use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
 use super::emit_stmt;
 use crate::llvm;
@@ -138,8 +138,16 @@ fn codegen_function_bodies(cg: &Codegen) {
             proc_cg.local_ptrs.push(local_ptr);
         }
 
-        emit_stmt::codegen_block(cg, &mut proc_cg, block);
-        //@block value
-        //@return if not terminated
+        let value_id = proc_cg.add_tail_value();
+        emit_stmt::codegen_block(cg, &mut proc_cg, Expect::Value(Some(value_id)), block);
+
+        let value = if let Some(tail) = proc_cg.tail_value(value_id) {
+            Some(cg.build.load(tail.value_ty, tail.value_ptr, "tail_val"))
+        } else {
+            None
+        };
+        if !cg.insert_bb_terminated() {
+            cg.build.ret(value);
+        }
     }
 }
