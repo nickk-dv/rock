@@ -304,6 +304,18 @@ impl<'c> ProcCodegen<'c> {
     pub fn tail_value(&self, value_id: TailValueID) -> Option<TailValue> {
         self.tail_values[value_id.index()]
     }
+
+    pub fn set_tail_value(
+        &mut self,
+        value_id: TailValueID,
+        value_ptr: llvm::ValuePtr,
+        value_ty: llvm::Type,
+    ) {
+        self.tail_values[value_id.index()] = Some(TailValue {
+            value_ptr,
+            value_ty,
+        });
+    }
 }
 
 impl CodegenCache {

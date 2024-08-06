@@ -35,6 +35,31 @@ pub fn codegen_expr_value_opt<'c>(
     }
 }
 
+pub fn codegen_expr_tail<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    expr: &hir::Expr<'c>,
+) {
+    if let Some(value) = codegen_expr(cg, proc_cg, expr, expect) {
+        match expect {
+            Expect::Value(Some(value_id)) => {
+                if let Some(tail) = proc_cg.tail_value(value_id) {
+                    cg.build.store(value, tail.value_ptr);
+                } else {
+                    let value_ty = llvm::typeof_value(value);
+                    let value_ptr = cg.entry_alloca(proc_cg, value_ty, "tail_ptr");
+                    proc_cg.set_tail_value(value_id, value_ptr, value_ty);
+                    cg.build.store(value, value_ptr);
+                }
+            }
+            Expect::Value(None) => {}
+            Expect::Pointer => unreachable!(),
+            Expect::Store(ptr_val) => cg.build.store(value, ptr_val),
+        }
+    }
+}
+
 pub fn codegen_expr_pointer<'c>(
     cg: &Codegen<'c>,
     proc_cg: &mut ProcCodegen<'c>,
@@ -65,13 +90,16 @@ fn codegen_expr<'c>(
     match *expr {
         hir::Expr::Error => unreachable!(),
         hir::Expr::Const { value } => Some(codegen_const(cg, value)),
-        hir::Expr::If { if_ } => unimplemented!(),
+        hir::Expr::If { if_ } => {
+            codegen_if(cg, proc_cg, expect, if_);
+            None
+        }
         hir::Expr::Block { block } => {
             emit_stmt::codegen_block(cg, proc_cg, expect, block);
             None
         }
-        hir::Expr::Match { match_ } => unimplemented!(),
-        hir::Expr::Match2 { match_ } => unimplemented!(),
+        hir::Expr::Match { match_ } => unimplemented!("emit match"),
+        hir::Expr::Match2 { match_ } => unimplemented!("emit match2"),
         hir::Expr::StructField {
             target,
             struct_id,
@@ -90,7 +118,7 @@ fn codegen_expr<'c>(
         hir::Expr::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect, target, access))
         }
-        hir::Expr::Slice { target, access } => unimplemented!(),
+        hir::Expr::Slice { target, access } => unimplemented!("emit slice"),
         hir::Expr::Cast { target, into, kind } => {
             Some(codegen_cast(cg, proc_cg, target, into, kind))
         }
@@ -102,7 +130,7 @@ fn codegen_expr<'c>(
             enum_id,
             variant_id,
             input,
-        } => unimplemented!(),
+        } => unimplemented!("emit variant"),
         hir::Expr::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, proc_cg, proc_id, input)
         }
@@ -214,6 +242,57 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
     //@zero sized array repeat is counter intuitive
     let elem_ty = llvm::typeof_value(values[0]);
     llvm::const_array(elem_ty, &values)
+}
+
+//@simplify
+fn codegen_if<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    if_: &hir::If<'c>,
+) {
+    let mut body_bb = cg.append_bb(proc_cg, "if_body");
+    let exit_bb = cg.append_bb(proc_cg, "if_exit");
+
+    let mut next_bb = if !if_.branches.is_empty() || if_.else_block.is_some() {
+        cg.append_bb(proc_cg, "if_next")
+    } else {
+        exit_bb
+    };
+
+    let cond = codegen_expr_value(cg, proc_cg, if_.entry.cond);
+    cg.build.cond_br(cond, body_bb, next_bb);
+
+    cg.build.position_at_end(body_bb);
+    emit_stmt::codegen_block(cg, proc_cg, expect, if_.entry.block);
+    cg.build_br_no_term(exit_bb);
+
+    for (idx, branch) in if_.branches.iter().enumerate() {
+        let last = idx + 1 == if_.branches.len();
+        let create_next = !last || if_.else_block.is_some();
+
+        body_bb = cg.append_bb(proc_cg, "if_body");
+        cg.build.position_at_end(next_bb);
+
+        let cond = codegen_expr_value(cg, proc_cg, branch.cond);
+        next_bb = if create_next {
+            cg.append_bb(proc_cg, "if_next")
+        } else {
+            exit_bb
+        };
+        cg.build.cond_br(cond, body_bb, next_bb);
+
+        cg.build.position_at_end(body_bb);
+        emit_stmt::codegen_block(cg, proc_cg, expect, branch.block);
+        cg.build_br_no_term(exit_bb);
+    }
+
+    if let Some(block) = if_.else_block {
+        cg.build.position_at_end(next_bb);
+        emit_stmt::codegen_block(cg, proc_cg, expect, block);
+        cg.build_br_no_term(exit_bb);
+    }
+    cg.build.position_at_end(exit_bb);
 }
 
 fn codegen_struct_field<'c>(
