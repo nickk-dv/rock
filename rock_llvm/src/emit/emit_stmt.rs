@@ -171,6 +171,11 @@ fn codegen_expr_semi<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, expr: 
     let _ = emit_expr::codegen_expr_value_opt(cg, proc_cg, expr);
 }
 
-fn codegen_expr_tail(cg: &Codegen, proc_cg: &mut ProcCodegen, expect: Expect, expr: &hir::Expr) {
-    unimplemented!();
+fn codegen_expr_tail<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    expr: &hir::Expr<'c>,
+) {
+    emit_expr::codegen_expr_tail(cg, proc_cg, expect, expr);
 }
