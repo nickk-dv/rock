@@ -69,12 +69,6 @@ impl IRContext {
     pub fn int_64(&self) -> Type {
         Type(unsafe { core::LLVMInt64TypeInContext(self.context) })
     }
-    pub fn int_128(&self) -> Type {
-        Type(unsafe { core::LLVMInt128TypeInContext(self.context) })
-    }
-    pub fn float_16(&self) -> Type {
-        Type(unsafe { core::LLVMHalfTypeInContext(self.context) })
-    }
     pub fn float_32(&self) -> Type {
         Type(unsafe { core::LLVMFloatTypeInContext(self.context) })
     }
@@ -193,15 +187,13 @@ impl IRBuilder {
     pub fn position_before_instr(&self, instr: ValueInstr) {
         unsafe { core::LLVMPositionBuilderBefore(self.builder, instr.0) }
     }
-    pub fn position_at_instr(&self, bb: BasicBlock, instr: ValueInstr) {
-        unsafe { core::LLVMPositionBuilder(self.builder, bb.0, instr.0) }
-    }
 
-    pub fn ret_void(&self) {
-        let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
-    }
-    pub fn ret(&self, val: Value) {
-        let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };
+    pub fn ret(&self, val: Option<Value>) {
+        if let Some(val) = val {
+            let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };
+        } else {
+            let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
+        }
     }
     pub fn br(&self, dest_bb: BasicBlock) {
         let _ = unsafe { core::LLVMBuildBr(self.builder, dest_bb.0) };
@@ -353,9 +345,6 @@ impl BasicBlock {
     pub fn first_instr(&self) -> Option<ValueInstr> {
         ValueInstr::new_opt(unsafe { core::LLVMGetFirstInstruction(self.0) })
     }
-    pub fn last_instr(&self) -> Option<ValueInstr> {
-        ValueInstr::new_opt(unsafe { core::LLVMGetLastInstruction(self.0) })
-    }
 }
 
 impl Value {
@@ -430,9 +419,6 @@ impl TypeStruct {
 
 pub fn const_all_zero(ty: Type) -> Value {
     Value(unsafe { core::LLVMConstNull(ty.0) })
-}
-pub fn const_all_ones(ty: Type) -> Value {
-    Value(unsafe { core::LLVMConstAllOnes(ty.0) })
 }
 pub fn const_int(int_ty: Type, val: u64, sign_extend: bool) -> Value {
     Value(unsafe { core::LLVMConstInt(int_ty.0, val, sign_extend as i32) })

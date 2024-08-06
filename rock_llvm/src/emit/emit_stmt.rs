@@ -1,12 +1,17 @@
-use super::context::{Codegen, ProcCodegen};
+use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
 use crate::llvm;
 use rock_core::hir;
 
-pub fn codegen_block<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, block: hir::Block<'c>) {
+pub fn codegen_block<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    block: hir::Block<'c>,
+) {
     proc_cg.block_enter();
     for stmt in block.stmts {
-        codegen_stmt(cg, proc_cg, *stmt);
+        codegen_stmt(cg, proc_cg, expect, *stmt);
     }
     if !cg.insert_bb_terminated() {
         let defer_range = proc_cg.last_defer_blocks();
@@ -15,7 +20,12 @@ pub fn codegen_block<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, block:
     proc_cg.block_exit();
 }
 
-fn codegen_stmt<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, stmt: hir::Stmt<'c>) {
+fn codegen_stmt<'c>(
+    cg: &Codegen<'c>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    stmt: hir::Stmt<'c>,
+) {
     match stmt {
         hir::Stmt::Break => codegen_break(cg, proc_cg),
         hir::Stmt::Continue => codegen_continue(cg, proc_cg),
@@ -25,7 +35,7 @@ fn codegen_stmt<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, stmt: hir::
         hir::Stmt::Local(local_id) => codegen_local(cg, proc_cg, local_id),
         hir::Stmt::Assign(assign) => codegen_assign(cg, proc_cg, assign),
         hir::Stmt::ExprSemi(expr) => codegen_expr_semi(cg, proc_cg, expr),
-        hir::Stmt::ExprTail(expr) => codegen_expr_tail(cg, proc_cg, expr),
+        hir::Stmt::ExprTail(expr) => codegen_expr_tail(cg, proc_cg, expect, expr),
     }
 }
 
@@ -49,11 +59,12 @@ fn codegen_return<'c>(
     let defer_range = proc_cg.all_defer_blocks();
     codegen_defer_blocks(cg, proc_cg, defer_range);
 
-    if let Some(expr) = expr {
-        emit_expr::codegen_expr_return(cg, proc_cg, expr);
+    let value = if let Some(expr) = expr {
+        emit_expr::codegen_expr_value_opt(cg, proc_cg, expr)
     } else {
-        cg.build.ret_void();
-    }
+        None
+    };
+    cg.build.ret(value);
 }
 
 fn codegen_defer_blocks<'c>(
@@ -69,7 +80,7 @@ fn codegen_defer_blocks<'c>(
         cg.build.br(defer_bb);
         cg.build.position_at_end(defer_bb);
         let block = proc_cg.defer_block(block_idx);
-        codegen_block(cg, proc_cg, block);
+        codegen_block(cg, proc_cg, Expect::Value(None), block);
     }
     let exit_bb = cg.append_bb(proc_cg, "defer_exit");
     cg.build.br(exit_bb);
@@ -89,7 +100,7 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
             cg.build.br(body_bb);
 
             cg.build.position_at_end(body_bb);
-            codegen_block(cg, proc_cg, loop_.block);
+            codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
             cg.build_br_no_term(entry_bb);
         }
         hir::LoopKind::While { cond } => {
@@ -99,7 +110,7 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
             cg.build.cond_br(cond, body_bb, exit_bb);
 
             cg.build.position_at_end(body_bb);
-            codegen_block(cg, proc_cg, loop_.block);
+            codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
             cg.build_br_no_term(entry_bb);
         }
         hir::LoopKind::ForLoop {
@@ -114,7 +125,7 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
             cg.build.cond_br(cond, body_bb, exit_bb);
 
             cg.build.position_at_end(body_bb);
-            codegen_block(cg, proc_cg, loop_.block);
+            codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
             if !cg.insert_bb_terminated() {
                 codegen_assign(cg, proc_cg, assign);
             }
@@ -156,10 +167,10 @@ fn codegen_assign<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, assign: &
     }
 }
 
-fn codegen_expr_semi(cg: &Codegen, proc_cg: &mut ProcCodegen, expr: &hir::Expr) {
-    unimplemented!();
+fn codegen_expr_semi<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, expr: &hir::Expr<'c>) {
+    let _ = emit_expr::codegen_expr_value_opt(cg, proc_cg, expr);
 }
 
-fn codegen_expr_tail(cg: &Codegen, proc_cg: &mut ProcCodegen, expr: &hir::Expr) {
+fn codegen_expr_tail(cg: &Codegen, proc_cg: &mut ProcCodegen, expect: Expect, expr: &hir::Expr) {
     unimplemented!();
 }
