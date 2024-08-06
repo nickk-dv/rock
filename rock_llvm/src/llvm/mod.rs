@@ -26,7 +26,11 @@ pub struct BasicBlock(sys::LLVMBasicBlockRef);
 #[derive(Copy, Clone)]
 pub struct Value(sys::LLVMValueRef);
 #[derive(Copy, Clone)]
+pub struct ValuePtr(sys::LLVMValueRef);
+#[derive(Copy, Clone)]
 pub struct ValueFn(sys::LLVMValueRef);
+#[derive(Copy, Clone)]
+pub struct ValueGlobal(sys::LLVMValueRef);
 #[derive(Copy, Clone)]
 pub struct ValueInstr(sys::LLVMValueRef);
 
@@ -34,6 +38,8 @@ pub struct ValueInstr(sys::LLVMValueRef);
 pub struct Type(sys::LLVMTypeRef);
 #[derive(Copy, Clone)]
 pub struct TypeFn(sys::LLVMTypeRef);
+#[derive(Copy, Clone)]
+pub struct TypeStruct(sys::LLVMTypeRef);
 
 pub type OpCode = sys::LLVMOpcode;
 pub type Linkage = sys::LLVMLinkage;
@@ -82,10 +88,10 @@ impl IRContext {
         Type(unsafe { core::LLVMPointerTypeInContext(self.context, 0) })
     }
 
-    pub fn struct_create_named(&self, name: &str) -> Type {
-        Type(unsafe { core::LLVMStructCreateNamed(self.context, self.cstr_buf.cstr(name)) })
+    pub fn struct_create_named(&self, name: &str) -> TypeStruct {
+        TypeStruct(unsafe { core::LLVMStructCreateNamed(self.context, self.cstr_buf.cstr(name)) })
     }
-    pub fn struct_set_body(&self, struct_ty: Type, field_types: &[Type], packed: bool) {
+    pub fn struct_set_body(&self, struct_ty: TypeStruct, field_types: &[Type], packed: bool) {
         unsafe {
             core::LLVMStructSetBody(
                 struct_ty.0,
@@ -95,8 +101,8 @@ impl IRContext {
             )
         }
     }
-    pub fn struct_type_inline(&self, field_types: &[Type], packed: bool) -> Type {
-        Type(unsafe {
+    pub fn struct_type_inline(&self, field_types: &[Type], packed: bool) -> TypeStruct {
+        TypeStruct(unsafe {
             core::LLVMStructTypeInContext(
                 self.context,
                 field_types.as_ptr() as *mut sys::LLVMTypeRef,
@@ -146,7 +152,7 @@ impl IRModule {
         unnamed_addr: bool,
         thread_local: bool,
         linkage: Linkage,
-    ) -> Value {
+    ) -> ValueGlobal {
         let name = self.cstr_buf.cstr(name);
         let global_val = unsafe { core::LLVMAddGlobal(self.module, ty.0, name) };
         let unnamed_addr = if unnamed_addr {
@@ -160,7 +166,7 @@ impl IRModule {
         unsafe { core::LLVMSetUnnamedAddress(global_val, unnamed_addr) };
         unsafe { core::LLVMSetThreadLocal(global_val, thread_local as i32) };
         unsafe { core::LLVMSetLinkage(global_val, linkage) };
-        Value(global_val)
+        ValueGlobal(global_val)
     }
 }
 
@@ -228,26 +234,26 @@ impl IRBuilder {
         Value(unsafe { core::LLVMBuildNot(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
 
-    pub fn alloca(&self, ty: Type, name: &str) -> Value {
-        Value(unsafe { core::LLVMBuildAlloca(self.builder, ty.0, self.cstr_buf.cstr(name)) })
+    pub fn alloca(&self, ty: Type, name: &str) -> ValuePtr {
+        ValuePtr(unsafe { core::LLVMBuildAlloca(self.builder, ty.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn load(&self, ptr_ty: Type, ptr_val: Value, name: &str) -> Value {
+    pub fn load(&self, ptr_ty: Type, ptr_val: ValuePtr, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildLoad2(self.builder, ptr_ty.0, ptr_val.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn store(&self, val: Value, ptr_val: Value) -> Value {
-        Value(unsafe { core::LLVMBuildStore(self.builder, val.0, ptr_val.0) })
+    pub fn store(&self, val: Value, ptr_val: ValuePtr) {
+        unsafe { core::LLVMBuildStore(self.builder, val.0, ptr_val.0) };
     }
 
     pub fn gep_inbounds(
         &self,
         ptr_ty: Type,
-        ptr_val: Value,
+        ptr_val: ValuePtr,
         indices: &[Value],
         name: &str,
-    ) -> Value {
-        Value(unsafe {
+    ) -> ValuePtr {
+        ValuePtr(unsafe {
             core::LLVMBuildInBoundsGEP2(
                 self.builder,
                 ptr_ty.0,
@@ -259,8 +265,14 @@ impl IRBuilder {
         })
     }
 
-    pub fn gep_struct(&self, ptr_ty: Type, ptr_val: Value, idx: u32, name: &str) -> Value {
-        Value(unsafe {
+    pub fn gep_struct(
+        &self,
+        ptr_ty: TypeStruct,
+        ptr_val: ValuePtr,
+        idx: u32,
+        name: &str,
+    ) -> ValuePtr {
+        ValuePtr(unsafe {
             core::LLVMBuildStructGEP2(
                 self.builder,
                 ptr_ty.0,
@@ -336,38 +348,49 @@ impl CStrBuffer {
 
 impl BasicBlock {
     pub fn terminator(&self) -> Option<ValueInstr> {
-        let instr = unsafe { core::LLVMGetBasicBlockTerminator(self.0) };
-        if instr.is_null() {
-            None
-        } else {
-            Some(ValueInstr(instr))
-        }
+        ValueInstr::new_opt(unsafe { core::LLVMGetBasicBlockTerminator(self.0) })
     }
     pub fn first_instr(&self) -> Option<ValueInstr> {
-        let instr = unsafe { core::LLVMGetFirstInstruction(self.0) };
-        if instr.is_null() {
-            None
-        } else {
-            Some(ValueInstr(instr))
-        }
+        ValueInstr::new_opt(unsafe { core::LLVMGetFirstInstruction(self.0) })
     }
     pub fn last_instr(&self) -> Option<ValueInstr> {
-        let instr = unsafe { core::LLVMGetLastInstruction(self.0) };
-        if instr.is_null() {
-            None
-        } else {
-            Some(ValueInstr(instr))
-        }
+        ValueInstr::new_opt(unsafe { core::LLVMGetLastInstruction(self.0) })
     }
 }
 
 impl Value {
+    pub fn into_ptr(self) -> ValuePtr {
+        let ty = typeof_value(self);
+        let ty_kind = unsafe { core::LLVMGetTypeKind(ty.0) };
+
+        match ty_kind {
+            sys::LLVMTypeKind::LLVMPointerTypeKind => ValuePtr(self.0),
+            _ => unreachable!(),
+        }
+    }
     pub fn into_fn(self) -> ValueFn {
-        ValueFn(self.0)
+        let ty = typeof_value(self);
+        let ty_kind = unsafe { core::LLVMGetTypeKind(ty.0) };
+
+        match ty_kind {
+            sys::LLVMTypeKind::LLVMFunctionTypeKind => ValueFn(self.0),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl ValuePtr {
+    #[inline]
+    pub fn as_val(self) -> Value {
+        Value(self.0)
     }
 }
 
 impl ValueFn {
+    #[inline]
+    pub fn as_ptr(self) -> ValuePtr {
+        ValuePtr(self.0)
+    }
     pub fn entry_bb(&self) -> BasicBlock {
         BasicBlock(unsafe { core::LLVMGetEntryBasicBlock(self.0) })
     }
@@ -380,9 +403,28 @@ impl ValueFn {
     }
 }
 
-impl Into<Value> for ValueFn {
-    fn into(self) -> Value {
-        Value(self.0)
+impl ValueGlobal {
+    #[inline]
+    pub fn as_ptr(self) -> ValuePtr {
+        ValuePtr(self.0)
+    }
+}
+
+impl ValueInstr {
+    #[inline]
+    fn new_opt(raw: sys::LLVMValueRef) -> Option<ValueInstr> {
+        if raw.is_null() {
+            None
+        } else {
+            Some(ValueInstr(raw))
+        }
+    }
+}
+
+impl TypeStruct {
+    #[inline]
+    pub fn as_ty(self) -> Type {
+        Type(self.0)
     }
 }
 
@@ -425,7 +467,7 @@ pub fn const_struct_inline(const_vals: &[Value], packed: bool) -> Value {
         )
     })
 }
-pub fn const_struct_named(struct_ty: Type, const_vals: &[Value]) -> Value {
+pub fn const_struct_named(struct_ty: TypeStruct, const_vals: &[Value]) -> Value {
     Value(unsafe {
         core::LLVMConstNamedStruct(
             struct_ty.0,
@@ -438,7 +480,6 @@ pub fn const_struct_named(struct_ty: Type, const_vals: &[Value]) -> Value {
 pub fn array_type(elem_ty: Type, len: u64) -> Type {
     Type(unsafe { core::LLVMArrayType2(elem_ty.0, len) })
 }
-
 pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -> TypeFn {
     TypeFn(unsafe {
         core::LLVMFunctionType(
@@ -449,7 +490,6 @@ pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -
         )
     })
 }
-
 pub fn typeof_value(val: Value) -> Type {
     Type(unsafe { core::LLVMTypeOf(val.0) })
 }
