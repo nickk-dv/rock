@@ -7,10 +7,10 @@ pub struct Codegen<'c> {
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
     pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
-    pub structs: Vec<llvm::Type>,
+    pub structs: Vec<llvm::TypeStruct>,
     pub consts: Vec<llvm::Value>,
-    pub globals: Vec<llvm::Value>,
-    pub string_lits: Vec<llvm::Value>,
+    pub globals: Vec<llvm::ValueGlobal>,
+    pub string_lits: Vec<llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
     cache: CodegenCache,
 }
@@ -18,8 +18,8 @@ pub struct Codegen<'c> {
 pub struct ProcCodegen<'c> {
     pub proc_id: hir::ProcID,
     pub fn_val: llvm::ValueFn,
-    pub param_ptrs: Vec<llvm::Value>,
-    pub local_ptrs: Vec<llvm::Value>,
+    pub param_ptrs: Vec<llvm::ValuePtr>,
+    pub local_ptrs: Vec<llvm::ValuePtr>,
     block_stack: Vec<BlockInfo>,
     defer_blocks: Vec<hir::Block<'c>>,
     next_loop_info: Option<LoopInfo>,
@@ -39,7 +39,7 @@ pub struct LoopInfo {
 pub enum Expect {
     Value,
     Pointer,
-    Store(llvm::Value),
+    Store(llvm::ValuePtr),
 }
 
 struct CodegenCache {
@@ -52,7 +52,7 @@ struct CodegenCache {
     float_64: llvm::Type,
     ptr_type: llvm::Type,
     void_type: llvm::Type,
-    slice_type: llvm::Type,
+    slice_type: llvm::TypeStruct,
 }
 
 impl<'c> Codegen<'c> {
@@ -81,10 +81,10 @@ impl<'c> Codegen<'c> {
             hir::Type::Error => unreachable!(),
             hir::Type::Basic(basic) => self.basic_type(basic),
             hir::Type::Enum(enum_id) => self.enum_type(enum_id),
-            hir::Type::Struct(struct_id) => self.struct_type(struct_id),
+            hir::Type::Struct(struct_id) => self.struct_type(struct_id).as_ty(),
             hir::Type::Reference(_, _) => self.cache.ptr_type,
             hir::Type::Procedure(_) => self.cache.ptr_type,
-            hir::Type::ArraySlice(_) => self.cache.slice_type,
+            hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
             hir::Type::ArrayStatic(array) => self.array_type(array),
         }
     }
@@ -119,7 +119,7 @@ impl<'c> Codegen<'c> {
         unimplemented!()
     }
 
-    pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::Type {
+    pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::TypeStruct {
         self.structs[struct_id.index()]
     }
 
@@ -141,7 +141,7 @@ impl<'c> Codegen<'c> {
         llvm::function_type(return_ty, &param_types, proc_ty.is_variadic)
     }
 
-    pub fn slice_type(&self) -> llvm::Type {
+    pub fn slice_type(&self) -> llvm::TypeStruct {
         self.cache.slice_type
     }
 
@@ -176,7 +176,12 @@ impl<'c> Codegen<'c> {
         }
     }
     #[must_use]
-    pub fn entry_alloca(&self, proc_cg: &ProcCodegen, ty: llvm::Type, name: &str) -> llvm::Value {
+    pub fn entry_alloca(
+        &self,
+        proc_cg: &ProcCodegen,
+        ty: llvm::Type,
+        name: &str,
+    ) -> llvm::ValuePtr {
         let insert_bb = self.build.insert_bb();
         let entry_bb = proc_cg.fn_val.entry_bb();
 
