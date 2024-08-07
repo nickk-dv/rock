@@ -8,3 +8,4 @@ path = "src/main.rs"
 
 [dependencies]
 rock_core = { path = "../rock_core", features = ["codegen_llvm"] }
+rock_llvm = { path = "../rock_llvm" }
