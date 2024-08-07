@@ -4,6 +4,7 @@ use std::ffi::{c_char, c_double, c_uint, c_ulonglong};
 // core
 extern "C" {
     pub fn LLVMShutdown();
+    pub fn LLVMDisposeMessage(Message: *mut c_char);
 }
 
 // context
@@ -18,6 +19,7 @@ extern "C" {
         ctx: LLVMContextRef,
     ) -> LLVMModuleRef;
     pub fn LLVMDisposeModule(m: LLVMModuleRef);
+    pub fn LLVMPrintModuleToString(m: LLVMModuleRef) -> *mut c_char;
 
     pub fn LLVMAddFunction(
         m: LLVMModuleRef,

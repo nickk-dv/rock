@@ -1,6 +1,7 @@
 [package]
 name = "rock_llvm"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 rock_core = { path = "../rock_core" }

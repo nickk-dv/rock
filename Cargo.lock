@@ -196,6 +196,7 @@ name = "rock_cli"
 version = "0.0.0"
 dependencies = [
  "rock_core",
+ "rock_llvm",
 ]
 
 [[package]]

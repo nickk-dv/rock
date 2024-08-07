@@ -162,6 +162,13 @@ impl IRModule {
         unsafe { core::LLVMSetLinkage(global_val, linkage) };
         ValueGlobal(global_val)
     }
+
+    pub fn print_to_string(&self) -> String {
+        let cstr_ptr = unsafe { core::LLVMPrintModuleToString(self.module) };
+        let cstr = unsafe { std::ffi::CString::from_raw(cstr_ptr) };
+        unsafe { core::LLVMDisposeMessage(cstr_ptr) };
+        cstr.to_string_lossy().to_string()
+    }
 }
 
 impl Drop for IRModule {

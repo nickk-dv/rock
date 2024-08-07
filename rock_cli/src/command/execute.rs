@@ -155,9 +155,11 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);
 
-        let result = codegen_ll::codegen_module(session, hir);
-        let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
-        Ok(warnings)
+        rock_llvm::codegen(hir);
+        Ok(vec![])
+        //let result = codegen_ll::codegen_module(session, hir);
+        //let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
+        //Ok(warnings)
     }
 }
 
