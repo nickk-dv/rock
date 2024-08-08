@@ -1,21 +1,19 @@
 fn main() {
-    #[cfg(not(target_os = "linux"))]
-    #[cfg(feature = "codegen_llvm")]
-    link_llvm_dylib();
+    link_llvmc();
 }
 
-fn link_llvm_dylib() {
+fn link_llvmc() {
+    if cfg!(not(target_pointer_width = "64")) {
+        panic!("rock-llvm build is only supported on 64-bit architectures");
+    }
     if cfg!(target_os = "windows") {
         println!("cargo:rustc-link-search=bin/windows");
+        println!("cargo:rustc-link-lib=dylib=LLVM-C");
     } else if cfg!(target_os = "linux") {
-        println!("cargo:rustc-link-search=bin/linux");
+        panic!("LLVM-C link for linux is not yet supported");
     } else if cfg!(target_os = "macos") {
-        println!("cargo:rustc-link-search=bin/macos");
+        panic!("LLVM-C link for macos is not yet supported");
     } else {
-        panic!("Rock-cli build is only supported for windows, linux, macos.");
+        panic!("rock-llvm build is only supported on windows, linux and macos");
     }
-    if cfg!(not(target_pointer_width = "64")) {
-        panic!("LLVM-C linking is only supported on 64-bit architectures.");
-    }
-    println!("cargo:rustc-link-lib=dylib=LLVM-C");
 }

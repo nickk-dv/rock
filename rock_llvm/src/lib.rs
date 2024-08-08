@@ -1,8 +1,8 @@
-mod emit;
+pub mod build;
 mod llvm;
 mod sys;
 
-use emit::emit_mod;
+use build::emit_mod;
 use rock_core::hir;
 
 pub fn codegen(hir: hir::Hir) {

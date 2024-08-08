@@ -1,14 +1,8 @@
 [package]
 name = "rock_core"
 edition = "2021"
-build = "build.rs"
-
-[features]
-codegen_llvm = []
 
 [dependencies]
 basic-toml = "0.1.9"
 serde = { version = "1.0.198", features = ["derive"] }
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm17-0"] }
-llvm-sys = { version = "170.0.1", features = ["no-llvm-linking"]  }
 serde_json = "1.0.114"
