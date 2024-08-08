@@ -1092,7 +1092,7 @@ fn fold_slice_field<'hir>(
     let target = fold_const_expr(hir, emit, origin_id, target);
     match target {
         hir::ConstValue::String { id, c_string } => {
-            if let hir::SliceField::Ptr = field {
+            if let hir::SliceField::Len = field {
                 if !c_string {
                     let string = hir.intern_string().get_str(id);
                     let len = string.len();
