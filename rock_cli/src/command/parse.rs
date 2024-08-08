@@ -1,8 +1,8 @@
 use super::format::CommandFormat;
 use super::{Command, CommandBuild, CommandNew, CommandRun};
-use rock_core::codegen::BuildKind;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::package::manifest::PackageKind;
+use rock_llvm::build::BuildKind;
 
 pub fn command(format: CommandFormat) -> ResultComp<Command> {
     match format.name.as_str() {
