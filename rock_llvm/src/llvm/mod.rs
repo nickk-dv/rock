@@ -1,4 +1,5 @@
 use crate::sys;
+use crate::sys::analysis;
 use crate::sys::core;
 use std::cell::UnsafeCell;
 use std::ffi::c_char;
@@ -163,11 +164,22 @@ impl IRModule {
         ValueGlobal(global_val)
     }
 
-    pub fn print_to_string(&self) -> String {
-        let cstr_ptr = unsafe { core::LLVMPrintModuleToString(self.module) };
-        let cstr = unsafe { std::ffi::CString::from_raw(cstr_ptr) };
-        unsafe { core::LLVMDisposeMessage(cstr_ptr) };
-        cstr.to_string_lossy().to_string()
+    pub fn to_string(&self) -> String {
+        let llvm_str = unsafe { core::LLVMPrintModuleToString(self.module) };
+        llvm_string_to_owned(llvm_str)
+    }
+
+    pub fn verify(&self) -> Result<(), String> {
+        let mut err_str = std::mem::MaybeUninit::uninit();
+        let action = analysis::LLVMVerifierFailureAction::LLVMReturnStatusAction;
+        let code = unsafe { analysis::LLVMVerifyModule(self.module, action, err_str.as_mut_ptr()) };
+        let err_str = unsafe { err_str.assume_init() };
+
+        if code == 1 && !err_str.is_null() {
+            Err(llvm_string_to_owned(err_str))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -305,6 +317,14 @@ impl IRBuilder {
         args: &[Value],
         name: &str,
     ) -> Option<Value> {
+        let return_ty = unsafe { core::LLVMGetReturnType(fn_ty.0) };
+        let return_kind = unsafe { core::LLVMGetTypeKind(return_ty) };
+
+        let name = match return_kind {
+            sys::LLVMTypeKind::LLVMVoidTypeKind => "\0".as_ptr() as *const c_char,
+            _ => self.cstr_buf.cstr(name),
+        };
+
         let call_value = Value(unsafe {
             core::LLVMBuildCall2(
                 self.builder,
@@ -312,12 +332,9 @@ impl IRBuilder {
                 fn_val.0,
                 args.as_ptr() as *mut sys::LLVMValueRef,
                 args.len() as u32,
-                self.cstr_buf.cstr(name),
+                name,
             )
         });
-
-        let return_ty = unsafe { core::LLVMGetReturnType(fn_ty.0) };
-        let return_kind = unsafe { core::LLVMGetTypeKind(return_ty) };
 
         match return_kind {
             sys::LLVMTypeKind::LLVMVoidTypeKind => None,
@@ -369,7 +386,9 @@ impl Value {
         let ty_kind = unsafe { core::LLVMGetTypeKind(ty.0) };
 
         match ty_kind {
-            sys::LLVMTypeKind::LLVMFunctionTypeKind => ValueFn(self.0),
+            sys::LLVMTypeKind::LLVMPointerTypeKind | sys::LLVMTypeKind::LLVMFunctionTypeKind => {
+                ValueFn(self.0)
+            }
             _ => unreachable!(),
         }
     }
@@ -485,4 +504,12 @@ pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -
 }
 pub fn typeof_value(val: Value) -> Type {
     Type(unsafe { core::LLVMTypeOf(val.0) })
+}
+
+fn llvm_string_to_owned(llvm_str: *mut c_char) -> String {
+    assert!(!llvm_str.is_null());
+    let cstr = unsafe { std::ffi::CStr::from_ptr(llvm_str) };
+    let string = cstr.to_string_lossy().into_owned();
+    unsafe { core::LLVMDisposeMessage(llvm_str) };
+    string
 }

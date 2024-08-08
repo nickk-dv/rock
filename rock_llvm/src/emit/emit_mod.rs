@@ -5,7 +5,6 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::fs_env;
 use rock_core::hir;
-use std::path::PathBuf;
 
 pub fn codegen_module<'c>(hir: hir::Hir<'c>) {
     let mut cg = Codegen::new(hir);
@@ -15,8 +14,20 @@ pub fn codegen_module<'c>(hir: hir::Hir<'c>) {
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&mut cg);
-    let _ =
-        fs_env::file_create_or_rewrite(&PathBuf::from("./module.ll"), &cg.module.print_to_string());
+
+    if let Ok(mut cwd) = fs_env::dir_get_current_working() {
+        cwd.push("module.ll");
+        let string = cg.module.to_string();
+        let _ = fs_env::file_create_or_rewrite(&cwd, &string);
+    } else {
+        //@temp panic, writing ll module is feature of --emit-llvm
+        panic!("failed to get cwd");
+    }
+
+    //@temp err handling
+    if let Err(error) = cg.module.verify() {
+        eprintln!("module verify failed:\n{}", error);
+    }
 }
 
 fn codegen_string_lits(cg: &mut Codegen) {
