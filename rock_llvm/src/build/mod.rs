@@ -1,7 +1,9 @@
 mod context;
 mod emit_expr;
-pub mod emit_mod;
+mod emit_mod;
 mod emit_stmt;
+
+use rock_core::hir;
 
 #[derive(Copy, Clone)]
 pub enum BuildKind {
@@ -16,4 +18,8 @@ impl BuildKind {
             BuildKind::Release => "release",
         }
     }
+}
+
+pub fn build(hir: hir::Hir) {
+    emit_mod::codegen_module(hir);
 }

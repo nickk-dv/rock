@@ -1,3 +1,8 @@
+//! `llvm` module provides safe api on top  
+//! of `sys` bindings to LLVM-C api.  
+//! It does not aim to fully safeguard  
+//! against type and value mismatch errors.
+
 use crate::sys;
 use crate::sys::analysis;
 use crate::sys::core;
@@ -114,12 +119,6 @@ impl IRContext {
     }
 }
 
-impl Drop for IRContext {
-    fn drop(&mut self) {
-        unsafe { core::LLVMShutdown() }
-    }
-}
-
 impl IRModule {
     pub fn new(context: &IRContext, name: &str) -> IRModule {
         let cstr_buf = CStrBuffer::new();
@@ -175,7 +174,7 @@ impl IRModule {
         let code = unsafe { analysis::LLVMVerifyModule(self.module, action, err_str.as_mut_ptr()) };
         let err_str = unsafe { err_str.assume_init() };
 
-        if code == 1 && !err_str.is_null() {
+        if code == 1 {
             Err(llvm_string_to_owned(err_str))
         } else {
             Ok(())

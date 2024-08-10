@@ -153,7 +153,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
         let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
         error_format::print_errors(Some(session), diagnostics);
 
-        rock_llvm::codegen(hir);
+        rock_llvm::build::build(hir);
         Ok(vec![])
         //let result = codegen_ll::codegen_module(session, hir);
         //let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
@@ -180,7 +180,7 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
         //let result = codegen::codegen(hir, session, data.kind, data.emit_llvm, Some(data.args));
         //let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
         //Ok(warnings)
-        rock_llvm::codegen(hir);
+        rock_llvm::build::build(hir);
         Ok(vec![])
     }
 }
