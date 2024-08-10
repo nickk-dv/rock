@@ -468,3 +468,93 @@ pub mod core {
         ) -> LLVMValueRef;
     }
 }
+
+pub mod target {
+    use super::*;
+    use std::ffi::c_char;
+
+    pub type LLVMTargetRef = *mut LLVMTarget;
+    pub type LLVMTargetDataRef = *mut LLVMTargetData;
+    pub type LLVMTargetMachineRef = *mut LLVMTargetMachine;
+
+    pub enum LLVMTarget {}
+    pub enum LLVMTargetData {}
+    pub enum LLVMTargetMachine {}
+
+    #[repr(C)]
+    #[allow(unused)]
+    #[derive(Copy, Clone)]
+    pub enum LLVMCodeGenOptLevel {
+        LLVMCodeGenLevelNone = 0,
+        LLVMCodeGenLevelLess = 1,
+        LLVMCodeGenLevelDefault = 2,
+        LLVMCodeGenLevelAggressive = 3,
+    }
+
+    #[repr(C)]
+    #[allow(unused)]
+    #[allow(non_camel_case_types)]
+    #[derive(Copy, Clone)]
+    pub enum LLVMRelocMode {
+        LLVMRelocDefault = 0,
+        LLVMRelocStatic = 1,
+        LLVMRelocPIC = 2,
+        LLVMRelocDynamicNoPic = 3,
+        LLVMRelocROPI = 4,
+        LLVMRelocRWPI = 5,
+        LLVMRelocROPI_RWPI = 6,
+    }
+
+    #[repr(C)]
+    #[allow(unused)]
+    #[derive(Copy, Clone)]
+    pub enum LLVMCodeModel {
+        LLVMCodeModelDefault = 0,
+        LLVMCodeModelJITDefault = 1,
+        LLVMCodeModelTiny = 2,
+        LLVMCodeModelSmall = 3,
+        LLVMCodeModelKernel = 4,
+        LLVMCodeModelMedium = 5,
+        LLVMCodeModelLarge = 6,
+    }
+
+    #[repr(C)]
+    #[allow(unused)]
+    #[derive(Copy, Clone)]
+    pub enum LLVMCodeGenFileType {
+        LLVMAssemblyFile = 0,
+        LLVMObjectFile = 1,
+    }
+
+    extern "C" {
+        pub fn LLVMGetTargetFromTriple(
+            triple: *const c_char,
+            target: *mut LLVMTargetRef,
+            error_msg: *mut *mut c_char,
+        ) -> LLVMBool;
+
+        pub fn LLVMCreateTargetMachine(
+            target: LLVMTargetRef,
+            triple: *const c_char,
+            cpu: *const c_char,
+            features: *const c_char,
+            opt_level: LLVMCodeGenOptLevel,
+            reloc_mode: LLVMRelocMode,
+            code_model: LLVMCodeModel,
+        ) -> LLVMTargetMachineRef;
+        pub fn LLVMDisposeTargetMachine(tm: LLVMTargetMachineRef);
+
+        pub fn LLVMCreateTargetDataLayout(tm: LLVMTargetMachineRef) -> LLVMTargetDataRef;
+        pub fn LLVMDisposeTargetData(td: LLVMTargetDataRef);
+        pub fn LLVMSetModuleDataLayout(m: LLVMModuleRef, td: LLVMTargetDataRef);
+        pub fn LLVMIntPtrTypeInContext(ctx: LLVMContextRef, td: LLVMTargetDataRef) -> LLVMTypeRef;
+
+        pub fn LLVMTargetMachineEmitToFile(
+            tm: LLVMTargetMachineRef,
+            m: LLVMModuleRef,
+            filename: *mut c_char,
+            codegen: LLVMCodeGenFileType,
+            error_msg: *mut *mut c_char,
+        ) -> LLVMBool;
+    }
+}
