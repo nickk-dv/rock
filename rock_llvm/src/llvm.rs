@@ -6,8 +6,22 @@
 use crate::sys;
 use crate::sys::analysis;
 use crate::sys::core;
+use crate::sys::target;
 use std::cell::UnsafeCell;
 use std::ffi::c_char;
+
+pub struct IRTarget {
+    target: target::LLVMTargetRef,
+    target_data: target::LLVMTargetDataRef,
+    target_machine: target::LLVMTargetMachineRef,
+}
+
+#[derive(Copy, Clone)]
+#[allow(non_camel_case_types)]
+pub enum TargetArch {
+    x86_64,
+    Arm_64,
+}
 
 pub struct IRContext {
     context: sys::LLVMContextRef,
@@ -51,6 +65,77 @@ pub type OpCode = sys::LLVMOpcode;
 pub type Linkage = sys::LLVMLinkage;
 pub type IntPred = sys::LLVMIntPredicate;
 pub type FloatPred = sys::LLVMRealPredicate;
+
+impl IRTarget {
+    pub fn new(arch: TargetArch, triple: &str) -> IRTarget {
+        match arch {
+            TargetArch::x86_64 => unsafe {
+                target::LLVMInitializeX86AsmParser();
+                target::LLVMInitializeX86AsmPrinter();
+                target::LLVMInitializeX86Disassembler();
+                target::LLVMInitializeX86Target();
+                target::LLVMInitializeX86TargetInfo();
+                target::LLVMInitializeX86TargetMC();
+            },
+            TargetArch::Arm_64 => unsafe {
+                target::LLVMInitializeAArch64AsmParser();
+                target::LLVMInitializeAArch64AsmPrinter();
+                target::LLVMInitializeAArch64Disassembler();
+                target::LLVMInitializeAArch64Target();
+                target::LLVMInitializeAArch64TargetInfo();
+                target::LLVMInitializeAArch64TargetMC();
+            },
+        }
+
+        let ctriple = cstring_from_str(triple);
+        let mut target = std::mem::MaybeUninit::uninit();
+        let mut err_str = std::mem::MaybeUninit::uninit();
+        let code = unsafe {
+            target::LLVMGetTargetFromTriple(
+                ctriple.as_ptr(),
+                target.as_mut_ptr(),
+                err_str.as_mut_ptr(),
+            )
+        };
+        let err_str = unsafe { err_str.assume_init() };
+        if code == 1 {
+            //@use ErrorComp instead?
+            panic!(
+                "failed to create target from triple `{}`:\n{}",
+                triple,
+                llvm_string_to_owned(err_str)
+            );
+        }
+        let target = unsafe { target.assume_init() };
+        assert!(!target.is_null());
+
+        let target_machine = unsafe {
+            target::LLVMCreateTargetMachine(
+                target,
+                ctriple.as_ptr(),
+                cstring_empty(),
+                cstring_empty(),
+                target::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone, //@base on options (debug / release)
+                target::LLVMRelocMode::LLVMRelocDefault,
+                target::LLVMCodeModel::LLVMCodeModelDefault,
+            )
+        };
+        let target_data = unsafe { target::LLVMCreateTargetDataLayout(target_machine) };
+
+        IRTarget {
+            target,
+            target_data,
+            target_machine,
+        }
+    }
+}
+
+impl Drop for IRTarget {
+    fn drop(&mut self) {
+        unsafe { target::LLVMDisposeTargetData(self.target_data) }
+        unsafe { target::LLVMDisposeTargetMachine(self.target_machine) }
+    }
+}
 
 impl IRContext {
     pub fn new() -> IRContext {
@@ -120,10 +205,11 @@ impl IRContext {
 }
 
 impl IRModule {
-    pub fn new(context: &IRContext, name: &str) -> IRModule {
+    pub fn new(context: &IRContext, target: &IRTarget, name: &str) -> IRModule {
         let cstr_buf = CStrBuffer::new();
         let name = cstr_buf.cstr(name);
         let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context.context) };
+        unsafe { target::LLVMSetModuleDataLayout(module, target.target_data) };
         IRModule { module, cstr_buf }
     }
 
@@ -179,6 +265,10 @@ impl IRModule {
         } else {
             Ok(())
         }
+    }
+
+    pub fn emit_to_file(&self, target: &IRTarget) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -320,7 +410,7 @@ impl IRBuilder {
         let return_kind = unsafe { core::LLVMGetTypeKind(return_ty) };
 
         let name = match return_kind {
-            sys::LLVMTypeKind::LLVMVoidTypeKind => "\0".as_ptr() as *const c_char,
+            sys::LLVMTypeKind::LLVMVoidTypeKind => cstring_empty(),
             _ => self.cstr_buf.cstr(name),
         };
 
@@ -511,4 +601,12 @@ fn llvm_string_to_owned(llvm_str: *mut c_char) -> String {
     let string = cstr.to_string_lossy().into_owned();
     unsafe { core::LLVMDisposeMessage(llvm_str) };
     string
+}
+
+fn cstring_from_str(string: &str) -> std::ffi::CString {
+    std::ffi::CString::new(string).unwrap()
+}
+
+fn cstring_empty() -> *const c_char {
+    "\0".as_ptr() as *const c_char
 }

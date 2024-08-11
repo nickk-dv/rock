@@ -1,13 +1,14 @@
 use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
 use super::emit_stmt;
+use super::TargetTriple;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::fs_env;
 use rock_core::hir;
 
-pub fn codegen_module<'c>(hir: hir::Hir<'c>) {
-    let mut cg = Codegen::new(hir);
+pub fn codegen_module<'c>(hir: hir::Hir<'c>, triple: TargetTriple) {
+    let mut cg = Codegen::new(hir, triple);
     codegen_string_lits(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_consts(&mut cg);
