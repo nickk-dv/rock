@@ -7,6 +7,7 @@ use rock_core::ast;
 use rock_core::fs_env;
 use rock_core::hir;
 
+//@temp err handling
 pub fn codegen_module<'c>(hir: hir::Hir<'c>, triple: TargetTriple) {
     let mut cg = Codegen::new(hir, triple);
     codegen_string_lits(&mut cg);
@@ -16,18 +17,23 @@ pub fn codegen_module<'c>(hir: hir::Hir<'c>, triple: TargetTriple) {
     codegen_function_values(&mut cg);
     codegen_function_bodies(&mut cg);
 
-    if let Ok(mut cwd) = fs_env::dir_get_current_working() {
-        cwd.push("module.ll");
-        let string = cg.module.to_string();
-        let _ = fs_env::file_create_or_rewrite(&cwd, &string);
-    } else {
-        //@temp panic, writing ll module is feature of --emit-llvm
-        panic!("failed to get cwd");
+    let cwd = fs_env::dir_get_current_working().map_err(|_| ()).unwrap(); //@temp
+    let build_path = cwd.join("build");
+    let _ = fs_env::dir_create(&build_path, false);
+
+    let string = cg.module.to_string();
+    let _ = fs_env::file_create_or_rewrite(&build_path.join("module.ll"), &string);
+
+    if let Err(error) = cg.module.verify() {
+        eprintln!("llvm module verify failed:\n{}", error);
     }
 
-    //@temp err handling
-    if let Err(error) = cg.module.verify() {
-        eprintln!("module verify failed:\n{}", error);
+    let object_path = build_path.join("module.o");
+    if let Err(error) = cg
+        .module
+        .emit_to_file(&cg.target, object_path.to_str().unwrap())
+    {
+        eprintln!("llvm module emit object failed:\n{}", error);
     }
 }
 

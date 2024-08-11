@@ -97,8 +97,8 @@ impl IRTarget {
                 err_str.as_mut_ptr(),
             )
         };
-        let err_str = unsafe { err_str.assume_init() };
         if code == 1 {
+            let err_str = unsafe { err_str.assume_init() };
             //@use ErrorComp instead?
             panic!(
                 "failed to create target from triple `{}`:\n{}",
@@ -258,17 +258,34 @@ impl IRModule {
         let mut err_str = std::mem::MaybeUninit::uninit();
         let action = analysis::LLVMVerifierFailureAction::LLVMReturnStatusAction;
         let code = unsafe { analysis::LLVMVerifyModule(self.module, action, err_str.as_mut_ptr()) };
-        let err_str = unsafe { err_str.assume_init() };
 
         if code == 1 {
+            let err_str = unsafe { err_str.assume_init() };
             Err(llvm_string_to_owned(err_str))
         } else {
             Ok(())
         }
     }
 
-    pub fn emit_to_file(&self, target: &IRTarget) -> Result<(), String> {
-        Ok(())
+    pub fn emit_to_file(&self, target: &IRTarget, filename: &str) -> Result<(), String> {
+        let mut err_str = std::mem::MaybeUninit::uninit();
+        let codegen = target::LLVMCodeGenFileType::LLVMObjectFile;
+        let code = unsafe {
+            target::LLVMTargetMachineEmitToFile(
+                target.target_machine,
+                self.module,
+                self.cstr_buf.cstr(filename) as *mut c_char,
+                codegen,
+                err_str.as_mut_ptr(),
+            )
+        };
+
+        if code == 1 {
+            let err_str = unsafe { err_str.assume_init() };
+            Err(llvm_string_to_owned(err_str))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -541,12 +558,12 @@ pub fn const_int(int_ty: Type, val: u64, sign_extend: bool) -> Value {
 pub fn const_float(float_ty: Type, val: f64) -> Value {
     Value(unsafe { core::LLVMConstReal(float_ty.0, val) })
 }
-pub fn const_string(string: &str, dont_null_terminate: bool) -> Value {
+pub fn const_string(string: &str, null_terminate: bool) -> Value {
     Value(unsafe {
         core::LLVMConstString(
             string.as_ptr() as *const c_char,
             string.len() as u32,
-            dont_null_terminate as i32,
+            (!null_terminate) as i32,
         )
     })
 }
