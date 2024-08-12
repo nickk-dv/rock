@@ -16,11 +16,20 @@ pub struct IRTarget {
     target_machine: target::LLVMTargetMachineRef,
 }
 
+//@move to rock_core?
 #[derive(Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum TargetArch {
     x86_64,
     Arm_64,
+}
+
+//@move to rock_core?
+#[derive(Copy, Clone)]
+pub enum TargetOS {
+    Windows,
+    Linux,
+    Macos,
 }
 
 pub struct IRContext {
@@ -99,7 +108,6 @@ impl IRTarget {
         };
         if code == 1 {
             let err_str = unsafe { err_str.assume_init() };
-            //@use ErrorComp instead?
             panic!(
                 "failed to create target from triple `{}`:\n{}",
                 triple,

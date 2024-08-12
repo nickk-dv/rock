@@ -4,11 +4,12 @@ use super::emit_stmt;
 use super::TargetTriple;
 use crate::llvm;
 use rock_core::ast;
-use rock_core::fs_env;
 use rock_core::hir;
 
-//@temp err handling
-pub fn codegen_module<'c>(hir: hir::Hir<'c>, triple: TargetTriple) {
+pub fn codegen_module<'c>(
+    hir: hir::Hir<'c>,
+    triple: TargetTriple,
+) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, triple);
     codegen_string_lits(&mut cg);
     codegen_struct_types(&mut cg);
@@ -16,25 +17,7 @@ pub fn codegen_module<'c>(hir: hir::Hir<'c>, triple: TargetTriple) {
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&mut cg);
-
-    let cwd = fs_env::dir_get_current_working().map_err(|_| ()).unwrap(); //@temp
-    let build_path = cwd.join("build");
-    let _ = fs_env::dir_create(&build_path, false);
-
-    let string = cg.module.to_string();
-    let _ = fs_env::file_create_or_rewrite(&build_path.join("module.ll"), &string);
-
-    if let Err(error) = cg.module.verify() {
-        eprintln!("llvm module verify failed:\n{}", error);
-    }
-
-    let object_path = build_path.join("module.o");
-    if let Err(error) = cg
-        .module
-        .emit_to_file(&cg.target, object_path.to_str().unwrap())
-    {
-        eprintln!("llvm module emit object failed:\n{}", error);
-    }
+    (cg.target, cg.module)
 }
 
 fn codegen_string_lits(cg: &mut Codegen) {

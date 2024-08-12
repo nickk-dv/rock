@@ -10,9 +10,11 @@ fn link_llvmc() {
         println!("cargo:rustc-link-search=bin/windows");
         println!("cargo:rustc-link-lib=dylib=LLVM-C");
     } else if cfg!(target_os = "linux") {
-        panic!("LLVM-C link for linux is not yet supported");
+        //@breaks rust analyzer when triggered, use #[cfg] instead?
+        //panic!("LLVM-C link for linux is not yet supported");
     } else if cfg!(target_os = "macos") {
-        panic!("LLVM-C link for macos is not yet supported");
+        //@breaks rust analyzer when triggered, use #[cfg] instead?
+        //panic!("LLVM-C link for macos is not yet supported");
     } else {
         panic!("rock-llvm build is only supported on windows, linux and macos");
     }
