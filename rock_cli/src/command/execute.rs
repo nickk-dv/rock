@@ -158,8 +158,8 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
             emit_llvm: data.emit_llvm,
         };
         let result = rock_llvm::build::build(hir, session, options);
-        let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
-        Ok(warnings)
+        let (_, _) = ResultComp::from_error(result).into_result(vec![])?;
+        Ok(vec![])
     }
 }
 
@@ -184,8 +184,10 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
             emit_llvm: data.emit_llvm,
         };
         let result = rock_llvm::build::build(hir, session, options);
-        let (_, warnings) = ResultComp::from_error(result).into_result(vec![])?;
-        Ok(warnings)
+        let (binary_path, _) = ResultComp::from_error(result).into_result(vec![])?;
+        let result = rock_llvm::build::run(binary_path, data.args);
+        let (_, _) = ResultComp::from_error(result).into_result(vec![])?;
+        Ok(vec![])
     }
 }
 

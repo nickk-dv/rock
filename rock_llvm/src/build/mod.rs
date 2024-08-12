@@ -109,8 +109,22 @@ pub fn build(
     build_path.push(options.kind.as_str());
     fs_env::dir_create(&build_path, false)?;
 
+    let manifest = session.package(Session::ROOT_ID).manifest();
+    let bin_name = match &manifest.build.bin_name {
+        Some(name) => name.clone(),
+        None => manifest.package.name.clone(),
+    };
+    let binary_path = match triple.os() {
+        TargetOS::Windows => build_path.join(format!("{bin_name}.exe")),
+        TargetOS::Linux => build_path.join(&bin_name),
+        TargetOS::Macos => build_path.join(&bin_name),
+    };
+
     if options.emit_llvm {
-        fs_env::file_create_or_rewrite(&build_path.join("module.ll"), &module.to_string())?;
+        fs_env::file_create_or_rewrite(
+            &build_path.join(format!("{bin_name}.ll")),
+            &module.to_string(),
+        )?;
     }
 
     //@fix module verify errors & return ErrorComp
@@ -121,15 +135,31 @@ pub fn build(
     let object_result = module.emit_to_file(&target, object_path.to_str().unwrap());
     object_result.map_err(|e| ErrorComp::message(format!("llvm emit object failed:\n{}", e)))?;
 
-    let manifest = session.package(Session::ROOT_ID).manifest();
-    let exe_name = match &manifest.build.bin_name {
-        Some(name) => name.clone(),
-        None => manifest.package.name.clone(),
-    };
-    let exe_path = match triple.os() {
-        TargetOS::Windows => object_path.join(format!("{exe_name}.exe")),
-        TargetOS::Linux => object_path.join(exe_name),
-        TargetOS::Macos => object_path.join(exe_name),
-    };
-    Ok(exe_path)
+    let arg_obj = object_path.to_string_lossy().to_string();
+    let arg_out = format!("/out:{}", binary_path.to_string_lossy()); //@windows only format
+    let mut args: Vec<String> = vec![arg_obj, arg_out];
+    args.push("/defaultlib:libcmt.lib".into()); //@windows only
+
+    //@assuming windows target + lld-link being in PATH
+    // instead use bundled executable from the compiler toolchain
+    //@use different command api, capture outputs + error
+    let status = std::process::Command::new("lld-link")
+        .args(args)
+        .status()
+        .map_err(|io_error| ErrorComp::message(format!("failed to link program:\n{}", io_error)))?;
+    Ok(binary_path)
+}
+
+pub fn run(binary_path: PathBuf, args: Vec<String>) -> Result<(), ErrorComp> {
+    let _ = std::process::Command::new(&binary_path)
+        .args(args)
+        .status()
+        .map_err(|io_error| {
+            ErrorComp::message(format!(
+                "failed to run executable `{}`\nreason: {}",
+                binary_path.to_string_lossy(),
+                io_error
+            ))
+        })?;
+    Ok(())
 }
