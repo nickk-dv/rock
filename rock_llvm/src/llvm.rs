@@ -11,7 +11,6 @@ use std::cell::UnsafeCell;
 use std::ffi::c_char;
 
 pub struct IRTarget {
-    target: target::LLVMTargetRef,
     target_data: target::LLVMTargetDataRef,
     target_machine: target::LLVMTargetMachineRef,
 }
@@ -131,10 +130,13 @@ impl IRTarget {
         let target_data = unsafe { target::LLVMCreateTargetDataLayout(target_machine) };
 
         IRTarget {
-            target,
             target_data,
             target_machine,
         }
+    }
+
+    pub fn ptr_sized_int(&self, context: &IRContext) -> Type {
+        Type(unsafe { target::LLVMIntPtrTypeInContext(context.context, self.target_data) })
     }
 }
 

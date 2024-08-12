@@ -64,6 +64,7 @@ struct CodegenCache {
     float_64: llvm::Type,
     ptr_type: llvm::Type,
     void_type: llvm::Type,
+    ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
 }
 
@@ -73,7 +74,7 @@ impl<'c> Codegen<'c> {
         let context = llvm::IRContext::new();
         let module = llvm::IRModule::new(&context, &target, "rock_module");
         let build = llvm::IRBuilder::new(&context);
-        let cache = CodegenCache::new(&context);
+        let cache = CodegenCache::new(&context, &target);
 
         Codegen {
             target,
@@ -109,19 +110,19 @@ impl<'c> Codegen<'c> {
             ast::BasicType::S16 => self.cache.int_16,
             ast::BasicType::S32 => self.cache.int_32,
             ast::BasicType::S64 => self.cache.int_64,
-            ast::BasicType::Ssize => self.cache.int_64, //@assume 64bit
+            ast::BasicType::Ssize => self.cache.ptr_sized_int,
             ast::BasicType::U8 => self.cache.int_8,
             ast::BasicType::U16 => self.cache.int_16,
             ast::BasicType::U32 => self.cache.int_32,
             ast::BasicType::U64 => self.cache.int_64,
-            ast::BasicType::Usize => self.cache.int_64, //@assume 64bit
+            ast::BasicType::Usize => self.cache.ptr_sized_int,
             ast::BasicType::F32 => self.cache.float_32,
             ast::BasicType::F64 => self.cache.float_64,
             ast::BasicType::Bool => self.cache.int_1,
             ast::BasicType::Char => self.cache.int_32,
             ast::BasicType::Rawptr => self.cache.ptr_type,
             ast::BasicType::Void => self.cache.void_type,
-            ast::BasicType::Never => self.cache.void_type, //@only expected in proc return type
+            ast::BasicType::Never => self.cache.void_type,
         }
     }
 
@@ -142,8 +143,7 @@ impl<'c> Codegen<'c> {
     }
 
     pub fn ptr_sized_int(&self) -> llvm::Type {
-        //@target dependant
-        self.cache.int_64
+        self.cache.ptr_sized_int
     }
 
     pub fn proc_type(&self, proc_ty: &hir::ProcType) -> llvm::TypeFn {
@@ -323,7 +323,11 @@ impl<'c> ProcCodegen<'c> {
 }
 
 impl CodegenCache {
-    fn new(context: &llvm::IRContext) -> CodegenCache {
+    fn new(context: &llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
+        let ptr_sized_int = target.ptr_sized_int(context);
+        let slice_fields = &[context.ptr_type(), ptr_sized_int];
+        let slice_type = context.struct_type_inline(slice_fields, false);
+
         CodegenCache {
             int_1: context.int_1(),
             int_8: context.int_8(),
@@ -334,8 +338,8 @@ impl CodegenCache {
             float_64: context.float_64(),
             ptr_type: context.ptr_type(),
             void_type: context.void_type(),
-            //@assume 64bit
-            slice_type: context.struct_type_inline(&[context.ptr_type(), context.int_64()], false),
+            ptr_sized_int,
+            slice_type,
         }
     }
 }
