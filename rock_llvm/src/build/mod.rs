@@ -101,6 +101,7 @@ pub fn build(
     options: BuildOptions,
 ) -> Result<PathBuf, ErrorComp> {
     let triple = TargetTriple::host();
+    let target_os = triple.os();
     let (target, module) = emit_mod::codegen_module(hir, triple);
 
     let cwd = fs_env::dir_get_current_working()?;
@@ -114,7 +115,7 @@ pub fn build(
         Some(name) => name.clone(),
         None => manifest.package.name.clone(),
     };
-    let binary_path = match triple.os() {
+    let binary_path = match target_os {
         TargetOS::Windows => build_path.join(format!("{bin_name}.exe")),
         TargetOS::Linux => build_path.join(&bin_name),
         TargetOS::Macos => build_path.join(&bin_name),
@@ -131,19 +132,63 @@ pub fn build(
     let verify_result = module.verify();
     let _ = verify_result.map_err(|e| eprintln!("llvm verify module failed:\n{}", e));
 
-    let object_path = build_path.join("module.o");
+    let object_path = build_path.join(format!("{bin_name}.o"));
     let object_result = module.emit_to_file(&target, object_path.to_str().unwrap());
     object_result.map_err(|e| ErrorComp::message(format!("llvm emit object failed:\n{}", e)))?;
 
     let arg_obj = object_path.to_string_lossy().to_string();
-    let arg_out = format!("/out:{}", binary_path.to_string_lossy()); //@windows only format
-    let mut args: Vec<String> = vec![arg_obj, arg_out];
-    args.push("/defaultlib:libcmt.lib".into()); //@windows only
+    let mut args: Vec<String> = vec![arg_obj];
 
-    //@assuming windows target + lld-link being in PATH
-    // instead use bundled executable from the compiler toolchain
+    match target_os {
+        TargetOS::Windows => {
+            args.push(format!("/out:{}", binary_path.to_string_lossy()));
+        }
+        TargetOS::Linux | TargetOS::Macos => {
+            args.push("-o".into());
+            args.push(binary_path.to_string_lossy().into());
+        }
+    }
+
+    match target_os {
+        TargetOS::Windows => args.push("/defaultlib:libcmt.lib".into()),
+        TargetOS::Linux | TargetOS::Macos => args.push("-lc".into()),
+    }
+
+    match options.kind {
+        BuildKind::Debug => match target_os {
+            TargetOS::Windows => args.push("/debug".into()),
+            TargetOS::Linux => {} //@enable debug info
+            TargetOS::Macos => {} //@enable debug info
+        },
+        BuildKind::Release => match target_os {
+            TargetOS::Windows => {
+                args.push("/opt:ref".into());
+                args.push("/opt:icf".into());
+                args.push("/opt:lbr".into());
+            }
+            TargetOS::Linux => {
+                args.push("--gc-sections".into());
+                args.push("--icf=all".into());
+                args.push("--strip-debug".into());
+            }
+            TargetOS::Macos => {
+                args.push("-dead_strip".into());
+                args.push("--icf=all".into());
+                args.push("-S".into())
+            }
+        },
+    }
+
+    //@when cross compiling linux & macos linkers will have .exe, lld-link wont.
+    let install_bin = fs_env::current_exe_path()?.join("bin");
+    let linker_path = match target_os {
+        TargetOS::Windows => install_bin.join("lld-link.exe"),
+        TargetOS::Linux => install_bin.join("ld.lld"),
+        TargetOS::Macos => install_bin.join("ld64.lld"),
+    };
+
     //@use different command api, capture outputs + error
-    let status = std::process::Command::new("lld-link")
+    let status = std::process::Command::new(linker_path)
         .args(args)
         .status()
         .map_err(|io_error| ErrorComp::message(format!("failed to link program:\n{}", io_error)))?;
