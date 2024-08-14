@@ -157,8 +157,6 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Null => codegen_const_null(cg),
         hir::ConstValue::Bool { val } => codegen_const_bool(cg, val),
         hir::ConstValue::Int { val, int_ty, .. } => codegen_const_int(cg, val, int_ty),
-        hir::ConstValue::IntS(_) => unimplemented!(),
-        hir::ConstValue::IntU(_) => unimplemented!(),
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
         hir::ConstValue::String { id, c_string } => codegen_const_string(cg, id, c_string),

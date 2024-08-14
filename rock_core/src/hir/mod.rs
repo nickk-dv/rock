@@ -239,8 +239,6 @@ pub enum ConstValue<'hir> {
     Null,
     Bool        { val: bool },
     Int         { val: u64, neg: bool, int_ty: BasicInt },
-    IntS (i64),
-    IntU (u64),
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
     String      { id: InternID, c_string: bool },

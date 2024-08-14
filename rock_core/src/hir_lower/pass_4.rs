@@ -977,7 +977,7 @@ pub fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    expr: &'hir hir::Expr<'hir>,
+    expr: &hir::Expr<'hir>,
 ) -> hir::ConstValue<'hir> {
     let result = match *expr {
         hir::Expr::Error => Ok(hir::ConstValue::Error),
@@ -1026,7 +1026,14 @@ pub fn fold_const_expr<'hir>(
         hir::Expr::Deref { .. } => Err("deref"),
         hir::Expr::Address { .. } => Err("address"),
         hir::Expr::Unary { op, rhs } => Ok(fold_unary_expr(hir, emit, origin_id, op, rhs)),
-        hir::Expr::Binary { op, lhs, rhs } => Err("binary"), //@todo binary 10.06.24
+        hir::Expr::Binary { op, lhs, rhs } => {
+            if let Ok(val) = fold_binary(hir, emit, origin_id, op, lhs, rhs) {
+                Ok(val)
+            } else {
+                //@temp forced
+                Err("binary with error")
+            }
+        }
     };
 
     match result {
@@ -1050,7 +1057,7 @@ fn fold_struct_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    target: &'hir hir::Expr<'hir>,
+    target: &hir::Expr<'hir>,
     field_id: hir::FieldID,
     deref: bool,
 ) -> hir::ConstValue<'hir> {
@@ -1076,7 +1083,7 @@ fn fold_slice_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    target: &'hir hir::Expr<'hir>,
+    target: &hir::Expr<'hir>,
     field: hir::SliceField,
     deref: bool,
 ) -> hir::ConstValue<'hir> {
@@ -1116,8 +1123,8 @@ fn fold_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    target: &'hir hir::Expr<'hir>,
-    access: &'hir hir::IndexAccess<'hir>,
+    target: &hir::Expr<'hir>,
+    access: &hir::IndexAccess<'hir>,
 ) -> hir::ConstValue<'hir> {
     let target_value = fold_const_expr(hir, emit, origin_id, target);
     let index_value = fold_const_expr(hir, emit, origin_id, access.index);
@@ -1176,7 +1183,7 @@ fn fold_struct_init<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     struct_id: hir::StructID,
-    input: &'hir [hir::FieldInit<'hir>],
+    input: &[hir::FieldInit<'hir>],
 ) -> hir::ConstValue<'hir> {
     let mut value_ids = Vec::new();
     let error_id = emit.const_intern.intern(hir::ConstValue::Error);
@@ -1197,7 +1204,7 @@ fn fold_array_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    array_init: &'hir hir::ArrayInit<'hir>,
+    array_init: &hir::ArrayInit<'hir>,
 ) -> hir::ConstValue<'hir> {
     let mut value_ids = Vec::with_capacity(array_init.input.len());
 
@@ -1219,7 +1226,7 @@ fn fold_array_repeat<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    array_repeat: &'hir hir::ArrayRepeat<'hir>,
+    array_repeat: &hir::ArrayRepeat<'hir>,
 ) -> hir::ConstValue<'hir> {
     let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
 
@@ -1269,6 +1276,175 @@ fn fold_unary_expr<'hir>(
     }
 }
 
+//@design how are singlular ints / floats are range checked
+// check before the operations, or allow: const V: u8 = 256 - 1; ?
+fn fold_binary<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: ModuleID,
+    op: hir::BinOp,
+    lhs: &hir::Expr<'hir>,
+    rhs: &hir::Expr<'hir>,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let lhs = fold_const_expr(hir, emit, origin_id, lhs);
+    let rhs = fold_const_expr(hir, emit, origin_id, rhs);
+
+    match op {
+        hir::BinOp::Add_Int => {
+            let int_ty = lhs.into_int_ty();
+            let val = lhs.into_i128() + rhs.into_i128();
+            int_range_check(emit, val, int_ty)
+        }
+        hir::BinOp::Add_Float => todo!(),
+        hir::BinOp::Sub_Int => {
+            let int_ty = lhs.into_int_ty();
+            let val = lhs.into_i128() - rhs.into_i128();
+            int_range_check(emit, val, int_ty)
+        }
+        hir::BinOp::Sub_Float => todo!(),
+        hir::BinOp::Mul_Int => todo!(),
+        hir::BinOp::Mul_Float => todo!(),
+        hir::BinOp::Div_IntS => todo!(),
+        hir::BinOp::Div_IntU => todo!(),
+        hir::BinOp::Div_Float => todo!(),
+        hir::BinOp::Rem_IntS => todo!(),
+        hir::BinOp::Rem_IntU => todo!(),
+        hir::BinOp::BitAnd => todo!(),
+        hir::BinOp::BitOr => todo!(),
+        hir::BinOp::BitXor => todo!(),
+        hir::BinOp::BitShl => todo!(),
+        hir::BinOp::BitShr_IntS => todo!(),
+        hir::BinOp::BitShr_IntU => todo!(),
+        hir::BinOp::IsEq_Int => {
+            let val = lhs.into_i128() == rhs.into_i128();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::IsEq_Float => {
+            let val = lhs.into_float() == rhs.into_float();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::NotEq_Int => {
+            let val = lhs.into_i128() != rhs.into_i128();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::NotEq_Float => {
+            let val = lhs.into_float() != rhs.into_float();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::Less_IntS | hir::BinOp::Less_IntU => {
+            let val = lhs.into_i128() < rhs.into_i128();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::Less_Float => {
+            let val = lhs.into_float() < rhs.into_float();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::LessEq_IntS | hir::BinOp::LessEq_IntU => {
+            let val = lhs.into_i128() <= rhs.into_i128();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::LessEq_Float => {
+            let val = lhs.into_float() <= rhs.into_float();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::Greater_IntS | hir::BinOp::Greater_IntU => {
+            let val = lhs.into_i128() > rhs.into_i128();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::Greater_Float => {
+            let val = lhs.into_float() > rhs.into_float();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::GreaterEq_IntS | hir::BinOp::GreaterEq_IntU => {
+            let val = lhs.into_i128() >= rhs.into_i128();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::GreaterEq_Float => {
+            let val = lhs.into_float() >= rhs.into_float();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::LogicAnd => {
+            let val = lhs.into_bool() && rhs.into_bool();
+            Ok(hir::ConstValue::Bool { val })
+        }
+        hir::BinOp::LogicOr => {
+            let val = lhs.into_bool() || rhs.into_bool();
+            Ok(hir::ConstValue::Bool { val })
+        }
+    }
+}
+
+fn int_range_check<'hir>(
+    emit: &mut HirEmit,
+    val: i128,
+    int_ty: hir::BasicInt,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let (min, max) = match int_ty {
+        hir::BasicInt::S8 => (i8::MIN as i128, i8::MAX as i128),
+        hir::BasicInt::S16 => (i16::MIN as i128, i16::MAX as i128),
+        hir::BasicInt::S32 => (i32::MIN as i128, i32::MAX as i128),
+        hir::BasicInt::S64 => (i64::MIN as i128, i64::MAX as i128),
+        hir::BasicInt::Ssize => todo!(), //@requires target pointer_width
+        hir::BasicInt::U8 => (u8::MIN as i128, u8::MAX as i128),
+        hir::BasicInt::U16 => (u16::MIN as i128, u16::MAX as i128),
+        hir::BasicInt::U32 => (u32::MIN as i128, u32::MAX as i128),
+        hir::BasicInt::U64 => (u64::MIN as i128, u64::MAX as i128),
+        hir::BasicInt::Usize => todo!(), //@requires target pointer_width
+    };
+
+    if val < min || val > max {
+        //@no source info available
+        emit.error(ErrorComp::message(format!(
+            "integer constant out of range for `{}`\nvalue `{val}` is outside `{min}..={max}` range",
+            int_ty.into_basic().as_str()
+        )));
+        Err(())
+    } else {
+        if val > 0 {
+            let val: u64 = val.try_into().unwrap();
+            let neg = false;
+            Ok(hir::ConstValue::Int { val, neg, int_ty })
+        } else {
+            let val: u64 = (-val).try_into().unwrap();
+            let neg = true;
+            Ok(hir::ConstValue::Int { val, neg, int_ty })
+        }
+    }
+}
+
+impl<'hir> hir::ConstValue<'hir> {
+    fn into_bool(&self) -> bool {
+        match *self {
+            hir::ConstValue::Bool { val } => val,
+            _ => unreachable!(),
+        }
+    }
+    fn into_i128(&self) -> i128 {
+        match *self {
+            hir::ConstValue::Int { val, neg, .. } => {
+                if neg {
+                    -(val as i128)
+                } else {
+                    val as i128
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+    fn into_int_ty(&self) -> hir::BasicInt {
+        match *self {
+            hir::ConstValue::Int { int_ty, .. } => int_ty,
+            _ => unreachable!(),
+        }
+    }
+    fn into_float(&self) -> f64 {
+        match *self {
+            hir::ConstValue::Float { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl<'hir> hir::ConstValue<'hir> {
     fn test() {
         //const shift_test: i32 = i32::MAX + i32::MAX;
@@ -1290,72 +1466,5 @@ impl<'hir> hir::ConstValue<'hir> {
         let less_eq = lhs <= rhs;
         let greater = lhs > rhs;
         let greater_eq = lhs >= rhs;
-    }
-
-    fn add(self, other: hir::ConstValue<'hir>) -> hir::ConstValue<'hir> {
-        match (self, other) {
-            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntS(rhs)) => {
-                Self::from_i64_opt(lhs.checked_add(rhs))
-            }
-            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntU(rhs)) => {
-                Self::from_i64_opt(lhs.checked_add_unsigned(rhs))
-            }
-            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntU(rhs)) => {
-                Self::from_u64_opt(lhs.checked_add(rhs))
-            }
-            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntS(rhs)) => {
-                Self::from_u64_opt(lhs.checked_add_signed(rhs))
-            }
-            _ => hir::ConstValue::Error,
-        }
-    }
-
-    fn sub(self, other: hir::ConstValue<'hir>) -> hir::ConstValue<'hir> {
-        match (self, other) {
-            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntS(rhs)) => {
-                Self::from_i64_opt(lhs.checked_sub(rhs))
-            }
-            (hir::ConstValue::IntS(lhs), hir::ConstValue::IntU(rhs)) => {
-                Self::from_i64_opt(lhs.checked_sub_unsigned(rhs))
-            }
-            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntU(rhs)) => {
-                Self::from_u64_opt(lhs.checked_sub(rhs))
-            }
-            (hir::ConstValue::IntU(lhs), hir::ConstValue::IntS(rhs)) => {
-                if let Some(rhs) = Self::i64_to_unsigned(rhs) {
-                    Self::from_u64_opt(lhs.checked_sub(rhs))
-                } else {
-                    eprintln!("error in const sub u - s int operation");
-                    hir::ConstValue::Error
-                }
-            }
-            _ => hir::ConstValue::Error,
-        }
-    }
-
-    fn i64_to_unsigned(val: i64) -> Option<u64> {
-        if val >= 0 {
-            Some(val as u64)
-        } else {
-            None
-        }
-    }
-
-    fn from_i64_opt(val: Option<i64>) -> hir::ConstValue<'hir> {
-        if let Some(val) = val {
-            hir::ConstValue::IntS(val)
-        } else {
-            eprintln!("error in const signed int operation");
-            hir::ConstValue::Error
-        }
-    }
-
-    fn from_u64_opt(val: Option<u64>) -> hir::ConstValue<'hir> {
-        if let Some(val) = val {
-            hir::ConstValue::IntU(val)
-        } else {
-            eprintln!("error in const unsigned int operation");
-            hir::ConstValue::Error
-        }
     }
 }

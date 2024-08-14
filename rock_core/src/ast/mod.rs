@@ -449,6 +449,7 @@ pub enum AssignOp {
 }
 
 use crate::size_assert;
+size_assert!(12, Attribute);
 size_assert!(16, Item);
 size_assert!(12, Name);
 size_assert!(16, Path);
