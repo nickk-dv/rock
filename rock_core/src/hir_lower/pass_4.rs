@@ -1292,21 +1292,37 @@ fn fold_binary<'hir>(
     match op {
         hir::BinOp::Add_Int => {
             let int_ty = lhs.into_int_ty();
-            let val = lhs.into_i128() + rhs.into_i128();
+            let val = lhs.into_int() + rhs.into_int();
             int_range_check(emit, val, int_ty)
         }
-        hir::BinOp::Add_Float => todo!(),
+        hir::BinOp::Add_Float => {
+            let float_ty = lhs.into_float_ty();
+            let val = lhs.into_float() + rhs.into_float();
+            float_range_check(emit, val, float_ty)
+        }
         hir::BinOp::Sub_Int => {
             let int_ty = lhs.into_int_ty();
-            let val = lhs.into_i128() - rhs.into_i128();
+            let val = lhs.into_int() - rhs.into_int();
             int_range_check(emit, val, int_ty)
         }
-        hir::BinOp::Sub_Float => todo!(),
+        hir::BinOp::Sub_Float => {
+            let float_ty = lhs.into_float_ty();
+            let val = lhs.into_float() - rhs.into_float();
+            float_range_check(emit, val, float_ty)
+        }
         hir::BinOp::Mul_Int => todo!(),
-        hir::BinOp::Mul_Float => todo!(),
+        hir::BinOp::Mul_Float => {
+            let float_ty = lhs.into_float_ty();
+            let val = lhs.into_float() * rhs.into_float();
+            float_range_check(emit, val, float_ty)
+        }
         hir::BinOp::Div_IntS => todo!(),
         hir::BinOp::Div_IntU => todo!(),
-        hir::BinOp::Div_Float => todo!(),
+        hir::BinOp::Div_Float => {
+            let float_ty = lhs.into_float_ty();
+            let val = lhs.into_float() / rhs.into_float();
+            float_range_check(emit, val, float_ty)
+        }
         hir::BinOp::Rem_IntS => todo!(),
         hir::BinOp::Rem_IntU => todo!(),
         hir::BinOp::BitAnd => todo!(),
@@ -1316,7 +1332,7 @@ fn fold_binary<'hir>(
         hir::BinOp::BitShr_IntS => todo!(),
         hir::BinOp::BitShr_IntU => todo!(),
         hir::BinOp::IsEq_Int => {
-            let val = lhs.into_i128() == rhs.into_i128();
+            let val = lhs.into_int() == rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::IsEq_Float => {
@@ -1324,7 +1340,7 @@ fn fold_binary<'hir>(
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::NotEq_Int => {
-            let val = lhs.into_i128() != rhs.into_i128();
+            let val = lhs.into_int() != rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::NotEq_Float => {
@@ -1332,7 +1348,7 @@ fn fold_binary<'hir>(
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::Less_IntS | hir::BinOp::Less_IntU => {
-            let val = lhs.into_i128() < rhs.into_i128();
+            let val = lhs.into_int() < rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::Less_Float => {
@@ -1340,7 +1356,7 @@ fn fold_binary<'hir>(
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::LessEq_IntS | hir::BinOp::LessEq_IntU => {
-            let val = lhs.into_i128() <= rhs.into_i128();
+            let val = lhs.into_int() <= rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::LessEq_Float => {
@@ -1348,7 +1364,7 @@ fn fold_binary<'hir>(
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::Greater_IntS | hir::BinOp::Greater_IntU => {
-            let val = lhs.into_i128() > rhs.into_i128();
+            let val = lhs.into_int() > rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::Greater_Float => {
@@ -1356,7 +1372,7 @@ fn fold_binary<'hir>(
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::GreaterEq_IntS | hir::BinOp::GreaterEq_IntU => {
-            let val = lhs.into_i128() >= rhs.into_i128();
+            let val = lhs.into_int() >= rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
         }
         hir::BinOp::GreaterEq_Float => {
@@ -1412,6 +1428,36 @@ fn int_range_check<'hir>(
     }
 }
 
+fn float_range_check<'hir>(
+    emit: &mut HirEmit,
+    val: f64,
+    float_ty: hir::BasicFloat,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let (min, max) = match float_ty {
+        hir::BasicFloat::F32 => (f32::MIN as f64, f32::MAX as f64),
+        hir::BasicFloat::F64 => (f64::MIN as f64, f64::MAX as f64),
+    };
+
+    if val.is_nan() {
+        //@no source info available
+        emit.error(ErrorComp::message(format!("float constant is NaN")));
+        Err(())
+    } else if val.is_infinite() {
+        //@no source info available
+        emit.error(ErrorComp::message(format!("float constant is Infinite")));
+        Err(())
+    } else if val < min || val > max {
+        //@no error source info available
+        emit.error(ErrorComp::message(format!(
+            "float constant out of range for `{}`\nvalue `{val}` is outside `{min}..={max}` range",
+            float_ty.into_basic().as_str()
+        )));
+        Err(())
+    } else {
+        Ok(hir::ConstValue::Float { val, float_ty })
+    }
+}
+
 impl<'hir> hir::ConstValue<'hir> {
     fn into_bool(&self) -> bool {
         match *self {
@@ -1419,7 +1465,7 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_i128(&self) -> i128 {
+    fn into_int(&self) -> i128 {
         match *self {
             hir::ConstValue::Int { val, neg, .. } => {
                 if neg {
@@ -1440,6 +1486,12 @@ impl<'hir> hir::ConstValue<'hir> {
     fn into_float(&self) -> f64 {
         match *self {
             hir::ConstValue::Float { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    fn into_float_ty(&self) -> hir::BasicFloat {
+        match *self {
+            hir::ConstValue::Float { float_ty, .. } => float_ty,
             _ => unreachable!(),
         }
     }
