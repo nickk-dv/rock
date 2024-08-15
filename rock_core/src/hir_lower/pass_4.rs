@@ -846,10 +846,13 @@ pub fn resolve_const_expr<'hir>(
     let error_count = emit.error_count();
     let hir_expr = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
 
+    //@instead result option or result?
     if emit.did_error(error_count) {
         hir::ConstValue::Error
+    } else if let Ok(value) = fold_const_expr(hir, emit, origin_id, hir_expr.expr) {
+        value
     } else {
-        fold_const_expr(hir, emit, origin_id, hir_expr.expr)
+        hir::ConstValue::Error
     }
 }
 
@@ -962,94 +965,71 @@ fn aligned_size(size: u64, align: u64) -> u64 {
     size.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1)
 }
 
-//@check int, float value range constraints 14.05.24
-// same for typecheck_int_lit etc, regular expressions checking
-// should later be merged with this constant resolution / folding flow
-
-//@ban globals being mentioned in constant expressions (immutable / mut doesnt matter)
-// also ajust const dependencies since globals wont be a dependency anymore they are not allowed
-//@more refined message for each incompatible expression type
-
-//@assume invalid expressions to be already checked for?
-// if `force` return ConstValue::Error
-// else panic!("unexpected `name` in constant");
-pub fn fold_const_expr<'hir>(
+fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     expr: &hir::Expr<'hir>,
-) -> hir::ConstValue<'hir> {
-    let result = match *expr {
-        hir::Expr::Error => Ok(hir::ConstValue::Error),
-        hir::Expr::Const { value } => Ok(value),
-        hir::Expr::If { .. } => Err("if"),
-        hir::Expr::Block { .. } => Err("block"),
-        hir::Expr::Match { .. } => Err("match"),
-        hir::Expr::Match2 { .. } => Err("match"),
+) -> Result<hir::ConstValue<'hir>, ()> {
+    match *expr {
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { value } => fold_const(emit, value),
+        hir::Expr::If { .. } => unreachable!(),
+        hir::Expr::Block { .. } => unreachable!(),
+        hir::Expr::Match { .. } => unreachable!(),
+        hir::Expr::Match2 { .. } => unreachable!(),
         hir::Expr::StructField {
             target,
             field_id,
             deref,
             ..
-        } => Ok(fold_struct_field(
-            hir, emit, origin_id, target, field_id, deref,
-        )),
+        } => fold_struct_field(hir, emit, origin_id, target, field_id, deref),
         hir::Expr::SliceField {
             target,
             field,
             deref,
-        } => Ok(fold_slice_field(hir, emit, origin_id, target, field, deref)),
-        hir::Expr::Index { target, access } => Ok(fold_index(hir, emit, origin_id, target, access)),
-        hir::Expr::Slice { .. } => Err("slice"),
-        hir::Expr::Cast { target, into, kind } => Err("cast"), //@todo cast 10.06.24
-        hir::Expr::LocalVar { .. } => Err("local var"),
-        hir::Expr::ParamVar { .. } => Err("param var"),
-        hir::Expr::ConstVar { const_id } => Ok(fold_const_var(hir, emit, const_id)),
-        hir::Expr::GlobalVar { .. } => Err("global var"), //@custom message
-        //@fold not implemented
-        hir::Expr::Variant {
-            enum_id,
-            variant_id,
-            input,
-        } => Err("enum variant"),
-        hir::Expr::CallDirect { .. } => Err("call direct"),
-        hir::Expr::CallIndirect { .. } => Err("call indirect"),
+        } => fold_slice_field(hir, emit, origin_id, target, field, deref),
+        hir::Expr::Index { target, access } => fold_index(hir, emit, origin_id, target, access),
+        hir::Expr::Slice { .. } => unreachable!(),
+        hir::Expr::Cast { .. } => unimplemented!("fold cast"),
+        hir::Expr::LocalVar { .. } => unreachable!(),
+        hir::Expr::ParamVar { .. } => unreachable!(),
+        hir::Expr::ConstVar { const_id } => fold_const_var(hir, emit, const_id),
+        hir::Expr::GlobalVar { .. } => unreachable!(),
+        hir::Expr::Variant { .. } => unimplemented!("fold enum variant"),
+        hir::Expr::CallDirect { .. } => unreachable!(),
+        hir::Expr::CallIndirect { .. } => unreachable!(),
         hir::Expr::StructInit { struct_id, input } => {
-            Ok(fold_struct_init(hir, emit, origin_id, struct_id, input))
+            fold_struct_init(hir, emit, origin_id, struct_id, input)
         }
-        hir::Expr::ArrayInit { array_init } => {
-            Ok(fold_array_init(hir, emit, origin_id, array_init))
-        }
+        hir::Expr::ArrayInit { array_init } => fold_array_init(hir, emit, origin_id, array_init),
         hir::Expr::ArrayRepeat { array_repeat } => {
-            Ok(fold_array_repeat(hir, emit, origin_id, array_repeat))
+            fold_array_repeat(hir, emit, origin_id, array_repeat)
         }
-        hir::Expr::Deref { .. } => Err("deref"),
-        hir::Expr::Address { .. } => Err("address"),
-        hir::Expr::Unary { op, rhs } => Ok(fold_unary_expr(hir, emit, origin_id, op, rhs)),
-        hir::Expr::Binary { op, lhs, rhs } => {
-            if let Ok(val) = fold_binary(hir, emit, origin_id, op, lhs, rhs) {
-                Ok(val)
-            } else {
-                //@temp forced
-                Err("binary with error")
-            }
-        }
-    };
+        hir::Expr::Deref { .. } => unreachable!(),
+        hir::Expr::Address { .. } => unreachable!(),
+        hir::Expr::Unary { op, rhs } => fold_unary_expr(hir, emit, origin_id, op, rhs),
+        hir::Expr::Binary { op, lhs, rhs } => fold_binary(hir, emit, origin_id, op, lhs, rhs),
+    }
+}
 
-    match result {
-        Ok(value) => value,
-        Err(expr_name) => {
-            //@range not available
-            //emit.error(ErrorComp::new(
-            //    format!("cannot use `{expr_name}` expression in constants"),
-            //    SourceRange::new(origin_id, expr.0.range),
-            //    None,
-            //));
-            emit.error(ErrorComp::message(format!(
-                "cannot use `{expr_name}` expression in constants"
-            )));
-            hir::ConstValue::Error
-        }
+fn fold_const<'hir>(
+    emit: &mut HirEmit,
+    value: hir::ConstValue<'hir>,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    match value {
+        hir::ConstValue::Error => unreachable!(),
+        hir::ConstValue::Int { val, int_ty, .. } => int_range_check(emit, val.into(), int_ty),
+        hir::ConstValue::Float { val, float_ty } => float_range_check(emit, val, float_ty),
+        hir::ConstValue::Null
+        | hir::ConstValue::Bool { .. }
+        | hir::ConstValue::Char { .. }
+        | hir::ConstValue::String { .. }
+        | hir::ConstValue::Procedure { .. }
+        | hir::ConstValue::Variant { .. }
+        | hir::ConstValue::Struct { .. }
+        | hir::ConstValue::Array { .. }
+        | hir::ConstValue::ArrayRepeat { .. } => Ok(value),
     }
 }
 
@@ -1060,22 +1040,18 @@ fn fold_struct_field<'hir>(
     target: &hir::Expr<'hir>,
     field_id: hir::FieldID,
     deref: bool,
-) -> hir::ConstValue<'hir> {
+) -> Result<hir::ConstValue<'hir>, ()> {
     if deref {
-        //@expr range required
-        emit.error(ErrorComp::message(
-            "cannot perform implicit dereference in constant expression",
-        ));
-        return hir::ConstValue::Error;
+        unreachable!()
     }
+    let target = fold_const_expr(hir, emit, origin_id, target)?;
 
-    let target = fold_const_expr(hir, emit, origin_id, target);
     match target {
         hir::ConstValue::Struct { struct_ } => {
             let value_id = struct_.fields[field_id.index()];
-            emit.const_intern.get(value_id)
+            Ok(emit.const_intern.get(value_id))
         }
-        _ => hir::ConstValue::Error,
+        _ => unreachable!(),
     }
 }
 
@@ -1086,82 +1062,75 @@ fn fold_slice_field<'hir>(
     target: &hir::Expr<'hir>,
     field: hir::SliceField,
     deref: bool,
-) -> hir::ConstValue<'hir> {
+) -> Result<hir::ConstValue<'hir>, ()> {
     if deref {
-        //@expr range required
-        emit.error(ErrorComp::message(
-            "cannot perform implicit dereference in constant expression",
-        ));
-        return hir::ConstValue::Error;
+        unreachable!();
     }
+    let target = fold_const_expr(hir, emit, origin_id, target)?;
 
-    //@are ConstValue::Error allowed here?
-    let target = fold_const_expr(hir, emit, origin_id, target);
     match target {
-        hir::ConstValue::String { id, c_string } => {
-            if let hir::SliceField::Len = field {
+        hir::ConstValue::String { id, c_string } => match field {
+            hir::SliceField::Ptr => unreachable!(),
+            hir::SliceField::Len => {
                 if !c_string {
                     let string = hir.intern_string().get_str(id);
                     let len = string.len();
-                    hir::ConstValue::Int {
+                    Ok(hir::ConstValue::Int {
                         val: len as u64,
                         neg: false,
                         int_ty: hir::BasicInt::Usize,
-                    }
+                    })
                 } else {
-                    hir::ConstValue::Error
+                    unreachable!()
                 }
-            } else {
-                hir::ConstValue::Error
             }
-        }
-        _ => hir::ConstValue::Error,
+        },
+        _ => unreachable!(),
     }
 }
 
+//@check out of bounds static array access even in non constant targets (during typecheck)
 fn fold_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     target: &hir::Expr<'hir>,
     access: &hir::IndexAccess<'hir>,
-) -> hir::ConstValue<'hir> {
-    let target_value = fold_const_expr(hir, emit, origin_id, target);
-    let index_value = fold_const_expr(hir, emit, origin_id, access.index);
+) -> Result<hir::ConstValue<'hir>, ()> {
+    if access.deref {
+        unreachable!();
+    }
+    let target = fold_const_expr(hir, emit, origin_id, target)?;
+    let index = fold_const_expr(hir, emit, origin_id, access.index)?;
 
-    let index = match index_value {
+    let index = match index {
         hir::ConstValue::Int { val, neg, int_ty } => {
-            if !neg {
-                Some(val)
-            } else {
-                None
-            }
+            assert!(!neg);
+            assert!(!int_ty.is_signed());
+            val
         }
-        _ => None,
+        _ => unreachable!(),
     };
-    if let Some(index) = index {
-        //@bounds check, same with normal array
-        match target_value {
-            hir::ConstValue::Array { array } => {
-                if index >= array.len {
-                    //@no source range available
-                    hir::ConstValue::Error
-                } else {
-                    emit.const_intern.get(array.values[index as usize])
-                }
-            }
-            hir::ConstValue::ArrayRepeat { len, value } => {
-                if index >= len {
-                    //@no source range available
-                    hir::ConstValue::Error
-                } else {
-                    emit.const_intern.get(value)
-                }
-            }
-            _ => hir::ConstValue::Error,
-        }
+
+    let array_len = match target {
+        hir::ConstValue::Array { array } => array.len,
+        hir::ConstValue::ArrayRepeat { len, .. } => len,
+        _ => unreachable!(),
+    };
+
+    if index >= array_len {
+        //@update error message
+        emit.error(ErrorComp::message(format!(
+            "index out of bounds\nvalue `{index}` >= `{array_len}` (array len)"
+        )));
+        Err(())
     } else {
-        hir::ConstValue::Error
+        let value_id = match target {
+            hir::ConstValue::Array { array } => array.values[index as usize],
+            hir::ConstValue::ArrayRepeat { value, .. } => value,
+            _ => unreachable!(),
+        };
+        Ok(emit.const_intern.get(value_id))
     }
 }
 
@@ -1169,12 +1138,14 @@ fn fold_const_var<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     const_id: hir::ConstID,
-) -> hir::ConstValue<'hir> {
+) -> Result<hir::ConstValue<'hir>, ()> {
     let data = hir.registry().const_data(const_id);
     let (eval, _) = hir.registry().const_eval(data.value);
+
     match *eval {
-        hir::ConstEval::ResolvedValue(value_id) => emit.const_intern.get(value_id),
-        _ => panic!("unresolved constant"),
+        hir::ConstEval::Unresolved(..) => unreachable!("fold_const_var unresolved"),
+        hir::ConstEval::ResolvedError => Err(()),
+        hir::ConstEval::ResolvedValue(value_id) => Ok(emit.const_intern.get(value_id)),
     }
 }
 
@@ -1184,20 +1155,20 @@ fn fold_struct_init<'hir>(
     origin_id: ModuleID,
     struct_id: hir::StructID,
     input: &[hir::FieldInit<'hir>],
-) -> hir::ConstValue<'hir> {
+) -> Result<hir::ConstValue<'hir>, ()> {
     let mut value_ids = Vec::new();
     let error_id = emit.const_intern.intern(hir::ConstValue::Error);
     value_ids.resize(input.len(), error_id);
 
     for init in input {
-        let value = fold_const_expr(hir, emit, origin_id, init.expr);
+        let value = fold_const_expr(hir, emit, origin_id, init.expr)?;
         value_ids[init.field_id.index()] = emit.const_intern.intern(value);
     }
 
     let fields = emit.const_intern.arena().alloc_slice(&value_ids);
     let const_struct = hir::ConstStruct { struct_id, fields };
     let struct_ = emit.const_intern.arena().alloc(const_struct);
-    hir::ConstValue::Struct { struct_ }
+    Ok(hir::ConstValue::Struct { struct_ })
 }
 
 fn fold_array_init<'hir>(
@@ -1205,11 +1176,11 @@ fn fold_array_init<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     array_init: &hir::ArrayInit<'hir>,
-) -> hir::ConstValue<'hir> {
+) -> Result<hir::ConstValue<'hir>, ()> {
     let mut value_ids = Vec::with_capacity(array_init.input.len());
 
     for &init in array_init.input {
-        let value = fold_const_expr(hir, emit, origin_id, init);
+        let value = fold_const_expr(hir, emit, origin_id, init)?;
         value_ids.push(emit.const_intern.intern(value));
     }
 
@@ -1219,7 +1190,7 @@ fn fold_array_init<'hir>(
         values,
     };
     let array = emit.const_intern.arena().alloc(const_array);
-    hir::ConstValue::Array { array }
+    Ok(hir::ConstValue::Array { array })
 }
 
 fn fold_array_repeat<'hir>(
@@ -1227,13 +1198,13 @@ fn fold_array_repeat<'hir>(
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     array_repeat: &hir::ArrayRepeat<'hir>,
-) -> hir::ConstValue<'hir> {
-    let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr);
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr)?;
 
-    hir::ConstValue::ArrayRepeat {
+    Ok(hir::ConstValue::ArrayRepeat {
         value: emit.const_intern.intern(value),
         len: array_repeat.len,
-    }
+    })
 }
 
 fn fold_unary_expr<'hir>(
@@ -1242,42 +1213,28 @@ fn fold_unary_expr<'hir>(
     origin_id: ModuleID,
     op: hir::UnOp,
     rhs: &'hir hir::Expr<'hir>,
-) -> hir::ConstValue<'hir> {
-    use hir::ConstValue;
-
-    let rhs_value = fold_const_expr(hir, emit, origin_id, rhs);
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let rhs = fold_const_expr(hir, emit, origin_id, rhs)?;
 
     match op {
-        hir::UnOp::Neg_Int => match rhs_value {
-            //@can overflow
-            ConstValue::Int { val, neg, int_ty } => ConstValue::Int {
-                val,
-                neg: !neg,
-                int_ty,
-            },
-            _ => unreachable!(),
-        },
-        hir::UnOp::Neg_Float => match rhs_value {
-            //@can overflow?
-            ConstValue::Float { val, float_ty } => ConstValue::Float {
-                val: -val,
-                float_ty,
-            },
-            _ => unreachable!(),
-        },
-        hir::UnOp::BitNot => {
-            //@can overflow + handle negative ~ correctly
-            hir::ConstValue::Error //@todo
+        hir::UnOp::Neg_Int => {
+            let int_ty = rhs.into_int_ty();
+            let val = -rhs.into_int();
+            int_range_check(emit, val, int_ty)
         }
-        hir::UnOp::LogicNot => match rhs_value {
-            hir::ConstValue::Bool { val } => ConstValue::Bool { val: !val },
-            _ => unreachable!(),
-        },
+        hir::UnOp::Neg_Float => {
+            let float_ty = rhs.into_float_ty();
+            let val = rhs.into_float();
+            float_range_check(emit, val, float_ty)
+        }
+        hir::UnOp::BitNot => unimplemented!(),
+        hir::UnOp::LogicNot => {
+            let val = !rhs.into_bool();
+            Ok(hir::ConstValue::Bool { val })
+        }
     }
 }
 
-//@design how are singlular ints / floats are range checked
-// check singular integers / floats right away
 fn fold_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1286,8 +1243,8 @@ fn fold_binary<'hir>(
     lhs: &hir::Expr<'hir>,
     rhs: &hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let lhs = fold_const_expr(hir, emit, origin_id, lhs);
-    let rhs = fold_const_expr(hir, emit, origin_id, rhs);
+    let lhs = fold_const_expr(hir, emit, origin_id, lhs)?;
+    let rhs = fold_const_expr(hir, emit, origin_id, rhs)?;
 
     match op {
         hir::BinOp::Add_Int => {
@@ -1315,14 +1272,12 @@ fn fold_binary<'hir>(
             let lhs = lhs.into_int();
             let rhs = rhs.into_int();
 
-            let val = match lhs.checked_mul(rhs) {
-                Some(val) => val,
-                None => {
-                    error_binary_int_overflow(emit, op, lhs, rhs);
-                    return Err(());
-                }
-            };
-            int_range_check(emit, val, int_ty)
+            if let Some(val) = lhs.checked_mul(rhs) {
+                int_range_check(emit, val, int_ty)
+            } else {
+                error_binary_int_overflow(emit, op, lhs, rhs);
+                Err(())
+            }
         }
         hir::BinOp::Mul_Float => {
             let float_ty = lhs.into_float_ty();
@@ -1336,16 +1291,13 @@ fn fold_binary<'hir>(
 
             if rhs == 0 {
                 error_binary_int_div_zero(emit, op, lhs, rhs);
-                return Err(());
+                Err(())
+            } else if let Some(val) = lhs.checked_div(rhs) {
+                int_range_check(emit, val, int_ty)
+            } else {
+                error_binary_int_overflow(emit, op, lhs, rhs);
+                Err(())
             }
-            let val = match lhs.checked_div_euclid(rhs) {
-                Some(val) => val,
-                None => {
-                    error_binary_int_overflow(emit, op, lhs, rhs);
-                    return Err(());
-                }
-            };
-            int_range_check(emit, val, int_ty)
         }
         hir::BinOp::Div_Float => {
             let float_ty = lhs.into_float_ty();
@@ -1359,23 +1311,20 @@ fn fold_binary<'hir>(
 
             if rhs == 0 {
                 error_binary_int_div_zero(emit, op, lhs, rhs);
-                return Err(());
+                Err(())
+            } else if let Some(val) = lhs.checked_rem(rhs) {
+                int_range_check(emit, val, int_ty)
+            } else {
+                error_binary_int_overflow(emit, op, lhs, rhs);
+                Err(())
             }
-            let val = match lhs.checked_rem(rhs) {
-                Some(val) => val,
-                None => {
-                    error_binary_int_overflow(emit, op, lhs, rhs);
-                    return Err(());
-                }
-            };
-            int_range_check(emit, val, int_ty)
         }
-        hir::BinOp::BitAnd => todo!(),
-        hir::BinOp::BitOr => todo!(),
-        hir::BinOp::BitXor => todo!(),
-        hir::BinOp::BitShl => todo!(),
-        hir::BinOp::BitShr_IntS => todo!(),
-        hir::BinOp::BitShr_IntU => todo!(),
+        hir::BinOp::BitAnd => unimplemented!(),
+        hir::BinOp::BitOr => unimplemented!(),
+        hir::BinOp::BitXor => unimplemented!(),
+        hir::BinOp::BitShl => unimplemented!(),
+        hir::BinOp::BitShr_IntS => unimplemented!(),
+        hir::BinOp::BitShr_IntU => unimplemented!(),
         hir::BinOp::IsEq_Int => {
             let val = lhs.into_int() == rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
@@ -1551,29 +1500,5 @@ impl<'hir> hir::ConstValue<'hir> {
             hir::ConstValue::Float { float_ty, .. } => float_ty,
             _ => unreachable!(),
         }
-    }
-}
-
-impl<'hir> hir::ConstValue<'hir> {
-    fn test() {
-        //const shift_test: i32 = i32::MAX + i32::MAX;
-
-        let lhs: i128 = 10;
-        let rhs: i128 = -10;
-
-        let add = lhs.checked_add(rhs);
-        let sub = lhs.checked_sub(rhs);
-        let mul = lhs.checked_mul(rhs);
-        let div = lhs.checked_div(rhs); //@check / 0 separately
-        let rem = lhs.checked_rem(rhs); //@check / 0 separately
-
-        let shl = lhs.checked_shl(rhs as u32); //@check for positive
-        let shr = lhs.checked_shr(rhs as u32); //@check for positive
-        let is_eq = lhs == rhs;
-        let not_eq = lhs != rhs;
-        let less = lhs < rhs;
-        let less_eq = lhs <= rhs;
-        let greater = lhs > rhs;
-        let greater_eq = lhs >= rhs;
     }
 }
