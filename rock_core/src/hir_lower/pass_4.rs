@@ -1277,7 +1277,7 @@ fn fold_unary_expr<'hir>(
 }
 
 //@design how are singlular ints / floats are range checked
-// check before the operations, or allow: const V: u8 = 256 - 1; ?
+// check singular integers / floats right away
 fn fold_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1310,21 +1310,66 @@ fn fold_binary<'hir>(
             let val = lhs.into_float() - rhs.into_float();
             float_range_check(emit, val, float_ty)
         }
-        hir::BinOp::Mul_Int => todo!(),
+        hir::BinOp::Mul_Int => {
+            let int_ty = lhs.into_int_ty();
+            let lhs = lhs.into_int();
+            let rhs = rhs.into_int();
+
+            let val = match lhs.checked_mul(rhs) {
+                Some(val) => val,
+                None => {
+                    error_binary_int_overflow(emit, op, lhs, rhs);
+                    return Err(());
+                }
+            };
+            int_range_check(emit, val, int_ty)
+        }
         hir::BinOp::Mul_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() * rhs.into_float();
             float_range_check(emit, val, float_ty)
         }
-        hir::BinOp::Div_IntS => todo!(),
-        hir::BinOp::Div_IntU => todo!(),
+        hir::BinOp::Div_IntS | hir::BinOp::Div_IntU => {
+            let int_ty = lhs.into_int_ty();
+            let lhs = lhs.into_int();
+            let rhs = rhs.into_int();
+
+            if rhs == 0 {
+                error_binary_int_div_zero(emit, op, lhs, rhs);
+                return Err(());
+            }
+            let val = match lhs.checked_div_euclid(rhs) {
+                Some(val) => val,
+                None => {
+                    error_binary_int_overflow(emit, op, lhs, rhs);
+                    return Err(());
+                }
+            };
+            int_range_check(emit, val, int_ty)
+        }
         hir::BinOp::Div_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() / rhs.into_float();
             float_range_check(emit, val, float_ty)
         }
-        hir::BinOp::Rem_IntS => todo!(),
-        hir::BinOp::Rem_IntU => todo!(),
+        hir::BinOp::Rem_IntS | hir::BinOp::Rem_IntU => {
+            let int_ty = lhs.into_int_ty();
+            let lhs = lhs.into_int();
+            let rhs = rhs.into_int();
+
+            if rhs == 0 {
+                error_binary_int_div_zero(emit, op, lhs, rhs);
+                return Err(());
+            }
+            let val = match lhs.checked_rem(rhs) {
+                Some(val) => val,
+                None => {
+                    error_binary_int_overflow(emit, op, lhs, rhs);
+                    return Err(());
+                }
+            };
+            int_range_check(emit, val, int_ty)
+        }
         hir::BinOp::BitAnd => todo!(),
         hir::BinOp::BitOr => todo!(),
         hir::BinOp::BitXor => todo!(),
@@ -1388,6 +1433,18 @@ fn fold_binary<'hir>(
             Ok(hir::ConstValue::Bool { val })
         }
     }
+}
+
+fn error_binary_int_div_zero(emit: &mut HirEmit, op: hir::BinOp, lhs: i128, rhs: i128) {
+    let op_str = op.as_str();
+    let format = format!("integer division by zero\nwhen computing: `{lhs}` {op_str} `{rhs}`");
+    emit.error(ErrorComp::message(format));
+}
+
+fn error_binary_int_overflow(emit: &mut HirEmit, op: hir::BinOp, lhs: i128, rhs: i128) {
+    let op_str = op.as_str();
+    let format = format!("integer constant overflow\nwhen computing: `{lhs}` {op_str} `{rhs}`");
+    emit.error(ErrorComp::message(format));
 }
 
 fn int_range_check<'hir>(

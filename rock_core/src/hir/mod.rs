@@ -729,3 +729,28 @@ impl BasicFloat {
         }
     }
 }
+
+impl BinOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BinOp::Add_Int | BinOp::Add_Float => "+",
+            BinOp::Sub_Int | BinOp::Sub_Float => "-",
+            BinOp::Mul_Int | BinOp::Mul_Float => "*",
+            BinOp::Div_IntS | BinOp::Div_IntU | BinOp::Div_Float => "/",
+            BinOp::Rem_IntS | BinOp::Rem_IntU => "%",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::BitShl => "<<",
+            BinOp::BitShr_IntS | BinOp::BitShr_IntU => ">>",
+            BinOp::IsEq_Int | BinOp::IsEq_Float => "==",
+            BinOp::NotEq_Int | BinOp::NotEq_Float => "!=",
+            BinOp::Less_IntS | BinOp::Less_IntU | BinOp::Less_Float => "<",
+            BinOp::LessEq_IntS | BinOp::LessEq_IntU | BinOp::LessEq_Float => "<=",
+            BinOp::Greater_IntS | BinOp::Greater_IntU | BinOp::Greater_Float => ">",
+            BinOp::GreaterEq_IntS | BinOp::GreaterEq_IntU | BinOp::GreaterEq_Float => ">=",
+            BinOp::LogicAnd => "&&",
+            BinOp::LogicOr => "||",
+        }
+    }
+}
