@@ -991,7 +991,9 @@ fn fold_const_expr<'hir>(
         } => fold_slice_field(hir, emit, origin_id, target, field, deref),
         hir::Expr::Index { target, access } => fold_index(hir, emit, origin_id, target, access),
         hir::Expr::Slice { .. } => unreachable!(),
-        hir::Expr::Cast { .. } => unimplemented!("fold cast"),
+        hir::Expr::Cast { target, into, kind } => {
+            fold_cast(hir, emit, origin_id, target, *into, kind)
+        }
         hir::Expr::LocalVar { .. } => unreachable!(),
         hir::Expr::ParamVar { .. } => unreachable!(),
         hir::Expr::ConstVar { const_id } => fold_const_var(hir, emit, const_id),
@@ -1131,6 +1133,63 @@ fn fold_index<'hir>(
             _ => unreachable!(),
         };
         Ok(emit.const_intern.get(value_id))
+    }
+}
+
+//@store type enums like BasicInt / BasicFloat
+// in cast kind to decrease invariance
+//@check how bool to int is handled
+fn fold_cast<'hir>(
+    hir: &HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    origin_id: ModuleID,
+    target: &hir::Expr<'hir>,
+    into: hir::Type,
+    kind: hir::CastKind,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    fn into_int_ty(into: hir::Type) -> hir::BasicInt {
+        match into {
+            hir::Type::Basic(basic) => hir::BasicInt::from_basic(basic).unwrap(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn into_float_ty(into: hir::Type) -> hir::BasicFloat {
+        match into {
+            hir::Type::Basic(basic) => hir::BasicFloat::from_basic(basic).unwrap(),
+            _ => unreachable!(),
+        }
+    }
+
+    let target = fold_const_expr(hir, emit, origin_id, target)?;
+
+    match kind {
+        hir::CastKind::Error => unreachable!(),
+        hir::CastKind::NoOp => Ok(target),
+        hir::CastKind::Int_Trunc
+        | hir::CastKind::IntS_Sign_Extend
+        | hir::CastKind::IntU_Zero_Extend => {
+            let val = target.into_int();
+            let int_ty = into_int_ty(into);
+            int_range_check(emit, val, int_ty)
+        }
+        hir::CastKind::IntS_to_Float | hir::CastKind::IntU_to_Float => {
+            let val = target.into_int();
+            let float_ty = into_float_ty(into);
+            let val_cast = val as f64;
+            float_range_check(emit, val_cast, float_ty)
+        }
+        hir::CastKind::Float_to_IntS | hir::CastKind::Float_to_IntU => {
+            let val = target.into_float();
+            let int_ty = into_int_ty(into);
+            let val_cast = val as i128;
+            int_range_check(emit, val_cast, int_ty)
+        }
+        hir::CastKind::Float_Trunc | hir::CastKind::Float_Extend => {
+            let val = target.into_float();
+            let float_ty = into_float_ty(into);
+            float_range_check(emit, val, float_ty)
+        }
     }
 }
 
