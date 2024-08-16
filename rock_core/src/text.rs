@@ -28,6 +28,13 @@ impl TextRange {
         TextRange { start, end }
     }
     #[inline]
+    pub const fn zero() -> TextRange {
+        TextRange {
+            start: TextOffset(0),
+            end: TextOffset(0),
+        }
+    }
+    #[inline]
     pub const fn empty_at(offset: TextOffset) -> TextRange {
         TextRange {
             start: offset,
@@ -151,7 +158,7 @@ impl fmt::Debug for TextLocation {
 
 pub fn find_line_ranges(text: &str) -> Vec<TextRange> {
     let mut ranges = Vec::new();
-    let mut range = TextRange::empty_at(0.into());
+    let mut range = TextRange::zero();
 
     for c in text.chars() {
         let size: TextOffset = (c.len_utf8() as u32).into();

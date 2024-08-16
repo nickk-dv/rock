@@ -254,8 +254,12 @@ pub fn check_type_expectation<'hir>(
 
 pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
+    kind: hir::ExprKind<'hir>,
+}
+
+pub struct ExprResult<'hir> {
+    ty: hir::Type<'hir>,
     pub expr: &'hir hir::Expr<'hir>,
-    ignore: bool,
 }
 
 struct BlockResult<'hir> {
@@ -265,20 +269,28 @@ struct BlockResult<'hir> {
 }
 
 impl<'hir> TypeResult<'hir> {
-    fn new(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
+    fn new(ty: hir::Type<'hir>, kind: hir::ExprKind<'hir>) -> TypeResult<'hir> {
+        TypeResult { ty, kind }
+    }
+    fn error() -> TypeResult<'hir> {
         TypeResult {
-            ty,
-            expr,
-            ignore: false,
+            ty: hir::Type::Error,
+            kind: hir::ExprKind::Error,
         }
     }
+    fn into_expr_result(self, emit: &mut HirEmit<'hir>, range: TextRange) -> ExprResult<'hir> {
+        let expr = hir::Expr {
+            kind: self.kind,
+            range,
+        };
+        let expr = emit.arena.alloc(expr);
+        ExprResult::new(self.ty, expr)
+    }
+}
 
-    fn new_ignore(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> TypeResult<'hir> {
-        TypeResult {
-            ty,
-            expr,
-            ignore: true,
-        }
+impl<'hir> ExprResult<'hir> {
+    fn new(ty: hir::Type<'hir>, expr: &'hir hir::Expr<'hir>) -> ExprResult<'hir> {
+        ExprResult { ty, expr }
     }
 }
 
@@ -295,17 +307,18 @@ impl<'hir> BlockResult<'hir> {
         }
     }
 
-    fn into_type_result(self, emit: &mut HirEmit<'hir>) -> TypeResult<'hir> {
-        let block_expr = hir::Expr::Block { block: self.block };
-        let block_expr = emit.arena.alloc(block_expr);
-        TypeResult {
-            ty: self.ty,
-            expr: block_expr,
-            ignore: true, //@ignoring with manual expectation check in blocks, might change 03.07.24
-        }
+    //@prev ignore behavior was always `ignore: true`
+    //@ignoring with manual expectation check in blocks, might change 03.07.24
+    fn into_type_result(self) -> TypeResult<'hir> {
+        let kind = hir::ExprKind::Block { block: self.block };
+        TypeResult::new(self.ty, kind)
     }
 }
 
+//@Error exprs are still allocated, before they were replaced
+// with constant reference defined in hir_build.
+// `if` check performance versus memory usage tradeoff.
+// It might be still good to include errored expressions with correct range.
 #[must_use]
 pub fn typecheck_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
@@ -313,13 +326,12 @@ pub fn typecheck_expr<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
     expr: &ast::Expr<'_>,
-) -> TypeResult<'hir> {
+) -> ExprResult<'hir> {
     let expr_res = match expr.kind {
         ast::ExprKind::Lit(lit) => typecheck_lit(emit, expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
-            typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None)
-                .into_type_result(emit)
+            typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None).into_type_result()
         }
         ast::ExprKind::Match { match_ } => {
             typecheck_match(hir, emit, proc, expect, match_, expr.range)
@@ -355,7 +367,7 @@ pub fn typecheck_expr<'hir>(
         }
         ast::ExprKind::Deref { rhs } => typecheck_deref(hir, emit, proc, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
-        ast::ExprKind::Range { range } => todo!("range feature"),
+        ast::ExprKind::Range { range } => todo!("typecheck range"),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(hir, emit, proc, expect, op, op_range, rhs)
         }
@@ -365,11 +377,9 @@ pub fn typecheck_expr<'hir>(
     };
 
     //@if `errored` is usefull it can be done via emit error count api
-    if !expr_res.ignore {
-        check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
-    }
-
-    expr_res
+    //@removed `ignored` from `TypeResult`, verify ignore behaviors for block returns
+    check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
+    expr_res.into_expr_result(emit, expr.range)
 }
 
 fn typecheck_lit<'hir>(
@@ -411,9 +421,8 @@ fn typecheck_lit<'hir>(
         }
     };
 
-    let expr = hir::Expr::Const { value };
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(ty, expr)
+    let kind = hir::ExprKind::Const { value };
+    TypeResult::new(ty, kind)
 }
 
 pub fn coerce_int_type(expect: Expectation) -> BasicInt {
@@ -504,10 +513,9 @@ fn typecheck_if<'hir>(
         else_block,
     };
     let if_ = emit.arena.alloc(if_);
-    let if_expr = hir::Expr::If { if_ };
-    let if_expr = emit.arena.alloc(if_expr);
+    let kind = hir::ExprKind::If { if_ };
     //@cannot tell when to ignore typecheck or not
-    TypeResult::new(if_type, if_expr)
+    TypeResult::new(if_type, kind)
 }
 
 fn typecheck_branch<'hir>(
@@ -630,10 +638,9 @@ fn typecheck_match<'hir>(
         fallback,
     };
     let match_ = emit.arena.alloc(match_);
-    let match_expr = hir::Expr::Match { match_ };
-    let match_expr = emit.arena.alloc(match_expr);
+    let kind = hir::ExprKind::Match { match_ };
     //@cannot tell when to ignore typecheck or not
-    TypeResult::new(match_type, match_expr)
+    TypeResult::new(match_type, kind)
 }
 
 fn typecheck_match_2<'hir>(
@@ -691,10 +698,9 @@ fn typecheck_match_2<'hir>(
         arms,
     };
     let match_ = emit.arena.alloc(match_);
-    let match_expr = hir::Expr::Match2 { match_ };
-    let match_expr = emit.arena.alloc(match_expr);
+    let kind = hir::ExprKind::Match2 { match_ };
     //@cannot tell when to ignore typecheck or not
-    TypeResult::new(match_type, match_expr)
+    TypeResult::new(match_type, kind)
 }
 
 struct PatResult<'hir> {
@@ -737,8 +743,8 @@ fn typecheck_pat_lit<'hir>(
     lit: ast::Lit,
 ) -> PatResult<'hir> {
     let lit_res = typecheck_lit(emit, expect, lit);
-    let value = match lit_res.expr {
-        hir::Expr::Const { value } => *value,
+    let value = match lit_res.kind {
+        hir::ExprKind::Const { value } => value,
         _ => unreachable!(),
     };
     PatResult::new(hir::Pat::Lit(value), lit_res.ty)
@@ -1061,7 +1067,7 @@ fn typecheck_field<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
     let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
-    emit_field_expr(emit, target_res.expr, field_result)
+    emit_field_expr(target_res.expr, field_result)
 }
 
 struct FieldResult<'hir> {
@@ -1256,32 +1262,30 @@ fn check_field_from_array<'hir>(
 }
 
 fn emit_field_expr<'hir>(
-    emit: &mut HirEmit<'hir>,
     target: &'hir hir::Expr<'hir>,
     field_result: Option<FieldResult<'hir>>,
 ) -> TypeResult<'hir> {
     let result = match field_result {
         Some(result) => result,
-        None => return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
+        None => return TypeResult::error(),
     };
 
-    let expr = match result.kind {
-        FieldKind::Struct(struct_id, field_id) => hir::Expr::StructField {
+    let kind = match result.kind {
+        FieldKind::Struct(struct_id, field_id) => hir::ExprKind::StructField {
             target,
             struct_id,
             field_id,
             deref: result.deref,
         },
-        FieldKind::ArraySlice { field } => hir::Expr::SliceField {
+        FieldKind::ArraySlice { field } => hir::ExprKind::SliceField {
             target,
             field,
             deref: result.deref,
         },
-        FieldKind::ArrayStatic { len } => hir::Expr::Const { value: len },
+        FieldKind::ArrayStatic { len } => hir::ExprKind::Const { value: len },
     };
 
-    let expr = emit.arena.alloc(expr);
-    TypeResult::new(result.field_ty, expr)
+    TypeResult::new(result.field_ty, kind)
 }
 
 struct CollectionType<'hir> {
@@ -1356,13 +1360,13 @@ fn typecheck_index<'hir>(
                 index: index_res.expr,
             };
 
-            let index_expr = hir::Expr::Index {
+            let kind = hir::ExprKind::Index {
                 target: target_res.expr,
                 access: emit.arena.alloc(access),
             };
-            TypeResult::new(collection.elem_ty, emit.arena.alloc(index_expr))
+            TypeResult::new(collection.elem_ty, kind)
         }
-        Ok(None) => TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR),
+        Ok(None) => TypeResult::error(),
         Err(()) => {
             emit.error(ErrorComp::new(
                 format!(
@@ -1379,7 +1383,7 @@ fn typecheck_index<'hir>(
                     SourceRange::new(proc.origin(), target.range),
                 ),
             ));
-            TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+            TypeResult::error()
         }
     }
 }
@@ -1392,7 +1396,7 @@ fn typecheck_call<'hir>(
     input: &ast::Input<'_>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    check_call_indirect(hir, emit, proc, target_res, target.range, input)
+    check_call_indirect(hir, emit, proc, target_res, input)
 }
 
 pub fn type_size(
@@ -1511,12 +1515,12 @@ fn typecheck_cast<'hir>(
         //@this could be skipped by returning reference to same error expression
         // to save memory in error cases and reduce noise in the code itself.
 
-        let cast_expr = hir::Expr::Cast {
+        let kind = hir::ExprKind::Cast {
             target: target_res.expr,
             into: emit.arena.alloc(into),
             kind: hir::CastKind::NoOp,
         };
-        return TypeResult::new(into, emit.arena.alloc(cast_expr));
+        return TypeResult::new(into, kind);
     }
 
     // invariant: both types are not Error
@@ -1532,12 +1536,12 @@ fn typecheck_cast<'hir>(
             None,
         ));
 
-        let cast_expr = hir::Expr::Cast {
+        let kind = hir::ExprKind::Cast {
             target: target_res.expr,
             into: emit.arena.alloc(into),
             kind: hir::CastKind::NoOp,
         };
-        return TypeResult::new(into, emit.arena.alloc(cast_expr));
+        return TypeResult::new(into, kind);
     }
 
     // invariant: from_size != into_size
@@ -1609,12 +1613,12 @@ fn typecheck_cast<'hir>(
         ));
     }
 
-    let cast_expr = hir::Expr::Cast {
+    let kind = hir::ExprKind::Cast {
         target: target_res.expr,
         into: emit.arena.alloc(into),
         kind: cast_kind,
     };
-    TypeResult::new(into, emit.arena.alloc(cast_expr))
+    TypeResult::new(into, kind)
 }
 
 fn typecheck_sizeof<'hir>(
@@ -1629,19 +1633,19 @@ fn typecheck_sizeof<'hir>(
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
-    let sizeof_expr = match type_size(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
+    let kind = match type_size(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
         Some(size) => {
             let value = hir::ConstValue::Int {
                 val: size.size(),
                 neg: false,
                 int_ty: BasicInt::Usize,
             };
-            emit.arena.alloc(hir::Expr::Const { value })
+            hir::ExprKind::Const { value }
         }
-        None => hir_build::EXPR_ERROR,
+        None => hir::ExprKind::Error,
     };
 
-    TypeResult::new(hir::Type::Basic(BasicType::Usize), sizeof_expr)
+    TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
 }
 
 fn typecheck_item<'hir>(
@@ -1680,9 +1684,8 @@ fn typecheck_item<'hir>(
 
                 let proc_ty = hir::Type::Procedure(emit.arena.alloc(proc_ty));
                 let proc_value = hir::ConstValue::Procedure { proc_id };
-                let proc_expr = hir::Expr::Const { value: proc_value };
-                let proc_expr = emit.arena.alloc(proc_expr);
-                return TypeResult::new(proc_ty, proc_expr);
+                let kind = hir::ExprKind::Const { value: proc_value };
+                return TypeResult::new(proc_ty, kind);
             }
         }
         ValueID::Enum(enum_id, variant_id) => {
@@ -1695,30 +1698,35 @@ fn typecheck_item<'hir>(
         }
         ValueID::Const(id) => TypeResult::new(
             hir.registry().const_data(id).ty,
-            emit.arena.alloc(hir::Expr::ConstVar { const_id: id }),
+            hir::ExprKind::ConstVar { const_id: id },
         ),
         ValueID::Global(id) => TypeResult::new(
             hir.registry().global_data(id).ty,
-            emit.arena.alloc(hir::Expr::GlobalVar { global_id: id }),
+            hir::ExprKind::GlobalVar { global_id: id },
         ),
         ValueID::Local(id) => TypeResult::new(
             proc.get_local(id).ty, //@type of local var might not be known
-            emit.arena.alloc(hir::Expr::LocalVar { local_id: id }),
+            hir::ExprKind::LocalVar { local_id: id },
         ),
         ValueID::Param(id) => TypeResult::new(
             proc.get_param(id).ty,
-            emit.arena.alloc(hir::Expr::ParamVar { param_id: id }),
+            hir::ExprKind::ParamVar { param_id: id },
         ),
     };
 
     let mut target_res = item_res;
+    let mut target_range = expr_range;
+
     for &name in field_names {
-        let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
-        target_res = emit_field_expr(emit, target_res.expr, field_result);
+        let expr_res = target_res.into_expr_result(emit, target_range);
+        let field_result = check_field_from_type(hir, emit, proc.origin(), name, expr_res.ty);
+        target_res = emit_field_expr(expr_res.expr, field_result);
+        target_range = TextRange::new(expr_range.start(), name.range.end());
     }
 
     if let Some(input) = input {
-        check_call_indirect(hir, emit, proc, target_res, expr_range, input)
+        let expr_res = target_res.into_expr_result(emit, target_range);
+        check_call_indirect(hir, emit, proc, expr_res, input)
     } else {
         target_res
     }
@@ -1877,8 +1885,8 @@ fn typecheck_struct_init<'hir>(
     }
 
     let input = emit.arena.alloc_slice(&field_inits);
-    let struct_init = hir::Expr::StructInit { struct_id, input };
-    TypeResult::new(hir::Type::Struct(struct_id), emit.arena.alloc(struct_init))
+    let kind = hir::ExprKind::StructInit { struct_id, input };
+    TypeResult::new(hir::Type::Struct(struct_id), kind)
 }
 
 fn typecheck_array_init<'hir>(
@@ -1948,8 +1956,8 @@ fn typecheck_array_init<'hir>(
         elem_ty,
     });
     let array_init = emit.arena.alloc(hir::ArrayInit { elem_ty, input });
-    let array_expr = emit.arena.alloc(hir::Expr::ArrayInit { array_init });
-    TypeResult::new(hir::Type::ArrayStatic(array_type), array_expr)
+    let kind = hir::ExprKind::ArrayInit { array_init };
+    TypeResult::new(hir::Type::ArrayStatic(array_type), kind)
 }
 
 fn typecheck_array_repeat<'hir>(
@@ -1999,12 +2007,10 @@ fn typecheck_array_repeat<'hir>(
             expr: expr_res.expr,
             len,
         });
-        TypeResult::new(
-            hir::Type::ArrayStatic(array_type),
-            emit.arena.alloc(hir::Expr::ArrayRepeat { array_repeat }),
-        )
+        let kind = hir::ExprKind::ArrayRepeat { array_repeat };
+        TypeResult::new(hir::Type::ArrayStatic(array_type), kind)
     } else {
-        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+        TypeResult::error()
     }
 }
 
@@ -2032,11 +2038,11 @@ fn typecheck_deref<'hir>(
         }
     };
 
-    let deref_expr = hir::Expr::Deref {
+    let kind = hir::ExprKind::Deref {
         rhs: rhs_res.expr,
         ptr_ty: emit.arena.alloc(ptr_ty),
     };
-    TypeResult::new(ptr_ty, emit.arena.alloc(deref_expr))
+    TypeResult::new(ptr_ty, kind)
 }
 
 fn typecheck_address<'hir>(
@@ -2099,9 +2105,10 @@ fn typecheck_address<'hir>(
         }
     }
 
-    let ref_ty = hir::Type::Reference(emit.arena.alloc(rhs_res.ty), mutt);
-    let address_expr = hir::Expr::Address { rhs: rhs_res.expr };
-    TypeResult::new(ref_ty, emit.arena.alloc(address_expr))
+    let ref_ty = emit.arena.alloc(rhs_res.ty);
+    let ref_ty = hir::Type::Reference(ref_ty, mutt);
+    let kind = hir::ExprKind::Address { rhs: rhs_res.expr };
+    TypeResult::new(ref_ty, kind)
 }
 
 enum Addressability {
@@ -2119,50 +2126,50 @@ fn get_expr_addressability<'hir>(
     proc: &ProcScope<'hir, '_>,
     expr: &'hir hir::Expr<'hir>,
 ) -> Addressability {
-    match *expr {
-        hir::Expr::Error => Addressability::Unknown,
-        hir::Expr::Const { .. } => Addressability::Temporary, //@TemporaryImmutable for struct / array? and alloca them
-        hir::Expr::If { .. } => Addressability::Temporary,
-        hir::Expr::Block { .. } => Addressability::Temporary,
-        hir::Expr::Match { .. } => Addressability::Temporary,
-        hir::Expr::Match2 { .. } => Addressability::Temporary,
-        hir::Expr::StructField { target, .. } => get_expr_addressability(hir, proc, target),
-        hir::Expr::SliceField { .. } => Addressability::SliceField,
-        hir::Expr::Index { target, .. } => get_expr_addressability(hir, proc, target),
-        hir::Expr::Slice { target, .. } => get_expr_addressability(hir, proc, target),
-        hir::Expr::Cast { .. } => Addressability::Temporary,
-        hir::Expr::LocalVar { local_id } => {
+    match expr.kind {
+        hir::ExprKind::Error => Addressability::Unknown,
+        hir::ExprKind::Const { .. } => Addressability::Temporary, //@TemporaryImmutable for struct / array? and alloca them
+        hir::ExprKind::If { .. } => Addressability::Temporary,
+        hir::ExprKind::Block { .. } => Addressability::Temporary,
+        hir::ExprKind::Match { .. } => Addressability::Temporary,
+        hir::ExprKind::Match2 { .. } => Addressability::Temporary,
+        hir::ExprKind::StructField { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::ExprKind::SliceField { .. } => Addressability::SliceField,
+        hir::ExprKind::Index { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::ExprKind::Slice { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::ExprKind::Cast { .. } => Addressability::Temporary,
+        hir::ExprKind::LocalVar { local_id } => {
             let local = proc.get_local(local_id);
             Addressability::Addressable(
                 local.mutt,
                 SourceRange::new(proc.origin(), local.name.range),
             )
         }
-        hir::Expr::ParamVar { param_id } => {
+        hir::ExprKind::ParamVar { param_id } => {
             let param = proc.get_param(param_id);
             Addressability::Addressable(
                 param.mutt,
                 SourceRange::new(proc.origin(), param.name.range),
             )
         }
-        hir::Expr::ConstVar { .. } => Addressability::Constant,
-        hir::Expr::GlobalVar { global_id } => {
+        hir::ExprKind::ConstVar { .. } => Addressability::Constant,
+        hir::ExprKind::GlobalVar { global_id } => {
             let data = hir.registry().global_data(global_id);
             Addressability::Addressable(
                 data.mutt,
                 SourceRange::new(data.origin_id, data.name.range),
             )
         }
-        hir::Expr::Variant { .. } => Addressability::NotImplemented, //@todo
-        hir::Expr::CallDirect { .. } => Addressability::Temporary,
-        hir::Expr::CallIndirect { .. } => Addressability::Temporary,
-        hir::Expr::StructInit { .. } => Addressability::TemporaryImmutable,
-        hir::Expr::ArrayInit { .. } => Addressability::TemporaryImmutable,
-        hir::Expr::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
-        hir::Expr::Deref { rhs, .. } => get_expr_addressability(hir, proc, rhs),
-        hir::Expr::Address { .. } => Addressability::Temporary,
-        hir::Expr::Unary { .. } => Addressability::Temporary,
-        hir::Expr::Binary { .. } => Addressability::Temporary,
+        hir::ExprKind::Variant { .. } => Addressability::NotImplemented, //@todo
+        hir::ExprKind::CallDirect { .. } => Addressability::Temporary,
+        hir::ExprKind::CallIndirect { .. } => Addressability::Temporary,
+        hir::ExprKind::StructInit { .. } => Addressability::TemporaryImmutable,
+        hir::ExprKind::ArrayInit { .. } => Addressability::TemporaryImmutable,
+        hir::ExprKind::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
+        hir::ExprKind::Deref { rhs, .. } => get_expr_addressability(hir, proc, rhs),
+        hir::ExprKind::Address { .. } => Addressability::Temporary,
+        hir::ExprKind::Unary { .. } => Addressability::Temporary,
+        hir::ExprKind::Binary { .. } => Addressability::Temporary,
     }
 }
 
@@ -2181,14 +2188,13 @@ fn typecheck_unary<'hir>(
 
     if let Some(un_op) = un_op {
         let unary_type = unary_output_type(op, rhs_res.ty);
-        let unary_expr = hir::Expr::Unary {
+        let kind = hir::ExprKind::Unary {
             op: un_op,
             rhs: rhs_res.expr,
         };
-        let unary_expr = emit.arena.alloc(unary_expr);
-        TypeResult::new(unary_type, unary_expr)
+        TypeResult::new(unary_type, kind)
     } else {
-        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+        TypeResult::error()
     }
 }
 
@@ -2218,15 +2224,14 @@ fn typecheck_binary<'hir>(
 
     if let Some(bin_op) = bin_op {
         let binary_ty = binary_output_type(op, lhs_res.ty);
-        let binary_expr = hir::Expr::Binary {
+        let kind = hir::ExprKind::Binary {
             op: bin_op,
             lhs: lhs_res.expr,
             rhs: rhs_res.expr,
         };
-        let binary_expr = emit.arena.alloc(binary_expr);
-        TypeResult::new(binary_ty, binary_expr)
+        TypeResult::new(binary_ty, kind)
     } else {
-        TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR)
+        TypeResult::error()
     }
 }
 
@@ -2808,33 +2813,33 @@ fn check_unused_expr_semi(
         Yes(&'static str),
     }
 
-    let unused = match expr {
+    let unused = match expr.kind {
         // errored expressions are not allowed to be checked
-        hir::Expr::Error => unreachable!(),
-        hir::Expr::Const { .. } => UnusedExpr::Yes("constant value"),
-        hir::Expr::If { .. } => UnusedExpr::Maybe,
-        hir::Expr::Block { .. } => UnusedExpr::Maybe,
-        hir::Expr::Match { .. } => UnusedExpr::Maybe,
-        hir::Expr::Match2 { .. } => UnusedExpr::Maybe,
-        hir::Expr::StructField { .. } => UnusedExpr::Yes("field access"),
-        hir::Expr::SliceField { .. } => UnusedExpr::Yes("field access"),
-        hir::Expr::Index { .. } => UnusedExpr::Yes("index access"),
-        hir::Expr::Slice { .. } => UnusedExpr::Yes("slice value"),
-        hir::Expr::Cast { .. } => UnusedExpr::Yes("cast value"),
-        hir::Expr::LocalVar { .. } => UnusedExpr::Yes("local value"),
-        hir::Expr::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
-        hir::Expr::ConstVar { .. } => UnusedExpr::Yes("constant value"),
-        hir::Expr::GlobalVar { .. } => UnusedExpr::Yes("global value"),
-        hir::Expr::Variant { .. } => UnusedExpr::Yes("variant value"),
-        hir::Expr::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
-        hir::Expr::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
-        hir::Expr::StructInit { .. } => UnusedExpr::Yes("struct value"),
-        hir::Expr::ArrayInit { .. } => UnusedExpr::Yes("array value"),
-        hir::Expr::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
-        hir::Expr::Deref { .. } => UnusedExpr::Yes("dereference"),
-        hir::Expr::Address { .. } => UnusedExpr::Yes("address value"),
-        hir::Expr::Unary { .. } => UnusedExpr::Yes("unary operation"),
-        hir::Expr::Binary { .. } => UnusedExpr::Yes("binary operation"),
+        hir::ExprKind::Error => unreachable!(),
+        hir::ExprKind::Const { .. } => UnusedExpr::Yes("constant value"),
+        hir::ExprKind::If { .. } => UnusedExpr::Maybe,
+        hir::ExprKind::Block { .. } => UnusedExpr::Maybe,
+        hir::ExprKind::Match { .. } => UnusedExpr::Maybe,
+        hir::ExprKind::Match2 { .. } => UnusedExpr::Maybe,
+        hir::ExprKind::StructField { .. } => UnusedExpr::Yes("field access"),
+        hir::ExprKind::SliceField { .. } => UnusedExpr::Yes("field access"),
+        hir::ExprKind::Index { .. } => UnusedExpr::Yes("index access"),
+        hir::ExprKind::Slice { .. } => UnusedExpr::Yes("slice value"),
+        hir::ExprKind::Cast { .. } => UnusedExpr::Yes("cast value"),
+        hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
+        hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
+        hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
+        hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
+        hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
+        hir::ExprKind::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::ExprKind::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::ExprKind::StructInit { .. } => UnusedExpr::Yes("struct value"),
+        hir::ExprKind::ArrayInit { .. } => UnusedExpr::Yes("array value"),
+        hir::ExprKind::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
+        hir::ExprKind::Deref { .. } => UnusedExpr::Yes("dereference"),
+        hir::ExprKind::Address { .. } => UnusedExpr::Yes("address value"),
+        hir::ExprKind::Unary { .. } => UnusedExpr::Yes("unary operation"),
+        hir::ExprKind::Binary { .. } => UnusedExpr::Yes("binary operation"),
     };
 
     if let UnusedExpr::Yes(kind) = unused {
@@ -2898,7 +2903,7 @@ fn error_result_default_check_input<'hir>(
     for &expr in input.exprs.iter() {
         let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
     }
-    return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+    TypeResult::error()
 }
 
 fn error_result_default_check_input_opt<'hir>(
@@ -2912,7 +2917,7 @@ fn error_result_default_check_input_opt<'hir>(
             let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
         }
     }
-    return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+    TypeResult::error()
 }
 
 fn error_result_default_check_field_init<'hir>(
@@ -2924,7 +2929,7 @@ fn error_result_default_check_field_init<'hir>(
     for field in input.iter() {
         let _ = typecheck_expr(hir, emit, proc, Expectation::None, field.expr);
     }
-    return TypeResult::new(hir::Type::Error, hir_build::EXPR_ERROR);
+    TypeResult::error()
 }
 
 //==================== CALL-LIKE INPUT CHECK ====================
@@ -3036,20 +3041,18 @@ fn check_call_direct<'hir>(
     }
     let values = emit.arena.alloc_slice(&values);
 
-    let call_direct = hir::Expr::CallDirect {
+    let kind = hir::ExprKind::CallDirect {
         proc_id,
         input: values,
     };
-    let call_direct = emit.arena.alloc(call_direct);
-    TypeResult::new(data.return_ty, call_direct)
+    TypeResult::new(data.return_ty, kind)
 }
 
 fn check_call_indirect<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    target_res: TypeResult<'hir>,
-    target_range: TextRange,
+    target_res: ExprResult<'hir>,
     input: &ast::Input,
 ) -> TypeResult<'hir> {
     let proc_ty = match target_res.ty {
@@ -3061,7 +3064,7 @@ fn check_call_indirect<'hir>(
                     "cannot call value of type `{}`",
                     type_format(hir, emit, target_res.ty).as_str()
                 ),
-                SourceRange::new(proc.origin(), target_range),
+                SourceRange::new(proc.origin(), target_res.expr.range),
                 None,
             ));
             return error_result_default_check_input(hir, emit, proc, input);
@@ -3102,12 +3105,11 @@ fn check_call_indirect<'hir>(
         input: values,
     };
     let indirect = emit.arena.alloc(indirect);
-    let call_indirect = hir::Expr::CallIndirect {
+    let kind = hir::ExprKind::CallIndirect {
         target: target_res.expr,
         indirect,
     };
-    let call_indirect = emit.arena.alloc(call_indirect);
-    TypeResult::new(proc_ty.return_ty, call_indirect)
+    TypeResult::new(proc_ty.return_ty, kind)
 }
 
 fn check_variant_input_opt<'hir>(
@@ -3161,13 +3163,12 @@ fn check_variant_input_opt<'hir>(
     };
 
     //@deal with empty value or type list like () both on definition & expression
-    let variant_expr = hir::Expr::Variant {
+    let kind = hir::ExprKind::Variant {
         enum_id,
         variant_id,
         input,
     };
-    let variant_expr = emit.arena.alloc(variant_expr);
-    TypeResult::new(hir::Type::Enum(enum_id), variant_expr)
+    TypeResult::new(hir::Type::Enum(enum_id), kind)
 }
 
 //==================== PATH RESOLVE ====================

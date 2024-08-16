@@ -29,7 +29,7 @@ pub fn source_file(lex: &mut Lexer) {
         }
     }
 
-    let dummy_range = TextRange::empty_at(0.into());
+    let dummy_range = TextRange::zero();
     lex.tokens().add_token(Token::Eof, dummy_range);
     lex.tokens().add_token(Token::Eof, dummy_range);
 }

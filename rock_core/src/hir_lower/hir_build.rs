@@ -2,14 +2,11 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
-use crate::hir::intern::ConstInternPool;
+use crate::hir::ConstInternPool;
 use crate::intern::{InternID, InternPool};
 use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
-
-/// prevents allocation of `hir::Expr::Error` during typechecking
-pub const EXPR_ERROR: &hir::Expr = &hir::Expr::Error;
 
 pub struct HirData<'hir, 'ast, 'intern> {
     modules: Vec<Module>,

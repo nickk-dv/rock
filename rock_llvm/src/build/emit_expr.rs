@@ -87,20 +87,20 @@ fn codegen_expr<'c>(
     expr: &hir::Expr<'c>,
     expect: Expect,
 ) -> Option<llvm::Value> {
-    match *expr {
-        hir::Expr::Error => unreachable!(),
-        hir::Expr::Const { value } => Some(codegen_const(cg, value)),
-        hir::Expr::If { if_ } => {
+    match expr.kind {
+        hir::ExprKind::Error => unreachable!(),
+        hir::ExprKind::Const { value } => Some(codegen_const(cg, value)),
+        hir::ExprKind::If { if_ } => {
             codegen_if(cg, proc_cg, expect, if_);
             None
         }
-        hir::Expr::Block { block } => {
+        hir::ExprKind::Block { block } => {
             emit_stmt::codegen_block(cg, proc_cg, expect, block);
             None
         }
-        hir::Expr::Match { match_ } => unimplemented!("emit match"),
-        hir::Expr::Match2 { match_ } => unimplemented!("emit match2"),
-        hir::Expr::StructField {
+        hir::ExprKind::Match { match_ } => unimplemented!("emit match"),
+        hir::ExprKind::Match2 { match_ } => unimplemented!("emit match2"),
+        hir::ExprKind::StructField {
             target,
             struct_id,
             field_id,
@@ -108,46 +108,54 @@ fn codegen_expr<'c>(
         } => Some(codegen_struct_field(
             cg, proc_cg, expect, target, struct_id, field_id, deref,
         )),
-        hir::Expr::SliceField {
+        hir::ExprKind::SliceField {
             target,
             field,
             deref,
         } => Some(codegen_slice_field(
             cg, proc_cg, expect, target, field, deref,
         )),
-        hir::Expr::Index { target, access } => {
+        hir::ExprKind::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect, target, access))
         }
-        hir::Expr::Slice { target, access } => unimplemented!("emit slice"),
-        hir::Expr::Cast { target, into, kind } => {
+        hir::ExprKind::Slice { target, access } => unimplemented!("emit slice"),
+        hir::ExprKind::Cast { target, into, kind } => {
             Some(codegen_cast(cg, proc_cg, target, into, kind))
         }
-        hir::Expr::LocalVar { local_id } => Some(codegen_local_var(cg, proc_cg, expect, local_id)),
-        hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, proc_cg, expect, param_id)),
-        hir::Expr::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
-        hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
-        hir::Expr::Variant {
+        hir::ExprKind::LocalVar { local_id } => {
+            Some(codegen_local_var(cg, proc_cg, expect, local_id))
+        }
+        hir::ExprKind::ParamVar { param_id } => {
+            Some(codegen_param_var(cg, proc_cg, expect, param_id))
+        }
+        hir::ExprKind::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
+        hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
+        hir::ExprKind::Variant {
             enum_id,
             variant_id,
             input,
         } => unimplemented!("emit variant"),
-        hir::Expr::CallDirect { proc_id, input } => {
+        hir::ExprKind::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, proc_cg, proc_id, input)
         }
-        hir::Expr::CallIndirect { target, indirect } => {
+        hir::ExprKind::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, target, indirect)
         }
-        hir::Expr::StructInit { struct_id, input } => {
+        hir::ExprKind::StructInit { struct_id, input } => {
             codegen_struct_init(cg, proc_cg, expect, struct_id, input)
         }
-        hir::Expr::ArrayInit { array_init } => codegen_array_init(cg, proc_cg, expect, array_init),
-        hir::Expr::ArrayRepeat { array_repeat } => {
+        hir::ExprKind::ArrayInit { array_init } => {
+            codegen_array_init(cg, proc_cg, expect, array_init)
+        }
+        hir::ExprKind::ArrayRepeat { array_repeat } => {
             codegen_array_repeat(cg, proc_cg, expect, array_repeat)
         }
-        hir::Expr::Deref { rhs, ptr_ty } => Some(codegen_deref(cg, proc_cg, expect, rhs, *ptr_ty)),
-        hir::Expr::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
-        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
-        hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
+        hir::ExprKind::Deref { rhs, ptr_ty } => {
+            Some(codegen_deref(cg, proc_cg, expect, rhs, *ptr_ty))
+        }
+        hir::ExprKind::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
+        hir::ExprKind::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
+        hir::ExprKind::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
     }
 }
 

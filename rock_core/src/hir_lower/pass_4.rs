@@ -834,7 +834,7 @@ pub fn resolve_const_expr<'hir>(
         vis: ast::Vis::Private,
         name: ast::Name {
             id: InternID::dummy(),
-            range: TextRange::empty_at(0.into()),
+            range: TextRange::zero(),
         },
         params: &[],
         return_ty: hir::Type::VOID,
@@ -971,47 +971,49 @@ fn fold_const_expr<'hir>(
     origin_id: ModuleID,
     expr: &hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    match *expr {
-        hir::Expr::Error => unreachable!(),
-        hir::Expr::Const { value } => fold_const(emit, value),
-        hir::Expr::If { .. } => unreachable!(),
-        hir::Expr::Block { .. } => unreachable!(),
-        hir::Expr::Match { .. } => unreachable!(),
-        hir::Expr::Match2 { .. } => unreachable!(),
-        hir::Expr::StructField {
+    match expr.kind {
+        hir::ExprKind::Error => unreachable!(),
+        hir::ExprKind::Const { value } => fold_const(emit, value),
+        hir::ExprKind::If { .. } => unreachable!(),
+        hir::ExprKind::Block { .. } => unreachable!(),
+        hir::ExprKind::Match { .. } => unreachable!(),
+        hir::ExprKind::Match2 { .. } => unreachable!(),
+        hir::ExprKind::StructField {
             target,
             field_id,
             deref,
             ..
         } => fold_struct_field(hir, emit, origin_id, target, field_id, deref),
-        hir::Expr::SliceField {
+        hir::ExprKind::SliceField {
             target,
             field,
             deref,
         } => fold_slice_field(hir, emit, origin_id, target, field, deref),
-        hir::Expr::Index { target, access } => fold_index(hir, emit, origin_id, target, access),
-        hir::Expr::Slice { .. } => unreachable!(),
-        hir::Expr::Cast { target, into, kind } => {
+        hir::ExprKind::Index { target, access } => fold_index(hir, emit, origin_id, target, access),
+        hir::ExprKind::Slice { .. } => unreachable!(),
+        hir::ExprKind::Cast { target, into, kind } => {
             fold_cast(hir, emit, origin_id, target, *into, kind)
         }
-        hir::Expr::LocalVar { .. } => unreachable!(),
-        hir::Expr::ParamVar { .. } => unreachable!(),
-        hir::Expr::ConstVar { const_id } => fold_const_var(hir, emit, const_id),
-        hir::Expr::GlobalVar { .. } => unreachable!(),
-        hir::Expr::Variant { .. } => unimplemented!("fold enum variant"),
-        hir::Expr::CallDirect { .. } => unreachable!(),
-        hir::Expr::CallIndirect { .. } => unreachable!(),
-        hir::Expr::StructInit { struct_id, input } => {
+        hir::ExprKind::LocalVar { .. } => unreachable!(),
+        hir::ExprKind::ParamVar { .. } => unreachable!(),
+        hir::ExprKind::ConstVar { const_id } => fold_const_var(hir, emit, const_id),
+        hir::ExprKind::GlobalVar { .. } => unreachable!(),
+        hir::ExprKind::Variant { .. } => unimplemented!("fold enum variant"),
+        hir::ExprKind::CallDirect { .. } => unreachable!(),
+        hir::ExprKind::CallIndirect { .. } => unreachable!(),
+        hir::ExprKind::StructInit { struct_id, input } => {
             fold_struct_init(hir, emit, origin_id, struct_id, input)
         }
-        hir::Expr::ArrayInit { array_init } => fold_array_init(hir, emit, origin_id, array_init),
-        hir::Expr::ArrayRepeat { array_repeat } => {
+        hir::ExprKind::ArrayInit { array_init } => {
+            fold_array_init(hir, emit, origin_id, array_init)
+        }
+        hir::ExprKind::ArrayRepeat { array_repeat } => {
             fold_array_repeat(hir, emit, origin_id, array_repeat)
         }
-        hir::Expr::Deref { .. } => unreachable!(),
-        hir::Expr::Address { .. } => unreachable!(),
-        hir::Expr::Unary { op, rhs } => fold_unary_expr(hir, emit, origin_id, op, rhs),
-        hir::Expr::Binary { op, lhs, rhs } => fold_binary(hir, emit, origin_id, op, lhs, rhs),
+        hir::ExprKind::Deref { .. } => unreachable!(),
+        hir::ExprKind::Address { .. } => unreachable!(),
+        hir::ExprKind::Unary { op, rhs } => fold_unary_expr(hir, emit, origin_id, op, rhs),
+        hir::ExprKind::Binary { op, lhs, rhs } => fold_binary(hir, emit, origin_id, op, lhs, rhs),
     }
 }
 

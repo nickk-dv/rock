@@ -1008,7 +1008,7 @@ fn match_<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Match<'ast>, S
     let offset = p.state.match_arms.start();
     let on_expr = expr(p)?;
     let mut fallback = None;
-    let mut fallback_range = TextRange::empty_at(0.into());
+    let mut fallback_range = TextRange::zero();
 
     p.expect(T!['{'])?;
     while !p.at(T!['}']) && !p.at(T![eof]) {

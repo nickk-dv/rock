@@ -682,7 +682,7 @@ fn expr_kind<'ast>(
                     let range = fallback.range(ctx.tree);
                     (Some(expr), range)
                 }
-                None => (None, TextRange::empty_at(0.into())),
+                None => (None, TextRange::zero()),
             };
 
             //@sync names `arms` vs `match_arms`
