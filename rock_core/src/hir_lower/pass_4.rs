@@ -844,15 +844,18 @@ pub fn resolve_const_expr<'hir>(
 
     let mut proc = proc_scope::ProcScope::new(&dummy_data, Expectation::None);
     let error_count = emit.error_count();
-    let hir_expr = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
+    let expr_res = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
 
     //@instead result option or result?
     if emit.did_error(error_count) {
         hir::ConstValue::Error
-    } else if let Ok(value) = fold_const_expr(hir, emit, origin_id, hir_expr.expr) {
-        value
     } else {
-        hir::ConstValue::Error
+        let src = SourceRange::new(origin_id, expr_res.expr.range);
+        if let Ok(value) = fold_const_expr(hir, emit, src, expr_res.expr) {
+            value
+        } else {
+            hir::ConstValue::Error
+        }
     }
 }
 
@@ -968,12 +971,12 @@ fn aligned_size(size: u64, align: u64) -> u64 {
 fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     expr: &hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     match expr.kind {
         hir::ExprKind::Error => unreachable!(),
-        hir::ExprKind::Const { value } => fold_const(emit, value),
+        hir::ExprKind::Const { value } => fold_const(emit, src, value),
         hir::ExprKind::If { .. } => unreachable!(),
         hir::ExprKind::Block { .. } => unreachable!(),
         hir::ExprKind::Match { .. } => unreachable!(),
@@ -983,16 +986,16 @@ fn fold_const_expr<'hir>(
             field_id,
             deref,
             ..
-        } => fold_struct_field(hir, emit, origin_id, target, field_id, deref),
+        } => fold_struct_field(hir, emit, src, target, field_id, deref),
         hir::ExprKind::SliceField {
             target,
             field,
             deref,
-        } => fold_slice_field(hir, emit, origin_id, target, field, deref),
-        hir::ExprKind::Index { target, access } => fold_index(hir, emit, origin_id, target, access),
+        } => fold_slice_field(hir, emit, src, target, field, deref),
+        hir::ExprKind::Index { target, access } => fold_index(hir, emit, src, target, access),
         hir::ExprKind::Slice { .. } => unreachable!(),
         hir::ExprKind::Cast { target, into, kind } => {
-            fold_cast(hir, emit, origin_id, target, *into, kind)
+            fold_cast(hir, emit, src, target, *into, kind)
         }
         hir::ExprKind::LocalVar { .. } => unreachable!(),
         hir::ExprKind::ParamVar { .. } => unreachable!(),
@@ -1002,29 +1005,28 @@ fn fold_const_expr<'hir>(
         hir::ExprKind::CallDirect { .. } => unreachable!(),
         hir::ExprKind::CallIndirect { .. } => unreachable!(),
         hir::ExprKind::StructInit { struct_id, input } => {
-            fold_struct_init(hir, emit, origin_id, struct_id, input)
+            fold_struct_init(hir, emit, src, struct_id, input)
         }
-        hir::ExprKind::ArrayInit { array_init } => {
-            fold_array_init(hir, emit, origin_id, array_init)
-        }
+        hir::ExprKind::ArrayInit { array_init } => fold_array_init(hir, emit, src, array_init),
         hir::ExprKind::ArrayRepeat { array_repeat } => {
-            fold_array_repeat(hir, emit, origin_id, array_repeat)
+            fold_array_repeat(hir, emit, src, array_repeat)
         }
         hir::ExprKind::Deref { .. } => unreachable!(),
         hir::ExprKind::Address { .. } => unreachable!(),
-        hir::ExprKind::Unary { op, rhs } => fold_unary_expr(hir, emit, origin_id, op, rhs),
-        hir::ExprKind::Binary { op, lhs, rhs } => fold_binary(hir, emit, origin_id, op, lhs, rhs),
+        hir::ExprKind::Unary { op, rhs } => fold_unary_expr(hir, emit, src, op, rhs),
+        hir::ExprKind::Binary { op, lhs, rhs } => fold_binary(hir, emit, src, op, lhs, rhs),
     }
 }
 
 fn fold_const<'hir>(
     emit: &mut HirEmit,
+    src: SourceRange,
     value: hir::ConstValue<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     match value {
         hir::ConstValue::Error => unreachable!(),
-        hir::ConstValue::Int { val, int_ty, .. } => int_range_check(emit, val.into(), int_ty),
-        hir::ConstValue::Float { val, float_ty } => float_range_check(emit, val, float_ty),
+        hir::ConstValue::Int { val, int_ty, .. } => int_range_check(emit, src, val.into(), int_ty),
+        hir::ConstValue::Float { val, float_ty } => float_range_check(emit, src, val, float_ty),
         hir::ConstValue::Null
         | hir::ConstValue::Bool { .. }
         | hir::ConstValue::Char { .. }
@@ -1040,7 +1042,7 @@ fn fold_const<'hir>(
 fn fold_struct_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     target: &hir::Expr<'hir>,
     field_id: hir::FieldID,
     deref: bool,
@@ -1048,7 +1050,8 @@ fn fold_struct_field<'hir>(
     if deref {
         unreachable!()
     }
-    let target = fold_const_expr(hir, emit, origin_id, target)?;
+    let target_src = SourceRange::new(src.module_id(), target.range);
+    let target = fold_const_expr(hir, emit, target_src, target)?;
 
     match target {
         hir::ConstValue::Struct { struct_ } => {
@@ -1062,7 +1065,7 @@ fn fold_struct_field<'hir>(
 fn fold_slice_field<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     target: &hir::Expr<'hir>,
     field: hir::SliceField,
     deref: bool,
@@ -1070,7 +1073,8 @@ fn fold_slice_field<'hir>(
     if deref {
         unreachable!();
     }
-    let target = fold_const_expr(hir, emit, origin_id, target)?;
+    let target_src = SourceRange::new(src.module_id(), target.range);
+    let target = fold_const_expr(hir, emit, target_src, target)?;
 
     match target {
         hir::ConstValue::String { id, c_string } => match field {
@@ -1097,15 +1101,20 @@ fn fold_slice_field<'hir>(
 fn fold_index<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     target: &hir::Expr<'hir>,
     access: &hir::IndexAccess<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     if access.deref {
         unreachable!();
     }
-    let target = fold_const_expr(hir, emit, origin_id, target)?;
-    let index = fold_const_expr(hir, emit, origin_id, access.index)?;
+    let target_src = SourceRange::new(src.module_id(), target.range);
+    let index_src = SourceRange::new(src.module_id(), access.index.range);
+    let target = fold_const_expr(hir, emit, target_src, target);
+    let index = fold_const_expr(hir, emit, index_src, access.index);
+
+    let target = target?;
+    let index = index?;
 
     let index = match index {
         hir::ConstValue::Int { val, neg, int_ty } => {
@@ -1123,10 +1132,9 @@ fn fold_index<'hir>(
     };
 
     if index >= array_len {
-        //@update error message
-        emit.error(ErrorComp::message(format!(
-            "index out of bounds\nvalue `{index}` >= `{array_len}` (array len)"
-        )));
+        let format =
+            format!("index out of bounds\nvalue `{index}` is outside `0..<{array_len}` range");
+        emit.error(ErrorComp::new(format, index_src, None));
         Err(())
     } else {
         let value_id = match target {
@@ -1144,7 +1152,7 @@ fn fold_index<'hir>(
 fn fold_cast<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     target: &hir::Expr<'hir>,
     into: hir::Type,
     kind: hir::CastKind,
@@ -1163,7 +1171,8 @@ fn fold_cast<'hir>(
         }
     }
 
-    let target = fold_const_expr(hir, emit, origin_id, target)?;
+    let target_src = SourceRange::new(src.module_id(), target.range);
+    let target = fold_const_expr(hir, emit, target_src, target)?;
 
     match kind {
         hir::CastKind::Error => unreachable!(),
@@ -1173,24 +1182,24 @@ fn fold_cast<'hir>(
         | hir::CastKind::IntU_Zero_Extend => {
             let val = target.into_int();
             let int_ty = into_int_ty(into);
-            int_range_check(emit, val, int_ty)
+            int_range_check(emit, src, val, int_ty)
         }
         hir::CastKind::IntS_to_Float | hir::CastKind::IntU_to_Float => {
             let val = target.into_int();
             let float_ty = into_float_ty(into);
             let val_cast = val as f64;
-            float_range_check(emit, val_cast, float_ty)
+            float_range_check(emit, src, val_cast, float_ty)
         }
         hir::CastKind::Float_to_IntS | hir::CastKind::Float_to_IntU => {
             let val = target.into_float();
             let int_ty = into_int_ty(into);
             let val_cast = val as i128;
-            int_range_check(emit, val_cast, int_ty)
+            int_range_check(emit, src, val_cast, int_ty)
         }
         hir::CastKind::Float_Trunc | hir::CastKind::Float_Extend => {
             let val = target.into_float();
             let float_ty = into_float_ty(into);
-            float_range_check(emit, val, float_ty)
+            float_range_check(emit, src, val, float_ty)
         }
     }
 }
@@ -1206,14 +1215,24 @@ fn fold_const_var<'hir>(
     match *eval {
         hir::ConstEval::Unresolved(..) => unreachable!("fold_const_var unresolved"),
         hir::ConstEval::ResolvedError => Err(()),
-        hir::ConstEval::ResolvedValue(value_id) => Ok(emit.const_intern.get(value_id)),
+        hir::ConstEval::ResolvedValue(value_id) => {
+            //@currently ConstValue::Error can be stored in constant
+            // instead use ResolvedError state of ConstEval, fully remove
+            // ConstValue::Error later, this is a temporary hack
+            let value = emit.const_intern.get(value_id);
+            match value {
+                hir::ConstValue::Error => Err(()),
+                _ => Ok(value),
+            }
+        }
     }
 }
 
+//@fully cover all values, even if one errored
 fn fold_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     struct_id: hir::StructID,
     input: &[hir::FieldInit<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -1222,7 +1241,8 @@ fn fold_struct_init<'hir>(
     value_ids.resize(input.len(), error_id);
 
     for init in input {
-        let value = fold_const_expr(hir, emit, origin_id, init.expr)?;
+        let src = SourceRange::new(src.module_id(), init.expr.range);
+        let value = fold_const_expr(hir, emit, src, init.expr)?;
         value_ids[init.field_id.index()] = emit.const_intern.intern(value);
     }
 
@@ -1232,16 +1252,18 @@ fn fold_struct_init<'hir>(
     Ok(hir::ConstValue::Struct { struct_ })
 }
 
+//@fully cover all values, even if one errored
 fn fold_array_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     array_init: &hir::ArrayInit<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut value_ids = Vec::with_capacity(array_init.input.len());
 
     for &init in array_init.input {
-        let value = fold_const_expr(hir, emit, origin_id, init)?;
+        let src = SourceRange::new(src.module_id(), init.range);
+        let value = fold_const_expr(hir, emit, src, init)?;
         value_ids.push(emit.const_intern.intern(value));
     }
 
@@ -1257,10 +1279,11 @@ fn fold_array_init<'hir>(
 fn fold_array_repeat<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     array_repeat: &hir::ArrayRepeat<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let value = fold_const_expr(hir, emit, origin_id, array_repeat.expr)?;
+    let src = SourceRange::new(src.module_id(), array_repeat.expr.range);
+    let value = fold_const_expr(hir, emit, src, array_repeat.expr)?;
 
     Ok(hir::ConstValue::ArrayRepeat {
         value: emit.const_intern.intern(value),
@@ -1271,22 +1294,23 @@ fn fold_array_repeat<'hir>(
 fn fold_unary_expr<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     op: hir::UnOp,
     rhs: &'hir hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let rhs = fold_const_expr(hir, emit, origin_id, rhs)?;
+    let rhs_src = SourceRange::new(src.module_id(), rhs.range);
+    let rhs = fold_const_expr(hir, emit, rhs_src, rhs)?;
 
     match op {
         hir::UnOp::Neg_Int => {
             let int_ty = rhs.into_int_ty();
             let val = -rhs.into_int();
-            int_range_check(emit, val, int_ty)
+            int_range_check(emit, src, val, int_ty)
         }
         hir::UnOp::Neg_Float => {
             let float_ty = rhs.into_float_ty();
             let val = rhs.into_float();
-            float_range_check(emit, val, float_ty)
+            float_range_check(emit, src, val, float_ty)
         }
         hir::UnOp::BitNot => unimplemented!(),
         hir::UnOp::LogicNot => {
@@ -1299,34 +1323,39 @@ fn fold_unary_expr<'hir>(
 fn fold_binary<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
-    origin_id: ModuleID,
+    src: SourceRange,
     op: hir::BinOp,
     lhs: &hir::Expr<'hir>,
     rhs: &hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let lhs = fold_const_expr(hir, emit, origin_id, lhs)?;
-    let rhs = fold_const_expr(hir, emit, origin_id, rhs)?;
+    let lhs_src = SourceRange::new(src.module_id(), lhs.range);
+    let rhs_src = SourceRange::new(src.module_id(), rhs.range);
+    let lhs = fold_const_expr(hir, emit, lhs_src, lhs);
+    let rhs = fold_const_expr(hir, emit, rhs_src, rhs);
+
+    let lhs = lhs?;
+    let rhs = rhs?;
 
     match op {
         hir::BinOp::Add_Int => {
             let int_ty = lhs.into_int_ty();
             let val = lhs.into_int() + rhs.into_int();
-            int_range_check(emit, val, int_ty)
+            int_range_check(emit, src, val, int_ty)
         }
         hir::BinOp::Add_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() + rhs.into_float();
-            float_range_check(emit, val, float_ty)
+            float_range_check(emit, src, val, float_ty)
         }
         hir::BinOp::Sub_Int => {
             let int_ty = lhs.into_int_ty();
             let val = lhs.into_int() - rhs.into_int();
-            int_range_check(emit, val, int_ty)
+            int_range_check(emit, src, val, int_ty)
         }
         hir::BinOp::Sub_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() - rhs.into_float();
-            float_range_check(emit, val, float_ty)
+            float_range_check(emit, src, val, float_ty)
         }
         hir::BinOp::Mul_Int => {
             let int_ty = lhs.into_int_ty();
@@ -1334,16 +1363,16 @@ fn fold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if let Some(val) = lhs.checked_mul(rhs) {
-                int_range_check(emit, val, int_ty)
+                int_range_check(emit, src, val, int_ty)
             } else {
-                error_binary_int_overflow(emit, op, lhs, rhs);
+                error_binary_int_overflow(emit, src, op, lhs, rhs);
                 Err(())
             }
         }
         hir::BinOp::Mul_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() * rhs.into_float();
-            float_range_check(emit, val, float_ty)
+            float_range_check(emit, src, val, float_ty)
         }
         hir::BinOp::Div_IntS | hir::BinOp::Div_IntU => {
             let int_ty = lhs.into_int_ty();
@@ -1351,19 +1380,19 @@ fn fold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if rhs == 0 {
-                error_binary_int_div_zero(emit, op, lhs, rhs);
+                error_binary_int_div_zero(emit, src, op, lhs, rhs);
                 Err(())
             } else if let Some(val) = lhs.checked_div(rhs) {
-                int_range_check(emit, val, int_ty)
+                int_range_check(emit, src, val, int_ty)
             } else {
-                error_binary_int_overflow(emit, op, lhs, rhs);
+                error_binary_int_overflow(emit, src, op, lhs, rhs);
                 Err(())
             }
         }
         hir::BinOp::Div_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() / rhs.into_float();
-            float_range_check(emit, val, float_ty)
+            float_range_check(emit, src, val, float_ty)
         }
         hir::BinOp::Rem_IntS | hir::BinOp::Rem_IntU => {
             let int_ty = lhs.into_int_ty();
@@ -1371,12 +1400,12 @@ fn fold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if rhs == 0 {
-                error_binary_int_div_zero(emit, op, lhs, rhs);
+                error_binary_int_div_zero(emit, src, op, lhs, rhs);
                 Err(())
             } else if let Some(val) = lhs.checked_rem(rhs) {
-                int_range_check(emit, val, int_ty)
+                int_range_check(emit, src, val, int_ty)
             } else {
-                error_binary_int_overflow(emit, op, lhs, rhs);
+                error_binary_int_overflow(emit, src, op, lhs, rhs);
                 Err(())
             }
         }
@@ -1445,20 +1474,33 @@ fn fold_binary<'hir>(
     }
 }
 
-fn error_binary_int_div_zero(emit: &mut HirEmit, op: hir::BinOp, lhs: i128, rhs: i128) {
+fn error_binary_int_div_zero(
+    emit: &mut HirEmit,
+    src: SourceRange,
+    op: hir::BinOp,
+    lhs: i128,
+    rhs: i128,
+) {
     let op_str = op.as_str();
     let format = format!("integer division by zero\nwhen computing: `{lhs}` {op_str} `{rhs}`");
-    emit.error(ErrorComp::message(format));
+    emit.error(ErrorComp::new(format, src, None));
 }
 
-fn error_binary_int_overflow(emit: &mut HirEmit, op: hir::BinOp, lhs: i128, rhs: i128) {
+fn error_binary_int_overflow(
+    emit: &mut HirEmit,
+    src: SourceRange,
+    op: hir::BinOp,
+    lhs: i128,
+    rhs: i128,
+) {
     let op_str = op.as_str();
     let format = format!("integer constant overflow\nwhen computing: `{lhs}` {op_str} `{rhs}`");
-    emit.error(ErrorComp::message(format));
+    emit.error(ErrorComp::new(format, src, None));
 }
 
 fn int_range_check<'hir>(
     emit: &mut HirEmit,
+    src: SourceRange,
     val: i128,
     int_ty: hir::BasicInt,
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -1467,20 +1509,20 @@ fn int_range_check<'hir>(
         hir::BasicInt::S16 => (i16::MIN as i128, i16::MAX as i128),
         hir::BasicInt::S32 => (i32::MIN as i128, i32::MAX as i128),
         hir::BasicInt::S64 => (i64::MIN as i128, i64::MAX as i128),
-        hir::BasicInt::Ssize => todo!(), //@requires target pointer_width
+        hir::BasicInt::Ssize => (i64::MIN as i128, i64::MAX as i128), //@requires target pointer_width
         hir::BasicInt::U8 => (u8::MIN as i128, u8::MAX as i128),
         hir::BasicInt::U16 => (u16::MIN as i128, u16::MAX as i128),
         hir::BasicInt::U32 => (u32::MIN as i128, u32::MAX as i128),
         hir::BasicInt::U64 => (u64::MIN as i128, u64::MAX as i128),
-        hir::BasicInt::Usize => todo!(), //@requires target pointer_width
+        hir::BasicInt::Usize => (u64::MIN as i128, u64::MAX as i128), //@requires target pointer_width
     };
 
     if val < min || val > max {
-        //@no source info available
-        emit.error(ErrorComp::message(format!(
+        let format = format!(
             "integer constant out of range for `{}`\nvalue `{val}` is outside `{min}..={max}` range",
             int_ty.into_basic().as_str()
-        )));
+        );
+        emit.error(ErrorComp::new(format, src, None));
         Err(())
     } else {
         if val > 0 {
@@ -1497,6 +1539,7 @@ fn int_range_check<'hir>(
 
 fn float_range_check<'hir>(
     emit: &mut HirEmit,
+    src: SourceRange,
     val: f64,
     float_ty: hir::BasicFloat,
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -1506,19 +1549,19 @@ fn float_range_check<'hir>(
     };
 
     if val.is_nan() {
-        //@no source info available
-        emit.error(ErrorComp::message(format!("float constant is NaN")));
+        let format = format!("float constant is NaN");
+        emit.error(ErrorComp::new(format, src, None));
         Err(())
     } else if val.is_infinite() {
-        //@no source info available
-        emit.error(ErrorComp::message(format!("float constant is Infinite")));
+        let format = format!("float constant is Infinite");
+        emit.error(ErrorComp::new(format, src, None));
         Err(())
     } else if val < min || val > max {
-        //@no error source info available
-        emit.error(ErrorComp::message(format!(
+        let format = format!(
             "float constant out of range for `{}`\nvalue `{val}` is outside `{min}..={max}` range",
             float_ty.into_basic().as_str()
-        )));
+        );
+        emit.error(ErrorComp::new(format, src, None));
         Err(())
     } else {
         Ok(hir::ConstValue::Float { val, float_ty })
