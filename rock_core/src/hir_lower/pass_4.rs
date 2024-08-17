@@ -1228,7 +1228,6 @@ fn fold_const_var<'hir>(
     }
 }
 
-//@fully cover all values, even if one errored
 fn fold_struct_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1236,44 +1235,56 @@ fn fold_struct_init<'hir>(
     struct_id: hir::StructID,
     input: &[hir::FieldInit<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
+    let mut correct = true;
     let mut value_ids = Vec::new();
-    let error_id = emit.const_intern.intern(hir::ConstValue::Error);
-    value_ids.resize(input.len(), error_id);
+    value_ids.resize(input.len(), hir::ConstValueID::dummy());
 
     for init in input {
         let src = SourceRange::new(src.module_id(), init.expr.range);
-        let value = fold_const_expr(hir, emit, src, init.expr)?;
-        value_ids[init.field_id.index()] = emit.const_intern.intern(value);
+        if let Ok(value) = fold_const_expr(hir, emit, src, init.expr) {
+            value_ids[init.field_id.index()] = emit.const_intern.intern(value);
+        } else {
+            correct = false;
+        }
     }
 
-    let fields = emit.const_intern.arena().alloc_slice(&value_ids);
-    let const_struct = hir::ConstStruct { struct_id, fields };
-    let struct_ = emit.const_intern.arena().alloc(const_struct);
-    Ok(hir::ConstValue::Struct { struct_ })
+    if correct {
+        let fields = emit.const_intern.arena().alloc_slice(&value_ids);
+        let const_struct = hir::ConstStruct { struct_id, fields };
+        let struct_ = emit.const_intern.arena().alloc(const_struct);
+        Ok(hir::ConstValue::Struct { struct_ })
+    } else {
+        Err(())
+    }
 }
 
-//@fully cover all values, even if one errored
 fn fold_array_init<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     array_init: &hir::ArrayInit<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
+    let mut correct = true;
     let mut value_ids = Vec::with_capacity(array_init.input.len());
 
-    for &init in array_init.input {
-        let src = SourceRange::new(src.module_id(), init.range);
-        let value = fold_const_expr(hir, emit, src, init)?;
-        value_ids.push(emit.const_intern.intern(value));
+    for &expr in array_init.input {
+        let src = SourceRange::new(src.module_id(), expr.range);
+        if let Ok(value) = fold_const_expr(hir, emit, src, expr) {
+            value_ids.push(emit.const_intern.intern(value));
+        } else {
+            correct = false;
+        }
     }
 
-    let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
-    let const_array = hir::ConstArray {
-        len: values.len() as u64,
-        values,
-    };
-    let array = emit.const_intern.arena().alloc(const_array);
-    Ok(hir::ConstValue::Array { array })
+    if correct {
+        let len = value_ids.len() as u64;
+        let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
+        let const_array = hir::ConstArray { len, values };
+        let array = emit.const_intern.arena().alloc(const_array);
+        Ok(hir::ConstValue::Array { array })
+    } else {
+        Err(())
+    }
 }
 
 fn fold_array_repeat<'hir>(
@@ -1391,8 +1402,16 @@ fn fold_binary<'hir>(
         }
         hir::BinOp::Div_Float => {
             let float_ty = lhs.into_float_ty();
-            let val = lhs.into_float() / rhs.into_float();
-            float_range_check(emit, src, val, float_ty)
+            let lhs = lhs.into_float();
+            let rhs = rhs.into_float();
+
+            if rhs == 0.0 {
+                error_binary_float_div_zero(emit, src, op, lhs, rhs);
+                Err(())
+            } else {
+                let val = lhs / rhs;
+                float_range_check(emit, src, val, float_ty)
+            }
         }
         hir::BinOp::Rem_IntS | hir::BinOp::Rem_IntU => {
             let int_ty = lhs.into_int_ty();
@@ -1483,6 +1502,18 @@ fn error_binary_int_div_zero(
 ) {
     let op_str = op.as_str();
     let format = format!("integer division by zero\nwhen computing: `{lhs}` {op_str} `{rhs}`");
+    emit.error(ErrorComp::new(format, src, None));
+}
+
+fn error_binary_float_div_zero(
+    emit: &mut HirEmit,
+    src: SourceRange,
+    op: hir::BinOp,
+    lhs: f64,
+    rhs: f64,
+) {
+    let op_str = op.as_str();
+    let format = format!("float division by zero\nwhen computing: `{lhs}` {op_str} `{rhs}`");
     emit.error(ErrorComp::new(format, src, None));
 }
 
