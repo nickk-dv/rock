@@ -62,11 +62,12 @@ pub enum ProcFlag {
 id_impl!(EnumID);
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
+    pub attr_set: BitSet,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub int_ty: BasicInt,
     pub variants: &'hir [Variant<'hir>],
-    pub size_eval: SizeEval,
+    pub layout: LayoutEval,
 }
 
 id_impl!(VariantID);
@@ -83,13 +84,20 @@ pub enum VariantKind<'hir> {
     HasValues(&'hir [Type<'hir>]),
 }
 
+#[repr(u32)]
+#[derive(Copy, Clone)]
+pub enum EnumFlag {
+    ReprC,
+}
+
 id_impl!(StructID);
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
+    pub attr_set: BitSet,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub fields: &'hir [Field<'hir>],
-    pub size_eval: SizeEval,
+    pub layout: LayoutEval,
 }
 
 id_impl!(FieldID);
@@ -98,6 +106,12 @@ pub struct Field<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
+}
+
+#[repr(u32)]
+#[derive(Copy, Clone)]
+pub enum StructFlag {
+    ReprC,
 }
 
 id_impl!(ConstID);
@@ -135,14 +149,14 @@ pub enum ConstEval<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum SizeEval {
+pub enum LayoutEval {
     Unresolved,
     ResolvedError,
-    Resolved(Size),
+    Resolved(Layout),
 }
 
 #[derive(Copy, Clone)]
-pub struct Size {
+pub struct Layout {
     size: u64,
     align: u64,
 }
@@ -259,19 +273,19 @@ pub enum ConstValue<'hir> {
 pub struct ConstVariant<'hir> {
     pub enum_id: EnumID,
     pub variant_id: VariantID,
-    pub values: Option<&'hir [ConstValueID]>,
+    pub value_ids: Option<&'hir [ConstValueID]>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstStruct<'hir> {
     pub struct_id: StructID,
-    pub fields: &'hir [ConstValueID],
+    pub value_ids: &'hir [ConstValueID],
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstArray<'hir> {
     pub len: u64,
-    pub values: &'hir [ConstValueID],
+    pub value_ids: &'hir [ConstValueID],
 }
 
 #[derive(Copy, Clone)]
@@ -614,19 +628,19 @@ impl<'hir> Hash for ConstValue<'hir> {
 
 impl<'hir> Hash for ConstVariant<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.enum_id.0, self.variant_id.0, self.values).hash(state);
+        (self.enum_id.0, self.variant_id.0, self.value_ids).hash(state);
     }
 }
 
 impl<'hir> Hash for ConstStruct<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.struct_id.0, self.fields).hash(state);
+        (self.struct_id.0, self.value_ids).hash(state);
     }
 }
 
 impl<'hir> Hash for ConstArray<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.len, self.values).hash(state);
+        (self.len, self.value_ids).hash(state);
     }
 }
 
@@ -675,22 +689,22 @@ impl<'hir> StructData<'hir> {
     }
 }
 
-impl SizeEval {
-    pub fn get_size(self) -> Option<Size> {
+impl LayoutEval {
+    pub fn get(self) -> Option<Layout> {
         match self {
-            SizeEval::Unresolved => None,
-            SizeEval::ResolvedError => None,
-            SizeEval::Resolved(size) => Some(size),
+            LayoutEval::Unresolved => None,
+            LayoutEval::ResolvedError => None,
+            LayoutEval::Resolved(layout) => Some(layout),
         }
     }
 }
 
-impl Size {
-    pub fn new(size: u64, align: u64) -> Size {
-        Size { size, align }
+impl Layout {
+    pub fn new(size: u64, align: u64) -> Layout {
+        Layout { size, align }
     }
-    pub fn new_equal(size_align: u64) -> Size {
-        Size {
+    pub fn new_equal(size_align: u64) -> Layout {
+        Layout {
             size: size_align,
             align: size_align,
         }

@@ -14,7 +14,7 @@ use crate::text::TextRange;
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
     EnumVariant(hir::EnumID, hir::VariantID),
-    StructSize(hir::StructID),
+    StructLayout(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
     ArrayLen(hir::ConstEvalID),
@@ -58,8 +58,8 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
     for id in hir.registry().struct_ids() {
         let data = hir.registry().struct_data(id);
 
-        if matches!(data.size_eval, hir::SizeEval::Unresolved) {
-            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructSize(id));
+        if matches!(data.layout, hir::LayoutEval::Unresolved) {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructLayout(id));
             let mut is_ok = true;
 
             for field in data.fields {
@@ -240,7 +240,7 @@ fn check_const_dependency_cycle(
             let variant = data.variant(variant_id);
             SourceRange::new(data.origin_id, variant.name.range)
         }
-        ConstDependency::StructSize(id) => {
+        ConstDependency::StructLayout(id) => {
             let data = hir.registry().struct_data(id);
             SourceRange::new(data.origin_id, data.name.range)
         }
@@ -292,7 +292,7 @@ fn check_const_dependency_cycle(
                 let src = SourceRange::new(data.origin_id, variant.name.range);
                 (msg, src)
             }
-            ConstDependency::StructSize(id) => {
+            ConstDependency::StructLayout(id) => {
                 let data = hir.registry().struct_data(id);
                 let msg = format!(
                     "{prefix}depends on size of `{}`{postfix}",
@@ -375,9 +375,9 @@ fn const_dependencies_mark_error_up_to_root(
                     }
                 }
             }
-            ConstDependency::StructSize(id) => {
+            ConstDependency::StructLayout(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
-                data.size_eval = hir::SizeEval::ResolvedError;
+                data.layout = hir::LayoutEval::ResolvedError;
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
@@ -438,9 +438,9 @@ fn add_struct_size_const_dependency<'hir>(
 ) -> Result<(), TreeNodeID> {
     let data = hir.registry().struct_data(struct_id);
 
-    match data.size_eval {
-        hir::SizeEval::Unresolved => {
-            let node_id = tree.add_child(parent_id, ConstDependency::StructSize(struct_id));
+    match data.layout {
+        hir::LayoutEval::Unresolved => {
+            let node_id = tree.add_child(parent_id, ConstDependency::StructLayout(struct_id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
 
             for field in data.fields {
@@ -448,8 +448,8 @@ fn add_struct_size_const_dependency<'hir>(
             }
             Ok(())
         }
-        hir::SizeEval::ResolvedError => Err(parent_id),
-        hir::SizeEval::Resolved(_) => Ok(()),
+        hir::LayoutEval::ResolvedError => Err(parent_id),
+        hir::LayoutEval::Resolved(_) => Ok(()),
     }
 }
 
@@ -775,9 +775,9 @@ fn resolve_const_dependency_tree<'hir>(
                     hir::VariantKind::HasValues(_) => todo!("resolve tree VariantKind::HasValues"),
                 }
             }
-            ConstDependency::StructSize(id) => {
-                let size_eval = resolve_struct_size(hir, emit, id);
-                hir.registry_mut().struct_data_mut(id).size_eval = size_eval;
+            ConstDependency::StructLayout(id) => {
+                let layout = resolve_struct_layout(hir, emit, id);
+                hir.registry_mut().struct_data_mut(id).layout = layout;
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
@@ -859,10 +859,10 @@ pub fn resolve_const_expr<'hir>(
     }
 }
 
-fn resolve_enum_size(hir: &HirData, emit: &mut HirEmit, enum_id: hir::EnumID) -> hir::SizeEval {
+fn resolve_enum_layout(hir: &HirData, emit: &mut HirEmit, enum_id: hir::EnumID) -> hir::LayoutEval {
     let data = hir.registry().enum_data(enum_id);
     if data.variants.is_empty() {
-        return hir::SizeEval::Resolved(hir::Size::new(0, 1));
+        return hir::LayoutEval::Resolved(hir::Layout::new(0, 1));
     }
     let mut size: u64 = 0;
     let mut align: u64 = 1;
@@ -871,15 +871,15 @@ fn resolve_enum_size(hir: &HirData, emit: &mut HirEmit, enum_id: hir::EnumID) ->
     // with proper alignment
 
     //@temp
-    hir::SizeEval::Unresolved
+    hir::LayoutEval::Unresolved
 }
 
-fn resolve_variant_size(
+fn resolve_variant_layout(
     hir: &HirData,
     emit: &mut HirEmit,
     origin_id: ModuleID,
     variant: &hir::Variant,
-) -> Option<hir::Size> {
+) -> Option<hir::Layout> {
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
@@ -888,7 +888,7 @@ fn resolve_variant_size(
         hir::VariantKind::Constant(_) => {}
         hir::VariantKind::HasValues(types) => {
             for ty in types {
-                let (ty_size, ty_align) = match pass_5::type_size(
+                let (ty_size, ty_align) = match pass_5::type_layout(
                     hir,
                     emit,
                     *ty,
@@ -917,27 +917,27 @@ fn resolve_variant_size(
         }
     }
 
-    Some(hir::Size::new(size, align))
+    Some(hir::Layout::new(size, align))
 }
 
-fn resolve_struct_size(
+fn resolve_struct_layout(
     hir: &HirData,
     emit: &mut HirEmit,
     struct_id: hir::StructID,
-) -> hir::SizeEval {
+) -> hir::LayoutEval {
     let data = hir.registry().struct_data(struct_id);
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for field in data.fields {
-        let (field_size, field_align) = match pass_5::type_size(
+        let (field_size, field_align) = match pass_5::type_layout(
             hir,
             emit,
             field.ty,
             SourceRange::new(data.origin_id, field.name.range), //@review source range for this type_size error 10.05.24
         ) {
             Some(size) => (size.size(), size.align()),
-            None => return hir::SizeEval::ResolvedError,
+            None => return hir::LayoutEval::ResolvedError,
         };
 
         size = aligned_size(size, field_align);
@@ -952,13 +952,13 @@ fn resolve_struct_size(
                 SourceRange::new(data.origin_id, field.name.range), //@review source range for size overflow error 10.05.24
                 None,
             ));
-            return hir::SizeEval::ResolvedError;
+            return hir::LayoutEval::ResolvedError;
         };
         align = align.max(field_align);
     }
 
     size = aligned_size(size, align);
-    hir::SizeEval::Resolved(hir::Size::new(size, align))
+    hir::LayoutEval::Resolved(hir::Layout::new(size, align))
 }
 
 //@remove asserts later on when compiler is stable? 02.05.24
@@ -1055,7 +1055,7 @@ fn fold_struct_field<'hir>(
 
     match target {
         hir::ConstValue::Struct { struct_ } => {
-            let value_id = struct_.fields[field_id.index()];
+            let value_id = struct_.value_ids[field_id.index()];
             Ok(emit.const_intern.get(value_id))
         }
         _ => unreachable!(),
@@ -1138,7 +1138,7 @@ fn fold_index<'hir>(
         Err(())
     } else {
         let value_id = match target {
-            hir::ConstValue::Array { array } => array.values[index as usize],
+            hir::ConstValue::Array { array } => array.value_ids[index as usize],
             hir::ConstValue::ArrayRepeat { value, .. } => value,
             _ => unreachable!(),
         };
@@ -1249,8 +1249,11 @@ fn fold_struct_init<'hir>(
     }
 
     if correct {
-        let fields = emit.const_intern.arena().alloc_slice(&value_ids);
-        let const_struct = hir::ConstStruct { struct_id, fields };
+        let value_ids = emit.const_intern.arena().alloc_slice(&value_ids);
+        let const_struct = hir::ConstStruct {
+            struct_id,
+            value_ids,
+        };
         let struct_ = emit.const_intern.arena().alloc(const_struct);
         Ok(hir::ConstValue::Struct { struct_ })
     } else {
@@ -1278,8 +1281,8 @@ fn fold_array_init<'hir>(
 
     if correct {
         let len = value_ids.len() as u64;
-        let values = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
-        let const_array = hir::ConstArray { len, values };
+        let value_ids = emit.const_intern.arena().alloc_slice(value_ids.as_slice());
+        let const_array = hir::ConstArray { len, value_ids };
         let array = emit.const_intern.arena().alloc(const_array);
         Ok(hir::ConstValue::Array { array })
     } else {

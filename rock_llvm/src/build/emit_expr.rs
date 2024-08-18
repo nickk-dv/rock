@@ -218,8 +218,8 @@ fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Val
 }
 
 fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
-    let mut values = Vec::with_capacity(struct_.fields.len());
-    for &value_id in struct_.fields {
+    let mut values = Vec::with_capacity(struct_.value_ids.len());
+    for &value_id in struct_.value_ids {
         let value = codegen_const(cg, cg.hir.const_value(value_id));
         values.push(value);
     }
@@ -230,7 +230,7 @@ fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value
 
 fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
     let mut values = Vec::with_capacity(array.len as usize);
-    for &value_id in array.values {
+    for &value_id in array.value_ids {
         let value = codegen_const(cg, cg.hir.const_value(value_id));
         values.push(value);
     }

@@ -78,7 +78,7 @@ fn add_proc_item<'hir, 'ast>(
             ast::AttributeKind::Test => Some(ProcFlag::Test),
             ast::AttributeKind::Builtin => Some(ProcFlag::Builtin),
             ast::AttributeKind::Inline => Some(ProcFlag::Inline),
-            ast::AttributeKind::Thread_Local => {
+            ast::AttributeKind::ReprC | ast::AttributeKind::Thread_Local => {
                 error_attribute_cannot_apply(emit, origin_id, attr, "procedures");
                 None
             }
@@ -132,6 +132,7 @@ fn add_enum_item<'hir, 'ast>(
 ) {
     for attr in item.attrs {
         match attr.kind {
+            ast::AttributeKind::ReprC => {} //@apply it to enum data
             ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "enums"),
         }
@@ -139,12 +140,13 @@ fn add_enum_item<'hir, 'ast>(
 
     let data = hir::EnumData {
         origin_id,
+        attr_set: BitSet::EMPTY,
         vis: item.vis,
         name: item.name,
         // placeholder, real type is assigned in pass_3
         int_ty: hir::BasicInt::S8,
         variants: &[],
-        size_eval: hir::SizeEval::Unresolved,
+        layout: hir::LayoutEval::Unresolved,
     };
 
     let id = hir.registry_mut().add_enum(item, data);
@@ -166,6 +168,7 @@ fn add_struct_item<'hir, 'ast>(
 ) {
     for attr in item.attrs {
         match attr.kind {
+            ast::AttributeKind::ReprC => {} //@apply it to struct_data
             ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "structs"),
         }
@@ -173,10 +176,11 @@ fn add_struct_item<'hir, 'ast>(
 
     let data = hir::StructData {
         origin_id,
+        attr_set: BitSet::EMPTY,
         vis: item.vis,
         name: item.name,
         fields: &[],
-        size_eval: hir::SizeEval::Unresolved,
+        layout: hir::LayoutEval::Unresolved,
     };
 
     let id = hir.registry_mut().add_struct(item, data);
@@ -232,7 +236,10 @@ fn add_global_item<'hir, 'ast>(
 
     for attr in item.attrs {
         let flag = match attr.kind {
-            ast::AttributeKind::Test | ast::AttributeKind::Builtin | ast::AttributeKind::Inline => {
+            ast::AttributeKind::Test
+            | ast::AttributeKind::Builtin
+            | ast::AttributeKind::Inline
+            | ast::AttributeKind::ReprC => {
                 error_attribute_cannot_apply(emit, origin_id, attr, "globals");
                 None
             }

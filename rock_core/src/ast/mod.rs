@@ -151,6 +151,7 @@ pub enum AttributeKind {
     Test,
     Builtin,
     Inline,
+    ReprC,
     Thread_Local,
     Unknown,
 }
@@ -463,6 +464,7 @@ impl AttributeKind {
             AttributeKind::Test => "test",
             AttributeKind::Builtin => "builtin",
             AttributeKind::Inline => "inline",
+            AttributeKind::ReprC => "repr_c",
             AttributeKind::Thread_Local => "thread_local",
             AttributeKind::Unknown => "unknown",
         }
@@ -473,6 +475,7 @@ impl AttributeKind {
             "test" => AttributeKind::Test,
             "builtin" => AttributeKind::Builtin,
             "inline" => AttributeKind::Inline,
+            "repr_c" => AttributeKind::ReprC,
             "thread_local" => AttributeKind::Thread_Local,
             _ => AttributeKind::Unknown,
         }

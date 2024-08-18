@@ -1346,13 +1346,13 @@ fn typecheck_index<'hir>(
                 elem_ty: collection.elem_ty,
                 kind: match collection.kind {
                     SliceOrArray::Slice(slice) => hir::IndexKind::Slice {
-                        elem_size: type_size(
+                        elem_size: type_layout(
                             hir,
                             emit,
                             slice.elem_ty,
                             SourceRange::new(proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
                         )
-                        .unwrap_or(hir::Size::new(0, 1))
+                        .unwrap_or(hir::Layout::new(0, 1))
                         .size(),
                     },
                     SliceOrArray::Array(array) => hir::IndexKind::Array { array },
@@ -1399,39 +1399,41 @@ fn typecheck_call<'hir>(
     check_call_indirect(hir, emit, proc, target_res, input)
 }
 
-pub fn type_size(
+pub fn type_layout(
     hir: &HirData,
     emit: &mut HirEmit,
     ty: hir::Type,
     source: SourceRange,
-) -> Option<hir::Size> {
+) -> Option<hir::Layout> {
     match ty {
         hir::Type::Error => None,
-        hir::Type::Basic(basic) => Some(basic_type_size(basic)),
+        hir::Type::Basic(basic) => Some(basic_type_layout(basic)),
         hir::Type::Enum(id) => {
+            //@currently disregaring possible value types
             let data = hir.registry().enum_data(id);
             if data.variants.is_empty() {
-                Some(hir::Size::new(0, 1))
+                Some(hir::Layout::new(0, 1))
             } else {
-                Some(basic_type_size(data.int_ty.into_basic()))
+                Some(basic_type_layout(data.int_ty.into_basic()))
             }
         }
-        hir::Type::Struct(id) => hir.registry().struct_data(id).size_eval.get_size(),
-        hir::Type::Reference(_, _) => Some(hir::Size::new_equal(8)), //@assume 64bit target
-        hir::Type::Procedure(_) => Some(hir::Size::new_equal(8)),    //@assume 64bit target
-        hir::Type::ArraySlice(_) => Some(hir::Size::new(16, 8)),     //@assume 64bit target
+        hir::Type::Struct(id) => hir.registry().struct_data(id).layout.get(),
+        hir::Type::Reference(_, _) => Some(hir::Layout::new_equal(8)), //@assume 64bit target
+        hir::Type::Procedure(_) => Some(hir::Layout::new_equal(8)),    //@assume 64bit target
+        hir::Type::ArraySlice(_) => Some(hir::Layout::new(16, 8)),     //@assume 64bit target
         hir::Type::ArrayStatic(array) => {
-            if let (Some(elem_size), Some(len)) = (
-                type_size(hir, emit, array.elem_ty, source),
+            if let (Some(elem_layout), Some(len)) = (
+                type_layout(hir, emit, array.elem_ty, source),
                 array_static_len(hir, emit, array.len),
             ) {
-                if let Some(array_size) = elem_size.size().checked_mul(len) {
-                    Some(hir::Size::new(array_size, elem_size.align()))
+                if let Some(array_size) = elem_layout.size().checked_mul(len) {
+                    Some(hir::Layout::new(array_size, elem_layout.align()))
                 } else {
+                    //@match const fold error style
                     emit.error(ErrorComp::new(
                         format!(
                             "array size overflow: `{}` * `{}` (elem_size * array_len)",
-                            elem_size.size(),
+                            elem_layout.size(),
                             len
                         ),
                         source,
@@ -1446,25 +1448,25 @@ pub fn type_size(
     }
 }
 
-fn basic_type_size(basic: BasicType) -> hir::Size {
+fn basic_type_layout(basic: BasicType) -> hir::Layout {
     match basic {
-        BasicType::S8 => hir::Size::new_equal(1),
-        BasicType::S16 => hir::Size::new_equal(2),
-        BasicType::S32 => hir::Size::new_equal(4),
-        BasicType::S64 => hir::Size::new_equal(8),
-        BasicType::Ssize => hir::Size::new_equal(8), //@assume 64bit target
-        BasicType::U8 => hir::Size::new_equal(1),
-        BasicType::U16 => hir::Size::new_equal(2),
-        BasicType::U32 => hir::Size::new_equal(4),
-        BasicType::U64 => hir::Size::new_equal(8),
-        BasicType::Usize => hir::Size::new_equal(8), //@assume 64bit target
-        BasicType::F32 => hir::Size::new_equal(4),
-        BasicType::F64 => hir::Size::new_equal(8),
-        BasicType::Bool => hir::Size::new_equal(1),
-        BasicType::Char => hir::Size::new_equal(4),
-        BasicType::Rawptr => hir::Size::new_equal(8), //@assume 64bit target
-        BasicType::Void => hir::Size::new(0, 1),
-        BasicType::Never => hir::Size::new(0, 1),
+        BasicType::S8 => hir::Layout::new_equal(1),
+        BasicType::S16 => hir::Layout::new_equal(2),
+        BasicType::S32 => hir::Layout::new_equal(4),
+        BasicType::S64 => hir::Layout::new_equal(8),
+        BasicType::Ssize => hir::Layout::new_equal(8), //@assume 64bit target
+        BasicType::U8 => hir::Layout::new_equal(1),
+        BasicType::U16 => hir::Layout::new_equal(2),
+        BasicType::U32 => hir::Layout::new_equal(4),
+        BasicType::U64 => hir::Layout::new_equal(8),
+        BasicType::Usize => hir::Layout::new_equal(8), //@assume 64bit target
+        BasicType::F32 => hir::Layout::new_equal(4),
+        BasicType::F64 => hir::Layout::new_equal(8),
+        BasicType::Bool => hir::Layout::new_equal(1),
+        BasicType::Char => hir::Layout::new_equal(4),
+        BasicType::Rawptr => hir::Layout::new_equal(8), //@assume 64bit target
+        BasicType::Void => hir::Layout::new(0, 1),
+        BasicType::Never => hir::Layout::new(0, 1),
     }
 }
 
@@ -1550,8 +1552,8 @@ fn typecheck_cast<'hir>(
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::new(from);
             let into_kind = BasicTypeKind::new(into);
-            let from_size = basic_type_size(from).size();
-            let into_size = basic_type_size(into).size();
+            let from_size = basic_type_layout(from).size();
+            let into_size = basic_type_layout(into).size();
 
             match from_kind {
                 BasicTypeKind::IntS => match into_kind {
@@ -1633,10 +1635,10 @@ fn typecheck_sizeof<'hir>(
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
-    let kind = match type_size(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
-        Some(size) => {
+    let kind = match type_layout(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
+        Some(layout) => {
             let value = hir::ConstValue::Int {
-                val: size.size(),
+                val: layout.size(),
                 neg: false,
                 int_ty: BasicInt::Usize,
             };
