@@ -3,7 +3,7 @@ use crate::ast;
 use crate::bitset::BitSet;
 use crate::error::{ErrorComp, Info, SourceRange, WarningComp};
 use crate::hir;
-use crate::hir::{GlobalFlag, ProcFlag};
+use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, Session};
 
 pub fn populate_scopes<'hir>(
@@ -55,7 +55,7 @@ fn add_proc_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::ProcItem<'ast>,
 ) {
-    let mut attr_set = BitSet::EMPTY;
+    let mut attr_set = BitSet::empty();
 
     if item.block.is_none() {
         attr_set.set(ProcFlag::External);
@@ -97,7 +97,6 @@ fn add_proc_item<'hir, 'ast>(
                 Some(attr),
                 &mut attr_set,
                 new_flag,
-                &PROC_FLAG_ALL,
             );
         }
     }
@@ -130,9 +129,11 @@ fn add_enum_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::EnumItem<'ast>,
 ) {
+    let mut attr_set = BitSet::empty();
+
     for attr in item.attrs {
         match attr.kind {
-            ast::AttributeKind::ReprC => {} //@apply it to enum data
+            ast::AttributeKind::ReprC => attr_set.set(EnumFlag::ReprC),
             ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "enums"),
         }
@@ -140,7 +141,7 @@ fn add_enum_item<'hir, 'ast>(
 
     let data = hir::EnumData {
         origin_id,
-        attr_set: BitSet::EMPTY,
+        attr_set,
         vis: item.vis,
         name: item.name,
         // placeholder, real type is assigned in pass_3
@@ -166,9 +167,11 @@ fn add_struct_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::StructItem<'ast>,
 ) {
+    let mut attr_set = BitSet::empty();
+
     for attr in item.attrs {
         match attr.kind {
-            ast::AttributeKind::ReprC => {} //@apply it to struct_data
+            ast::AttributeKind::ReprC => attr_set.set(StructFlag::ReprC),
             ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "structs"),
         }
@@ -176,7 +179,7 @@ fn add_struct_item<'hir, 'ast>(
 
     let data = hir::StructData {
         origin_id,
-        attr_set: BitSet::EMPTY,
+        attr_set,
         vis: item.vis,
         name: item.name,
         fields: &[],
@@ -232,7 +235,7 @@ fn add_global_item<'hir, 'ast>(
     origin_id: ModuleID,
     item: &'ast ast::GlobalItem<'ast>,
 ) {
-    let mut attr_set = BitSet::EMPTY;
+    let mut attr_set = BitSet::empty();
 
     for attr in item.attrs {
         let flag = match attr.kind {
@@ -259,7 +262,6 @@ fn add_global_item<'hir, 'ast>(
                 Some(attr),
                 &mut attr_set,
                 new_flag,
-                &GLOBAL_FLAG_ALL,
             );
         }
     }
@@ -336,17 +338,18 @@ fn error_attribute_cannot_apply(
     ));
 }
 
-pub fn check_attribute_flag<FlagT: AttributeFlag + Copy + Clone>(
+pub fn check_attribute_flag<T>(
     emit: &mut HirEmit,
     origin_id: ModuleID,
     item_name: ast::Name,
     item_kind: &'static str,
     attr: Option<&ast::Attribute>,
-    attr_set: &mut BitSet,
-    new_flag: FlagT,
-    all_flags: &[FlagT],
-) {
-    if attr_set.contains(new_flag.into_u32()) {
+    attr_set: &mut BitSet<T>,
+    new_flag: T,
+) where
+    T: Copy + Clone + Into<u32> + DataFlag<T> + 'static,
+{
+    if attr_set.contains(new_flag) {
         if let Some(attr) = attr {
             emit.warning(WarningComp::new(
                 format!("duplicate attribute #[`{}`]", attr.kind.as_str()),
@@ -354,60 +357,66 @@ pub fn check_attribute_flag<FlagT: AttributeFlag + Copy + Clone>(
                 None,
             ));
         } else {
-            // properties like `external`, `variadic`
-            // cannot be set multiple times, unlike attributes
+            // properties cannot be set multiple times
             unreachable!();
         }
         return;
     }
 
-    let compat_set = new_flag.compatibility_set();
-
-    for flag in all_flags {
-        if attr_set.contains(flag.into_u32()) {
-            if !compat_set.contains(flag.into_u32()) {
-                if let Some(attr) = attr {
-                    emit.error(ErrorComp::new(
-                        format!(
-                            "attribute #[{}] cannot be applied to `{}` {item_kind}",
-                            new_flag.as_str(),
-                            flag.as_str(),
-                        ),
-                        SourceRange::new(origin_id, attr.range),
-                        None,
-                    ));
-                } else {
-                    emit.error(ErrorComp::new(
-                        format!(
-                            "`{}` {item_kind} cannot be `{}`",
-                            new_flag.as_str(),
-                            flag.as_str(),
-                        ),
-                        SourceRange::new(origin_id, item_name.range),
-                        None,
-                    ));
-                }
-                return;
-            }
+    for flag in T::ALL_FLAGS {
+        if !attr_set.contains(*flag) {
+            continue;
         }
+        if new_flag.compatible(*flag) {
+            continue;
+        }
+
+        if let Some(attr) = attr {
+            emit.error(ErrorComp::new(
+                format!(
+                    "attribute #[{}] cannot be applied to `{}` {item_kind}",
+                    new_flag.as_str(),
+                    flag.as_str(),
+                ),
+                SourceRange::new(origin_id, attr.range),
+                None,
+            ));
+        } else {
+            emit.error(ErrorComp::new(
+                format!(
+                    "`{}` {item_kind} cannot be `{}`",
+                    new_flag.as_str(),
+                    flag.as_str(),
+                ),
+                SourceRange::new(origin_id, item_name.range),
+                None,
+            ));
+        }
+        return;
     }
 
-    attr_set.set(new_flag.into_u32());
+    attr_set.set(new_flag);
 }
 
-pub trait AttributeFlag
+pub trait DataFlag<T: PartialEq + Into<u32> + 'static>
 where
-    Self: Sized,
+    Self: Sized + PartialEq,
 {
-    fn into_u32(self) -> u32;
+    const ALL_FLAGS: &'static [T];
+
     fn as_str(self) -> &'static str;
-    fn compatibility_set(self) -> BitSet;
+    fn compatible(self, other: T) -> bool;
 }
 
-impl AttributeFlag for ProcFlag {
-    fn into_u32(self) -> u32 {
-        self as u32
-    }
+impl DataFlag<ProcFlag> for ProcFlag {
+    const ALL_FLAGS: &'static [ProcFlag] = &[
+        ProcFlag::External,
+        ProcFlag::Variadic,
+        ProcFlag::Main,
+        ProcFlag::Test,
+        ProcFlag::Builtin,
+        ProcFlag::Inline,
+    ];
 
     fn as_str(self) -> &'static str {
         match self {
@@ -420,22 +429,61 @@ impl AttributeFlag for ProcFlag {
         }
     }
 
-    fn compatibility_set(self) -> BitSet {
+    fn compatible(self, other: ProcFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
         match self {
-            ProcFlag::External => PROC_FLAG_COMPAT_EXTERNAL,
-            ProcFlag::Variadic => PROC_FLAG_COMPAT_VARIADIC,
-            ProcFlag::Main => PROC_FLAG_COMPAT_MAIN,
-            ProcFlag::Test => PROC_FLAG_COMPAT_TEST,
-            ProcFlag::Builtin => PROC_FLAG_COMPAT_BUILTIN,
-            ProcFlag::Inline => PROC_FLAG_COMPAT_INLINE,
+            ProcFlag::External => matches!(other, ProcFlag::Variadic | ProcFlag::Inline),
+            ProcFlag::Variadic => matches!(other, ProcFlag::External | ProcFlag::Inline),
+            ProcFlag::Main => false,
+            ProcFlag::Test => matches!(other, ProcFlag::Inline),
+            ProcFlag::Builtin => matches!(other, ProcFlag::Inline),
+            ProcFlag::Inline => !matches!(other, ProcFlag::Main),
         }
     }
 }
 
-impl AttributeFlag for GlobalFlag {
-    fn into_u32(self) -> u32 {
-        self as u32
+impl DataFlag<EnumFlag> for EnumFlag {
+    const ALL_FLAGS: &'static [EnumFlag] = &[EnumFlag::ReprC];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            EnumFlag::ReprC => "repr_c",
+        }
     }
+
+    fn compatible(self, other: EnumFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
+        match self {
+            EnumFlag::ReprC => false,
+        }
+    }
+}
+
+impl DataFlag<StructFlag> for StructFlag {
+    const ALL_FLAGS: &'static [StructFlag] = &[StructFlag::ReprC];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            StructFlag::ReprC => "repr_c",
+        }
+    }
+
+    fn compatible(self, other: StructFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
+        match self {
+            StructFlag::ReprC => false,
+        }
+    }
+}
+
+impl DataFlag<GlobalFlag> for GlobalFlag {
+    const ALL_FLAGS: &'static [GlobalFlag] = &[GlobalFlag::ThreadLocal];
 
     fn as_str(self) -> &'static str {
         match self {
@@ -443,9 +491,12 @@ impl AttributeFlag for GlobalFlag {
         }
     }
 
-    fn compatibility_set(self) -> BitSet {
+    fn compatible(self, other: GlobalFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
         match self {
-            GlobalFlag::ThreadLocal => GLOBAL_FLAG_COMPAT_THREAD_LOCAL,
+            GlobalFlag::ThreadLocal => false,
         }
     }
 }
@@ -455,36 +506,18 @@ impl Into<u32> for ProcFlag {
         self as u32
     }
 }
-
+impl Into<u32> for EnumFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
+impl Into<u32> for StructFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
 impl Into<u32> for GlobalFlag {
     fn into(self) -> u32 {
         self as u32
     }
 }
-
-pub const PROC_FLAG_ALL: [ProcFlag; 6] = [
-    ProcFlag::External,
-    ProcFlag::Variadic,
-    ProcFlag::Main,
-    ProcFlag::Test,
-    ProcFlag::Builtin,
-    ProcFlag::Inline,
-];
-
-const PROC_FLAG_COMPAT_EXTERNAL: BitSet =
-    BitSet::new(&[ProcFlag::Variadic as u32, ProcFlag::Inline as u32]);
-const PROC_FLAG_COMPAT_VARIADIC: BitSet =
-    BitSet::new(&[ProcFlag::External as u32, ProcFlag::Inline as u32]);
-const PROC_FLAG_COMPAT_MAIN: BitSet = BitSet::new(&[]);
-const PROC_FLAG_COMPAT_TEST: BitSet = BitSet::new(&[ProcFlag::Inline as u32]);
-const PROC_FLAG_COMPAT_BUILTIN: BitSet = BitSet::new(&[ProcFlag::Inline as u32]);
-const PROC_FLAG_COMPAT_INLINE: BitSet = BitSet::new(&[
-    ProcFlag::External as u32,
-    ProcFlag::Variadic as u32,
-    ProcFlag::Test as u32,
-    ProcFlag::Builtin as u32,
-]);
-
-const GLOBAL_FLAG_ALL: [GlobalFlag; 1] = [GlobalFlag::ThreadLocal];
-
-const GLOBAL_FLAG_COMPAT_THREAD_LOCAL: BitSet = BitSet::new(&[]);

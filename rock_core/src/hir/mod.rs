@@ -31,7 +31,7 @@ pub struct ConstInternPool<'hir> {
 id_impl!(ProcID);
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet,
+    pub attr_set: BitSet<ProcFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub params: &'hir [Param<'hir>],
@@ -49,7 +49,7 @@ pub struct Param<'hir> {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ProcFlag {
     External,
     Variadic,
@@ -62,7 +62,7 @@ pub enum ProcFlag {
 id_impl!(EnumID);
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet,
+    pub attr_set: BitSet<EnumFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub int_ty: BasicInt,
@@ -85,7 +85,7 @@ pub enum VariantKind<'hir> {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum EnumFlag {
     ReprC,
 }
@@ -93,7 +93,7 @@ pub enum EnumFlag {
 id_impl!(StructID);
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet,
+    pub attr_set: BitSet<StructFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub fields: &'hir [Field<'hir>],
@@ -109,7 +109,7 @@ pub struct Field<'hir> {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum StructFlag {
     ReprC,
 }
@@ -126,7 +126,7 @@ pub struct ConstData<'hir> {
 id_impl!(GlobalID);
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet,
+    pub attr_set: BitSet<GlobalFlag>,
     pub vis: ast::Vis,
     pub mutt: ast::Mut,
     pub name: ast::Name,
@@ -135,7 +135,7 @@ pub struct GlobalData<'hir> {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum GlobalFlag {
     ThreadLocal,
 }
@@ -251,6 +251,42 @@ pub struct Assign<'hir> {
     pub lhs_ty: Type<'hir>,
 }
 
+#[derive(Copy, Clone)]
+pub struct Expr<'hir> {
+    pub kind: ExprKind<'hir>,
+    pub range: TextRange,
+}
+
+#[rustfmt::skip]
+#[derive(Copy, Clone)]
+pub enum ExprKind<'hir> {
+    Error,
+    Const        { value: ConstValue<'hir> },
+    If           { if_: &'hir If<'hir> },
+    Block        { block: Block<'hir> },
+    Match        { match_: &'hir Match<'hir> },
+    Match2       { match_: &'hir Match2<'hir> },
+    StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: FieldID, deref: bool },
+    SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
+    Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
+    Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
+    Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
+    LocalVar     { local_id: LocalID },
+    ParamVar     { param_id: ParamID },
+    ConstVar     { const_id: ConstID },
+    GlobalVar    { global_id: GlobalID },
+    Variant      { enum_id: EnumID, variant_id: VariantID, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
+    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
+    CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
+    StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
+    ArrayInit    { array_init: &'hir ArrayInit<'hir> },
+    ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
+    Deref        { rhs: &'hir Expr<'hir>, ptr_ty: &'hir Type<'hir> },
+    Address      { rhs: &'hir Expr<'hir> },
+    Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
+    Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
+}
+
 id_impl!(ConstValueID);
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
@@ -286,42 +322,6 @@ pub struct ConstStruct<'hir> {
 pub struct ConstArray<'hir> {
     pub len: u64,
     pub value_ids: &'hir [ConstValueID],
-}
-
-#[derive(Copy, Clone)]
-pub struct Expr<'hir> {
-    pub kind: ExprKind<'hir>,
-    pub range: TextRange,
-}
-
-#[rustfmt::skip]
-#[derive(Copy, Clone)]
-pub enum ExprKind<'hir> {
-    Error,
-    Const        { value: ConstValue<'hir> },
-    If           { if_: &'hir If<'hir> },
-    Block        { block: Block<'hir> },
-    Match        { match_: &'hir Match<'hir> },
-    Match2       { match_: &'hir Match2<'hir> },
-    StructField  { target: &'hir Expr<'hir>, struct_id: StructID, field_id: FieldID, deref: bool },
-    SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
-    Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
-    Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
-    Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    LocalVar     { local_id: LocalID },
-    ParamVar     { param_id: ParamID },
-    ConstVar     { const_id: ConstID },
-    GlobalVar    { global_id: GlobalID },
-    Variant      { enum_id: EnumID, variant_id: VariantID, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
-    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
-    CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
-    StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
-    ArrayInit    { array_init: &'hir ArrayInit<'hir> },
-    ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
-    Deref        { rhs: &'hir Expr<'hir>, ptr_ty: &'hir Type<'hir> },
-    Address      { rhs: &'hir Expr<'hir> },
-    Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
-    Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
 
 #[derive(Copy, Clone)]

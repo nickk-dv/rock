@@ -830,7 +830,7 @@ pub fn resolve_const_expr<'hir>(
 ) -> hir::ConstValue<'hir> {
     let dummy_data = hir::ProcData {
         origin_id,
-        attr_set: BitSet::EMPTY,
+        attr_set: BitSet::empty(),
         vis: ast::Vis::Private,
         name: ast::Name {
             id: InternID::dummy(),

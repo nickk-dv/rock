@@ -55,7 +55,6 @@ pub fn check_main_procedure<'hir>(
         None,
         &mut data_mut.attr_set,
         hir::ProcFlag::Main,
-        &super::pass_1::PROC_FLAG_ALL,
     );
 
     let item = hir.registry().proc_item(proc_id);
