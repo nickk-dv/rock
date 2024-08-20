@@ -776,8 +776,12 @@ fn resolve_const_dependency_tree<'hir>(
                 }
             }
             ConstDependency::StructLayout(id) => {
-                let layout = resolve_struct_layout(hir, emit, id);
-                hir.registry_mut().struct_data_mut(id).layout = layout;
+                let layout_res = resolve_struct_layout(hir, emit, id);
+                let layout_eval = match layout_res {
+                    Ok(layout) => hir::LayoutEval::Resolved(layout),
+                    Err(()) => hir::LayoutEval::ResolvedError,
+                };
+                hir.registry_mut().struct_data_mut(id).layout = layout_eval;
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
@@ -859,109 +863,92 @@ pub fn resolve_const_expr<'hir>(
     }
 }
 
-fn resolve_enum_layout(hir: &HirData, emit: &mut HirEmit, enum_id: hir::EnumID) -> hir::LayoutEval {
-    let data = hir.registry().enum_data(enum_id);
-    if data.variants.is_empty() {
-        return hir::LayoutEval::Resolved(hir::Layout::new(0, 1));
-    }
+fn resolve_enum_layout(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    enum_id: hir::EnumID,
+) -> Result<hir::Layout, ()> {
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
-    //@tag size + max variant size
-    // with proper alignment
+    let data = hir.registry().enum_data(enum_id);
+    for variant in data.variants {
+        let variant_layout = resolve_variant_layout(hir, emit, data, variant)?;
+        size = size.max(variant_layout.size());
+        align = align.max(variant_layout.align());
+    }
 
-    //@temp
-    hir::LayoutEval::Unresolved
+    size = aligned_size(size, align);
+    Ok(hir::Layout::new(size, align))
 }
 
 fn resolve_variant_layout(
     hir: &HirData,
     emit: &mut HirEmit,
-    origin_id: ModuleID,
+    data: &hir::EnumData,
     variant: &hir::Variant,
-) -> Option<hir::Layout> {
-    let mut size: u64 = 0;
-    let mut align: u64 = 1;
+) -> Result<hir::Layout, ()> {
+    let err_src = SourceRange::new(data.origin_id, variant.name.range);
+    let tag_ty = [hir::Type::Basic(data.int_ty.into_basic())];
 
     match variant.kind {
-        hir::VariantKind::Default(_) => {}
-        hir::VariantKind::Constant(_) => {}
+        hir::VariantKind::Default(_) | hir::VariantKind::Constant(_) => {
+            let mut types = tag_ty.iter().copied();
+            resolve_aggregate_layout(hir, emit, err_src, "variant", &mut types)
+        }
         hir::VariantKind::HasValues(types) => {
-            for ty in types {
-                let (ty_size, ty_align) = match pass_5::type_layout(
-                    hir,
-                    emit,
-                    *ty,
-                    SourceRange::new(origin_id, variant.name.range),
-                ) {
-                    Some(size) => (size.size(), size.align()),
-                    None => return None,
-                };
-
-                size = aligned_size(size, ty_align);
-                size = if let Some(new_size) = size.checked_add(ty_size) {
-                    new_size
-                } else {
-                    emit.error(ErrorComp::new(
-                        format!(
-                            "variant size overflow: `{}` + `{}` (when computing: total_size + value_size)",
-                            size, ty_size
-                        ),
-                        SourceRange::new(origin_id, variant.name.range), //@review source range for size overflow error 10.05.24
-                        None,
-                    ));
-                    return None;
-                };
-                align = align.max(ty_align);
-            }
+            let mut types = tag_ty.iter().copied().chain(types.iter().copied());
+            resolve_aggregate_layout(hir, emit, err_src, "variant", &mut types)
         }
     }
-
-    Some(hir::Layout::new(size, align))
 }
 
 fn resolve_struct_layout(
     hir: &HirData,
     emit: &mut HirEmit,
     struct_id: hir::StructID,
-) -> hir::LayoutEval {
+) -> Result<hir::Layout, ()> {
     let data = hir.registry().struct_data(struct_id);
+    let err_src = SourceRange::new(data.origin_id, data.name.range);
+
+    let mut types = data.fields.iter().map(|f| f.ty);
+    resolve_aggregate_layout(hir, emit, err_src, "struct", &mut types)
+}
+
+fn resolve_aggregate_layout<'hir>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    err_src: SourceRange,
+    item_kind: &'static str,
+    types: &mut dyn Iterator<Item = hir::Type<'hir>>,
+) -> Result<hir::Layout, ()> {
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
-    for field in data.fields {
-        let (field_size, field_align) = match pass_5::type_layout(
-            hir,
-            emit,
-            field.ty,
-            SourceRange::new(data.origin_id, field.name.range), //@review source range for this type_size error 10.05.24
-        ) {
-            Some(size) => (size.size(), size.align()),
-            None => return hir::LayoutEval::ResolvedError,
-        };
+    for ty in types {
+        let elem_layout = pass_5::type_layout(hir, emit, ty, err_src)?;
+        size = aligned_size(size, elem_layout.align());
+        align = align.max(elem_layout.align());
 
-        size = aligned_size(size, field_align);
-        size = if let Some(new_size) = size.checked_add(field_size) {
-            new_size
-        } else {
-            emit.error(ErrorComp::new(
-                format!(
-                    "struct size overflow: `{}` + `{}` (when computing: total_size + field_size)",
-                    size, field_size
-                ),
-                SourceRange::new(data.origin_id, field.name.range), //@review source range for size overflow error 10.05.24
-                None,
-            ));
-            return hir::LayoutEval::ResolvedError;
-        };
-        align = align.max(field_align);
+        size = match size.checked_add(elem_layout.size()) {
+            Some(size) => size,
+            None => {
+                let format = format!(
+                    "{} size overflow\nwhen computing: `{}` + `{}`)",
+                    item_kind,
+                    size,
+                    elem_layout.size()
+                );
+                emit.error(ErrorComp::new(format, err_src, None));
+                return Err(());
+            }
+        }
     }
 
     size = aligned_size(size, align);
-    hir::LayoutEval::Resolved(hir::Layout::new(size, align))
+    Ok(hir::Layout::new(size, align))
 }
 
-//@remove asserts later on when compiler is stable? 02.05.24
 fn aligned_size(size: u64, align: u64) -> u64 {
     assert!(align != 0);
     assert!(align.is_power_of_two());

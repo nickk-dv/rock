@@ -690,11 +690,11 @@ impl<'hir> StructData<'hir> {
 }
 
 impl LayoutEval {
-    pub fn get(self) -> Option<Layout> {
+    pub fn get_resolved(self) -> Result<Layout, ()> {
         match self {
-            LayoutEval::Unresolved => None,
-            LayoutEval::ResolvedError => None,
-            LayoutEval::Resolved(layout) => Some(layout),
+            LayoutEval::Unresolved => unreachable!(),
+            LayoutEval::ResolvedError => Err(()),
+            LayoutEval::Resolved(layout) => Ok(layout),
         }
     }
 }

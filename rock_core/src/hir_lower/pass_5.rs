@@ -1403,31 +1403,31 @@ pub fn type_layout(
     hir: &HirData,
     emit: &mut HirEmit,
     ty: hir::Type,
-    source: SourceRange,
-) -> Option<hir::Layout> {
+    err_src: SourceRange,
+) -> Result<hir::Layout, ()> {
     match ty {
-        hir::Type::Error => None,
-        hir::Type::Basic(basic) => Some(basic_type_layout(basic)),
+        hir::Type::Error => Err(()),
+        hir::Type::Basic(basic) => Ok(basic_type_layout(basic)),
         hir::Type::Enum(id) => {
             //@currently disregaring possible value types
             let data = hir.registry().enum_data(id);
             if data.variants.is_empty() {
-                Some(hir::Layout::new(0, 1))
+                Ok(hir::Layout::new(0, 1))
             } else {
-                Some(basic_type_layout(data.int_ty.into_basic()))
+                Ok(basic_type_layout(data.int_ty.into_basic()))
             }
         }
-        hir::Type::Struct(id) => hir.registry().struct_data(id).layout.get(),
-        hir::Type::Reference(_, _) => Some(hir::Layout::new_equal(8)), //@assume 64bit target
-        hir::Type::Procedure(_) => Some(hir::Layout::new_equal(8)),    //@assume 64bit target
-        hir::Type::ArraySlice(_) => Some(hir::Layout::new(16, 8)),     //@assume 64bit target
+        hir::Type::Struct(id) => hir.registry().struct_data(id).layout.get_resolved(),
+        hir::Type::Reference(_, _) => Ok(hir::Layout::new_equal(8)), //@assume 64bit target
+        hir::Type::Procedure(_) => Ok(hir::Layout::new_equal(8)),    //@assume 64bit target
+        hir::Type::ArraySlice(_) => Ok(hir::Layout::new(16, 8)),     //@assume 64bit target
         hir::Type::ArrayStatic(array) => {
-            if let (Some(elem_layout), Some(len)) = (
-                type_layout(hir, emit, array.elem_ty, source),
+            if let (Ok(elem_layout), Some(len)) = (
+                type_layout(hir, emit, array.elem_ty, err_src),
                 array_static_len(hir, emit, array.len),
             ) {
                 if let Some(array_size) = elem_layout.size().checked_mul(len) {
-                    Some(hir::Layout::new(array_size, elem_layout.align()))
+                    Ok(hir::Layout::new(array_size, elem_layout.align()))
                 } else {
                     //@match const fold error style
                     emit.error(ErrorComp::new(
@@ -1436,13 +1436,13 @@ pub fn type_layout(
                             elem_layout.size(),
                             len
                         ),
-                        source,
+                        err_src,
                         None,
                     ));
-                    None
+                    Err(())
                 }
             } else {
-                None
+                Err(())
             }
         }
     }
@@ -1636,7 +1636,7 @@ fn typecheck_sizeof<'hir>(
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
     let kind = match type_layout(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
-        Some(layout) => {
+        Ok(layout) => {
             let value = hir::ConstValue::Int {
                 val: layout.size(),
                 neg: false,
@@ -1644,7 +1644,7 @@ fn typecheck_sizeof<'hir>(
             };
             hir::ExprKind::Const { value }
         }
-        None => hir::ExprKind::Error,
+        Err(()) => hir::ExprKind::Error,
     };
 
     TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
