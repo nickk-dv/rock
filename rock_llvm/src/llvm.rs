@@ -7,28 +7,13 @@ use crate::sys;
 use crate::sys::analysis;
 use crate::sys::core;
 use crate::sys::target;
+use rock_core::config::{TargetArch, TargetTriple};
 use std::cell::UnsafeCell;
 use std::ffi::c_char;
 
 pub struct IRTarget {
     target_data: target::LLVMTargetDataRef,
     target_machine: target::LLVMTargetMachineRef,
-}
-
-//@move to rock_core?
-#[derive(Copy, Clone)]
-#[allow(non_camel_case_types)]
-pub enum TargetArch {
-    x86_64,
-    Arm_64,
-}
-
-//@move to rock_core?
-#[derive(Copy, Clone)]
-pub enum TargetOS {
-    Windows,
-    Linux,
-    Macos,
 }
 
 pub struct IRContext {
@@ -75,8 +60,8 @@ pub type IntPred = sys::LLVMIntPredicate;
 pub type FloatPred = sys::LLVMRealPredicate;
 
 impl IRTarget {
-    pub fn new(arch: TargetArch, triple: &str) -> IRTarget {
-        match arch {
+    pub fn new(triple: TargetTriple) -> IRTarget {
+        match triple.arch() {
             TargetArch::x86_64 => unsafe {
                 target::LLVMInitializeX86AsmParser();
                 target::LLVMInitializeX86AsmPrinter();
@@ -95,7 +80,7 @@ impl IRTarget {
             },
         }
 
-        let ctriple = cstring_from_str(triple);
+        let ctriple = cstring_from_str(triple.as_str());
         let mut target = std::mem::MaybeUninit::uninit();
         let mut err_str = std::mem::MaybeUninit::uninit();
         let code = unsafe {
@@ -109,7 +94,7 @@ impl IRTarget {
             let err_str = unsafe { err_str.assume_init() };
             panic!(
                 "failed to create target from triple `{}`:\n{}",
-                triple,
+                triple.as_str(),
                 llvm_string_to_owned(err_str)
             );
         }

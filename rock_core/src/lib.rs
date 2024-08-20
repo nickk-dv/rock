@@ -5,6 +5,7 @@ mod arena;
 pub mod ast;
 pub mod ast_parse;
 mod bitset;
+pub mod config;
 pub mod error;
 pub mod format;
 pub mod fs_env;

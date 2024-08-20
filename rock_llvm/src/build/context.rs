@@ -1,6 +1,6 @@
-use super::TargetTriple;
 use crate::llvm;
 use rock_core::ast;
+use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::id_impl;
 
@@ -70,7 +70,7 @@ struct CodegenCache {
 
 impl<'c> Codegen<'c> {
     pub fn new(hir: hir::Hir<'c>, triple: TargetTriple) -> Codegen<'c> {
-        let target = llvm::IRTarget::new(triple.arch(), triple.as_str());
+        let target = llvm::IRTarget::new(triple);
         let context = llvm::IRContext::new();
         let module = llvm::IRModule::new(&context, &target, "rock_module");
         let build = llvm::IRBuilder::new(&context);

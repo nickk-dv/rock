@@ -1,9 +1,9 @@
 use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
 use super::emit_stmt;
-use super::TargetTriple;
 use crate::llvm;
 use rock_core::ast;
+use rock_core::config::TargetTriple;
 use rock_core::hir;
 
 pub fn codegen_module<'c>(
