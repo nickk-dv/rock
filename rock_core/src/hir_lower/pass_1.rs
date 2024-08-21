@@ -49,6 +49,14 @@ fn add_module_items<'hir>(
     }
 }
 
+enum CfgKind {
+    Target,
+    TargetArch,
+    TargetOs,
+    TargetPtrWidth,
+    BuildKind,
+}
+
 fn add_proc_item<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,

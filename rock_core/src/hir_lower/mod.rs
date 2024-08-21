@@ -1,3 +1,4 @@
+mod errors;
 mod hir_build;
 mod pass_1;
 mod pass_2;

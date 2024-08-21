@@ -935,7 +935,7 @@ fn resolve_aggregate_layout<'hir>(
             Some(size) => size,
             None => {
                 let format = format!(
-                    "{} size overflow\nwhen computing: `{}` + `{}`)",
+                    "{} size overflow\nwhen computing: `{}` + `{}`",
                     item_kind,
                     size,
                     elem_layout.size()
