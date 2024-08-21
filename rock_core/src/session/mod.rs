@@ -1,3 +1,4 @@
+use crate::config::TargetTriple;
 use crate::error::ErrorComp;
 use crate::fs_env;
 use crate::id_impl;

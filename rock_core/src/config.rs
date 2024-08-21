@@ -24,6 +24,13 @@ pub enum TargetOS {
 }
 
 #[derive(Copy, Clone)]
+#[allow(non_camel_case_types)]
+pub enum TargetPtrWidth {
+    Bit_32,
+    Bit_64,
+}
+
+#[derive(Copy, Clone)]
 pub enum BuildKind {
     Debug,
     Release,
@@ -40,7 +47,6 @@ impl TargetTriple {
             TargetTriple::Arm_64_apple_darwin => "aarch64-apple-darwin",
         }
     }
-
     pub fn arch(self) -> TargetArch {
         match self {
             TargetTriple::x86_64_pc_windows_msvc
@@ -51,7 +57,6 @@ impl TargetTriple {
             | TargetTriple::Arm_64_apple_darwin => TargetArch::Arm_64,
         }
     }
-
     pub fn os(self) -> TargetOS {
         match self {
             TargetTriple::x86_64_pc_windows_msvc => TargetOS::Windows,
@@ -62,7 +67,6 @@ impl TargetTriple {
             TargetTriple::Arm_64_apple_darwin => TargetOS::Macos,
         }
     }
-
     pub fn host() -> TargetTriple {
         #[rustfmt::skip]
         #[cfg(all(target_arch = "x86_64", target_vendor = "pc", target_os = "windows", target_env = "msvc"))]
@@ -92,6 +96,12 @@ impl TargetArch {
             TargetArch::Arm_64 => "aarch64",
         }
     }
+    pub fn ptr_width(self) -> TargetPtrWidth {
+        match self {
+            TargetArch::x86_64 => TargetPtrWidth::Bit_64,
+            TargetArch::Arm_64 => TargetPtrWidth::Bit_64,
+        }
+    }
 }
 
 impl TargetOS {
@@ -100,6 +110,21 @@ impl TargetOS {
             TargetOS::Windows => "windows",
             TargetOS::Linux => "linux",
             TargetOS::Macos => "macos",
+        }
+    }
+}
+
+impl TargetPtrWidth {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TargetPtrWidth::Bit_32 => "32",
+            TargetPtrWidth::Bit_64 => "64",
+        }
+    }
+    pub fn ptr_size(self) -> u64 {
+        match self {
+            TargetPtrWidth::Bit_32 => 4,
+            TargetPtrWidth::Bit_64 => 8,
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::arena::Arena;
 use crate::ast;
+use crate::config::TargetTriple;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::ConstInternPool;
@@ -12,6 +13,7 @@ pub struct HirData<'hir, 'ast, 'intern> {
     modules: Vec<Module>,
     registry: Registry<'hir, 'ast>,
     ast: ast::Ast<'ast, 'intern>,
+    target: TargetTriple,
 }
 
 pub struct Module {
@@ -69,6 +71,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
             modules,
             registry,
             ast,
+            target: TargetTriple::host(),
         }
     }
 
@@ -97,6 +100,9 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     }
     pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
         self.ast.modules[module_id.index()]
+    }
+    pub fn target(&self) -> TargetTriple {
+        self.target
     }
 
     pub fn add_symbol(&mut self, origin_id: ModuleID, id: InternID, symbol: Symbol) {

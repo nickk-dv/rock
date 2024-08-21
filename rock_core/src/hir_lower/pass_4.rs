@@ -4,6 +4,7 @@ use super::pass_5::{self, Expectation};
 use super::proc_scope;
 use crate::ast;
 use crate::bitset::BitSet;
+use crate::config::TargetPtrWidth;
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr};
 use crate::hir;
 use crate::id_impl;
@@ -963,7 +964,7 @@ fn fold_const_expr<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     match expr.kind {
         hir::ExprKind::Error => unreachable!(),
-        hir::ExprKind::Const { value } => fold_const(emit, src, value),
+        hir::ExprKind::Const { value } => fold_const(hir, emit, src, value),
         hir::ExprKind::If { .. } => unreachable!(),
         hir::ExprKind::Block { .. } => unreachable!(),
         hir::ExprKind::Match { .. } => unreachable!(),
@@ -1006,13 +1007,16 @@ fn fold_const_expr<'hir>(
 }
 
 fn fold_const<'hir>(
+    hir: &HirData,
     emit: &mut HirEmit,
     src: SourceRange,
     value: hir::ConstValue<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     match value {
         hir::ConstValue::Error => unreachable!(),
-        hir::ConstValue::Int { val, int_ty, .. } => int_range_check(emit, src, val.into(), int_ty),
+        hir::ConstValue::Int { val, int_ty, .. } => {
+            int_range_check(hir, emit, src, val.into(), int_ty)
+        }
         hir::ConstValue::Float { val, float_ty } => float_range_check(emit, src, val, float_ty),
         hir::ConstValue::Null
         | hir::ConstValue::Bool { .. }
@@ -1169,7 +1173,7 @@ fn fold_cast<'hir>(
         | hir::CastKind::IntU_Zero_Extend => {
             let val = target.into_int();
             let int_ty = into_int_ty(into);
-            int_range_check(emit, src, val, int_ty)
+            int_range_check(hir, emit, src, val, int_ty)
         }
         hir::CastKind::IntS_to_Float | hir::CastKind::IntU_to_Float => {
             let val = target.into_int();
@@ -1181,7 +1185,7 @@ fn fold_cast<'hir>(
             let val = target.into_float();
             let int_ty = into_int_ty(into);
             let val_cast = val as i128;
-            int_range_check(emit, src, val_cast, int_ty)
+            int_range_check(hir, emit, src, val_cast, int_ty)
         }
         hir::CastKind::Float_Trunc | hir::CastKind::Float_Extend => {
             let val = target.into_float();
@@ -1306,7 +1310,7 @@ fn fold_unary_expr<'hir>(
         hir::UnOp::Neg_Int => {
             let int_ty = rhs.into_int_ty();
             let val = -rhs.into_int();
-            int_range_check(emit, src, val, int_ty)
+            int_range_check(hir, emit, src, val, int_ty)
         }
         hir::UnOp::Neg_Float => {
             let float_ty = rhs.into_float_ty();
@@ -1341,7 +1345,7 @@ fn fold_binary<'hir>(
         hir::BinOp::Add_Int => {
             let int_ty = lhs.into_int_ty();
             let val = lhs.into_int() + rhs.into_int();
-            int_range_check(emit, src, val, int_ty)
+            int_range_check(hir, emit, src, val, int_ty)
         }
         hir::BinOp::Add_Float => {
             let float_ty = lhs.into_float_ty();
@@ -1351,7 +1355,7 @@ fn fold_binary<'hir>(
         hir::BinOp::Sub_Int => {
             let int_ty = lhs.into_int_ty();
             let val = lhs.into_int() - rhs.into_int();
-            int_range_check(emit, src, val, int_ty)
+            int_range_check(hir, emit, src, val, int_ty)
         }
         hir::BinOp::Sub_Float => {
             let float_ty = lhs.into_float_ty();
@@ -1364,7 +1368,7 @@ fn fold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if let Some(val) = lhs.checked_mul(rhs) {
-                int_range_check(emit, src, val, int_ty)
+                int_range_check(hir, emit, src, val, int_ty)
             } else {
                 error_binary_int_overflow(emit, src, op, lhs, rhs);
                 Err(())
@@ -1384,7 +1388,7 @@ fn fold_binary<'hir>(
                 error_binary_int_div_zero(emit, src, op, lhs, rhs);
                 Err(())
             } else if let Some(val) = lhs.checked_div(rhs) {
-                int_range_check(emit, src, val, int_ty)
+                int_range_check(hir, emit, src, val, int_ty)
             } else {
                 error_binary_int_overflow(emit, src, op, lhs, rhs);
                 Err(())
@@ -1412,7 +1416,7 @@ fn fold_binary<'hir>(
                 error_binary_int_div_zero(emit, src, op, lhs, rhs);
                 Err(())
             } else if let Some(val) = lhs.checked_rem(rhs) {
-                int_range_check(emit, src, val, int_ty)
+                int_range_check(hir, emit, src, val, int_ty)
             } else {
                 error_binary_int_overflow(emit, src, op, lhs, rhs);
                 Err(())
@@ -1520,6 +1524,7 @@ fn error_binary_int_overflow(
 }
 
 fn int_range_check<'hir>(
+    hir: &HirData,
     emit: &mut HirEmit,
     src: SourceRange,
     val: i128,
@@ -1530,12 +1535,24 @@ fn int_range_check<'hir>(
         hir::BasicInt::S16 => (i16::MIN as i128, i16::MAX as i128),
         hir::BasicInt::S32 => (i32::MIN as i128, i32::MAX as i128),
         hir::BasicInt::S64 => (i64::MIN as i128, i64::MAX as i128),
-        hir::BasicInt::Ssize => (i64::MIN as i128, i64::MAX as i128), //@requires target pointer_width
+        hir::BasicInt::Ssize => {
+            let ptr_width = hir.target().arch().ptr_width();
+            match ptr_width {
+                TargetPtrWidth::Bit_32 => (i32::MIN as i128, i32::MAX as i128),
+                TargetPtrWidth::Bit_64 => (i64::MIN as i128, i64::MAX as i128),
+            }
+        }
         hir::BasicInt::U8 => (u8::MIN as i128, u8::MAX as i128),
         hir::BasicInt::U16 => (u16::MIN as i128, u16::MAX as i128),
         hir::BasicInt::U32 => (u32::MIN as i128, u32::MAX as i128),
         hir::BasicInt::U64 => (u64::MIN as i128, u64::MAX as i128),
-        hir::BasicInt::Usize => (u64::MIN as i128, u64::MAX as i128), //@requires target pointer_width
+        hir::BasicInt::Usize => {
+            let ptr_width = hir.target().arch().ptr_width();
+            match ptr_width {
+                TargetPtrWidth::Bit_32 => (u32::MIN as i128, u32::MAX as i128),
+                TargetPtrWidth::Bit_64 => (u64::MIN as i128, u64::MAX as i128),
+            }
+        }
     };
 
     if val < min || val > max {
