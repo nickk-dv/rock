@@ -7,7 +7,10 @@ pub enum SyntaxKind {
 
     ATTRIBUTE_LIST,
     ATTRIBUTE,
+    ATTRIBUTE_PARAM_LIST,
+    ATTRIBUTE_PARAM,
     VISIBILITY,
+
     PROC_ITEM,
     PARAM_LIST,
     PARAM,

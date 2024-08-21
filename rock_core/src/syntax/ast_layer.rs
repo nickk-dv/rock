@@ -220,7 +220,10 @@ ast_node_impl!(SourceFile, SyntaxKind::SOURCE_FILE);
 
 ast_node_impl!(AttributeList, SyntaxKind::ATTRIBUTE_LIST);
 ast_node_impl!(Attribute, SyntaxKind::ATTRIBUTE);
+ast_node_impl!(AttributeParamList, SyntaxKind::ATTRIBUTE_PARAM_LIST);
+ast_node_impl!(AttributeParam, SyntaxKind::ATTRIBUTE_PARAM);
 ast_node_impl!(Visibility, SyntaxKind::VISIBILITY);
+
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
 ast_node_impl!(ParamList, SyntaxKind::PARAM_LIST);
 ast_node_impl!(Param, SyntaxKind::PARAM);
@@ -617,6 +620,16 @@ impl<'syn> AttributeList<'syn> {
 
 impl<'syn> Attribute<'syn> {
     find_first!(name, Name);
+    find_first!(param_list, AttributeParamList);
+}
+
+impl<'syn> AttributeParamList<'syn> {
+    node_iter!(params, AttributeParam);
+}
+
+impl<'syn> AttributeParam<'syn> {
+    find_first!(key, Name);
+    find_first!(val, LitString);
 }
 
 impl<'syn> Visibility<'syn> {

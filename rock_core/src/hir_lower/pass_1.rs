@@ -75,6 +75,9 @@ fn add_proc_item<'hir, 'ast>(
 
     for attr in item.attrs {
         let flag = match attr.kind {
+            ast::AttributeKind::Cfg | ast::AttributeKind::Cfg_Not | ast::AttributeKind::Cfg_Any => {
+                None
+            }
             ast::AttributeKind::Test => Some(ProcFlag::Test),
             ast::AttributeKind::Builtin => Some(ProcFlag::Builtin),
             ast::AttributeKind::Inline => Some(ProcFlag::Inline),
@@ -239,6 +242,9 @@ fn add_global_item<'hir, 'ast>(
 
     for attr in item.attrs {
         let flag = match attr.kind {
+            ast::AttributeKind::Cfg | ast::AttributeKind::Cfg_Not | ast::AttributeKind::Cfg_Any => {
+                None
+            }
             ast::AttributeKind::Test
             | ast::AttributeKind::Builtin
             | ast::AttributeKind::Inline

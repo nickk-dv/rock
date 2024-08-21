@@ -27,7 +27,7 @@ pub enum Item<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
-    pub attrs: &'ast [Attribute],
+    pub attrs: &'ast [Attribute<'ast>],
     pub vis: Vis,
     pub name: Name,
     pub params: &'ast [Param<'ast>],
@@ -45,7 +45,7 @@ pub struct Param<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct EnumItem<'ast> {
-    pub attrs: &'ast [Attribute],
+    pub attrs: &'ast [Attribute<'ast>],
     pub vis: Vis,
     pub name: Name,
     pub basic: Option<(BasicType, TextRange)>,
@@ -67,7 +67,7 @@ pub enum VariantKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct StructItem<'ast> {
-    pub attrs: &'ast [Attribute],
+    pub attrs: &'ast [Attribute<'ast>],
     pub vis: Vis,
     pub name: Name,
     pub fields: &'ast [Field<'ast>],
@@ -82,7 +82,7 @@ pub struct Field<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ConstItem<'ast> {
-    pub attrs: &'ast [Attribute],
+    pub attrs: &'ast [Attribute<'ast>],
     pub vis: Vis,
     pub name: Name,
     pub ty: Type<'ast>,
@@ -91,7 +91,7 @@ pub struct ConstItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
-    pub attrs: &'ast [Attribute],
+    pub attrs: &'ast [Attribute<'ast>],
     pub vis: Vis,
     pub mutt: Mut,
     pub name: Name,
@@ -101,7 +101,7 @@ pub struct GlobalItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
-    pub attrs: &'ast [Attribute],
+    pub attrs: &'ast [Attribute<'ast>],
     pub package: Option<Name>,
     pub import_path: &'ast [Name],
     pub rename: SymbolRename,
@@ -140,14 +140,24 @@ pub struct Name {
 }
 
 #[derive(Copy, Clone)]
-pub struct Attribute {
+pub struct Attribute<'ast> {
     pub kind: AttributeKind,
     pub range: TextRange,
+    pub params: &'ast [AttributeParam],
+}
+
+#[derive(Copy, Clone)]
+pub struct AttributeParam {
+    pub key: Name,
+    pub val: InternID,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum AttributeKind {
+    Cfg,
+    Cfg_Not,
+    Cfg_Any,
     Test,
     Builtin,
     Inline,
@@ -450,7 +460,7 @@ pub enum AssignOp {
 }
 
 use crate::size_assert;
-size_assert!(12, Attribute);
+size_assert!(32, Attribute);
 size_assert!(16, Item);
 size_assert!(12, Name);
 size_assert!(16, Path);
@@ -461,6 +471,9 @@ size_assert!(32, Expr);
 impl AttributeKind {
     pub fn as_str(self) -> &'static str {
         match self {
+            AttributeKind::Cfg => "cfg",
+            AttributeKind::Cfg_Not => "cfg_not",
+            AttributeKind::Cfg_Any => "cfg_any",
             AttributeKind::Test => "test",
             AttributeKind::Builtin => "builtin",
             AttributeKind::Inline => "inline",
@@ -472,6 +485,9 @@ impl AttributeKind {
 
     pub fn from_str(string: &str) -> AttributeKind {
         match string {
+            "cfg" => AttributeKind::Cfg,
+            "cfg_not" => AttributeKind::Cfg_Not,
+            "cfg_any" => AttributeKind::Cfg_Any,
             "test" => AttributeKind::Test,
             "builtin" => AttributeKind::Builtin,
             "inline" => AttributeKind::Inline,

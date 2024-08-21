@@ -322,7 +322,9 @@ fn name(p: &mut Parser) -> Result<Name, String> {
     Ok(Name { range, id })
 }
 
-fn attribute_list<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast [Attribute], String> {
+fn attribute_list<'ast>(
+    p: &mut Parser<'ast, '_, '_, '_>,
+) -> Result<&'ast [Attribute<'ast>], String> {
     let offset = p.state.attrs.start();
 
     while p.at(T![#]) {
@@ -335,15 +337,36 @@ fn attribute_list<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast [Attri
         let string = &p.source[range.as_usize()];
         let kind = AttributeKind::from_str(string);
 
+        let params = if p.at(T!['(']) {
+            comma_separated_list!(p, attribute_param, attr_params, T!['('], T![')'])
+        } else {
+            &[]
+        };
         p.expect(T![']'])?;
+
         let attr = Attribute {
             kind,
             range: p.make_range(start),
+            params,
         };
         p.state.attrs.add(attr);
     }
 
     Ok(p.state.attrs.take(offset, &mut p.state.arena))
+}
+
+fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<AttributeParam, String> {
+    let key = name(p)?;
+    p.expect(T![=])?;
+
+    let val = if p.at(T![string_lit]) {
+        p.bump();
+        p.get_string_lit().0
+    } else {
+        return Err("expected string literal".into());
+    };
+
+    Ok(AttributeParam { key, val })
 }
 
 fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, String> {

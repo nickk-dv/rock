@@ -3,7 +3,7 @@ use super::syntax_tree::SyntaxTree;
 use crate::arena::Arena;
 use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
-use crate::intern::InternPool;
+use crate::intern::{InternID, InternPool};
 use crate::session::{ModuleID, Session};
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
@@ -29,7 +29,8 @@ struct AstBuildState<'ast> {
     errors: Vec<ErrorComp>,
 
     items: TempBuffer<ast::Item<'ast>>,
-    attrs: TempBuffer<ast::Attribute>,
+    attrs: TempBuffer<ast::Attribute<'ast>>,
+    attr_params: TempBuffer<ast::AttributeParam>,
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
     fields: TempBuffer<ast::Field<'ast>>,
@@ -74,6 +75,7 @@ impl<'ast> AstBuildState<'ast> {
 
             items: TempBuffer::new(128),
             attrs: TempBuffer::new(32),
+            attr_params: TempBuffer::new(32),
             params: TempBuffer::new(32),
             variants: TempBuffer::new(32),
             fields: TempBuffer::new(32),
@@ -153,7 +155,7 @@ fn item(ctx: &mut AstBuild, item: cst::Item) {
 fn attribute_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     attr_list: Option<cst::AttributeList>,
-) -> &'ast [ast::Attribute] {
+) -> &'ast [ast::Attribute<'ast>] {
     if let Some(attr_list) = attr_list {
         let offset = ctx.s.attrs.start();
         for attr_cst in attr_list.attrs(ctx.tree) {
@@ -166,16 +168,44 @@ fn attribute_list<'ast>(
     }
 }
 
-fn attribute(ctx: &mut AstBuild, attr: cst::Attribute) -> ast::Attribute {
+fn attribute<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    attr: cst::Attribute,
+) -> ast::Attribute<'ast> {
     //@assuming range of ident token without any trivia
     let name_cst = attr.name(ctx.tree).unwrap();
     let range = name_cst.range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
+    let params = attribute_param_list(ctx, attr.param_list(ctx.tree));
 
     ast::Attribute {
         kind: ast::AttributeKind::from_str(string),
         range: attr.range(ctx.tree),
+        params,
     }
+}
+
+fn attribute_param_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    param_list: Option<cst::AttributeParamList>,
+) -> &'ast [ast::AttributeParam] {
+    if let Some(param_list) = param_list {
+        let offset = ctx.s.attr_params.start();
+        for param_cst in param_list.params(ctx.tree) {
+            let param = attribute_param(ctx, param_cst);
+            ctx.s.attr_params.add(param);
+        }
+        ctx.s.attr_params.take(offset, &mut ctx.s.arena)
+    } else {
+        &[]
+    }
+}
+
+//@allowing and ignoring c_string
+fn attribute_param(ctx: &mut AstBuild, param: cst::AttributeParam) -> ast::AttributeParam {
+    let key = name(ctx, param.key(ctx.tree).unwrap());
+    let (val, _) = string_lit(ctx);
+    ast::AttributeParam { key, val }
 }
 
 fn vis(is_pub: bool) -> ast::Vis {
@@ -879,13 +909,11 @@ fn lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, lit: cst::Lit) -> ast::Lit {
         cst::Lit::Null(_) => ast::Lit::Null,
         cst::Lit::Bool(lit) => {
             let val = lit.value(ctx.tree);
-
             ast::Lit::Bool(val)
         }
         cst::Lit::Int(_) => {
             let val = ctx.tree.tokens().int(ctx.int_id as usize);
             ctx.int_id += 1;
-
             ast::Lit::Int(val)
         }
         cst::Lit::Float(lit) => {
@@ -904,29 +932,31 @@ fn lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, lit: cst::Lit) -> ast::Lit {
                     0.0
                 }
             };
-
             ast::Lit::Float(val)
         }
         cst::Lit::Char(_) => {
             let val = ctx.tree.tokens().char(ctx.char_id as usize);
             ctx.char_id += 1;
-
             ast::Lit::Char(val)
         }
         cst::Lit::String(_) => {
-            let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
-            let id = ctx.s.intern_string.intern(string);
-            ctx.string_id += 1;
-
-            if id.index() >= ctx.s.string_is_cstr.len() {
-                ctx.s.string_is_cstr.push(c_string);
-            } else if c_string {
-                ctx.s.string_is_cstr[id.index()] = true;
-            }
-
+            let (id, c_string) = string_lit(ctx);
             ast::Lit::String { id, c_string }
         }
     }
+}
+
+fn string_lit(ctx: &mut AstBuild) -> (InternID, bool) {
+    let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
+    let id = ctx.s.intern_string.intern(string);
+    ctx.string_id += 1;
+
+    if id.index() >= ctx.s.string_is_cstr.len() {
+        ctx.s.string_is_cstr.push(c_string);
+    } else if c_string {
+        ctx.s.string_is_cstr[id.index()] = true;
+    }
+    (id, c_string)
 }
 
 fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
