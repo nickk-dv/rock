@@ -145,7 +145,7 @@ id_impl!(ConstEvalID);
 pub enum ConstEval<'ast> {
     Unresolved(ast::ConstExpr<'ast>),
     ResolvedError,
-    ResolvedValue(ConstValueID),
+    Resolved(ConstValueID),
 }
 
 #[derive(Copy, Clone)]
@@ -686,6 +686,16 @@ impl<'hir> StructData<'hir> {
             }
         }
         None
+    }
+}
+
+impl<'hir> ConstEval<'hir> {
+    pub fn get_resolved(self) -> Result<ConstValueID, ()> {
+        match self {
+            ConstEval::Unresolved(_) => unreachable!(),
+            ConstEval::ResolvedError => Err(()),
+            ConstEval::Resolved(value_id) => Ok(value_id),
+        }
     }
 }
 

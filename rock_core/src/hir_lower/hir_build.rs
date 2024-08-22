@@ -3,7 +3,6 @@ use crate::ast;
 use crate::config::TargetTriple;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
-use crate::hir::ConstInternPool;
 use crate::intern::{InternID, InternPool};
 use crate::session::ModuleID;
 use crate::text::TextRange;
@@ -53,7 +52,7 @@ pub struct Registry<'hir, 'ast> {
 
 pub struct HirEmit<'hir> {
     pub arena: Arena<'hir>,
-    pub const_intern: ConstInternPool<'hir>,
+    pub const_intern: hir::ConstInternPool<'hir>,
     diagnostics: DiagnosticCollection,
 }
 
@@ -402,7 +401,7 @@ impl<'hir> HirEmit<'hir> {
     pub fn new() -> HirEmit<'hir> {
         HirEmit {
             arena: Arena::new(),
-            const_intern: ConstInternPool::new(),
+            const_intern: hir::ConstInternPool::new(),
             diagnostics: DiagnosticCollection::new(),
         }
     }
@@ -436,6 +435,8 @@ impl<'hir> HirEmit<'hir> {
         let mut errors = Vec::new();
 
         for (eval, origin_id) in hir.registry.const_evals.iter() {
+            //@can just use `get_resolve` but for now emitting internal error
+            // just rely on unreachable! in `get_resolve` when compiler is stable
             match *eval {
                 hir::ConstEval::Unresolved(expr) => {
                     errors.push(ErrorComp::new(
@@ -449,7 +450,7 @@ impl<'hir> HirEmit<'hir> {
                         "internal: trying to emit hir with ConstEval::ResolvedError expression",
                     ));
                 }
-                hir::ConstEval::ResolvedValue(value_id) => const_values.push(value_id),
+                hir::ConstEval::Resolved(value_id) => const_values.push(value_id),
             }
         }
 
@@ -470,6 +471,27 @@ impl<'hir> HirEmit<'hir> {
             ResultComp::Ok((hir, self.diagnostics.warnings_moveout()))
         } else {
             ResultComp::Err(self.diagnostics.join_errors(errors))
+        }
+    }
+}
+
+impl hir::ArrayStaticLen {
+    pub fn get_resolved<'hir>(
+        self,
+        hir: &HirData<'hir, '_, '_>,
+        emit: &HirEmit<'hir>,
+    ) -> Result<u64, ()> {
+        match self {
+            hir::ArrayStaticLen::Immediate(len) => len.ok_or(()),
+            hir::ArrayStaticLen::ConstEval(eval_id) => {
+                let (eval, _) = *hir.registry().const_eval(eval_id);
+                let value_id = eval.get_resolved()?;
+
+                match emit.const_intern.get(value_id) {
+                    hir::ConstValue::Int { val, .. } => Ok(val),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }

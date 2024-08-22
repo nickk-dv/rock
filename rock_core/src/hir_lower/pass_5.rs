@@ -1,4 +1,5 @@
-use super::hir_build::{self, HirData, HirEmit, SymbolKind};
+use super::constant;
+use super::hir_build::{HirData, HirEmit, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr, WarningComp};
@@ -106,15 +107,15 @@ pub fn type_matches<'hir>(
             }
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
-            if let Some(len) = array_static_len(hir, emit, array.len) {
-                if let Some(len2) = array_static_len(hir, emit, array2.len) {
+            if let Ok(len) = array.len.get_resolved(hir, emit) {
+                if let Ok(len2) = array2.len.get_resolved(hir, emit) {
                     return (len == len2) && type_matches(hir, emit, array.elem_ty, array2.elem_ty);
                 }
             }
             true
         }
-        (hir::Type::ArrayStatic(array), _) => array_static_len(hir, emit, array.len).is_none(),
-        (_, hir::Type::ArrayStatic(array2)) => array_static_len(hir, emit, array2.len).is_none(),
+        (hir::Type::ArrayStatic(array), _) => array.len.get_resolved(hir, emit).is_err(),
+        (_, hir::Type::ArrayStatic(array2)) => array2.len.get_resolved(hir, emit).is_err(),
         _ => false,
     }
 }
@@ -171,42 +172,13 @@ pub fn type_format<'hir>(
             format.into()
         }
         hir::Type::ArrayStatic(array) => {
-            let len = array_static_len(hir, emit, array.len);
+            let len = array.len.get_resolved(hir, emit);
             let elem_format = type_format(hir, emit, array.elem_ty);
             let format = match len {
-                Some(len) => format!("[{}]{}", len, elem_format.as_str()),
-                None => format!("[<unknown>]{}", elem_format.as_str()),
+                Ok(len) => format!("[{}]{}", len, elem_format.as_str()),
+                Err(()) => format!("[<unknown>]{}", elem_format.as_str()),
             };
             format.into()
-        }
-    }
-}
-
-fn array_static_len<'hir>(
-    hir: &HirData<'hir, '_, '_>,
-    emit: &HirEmit<'hir>,
-    len: hir::ArrayStaticLen,
-) -> Option<u64> {
-    match len {
-        hir::ArrayStaticLen::Immediate(len) => len,
-        hir::ArrayStaticLen::ConstEval(eval_id) => {
-            let (eval, _) = *hir.registry().const_eval(eval_id);
-            match eval {
-                hir::ConstEval::ResolvedValue(value_id) => {
-                    let value = emit.const_intern.get(value_id);
-                    match value {
-                        hir::ConstValue::Int { val, neg, int_ty } => {
-                            if neg {
-                                None
-                            } else {
-                                Some(val)
-                            }
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
         }
     }
 }
@@ -570,8 +542,7 @@ fn typecheck_match<'hir>(
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
-        let value =
-            super::pass_4::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
+        let value = constant::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
         let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
         // never -> anything
@@ -1237,10 +1208,10 @@ fn check_field_from_array<'hir>(
                     None => hir::ConstValue::Error,
                 },
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
-                    match hir.registry().const_eval(eval_id).0 {
-                        hir::ConstEval::Unresolved(_) => unreachable!(),
-                        hir::ConstEval::ResolvedError => hir::ConstValue::Error,
-                        hir::ConstEval::ResolvedValue(value_id) => emit.const_intern.get(value_id),
+                    let (eval, _) = hir.registry().const_eval(eval_id);
+                    match eval.get_resolved() {
+                        Ok(value_id) => emit.const_intern.get(value_id),
+                        Err(()) => hir::ConstValue::Error,
                     }
                 }
             };
@@ -1346,7 +1317,7 @@ fn typecheck_index<'hir>(
                 elem_ty: collection.elem_ty,
                 kind: match collection.kind {
                     SliceOrArray::Slice(slice) => hir::IndexKind::Slice {
-                        elem_size: type_layout(
+                        elem_size: constant::type_layout(
                             hir,
                             emit,
                             slice.elem_ty,
@@ -1397,95 +1368,6 @@ fn typecheck_call<'hir>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
     check_call_indirect(hir, emit, proc, target_res, input)
-}
-
-pub fn type_layout(
-    hir: &HirData,
-    emit: &mut HirEmit,
-    ty: hir::Type,
-    err_src: SourceRange,
-) -> Result<hir::Layout, ()> {
-    match ty {
-        hir::Type::Error => Err(()),
-        hir::Type::Basic(basic) => Ok(basic_type_layout(hir, basic)),
-        hir::Type::Enum(id) => {
-            //@currently disregaring possible value types
-            let data = hir.registry().enum_data(id);
-            if data.variants.is_empty() {
-                Ok(hir::Layout::new(0, 1))
-            } else {
-                Ok(basic_type_layout(hir, data.int_ty.into_basic()))
-            }
-        }
-        hir::Type::Struct(id) => hir.registry().struct_data(id).layout.get_resolved(),
-        hir::Type::Reference(_, _) => {
-            let ptr_size = hir.target().arch().ptr_width().ptr_size();
-            Ok(hir::Layout::new_equal(ptr_size))
-        }
-        hir::Type::Procedure(_) => {
-            let ptr_size = hir.target().arch().ptr_width().ptr_size();
-            Ok(hir::Layout::new_equal(ptr_size))
-        }
-        hir::Type::ArraySlice(_) => {
-            let ptr_size = hir.target().arch().ptr_width().ptr_size();
-            Ok(hir::Layout::new(ptr_size * 2, ptr_size))
-        }
-        hir::Type::ArrayStatic(array) => {
-            if let (Ok(elem_layout), Some(len)) = (
-                type_layout(hir, emit, array.elem_ty, err_src),
-                array_static_len(hir, emit, array.len),
-            ) {
-                if let Some(array_size) = elem_layout.size().checked_mul(len) {
-                    Ok(hir::Layout::new(array_size, elem_layout.align()))
-                } else {
-                    //@match const fold error style
-                    emit.error(ErrorComp::new(
-                        format!(
-                            "array size overflow: `{}` * `{}` (elem_size * array_len)",
-                            elem_layout.size(),
-                            len
-                        ),
-                        err_src,
-                        None,
-                    ));
-                    Err(())
-                }
-            } else {
-                Err(())
-            }
-        }
-    }
-}
-
-fn basic_type_layout(hir: &HirData, basic: BasicType) -> hir::Layout {
-    match basic {
-        BasicType::S8 => hir::Layout::new_equal(1),
-        BasicType::S16 => hir::Layout::new_equal(2),
-        BasicType::S32 => hir::Layout::new_equal(4),
-        BasicType::S64 => hir::Layout::new_equal(8),
-        BasicType::Ssize => {
-            let ptr_size = hir.target().arch().ptr_width().ptr_size();
-            hir::Layout::new_equal(ptr_size)
-        }
-        BasicType::U8 => hir::Layout::new_equal(1),
-        BasicType::U16 => hir::Layout::new_equal(2),
-        BasicType::U32 => hir::Layout::new_equal(4),
-        BasicType::U64 => hir::Layout::new_equal(8),
-        BasicType::Usize => {
-            let ptr_size = hir.target().arch().ptr_width().ptr_size();
-            hir::Layout::new_equal(ptr_size)
-        }
-        BasicType::F32 => hir::Layout::new_equal(4),
-        BasicType::F64 => hir::Layout::new_equal(8),
-        BasicType::Bool => hir::Layout::new_equal(1),
-        BasicType::Char => hir::Layout::new_equal(4),
-        BasicType::Rawptr => {
-            let ptr_size = hir.target().arch().ptr_width().ptr_size();
-            hir::Layout::new_equal(ptr_size)
-        }
-        BasicType::Void => hir::Layout::new(0, 1),
-        BasicType::Never => hir::Layout::new(0, 1),
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -1570,8 +1452,8 @@ fn typecheck_cast<'hir>(
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::new(from);
             let into_kind = BasicTypeKind::new(into);
-            let from_size = basic_type_layout(hir, from).size();
-            let into_size = basic_type_layout(hir, into).size();
+            let from_size = constant::basic_layout(hir, from).size();
+            let into_size = constant::basic_layout(hir, into).size();
 
             match from_kind {
                 BasicTypeKind::IntS => match into_kind {
@@ -1641,6 +1523,9 @@ fn typecheck_cast<'hir>(
     TypeResult::new(into, kind)
 }
 
+//@resulting layout sizes are not checked to fit in usize
+// this can be partially adressed if each hir::Expr
+// is folded, thus range being range checked for `usize`
 fn typecheck_sizeof<'hir>(
     hir: &HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -1653,17 +1538,18 @@ fn typecheck_sizeof<'hir>(
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
-    let kind = match type_layout(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
-        Ok(layout) => {
-            let value = hir::ConstValue::Int {
-                val: layout.size(),
-                neg: false,
-                int_ty: BasicInt::Usize,
-            };
-            hir::ExprKind::Const { value }
-        }
-        Err(()) => hir::ExprKind::Error,
-    };
+    let kind =
+        match constant::type_layout(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
+            Ok(layout) => {
+                let value = hir::ConstValue::Int {
+                    val: layout.size(),
+                    neg: false,
+                    int_ty: BasicInt::Usize,
+                };
+                hir::ExprKind::Const { value }
+            }
+            Err(()) => hir::ExprKind::Error,
+        };
 
     TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
 }
@@ -1999,7 +1885,7 @@ fn typecheck_array_repeat<'hir>(
     let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
-    let value = super::pass_4::resolve_const_expr(
+    let value = constant::resolve_const_expr(
         hir,
         emit,
         proc.origin(),
