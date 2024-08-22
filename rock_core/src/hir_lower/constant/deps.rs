@@ -16,12 +16,14 @@ use crate::text::TextRange;
 #[derive(Copy, Clone, PartialEq)]
 enum ConstDependency {
     EnumVariant(hir::EnumID, hir::VariantID),
+    EnumLayout(hir::EnumID),
     StructLayout(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
     ArrayLen(hir::ConstEvalID),
 }
 
+//@enum layout dep not implemented
 pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().enum_ids() {
         let data = hir.registry().enum_data(id);
@@ -53,6 +55,36 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
                 //@resolve automatically at the end of the process?
                 // array lens etc
                 hir::VariantKind::HasValues(_) => {}
+            }
+        }
+    }
+
+    for id in hir.registry().enum_ids() {
+        let data = hir.registry().enum_data(id);
+
+        if matches!(data.layout, hir::LayoutEval::Unresolved) {
+            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::EnumLayout(id));
+            let mut is_ok = true;
+
+            for variant in data.variants {
+                match variant.kind {
+                    hir::VariantKind::Default(_) => {}
+                    hir::VariantKind::Constant(_) => {}
+                    hir::VariantKind::HasValues(types) => {
+                        for ty in types {
+                            if let Err(from_id) =
+                                add_type_size_const_dependencies(hir, emit, &mut tree, root_id, *ty)
+                            {
+                                const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                                is_ok = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if is_ok {
+                resolve_const_dependency_tree(hir, emit, &tree);
             }
         }
     }
@@ -242,6 +274,10 @@ fn check_const_dependency_cycle(
             let variant = data.variant(variant_id);
             SourceRange::new(data.origin_id, variant.name.range)
         }
+        ConstDependency::EnumLayout(id) => {
+            let data = hir.registry().enum_data(id);
+            SourceRange::new(data.origin_id, data.name.range)
+        }
         ConstDependency::StructLayout(id) => {
             let data = hir.registry().struct_data(id);
             SourceRange::new(data.origin_id, data.name.range)
@@ -292,6 +328,15 @@ fn check_const_dependency_cycle(
                     hir.name_str(variant.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, variant.name.range);
+                (msg, src)
+            }
+            ConstDependency::EnumLayout(id) => {
+                let data = hir.registry().enum_data(id);
+                let msg = format!(
+                    "{prefix}depends on size of `{}`{postfix}",
+                    hir.name_str(data.name.id)
+                );
+                let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::StructLayout(id) => {
@@ -377,6 +422,10 @@ fn const_dependencies_mark_error_up_to_root(
                     }
                 }
             }
+            ConstDependency::EnumLayout(id) => {
+                let data = hir.registry_mut().enum_data_mut(id);
+                data.layout = hir::LayoutEval::ResolvedError;
+            }
             ConstDependency::StructLayout(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
                 data.layout = hir::LayoutEval::ResolvedError;
@@ -428,30 +477,6 @@ fn add_variant_const_dependency<'hir>(
         }
         hir::ConstEval::ResolvedError => Err(parent_id),
         hir::ConstEval::Resolved(_) => Ok(()),
-    }
-}
-
-fn add_struct_size_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID,
-    struct_id: hir::StructID,
-) -> Result<(), TreeNodeID> {
-    let data = hir.registry().struct_data(struct_id);
-
-    match data.layout {
-        hir::LayoutEval::Unresolved => {
-            let node_id = tree.add_child(parent_id, ConstDependency::StructLayout(struct_id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
-
-            for field in data.fields {
-                add_type_size_const_dependencies(hir, emit, tree, node_id, field.ty)?;
-            }
-            Ok(())
-        }
-        hir::LayoutEval::ResolvedError => Err(parent_id),
-        hir::LayoutEval::Resolved(_) => Ok(()),
     }
 }
 
@@ -514,7 +539,9 @@ fn add_type_size_const_dependencies<'hir>(
     match ty {
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
-        hir::Type::Enum(_) => {}
+        hir::Type::Enum(id) => {
+            add_enum_size_const_dependency(hir, emit, tree, parent_id, id)?;
+        }
         hir::Type::Struct(id) => {
             add_struct_size_const_dependency(hir, emit, tree, parent_id, id)?;
         }
@@ -531,6 +558,62 @@ fn add_type_size_const_dependencies<'hir>(
     Ok(())
 }
 
+fn add_enum_size_const_dependency<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    enum_id: hir::EnumID,
+) -> Result<(), TreeNodeID> {
+    let data = hir.registry().enum_data(enum_id);
+
+    match data.layout {
+        hir::LayoutEval::Unresolved => {
+            let node_id = tree.add_child(parent_id, ConstDependency::EnumLayout(enum_id));
+            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+
+            for variant in data.variants {
+                match variant.kind {
+                    hir::VariantKind::Default(_) => {}
+                    hir::VariantKind::Constant(_) => {}
+                    hir::VariantKind::HasValues(types) => {
+                        for ty in types {
+                            add_type_size_const_dependencies(hir, emit, tree, node_id, *ty)?;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        hir::LayoutEval::ResolvedError => Err(parent_id),
+        hir::LayoutEval::Resolved(_) => Ok(()),
+    }
+}
+
+fn add_struct_size_const_dependency<'hir>(
+    hir: &mut HirData<'hir, '_, '_>,
+    emit: &mut HirEmit<'hir>,
+    tree: &mut Tree<ConstDependency>,
+    parent_id: TreeNodeID,
+    struct_id: hir::StructID,
+) -> Result<(), TreeNodeID> {
+    let data = hir.registry().struct_data(struct_id);
+
+    match data.layout {
+        hir::LayoutEval::Unresolved => {
+            let node_id = tree.add_child(parent_id, ConstDependency::StructLayout(struct_id));
+            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+
+            for field in data.fields {
+                add_type_size_const_dependencies(hir, emit, tree, node_id, field.ty)?;
+            }
+            Ok(())
+        }
+        hir::LayoutEval::ResolvedError => Err(parent_id),
+        hir::LayoutEval::Resolved(_) => Ok(()),
+    }
+}
+
 fn add_type_usage_const_dependencies<'hir>(
     hir: &mut HirData<'hir, '_, '_>,
     emit: &mut HirEmit<'hir>,
@@ -541,7 +624,20 @@ fn add_type_usage_const_dependencies<'hir>(
     match ty {
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
-        hir::Type::Enum(_) => {}
+        hir::Type::Enum(id) => {
+            let data = hir.registry().enum_data(id);
+            for variant in data.variants {
+                match variant.kind {
+                    hir::VariantKind::Default(_) => {}
+                    hir::VariantKind::Constant(_) => {}
+                    hir::VariantKind::HasValues(types) => {
+                        for ty in types {
+                            add_type_usage_const_dependencies(hir, emit, tree, parent_id, *ty)?;
+                        }
+                    }
+                }
+            }
+        }
         hir::Type::Struct(id) => {
             let data = hir.registry().struct_data(id);
             for field in data.fields {
@@ -776,6 +872,14 @@ fn resolve_const_dependency_tree<'hir>(
                     }
                     hir::VariantKind::HasValues(_) => todo!("resolve tree VariantKind::HasValues"),
                 }
+            }
+            ConstDependency::EnumLayout(id) => {
+                let layout_res = layout::resolve_enum_layout(hir, emit, id);
+                let layout_eval = match layout_res {
+                    Ok(layout) => hir::LayoutEval::Resolved(layout),
+                    Err(()) => hir::LayoutEval::ResolvedError,
+                };
+                hir.registry_mut().enum_data_mut(id).layout = layout_eval;
             }
             ConstDependency::StructLayout(id) => {
                 let layout_res = layout::resolve_struct_layout(hir, emit, id);
