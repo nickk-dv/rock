@@ -66,7 +66,7 @@ pub struct EnumData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub variants: &'hir [Variant<'hir>],
-    pub tag_ty: TagTypeEval,
+    pub tag_ty: Result<BasicInt, ()>,
     pub layout: LayoutEval,
 }
 
@@ -74,20 +74,13 @@ id_impl!(VariantID);
 #[derive(Copy, Clone)]
 pub struct Variant<'hir> {
     pub name: ast::Name,
-    pub tag: TagValueEval,
+    pub kind: VariantKind<'hir>,
     pub fields: &'hir [Type<'hir>],
 }
 
 #[derive(Copy, Clone)]
-pub enum TagTypeEval {
-    Unresolved,
-    ResolvedError,
-    Resolved(BasicInt),
-}
-
-#[derive(Copy, Clone)]
-pub enum TagValueEval {
-    Default,
+pub enum VariantKind<'hir> {
+    Default(ConstValue<'hir>),
     Constant(ConstEvalID),
 }
 
@@ -691,16 +684,6 @@ impl<'hir> StructData<'hir> {
             }
         }
         None
-    }
-}
-
-impl TagTypeEval {
-    pub fn get_resolved(self) -> Result<BasicInt, ()> {
-        match self {
-            TagTypeEval::Unresolved => unreachable!(),
-            TagTypeEval::ResolvedError => Err(()),
-            TagTypeEval::Resolved(int_ty) => Ok(int_ty),
-        }
     }
 }
 

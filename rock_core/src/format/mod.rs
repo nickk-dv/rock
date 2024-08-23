@@ -222,10 +222,6 @@ fn enum_item(fmt: &mut Formatter, item: ast::EnumItem) {
     fmt.space();
     name_fmt(fmt, item.name(fmt.tree).unwrap());
     fmt.space();
-    if let Some(ty) = item.type_basic(fmt.tree) {
-        type_basic(fmt, ty);
-        fmt.space();
-    }
     variant_list(fmt, item.variant_list(fmt.tree).unwrap());
     fmt.new_line();
 }

@@ -90,8 +90,9 @@ fn attribute_param_list(p: &mut Parser) {
 fn attribute_param(p: &mut Parser) {
     let m = p.start();
     p.bump(T![ident]);
-    p.expect(T![=]);
-    p.expect(T![string_lit]);
+    if p.eat(T![=]) {
+        p.expect(T![string_lit]);
+    }
     m.complete(p, SyntaxKind::ATTRIBUTE_PARAM);
 }
 
@@ -172,11 +173,6 @@ fn param(p: &mut Parser) {
 fn enum_item(p: &mut Parser, m: Marker) {
     p.bump(T![enum]);
     name(p);
-    if p.peek().as_basic_type().is_some() {
-        let m = p.start();
-        p.bump(p.peek());
-        m.complete(p, SyntaxKind::TYPE_BASIC);
-    }
     if p.at(T!['{']) {
         variant_list(p);
     } else {

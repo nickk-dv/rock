@@ -124,23 +124,12 @@ fn enum_item<'ast>(
 ) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
     let name = name(p)?;
-
-    let basic_range = p.peek_range();
-    let basic_ty = p.peek().as_basic_type();
-    let basic = if let Some(basic) = basic_ty {
-        p.bump();
-        Some((basic, basic_range))
-    } else {
-        None
-    };
-
     let variants = comma_separated_list!(p, variant, variants, T!['{'], T!['}']);
 
     Ok(p.state.arena.alloc(EnumItem {
         attrs,
         vis,
         name,
-        basic,
         variants,
     }))
 }
@@ -357,13 +346,16 @@ fn attribute_list<'ast>(
 
 fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<AttributeParam, String> {
     let key = name(p)?;
-    p.expect(T![=])?;
 
-    let val = if p.at(T![string_lit]) {
-        p.bump();
-        p.get_string_lit().0
+    let val = if p.eat(T![=]) {
+        if p.at(T![string_lit]) {
+            p.bump();
+            Some(p.get_string_lit().0)
+        } else {
+            return Err("expected string literal".into());
+        }
     } else {
-        return Err("expected string literal".into());
+        None
     };
 
     Ok(AttributeParam { key, val })

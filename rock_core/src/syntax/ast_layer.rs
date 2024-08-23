@@ -660,7 +660,6 @@ impl<'syn> EnumItem<'syn> {
     find_first!(attr_list, AttributeList);
     find_first!(visibility, Visibility);
     find_first!(name, Name);
-    find_first!(type_basic, TypeBasic);
     find_first!(variant_list, VariantList);
 }
 

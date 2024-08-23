@@ -204,7 +204,12 @@ fn attribute_param_list<'ast>(
 //@allowing and ignoring c_string
 fn attribute_param(ctx: &mut AstBuild, param: cst::AttributeParam) -> ast::AttributeParam {
     let key = name(ctx, param.key(ctx.tree).unwrap());
-    let (val, _) = string_lit(ctx);
+    let val = if param.val(ctx.tree).is_some() {
+        let (val, _) = string_lit(ctx);
+        Some(val)
+    } else {
+        None
+    };
     ast::AttributeParam { key, val }
 }
 
@@ -271,9 +276,6 @@ fn enum_item<'ast>(
     let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let basic = item
-        .type_basic(ctx.tree)
-        .map(|tb| (tb.basic(ctx.tree), tb.range(ctx.tree)));
 
     let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();
@@ -286,7 +288,6 @@ fn enum_item<'ast>(
         attrs,
         vis,
         name,
-        basic,
         variants,
     };
     ctx.s.arena.alloc(enum_item)

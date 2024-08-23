@@ -97,15 +97,12 @@ fn resolve_variant_layout(
     variant: &hir::Variant,
 ) -> Result<hir::Layout, ()> {
     let src = SourceRange::new(data.origin_id, variant.name.range);
-    let tag_ty = data.tag_ty.get_resolved()?;
+    let tag_ty = data.tag_ty?;
     let tag_ty = [hir::Type::Basic(tag_ty.into_basic())];
     let mut types = tag_ty.iter().copied().chain(variant.fields.iter().copied());
     resolve_aggregate_layout(hir, emit, src, "variant", &mut types)
 }
 
-//@can be simplified if we have EnumFlag like `TagOnly`
-// dont need to compute each variant layout if they are the same
-// 0 variants has (0, 1) layout
 pub fn resolve_enum_layout(
     hir: &HirData,
     emit: &mut HirEmit,
@@ -115,27 +112,9 @@ pub fn resolve_enum_layout(
     let mut align: u64 = 1;
 
     let data = hir.registry().enum_data(enum_id);
-    match data.tag_ty {
-        hir::TagTypeEval::Unresolved => {
-            let tag_ty = hir::BasicInt::U8;
-
-            for variant in data.variants {
-                let (eval, _) = hir.registry().const_eval(variant.tag);
-                let value_id = eval.get_resolved()?;
-                let value = emit.const_intern.get(value_id);
-
-                //expand tag_ty based on value
-            }
-
-            //let data = hir.registry_mut().enum_data_mut(enum_id);
-            //data.tag_ty = hir::TagTypeEval::Resolved(tag_ty);
-        }
-        hir::TagTypeEval::ResolvedError => return Err(()),
-        hir::TagTypeEval::Resolved(_) => {}
-    };
-
     for variant in data.variants {
         let variant_layout = resolve_variant_layout(hir, emit, data, variant)?;
+
         size = size.max(variant_layout.size());
         align = align.max(variant_layout.align());
     }

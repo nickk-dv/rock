@@ -557,11 +557,16 @@ fn typecheck_match<'hir>(
             }
         }
 
-        if value == hir::ConstValue::Error {
+        if value.is_err() {
             check_exaust = false;
         }
 
-        let pat_value_id = emit.const_intern.intern(value);
+        //@temp dummy value (match2 will be used instead)
+        let pat_value_id = match value {
+            Ok(value) => emit.const_intern.intern(value),
+            Err(_) => hir::ConstValueID::dummy(),
+        };
+
         let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
         let stmts = emit.arena.alloc_slice(&[tail_stmt]);
 
@@ -734,18 +739,12 @@ fn typecheck_pat_item<'hir>(
     match value_id {
         ValueID::None => PatResult::new(hir::Pat::Error, hir::Type::Error),
         ValueID::Enum(enum_id, variant_id) => {
-            //@fields are guaranteed to be empty (solve by making path resolve more clear)
+            //@`field_names` are guaranteed to be empty (solve by making path resolve more clear)
             let data = hir.registry().enum_data(enum_id);
             let variant = data.variant(variant_id);
 
-            let value_types = match variant.kind {
-                hir::VariantKind::Default(_) => &[],
-                hir::VariantKind::Constant(_) => &[],
-                hir::VariantKind::HasValues(types) => types,
-            };
-
             let input_count = binds.map(|names| names.len()).unwrap_or(0);
-            let expected_count = value_types.len();
+            let expected_count = variant.fields.len();
 
             if input_count != expected_count {
                 //@error src can be improved to not include variant itself if possible (if needed)
@@ -814,14 +813,8 @@ fn typecheck_pat_variant<'hir>(
     let data = hir.registry().enum_data(enum_id);
     if let Some((variant_id, variant)) = data.find_variant(name.id) {
         //@duplicate codeblock, same as ast::PatKind::Item
-        let value_types = match variant.kind {
-            hir::VariantKind::Default(_) => &[],
-            hir::VariantKind::Constant(_) => &[],
-            hir::VariantKind::HasValues(types) => types,
-        };
-
         let input_count = binds.map(|names| names.len()).unwrap_or(0);
-        let expected_count = value_types.len();
+        let expected_count = variant.fields.len();
 
         if input_count != expected_count {
             //@error src can be improved to not include variant itself if possible (if needed)
@@ -1205,13 +1198,13 @@ fn check_field_from_array<'hir>(
                         neg: false,
                         int_ty: hir::BasicInt::Usize,
                     },
-                    None => hir::ConstValue::Error,
+                    None => return None, //@field result doesnt communicate usize type if this is None
                 },
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = hir.registry().const_eval(eval_id);
                     match eval.get_resolved() {
                         Ok(value_id) => emit.const_intern.get(value_id),
-                        Err(()) => hir::ConstValue::Error,
+                        Err(()) => return None, //@field result doesnt communicate usize type if this is None
                     }
                 }
             };
@@ -1893,13 +1886,7 @@ fn typecheck_array_repeat<'hir>(
         len,
     );
     let len = match value {
-        hir::ConstValue::Int { val, neg, int_ty } => {
-            if neg {
-                None
-            } else {
-                Some(val)
-            }
-        }
+        Ok(hir::ConstValue::Int { val, .. }) => Some(val),
         _ => None,
     };
 
@@ -3030,14 +3017,8 @@ fn check_variant_input_opt<'hir>(
     let data = hir.registry().enum_data(enum_id);
     let variant = data.variant(variant_id);
 
-    let value_types = match variant.kind {
-        hir::VariantKind::Default(_) => &[],
-        hir::VariantKind::Constant(_) => &[],
-        hir::VariantKind::HasValues(types) => types,
-    };
-
     let input_count = input.map(|i| i.exprs.len()).unwrap_or(0);
-    let expected_count = value_types.len();
+    let expected_count = variant.fields.len();
 
     if input_count != expected_count {
         let input_range = input_opt_range(input, error_range);
@@ -3054,7 +3035,7 @@ fn check_variant_input_opt<'hir>(
         let mut values = Vec::with_capacity(input.exprs.len());
         for (idx, &expr) in input.exprs.iter().enumerate() {
             //@expect src, id with duplicates problem
-            let expect = match value_types.get(idx) {
+            let expect = match variant.fields.get(idx) {
                 Some(ty) => Expectation::HasType(*ty, None),
                 None => Expectation::None,
             };

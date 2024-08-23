@@ -48,7 +48,6 @@ pub struct EnumItem<'ast> {
     pub attrs: &'ast [Attribute<'ast>],
     pub vis: Vis,
     pub name: Name,
-    pub basic: Option<(BasicType, TextRange)>,
     pub variants: &'ast [Variant<'ast>],
 }
 
@@ -149,7 +148,7 @@ pub struct Attribute<'ast> {
 #[derive(Copy, Clone)]
 pub struct AttributeParam {
     pub key: Name,
-    pub val: InternID,
+    pub val: Option<InternID>,
 }
 
 #[allow(non_camel_case_types)]
