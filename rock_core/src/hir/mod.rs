@@ -65,8 +65,8 @@ pub struct EnumData<'hir> {
     pub attr_set: BitSet<EnumFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub int_ty: BasicInt,
     pub variants: &'hir [Variant<'hir>],
+    pub tag_ty: TagTypeEval,
     pub layout: LayoutEval,
 }
 
@@ -74,14 +74,21 @@ id_impl!(VariantID);
 #[derive(Copy, Clone)]
 pub struct Variant<'hir> {
     pub name: ast::Name,
-    pub kind: VariantKind<'hir>,
+    pub tag: TagValueEval,
+    pub fields: &'hir [Type<'hir>],
 }
 
 #[derive(Copy, Clone)]
-pub enum VariantKind<'hir> {
-    Default(ConstValue<'hir>),
+pub enum TagTypeEval {
+    Unresolved,
+    ResolvedError,
+    Resolved(BasicInt),
+}
+
+#[derive(Copy, Clone)]
+pub enum TagValueEval {
+    Default,
     Constant(ConstEvalID),
-    HasValues(&'hir [Type<'hir>]),
 }
 
 #[repr(u32)]
@@ -291,7 +298,6 @@ id_impl!(ConstValueID);
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
 pub enum ConstValue<'hir> {
-    Error,
     Null,
     Bool        { val: bool },
     Int         { val: u64, neg: bool, int_ty: BasicInt },
@@ -610,8 +616,7 @@ impl<'hir> Eq for ConstValue<'hir> {}
 impl<'hir> Hash for ConstValue<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match *self {
-            ConstValue::Error => 0.hash(state),
-            ConstValue::Null => 1.hash(state),
+            ConstValue::Null => 0.hash(state),
             ConstValue::Bool { val } => val.hash(state),
             ConstValue::Int { val, neg, int_ty } => (val, neg, int_ty).hash(state),
             ConstValue::Float { val, float_ty } => (val.to_bits(), float_ty).hash(state),
@@ -686,6 +691,16 @@ impl<'hir> StructData<'hir> {
             }
         }
         None
+    }
+}
+
+impl TagTypeEval {
+    pub fn get_resolved(self) -> Result<BasicInt, ()> {
+        match self {
+            TagTypeEval::Unresolved => unreachable!(),
+            TagTypeEval::ResolvedError => Err(()),
+            TagTypeEval::Resolved(int_ty) => Ok(int_ty),
+        }
     }
 }
 

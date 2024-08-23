@@ -30,31 +30,23 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
 
         for (idx, variant) in data.variants.iter().enumerate() {
             let variant_id = hir::VariantID::new(idx);
+            let (eval, origin_id) = *hir.registry().const_eval(variant.tag);
 
-            match variant.kind {
-                hir::VariantKind::Default(_) => {}
-                hir::VariantKind::Constant(eval_id) => {
-                    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
-                    match eval {
-                        hir::ConstEval::Unresolved(expr) => {
-                            let (mut tree, root_id) =
-                                Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
+            match eval {
+                hir::ConstEval::Unresolved(expr) => {
+                    let (mut tree, root_id) =
+                        Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
 
-                            if let Err(from_id) = add_expr_const_dependencies(
-                                hir, emit, &mut tree, root_id, origin_id, expr.0,
-                            ) {
-                                const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
-                            } else {
-                                resolve_const_dependency_tree(hir, emit, &tree);
-                            }
-                        }
-                        hir::ConstEval::ResolvedError => {}
-                        hir::ConstEval::Resolved(_) => {}
+                    if let Err(from_id) = add_expr_const_dependencies(
+                        hir, emit, &mut tree, root_id, origin_id, expr.0,
+                    ) {
+                        const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    } else {
+                        resolve_const_dependency_tree(hir, emit, &tree);
                     }
                 }
-                //@resolve automatically at the end of the process?
-                // array lens etc
-                hir::VariantKind::HasValues(_) => {}
+                hir::ConstEval::ResolvedError => {}
+                hir::ConstEval::Resolved(_) => {}
             }
         }
     }
@@ -67,19 +59,13 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
             let mut is_ok = true;
 
             for variant in data.variants {
-                match variant.kind {
-                    hir::VariantKind::Default(_) => {}
-                    hir::VariantKind::Constant(_) => {}
-                    hir::VariantKind::HasValues(types) => {
-                        for ty in types {
-                            if let Err(from_id) =
-                                add_type_size_const_dependencies(hir, emit, &mut tree, root_id, *ty)
-                            {
-                                const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
-                                is_ok = false;
-                                break;
-                            }
-                        }
+                for ty in variant.fields {
+                    if let Err(from_id) =
+                        add_type_size_const_dependencies(hir, emit, &mut tree, root_id, *ty)
+                    {
+                        const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                        is_ok = false;
+                        break;
                     }
                 }
             }
@@ -923,14 +909,20 @@ fn resolve_and_update_const_eval<'hir>(
 ) {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
 
-    let value = match eval {
-        hir::ConstEval::Unresolved(expr) => resolve_const_expr(hir, emit, origin_id, expect, expr),
+    match eval {
+        hir::ConstEval::Unresolved(expr) => {
+            let value_res = resolve_const_expr(hir, emit, origin_id, expect, expr);
+            let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+
+            if let Ok(value) = value_res {
+                let value_id = emit.const_intern.intern(value);
+                *eval = hir::ConstEval::Resolved(value_id);
+            } else {
+                *eval = hir::ConstEval::ResolvedError;
+            }
+        }
         _ => panic!("calling `resolve_const_expr` on already resolved expr"),
     };
-
-    let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-    let value_id = emit.const_intern.intern(value);
-    *eval = hir::ConstEval::Resolved(value_id);
 }
 
 #[must_use]
@@ -940,7 +932,7 @@ pub fn resolve_const_expr<'hir>(
     origin_id: ModuleID,
     expect: Expectation<'hir>,
     expr: ast::ConstExpr,
-) -> hir::ConstValue<'hir> {
+) -> Result<hir::ConstValue<'hir>, ()> {
     let dummy_data = hir::ProcData {
         origin_id,
         attr_set: BitSet::empty(),
@@ -959,15 +951,10 @@ pub fn resolve_const_expr<'hir>(
     let error_count = emit.error_count();
     let expr_res = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
 
-    //@instead result option or result?
-    if emit.did_error(error_count) {
-        hir::ConstValue::Error
-    } else {
+    if !emit.did_error(error_count) {
         let src = SourceRange::new(origin_id, expr_res.expr.range);
-        if let Ok(value) = fold::fold_const_expr(hir, emit, src, expr_res.expr) {
-            value
-        } else {
-            hir::ConstValue::Error
-        }
+        fold::fold_const_expr(hir, emit, src, expr_res.expr)
+    } else {
+        Err(())
     }
 }

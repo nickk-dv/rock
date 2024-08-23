@@ -61,7 +61,6 @@ fn fold_const<'hir>(
     value: hir::ConstValue<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     match value {
-        hir::ConstValue::Error => unreachable!(),
         hir::ConstValue::Int { val, int_ty, .. } => {
             int_range_check(hir, emit, src, val.into(), int_ty)
         }
@@ -251,14 +250,7 @@ fn fold_const_var<'hir>(
 
     let value_id = eval.get_resolved()?;
     let value = emit.const_intern.get(value_id);
-
-    //@currently ConstValue::Error can be stored in constant
-    // instead use ResolvedError state of ConstEval, fully remove
-    // ConstValue::Error later, this is a temporary hack
-    match value {
-        hir::ConstValue::Error => Err(()),
-        _ => Ok(value),
-    }
+    Ok(value)
 }
 
 fn fold_struct_init<'hir>(

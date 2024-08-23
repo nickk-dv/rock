@@ -73,19 +73,17 @@ pub fn type_resolve<'hir>(
         }
         ast::TypeKind::ArrayStatic(array) => {
             let expect = Expectation::HasType(hir::Type::USIZE, None);
-            let value = constant::resolve_const_expr(hir, emit, origin_id, expect, array.len);
-
-            let len = match value {
-                hir::ConstValue::Int { val, int_ty, neg } => {
-                    if neg {
-                        None
-                    } else {
-                        Some(val)
-                    }
-                }
-                _ => None,
-            };
+            let len_res = constant::resolve_const_expr(hir, emit, origin_id, expect, array.len);
             let elem_ty = type_resolve(hir, emit, origin_id, array.elem_ty);
+
+            let len = if let Ok(value) = len_res {
+                match value {
+                    hir::ConstValue::Int { val, .. } => Some(val),
+                    _ => unreachable!(),
+                }
+            } else {
+                None
+            };
 
             let array = hir::ArrayStatic {
                 len: hir::ArrayStaticLen::Immediate(len),

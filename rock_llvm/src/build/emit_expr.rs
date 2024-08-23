@@ -161,7 +161,6 @@ fn codegen_expr<'c>(
 
 pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
     match value {
-        hir::ConstValue::Error => unreachable!(),
         hir::ConstValue::Null => codegen_const_null(cg),
         hir::ConstValue::Bool { val } => codegen_const_bool(cg, val),
         hir::ConstValue::Int { val, int_ty, .. } => codegen_const_int(cg, val, int_ty),

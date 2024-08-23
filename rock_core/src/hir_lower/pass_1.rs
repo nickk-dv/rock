@@ -150,14 +150,18 @@ fn add_enum_item<'hir, 'ast>(
         }
     }
 
+    //@set resolved based on ast basic
+    //@conflict with repr_c, instead use repr(`param`) instead?
+    //@currently manual tag_ty cannot be set
+    // repr int_ty is probably required else correct constant expr checking
+    // cannot be done and it will default to i32 which isnt always correct
     let data = hir::EnumData {
         origin_id,
         attr_set,
         vis: item.vis,
         name: item.name,
-        // placeholder, real type is assigned in pass_3
-        int_ty: hir::BasicInt::S8,
         variants: &[],
+        tag_ty: hir::TagTypeEval::Unresolved,
         layout: hir::LayoutEval::Unresolved,
     };
 
