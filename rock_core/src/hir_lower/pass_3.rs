@@ -203,10 +203,12 @@ fn process_enum_data<'hir>(
 ) {
     let item = hir.registry().enum_item(id);
     let data = hir.registry().enum_data(id);
-    let origin_id = hir.registry().enum_data(id).origin_id;
-    let enum_name = data.name;
 
     let mut unique = Vec::<hir::Variant>::new();
+    let mut tag_ty = data.tag_ty;
+    let mut any_constant = false;
+    let origin_id = data.origin_id;
+    let enum_name = data.name;
 
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
@@ -222,70 +224,53 @@ fn process_enum_data<'hir>(
                 ),
             ));
         } else {
-            let kind = match variant.kind {
-                ast::VariantKind::Default => {
-                    let value_error = hir::ConstValue::Error;
-                    hir::VariantKind::Default(value_error)
-                }
+            let variant = match variant.kind {
+                ast::VariantKind::Default => hir::Variant {
+                    name: variant.name,
+                    kind: hir::VariantKind::Default(None),
+                    fields: &[],
+                },
                 ast::VariantKind::Constant(value) => {
-                    //@perf (same for array sizes) `fast` resolve and dont add the ConstEvalID?
-                    let value = hir.registry_mut().add_const_eval(value, origin_id);
-                    hir::VariantKind::Constant(value)
+                    let eval_id = hir.registry_mut().add_const_eval(value, origin_id);
+                    any_constant = true;
+
+                    hir::Variant {
+                        name: variant.name,
+                        kind: hir::VariantKind::Constant(eval_id),
+                        fields: &[],
+                    }
                 }
                 ast::VariantKind::HasValues(types) => {
-                    //@temp buffer this allocation (applies for all allocs in hir_lower)
-                    let mut variant_types = Vec::with_capacity(types.len());
+                    let mut fields = Vec::with_capacity(types.len());
                     for ty in types {
                         let ty = type_resolve_delayed(hir, emit, origin_id, *ty);
-                        variant_types.push(ty);
+                        fields.push(ty);
                     }
-                    let types = emit.arena.alloc_slice(&variant_types);
-                    hir::VariantKind::HasValues(types)
-                }
-            };
+                    let fields = emit.arena.alloc_slice(&fields);
 
-            let variant = hir::Variant {
-                name: variant.name,
-                kind,
+                    hir::Variant {
+                        name: variant.name,
+                        kind: hir::VariantKind::Default(None),
+                        fields,
+                    }
+                }
             };
             unique.push(variant);
         }
     }
 
-    let any_default = unique
-        .iter()
-        .any(|v| matches!(v.kind, hir::VariantKind::Default(_)));
-    let any_constant = unique
-        .iter()
-        .any(|v| matches!(v.kind, hir::VariantKind::Constant(_)));
-
-    let int_ty = if let Some((basic, basic_range)) = item.basic {
-        // use defined integer type
-        if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
-            int_ty
-        } else {
-            emit.error(ErrorComp::new(
-                format!(
-                    "enum type must be an integer, found `{}`\ndefault `s32` will be used",
-                    basic.as_str()
-                ),
-                SourceRange::new(origin_id, basic_range),
-                None,
-            ));
-            hir::BasicInt::S32
-        }
-    } else if any_constant {
-        // require integer type
+    if tag_ty.is_err() && any_constant {
         emit.error(ErrorComp::new(
-            "enum type must be specified, add it after the enum name\ndefault `s32` will be used",
+            "enum type must be specified\nuse #[repr(<int_ty>)] or #[repr(C)] attribute",
             SourceRange::new(origin_id, enum_name.range),
             None,
         ));
-        hir::BasicInt::S32
-    } else {
-        // infer type for Default | HasValues variants
+    }
+
+    if tag_ty.is_err() && !any_constant {
         let variant_count = unique.len() as u64;
-        if variant_count <= u8::MAX as u64 {
+
+        let int_ty = if variant_count <= u8::MAX as u64 {
             hir::BasicInt::U8
         } else if variant_count <= u16::MAX as u64 {
             hir::BasicInt::U16
@@ -293,42 +278,27 @@ fn process_enum_data<'hir>(
             hir::BasicInt::U32
         } else {
             hir::BasicInt::U64
-        }
-    };
+        };
 
-    if any_constant && any_default {
-        let mut info_vec = Vec::new();
-        for variant in unique.iter() {
-            if matches!(variant.kind, hir::VariantKind::Default(_)) {
-                info_vec.push(Info::new_value(
-                    "assign an explicit value",
-                    SourceRange::new(origin_id, variant.name.range),
-                ));
-            }
-        }
-        emit.error(ErrorComp::new_detailed_info_vec(
-            "default variants must have a value",
-            "in this enum",
-            SourceRange::new(origin_id, enum_name.range),
-            info_vec,
-        ));
-    } else {
-        //@tag for HasValues variants is not clear and can only be known after all constants (if any) were resolved
-        // (with just Default | HasValues) it sequential (also HasValues tag value is not stored anywhere!)
-        //@bounds check user defined type for Default | HasValues variants with their tag values
+        let data = hir.registry_mut().enum_data_mut(id);
+        data.tag_ty = Ok(int_ty);
+        tag_ty = data.tag_ty;
+    }
+
+    if let Ok(int_ty) = tag_ty {
         for (idx, variant) in unique.iter_mut().enumerate() {
-            if let hir::VariantKind::Default(value) = &mut variant.kind {
-                *value = hir::ConstValue::Int {
-                    val: idx as u64,
-                    neg: false,
-                    int_ty,
-                };
+            match &mut variant.kind {
+                hir::VariantKind::Default(value) => {
+                    let src = SourceRange::new(origin_id, variant.name.range);
+                    let tag_value = constant::int_range_check(hir, emit, src, idx as i128, int_ty);
+                    *value = tag_value.ok();
+                }
+                hir::VariantKind::Constant(_) => break,
             }
         }
     }
 
     let data = hir.registry_mut().enum_data_mut(id);
-    data.int_ty = int_ty;
     data.variants = emit.arena.alloc_slice(&unique);
 }
 

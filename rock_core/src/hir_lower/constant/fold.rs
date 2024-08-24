@@ -521,7 +521,7 @@ fn fold_binary<'hir>(
     }
 }
 
-fn int_range_check<'hir>(
+pub fn int_range_check<'hir>(
     hir: &HirData,
     emit: &mut HirEmit,
     src: SourceRange,

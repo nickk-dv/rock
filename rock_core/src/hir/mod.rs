@@ -80,7 +80,7 @@ pub struct Variant<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum VariantKind<'hir> {
-    Default(ConstValue<'hir>),
+    Default(Option<ConstValue<'hir>>),
     Constant(ConstEvalID),
 }
 
