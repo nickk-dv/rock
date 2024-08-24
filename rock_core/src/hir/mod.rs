@@ -67,7 +67,7 @@ pub struct EnumData<'hir> {
     pub name: ast::Name,
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Result<BasicInt, ()>,
-    pub layout: LayoutEval,
+    pub layout: Eval<(), Layout>,
 }
 
 id_impl!(VariantID);
@@ -80,7 +80,7 @@ pub struct Variant<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum VariantKind<'hir> {
-    Default(Option<ConstValue<'hir>>),
+    Default(Eval<(), ConstValue<'hir>>),
     Constant(ConstEvalID),
 }
 
@@ -97,7 +97,7 @@ pub struct StructData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub fields: &'hir [Field<'hir>],
-    pub layout: LayoutEval,
+    pub layout: Eval<(), Layout>,
 }
 
 id_impl!(FieldID);
@@ -138,21 +138,6 @@ pub struct GlobalData<'hir> {
 #[derive(Copy, Clone, PartialEq)]
 pub enum GlobalFlag {
     ThreadLocal,
-}
-
-id_impl!(ConstEvalID);
-#[derive(Copy, Clone)]
-pub enum ConstEval<'ast> {
-    Unresolved(ast::ConstExpr<'ast>),
-    ResolvedError,
-    Resolved(ConstValueID),
-}
-
-#[derive(Copy, Clone)]
-pub enum LayoutEval {
-    Unresolved,
-    ResolvedError,
-    Resolved(Layout),
 }
 
 #[derive(Copy, Clone)]
@@ -286,6 +271,9 @@ pub enum ExprKind<'hir> {
     Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
     Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
+
+id_impl!(ConstEvalID);
+pub type ConstEval<'ast> = Eval<ast::ConstExpr<'ast>, ConstValueID>;
 
 id_impl!(ConstValueID);
 #[rustfmt::skip]
@@ -460,6 +448,17 @@ pub struct ArrayRepeat<'hir> {
     pub len: u64,
 }
 
+#[derive(Copy, Clone)]
+pub enum Eval<U, R>
+where
+    U: Copy + Clone,
+    R: Copy + Clone,
+{
+    Unresolved(U),
+    Resolved(R),
+    ResolvedError,
+}
+
 #[derive(Copy, Clone, PartialEq, Hash)]
 pub enum BasicInt {
     S8,
@@ -545,11 +544,10 @@ pub enum AssignOp {
 }
 
 use crate::size_assert;
-size_assert!(16, ConstEval);
-size_assert!(16, ConstValue);
 size_assert!(16, Type);
 size_assert!(16, Stmt);
 size_assert!(32, Expr);
+size_assert!(16, ConstValue);
 
 impl<'hir> Hir<'hir> {
     pub fn proc_data(&self, id: ProcID) -> &ProcData<'hir> {
@@ -687,26 +685,6 @@ impl<'hir> StructData<'hir> {
     }
 }
 
-impl<'hir> ConstEval<'hir> {
-    pub fn get_resolved(self) -> Result<ConstValueID, ()> {
-        match self {
-            ConstEval::Unresolved(_) => unreachable!(),
-            ConstEval::ResolvedError => Err(()),
-            ConstEval::Resolved(value_id) => Ok(value_id),
-        }
-    }
-}
-
-impl LayoutEval {
-    pub fn get_resolved(self) -> Result<Layout, ()> {
-        match self {
-            LayoutEval::Unresolved => unreachable!(),
-            LayoutEval::ResolvedError => Err(()),
-            LayoutEval::Resolved(layout) => Ok(layout),
-        }
-    }
-}
-
 impl Layout {
     pub fn new(size: u64, align: u64) -> Layout {
         Layout { size, align }
@@ -738,6 +716,31 @@ impl<'hir> Type<'hir> {
     }
     pub fn is_never(self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Never))
+    }
+}
+
+impl<U, R> Eval<U, R>
+where
+    U: Copy + Clone,
+    R: Copy + Clone,
+{
+    pub fn from_res(res: Result<R, ()>) -> Eval<U, R> {
+        match res {
+            Ok(val) => Eval::Resolved(val),
+            Err(_) => Eval::ResolvedError,
+        }
+    }
+
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Eval::Unresolved(_))
+    }
+
+    pub fn get_resolved(&self) -> Result<R, ()> {
+        match self {
+            Eval::Unresolved(_) => unreachable!(),
+            Eval::Resolved(val) => Ok(*val),
+            Eval::ResolvedError => Err(()),
+        }
     }
 }
 

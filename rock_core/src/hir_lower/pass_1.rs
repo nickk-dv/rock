@@ -158,7 +158,7 @@ fn add_enum_item<'hir, 'ast>(
         name: item.name,
         variants: &[],
         tag_ty: Err(()),
-        layout: hir::LayoutEval::Unresolved,
+        layout: hir::Eval::Unresolved(()),
     };
 
     let id = hir.registry_mut().add_enum(item, data);
@@ -194,7 +194,7 @@ fn add_struct_item<'hir, 'ast>(
         vis: item.vis,
         name: item.name,
         fields: &[],
-        layout: hir::LayoutEval::Unresolved,
+        layout: hir::Eval::Unresolved(()),
     };
 
     let id = hir.registry_mut().add_struct(item, data);

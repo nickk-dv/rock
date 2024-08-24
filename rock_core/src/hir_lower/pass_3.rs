@@ -225,11 +225,15 @@ fn process_enum_data<'hir>(
             ));
         } else {
             let variant = match variant.kind {
-                ast::VariantKind::Default => hir::Variant {
-                    name: variant.name,
-                    kind: hir::VariantKind::Default(None),
-                    fields: &[],
-                },
+                ast::VariantKind::Default => {
+                    let eval = hir::Eval::Unresolved(());
+
+                    hir::Variant {
+                        name: variant.name,
+                        kind: hir::VariantKind::Default(eval),
+                        fields: &[],
+                    }
+                }
                 ast::VariantKind::Constant(value) => {
                     let eval_id = hir.registry_mut().add_const_eval(value, origin_id);
                     any_constant = true;
@@ -241,6 +245,8 @@ fn process_enum_data<'hir>(
                     }
                 }
                 ast::VariantKind::HasValues(types) => {
+                    let eval = hir::Eval::Unresolved(());
+
                     let mut fields = Vec::with_capacity(types.len());
                     for ty in types {
                         let ty = type_resolve_delayed(hir, emit, origin_id, *ty);
@@ -250,7 +256,7 @@ fn process_enum_data<'hir>(
 
                     hir::Variant {
                         name: variant.name,
-                        kind: hir::VariantKind::Default(None),
+                        kind: hir::VariantKind::Default(eval),
                         fields,
                     }
                 }
@@ -291,7 +297,7 @@ fn process_enum_data<'hir>(
                 hir::VariantKind::Default(value) => {
                     let src = SourceRange::new(origin_id, variant.name.range);
                     let tag_value = constant::int_range_check(hir, emit, src, idx as i128, int_ty);
-                    *value = tag_value.ok();
+                    *value = hir::Eval::from_res(tag_value);
                 }
                 hir::VariantKind::Constant(_) => break,
             }

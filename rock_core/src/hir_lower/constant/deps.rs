@@ -30,27 +30,29 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
         for (idx, variant) in data.variants.iter().enumerate() {
             let variant_id = hir::VariantID::new(idx);
 
-            let (eval, origin_id) = match variant.kind {
+            //@if no tag type instantly set ResolvedError?
+            match variant.kind {
                 hir::VariantKind::Default(_) => continue,
-                hir::VariantKind::Constant(eval_id) => *hir.registry().const_eval(eval_id),
-            };
+                hir::VariantKind::Constant(eval_id) => {
+                    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+                    match eval {
+                        hir::ConstEval::Unresolved(expr) => {
+                            let (mut tree, root_id) =
+                                Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
 
-            match eval {
-                hir::ConstEval::Unresolved(expr) => {
-                    let (mut tree, root_id) =
-                        Tree::new_rooted(ConstDependency::EnumVariant(id, variant_id));
-
-                    //@not adding prev variants as dependency
-                    if let Err(from_id) = add_expr_const_dependencies(
-                        hir, emit, &mut tree, root_id, origin_id, expr.0,
-                    ) {
-                        const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
-                    } else {
-                        resolve_const_dependency_tree(hir, emit, &tree);
+                            //@not adding prev variants as dependency
+                            if let Err(from_id) = add_expr_const_dependencies(
+                                hir, emit, &mut tree, root_id, origin_id, expr.0,
+                            ) {
+                                const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                            } else {
+                                resolve_const_dependency_tree(hir, emit, &tree);
+                            }
+                        }
+                        hir::ConstEval::ResolvedError => {}
+                        hir::ConstEval::Resolved(_) => {}
                     }
                 }
-                hir::ConstEval::ResolvedError => {}
-                hir::ConstEval::Resolved(_) => {}
             }
         }
     }
@@ -58,7 +60,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
     for id in hir.registry().enum_ids() {
         let data = hir.registry().enum_data(id);
 
-        if matches!(data.layout, hir::LayoutEval::Unresolved) {
+        if data.layout.is_unresolved() {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::EnumLayout(id));
             let mut is_ok = true;
 
@@ -82,7 +84,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
     for id in hir.registry().struct_ids() {
         let data = hir.registry().struct_data(id);
 
-        if matches!(data.layout, hir::LayoutEval::Unresolved) {
+        if data.layout.is_unresolved() {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructLayout(id));
             let mut is_ok = true;
 
@@ -410,11 +412,11 @@ fn const_dependencies_mark_error_up_to_root(
             }
             ConstDependency::EnumLayout(id) => {
                 let data = hir.registry_mut().enum_data_mut(id);
-                data.layout = hir::LayoutEval::ResolvedError;
+                data.layout = hir::Eval::ResolvedError;
             }
             ConstDependency::StructLayout(id) => {
                 let data = hir.registry_mut().struct_data_mut(id);
-                data.layout = hir::LayoutEval::ResolvedError;
+                data.layout = hir::Eval::ResolvedError;
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
@@ -553,7 +555,7 @@ fn add_enum_size_const_dependency<'hir>(
     let data = hir.registry().enum_data(enum_id);
 
     match data.layout {
-        hir::LayoutEval::Unresolved => {
+        hir::Eval::Unresolved(()) => {
             let node_id = tree.add_child(parent_id, ConstDependency::EnumLayout(enum_id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
 
@@ -564,8 +566,8 @@ fn add_enum_size_const_dependency<'hir>(
             }
             Ok(())
         }
-        hir::LayoutEval::ResolvedError => Err(parent_id),
-        hir::LayoutEval::Resolved(_) => Ok(()),
+        hir::Eval::ResolvedError => Err(parent_id),
+        hir::Eval::Resolved(_) => Ok(()),
     }
 }
 
@@ -579,7 +581,7 @@ fn add_struct_size_const_dependency<'hir>(
     let data = hir.registry().struct_data(struct_id);
 
     match data.layout {
-        hir::LayoutEval::Unresolved => {
+        hir::Eval::Unresolved(()) => {
             let node_id = tree.add_child(parent_id, ConstDependency::StructLayout(struct_id));
             check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
 
@@ -588,8 +590,8 @@ fn add_struct_size_const_dependency<'hir>(
             }
             Ok(())
         }
-        hir::LayoutEval::ResolvedError => Err(parent_id),
-        hir::LayoutEval::Resolved(_) => Ok(()),
+        hir::Eval::ResolvedError => Err(parent_id),
+        hir::Eval::Resolved(_) => Ok(()),
     }
 }
 
@@ -841,19 +843,13 @@ fn resolve_const_dependency_tree<'hir>(
             }
             ConstDependency::EnumLayout(id) => {
                 let layout_res = layout::resolve_enum_layout(hir, emit, id);
-                let layout_eval = match layout_res {
-                    Ok(layout) => hir::LayoutEval::Resolved(layout),
-                    Err(()) => hir::LayoutEval::ResolvedError,
-                };
-                hir.registry_mut().enum_data_mut(id).layout = layout_eval;
+                let layout = hir::Eval::from_res(layout_res);
+                hir.registry_mut().enum_data_mut(id).layout = layout;
             }
             ConstDependency::StructLayout(id) => {
                 let layout_res = layout::resolve_struct_layout(hir, emit, id);
-                let layout_eval = match layout_res {
-                    Ok(layout) => hir::LayoutEval::Resolved(layout),
-                    Err(()) => hir::LayoutEval::ResolvedError,
-                };
-                hir.registry_mut().struct_data_mut(id).layout = layout_eval;
+                let layout = hir::Eval::from_res(layout_res);
+                hir.registry_mut().struct_data_mut(id).layout = layout;
             }
             ConstDependency::Const(id) => {
                 let data = hir.registry().const_data(id);
