@@ -1,3 +1,4 @@
+mod attr_check;
 mod constant;
 mod errors;
 mod hir_build;
