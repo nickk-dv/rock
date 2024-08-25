@@ -25,7 +25,7 @@ fn item(p: &mut Parser) {
         while p.at(T![#]) {
             attribute(p);
         }
-        mc = Some(m.complete(p, SyntaxKind::ATTRIBUTE_LIST));
+        mc = Some(m.complete(p, SyntaxKind::ATTR_LIST));
     }
 
     //@not used in import, ignored without errors
@@ -66,7 +66,7 @@ fn attribute(p: &mut Parser) -> MarkerClosed {
         attribute_param_list(p);
     }
     p.expect(T![']']);
-    m.complete(p, SyntaxKind::ATTRIBUTE)
+    m.complete(p, SyntaxKind::ATTR)
 }
 
 fn attribute_param_list(p: &mut Parser) {
@@ -79,12 +79,12 @@ fn attribute_param_list(p: &mut Parser) {
                 p.expect(T![,]);
             }
         } else {
-            p.error_recover("expected attribute parameter", RECOVER_ATTRIBUTE_PARAM);
+            p.error_recover("expected attribute parameter", RECOVER_ATTR_PARAM);
             break;
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::ATTRIBUTE_PARAM_LIST);
+    m.complete(p, SyntaxKind::ATTR_PARAM_LIST);
 }
 
 fn attribute_param(p: &mut Parser) {
@@ -93,7 +93,7 @@ fn attribute_param(p: &mut Parser) {
     if p.eat(T![=]) {
         p.expect(T![string_lit]);
     }
-    m.complete(p, SyntaxKind::ATTRIBUTE_PARAM);
+    m.complete(p, SyntaxKind::ATTR_PARAM);
 }
 
 fn visibility(p: &mut Parser) -> MarkerClosed {
@@ -115,7 +115,7 @@ const FIRST_ITEM: TokenSet = TokenSet::new(&[
 
 const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
 
-const RECOVER_ATTRIBUTE_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')'], T![']']]));
+const RECOVER_ATTR_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')'], T![']']]));
 const RECOVER_PARAM_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![->], T!['{'], T![;]]));
 const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
 const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;

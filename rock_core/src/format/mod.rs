@@ -132,14 +132,14 @@ fn item_fmt(fmt: &mut Formatter, item: ast::Item) {
     }
 }
 
-fn attribute_list(fmt: &mut Formatter, attr_list: ast::AttributeList) {
+fn attribute_list(fmt: &mut Formatter, attr_list: ast::AttrList) {
     for attr in attr_list.attrs(fmt.tree) {
         attribute(fmt, attr);
         fmt.new_line();
     }
 }
 
-fn attribute(fmt: &mut Formatter, attr: ast::Attribute) {
+fn attribute(fmt: &mut Formatter, attr: ast::Attr) {
     fmt.write("#[");
     name_fmt(fmt, attr.name(fmt.tree).unwrap());
     fmt.write_c(']');

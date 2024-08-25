@@ -49,7 +49,7 @@ pub fn module<'ast>(
 }
 
 fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
-    let attrs = attribute_list(p)?;
+    let attrs = attr_list(p)?;
     let vis = vis(p); //@not allowing vis with `import` is not enforced right now
 
     match p.peek() {
@@ -65,7 +65,7 @@ fn item<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Item<'ast>, String> {
 
 fn proc_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attrs: &'ast [Attribute],
+    attrs: &'ast [Attr],
     vis: Vis,
 ) -> Result<&'ast ProcItem<'ast>, String> {
     p.bump();
@@ -119,7 +119,7 @@ fn param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Param<'ast>, String> 
 
 fn enum_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attrs: &'ast [Attribute],
+    attrs: &'ast [Attr],
     vis: Vis,
 ) -> Result<&'ast EnumItem<'ast>, String> {
     p.bump();
@@ -152,7 +152,7 @@ fn variant<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Variant<'ast>, Stri
 
 fn struct_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attrs: &'ast [Attribute],
+    attrs: &'ast [Attr],
     vis: Vis,
 ) -> Result<&'ast StructItem<'ast>, String> {
     p.bump();
@@ -178,7 +178,7 @@ fn field<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<Field<'ast>, String> 
 
 fn const_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attrs: &'ast [Attribute],
+    attrs: &'ast [Attr],
     vis: Vis,
 ) -> Result<&'ast ConstItem<'ast>, String> {
     p.bump();
@@ -200,7 +200,7 @@ fn const_item<'ast>(
 
 fn global_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attrs: &'ast [Attribute],
+    attrs: &'ast [Attr],
     vis: Vis,
 ) -> Result<&'ast GlobalItem<'ast>, String> {
     p.bump();
@@ -224,7 +224,7 @@ fn global_item<'ast>(
 
 fn import_item<'ast>(
     p: &mut Parser<'ast, '_, '_, '_>,
-    attrs: &'ast [Attribute],
+    attrs: &'ast [Attr],
     vis: Vis,
 ) -> Result<&'ast ImportItem<'ast>, String> {
     p.bump();
@@ -311,9 +311,7 @@ fn name(p: &mut Parser) -> Result<Name, String> {
     Ok(Name { range, id })
 }
 
-fn attribute_list<'ast>(
-    p: &mut Parser<'ast, '_, '_, '_>,
-) -> Result<&'ast [Attribute<'ast>], String> {
+fn attr_list<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast [Attr<'ast>], String> {
     let offset = p.state.attrs.start();
 
     while p.at(T![#]) {
@@ -321,22 +319,20 @@ fn attribute_list<'ast>(
         p.expect(T![#])?;
         p.expect(T!['['])?;
 
-        let range = p.peek_range();
-        p.expect(T![ident])?;
-        let string = &p.source[range.as_usize()];
-        let kind = AttributeKind::from_str(string);
-
+        let name = name(p)?;
         let params = if p.at(T!['(']) {
-            comma_separated_list!(p, attribute_param, attr_params, T!['('], T![')'])
+            let start = p.start_range();
+            let params = comma_separated_list!(p, attribute_param, attr_params, T!['('], T![')']);
+            Some((params, p.make_range(start)))
         } else {
-            &[]
+            None
         };
         p.expect(T![']'])?;
 
-        let attr = Attribute {
-            kind,
-            range: p.make_range(start),
+        let attr = Attr {
+            name,
             params,
+            range: p.make_range(start),
         };
         p.state.attrs.add(attr);
     }
@@ -344,13 +340,13 @@ fn attribute_list<'ast>(
     Ok(p.state.attrs.take(offset, &mut p.state.arena))
 }
 
-fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<AttributeParam, String> {
-    let key = name(p)?;
-
-    let val = if p.eat(T![=]) {
+fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<AttrParam, String> {
+    let name = name(p)?;
+    let value = if p.eat(T![=]) {
         if p.at(T![string_lit]) {
+            let range = p.peek_range();
             p.bump();
-            Some(p.get_string_lit().0)
+            Some((p.get_string_lit().0, range))
         } else {
             return Err("expected string literal".into());
         }
@@ -358,7 +354,7 @@ fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<AttributePa
         None
     };
 
-    Ok(AttributeParam { key, val })
+    Ok(AttrParam { name, value })
 }
 
 fn path<'ast>(p: &mut Parser<'ast, '_, '_, '_>) -> Result<&'ast Path<'ast>, String> {

@@ -29,8 +29,8 @@ struct AstBuildState<'ast> {
     errors: Vec<ErrorComp>,
 
     items: TempBuffer<ast::Item<'ast>>,
-    attrs: TempBuffer<ast::Attribute<'ast>>,
-    attr_params: TempBuffer<ast::AttributeParam>,
+    attrs: TempBuffer<ast::Attr<'ast>>,
+    attr_params: TempBuffer<ast::AttrParam>,
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
     fields: TempBuffer<ast::Field<'ast>>,
@@ -152,10 +152,10 @@ fn item(ctx: &mut AstBuild, item: cst::Item) {
     ctx.s.items.add(item);
 }
 
-fn attribute_list<'ast>(
+fn attr_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    attr_list: Option<cst::AttributeList>,
-) -> &'ast [ast::Attribute<'ast>] {
+    attr_list: Option<cst::AttrList>,
+) -> &'ast [ast::Attr<'ast>] {
     if let Some(attr_list) = attr_list {
         let offset = ctx.s.attrs.start();
         for attr_cst in attr_list.attrs(ctx.tree) {
@@ -168,49 +168,49 @@ fn attribute_list<'ast>(
     }
 }
 
-fn attribute<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    attr: cst::Attribute,
-) -> ast::Attribute<'ast> {
+fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, attr: cst::Attr) -> ast::Attr<'ast> {
     //@assuming range of ident token without any trivia
-    let name_cst = attr.name(ctx.tree).unwrap();
-    let range = name_cst.range(ctx.tree);
-    let string = &ctx.source[range.as_usize()];
-    let params = attribute_param_list(ctx, attr.param_list(ctx.tree));
+    let name = name(ctx, attr.name(ctx.tree).unwrap());
+    let params = attr_param_list(ctx, attr.param_list(ctx.tree));
+    let range = attr.range(ctx.tree);
 
-    ast::Attribute {
-        kind: ast::AttributeKind::from_str(string),
-        range: attr.range(ctx.tree),
+    ast::Attr {
+        name,
         params,
+        range,
     }
 }
 
-fn attribute_param_list<'ast>(
+//@in general make sure range doesnt include trivia tokens
+fn attr_param_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    param_list: Option<cst::AttributeParamList>,
-) -> &'ast [ast::AttributeParam] {
+    param_list: Option<cst::AttrParamList>,
+) -> Option<(&'ast [ast::AttrParam], TextRange)> {
     if let Some(param_list) = param_list {
         let offset = ctx.s.attr_params.start();
         for param_cst in param_list.params(ctx.tree) {
-            let param = attribute_param(ctx, param_cst);
+            let param = attr_param(ctx, param_cst);
             ctx.s.attr_params.add(param);
         }
-        ctx.s.attr_params.take(offset, &mut ctx.s.arena)
+        let params = ctx.s.attr_params.take(offset, &mut ctx.s.arena);
+        Some((params, param_list.range(ctx.tree)))
     } else {
-        &[]
+        None
     }
 }
 
 //@allowing and ignoring c_string
-fn attribute_param(ctx: &mut AstBuild, param: cst::AttributeParam) -> ast::AttributeParam {
-    let key = name(ctx, param.key(ctx.tree).unwrap());
-    let val = if param.val(ctx.tree).is_some() {
-        let (val, _) = string_lit(ctx);
-        Some(val)
-    } else {
-        None
+fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
+    let name = name(ctx, param.name(ctx.tree).unwrap());
+    let value = match param.value(ctx.tree) {
+        Some(cst_string) => {
+            let value = string_lit(ctx).0;
+            let range = cst_string.range(ctx.tree);
+            Some((value, range))
+        }
+        None => None,
     };
-    ast::AttributeParam { key, val }
+    ast::AttrParam { name, value }
 }
 
 fn vis(is_pub: bool) -> ast::Vis {
@@ -233,7 +233,7 @@ fn proc_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
-    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
+    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
@@ -273,7 +273,7 @@ fn enum_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
-    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
+    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
@@ -319,7 +319,7 @@ fn struct_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
-    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
+    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
@@ -352,7 +352,7 @@ fn const_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
-    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
+    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
@@ -372,7 +372,7 @@ fn global_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
-    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
+    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.visibility(ctx.tree).is_some());
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.is_mut(ctx.tree));
@@ -394,7 +394,7 @@ fn import_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
-    let attrs = attribute_list(ctx, item.attr_list(ctx.tree));
+    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();

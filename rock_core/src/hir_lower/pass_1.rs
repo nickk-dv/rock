@@ -172,6 +172,57 @@ fn add_enum_item<'hir, 'ast>(
     );
 }
 
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum AttributeKind {
+    Cfg,
+    Cfg_Not,
+    Cfg_Any,
+    Test,
+    Builtin,
+    Inline,
+    ReprC,
+    Thread_Local,
+    Unknown,
+}
+
+impl AttributeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AttributeKind::Cfg => "cfg",
+            AttributeKind::Cfg_Not => "cfg_not",
+            AttributeKind::Cfg_Any => "cfg_any",
+            AttributeKind::Test => "test",
+            AttributeKind::Builtin => "builtin",
+            AttributeKind::Inline => "inline",
+            AttributeKind::ReprC => "repr_c",
+            AttributeKind::Thread_Local => "thread_local",
+            AttributeKind::Unknown => "unknown",
+        }
+    }
+
+    pub fn from_str(string: &str) -> AttributeKind {
+        match string {
+            "cfg" => AttributeKind::Cfg,
+            "cfg_not" => AttributeKind::Cfg_Not,
+            "cfg_any" => AttributeKind::Cfg_Any,
+            "test" => AttributeKind::Test,
+            "builtin" => AttributeKind::Builtin,
+            "inline" => AttributeKind::Inline,
+            "repr_c" => AttributeKind::ReprC,
+            "thread_local" => AttributeKind::Thread_Local,
+            _ => AttributeKind::Unknown,
+        }
+    }
+}
+
+enum ReprKind {
+    ReprC,
+    ReprInt(hir::BasicInt),
+}
+
+fn resolve_repr_attr() {}
+
 fn add_struct_item<'hir, 'ast>(
     hir: &mut HirData<'hir, 'ast, '_>,
     emit: &mut HirEmit<'hir>,

@@ -745,6 +745,22 @@ where
 }
 
 impl BasicInt {
+    pub fn from_str(string: &str) -> Option<BasicInt> {
+        match string {
+            "s8" => Some(BasicInt::S8),
+            "s16" => Some(BasicInt::S16),
+            "s32" => Some(BasicInt::S32),
+            "s64" => Some(BasicInt::S64),
+            "ssize" => Some(BasicInt::Ssize),
+            "u8" => Some(BasicInt::U8),
+            "u16" => Some(BasicInt::U16),
+            "u32" => Some(BasicInt::U32),
+            "u64" => Some(BasicInt::U64),
+            "usize" => Some(BasicInt::Usize),
+            _ => None,
+        }
+    }
+
     pub fn from_basic(basic: ast::BasicType) -> Option<BasicInt> {
         match basic {
             ast::BasicType::S8 => Some(BasicInt::S8),
