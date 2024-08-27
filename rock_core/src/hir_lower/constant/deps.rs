@@ -31,6 +31,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &
             let variant_id = hir::VariantID::new(idx);
 
             //@if no tag type instantly set ResolvedError?
+
             match variant.kind {
                 hir::VariantKind::Default(_) => continue,
                 hir::VariantKind::Constant(eval_id) => {

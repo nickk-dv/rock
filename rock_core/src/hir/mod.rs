@@ -87,7 +87,7 @@ pub enum VariantKind<'hir> {
 #[repr(u32)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum EnumFlag {
-    ReprC,
+    HasRepr,
 }
 
 id_impl!(StructID);
