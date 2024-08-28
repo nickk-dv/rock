@@ -1,52 +1,56 @@
-#[derive(Copy, Clone)]
-#[allow(non_camel_case_types)]
-pub enum TargetTriple {
-    x86_64_pc_windows_msvc,
-    x86_64_unknown_linux_gnu,
-    x86_64_apple_darwin,
-    Arm_64_pc_windows_msvc,
-    Arm_64_unknown_linux_gnu,
-    Arm_64_apple_darwin,
-}
+use crate::enum_str_convert;
 
-#[derive(Copy, Clone)]
-#[allow(non_camel_case_types)]
-pub enum TargetArch {
-    x86_64,
-    Arm_64,
-}
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone,)]
+    pub enum TargetTriple {
+        x86_64_pc_windows_msvc => "x86_64-pc-windows-msvc",
+        x86_64_unknown_linux_gnu => "x86_64-unknown-linux-gnu",
+        x86_64_apple_darwin => "x86_64-apple-darwin",
+        Arm_64_pc_windows_msvc => "aarch64-pc-windows-msvc",
+        Arm_64_unknown_linux_gnu => "aarch64-unknown-linux-gnu",
+        Arm_64_apple_darwin => "aarch64-apple-darwin",
+    }
+);
 
-#[derive(Copy, Clone)]
-pub enum TargetOS {
-    Windows,
-    Linux,
-    Macos,
-}
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone,)]
+    pub enum TargetArch {
+        x86_64 => "x86_64",
+        Arm_64 => "aarch64",
+    }
+);
 
-#[derive(Copy, Clone)]
-#[allow(non_camel_case_types)]
-pub enum TargetPtrWidth {
-    Bit_32,
-    Bit_64,
-}
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone,)]
+    pub enum TargetOS {
+        Windows => "windows",
+        Linux => "linux",
+        Macos => "macos",
+    }
+);
 
-#[derive(Copy, Clone)]
-pub enum BuildKind {
-    Debug,
-    Release,
-}
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone,)]
+    pub enum TargetPtrWidth {
+        Bit_32 => "32",
+        Bit_64 => "64",
+    }
+);
+
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone,)]
+    pub enum BuildKind {
+        Debug => "debug",
+        Release => "release",
+    }
+);
 
 impl TargetTriple {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TargetTriple::x86_64_pc_windows_msvc => "x86_64-pc-windows-msvc",
-            TargetTriple::x86_64_unknown_linux_gnu => "x86_64-unknown-linux-gnu",
-            TargetTriple::x86_64_apple_darwin => "x86_64-apple-darwin",
-            TargetTriple::Arm_64_pc_windows_msvc => "aarch64-pc-windows-msvc",
-            TargetTriple::Arm_64_unknown_linux_gnu => "aarch64-unknown-linux-gnu",
-            TargetTriple::Arm_64_apple_darwin => "aarch64-apple-darwin",
-        }
-    }
     pub fn arch(self) -> TargetArch {
         match self {
             TargetTriple::x86_64_pc_windows_msvc
@@ -90,12 +94,6 @@ impl TargetTriple {
 }
 
 impl TargetArch {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TargetArch::x86_64 => "x86_64",
-            TargetArch::Arm_64 => "aarch64",
-        }
-    }
     pub fn ptr_width(self) -> TargetPtrWidth {
         match self {
             TargetArch::x86_64 => TargetPtrWidth::Bit_64,
@@ -104,36 +102,11 @@ impl TargetArch {
     }
 }
 
-impl TargetOS {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TargetOS::Windows => "windows",
-            TargetOS::Linux => "linux",
-            TargetOS::Macos => "macos",
-        }
-    }
-}
-
 impl TargetPtrWidth {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            TargetPtrWidth::Bit_32 => "32",
-            TargetPtrWidth::Bit_64 => "64",
-        }
-    }
     pub fn ptr_size(self) -> u64 {
         match self {
             TargetPtrWidth::Bit_32 => 4,
             TargetPtrWidth::Bit_64 => 8,
-        }
-    }
-}
-
-impl BuildKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BuildKind::Debug => "debug",
-            BuildKind::Release => "release",
         }
     }
 }

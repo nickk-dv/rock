@@ -1,6 +1,7 @@
 use super::hir_build::HirEmit;
 use crate::ast;
 use crate::bitset::BitSet;
+use crate::enum_str_convert;
 use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
@@ -37,8 +38,8 @@ impl CfgOp {
     fn from_attr(kind: AttrKind) -> Option<CfgOp> {
         match kind {
             AttrKind::Cfg => Some(CfgOp::And),
-            AttrKind::Cfg_Not => Some(CfgOp::Not),
-            AttrKind::Cfg_Any => Some(CfgOp::Or),
+            AttrKind::CfgNot => Some(CfgOp::Not),
+            AttrKind::CfgAny => Some(CfgOp::Or),
             _ => None,
         }
     }
@@ -118,34 +119,6 @@ where
     }
 }
 
-#[allow(non_camel_case_types)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum AttrKind {
-    Cfg,
-    Cfg_Not,
-    Cfg_Any,
-    Test,
-    Builtin,
-    Inline,
-    Repr,
-    ThreadLocal,
-}
-
-//@variants / fields / stmts grammar 25.08.24
-// cannot have attrs applied currently
-#[derive(Copy, Clone)]
-enum AttrTarget {
-    Proc,
-    Enum,
-    Struct,
-    Const,
-    Global,
-    Import,
-    Statement,
-    EnumVariant,
-    StructField,
-}
-
 #[derive(Copy, Clone)]
 pub struct CfgState(bool);
 
@@ -170,37 +143,55 @@ enum ReprKind {
     ReprInt(hir::BasicInt),
 }
 
+//@variants / fields / stmts grammar 25.08.24
+// cannot have attrs applied currently
+enum_str_convert!(
+    fn as_str,
+    #[derive(Copy, Clone)]
+    pub enum AttrTarget {
+        Proc => "procedures",
+        Enum => "enums",
+        Struct => "structs",
+        Const => "constants",
+        Global => "globals",
+        Import => "imports",
+        Statement => "statements",
+        EnumVariant => "enum variants",
+        StructField => "struct fields",
+    }
+);
+
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone)]
+    enum AttrKind {
+        Cfg => "cfg",
+        CfgNot => "cfg_not",
+        CfgAny => "cfg_any",
+        Test => "test",
+        Builtin => "builtin",
+        Inline => "inline",
+        Repr => "repr",
+        ThreadLocal => "thread_local",
+    }
+);
+
+enum_str_convert!(
+    fn as_str, fn from_str,
+    #[derive(Copy, Clone)]
+    enum CfgParamKind {
+        Target => "target",
+        TargetArch => "target_arch",
+        TargetOS => "target_os",
+        TargetPtrWidth => "target_ptr_width",
+        BuildKind => "build_kind",
+    }
+);
+
 impl AttrKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            AttrKind::Cfg => "cfg",
-            AttrKind::Cfg_Not => "cfg_not",
-            AttrKind::Cfg_Any => "cfg_any",
-            AttrKind::Test => "test",
-            AttrKind::Builtin => "builtin",
-            AttrKind::Inline => "inline",
-            AttrKind::Repr => "repr",
-            AttrKind::ThreadLocal => "thread_local",
-        }
-    }
-
-    fn from_str(string: &str) -> Option<AttrKind> {
-        match string {
-            "cfg" => Some(AttrKind::Cfg),
-            "cfg_not" => Some(AttrKind::Cfg_Not),
-            "cfg_any" => Some(AttrKind::Cfg_Any),
-            "test" => Some(AttrKind::Test),
-            "builtin" => Some(AttrKind::Builtin),
-            "inline" => Some(AttrKind::Inline),
-            "repr" => Some(AttrKind::Repr),
-            "thread_local" => Some(AttrKind::ThreadLocal),
-            _ => None,
-        }
-    }
-
     fn requires_params(self) -> bool {
         match self {
-            AttrKind::Cfg | AttrKind::Cfg_Not | AttrKind::Cfg_Any => true,
+            AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny => true,
             AttrKind::Test | AttrKind::Builtin | AttrKind::Inline => false,
             AttrKind::Repr => true,
             AttrKind::ThreadLocal => false,
@@ -209,22 +200,8 @@ impl AttrKind {
 }
 
 impl AttrTarget {
-    fn as_str(self) -> &'static str {
-        match self {
-            AttrTarget::Proc => "procedures",
-            AttrTarget::Enum => "enums",
-            AttrTarget::Struct => "structs",
-            AttrTarget::Const => "constants",
-            AttrTarget::Global => "globals",
-            AttrTarget::Import => "imports",
-            AttrTarget::Statement => "statements",
-            AttrTarget::EnumVariant => "enum variants",
-            AttrTarget::StructField => "struct fields",
-        }
-    }
-
     fn can_apply(self, kind: AttrKind) -> bool {
-        if matches!(kind, AttrKind::Cfg | AttrKind::Cfg_Not | AttrKind::Cfg_Any) {
+        if matches!(kind, AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny) {
             return true;
         }
         match self {

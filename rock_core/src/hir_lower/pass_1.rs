@@ -83,17 +83,15 @@ fn add_proc_item<'hir, 'ast>(
 
     for attr in item.attrs {
         let flag = match attr.kind {
-            ast::AttributeKind::Cfg | ast::AttributeKind::Cfg_Not | ast::AttributeKind::Cfg_Any => {
-                None
-            }
-            ast::AttributeKind::Test => Some(ProcFlag::Test),
-            ast::AttributeKind::Builtin => Some(ProcFlag::Builtin),
-            ast::AttributeKind::Inline => Some(ProcFlag::Inline),
-            ast::AttributeKind::ReprC | ast::AttributeKind::Thread_Local => {
+            ast::AttrKind::Cfg | ast::AttrKind::Cfg_Not | ast::AttrKind::Cfg_Any => None,
+            ast::AttrKind::Test => Some(ProcFlag::Test),
+            ast::AttrKind::Builtin => Some(ProcFlag::Builtin),
+            ast::AttrKind::Inline => Some(ProcFlag::Inline),
+            ast::AttrKind::ReprC | ast::AttrKind::Thread_Local => {
                 error_attribute_cannot_apply(emit, origin_id, attr, "procedures");
                 None
             }
-            ast::AttributeKind::Unknown => {
+            ast::AttrKind::Unknown => {
                 error_attribute_unknown(emit, origin_id, attr);
                 None
             }
@@ -144,8 +142,8 @@ fn add_enum_item<'hir, 'ast>(
 
     for attr in item.attrs {
         match attr.kind {
-            ast::AttributeKind::ReprC => attr_set.set(EnumFlag::ReprC),
-            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            ast::AttrKind::ReprC => attr_set.set(EnumFlag::ReprC),
+            ast::AttrKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "enums"),
         }
     }
@@ -182,8 +180,8 @@ fn add_struct_item<'hir, 'ast>(
 
     for attr in item.attrs {
         match attr.kind {
-            ast::AttributeKind::ReprC => attr_set.set(StructFlag::ReprC),
-            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            ast::AttrKind::ReprC => attr_set.set(StructFlag::ReprC),
+            ast::AttrKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "structs"),
         }
     }
@@ -216,7 +214,7 @@ fn add_const_item<'hir, 'ast>(
 ) {
     for attr in item.attrs {
         match attr.kind {
-            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            ast::AttrKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "constants"),
         }
     }
@@ -250,18 +248,16 @@ fn add_global_item<'hir, 'ast>(
 
     for attr in item.attrs {
         let flag = match attr.kind {
-            ast::AttributeKind::Cfg | ast::AttributeKind::Cfg_Not | ast::AttributeKind::Cfg_Any => {
-                None
-            }
-            ast::AttributeKind::Test
-            | ast::AttributeKind::Builtin
-            | ast::AttributeKind::Inline
-            | ast::AttributeKind::ReprC => {
+            ast::AttrKind::Cfg | ast::AttrKind::Cfg_Not | ast::AttrKind::Cfg_Any => None,
+            ast::AttrKind::Test
+            | ast::AttrKind::Builtin
+            | ast::AttrKind::Inline
+            | ast::AttrKind::ReprC => {
                 error_attribute_cannot_apply(emit, origin_id, attr, "globals");
                 None
             }
-            ast::AttributeKind::Thread_Local => Some(GlobalFlag::ThreadLocal),
-            ast::AttributeKind::Unknown => {
+            ast::AttrKind::Thread_Local => Some(GlobalFlag::ThreadLocal),
+            ast::AttrKind::Unknown => {
                 error_attribute_unknown(emit, origin_id, attr);
                 None
             }
@@ -308,7 +304,7 @@ fn check_import_item<'hir, 'ast>(
 ) {
     for attr in item.attrs {
         match attr.kind {
-            ast::AttributeKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
+            ast::AttrKind::Unknown => error_attribute_unknown(emit, origin_id, attr),
             _ => error_attribute_cannot_apply(emit, origin_id, attr, "constants"),
         }
     }
@@ -328,7 +324,7 @@ pub fn error_name_already_defined(
     ));
 }
 
-fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: &ast::Attribute) {
+fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: &ast::Attr) {
     emit.error(ErrorComp::new(
         "attribute is unknown",
         SourceRange::new(origin_id, attr.range),
@@ -339,7 +335,7 @@ fn error_attribute_unknown(emit: &mut HirEmit, origin_id: ModuleID, attr: &ast::
 fn error_attribute_cannot_apply(
     emit: &mut HirEmit,
     origin_id: ModuleID,
-    attr: &ast::Attribute,
+    attr: &ast::Attr,
     item_kind: &'static str,
 ) {
     emit.error(ErrorComp::new(
@@ -357,7 +353,7 @@ pub fn check_attribute_flag<T>(
     origin_id: ModuleID,
     item_name: ast::Name,
     item_kind: &'static str,
-    attr: Option<&ast::Attribute>,
+    attr: Option<&ast::Attr>,
     attr_set: &mut BitSet<T>,
     new_flag: T,
 ) where
@@ -512,26 +508,5 @@ impl DataFlag<GlobalFlag> for GlobalFlag {
         match self {
             GlobalFlag::ThreadLocal => false,
         }
-    }
-}
-
-impl Into<u32> for ProcFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-impl Into<u32> for EnumFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-impl Into<u32> for StructFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-impl Into<u32> for GlobalFlag {
-    fn into(self) -> u32 {
-        self as u32
     }
 }

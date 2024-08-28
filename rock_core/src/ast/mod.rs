@@ -1,4 +1,5 @@
 use crate::arena::Arena;
+use crate::enum_str_convert;
 use crate::intern::{InternID, InternPool};
 use crate::text::TextRange;
 
@@ -23,6 +24,30 @@ pub enum Item<'ast> {
     Const(&'ast ConstItem<'ast>),
     Global(&'ast GlobalItem<'ast>),
     Import(&'ast ImportItem<'ast>),
+}
+
+#[derive(Copy, Clone)]
+pub struct Name {
+    pub id: InternID,
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct Path<'ast> {
+    pub names: &'ast [Name],
+}
+
+#[derive(Copy, Clone)]
+pub struct Attr<'ast> {
+    pub name: Name,
+    pub params: Option<(&'ast [AttrParam], TextRange)>,
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct AttrParam {
+    pub name: Name,
+    pub value: Option<(InternID, TextRange)>,
 }
 
 #[derive(Copy, Clone)]
@@ -118,42 +143,6 @@ pub enum SymbolRename {
     None,
     Alias(Name),
     Discard(TextRange),
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Vis {
-    Public,
-    Private,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum Mut {
-    Mutable,
-    Immutable,
-}
-
-#[derive(Copy, Clone)]
-pub struct Name {
-    pub id: InternID,
-    pub range: TextRange,
-}
-
-#[derive(Copy, Clone)]
-pub struct Attr<'ast> {
-    pub name: Name,
-    pub params: Option<(&'ast [AttrParam], TextRange)>,
-    pub range: TextRange,
-}
-
-#[derive(Copy, Clone)]
-pub struct AttrParam {
-    pub name: Name,
-    pub value: Option<(InternID, TextRange)>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Path<'ast> {
-    pub names: &'ast [Name],
 }
 
 #[derive(Copy, Clone)]
@@ -388,55 +377,76 @@ pub struct BinExpr<'ast> {
     pub rhs: &'ast Expr<'ast>,
 }
 
-#[derive(Copy, Clone, PartialEq, Hash)]
-pub enum BasicType {
-    S8,
-    S16,
-    S32,
-    S64,
-    Ssize,
-    U8,
-    U16,
-    U32,
-    U64,
-    Usize,
-    F32,
-    F64,
-    Bool,
-    Char,
-    Rawptr,
-    Void,
-    Never,
+#[derive(Copy, Clone, PartialEq)]
+pub enum Vis {
+    Public,
+    Private,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum UnOp {
-    Neg,
-    BitNot,
-    LogicNot,
+pub enum Mut {
+    Mutable,
+    Immutable,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    BitAnd,
-    BitOr,
-    BitXor,
-    BitShl,
-    BitShr,
-    IsEq,
-    NotEq,
-    Less,
-    LessEq,
-    Greater,
-    GreaterEq,
-    LogicAnd,
-    LogicOr,
-}
+enum_str_convert!(
+    fn as_str,
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum BasicType {
+        S8 => "s8",
+        S16 => "s16",
+        S32 => "s32",
+        S64 => "s64",
+        Ssize => "ssize",
+        U8 => "u8",
+        U16 => "u16",
+        U32 => "u32",
+        U64 => "u64",
+        Usize => "usize",
+        F32 => "f32",
+        F64 => "f64",
+        Bool => "bool",
+        Char => "char",
+        Rawptr => "rawptr",
+        Void => "void",
+        Never => "never",
+    }
+);
+
+enum_str_convert!(
+    fn as_str,
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum UnOp {
+        Neg => "-",
+        BitNot => "~",
+        LogicNot => "!",
+    }
+);
+
+enum_str_convert!(
+    fn as_str,
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum BinOp {
+        Add => "+",
+        Sub => "-",
+        Mul => "*",
+        Div => "/",
+        Rem => "%",
+        BitAnd => "&",
+        BitOr => "|",
+        BitXor => "^",
+        BitShl => "<<",
+        BitShr => ">>",
+        IsEq => "==",
+        NotEq => "!=",
+        Less => "<",
+        LessEq => "<=",
+        Greater => ">",
+        GreaterEq => ">=",
+        LogicAnd => "&&",
+        LogicOr => "||",
+    }
+);
 
 #[derive(Copy, Clone)]
 pub enum AssignOp {
@@ -452,62 +462,3 @@ size_assert!(16, Path);
 size_assert!(24, Type);
 size_assert!(24, Stmt);
 size_assert!(32, Expr);
-
-impl BasicType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BasicType::S8 => "s8",
-            BasicType::S16 => "s16",
-            BasicType::S32 => "s32",
-            BasicType::S64 => "s64",
-            BasicType::Ssize => "ssize",
-            BasicType::U8 => "u8",
-            BasicType::U16 => "u16",
-            BasicType::U32 => "u32",
-            BasicType::U64 => "u64",
-            BasicType::Usize => "usize",
-            BasicType::F32 => "f32",
-            BasicType::F64 => "f64",
-            BasicType::Bool => "bool",
-            BasicType::Char => "char",
-            BasicType::Rawptr => "rawptr",
-            BasicType::Void => "void",
-            BasicType::Never => "never",
-        }
-    }
-}
-
-impl UnOp {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            UnOp::Neg => "-",
-            UnOp::BitNot => "~",
-            UnOp::LogicNot => "!",
-        }
-    }
-}
-
-impl BinOp {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BinOp::Add => "+",
-            BinOp::Sub => "-",
-            BinOp::Mul => "*",
-            BinOp::Div => "/",
-            BinOp::Rem => "%",
-            BinOp::BitAnd => "&",
-            BinOp::BitOr => "|",
-            BinOp::BitXor => "^",
-            BinOp::BitShl => "<<",
-            BinOp::BitShr => ">>",
-            BinOp::IsEq => "==",
-            BinOp::NotEq => "!=",
-            BinOp::Less => "<",
-            BinOp::LessEq => "<=",
-            BinOp::Greater => ">",
-            BinOp::GreaterEq => ">=",
-            BinOp::LogicAnd => "&&",
-            BinOp::LogicOr => "||",
-        }
-    }
-}

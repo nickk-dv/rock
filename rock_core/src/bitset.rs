@@ -24,7 +24,7 @@ where
         self.mask |= 1 << flag.into();
     }
 
-    pub fn contains(self, flag: T) -> bool {
+    pub fn contains(&self, flag: T) -> bool {
         self.mask & (1 << flag.into()) != 0
     }
 }
