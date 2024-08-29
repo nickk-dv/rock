@@ -2,7 +2,7 @@ use crate::enum_str_convert;
 
 enum_str_convert!(
     fn as_str, fn from_str,
-    #[derive(Copy, Clone,)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum TargetTriple {
         x86_64_pc_windows_msvc => "x86_64-pc-windows-msvc",
         x86_64_unknown_linux_gnu => "x86_64-unknown-linux-gnu",
@@ -15,7 +15,7 @@ enum_str_convert!(
 
 enum_str_convert!(
     fn as_str, fn from_str,
-    #[derive(Copy, Clone,)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum TargetArch {
         x86_64 => "x86_64",
         Arm_64 => "aarch64",
@@ -24,7 +24,7 @@ enum_str_convert!(
 
 enum_str_convert!(
     fn as_str, fn from_str,
-    #[derive(Copy, Clone,)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum TargetOS {
         Windows => "windows",
         Linux => "linux",
@@ -34,7 +34,7 @@ enum_str_convert!(
 
 enum_str_convert!(
     fn as_str, fn from_str,
-    #[derive(Copy, Clone,)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum TargetPtrWidth {
         Bit_32 => "32",
         Bit_64 => "64",
@@ -43,7 +43,7 @@ enum_str_convert!(
 
 enum_str_convert!(
     fn as_str, fn from_str,
-    #[derive(Copy, Clone,)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum BuildKind {
         Debug => "debug",
         Release => "release",
