@@ -1,3 +1,4 @@
+use super::errors as err;
 use super::hir_build::{HirData, HirEmit};
 use crate::ast;
 use crate::bitset::BitSet;
@@ -40,11 +41,8 @@ fn check_attr(
     let kind = match AttrKind::from_str(attr_name) {
         Some(kind) => kind,
         None => {
-            emit.error(ErrorComp::new(
-                format!("attribute `{attr_name}` is unknown"),
-                SourceRange::new(origin_id, attr.name.range),
-                None,
-            ));
+            let attr_src = SourceRange::new(origin_id, attr.name.range);
+            err::attr_unknown(emit, attr_src, attr_name);
             return;
         }
     };
@@ -52,108 +50,123 @@ fn check_attr(
     if let Some(cfg_op) = CfgOp::from_attr(kind) {
         if let Some((params, params_range)) = attr.params {
             if params.is_empty() {
-                emit.error(ErrorComp::new(
-                    format!("attribute `{attr_name}` requires non-empty parameter list"),
-                    SourceRange::new(origin_id, params_range),
-                    None,
-                ));
+                let params_src = SourceRange::new(origin_id, params_range);
+                err::attr_param_list_required(emit, params_src, attr_name, true);
                 return;
-            } else {
-                for param in params {
-                    let param_name = &module.source[param.name.range.as_usize()];
+            }
 
-                    let param_kind = match CfgParamKind::from_str(param_name) {
-                        Some(param_kind) => param_kind,
-                        None => {
-                            emit.error(ErrorComp::new(
-                                format!("config parameter `{param_name}` is unknown"),
-                                SourceRange::new(origin_id, param.name.range),
-                                None,
-                            ));
-                            continue;
-                        }
-                    };
+            for param in params {
+                let param_name = &module.source[param.name.range.as_usize()];
 
-                    let (value, value_range) = match param.value {
-                        Some((value, value_range)) => {
-                            let value = hir.intern_string().get_str(value);
-                            (value, value_range)
-                        }
-                        None => {
-                            emit.error(ErrorComp::new(
-                                format!("config parameter `{param_name}` requires an assigned string value"),
-                                SourceRange::new(origin_id, param.name.range),
-                                None,
-                            ));
-                            continue;
-                        }
-                    };
+                let param_kind = match CfgParamKind::from_str(param_name) {
+                    Some(param_kind) => param_kind,
+                    None => {
+                        let param_src = SourceRange::new(origin_id, param.name.range);
+                        err::attr_param_unknown(emit, param_src, param_name);
+                        continue;
+                    }
+                };
 
-                    let cfg_state = match param_kind {
-                        CfgParamKind::Target => match config::TargetTriple::from_str(value) {
-                            Some(cfg_triple) => {
-                                let triple = hir.target();
-                                Ok(CfgState(triple == cfg_triple))
-                            }
-                            None => Err(()),
-                        },
-                        CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
-                            Some(cfg_arch) => {
-                                let arch = hir.target().arch();
-                                Ok(CfgState(arch == cfg_arch))
-                            }
-                            None => Err(()),
-                        },
-                        CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
-                            Some(cfg_os) => {
-                                let os = hir.target().os();
-                                Ok(CfgState(os == cfg_os))
-                            }
-                            None => Err(()),
-                        },
-                        CfgParamKind::TargetPtrWidth => {
-                            match config::TargetPtrWidth::from_str(value) {
-                                Some(cfg_ptr_width) => {
-                                    let ptr_width = hir.target().arch().ptr_width();
-                                    Ok(CfgState(ptr_width == cfg_ptr_width))
-                                }
-                                None => Err(()),
-                            }
-                        }
-                        CfgParamKind::BuildKind => match config::BuildKind::from_str(value) {
-                            Some(cfg_build_kind) => {
-                                //@current build_kind not available trough any context
-                                let build_kind: config::BuildKind =
-                                    todo!("build kind is not available");
-                                Ok(CfgState(build_kind == cfg_build_kind))
-                            }
-                            None => Err(()),
-                        },
-                    };
+                let (value, value_range) = match param.value {
+                    Some((value, value_range)) => {
+                        let value = hir.intern_string().get_str(value);
+                        (value, value_range)
+                    }
+                    None => {
+                        let param_src = SourceRange::new(origin_id, param.name.range);
+                        err::attr_param_value_required(emit, param_src, param_name);
+                        continue;
+                    }
+                };
 
-                    let cfg_state = match cfg_state {
-                        Ok(cfg_state) => cfg_state,
-                        Err(()) => {
-                            emit.error(ErrorComp::new(
-                                format!("unknown `{param_name}` value `{value}`"),
-                                SourceRange::new(origin_id, value_range),
-                                None,
-                            ));
-                            continue;
+                let cfg_state = match param_kind {
+                    CfgParamKind::Target => match config::TargetTriple::from_str(value) {
+                        Some(cfg_triple) => {
+                            let triple = hir.target();
+                            Ok(CfgState(triple == cfg_triple))
                         }
-                    };
+                        None => Err(()),
+                    },
+                    CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
+                        Some(cfg_arch) => {
+                            let arch = hir.target().arch();
+                            Ok(CfgState(arch == cfg_arch))
+                        }
+                        None => Err(()),
+                    },
+                    CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
+                        Some(cfg_os) => {
+                            let os = hir.target().os();
+                            Ok(CfgState(os == cfg_os))
+                        }
+                        None => Err(()),
+                    },
+                    CfgParamKind::TargetPtrWidth => match config::TargetPtrWidth::from_str(value) {
+                        Some(cfg_ptr_width) => {
+                            let ptr_width = hir.target().arch().ptr_width();
+                            Ok(CfgState(ptr_width == cfg_ptr_width))
+                        }
+                        None => Err(()),
+                    },
+                    CfgParamKind::BuildKind => match config::BuildKind::from_str(value) {
+                        Some(cfg_build_kind) => {
+                            //@current build_kind not available trough any context
+                            let build_kind: config::BuildKind =
+                                todo!("build kind is not available");
+                            Ok(CfgState(build_kind == cfg_build_kind))
+                        }
+                        None => Err(()),
+                    },
+                };
 
-                    //@correctly evaluate state according to cfg_op
-                    // across multiple config parameters
-                    // currently cfg_state is true on matching parameter
-                }
+                let cfg_state = match cfg_state {
+                    Ok(cfg_state) => cfg_state,
+                    Err(()) => {
+                        let value_src = SourceRange::new(origin_id, value_range);
+                        err::attr_param_value_unknown(emit, value_src, param_name, value);
+                        continue;
+                    }
+                };
+
+                //@correctly evaluate state according to cfg_op
+                // across multiple config parameters
+                // currently cfg_state is true on matching parameter
             }
         } else {
-            emit.error(ErrorComp::new(
-                format!("attribute `{attr_name}` requires parameter list"),
-                SourceRange::new(origin_id, attr.range),
-                None,
-            ));
+            let attr_src = SourceRange::new(origin_id, attr.name.range);
+            err::attr_param_list_required(emit, attr_src, attr_name, false);
+            return;
+        }
+    } else if let AttrKind::Repr = kind {
+        if let Some((params, params_range)) = attr.params {
+            if let Some(param) = params.get(0) {
+                let param_name = &module.source[param.name.range.as_usize()];
+
+                let repr = if param_name == "C" {
+                    ReprKind::ReprC
+                } else if let Some(int_ty) = hir::BasicInt::from_str(param_name) {
+                    ReprKind::ReprInt(int_ty)
+                } else {
+                    let param_src = SourceRange::new(origin_id, param.name.range);
+                    err::attr_param_unknown(emit, param_src, param_name);
+                    return;
+                };
+
+                //@set repr flag for struct data
+                // or set tag_ty for enum data
+
+                for param in params.iter().skip(1) {
+                    let param_src = SourceRange::new(origin_id, param.name.range);
+                    err::attr_expected_single_param(emit, param_src, attr_name);
+                }
+            } else {
+                let params_src = SourceRange::new(origin_id, params_range);
+                err::attr_param_list_required(emit, params_src, attr_name, true);
+                return;
+            }
+        } else {
+            let attr_src = SourceRange::new(origin_id, attr.name.range);
+            err::attr_param_list_required(emit, attr_src, attr_name, false);
             return;
         }
     } else {
