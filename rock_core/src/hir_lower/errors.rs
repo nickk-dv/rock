@@ -29,6 +29,16 @@ pub fn attr_param_value_required(emit: &mut HirEmit, param_src: SourceRange, par
     emit.error(ErrorComp::new(msg, param_src, None));
 }
 
+pub fn attr_expected_single_param(emit: &mut HirEmit, param_src: SourceRange, attr_name: &str) {
+    let msg = format!("attribute `{attr_name}` only expects a single parameter");
+    emit.error(ErrorComp::new(msg, param_src, None));
+}
+
+pub fn attr_param_list_unexpected(emit: &mut HirEmit, params_src: SourceRange, attr_name: &str) {
+    let msg = format!("attribute `{attr_name}` expects no parameters");
+    emit.error(ErrorComp::new(msg, params_src, None));
+}
+
 pub fn attr_param_list_required(
     emit: &mut HirEmit,
     src: SourceRange,
@@ -38,11 +48,6 @@ pub fn attr_param_list_required(
     let non_empty = if exists { "non-empty " } else { "" };
     let msg = format!("attribute `{attr_name}` requires {non_empty}parameter list");
     emit.error(ErrorComp::new(msg, src, None));
-}
-
-pub fn attr_expected_single_param(emit: &mut HirEmit, param_src: SourceRange, attr_name: &str) {
-    let msg = format!("attribute `{attr_name}` only expects a single parameter");
-    emit.error(ErrorComp::new(msg, param_src, None));
 }
 
 //==================== CONSTANT ====================

@@ -27,6 +27,67 @@ impl CfgOp {
     }
 }
 
+fn expect_no_params<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attr: &ast::Attr<'ast>,
+    attr_name: &str,
+) -> Result<(), ()> {
+    if let Some((_, params_range)) = attr.params {
+        let params_src = SourceRange::new(origin_id, params_range);
+        err::attr_param_list_unexpected(emit, params_src, attr_name);
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
+fn expect_single_param<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attr: &ast::Attr<'ast>,
+    attr_name: &str,
+) -> Result<&'ast ast::AttrParam, ()> {
+    if let Some((params, params_range)) = attr.params {
+        if let Some(param) = params.get(0) {
+            for param in params.iter().skip(1) {
+                let param_src = SourceRange::new(origin_id, param.name.range);
+                err::attr_expected_single_param(emit, param_src, attr_name);
+            }
+            Ok(param)
+        } else {
+            let params_src = SourceRange::new(origin_id, params_range);
+            err::attr_param_list_required(emit, params_src, attr_name, true);
+            Err(())
+        }
+    } else {
+        let attr_src = SourceRange::new(origin_id, attr.name.range);
+        err::attr_param_list_required(emit, attr_src, attr_name, false);
+        Err(())
+    }
+}
+
+fn expect_multiple_params<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attr: &ast::Attr<'ast>,
+    attr_name: &str,
+) -> Result<&'ast [ast::AttrParam], ()> {
+    if let Some((params, params_range)) = attr.params {
+        if params.is_empty() {
+            let params_src = SourceRange::new(origin_id, params_range);
+            err::attr_param_list_required(emit, params_src, attr_name, true);
+            Err(())
+        } else {
+            Ok(params)
+        }
+    } else {
+        let attr_src = SourceRange::new(origin_id, attr.name.range);
+        err::attr_param_list_required(emit, attr_src, attr_name, false);
+        Err(())
+    }
+}
+
 //@incomplete prototype
 fn check_attr(
     hir: &HirData,
@@ -170,6 +231,19 @@ fn check_attr(
             return;
         }
     } else {
+        if let Some((_, params_range)) = attr.params {
+            let params_src = SourceRange::new(origin_id, params_range);
+            err::attr_param_list_unexpected(emit, params_src, attr_name);
+        }
+
+        match kind {
+            AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny => unreachable!(),
+            AttrKind::Test => {}
+            AttrKind::Builtin => {}
+            AttrKind::Inline => {}
+            AttrKind::Repr => unreachable!(),
+            AttrKind::ThreadLocal => {}
+        }
         //@todo non cfg attributes
         // divide AttrKind into subcategories?
         return;
