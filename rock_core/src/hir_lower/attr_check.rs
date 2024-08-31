@@ -7,8 +7,7 @@ use crate::enum_str_convert;
 use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
-use crate::session::{ModuleID, Session};
-use crate::text::TextRange;
+use crate::session::{ModuleID, RockModule, Session};
 
 pub struct AttrFeedbackProc {
     pub cfg_state: CfgState,
@@ -52,15 +51,41 @@ pub struct AttrFeedbackStructField {
 }
 
 pub fn check_attrs_proc<'ast>(
+    hir: &HirData,
     emit: &mut HirEmit,
+    session: &Session,
     origin_id: ModuleID,
+    name: ast::Name,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackProc {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
 
     for attr in attrs {
-        //@todo
+        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+            Ok(resolved) => resolved,
+            Err(()) => continue,
+        };
+        let attr_src = SourceRange::new(origin_id, attr.range);
+
+        let flag = match resolved.data {
+            AttrResolved::Cfg(state) => {
+                cfg_state.combine(state);
+                continue;
+            }
+            AttrResolved::Test => ProcFlag::Test,
+            AttrResolved::Builtin => ProcFlag::Builtin,
+            AttrResolved::Inline => ProcFlag::Inline,
+            _ => {
+                let attr_name = resolved.kind.as_str();
+                err::attr_cannot_apply(emit, attr_src, attr_name, "procedures");
+                continue;
+            }
+        };
+
+        let item_src = SourceRange::new(origin_id, name.range);
+        let attr_data = Some((resolved.kind, attr_src));
+        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "procedures");
     }
 
     AttrFeedbackProc {
@@ -70,8 +95,11 @@ pub fn check_attrs_proc<'ast>(
 }
 
 pub fn check_attrs_enum<'ast>(
+    hir: &HirData,
     emit: &mut HirEmit,
+    session: &Session,
     origin_id: ModuleID,
+    name: ast::Name,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackEnum {
     let mut cfg_state = CfgState::new_enabled();
@@ -79,7 +107,34 @@ pub fn check_attrs_enum<'ast>(
     let mut tag_ty = Err(());
 
     for attr in attrs {
-        //@todo
+        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+            Ok(resolved) => resolved,
+            Err(()) => continue,
+        };
+        let attr_src = SourceRange::new(origin_id, attr.range);
+
+        let flag = match resolved.data {
+            AttrResolved::Cfg(state) => {
+                cfg_state.combine(state);
+                continue;
+            }
+            AttrResolved::Repr(repr_kind) => {
+                tag_ty = match repr_kind {
+                    ReprKind::ReprC => Ok(hir::BasicInt::S32),
+                    ReprKind::ReprInt(int_ty) => Ok(int_ty),
+                };
+                hir::EnumFlag::HasRepr
+            }
+            _ => {
+                let attr_name = resolved.kind.as_str();
+                err::attr_cannot_apply(emit, attr_src, attr_name, "enums");
+                continue;
+            }
+        };
+
+        let item_src = SourceRange::new(origin_id, name.range);
+        let attr_data = Some((resolved.kind, attr_src));
+        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "enums");
     }
 
     AttrFeedbackEnum {
@@ -90,15 +145,47 @@ pub fn check_attrs_enum<'ast>(
 }
 
 pub fn check_attrs_struct<'ast>(
+    hir: &HirData,
     emit: &mut HirEmit,
+    session: &Session,
     origin_id: ModuleID,
+    name: ast::Name,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackStruct {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
 
     for attr in attrs {
-        //@todo
+        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+            Ok(resolved) => resolved,
+            Err(()) => continue,
+        };
+        let attr_src = SourceRange::new(origin_id, attr.range);
+
+        let flag = match resolved.data {
+            AttrResolved::Cfg(state) => {
+                cfg_state.combine(state);
+                continue;
+            }
+            AttrResolved::Repr(repr_kind) => match repr_kind {
+                ReprKind::ReprC => hir::StructFlag::ReprC,
+                ReprKind::ReprInt(int_ty) => {
+                    //@add as_str for BasicInt?
+                    let int_ty = int_ty.into_basic().as_str();
+                    err::attr_struct_repr_int(emit, attr_src, int_ty);
+                    continue;
+                }
+            },
+            _ => {
+                let attr_name = resolved.kind.as_str();
+                err::attr_cannot_apply(emit, attr_src, attr_name, "structs");
+                continue;
+            }
+        };
+
+        let item_src = SourceRange::new(origin_id, name.range);
+        let attr_data = Some((resolved.kind, attr_src));
+        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "structs");
     }
 
     AttrFeedbackStruct {
@@ -108,31 +195,50 @@ pub fn check_attrs_struct<'ast>(
 }
 
 pub fn check_attrs_const<'ast>(
+    hir: &HirData,
     emit: &mut HirEmit,
+    session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackConst {
-    let mut cfg_state = CfgState::new_enabled();
-
-    for attr in attrs {
-        //@todo
-    }
-
-    AttrFeedbackConst {
-        cfg_state,
-    }
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "constants");
+    AttrFeedbackConst { cfg_state }
 }
 
 pub fn check_attrs_global<'ast>(
+    hir: &HirData,
     emit: &mut HirEmit,
+    session: &Session,
     origin_id: ModuleID,
+    name: ast::Name,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackGlobal {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
 
     for attr in attrs {
-        //@todo
+        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+            Ok(resolved) => resolved,
+            Err(()) => continue,
+        };
+        let attr_src = SourceRange::new(origin_id, attr.range);
+
+        let flag = match resolved.data {
+            AttrResolved::Cfg(state) => {
+                cfg_state.combine(state);
+                continue;
+            }
+            AttrResolved::ThreadLocal => GlobalFlag::ThreadLocal,
+            _ => {
+                let attr_name = resolved.kind.as_str();
+                err::attr_cannot_apply(emit, attr_src, attr_name, "globals");
+                continue;
+            }
+        };
+
+        let item_src = SourceRange::new(origin_id, name.range);
+        let attr_data = Some((resolved.kind, attr_src));
+        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "globals");
     }
 
     AttrFeedbackGlobal {
@@ -142,19 +248,138 @@ pub fn check_attrs_global<'ast>(
 }
 
 pub fn check_attrs_import<'ast>(
+    hir: &HirData,
     emit: &mut HirEmit,
+    session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackImport {
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "imports");
+    AttrFeedbackImport { cfg_state }
+}
+
+pub fn check_attrs_stmt<'ast>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    session: &Session,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackStmt {
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "statements");
+    AttrFeedbackStmt { cfg_state }
+}
+
+pub fn check_attrs_enum_variant<'ast>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    session: &Session,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackEnumVariant {
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "enum variants");
+    AttrFeedbackEnumVariant { cfg_state }
+}
+
+pub fn check_attrs_struct_field<'ast>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    session: &Session,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackStructField {
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "struct fields");
+    AttrFeedbackStructField { cfg_state }
+}
+
+fn check_attrs_expect_cfg<'ast>(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    session: &Session,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+    item_kinds: &'static str,
+) -> CfgState {
     let mut cfg_state = CfgState::new_enabled();
 
     for attr in attrs {
-        //@todo
+        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+            Ok(resolved) => resolved,
+            Err(()) => continue,
+        };
+        let attr_src = SourceRange::new(origin_id, attr.range);
+
+        match resolved.data {
+            AttrResolved::Cfg(state) => {
+                cfg_state.combine(state);
+            }
+            _ => {
+                let attr_name = resolved.kind.as_str();
+                err::attr_cannot_apply(emit, attr_src, attr_name, item_kinds);
+            }
+        };
     }
 
-    AttrFeedbackImport {
-        cfg_state,
-    }
+    cfg_state
+}
+
+fn resolve_attr(
+    hir: &HirData,
+    emit: &mut HirEmit,
+    session: &Session,
+    origin_id: ModuleID,
+    attr: &ast::Attr,
+) -> Result<AttrResolvedData, ()> {
+    let module = session.module(origin_id);
+    let attr_name = &module.source[attr.name.range.as_usize()];
+
+    let kind = match AttrKind::from_str(attr_name) {
+        Some(kind) => kind,
+        None => {
+            let attr_src = SourceRange::new(origin_id, attr.name.range);
+            err::attr_unknown(emit, attr_src, attr_name);
+            return Err(());
+        }
+    };
+
+    let resolved = match kind {
+        AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny => {
+            let op = match kind {
+                AttrKind::Cfg => CfgOp::And,
+                AttrKind::CfgNot => CfgOp::Not,
+                AttrKind::CfgAny => CfgOp::Or,
+                _ => unreachable!(),
+            };
+            let params = expect_multiple_params(emit, origin_id, attr, attr_name)?;
+            let state = resolve_cfg_params(hir, emit, origin_id, module, params, op)?;
+            AttrResolved::Cfg(state)
+        }
+        AttrKind::Test => {
+            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            AttrResolved::Test
+        }
+        AttrKind::Builtin => {
+            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            AttrResolved::Builtin
+        }
+        AttrKind::Inline => {
+            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            AttrResolved::Inline
+        }
+        AttrKind::Repr => {
+            let param = expect_single_param(emit, origin_id, attr, attr_name)?;
+            let repr_kind = resolve_repr_param(emit, origin_id, module, param)?;
+            AttrResolved::Repr(repr_kind)
+        }
+        AttrKind::ThreadLocal => {
+            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            AttrResolved::ThreadLocal
+        }
+    };
+
+    Ok(AttrResolvedData {
+        kind,
+        data: resolved,
+    })
 }
 
 fn expect_no_params<'ast>(
@@ -218,287 +443,127 @@ fn expect_multiple_params<'ast>(
     }
 }
 
-//@incomplete prototype
-fn check_attr(
+fn resolve_cfg_params(
     hir: &HirData,
     emit: &mut HirEmit,
-    session: &Session,
     origin_id: ModuleID,
-    attr: &ast::Attr,
-) {
-    let module = session.module(origin_id);
-    let attr_name = &module.source[attr.name.range.as_usize()];
+    module: &RockModule,
+    params: &[ast::AttrParam],
+    op: CfgOp,
+) -> Result<CfgState, ()> {
+    let mut cfg_state = CfgState::new_enabled();
 
-    let kind = match AttrKind::from_str(attr_name) {
-        Some(kind) => kind,
-        None => {
-            let attr_src = SourceRange::new(origin_id, attr.name.range);
-            err::attr_unknown(emit, attr_src, attr_name);
-            return;
-        }
-    };
+    for param in params {
+        let param_name = &module.source[param.name.range.as_usize()];
 
-    if let Some(cfg_op) = CfgOp::from_attr(kind) {
-        if let Some((params, params_range)) = attr.params {
-            if params.is_empty() {
-                let params_src = SourceRange::new(origin_id, params_range);
-                err::attr_param_list_required(emit, params_src, attr_name, true);
-                return;
+        let param_kind = match CfgParamKind::from_str(param_name) {
+            Some(param_kind) => param_kind,
+            None => {
+                let param_src = SourceRange::new(origin_id, param.name.range);
+                err::attr_param_unknown(emit, param_src, param_name);
+                continue;
             }
+        };
 
-            for param in params {
-                let param_name = &module.source[param.name.range.as_usize()];
-
-                let param_kind = match CfgParamKind::from_str(param_name) {
-                    Some(param_kind) => param_kind,
-                    None => {
-                        let param_src = SourceRange::new(origin_id, param.name.range);
-                        err::attr_param_unknown(emit, param_src, param_name);
-                        continue;
-                    }
-                };
-
-                let (value, value_range) = match param.value {
-                    Some((value, value_range)) => {
-                        let value = hir.intern_string().get_str(value);
-                        (value, value_range)
-                    }
-                    None => {
-                        let param_src = SourceRange::new(origin_id, param.name.range);
-                        err::attr_param_value_required(emit, param_src, param_name);
-                        continue;
-                    }
-                };
-
-                let cfg_state = match param_kind {
-                    CfgParamKind::Target => match config::TargetTriple::from_str(value) {
-                        Some(cfg_triple) => {
-                            let triple = hir.target();
-                            Ok(CfgState(triple == cfg_triple))
-                        }
-                        None => Err(()),
-                    },
-                    CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
-                        Some(cfg_arch) => {
-                            let arch = hir.target().arch();
-                            Ok(CfgState(arch == cfg_arch))
-                        }
-                        None => Err(()),
-                    },
-                    CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
-                        Some(cfg_os) => {
-                            let os = hir.target().os();
-                            Ok(CfgState(os == cfg_os))
-                        }
-                        None => Err(()),
-                    },
-                    CfgParamKind::TargetPtrWidth => match config::TargetPtrWidth::from_str(value) {
-                        Some(cfg_ptr_width) => {
-                            let ptr_width = hir.target().arch().ptr_width();
-                            Ok(CfgState(ptr_width == cfg_ptr_width))
-                        }
-                        None => Err(()),
-                    },
-                    CfgParamKind::BuildKind => match config::BuildKind::from_str(value) {
-                        Some(cfg_build_kind) => {
-                            //@current build_kind not available trough any context
-                            let build_kind: config::BuildKind =
-                                todo!("build kind is not available");
-                            Ok(CfgState(build_kind == cfg_build_kind))
-                        }
-                        None => Err(()),
-                    },
-                };
-
-                let cfg_state = match cfg_state {
-                    Ok(cfg_state) => cfg_state,
-                    Err(()) => {
-                        let value_src = SourceRange::new(origin_id, value_range);
-                        err::attr_param_value_unknown(emit, value_src, param_name, value);
-                        continue;
-                    }
-                };
-
-                //@correctly evaluate state according to cfg_op
-                // across multiple config parameters
-                // currently cfg_state is true on matching parameter
+        let (value, value_range) = match param.value {
+            Some((value, value_range)) => {
+                let value = hir.intern_string().get_str(value);
+                (value, value_range)
             }
-        } else {
-            let attr_src = SourceRange::new(origin_id, attr.name.range);
-            err::attr_param_list_required(emit, attr_src, attr_name, false);
-            return;
-        }
-    } else if let AttrKind::Repr = kind {
-        if let Some((params, params_range)) = attr.params {
-            if let Some(param) = params.get(0) {
-                let param_name = &module.source[param.name.range.as_usize()];
+            None => {
+                let param_src = SourceRange::new(origin_id, param.name.range);
+                err::attr_param_value_required(emit, param_src, param_name);
+                continue;
+            }
+        };
 
-                let repr = if param_name == "C" {
-                    ReprKind::ReprC
-                } else if let Some(int_ty) = hir::BasicInt::from_str(param_name) {
-                    ReprKind::ReprInt(int_ty)
-                } else {
-                    let param_src = SourceRange::new(origin_id, param.name.range);
-                    err::attr_param_unknown(emit, param_src, param_name);
-                    return;
-                };
-
-                //@set repr flag for struct data
-                // or set tag_ty for enum data
-
-                for param in params.iter().skip(1) {
-                    let param_src = SourceRange::new(origin_id, param.name.range);
-                    err::attr_expect_single_param(emit, param_src, attr_name);
+        let state = match param_kind {
+            CfgParamKind::Target => match config::TargetTriple::from_str(value) {
+                Some(cfg_triple) => {
+                    let triple = hir.target();
+                    Ok(CfgState(triple == cfg_triple))
                 }
-            } else {
-                let params_src = SourceRange::new(origin_id, params_range);
-                err::attr_param_list_required(emit, params_src, attr_name, true);
-                return;
+                None => Err(()),
+            },
+            CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
+                Some(cfg_arch) => {
+                    let arch = hir.target().arch();
+                    Ok(CfgState(arch == cfg_arch))
+                }
+                None => Err(()),
+            },
+            CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
+                Some(cfg_os) => {
+                    let os = hir.target().os();
+                    Ok(CfgState(os == cfg_os))
+                }
+                None => Err(()),
+            },
+            CfgParamKind::TargetPtrWidth => match config::TargetPtrWidth::from_str(value) {
+                Some(cfg_ptr_width) => {
+                    let ptr_width = hir.target().arch().ptr_width();
+                    Ok(CfgState(ptr_width == cfg_ptr_width))
+                }
+                None => Err(()),
+            },
+            CfgParamKind::BuildKind => match config::BuildKind::from_str(value) {
+                Some(cfg_build_kind) => {
+                    //@current build_kind not available trough any context
+                    let build_kind: config::BuildKind = todo!("build kind is not available");
+                    Ok(CfgState(build_kind == cfg_build_kind))
+                }
+                None => Err(()),
+            },
+        };
+
+        let state = match state {
+            Ok(state) => state,
+            Err(()) => {
+                let value_src = SourceRange::new(origin_id, value_range);
+                err::attr_param_value_unknown(emit, value_src, param_name, value);
+                continue;
             }
-        } else {
-            let attr_src = SourceRange::new(origin_id, attr.name.range);
-            err::attr_param_list_required(emit, attr_src, attr_name, false);
-            return;
-        }
+        };
+        cfg_state.apply_op(state, op);
+    }
+
+    Ok(cfg_state)
+}
+
+fn resolve_repr_param(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    module: &RockModule,
+    param: &ast::AttrParam,
+) -> Result<ReprKind, ()> {
+    let param_name = &module.source[param.name.range.as_usize()];
+
+    let mut repr_kind = if param_name == "C" {
+        Ok(ReprKind::ReprC)
+    } else if let Some(int_ty) = hir::BasicInt::from_str(param_name) {
+        Ok(ReprKind::ReprInt(int_ty))
     } else {
-        if let Some((_, params_range)) = attr.params {
-            let params_src = SourceRange::new(origin_id, params_range);
-            err::attr_param_list_unexpected(emit, params_src, attr_name);
-        }
-
-        match kind {
-            AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny => unreachable!(),
-            AttrKind::Test => {}
-            AttrKind::Builtin => {}
-            AttrKind::Inline => {}
-            AttrKind::Repr => unreachable!(),
-            AttrKind::ThreadLocal => {}
-        }
-        //@todo non cfg attributes
-        // divide AttrKind into subcategories?
-        return;
-    }
-}
-
-pub fn process_attrs<T>(
-    emit: &mut HirEmit,
-    session: &Session,
-    origin_id: ModuleID,
-    item_name: ast::Name,
-    target: AttrTarget,
-    attrs: &[ast::Attr],
-    attr_set: &mut BitSet<T>,
-) -> CfgState
-where
-    T: Copy + Clone + Into<u32> + DataFlag<T> + 'static,
-{
-    let mut cfg_state = CfgState(true);
-    for attr in attrs {
-        let cfg = process_attr(emit, session, origin_id, item_name, target, attr, attr_set);
-        cfg_state.combine(cfg);
-    }
-    cfg_state
-}
-
-//@set feedback like repr int_ty for enums
-fn process_attr<T>(
-    emit: &mut HirEmit,
-    session: &Session,
-    origin_id: ModuleID,
-    item_name: ast::Name,
-    target: AttrTarget,
-    attr: &ast::Attr,
-    attr_set: &mut BitSet<T>,
-) -> CfgState
-where
-    T: Copy + Clone + Into<u32> + DataFlag<T> + 'static,
-{
-    let module = session.module(origin_id);
-    let attr_name = &module.source[attr.name.range.as_usize()];
-
-    let kind = match AttrKind::from_str(attr_name) {
-        Some(kind) => kind,
-        None => {
-            emit.error(ErrorComp::new(
-                format!("attribute `{attr_name}` is unknown"),
-                SourceRange::new(origin_id, attr.name.range),
-                None,
-            ));
-            return CfgState(true);
-        }
+        let param_src = SourceRange::new(origin_id, param.name.range);
+        err::attr_param_unknown(emit, param_src, param_name);
+        Err(())
     };
 
-    if let Some(new_flag) = T::from_attr(kind) {
-        check_attr_flag(
-            emit,
-            origin_id,
-            item_name,
-            target,
-            Some((kind, attr.name.range)),
-            attr_set,
-            new_flag,
-        );
-    } else if let Some(cfg_op) = CfgOp::from_attr(kind) {
-        //@check and evaluate #cfg attribute
-    } else {
-        emit.error(ErrorComp::new(
-            format!(
-                "attribute `{attr_name}` cannot be applied to {}",
-                target.as_str(),
-            ),
-            SourceRange::new(origin_id, attr.range),
-            None,
-        ));
-        return CfgState(true);
+    if let Some((_, value_range)) = param.value {
+        let value_src = SourceRange::new(origin_id, value_range);
+        err::attr_param_value_unexpected(emit, value_src, param_name);
+        repr_kind = Err(());
     }
 
-    let require_params = kind.requires_params();
-    if let Some((params, params_range)) = attr.params {
-        if require_params && params.is_empty() {
-            emit.error(ErrorComp::new(
-                format!("attribute `{attr_name}` requires non-empty parameter list"),
-                SourceRange::new(origin_id, params_range),
-                None,
-            ));
-        }
-        return CfgState(true);
-    } else {
-        if require_params {
-            emit.error(ErrorComp::new(
-                format!("attribute `{attr_name}` requires parameter list"),
-                SourceRange::new(origin_id, attr.range),
-                None,
-            ));
-        }
-        return CfgState(true);
-    }
+    repr_kind
 }
 
-//@variants / fields / stmts grammar 25.08.24
-// cannot have attrs applied currently
-enum_str_convert!(
-    fn as_str,
-    #[derive(Copy, Clone)]
-    pub enum AttrTarget {
-        Proc => "procedures",
-        Enum => "enums",
-        Struct => "structs",
-        Const => "constants",
-        Global => "globals",
-        Import => "imports",
-        Statement => "statements",
-        EnumVariant => "enum variants",
-        StructField => "struct fields",
-    }
-);
-
-struct AttrResolved {
-    attr: AttrKind,
-    kind: AttrResolvedKind,
+struct AttrResolvedData {
+    kind: AttrKind,
+    data: AttrResolved,
 }
 
-enum AttrResolvedKind {
-    Cfg(CfgState, CfgOp),
+enum AttrResolved {
+    Cfg(CfgState),
     Test,
     Builtin,
     Inline,
@@ -509,6 +574,7 @@ enum AttrResolvedKind {
 #[derive(Copy, Clone)]
 pub struct CfgState(bool);
 
+#[derive(Copy, Clone)]
 enum CfgOp {
     And,
     Not,
@@ -535,8 +601,16 @@ impl CfgState {
         self.0
     }
     #[inline]
-    fn combine(&mut self, other: CfgState) {
-        self.0 = self.0 && other.0
+    fn combine(&mut self, state: CfgState) {
+        self.0 = self.0 && state.0;
+    }
+    #[inline]
+    fn apply_op(&mut self, state: CfgState, op: CfgOp) {
+        match op {
+            CfgOp::And => self.0 = self.0 && state.0,
+            CfgOp::Not => self.0 = self.0 && !state.0,
+            CfgOp::Or => self.0 = self.0 || state.0,
+        }
     }
 }
 
@@ -567,60 +641,27 @@ enum_str_convert!(
     }
 );
 
-impl AttrKind {
-    fn requires_params(self) -> bool {
-        match self {
-            AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny => true,
-            AttrKind::Test | AttrKind::Builtin | AttrKind::Inline => false,
-            AttrKind::Repr => true,
-            AttrKind::ThreadLocal => false,
-        }
-    }
-}
-
-impl AttrTarget {
-    fn can_apply(self, kind: AttrKind) -> bool {
-        if matches!(kind, AttrKind::Cfg | AttrKind::CfgNot | AttrKind::CfgAny) {
-            return true;
-        }
-        match self {
-            AttrTarget::Proc => {
-                matches!(kind, AttrKind::Test | AttrKind::Builtin | AttrKind::Inline)
-            }
-            AttrTarget::Enum => matches!(kind, AttrKind::Repr),
-            AttrTarget::Struct => matches!(kind, AttrKind::Repr),
-            AttrTarget::Const => false,
-            AttrTarget::Global => matches!(kind, AttrKind::ThreadLocal),
-            AttrTarget::Import => false,
-            AttrTarget::Statement => false,
-            AttrTarget::EnumVariant => false,
-            AttrTarget::StructField => false,
-        }
-    }
-}
-
 pub fn check_attr_flag<T>(
     emit: &mut HirEmit,
-    origin_id: ModuleID,
-    item_name: ast::Name,
-    target: AttrTarget,
-    attr: Option<(AttrKind, TextRange)>,
-    attr_set: &mut BitSet<T>,
     new_flag: T,
+    attr_set: &mut BitSet<T>,
+    attr_data: Option<(AttrKind, SourceRange)>,
+    item_src: SourceRange,
+    item_kinds: &'static str,
 ) where
     T: Copy + Clone + Into<u32> + DataFlag<T> + 'static,
 {
     if attr_set.contains(new_flag) {
-        if let Some((attr, range)) = attr {
+        if let Some((kind, attr_src)) = attr_data {
             emit.warning(WarningComp::new(
-                format!("duplicate attribute `{}`", attr.as_str()),
-                SourceRange::new(origin_id, range),
+                format!("duplicate attribute `{}`", kind.as_str()),
+                attr_src,
                 None,
             ));
+            return;
         } else {
             unreachable!();
         }
-        return;
     }
 
     for flag in T::ALL_FLAGS {
@@ -631,26 +672,24 @@ pub fn check_attr_flag<T>(
             continue;
         }
 
-        if let Some((_, range)) = attr {
+        if let Some((_, attr_src)) = attr_data {
             emit.error(ErrorComp::new(
                 format!(
-                    "attribute `{}` cannot be applied to `{}` {}",
+                    "attribute `{}` cannot be applied to `{}` {item_kinds}",
                     new_flag.as_str(),
                     flag.as_str(),
-                    target.as_str(),
                 ),
-                SourceRange::new(origin_id, range),
+                attr_src,
                 None,
             ));
         } else {
             emit.error(ErrorComp::new(
                 format!(
-                    "`{}` {} cannot be `{}`",
+                    "`{}` {item_kinds} cannot be `{}`",
                     new_flag.as_str(),
-                    target.as_str(),
                     flag.as_str(),
                 ),
-                SourceRange::new(origin_id, item_name.range),
+                item_src,
                 None,
             ));
         }

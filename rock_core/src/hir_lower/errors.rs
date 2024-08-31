@@ -55,6 +55,23 @@ pub fn attr_param_list_required(
     emit.error(ErrorComp::new(msg, src, None));
 }
 
+pub fn attr_cannot_apply(
+    emit: &mut HirEmit,
+    attr_src: SourceRange,
+    attr_name: &str,
+    item_kinds: &'static str,
+) {
+    let msg = format!("attribute `{attr_name}` cannot be applied to {item_kinds}",);
+    emit.error(ErrorComp::new(msg, attr_src, None));
+}
+
+pub fn attr_struct_repr_int(emit: &mut HirEmit, attr_src: SourceRange, int_ty: &str) {
+    let msg = format!(
+        "attribute `repr({int_ty})` cannot be applied to structs\nonly `repr(C)` is allowed",
+    );
+    emit.error(ErrorComp::new(msg, attr_src, None));
+}
+
 //==================== CONSTANT ====================
 
 pub fn const_cannot_use_expr(emit: &mut HirEmit, src: SourceRange, name: &'static str) {
