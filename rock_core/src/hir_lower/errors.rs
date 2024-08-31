@@ -24,19 +24,24 @@ pub fn attr_param_value_unknown(
     emit.error(ErrorComp::new(msg, value_src, None));
 }
 
-pub fn attr_param_value_required(emit: &mut HirEmit, param_src: SourceRange, param_name: &str) {
-    let msg = format!("attribute parameter `{param_name}` requires an assigned string value");
-    emit.error(ErrorComp::new(msg, param_src, None));
+pub fn attr_param_value_unexpected(emit: &mut HirEmit, value_src: SourceRange, param_name: &str) {
+    let msg = format!("attribute parameter `{param_name}` expects no assigned string value");
+    emit.error(ErrorComp::new(msg, value_src, None));
 }
 
-pub fn attr_expected_single_param(emit: &mut HirEmit, param_src: SourceRange, attr_name: &str) {
-    let msg = format!("attribute `{attr_name}` only expects a single parameter");
+pub fn attr_param_value_required(emit: &mut HirEmit, param_src: SourceRange, param_name: &str) {
+    let msg = format!("attribute parameter `{param_name}` requires an assigned string value");
     emit.error(ErrorComp::new(msg, param_src, None));
 }
 
 pub fn attr_param_list_unexpected(emit: &mut HirEmit, params_src: SourceRange, attr_name: &str) {
     let msg = format!("attribute `{attr_name}` expects no parameters");
     emit.error(ErrorComp::new(msg, params_src, None));
+}
+
+pub fn attr_expect_single_param(emit: &mut HirEmit, param_src: SourceRange, attr_name: &str) {
+    let msg = format!("attribute `{attr_name}` expects a single parameter");
+    emit.error(ErrorComp::new(msg, param_src, None));
 }
 
 pub fn attr_param_list_required(

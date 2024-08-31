@@ -10,20 +10,150 @@ use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, Session};
 use crate::text::TextRange;
 
-enum CfgOp {
-    And,
-    Not,
-    Or,
+pub struct AttrFeedbackProc {
+    pub cfg_state: CfgState,
+    pub attr_set: BitSet<ProcFlag>,
 }
 
-impl CfgOp {
-    fn from_attr(kind: AttrKind) -> Option<CfgOp> {
-        match kind {
-            AttrKind::Cfg => Some(CfgOp::And),
-            AttrKind::CfgNot => Some(CfgOp::Not),
-            AttrKind::CfgAny => Some(CfgOp::Or),
-            _ => None,
-        }
+pub struct AttrFeedbackEnum {
+    pub cfg_state: CfgState,
+    pub attr_set: BitSet<EnumFlag>,
+    pub tag_ty: Result<hir::BasicInt, ()>,
+}
+
+pub struct AttrFeedbackStruct {
+    pub cfg_state: CfgState,
+    pub attr_set: BitSet<StructFlag>,
+}
+
+pub struct AttrFeedbackConst {
+    pub cfg_state: CfgState,
+}
+
+pub struct AttrFeedbackGlobal {
+    pub cfg_state: CfgState,
+    pub attr_set: BitSet<GlobalFlag>,
+}
+
+pub struct AttrFeedbackImport {
+    pub cfg_state: CfgState,
+}
+
+pub struct AttrFeedbackStmt {
+    pub cfg_state: CfgState,
+}
+
+pub struct AttrFeedbackEnumVariant {
+    pub cfg_state: CfgState,
+}
+
+pub struct AttrFeedbackStructField {
+    pub cfg_state: CfgState,
+}
+
+pub fn check_attrs_proc<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackProc {
+    let mut cfg_state = CfgState::new_enabled();
+    let mut attr_set = BitSet::empty();
+
+    for attr in attrs {
+        //@todo
+    }
+
+    AttrFeedbackProc {
+        cfg_state,
+        attr_set,
+    }
+}
+
+pub fn check_attrs_enum<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackEnum {
+    let mut cfg_state = CfgState::new_enabled();
+    let mut attr_set = BitSet::empty();
+    let mut tag_ty = Err(());
+
+    for attr in attrs {
+        //@todo
+    }
+
+    AttrFeedbackEnum {
+        cfg_state,
+        attr_set,
+        tag_ty,
+    }
+}
+
+pub fn check_attrs_struct<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackStruct {
+    let mut cfg_state = CfgState::new_enabled();
+    let mut attr_set = BitSet::empty();
+
+    for attr in attrs {
+        //@todo
+    }
+
+    AttrFeedbackStruct {
+        cfg_state,
+        attr_set,
+    }
+}
+
+pub fn check_attrs_const<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackConst {
+    let mut cfg_state = CfgState::new_enabled();
+
+    for attr in attrs {
+        //@todo
+    }
+
+    AttrFeedbackConst {
+        cfg_state,
+    }
+}
+
+pub fn check_attrs_global<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackGlobal {
+    let mut cfg_state = CfgState::new_enabled();
+    let mut attr_set = BitSet::empty();
+
+    for attr in attrs {
+        //@todo
+    }
+
+    AttrFeedbackGlobal {
+        cfg_state,
+        attr_set,
+    }
+}
+
+pub fn check_attrs_import<'ast>(
+    emit: &mut HirEmit,
+    origin_id: ModuleID,
+    attrs: &'ast [ast::Attr<'ast>],
+) -> AttrFeedbackImport {
+    let mut cfg_state = CfgState::new_enabled();
+
+    for attr in attrs {
+        //@todo
+    }
+
+    AttrFeedbackImport {
+        cfg_state,
     }
 }
 
@@ -52,7 +182,7 @@ fn expect_single_param<'ast>(
         if let Some(param) = params.get(0) {
             for param in params.iter().skip(1) {
                 let param_src = SourceRange::new(origin_id, param.name.range);
-                err::attr_expected_single_param(emit, param_src, attr_name);
+                err::attr_expect_single_param(emit, param_src, attr_name);
             }
             Ok(param)
         } else {
@@ -218,7 +348,7 @@ fn check_attr(
 
                 for param in params.iter().skip(1) {
                     let param_src = SourceRange::new(origin_id, param.name.range);
-                    err::attr_expected_single_param(emit, param_src, attr_name);
+                    err::attr_expect_single_param(emit, param_src, attr_name);
                 }
             } else {
                 let params_src = SourceRange::new(origin_id, params_range);
@@ -344,30 +474,6 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
-pub struct CfgState(bool);
-
-impl CfgState {
-    #[inline]
-    pub fn disabled(self) -> bool {
-        !self.0
-    }
-    #[inline]
-    pub fn enabled(self) -> bool {
-        self.0
-    }
-    #[inline]
-    fn combine(&mut self, other: CfgState) {
-        self.0 = self.0 && other.0
-    }
-}
-
-#[derive(Copy, Clone)]
-enum ReprKind {
-    ReprC,
-    ReprInt(hir::BasicInt),
-}
-
 //@variants / fields / stmts grammar 25.08.24
 // cannot have attrs applied currently
 enum_str_convert!(
@@ -385,6 +491,54 @@ enum_str_convert!(
         StructField => "struct fields",
     }
 );
+
+struct AttrResolved {
+    attr: AttrKind,
+    kind: AttrResolvedKind,
+}
+
+enum AttrResolvedKind {
+    Cfg(CfgState, CfgOp),
+    Test,
+    Builtin,
+    Inline,
+    Repr(ReprKind),
+    ThreadLocal,
+}
+
+#[derive(Copy, Clone)]
+pub struct CfgState(bool);
+
+enum CfgOp {
+    And,
+    Not,
+    Or,
+}
+
+#[derive(Copy, Clone)]
+enum ReprKind {
+    ReprC,
+    ReprInt(hir::BasicInt),
+}
+
+impl CfgState {
+    #[inline]
+    fn new_enabled() -> CfgState {
+        CfgState(true)
+    }
+    #[inline]
+    pub fn disabled(self) -> bool {
+        !self.0
+    }
+    #[inline]
+    pub fn enabled(self) -> bool {
+        self.0
+    }
+    #[inline]
+    fn combine(&mut self, other: CfgState) {
+        self.0 = self.0 && other.0
+    }
+}
 
 enum_str_convert!(
     fn as_str, fn from_str,
