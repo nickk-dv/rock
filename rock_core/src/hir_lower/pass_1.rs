@@ -6,7 +6,7 @@ use crate::hir;
 use crate::session::{ModuleID, Session};
 
 pub fn populate_scopes<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
 ) {
@@ -16,7 +16,7 @@ pub fn populate_scopes<'hir>(
 }
 
 fn add_module_items<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
@@ -50,7 +50,7 @@ fn add_module_items<'hir>(
 }
 
 fn add_proc_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
@@ -78,7 +78,7 @@ fn add_proc_item<'hir, 'ast>(
 }
 
 fn add_enum_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
@@ -105,7 +105,7 @@ fn add_enum_item<'hir, 'ast>(
 }
 
 fn add_struct_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
@@ -131,7 +131,7 @@ fn add_struct_item<'hir, 'ast>(
 }
 
 fn add_const_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
@@ -159,7 +159,7 @@ fn add_const_item<'hir, 'ast>(
 }
 
 fn add_global_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
@@ -189,7 +189,7 @@ fn add_global_item<'hir, 'ast>(
 }
 
 fn check_import_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,

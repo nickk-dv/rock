@@ -5,7 +5,7 @@ use crate::hir_lower::errors as err;
 use crate::hir_lower::hir_build::{HirData, HirEmit};
 
 pub fn fold_const_expr<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     expr: &hir::Expr<'hir>,
@@ -78,7 +78,7 @@ fn fold_const<'hir>(
 }
 
 fn fold_struct_field<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
@@ -101,7 +101,7 @@ fn fold_struct_field<'hir>(
 }
 
 fn fold_slice_field<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
@@ -137,7 +137,7 @@ fn fold_slice_field<'hir>(
 
 //@check out of bounds static array access even in non constant targets (during typecheck)
 fn fold_index<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
@@ -186,7 +186,7 @@ fn fold_index<'hir>(
 // in cast kind to decrease invariance
 //@check how bool to int is handled
 fn fold_cast<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
@@ -241,7 +241,7 @@ fn fold_cast<'hir>(
 }
 
 fn fold_const_var<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     const_id: hir::ConstID,
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -254,7 +254,7 @@ fn fold_const_var<'hir>(
 }
 
 fn fold_struct_init<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     struct_id: hir::StructID,
@@ -287,7 +287,7 @@ fn fold_struct_init<'hir>(
 }
 
 fn fold_array_init<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     array_init: &hir::ArrayInit<'hir>,
@@ -316,7 +316,7 @@ fn fold_array_init<'hir>(
 }
 
 fn fold_array_repeat<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     array_repeat: &hir::ArrayRepeat<'hir>,
@@ -331,7 +331,7 @@ fn fold_array_repeat<'hir>(
 }
 
 fn fold_unary_expr<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     op: hir::UnOp,
@@ -360,7 +360,7 @@ fn fold_unary_expr<'hir>(
 }
 
 fn fold_binary<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     src: SourceRange,
     op: hir::BinOp,

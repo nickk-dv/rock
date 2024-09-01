@@ -6,7 +6,7 @@ use crate::error::{ErrorComp, Info, SourceRange};
 use crate::hir;
 use crate::session::ModuleID;
 
-pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+pub fn process_items<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().proc_ids() {
         process_proc_data(hir, emit, id)
     }
@@ -27,7 +27,7 @@ pub fn process_items<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'
 //@deduplicate with type_resolve_delayed 16.05.24
 #[must_use]
 pub fn type_resolve<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     ast_ty: ast::Type,
@@ -96,7 +96,7 @@ pub fn type_resolve<'hir>(
 
 #[must_use]
 pub fn type_resolve_delayed<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     ast_ty: ast::Type<'ast>,
@@ -154,7 +154,7 @@ pub fn type_resolve_delayed<'hir, 'ast>(
 }
 
 pub fn process_proc_data<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::ProcID,
 ) {
@@ -196,11 +196,7 @@ pub fn process_proc_data<'hir>(
     }
 }
 
-fn process_enum_data<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
-    emit: &mut HirEmit<'hir>,
-    id: hir::EnumID,
-) {
+fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, id: hir::EnumID) {
     let item = hir.registry().enum_item(id);
     let data = hir.registry().enum_data(id);
 
@@ -309,7 +305,7 @@ fn process_enum_data<'hir>(
 }
 
 fn process_struct_data<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::StructID,
 ) {
@@ -347,7 +343,7 @@ fn process_struct_data<'hir>(
 }
 
 fn process_const_data<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::ConstID,
 ) {
@@ -360,7 +356,7 @@ fn process_const_data<'hir>(
 }
 
 fn process_global_data<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     id: hir::GlobalID,
 ) {

@@ -7,14 +7,14 @@ use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-pub fn typecheck_procedures<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+pub fn typecheck_procedures<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     for proc_id in hir.registry().proc_ids() {
         typecheck_proc(hir, emit, proc_id)
     }
 }
 
 fn typecheck_proc<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc_id: hir::ProcID,
 ) {
@@ -68,7 +68,7 @@ fn typecheck_proc<'hir>(
 }
 
 pub fn type_matches<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &HirEmit<'hir>,
     ty: hir::Type<'hir>,
     ty2: hir::Type<'hir>,
@@ -121,7 +121,7 @@ pub fn type_matches<'hir>(
 }
 
 pub fn type_format<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &HirEmit<'hir>,
     ty: hir::Type<'hir>,
 ) -> StringOrStr {
@@ -191,7 +191,7 @@ pub enum Expectation<'hir> {
 
 //@verify how this works, `false` is good outcome?
 pub fn check_type_expectation<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     from_range: TextRange,
@@ -293,7 +293,7 @@ impl<'hir> BlockResult<'hir> {
 // It might be still good to include errored expressions with correct range.
 #[must_use]
 pub fn typecheck_expr<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -435,7 +435,7 @@ pub fn alloc_string_lit_type<'hir>(emit: &mut HirEmit<'hir>, c_string: bool) -> 
 }
 
 fn typecheck_if<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     mut expect: Expectation<'hir>,
@@ -491,7 +491,7 @@ fn typecheck_if<'hir>(
 }
 
 fn typecheck_branch<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: &mut Expectation<'hir>,
@@ -524,7 +524,7 @@ fn typecheck_branch<'hir>(
 }
 
 fn typecheck_match<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     mut expect: Expectation<'hir>,
@@ -620,7 +620,7 @@ fn typecheck_match<'hir>(
 }
 
 fn typecheck_match_2<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     mut expect: Expectation<'hir>,
@@ -691,7 +691,7 @@ impl<'hir> PatResult<'hir> {
 }
 
 fn typecheck_pat<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -727,7 +727,7 @@ fn typecheck_pat_lit<'hir>(
 }
 
 fn typecheck_pat_item<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
@@ -796,7 +796,7 @@ fn typecheck_pat_item<'hir>(
 }
 
 fn typecheck_pat_variant<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -846,7 +846,7 @@ fn typecheck_pat_variant<'hir>(
 }
 
 fn typecheck_pat_or<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -866,7 +866,7 @@ fn typecheck_pat_or<'hir>(
 // could have same value and result in
 // error in llvm ir generation, not checked currently
 fn check_match_exhaust<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     arms: &mut [hir::MatchArm<'hir>],
@@ -1023,7 +1023,7 @@ fn check_match_exhaust<'hir>(
 }
 
 fn typecheck_field<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr,
@@ -1058,7 +1058,7 @@ impl<'hir> FieldResult<'hir> {
 }
 
 fn check_field_from_type<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     name: ast::Name,
@@ -1120,7 +1120,7 @@ fn check_field_from_type<'hir>(
 }
 
 fn check_field_from_struct<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit,
     origin_id: ModuleID,
     name: ast::Name,
@@ -1291,7 +1291,7 @@ impl<'hir> CollectionType<'hir> {
 
 //@index or slice, desugar correctly
 fn typecheck_index<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
@@ -1353,7 +1353,7 @@ fn typecheck_index<'hir>(
 }
 
 fn typecheck_call<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
@@ -1395,7 +1395,7 @@ impl BasicTypeKind {
 }
 
 fn typecheck_cast<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
@@ -1520,7 +1520,7 @@ fn typecheck_cast<'hir>(
 // this can be partially adressed if each hir::Expr
 // is folded, thus range being range checked for `usize`
 fn typecheck_sizeof<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     ty: ast::Type,
@@ -1548,7 +1548,7 @@ fn typecheck_sizeof<'hir>(
 }
 
 fn typecheck_item<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
@@ -1632,7 +1632,7 @@ fn typecheck_item<'hir>(
 }
 
 fn typecheck_variant<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -1672,7 +1672,7 @@ pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
 }
 
 fn typecheck_struct_init<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -1789,7 +1789,7 @@ fn typecheck_struct_init<'hir>(
 }
 
 fn typecheck_array_init<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     mut expect: Expectation<'hir>,
@@ -1860,7 +1860,7 @@ fn typecheck_array_init<'hir>(
 }
 
 fn typecheck_array_repeat<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     mut expect: Expectation<'hir>,
@@ -1908,7 +1908,7 @@ fn typecheck_array_repeat<'hir>(
 }
 
 fn typecheck_deref<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     rhs: &ast::Expr,
@@ -1939,7 +1939,7 @@ fn typecheck_deref<'hir>(
 }
 
 fn typecheck_address<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     mutt: ast::Mut,
@@ -2015,7 +2015,7 @@ enum Addressability {
 }
 
 fn get_expr_addressability<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     proc: &ProcScope<'hir, '_>,
     expr: &'hir hir::Expr<'hir>,
 ) -> Addressability {
@@ -2067,7 +2067,7 @@ fn get_expr_addressability<'hir>(
 }
 
 fn typecheck_unary<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -2099,7 +2099,7 @@ fn typecheck_unary<'hir>(
 // let x = 5 + 10 as u16;
 // let y = 5 as u16 + 10;
 fn typecheck_binary<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -2129,7 +2129,7 @@ fn typecheck_binary<'hir>(
 }
 
 fn check_match_compatibility<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     ty: hir::Type,
@@ -2158,7 +2158,7 @@ fn check_match_compatibility<'hir>(
 }
 
 fn typecheck_block<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
@@ -2375,7 +2375,7 @@ fn typecheck_continue<'hir>(
 
 /// returns `None` on invalid use of `return`
 fn typecheck_return<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expr: Option<&ast::Expr>,
@@ -2421,7 +2421,7 @@ fn typecheck_return<'hir>(
 
 /// returns `None` on invalid use of `defer`
 fn typecheck_defer<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     block: ast::Block<'_>,
@@ -2461,7 +2461,7 @@ fn typecheck_defer<'hir>(
 }
 
 fn typecheck_loop<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     loop_: &ast::Loop<'_>,
@@ -2519,7 +2519,7 @@ fn typecheck_loop<'hir>(
 }
 
 fn typecheck_local<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     local: &ast::Local,
@@ -2587,7 +2587,7 @@ fn typecheck_local<'hir>(
 
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
 fn typecheck_assign<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     assign: &ast::Assign,
@@ -2662,7 +2662,7 @@ fn typecheck_assign<'hir>(
 // locals or input params etc not checked yet (need to find a reasonable strategy)
 // proc return type is allowed to be never or void unlike other instances where types are used
 pub fn require_value_type<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     ty: hir::Type,
     source: SourceRange,
@@ -2788,7 +2788,7 @@ fn infer_struct_type(
 //==================== DEFAULT CHECK ====================
 
 fn error_result_default_check_input<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     input: &ast::Input,
@@ -2800,7 +2800,7 @@ fn error_result_default_check_input<'hir>(
 }
 
 fn error_result_default_check_input_opt<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     input: Option<&ast::Input>,
@@ -2814,7 +2814,7 @@ fn error_result_default_check_input_opt<'hir>(
 }
 
 fn error_result_default_check_field_init<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     input: &[ast::FieldInit],
@@ -2896,7 +2896,7 @@ fn error_unexpected_call_arg_count(
 }
 
 fn check_call_direct<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     proc_id: hir::ProcID,
@@ -2942,7 +2942,7 @@ fn check_call_direct<'hir>(
 }
 
 fn check_call_indirect<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target_res: ExprResult<'hir>,
@@ -3006,7 +3006,7 @@ fn check_call_indirect<'hir>(
 }
 
 fn check_variant_input_opt<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     enum_id: hir::EnumID,
@@ -3079,7 +3079,7 @@ enum ResolvedPath {
 }
 
 fn path_resolve<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,
@@ -3119,7 +3119,7 @@ fn path_resolve<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,
@@ -3186,7 +3186,7 @@ pub fn path_resolve_type<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_struct<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,
@@ -3262,7 +3262,7 @@ pub enum ValueID {
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast, '_>,
+    hir: &HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,

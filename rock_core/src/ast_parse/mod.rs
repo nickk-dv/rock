@@ -8,10 +8,7 @@ use crate::lexer;
 use crate::session::Session;
 use crate::timer::Timer;
 
-pub fn parse<'ast, 'intern>(
-    session: &Session,
-    intern_name: InternPool<'intern>,
-) -> ResultComp<Ast<'ast, 'intern>> {
+pub fn parse<'ast>(session: &Session, intern_name: InternPool<'ast>) -> ResultComp<Ast<'ast>> {
     let t_total = Timer::new();
     let mut state = parser::ParseState::new(intern_name);
 

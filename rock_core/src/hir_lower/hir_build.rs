@@ -8,10 +8,10 @@ use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-pub struct HirData<'hir, 'ast, 'intern> {
+pub struct HirData<'hir, 'ast> {
     modules: Vec<Module>,
     registry: Registry<'hir, 'ast>,
-    ast: ast::Ast<'ast, 'intern>,
+    ast: ast::Ast<'ast>,
     target: TargetTriple,
 }
 
@@ -58,8 +58,8 @@ pub struct HirEmit<'hir> {
     diagnostics: DiagnosticCollection,
 }
 
-impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
-    pub fn new(ast: ast::Ast<'ast, 'intern>) -> Self {
+impl<'hir, 'ast> HirData<'hir, 'ast> {
+    pub fn new(ast: ast::Ast<'ast>) -> Self {
         let mut modules = Vec::with_capacity(ast.modules.len());
         for _ in ast.modules.iter() {
             modules.push(Module {
@@ -93,10 +93,10 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
     pub fn name_str(&self, id: InternID) -> &str {
         self.ast.intern_name.get_str(id)
     }
-    pub fn intern_name(&mut self) -> &mut InternPool<'intern> {
+    pub fn intern_name(&mut self) -> &mut InternPool<'ast> {
         &mut self.ast.intern_name
     }
-    pub fn intern_string(&self) -> &InternPool<'intern> {
+    pub fn intern_string(&self) -> &InternPool<'ast> {
         &self.ast.intern_string
     }
     pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
@@ -448,10 +448,7 @@ impl<'hir> HirEmit<'hir> {
         self.error_count() > error_count
     }
 
-    pub fn emit<'ast, 'intern: 'hir>(
-        self,
-        hir: HirData<'hir, 'ast, 'intern>,
-    ) -> ResultComp<hir::Hir<'hir>> {
+    pub fn emit<'ast: 'hir>(self, hir: HirData<'hir, 'ast>) -> ResultComp<hir::Hir<'hir>> {
         if !self.diagnostics.errors().is_empty() {
             return ResultComp::Err(self.diagnostics);
         }
@@ -503,7 +500,7 @@ impl<'hir> HirEmit<'hir> {
 impl hir::ArrayStaticLen {
     pub fn get_resolved<'hir>(
         self,
-        hir: &HirData<'hir, '_, '_>,
+        hir: &HirData<'hir, '_>,
         emit: &HirEmit<'hir>,
     ) -> Result<u64, ()> {
         match self {

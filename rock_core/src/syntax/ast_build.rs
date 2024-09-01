@@ -91,10 +91,7 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-pub fn parse<'ast, 'intern: 'ast>(
-    session: &Session,
-    intern_name: InternPool<'intern>,
-) -> ResultComp<ast::Ast<'ast, 'intern>> {
+pub fn parse<'ast>(session: &Session, intern_name: InternPool<'ast>) -> ResultComp<ast::Ast<'ast>> {
     let t_total = Timer::new();
     let mut state = AstBuildState::new(intern_name);
 

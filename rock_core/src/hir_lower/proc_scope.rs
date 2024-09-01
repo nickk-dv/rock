@@ -203,7 +203,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
 
     pub fn check_stmt_diverges(
         &mut self,
-        hir: &HirData<'hir, '_, '_>,
+        hir: &HirData<'hir, '_>,
         emit: &mut HirEmit<'hir>,
         will_diverge: bool,
         stmt_range: TextRange,

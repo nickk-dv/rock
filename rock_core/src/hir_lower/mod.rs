@@ -15,8 +15,8 @@ use crate::hir;
 use crate::session::Session;
 use hir_build::{HirData, HirEmit};
 
-pub fn check<'hir, 'ast, 'intern: 'hir>(
-    ast: ast::Ast<'ast, 'intern>,
+pub fn check<'hir, 'ast: 'hir>(
+    ast: ast::Ast<'ast>,
     session: &Session,
 ) -> ResultComp<hir::Hir<'hir>> {
     let mut hir = HirData::new(ast);

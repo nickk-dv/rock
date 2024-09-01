@@ -3,10 +3,10 @@ use crate::enum_str_convert;
 use crate::intern::{InternID, InternPool};
 use crate::text::TextRange;
 
-pub struct Ast<'ast, 'intern> {
+pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
-    pub intern_name: InternPool<'intern>,
-    pub intern_string: InternPool<'intern>,
+    pub intern_name: InternPool<'ast>,
+    pub intern_string: InternPool<'ast>,
     pub string_is_cstr: Vec<bool>,
     pub modules: Vec<Module<'ast>>,
 }

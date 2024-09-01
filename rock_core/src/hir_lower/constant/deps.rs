@@ -23,7 +23,7 @@ enum ConstDependency {
     ArrayLen(hir::ConstEvalID),
 }
 
-pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_, '_>, emit: &mut HirEmit<'hir>) {
+pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
     for id in hir.registry().enum_ids() {
         let data = hir.registry().enum_data(id);
 
@@ -440,7 +440,7 @@ fn const_dependencies_mark_error_up_to_root(
 }
 
 fn add_variant_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -469,7 +469,7 @@ fn add_variant_const_dependency<'hir>(
 }
 
 fn add_const_var_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -496,7 +496,7 @@ fn add_const_var_const_dependency<'hir>(
 }
 
 fn add_array_len_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -518,7 +518,7 @@ fn add_array_len_const_dependency<'hir>(
 }
 
 fn add_type_size_const_dependencies<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -547,7 +547,7 @@ fn add_type_size_const_dependencies<'hir>(
 }
 
 fn add_enum_size_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -573,7 +573,7 @@ fn add_enum_size_const_dependency<'hir>(
 }
 
 fn add_struct_size_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -597,7 +597,7 @@ fn add_struct_size_const_dependency<'hir>(
 }
 
 fn add_type_usage_const_dependencies<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -643,7 +643,7 @@ fn add_type_usage_const_dependencies<'hir>(
 }
 
 fn add_expr_const_dependencies<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast, '_>,
+    hir: &mut HirData<'hir, 'ast>,
     emit: &mut HirEmit<'hir>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
@@ -819,7 +819,7 @@ fn error_cannot_refer_to_in_constants(
 }
 
 fn resolve_const_dependency_tree<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     tree: &Tree<ConstDependency>,
 ) {
@@ -879,7 +879,7 @@ fn resolve_const_dependency_tree<'hir>(
 //@change how this is handled, still check double resolve
 // with assert to catch potential bugs in implementation
 fn resolve_and_update_const_eval<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     eval_id: hir::ConstEvalID,
     expect: Expectation<'hir>,
@@ -904,7 +904,7 @@ fn resolve_and_update_const_eval<'hir>(
 
 #[must_use]
 pub fn resolve_const_expr<'hir>(
-    hir: &HirData<'hir, '_, '_>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     expect: Expectation<'hir>,

@@ -8,7 +8,7 @@ use crate::text::{TextOffset, TextRange};
 use crate::token::token_list::TokenList;
 use crate::token::Token;
 
-pub struct Parser<'ast, 'intern, 'src, 'state> {
+pub struct Parser<'ast, 'src, 'state> {
     pub cursor: usize,
     tokens: TokenList,
     int_id: u32,
@@ -16,13 +16,13 @@ pub struct Parser<'ast, 'intern, 'src, 'state> {
     string_id: u32,
     pub module_id: ModuleID,
     pub source: &'src str,
-    pub state: &'state mut ParseState<'ast, 'intern>,
+    pub state: &'state mut ParseState<'ast>,
 }
 
-pub struct ParseState<'ast, 'intern> {
+pub struct ParseState<'ast> {
     pub arena: Arena<'ast>,
-    pub intern_name: InternPool<'intern>,
-    pub intern_string: InternPool<'intern>,
+    pub intern_name: InternPool<'ast>,
+    pub intern_string: InternPool<'ast>,
     pub string_is_cstr: Vec<bool>,
     pub modules: Vec<Module<'ast>>,
     pub errors: Vec<ErrorComp>,
@@ -44,12 +44,12 @@ pub struct ParseState<'ast, 'intern> {
     pub field_inits: TempBuffer<FieldInit<'ast>>,
 }
 
-impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
+impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     pub fn new(
         tokens: TokenList,
         module_id: ModuleID,
         source: &'src str,
-        state: &'state mut ParseState<'ast, 'intern>,
+        state: &'state mut ParseState<'ast>,
     ) -> Self {
         Self {
             cursor: 0,
@@ -148,8 +148,8 @@ impl<'ast, 'intern, 'src, 'state> Parser<'ast, 'intern, 'src, 'state> {
     }
 }
 
-impl<'ast, 'intern> ParseState<'ast, 'intern> {
-    pub fn new(intern_name: InternPool<'intern>) -> ParseState<'ast, 'intern> {
+impl<'ast> ParseState<'ast> {
+    pub fn new(intern_name: InternPool<'ast>) -> ParseState<'ast> {
         ParseState {
             arena: Arena::new(),
             intern_name,
@@ -176,7 +176,7 @@ impl<'ast, 'intern> ParseState<'ast, 'intern> {
         }
     }
 
-    pub fn result(self) -> ResultComp<Ast<'ast, 'intern>> {
+    pub fn result(self) -> ResultComp<Ast<'ast>> {
         let ast = Ast {
             arena: self.arena,
             intern_name: self.intern_name,

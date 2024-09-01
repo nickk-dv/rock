@@ -7,7 +7,7 @@ use crate::package::manifest::PackageKind;
 use crate::session::{ModuleOrDirectory, Session};
 
 pub fn check_entry_point<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     session: &Session,
 ) {
@@ -43,7 +43,7 @@ pub fn check_entry_point<'hir>(
 }
 
 pub fn check_main_procedure<'hir>(
-    hir: &mut HirData<'hir, '_, '_>,
+    hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc_id: hir::ProcID,
 ) {
