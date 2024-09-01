@@ -4,13 +4,10 @@ use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::session::{ModuleID, ModuleOrDirectory, Session};
 
 pub fn resolve_imports(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
-    for origin_id in session.module_ids() {
-        let module_ast = hir.ast_module(origin_id);
-        for item in module_ast.items.iter().copied() {
-            if let ast::Item::Import(import) = item {
-                resolve_import(hir, emit, session, origin_id, import);
-            }
-        }
+    for import_id in hir.registry().import_ids() {
+        let origin_id = hir.registry().import_data(import_id).origin_id;
+        let import = hir.registry().import_item(import_id);
+        resolve_import(hir, emit, session, origin_id, import);
     }
 }
 

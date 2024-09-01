@@ -55,13 +55,29 @@ pub fn check_attrs_proc<'ast>(
     emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    name: ast::Name,
-    attrs: &'ast [ast::Attr<'ast>],
+    item: &ast::ProcItem,
 ) -> AttrFeedbackProc {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
 
-    for attr in attrs {
+    if item.block.is_none() {
+        attr_set.set(ProcFlag::External);
+    }
+
+    if item.is_variadic {
+        if attr_set.contains(ProcFlag::External) {
+            attr_set.set(ProcFlag::Variadic);
+        } else {
+            //@use err:: for this unique case
+            emit.error(ErrorComp::new(
+                "`variadic` procedures must be `external`",
+                SourceRange::new(origin_id, item.name.range),
+                None,
+            ));
+        }
+    }
+
+    for attr in item.attrs {
         let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
@@ -83,7 +99,7 @@ pub fn check_attrs_proc<'ast>(
             }
         };
 
-        let item_src = SourceRange::new(origin_id, name.range);
+        let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
         check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "procedures");
     }
@@ -99,14 +115,13 @@ pub fn check_attrs_enum<'ast>(
     emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    name: ast::Name,
-    attrs: &'ast [ast::Attr<'ast>],
+    item: &ast::EnumItem,
 ) -> AttrFeedbackEnum {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
     let mut tag_ty = Err(());
 
-    for attr in attrs {
+    for attr in item.attrs {
         let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
@@ -132,7 +147,7 @@ pub fn check_attrs_enum<'ast>(
             }
         };
 
-        let item_src = SourceRange::new(origin_id, name.range);
+        let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
         check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "enums");
     }
@@ -149,13 +164,12 @@ pub fn check_attrs_struct<'ast>(
     emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    name: ast::Name,
-    attrs: &'ast [ast::Attr<'ast>],
+    item: &ast::StructItem,
 ) -> AttrFeedbackStruct {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
 
-    for attr in attrs {
+    for attr in item.attrs {
         let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
@@ -183,7 +197,7 @@ pub fn check_attrs_struct<'ast>(
             }
         };
 
-        let item_src = SourceRange::new(origin_id, name.range);
+        let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
         check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "structs");
     }
@@ -199,9 +213,9 @@ pub fn check_attrs_const<'ast>(
     emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    attrs: &'ast [ast::Attr<'ast>],
+    item: &ast::ConstItem,
 ) -> AttrFeedbackConst {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "constants");
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, item.attrs, "constants");
     AttrFeedbackConst { cfg_state }
 }
 
@@ -210,13 +224,12 @@ pub fn check_attrs_global<'ast>(
     emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    name: ast::Name,
-    attrs: &'ast [ast::Attr<'ast>],
+    item: &ast::GlobalItem,
 ) -> AttrFeedbackGlobal {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
 
-    for attr in attrs {
+    for attr in item.attrs {
         let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
@@ -236,7 +249,7 @@ pub fn check_attrs_global<'ast>(
             }
         };
 
-        let item_src = SourceRange::new(origin_id, name.range);
+        let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
         check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "globals");
     }
@@ -252,9 +265,9 @@ pub fn check_attrs_import<'ast>(
     emit: &mut HirEmit,
     session: &Session,
     origin_id: ModuleID,
-    attrs: &'ast [ast::Attr<'ast>],
+    item: &ast::ImportItem,
 ) -> AttrFeedbackImport {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "imports");
+    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, item.attrs, "imports");
     AttrFeedbackImport { cfg_state }
 }
 
@@ -617,7 +630,7 @@ impl CfgState {
 enum_str_convert!(
     fn as_str, fn from_str,
     #[derive(Copy, Clone)]
-    enum AttrKind {
+    pub enum AttrKind {
         Cfg => "cfg",
         CfgNot => "cfg_not",
         CfgAny => "cfg_any",
@@ -706,7 +719,6 @@ where
     const ALL_FLAGS: &'static [T];
 
     fn as_str(self) -> &'static str;
-    fn from_attr(kind: AttrKind) -> Option<Self>;
     fn compatible(self, other: T) -> bool;
 }
 
@@ -728,15 +740,6 @@ impl DataFlag<ProcFlag> for ProcFlag {
             ProcFlag::Test => "test",
             ProcFlag::Builtin => "builtin",
             ProcFlag::Inline => "inline",
-        }
-    }
-
-    fn from_attr(kind: AttrKind) -> Option<ProcFlag> {
-        match kind {
-            AttrKind::Test => Some(ProcFlag::Test),
-            AttrKind::Builtin => Some(ProcFlag::Builtin),
-            AttrKind::Inline => Some(ProcFlag::Inline),
-            _ => None,
         }
     }
 
@@ -764,13 +767,6 @@ impl DataFlag<EnumFlag> for EnumFlag {
         }
     }
 
-    fn from_attr(kind: AttrKind) -> Option<EnumFlag> {
-        match kind {
-            AttrKind::Repr => Some(EnumFlag::HasRepr),
-            _ => None,
-        }
-    }
-
     fn compatible(self, other: EnumFlag) -> bool {
         if self == other {
             unreachable!()
@@ -790,13 +786,6 @@ impl DataFlag<StructFlag> for StructFlag {
         }
     }
 
-    fn from_attr(kind: AttrKind) -> Option<StructFlag> {
-        match kind {
-            AttrKind::Repr => Some(StructFlag::ReprC),
-            _ => None,
-        }
-    }
-
     fn compatible(self, other: StructFlag) -> bool {
         if self == other {
             unreachable!()
@@ -813,13 +802,6 @@ impl DataFlag<GlobalFlag> for GlobalFlag {
     fn as_str(self) -> &'static str {
         match self {
             GlobalFlag::ThreadLocal => "thread_local",
-        }
-    }
-
-    fn from_attr(kind: AttrKind) -> Option<GlobalFlag> {
-        match kind {
-            AttrKind::ThreadLocal => Some(GlobalFlag::ThreadLocal),
-            _ => None,
         }
     }
 

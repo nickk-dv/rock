@@ -140,6 +140,11 @@ pub enum GlobalFlag {
     ThreadLocal,
 }
 
+id_impl!(ImportID);
+pub struct ImportData {
+    pub origin_id: ModuleID,
+}
+
 #[derive(Copy, Clone)]
 pub struct Layout {
     size: u64,

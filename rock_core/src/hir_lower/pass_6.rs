@@ -1,3 +1,4 @@
+use super::attr_check;
 use super::hir_build::{HirData, HirEmit, SymbolKind};
 use crate::ast::BasicType;
 use crate::error::{ErrorComp, SourceRange};
@@ -46,16 +47,11 @@ pub fn check_main_procedure<'hir>(
     emit: &mut HirEmit<'hir>,
     proc_id: hir::ProcID,
 ) {
-    let data_mut = hir.registry_mut().proc_data_mut(proc_id);
-    super::pass_1::check_attribute_flag(
-        emit,
-        data_mut.origin_id,
-        data_mut.name,
-        "procedure",
-        None,
-        &mut data_mut.attr_set,
-        hir::ProcFlag::Main,
-    );
+    let data = hir.registry_mut().proc_data_mut(proc_id);
+    let item_src = SourceRange::new(data.origin_id, data.name.range);
+
+    let flag = hir::ProcFlag::Main;
+    attr_check::check_attr_flag(emit, flag, &mut data.attr_set, None, item_src, "procedures");
 
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
@@ -63,7 +59,7 @@ pub fn check_main_procedure<'hir>(
     if !data.params.is_empty() {
         emit.error(ErrorComp::new(
             "`main` procedure cannot have any parameters",
-            SourceRange::new(data.origin_id, data.name.range),
+            item_src,
             None,
         ));
     }

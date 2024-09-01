@@ -22,7 +22,7 @@ pub struct Module {
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum Symbol {
-    Defined  { kind: SymbolKind, },
+    Defined(SymbolKind),
     Imported { kind: SymbolKind, import_range: TextRange },
 }
 
@@ -42,11 +42,13 @@ pub struct Registry<'hir, 'ast> {
     ast_structs: Vec<&'ast ast::StructItem<'ast>>,
     ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
     ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
+    ast_imports: Vec<&'ast ast::ImportItem<'ast>>,
     hir_procs: Vec<hir::ProcData<'hir>>,
     hir_enums: Vec<hir::EnumData<'hir>>,
     hir_structs: Vec<hir::StructData<'hir>>,
     hir_consts: Vec<hir::ConstData<'hir>>,
     hir_globals: Vec<hir::GlobalData<'hir>>,
+    hir_imports: Vec<hir::ImportData>,
     const_evals: Vec<(hir::ConstEval<'ast>, ModuleID)>,
 }
 
@@ -113,7 +115,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         let origin = self.module(origin_id);
 
         match origin.symbols.get(&id).cloned() {
-            Some(Symbol::Defined { kind }) => Some(kind),
+            Some(Symbol::Defined(kind)) => Some(kind),
             _ => None,
         }
     }
@@ -123,7 +125,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         let symbol = origin.symbols.get(&id).cloned()?;
 
         match symbol {
-            Symbol::Defined { kind } => {
+            Symbol::Defined(kind) => {
                 Some(SourceRange::new(origin_id, kind.name_range(&self.registry)))
             }
             Symbol::Imported { import_range, .. } => {
@@ -141,7 +143,7 @@ impl<'hir, 'ast, 'intern> HirData<'hir, 'ast, 'intern> {
         let target = self.module(target_id);
 
         match target.symbols.get(&name.id).copied() {
-            Some(Symbol::Defined { kind }) => {
+            Some(Symbol::Defined(kind)) => {
                 let source = SourceRange::new(target_id, kind.name_range(&self.registry));
 
                 let vis = if origin_id == target_id {
@@ -223,6 +225,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         let mut struct_count = 0;
         let mut const_count = 0;
         let mut global_count = 0;
+        let mut import_count = 0;
 
         for module in modules {
             for item in module.items {
@@ -232,7 +235,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
                     ast::Item::Struct(_) => struct_count += 1,
                     ast::Item::Const(_) => const_count += 1,
                     ast::Item::Global(_) => global_count += 1,
-                    ast::Item::Import(_) => {}
+                    ast::Item::Import(_) => import_count += 1,
                 }
             }
         }
@@ -245,11 +248,13 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             ast_structs: Vec::with_capacity(struct_count),
             ast_consts: Vec::with_capacity(const_count),
             ast_globals: Vec::with_capacity(global_count),
+            ast_imports: Vec::with_capacity(import_count),
             hir_procs: Vec::with_capacity(proc_count),
             hir_enums: Vec::with_capacity(enum_count),
             hir_structs: Vec::with_capacity(struct_count),
             hir_consts: Vec::with_capacity(const_count),
             hir_globals: Vec::with_capacity(global_count),
+            hir_imports: Vec::with_capacity(import_count),
             const_evals: Vec::with_capacity(consteval_count),
         }
     }
@@ -309,14 +314,25 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id
     }
 
+    pub fn add_import(
+        &mut self,
+        item: &'ast ast::ImportItem<'ast>,
+        data: hir::ImportData,
+    ) -> hir::ImportID {
+        let id = hir::ImportID::new(self.hir_imports.len());
+        self.ast_imports.push(item);
+        self.hir_imports.push(data);
+        id
+    }
+
     pub fn add_const_eval(
         &mut self,
         const_expr: ast::ConstExpr<'ast>,
         origin_id: ModuleID,
     ) -> hir::ConstEvalID {
         let id = hir::ConstEvalID::new(self.const_evals.len());
-        self.const_evals
-            .push((hir::ConstEval::Unresolved(const_expr), origin_id));
+        let eval = hir::ConstEval::Unresolved(const_expr);
+        self.const_evals.push((eval, origin_id));
         id
     }
 
@@ -334,6 +350,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
     pub fn global_ids(&self) -> impl Iterator<Item = hir::GlobalID> {
         (0..self.hir_globals.len()).map(hir::GlobalID::new)
+    }
+    pub fn import_ids(&self) -> impl Iterator<Item = hir::ImportID> {
+        (0..self.hir_imports.len()).map(hir::ImportID::new)
     }
     pub fn const_eval_ids(&self) -> impl Iterator<Item = hir::ConstEvalID> {
         (0..self.const_evals.len()).map(hir::ConstEvalID::new)
@@ -354,6 +373,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn global_item(&self, id: hir::GlobalID) -> &'ast ast::GlobalItem<'ast> {
         self.ast_globals[id.index()]
     }
+    pub fn import_item(&self, id: hir::ImportID) -> &'ast ast::ImportItem<'ast> {
+        self.ast_imports[id.index()]
+    }
 
     pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
         &self.hir_procs[id.index()]
@@ -369,6 +391,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
     pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
         &self.hir_globals[id.index()]
+    }
+    pub fn import_data(&self, id: hir::ImportID) -> &hir::ImportData {
+        &self.hir_imports[id.index()]
     }
     pub fn const_eval(&self, id: hir::ConstEvalID) -> &(hir::ConstEval<'ast>, ModuleID) {
         &self.const_evals[id.index()]
