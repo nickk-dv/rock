@@ -601,7 +601,7 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_int(&self) -> i128 {
+    pub fn into_int(&self) -> i128 {
         match *self {
             hir::ConstValue::Int { val, neg, .. } => {
                 if neg {

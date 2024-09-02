@@ -287,18 +287,17 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
 
         let data = hir.registry_mut().enum_data_mut(id);
         data.tag_ty = Ok(int_ty);
-        tag_ty = data.tag_ty;
+        tag_ty = Ok(int_ty);
     }
 
-    if let Ok(int_ty) = tag_ty {
-        for (idx, variant) in unique.iter_mut().enumerate() {
+    if tag_ty.is_err() {
+        for variant in unique.iter_mut() {
             match &mut variant.kind {
-                hir::VariantKind::Default(value) => {
-                    let src = SourceRange::new(origin_id, variant.name.range);
-                    let tag_value = constant::int_range_check(hir, emit, src, idx as i128, int_ty);
-                    *value = hir::Eval::from_res(tag_value);
+                hir::VariantKind::Default(value) => *value = hir::Eval::ResolvedError,
+                hir::VariantKind::Constant(eval_id) => {
+                    let (eval, _) = hir.registry_mut().const_eval_mut(*eval_id);
+                    *eval = hir::Eval::ResolvedError;
                 }
-                hir::VariantKind::Constant(_) => break,
             }
         }
     }
