@@ -8,14 +8,16 @@ use crate::session::ModuleID;
 use crate::text::TextRange;
 
 pub fn typecheck_procedures<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+    let mut proc = ProcScope::dummy();
     for proc_id in hir.registry().proc_ids() {
-        typecheck_proc(hir, emit, proc_id)
+        typecheck_proc(hir, emit, &mut proc, proc_id)
     }
 }
 
 fn typecheck_proc<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
     proc_id: hir::ProcID,
 ) {
     let item = hir.registry().proc_item(proc_id);
@@ -56,9 +58,9 @@ fn typecheck_proc<'hir>(
             None => SourceRange::new(data.origin_id, data.name.range),
         };
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
+        proc.reset(data.origin_id, data.params, expect);
 
-        let mut proc = ProcScope::new(data, expect);
-        let block_res = typecheck_block(hir, emit, &mut proc, expect, block, BlockEnter::None);
+        let block_res = typecheck_block(hir, emit, proc, expect, block, BlockEnter::None);
         let locals = emit.arena.alloc_slice(proc.finish_locals());
 
         let data = hir.registry_mut().proc_data_mut(proc_id);
@@ -542,7 +544,8 @@ fn typecheck_match<'hir>(
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
-        let value = constant::resolve_const_expr(hir, emit, proc.origin(), pat_expect, arm.pat);
+        let value =
+            constant::resolve_const_expr(hir, emit, proc, proc.origin(), pat_expect, arm.pat);
         let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
 
         // never -> anything
@@ -1403,7 +1406,7 @@ fn typecheck_cast<'hir>(
     range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    let into = super::pass_3::type_resolve(hir, emit, proc.origin(), *into);
+    let into = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), *into);
 
     // early return prevents false positives on cast warning & cast error
     if matches!(target_res.ty, hir::Type::Error) || matches!(into, hir::Type::Error) {
@@ -1526,7 +1529,7 @@ fn typecheck_sizeof<'hir>(
     ty: ast::Type,
     expr_range: TextRange, //@temp? used for array size overflow error
 ) -> TypeResult<'hir> {
-    let ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ty);
+    let ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ty);
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
@@ -1881,6 +1884,7 @@ fn typecheck_array_repeat<'hir>(
     let value = constant::resolve_const_expr(
         hir,
         emit,
+        proc,
         proc.origin(),
         Expectation::HasType(hir::Type::USIZE, None),
         len,
@@ -2546,12 +2550,12 @@ fn typecheck_local<'hir>(
 
     let (local_ty, local_value) = match local.kind {
         ast::LocalKind::Decl(ast_ty) => {
-            let hir_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ast_ty);
+            let hir_ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ast_ty);
             (hir_ty, None)
         }
         ast::LocalKind::Init(ast_ty, value) => {
             let expect = if let Some(ast_ty) = ast_ty {
-                let hir_ty = super::pass_3::type_resolve(hir, emit, proc.origin(), ast_ty);
+                let hir_ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ast_ty);
                 let expect_src = SourceRange::new(proc.origin(), ast_ty.range);
                 Expectation::HasType(hir_ty, Some(expect_src))
             } else {

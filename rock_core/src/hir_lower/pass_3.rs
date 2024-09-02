@@ -1,6 +1,7 @@
 use super::constant;
 use super::hir_build::{HirData, HirEmit};
 use super::pass_5::{self, Expectation};
+use super::proc_scope::ProcScope;
 use crate::ast;
 use crate::error::{ErrorComp, Info, SourceRange};
 use crate::hir;
@@ -29,6 +30,7 @@ pub fn process_items<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
 pub fn type_resolve<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
     origin_id: ModuleID,
     ast_ty: ast::Type,
 ) -> hir::Type<'hir> {
@@ -38,19 +40,19 @@ pub fn type_resolve<'hir>(
             super::pass_5::path_resolve_type(hir, emit, None, origin_id, path)
         }
         ast::TypeKind::Reference(ref_ty, mutt) => {
-            let ref_ty = type_resolve(hir, emit, origin_id, *ref_ty);
+            let ref_ty = type_resolve(hir, emit, proc, origin_id, *ref_ty);
             hir::Type::Reference(emit.arena.alloc(ref_ty), mutt)
         }
         ast::TypeKind::Procedure(proc_ty) => {
             let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
             for param_ty in proc_ty.param_types {
-                let ty = type_resolve(hir, emit, origin_id, *param_ty);
+                let ty = type_resolve(hir, emit, proc, origin_id, *param_ty);
                 param_types.push(ty);
             }
             let param_types = emit.arena.alloc_slice(&param_types);
 
             let return_ty = if let Some(return_ty) = proc_ty.return_ty {
-                type_resolve(hir, emit, origin_id, return_ty)
+                type_resolve(hir, emit, proc, origin_id, return_ty)
             } else {
                 hir::Type::Basic(ast::BasicType::Void)
             };
@@ -63,7 +65,7 @@ pub fn type_resolve<'hir>(
             hir::Type::Procedure(emit.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {
-            let elem_ty = type_resolve(hir, emit, origin_id, slice.elem_ty);
+            let elem_ty = type_resolve(hir, emit, proc, origin_id, slice.elem_ty);
 
             let slice = hir::ArraySlice {
                 mutt: slice.mutt,
@@ -73,8 +75,9 @@ pub fn type_resolve<'hir>(
         }
         ast::TypeKind::ArrayStatic(array) => {
             let expect = Expectation::HasType(hir::Type::USIZE, None);
-            let len_res = constant::resolve_const_expr(hir, emit, origin_id, expect, array.len);
-            let elem_ty = type_resolve(hir, emit, origin_id, array.elem_ty);
+            let len_res =
+                constant::resolve_const_expr(hir, emit, proc, origin_id, expect, array.len);
+            let elem_ty = type_resolve(hir, emit, proc, origin_id, array.elem_ty);
 
             let len = if let Ok(value) = len_res {
                 match value {

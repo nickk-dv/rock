@@ -11,7 +11,8 @@ use crate::text::TextRange;
 // not a big deal until perf of check is important
 // not re-using will re allocate each of 3 vectors multiple times for EACH procedure being typechecked
 pub struct ProcScope<'hir, 'check> {
-    data: &'check hir::ProcData<'hir>,
+    origin_id: ModuleID,
+    params: &'check [hir::Param<'hir>],
     return_expect: Expectation<'hir>,
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
@@ -65,21 +66,36 @@ pub enum VariableID {
 }
 
 impl<'hir, 'check> ProcScope<'hir, 'check> {
-    pub fn new(data: &'check hir::ProcData<'hir>, return_expect: Expectation<'hir>) -> Self {
+    pub fn dummy() -> ProcScope<'hir, 'check> {
         ProcScope {
-            data,
-            return_expect,
-            blocks: Vec::new(),
-            locals: Vec::new(),
-            locals_in_scope: Vec::new(),
+            origin_id: ModuleID::dummy(),
+            params: &[],
+            return_expect: Expectation::None,
+            blocks: Vec::with_capacity(64),
+            locals: Vec::with_capacity(64),
+            locals_in_scope: Vec::with_capacity(64),
         }
+    }
+
+    pub fn reset(
+        &mut self,
+        origin_id: ModuleID,
+        params: &'check [hir::Param<'hir>],
+        return_expect: Expectation<'hir>,
+    ) {
+        self.origin_id = origin_id;
+        self.params = params;
+        self.return_expect = return_expect;
+        self.blocks.clear();
+        self.locals.clear();
+        self.locals_in_scope.clear();
     }
 
     pub fn finish_locals(&self) -> &[&'hir hir::Local<'hir>] {
         self.locals.as_slice()
     }
     pub fn origin(&self) -> ModuleID {
-        self.data.origin_id
+        self.origin_id
     }
     pub fn return_expect(&self) -> Expectation<'hir> {
         self.return_expect
@@ -97,7 +113,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         self.locals[id.index()]
     }
     pub fn get_param(&self, id: hir::ParamID) -> &hir::Param<'hir> {
-        self.data.param(id)
+        &self.params[id.index()]
     }
 
     pub fn push_block(&mut self, enter: BlockEnter) {
@@ -190,12 +206,21 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     }
 
     pub fn find_variable(&self, id: InternID) -> Option<VariableID> {
-        if let Some((param_id, _)) = self.data.find_param(id) {
+        if let Some(param_id) = self.find_param(id) {
             return Some(VariableID::Param(param_id));
         }
         for local_id in self.locals_in_scope.iter().cloned() {
             if self.get_local(local_id).name.id == id {
                 return Some(VariableID::Local(local_id));
+            }
+        }
+        None
+    }
+
+    fn find_param(&self, id: InternID) -> Option<hir::ParamID> {
+        for (idx, param) in self.params.iter().enumerate() {
+            if param.name.id == id {
+                return Some(hir::ParamID::new(idx));
             }
         }
         None

@@ -1,15 +1,12 @@
 use super::fold;
 use super::layout;
 use crate::ast;
-use crate::bitset::BitSet;
 use crate::error::{ErrorComp, Info, SourceRange, StringOrStr};
 use crate::hir;
-use crate::hir_lower::errors as err;
 use crate::hir_lower::hir_build::{HirData, HirEmit};
-use crate::hir_lower::proc_scope;
+use crate::hir_lower::proc_scope::ProcScope;
 use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::id_impl;
-use crate::intern::InternID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
@@ -24,6 +21,8 @@ enum ConstDependency {
 }
 
 pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+    let mut proc = ProcScope::dummy();
+
     for id in hir.registry().enum_ids() {
         let data = hir.registry().enum_data(id);
 
@@ -47,7 +46,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
                             ) {
                                 const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
                             } else {
-                                resolve_const_dependency_tree(hir, emit, &tree);
+                                resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
                             }
                         }
                         hir::ConstEval::ResolvedError => {}
@@ -77,7 +76,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
                 }
             }
             if is_ok {
-                resolve_const_dependency_tree(hir, emit, &tree);
+                resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
             }
         }
     }
@@ -99,7 +98,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
                 }
             }
             if is_ok {
-                resolve_const_dependency_tree(hir, emit, &tree);
+                resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
             }
         }
     }
@@ -121,7 +120,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
                 {
                     const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
                 } else {
-                    resolve_const_dependency_tree(hir, emit, &tree);
+                    resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
                 }
             }
             hir::ConstEval::ResolvedError => {}
@@ -146,7 +145,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
                 {
                     const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
                 } else {
-                    resolve_const_dependency_tree(hir, emit, &tree);
+                    resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
                 }
             }
             hir::ConstEval::ResolvedError => {}
@@ -164,7 +163,7 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let expect = Expectation::HasType(hir::Type::USIZE, None);
-            resolve_and_update_const_eval(hir, emit, eval_id, expect);
+            resolve_and_update_const_eval(hir, emit, &mut proc, eval_id, expect);
         }
     }
 }
@@ -821,6 +820,7 @@ fn error_cannot_refer_to_in_constants(
 fn resolve_const_dependency_tree<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
     tree: &Tree<ConstDependency>,
 ) {
     // reverse iteration allows to resolve dependencies in correct order
@@ -838,7 +838,7 @@ fn resolve_const_dependency_tree<'hir>(
                 match variant.kind {
                     hir::VariantKind::Default(_) => unreachable!(),
                     hir::VariantKind::Constant(eval_id) => {
-                        resolve_and_update_const_eval(hir, emit, eval_id, expect);
+                        resolve_and_update_const_eval(hir, emit, proc, eval_id, expect);
                     }
                 }
             }
@@ -858,7 +858,7 @@ fn resolve_const_dependency_tree<'hir>(
 
                 let expect_src = SourceRange::new(data.origin_id, item.ty.range);
                 let expect = Expectation::HasType(data.ty, Some(expect_src));
-                resolve_and_update_const_eval(hir, emit, data.value, expect);
+                resolve_and_update_const_eval(hir, emit, proc, data.value, expect);
             }
             ConstDependency::Global(id) => {
                 let data = hir.registry().global_data(id);
@@ -866,11 +866,11 @@ fn resolve_const_dependency_tree<'hir>(
 
                 let expect_src = SourceRange::new(data.origin_id, item.ty.range);
                 let expect = Expectation::HasType(data.ty, Some(expect_src));
-                resolve_and_update_const_eval(hir, emit, data.value, expect);
+                resolve_and_update_const_eval(hir, emit, proc, data.value, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
                 let expect = Expectation::HasType(hir::Type::USIZE, None);
-                resolve_and_update_const_eval(hir, emit, eval_id, expect);
+                resolve_and_update_const_eval(hir, emit, proc, eval_id, expect);
             }
         }
     }
@@ -881,6 +881,7 @@ fn resolve_const_dependency_tree<'hir>(
 fn resolve_and_update_const_eval<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
     eval_id: hir::ConstEvalID,
     expect: Expectation<'hir>,
 ) {
@@ -888,7 +889,7 @@ fn resolve_and_update_const_eval<'hir>(
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
-            let value_res = resolve_const_expr(hir, emit, origin_id, expect, expr);
+            let value_res = resolve_const_expr(hir, emit, proc, origin_id, expect, expr);
             let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
 
             if let Ok(value) = value_res {
@@ -906,27 +907,13 @@ fn resolve_and_update_const_eval<'hir>(
 pub fn resolve_const_expr<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
+    proc: &mut ProcScope<'hir, '_>,
     origin_id: ModuleID,
     expect: Expectation<'hir>,
     expr: ast::ConstExpr,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let dummy_data = hir::ProcData {
-        origin_id,
-        attr_set: BitSet::empty(),
-        vis: ast::Vis::Private,
-        name: ast::Name {
-            id: InternID::dummy(),
-            range: TextRange::zero(),
-        },
-        params: &[],
-        return_ty: hir::Type::VOID,
-        block: None,
-        locals: &[],
-    };
-
-    let mut proc = proc_scope::ProcScope::new(&dummy_data, Expectation::None);
     let error_count = emit.error_count();
-    let expr_res = pass_5::typecheck_expr(hir, emit, &mut proc, expect, expr.0);
+    let expr_res = pass_5::typecheck_expr(hir, emit, proc, expect, expr.0);
 
     if !emit.did_error(error_count) {
         let src = SourceRange::new(origin_id, expr_res.expr.range);
