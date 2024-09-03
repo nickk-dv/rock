@@ -2,7 +2,8 @@ use super::hir_build::{HirData, HirEmit};
 use super::pass_5::Expectation;
 use crate::error::{Info, SourceRange, WarningComp};
 use crate::hir;
-use crate::intern::InternID;
+use crate::intern::InternName;
+use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
@@ -209,7 +210,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         local_id
     }
 
-    pub fn find_variable(&self, id: InternID) -> Option<VariableID> {
+    pub fn find_variable(&self, id: ID<InternName>) -> Option<VariableID> {
         if let Some(param_id) = self.find_param(id) {
             return Some(VariableID::Param(param_id));
         }
@@ -221,7 +222,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         None
     }
 
-    fn find_param(&self, id: InternID) -> Option<hir::ParamID> {
+    fn find_param(&self, id: ID<InternName>) -> Option<hir::ParamID> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
                 return Some(hir::ParamID::new(idx));

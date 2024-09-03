@@ -1,12 +1,13 @@
 use crate::arena::Arena;
 use crate::enum_str_convert;
-use crate::intern::{InternID, InternPool};
+use crate::intern::{InternName, InternPool, InternString};
+use crate::macros::ID;
 use crate::text::TextRange;
 
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
-    pub intern_name: InternPool<'ast>,
-    pub intern_string: InternPool<'ast>,
+    pub intern_name: InternPool<'ast, InternName<'ast>>,
+    pub intern_string: InternPool<'ast, InternString<'ast>>,
     pub string_is_cstr: Vec<bool>,
     pub modules: Vec<Module<'ast>>,
 }
@@ -27,34 +28,34 @@ pub enum Item<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Name {
-    pub id: InternID,
+pub struct Name<'ast> {
+    pub id: ID<InternName<'ast>>,
     pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
 pub struct Path<'ast> {
-    pub names: &'ast [Name],
+    pub names: &'ast [Name<'ast>],
 }
 
 #[derive(Copy, Clone)]
 pub struct Attr<'ast> {
-    pub name: Name,
-    pub params: Option<(&'ast [AttrParam], TextRange)>,
+    pub name: Name<'ast>,
+    pub params: Option<(&'ast [AttrParam<'ast>], TextRange)>,
     pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
-pub struct AttrParam {
-    pub name: Name,
-    pub value: Option<(InternID, TextRange)>,
+pub struct AttrParam<'ast> {
+    pub name: Name<'ast>,
+    pub value: Option<(ID<InternString<'ast>>, TextRange)>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub params: &'ast [Param<'ast>],
     pub is_variadic: bool,
     pub return_ty: Option<Type<'ast>>,
@@ -64,7 +65,7 @@ pub struct ProcItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct Param<'ast> {
     pub mutt: Mut,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub ty: Type<'ast>,
 }
 
@@ -72,13 +73,13 @@ pub struct Param<'ast> {
 pub struct EnumItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub variants: &'ast [Variant<'ast>],
 }
 
 #[derive(Copy, Clone)]
 pub struct Variant<'ast> {
-    pub name: Name,
+    pub name: Name<'ast>,
     pub kind: VariantKind<'ast>,
 }
 
@@ -93,14 +94,14 @@ pub enum VariantKind<'ast> {
 pub struct StructItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub fields: &'ast [Field<'ast>],
 }
 
 #[derive(Copy, Clone)]
 pub struct Field<'ast> {
     pub vis: Vis,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub ty: Type<'ast>,
 }
 
@@ -108,7 +109,7 @@ pub struct Field<'ast> {
 pub struct ConstItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
 }
@@ -118,7 +119,7 @@ pub struct GlobalItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub mutt: Mut,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
 }
@@ -126,22 +127,22 @@ pub struct GlobalItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
-    pub package: Option<Name>,
-    pub import_path: &'ast [Name],
-    pub rename: SymbolRename,
-    pub symbols: &'ast [ImportSymbol],
+    pub package: Option<Name<'ast>>,
+    pub import_path: &'ast [Name<'ast>],
+    pub rename: SymbolRename<'ast>,
+    pub symbols: &'ast [ImportSymbol<'ast>],
 }
 
 #[derive(Copy, Clone)]
-pub struct ImportSymbol {
-    pub name: Name,
-    pub rename: SymbolRename,
+pub struct ImportSymbol<'ast> {
+    pub name: Name<'ast>,
+    pub rename: SymbolRename<'ast>,
 }
 
 #[derive(Copy, Clone)]
-pub enum SymbolRename {
+pub enum SymbolRename<'ast> {
     None,
-    Alias(Name),
+    Alias(Name<'ast>),
     Discard(TextRange),
 }
 
@@ -226,7 +227,7 @@ pub enum LoopKind<'ast> {
 #[derive(Copy, Clone)]
 pub struct Local<'ast> {
     pub mutt: Mut,
-    pub name: Name,
+    pub name: Name<'ast>,
     pub kind: LocalKind<'ast>,
 }
 
@@ -256,18 +257,18 @@ pub struct Expr<'ast> {
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum ExprKind<'ast> {
-    Lit         (Lit),
+    Lit         (Lit<'ast>),
     If          { if_: &'ast If<'ast> },
     Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
     Match2      { match_2: &'ast Match2<'ast> },
-    Field       { target: &'ast Expr<'ast>, name: Name },
+    Field       { target: &'ast Expr<'ast>, name: Name<'ast> },
     Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
     Call        { target: &'ast Expr<'ast>, input: &'ast Input<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: &'ast Type<'ast> },
     Item        { path: &'ast Path<'ast>, input: Option<&'ast Input<'ast>> },
-    Variant     { name: Name, input: Option<&'ast Input<'ast>> },
+    Variant     { name: Name<'ast>, input: Option<&'ast Input<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
@@ -279,13 +280,16 @@ pub enum ExprKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Lit {
+pub enum Lit<'ast> {
     Null,
     Bool(bool),
     Int(u64),
     Float(f64),
     Char(char),
-    String { id: InternID, c_string: bool },
+    String {
+        id: ID<InternString<'ast>>,
+        c_string: bool,
+    },
 }
 
 #[derive(Copy, Clone)]
@@ -337,9 +341,9 @@ pub struct Pat<'ast> {
 #[derive(Copy, Clone)]
 pub enum PatKind<'ast> {
     Wild,
-    Lit       (Lit),
-    Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name]> },
-    Variant   { name: Name, binds: Option<&'ast [Name]> },
+    Lit       (Lit<'ast>),
+    Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name<'ast>]> },
+    Variant   { name: Name<'ast>, binds: Option<&'ast [Name<'ast>]> },
     Or        { patterns: &'ast [Pat<'ast>] },
 }
 
@@ -357,7 +361,7 @@ pub struct StructInit<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct FieldInit<'ast> {
-    pub name: Name,
+    pub name: Name<'ast>,
     pub expr: &'ast Expr<'ast>,
 }
 

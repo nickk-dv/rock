@@ -7,6 +7,7 @@ use crate::enum_str_convert;
 use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
+use crate::intern::Interned;
 use crate::session::{ModuleID, RockModule, Session};
 
 pub struct AttrFeedbackProc {
@@ -415,7 +416,7 @@ fn expect_single_param<'ast>(
     origin_id: ModuleID,
     attr: &ast::Attr<'ast>,
     attr_name: &str,
-) -> Result<&'ast ast::AttrParam, ()> {
+) -> Result<&'ast ast::AttrParam<'ast>, ()> {
     if let Some((params, params_range)) = attr.params {
         if let Some(param) = params.get(0) {
             for param in params.iter().skip(1) {
@@ -440,7 +441,7 @@ fn expect_multiple_params<'ast>(
     origin_id: ModuleID,
     attr: &ast::Attr<'ast>,
     attr_name: &str,
-) -> Result<&'ast [ast::AttrParam], ()> {
+) -> Result<&'ast [ast::AttrParam<'ast>], ()> {
     if let Some((params, params_range)) = attr.params {
         if params.is_empty() {
             let params_src = SourceRange::new(origin_id, params_range);
@@ -480,8 +481,8 @@ fn resolve_cfg_params(
 
         let (value, value_range) = match param.value {
             Some((value, value_range)) => {
-                let value = hir.intern_string().get_str(value);
-                (value, value_range)
+                let value = hir.intern_string().get(value);
+                (value.as_str(), value_range)
             }
             None => {
                 let param_src = SourceRange::new(origin_id, param.name.range);

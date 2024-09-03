@@ -265,14 +265,14 @@ fn import_item<'ast>(
     }))
 }
 
-fn import_symbol(p: &mut Parser) -> Result<ImportSymbol, String> {
+fn import_symbol<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<ImportSymbol<'ast>, String> {
     let name = name(p)?;
     let rename = symbol_rename(p)?;
 
     Ok(ImportSymbol { name, rename })
 }
 
-fn symbol_rename(p: &mut Parser) -> Result<SymbolRename, String> {
+fn symbol_rename<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<SymbolRename<'ast>, String> {
     if p.eat(T![as]) {
         let range = p.peek_range();
         if p.eat(T![_]) {
@@ -302,7 +302,7 @@ fn mutt(p: &mut Parser) -> Mut {
     }
 }
 
-fn name(p: &mut Parser) -> Result<Name, String> {
+fn name<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Name<'ast>, String> {
     let range = p.peek_range();
     p.expect(T![ident])?;
     let string = &p.source[range.as_usize()];
@@ -340,7 +340,9 @@ fn attr_list<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast [Attr<'ast>], S
     Ok(p.state.attrs.take(offset, &mut p.state.arena))
 }
 
-fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<AttrParam, String> {
+//@those get put into string lit intern pool, which will lean to them being generated
+// and maybe discarded later, avoid that
+fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<AttrParam<'ast>, String> {
     let name = name(p)?;
     let value = if p.eat(T![=]) {
         if p.at(T![string_lit]) {
@@ -912,7 +914,7 @@ fn tail_expr<'ast>(
     }
 }
 
-fn lit<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Lit, String> {
+fn lit<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Lit<'ast>, String> {
     match p.peek() {
         T![null] => {
             p.bump();
@@ -1131,7 +1133,7 @@ fn primary_pat<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Pat<'ast>, String> 
     Ok(pat)
 }
 
-fn binds<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Option<&'ast [Name]>, String> {
+fn binds<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Option<&'ast [Name<'ast>]>, String> {
     if p.at(T!['(']) {
         let names = comma_separated_list!(p, name, names, T!['('], T![')']);
         Ok(Some(names))

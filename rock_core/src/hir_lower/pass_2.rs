@@ -3,7 +3,11 @@ use crate::ast;
 use crate::error::{ErrorComp, SourceRange, WarningComp};
 use crate::session::{ModuleID, ModuleOrDirectory, Session};
 
-pub fn resolve_imports(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
+pub fn resolve_imports<'hir: 'ast, 'ast>(
+    hir: &mut HirData<'hir, 'ast>,
+    emit: &mut HirEmit<'ast>,
+    session: &Session,
+) {
     for import_id in hir.registry().import_ids() {
         let origin_id = hir.registry().import_data(import_id).origin_id;
         let import = hir.registry().import_item(import_id);
@@ -11,12 +15,12 @@ pub fn resolve_imports(hir: &mut HirData, emit: &mut HirEmit, session: &Session)
     }
 }
 
-fn resolve_import(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+fn resolve_import<'hir, 'ast>(
+    hir: &mut HirData<'hir, 'ast>,
+    emit: &mut HirEmit<'hir>,
     session: &Session,
     origin_id: ModuleID,
-    import: &ast::ImportItem,
+    import: &ast::ImportItem<'ast>,
 ) {
     let mut source_package = session.package(session.module(origin_id).package_id);
 
@@ -119,13 +123,13 @@ fn resolve_import(
     }
 }
 
-fn import_module(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+fn import_module<'hir, 'ast>(
+    hir: &mut HirData<'hir, 'ast>,
+    emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     target_id: ModuleID,
-    module_name: ast::Name,
-    rename: ast::SymbolRename,
+    module_name: ast::Name<'ast>,
+    rename: ast::SymbolRename<'ast>,
 ) {
     let module_alias = check_symbol_rename(hir, emit, origin_id, module_name, rename, false);
     let module_alias = match module_alias {
@@ -144,12 +148,12 @@ fn import_module(
     }
 }
 
-fn import_symbol(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+fn import_symbol<'hir, 'ast>(
+    hir: &mut HirData<'hir, 'ast>,
+    emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
     target_id: ModuleID,
-    symbol: &ast::ImportSymbol,
+    symbol: &ast::ImportSymbol<'ast>,
 ) {
     let symbol_alias = check_symbol_rename(hir, emit, origin_id, symbol.name, symbol.rename, true);
     let (symbol_alias, discarded) = match symbol_alias {
@@ -180,14 +184,14 @@ fn import_symbol(
     }
 }
 
-fn check_symbol_rename(
-    hir: &HirData,
-    emit: &mut HirEmit,
+fn check_symbol_rename<'hir, 'ast>(
+    hir: &HirData<'hir, 'ast>,
+    emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    name: ast::Name,
-    rename: ast::SymbolRename,
+    name: ast::Name<'ast>,
+    rename: ast::SymbolRename<'ast>,
     for_symbol: bool,
-) -> Option<ast::Name> {
+) -> Option<ast::Name<'ast>> {
     match rename {
         ast::SymbolRename::None => Some(name),
         ast::SymbolRename::Alias(alias) => {

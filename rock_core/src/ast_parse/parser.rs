@@ -1,7 +1,8 @@
 use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
-use crate::intern::{InternID, InternPool};
+use crate::intern::{InternName, InternPool, InternString};
+use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::temp_buffer::TempBuffer;
 use crate::text::{TextOffset, TextRange};
@@ -21,19 +22,19 @@ pub struct Parser<'ast, 'src, 'state> {
 
 pub struct ParseState<'ast> {
     pub arena: Arena<'ast>,
-    pub intern_name: InternPool<'ast>,
-    pub intern_string: InternPool<'ast>,
+    pub intern_name: InternPool<'ast, InternName<'ast>>,
+    pub intern_string: InternPool<'ast, InternString<'ast>>,
     pub string_is_cstr: Vec<bool>,
     pub modules: Vec<Module<'ast>>,
     pub errors: Vec<ErrorComp>,
     pub items: TempBuffer<Item<'ast>>,
     pub attrs: TempBuffer<Attr<'ast>>,
-    pub attr_params: TempBuffer<AttrParam>,
+    pub attr_params: TempBuffer<AttrParam<'ast>>,
     pub params: TempBuffer<Param<'ast>>,
     pub variants: TempBuffer<Variant<'ast>>,
     pub fields: TempBuffer<Field<'ast>>,
-    pub import_symbols: TempBuffer<ImportSymbol>,
-    pub names: TempBuffer<Name>,
+    pub import_symbols: TempBuffer<ImportSymbol<'ast>>,
+    pub names: TempBuffer<Name<'ast>>,
     pub types: TempBuffer<Type<'ast>>,
     pub stmts: TempBuffer<Stmt<'ast>>,
     pub branches: TempBuffer<Branch<'ast>>,
@@ -133,14 +134,14 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
         value
     }
 
-    pub fn get_string_lit(&mut self) -> (InternID, bool) {
+    pub fn get_string_lit(&mut self) -> (ID<InternString<'ast>>, bool) {
         let (string, c_string) = self.tokens.string(self.string_id as usize);
         let id = self.state.intern_string.intern(string);
 
-        if id.index() >= self.state.string_is_cstr.len() {
+        if id.raw_index() >= self.state.string_is_cstr.len() {
             self.state.string_is_cstr.push(c_string);
         } else if c_string {
-            self.state.string_is_cstr[id.index()] = true;
+            self.state.string_is_cstr[id.raw_index()] = true;
         }
 
         self.string_id += 1;
@@ -149,7 +150,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
 }
 
 impl<'ast> ParseState<'ast> {
-    pub fn new(intern_name: InternPool<'ast>) -> ParseState<'ast> {
+    pub fn new(intern_name: InternPool<'ast, InternName<'ast>>) -> ParseState<'ast> {
         ParseState {
             arena: Arena::new(),
             intern_name,

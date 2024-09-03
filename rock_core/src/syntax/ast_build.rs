@@ -3,7 +3,8 @@ use super::syntax_tree::SyntaxTree;
 use crate::arena::Arena;
 use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
-use crate::intern::{InternID, InternPool};
+use crate::intern::{InternName, InternPool, InternString};
+use crate::macros::ID;
 use crate::session::{ModuleID, Session};
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
@@ -22,20 +23,20 @@ struct AstBuild<'ast, 'syn, 'src, 'state> {
 
 struct AstBuildState<'ast> {
     arena: Arena<'ast>,
-    intern_name: InternPool<'ast>,
-    intern_string: InternPool<'ast>,
+    intern_name: InternPool<'ast, InternName<'ast>>,
+    intern_string: InternPool<'ast, InternString<'ast>>,
     string_is_cstr: Vec<bool>,
     modules: Vec<ast::Module<'ast>>,
     errors: Vec<ErrorComp>,
 
     items: TempBuffer<ast::Item<'ast>>,
     attrs: TempBuffer<ast::Attr<'ast>>,
-    attr_params: TempBuffer<ast::AttrParam>,
+    attr_params: TempBuffer<ast::AttrParam<'ast>>,
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
     fields: TempBuffer<ast::Field<'ast>>,
-    import_symbols: TempBuffer<ast::ImportSymbol>,
-    names: TempBuffer<ast::Name>,
+    import_symbols: TempBuffer<ast::ImportSymbol<'ast>>,
+    names: TempBuffer<ast::Name<'ast>>,
     types: TempBuffer<ast::Type<'ast>>,
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
@@ -64,7 +65,7 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
 }
 
 impl<'ast> AstBuildState<'ast> {
-    fn new(intern_name: InternPool<'ast>) -> Self {
+    fn new(intern_name: InternPool<'ast, InternName<'ast>>) -> Self {
         AstBuildState {
             arena: Arena::new(),
             intern_name,
@@ -91,7 +92,10 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-pub fn parse<'ast>(session: &Session, intern_name: InternPool<'ast>) -> ResultComp<ast::Ast<'ast>> {
+pub fn parse<'ast>(
+    session: &Session,
+    intern_name: InternPool<'ast, InternName<'ast>>,
+) -> ResultComp<ast::Ast<'ast>> {
     let t_total = Timer::new();
     let mut state = AstBuildState::new(intern_name);
 
@@ -182,7 +186,7 @@ fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, attr: cst::Attr) -> ast
 fn attr_param_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     param_list: Option<cst::AttrParamList>,
-) -> Option<(&'ast [ast::AttrParam], TextRange)> {
+) -> Option<(&'ast [ast::AttrParam<'ast>], TextRange)> {
     if let Some(param_list) = param_list {
         let offset = ctx.s.attr_params.start();
         for param_cst in param_list.params(ctx.tree) {
@@ -197,7 +201,10 @@ fn attr_param_list<'ast>(
 }
 
 //@allowing and ignoring c_string
-fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
+fn attr_param<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    param: cst::AttrParam,
+) -> ast::AttrParam<'ast> {
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let value = match param.value(ctx.tree) {
         Some(cst_string) => {
@@ -431,7 +438,10 @@ fn import_symbol(ctx: &mut AstBuild, import_symbol: cst::ImportSymbol) {
     ctx.s.import_symbols.add(import_symbol);
 }
 
-fn symbol_rename(ctx: &mut AstBuild, rename: Option<cst::SymbolRename>) -> ast::SymbolRename {
+fn symbol_rename<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    rename: Option<cst::SymbolRename>,
+) -> ast::SymbolRename<'ast> {
     if let Some(rename) = rename {
         if let Some(alias) = rename.alias(ctx.tree) {
             ast::SymbolRename::Alias(name(ctx, alias))
@@ -444,7 +454,7 @@ fn symbol_rename(ctx: &mut AstBuild, rename: Option<cst::SymbolRename>) -> ast::
     }
 }
 
-fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
+fn name<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, name: cst::Name) -> ast::Name<'ast> {
     let range = name.range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
     let id = ctx.s.intern_name.intern(string);
@@ -902,7 +912,7 @@ fn expr_kind<'ast>(
     }
 }
 
-fn lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, lit: cst::Lit) -> ast::Lit {
+fn lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, lit: cst::Lit) -> ast::Lit<'ast> {
     match lit {
         cst::Lit::Null(_) => ast::Lit::Null,
         cst::Lit::Bool(lit) => {
@@ -944,15 +954,16 @@ fn lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, lit: cst::Lit) -> ast::Lit {
     }
 }
 
-fn string_lit(ctx: &mut AstBuild) -> (InternID, bool) {
+//@same problem with using string literal intern pool for values, view ast_parse for more context
+fn string_lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>) -> (ID<InternString<'ast>>, bool) {
     let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
     let id = ctx.s.intern_string.intern(string);
     ctx.string_id += 1;
 
-    if id.index() >= ctx.s.string_is_cstr.len() {
+    if id.raw_index() >= ctx.s.string_is_cstr.len() {
         ctx.s.string_is_cstr.push(c_string);
     } else if c_string {
-        ctx.s.string_is_cstr[id.index()] = true;
+        ctx.s.string_is_cstr[id.raw_index()] = true;
     }
     (id, c_string)
 }

@@ -2,7 +2,8 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::bitset::BitSet;
 use crate::id_impl;
-use crate::intern::{InternID, InternPool};
+use crate::intern::{InternName, InternPool, InternString};
+use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
@@ -10,8 +11,8 @@ use std::hash::{Hash, Hasher};
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
-    pub intern_name: InternPool<'hir>,
-    pub intern_string: InternPool<'hir>,
+    pub intern_name: InternPool<'hir, InternName<'hir>>,
+    pub intern_string: InternPool<'hir, InternString<'hir>>,
     pub string_is_cstr: Vec<bool>,
     pub const_intern: ConstInternPool<'hir>,
     pub procs: Vec<ProcData<'hir>>,
@@ -33,7 +34,7 @@ pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<ProcFlag>,
     pub vis: ast::Vis,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub params: &'hir [Param<'hir>],
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
@@ -44,7 +45,7 @@ id_impl!(ParamID);
 #[derive(Copy, Clone)]
 pub struct Param<'hir> {
     pub mutt: ast::Mut,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub ty: Type<'hir>,
 }
 
@@ -64,7 +65,7 @@ pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<EnumFlag>,
     pub vis: ast::Vis,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Result<BasicInt, ()>,
     pub layout: Eval<(), Layout>,
@@ -73,7 +74,7 @@ pub struct EnumData<'hir> {
 id_impl!(VariantID);
 #[derive(Copy, Clone)]
 pub struct Variant<'hir> {
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub kind: VariantKind,
     pub fields: &'hir [Type<'hir>],
 }
@@ -98,7 +99,7 @@ pub struct StructData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<StructFlag>,
     pub vis: ast::Vis,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
 }
@@ -107,7 +108,7 @@ id_impl!(FieldID);
 #[derive(Copy, Clone)]
 pub struct Field<'hir> {
     pub vis: ast::Vis,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub ty: Type<'hir>,
 }
 
@@ -121,7 +122,7 @@ id_impl!(ConstID);
 pub struct ConstData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
 }
@@ -132,7 +133,7 @@ pub struct GlobalData<'hir> {
     pub attr_set: BitSet<GlobalFlag>,
     pub vis: ast::Vis,
     pub mutt: ast::Mut,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
 }
@@ -231,7 +232,7 @@ id_impl!(LocalID);
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
     pub mutt: ast::Mut,
-    pub name: ast::Name,
+    pub name: ast::Name<'hir>,
     pub ty: Type<'hir>,
     pub value: Option<&'hir Expr<'hir>>,
 }
@@ -292,7 +293,7 @@ pub enum ConstValue<'hir> {
     Int         { val: u64, neg: bool, int_ty: BasicInt },
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
-    String      { id: InternID, c_string: bool },
+    String      { id: ID<InternString<'hir>>, c_string: bool },
     Procedure   { proc_id: ProcID },
     Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
@@ -655,7 +656,7 @@ impl<'hir> ProcData<'hir> {
     pub fn local(&self, id: LocalID) -> &'hir Local<'hir> {
         self.locals[id.index()]
     }
-    pub fn find_param(&self, id: InternID) -> Option<(ParamID, &'hir Param<'hir>)> {
+    pub fn find_param(&self, id: ID<InternName<'hir>>) -> Option<(ParamID, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
                 return Some((ParamID::new(idx), param));
@@ -669,7 +670,10 @@ impl<'hir> EnumData<'hir> {
     pub fn variant(&self, id: VariantID) -> &'hir Variant<'hir> {
         &self.variants[id.index()]
     }
-    pub fn find_variant(&self, id: InternID) -> Option<(VariantID, &'hir Variant<'hir>)> {
+    pub fn find_variant(
+        &self,
+        id: ID<InternName<'hir>>,
+    ) -> Option<(VariantID, &'hir Variant<'hir>)> {
         for (idx, variant) in self.variants.iter().enumerate() {
             if variant.name.id == id {
                 return Some((VariantID::new(idx), variant));
@@ -683,7 +687,7 @@ impl<'hir> StructData<'hir> {
     pub fn field(&self, id: FieldID) -> &'hir Field<'hir> {
         &self.fields[id.index()]
     }
-    pub fn find_field(&self, id: InternID) -> Option<(FieldID, &'hir Field<'hir>)> {
+    pub fn find_field(&self, id: ID<InternName<'hir>>) -> Option<(FieldID, &'hir Field<'hir>)> {
         for (idx, field) in self.fields.iter().enumerate() {
             if field.name.id == id {
                 return Some((FieldID::new(idx), field));

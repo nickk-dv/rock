@@ -3,12 +3,15 @@ mod parser;
 
 use crate::ast::*;
 use crate::error::ResultComp;
-use crate::intern::InternPool;
+use crate::intern::{InternName, InternPool};
 use crate::lexer;
 use crate::session::Session;
 use crate::timer::Timer;
 
-pub fn parse<'ast>(session: &Session, intern_name: InternPool<'ast>) -> ResultComp<Ast<'ast>> {
+pub fn parse<'ast>(
+    session: &Session,
+    intern_name: InternPool<'ast, InternName<'ast>>,
+) -> ResultComp<Ast<'ast>> {
     let t_total = Timer::new();
     let mut state = parser::ParseState::new(intern_name);
 

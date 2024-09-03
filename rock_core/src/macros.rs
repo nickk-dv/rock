@@ -8,6 +8,79 @@ macro_rules! size_assert {
     };
 }
 
+use std::cmp::PartialEq;
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
+
+pub struct ID<T> {
+    raw: u32,
+    phantom: PhantomData<T>,
+}
+
+impl<T> Copy for ID<T> {}
+
+impl<T> Clone for ID<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Hash for ID<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.raw.hash(state);
+    }
+}
+
+impl<T> PartialEq for ID<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl<T> Eq for ID<T> {}
+
+impl<T> ID<T> {
+    pub fn new(values: &impl IndexID<T>) -> ID<T> {
+        ID {
+            raw: values.len() as u32,
+            phantom: PhantomData,
+        }
+    }
+    pub fn raw_index(self) -> usize {
+        self.raw as usize
+    }
+}
+
+pub trait IndexID<T> {
+    fn len(&self) -> usize;
+    fn id_get(&self, id: ID<T>) -> &T;
+    fn id_get_mut(&mut self, id: ID<T>) -> &mut T;
+}
+
+impl<T> IndexID<T> for [T] {
+    fn len(&self) -> usize {
+        self.len()
+    }
+    fn id_get(&self, id: ID<T>) -> &T {
+        &self[id.raw as usize]
+    }
+    fn id_get_mut(&mut self, id: ID<T>) -> &mut T {
+        &mut self[id.raw as usize]
+    }
+}
+
+impl<T> IndexID<T> for Vec<T> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+    fn id_get(&self, id: ID<T>) -> &T {
+        &self[id.raw as usize]
+    }
+    fn id_get_mut(&mut self, id: ID<T>) -> &mut T {
+        &mut self[id.raw as usize]
+    }
+}
+
 /// defines named `ID` newtype
 #[macro_export]
 macro_rules! id_impl {
