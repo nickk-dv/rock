@@ -9,44 +9,44 @@ use crate::text::{self, TextRange};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub struct Session<'a> {
+pub struct Session {
     cwd: PathBuf,
-    modules: Vec<RockModule<'a>>,
-    packages: Vec<RockPackage<'a>>,
+    modules: Vec<RockModule>,
+    packages: Vec<RockPackage>,
 }
 
 id_impl!(PackageID);
-pub struct RockPackage<'a> {
-    pub name_id: ID<InternName<'a>>,
+pub struct RockPackage {
+    pub name_id: ID<InternName>,
     pub root_dir: PathBuf,
-    pub src: RockDirectory<'a>,
+    pub src: RockDirectory,
     manifest: Manifest,
-    dependency_map: HashMap<ID<InternName<'a>>, PackageID>,
+    dependency_map: HashMap<ID<InternName>, PackageID>,
 }
 
-pub struct RockDirectory<'a> {
-    pub name_id: ID<InternName<'a>>,
+pub struct RockDirectory {
+    pub name_id: ID<InternName>,
     pub path: PathBuf,
     modules: Vec<ModuleID>,
-    sub_dirs: Vec<RockDirectory<'a>>,
+    sub_dirs: Vec<RockDirectory>,
 }
 
 id_impl!(ModuleID);
-pub struct RockModule<'a> {
-    pub name_id: ID<InternName<'a>>,
+pub struct RockModule {
+    pub name_id: ID<InternName>,
     pub path: PathBuf,
     pub source: String,
     pub line_ranges: Vec<TextRange>,
     pub package_id: PackageID,
 }
 
-impl<'a> Session<'a> {
+impl Session {
     pub const ROOT_ID: PackageID = PackageID::new(0);
 
     pub fn new(
         building: bool,
         file_cache: Option<&HashMap<PathBuf, String>>,
-    ) -> Result<(Session<'_>, InternPool<'_, InternName<'_>>), ErrorComp> {
+    ) -> Result<(Session, InternPool<'_, InternName>), ErrorComp> {
         session_create(building, file_cache)
     }
 
@@ -67,23 +67,23 @@ impl<'a> Session<'a> {
     }
 }
 
-impl<'a> RockPackage<'a> {
+impl RockPackage {
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }
-    pub fn dependency(&self, name_id: ID<InternName<'a>>) -> Option<PackageID> {
+    pub fn dependency(&self, name_id: ID<InternName>) -> Option<PackageID> {
         self.dependency_map.get(&name_id).copied()
     }
 }
 
-pub enum ModuleOrDirectory<'src, 'a> {
+pub enum ModuleOrDirectory<'src> {
     None,
     Module(ModuleID),
-    Directory(&'src RockDirectory<'a>),
+    Directory(&'src RockDirectory),
 }
 
-impl<'a> RockDirectory<'a> {
-    pub fn find(&self, session: &Session, name_id: ID<InternName<'a>>) -> ModuleOrDirectory {
+impl RockDirectory {
+    pub fn find(&self, session: &Session, name_id: ID<InternName>) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
             let module = session.module(module_id);
             if module.name_id == name_id {
@@ -103,7 +103,7 @@ impl<'a> RockDirectory<'a> {
 fn session_create(
     building: bool,
     file_cache: Option<&HashMap<PathBuf, String>>,
-) -> Result<(Session<'_>, InternPool<'_, InternName<'_>>), ErrorComp> {
+) -> Result<(Session, InternPool<'_, InternName>), ErrorComp> {
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
         modules: Vec::new(),
@@ -156,9 +156,9 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
     Ok((session, intern_name))
 }
 
-fn process_package<'a>(
-    session: &mut Session<'a>,
-    intern_name: &mut InternPool<'a, InternName<'a>>,
+fn process_package(
+    session: &mut Session,
+    intern_name: &mut InternPool<'_, InternName>,
     file_cache: Option<&HashMap<PathBuf, String>>,
     root_dir: &PathBuf,
     dependency: bool,
@@ -245,13 +245,13 @@ fn process_package<'a>(
     Ok(package_id)
 }
 
-fn process_directory<'a>(
-    session: &mut Session<'a>,
-    intern_name: &mut InternPool<'a, InternName<'a>>,
+fn process_directory<'intern>(
+    session: &mut Session,
+    intern_name: &mut InternPool<'intern, InternName>,
     file_cache: Option<&HashMap<PathBuf, String>>,
     package_id: PackageID,
     path: PathBuf,
-) -> Result<RockDirectory<'a>, ErrorComp> {
+) -> Result<RockDirectory, ErrorComp> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = intern_name.intern(filename);
     let mut modules = Vec::new();
@@ -296,9 +296,9 @@ fn process_directory<'a>(
     Ok(directory)
 }
 
-fn process_file<'a>(
-    session: &mut Session<'a>,
-    intern_name: &mut InternPool<'a, InternName<'a>>,
+fn process_file(
+    session: &mut Session,
+    intern_name: &mut InternPool<'_, InternName>,
     file_cache: Option<&HashMap<PathBuf, String>>,
     package_id: PackageID,
     path: PathBuf,

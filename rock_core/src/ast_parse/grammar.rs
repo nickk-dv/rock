@@ -265,14 +265,14 @@ fn import_item<'ast>(
     }))
 }
 
-fn import_symbol<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<ImportSymbol<'ast>, String> {
+fn import_symbol(p: &mut Parser) -> Result<ImportSymbol, String> {
     let name = name(p)?;
     let rename = symbol_rename(p)?;
 
     Ok(ImportSymbol { name, rename })
 }
 
-fn symbol_rename<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<SymbolRename<'ast>, String> {
+fn symbol_rename(p: &mut Parser) -> Result<SymbolRename, String> {
     if p.eat(T![as]) {
         let range = p.peek_range();
         if p.eat(T![_]) {
@@ -302,7 +302,7 @@ fn mutt(p: &mut Parser) -> Mut {
     }
 }
 
-fn name<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Name<'ast>, String> {
+fn name(p: &mut Parser) -> Result<Name, String> {
     let range = p.peek_range();
     p.expect(T![ident])?;
     let string = &p.source[range.as_usize()];
@@ -340,9 +340,9 @@ fn attr_list<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast [Attr<'ast>], S
     Ok(p.state.attrs.take(offset, &mut p.state.arena))
 }
 
-//@those get put into string lit intern pool, which will lean to them being generated
+//@those get put into string lit intern pool, which will lead to them being generated
 // and maybe discarded later, avoid that
-fn attribute_param<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<AttrParam<'ast>, String> {
+fn attribute_param(p: &mut Parser) -> Result<AttrParam, String> {
     let name = name(p)?;
     let value = if p.eat(T![=]) {
         if p.at(T![string_lit]) {
@@ -685,7 +685,7 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
         | T![char_lit]
         | T![string_lit] => {
             let lit = lit(p)?;
-            ExprKind::Lit(lit)
+            ExprKind::Lit { lit }
         }
         T![if] => ExprKind::If { if_: if_(p)? },
         T!['{'] => {
@@ -914,7 +914,7 @@ fn tail_expr<'ast>(
     }
 }
 
-fn lit<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Lit<'ast>, String> {
+fn lit(p: &mut Parser) -> Result<Lit, String> {
     match p.peek() {
         T![null] => {
             p.bump();
@@ -959,7 +959,8 @@ fn lit<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Lit<'ast>, String> {
         T![string_lit] => {
             p.bump();
             let (id, c_string) = p.get_string_lit();
-            Ok(Lit::String { id, c_string })
+            let string_lit = StringLit { id, c_string };
+            Ok(Lit::String(string_lit))
         }
         _ => unreachable!(),
     }
@@ -1110,7 +1111,7 @@ fn primary_pat<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Pat<'ast>, String> 
         | T![char_lit]
         | T![string_lit] => {
             let lit = lit(p)?;
-            PatKind::Lit(lit)
+            PatKind::Lit { lit }
         }
         T![ident] => {
             let path = path(p)?;
@@ -1133,7 +1134,7 @@ fn primary_pat<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Pat<'ast>, String> 
     Ok(pat)
 }
 
-fn binds<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Option<&'ast [Name<'ast>]>, String> {
+fn binds<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Option<&'ast [Name]>, String> {
     if p.at(T!['(']) {
         let names = comma_separated_list!(p, name, names, T!['('], T![')']);
         Ok(Some(names))

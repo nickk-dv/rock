@@ -10,7 +10,7 @@ use crate::timer::Timer;
 
 pub fn parse<'ast>(
     session: &Session,
-    intern_name: InternPool<'ast, InternName<'ast>>,
+    intern_name: InternPool<'ast, InternName>,
 ) -> ResultComp<Ast<'ast>> {
     let t_total = Timer::new();
     let mut state = parser::ParseState::new(intern_name);

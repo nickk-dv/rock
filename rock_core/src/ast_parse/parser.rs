@@ -1,7 +1,7 @@
 use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
-use crate::intern::{InternName, InternPool, InternString};
+use crate::intern::{InternLit, InternName, InternPool};
 use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::temp_buffer::TempBuffer;
@@ -22,19 +22,19 @@ pub struct Parser<'ast, 'src, 'state> {
 
 pub struct ParseState<'ast> {
     pub arena: Arena<'ast>,
-    pub intern_name: InternPool<'ast, InternName<'ast>>,
-    pub intern_string: InternPool<'ast, InternString<'ast>>,
     pub string_is_cstr: Vec<bool>,
+    pub intern_lit: InternPool<'ast, InternLit>,
+    pub intern_name: InternPool<'ast, InternName>,
     pub modules: Vec<Module<'ast>>,
     pub errors: Vec<ErrorComp>,
     pub items: TempBuffer<Item<'ast>>,
     pub attrs: TempBuffer<Attr<'ast>>,
-    pub attr_params: TempBuffer<AttrParam<'ast>>,
+    pub attr_params: TempBuffer<AttrParam>,
     pub params: TempBuffer<Param<'ast>>,
     pub variants: TempBuffer<Variant<'ast>>,
     pub fields: TempBuffer<Field<'ast>>,
-    pub import_symbols: TempBuffer<ImportSymbol<'ast>>,
-    pub names: TempBuffer<Name<'ast>>,
+    pub import_symbols: TempBuffer<ImportSymbol>,
+    pub names: TempBuffer<Name>,
     pub types: TempBuffer<Type<'ast>>,
     pub stmts: TempBuffer<Stmt<'ast>>,
     pub branches: TempBuffer<Branch<'ast>>,
@@ -134,9 +134,9 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
         value
     }
 
-    pub fn get_string_lit(&mut self) -> (ID<InternString<'ast>>, bool) {
+    pub fn get_string_lit(&mut self) -> (ID<InternLit>, bool) {
         let (string, c_string) = self.tokens.string(self.string_id as usize);
-        let id = self.state.intern_string.intern(string);
+        let id = self.state.intern_lit.intern(string);
 
         if id.raw_index() >= self.state.string_is_cstr.len() {
             self.state.string_is_cstr.push(c_string);
@@ -150,12 +150,12 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
 }
 
 impl<'ast> ParseState<'ast> {
-    pub fn new(intern_name: InternPool<'ast, InternName<'ast>>) -> ParseState<'ast> {
+    pub fn new(intern_name: InternPool<'ast, InternName>) -> ParseState<'ast> {
         ParseState {
             arena: Arena::new(),
-            intern_name,
-            intern_string: InternPool::new(),
             string_is_cstr: Vec::with_capacity(1024),
+            intern_lit: InternPool::new(),
+            intern_name,
             modules: Vec::new(),
             errors: Vec::new(),
             items: TempBuffer::new(128),
@@ -180,9 +180,9 @@ impl<'ast> ParseState<'ast> {
     pub fn result(self) -> ResultComp<Ast<'ast>> {
         let ast = Ast {
             arena: self.arena,
-            intern_name: self.intern_name,
-            intern_string: self.intern_string,
             string_is_cstr: self.string_is_cstr,
+            intern_lit: self.intern_lit,
+            intern_name: self.intern_name,
             modules: self.modules,
         };
         if self.errors.is_empty() {

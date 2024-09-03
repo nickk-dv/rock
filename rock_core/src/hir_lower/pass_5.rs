@@ -294,15 +294,15 @@ impl<'hir> BlockResult<'hir> {
 // `if` check performance versus memory usage tradeoff.
 // It might be still good to include errored expressions with correct range.
 #[must_use]
-pub fn typecheck_expr<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+pub fn typecheck_expr<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
-    expr: &ast::Expr<'ast>,
+    expr: &ast::Expr,
 ) -> ExprResult<'hir> {
     let expr_res = match expr.kind {
-        ast::ExprKind::Lit(lit) => typecheck_lit(emit, expect, lit),
+        ast::ExprKind::Lit { lit } => typecheck_lit(emit, expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None).into_type_result()
@@ -356,10 +356,10 @@ pub fn typecheck_expr<'hir, 'ast>(
     expr_res.into_expr_result(emit, expr.range)
 }
 
-fn typecheck_lit<'hir, 'ast>(
+fn typecheck_lit<'hir>(
     emit: &mut HirEmit<'hir>,
     expect: Expectation<'hir>,
-    lit: ast::Lit<'ast>,
+    lit: ast::Lit,
 ) -> TypeResult<'hir> {
     let (value, ty) = match lit {
         ast::Lit::Null => {
@@ -388,9 +388,9 @@ fn typecheck_lit<'hir, 'ast>(
             let value = hir::ConstValue::Char { val };
             (value, hir::Type::Basic(BasicType::Char))
         }
-        ast::Lit::String { id, c_string } => {
-            let value = hir::ConstValue::String { id, c_string };
-            let string_ty = alloc_string_lit_type(emit, c_string);
+        ast::Lit::String(string_lit) => {
+            let value = hir::ConstValue::String { string_lit };
+            let string_ty = alloc_string_lit_type(emit, string_lit);
             (value, string_ty)
         }
     };
@@ -423,8 +423,11 @@ pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
     }
 }
 
-pub fn alloc_string_lit_type<'hir>(emit: &mut HirEmit<'hir>, c_string: bool) -> hir::Type<'hir> {
-    if c_string {
+pub fn alloc_string_lit_type<'hir>(
+    emit: &mut HirEmit<'hir>,
+    string_lit: ast::StringLit,
+) -> hir::Type<'hir> {
+    if string_lit.c_string {
         let byte = emit.arena.alloc(hir::Type::Basic(BasicType::U8));
         hir::Type::Reference(byte, ast::Mut::Immutable)
     } else {
@@ -693,16 +696,16 @@ impl<'hir> PatResult<'hir> {
     }
 }
 
-fn typecheck_pat<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_pat<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
-    pat: &ast::Pat<'ast>,
+    pat: &ast::Pat,
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
-        ast::PatKind::Lit(lit) => typecheck_pat_lit(emit, expect, lit),
+        ast::PatKind::Lit { lit } => typecheck_pat_lit(emit, expect, lit),
         ast::PatKind::Item { path, binds } => {
             typecheck_pat_item(hir, emit, proc, path, binds, pat.range)
         }
@@ -729,11 +732,11 @@ fn typecheck_pat_lit<'hir>(
     PatResult::new(hir::Pat::Lit(value), lit_res.ty)
 }
 
-fn typecheck_pat_item<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_pat_item<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    path: &'ast ast::Path<'ast>,
+    path: &ast::Path,
     binds: Option<&[ast::Name]>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
@@ -1025,12 +1028,12 @@ fn check_match_exhaust<'hir>(
     }
 }
 
-fn typecheck_field<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_field<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr,
-    name: ast::Name<'ast>,
+    name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
     let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
@@ -1060,11 +1063,11 @@ impl<'hir> FieldResult<'hir> {
     }
 }
 
-fn check_field_from_type<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn check_field_from_type<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     origin_id: ModuleID,
-    name: ast::Name<'ast>,
+    name: ast::Name,
     ty: hir::Type<'hir>,
 ) -> Option<FieldResult<'hir>> {
     let (ty, deref) = match ty {
@@ -1122,11 +1125,11 @@ fn check_field_from_type<'hir, 'ast>(
     }
 }
 
-fn check_field_from_struct<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn check_field_from_struct<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit,
     origin_id: ModuleID,
-    name: ast::Name<'ast>,
+    name: ast::Name,
     struct_id: hir::StructID,
 ) -> Option<(hir::FieldID, &'hir hir::Field<'hir>)> {
     let data = hir.registry().struct_data(struct_id);
@@ -1550,11 +1553,11 @@ fn typecheck_sizeof<'hir>(
     TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
 }
 
-fn typecheck_item<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_item<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    path: &'ast ast::Path<'ast>,
+    path: &ast::Path,
     input: Option<&ast::Input>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
@@ -1674,12 +1677,12 @@ pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
     emit.error(ErrorComp::new("cannot infer struct type", src, None))
 }
 
-fn typecheck_struct_init<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_struct_init<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
-    struct_init: &ast::StructInit<'ast>,
+    struct_init: &ast::StructInit,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_id = match struct_init.path {
@@ -2161,12 +2164,12 @@ fn check_match_compatibility<'hir>(
     }
 }
 
-fn typecheck_block<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_block<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
-    block: ast::Block<'ast>,
+    block: ast::Block,
     enter: BlockEnter,
 ) -> BlockResult<'hir> {
     proc.push_block(enter);
@@ -2424,11 +2427,11 @@ fn typecheck_return<'hir>(
 }
 
 /// returns `None` on invalid use of `defer`
-fn typecheck_defer<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_defer<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    block: ast::Block<'ast>,
+    block: ast::Block,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
@@ -2464,11 +2467,11 @@ fn typecheck_defer<'hir, 'ast>(
     }
 }
 
-fn typecheck_loop<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_loop<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    loop_: &ast::Loop<'ast>,
+    loop_: &ast::Loop,
 ) -> &'hir hir::Loop<'hir> {
     let kind = match loop_.kind {
         ast::LoopKind::Loop => hir::LoopKind::Loop,
@@ -2522,11 +2525,11 @@ fn typecheck_loop<'hir, 'ast>(
     emit.arena.alloc(loop_)
 }
 
-fn typecheck_local<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+fn typecheck_local<'hir>(
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    local: &ast::Local<'ast>,
+    local: &ast::Local,
 ) -> hir::LocalID {
     //@theres no `nice` way to find both existing name from global (hir) scope
     // and proc_scope, those are so far disconnected,
@@ -3266,12 +3269,12 @@ pub enum ValueID {
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
-    hir: &HirData<'hir, 'ast>,
+    hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,
-    path: &'ast ast::Path<'ast>,
-) -> (ValueID, &'ast [ast::Name<'ast>]) {
+    path: &ast::Path<'ast>,
+) -> (ValueID, &'ast [ast::Name]) {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let value_id = match resolved {

@@ -517,16 +517,6 @@ fn add_variant_const_dependency<'hir>(
     Ok(())
 }
 
-#[repr(i8)]
-enum G {
-    One,
-    Two(bool) = -1,
-}
-
-fn testing() {
-    let l = G::Two as u8;
-}
-
 fn add_const_var_const_dependency<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
@@ -710,7 +700,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
     expr: &'ast ast::Expr<'ast>,
 ) -> Result<(), TreeNodeID> {
     match expr.kind {
-        ast::ExprKind::Lit(_) => Ok(()),
+        ast::ExprKind::Lit { .. } => Ok(()),
         ast::ExprKind::If { .. } => {
             error_cannot_use_in_constants(emit, origin_id, expr.range, "if");
             Err(parent_id)

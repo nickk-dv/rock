@@ -3,21 +3,21 @@ use crate::ast;
 use crate::config::TargetTriple;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
-use crate::intern::{InternName, InternPool, InternString, Interned};
+use crate::intern::{InternLit, InternName, InternPool};
 use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-pub struct HirData<'hir, 'ast: 'hir> {
-    modules: Vec<Module<'hir>>,
+pub struct HirData<'hir, 'ast> {
+    modules: Vec<Module>,
     registry: Registry<'hir, 'ast>,
     ast: ast::Ast<'ast>,
     target: TargetTriple,
 }
 
-pub struct Module<'hir> {
-    symbols: HashMap<ID<InternName<'hir>>, Symbol>,
+pub struct Module {
+    symbols: HashMap<ID<InternName>, Symbol>,
 }
 
 #[rustfmt::skip]
@@ -81,7 +81,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     fn module(&self, id: ModuleID) -> &Module {
         &self.modules[id.index()]
     }
-    fn module_mut(&mut self, id: ModuleID) -> &mut Module<'hir> {
+    fn module_mut(&mut self, id: ModuleID) -> &mut Module {
         &mut self.modules[id.index()]
     }
 
@@ -92,14 +92,14 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         &mut self.registry
     }
 
-    pub fn name_str(&self, id: ID<InternName<'ast>>) -> &str {
-        self.ast.intern_name.get(id).as_str()
+    pub fn name_str(&self, id: ID<InternName>) -> &str {
+        self.ast.intern_name.get(id)
     }
-    pub fn intern_name(&mut self) -> &mut InternPool<'ast, InternName<'ast>> {
+    pub fn intern_lit(&self) -> &InternPool<'ast, InternLit> {
+        &self.ast.intern_lit
+    }
+    pub fn intern_name(&mut self) -> &mut InternPool<'ast, InternName> {
         &mut self.ast.intern_name
-    }
-    pub fn intern_string(&self) -> &InternPool<'ast, InternString<'ast>> {
-        &self.ast.intern_string
     }
     pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
         self.ast.modules[module_id.index()]
@@ -108,16 +108,12 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         self.target
     }
 
-    pub fn add_symbol(&mut self, origin_id: ModuleID, id: ID<InternName<'hir>>, symbol: Symbol) {
+    pub fn add_symbol(&mut self, origin_id: ModuleID, id: ID<InternName>, symbol: Symbol) {
         let origin = self.module_mut(origin_id);
         origin.symbols.insert(id, symbol);
     }
 
-    pub fn symbol_defined(
-        &self,
-        origin_id: ModuleID,
-        id: ID<InternName<'hir>>,
-    ) -> Option<SymbolKind> {
+    pub fn symbol_defined(&self, origin_id: ModuleID, id: ID<InternName>) -> Option<SymbolKind> {
         let origin = self.module(origin_id);
 
         match origin.symbols.get(&id).cloned() {
@@ -129,7 +125,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     pub fn symbol_in_scope_source(
         &self,
         origin_id: ModuleID,
-        id: ID<InternName<'hir>>,
+        id: ID<InternName>,
     ) -> Option<SourceRange> {
         let origin = self.module(origin_id);
         let symbol = origin.symbols.get(&id).cloned()?;
@@ -504,9 +500,9 @@ impl<'hir> HirEmit<'hir> {
         if errors.is_empty() {
             let hir = hir::Hir {
                 arena: self.arena,
-                intern_name: hir.ast.intern_name,
-                intern_string: hir.ast.intern_string,
                 string_is_cstr: hir.ast.string_is_cstr,
+                intern_lit: hir.ast.intern_lit,
+                intern_name: hir.ast.intern_name,
                 const_intern: self.const_intern,
                 procs: hir.registry.hir_procs,
                 enums: hir.registry.hir_enums,

@@ -1,17 +1,20 @@
 use crate::arena::Arena;
-use crate::macros::{IndexID, ID};
+use crate::macros::ID;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
 use std::marker::PhantomData;
 
-pub struct InternPool<'intern, T: Interned<'intern>> {
+pub struct InternLit;
+pub struct InternName;
+
+pub struct InternPool<'intern, T> {
     arena: Arena<'intern>,
-    values: Vec<T>,
+    values: Vec<&'intern str>,
     intern_map: HashMap<&'intern str, ID<T>, Fnv1aHasher>,
     phantom: PhantomData<T>,
 }
 
-impl<'intern, T: Interned<'intern>> InternPool<'intern, T> {
+impl<'intern, T> InternPool<'intern, T> {
     pub fn new() -> InternPool<'intern, T> {
         InternPool {
             arena: Arena::new(),
@@ -25,50 +28,21 @@ impl<'intern, T: Interned<'intern>> InternPool<'intern, T> {
         if let Some(id) = self.intern_map.get(string).cloned() {
             return id;
         }
-        let id = ID::new(&self.values);
+        let id = ID::new_raw(self.values.len());
         let str = self.arena.alloc_str(string);
-        self.values.push(T::from_str(str));
+        self.values.push(str);
         self.intern_map.insert(str, id);
         id
     }
 
-    pub fn get(&self, id: ID<T>) -> &T {
-        self.values.id_get(id)
+    pub fn get(&self, id: ID<T>) -> &'intern str {
+        self.values[id.raw_index()]
     }
-    pub fn get_all(&self) -> &[T] {
+    pub fn get_all(&self) -> &[&'intern str] {
         &self.values
     }
-    pub fn get_id(&self, value: T) -> Option<ID<T>> {
-        self.intern_map.get(value.as_str()).copied()
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct InternName<'intern>(&'intern str);
-
-#[derive(Copy, Clone)]
-pub struct InternString<'intern>(&'intern str);
-
-pub trait Interned<'intern> {
-    fn as_str(&self) -> &'intern str;
-    fn from_str(string: &'intern str) -> Self;
-}
-
-impl<'intern> Interned<'intern> for InternName<'intern> {
-    fn as_str(&self) -> &'intern str {
-        self.0
-    }
-    fn from_str(string: &'intern str) -> Self {
-        InternName(string)
-    }
-}
-
-impl<'intern> Interned<'intern> for InternString<'intern> {
-    fn as_str(&self) -> &'intern str {
-        self.0
-    }
-    fn from_str(string: &'intern str) -> Self {
-        InternString(string)
+    pub fn get_id(&self, string: &str) -> Option<ID<T>> {
+        self.intern_map.get(string).copied()
     }
 }
 

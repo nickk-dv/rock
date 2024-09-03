@@ -25,11 +25,7 @@ impl<T> Clone for ID<T> {
     }
 }
 
-impl<T> Hash for ID<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
-    }
-}
+impl<T> Eq for ID<T> {}
 
 impl<T> PartialEq for ID<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -37,12 +33,22 @@ impl<T> PartialEq for ID<T> {
     }
 }
 
-impl<T> Eq for ID<T> {}
+impl<T> Hash for ID<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.raw.hash(state);
+    }
+}
 
 impl<T> ID<T> {
     pub fn new(values: &impl IndexID<T>) -> ID<T> {
         ID {
             raw: values.len() as u32,
+            phantom: PhantomData,
+        }
+    }
+    pub fn new_raw(index: usize) -> ID<T> {
+        ID {
+            raw: index as u32,
             phantom: PhantomData,
         }
     }

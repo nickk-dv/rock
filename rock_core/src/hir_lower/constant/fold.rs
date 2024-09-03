@@ -3,7 +3,6 @@ use crate::error::SourceRange;
 use crate::hir;
 use crate::hir_lower::errors as err;
 use crate::hir_lower::hir_build::{HirData, HirEmit};
-use crate::intern::Interned;
 
 pub fn fold_const_expr<'hir>(
     hir: &HirData<'hir, '_>,
@@ -116,12 +115,13 @@ fn fold_slice_field<'hir>(
     let target = fold_const_expr(hir, emit, target_src, target)?;
 
     match target {
-        hir::ConstValue::String { id, c_string } => match field {
+        hir::ConstValue::String { string_lit } => match field {
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
-                if !c_string {
-                    let string = hir.intern_string().get(id);
-                    let len = string.as_str().len();
+                if !string_lit.c_string {
+                    let string = hir.intern_lit().get(string_lit.id);
+                    let len = string.len();
+
                     Ok(hir::ConstValue::Int {
                         val: len as u64,
                         neg: false,
