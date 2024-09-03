@@ -3,7 +3,6 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
-use rock_core::intern::InternID;
 
 pub fn codegen_expr_value<'c>(
     cg: &Codegen<'c>,
@@ -166,7 +165,7 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Int { val, int_ty, .. } => codegen_const_int(cg, val, int_ty),
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
-        hir::ConstValue::String { id, c_string } => codegen_const_string(cg, id, c_string),
+        hir::ConstValue::String { string_lit } => codegen_const_string(cg, string_lit),
         hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
         hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
@@ -200,13 +199,14 @@ fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
     llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
 }
 
-fn codegen_const_string(cg: &Codegen, id: InternID, c_string: bool) -> llvm::Value {
-    let global_ptr = cg.string_lits[id.index()].as_ptr();
+fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value {
+    let string_idx = string_lit.id.raw_index();
+    let global_ptr = cg.string_lits[string_idx].as_ptr();
 
-    if c_string {
+    if string_lit.c_string {
         global_ptr.as_val()
     } else {
-        let string = cg.hir.intern_string.get_str(id);
+        let string = cg.hir.intern_lit.get(string_lit.id);
         let slice_len = cg.const_usize(string.len() as u64);
         llvm::const_struct_inline(&[global_ptr.as_val(), slice_len], false)
     }

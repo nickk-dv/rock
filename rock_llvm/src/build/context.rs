@@ -85,7 +85,7 @@ impl<'c> Codegen<'c> {
             structs: Vec::with_capacity(hir.structs.len()),
             consts: Vec::with_capacity(hir.consts.len()),
             globals: Vec::with_capacity(hir.globals.len()),
-            string_lits: Vec::with_capacity(hir.intern_string.get_all_strings().len()),
+            string_lits: Vec::with_capacity(hir.intern_lit.get_all().len()),
             hir,
             cache,
         }

@@ -5,7 +5,7 @@ use rock_core::ast_parse;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::fs_env;
 use rock_core::hir_lower;
-use rock_core::intern::InternPool;
+use rock_core::intern::{InternName, InternPool};
 use rock_core::package;
 use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
 use rock_core::package::semver::Semver;
@@ -129,7 +129,7 @@ fn check() -> Result<(), ErrorComp> {
 
     fn check_impl(
         session: &Session,
-        intern_name: InternPool,
+        intern_name: InternPool<'_, InternName>,
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
         let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
@@ -145,7 +145,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 
     fn build_impl(
         session: &Session,
-        intern_name: InternPool,
+        intern_name: InternPool<'_, InternName>,
         data: CommandBuild,
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
@@ -171,7 +171,7 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
 
     fn run_impl(
         session: &Session,
-        intern_name: InternPool,
+        intern_name: InternPool<'_, InternName>,
         data: CommandRun,
     ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
         let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;

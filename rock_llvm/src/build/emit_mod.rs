@@ -21,7 +21,7 @@ pub fn codegen_module<'c>(
 }
 
 fn codegen_string_lits(cg: &mut Codegen) {
-    for (idx, &string) in cg.hir.intern_string.get_all_strings().iter().enumerate() {
+    for (idx, &string) in cg.hir.intern_lit.get_all().iter().enumerate() {
         let c_string = cg.hir.string_is_cstr[idx];
         let str_val = llvm::const_string(string, c_string);
         let str_ty = llvm::typeof_value(str_val);
@@ -97,7 +97,7 @@ fn codegen_function_values(cg: &mut Codegen) {
         let is_main = data.attr_set.contains(hir::ProcFlag::Main);
 
         let name = if is_external || is_main {
-            cg.hir.intern_name.get_str(data.name.id)
+            cg.hir.intern_name.get(data.name.id)
         } else {
             "rock_proc"
         };
