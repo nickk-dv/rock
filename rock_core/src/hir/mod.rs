@@ -74,15 +74,18 @@ id_impl!(VariantID);
 #[derive(Copy, Clone)]
 pub struct Variant<'hir> {
     pub name: ast::Name,
-    pub kind: VariantKind<'hir>,
+    pub kind: VariantKind,
     pub fields: &'hir [Type<'hir>],
 }
 
 #[derive(Copy, Clone)]
-pub enum VariantKind<'hir> {
-    Default(Eval<(), ConstValue<'hir>>),
+pub enum VariantKind {
+    Default(VariantEvalID),
     Constant(ConstEvalID),
 }
+
+id_impl!(VariantEvalID);
+pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
 
 #[repr(u32)]
 #[derive(Copy, Clone, PartialEq)]

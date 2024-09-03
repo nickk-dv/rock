@@ -77,6 +77,10 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
         }
     }
 
+    pub fn reset_origin(&mut self, origin_id: ModuleID) {
+        self.origin_id = origin_id;
+    }
+
     pub fn reset(
         &mut self,
         origin_id: ModuleID,

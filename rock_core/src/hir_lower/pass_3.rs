@@ -225,11 +225,11 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
         } else {
             let variant = match variant.kind {
                 ast::VariantKind::Default => {
-                    let eval = hir::Eval::Unresolved(());
+                    let eval_id = hir.registry_mut().add_variant_eval();
 
                     hir::Variant {
                         name: variant.name,
-                        kind: hir::VariantKind::Default(eval),
+                        kind: hir::VariantKind::Default(eval_id),
                         fields: &[],
                     }
                 }
@@ -244,7 +244,7 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
                     }
                 }
                 ast::VariantKind::HasValues(types) => {
-                    let eval = hir::Eval::Unresolved(());
+                    let eval_id = hir.registry_mut().add_variant_eval();
 
                     let mut fields = Vec::with_capacity(types.len());
                     for ty in types {
@@ -255,7 +255,7 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
 
                     hir::Variant {
                         name: variant.name,
-                        kind: hir::VariantKind::Default(eval),
+                        kind: hir::VariantKind::Default(eval_id),
                         fields,
                     }
                 }
@@ -291,11 +291,14 @@ fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>
     }
 
     if tag_ty.is_err() {
-        for variant in unique.iter_mut() {
-            match &mut variant.kind {
-                hir::VariantKind::Default(value) => *value = hir::Eval::ResolvedError,
+        for variant in unique.iter() {
+            match variant.kind {
+                hir::VariantKind::Default(eval_id) => {
+                    let eval = hir.registry_mut().variant_eval_mut(eval_id);
+                    *eval = hir::Eval::ResolvedError;
+                }
                 hir::VariantKind::Constant(eval_id) => {
-                    let (eval, _) = hir.registry_mut().const_eval_mut(*eval_id);
+                    let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
                     *eval = hir::Eval::ResolvedError;
                 }
             }

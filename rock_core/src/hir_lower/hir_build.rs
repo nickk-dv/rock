@@ -50,6 +50,7 @@ pub struct Registry<'hir, 'ast> {
     hir_globals: Vec<hir::GlobalData<'hir>>,
     hir_imports: Vec<hir::ImportData>,
     const_evals: Vec<(hir::ConstEval<'ast>, ModuleID)>,
+    variant_evals: Vec<hir::VariantEval<'hir>>,
 }
 
 pub struct HirEmit<'hir> {
@@ -240,6 +241,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             }
         }
 
+        //@assumes enums have on average 4 explicit constants (depends on the project)
         let consteval_count = enum_count * 4 + const_count + global_count;
 
         Registry {
@@ -256,6 +258,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             hir_globals: Vec::with_capacity(global_count),
             hir_imports: Vec::with_capacity(import_count),
             const_evals: Vec::with_capacity(consteval_count),
+            variant_evals: Vec::with_capacity(0), //@infer?
         }
     }
 
@@ -336,6 +339,13 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id
     }
 
+    pub fn add_variant_eval(&mut self) -> hir::VariantEvalID {
+        let id = hir::VariantEvalID::new(self.variant_evals.len());
+        let eval = hir::VariantEval::Unresolved(());
+        self.variant_evals.push(eval);
+        id
+    }
+
     pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
         (0..self.hir_procs.len()).map(hir::ProcID::new)
     }
@@ -398,6 +408,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn const_eval(&self, id: hir::ConstEvalID) -> &(hir::ConstEval<'ast>, ModuleID) {
         &self.const_evals[id.index()]
     }
+    pub fn variant_eval(&self, id: hir::VariantEvalID) -> &hir::VariantEval<'hir> {
+        &self.variant_evals[id.index()]
+    }
 
     pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
         &mut self.hir_procs[id.index()]
@@ -419,6 +432,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id: hir::ConstEvalID,
     ) -> &mut (hir::ConstEval<'ast>, ModuleID) {
         &mut self.const_evals[id.index()]
+    }
+    pub fn variant_eval_mut(&mut self, id: hir::VariantEvalID) -> &mut hir::VariantEval<'hir> {
+        &mut self.variant_evals[id.index()]
     }
 }
 

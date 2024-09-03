@@ -30,9 +30,12 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
             let variant_id = hir::VariantID::new(idx);
 
             let unresolved = match variant.kind {
-                hir::VariantKind::Default(eval) => eval.is_unresolved(),
+                hir::VariantKind::Default(eval_id) => {
+                    let eval = *hir.registry().variant_eval(eval_id);
+                    eval.is_unresolved()
+                }
                 hir::VariantKind::Constant(eval_id) => {
-                    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+                    let (eval, _) = *hir.registry().const_eval(eval_id);
                     eval.is_unresolved()
                 }
             };
@@ -443,20 +446,43 @@ fn add_variant_tag_const_dependency<'hir>(
 ) -> Result<(), TreeNodeID> {
     let data = hir.registry().enum_data(enum_id);
     match data.variant(variant_id).kind {
-        hir::VariantKind::Default(eval) => match eval {
-            hir::Eval::Unresolved(_) => {
-                if variant_id.index() > 0 {
-                    let prev_id = hir::VariantID::new(variant_id.index() - 1);
-                    let node_id =
-                        tree.add_child(parent_id, ConstDependency::EnumVariant(enum_id, prev_id));
-                    check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
-                    add_variant_tag_const_dependency(hir, emit, tree, node_id, enum_id, prev_id)?;
+        hir::VariantKind::Default(eval_id) => {
+            let eval = *hir.registry().variant_eval(eval_id);
+            match eval {
+                hir::Eval::Unresolved(_) => {
+                    if variant_id.index() > 0 {
+                        let prev_id = hir::VariantID::new(variant_id.index() - 1);
+                        let prev = data.variant(prev_id);
+
+                        let unresolved = match prev.kind {
+                            hir::VariantKind::Default(eval_id) => {
+                                let eval = *hir.registry().variant_eval(eval_id);
+                                eval.is_unresolved()
+                            }
+                            hir::VariantKind::Constant(eval_id) => {
+                                let (eval, _) = *hir.registry().const_eval(eval_id);
+                                eval.is_unresolved()
+                            }
+                        };
+
+                        if unresolved {
+                            let node_id = tree.add_child(
+                                parent_id,
+                                ConstDependency::EnumVariant(enum_id, prev_id),
+                            );
+                            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+
+                            add_variant_tag_const_dependency(
+                                hir, emit, tree, node_id, enum_id, prev_id,
+                            )?;
+                        }
+                    }
+                    Ok(())
                 }
-                Ok(())
+                hir::Eval::Resolved(_) => Ok(()),
+                hir::Eval::ResolvedError => Err(parent_id),
             }
-            hir::Eval::Resolved(_) => Ok(()),
-            hir::Eval::ResolvedError => Err(parent_id),
-        },
+        }
         hir::VariantKind::Constant(eval_id) => {
             let (eval, origin_id) = *hir.registry().const_eval(eval_id);
             match eval {
@@ -471,7 +497,8 @@ fn add_variant_tag_const_dependency<'hir>(
     }
 }
 
-//@add variant as dependency, used in expr, is wrong!
+//@verify correctness
+// adds tag dependency and type usage of each inner field value
 fn add_variant_const_dependency<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
@@ -480,25 +507,24 @@ fn add_variant_const_dependency<'hir>(
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
 ) -> Result<(), TreeNodeID> {
+    add_variant_tag_const_dependency(hir, emit, tree, parent_id, enum_id, variant_id)?;
+
     let data = hir.registry().enum_data(enum_id);
-    let eval_id = match data.variant(variant_id).kind {
-        hir::VariantKind::Default(_) => unreachable!(),
-        hir::VariantKind::Constant(eval_id) => eval_id,
-    };
-    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
-
-    match eval {
-        hir::ConstEval::Unresolved(expr) => {
-            let node_id =
-                tree.add_child(parent_id, ConstDependency::EnumVariant(enum_id, variant_id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
-
-            add_expr_const_dependencies(hir, emit, tree, node_id, origin_id, expr.0)?;
-            Ok(())
-        }
-        hir::ConstEval::ResolvedError => Err(parent_id),
-        hir::ConstEval::Resolved(_) => Ok(()),
+    let variant = data.variant(variant_id);
+    for ty in variant.fields {
+        add_type_usage_const_dependencies(hir, emit, tree, parent_id, *ty)?;
     }
+    Ok(())
+}
+
+#[repr(i8)]
+enum G {
+    One,
+    Two(bool) = -1,
+}
+
+fn testing() {
+    let l = G::Two as u8;
 }
 
 fn add_const_var_const_dependency<'hir>(
@@ -869,28 +895,28 @@ fn resolve_const_dependency_tree<'hir>(
                 let expect = Expectation::HasType(hir::Type::Basic(tag_ty.into_basic()), None);
 
                 match variant.kind {
-                    hir::VariantKind::Default(eval) => {
+                    hir::VariantKind::Default(eval_id) => {
                         if variant_id.index() == 0 {
                             let zero = hir::ConstValue::Int {
                                 val: 0,
                                 neg: false,
                                 int_ty: tag_ty,
                             };
-                            let new_eval: hir::Eval<(), hir::ConstValue> =
-                                hir::Eval::Resolved(zero);
-                            //@cannot mutate variant!
+
+                            let eval = hir.registry_mut().variant_eval_mut(eval_id);
+                            *eval = hir::Eval::Resolved(zero);
                         } else {
                             let prev_id = hir::VariantID::new(variant_id.index() - 1);
                             let prev = data.variant(prev_id);
 
                             let prev_value = match prev.kind {
-                                hir::VariantKind::Default(eval) => eval.get_resolved(),
+                                hir::VariantKind::Default(eval_id) => {
+                                    let eval = hir.registry().variant_eval(eval_id);
+                                    eval.get_resolved()
+                                }
                                 hir::VariantKind::Constant(eval_id) => {
                                     let (eval, _) = hir.registry().const_eval(eval_id);
-                                    match eval.get_resolved() {
-                                        Ok(value_id) => Ok(emit.const_intern.get(value_id)),
-                                        Err(()) => Err(()),
-                                    }
+                                    eval.get_resolved().map(|id| emit.const_intern.get(id))
                                 }
                             };
 
@@ -906,9 +932,8 @@ fn resolve_const_dependency_tree<'hir>(
                                 Err(()) => Err(()),
                             };
 
-                            let new_eval: hir::Eval<(), hir::ConstValue> =
-                                hir::Eval::from_res(value_res);
-                            //@cannot mutate variant!
+                            let eval = hir.registry_mut().variant_eval_mut(eval_id);
+                            *eval = hir::Eval::from_res(value_res);
                         }
                     }
                     hir::VariantKind::Constant(eval_id) => {
@@ -960,18 +985,14 @@ fn resolve_and_update_const_eval<'hir>(
     expect: Expectation<'hir>,
 ) {
     let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+    proc.reset_origin(origin_id);
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
             let value_res = resolve_const_expr(hir, emit, proc, origin_id, expect, expr);
+            let value_res = value_res.map(|v| emit.const_intern.intern(v));
             let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
-
-            if let Ok(value) = value_res {
-                let value_id = emit.const_intern.intern(value);
-                *eval = hir::ConstEval::Resolved(value_id);
-            } else {
-                *eval = hir::ConstEval::ResolvedError;
-            }
+            *eval = hir::Eval::from_res(value_res);
         }
         _ => panic!("calling `resolve_const_expr` on already resolved expr"),
     };
