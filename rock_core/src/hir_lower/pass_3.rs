@@ -191,12 +191,10 @@ pub fn process_proc_data<'hir>(
         }
     }
 
-    hir.registry_mut().proc_data_mut(id).params = emit.arena.alloc_slice(&unique);
-    hir.registry_mut().proc_data_mut(id).return_ty = if let Some(ret_ty) = item.return_ty {
-        type_resolve_delayed(hir, emit, origin_id, ret_ty)
-    } else {
-        hir::Type::Basic(ast::BasicType::Void)
-    }
+    let return_ty = type_resolve_delayed(hir, emit, origin_id, item.return_ty);
+    let data = hir.registry_mut().proc_data_mut(id);
+    data.params = emit.arena.alloc_slice(&unique);
+    data.return_ty = return_ty;
 }
 
 fn process_enum_data<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>, id: hir::EnumID) {

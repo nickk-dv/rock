@@ -130,9 +130,7 @@ fn proc_item(p: &mut Parser, m: Marker) {
     } else {
         p.error_recover("expected parameter list", RECOVER_PARAM_LIST);
     }
-    if p.eat(T![->]) {
-        ty(p);
-    }
+    ty(p);
     if p.at(T!['{']) {
         block(p, SyntaxKind::BLOCK);
     } else if !p.eat(T![;]) {

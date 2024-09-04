@@ -246,7 +246,7 @@ fn proc_item<'ast>(
     let params = ctx.s.params.take(offset, &mut ctx.s.arena);
 
     let is_variadic = param_list.is_variadic(ctx.tree);
-    let return_ty = item.return_ty(ctx.tree).map(|t| ty(ctx, t));
+    let return_ty = ty(ctx, item.return_ty(ctx.tree).unwrap());
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
     let proc_item = ast::ProcItem {

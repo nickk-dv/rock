@@ -87,14 +87,16 @@ fn proc_item<'ast>(
     }
     p.expect(T![')'])?;
     let params = p.state.params.take(offset, &mut p.state.arena);
-    let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
+
+    p.expect(T![->])?;
+    let return_ty = ty(p)?;
 
     let block = if p.at(T!['{']) {
         Some(block(p)?)
     } else if p.eat(T![;]) {
         None
     } else {
-        return Err("expected `{` or `;`".into());
+        return Err("expected block or `;`".into());
     };
 
     Ok(p.state.arena.alloc(ProcItem {

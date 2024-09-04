@@ -48,9 +48,8 @@ pub fn check_main_procedure<'hir>(
     proc_id: hir::ProcID,
 ) {
     let data = hir.registry_mut().proc_data_mut(proc_id);
-    let item_src = SourceRange::new(data.origin_id, data.name.range);
-
     let flag = hir::ProcFlag::Main;
+    let item_src = SourceRange::new(data.origin_id, data.name.range);
     attr_check::check_attr_flag(emit, flag, &mut data.attr_set, None, item_src, "procedures");
 
     let item = hir.registry().proc_item(proc_id);
@@ -69,14 +68,9 @@ pub fn check_main_procedure<'hir>(
         data.return_ty,
         hir::Type::Error | hir::Type::Basic(BasicType::S32)
     ) {
-        let ty_range = if let Some(ty) = item.return_ty {
-            ty.range
-        } else {
-            data.name.range
-        };
         emit.error(ErrorComp::new(
             "`main` procedure must return `s32`",
-            SourceRange::new(data.origin_id, ty_range),
+            SourceRange::new(data.origin_id, item.return_ty.range),
             None,
         ));
     }

@@ -65,7 +65,7 @@ pub struct ProcItem<'ast> {
     pub name: Name,
     pub params: &'ast [Param<'ast>],
     pub is_variadic: bool,
-    pub return_ty: Option<Type<'ast>>,
+    pub return_ty: Type<'ast>,
     pub block: Option<Block<'ast>>,
 }
 

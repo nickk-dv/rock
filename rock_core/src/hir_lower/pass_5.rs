@@ -41,22 +41,18 @@ fn typecheck_proc<'hir>(
                 None,
             ));
         }
+        //@allow never
         if !data.return_ty.is_void() {
-            if let Some(return_ty) = item.return_ty {
-                emit.error(ErrorComp::new(
-                    "procedures with #[test] attribute can only return `void`",
-                    SourceRange::new(data.origin_id, return_ty.range),
-                    None,
-                ));
-            }
+            emit.error(ErrorComp::new(
+                "procedures with #[test] attribute can only return `void`",
+                SourceRange::new(data.origin_id, item.return_ty.range),
+                None,
+            ));
         }
     }
 
     if let Some(block) = item.block {
-        let expect_src = match item.return_ty {
-            Some(return_ty) => SourceRange::new(data.origin_id, return_ty.range),
-            None => SourceRange::new(data.origin_id, data.name.range),
-        };
+        let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
         proc.reset(data.origin_id, data.params, expect);
 
