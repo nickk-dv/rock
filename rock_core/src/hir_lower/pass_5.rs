@@ -2248,7 +2248,7 @@ fn typecheck_block<'hir>(
                 let error_count = emit.error_count();
                 let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
                 if !emit.did_error(error_count) {
-                    check_unused_expr_semi(emit, proc.origin(), expr_res.expr, expr.range);
+                    check_unused_expr_semi(hir, emit, proc.origin(), expr_res.expr, expr.range);
                 }
 
                 //@migrate to using never type instead of diverges bool flags
@@ -2736,6 +2736,7 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
 //==================== UNUSED CHECK ====================
 
 fn check_unused_expr_semi(
+    hir: &HirData,
     emit: &mut HirEmit,
     origin_id: ModuleID,
     expr: &hir::Expr,
@@ -2745,6 +2746,15 @@ fn check_unused_expr_semi(
         No,
         Maybe,
         Yes(&'static str),
+    }
+
+    fn return_type(ty: hir::Type) -> UnusedExpr {
+        match ty {
+            hir::Type::Error => UnusedExpr::No,
+            hir::Type::Basic(BasicType::Void) => UnusedExpr::No,
+            hir::Type::Basic(BasicType::Never) => UnusedExpr::No,
+            _ => UnusedExpr::Yes("procedure return value"),
+        }
     }
 
     let unused = match expr.kind {
@@ -2765,8 +2775,14 @@ fn check_unused_expr_semi(
         hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
-        hir::ExprKind::CallDirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
-        hir::ExprKind::CallIndirect { .. } => UnusedExpr::No, //@only if #[must_use] (not implemented)
+        hir::ExprKind::CallDirect { proc_id, .. } => {
+            let ty = hir.registry().proc_data(proc_id).return_ty;
+            return_type(ty)
+        }
+        hir::ExprKind::CallIndirect { indirect, .. } => {
+            let ty = indirect.proc_ty.return_ty;
+            return_type(ty)
+        }
         hir::ExprKind::StructInit { .. } => UnusedExpr::Yes("struct value"),
         hir::ExprKind::ArrayInit { .. } => UnusedExpr::Yes("array value"),
         hir::ExprKind::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
