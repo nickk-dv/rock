@@ -31,6 +31,7 @@ pub enum SyntaxKind {
 
     NAME,
     PATH,
+    BINDING,
 
     TYPE_BASIC,
     TYPE_CUSTOM,

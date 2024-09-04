@@ -244,6 +244,7 @@ ast_node_impl!(SymbolRename, SyntaxKind::SYMBOL_RENAME);
 
 ast_node_impl!(Name, SyntaxKind::NAME);
 ast_node_impl!(Path, SyntaxKind::PATH);
+ast_node_impl!(Binding, SyntaxKind::BINDING);
 
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
@@ -747,6 +748,10 @@ impl<'syn> Path<'syn> {
     node_iter!(names, Name);
 }
 
+impl<'syn> Binding<'syn> {
+    find_first!(name, Name);
+}
+
 impl<'syn> TypeBasic<'syn> {
     pub fn basic(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
         self.0.find_by_token(tree, Token::as_basic_type).unwrap()
@@ -826,7 +831,7 @@ impl<'syn> LoopCLikeHeader<'syn> {
 
 impl<'syn> StmtLocal<'syn> {
     find_token!(is_mut, T![mut]);
-    find_first!(name, Name);
+    find_first!(bind, Binding);
     find_first!(ty, Type);
     find_first!(expr, Expr);
 }

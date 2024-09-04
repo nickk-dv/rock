@@ -381,6 +381,7 @@ fn path_type(p: &mut Parser) {
     m.complete(p, SyntaxKind::PATH);
 }
 
+//@remove state
 fn path_expr(p: &mut Parser) -> bool {
     let m = p.start();
     name(p);
@@ -393,6 +394,14 @@ fn path_expr(p: &mut Parser) -> bool {
     }
     m.complete(p, SyntaxKind::PATH);
     false
+}
+
+fn binding(p: &mut Parser) {
+    if p.at(T![ident]) {
+        name(p);
+    } else if !p.eat(T![_]) {
+        p.error("expected `identifier` or `_`");
+    }
 }
 
 const FIRST_TYPE_SET: TokenSet = TokenSet::new(&[
@@ -606,7 +615,7 @@ fn local(p: &mut Parser) {
         T![mut] => p.bump(T![mut]),
         _ => unreachable!(),
     }
-    name(p);
+    binding(p);
     if p.eat(T![:]) {
         ty(p);
         if p.eat(T![=]) {

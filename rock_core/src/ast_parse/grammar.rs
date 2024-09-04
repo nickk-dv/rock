@@ -311,6 +311,19 @@ fn name(p: &mut Parser) -> Result<Name, String> {
     Ok(Name { range, id })
 }
 
+fn binding(p: &mut Parser) -> Result<Binding, String> {
+    if p.at(T![ident]) {
+        let name = name(p)?;
+        Ok(Binding::Named(name))
+    } else if p.at(T![_]) {
+        let range = p.peek_range();
+        p.expect(T![_])?;
+        Ok(Binding::Discard(range))
+    } else {
+        Err("expected `identifier` or `_`".into())
+    }
+}
+
 fn attr_list<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast [Attr<'ast>], String> {
     let offset = p.state.attrs.start();
 
@@ -579,7 +592,7 @@ fn local<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Local<'ast>, String
     };
     p.bump();
 
-    let name = name(p)?;
+    let bind = binding(p)?;
     let kind = if p.eat(T![:]) {
         let ty = ty(p)?;
         if p.eat(T![=]) {
@@ -595,7 +608,7 @@ fn local<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Local<'ast>, String
     };
     p.expect(T![;])?;
 
-    Ok(p.state.arena.alloc(Local { mutt, name, kind }))
+    Ok(p.state.arena.alloc(Local { mutt, bind, kind }))
 }
 
 fn expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, String> {

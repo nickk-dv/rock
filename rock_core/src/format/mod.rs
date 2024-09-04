@@ -556,7 +556,7 @@ fn stmt_local(fmt: &mut Formatter, local: ast::StmtLocal) {
         fmt.write("let");
     }
     fmt.space();
-    name_fmt(fmt, local.name(fmt.tree).unwrap());
+    //@name_fmt(fmt, local.name(fmt.tree).unwrap());
 
     if let Some(ty) = local.ty(fmt.tree) {
         fmt.write_c(':');

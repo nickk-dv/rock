@@ -448,7 +448,7 @@ fn symbol_rename(ctx: &mut AstBuild, rename: Option<cst::SymbolRename>) -> ast::
     }
 }
 
-fn name<'ast>(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
+fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
     let range = name.range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
     let id = ctx.s.intern_name.intern(string);
@@ -464,6 +464,16 @@ fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, path: cst::Path) -> &'ast as
     let names = ctx.s.names.take(offset, &mut ctx.s.arena);
 
     ctx.s.arena.alloc(ast::Path { names })
+}
+
+fn binding(ctx: &mut AstBuild, bind: cst::Binding) -> ast::Binding {
+    if let Some(name_cst) = bind.name(ctx.tree) {
+        let name = name(ctx, name_cst);
+        ast::Binding::Named(name)
+    } else {
+        let range = bind.range(ctx.tree); //@should use token range instead of this
+        ast::Binding::Discard(range)
+    }
 }
 
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
@@ -602,7 +612,7 @@ fn stmt_local<'ast>(
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
     let mutt = mutt(local.is_mut(ctx.tree));
-    let name = name(ctx, local.name(ctx.tree).unwrap());
+    let bind = binding(ctx, local.bind(ctx.tree).unwrap());
 
     let kind = if let Some(ty_cst) = local.ty(ctx.tree) {
         let ty = ty(ctx, ty_cst);
@@ -613,11 +623,12 @@ fn stmt_local<'ast>(
             ast::LocalKind::Decl(ty)
         }
     } else {
-        let expr = expr(ctx, local.expr(ctx.tree).unwrap());
+        let expr_cst = local.expr(ctx.tree).unwrap();
+        let expr = expr(ctx, expr_cst);
         ast::LocalKind::Init(None, expr)
     };
 
-    let local = ast::Local { mutt, name, kind };
+    let local = ast::Local { mutt, bind, kind };
     ctx.s.arena.alloc(local)
 }
 
@@ -948,7 +959,7 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
     }
 }
 
-fn string_lit<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>) -> ast::StringLit {
+fn string_lit(ctx: &mut AstBuild) -> ast::StringLit {
     let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
     let id = ctx.s.intern_lit.intern(string);
     ctx.string_id += 1;

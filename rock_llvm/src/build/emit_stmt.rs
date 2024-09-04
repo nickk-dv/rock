@@ -33,6 +33,7 @@ fn codegen_stmt<'c>(
         hir::Stmt::Defer(block) => proc_cg.add_defer_block(*block),
         hir::Stmt::Loop(loop_) => codegen_loop(cg, proc_cg, loop_),
         hir::Stmt::Local(local_id) => codegen_local(cg, proc_cg, local_id),
+        hir::Stmt::Discard(value) => codegen_discard(cg, proc_cg, value),
         hir::Stmt::Assign(assign) => codegen_assign(cg, proc_cg, assign),
         hir::Stmt::ExprSemi(expr) => codegen_expr_semi(cg, proc_cg, expr),
         hir::Stmt::ExprTail(expr) => codegen_expr_tail(cg, proc_cg, expect, expr),
@@ -113,12 +114,12 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
             codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
             cg.build_br_no_term(entry_bb);
         }
-        hir::LoopKind::ForLoop {
-            local_id,
-            cond,
-            assign,
-        } => {
-            codegen_local(cg, proc_cg, local_id);
+        hir::LoopKind::ForLoop { bind, cond, assign } => {
+            match bind {
+                hir::ForLoopBind::NoOp => {}
+                hir::ForLoopBind::Local(local_id) => codegen_local(cg, proc_cg, local_id),
+                hir::ForLoopBind::Discard(value) => codegen_discard(cg, proc_cg, value),
+            }
             cg.build.br(entry_bb);
             cg.build.position_at_end(entry_bb);
             let cond = emit_expr::codegen_expr_value(cg, proc_cg, cond);
@@ -148,6 +149,12 @@ fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: 
         let zero_init = llvm::const_all_zero(local_ty);
         cg.build.store(zero_init, local_ptr);
     }
+}
+
+fn codegen_discard<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, value: &hir::Expr<'c>) {
+    //@generates not needed load for tail values
+    // values should be fully ignored and not stored anywhere
+    emit_expr::codegen_expr_value_opt(cg, proc_cg, value);
 }
 
 fn codegen_assign<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, assign: &hir::Assign<'c>) {

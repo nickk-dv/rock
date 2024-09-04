@@ -39,6 +39,12 @@ pub struct Path<'ast> {
 }
 
 #[derive(Copy, Clone)]
+pub enum Binding {
+    Named(Name),
+    Discard(TextRange),
+}
+
+#[derive(Copy, Clone)]
 pub struct Attr<'ast> {
     pub name: Name,
     pub params: Option<(&'ast [AttrParam], TextRange)>,
@@ -228,7 +234,7 @@ pub enum LoopKind<'ast> {
 #[derive(Copy, Clone)]
 pub struct Local<'ast> {
     pub mutt: Mut,
-    pub name: Name,
+    pub bind: Binding,
     pub kind: LocalKind<'ast>,
 }
 

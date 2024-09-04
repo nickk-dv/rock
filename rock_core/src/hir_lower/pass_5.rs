@@ -2222,7 +2222,12 @@ fn typecheck_block<'hir>(
             ast::StmtKind::Local(local) => {
                 //@can diverge any diverging expr inside
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
-                let stmt_res = hir::Stmt::Local(typecheck_local(hir, emit, proc, local));
+                let local_res = typecheck_local(hir, emit, proc, local);
+                let stmt_res = match local_res {
+                    LocalResult::NoOp => continue,
+                    LocalResult::Local(local_id) => hir::Stmt::Local(local_id),
+                    LocalResult::Discard(value) => hir::Stmt::Discard(value),
+                };
                 (stmt_res, diverges)
             }
             ast::StmtKind::Assign(assign) => {
@@ -2483,6 +2488,7 @@ fn typecheck_loop<'hir>(
                 Expectation::HasType(hir::Type::BOOL, None),
                 cond,
             );
+
             hir::LoopKind::While {
                 cond: cond_res.expr,
             }
@@ -2492,7 +2498,7 @@ fn typecheck_loop<'hir>(
             cond,
             assign,
         } => {
-            let local_id = typecheck_local(hir, emit, proc, local);
+            let local_res = typecheck_local(hir, emit, proc, local);
             let cond_res = typecheck_expr(
                 hir,
                 emit,
@@ -2501,8 +2507,14 @@ fn typecheck_loop<'hir>(
                 cond,
             );
             let assign = typecheck_assign(hir, emit, proc, assign);
+
+            let bind = match local_res {
+                LocalResult::NoOp => hir::ForLoopBind::NoOp,
+                LocalResult::Local(local_id) => hir::ForLoopBind::Local(local_id),
+                LocalResult::Discard(value) => hir::ForLoopBind::Discard(value),
+            };
             hir::LoopKind::ForLoop {
-                local_id,
+                bind,
                 cond: cond_res.expr,
                 assign,
             }
@@ -2525,30 +2537,44 @@ fn typecheck_loop<'hir>(
     emit.arena.alloc(loop_)
 }
 
+enum LocalResult<'hir> {
+    NoOp,
+    Local(hir::LocalID),
+    Discard(&'hir hir::Expr<'hir>),
+}
+
 fn typecheck_local<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     local: &ast::Local,
-) -> hir::LocalID {
+) -> LocalResult<'hir> {
     //@theres no `nice` way to find both existing name from global (hir) scope
     // and proc_scope, those are so far disconnected,
     // some unified model of symbols might be better in the future
     // this also applies to SymbolKind which is separate from VariableID (leads to some issues in path resolve) @1.04.24
-    let already_defined = if let Some(existing) =
-        hir.symbol_in_scope_source(proc.origin(), local.name.id)
-    {
-        super::pass_1::error_name_already_defined(hir, emit, proc.origin(), local.name, existing);
-        true
-    } else if let Some(existing_var) = proc.find_variable(local.name.id) {
-        let existing = match existing_var {
-            VariableID::Local(id) => SourceRange::new(proc.origin(), proc.get_local(id).name.range),
-            VariableID::Param(id) => SourceRange::new(proc.origin(), proc.get_param(id).name.range),
-        };
-        super::pass_1::error_name_already_defined(hir, emit, proc.origin(), local.name, existing);
-        true
-    } else {
-        false
+
+    let already_defined = match local.bind {
+        ast::Binding::Named(name) => {
+            if let Some(existing) = hir.symbol_in_scope_source(proc.origin(), name.id) {
+                super::pass_1::error_name_already_defined(hir, emit, proc.origin(), name, existing);
+                true
+            } else if let Some(existing_var) = proc.find_variable(name.id) {
+                let existing = match existing_var {
+                    VariableID::Local(id) => {
+                        SourceRange::new(proc.origin(), proc.get_local(id).name.range)
+                    }
+                    VariableID::Param(id) => {
+                        SourceRange::new(proc.origin(), proc.get_param(id).name.range)
+                    }
+                };
+                super::pass_1::error_name_already_defined(hir, emit, proc.origin(), name, existing);
+                true
+            } else {
+                false
+            }
+        }
+        ast::Binding::Discard(_) => false,
     };
 
     let (local_ty, local_value) = match local.kind {
@@ -2578,17 +2604,29 @@ fn typecheck_local<'hir>(
         }
     };
 
-    if already_defined {
-        hir::LocalID::dummy()
-    } else {
-        //@check for `never`, `void` to prevent panic during codegen
-        let local = emit.arena.alloc(hir::Local {
-            mutt: local.mutt,
-            name: local.name,
-            ty: local_ty,
-            value: local_value,
-        });
-        proc.push_local(local)
+    match local.bind {
+        ast::Binding::Named(name) => {
+            if already_defined {
+                LocalResult::NoOp
+            } else {
+                //@check for `never`, `void` to prevent panic during codegen
+                let local = emit.arena.alloc(hir::Local {
+                    mutt: local.mutt,
+                    name: name,
+                    ty: local_ty,
+                    value: local_value,
+                });
+                let local_id = proc.push_local(local);
+                LocalResult::Local(local_id)
+            }
+        }
+        ast::Binding::Discard(_) => {
+            if let Some(value) = local_value {
+                LocalResult::Discard(value)
+            } else {
+                LocalResult::NoOp
+            }
+        }
     }
 }
 

@@ -205,6 +205,7 @@ pub enum Stmt<'hir> {
     Defer(&'hir Block<'hir>),
     Loop(&'hir Loop<'hir>),
     Local(LocalID),
+    Discard(&'hir Expr<'hir>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
@@ -222,10 +223,17 @@ pub enum LoopKind<'hir> {
     Loop,
     While { cond: &'hir Expr<'hir> },
     ForLoop {
-        local_id: LocalID,
+        bind: ForLoopBind<'hir>,
         cond: &'hir Expr<'hir>,
         assign: &'hir Assign<'hir>,
     },
+}
+
+#[derive(Copy, Clone)]
+pub enum ForLoopBind<'hir> {
+    NoOp,
+    Local(LocalID),
+    Discard(&'hir Expr<'hir>),
 }
 
 id_impl!(LocalID);
