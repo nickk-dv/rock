@@ -39,12 +39,6 @@ pub struct Path<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Binding {
-    Named(Name),
-    Discard(TextRange),
-}
-
-#[derive(Copy, Clone)]
 pub struct Attr<'ast> {
     pub name: Name,
     pub params: Option<(&'ast [AttrParam], TextRange)>,
@@ -271,11 +265,11 @@ pub enum ExprKind<'ast> {
     Match2      { match_2: &'ast Match2<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
-    Call        { target: &'ast Expr<'ast>, input: &'ast Input<'ast> },
+    Call        { target: &'ast Expr<'ast>, input: &'ast ArgumentList<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: &'ast Type<'ast> },
-    Item        { path: &'ast Path<'ast>, input: Option<&'ast Input<'ast>> },
-    Variant     { name: Name, input: Option<&'ast Input<'ast>> },
+    Item        { path: &'ast Path<'ast>, input: Option<&'ast ArgumentList<'ast>> },
+    Variant     { name: Name, input: Option<&'ast ArgumentList<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
@@ -352,15 +346,27 @@ pub struct Pat<'ast> {
 pub enum PatKind<'ast> {
     Wild,
     Lit       { lit: Lit },
-    Item      { path: &'ast Path<'ast>, binds: Option<&'ast [Name]> },
-    Variant   { name: Name, binds: Option<&'ast [Name]> },
+    Item      { path: &'ast Path<'ast>, input: Option<&'ast BindingList<'ast>> },
+    Variant   { name: Name, input: Option<&'ast BindingList<'ast>> },
     Or        { patterns: &'ast [Pat<'ast>] },
 }
 
 #[derive(Copy, Clone)]
-pub struct Input<'ast> {
+pub struct ArgumentList<'ast> {
     pub exprs: &'ast [&'ast Expr<'ast>],
     pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct BindingList<'ast> {
+    pub binds: &'ast [Binding],
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub enum Binding {
+    Named(Name),
+    Discard(TextRange),
 }
 
 #[derive(Copy, Clone)]

@@ -702,11 +702,11 @@ fn typecheck_pat<'hir>(
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
         ast::PatKind::Lit { lit } => typecheck_pat_lit(emit, expect, lit),
-        ast::PatKind::Item { path, binds } => {
-            typecheck_pat_item(hir, emit, proc, path, binds, pat.range)
+        ast::PatKind::Item { path, input } => {
+            typecheck_pat_item(hir, emit, proc, path, input, pat.range)
         }
-        ast::PatKind::Variant { name, binds } => {
-            typecheck_pat_variant(hir, emit, proc, expect, name, binds, pat.range)
+        ast::PatKind::Variant { name, input } => {
+            typecheck_pat_variant(hir, emit, proc, expect, name, input, pat.range)
         }
         ast::PatKind::Or { patterns } => typecheck_pat_or(hir, emit, proc, expect, patterns),
     };
@@ -733,7 +733,7 @@ fn typecheck_pat_item<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
-    binds: Option<&[ast::Name]>,
+    binds: Option<&ast::BindingList>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
@@ -745,7 +745,7 @@ fn typecheck_pat_item<'hir>(
             let data = hir.registry().enum_data(enum_id);
             let variant = data.variant(variant_id);
 
-            let input_count = binds.map(|names| names.len()).unwrap_or(0);
+            let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
             let expected_count = variant.fields.len();
 
             if input_count != expected_count {
@@ -773,7 +773,7 @@ fn typecheck_pat_item<'hir>(
                 ));
             }
 
-            let input_count = binds.map(|names| names.len()).unwrap_or(0);
+            let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
             if input_count > 0 {
                 //@rephrase error
                 emit.error(ErrorComp::new(
@@ -803,7 +803,7 @@ fn typecheck_pat_variant<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
-    binds: Option<&[ast::Name]>,
+    binds: Option<&ast::BindingList>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
     let enum_id = infer_enum_type(emit, expect, SourceRange::new(proc.origin(), name.range));
@@ -815,7 +815,7 @@ fn typecheck_pat_variant<'hir>(
     let data = hir.registry().enum_data(enum_id);
     if let Some((variant_id, variant)) = data.find_variant(name.id) {
         //@duplicate codeblock, same as ast::PatKind::Item
-        let input_count = binds.map(|names| names.len()).unwrap_or(0);
+        let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
         let expected_count = variant.fields.len();
 
         if input_count != expected_count {
@@ -1359,7 +1359,7 @@ fn typecheck_call<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target: &ast::Expr<'_>,
-    input: &ast::Input<'_>,
+    input: &ast::ArgumentList<'_>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
     check_call_indirect(hir, emit, proc, target_res, input)
@@ -1554,7 +1554,7 @@ fn typecheck_item<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     path: &ast::Path,
-    input: Option<&ast::Input>,
+    input: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
@@ -1639,7 +1639,7 @@ fn typecheck_variant<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
-    input: Option<&ast::Input>,
+    input: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let enum_id = infer_enum_type(emit, expect, SourceRange::new(proc.origin(), expr_range));
@@ -2848,7 +2848,7 @@ fn error_result_default_check_input<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    input: &ast::Input,
+    input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     for &expr in input.exprs.iter() {
         let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
@@ -2860,7 +2860,7 @@ fn error_result_default_check_input_opt<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    input: Option<&ast::Input>,
+    input: Option<&ast::ArgumentList>,
 ) -> TypeResult<'hir> {
     if let Some(input) = input {
         for &expr in input.exprs.iter() {
@@ -2884,7 +2884,8 @@ fn error_result_default_check_field_init<'hir>(
 
 //==================== CALL-LIKE INPUT CHECK ====================
 
-fn input_range(input: &ast::Input) -> TextRange {
+//@fix names for ArgumentList / BindingList related code
+fn input_range(input: &ast::ArgumentList) -> TextRange {
     if input.exprs.is_empty() {
         input.range
     } else {
@@ -2893,7 +2894,7 @@ fn input_range(input: &ast::Input) -> TextRange {
     }
 }
 
-fn input_opt_range(input: Option<&ast::Input>, default: TextRange) -> TextRange {
+fn input_opt_range(input: Option<&ast::ArgumentList>, default: TextRange) -> TextRange {
     if let Some(input) = input {
         input_range(input)
     } else {
@@ -2957,7 +2958,7 @@ fn check_call_direct<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     proc_id: hir::ProcID,
-    input: &ast::Input,
+    input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let data = hir.registry().proc_data(proc_id);
 
@@ -3003,7 +3004,7 @@ fn check_call_indirect<'hir>(
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
     target_res: ExprResult<'hir>,
-    input: &ast::Input,
+    input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let proc_ty = match target_res.ty {
         hir::Type::Error => return error_result_default_check_input(hir, emit, proc, input),
@@ -3068,7 +3069,7 @@ fn check_variant_input_opt<'hir>(
     proc: &mut ProcScope<'hir, '_>,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
-    input: Option<&ast::Input>,
+    input: Option<&ast::ArgumentList>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
     let data = hir.registry().enum_data(enum_id);

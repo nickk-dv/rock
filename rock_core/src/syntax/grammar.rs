@@ -1034,7 +1034,7 @@ fn bind_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        name(p);
+        binding(p);
         if !p.at(T![')']) {
             p.expect(T![,]);
         }

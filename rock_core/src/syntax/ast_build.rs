@@ -989,7 +989,7 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::
 fn argument_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     argument_list: cst::ArgumentList,
-) -> ast::Input<'ast> {
+) -> ast::ArgumentList<'ast> {
     let offset = ctx.s.exprs.start();
     for input in argument_list.inputs(ctx.tree) {
         let expr = expr(ctx, input);
@@ -997,7 +997,7 @@ fn argument_list<'ast>(
     }
     let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
 
-    ast::Input {
+    ast::ArgumentList {
         exprs,
         range: argument_list.range(ctx.tree),
     }
