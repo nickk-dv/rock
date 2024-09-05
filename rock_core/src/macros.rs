@@ -52,6 +52,9 @@ impl<T> ID<T> {
             phantom: PhantomData,
         }
     }
+    pub fn raw(self) -> u32 {
+        self.raw
+    }
     pub fn raw_index(self) -> usize {
         self.raw as usize
     }

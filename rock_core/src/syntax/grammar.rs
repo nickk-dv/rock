@@ -616,13 +616,9 @@ fn local(p: &mut Parser) {
     binding(p);
     if p.eat(T![:]) {
         ty(p);
-        if p.eat(T![=]) {
-            expr(p);
-        }
-    } else {
-        p.expect(T![=]);
-        expr(p);
     }
+    p.expect(T![=]);
+    expr(p);
     p.expect(T![;]);
     m.complete(p, SyntaxKind::STMT_LOCAL);
 }

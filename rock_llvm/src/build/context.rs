@@ -19,7 +19,7 @@ pub struct Codegen<'c> {
 }
 
 pub struct ProcCodegen<'c> {
-    pub proc_id: hir::ProcID,
+    pub proc_id: hir::ProcID<'c>,
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
     pub local_ptrs: Vec<llvm::ValuePtr>,
@@ -225,7 +225,7 @@ impl<'c> Codegen<'c> {
 }
 
 impl<'c> ProcCodegen<'c> {
-    pub fn new(proc_id: hir::ProcID, fn_val: llvm::ValueFn) -> ProcCodegen<'c> {
+    pub fn new(proc_id: hir::ProcID<'c>, fn_val: llvm::ValueFn) -> ProcCodegen<'c> {
         ProcCodegen {
             proc_id,
             fn_val,

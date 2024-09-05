@@ -590,27 +590,21 @@ fn local<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Local<'ast>, String
     let mutt = match p.peek() {
         T![mut] => Mut::Mutable,
         T![let] => Mut::Immutable,
-        _ => return Err("expected `let` or `mut`".into()),
+        _ => unreachable!(),
     };
     p.bump();
-
     let bind = binding(p)?;
-    let kind = if p.eat(T![:]) {
-        let ty = ty(p)?;
-        if p.eat(T![=]) {
-            let value = expr(p)?;
-            LocalKind::Init(Some(ty), value)
-        } else {
-            LocalKind::Decl(ty)
-        }
-    } else {
-        p.expect(T![=])?;
-        let value = expr(p)?;
-        LocalKind::Init(None, value)
-    };
+    let ty = if p.eat(T![:]) { Some(ty(p)?) } else { None };
+    p.expect(T![=])?;
+    let init = expr(p)?;
     p.expect(T![;])?;
 
-    Ok(p.state.arena.alloc(Local { mutt, bind, kind }))
+    Ok(p.state.arena.alloc(Local {
+        mutt,
+        bind,
+        ty,
+        init,
+    }))
 }
 
 fn expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, String> {

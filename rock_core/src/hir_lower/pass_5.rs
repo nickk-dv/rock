@@ -18,7 +18,7 @@ fn typecheck_proc<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    proc_id: hir::ProcID,
+    proc_id: hir::ProcID<'hir>,
 ) {
     let item = hir.registry().proc_item(proc_id);
     let data = hir.registry().proc_data(proc_id);
@@ -2220,7 +2220,7 @@ fn typecheck_block<'hir>(
                 let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
                 let local_res = typecheck_local(hir, emit, proc, local);
                 let stmt_res = match local_res {
-                    LocalResult::NoOp => continue,
+                    LocalResult::Error => continue,
                     LocalResult::Local(local_id) => hir::Stmt::Local(local_id),
                     LocalResult::Discard(value) => hir::Stmt::Discard(value),
                 };
@@ -2505,7 +2505,7 @@ fn typecheck_loop<'hir>(
             let assign = typecheck_assign(hir, emit, proc, assign);
 
             let bind = match local_res {
-                LocalResult::NoOp => hir::ForLoopBind::NoOp,
+                LocalResult::Error => hir::ForLoopBind::Error,
                 LocalResult::Local(local_id) => hir::ForLoopBind::Local(local_id),
                 LocalResult::Discard(value) => hir::ForLoopBind::Discard(value),
             };
@@ -2534,7 +2534,7 @@ fn typecheck_loop<'hir>(
 }
 
 enum LocalResult<'hir> {
-    NoOp,
+    Error,
     Local(hir::LocalID),
     Discard(&'hir hir::Expr<'hir>),
 }
@@ -2573,56 +2573,35 @@ fn typecheck_local<'hir>(
         ast::Binding::Discard(_) => false,
     };
 
-    let (local_ty, local_value) = match local.kind {
-        ast::LocalKind::Decl(ast_ty) => {
-            let hir_ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ast_ty);
-            (hir_ty, None)
+    let (local_ty, expect) = match local.ty {
+        Some(ty) => {
+            let local_ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ty);
+            let expect_src = SourceRange::new(proc.origin(), ty.range);
+            let expect = Expectation::HasType(local_ty, Some(expect_src));
+            (Some(local_ty), expect)
         }
-        ast::LocalKind::Init(ast_ty, value) => {
-            let expect = if let Some(ast_ty) = ast_ty {
-                let hir_ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ast_ty);
-                let expect_src = SourceRange::new(proc.origin(), ast_ty.range);
-                Expectation::HasType(hir_ty, Some(expect_src))
-            } else {
-                Expectation::None
-            };
-
-            let value_res = typecheck_expr(hir, emit, proc, expect, value);
-
-            if ast_ty.is_some() {
-                match expect {
-                    Expectation::None => unreachable!(),
-                    Expectation::HasType(expect_ty, _) => (expect_ty, Some(value_res.expr)),
-                }
-            } else {
-                (value_res.ty, Some(value_res.expr))
-            }
-        }
+        None => (None, Expectation::None),
     };
+    let init_res = typecheck_expr(hir, emit, proc, expect, local.init);
+    let local_ty = local_ty.unwrap_or(init_res.ty);
 
     match local.bind {
         ast::Binding::Named(name) => {
             if already_defined {
-                LocalResult::NoOp
+                LocalResult::Error
             } else {
                 //@check for `never`, `void` to prevent panic during codegen
                 let local = emit.arena.alloc(hir::Local {
                     mutt: local.mutt,
-                    name: name,
+                    name,
                     ty: local_ty,
-                    value: local_value,
+                    init: init_res.expr,
                 });
                 let local_id = proc.push_local(local);
                 LocalResult::Local(local_id)
             }
         }
-        ast::Binding::Discard(_) => {
-            if let Some(value) = local_value {
-                LocalResult::Discard(value)
-            } else {
-                LocalResult::NoOp
-            }
-        }
+        ast::Binding::Discard(_) => LocalResult::Discard(init_res.expr),
     }
 }
 
@@ -2957,7 +2936,7 @@ fn check_call_direct<'hir>(
     hir: &HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
     proc: &mut ProcScope<'hir, '_>,
-    proc_id: hir::ProcID,
+    proc_id: hir::ProcID<'hir>,
     input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let data = hir.registry().proc_data(proc_id);
@@ -3130,10 +3109,10 @@ param_var  -> <follow?> by <chained> field access
 local_var  -> <follow?> by <chained> field access
 */
 
-enum ResolvedPath {
+enum ResolvedPath<'hir> {
     None,
     Variable(VariableID),
-    Symbol(SymbolKind, SourceRange),
+    Symbol(SymbolKind<'hir>, SourceRange),
 }
 
 fn path_resolve<'hir>(
@@ -3142,7 +3121,7 @@ fn path_resolve<'hir>(
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,
     path: &ast::Path,
-) -> (ResolvedPath, usize) {
+) -> (ResolvedPath<'hir>, usize) {
     let name = path.names.first().cloned().expect("non empty path");
 
     if let Some(proc) = proc {
@@ -3309,9 +3288,9 @@ pub fn path_resolve_struct<'hir>(
     struct_id
 }
 
-pub enum ValueID {
+pub enum ValueID<'hir> {
     None,
-    Proc(hir::ProcID),
+    Proc(hir::ProcID<'hir>),
     Enum(hir::EnumID, hir::VariantID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
@@ -3325,7 +3304,7 @@ pub fn path_resolve_value<'hir, 'ast>(
     proc: Option<&ProcScope<'hir, '_>>,
     origin_id: ModuleID,
     path: &ast::Path<'ast>,
-) -> (ValueID, &'ast [ast::Name]) {
+) -> (ValueID<'hir>, &'ast [ast::Name]) {
     let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
 
     let value_id = match resolved {

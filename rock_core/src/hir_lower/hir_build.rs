@@ -4,33 +4,33 @@ use crate::config::TargetTriple;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::ID;
+use crate::macros::{IndexID, ID};
 use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
 pub struct HirData<'hir, 'ast> {
-    modules: Vec<Module>,
+    modules: Vec<Module<'hir>>,
     registry: Registry<'hir, 'ast>,
     ast: ast::Ast<'ast>,
     target: TargetTriple,
 }
 
-pub struct Module {
-    symbols: HashMap<ID<InternName>, Symbol>,
+pub struct Module<'hir> {
+    symbols: HashMap<ID<InternName>, Symbol<'hir>>,
 }
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum Symbol {
-    Defined(SymbolKind),
-    Imported { kind: SymbolKind, import_range: TextRange },
+pub enum Symbol<'hir> {
+    Defined(SymbolKind<'hir>),
+    Imported { kind: SymbolKind<'hir>, import_range: TextRange },
 }
 
 #[derive(Copy, Clone)]
-pub enum SymbolKind {
+pub enum SymbolKind<'hir> {
     Module(ModuleID),
-    Proc(hir::ProcID),
+    Proc(hir::ProcID<'hir>),
     Enum(hir::EnumID),
     Struct(hir::StructID),
     Const(hir::ConstID),
@@ -78,10 +78,10 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         }
     }
 
-    fn module(&self, id: ModuleID) -> &Module {
+    fn module(&self, id: ModuleID) -> &Module<'hir> {
         &self.modules[id.index()]
     }
-    fn module_mut(&mut self, id: ModuleID) -> &mut Module {
+    fn module_mut(&mut self, id: ModuleID) -> &mut Module<'hir> {
         &mut self.modules[id.index()]
     }
 
@@ -108,12 +108,16 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         self.target
     }
 
-    pub fn add_symbol(&mut self, origin_id: ModuleID, id: ID<InternName>, symbol: Symbol) {
+    pub fn add_symbol(&mut self, origin_id: ModuleID, id: ID<InternName>, symbol: Symbol<'hir>) {
         let origin = self.module_mut(origin_id);
         origin.symbols.insert(id, symbol);
     }
 
-    pub fn symbol_defined(&self, origin_id: ModuleID, id: ID<InternName>) -> Option<SymbolKind> {
+    pub fn symbol_defined(
+        &self,
+        origin_id: ModuleID,
+        id: ID<InternName>,
+    ) -> Option<SymbolKind<'hir>> {
         let origin = self.module(origin_id);
 
         match origin.symbols.get(&id).cloned() {
@@ -145,7 +149,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         origin_id: ModuleID,
         target_id: ModuleID,
         name: ast::Name,
-    ) -> Result<(SymbolKind, SourceRange), ErrorComp> {
+    ) -> Result<(SymbolKind<'hir>, SourceRange), ErrorComp> {
         let target = self.module(target_id);
 
         match target.symbols.get(&name.id).copied() {
@@ -189,7 +193,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     }
 }
 
-impl SymbolKind {
+impl<'hir> SymbolKind<'hir> {
     pub const fn kind_name(self) -> &'static str {
         match self {
             SymbolKind::Module(_) => "module",
@@ -271,8 +275,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
         data: hir::ProcData<'hir>,
-    ) -> hir::ProcID {
-        let id = hir::ProcID::new(self.hir_procs.len());
+    ) -> hir::ProcID<'hir> {
+        let id = hir::ProcID::new(&self.hir_procs);
         self.ast_procs.push(item);
         self.hir_procs.push(data);
         id
@@ -351,8 +355,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         id
     }
 
-    pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
-        (0..self.hir_procs.len()).map(hir::ProcID::new)
+    pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID<'hir>> {
+        (0..self.hir_procs.len()).map(hir::ProcID::new_raw)
     }
     pub fn enum_ids(&self) -> impl Iterator<Item = hir::EnumID> {
         (0..self.hir_enums.len()).map(hir::EnumID::new)
@@ -374,7 +378,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
 
     pub fn proc_item(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
-        self.ast_procs[id.index()]
+        self.ast_procs[id.raw_index()]
     }
     pub fn enum_item(&self, id: hir::EnumID) -> &'ast ast::EnumItem<'ast> {
         self.ast_enums[id.index()]
@@ -392,8 +396,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.ast_imports[id.index()]
     }
 
-    pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
-        &self.hir_procs[id.index()]
+    pub fn proc_data(&self, id: hir::ProcID<'hir>) -> &hir::ProcData<'hir> {
+        self.hir_procs.id_get(id)
     }
     pub fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
         &self.hir_enums[id.index()]
@@ -417,8 +421,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &self.variant_evals[id.index()]
     }
 
-    pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
-        &mut self.hir_procs[id.index()]
+    pub fn proc_data_mut(&mut self, id: hir::ProcID<'hir>) -> &mut hir::ProcData<'hir> {
+        self.hir_procs.id_get_mut(id)
     }
     pub fn enum_data_mut(&mut self, id: hir::EnumID) -> &mut hir::EnumData<'hir> {
         &mut self.hir_enums[id.index()]

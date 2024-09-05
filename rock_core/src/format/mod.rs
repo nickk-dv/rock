@@ -562,7 +562,7 @@ fn stmt_local(fmt: &mut Formatter, local: ast::StmtLocal) {
         fmt.write_c(':');
         fmt.space();
         type_fmt(fmt, ty);
-        if let Some(expr) = local.expr(fmt.tree) {
+        if let Some(expr) = local.init(fmt.tree) {
             fmt.space();
             fmt.write_c('=');
             fmt.space();
@@ -572,7 +572,7 @@ fn stmt_local(fmt: &mut Formatter, local: ast::StmtLocal) {
         fmt.space();
         fmt.write_c('=');
         fmt.space();
-        expr_fmt(fmt, local.expr(fmt.tree).unwrap());
+        expr_fmt(fmt, local.init(fmt.tree).unwrap());
     }
     fmt.write_c(';');
 }

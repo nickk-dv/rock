@@ -229,13 +229,8 @@ pub enum LoopKind<'ast> {
 pub struct Local<'ast> {
     pub mutt: Mut,
     pub bind: Binding,
-    pub kind: LocalKind<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub enum LocalKind<'ast> {
-    Decl(Type<'ast>),
-    Init(Option<Type<'ast>>, &'ast Expr<'ast>),
+    pub ty: Option<Type<'ast>>,
+    pub init: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]

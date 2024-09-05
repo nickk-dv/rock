@@ -166,7 +166,7 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
         hir::ConstValue::String { string_lit } => codegen_const_string(cg, string_lit),
-        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
+        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.raw_index()].0.as_ptr().as_val(),
         hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
@@ -508,7 +508,7 @@ fn codegen_call_direct<'c>(
         input_values.push(value);
     }
 
-    let (fn_val, fn_ty) = cg.procs[proc_id.index()];
+    let (fn_val, fn_ty) = cg.procs[proc_id.raw_index()];
     cg.build.call(fn_ty, fn_val, &input_values, "call_val")
 }
 

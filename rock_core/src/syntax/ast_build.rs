@@ -613,22 +613,19 @@ fn stmt_local<'ast>(
 ) -> &'ast ast::Local<'ast> {
     let mutt = mutt(local.is_mut(ctx.tree));
     let bind = binding(ctx, local.bind(ctx.tree).unwrap());
-
-    let kind = if let Some(ty_cst) = local.ty(ctx.tree) {
-        let ty = ty(ctx, ty_cst);
-        if let Some(expr_cst) = local.expr(ctx.tree) {
-            let expr = expr(ctx, expr_cst);
-            ast::LocalKind::Init(Some(ty), expr)
-        } else {
-            ast::LocalKind::Decl(ty)
-        }
+    let ty = if let Some(ty_cst) = local.ty(ctx.tree) {
+        Some(ty(ctx, ty_cst))
     } else {
-        let expr_cst = local.expr(ctx.tree).unwrap();
-        let expr = expr(ctx, expr_cst);
-        ast::LocalKind::Init(None, expr)
+        None
     };
+    let init = expr(ctx, local.init(ctx.tree).unwrap());
 
-    let local = ast::Local { mutt, bind, kind };
+    let local = ast::Local {
+        mutt,
+        bind,
+        ty,
+        init,
+    };
     ctx.s.arena.alloc(local)
 }
 

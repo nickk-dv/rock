@@ -833,7 +833,7 @@ impl<'syn> StmtLocal<'syn> {
     find_token!(is_mut, T![mut]);
     find_first!(bind, Binding);
     find_first!(ty, Type);
-    find_first!(expr, Expr);
+    find_first!(init, Expr);
 }
 
 impl<'syn> StmtAssign<'syn> {

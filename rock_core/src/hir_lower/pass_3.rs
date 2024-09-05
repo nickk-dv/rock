@@ -159,7 +159,7 @@ pub fn type_resolve_delayed<'hir, 'ast>(
 pub fn process_proc_data<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
-    id: hir::ProcID,
+    id: hir::ProcID<'hir>,
 ) {
     let item = hir.registry().proc_item(id);
     let origin_id = hir.registry().proc_data(id).origin_id;

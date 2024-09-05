@@ -122,7 +122,9 @@ fn codegen_function_bodies(cg: &Codegen) {
         };
 
         let fn_val = cg.procs[idx].0;
-        let mut proc_cg = ProcCodegen::new(hir::ProcID::new(idx), fn_val);
+        let proc_id = hir::ProcID::new_raw(idx);
+        //@re-use, reduce allocations
+        let mut proc_cg = ProcCodegen::new(proc_id, fn_val);
 
         let entry_bb = cg.context.append_bb(fn_val, "entry_bb");
         cg.build.position_at_end(entry_bb);

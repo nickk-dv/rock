@@ -3,7 +3,7 @@ use crate::ast;
 use crate::bitset::BitSet;
 use crate::id_impl;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::ID;
+use crate::macros::{IndexID, ID};
 use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ pub struct ConstInternPool<'hir> {
     intern_map: HashMap<ConstValue<'hir>, ConstValueID>,
 }
 
-id_impl!(ProcID);
+pub type ProcID<'hir> = ID<ProcData<'hir>>;
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<ProcFlag>,
@@ -231,7 +231,7 @@ pub enum LoopKind<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum ForLoopBind<'hir> {
-    NoOp,
+    Error,
     Local(LocalID),
     Discard(&'hir Expr<'hir>),
 }
@@ -242,7 +242,7 @@ pub struct Local<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: Option<&'hir Expr<'hir>>,
+    pub init: &'hir Expr<'hir>,
 }
 
 #[derive(Copy, Clone)]
@@ -278,7 +278,7 @@ pub enum ExprKind<'hir> {
     ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
-    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
+    CallDirect   { proc_id: ProcID<'hir>, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },
@@ -302,7 +302,7 @@ pub enum ConstValue<'hir> {
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
     String      { string_lit: ast::StringLit },
-    Procedure   { proc_id: ProcID },
+    Procedure   { proc_id: ProcID<'hir> },
     Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
@@ -567,8 +567,8 @@ size_assert!(32, Expr);
 size_assert!(16, ConstValue);
 
 impl<'hir> Hir<'hir> {
-    pub fn proc_data(&self, id: ProcID) -> &ProcData<'hir> {
-        &self.procs[id.index()]
+    pub fn proc_data(&self, id: ProcID<'hir>) -> &ProcData<'hir> {
+        self.procs.id_get(id)
     }
     pub fn enum_data(&self, id: EnumID) -> &EnumData<'hir> {
         &self.enums[id.index()]
@@ -630,7 +630,7 @@ impl<'hir> Hash for ConstValue<'hir> {
             ConstValue::Float { val, float_ty } => (val.to_bits(), float_ty).hash(state),
             ConstValue::Char { val } => val.hash(state),
             ConstValue::String { string_lit } => string_lit.hash(state),
-            ConstValue::Procedure { proc_id } => proc_id.0.hash(state),
+            ConstValue::Procedure { proc_id } => proc_id.raw().hash(state),
             ConstValue::Variant { variant } => variant.hash(state),
             ConstValue::Struct { struct_ } => struct_.hash(state),
             ConstValue::Array { array } => array.hash(state),

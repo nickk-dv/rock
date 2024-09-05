@@ -116,7 +116,7 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
         }
         hir::LoopKind::ForLoop { bind, cond, assign } => {
             match bind {
-                hir::ForLoopBind::NoOp => {}
+                hir::ForLoopBind::Error => unreachable!(),
                 hir::ForLoopBind::Local(local_id) => codegen_local(cg, proc_cg, local_id),
                 hir::ForLoopBind::Discard(value) => codegen_discard(cg, proc_cg, value),
             }
@@ -140,15 +140,7 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
 fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: hir::LocalID) {
     let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
     let local_ptr = proc_cg.local_ptrs[local_id.index()];
-
-    if let Some(expr) = local.value {
-        emit_expr::codegen_expr_store(cg, proc_cg, expr, local_ptr);
-    } else {
-        //@can be unsafe on complex types, enums, re-design local init rules
-        let local_ty = cg.ty(local.ty);
-        let zero_init = llvm::const_all_zero(local_ty);
-        cg.build.store(zero_init, local_ptr);
-    }
+    emit_expr::codegen_expr_store(cg, proc_cg, local.init, local_ptr);
 }
 
 fn codegen_discard<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, value: &hir::Expr<'c>) {

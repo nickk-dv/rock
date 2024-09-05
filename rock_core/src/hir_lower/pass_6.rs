@@ -45,7 +45,7 @@ pub fn check_entry_point<'hir>(
 pub fn check_main_procedure<'hir>(
     hir: &mut HirData<'hir, '_>,
     emit: &mut HirEmit<'hir>,
-    proc_id: hir::ProcID,
+    proc_id: hir::ProcID<'hir>,
 ) {
     let data = hir.registry_mut().proc_data_mut(proc_id);
     let flag = hir::ProcFlag::Main;
