@@ -1,31 +1,26 @@
 use super::constant;
-use super::hir_build::{HirData, HirEmit, SymbolKind};
+use super::context::{HirCtx, HirEmit, SymbolKind};
+use super::errors as err;
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
-use crate::error::{ErrorComp, Info, SourceRange, StringOrStr, WarningComp};
+use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp};
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-pub fn typecheck_procedures<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
-    let mut proc = ProcScope::dummy();
-    for proc_id in hir.registry().proc_ids() {
-        typecheck_proc(hir, emit, &mut proc, proc_id)
+pub fn typecheck_procedures(ctx: &mut HirCtx) {
+    for proc_id in ctx.registry.proc_ids() {
+        typecheck_proc(ctx, proc_id)
     }
 }
 
-fn typecheck_proc<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    proc_id: hir::ProcID<'hir>,
-) {
-    let item = hir.registry().proc_item(proc_id);
-    let data = hir.registry().proc_data(proc_id);
+fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_>, proc_id: hir::ProcID<'hir>) {
+    let item = ctx.registry.proc_item(proc_id);
+    let data = ctx.registry.proc_data(proc_id);
 
     if data.attr_set.contains(hir::ProcFlag::Variadic) {
         if data.params.is_empty() {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "variadic procedures must have at least one named parameter",
                 SourceRange::new(data.origin_id, data.name.range),
                 None,
@@ -35,7 +30,7 @@ fn typecheck_proc<'hir>(
 
     if data.attr_set.contains(hir::ProcFlag::Test) {
         if !data.params.is_empty() {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "procedures with #[test] attribute cannot have any input parameters",
                 SourceRange::new(data.origin_id, data.name.range),
                 None,
@@ -43,7 +38,7 @@ fn typecheck_proc<'hir>(
         }
         //@allow never
         if !data.return_ty.is_void() {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "procedures with #[test] attribute can only return `void`",
                 SourceRange::new(data.origin_id, item.return_ty.range),
                 None,
@@ -54,23 +49,18 @@ fn typecheck_proc<'hir>(
     if let Some(block) = item.block {
         let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
-        proc.reset(data.origin_id, data.params, expect);
+        ctx.proc.reset(data.origin_id, data.params, expect);
 
-        let block_res = typecheck_block(hir, emit, proc, expect, block, BlockEnter::None);
-        let locals = emit.arena.alloc_slice(proc.finish_locals());
+        let block_res = typecheck_block(ctx, expect, block, BlockEnter::None);
+        let locals = ctx.arena.alloc_slice(ctx.proc.finish_locals());
 
-        let data = hir.registry_mut().proc_data_mut(proc_id);
+        let data = ctx.registry.proc_data_mut(proc_id);
         data.block = Some(block_res.block);
         data.locals = locals;
     }
 }
 
-pub fn type_matches<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &HirEmit<'hir>,
-    ty: hir::Type<'hir>,
-    ty2: hir::Type<'hir>,
-) -> bool {
+pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     match (ty, ty2) {
         (hir::Type::Error, _) => true,
         (_, hir::Type::Error) => true,
@@ -79,59 +69,50 @@ pub fn type_matches<'hir>(
         (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
         (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
             if mutt2 == ast::Mut::Mutable {
-                type_matches(hir, emit, *ref_ty, *ref_ty2)
+                type_matches(ctx, *ref_ty, *ref_ty2)
             } else {
-                mutt == mutt2 && type_matches(hir, emit, *ref_ty, *ref_ty2)
+                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
             }
         }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.param_types.len() == proc_ty2.param_types.len())
                 && (proc_ty.is_variadic == proc_ty2.is_variadic)
-                && type_matches(hir, emit, proc_ty.return_ty, proc_ty2.return_ty)
+                && type_matches(ctx, proc_ty.return_ty, proc_ty2.return_ty)
                 && (0..proc_ty.param_types.len()).all(|idx| {
-                    type_matches(
-                        hir,
-                        emit,
-                        proc_ty.param_types[idx],
-                        proc_ty2.param_types[idx],
-                    )
+                    type_matches(ctx, proc_ty.param_types[idx], proc_ty2.param_types[idx])
                 })
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
             if slice2.mutt == ast::Mut::Mutable {
-                type_matches(hir, emit, slice.elem_ty, slice2.elem_ty)
+                type_matches(ctx, slice.elem_ty, slice2.elem_ty)
             } else {
-                slice.mutt == slice2.mutt && type_matches(hir, emit, slice.elem_ty, slice2.elem_ty)
+                slice.mutt == slice2.mutt && type_matches(ctx, slice.elem_ty, slice2.elem_ty)
             }
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
-            if let Ok(len) = array.len.get_resolved(hir, emit) {
-                if let Ok(len2) = array2.len.get_resolved(hir, emit) {
-                    return (len == len2) && type_matches(hir, emit, array.elem_ty, array2.elem_ty);
+            if let Ok(len) = array.len.get_resolved(ctx) {
+                if let Ok(len2) = array2.len.get_resolved(ctx) {
+                    return (len == len2) && type_matches(ctx, array.elem_ty, array2.elem_ty);
                 }
             }
             true
         }
-        (hir::Type::ArrayStatic(array), _) => array.len.get_resolved(hir, emit).is_err(),
-        (_, hir::Type::ArrayStatic(array2)) => array2.len.get_resolved(hir, emit).is_err(),
+        (hir::Type::ArrayStatic(array), _) => array.len.get_resolved(ctx).is_err(),
+        (_, hir::Type::ArrayStatic(array2)) => array2.len.get_resolved(ctx).is_err(),
         _ => false,
     }
 }
 
-pub fn type_format<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &HirEmit<'hir>,
-    ty: hir::Type<'hir>,
-) -> StringOrStr {
+pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().into(),
         hir::Type::Enum(id) => {
-            let name = hir.name_str(hir.registry().enum_data(id).name.id);
+            let name = ctx.name_str(ctx.registry.enum_data(id).name.id);
             name.to_string().into()
         }
         hir::Type::Struct(id) => {
-            let name = hir.name_str(hir.registry().struct_data(id).name.id);
+            let name = ctx.name_str(ctx.registry.struct_data(id).name.id);
             name.to_string().into()
         }
         hir::Type::Reference(ref_ty, mutt) => {
@@ -139,14 +120,14 @@ pub fn type_format<'hir>(
                 ast::Mut::Mutable => "mut ",
                 ast::Mut::Immutable => "",
             };
-            let ref_ty_format = type_format(hir, emit, *ref_ty);
+            let ref_ty_format = type_format(ctx, *ref_ty);
             let format = format!("&{}{}", mut_str, ref_ty_format.as_str());
             format.into()
         }
         hir::Type::Procedure(proc_ty) => {
             let mut format = String::from("proc(");
             for (idx, param_ty) in proc_ty.param_types.iter().enumerate() {
-                let param_ty_format = type_format(hir, emit, *param_ty);
+                let param_ty_format = type_format(ctx, *param_ty);
                 format.push_str(param_ty_format.as_str());
                 if proc_ty.param_types.len() != idx + 1 {
                     format.push_str(", ");
@@ -156,7 +137,7 @@ pub fn type_format<'hir>(
                 format.push_str(", ..")
             }
             format.push_str(") -> ");
-            let return_format = type_format(hir, emit, proc_ty.return_ty);
+            let return_format = type_format(ctx, proc_ty.return_ty);
             format.push_str(return_format.as_str());
             format.into()
         }
@@ -165,13 +146,13 @@ pub fn type_format<'hir>(
                 ast::Mut::Mutable => "mut",
                 ast::Mut::Immutable => "",
             };
-            let elem_format = type_format(hir, emit, slice.elem_ty);
+            let elem_format = type_format(ctx, slice.elem_ty);
             let format = format!("[{}]{}", mut_str, elem_format.as_str());
             format.into()
         }
         hir::Type::ArrayStatic(array) => {
-            let len = array.len.get_resolved(hir, emit);
-            let elem_format = type_format(hir, emit, array.elem_ty);
+            let len = array.len.get_resolved(ctx);
+            let elem_format = type_format(ctx, array.elem_ty);
             let format = match len {
                 Ok(len) => format!("[{}]{}", len, elem_format.as_str()),
                 Err(()) => format!("[<unknown>]{}", elem_format.as_str()),
@@ -188,16 +169,15 @@ pub enum Expectation<'hir> {
 }
 
 //@verify how this works, `false` is good outcome?
-pub fn check_type_expectation<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+pub fn check_type_expectation(
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     from_range: TextRange,
-    expect: Expectation<'hir>,
-    found_ty: hir::Type<'hir>,
+    expect: Expectation,
+    found_ty: hir::Type,
 ) -> bool {
     if let Expectation::HasType(expect_ty, expect_src) = expect {
-        if type_matches(hir, emit, expect_ty, found_ty) {
+        if type_matches(ctx, expect_ty, found_ty) {
             return false;
         }
 
@@ -207,11 +187,11 @@ pub fn check_type_expectation<'hir>(
             None
         };
 
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "type mismatch: expected `{}`, found `{}`",
-                type_format(hir, emit, expect_ty).as_str(),
-                type_format(hir, emit, found_ty).as_str()
+                type_format(ctx, expect_ty).as_str(),
+                type_format(ctx, found_ty).as_str()
             ),
             SourceRange::new(origin_id, from_range),
             info,
@@ -248,12 +228,12 @@ impl<'hir> TypeResult<'hir> {
             kind: hir::ExprKind::Error,
         }
     }
-    fn into_expr_result(self, emit: &mut HirEmit<'hir>, range: TextRange) -> ExprResult<'hir> {
+    fn into_expr_result(self, ctx: &mut HirCtx<'hir, '_>, range: TextRange) -> ExprResult<'hir> {
         let expr = hir::Expr {
             kind: self.kind,
             range,
         };
-        let expr = emit.arena.alloc(expr);
+        let expr = ctx.arena.alloc(expr);
         ExprResult::new(self.ty, expr)
     }
 }
@@ -291,70 +271,56 @@ impl<'hir> BlockResult<'hir> {
 // It might be still good to include errored expressions with correct range.
 #[must_use]
 pub fn typecheck_expr<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     expr: &ast::Expr,
 ) -> ExprResult<'hir> {
     let expr_res = match expr.kind {
-        ast::ExprKind::Lit { lit } => typecheck_lit(emit, expect, lit),
-        ast::ExprKind::If { if_ } => typecheck_if(hir, emit, proc, expect, if_, expr.range),
+        ast::ExprKind::Lit { lit } => typecheck_lit(ctx, expect, lit),
+        ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
-            typecheck_block(hir, emit, proc, expect, *block, BlockEnter::None).into_type_result()
+            typecheck_block(ctx, expect, *block, BlockEnter::None).into_type_result()
         }
-        ast::ExprKind::Match { match_ } => {
-            typecheck_match(hir, emit, proc, expect, match_, expr.range)
-        }
-        ast::ExprKind::Match2 { match_2 } => {
-            typecheck_match_2(hir, emit, proc, expect, match_2, expr.range)
-        }
-        ast::ExprKind::Field { target, name } => typecheck_field(hir, emit, proc, target, name),
+        ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
+        ast::ExprKind::Match2 { match_2 } => typecheck_match_2(ctx, expect, match_2, expr.range),
+        ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
         ast::ExprKind::Index {
             target,
             mutt,
             index,
-        } => typecheck_index(hir, emit, proc, target, mutt, index, expr.range),
-        ast::ExprKind::Call { target, input } => typecheck_call(hir, emit, proc, target, input),
-        ast::ExprKind::Cast { target, into } => {
-            typecheck_cast(hir, emit, proc, target, into, expr.range)
-        }
-        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(hir, emit, proc, *ty, expr.range),
-        ast::ExprKind::Item { path, input } => {
-            typecheck_item(hir, emit, proc, path, input, expr.range)
-        }
+        } => typecheck_index(ctx, target, mutt, index, expr.range),
+        ast::ExprKind::Call { target, input } => typecheck_call(ctx, target, input),
+        ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
+        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
+        ast::ExprKind::Item { path, input } => typecheck_item(ctx, path, input, expr.range),
         ast::ExprKind::Variant { name, input } => {
-            typecheck_variant(hir, emit, proc, expect, name, input, expr.range)
+            typecheck_variant(ctx, expect, name, input, expr.range)
         }
         ast::ExprKind::StructInit { struct_init } => {
-            typecheck_struct_init(hir, emit, proc, expect, struct_init, expr.range)
+            typecheck_struct_init(ctx, expect, struct_init, expr.range)
         }
-        ast::ExprKind::ArrayInit { input } => {
-            typecheck_array_init(hir, emit, proc, expect, input, expr.range)
-        }
-        ast::ExprKind::ArrayRepeat { expr, len } => {
-            typecheck_array_repeat(hir, emit, proc, expect, expr, len)
-        }
-        ast::ExprKind::Deref { rhs } => typecheck_deref(hir, emit, proc, rhs),
-        ast::ExprKind::Address { mutt, rhs } => typecheck_address(hir, emit, proc, mutt, rhs),
+        ast::ExprKind::ArrayInit { input } => typecheck_array_init(ctx, expect, input, expr.range),
+        ast::ExprKind::ArrayRepeat { expr, len } => typecheck_array_repeat(ctx, expect, expr, len),
+        ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs),
+        ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs),
         ast::ExprKind::Range { range } => todo!("typecheck range"),
         ast::ExprKind::Unary { op, op_range, rhs } => {
-            typecheck_unary(hir, emit, proc, expect, op, op_range, rhs)
+            typecheck_unary(ctx, expect, op, op_range, rhs)
         }
         ast::ExprKind::Binary { op, op_range, bin } => {
-            typecheck_binary(hir, emit, proc, expect, op, op_range, bin)
+            typecheck_binary(ctx, expect, op, op_range, bin)
         }
     };
 
     //@if `errored` is usefull it can be done via emit error count api
     //@removed `ignored` from `TypeResult`, verify ignore behaviors for block returns
-    check_type_expectation(hir, emit, proc.origin(), expr.range, expect, expr_res.ty);
-    expr_res.into_expr_result(emit, expr.range)
+    check_type_expectation(ctx, ctx.proc.origin(), expr.range, expect, expr_res.ty);
+    expr_res.into_expr_result(ctx, expr.range)
 }
 
 fn typecheck_lit<'hir>(
-    emit: &mut HirEmit<'hir>,
-    expect: Expectation<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
+    expect: Expectation,
     lit: ast::Lit,
 ) -> TypeResult<'hir> {
     let (value, ty) = match lit {
@@ -386,7 +352,7 @@ fn typecheck_lit<'hir>(
         }
         ast::Lit::String(string_lit) => {
             let value = hir::ConstValue::String { string_lit };
-            let string_ty = alloc_string_lit_type(emit, string_lit);
+            let string_ty = alloc_string_lit_type(ctx, string_lit);
             (value, string_ty)
         }
     };
@@ -420,14 +386,14 @@ pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
 }
 
 pub fn alloc_string_lit_type<'hir>(
-    emit: &mut HirEmit<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
     string_lit: ast::StringLit,
 ) -> hir::Type<'hir> {
     if string_lit.c_string {
-        let byte = emit.arena.alloc(hir::Type::Basic(BasicType::U8));
+        let byte = ctx.arena.alloc(hir::Type::Basic(BasicType::U8));
         hir::Type::Reference(byte, ast::Mut::Immutable)
     } else {
-        let slice = emit.arena.alloc(hir::ArraySlice {
+        let slice = ctx.arena.alloc(hir::ArraySlice {
             mutt: ast::Mut::Immutable,
             elem_ty: hir::Type::Basic(BasicType::U8),
         });
@@ -436,26 +402,24 @@ pub fn alloc_string_lit_type<'hir>(
 }
 
 fn typecheck_if<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     mut expect: Expectation<'hir>,
-    if_: &ast::If<'_>,
+    if_: &ast::If,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut if_type = hir::Type::Basic(BasicType::Never);
-    let entry = typecheck_branch(hir, emit, proc, &mut expect, &mut if_type, &if_.entry);
+    let entry = typecheck_branch(ctx, &mut expect, &mut if_type, &if_.entry);
 
     let mut branches = Vec::with_capacity(if_.branches.len());
     for branch in if_.branches {
-        let branch = typecheck_branch(hir, emit, proc, &mut expect, &mut if_type, branch);
+        let branch = typecheck_branch(ctx, &mut expect, &mut if_type, branch);
         branches.push(branch);
     }
-    let branches = emit.arena.alloc_slice(&branches);
+    let branches = ctx.arena.alloc_slice(&branches);
 
     let else_block = match if_.else_block {
         Some(block) => {
-            let block_res = typecheck_block(hir, emit, proc, expect, block, BlockEnter::None);
+            let block_res = typecheck_block(ctx, expect, block, BlockEnter::None);
 
             // never -> anything
             // error -> anything except never
@@ -473,9 +437,9 @@ fn typecheck_if<'hir>(
     }
 
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
-            SourceRange::new(proc.origin(), expr_range),
+            SourceRange::new(ctx.proc.origin(), expr_range),
             None,
         ));
     }
@@ -485,23 +449,21 @@ fn typecheck_if<'hir>(
         branches,
         else_block,
     };
-    let if_ = emit.arena.alloc(if_);
+    let if_ = ctx.arena.alloc(if_);
     let kind = hir::ExprKind::If { if_ };
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(if_type, kind)
 }
 
 fn typecheck_branch<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: &mut Expectation<'hir>,
     if_type: &mut hir::Type<'hir>,
-    branch: &ast::Branch<'_>,
+    branch: &ast::Branch,
 ) -> hir::Branch<'hir> {
     let expect_bool = Expectation::HasType(hir::Type::BOOL, None);
-    let cond_res = typecheck_expr(hir, emit, proc, expect_bool, branch.cond);
-    let block_res = typecheck_block(hir, emit, proc, *expect, branch.block, BlockEnter::None);
+    let cond_res = typecheck_expr(ctx, expect_bool, branch.cond);
+    let block_res = typecheck_block(ctx, *expect, branch.block, BlockEnter::None);
 
     // never -> anything
     // error -> anything except never
@@ -513,7 +475,7 @@ fn typecheck_branch<'hir>(
         if !block_res.ty.is_error() && !block_res.ty.is_never() {
             let expect_src = block_res
                 .tail_range
-                .map(|range| SourceRange::new(proc.origin(), range));
+                .map(|range| SourceRange::new(ctx.proc.origin(), range));
             *expect = Expectation::HasType(block_res.ty, expect_src);
         }
     }
@@ -525,27 +487,24 @@ fn typecheck_branch<'hir>(
 }
 
 fn typecheck_match<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     mut expect: Expectation<'hir>,
-    match_: &ast::Match<'_>,
+    match_: &ast::Match,
     match_range: TextRange,
 ) -> TypeResult<'hir> {
-    let on_res = typecheck_expr(hir, emit, proc, Expectation::None, match_.on_expr);
-    check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
+    let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
+    check_match_compatibility(ctx, ctx.proc.origin(), on_res.ty, match_.on_expr.range);
 
     let mut match_type = hir::Type::Basic(BasicType::Never);
     let mut check_exaust = true;
 
-    let pat_expect_src = SourceRange::new(proc.origin(), match_.on_expr.range);
+    let pat_expect_src = SourceRange::new(ctx.proc.origin(), match_.on_expr.range);
     let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
-        let value =
-            constant::resolve_const_expr(hir, emit, proc, proc.origin(), pat_expect, arm.pat);
-        let value_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
+        let value = constant::resolve_const_expr(ctx, ctx.proc.origin(), pat_expect, arm.pat);
+        let value_res = typecheck_expr(ctx, expect, arm.expr);
 
         // never -> anything
         // error -> anything except never
@@ -554,7 +513,7 @@ fn typecheck_match<'hir>(
         }
         if let Expectation::None = expect {
             if !value_res.ty.is_error() && !value_res.ty.is_never() {
-                let expect_src = SourceRange::new(proc.origin(), arm.expr.range);
+                let expect_src = SourceRange::new(ctx.proc.origin(), arm.expr.range);
                 expect = Expectation::HasType(value_res.ty, Some(expect_src));
             }
         }
@@ -565,12 +524,12 @@ fn typecheck_match<'hir>(
 
         //@temp dummy value (match2 will be used instead)
         let pat_value_id = match value {
-            Ok(value) => emit.const_intern.intern(value),
+            Ok(value) => ctx.const_intern.intern(value),
             Err(_) => hir::ConstValueID::dummy(),
         };
 
         let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
-        let stmts = emit.arena.alloc_slice(&[tail_stmt]);
+        let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
 
         let arm = hir::MatchArm {
             pat: pat_value_id,
@@ -581,7 +540,7 @@ fn typecheck_match<'hir>(
     }
 
     let mut fallback = if let Some(fallback) = match_.fallback {
-        let value_res = typecheck_expr(hir, emit, proc, expect, fallback);
+        let value_res = typecheck_expr(ctx, expect, fallback);
 
         // never -> anything
         // error -> anything except never
@@ -590,7 +549,7 @@ fn typecheck_match<'hir>(
         }
 
         let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
-        let stmts = emit.arena.alloc_slice(&[tail_stmt]);
+        let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
         Some(hir::Block { stmts })
     } else {
         None
@@ -598,9 +557,7 @@ fn typecheck_match<'hir>(
 
     if check_exaust {
         check_match_exhaust(
-            hir,
-            emit,
-            proc,
+            ctx,
             &mut arms,
             &mut fallback,
             match_,
@@ -609,38 +566,36 @@ fn typecheck_match<'hir>(
         );
     }
 
-    let arms = emit.arena.alloc_slice(&arms);
+    let arms = ctx.arena.alloc_slice(&arms);
     let match_ = hir::Match {
         on_expr: on_res.expr,
         arms,
         fallback,
     };
-    let match_ = emit.arena.alloc(match_);
+    let match_ = ctx.arena.alloc(match_);
     let kind = hir::ExprKind::Match { match_ };
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(match_type, kind)
 }
 
 fn typecheck_match_2<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     mut expect: Expectation<'hir>,
-    match_: &ast::Match2<'_>,
+    match_: &ast::Match2,
     match_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut match_type = hir::Type::Basic(BasicType::Never);
-    let error_count = emit.error_count();
+    let error_count = ctx.emit.error_count();
 
-    let on_res = typecheck_expr(hir, emit, proc, Expectation::None, match_.on_expr);
-    let pat_expect_src = SourceRange::new(proc.origin(), match_.on_expr.range);
+    let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
+    let pat_expect_src = SourceRange::new(ctx.proc.origin(), match_.on_expr.range);
     let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
-    check_match_compatibility(hir, emit, proc.origin(), on_res.ty, match_.on_expr.range);
+    check_match_compatibility(ctx, ctx.proc.origin(), on_res.ty, match_.on_expr.range);
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
-        let pat = typecheck_pat(hir, emit, proc, pat_expect, &arm.pat);
-        let expr_res = typecheck_expr(hir, emit, proc, expect, arm.expr);
+        let pat = typecheck_pat(ctx, pat_expect, &arm.pat);
+        let expr_res = typecheck_expr(ctx, expect, arm.expr);
 
         // never -> anything
         // error -> anything except never
@@ -649,13 +604,13 @@ fn typecheck_match_2<'hir>(
         }
         if let Expectation::None = expect {
             if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
-                let expect_src = SourceRange::new(proc.origin(), arm.expr.range);
+                let expect_src = SourceRange::new(ctx.proc.origin(), arm.expr.range);
                 expect = Expectation::HasType(expr_res.ty, Some(expect_src));
             }
         }
 
         let tail_stmt = hir::Stmt::ExprTail(expr_res.expr);
-        let stmts = emit.arena.alloc_slice(&[tail_stmt]);
+        let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
         let block = hir::Block { stmts };
 
         let arm = hir::MatchArm2 {
@@ -665,9 +620,9 @@ fn typecheck_match_2<'hir>(
         };
         arms.push(arm);
     }
-    let arms = emit.arena.alloc_slice(&arms);
+    let arms = ctx.arena.alloc_slice(&arms);
 
-    if !emit.did_error(error_count) {
+    if !ctx.emit.did_error(error_count) {
         //@pattern analysis / unrechability / exaustiveness
     }
 
@@ -675,7 +630,7 @@ fn typecheck_match_2<'hir>(
         on_expr: on_res.expr,
         arms,
     };
-    let match_ = emit.arena.alloc(match_);
+    let match_ = ctx.arena.alloc(match_);
     let kind = hir::ExprKind::Match2 { match_ };
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(match_type, kind)
@@ -693,34 +648,30 @@ impl<'hir> PatResult<'hir> {
 }
 
 fn typecheck_pat<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     pat: &ast::Pat,
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
-        ast::PatKind::Lit { lit } => typecheck_pat_lit(emit, expect, lit),
-        ast::PatKind::Item { path, input } => {
-            typecheck_pat_item(hir, emit, proc, path, input, pat.range)
-        }
+        ast::PatKind::Lit { lit } => typecheck_pat_lit(ctx, expect, lit),
+        ast::PatKind::Item { path, input } => typecheck_pat_item(ctx, path, input, pat.range),
         ast::PatKind::Variant { name, input } => {
-            typecheck_pat_variant(hir, emit, proc, expect, name, input, pat.range)
+            typecheck_pat_variant(ctx, expect, name, input, pat.range)
         }
-        ast::PatKind::Or { patterns } => typecheck_pat_or(hir, emit, proc, expect, patterns),
+        ast::PatKind::Or { patterns } => typecheck_pat_or(ctx, expect, patterns),
     };
 
-    check_type_expectation(hir, emit, proc.origin(), pat.range, expect, pat_res.pat_ty);
+    check_type_expectation(ctx, ctx.proc.origin(), pat.range, expect, pat_res.pat_ty);
     pat_res.pat
 }
 
 fn typecheck_pat_lit<'hir>(
-    emit: &mut HirEmit<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     lit: ast::Lit,
 ) -> PatResult<'hir> {
-    let lit_res = typecheck_lit(emit, expect, lit);
+    let lit_res = typecheck_lit(ctx, expect, lit);
     let value = match lit_res.kind {
         hir::ExprKind::Const { value } => value,
         _ => unreachable!(),
@@ -729,20 +680,18 @@ fn typecheck_pat_lit<'hir>(
 }
 
 fn typecheck_pat_item<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     path: &ast::Path,
     binds: Option<&ast::BindingList>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
-    let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
+    let (value_id, field_names) = path_resolve_value(ctx, ctx.proc.origin(), path);
 
     match value_id {
         ValueID::None => PatResult::new(hir::Pat::Error, hir::Type::Error),
         ValueID::Enum(enum_id, variant_id) => {
             //@`field_names` are guaranteed to be empty (solve by making path resolve more clear)
-            let data = hir.registry().enum_data(enum_id);
+            let data = ctx.registry.enum_data(enum_id);
             let variant = data.variant(variant_id);
 
             let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
@@ -751,10 +700,10 @@ fn typecheck_pat_item<'hir>(
             if input_count != expected_count {
                 //@error src can be improved to not include variant itself if possible (if needed)
                 error_unexpected_variant_bind_count(
-                    emit,
+                    &mut ctx.emit,
                     expected_count,
                     input_count,
-                    SourceRange::new(proc.origin(), pat_range),
+                    SourceRange::new(ctx.proc.origin(), pat_range),
                     SourceRange::new(data.origin_id, variant.name.range),
                 );
             }
@@ -766,9 +715,9 @@ fn typecheck_pat_item<'hir>(
         }
         ValueID::Const(const_id) => {
             if let Some(name) = field_names.first() {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     "cannot access fields in patterns",
-                    SourceRange::new(proc.origin(), name.range),
+                    SourceRange::new(ctx.proc.origin(), name.range),
                     None,
                 ));
             }
@@ -776,20 +725,20 @@ fn typecheck_pat_item<'hir>(
             let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
             if input_count > 0 {
                 //@rephrase error
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     "cannot destructure constants in patterns",
-                    SourceRange::new(proc.origin(), pat_range),
+                    SourceRange::new(ctx.proc.origin(), pat_range),
                     None,
                 ));
             }
 
-            let data = hir.registry().const_data(const_id);
+            let data = ctx.registry.const_data(const_id);
             PatResult::new(hir::Pat::Const(const_id), data.ty)
         }
         ValueID::Proc(_) | ValueID::Global(_) | ValueID::Local(_) | ValueID::Param(_) => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot use runtime values in patterns",
-                SourceRange::new(proc.origin(), pat_range),
+                SourceRange::new(ctx.proc.origin(), pat_range),
                 None,
             ));
             PatResult::new(hir::Pat::Error, hir::Type::Error)
@@ -798,21 +747,23 @@ fn typecheck_pat_item<'hir>(
 }
 
 fn typecheck_pat_variant<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx,
     expect: Expectation<'hir>,
     name: ast::Name,
     binds: Option<&ast::BindingList>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
-    let enum_id = infer_enum_type(emit, expect, SourceRange::new(proc.origin(), name.range));
+    let enum_id = infer_enum_type(
+        &mut ctx.emit,
+        expect,
+        SourceRange::new(ctx.proc.origin(), name.range),
+    );
     let enum_id = match enum_id {
         Some(enum_id) => enum_id,
         None => return PatResult::new(hir::Pat::Wild, hir::Type::Error),
     };
 
-    let data = hir.registry().enum_data(enum_id);
+    let data = ctx.registry.enum_data(enum_id);
     if let Some((variant_id, variant)) = data.find_variant(name.id) {
         //@duplicate codeblock, same as ast::PatKind::Item
         let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
@@ -821,10 +772,10 @@ fn typecheck_pat_variant<'hir>(
         if input_count != expected_count {
             //@error src can be improved to not include variant itself if possible (if needed)
             error_unexpected_variant_bind_count(
-                emit,
+                &mut ctx.emit,
                 expected_count,
                 input_count,
-                SourceRange::new(proc.origin(), pat_range),
+                SourceRange::new(ctx.proc.origin(), pat_range),
                 SourceRange::new(data.origin_id, variant.name.range),
             );
         }
@@ -835,9 +786,9 @@ fn typecheck_pat_variant<'hir>(
         )
     } else {
         //@duplicate error, same as path resolve
-        emit.error(ErrorComp::new(
-            format!("enum variant `{}` is not found", hir.name_str(name.id)),
-            SourceRange::new(proc.origin(), name.range),
+        ctx.emit.error(ErrorComp::new(
+            format!("enum variant `{}` is not found", ctx.name_str(name.id)),
+            SourceRange::new(ctx.proc.origin(), name.range),
             Info::new(
                 "enum defined here",
                 SourceRange::new(data.origin_id, data.name.range),
@@ -848,18 +799,16 @@ fn typecheck_pat_variant<'hir>(
 }
 
 fn typecheck_pat_or<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     patterns: &[ast::Pat],
 ) -> PatResult<'hir> {
     let mut patterns_res = Vec::with_capacity(patterns.len());
     for pat in patterns {
-        let pat = typecheck_pat(hir, emit, proc, expect, pat);
+        let pat = typecheck_pat(ctx, expect, pat);
         patterns_res.push(pat);
     }
-    let patterns = emit.arena.alloc_slice(&patterns_res);
+    let patterns = ctx.arena.alloc_slice(&patterns_res);
 
     PatResult::new(hir::Pat::Or(patterns), hir::Type::Error)
 }
@@ -868,12 +817,10 @@ fn typecheck_pat_or<'hir>(
 // could have same value and result in
 // error in llvm ir generation, not checked currently
 fn check_match_exhaust<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    arms: &mut [hir::MatchArm<'hir>],
-    fallback: &mut Option<hir::Block<'hir>>,
-    match_ast: &ast::Match<'_>,
+    ctx: &mut HirCtx,
+    arms: &mut [hir::MatchArm],
+    fallback: &mut Option<hir::Block>,
+    match_ast: &ast::Match,
     match_range: TextRange,
     on_ty: hir::Type<'hir>,
 ) {
@@ -884,16 +831,16 @@ fn check_match_exhaust<'hir>(
             let mut cover_false = false;
 
             for (idx, arm) in arms.iter_mut().enumerate() {
-                let value = emit.const_intern.get(arm.pat);
+                let value = ctx.const_intern.get(arm.pat);
                 match value {
                     hir::ConstValue::Bool { val } => {
                         if val {
                             if cover_true {
                                 let ast_arm = match_ast.arms[idx];
                                 arm.unreachable = true;
-                                emit.warning(WarningComp::new(
+                                ctx.emit.warning(WarningComp::new(
                                     "unreachable pattern",
-                                    SourceRange::new(proc.origin(), ast_arm.pat.0.range),
+                                    SourceRange::new(ctx.proc.origin(), ast_arm.pat.0.range),
                                     None,
                                 ));
                             } else {
@@ -903,9 +850,9 @@ fn check_match_exhaust<'hir>(
                             if cover_false {
                                 let ast_arm = match_ast.arms[idx];
                                 arm.unreachable = true;
-                                emit.warning(WarningComp::new(
+                                ctx.emit.warning(WarningComp::new(
                                     "unreachable pattern",
-                                    SourceRange::new(proc.origin(), ast_arm.pat.0.range),
+                                    SourceRange::new(ctx.proc.origin(), ast_arm.pat.0.range),
                                     None,
                                 ));
                             } else {
@@ -921,9 +868,9 @@ fn check_match_exhaust<'hir>(
                 let all_covered = cover_true && cover_false;
                 if all_covered {
                     *fallback = None;
-                    emit.warning(WarningComp::new(
+                    ctx.emit.warning(WarningComp::new(
                         "unreachable pattern",
-                        SourceRange::new(proc.origin(), match_ast.fallback_range),
+                        SourceRange::new(ctx.proc.origin(), match_ast.fallback_range),
                         None,
                     ));
                 }
@@ -934,10 +881,10 @@ fn check_match_exhaust<'hir>(
                     (false, true) => "`true`",
                     (false, false) => "`true`, `false`",
                 };
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!("non-exhaustive match patterns\nmissing: {}", missing),
                     SourceRange::new(
-                        proc.origin(),
+                        ctx.proc.origin(),
                         TextRange::new(match_range.start(), match_range.start() + 5.into()),
                     ),
                     None,
@@ -948,14 +895,14 @@ fn check_match_exhaust<'hir>(
             //
         }
         hir::Type::Enum(enum_id) => {
-            let data = hir.registry().enum_data(enum_id);
+            let data = ctx.registry.enum_data(enum_id);
 
             let variant_count = data.variants.len();
             let mut variants_covered = Vec::new();
             variants_covered.resize(variant_count, false);
 
             for (idx, arm) in arms.iter_mut().enumerate() {
-                let value = emit.const_intern.get(arm.pat);
+                let value = ctx.const_intern.get(arm.pat);
                 match value {
                     //@consider typecheck result of patterns to make sure this is same type 01.06.24
                     // (dont check when any error were raised or value is Error)
@@ -968,9 +915,9 @@ fn check_match_exhaust<'hir>(
                         } else {
                             let ast_arm = match_ast.arms[idx];
                             arm.unreachable = true;
-                            emit.warning(WarningComp::new(
+                            ctx.emit.warning(WarningComp::new(
                                 "unreachable pattern",
-                                SourceRange::new(proc.origin(), ast_arm.pat.0.range),
+                                SourceRange::new(ctx.proc.origin(), ast_arm.pat.0.range),
                                 None,
                             ));
                         }
@@ -983,9 +930,9 @@ fn check_match_exhaust<'hir>(
                 let all_covered = variants_covered.iter().copied().all(|v| v);
                 if all_covered {
                     *fallback = None;
-                    emit.warning(WarningComp::new(
+                    ctx.emit.warning(WarningComp::new(
                         "unreachable pattern",
-                        SourceRange::new(proc.origin(), match_ast.fallback_range),
+                        SourceRange::new(ctx.proc.origin(), match_ast.fallback_range),
                         None,
                     ));
                 }
@@ -1000,19 +947,19 @@ fn check_match_exhaust<'hir>(
                     if !covered {
                         let variant = data.variant(hir::VariantID::new(idx));
                         let comma = if missing_count != 0 { ", " } else { "" };
-                        missing.push_str(&format!("{comma}`{}`", hir.name_str(variant.name.id)));
+                        missing.push_str(&format!("{comma}`{}`", ctx.name_str(variant.name.id)));
                         missing_count += 1;
                     }
                 }
 
                 if missing_count > 0 {
-                    emit.error(ErrorComp::new(
+                    ctx.emit.error(ErrorComp::new(
                         format!(
                             "non-exhaustive match patterns\nmissing variants: {}",
                             missing
                         ),
                         SourceRange::new(
-                            proc.origin(),
+                            ctx.proc.origin(),
                             TextRange::new(match_range.start(), match_range.start() + 5.into()),
                         ),
                         None,
@@ -1025,14 +972,12 @@ fn check_match_exhaust<'hir>(
 }
 
 fn typecheck_field<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     target: &ast::Expr,
     name: ast::Name,
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    let field_result = check_field_from_type(hir, emit, proc.origin(), name, target_res.ty);
+    let target_res = typecheck_expr(ctx, Expectation::None, target);
+    let field_result = check_field_from_type(ctx, ctx.proc.origin(), name, target_res.ty);
     emit_field_expr(target_res.expr, field_result)
 }
 
@@ -1060,8 +1005,7 @@ impl<'hir> FieldResult<'hir> {
 }
 
 fn check_field_from_type<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     name: ast::Name,
     ty: hir::Type<'hir>,
@@ -1074,7 +1018,7 @@ fn check_field_from_type<'hir>(
     match ty {
         hir::Type::Error => None,
         hir::Type::Struct(struct_id) => {
-            match check_field_from_struct(hir, emit, origin_id, name, struct_id) {
+            match check_field_from_struct(ctx, origin_id, name, struct_id) {
                 Some((field_id, field)) => {
                     let kind = FieldKind::Struct(struct_id, field_id);
                     let field_ty = field.ty;
@@ -1083,21 +1027,19 @@ fn check_field_from_type<'hir>(
                 None => None,
             }
         }
-        hir::Type::ArraySlice(slice) => {
-            match check_field_from_slice(hir, emit, origin_id, name, slice) {
-                Some(field) => {
-                    let kind = FieldKind::ArraySlice { field };
-                    let field_ty = match field {
-                        hir::SliceField::Ptr => hir::Type::Reference(&slice.elem_ty, slice.mutt),
-                        hir::SliceField::Len => hir::Type::USIZE,
-                    };
-                    Some(FieldResult::new(deref, kind, field_ty))
-                }
-                None => None,
+        hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, origin_id, name, slice) {
+            Some(field) => {
+                let kind = FieldKind::ArraySlice { field };
+                let field_ty = match field {
+                    hir::SliceField::Ptr => hir::Type::Reference(&slice.elem_ty, slice.mutt),
+                    hir::SliceField::Len => hir::Type::USIZE,
+                };
+                Some(FieldResult::new(deref, kind, field_ty))
             }
-        }
+            None => None,
+        },
         hir::Type::ArrayStatic(array) => {
-            match check_field_from_array(hir, emit, origin_id, name, array) {
+            match check_field_from_array(ctx, origin_id, name, array) {
                 Some(len) => {
                     let kind = FieldKind::ArrayStatic { len };
                     let field_ty = hir::Type::USIZE;
@@ -1107,11 +1049,11 @@ fn check_field_from_type<'hir>(
             }
         }
         _ => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "no field `{}` exists on value of type `{}`",
-                    hir.name_str(name.id),
-                    type_format(hir, emit, ty).as_str(),
+                    ctx.name_str(name.id),
+                    type_format(ctx, ty).as_str(),
                 ),
                 SourceRange::new(origin_id, name.range),
                 None,
@@ -1122,18 +1064,17 @@ fn check_field_from_type<'hir>(
 }
 
 fn check_field_from_struct<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     name: ast::Name,
     struct_id: hir::StructID,
 ) -> Option<(hir::FieldID, &'hir hir::Field<'hir>)> {
-    let data = hir.registry().struct_data(struct_id);
+    let data = ctx.registry.struct_data(struct_id);
     match data.find_field(name.id) {
         Some((field_id, field)) => {
             if origin_id != data.origin_id && field.vis == ast::Vis::Private {
-                emit.error(ErrorComp::new(
-                    format!("field `{}` is private", hir.name_str(name.id)),
+                ctx.emit.error(ErrorComp::new(
+                    format!("field `{}` is private", ctx.name_str(name.id)),
                     SourceRange::new(origin_id, name.range),
                     Info::new(
                         "defined here",
@@ -1144,8 +1085,8 @@ fn check_field_from_struct<'hir>(
             Some((field_id, field))
         }
         None => {
-            emit.error(ErrorComp::new(
-                format!("field `{}` is not found", hir.name_str(name.id)),
+            ctx.emit.error(ErrorComp::new(
+                format!("field `{}` is not found", ctx.name_str(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new(
                     "struct defined here",
@@ -1158,22 +1099,21 @@ fn check_field_from_struct<'hir>(
 }
 
 fn check_field_from_slice<'hir>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     name: ast::Name,
     slice: &hir::ArraySlice,
 ) -> Option<hir::SliceField> {
-    let field_name = hir.name_str(name.id);
+    let field_name = ctx.name_str(name.id);
     match field_name {
         "ptr" => Some(hir::SliceField::Ptr),
         "len" => Some(hir::SliceField::Len),
         _ => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
                     field_name,
-                    type_format(hir, emit, hir::Type::ArraySlice(slice)).as_str(),
+                    type_format(ctx, hir::Type::ArraySlice(slice)).as_str(),
                 ),
                 SourceRange::new(origin_id, name.range),
                 None,
@@ -1184,13 +1124,12 @@ fn check_field_from_slice<'hir>(
 }
 
 fn check_field_from_array<'hir>(
-    hir: &HirData,
-    emit: &mut HirEmit<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     name: ast::Name,
     array: &hir::ArrayStatic,
 ) -> Option<hir::ConstValue<'hir>> {
-    let field_name = hir.name_str(name.id);
+    let field_name = ctx.name_str(name.id);
     match field_name {
         "len" => {
             let len = match array.len {
@@ -1203,9 +1142,9 @@ fn check_field_from_array<'hir>(
                     None => return None, //@field result doesnt communicate usize type if this is None
                 },
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
-                    let (eval, _) = hir.registry().const_eval(eval_id);
+                    let (eval, _) = ctx.registry.const_eval(eval_id);
                     match eval.get_resolved() {
-                        Ok(value_id) => emit.const_intern.get(value_id),
+                        Ok(value_id) => ctx.const_intern.get(value_id),
                         Err(()) => return None, //@field result doesnt communicate usize type if this is None
                     }
                 }
@@ -1213,11 +1152,11 @@ fn check_field_from_array<'hir>(
             Some(len)
         }
         _ => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "no field `{}` exists on array type `{}`\ndid you mean `len`?",
                     field_name,
-                    type_format(hir, emit, hir::Type::ArrayStatic(array)).as_str(),
+                    type_format(ctx, hir::Type::ArrayStatic(array)).as_str(),
                 ),
                 SourceRange::new(origin_id, name.range),
                 None,
@@ -1293,17 +1232,15 @@ impl<'hir> CollectionType<'hir> {
 
 //@index or slice, desugar correctly
 fn typecheck_index<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    target: &ast::Expr<'_>,
+    ctx: &mut HirCtx<'hir, '_>,
+    target: &ast::Expr,
     mutt: ast::Mut,
-    index: &ast::Expr<'_>,
+    index: &ast::Expr,
     expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
+    let target_res = typecheck_expr(ctx, Expectation::None, target);
     let expect_usize = Expectation::HasType(hir::Type::USIZE, None);
-    let index_res = typecheck_expr(hir, emit, proc, expect_usize, index);
+    let index_res = typecheck_expr(ctx, expect_usize, index);
 
     match CollectionType::from(target_res.ty) {
         Ok(Some(collection)) => {
@@ -1313,10 +1250,9 @@ fn typecheck_index<'hir>(
                 kind: match collection.kind {
                     SliceOrArray::Slice(slice) => hir::IndexKind::Slice {
                         elem_size: constant::type_layout(
-                            hir,
-                            emit,
+                            ctx,
                             slice.elem_ty,
-                            SourceRange::new(proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
+                            SourceRange::new(ctx.proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
                         )
                         .unwrap_or(hir::Layout::new(0, 1))
                         .size(),
@@ -1328,25 +1264,22 @@ fn typecheck_index<'hir>(
 
             let kind = hir::ExprKind::Index {
                 target: target_res.expr,
-                access: emit.arena.alloc(access),
+                access: ctx.arena.alloc(access),
             };
             TypeResult::new(collection.elem_ty, kind)
         }
         Ok(None) => TypeResult::error(),
         Err(()) => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "cannot index value of type `{}`",
-                    type_format(hir, emit, target_res.ty).as_str()
+                    type_format(ctx, target_res.ty).as_str()
                 ),
-                SourceRange::new(proc.origin(), expr_range),
+                SourceRange::new(ctx.proc.origin(), expr_range),
                 // is this info needed? test if its useful
                 Info::new(
-                    format!(
-                        "has `{}` type",
-                        type_format(hir, emit, target_res.ty).as_str()
-                    ),
-                    SourceRange::new(proc.origin(), target.range),
+                    format!("has `{}` type", type_format(ctx, target_res.ty).as_str()),
+                    SourceRange::new(ctx.proc.origin(), target.range),
                 ),
             ));
             TypeResult::error()
@@ -1355,14 +1288,12 @@ fn typecheck_index<'hir>(
 }
 
 fn typecheck_call<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    target: &ast::Expr<'_>,
-    input: &ast::ArgumentList<'_>,
+    ctx: &mut HirCtx<'hir, '_>,
+    target: &ast::Expr,
+    input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    check_call_indirect(hir, emit, proc, target_res, input)
+    let target_res = typecheck_expr(ctx, Expectation::None, target);
+    check_call_indirect(ctx, target_res, input)
 }
 
 #[derive(Copy, Clone)]
@@ -1397,15 +1328,13 @@ impl BasicTypeKind {
 }
 
 fn typecheck_cast<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    target: &ast::Expr<'_>,
-    into: &ast::Type<'_>,
+    ctx: &mut HirCtx<'hir, '_>,
+    target: &ast::Expr,
+    into: &ast::Type,
     range: TextRange,
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(hir, emit, proc, Expectation::None, target);
-    let into = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), *into);
+    let target_res = typecheck_expr(ctx, Expectation::None, target);
+    let into = super::pass_3::type_resolve(ctx, ctx.proc.origin(), *into);
 
     // early return prevents false positives on cast warning & cast error
     if matches!(target_res.ty, hir::Type::Error) || matches!(into, hir::Type::Error) {
@@ -1414,7 +1343,7 @@ fn typecheck_cast<'hir>(
 
         let kind = hir::ExprKind::Cast {
             target: target_res.expr,
-            into: emit.arena.alloc(into),
+            into: ctx.arena.alloc(into),
             kind: hir::CastKind::NoOp,
         };
         return TypeResult::new(into, kind);
@@ -1422,20 +1351,20 @@ fn typecheck_cast<'hir>(
 
     // invariant: both types are not Error
     // ensured by early return above
-    if type_matches(hir, emit, target_res.ty, into) {
-        emit.warning(WarningComp::new(
+    if type_matches(ctx, target_res.ty, into) {
+        ctx.emit.warning(WarningComp::new(
             format!(
                 "redundant cast from `{}` into `{}`",
-                type_format(hir, emit, target_res.ty).as_str(),
-                type_format(hir, emit, into).as_str()
+                type_format(ctx, target_res.ty).as_str(),
+                type_format(ctx, into).as_str()
             ),
-            SourceRange::new(proc.origin(), range),
+            SourceRange::new(ctx.proc.origin(), range),
             None,
         ));
 
         let kind = hir::ExprKind::Cast {
             target: target_res.expr,
-            into: emit.arena.alloc(into),
+            into: ctx.arena.alloc(into),
             kind: hir::CastKind::NoOp,
         };
         return TypeResult::new(into, kind);
@@ -1447,8 +1376,8 @@ fn typecheck_cast<'hir>(
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::new(from);
             let into_kind = BasicTypeKind::new(into);
-            let from_size = constant::basic_layout(hir, from).size();
-            let into_size = constant::basic_layout(hir, into).size();
+            let from_size = constant::basic_layout(ctx, from).size();
+            let into_size = constant::basic_layout(ctx, into).size();
 
             match from_kind {
                 BasicTypeKind::IntS => match into_kind {
@@ -1499,20 +1428,20 @@ fn typecheck_cast<'hir>(
         //@cast could be primitive but still invalid
         // wording might be improved
         // or have 2 error types for this
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "non primitive cast from `{}` into `{}`",
-                type_format(hir, emit, target_res.ty).as_str(),
-                type_format(hir, emit, into).as_str()
+                type_format(ctx, target_res.ty).as_str(),
+                type_format(ctx, into).as_str()
             ),
-            SourceRange::new(proc.origin(), range),
+            SourceRange::new(ctx.proc.origin(), range),
             None,
         ));
     }
 
     let kind = hir::ExprKind::Cast {
         target: target_res.expr,
-        into: emit.arena.alloc(into),
+        into: ctx.arena.alloc(into),
         kind: cast_kind,
     };
     TypeResult::new(into, kind)
@@ -1522,46 +1451,42 @@ fn typecheck_cast<'hir>(
 // this can be partially adressed if each hir::Expr
 // is folded, thus range being range checked for `usize`
 fn typecheck_sizeof<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx,
     ty: ast::Type,
     expr_range: TextRange, //@temp? used for array size overflow error
 ) -> TypeResult<'hir> {
-    let ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ty);
+    let ty = super::pass_3::type_resolve(ctx, ctx.proc.origin(), ty);
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
-    let kind =
-        match constant::type_layout(hir, emit, ty, SourceRange::new(proc.origin(), expr_range)) {
-            Ok(layout) => {
-                let value = hir::ConstValue::Int {
-                    val: layout.size(),
-                    neg: false,
-                    int_ty: BasicInt::Usize,
-                };
-                hir::ExprKind::Const { value }
-            }
-            Err(()) => hir::ExprKind::Error,
-        };
+    let kind = match constant::type_layout(ctx, ty, SourceRange::new(ctx.proc.origin(), expr_range))
+    {
+        Ok(layout) => {
+            let value = hir::ConstValue::Int {
+                val: layout.size(),
+                neg: false,
+                int_ty: BasicInt::Usize,
+            };
+            hir::ExprKind::Const { value }
+        }
+        Err(()) => hir::ExprKind::Error,
+    };
 
     TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
 }
 
 fn typecheck_item<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     path: &ast::Path,
     input: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let (value_id, field_names) = path_resolve_value(hir, emit, Some(proc), proc.origin(), path);
+    let (value_id, field_names) = path_resolve_value(ctx, ctx.proc.origin(), path);
 
     let item_res = match value_id {
         ValueID::None => {
-            return error_result_default_check_input_opt(hir, emit, proc, input);
+            return error_result_default_check_input_opt(ctx, input);
         }
         ValueID::Proc(proc_id) => {
             //@where do fields go? none expected?
@@ -1569,21 +1494,21 @@ fn typecheck_item<'hir>(
             // remaining fields in each variant so its known when none can exist
             // instead of hadling the empty slice and assuming its correct
             if let Some(input) = input {
-                return check_call_direct(hir, emit, proc, proc_id, input);
+                return check_call_direct(ctx, proc_id, input);
             } else {
-                let data = hir.registry().proc_data(proc_id);
+                let data = ctx.registry.proc_data(proc_id);
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
                 let mut param_types = Vec::with_capacity(data.params.len());
                 for param in data.params {
                     param_types.push(param.ty);
                 }
                 let proc_ty = hir::ProcType {
-                    param_types: emit.arena.alloc_slice(&param_types),
+                    param_types: ctx.arena.alloc_slice(&param_types),
                     is_variadic: data.attr_set.contains(hir::ProcFlag::Variadic),
                     return_ty: data.return_ty,
                 };
 
-                let proc_ty = hir::Type::Procedure(emit.arena.alloc(proc_ty));
+                let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
                 let proc_value = hir::ConstValue::Procedure { proc_id };
                 let kind = hir::ExprKind::Const { value: proc_value };
                 return TypeResult::new(proc_ty, kind);
@@ -1593,24 +1518,22 @@ fn typecheck_item<'hir>(
             //@no fields is guaranteed by path resolve
             // remove assert when stable, or path resolve is reworked
             assert!(field_names.is_empty());
-            return check_variant_input_opt(
-                hir, emit, proc, enum_id, variant_id, input, expr_range,
-            );
+            return check_variant_input_opt(ctx, enum_id, variant_id, input, expr_range);
         }
         ValueID::Const(id) => TypeResult::new(
-            hir.registry().const_data(id).ty,
+            ctx.registry.const_data(id).ty,
             hir::ExprKind::ConstVar { const_id: id },
         ),
         ValueID::Global(id) => TypeResult::new(
-            hir.registry().global_data(id).ty,
+            ctx.registry.global_data(id).ty,
             hir::ExprKind::GlobalVar { global_id: id },
         ),
         ValueID::Local(id) => TypeResult::new(
-            proc.get_local(id).ty, //@type of local var might not be known
+            ctx.proc.get_local(id).ty, //@type of local var might not be known
             hir::ExprKind::LocalVar { local_id: id },
         ),
         ValueID::Param(id) => TypeResult::new(
-            proc.get_param(id).ty,
+            ctx.proc.get_param(id).ty,
             hir::ExprKind::ParamVar { param_id: id },
         ),
     };
@@ -1619,53 +1542,55 @@ fn typecheck_item<'hir>(
     let mut target_range = expr_range;
 
     for &name in field_names {
-        let expr_res = target_res.into_expr_result(emit, target_range);
-        let field_result = check_field_from_type(hir, emit, proc.origin(), name, expr_res.ty);
+        let expr_res = target_res.into_expr_result(ctx, target_range);
+        let field_result = check_field_from_type(ctx, ctx.proc.origin(), name, expr_res.ty);
         target_res = emit_field_expr(expr_res.expr, field_result);
         target_range = TextRange::new(expr_range.start(), name.range.end());
     }
 
     if let Some(input) = input {
-        let expr_res = target_res.into_expr_result(emit, target_range);
-        check_call_indirect(hir, emit, proc, expr_res, input)
+        let expr_res = target_res.into_expr_result(ctx, target_range);
+        check_call_indirect(ctx, expr_res, input)
     } else {
         target_res
     }
 }
 
 fn typecheck_variant<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    expect: Expectation<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
+    expect: Expectation,
     name: ast::Name,
     input: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let enum_id = infer_enum_type(emit, expect, SourceRange::new(proc.origin(), expr_range));
+    let enum_id = infer_enum_type(
+        &mut ctx.emit,
+        expect,
+        SourceRange::new(ctx.proc.origin(), expr_range),
+    );
     let enum_id = match enum_id {
         Some(enum_id) => enum_id,
-        None => return error_result_default_check_input_opt(hir, emit, proc, input),
+        None => return error_result_default_check_input_opt(ctx, input),
     };
 
-    let data = hir.registry().enum_data(enum_id);
+    let data = ctx.registry.enum_data(enum_id);
     let variant_id = match data.find_variant(name.id) {
         Some((variant_id, _)) => variant_id,
         None => {
             //@duplicate error, same as path resolve 1.07.24
-            emit.error(ErrorComp::new(
-                format!("enum variant `{}` is not found", hir.name_str(name.id)),
-                SourceRange::new(proc.origin(), name.range),
+            ctx.emit.error(ErrorComp::new(
+                format!("enum variant `{}` is not found", ctx.name_str(name.id)),
+                SourceRange::new(ctx.proc.origin(), name.range),
                 Info::new(
                     "enum defined here",
                     SourceRange::new(data.origin_id, data.name.range),
                 ),
             ));
-            return error_result_default_check_input_opt(hir, emit, proc, input);
+            return error_result_default_check_input_opt(ctx, input);
         }
     };
 
-    check_variant_input_opt(hir, emit, proc, enum_id, variant_id, input, expr_range)
+    check_variant_input_opt(ctx, enum_id, variant_id, input, expr_range)
 }
 
 //@still used in pass4
@@ -1674,23 +1599,25 @@ pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
 }
 
 fn typecheck_struct_init<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    expect: Expectation<'hir>,
+    ctx: &mut HirCtx<'hir, '_>,
+    expect: Expectation,
     struct_init: &ast::StructInit,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_id = match struct_init.path {
-        Some(path) => path_resolve_struct(hir, emit, Some(proc), proc.origin(), path),
-        None => infer_struct_type(emit, expect, SourceRange::new(proc.origin(), expr_range)),
+        Some(path) => path_resolve_struct(ctx, ctx.proc.origin(), path),
+        None => infer_struct_type(
+            &mut ctx.emit,
+            expect,
+            SourceRange::new(ctx.proc.origin(), expr_range),
+        ),
     };
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,
-        None => return error_result_default_check_field_init(hir, emit, proc, struct_init.input),
+        None => return error_result_default_check_field_init(ctx, struct_init.input),
     };
 
-    let data = hir.registry().struct_data(struct_id);
+    let data = ctx.registry.struct_data(struct_id);
     let field_count = data.fields.len();
 
     enum FieldStatus {
@@ -1708,23 +1635,23 @@ fn typecheck_struct_init<'hir>(
         if let Some((field_id, field)) = data.find_field(input.name.id) {
             //@get expect source?
             let expect = Expectation::HasType(field.ty, None);
-            let input_res = typecheck_expr(hir, emit, proc, expect, input.expr);
+            let input_res = typecheck_expr(ctx, expect, input.expr);
 
             if let FieldStatus::Init(range) = field_status[field_id.index()] {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!(
                         "field `{}` was already initialized",
-                        hir.name_str(input.name.id),
+                        ctx.name_str(input.name.id),
                     ),
-                    SourceRange::new(proc.origin(), input.name.range),
+                    SourceRange::new(ctx.proc.origin(), input.name.range),
                     Info::new("initialized here", SourceRange::new(data.origin_id, range)),
                 ));
             } else {
-                if proc.origin() != data.origin_id {
+                if ctx.proc.origin() != data.origin_id {
                     if field.vis == ast::Vis::Private {
-                        emit.error(ErrorComp::new(
-                            format!("field `{}` is private", hir.name_str(field.name.id),),
-                            SourceRange::new(proc.origin(), input.name.range),
+                        ctx.emit.error(ErrorComp::new(
+                            format!("field `{}` is private", ctx.name_str(field.name.id),),
+                            SourceRange::new(ctx.proc.origin(), input.name.range),
                             Info::new(
                                 "defined here",
                                 SourceRange::new(data.origin_id, field.name.range),
@@ -1742,19 +1669,19 @@ fn typecheck_struct_init<'hir>(
                 init_count += 1;
             }
         } else {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "field `{}` is not found in `{}`",
-                    hir.name_str(input.name.id),
-                    hir.name_str(data.name.id)
+                    ctx.name_str(input.name.id),
+                    ctx.name_str(data.name.id)
                 ),
-                SourceRange::new(proc.origin(), input.name.range),
+                SourceRange::new(ctx.proc.origin(), input.name.range),
                 Info::new(
                     "struct defined here",
                     SourceRange::new(data.origin_id, data.name.range),
                 ),
             ));
-            let _ = typecheck_expr(hir, emit, proc, Expectation::None, input.expr);
+            let _ = typecheck_expr(ctx, Expectation::None, input.expr);
         }
     }
 
@@ -1766,7 +1693,7 @@ fn typecheck_struct_init<'hir>(
             if let FieldStatus::None = status {
                 let field = data.field(hir::FieldID::new(idx));
                 message.push('`');
-                message.push_str(hir.name_str(field.name.id));
+                message.push_str(ctx.name_str(field.name.id));
                 if idx + 1 != field_count {
                     message.push_str("`, ");
                 } else {
@@ -1775,9 +1702,9 @@ fn typecheck_struct_init<'hir>(
             }
         }
 
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             message,
-            SourceRange::new(proc.origin(), expr_range),
+            SourceRange::new(ctx.proc.origin(), expr_range),
             Info::new(
                 "struct defined here",
                 SourceRange::new(data.origin_id, data.name.range),
@@ -1785,15 +1712,13 @@ fn typecheck_struct_init<'hir>(
         ));
     }
 
-    let input = emit.arena.alloc_slice(&field_inits);
+    let input = ctx.arena.alloc_slice(&field_inits);
     let kind = hir::ExprKind::StructInit { struct_id, input };
     TypeResult::new(hir::Type::Struct(struct_id), kind)
 }
 
 fn typecheck_array_init<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     mut expect: Expectation<'hir>,
     input: &[&ast::Expr<'_>],
     array_range: TextRange,
@@ -1817,7 +1742,7 @@ fn typecheck_array_init<'hir>(
     let input = {
         let mut input_res = Vec::with_capacity(input.len());
         for &expr in input.iter() {
-            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+            let expr_res = typecheck_expr(ctx, expect, expr);
             input_res.push(expr_res.expr);
 
             //@temp old version
@@ -1829,21 +1754,21 @@ fn typecheck_array_init<'hir>(
             if expect.ty.is_error() {
                 expect = TypeExpectation::new(
                     expr_res.ty,
-                    Some(SourceRange::new(proc.origin(), expr.range)),
+                    Some(SourceRange::new(ctx.proc.origin(), expr.range)),
                 )
             }
             */
         }
-        emit.arena.alloc_slice(&input_res)
+        ctx.arena.alloc_slice(&input_res)
     };
 
     let elem_ty = if input.is_empty() {
         if let Some(array_ty) = expect_array_ty {
             array_ty.elem_ty
         } else {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot infer type of empty array",
-                SourceRange::new(proc.origin(), array_range),
+                SourceRange::new(ctx.proc.origin(), array_range),
                 None,
             ));
             hir::Type::Error
@@ -1852,19 +1777,17 @@ fn typecheck_array_init<'hir>(
         elem_ty
     };
 
-    let array_type: &hir::ArrayStatic = emit.arena.alloc(hir::ArrayStatic {
+    let array_type: &hir::ArrayStatic = ctx.arena.alloc(hir::ArrayStatic {
         len: hir::ArrayStaticLen::Immediate(Some(input.len() as u64)),
         elem_ty,
     });
-    let array_init = emit.arena.alloc(hir::ArrayInit { elem_ty, input });
+    let array_init = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
     let kind = hir::ExprKind::ArrayInit { array_init };
     TypeResult::new(hir::Type::ArrayStatic(array_type), kind)
 }
 
 fn typecheck_array_repeat<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     mut expect: Expectation<'hir>,
     expr: &ast::Expr,
     len: ast::ConstExpr,
@@ -1877,14 +1800,12 @@ fn typecheck_array_repeat<'hir>(
         },
     };
 
-    let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+    let expr_res = typecheck_expr(ctx, expect, expr);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
     let value = constant::resolve_const_expr(
-        hir,
-        emit,
-        proc,
-        proc.origin(),
+        ctx,
+        ctx.proc.origin(),
         Expectation::HasType(hir::Type::USIZE, None),
         len,
     );
@@ -1894,11 +1815,11 @@ fn typecheck_array_repeat<'hir>(
     };
 
     if let Some(len) = len {
-        let array_type = emit.arena.alloc(hir::ArrayStatic {
+        let array_type = ctx.arena.alloc(hir::ArrayStatic {
             len: hir::ArrayStaticLen::Immediate(Some(len)), //@move to always specified size? else error 09.06.24
             elem_ty: expr_res.ty,
         });
-        let array_repeat = emit.arena.alloc(hir::ArrayRepeat {
+        let array_repeat = ctx.arena.alloc(hir::ArrayRepeat {
             elem_ty: expr_res.ty,
             expr: expr_res.expr,
             len,
@@ -1910,24 +1831,19 @@ fn typecheck_array_repeat<'hir>(
     }
 }
 
-fn typecheck_deref<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    rhs: &ast::Expr,
-) -> TypeResult<'hir> {
-    let rhs_res = typecheck_expr(hir, emit, proc, Expectation::None, rhs);
+fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_>, rhs: &ast::Expr) -> TypeResult<'hir> {
+    let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
 
     let ptr_ty = match rhs_res.ty {
         hir::Type::Error => hir::Type::Error,
         hir::Type::Reference(ref_ty, _) => *ref_ty,
         _ => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "cannot dereference value of type `{}`",
-                    type_format(hir, emit, rhs_res.ty).as_str()
+                    type_format(ctx, rhs_res.ty).as_str()
                 ),
-                SourceRange::new(proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
             hir::Type::Error
@@ -1936,72 +1852,70 @@ fn typecheck_deref<'hir>(
 
     let kind = hir::ExprKind::Deref {
         rhs: rhs_res.expr,
-        ptr_ty: emit.arena.alloc(ptr_ty),
+        ptr_ty: ctx.arena.alloc(ptr_ty),
     };
     TypeResult::new(ptr_ty, kind)
 }
 
 fn typecheck_address<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     mutt: ast::Mut,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
-    let rhs_res = typecheck_expr(hir, emit, proc, Expectation::None, rhs);
-    let adressability = get_expr_addressability(hir, proc, rhs_res.expr);
+    let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
+    let adressability = get_expr_addressability(ctx, rhs_res.expr);
 
     match adressability {
         Addressability::Unknown => {} //@ & to error should be also Error? 16.05.24
         Addressability::Constant => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot get reference to a constant, you can use `global` instead",
-                SourceRange::new(proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::SliceField => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot get reference to a slice field, slice itself cannot be modified",
-                SourceRange::new(proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::Temporary => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot get reference to a temporary value",
-                SourceRange::new(proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::TemporaryImmutable => {
             if mutt == ast::Mut::Mutable {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     "cannot get mutable reference to this temporary value, only immutable `&` is allowed",
-                    SourceRange::new(proc.origin(), rhs.range),
+                    SourceRange::new(ctx.proc.origin(), rhs.range),
                     None,
                 ));
             }
         }
         Addressability::Addressable(rhs_mutt, src) => {
             if mutt == ast::Mut::Mutable && rhs_mutt == ast::Mut::Immutable {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     "cannot get mutable reference to an immutable variable",
-                    SourceRange::new(proc.origin(), rhs.range),
+                    SourceRange::new(ctx.proc.origin(), rhs.range),
                     Info::new("variable defined here", src),
                 ));
             }
         }
         Addressability::NotImplemented => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "addressability not implemented for this expression",
-                SourceRange::new(proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
         }
     }
 
-    let ref_ty = emit.arena.alloc(rhs_res.ty);
+    let ref_ty = ctx.arena.alloc(rhs_res.ty);
     let ref_ty = hir::Type::Reference(ref_ty, mutt);
     let kind = hir::ExprKind::Address { rhs: rhs_res.expr };
     TypeResult::new(ref_ty, kind)
@@ -2017,11 +1931,7 @@ enum Addressability {
     NotImplemented, //@temporary non crashing error 05.05.24
 }
 
-fn get_expr_addressability<'hir>(
-    hir: &HirData<'hir, '_>,
-    proc: &ProcScope<'hir, '_>,
-    expr: &'hir hir::Expr<'hir>,
-) -> Addressability {
+fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> Addressability {
     match expr.kind {
         hir::ExprKind::Error => Addressability::Unknown,
         hir::ExprKind::Const { .. } => Addressability::Temporary, //@TemporaryImmutable for struct / array? and alloca them
@@ -2029,28 +1939,28 @@ fn get_expr_addressability<'hir>(
         hir::ExprKind::Block { .. } => Addressability::Temporary,
         hir::ExprKind::Match { .. } => Addressability::Temporary,
         hir::ExprKind::Match2 { .. } => Addressability::Temporary,
-        hir::ExprKind::StructField { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::ExprKind::StructField { target, .. } => get_expr_addressability(ctx, target),
         hir::ExprKind::SliceField { .. } => Addressability::SliceField,
-        hir::ExprKind::Index { target, .. } => get_expr_addressability(hir, proc, target),
-        hir::ExprKind::Slice { target, .. } => get_expr_addressability(hir, proc, target),
+        hir::ExprKind::Index { target, .. } => get_expr_addressability(ctx, target),
+        hir::ExprKind::Slice { target, .. } => get_expr_addressability(ctx, target),
         hir::ExprKind::Cast { .. } => Addressability::Temporary,
         hir::ExprKind::LocalVar { local_id } => {
-            let local = proc.get_local(local_id);
+            let local = ctx.proc.get_local(local_id);
             Addressability::Addressable(
                 local.mutt,
-                SourceRange::new(proc.origin(), local.name.range),
+                SourceRange::new(ctx.proc.origin(), local.name.range),
             )
         }
         hir::ExprKind::ParamVar { param_id } => {
-            let param = proc.get_param(param_id);
+            let param = ctx.proc.get_param(param_id);
             Addressability::Addressable(
                 param.mutt,
-                SourceRange::new(proc.origin(), param.name.range),
+                SourceRange::new(ctx.proc.origin(), param.name.range),
             )
         }
         hir::ExprKind::ConstVar { .. } => Addressability::Constant,
         hir::ExprKind::GlobalVar { global_id } => {
-            let data = hir.registry().global_data(global_id);
+            let data = ctx.registry.global_data(global_id);
             Addressability::Addressable(
                 data.mutt,
                 SourceRange::new(data.origin_id, data.name.range),
@@ -2062,7 +1972,7 @@ fn get_expr_addressability<'hir>(
         hir::ExprKind::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::ExprKind::ArrayInit { .. } => Addressability::TemporaryImmutable,
         hir::ExprKind::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
-        hir::ExprKind::Deref { rhs, .. } => get_expr_addressability(hir, proc, rhs),
+        hir::ExprKind::Deref { rhs, .. } => get_expr_addressability(ctx, rhs),
         hir::ExprKind::Address { .. } => Addressability::Temporary,
         hir::ExprKind::Unary { .. } => Addressability::Temporary,
         hir::ExprKind::Binary { .. } => Addressability::Temporary,
@@ -2070,17 +1980,15 @@ fn get_expr_addressability<'hir>(
 }
 
 fn typecheck_unary<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     op: ast::UnOp,
     op_range: TextRange,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
     let rhs_expect = unary_rhs_expect(op, expect);
-    let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, rhs);
-    let un_op = unary_op_check(hir, emit, proc.origin(), rhs_res.ty, op, op_range);
+    let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
+    let un_op = unary_op_check(ctx, ctx.proc.origin(), rhs_res.ty, op, op_range);
 
     if let Some(un_op) = un_op {
         let unary_type = unary_output_type(op, rhs_res.ty);
@@ -2102,21 +2010,19 @@ fn typecheck_unary<'hir>(
 // let x = 5 + 10 as u16;
 // let y = 5 as u16 + 10;
 fn typecheck_binary<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     op: ast::BinOp,
     op_range: TextRange,
     bin: &ast::BinExpr<'_>,
 ) -> TypeResult<'hir> {
     let lhs_expect = binary_lhs_expect(op, expect);
-    let lhs_res = typecheck_expr(hir, emit, proc, lhs_expect, bin.lhs);
-    let bin_op = binary_op_check(hir, emit, proc.origin(), lhs_res.ty, op, op_range);
+    let lhs_res = typecheck_expr(ctx, lhs_expect, bin.lhs);
+    let bin_op = binary_op_check(ctx, ctx.proc.origin(), lhs_res.ty, op, op_range);
 
-    let expect_src = SourceRange::new(proc.origin(), bin.lhs.range);
+    let expect_src = SourceRange::new(ctx.proc.origin(), bin.lhs.range);
     let rhs_expect = binary_rhs_expect(op, lhs_res.ty, bin_op.is_some(), expect_src);
-    let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, bin.rhs);
+    let rhs_res = typecheck_expr(ctx, rhs_expect, bin.rhs);
 
     if let Some(bin_op) = bin_op {
         let binary_ty = binary_output_type(op, lhs_res.ty);
@@ -2132,8 +2038,7 @@ fn typecheck_binary<'hir>(
 }
 
 fn check_match_compatibility<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     ty: hir::Type,
     range: TextRange,
@@ -2149,10 +2054,10 @@ fn check_match_compatibility<'hir>(
     };
 
     if !compatible {
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "cannot match on value of type `{}`",
-                type_format(hir, emit, ty).as_str()
+                type_format(ctx, ty).as_str()
             ),
             SourceRange::new(origin_id, range),
             None,
@@ -2161,14 +2066,12 @@ fn check_match_compatibility<'hir>(
 }
 
 fn typecheck_block<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     block: ast::Block,
     enter: BlockEnter,
 ) -> BlockResult<'hir> {
-    proc.push_block(enter);
+    ctx.proc.push_block(enter);
 
     let mut block_stmts: Vec<hir::Stmt> = Vec::with_capacity(block.stmts.len());
     let mut block_ty: Option<hir::Type> = None;
@@ -2177,24 +2080,24 @@ fn typecheck_block<'hir>(
     for stmt in block.stmts {
         let (hir_stmt, diverges) = match stmt.kind {
             ast::StmtKind::Break => {
-                if let Some(stmt_res) = typecheck_break(emit, proc, stmt.range) {
-                    let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                if let Some(stmt_res) = typecheck_break(ctx, stmt.range) {
+                    let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
                 }
             }
             ast::StmtKind::Continue => {
-                if let Some(stmt_res) = typecheck_continue(emit, proc, stmt.range) {
-                    let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                if let Some(stmt_res) = typecheck_continue(ctx, stmt.range) {
+                    let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
                 }
             }
             ast::StmtKind::Return(expr) => {
-                if let Some(stmt_res) = typecheck_return(hir, emit, proc, expr, stmt.range) {
-                    let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                if let Some(stmt_res) = typecheck_return(ctx, expr, stmt.range) {
+                    let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -2202,8 +2105,8 @@ fn typecheck_block<'hir>(
             }
             //@defer block divergence should be simulated to correctly handle block_ty and divergence warnings 03.07.24
             ast::StmtKind::Defer(block) => {
-                if let Some(stmt_res) = typecheck_defer(hir, emit, proc, *block, stmt.range) {
-                    let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
+                if let Some(stmt_res) = typecheck_defer(ctx, *block, stmt.range) {
+                    let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -2211,14 +2114,14 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Loop(loop_) => {
                 //@can diverge (inf loop, return, panic)
-                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
-                let stmt_res = hir::Stmt::Loop(typecheck_loop(hir, emit, proc, loop_));
+                let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                let stmt_res = hir::Stmt::Loop(typecheck_loop(ctx, loop_));
                 (stmt_res, diverges)
             }
             ast::StmtKind::Local(local) => {
                 //@can diverge any diverging expr inside
-                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
-                let local_res = typecheck_local(hir, emit, proc, local);
+                let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                let local_res = typecheck_local(ctx, local);
                 let stmt_res = match local_res {
                     LocalResult::Error => continue,
                     LocalResult::Local(local_id) => hir::Stmt::Local(local_id),
@@ -2228,8 +2131,8 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Assign(assign) => {
                 //@can diverge any diverging expr inside
-                let diverges = proc.check_stmt_diverges(hir, emit, false, stmt.range);
-                let stmt_res = hir::Stmt::Assign(typecheck_assign(hir, emit, proc, assign));
+                let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                let stmt_res = hir::Stmt::Assign(typecheck_assign(ctx, assign));
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprSemi(expr) => {
@@ -2245,15 +2148,15 @@ fn typecheck_block<'hir>(
                     _ => Expectation::None,
                 };
 
-                let error_count = emit.error_count();
-                let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
-                if !emit.did_error(error_count) {
-                    check_unused_expr_semi(hir, emit, proc.origin(), expr_res.expr, expr.range);
+                let error_count = ctx.emit.error_count();
+                let expr_res = typecheck_expr(ctx, expect, expr);
+                if !ctx.emit.did_error(error_count) {
+                    check_unused_expr_semi(ctx, ctx.proc.origin(), expr_res.expr, expr.range);
                 }
 
                 //@migrate to using never type instead of diverges bool flags
                 let will_diverge = expr_res.ty.is_never();
-                let diverges = proc.check_stmt_diverges(hir, emit, will_diverge, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(ctx, will_diverge, stmt.range);
 
                 let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
                 (stmt_res, diverges)
@@ -2271,10 +2174,10 @@ fn typecheck_block<'hir>(
                 }
                  */
                 // type expectation is delegated to tail expression, instead of the block itself
-                let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+                let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
                 // @seems to fix the problem (still a hack)
-                let diverges = proc.check_stmt_diverges(hir, emit, true, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
 
                 // only assigned once, any further `ExprTail` are unreachable
                 if block_ty.is_none() {
@@ -2290,7 +2193,7 @@ fn typecheck_block<'hir>(
         }
     }
 
-    let stmts = emit.arena.alloc_slice(&block_stmts);
+    let stmts = ctx.arena.alloc_slice(&block_stmts);
     let hir_block = hir::Block { stmts };
 
     //@wip approach, will change 03.07.24
@@ -2299,16 +2202,9 @@ fn typecheck_block<'hir>(
     } else {
         //@potentially incorrect aproach, verify that `void`
         // as the expectation and block result ty are valid 29.05.24
-        let diverges = proc.diverges().is_always();
+        let diverges = ctx.proc.diverges().is_always();
         if !diverges {
-            check_type_expectation(
-                hir,
-                emit,
-                proc.origin(),
-                block.range,
-                expect,
-                hir::Type::VOID,
-            );
+            check_type_expectation(ctx, ctx.proc.origin(), block.range, expect, hir::Type::VOID);
         }
         //@hack but should be correct
         let block_ty = if diverges {
@@ -2319,31 +2215,27 @@ fn typecheck_block<'hir>(
         BlockResult::new(block_ty, hir_block, tail_range)
     };
 
-    proc.pop_block();
+    ctx.proc.pop_block();
     block_result
 }
 
 /// returns `None` on invalid use of `break`
-fn typecheck_break<'hir>(
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    stmt_range: TextRange,
-) -> Option<hir::Stmt<'hir>> {
-    match proc.loop_status() {
+fn typecheck_break<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir::Stmt<'hir>> {
+    match ctx.proc.loop_status() {
         LoopStatus::None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot use `break` outside of loop",
-                SourceRange::new(proc.origin(), kw_range),
+                SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
             ));
             None
         }
         LoopStatus::Inside_WithDefer => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot use `break` in loop started outside of `defer`",
-                SourceRange::new(proc.origin(), kw_range),
+                SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
             ));
             None
@@ -2353,26 +2245,22 @@ fn typecheck_break<'hir>(
 }
 
 /// returns `None` on invalid use of `continue`
-fn typecheck_continue<'hir>(
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    stmt_range: TextRange,
-) -> Option<hir::Stmt<'hir>> {
-    match proc.loop_status() {
+fn typecheck_continue<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir::Stmt<'hir>> {
+    match ctx.proc.loop_status() {
         LoopStatus::None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot use `continue` outside of loop",
-                SourceRange::new(proc.origin(), kw_range),
+                SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
             ));
             None
         }
         LoopStatus::Inside_WithDefer => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot use `continue` in loop started outside of `defer`",
-                SourceRange::new(proc.origin(), kw_range),
+                SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
             ));
             None
@@ -2383,18 +2271,19 @@ fn typecheck_continue<'hir>(
 
 /// returns `None` on invalid use of `return`
 fn typecheck_return<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     expr: Option<&ast::Expr>,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
-    let valid = if let DeferStatus::Inside(prev_defer) = proc.defer_status() {
+    let valid = if let DeferStatus::Inside(prev_defer) = ctx.proc.defer_status() {
         let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             "cannot use `return` inside `defer`",
-            SourceRange::new(proc.origin(), kw_range),
-            Info::new("in this defer", SourceRange::new(proc.origin(), prev_defer)),
+            SourceRange::new(ctx.proc.origin(), kw_range),
+            Info::new(
+                "in this defer",
+                SourceRange::new(ctx.proc.origin(), prev_defer),
+            ),
         ));
         false
     } else {
@@ -2403,17 +2292,16 @@ fn typecheck_return<'hir>(
 
     let expr = match expr {
         Some(expr) => {
-            let expr_res = typecheck_expr(hir, emit, proc, proc.return_expect(), expr);
+            let expr_res = typecheck_expr(ctx, ctx.proc.return_expect(), expr);
             Some(expr_res.expr)
         }
         None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
             check_type_expectation(
-                hir,
-                emit,
-                proc.origin(),
+                ctx,
+                ctx.proc.origin(),
                 kw_range,
-                proc.return_expect(),
+                ctx.proc.return_expect(),
                 hir::Type::VOID,
             );
             None
@@ -2429,21 +2317,19 @@ fn typecheck_return<'hir>(
 
 /// returns `None` on invalid use of `defer`
 fn typecheck_defer<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     block: ast::Block,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
 
-    let valid = if let DeferStatus::Inside(prev_defer) = proc.defer_status() {
-        emit.error(ErrorComp::new(
+    let valid = if let DeferStatus::Inside(prev_defer) = ctx.proc.defer_status() {
+        ctx.emit.error(ErrorComp::new(
             "`defer` statements cannot be nested",
-            SourceRange::new(proc.origin(), kw_range),
+            SourceRange::new(ctx.proc.origin(), kw_range),
             Info::new(
                 "already in this defer",
-                SourceRange::new(proc.origin(), prev_defer),
+                SourceRange::new(ctx.proc.origin(), prev_defer),
             ),
         ));
         false
@@ -2452,38 +2338,25 @@ fn typecheck_defer<'hir>(
     };
 
     let block_res = typecheck_block(
-        hir,
-        emit,
-        proc,
+        ctx,
         Expectation::HasType(hir::Type::VOID, None),
         block,
         BlockEnter::Defer(kw_range),
     );
 
     if valid {
-        let block = emit.arena.alloc(block_res.block);
+        let block = ctx.arena.alloc(block_res.block);
         Some(hir::Stmt::Defer(block))
     } else {
         None
     }
 }
 
-fn typecheck_loop<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    loop_: &ast::Loop,
-) -> &'hir hir::Loop<'hir> {
+fn typecheck_loop<'hir>(ctx: &mut HirCtx<'hir, '_>, loop_: &ast::Loop) -> &'hir hir::Loop<'hir> {
     let kind = match loop_.kind {
         ast::LoopKind::Loop => hir::LoopKind::Loop,
         ast::LoopKind::While { cond } => {
-            let cond_res = typecheck_expr(
-                hir,
-                emit,
-                proc,
-                Expectation::HasType(hir::Type::BOOL, None),
-                cond,
-            );
+            let cond_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::BOOL, None), cond);
 
             hir::LoopKind::While {
                 cond: cond_res.expr,
@@ -2494,15 +2367,9 @@ fn typecheck_loop<'hir>(
             cond,
             assign,
         } => {
-            let local_res = typecheck_local(hir, emit, proc, local);
-            let cond_res = typecheck_expr(
-                hir,
-                emit,
-                proc,
-                Expectation::HasType(hir::Type::BOOL, None),
-                cond,
-            );
-            let assign = typecheck_assign(hir, emit, proc, assign);
+            let local_res = typecheck_local(ctx, local);
+            let cond_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::BOOL, None), cond);
+            let assign = typecheck_assign(ctx, assign);
 
             let bind = match local_res {
                 LocalResult::Error => hir::ForLoopBind::Error,
@@ -2518,9 +2385,7 @@ fn typecheck_loop<'hir>(
     };
 
     let block_res = typecheck_block(
-        hir,
-        emit,
-        proc,
+        ctx,
         Expectation::HasType(hir::Type::VOID, None),
         loop_.block,
         BlockEnter::Loop,
@@ -2530,7 +2395,7 @@ fn typecheck_loop<'hir>(
         kind,
         block: block_res.block,
     };
-    emit.arena.alloc(loop_)
+    ctx.arena.alloc(loop_)
 }
 
 enum LocalResult<'hir> {
@@ -2539,12 +2404,7 @@ enum LocalResult<'hir> {
     Discard(&'hir hir::Expr<'hir>),
 }
 
-fn typecheck_local<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
-    local: &ast::Local,
-) -> LocalResult<'hir> {
+fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> LocalResult<'hir> {
     //@theres no `nice` way to find both existing name from global (hir) scope
     // and proc_scope, those are so far disconnected,
     // some unified model of symbols might be better in the future
@@ -2552,19 +2412,26 @@ fn typecheck_local<'hir>(
 
     let already_defined = match local.bind {
         ast::Binding::Named(name) => {
-            if let Some(existing) = hir.symbol_in_scope_source(proc.origin(), name.id) {
-                super::pass_1::error_name_already_defined(hir, emit, proc.origin(), name, existing);
+            if let Some(existing) =
+                ctx.scope
+                    .symbol_defined_src(&ctx.registry, ctx.proc.origin(), name.id)
+            {
+                let src = SourceRange::new(ctx.proc.origin(), name.range);
+                let name = ctx.name_str(name.id);
+                err::scope_name_already_defined(&mut ctx.emit, src, existing, name);
                 true
-            } else if let Some(existing_var) = proc.find_variable(name.id) {
+            } else if let Some(existing_var) = ctx.proc.find_variable(name.id) {
                 let existing = match existing_var {
                     VariableID::Local(id) => {
-                        SourceRange::new(proc.origin(), proc.get_local(id).name.range)
+                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
                     }
                     VariableID::Param(id) => {
-                        SourceRange::new(proc.origin(), proc.get_param(id).name.range)
+                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
                     }
                 };
-                super::pass_1::error_name_already_defined(hir, emit, proc.origin(), name, existing);
+                let src = SourceRange::new(ctx.proc.origin(), name.range);
+                let name = ctx.name_str(name.id);
+                err::scope_name_already_defined(&mut ctx.emit, src, existing, name);
                 true
             } else {
                 false
@@ -2575,14 +2442,14 @@ fn typecheck_local<'hir>(
 
     let (local_ty, expect) = match local.ty {
         Some(ty) => {
-            let local_ty = super::pass_3::type_resolve(hir, emit, proc, proc.origin(), ty);
-            let expect_src = SourceRange::new(proc.origin(), ty.range);
+            let local_ty = super::pass_3::type_resolve(ctx, ctx.proc.origin(), ty);
+            let expect_src = SourceRange::new(ctx.proc.origin(), ty.range);
             let expect = Expectation::HasType(local_ty, Some(expect_src));
             (Some(local_ty), expect)
         }
         None => (None, Expectation::None),
     };
-    let init_res = typecheck_expr(hir, emit, proc, expect, local.init);
+    let init_res = typecheck_expr(ctx, expect, local.init);
     let local_ty = local_ty.unwrap_or(init_res.ty);
 
     match local.bind {
@@ -2591,13 +2458,13 @@ fn typecheck_local<'hir>(
                 LocalResult::Error
             } else {
                 //@check for `never`, `void` to prevent panic during codegen
-                let local = emit.arena.alloc(hir::Local {
+                let local = ctx.arena.alloc(hir::Local {
                     mutt: local.mutt,
                     name,
                     ty: local_ty,
                     init: init_res.expr,
                 });
-                let local_id = proc.push_local(local);
+                let local_id = ctx.proc.push_local(local);
                 LocalResult::Local(local_id)
             }
         }
@@ -2607,50 +2474,48 @@ fn typecheck_local<'hir>(
 
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
 fn typecheck_assign<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     assign: &ast::Assign,
 ) -> &'hir hir::Assign<'hir> {
-    let lhs_res = typecheck_expr(hir, emit, proc, Expectation::None, assign.lhs);
+    let lhs_res = typecheck_expr(ctx, Expectation::None, assign.lhs);
 
-    let adressability = get_expr_addressability(hir, proc, lhs_res.expr);
+    let adressability = get_expr_addressability(ctx, lhs_res.expr);
     match adressability {
         Addressability::Unknown => {}
         Addressability::Constant => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot assign to a constant",
-                SourceRange::new(proc.origin(), assign.lhs.range),
+                SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::SliceField => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot assign to a slice field, slice itself cannot be modified",
-                SourceRange::new(proc.origin(), assign.lhs.range),
+                SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::Temporary | Addressability::TemporaryImmutable => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "cannot assign to a temporary value",
-                SourceRange::new(proc.origin(), assign.lhs.range),
+                SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::Addressable(mutt, src) => {
             if mutt == ast::Mut::Immutable {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     "cannot assign to an immutable variable",
-                    SourceRange::new(proc.origin(), assign.lhs.range),
+                    SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                     Info::new("variable defined here", src),
                 ));
             }
         }
         Addressability::NotImplemented => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "addressability not implemented for this expression",
-                SourceRange::new(proc.origin(), assign.lhs.range),
+                SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
             ));
         }
@@ -2659,15 +2524,15 @@ fn typecheck_assign<'hir>(
     let assign_op = match assign.op {
         ast::AssignOp::Assign => hir::AssignOp::Assign,
         ast::AssignOp::Bin(op) => {
-            binary_op_check(hir, emit, proc.origin(), lhs_res.ty, op, assign.op_range)
+            binary_op_check(ctx, ctx.proc.origin(), lhs_res.ty, op, assign.op_range)
                 .map(hir::AssignOp::Bin)
                 .unwrap_or(hir::AssignOp::Assign)
         }
     };
 
-    let expect_src = SourceRange::new(proc.origin(), assign.lhs.range);
+    let expect_src = SourceRange::new(ctx.proc.origin(), assign.lhs.range);
     let rhs_expect = Expectation::HasType(lhs_res.ty, Some(expect_src));
-    let rhs_res = typecheck_expr(hir, emit, proc, rhs_expect, assign.rhs);
+    let rhs_res = typecheck_expr(ctx, rhs_expect, assign.rhs);
 
     let assign = hir::Assign {
         op: assign_op,
@@ -2675,25 +2540,20 @@ fn typecheck_assign<'hir>(
         rhs: rhs_res.expr,
         lhs_ty: lhs_res.ty,
     };
-    emit.arena.alloc(assign)
+    ctx.arena.alloc(assign)
 }
 
 // these calls are only done for items so far @26.04.24
 // locals or input params etc not checked yet (need to find a reasonable strategy)
 // proc return type is allowed to be never or void unlike other instances where types are used
-pub fn require_value_type<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    ty: hir::Type,
-    source: SourceRange,
-) {
+pub fn require_value_type(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) {
     if !type_is_value_type(ty) {
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "expected value type, found `{}`",
-                type_format(hir, emit, ty).as_str()
+                type_format(ctx, ty).as_str()
             ),
-            source,
+            src,
             None,
         ))
     }
@@ -2715,8 +2575,7 @@ pub fn type_is_value_type(ty: hir::Type) -> bool {
 //==================== UNUSED CHECK ====================
 
 fn check_unused_expr_semi(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     expr: &hir::Expr,
     expr_range: TextRange,
@@ -2755,7 +2614,7 @@ fn check_unused_expr_semi(
         hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
         hir::ExprKind::CallDirect { proc_id, .. } => {
-            let ty = hir.registry().proc_data(proc_id).return_ty;
+            let ty = ctx.registry.proc_data(proc_id).return_ty;
             return_type(ty)
         }
         hir::ExprKind::CallIndirect { indirect, .. } => {
@@ -2772,7 +2631,7 @@ fn check_unused_expr_semi(
     };
 
     if let UnusedExpr::Yes(kind) = unused {
-        emit.warning(WarningComp::new(
+        ctx.emit.warning(WarningComp::new(
             format!("unused {}", kind),
             SourceRange::new(origin_id, expr_range),
             None,
@@ -2824,39 +2683,33 @@ fn infer_struct_type(
 //==================== DEFAULT CHECK ====================
 
 fn error_result_default_check_input<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx,
     input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     for &expr in input.exprs.iter() {
-        let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+        let _ = typecheck_expr(ctx, Expectation::None, expr);
     }
     TypeResult::error()
 }
 
 fn error_result_default_check_input_opt<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx,
     input: Option<&ast::ArgumentList>,
 ) -> TypeResult<'hir> {
     if let Some(input) = input {
         for &expr in input.exprs.iter() {
-            let _ = typecheck_expr(hir, emit, proc, Expectation::None, expr);
+            let _ = typecheck_expr(ctx, Expectation::None, expr);
         }
     }
     TypeResult::error()
 }
 
 fn error_result_default_check_field_init<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx,
     input: &[ast::FieldInit],
 ) -> TypeResult<'hir> {
     for field in input.iter() {
-        let _ = typecheck_expr(hir, emit, proc, Expectation::None, field.expr);
+        let _ = typecheck_expr(ctx, Expectation::None, field.expr);
     }
     TypeResult::error()
 }
@@ -2933,13 +2786,12 @@ fn error_unexpected_call_arg_count(
 }
 
 fn check_call_direct<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     proc_id: hir::ProcID<'hir>,
     input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
-    let data = hir.registry().proc_data(proc_id);
+    let data = ctx.registry.proc_data(proc_id);
+    let return_ty = data.return_ty;
 
     let input_count = input.exprs.len();
     let expected_count = data.params.len();
@@ -2950,54 +2802,54 @@ fn check_call_direct<'hir>(
     if wrong_count {
         let input_range = input_range(input);
         error_unexpected_call_arg_count(
-            emit,
+            &mut ctx.emit,
             expected_count,
             input_count,
             is_variadic,
-            SourceRange::new(proc.origin(), input_range),
+            SourceRange::new(ctx.proc.origin(), input_range),
             Some(SourceRange::new(data.origin_id, data.name.range)),
         );
     }
 
     let mut values = Vec::with_capacity(data.params.len());
     for (idx, &expr) in input.exprs.iter().enumerate() {
+        //@reborrow
+        let data = ctx.registry.proc_data(proc_id);
         //@expect src, id with duplicates problem
         let expect = match data.params.get(idx) {
             Some(param) => Expectation::HasType(param.ty, None),
             None => Expectation::None,
         };
-        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        let expr_res = typecheck_expr(ctx, expect, expr);
         values.push(expr_res.expr);
     }
-    let values = emit.arena.alloc_slice(&values);
+    let values = ctx.arena.alloc_slice(&values);
 
     let kind = hir::ExprKind::CallDirect {
         proc_id,
         input: values,
     };
-    TypeResult::new(data.return_ty, kind)
+    TypeResult::new(return_ty, kind)
 }
 
 fn check_call_indirect<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     target_res: ExprResult<'hir>,
     input: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let proc_ty = match target_res.ty {
-        hir::Type::Error => return error_result_default_check_input(hir, emit, proc, input),
+        hir::Type::Error => return error_result_default_check_input(ctx, input),
         hir::Type::Procedure(proc_ty) => proc_ty,
         _ => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "cannot call value of type `{}`",
-                    type_format(hir, emit, target_res.ty).as_str()
+                    type_format(ctx, target_res.ty).as_str()
                 ),
-                SourceRange::new(proc.origin(), target_res.expr.range),
+                SourceRange::new(ctx.proc.origin(), target_res.expr.range),
                 None,
             ));
-            return error_result_default_check_input(hir, emit, proc, input);
+            return error_result_default_check_input(ctx, input);
         }
     };
 
@@ -3010,11 +2862,11 @@ fn check_call_indirect<'hir>(
     if wrong_count {
         let input_range = input_range(input);
         error_unexpected_call_arg_count(
-            emit,
+            &mut ctx.emit,
             expected_count,
             input_count,
             is_variadic,
-            SourceRange::new(proc.origin(), input_range),
+            SourceRange::new(ctx.proc.origin(), input_range),
             None,
         );
     }
@@ -3025,16 +2877,16 @@ fn check_call_indirect<'hir>(
             Some(param_ty) => Expectation::HasType(*param_ty, None),
             None => Expectation::None,
         };
-        let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+        let expr_res = typecheck_expr(ctx, expect, expr);
         values.push(expr_res.expr);
     }
-    let values = emit.arena.alloc_slice(&values);
+    let values = ctx.arena.alloc_slice(&values);
 
     let indirect = hir::CallIndirect {
         proc_ty,
         input: values,
     };
-    let indirect = emit.arena.alloc(indirect);
+    let indirect = ctx.arena.alloc(indirect);
     let kind = hir::ExprKind::CallIndirect {
         target: target_res.expr,
         indirect,
@@ -3043,15 +2895,13 @@ fn check_call_indirect<'hir>(
 }
 
 fn check_variant_input_opt<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
     input: Option<&ast::ArgumentList>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
-    let data = hir.registry().enum_data(enum_id);
+    let data = ctx.registry.enum_data(enum_id);
     let variant = data.variant(variant_id);
 
     let input_count = input.map(|i| i.exprs.len()).unwrap_or(0);
@@ -3060,10 +2910,10 @@ fn check_variant_input_opt<'hir>(
     if input_count != expected_count {
         let input_range = input_opt_range(input, error_range);
         error_unexpected_variant_arg_count(
-            emit,
+            &mut ctx.emit,
             expected_count,
             input_count,
-            SourceRange::new(proc.origin(), input_range),
+            SourceRange::new(ctx.proc.origin(), input_range),
             SourceRange::new(data.origin_id, variant.name.range),
         );
     }
@@ -3076,11 +2926,11 @@ fn check_variant_input_opt<'hir>(
                 Some(ty) => Expectation::HasType(*ty, None),
                 None => Expectation::None,
             };
-            let expr_res = typecheck_expr(hir, emit, proc, expect, expr);
+            let expr_res = typecheck_expr(ctx, expect, expr);
             values.push(expr_res.expr);
         }
-        let values = emit.arena.alloc_slice(&values);
-        let values = emit.arena.alloc(values);
+        let values = ctx.arena.alloc_slice(&values);
+        let values = ctx.arena.alloc(values);
         Some(values)
     } else {
         None
@@ -3116,38 +2966,45 @@ enum ResolvedPath<'hir> {
 }
 
 fn path_resolve<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: Option<&ProcScope<'hir, '_>>,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> (ResolvedPath<'hir>, usize) {
     let name = path.names.first().cloned().expect("non empty path");
 
-    if let Some(proc) = proc {
-        if let Some(var_id) = proc.find_variable(name.id) {
+    //@cannot tell in whitch context this body is
+    // contant exprs, type defs dont have a `proc`
+    if false {
+        if let Some(var_id) = ctx.proc.find_variable(name.id) {
             return (ResolvedPath::Variable(var_id), 0);
         }
     }
 
-    let (module_id, name) = match hir.symbol_from_scope(origin_id, origin_id, name) {
-        Ok((kind, source)) => {
-            let next_name = path.names.get(1).cloned();
-            match (kind, next_name) {
-                (SymbolKind::Module(module_id), Some(name)) => (module_id, name),
-                _ => return (ResolvedPath::Symbol(kind, source), 0),
+    let (module_id, name) =
+        match ctx
+            .scope
+            .symbol_from_scope(ctx, &ctx.registry, origin_id, origin_id, name)
+        {
+            Ok((kind, source)) => {
+                let next_name = path.names.get(1).cloned();
+                match (kind, next_name) {
+                    (SymbolKind::Module(module_id), Some(name)) => (module_id, name),
+                    _ => return (ResolvedPath::Symbol(kind, source), 0),
+                }
             }
-        }
-        Err(error) => {
-            emit.error(error);
-            return (ResolvedPath::None, 0);
-        }
-    };
+            Err(error) => {
+                ctx.emit.error(error);
+                return (ResolvedPath::None, 0);
+            }
+        };
 
-    match hir.symbol_from_scope(origin_id, module_id, name) {
+    match ctx
+        .scope
+        .symbol_from_scope(ctx, &ctx.registry, origin_id, module_id, name)
+    {
         Ok((kind, source)) => (ResolvedPath::Symbol(kind, source), 1),
         Err(error) => {
-            emit.error(error);
+            ctx.emit.error(error);
             (ResolvedPath::None, 1)
         }
     }
@@ -3156,32 +3013,29 @@ fn path_resolve<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: Option<&ProcScope<'hir, '_>>,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
-    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
 
     let ty = match resolved {
         ResolvedPath::None => return hir::Type::Error,
         ResolvedPath::Variable(variable) => {
             let name = path.names[name_idx];
 
-            let proc = proc.expect("proc context");
             let source = match variable {
                 VariableID::Local(id) => {
-                    SourceRange::new(proc.origin(), proc.get_local(id).name.range)
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
                 }
                 VariableID::Param(id) => {
-                    SourceRange::new(proc.origin(), proc.get_param(id).name.range)
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
                 }
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(ErrorComp::new(
-                format!("expected type, found local `{}`", hir.name_str(name.id)),
+            ctx.emit.error(ErrorComp::new(
+                format!("expected type, found local `{}`", ctx.name_str(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new("defined here", source),
             ));
@@ -3192,11 +3046,11 @@ pub fn path_resolve_type<'hir>(
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!(
                         "expected type, found {} `{}`",
                         kind.kind_name(),
-                        hir.name_str(name.id)
+                        ctx.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
                     Info::new("defined here", source),
@@ -3209,7 +3063,7 @@ pub fn path_resolve_type<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "unexpected path segment",
                 SourceRange::new(origin_id, range),
                 None,
@@ -3223,34 +3077,31 @@ pub fn path_resolve_type<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_struct<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: Option<&ProcScope<'hir, '_>>,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> Option<hir::StructID> {
-    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
 
     let struct_id = match resolved {
         ResolvedPath::None => return None,
         ResolvedPath::Variable(variable) => {
             let name = path.names[name_idx];
 
-            let proc = proc.expect("proc context");
             let source = match variable {
                 VariableID::Local(id) => {
-                    SourceRange::new(proc.origin(), proc.get_local(id).name.range)
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
                 }
                 VariableID::Param(id) => {
-                    SourceRange::new(proc.origin(), proc.get_param(id).name.range)
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
                 }
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "expected struct type, found local `{}`",
-                    hir.name_str(name.id)
+                    ctx.name_str(name.id)
                 ),
                 SourceRange::new(origin_id, name.range),
                 Info::new("defined here", source),
@@ -3261,11 +3112,11 @@ pub fn path_resolve_struct<'hir>(
             SymbolKind::Struct(id) => Some(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!(
                         "expected struct type, found {} `{}`",
                         kind.kind_name(),
-                        hir.name_str(name.id)
+                        ctx.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
                     Info::new("defined here", source),
@@ -3278,7 +3129,7 @@ pub fn path_resolve_struct<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "unexpected path segment",
                 SourceRange::new(origin_id, range),
                 None,
@@ -3299,13 +3150,11 @@ pub enum ValueID<'hir> {
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: Option<&ProcScope<'hir, '_>>,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     path: &ast::Path<'ast>,
 ) -> (ValueID<'hir>, &'ast [ast::Name]) {
-    let (resolved, name_idx) = path_resolve(hir, emit, proc, origin_id, path);
+    let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
 
     let value_id = match resolved {
         ResolvedPath::None => return (ValueID::None, &[]),
@@ -3318,7 +3167,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                 if let Some(remaining) = path.names.get(name_idx + 1..) {
                     if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
                         let range = TextRange::new(first.range.start(), last.range.end());
-                        emit.error(ErrorComp::new(
+                        ctx.emit.error(ErrorComp::new(
                             "unexpected path segment",
                             SourceRange::new(origin_id, range),
                             None,
@@ -3329,13 +3178,13 @@ pub fn path_resolve_value<'hir, 'ast>(
             }
             SymbolKind::Enum(id) => {
                 if let Some(variant_name) = path.names.get(name_idx + 1) {
-                    let enum_data = hir.registry().enum_data(id);
+                    let enum_data = ctx.registry.enum_data(id);
                     if let Some((variant_id, ..)) = enum_data.find_variant(variant_name.id) {
                         if let Some(remaining) = path.names.get(name_idx + 2..) {
                             if let (Some(first), Some(last)) = (remaining.first(), remaining.last())
                             {
                                 let range = TextRange::new(first.range.start(), last.range.end());
-                                emit.error(ErrorComp::new(
+                                ctx.emit.error(ErrorComp::new(
                                     "unexpected path segment",
                                     SourceRange::new(origin_id, range),
                                     None,
@@ -3344,10 +3193,10 @@ pub fn path_resolve_value<'hir, 'ast>(
                         }
                         return (ValueID::Enum(id, variant_id), &[]);
                     } else {
-                        emit.error(ErrorComp::new(
+                        ctx.emit.error(ErrorComp::new(
                             format!(
                                 "enum variant `{}` is not found",
-                                hir.name_str(variant_name.id)
+                                ctx.name_str(variant_name.id)
                             ),
                             SourceRange::new(origin_id, variant_name.range),
                             Info::new("enum defined here", source),
@@ -3356,11 +3205,11 @@ pub fn path_resolve_value<'hir, 'ast>(
                     }
                 } else {
                     let name = path.names[name_idx];
-                    emit.error(ErrorComp::new(
+                    ctx.emit.error(ErrorComp::new(
                         format!(
                             "expected value, found {} `{}`",
                             kind.kind_name(),
-                            hir.name_str(name.id)
+                            ctx.name_str(name.id)
                         ),
                         SourceRange::new(origin_id, name.range),
                         Info::new("defined here", source),
@@ -3372,11 +3221,11 @@ pub fn path_resolve_value<'hir, 'ast>(
             SymbolKind::Global(id) => ValueID::Global(id),
             _ => {
                 let name = path.names[name_idx];
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!(
                         "expected value, found {} `{}`",
                         kind.kind_name(),
-                        hir.name_str(name.id)
+                        ctx.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
                     Info::new("defined here", source),
@@ -3407,8 +3256,7 @@ fn unary_output_type(op: ast::UnOp, rhs_ty: hir::Type) -> hir::Type {
 }
 
 fn unary_op_check(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     rhs_ty: hir::Type,
     op: ast::UnOp,
@@ -3444,11 +3292,11 @@ fn unary_op_check(
     };
 
     if un_op.is_none() {
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "cannot apply unary operator `{}` on value of type `{}`",
                 op.as_str(),
-                type_format(hir, emit, rhs_ty).as_str()
+                type_format(ctx, rhs_ty).as_str()
             ),
             SourceRange::new(origin_id, op_range),
             None,
@@ -3538,8 +3386,7 @@ fn binary_output_type(op: ast::BinOp, lhs_ty: hir::Type) -> hir::Type {
 }
 
 fn binary_op_check(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     lhs_ty: hir::Type,
     op: ast::BinOp,
@@ -3704,11 +3551,11 @@ fn binary_op_check(
     };
 
     if bin_op.is_none() {
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "cannot apply binary operator `{}` on value of type `{}`",
                 op.as_str(),
-                type_format(hir, emit, lhs_ty).as_str()
+                type_format(ctx, lhs_ty).as_str()
             ),
             SourceRange::new(origin_id, op_range),
             None,

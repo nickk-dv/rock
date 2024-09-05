@@ -1,7 +1,8 @@
+use super::proc_scope::ProcScope;
 use crate::arena::Arena;
 use crate::ast;
 use crate::config::TargetTriple;
-use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
+use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, Info, ResultComp, SourceRange};
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::macros::{IndexID, ID};
@@ -9,16 +10,26 @@ use crate::session::ModuleID;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-use super::context::HirCtx;
-
-pub struct HirData<'hir, 'ast> {
-    modules: Vec<Module<'hir>>,
-    registry: Registry<'hir, 'ast>,
-    ast: ast::Ast<'ast>,
-    target: TargetTriple,
+pub struct HirCtx<'hir, 'ast> {
+    pub ast: ast::Ast<'ast>,
+    pub arena: Arena<'hir>,
+    pub emit: HirEmit,
+    pub proc: ProcScope<'hir>,
+    pub scope: HirScope<'hir>,
+    pub registry: Registry<'hir, 'ast>,
+    pub const_intern: hir::ConstInternPool<'hir>,
+    pub target: TargetTriple,
 }
 
-pub struct Module<'hir> {
+pub struct HirEmit {
+    diagnostics: DiagnosticCollection,
+}
+
+pub struct HirScope<'hir> {
+    modules: Vec<Module<'hir>>,
+}
+
+struct Module<'hir> {
     symbols: HashMap<ID<InternName>, Symbol<'hir>>,
 }
 
@@ -56,28 +67,129 @@ pub struct Registry<'hir, 'ast> {
     variant_evals: Vec<hir::VariantEval<'hir>>,
 }
 
-pub struct HirEmit<'hir> {
-    pub arena: Arena<'hir>,
-    pub const_intern: hir::ConstInternPool<'hir>,
-    diagnostics: DiagnosticCollection,
-}
+impl<'hir, 'ast: 'hir> HirCtx<'hir, 'ast> {
+    pub fn new(ast: ast::Ast<'ast>) -> HirCtx<'hir, 'ast> {
+        let arena = Arena::new();
+        let emit = HirEmit::new();
+        let proc = ProcScope::dummy();
+        let scope = HirScope::new(&ast);
+        let registry = Registry::new(&ast);
+        let const_intern = hir::ConstInternPool::new();
 
-impl<'hir, 'ast> HirData<'hir, 'ast> {
-    pub fn new(ast: ast::Ast<'ast>) -> Self {
-        let mut modules = Vec::with_capacity(ast.modules.len());
-        for _ in ast.modules.iter() {
-            modules.push(Module {
-                symbols: HashMap::with_capacity(64),
-            });
-        }
-        let registry = Registry::new(&ast.modules);
-
-        HirData {
-            modules,
-            registry,
+        //@store in Session instead?
+        // build triples will be different from host
+        HirCtx {
             ast,
+            arena,
+            emit,
+            proc,
+            scope,
+            registry,
+            const_intern,
             target: TargetTriple::host(),
         }
+    }
+
+    #[inline]
+    pub fn name_str(&self, id: ID<InternName>) -> &'ast str {
+        self.ast.intern_name.get(id)
+    }
+    #[inline]
+    pub fn intern_lit(&self) -> &InternPool<'ast, InternLit> {
+        &self.ast.intern_lit
+    }
+    #[inline]
+    pub fn intern_name(&mut self) -> &mut InternPool<'ast, InternName> {
+        &mut self.ast.intern_name
+    }
+    #[inline]
+    pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
+        self.ast.modules[module_id.index()]
+    }
+
+    pub fn hir_emit(self) -> ResultComp<hir::Hir<'hir>> {
+        if !self.emit.diagnostics.errors().is_empty() {
+            return ResultComp::Err(self.emit.diagnostics);
+        }
+
+        let mut const_values = Vec::with_capacity(self.registry.const_evals.len());
+        let mut errors = Vec::new();
+
+        for (eval, origin_id) in self.registry.const_evals.iter() {
+            //@can just use `get_resolved` but for now emitting internal error
+            // just rely on unreachable! in `get_resolve` when compiler is stable
+            match *eval {
+                hir::ConstEval::Unresolved(expr) => {
+                    errors.push(ErrorComp::new(
+                        "internal: trying to emit hir with ConstEval::Unresolved expression",
+                        SourceRange::new(*origin_id, expr.0.range),
+                        None,
+                    ));
+                }
+                hir::ConstEval::ResolvedError => {
+                    errors.push(ErrorComp::message(
+                        "internal: trying to emit hir with ConstEval::ResolvedError expression",
+                    ));
+                }
+                hir::ConstEval::Resolved(value_id) => const_values.push(value_id),
+            }
+        }
+
+        if errors.is_empty() {
+            let hir = hir::Hir {
+                arena: self.arena,
+                string_is_cstr: self.ast.string_is_cstr,
+                intern_lit: self.ast.intern_lit,
+                intern_name: self.ast.intern_name,
+                const_intern: self.const_intern,
+                procs: self.registry.hir_procs,
+                enums: self.registry.hir_enums,
+                structs: self.registry.hir_structs,
+                consts: self.registry.hir_consts,
+                globals: self.registry.hir_globals,
+                const_values,
+            };
+            ResultComp::Ok((hir, self.emit.diagnostics.warnings_moveout()))
+        } else {
+            ResultComp::Err(self.emit.diagnostics.join_errors(errors))
+        }
+    }
+}
+
+impl ErrorSink for HirEmit {
+    fn diagnostics(&self) -> &DiagnosticCollection {
+        &self.diagnostics
+    }
+    fn diagnostics_mut(&mut self) -> &mut DiagnosticCollection {
+        &mut self.diagnostics
+    }
+}
+
+impl HirEmit {
+    fn new() -> HirEmit {
+        HirEmit {
+            diagnostics: DiagnosticCollection::new(),
+        }
+    }
+}
+
+impl<'hir> HirScope<'hir> {
+    pub fn new(ast: &ast::Ast) -> HirScope<'hir> {
+        let mut modules = Vec::with_capacity(ast.modules.len());
+
+        for module in ast.modules.iter() {
+            let mut symbol_count = 0;
+            for item in module.items {
+                symbol_count += 1;
+                if let ast::Item::Import(import) = item {
+                    symbol_count += import.symbols.len();
+                }
+            }
+            let symbols = HashMap::with_capacity(symbol_count);
+            modules.push(Module { symbols });
+        }
+
+        HirScope { modules }
     }
 
     fn module(&self, id: ModuleID) -> &Module<'hir> {
@@ -85,29 +197,6 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
     }
     fn module_mut(&mut self, id: ModuleID) -> &mut Module<'hir> {
         &mut self.modules[id.index()]
-    }
-
-    pub fn registry(&self) -> &Registry<'hir, 'ast> {
-        &self.registry
-    }
-    pub fn registry_mut(&mut self) -> &mut Registry<'hir, 'ast> {
-        &mut self.registry
-    }
-
-    pub fn name_str(&self, id: ID<InternName>) -> &str {
-        self.ast.intern_name.get(id)
-    }
-    pub fn intern_lit(&self) -> &InternPool<'ast, InternLit> {
-        &self.ast.intern_lit
-    }
-    pub fn intern_name(&mut self) -> &mut InternPool<'ast, InternName> {
-        &mut self.ast.intern_name
-    }
-    pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
-        self.ast.modules[module_id.index()]
-    }
-    pub fn target(&self) -> TargetTriple {
-        self.target
     }
 
     pub fn add_symbol(&mut self, origin_id: ModuleID, id: ID<InternName>, symbol: Symbol<'hir>) {
@@ -128,8 +217,9 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         }
     }
 
-    pub fn symbol_in_scope_source(
+    pub fn symbol_defined_src(
         &self,
+        registry: &Registry,
         origin_id: ModuleID,
         id: ID<InternName>,
     ) -> Option<SourceRange> {
@@ -137,9 +227,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         let symbol = origin.symbols.get(&id).cloned()?;
 
         match symbol {
-            Symbol::Defined(kind) => {
-                Some(SourceRange::new(origin_id, kind.name_range(&self.registry)))
-            }
+            Symbol::Defined(kind) => Some(SourceRange::new(origin_id, kind.name_range(registry))),
             Symbol::Imported { import_range, .. } => {
                 Some(SourceRange::new(origin_id, import_range))
             }
@@ -148,6 +236,8 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
 
     pub fn symbol_from_scope(
         &self,
+        ctx: &HirCtx,
+        registry: &Registry,
         origin_id: ModuleID,
         target_id: ModuleID,
         name: ast::Name,
@@ -156,12 +246,12 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
 
         match target.symbols.get(&name.id).copied() {
             Some(Symbol::Defined(kind)) => {
-                let source = SourceRange::new(target_id, kind.name_range(&self.registry));
+                let source = SourceRange::new(target_id, kind.name_range(registry));
 
                 let vis = if origin_id == target_id {
                     ast::Vis::Public
                 } else {
-                    kind.vis(&self.registry)
+                    kind.vis(registry)
                 };
 
                 return match vis {
@@ -170,7 +260,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
                         format!(
                             "{} `{}` is private",
                             kind.kind_name(),
-                            self.name_str(name.id)
+                            ctx.name_str(name.id)
                         ),
                         SourceRange::new(origin_id, name.range),
                         Info::new("defined here", source),
@@ -188,7 +278,7 @@ impl<'hir, 'ast> HirData<'hir, 'ast> {
         }
 
         Err(ErrorComp::new(
-            format!("name `{}` is not found in module", self.name_str(name.id)),
+            format!("name `{}` is not found in module", ctx.name_str(name.id)),
             SourceRange::new(origin_id, name.range),
             None,
         ))
@@ -231,7 +321,7 @@ impl<'hir> SymbolKind<'hir> {
 }
 
 impl<'hir, 'ast> Registry<'hir, 'ast> {
-    pub fn new(modules: &[ast::Module<'ast>]) -> Registry<'hir, 'ast> {
+    pub fn new(ast: &ast::Ast<'ast>) -> Registry<'hir, 'ast> {
         let mut proc_count = 0;
         let mut enum_count = 0;
         let mut struct_count = 0;
@@ -239,7 +329,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         let mut global_count = 0;
         let mut import_count = 0;
 
-        for module in modules {
+        for module in ast.modules.iter() {
             for item in module.items {
                 match item {
                     ast::Item::Proc(_) => proc_count += 1,
@@ -379,7 +469,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         (0..self.const_evals.len()).map(hir::ConstEvalID::new)
     }
 
-    pub fn proc_item(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
+    pub fn proc_item(&self, id: hir::ProcID<'hir>) -> &'ast ast::ProcItem<'ast> {
         self.ast_procs[id.raw_index()]
     }
     pub fn enum_item(&self, id: hir::EnumID) -> &'ast ast::EnumItem<'ast> {
@@ -446,97 +536,5 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
     pub fn variant_eval_mut(&mut self, id: hir::VariantEvalID) -> &mut hir::VariantEval<'hir> {
         &mut self.variant_evals[id.index()]
-    }
-}
-
-impl<'hir> HirEmit<'hir> {
-    pub fn new() -> HirEmit<'hir> {
-        HirEmit {
-            arena: Arena::new(),
-            const_intern: hir::ConstInternPool::new(),
-            diagnostics: DiagnosticCollection::new(),
-        }
-    }
-
-    #[inline]
-    pub fn error(&mut self, error: ErrorComp) {
-        self.diagnostics.error(error);
-    }
-    #[inline]
-    pub fn warning(&mut self, warning: WarningComp) {
-        self.diagnostics.warning(warning);
-    }
-    #[inline]
-    pub fn error_count(&self) -> usize {
-        self.diagnostics.errors().len()
-    }
-    #[inline]
-    pub fn did_error(&self, error_count: usize) -> bool {
-        self.error_count() > error_count
-    }
-
-    pub fn emit<'ast: 'hir>(self, hir: HirData<'hir, 'ast>) -> ResultComp<hir::Hir<'hir>> {
-        if !self.diagnostics.errors().is_empty() {
-            return ResultComp::Err(self.diagnostics);
-        }
-
-        let mut const_values = Vec::with_capacity(hir.registry.const_evals.len());
-        let mut errors = Vec::new();
-
-        for (eval, origin_id) in hir.registry.const_evals.iter() {
-            //@can just use `get_resolve` but for now emitting internal error
-            // just rely on unreachable! in `get_resolve` when compiler is stable
-            match *eval {
-                hir::ConstEval::Unresolved(expr) => {
-                    errors.push(ErrorComp::new(
-                        "internal: trying to emit hir with ConstEval::Unresolved expression",
-                        SourceRange::new(*origin_id, expr.0.range),
-                        None,
-                    ));
-                }
-                hir::ConstEval::ResolvedError => {
-                    errors.push(ErrorComp::message(
-                        "internal: trying to emit hir with ConstEval::ResolvedError expression",
-                    ));
-                }
-                hir::ConstEval::Resolved(value_id) => const_values.push(value_id),
-            }
-        }
-
-        if errors.is_empty() {
-            let hir = hir::Hir {
-                arena: self.arena,
-                string_is_cstr: hir.ast.string_is_cstr,
-                intern_lit: hir.ast.intern_lit,
-                intern_name: hir.ast.intern_name,
-                const_intern: self.const_intern,
-                procs: hir.registry.hir_procs,
-                enums: hir.registry.hir_enums,
-                structs: hir.registry.hir_structs,
-                consts: hir.registry.hir_consts,
-                globals: hir.registry.hir_globals,
-                const_values,
-            };
-            ResultComp::Ok((hir, self.diagnostics.warnings_moveout()))
-        } else {
-            ResultComp::Err(self.diagnostics.join_errors(errors))
-        }
-    }
-}
-
-impl hir::ArrayStaticLen {
-    pub fn get_resolved(self, ctx: &HirCtx) -> Result<u64, ()> {
-        match self {
-            hir::ArrayStaticLen::Immediate(len) => len.ok_or(()),
-            hir::ArrayStaticLen::ConstEval(eval_id) => {
-                let (eval, _) = *ctx.registry.const_eval(eval_id);
-                let value_id = eval.get_resolved()?;
-
-                match ctx.const_intern.get(value_id) {
-                    hir::ConstValue::Int { val, .. } => Ok(val),
-                    _ => unreachable!(),
-                }
-            }
-        }
     }
 }

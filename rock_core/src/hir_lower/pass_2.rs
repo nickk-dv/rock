@@ -1,19 +1,19 @@
-use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
+use super::context::{HirCtx, Symbol, SymbolKind};
+use super::errors as err;
 use crate::ast;
-use crate::error::{ErrorComp, SourceRange, WarningComp};
+use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
 use crate::session::{ModuleID, ModuleOrDirectory, Session};
 
-pub fn resolve_imports(hir: &mut HirData, emit: &mut HirEmit, session: &Session) {
-    for import_id in hir.registry().import_ids() {
-        let origin_id = hir.registry().import_data(import_id).origin_id;
-        let import = hir.registry().import_item(import_id);
-        resolve_import(hir, emit, session, origin_id, import);
+pub fn resolve_imports(ctx: &mut HirCtx, session: &Session) {
+    for import_id in ctx.registry.import_ids() {
+        let origin_id = ctx.registry.import_data(import_id).origin_id;
+        let import = ctx.registry.import_item(import_id);
+        resolve_import(ctx, session, origin_id, import);
     }
 }
 
 fn resolve_import(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     import: &ast::ImportItem,
@@ -24,11 +24,11 @@ fn resolve_import(
         if let Some(dependency_id) = source_package.dependency(package_name.id) {
             source_package = session.package(dependency_id);
         } else {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "package `{}` is not found in dependencies of `{}`",
-                    hir.name_str(package_name.id),
-                    hir.name_str(source_package.name_id),
+                    ctx.name_str(package_name.id),
+                    ctx.name_str(source_package.name_id),
                 ),
                 SourceRange::new(origin_id, package_name.range),
                 None,
@@ -46,11 +46,11 @@ fn resolve_import(
     for name in directory_names {
         match target_dir.find(session, name.id) {
             ModuleOrDirectory::None => {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!(
                         "expected directory `{}` is not found in `{}`",
-                        hir.name_str(name.id),
-                        hir.name_str(source_package.name_id),
+                        ctx.name_str(name.id),
+                        ctx.name_str(source_package.name_id),
                     ),
                     SourceRange::new(origin_id, name.range),
                     None,
@@ -58,10 +58,10 @@ fn resolve_import(
                 return;
             }
             ModuleOrDirectory::Module(_) => {
-                emit.error(ErrorComp::new(
+                ctx.emit.error(ErrorComp::new(
                     format!(
                         "expected directory, found module `{}`",
-                        hir.name_str(name.id),
+                        ctx.name_str(name.id),
                     ),
                     SourceRange::new(origin_id, name.range),
                     None,
@@ -76,11 +76,11 @@ fn resolve_import(
 
     let target_id = match target_dir.find(session, module_name.id) {
         ModuleOrDirectory::None => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "expected module `{}` is not found in `{}`",
-                    hir.name_str(module_name.id),
-                    hir.name_str(source_package.name_id),
+                    ctx.name_str(module_name.id),
+                    ctx.name_str(source_package.name_id),
                 ),
                 SourceRange::new(origin_id, module_name.range),
                 None,
@@ -89,10 +89,10 @@ fn resolve_import(
         }
         ModuleOrDirectory::Module(module_id) => module_id,
         ModuleOrDirectory::Directory(_) => {
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 format!(
                     "expected module, found directory `{}`",
-                    hir.name_str(module_name.id),
+                    ctx.name_str(module_name.id),
                 ),
                 SourceRange::new(origin_id, module_name.range),
                 None,
@@ -102,10 +102,10 @@ fn resolve_import(
     };
 
     if target_id == origin_id {
-        emit.error(ErrorComp::new(
+        ctx.emit.error(ErrorComp::new(
             format!(
                 "importing module `{}` into itself is not allowed",
-                hir.name_str(module_name.id)
+                ctx.name_str(module_name.id)
             ),
             SourceRange::new(origin_id, module_name.range),
             None,
@@ -113,76 +113,73 @@ fn resolve_import(
         return;
     }
 
-    import_module(hir, emit, origin_id, target_id, module_name, import.rename);
+    import_module(ctx, origin_id, target_id, module_name, import.rename);
     for symbol in import.symbols {
-        import_symbol(hir, emit, origin_id, target_id, symbol);
+        import_symbol(ctx, origin_id, target_id, symbol);
     }
 }
 
 fn import_module(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     target_id: ModuleID,
     module_name: ast::Name,
     rename: ast::SymbolRename,
 ) {
-    let module_alias = check_symbol_rename(hir, emit, origin_id, module_name, rename, false);
+    let module_alias = check_symbol_rename(ctx, origin_id, module_name, rename, false);
     let module_alias = match module_alias {
         Some(module_alias) => module_alias,
         None => return,
     };
 
-    if let Some(existing) = hir.symbol_in_scope_source(origin_id, module_alias.id) {
-        super::pass_1::error_name_already_defined(hir, emit, origin_id, module_alias, existing);
-    } else {
+    if super::pass_1::name_already_defined_check(ctx, origin_id, module_alias).is_ok() {
         let symbol = Symbol::Imported {
             kind: SymbolKind::Module(target_id),
             import_range: module_alias.range,
         };
-        hir.add_symbol(origin_id, module_alias.id, symbol);
+        ctx.scope.add_symbol(origin_id, module_alias.id, symbol);
     }
 }
 
 fn import_symbol(
-    hir: &mut HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     target_id: ModuleID,
     symbol: &ast::ImportSymbol,
 ) {
-    let symbol_alias = check_symbol_rename(hir, emit, origin_id, symbol.name, symbol.rename, true);
+    let symbol_alias = check_symbol_rename(ctx, origin_id, symbol.name, symbol.rename, true);
     let (symbol_alias, discarded) = match symbol_alias {
         Some(symbol_alias) => (symbol_alias, false),
         None => (symbol.name, true),
     };
 
-    let kind = match hir.symbol_from_scope(origin_id, target_id, symbol.name) {
-        Ok((kind, _)) => kind,
-        Err(error) => {
-            emit.error(error);
-            return;
-        }
-    };
+    let kind =
+        match ctx
+            .scope
+            .symbol_from_scope(ctx, &ctx.registry, origin_id, target_id, symbol.name)
+        {
+            Ok((kind, _)) => kind,
+            Err(error) => {
+                ctx.emit.error(error);
+                return;
+            }
+        };
 
     if discarded {
         return;
     }
 
-    if let Some(existing) = hir.symbol_in_scope_source(origin_id, symbol_alias.id) {
-        super::pass_1::error_name_already_defined(hir, emit, origin_id, symbol_alias, existing);
-    } else {
+    if super::pass_1::name_already_defined_check(ctx, origin_id, symbol_alias).is_ok() {
         let symbol = Symbol::Imported {
             kind,
             import_range: symbol_alias.range,
         };
-        hir.add_symbol(origin_id, symbol_alias.id, symbol);
+        ctx.scope.add_symbol(origin_id, symbol_alias.id, symbol);
     }
 }
 
 fn check_symbol_rename(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     name: ast::Name,
     rename: ast::SymbolRename,
@@ -192,10 +189,10 @@ fn check_symbol_rename(
         ast::SymbolRename::None => Some(name),
         ast::SymbolRename::Alias(alias) => {
             if name.id == alias.id {
-                emit.warning(WarningComp::new(
+                ctx.emit.warning(WarningComp::new(
                     format!(
                         "name alias `{}` is redundant, remove it",
-                        hir.name_str(alias.id)
+                        ctx.name_str(alias.id)
                     ),
                     SourceRange::new(origin_id, alias.range),
                     None,
@@ -205,7 +202,7 @@ fn check_symbol_rename(
         }
         ast::SymbolRename::Discard(range) => {
             if for_symbol {
-                emit.warning(WarningComp::new(
+                ctx.emit.warning(WarningComp::new(
                     "name discard `_` is redundant, remove it",
                     SourceRange::new(origin_id, range),
                     None,

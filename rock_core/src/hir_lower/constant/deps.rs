@@ -1,9 +1,9 @@
 use super::fold;
 use super::layout;
 use crate::ast;
-use crate::error::{ErrorComp, Info, SourceRange, StringOrStr};
+use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr};
 use crate::hir;
-use crate::hir_lower::hir_build::{HirData, HirEmit};
+use crate::hir_lower::context::{HirCtx, HirEmit};
 use crate::hir_lower::proc_scope::ProcScope;
 use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::id_impl;
@@ -20,22 +20,22 @@ enum ConstDependency {
     ArrayLen(hir::ConstEvalID),
 }
 
-pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut HirEmit<'hir>) {
+pub fn resolve_const_dependencies<'hir>(ctx: &mut HirCtx) {
     let mut proc = ProcScope::dummy();
 
-    for enum_id in hir.registry().enum_ids() {
-        let data = hir.registry().enum_data(enum_id);
+    for enum_id in ctx.registry.enum_ids() {
+        let data = ctx.registry.enum_data(enum_id);
 
         for (idx, variant) in data.variants.iter().enumerate() {
             let variant_id = hir::VariantID::new(idx);
 
             let unresolved = match variant.kind {
                 hir::VariantKind::Default(eval_id) => {
-                    let eval = *hir.registry().variant_eval(eval_id);
+                    let eval = *ctx.registry.variant_eval(eval_id);
                     eval.is_unresolved()
                 }
                 hir::VariantKind::Constant(eval_id) => {
-                    let (eval, _) = *hir.registry().const_eval(eval_id);
+                    let (eval, _) = *ctx.registry.const_eval(eval_id);
                     eval.is_unresolved()
                 }
             };
@@ -44,19 +44,19 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
                 let dependency = ConstDependency::EnumVariant(enum_id, variant_id);
                 let (mut tree, root_id) = Tree::new_rooted(dependency);
 
-                if let Err(from_id) = add_variant_tag_const_dependency(
-                    hir, emit, &mut tree, root_id, enum_id, variant_id,
-                ) {
-                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                if let Err(from_id) =
+                    add_variant_tag_const_dependency(ctx, &mut tree, root_id, enum_id, variant_id)
+                {
+                    const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                 } else {
-                    resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
+                    resolve_const_dependency_tree(ctx, &mut proc, &tree);
                 }
             }
         }
     }
 
-    for id in hir.registry().enum_ids() {
-        let data = hir.registry().enum_data(id);
+    for id in ctx.registry.enum_ids() {
+        let data = ctx.registry.enum_data(id);
 
         if data.layout.is_unresolved() {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::EnumLayout(id));
@@ -65,22 +65,22 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
             for variant in data.variants {
                 for ty in variant.fields {
                     if let Err(from_id) =
-                        add_type_size_const_dependencies(hir, emit, &mut tree, root_id, *ty)
+                        add_type_size_const_dependencies(ctx, &mut tree, root_id, *ty)
                     {
-                        const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                        const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                         is_ok = false;
                         break;
                     }
                 }
             }
             if is_ok {
-                resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
+                resolve_const_dependency_tree(ctx, &mut proc, &tree);
             }
         }
     }
 
-    for id in hir.registry().struct_ids() {
-        let data = hir.registry().struct_data(id);
+    for id in ctx.registry.struct_ids() {
+        let data = ctx.registry.struct_data(id);
 
         if data.layout.is_unresolved() {
             let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructLayout(id));
@@ -88,37 +88,37 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
 
             for field in data.fields {
                 if let Err(from_id) =
-                    add_type_size_const_dependencies(hir, emit, &mut tree, root_id, field.ty)
+                    add_type_size_const_dependencies(ctx, &mut tree, root_id, field.ty)
                 {
-                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                     is_ok = false;
                     break;
                 }
             }
             if is_ok {
-                resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
+                resolve_const_dependency_tree(ctx, &mut proc, &tree);
             }
         }
     }
 
-    for id in hir.registry().const_ids() {
-        let data = hir.registry().const_data(id);
-        let (eval, origin_id) = *hir.registry().const_eval(data.value);
+    for id in ctx.registry.const_ids() {
+        let data = ctx.registry.const_data(id);
+        let (eval, origin_id) = *ctx.registry.const_eval(data.value);
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
                 let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
 
                 if let Err(from_id) =
-                    add_type_usage_const_dependencies(hir, emit, &mut tree, root_id, data.ty)
+                    add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
                 {
-                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                 } else if let Err(from_id) =
-                    add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
+                    add_expr_const_dependencies(ctx, &mut tree, root_id, origin_id, expr.0)
                 {
-                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                 } else {
-                    resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
+                    resolve_const_dependency_tree(ctx, &mut proc, &tree);
                 }
             }
             hir::ConstEval::ResolvedError => {}
@@ -126,24 +126,24 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
         }
     }
 
-    for id in hir.registry().global_ids() {
-        let data = hir.registry().global_data(id);
-        let (eval, origin_id) = *hir.registry().const_eval(data.value);
+    for id in ctx.registry.global_ids() {
+        let data = ctx.registry.global_data(id);
+        let (eval, origin_id) = *ctx.registry.const_eval(data.value);
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
                 let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
 
                 if let Err(from_id) =
-                    add_type_usage_const_dependencies(hir, emit, &mut tree, root_id, data.ty)
+                    add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
                 {
-                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                 } else if let Err(from_id) =
-                    add_expr_const_dependencies(hir, emit, &mut tree, root_id, origin_id, expr.0)
+                    add_expr_const_dependencies(ctx, &mut tree, root_id, origin_id, expr.0)
                 {
-                    const_dependencies_mark_error_up_to_root(hir, &tree, from_id);
+                    const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                 } else {
-                    resolve_const_dependency_tree(hir, emit, &mut proc, &tree);
+                    resolve_const_dependency_tree(ctx, &mut proc, &tree);
                 }
             }
             hir::ConstEval::ResolvedError => {}
@@ -156,12 +156,12 @@ pub fn resolve_const_dependencies<'hir>(hir: &mut HirData<'hir, '_>, emit: &mut 
     // this is only true when previos const dependencies and const evals were handled correctly
     //@how will unresolved expressions due to something else erroring earlier behave?
     // for example struct field with some unresolved array len
-    for eval_id in hir.registry().const_eval_ids() {
-        let (eval, _) = hir.registry().const_eval(eval_id);
+    for eval_id in ctx.registry.const_eval_ids() {
+        let (eval, _) = ctx.registry.const_eval(eval_id);
 
         if matches!(eval, hir::ConstEval::Unresolved(_)) {
             let expect = Expectation::HasType(hir::Type::USIZE, None);
-            resolve_and_update_const_eval(hir, emit, &mut proc, eval_id, expect);
+            resolve_and_update_const_eval(ctx, eval_id, expect);
         }
     }
 }
@@ -246,9 +246,12 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 }
 
+//@change Err type to enum
+// bubble it to the top
+// `already error`, `cycle` variants
+// tree itself should return a result on each `add` operation
 fn check_const_dependency_cycle(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     tree: &Tree<ConstDependency>,
     parent_id: TreeNodeID,
     node_id: TreeNodeID,
@@ -260,28 +263,28 @@ fn check_const_dependency_cycle(
 
     let src = match tree.get_node(cycle_id).value {
         ConstDependency::EnumVariant(id, variant_id) => {
-            let data = hir.registry().enum_data(id);
+            let data = ctx.registry.enum_data(id);
             let variant = data.variant(variant_id);
             SourceRange::new(data.origin_id, variant.name.range)
         }
         ConstDependency::EnumLayout(id) => {
-            let data = hir.registry().enum_data(id);
+            let data = ctx.registry.enum_data(id);
             SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::StructLayout(id) => {
-            let data = hir.registry().struct_data(id);
+            let data = ctx.registry.struct_data(id);
             SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::Const(id) => {
-            let data = hir.registry().const_data(id);
+            let data = ctx.registry.const_data(id);
             SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::Global(id) => {
-            let data = hir.registry().global_data(id);
+            let data = ctx.registry.global_data(id);
             SourceRange::new(data.origin_id, data.name.range)
         }
         ConstDependency::ArrayLen(eval_id) => {
-            let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+            let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
             if let hir::ConstEval::Unresolved(expr) = eval {
                 SourceRange::new(origin_id, expr.0.range)
             } else {
@@ -310,54 +313,54 @@ fn check_const_dependency_cycle(
 
         let (msg, src) = match const_dep {
             ConstDependency::EnumVariant(id, variant_id) => {
-                let data = hir.registry().enum_data(id);
+                let data = ctx.registry.enum_data(id);
                 let variant = data.variant(variant_id);
                 let msg = format!(
                     "{prefix}depends on `{}.{}` enum variant{postfix}",
-                    hir.name_str(data.name.id),
-                    hir.name_str(variant.name.id)
+                    ctx.name_str(data.name.id),
+                    ctx.name_str(variant.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, variant.name.range);
                 (msg, src)
             }
             ConstDependency::EnumLayout(id) => {
-                let data = hir.registry().enum_data(id);
+                let data = ctx.registry.enum_data(id);
                 let msg = format!(
                     "{prefix}depends on size of `{}`{postfix}",
-                    hir.name_str(data.name.id)
+                    ctx.name_str(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::StructLayout(id) => {
-                let data = hir.registry().struct_data(id);
+                let data = ctx.registry.struct_data(id);
                 let msg = format!(
                     "{prefix}depends on size of `{}`{postfix}",
-                    hir.name_str(data.name.id)
+                    ctx.name_str(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::Const(id) => {
-                let data = hir.registry().const_data(id);
+                let data = ctx.registry.const_data(id);
                 let msg = format!(
                     "{prefix}depends on `{}` const value{postfix}",
-                    hir.name_str(data.name.id)
+                    ctx.name_str(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::Global(id) => {
-                let data = hir.registry().global_data(id);
+                let data = ctx.registry.global_data(id);
                 let msg = format!(
                     "{prefix}depends on `{}` global value{postfix}",
-                    hir.name_str(data.name.id)
+                    ctx.name_str(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
             }
             ConstDependency::ArrayLen(eval_id) => {
-                let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+                let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
                 if let hir::ConstEval::Unresolved(expr) = eval {
                     let msg = format!("{prefix}depends on array length{postfix}");
                     let src = SourceRange::new(origin_id, expr.0.range);
@@ -379,7 +382,7 @@ fn check_const_dependency_cycle(
         info_src = src;
     }
 
-    emit.error(ErrorComp::new_detailed_info_vec(
+    ctx.emit.error(ErrorComp::new_detailed_info_vec(
         "constant dependency cycle found:",
         ctx_msg,
         src,
@@ -389,7 +392,7 @@ fn check_const_dependency_cycle(
 }
 
 fn const_dependencies_mark_error_up_to_root(
-    hir: &mut HirData,
+    ctx: &mut HirCtx,
     tree: &Tree<ConstDependency>,
     from_id: TreeNodeID,
 ) {
@@ -397,57 +400,56 @@ fn const_dependencies_mark_error_up_to_root(
     for dep in const_deps {
         match dep {
             ConstDependency::EnumVariant(id, variant_id) => {
-                let data = hir.registry().enum_data(id);
+                let data = ctx.registry.enum_data(id);
                 let variant = data.variant(variant_id);
 
                 match variant.kind {
                     hir::VariantKind::Default(_) => unreachable!(),
                     hir::VariantKind::Constant(eval_id) => {
-                        let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+                        let (eval, _) = ctx.registry.const_eval_mut(eval_id);
                         *eval = hir::ConstEval::ResolvedError;
                     }
                 }
             }
             ConstDependency::EnumLayout(id) => {
-                let data = hir.registry_mut().enum_data_mut(id);
+                let data = ctx.registry.enum_data_mut(id);
                 data.layout = hir::Eval::ResolvedError;
             }
             ConstDependency::StructLayout(id) => {
-                let data = hir.registry_mut().struct_data_mut(id);
+                let data = ctx.registry.struct_data_mut(id);
                 data.layout = hir::Eval::ResolvedError;
             }
             ConstDependency::Const(id) => {
-                let data = hir.registry().const_data(id);
+                let data = ctx.registry.const_data(id);
                 let eval_id = data.value;
-                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+                let (eval, _) = ctx.registry.const_eval_mut(eval_id);
                 *eval = hir::ConstEval::ResolvedError;
             }
             ConstDependency::Global(id) => {
-                let data = hir.registry().global_data(id);
+                let data = ctx.registry.global_data(id);
                 let eval_id = data.value;
-                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+                let (eval, _) = ctx.registry.const_eval_mut(eval_id);
                 *eval = hir::ConstEval::ResolvedError;
             }
             ConstDependency::ArrayLen(eval_id) => {
-                let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+                let (eval, _) = ctx.registry.const_eval_mut(eval_id);
                 *eval = hir::ConstEval::ResolvedError;
             }
         }
     }
 }
 
-fn add_variant_tag_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_variant_tag_const_dependency(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
 ) -> Result<(), TreeNodeID> {
-    let data = hir.registry().enum_data(enum_id);
+    let data = ctx.registry.enum_data(enum_id);
     match data.variant(variant_id).kind {
         hir::VariantKind::Default(eval_id) => {
-            let eval = *hir.registry().variant_eval(eval_id);
+            let eval = *ctx.registry.variant_eval(eval_id);
             match eval {
                 hir::Eval::Unresolved(_) => {
                     if variant_id.index() > 0 {
@@ -456,11 +458,11 @@ fn add_variant_tag_const_dependency<'hir>(
 
                         let unresolved = match prev.kind {
                             hir::VariantKind::Default(eval_id) => {
-                                let eval = *hir.registry().variant_eval(eval_id);
+                                let eval = *ctx.registry.variant_eval(eval_id);
                                 eval.is_unresolved()
                             }
                             hir::VariantKind::Constant(eval_id) => {
-                                let (eval, _) = *hir.registry().const_eval(eval_id);
+                                let (eval, _) = *ctx.registry.const_eval(eval_id);
                                 eval.is_unresolved()
                             }
                         };
@@ -470,11 +472,9 @@ fn add_variant_tag_const_dependency<'hir>(
                                 parent_id,
                                 ConstDependency::EnumVariant(enum_id, prev_id),
                             );
-                            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+                            check_const_dependency_cycle(ctx, tree, parent_id, node_id)?;
 
-                            add_variant_tag_const_dependency(
-                                hir, emit, tree, node_id, enum_id, prev_id,
-                            )?;
+                            add_variant_tag_const_dependency(ctx, tree, node_id, enum_id, prev_id)?;
                         }
                     }
                     Ok(())
@@ -484,10 +484,10 @@ fn add_variant_tag_const_dependency<'hir>(
             }
         }
         hir::VariantKind::Constant(eval_id) => {
-            let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+            let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
             match eval {
                 hir::ConstEval::Unresolved(expr) => {
-                    add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr.0)?;
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, expr.0)?;
                     Ok(())
                 }
                 hir::ConstEval::Resolved(_) => Ok(()),
@@ -499,44 +499,42 @@ fn add_variant_tag_const_dependency<'hir>(
 
 //@verify correctness
 // adds tag dependency and type usage of each inner field value
-fn add_variant_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_variant_const_dependency(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
 ) -> Result<(), TreeNodeID> {
-    add_variant_tag_const_dependency(hir, emit, tree, parent_id, enum_id, variant_id)?;
+    add_variant_tag_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
 
-    let data = hir.registry().enum_data(enum_id);
+    let data = ctx.registry.enum_data(enum_id);
     let variant = data.variant(variant_id);
     for ty in variant.fields {
-        add_type_usage_const_dependencies(hir, emit, tree, parent_id, *ty)?;
+        add_type_usage_const_dependencies(ctx, tree, parent_id, *ty)?;
     }
     Ok(())
 }
 
-fn add_const_var_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_const_var_const_dependency(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     const_id: hir::ConstID,
 ) -> Result<(), TreeNodeID> {
-    let data = hir.registry().const_data(const_id);
+    let data = ctx.registry.const_data(const_id);
     let const_ty = data.ty;
     let eval_id = data.value;
-    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+    let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
             let node_id = tree.add_child(parent_id, ConstDependency::Const(const_id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            check_const_dependency_cycle(ctx, tree, parent_id, node_id)?;
 
             // @will order of eval be correct? 13.06.24
-            add_type_usage_const_dependencies(hir, emit, tree, parent_id, const_ty)?;
-            add_expr_const_dependencies(hir, emit, tree, node_id, origin_id, expr.0)?;
+            add_type_usage_const_dependencies(ctx, tree, parent_id, const_ty)?;
+            add_expr_const_dependencies(ctx, tree, node_id, origin_id, expr.0)?;
             Ok(())
         }
         hir::ConstEval::ResolvedError => Err(parent_id),
@@ -544,21 +542,20 @@ fn add_const_var_const_dependency<'hir>(
     }
 }
 
-fn add_array_len_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_array_len_const_dependency(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     eval_id: hir::ConstEvalID,
 ) -> Result<(), TreeNodeID> {
-    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
+    let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
             let node_id = tree.add_child(parent_id, ConstDependency::ArrayLen(eval_id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            check_const_dependency_cycle(ctx, tree, parent_id, node_id)?;
 
-            add_expr_const_dependencies(hir, emit, tree, node_id, origin_id, expr.0)?;
+            add_expr_const_dependencies(ctx, tree, node_id, origin_id, expr.0)?;
             Ok(())
         }
         hir::ConstEval::ResolvedError => Err(parent_id),
@@ -566,9 +563,8 @@ fn add_array_len_const_dependency<'hir>(
     }
 }
 
-fn add_type_size_const_dependencies<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_type_size_const_dependencies(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     ty: hir::Type,
@@ -577,41 +573,42 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
         hir::Type::Enum(id) => {
-            add_enum_size_const_dependency(hir, emit, tree, parent_id, id)?;
+            add_enum_size_const_dependency(ctx, tree, parent_id, id)?;
         }
         hir::Type::Struct(id) => {
-            add_struct_size_const_dependency(hir, emit, tree, parent_id, id)?;
+            add_struct_size_const_dependency(ctx, tree, parent_id, id)?;
         }
         hir::Type::Reference(_, _) => {}
         hir::Type::Procedure(_) => {}
         hir::Type::ArraySlice(_) => {}
         hir::Type::ArrayStatic(array) => {
             if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
-                add_array_len_const_dependency(hir, emit, tree, parent_id, eval_id)?;
+                add_array_len_const_dependency(ctx, tree, parent_id, eval_id)?;
             }
-            add_type_size_const_dependencies(hir, emit, tree, parent_id, array.elem_ty)?;
+            add_type_size_const_dependencies(ctx, tree, parent_id, array.elem_ty)?;
         }
     }
     Ok(())
 }
 
-fn add_enum_size_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_enum_size_const_dependency(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
 ) -> Result<(), TreeNodeID> {
-    let data = hir.registry().enum_data(enum_id);
+    let data = ctx.registry.enum_data(enum_id);
 
     match data.layout {
         hir::Eval::Unresolved(()) => {
             let node_id = tree.add_child(parent_id, ConstDependency::EnumLayout(enum_id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            check_const_dependency_cycle(ctx, tree, parent_id, node_id)?;
 
+            //@forced re-borrow due to `check_const_dependency_cycle` taking &mut ctx
+            let data = ctx.registry.enum_data(enum_id);
             for variant in data.variants {
                 for ty in variant.fields {
-                    add_type_size_const_dependencies(hir, emit, tree, node_id, *ty)?;
+                    add_type_size_const_dependencies(ctx, tree, node_id, *ty)?;
                 }
             }
             Ok(())
@@ -621,22 +618,23 @@ fn add_enum_size_const_dependency<'hir>(
     }
 }
 
-fn add_struct_size_const_dependency<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_struct_size_const_dependency(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     struct_id: hir::StructID,
 ) -> Result<(), TreeNodeID> {
-    let data = hir.registry().struct_data(struct_id);
+    let data = ctx.registry.struct_data(struct_id);
 
     match data.layout {
         hir::Eval::Unresolved(()) => {
             let node_id = tree.add_child(parent_id, ConstDependency::StructLayout(struct_id));
-            check_const_dependency_cycle(hir, emit, tree, parent_id, node_id)?;
+            check_const_dependency_cycle(ctx, tree, parent_id, node_id)?;
 
+            //@forced re-borrow due to `check_const_dependency_cycle` taking &mut ctx
+            let data = ctx.registry.struct_data(struct_id);
             for field in data.fields {
-                add_type_size_const_dependencies(hir, emit, tree, node_id, field.ty)?;
+                add_type_size_const_dependencies(ctx, tree, node_id, field.ty)?;
             }
             Ok(())
         }
@@ -645,9 +643,8 @@ fn add_struct_size_const_dependency<'hir>(
     }
 }
 
-fn add_type_usage_const_dependencies<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
+fn add_type_usage_const_dependencies(
+    ctx: &mut HirCtx,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     ty: hir::Type,
@@ -656,66 +653,65 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Error => {}
         hir::Type::Basic(_) => {}
         hir::Type::Enum(id) => {
-            let data = hir.registry().enum_data(id);
+            let data = ctx.registry.enum_data(id);
             for variant in data.variants {
                 for ty in variant.fields {
-                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, *ty)?;
+                    add_type_usage_const_dependencies(ctx, tree, parent_id, *ty)?;
                 }
             }
         }
         hir::Type::Struct(id) => {
-            let data = hir.registry().struct_data(id);
+            let data = ctx.registry.struct_data(id);
             for field in data.fields {
-                add_type_usage_const_dependencies(hir, emit, tree, parent_id, field.ty)?
+                add_type_usage_const_dependencies(ctx, tree, parent_id, field.ty)?
             }
         }
         hir::Type::Reference(ref_ty, _) => {
-            add_type_usage_const_dependencies(hir, emit, tree, parent_id, *ref_ty)?
+            add_type_usage_const_dependencies(ctx, tree, parent_id, *ref_ty)?
         }
         hir::Type::Procedure(proc_ty) => {
             for param_ty in proc_ty.param_types {
-                add_type_usage_const_dependencies(hir, emit, tree, parent_id, *param_ty)?
+                add_type_usage_const_dependencies(ctx, tree, parent_id, *param_ty)?
             }
-            add_type_usage_const_dependencies(hir, emit, tree, parent_id, proc_ty.return_ty)?
+            add_type_usage_const_dependencies(ctx, tree, parent_id, proc_ty.return_ty)?
         }
         hir::Type::ArraySlice(slice) => {
-            add_type_usage_const_dependencies(hir, emit, tree, parent_id, slice.elem_ty)?;
+            add_type_usage_const_dependencies(ctx, tree, parent_id, slice.elem_ty)?;
         }
         hir::Type::ArrayStatic(array) => {
             if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
-                add_array_len_const_dependency(hir, emit, tree, parent_id, eval_id)?;
+                add_array_len_const_dependency(ctx, tree, parent_id, eval_id)?;
             }
-            add_type_usage_const_dependencies(hir, emit, tree, parent_id, array.elem_ty)?;
+            add_type_usage_const_dependencies(ctx, tree, parent_id, array.elem_ty)?;
         }
     }
     Ok(())
 }
 
 fn add_expr_const_dependencies<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+    ctx: &mut HirCtx<'hir, 'ast>,
     tree: &mut Tree<ConstDependency>,
     parent_id: TreeNodeID,
     origin_id: ModuleID,
-    expr: &'ast ast::Expr<'ast>,
+    expr: &ast::Expr<'ast>,
 ) -> Result<(), TreeNodeID> {
     match expr.kind {
         ast::ExprKind::Lit { .. } => Ok(()),
         ast::ExprKind::If { .. } => {
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "if");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "if");
             Err(parent_id)
         }
         ast::ExprKind::Block { .. } => {
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "block");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "block");
             Err(parent_id)
         }
         ast::ExprKind::Match { .. } => {
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "match");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "match");
             Err(parent_id)
         }
         ast::ExprKind::Match2 { .. } => todo!("match2 `add_expr_const_dependencies`"),
         ast::ExprKind::Field { target, .. } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
         }
         //@index or slicing
@@ -724,77 +720,88 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             mutt,
             index,
         } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, index)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, index)?;
             Ok(())
         }
         ast::ExprKind::Call { .. } => {
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "procedure call");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "procedure call");
             Err(parent_id)
         }
         ast::ExprKind::Cast { target, .. } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, target)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
         }
         ast::ExprKind::Sizeof { ty } => {
-            let ty = pass_3::type_resolve_delayed(hir, emit, origin_id, *ty);
-            add_type_size_const_dependencies(hir, emit, tree, parent_id, ty)?;
+            let ty = pass_3::type_resolve_delayed(ctx, origin_id, *ty);
+            add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
             Ok(())
         }
         //@input not used
         ast::ExprKind::Item { path, input } => {
-            let (value_id, _) = pass_5::path_resolve_value(hir, emit, None, origin_id, path);
+            let (value_id, _) = pass_5::path_resolve_value(ctx, origin_id, path);
             match value_id {
                 pass_5::ValueID::None => Err(parent_id),
                 pass_5::ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
                     // change the result Err type with delayed mutation of HirData only at top lvl?
-                    for param in hir.registry().proc_data(proc_id).params {
-                        add_type_usage_const_dependencies(hir, emit, tree, parent_id, param.ty)?;
+                    for param in ctx.registry.proc_data(proc_id).params {
+                        add_type_usage_const_dependencies(ctx, tree, parent_id, param.ty)?;
                     }
-                    let data = hir.registry().proc_data(proc_id);
-                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, data.return_ty)?;
+                    let data = ctx.registry.proc_data(proc_id);
+                    add_type_usage_const_dependencies(ctx, tree, parent_id, data.return_ty)?;
                     Ok(())
                 }
                 pass_5::ValueID::Enum(enum_id, variant_id) => {
-                    add_variant_const_dependency(hir, emit, tree, parent_id, enum_id, variant_id)?;
+                    add_variant_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
                     Ok(())
                 }
                 pass_5::ValueID::Const(const_id) => {
-                    add_const_var_const_dependency(hir, emit, tree, parent_id, const_id)?;
+                    add_const_var_const_dependency(ctx, tree, parent_id, const_id)?;
                     Ok(())
                 }
                 pass_5::ValueID::Global(_) => {
-                    error_cannot_refer_to_in_constants(emit, origin_id, expr.range, "globals");
+                    error_cannot_refer_to_in_constants(
+                        &mut ctx.emit,
+                        origin_id,
+                        expr.range,
+                        "globals",
+                    );
                     Err(parent_id)
                 }
                 pass_5::ValueID::Local(_) => {
-                    error_cannot_refer_to_in_constants(emit, origin_id, expr.range, "locals");
+                    error_cannot_refer_to_in_constants(
+                        &mut ctx.emit,
+                        origin_id,
+                        expr.range,
+                        "locals",
+                    );
                     Err(parent_id)
                 }
                 pass_5::ValueID::Param(_) => {
-                    error_cannot_refer_to_in_constants(emit, origin_id, expr.range, "parameters");
+                    error_cannot_refer_to_in_constants(
+                        &mut ctx.emit,
+                        origin_id,
+                        expr.range,
+                        "parameters",
+                    );
                     Err(parent_id)
                 }
             }
         }
         ast::ExprKind::Variant { .. } => {
             //@no type inference on this `ast name resolve` pass thus cannot infer variant type 14.06.24
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "variant selector");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "variant selector");
             Err(parent_id)
         }
         ast::ExprKind::StructInit { struct_init } => match struct_init.path {
             //@cannot infer struct / enum variant type in constants
             Some(path) => {
-                if let Some(struct_id) =
-                    pass_5::path_resolve_struct(hir, emit, None, origin_id, path)
-                {
+                if let Some(struct_id) = pass_5::path_resolve_struct(ctx, origin_id, path) {
                     let ty = hir::Type::Struct(struct_id);
-                    add_type_usage_const_dependencies(hir, emit, tree, parent_id, ty)?;
+                    add_type_usage_const_dependencies(ctx, tree, parent_id, ty)?;
                     for init in struct_init.input {
-                        add_expr_const_dependencies(
-                            hir, emit, tree, parent_id, origin_id, init.expr,
-                        )?;
+                        add_expr_const_dependencies(ctx, tree, parent_id, origin_id, init.expr)?;
                     }
                     Ok(())
                 } else {
@@ -803,7 +810,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             }
             None => {
                 pass_5::error_cannot_infer_struct_type(
-                    emit,
+                    &mut ctx.emit,
                     SourceRange::new(origin_id, expr.range),
                 );
                 Err(parent_id)
@@ -811,31 +818,31 @@ fn add_expr_const_dependencies<'hir, 'ast>(
         },
         ast::ExprKind::ArrayInit { input } => {
             for &expr in input {
-                add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;
+                add_expr_const_dependencies(ctx, tree, parent_id, origin_id, expr)?;
             }
             Ok(())
         }
         ast::ExprKind::ArrayRepeat { expr, len } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, expr)?;
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, len.0)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, expr)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
         ast::ExprKind::Deref { .. } => {
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "deref");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "deref");
             Err(parent_id)
         }
         ast::ExprKind::Address { .. } => {
-            error_cannot_use_in_constants(emit, origin_id, expr.range, "address");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "address");
             Err(parent_id)
         }
         ast::ExprKind::Range { range } => todo!("range feature"),
         ast::ExprKind::Unary { rhs, .. } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, rhs)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())
         }
         ast::ExprKind::Binary { bin, .. } => {
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, bin.lhs)?;
-            add_expr_const_dependencies(hir, emit, tree, parent_id, origin_id, bin.rhs)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, bin.lhs)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, bin.rhs)?;
             Ok(())
         }
     }
@@ -867,17 +874,16 @@ fn error_cannot_refer_to_in_constants(
     ));
 }
 
-fn resolve_const_dependency_tree<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+fn resolve_const_dependency_tree(
+    ctx: &mut HirCtx,
+    proc: &mut ProcScope,
     tree: &Tree<ConstDependency>,
 ) {
     // reverse iteration allows to resolve dependencies in correct order
     for node in tree.nodes.iter().rev() {
         match node.value {
             ConstDependency::EnumVariant(enum_id, variant_id) => {
-                let data = hir.registry().enum_data(enum_id);
+                let data = ctx.registry.enum_data(enum_id);
                 let variant = data.variant(variant_id);
 
                 // variant is set to `ResolvedError` if tag_ty is not known (safe to unwrap)
@@ -893,7 +899,7 @@ fn resolve_const_dependency_tree<'hir>(
                                 int_ty: tag_ty,
                             };
 
-                            let eval = hir.registry_mut().variant_eval_mut(eval_id);
+                            let eval = ctx.registry.variant_eval_mut(eval_id);
                             *eval = hir::Eval::Resolved(zero);
                         } else {
                             let prev_id = hir::VariantID::new(variant_id.index() - 1);
@@ -901,12 +907,12 @@ fn resolve_const_dependency_tree<'hir>(
 
                             let prev_value = match prev.kind {
                                 hir::VariantKind::Default(eval_id) => {
-                                    let eval = hir.registry().variant_eval(eval_id);
+                                    let eval = ctx.registry.variant_eval(eval_id);
                                     eval.get_resolved()
                                 }
                                 hir::VariantKind::Constant(eval_id) => {
-                                    let (eval, _) = hir.registry().const_eval(eval_id);
-                                    eval.get_resolved().map(|id| emit.const_intern.get(id))
+                                    let (eval, _) = ctx.registry.const_eval(eval_id);
+                                    eval.get_resolved().map(|id| ctx.const_intern.get(id))
                                 }
                             };
 
@@ -917,49 +923,49 @@ fn resolve_const_dependency_tree<'hir>(
                                     let prev_inc = prev_tag + 1;
                                     let variant_src =
                                         SourceRange::new(data.origin_id, variant.name.range);
-                                    fold::int_range_check(hir, emit, variant_src, prev_inc, tag_ty)
+                                    fold::int_range_check(ctx, variant_src, prev_inc, tag_ty)
                                 }
                                 Err(()) => Err(()),
                             };
 
-                            let eval = hir.registry_mut().variant_eval_mut(eval_id);
+                            let eval = ctx.registry.variant_eval_mut(eval_id);
                             *eval = hir::Eval::from_res(value_res);
                         }
                     }
                     hir::VariantKind::Constant(eval_id) => {
-                        resolve_and_update_const_eval(hir, emit, proc, eval_id, expect);
+                        resolve_and_update_const_eval(ctx, eval_id, expect);
                     }
                 }
             }
             ConstDependency::EnumLayout(id) => {
-                let layout_res = layout::resolve_enum_layout(hir, emit, id);
+                let layout_res = layout::resolve_enum_layout(ctx, id);
                 let layout = hir::Eval::from_res(layout_res);
-                hir.registry_mut().enum_data_mut(id).layout = layout;
+                ctx.registry.enum_data_mut(id).layout = layout;
             }
             ConstDependency::StructLayout(id) => {
-                let layout_res = layout::resolve_struct_layout(hir, emit, id);
+                let layout_res = layout::resolve_struct_layout(ctx, id);
                 let layout = hir::Eval::from_res(layout_res);
-                hir.registry_mut().struct_data_mut(id).layout = layout;
+                ctx.registry.struct_data_mut(id).layout = layout;
             }
             ConstDependency::Const(id) => {
-                let data = hir.registry().const_data(id);
-                let item = hir.registry().const_item(id);
+                let data = ctx.registry.const_data(id);
+                let item = ctx.registry.const_item(id);
 
                 let expect_src = SourceRange::new(data.origin_id, item.ty.range);
                 let expect = Expectation::HasType(data.ty, Some(expect_src));
-                resolve_and_update_const_eval(hir, emit, proc, data.value, expect);
+                resolve_and_update_const_eval(ctx, data.value, expect);
             }
             ConstDependency::Global(id) => {
-                let data = hir.registry().global_data(id);
-                let item = hir.registry().global_item(id);
+                let data = ctx.registry.global_data(id);
+                let item = ctx.registry.global_item(id);
 
                 let expect_src = SourceRange::new(data.origin_id, item.ty.range);
                 let expect = Expectation::HasType(data.ty, Some(expect_src));
-                resolve_and_update_const_eval(hir, emit, proc, data.value, expect);
+                resolve_and_update_const_eval(ctx, data.value, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
                 let expect = Expectation::HasType(hir::Type::USIZE, None);
-                resolve_and_update_const_eval(hir, emit, proc, eval_id, expect);
+                resolve_and_update_const_eval(ctx, eval_id, expect);
             }
         }
     }
@@ -968,20 +974,18 @@ fn resolve_const_dependency_tree<'hir>(
 //@change how this is handled, still check double resolve
 // with assert to catch potential bugs in implementation
 fn resolve_and_update_const_eval<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     eval_id: hir::ConstEvalID,
     expect: Expectation<'hir>,
 ) {
-    let (eval, origin_id) = *hir.registry().const_eval(eval_id);
-    proc.reset_origin(origin_id);
+    let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
+    ctx.proc.reset_origin(origin_id);
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
-            let value_res = resolve_const_expr(hir, emit, proc, origin_id, expect, expr);
-            let value_res = value_res.map(|v| emit.const_intern.intern(v));
-            let (eval, _) = hir.registry_mut().const_eval_mut(eval_id);
+            let value_res = resolve_const_expr(ctx, origin_id, expect, expr);
+            let value_res = value_res.map(|v| ctx.const_intern.intern(v));
+            let (eval, _) = ctx.registry.const_eval_mut(eval_id);
             *eval = hir::Eval::from_res(value_res);
         }
         _ => panic!("calling `resolve_const_expr` on already resolved expr"),
@@ -990,19 +994,17 @@ fn resolve_and_update_const_eval<'hir>(
 
 #[must_use]
 pub fn resolve_const_expr<'hir>(
-    hir: &HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    proc: &mut ProcScope<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     expect: Expectation<'hir>,
     expr: ast::ConstExpr,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let error_count = emit.error_count();
-    let expr_res = pass_5::typecheck_expr(hir, emit, proc, expect, expr.0);
+    let error_count = ctx.emit.error_count();
+    let expr_res = pass_5::typecheck_expr(ctx, expect, expr.0);
 
-    if !emit.did_error(error_count) {
+    if !ctx.emit.did_error(error_count) {
         let src = SourceRange::new(origin_id, expr_res.expr.range);
-        fold::fold_const_expr(hir, emit, src, expr_res.expr)
+        fold::fold_const_expr(ctx, src, expr_res.expr)
     } else {
         Err(())
     }

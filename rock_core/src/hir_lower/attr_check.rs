@@ -1,10 +1,11 @@
+use super::context::HirCtx;
+use super::context::HirEmit;
 use super::errors as err;
-use super::hir_build::{HirData, HirEmit};
 use crate::ast;
 use crate::bitset::BitSet;
 use crate::config;
 use crate::enum_str_convert;
-use crate::error::{ErrorComp, SourceRange, WarningComp};
+use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, RockModule, Session};
@@ -51,8 +52,7 @@ pub struct AttrFeedbackStructField {
 }
 
 pub fn check_attrs_proc<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     item: &ast::ProcItem,
@@ -69,7 +69,7 @@ pub fn check_attrs_proc<'ast>(
             attr_set.set(ProcFlag::Variadic);
         } else {
             //@use err:: for this unique case
-            emit.error(ErrorComp::new(
+            ctx.emit.error(ErrorComp::new(
                 "`variadic` procedures must be `external`",
                 SourceRange::new(origin_id, item.name.range),
                 None,
@@ -78,7 +78,7 @@ pub fn check_attrs_proc<'ast>(
     }
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -94,14 +94,21 @@ pub fn check_attrs_proc<'ast>(
             AttrResolved::Inline => ProcFlag::Inline,
             _ => {
                 let attr_name = resolved.kind.as_str();
-                err::attr_cannot_apply(emit, attr_src, attr_name, "procedures");
+                err::attr_cannot_apply(&mut ctx.emit, attr_src, attr_name, "procedures");
                 continue;
             }
         };
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "procedures");
+        check_attr_flag(
+            &mut ctx.emit,
+            flag,
+            &mut attr_set,
+            attr_data,
+            item_src,
+            "procedures",
+        );
     }
 
     AttrFeedbackProc {
@@ -111,8 +118,7 @@ pub fn check_attrs_proc<'ast>(
 }
 
 pub fn check_attrs_enum<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     item: &ast::EnumItem,
@@ -122,7 +128,7 @@ pub fn check_attrs_enum<'ast>(
     let mut tag_ty = Err(());
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -142,14 +148,21 @@ pub fn check_attrs_enum<'ast>(
             }
             _ => {
                 let attr_name = resolved.kind.as_str();
-                err::attr_cannot_apply(emit, attr_src, attr_name, "enums");
+                err::attr_cannot_apply(&mut ctx.emit, attr_src, attr_name, "enums");
                 continue;
             }
         };
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "enums");
+        check_attr_flag(
+            &mut ctx.emit,
+            flag,
+            &mut attr_set,
+            attr_data,
+            item_src,
+            "enums",
+        );
     }
 
     AttrFeedbackEnum {
@@ -160,8 +173,7 @@ pub fn check_attrs_enum<'ast>(
 }
 
 pub fn check_attrs_struct<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     item: &ast::StructItem,
@@ -170,7 +182,7 @@ pub fn check_attrs_struct<'ast>(
     let mut attr_set = BitSet::empty();
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -186,20 +198,27 @@ pub fn check_attrs_struct<'ast>(
                 ReprKind::ReprInt(int_ty) => {
                     //@add as_str for BasicInt?
                     let int_ty = int_ty.into_basic().as_str();
-                    err::attr_struct_repr_int(emit, attr_src, int_ty);
+                    err::attr_struct_repr_int(&mut ctx.emit, attr_src, int_ty);
                     continue;
                 }
             },
             _ => {
                 let attr_name = resolved.kind.as_str();
-                err::attr_cannot_apply(emit, attr_src, attr_name, "structs");
+                err::attr_cannot_apply(&mut ctx.emit, attr_src, attr_name, "structs");
                 continue;
             }
         };
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "structs");
+        check_attr_flag(
+            &mut ctx.emit,
+            flag,
+            &mut attr_set,
+            attr_data,
+            item_src,
+            "structs",
+        );
     }
 
     AttrFeedbackStruct {
@@ -209,19 +228,17 @@ pub fn check_attrs_struct<'ast>(
 }
 
 pub fn check_attrs_const<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     item: &ast::ConstItem,
 ) -> AttrFeedbackConst {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, item.attrs, "constants");
+    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, item.attrs, "constants");
     AttrFeedbackConst { cfg_state }
 }
 
 pub fn check_attrs_global<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     item: &ast::GlobalItem,
@@ -230,7 +247,7 @@ pub fn check_attrs_global<'ast>(
     let mut attr_set = BitSet::empty();
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -244,14 +261,21 @@ pub fn check_attrs_global<'ast>(
             AttrResolved::ThreadLocal => GlobalFlag::ThreadLocal,
             _ => {
                 let attr_name = resolved.kind.as_str();
-                err::attr_cannot_apply(emit, attr_src, attr_name, "globals");
+                err::attr_cannot_apply(&mut ctx.emit, attr_src, attr_name, "globals");
                 continue;
             }
         };
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(emit, flag, &mut attr_set, attr_data, item_src, "globals");
+        check_attr_flag(
+            &mut ctx.emit,
+            flag,
+            &mut attr_set,
+            attr_data,
+            item_src,
+            "globals",
+        );
     }
 
     AttrFeedbackGlobal {
@@ -261,52 +285,47 @@ pub fn check_attrs_global<'ast>(
 }
 
 pub fn check_attrs_import<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     item: &ast::ImportItem,
 ) -> AttrFeedbackImport {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, item.attrs, "imports");
+    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, item.attrs, "imports");
     AttrFeedbackImport { cfg_state }
 }
 
 pub fn check_attrs_stmt<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackStmt {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "statements");
+    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, attrs, "statements");
     AttrFeedbackStmt { cfg_state }
 }
 
 pub fn check_attrs_enum_variant<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackEnumVariant {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "enum variants");
+    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, attrs, "enum variants");
     AttrFeedbackEnumVariant { cfg_state }
 }
 
 pub fn check_attrs_struct_field<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackStructField {
-    let cfg_state = check_attrs_expect_cfg(hir, emit, session, origin_id, attrs, "struct fields");
+    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, attrs, "struct fields");
     AttrFeedbackStructField { cfg_state }
 }
 
 fn check_attrs_expect_cfg<'ast>(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
@@ -315,7 +334,7 @@ fn check_attrs_expect_cfg<'ast>(
     let mut cfg_state = CfgState::new_enabled();
 
     for attr in attrs {
-        let resolved = match resolve_attr(hir, emit, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -327,7 +346,7 @@ fn check_attrs_expect_cfg<'ast>(
             }
             _ => {
                 let attr_name = resolved.kind.as_str();
-                err::attr_cannot_apply(emit, attr_src, attr_name, item_kinds);
+                err::attr_cannot_apply(&mut ctx.emit, attr_src, attr_name, item_kinds);
             }
         };
     }
@@ -336,8 +355,7 @@ fn check_attrs_expect_cfg<'ast>(
 }
 
 fn resolve_attr(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     session: &Session,
     origin_id: ModuleID,
     attr: &ast::Attr,
@@ -349,7 +367,7 @@ fn resolve_attr(
         Some(kind) => kind,
         None => {
             let attr_src = SourceRange::new(origin_id, attr.name.range);
-            err::attr_unknown(emit, attr_src, attr_name);
+            err::attr_unknown(&mut ctx.emit, attr_src, attr_name);
             return Err(());
         }
     };
@@ -362,29 +380,29 @@ fn resolve_attr(
                 AttrKind::CfgAny => CfgOp::Or,
                 _ => unreachable!(),
             };
-            let params = expect_multiple_params(emit, origin_id, attr, attr_name)?;
-            let state = resolve_cfg_params(hir, emit, origin_id, module, params, op)?;
+            let params = expect_multiple_params(ctx, origin_id, attr, attr_name)?;
+            let state = resolve_cfg_params(ctx, origin_id, module, params, op)?;
             AttrResolved::Cfg(state)
         }
         AttrKind::Test => {
-            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            let _ = expect_no_params(ctx, origin_id, attr, attr_name)?;
             AttrResolved::Test
         }
         AttrKind::Builtin => {
-            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            let _ = expect_no_params(ctx, origin_id, attr, attr_name)?;
             AttrResolved::Builtin
         }
         AttrKind::Inline => {
-            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            let _ = expect_no_params(ctx, origin_id, attr, attr_name)?;
             AttrResolved::Inline
         }
         AttrKind::Repr => {
-            let param = expect_single_param(emit, origin_id, attr, attr_name)?;
-            let repr_kind = resolve_repr_param(emit, origin_id, module, param)?;
+            let param = expect_single_param(ctx, origin_id, attr, attr_name)?;
+            let repr_kind = resolve_repr_param(ctx, origin_id, module, param)?;
             AttrResolved::Repr(repr_kind)
         }
         AttrKind::ThreadLocal => {
-            let _ = expect_no_params(emit, origin_id, attr, attr_name)?;
+            let _ = expect_no_params(ctx, origin_id, attr, attr_name)?;
             AttrResolved::ThreadLocal
         }
     };
@@ -396,14 +414,14 @@ fn resolve_attr(
 }
 
 fn expect_no_params<'ast>(
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     attr: &ast::Attr<'ast>,
     attr_name: &str,
 ) -> Result<(), ()> {
     if let Some((_, params_range)) = attr.params {
         let params_src = SourceRange::new(origin_id, params_range);
-        err::attr_param_list_unexpected(emit, params_src, attr_name);
+        err::attr_param_list_unexpected(&mut ctx.emit, params_src, attr_name);
         Err(())
     } else {
         Ok(())
@@ -411,7 +429,7 @@ fn expect_no_params<'ast>(
 }
 
 fn expect_single_param<'ast>(
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     attr: &ast::Attr<'ast>,
     attr_name: &str,
@@ -420,23 +438,23 @@ fn expect_single_param<'ast>(
         if let Some(param) = params.get(0) {
             for param in params.iter().skip(1) {
                 let param_src = SourceRange::new(origin_id, param.name.range);
-                err::attr_expect_single_param(emit, param_src, attr_name);
+                err::attr_expect_single_param(&mut ctx.emit, param_src, attr_name);
             }
             Ok(param)
         } else {
             let params_src = SourceRange::new(origin_id, params_range);
-            err::attr_param_list_required(emit, params_src, attr_name, true);
+            err::attr_param_list_required(&mut ctx.emit, params_src, attr_name, true);
             Err(())
         }
     } else {
         let attr_src = SourceRange::new(origin_id, attr.name.range);
-        err::attr_param_list_required(emit, attr_src, attr_name, false);
+        err::attr_param_list_required(&mut ctx.emit, attr_src, attr_name, false);
         Err(())
     }
 }
 
 fn expect_multiple_params<'ast>(
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     attr: &ast::Attr<'ast>,
     attr_name: &str,
@@ -444,21 +462,20 @@ fn expect_multiple_params<'ast>(
     if let Some((params, params_range)) = attr.params {
         if params.is_empty() {
             let params_src = SourceRange::new(origin_id, params_range);
-            err::attr_param_list_required(emit, params_src, attr_name, true);
+            err::attr_param_list_required(&mut ctx.emit, params_src, attr_name, true);
             Err(())
         } else {
             Ok(params)
         }
     } else {
         let attr_src = SourceRange::new(origin_id, attr.name.range);
-        err::attr_param_list_required(emit, attr_src, attr_name, false);
+        err::attr_param_list_required(&mut ctx.emit, attr_src, attr_name, false);
         Err(())
     }
 }
 
 fn resolve_cfg_params(
-    hir: &HirData,
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     module: &RockModule,
     params: &[ast::AttrParam],
@@ -473,7 +490,7 @@ fn resolve_cfg_params(
             Some(param_kind) => param_kind,
             None => {
                 let param_src = SourceRange::new(origin_id, param.name.range);
-                err::attr_param_unknown(emit, param_src, param_name);
+                err::attr_param_unknown(&mut ctx.emit, param_src, param_name);
                 continue;
             }
         };
@@ -481,12 +498,12 @@ fn resolve_cfg_params(
         let (value, value_range) = match param.value {
             Some((value, value_range)) => {
                 //@change from using intern_lit
-                let value = hir.intern_lit().get(value);
+                let value = ctx.intern_lit().get(value);
                 (value, value_range)
             }
             None => {
                 let param_src = SourceRange::new(origin_id, param.name.range);
-                err::attr_param_value_required(emit, param_src, param_name);
+                err::attr_param_value_required(&mut ctx.emit, param_src, param_name);
                 continue;
             }
         };
@@ -494,28 +511,28 @@ fn resolve_cfg_params(
         let state = match param_kind {
             CfgParamKind::Target => match config::TargetTriple::from_str(value) {
                 Some(cfg_triple) => {
-                    let triple = hir.target();
+                    let triple = ctx.target;
                     Ok(CfgState(triple == cfg_triple))
                 }
                 None => Err(()),
             },
             CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
                 Some(cfg_arch) => {
-                    let arch = hir.target().arch();
+                    let arch = ctx.target.arch();
                     Ok(CfgState(arch == cfg_arch))
                 }
                 None => Err(()),
             },
             CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
                 Some(cfg_os) => {
-                    let os = hir.target().os();
+                    let os = ctx.target.os();
                     Ok(CfgState(os == cfg_os))
                 }
                 None => Err(()),
             },
             CfgParamKind::TargetPtrWidth => match config::TargetPtrWidth::from_str(value) {
                 Some(cfg_ptr_width) => {
-                    let ptr_width = hir.target().arch().ptr_width();
+                    let ptr_width = ctx.target.arch().ptr_width();
                     Ok(CfgState(ptr_width == cfg_ptr_width))
                 }
                 None => Err(()),
@@ -534,7 +551,7 @@ fn resolve_cfg_params(
             Ok(state) => state,
             Err(()) => {
                 let value_src = SourceRange::new(origin_id, value_range);
-                err::attr_param_value_unknown(emit, value_src, param_name, value);
+                err::attr_param_value_unknown(&mut ctx.emit, value_src, param_name, value);
                 continue;
             }
         };
@@ -545,7 +562,7 @@ fn resolve_cfg_params(
 }
 
 fn resolve_repr_param(
-    emit: &mut HirEmit,
+    ctx: &mut HirCtx,
     origin_id: ModuleID,
     module: &RockModule,
     param: &ast::AttrParam,
@@ -558,13 +575,13 @@ fn resolve_repr_param(
         Ok(ReprKind::ReprInt(int_ty))
     } else {
         let param_src = SourceRange::new(origin_id, param.name.range);
-        err::attr_param_unknown(emit, param_src, param_name);
+        err::attr_param_unknown(&mut ctx.emit, param_src, param_name);
         Err(())
     };
 
     if let Some((_, value_range)) = param.value {
         let value_src = SourceRange::new(origin_id, value_range);
-        err::attr_param_value_unexpected(emit, value_src, param_name);
+        err::attr_param_value_unexpected(&mut ctx.emit, value_src, param_name);
         repr_kind = Err(());
     }
 

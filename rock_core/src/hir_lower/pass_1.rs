@@ -1,63 +1,62 @@
 use super::attr_check;
-use super::hir_build::{HirData, HirEmit, Symbol, SymbolKind};
+use super::context::{HirCtx, Symbol, SymbolKind};
+use super::errors as err;
 use crate::ast;
-use crate::error::{ErrorComp, Info, SourceRange};
+use crate::error::SourceRange;
 use crate::hir;
 use crate::session::{ModuleID, Session};
 
-pub fn populate_scopes<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    session: &Session,
-) {
+pub fn populate_scopes(ctx: &mut HirCtx, session: &Session) {
     for origin_id in session.module_ids() {
-        add_module_items(hir, emit, session, origin_id);
+        add_module_items(ctx, session, origin_id);
     }
 }
 
-fn add_module_items<'hir>(
-    hir: &mut HirData<'hir, '_>,
-    emit: &mut HirEmit<'hir>,
-    session: &Session,
-    origin_id: ModuleID,
-) {
-    let module = hir.ast_module(origin_id);
+fn add_module_items(ctx: &mut HirCtx, session: &Session, origin_id: ModuleID) {
+    let module = ctx.ast_module(origin_id);
     for item in module.items.iter().copied() {
         match item {
-            ast::Item::Proc(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
-                Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
-                None => add_proc_item(hir, emit, session, origin_id, item),
-            },
-            ast::Item::Enum(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
-                Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
-                None => add_enum_item(hir, emit, session, origin_id, item),
-            },
-            ast::Item::Struct(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
-                Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
-                None => add_struct_item(hir, emit, session, origin_id, item),
-            },
-            ast::Item::Const(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
-                Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
-                None => add_const_item(hir, emit, session, origin_id, item),
-            },
-            ast::Item::Global(item) => match hir.symbol_in_scope_source(origin_id, item.name.id) {
-                Some(src) => error_name_already_defined(hir, emit, origin_id, item.name, src),
-                None => add_global_item(hir, emit, session, origin_id, item),
-            },
-            ast::Item::Import(item) => check_import_item(hir, emit, session, origin_id, item),
+            ast::Item::Proc(item) => add_proc_item(ctx, session, origin_id, item),
+            ast::Item::Enum(item) => add_enum_item(ctx, session, origin_id, item),
+            ast::Item::Struct(item) => add_struct_item(ctx, session, origin_id, item),
+            ast::Item::Const(item) => add_const_item(ctx, session, origin_id, item),
+            ast::Item::Global(item) => add_global_item(ctx, session, origin_id, item),
+            ast::Item::Import(item) => check_import_item(ctx, session, origin_id, item),
         }
     }
 }
 
-fn add_proc_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+//@move to hir scope?
+pub fn name_already_defined_check(
+    ctx: &mut HirCtx,
+    origin_id: ModuleID,
+    name: ast::Name,
+) -> Result<(), ()> {
+    let defined = ctx
+        .scope
+        .symbol_defined_src(&ctx.registry, origin_id, name.id);
+
+    if let Some(existing) = defined {
+        let item_src = SourceRange::new(origin_id, name.range);
+        let name = ctx.name_str(name.id);
+        err::scope_name_already_defined(&mut ctx.emit, item_src, existing, name);
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
+fn add_proc_item<'ast>(
+    ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
     origin_id: ModuleID,
-    item: &'ast ast::ProcItem<'ast>,
+    item: &'ast ast::ProcItem,
 ) {
-    let feedback = attr_check::check_attrs_proc(hir, emit, session, origin_id, item);
+    let feedback = attr_check::check_attrs_proc(ctx, session, origin_id, item);
     if feedback.cfg_state.disabled() {
+        return;
+    }
+    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
         return;
     }
 
@@ -72,20 +71,22 @@ fn add_proc_item<'hir, 'ast>(
         locals: &[],
     };
 
-    let proc_id = hir.registry_mut().add_proc(item, data);
+    let proc_id = ctx.registry.add_proc(item, data);
     let symbol = Symbol::Defined(SymbolKind::Proc(proc_id));
-    hir.add_symbol(origin_id, item.name.id, symbol);
+    ctx.scope.add_symbol(origin_id, item.name.id, symbol);
 }
 
-fn add_enum_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+fn add_enum_item<'ast>(
+    ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
     origin_id: ModuleID,
-    item: &'ast ast::EnumItem<'ast>,
+    item: &'ast ast::EnumItem,
 ) {
-    let feedback = attr_check::check_attrs_enum(hir, emit, session, origin_id, item);
+    let feedback = attr_check::check_attrs_enum(ctx, session, origin_id, item);
     if feedback.cfg_state.disabled() {
+        return;
+    }
+    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
         return;
     }
 
@@ -99,20 +100,22 @@ fn add_enum_item<'hir, 'ast>(
         layout: hir::Eval::Unresolved(()),
     };
 
-    let enum_id = hir.registry_mut().add_enum(item, data);
+    let enum_id = ctx.registry.add_enum(item, data);
     let symbol = Symbol::Defined(SymbolKind::Enum(enum_id));
-    hir.add_symbol(origin_id, item.name.id, symbol);
+    ctx.scope.add_symbol(origin_id, item.name.id, symbol);
 }
 
-fn add_struct_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+fn add_struct_item<'ast>(
+    ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
     origin_id: ModuleID,
-    item: &'ast ast::StructItem<'ast>,
+    item: &'ast ast::StructItem,
 ) {
-    let feedback = attr_check::check_attrs_struct(hir, emit, session, origin_id, item);
+    let feedback = attr_check::check_attrs_struct(ctx, session, origin_id, item);
     if feedback.cfg_state.disabled() {
+        return;
+    }
+    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
         return;
     }
 
@@ -125,26 +128,26 @@ fn add_struct_item<'hir, 'ast>(
         layout: hir::Eval::Unresolved(()),
     };
 
-    let struct_id = hir.registry_mut().add_struct(item, data);
+    let struct_id = ctx.registry.add_struct(item, data);
     let symbol = Symbol::Defined(SymbolKind::Struct(struct_id));
-    hir.add_symbol(origin_id, item.name.id, symbol);
+    ctx.scope.add_symbol(origin_id, item.name.id, symbol);
 }
 
-fn add_const_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+fn add_const_item<'ast>(
+    ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
     origin_id: ModuleID,
-    item: &'ast ast::ConstItem<'ast>,
+    item: &'ast ast::ConstItem,
 ) {
-    let feedback = attr_check::check_attrs_const(hir, emit, session, origin_id, item);
+    let feedback = attr_check::check_attrs_const(ctx, session, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
+    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+        return;
+    }
 
-    let registry = hir.registry_mut();
-    let eval_id = registry.add_const_eval(item.value, origin_id);
-
+    let eval_id = ctx.registry.add_const_eval(item.value, origin_id);
     let data = hir::ConstData {
         origin_id,
         vis: item.vis,
@@ -153,26 +156,26 @@ fn add_const_item<'hir, 'ast>(
         value: eval_id,
     };
 
-    let const_id = registry.add_const(item, data);
+    let const_id = ctx.registry.add_const(item, data);
     let symbol = Symbol::Defined(SymbolKind::Const(const_id));
-    hir.add_symbol(origin_id, item.name.id, symbol);
+    ctx.scope.add_symbol(origin_id, item.name.id, symbol);
 }
 
-fn add_global_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+fn add_global_item<'ast>(
+    ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
     origin_id: ModuleID,
-    item: &'ast ast::GlobalItem<'ast>,
+    item: &'ast ast::GlobalItem,
 ) {
-    let feedback = attr_check::check_attrs_global(hir, emit, session, origin_id, item);
+    let feedback = attr_check::check_attrs_global(ctx, session, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
+    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+        return;
+    }
 
-    let registry = hir.registry_mut();
-    let eval_id = registry.add_const_eval(item.value, origin_id);
-
+    let eval_id = ctx.registry.add_const_eval(item.value, origin_id);
     let data = hir::GlobalData {
         origin_id,
         attr_set: feedback.attr_set,
@@ -183,38 +186,22 @@ fn add_global_item<'hir, 'ast>(
         value: eval_id,
     };
 
-    let global_id = registry.add_global(item, data);
+    let global_id = ctx.registry.add_global(item, data);
     let symbol = Symbol::Defined(SymbolKind::Global(global_id));
-    hir.add_symbol(origin_id, item.name.id, symbol);
+    ctx.scope.add_symbol(origin_id, item.name.id, symbol);
 }
 
-fn check_import_item<'hir, 'ast>(
-    hir: &mut HirData<'hir, 'ast>,
-    emit: &mut HirEmit<'hir>,
+fn check_import_item<'ast>(
+    ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
     origin_id: ModuleID,
-    item: &'ast ast::ImportItem<'ast>,
+    item: &'ast ast::ImportItem,
 ) {
-    let feedback = attr_check::check_attrs_import(hir, emit, session, origin_id, item);
+    let feedback = attr_check::check_attrs_import(ctx, session, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
 
     let data = hir::ImportData { origin_id };
-    let _ = hir.registry_mut().add_import(item, data);
-}
-
-//@move to `::errors`
-pub fn error_name_already_defined(
-    hir: &HirData,
-    emit: &mut HirEmit,
-    origin_id: ModuleID,
-    name: ast::Name,
-    existing: SourceRange,
-) {
-    emit.error(ErrorComp::new(
-        format!("name `{}` is defined multiple times", hir.name_str(name.id)),
-        SourceRange::new(origin_id, name.range),
-        Info::new("existing definition", existing),
-    ));
+    let _ = ctx.registry.add_import(item, data);
 }

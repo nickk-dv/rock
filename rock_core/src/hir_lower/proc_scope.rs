@@ -1,6 +1,6 @@
-use super::hir_build::{HirData, HirEmit};
+use super::context::HirCtx;
 use super::pass_5::Expectation;
-use crate::error::{Info, SourceRange, WarningComp};
+use crate::error::{ErrorSink, Info, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::InternName;
 use crate::macros::ID;
@@ -11,9 +11,9 @@ use crate::text::TextRange;
 // lifetime problems, separate vectors into separate re-usable mutable reference?
 // not a big deal until perf of check is important
 // not re-using will re allocate each of 3 vectors multiple times for EACH procedure being typechecked
-pub struct ProcScope<'hir, 'check> {
+pub struct ProcScope<'hir> {
     origin_id: ModuleID,
-    params: &'check [hir::Param<'hir>],
+    params: &'hir [hir::Param<'hir>],
     return_expect: Expectation<'hir>,
     blocks: Vec<BlockData>,
     locals: Vec<&'hir hir::Local<'hir>>,
@@ -66,8 +66,8 @@ pub enum VariableID {
     Param(hir::ParamID),
 }
 
-impl<'hir, 'check> ProcScope<'hir, 'check> {
-    pub fn dummy() -> ProcScope<'hir, 'check> {
+impl<'hir> ProcScope<'hir> {
+    pub fn dummy() -> ProcScope<'hir> {
         ProcScope {
             origin_id: ModuleID::dummy(),
             params: &[],
@@ -85,7 +85,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
     pub fn reset(
         &mut self,
         origin_id: ModuleID,
-        params: &'check [hir::Param<'hir>],
+        params: &'hir [hir::Param<'hir>],
         return_expect: Expectation<'hir>,
     ) {
         self.origin_id = origin_id;
@@ -233,8 +233,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
 
     pub fn check_stmt_diverges(
         &mut self,
-        hir: &HirData<'hir, '_>,
-        emit: &mut HirEmit<'hir>,
+        ctx: &mut HirCtx,
         will_diverge: bool,
         stmt_range: TextRange,
     ) -> bool {
@@ -249,7 +248,7 @@ impl<'hir, 'check> ProcScope<'hir, 'check> {
             Diverges::Always(diverge_range) => {
                 *diverges = Diverges::AlwaysWarned;
 
-                emit.warning(WarningComp::new(
+                ctx.emit.warning(WarningComp::new(
                     "unreachable statement",
                     SourceRange::new(self.origin(), stmt_range),
                     Info::new(
