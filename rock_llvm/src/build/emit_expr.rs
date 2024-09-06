@@ -449,7 +449,7 @@ fn codegen_local_var(
     expect: Expect,
     local_id: hir::LocalID,
 ) -> llvm::Value {
-    let local_ptr = proc_cg.local_ptrs[local_id.index()];
+    let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -467,7 +467,7 @@ fn codegen_param_var(
     expect: Expect,
     param_id: hir::ParamID,
 ) -> llvm::Value {
-    let param_ptr = proc_cg.param_ptrs[param_id.index()];
+    let param_ptr = proc_cg.param_ptrs[param_id.raw_index()];
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -480,11 +480,11 @@ fn codegen_param_var(
 }
 
 fn codegen_const_var(cg: &Codegen, const_id: hir::ConstID) -> llvm::Value {
-    cg.consts[const_id.index()]
+    cg.consts[const_id.raw_index()]
 }
 
 fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) -> llvm::Value {
-    let global_ptr = cg.globals[global_id.index()].as_ptr();
+    let global_ptr = cg.globals[global_id.raw_index()].as_ptr();
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {

@@ -184,7 +184,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::ProcID<'hir>
     data.return_ty = return_ty;
 }
 
-fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
+fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::EnumID<'hir>) {
     let item = ctx.registry.enum_item(id);
     let data = ctx.registry.enum_data(id);
 
@@ -293,7 +293,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     ctx.registry.enum_data_mut(id).variants = ctx.arena.alloc_slice(&unique);
 }
 
-fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
+fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::StructID<'hir>) {
     let item = ctx.registry.struct_item(id);
     let origin_id = ctx.registry.struct_data(id).origin_id;
     let mut unique = Vec::<hir::Field>::new();
@@ -327,7 +327,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
     ctx.registry.struct_data_mut(id).fields = ctx.arena.alloc_slice(&unique);
 }
 
-fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
+fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::ConstID<'hir>) {
     let origin_id = ctx.registry.const_data(id).origin_id;
     let item = ctx.registry.const_item(id);
     let ty = type_resolve_delayed(ctx, origin_id, item.ty);
@@ -336,7 +336,7 @@ fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
     ctx.registry.const_data_mut(id).ty = ty;
 }
 
-fn process_global_data(ctx: &mut HirCtx, id: hir::GlobalID) {
+fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::GlobalID<'hir>) {
     let origin_id = ctx.registry.global_data(id).origin_id;
     let item = ctx.registry.global_item(id);
     let ty = type_resolve_delayed(ctx, origin_id, item.ty);

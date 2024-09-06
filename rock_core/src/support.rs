@@ -23,7 +23,7 @@ mod arena {
         pub fn new() -> Arena<'arena> {
             Arena {
                 offset: 0,
-                block: alloc_zeroed(PAGE_SIZE),
+                block: alloc(PAGE_SIZE),
                 full_blocks: Vec::new(),
                 phantom: PhantomData,
             }
@@ -50,10 +50,9 @@ mod arena {
             unsafe { std::str::from_utf8_unchecked(bytes) }
         }
 
-        //@UB when size > MAX_PAGE_SIZE
         fn offset_raw<T: Copy>(&mut self, size: usize) -> *mut T {
             if self.offset + size > self.block.1.size() {
-                self.grow();
+                self.grow(size);
             }
             unsafe {
                 let offset = self.block.0.add(self.offset) as *mut T;
@@ -62,10 +61,11 @@ mod arena {
             }
         }
 
-        fn grow(&mut self) {
-            self.full_blocks.push(self.block);
+        fn grow(&mut self, size: usize) {
             self.offset = 0;
-            self.block = alloc_zeroed((self.block.1.size() * 2).min(MAX_PAGE_SIZE));
+            self.full_blocks.push(self.block);
+            let block_size = (self.block.1.size() * 2).min(MAX_PAGE_SIZE).max(size);
+            self.block = alloc(block_size);
         }
 
         pub fn mem_usage(&self) -> usize {
@@ -83,10 +83,9 @@ mod arena {
         }
     }
 
-    //@do regular alloc without zeroing? test perf diff
-    fn alloc_zeroed(size: usize) -> (*mut u8, alloc::Layout) {
+    fn alloc(size: usize) -> (*mut u8, alloc::Layout) {
         let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
-        let data = unsafe { alloc::alloc_zeroed(layout) };
+        let data = unsafe { alloc::alloc(layout) };
         (data, layout)
     }
 
@@ -162,9 +161,15 @@ mod typed_id {
                 phantom: PhantomData,
             }
         }
-        pub fn new_raw(index: usize) -> ID<T> {
+        pub const fn new_raw(index: usize) -> ID<T> {
             ID {
                 raw: index as u32,
+                phantom: PhantomData,
+            }
+        }
+        pub const fn dummy() -> ID<T> {
+            ID {
+                raw: u32::MAX,
                 phantom: PhantomData,
             }
         }

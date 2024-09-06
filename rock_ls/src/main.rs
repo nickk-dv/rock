@@ -148,7 +148,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
 
             if let Some(source) = context.files_in_memory.get(&path) {
                 //@random ModuleID used
-                if let Ok(formatted) = rock_core::format::format(source, ModuleID::new(0)) {
+                if let Ok(formatted) = rock_core::format::format(source, ModuleID::new_raw(0)) {
                     let line_count = source.lines().count() as u32;
                     context.files_in_memory.insert(path, formatted.clone());
 

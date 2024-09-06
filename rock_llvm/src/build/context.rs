@@ -2,7 +2,7 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
-use rock_core::id_impl;
+use rock_core::support::{IndexID, ID};
 
 pub struct Codegen<'c> {
     pub target: llvm::IRTarget,
@@ -47,7 +47,7 @@ pub enum Expect {
     Store(llvm::ValuePtr),
 }
 
-id_impl!(TailValueID);
+type TailValueID = ID<Option<TailValue>>;
 #[derive(Copy, Clone)]
 pub struct TailValue {
     pub value_ptr: llvm::ValuePtr,
@@ -135,7 +135,7 @@ impl<'c> Codegen<'c> {
     }
 
     pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::TypeStruct {
-        self.structs[struct_id.index()]
+        self.structs[struct_id.raw_index()]
     }
 
     pub fn ptr_type(&self) -> llvm::Type {
@@ -300,13 +300,13 @@ impl<'c> ProcCodegen<'c> {
     }
 
     pub fn add_tail_value(&mut self) -> TailValueID {
-        let value_id = TailValueID::new(self.tail_values.len());
+        let value_id = TailValueID::new(&self.tail_values);
         self.tail_values.push(None);
         value_id
     }
 
     pub fn tail_value(&self, value_id: TailValueID) -> Option<TailValue> {
-        self.tail_values[value_id.index()]
+        *self.tail_values.id_get(value_id)
     }
 
     pub fn set_tail_value(
@@ -315,10 +315,11 @@ impl<'c> ProcCodegen<'c> {
         value_ptr: llvm::ValuePtr,
         value_ty: llvm::Type,
     ) {
-        self.tail_values[value_id.index()] = Some(TailValue {
+        let value = TailValue {
             value_ptr,
             value_ty,
-        });
+        };
+        *self.tail_values.id_get_mut(value_id) = Some(value);
     }
 }
 

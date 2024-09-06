@@ -137,9 +137,9 @@ fn codegen_loop<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, loop_: &hir
     cg.build.position_at_end(exit_bb);
 }
 
-fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: hir::LocalID) {
+fn codegen_local<'c>(cg: &Codegen<'c>, proc_cg: &mut ProcCodegen<'c>, local_id: hir::LocalID<'c>) {
     let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
-    let local_ptr = proc_cg.local_ptrs[local_id.index()];
+    let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
     emit_expr::codegen_expr_store(cg, proc_cg, local.init, local_ptr);
 }
 

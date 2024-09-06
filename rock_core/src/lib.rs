@@ -13,7 +13,7 @@ mod lexer;
 mod macros;
 pub mod package;
 pub mod session;
-mod support;
+pub mod support;
 pub mod syntax;
 pub mod text;
 mod token;

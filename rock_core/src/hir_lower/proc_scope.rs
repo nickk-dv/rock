@@ -2,7 +2,7 @@ use super::pass_5::Expectation;
 use crate::hir;
 use crate::intern::InternName;
 use crate::session::ModuleID;
-use crate::support::ID;
+use crate::support::{IndexID, ID};
 use crate::text::TextRange;
 
 //@re-use same proc scope to avoid frequent re-alloc 26.05.24
@@ -14,8 +14,8 @@ pub struct ProcScope<'hir> {
     params: &'hir [hir::Param<'hir>],
     return_expect: Expectation<'hir>,
     blocks: Vec<BlockData>,
-    locals: Vec<&'hir hir::Local<'hir>>,
-    locals_in_scope: Vec<hir::LocalID>,
+    locals: Vec<hir::Local<'hir>>,
+    locals_in_scope: Vec<hir::LocalID<'hir>>,
 }
 
 pub struct BlockData {
@@ -59,9 +59,9 @@ impl Diverges {
     }
 }
 
-pub enum VariableID {
-    Local(hir::LocalID),
-    Param(hir::ParamID),
+pub enum VariableID<'hir> {
+    Local(hir::LocalID<'hir>),
+    Param(hir::ParamID<'hir>),
 }
 
 impl<'hir> ProcScope<'hir> {
@@ -94,7 +94,7 @@ impl<'hir> ProcScope<'hir> {
         self.locals_in_scope.clear();
     }
 
-    pub fn finish_locals(&self) -> &[&'hir hir::Local<'hir>] {
+    pub fn finish_locals(&self) -> &[hir::Local<'hir>] {
         self.locals.as_slice()
     }
     pub fn origin(&self) -> ModuleID {
@@ -112,11 +112,11 @@ impl<'hir> ProcScope<'hir> {
     pub fn diverges(&self) -> Diverges {
         self.blocks.last().expect("block exists").diverges
     }
-    pub fn get_local(&self, id: hir::LocalID) -> &hir::Local<'hir> {
-        self.locals[id.index()]
+    pub fn get_local(&self, id: hir::LocalID<'hir>) -> &hir::Local<'hir> {
+        self.locals.id_get(id)
     }
-    pub fn get_param(&self, id: hir::ParamID) -> &hir::Param<'hir> {
-        &self.params[id.index()]
+    pub fn get_param(&self, id: hir::ParamID<'hir>) -> &hir::Param<'hir> {
+        self.params.id_get(id)
     }
 
     pub fn push_block(&mut self, enter: BlockEnter) {
@@ -200,15 +200,15 @@ impl<'hir> ProcScope<'hir> {
         }
     }
 
-    pub fn push_local(&mut self, local: &'hir hir::Local<'hir>) -> hir::LocalID {
-        let local_id = hir::LocalID::new(self.locals.len());
+    pub fn push_local(&mut self, local: hir::Local<'hir>) -> hir::LocalID<'hir> {
+        let local_id = hir::LocalID::new(&self.locals);
         self.locals.push(local);
         self.locals_in_scope.push(local_id);
         self.blocks.last_mut().expect("block exists").local_count += 1;
         local_id
     }
 
-    pub fn find_variable(&self, id: ID<InternName>) -> Option<VariableID> {
+    pub fn find_variable(&self, id: ID<InternName>) -> Option<VariableID<'hir>> {
         if let Some(param_id) = self.find_param(id) {
             return Some(VariableID::Param(param_id));
         }
@@ -220,10 +220,10 @@ impl<'hir> ProcScope<'hir> {
         None
     }
 
-    fn find_param(&self, id: ID<InternName>) -> Option<hir::ParamID> {
+    fn find_param(&self, id: ID<InternName>) -> Option<hir::ParamID<'hir>> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
-                return Some(hir::ParamID::new(idx));
+                return Some(hir::ParamID::new_raw(idx));
             }
         }
         None

@@ -2,7 +2,6 @@ mod attr_check;
 mod constant;
 mod context;
 mod errors;
-mod hir_build;
 mod pass_1;
 mod pass_2;
 mod pass_3;

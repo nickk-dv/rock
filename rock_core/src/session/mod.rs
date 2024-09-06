@@ -1,10 +1,9 @@
 use crate::error::ErrorComp;
 use crate::fs_env;
-use crate::id_impl;
 use crate::intern::{InternName, InternPool};
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
-use crate::support::ID;
+use crate::support::{IndexID, ID};
 use crate::text::{self, TextRange};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,7 +14,7 @@ pub struct Session {
     packages: Vec<RockPackage>,
 }
 
-id_impl!(PackageID);
+pub type PackageID = ID<RockPackage>;
 pub struct RockPackage {
     pub name_id: ID<InternName>,
     pub root_dir: PathBuf,
@@ -31,7 +30,7 @@ pub struct RockDirectory {
     sub_dirs: Vec<RockDirectory>,
 }
 
-id_impl!(ModuleID);
+pub type ModuleID = ID<RockModule>;
 pub struct RockModule {
     pub name_id: ID<InternName>,
     pub path: PathBuf,
@@ -41,7 +40,7 @@ pub struct RockModule {
 }
 
 impl Session {
-    pub const ROOT_ID: PackageID = PackageID::new(0);
+    pub const ROOT_ID: PackageID = PackageID::new_raw(0);
 
     pub fn new(
         building: bool,
@@ -54,16 +53,16 @@ impl Session {
         &self.cwd
     }
     pub fn module(&self, id: ModuleID) -> &RockModule {
-        &self.modules[id.index()]
+        &self.modules.id_get(id)
     }
     pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
-        (0..self.modules.len()).map(ModuleID::new)
+        (0..self.modules.len()).map(ModuleID::new_raw)
     }
     pub fn package(&self, id: PackageID) -> &RockPackage {
-        &self.packages[id.index()]
+        &self.packages.id_get(id)
     }
     pub fn package_ids(&self) -> impl Iterator<Item = PackageID> {
-        (0..self.packages.len()).map(PackageID::new)
+        (0..self.packages.len()).map(PackageID::new_raw)
     }
 }
 
@@ -201,7 +200,8 @@ fn process_package(
             src_dir.to_string_lossy()
         )));
     }
-    let package_id = PackageID::new(session.packages.len());
+
+    let package_id = PackageID::new(&session.packages);
     let src = process_directory(session, intern_name, file_cache, package_id, src_dir)?;
 
     if let Some(lib_paths) = &manifest.build.lib_paths {
@@ -316,7 +316,7 @@ fn process_file(
         package_id,
     };
 
-    let module_id = ModuleID::new(session.modules.len());
+    let module_id = ModuleID::new(&session.modules);
     session.modules.push(module);
     Ok(module_id)
 }

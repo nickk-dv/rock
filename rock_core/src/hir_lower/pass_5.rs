@@ -748,7 +748,7 @@ fn typecheck_pat_item<'hir>(
 }
 
 fn typecheck_pat_variant<'hir>(
-    ctx: &mut HirCtx,
+    ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
     binds: Option<&ast::BindingList>,
@@ -911,8 +911,8 @@ fn check_match_exhaust<'hir>(
                         //@match patterns dont support enum values
                         // and pat wont be a ConstExpr in the future probably
                         let variant_id = variant.variant_id;
-                        if !variants_covered[variant_id.index()] {
-                            variants_covered[variant_id.index()] = true;
+                        if !variants_covered[variant_id.raw_index()] {
+                            variants_covered[variant_id.raw_index()] = true;
                         } else {
                             let ast_arm = match_ast.arms[idx];
                             arm.unreachable = true;
@@ -946,7 +946,7 @@ fn check_match_exhaust<'hir>(
                 for idx in 0..data.variants.len() {
                     let covered = variants_covered[idx];
                     if !covered {
-                        let variant = data.variant(hir::VariantID::new(idx));
+                        let variant = data.variant(hir::VariantID::new_raw(idx));
                         let comma = if missing_count != 0 { ", " } else { "" };
                         missing.push_str(&format!("{comma}`{}`", ctx.name_str(variant.name.id)));
                         missing_count += 1;
@@ -990,7 +990,7 @@ struct FieldResult<'hir> {
 
 #[rustfmt::skip]
 enum FieldKind<'hir> {
-    Struct(hir::StructID, hir::FieldID),
+    Struct(hir::StructID<'hir>, hir::FieldID<'hir>),
     ArraySlice { field: hir::SliceField },
     ArrayStatic { len: hir::ConstValue<'hir> },
 }
@@ -1068,8 +1068,8 @@ fn check_field_from_struct<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     name: ast::Name,
-    struct_id: hir::StructID,
-) -> Option<(hir::FieldID, &'hir hir::Field<'hir>)> {
+    struct_id: hir::StructID<'hir>,
+) -> Option<(hir::FieldID<'hir>, &'hir hir::Field<'hir>)> {
     let data = ctx.registry.struct_data(struct_id);
     match data.find_field(name.id) {
         Some((field_id, field)) => {
@@ -1559,7 +1559,7 @@ fn typecheck_item<'hir>(
 
 fn typecheck_variant<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
-    expect: Expectation,
+    expect: Expectation<'hir>,
     name: ast::Name,
     input: Option<&ast::ArgumentList>,
     expr_range: TextRange,
@@ -1643,7 +1643,7 @@ fn typecheck_struct_init<'hir>(
                 let expect = Expectation::HasType(field.ty, None);
                 let input_res = typecheck_expr(ctx, expect, input.expr);
 
-                if let FieldStatus::Init(range) = field_status[field_id.index()] {
+                if let FieldStatus::Init(range) = field_status[field_id.raw_index()] {
                     ctx.emit.error(ErrorComp::new(
                         format!(
                             "field `{}` was already initialized",
@@ -1671,7 +1671,7 @@ fn typecheck_struct_init<'hir>(
                         expr: input_res.expr,
                     };
                     field_inits.push(field_init);
-                    field_status[field_id.index()] = FieldStatus::Init(input.name.range);
+                    field_status[field_id.raw_index()] = FieldStatus::Init(input.name.range);
                     init_count += 1;
                 }
             }
@@ -1701,7 +1701,7 @@ fn typecheck_struct_init<'hir>(
 
         for (idx, status) in field_status.iter().enumerate() {
             if let FieldStatus::None = status {
-                let field = data.field(hir::FieldID::new(idx));
+                let field = data.field(hir::FieldID::new_raw(idx));
                 message.push('`');
                 message.push_str(ctx.name_str(field.name.id));
                 if idx + 1 != field_count {
@@ -2421,7 +2421,7 @@ fn typecheck_loop<'hir>(ctx: &mut HirCtx<'hir, '_>, loop_: &ast::Loop) -> &'hir 
 
 enum LocalResult<'hir> {
     Error,
-    Local(hir::LocalID),
+    Local(hir::LocalID<'hir>),
     Discard(&'hir hir::Expr<'hir>),
 }
 
@@ -2479,12 +2479,12 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> Loca
                 LocalResult::Error
             } else {
                 //@check for `never`, `void` to prevent panic during codegen
-                let local = ctx.arena.alloc(hir::Local {
+                let local = hir::Local {
                     mutt: local.mutt,
                     name,
                     ty: local_ty,
                     init: init_res.expr,
-                });
+                };
                 let local_id = ctx.proc.push_local(local);
                 LocalResult::Local(local_id)
             }
@@ -2663,11 +2663,11 @@ fn check_unused_expr_semi(
 //==================== INFERENCE ====================
 //@check if reference expectations need to be accounted for
 
-fn infer_enum_type(
+fn infer_enum_type<'hir>(
     emit: &mut HirEmit,
-    expect: Expectation,
+    expect: Expectation<'hir>,
     error_src: SourceRange,
-) -> Option<hir::EnumID> {
+) -> Option<hir::EnumID<'hir>> {
     let enum_id = match expect {
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
@@ -2682,11 +2682,11 @@ fn infer_enum_type(
     enum_id
 }
 
-fn infer_struct_type(
+fn infer_struct_type<'hir>(
     emit: &mut HirEmit,
-    expect: Expectation,
+    expect: Expectation<'hir>,
     error_src: SourceRange,
-) -> Option<hir::StructID> {
+) -> Option<hir::StructID<'hir>> {
     let struct_id = match expect {
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
@@ -2917,8 +2917,8 @@ fn check_call_indirect<'hir>(
 
 fn check_variant_input_opt<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
-    enum_id: hir::EnumID,
-    variant_id: hir::VariantID,
+    enum_id: hir::EnumID<'hir>,
+    variant_id: hir::VariantID<'hir>,
     input: Option<&ast::ArgumentList>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
@@ -2982,7 +2982,7 @@ local_var  -> <follow?> by <chained> field access
 
 enum ResolvedPath<'hir> {
     None,
-    Variable(VariableID),
+    Variable(VariableID<'hir>),
     Symbol(SymbolKind<'hir>, SourceRange),
 }
 
@@ -3034,7 +3034,7 @@ fn path_resolve<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
-    ctx: &mut HirCtx,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
@@ -3098,10 +3098,10 @@ pub fn path_resolve_type<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_struct<'hir>(
-    ctx: &mut HirCtx,
+    ctx: &mut HirCtx<'hir, '_>,
     origin_id: ModuleID,
     path: &ast::Path,
-) -> Option<hir::StructID> {
+) -> Option<hir::StructID<'hir>> {
     let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
 
     let struct_id = match resolved {
@@ -3163,11 +3163,11 @@ pub fn path_resolve_struct<'hir>(
 pub enum ValueID<'hir> {
     None,
     Proc(hir::ProcID<'hir>),
-    Enum(hir::EnumID, hir::VariantID),
-    Const(hir::ConstID),
-    Global(hir::GlobalID),
-    Local(hir::LocalID),
-    Param(hir::ParamID),
+    Enum(hir::EnumID<'hir>, hir::VariantID<'hir>),
+    Const(hir::ConstID<'hir>),
+    Global(hir::GlobalID<'hir>),
+    Local(hir::LocalID<'hir>),
+    Param(hir::ParamID<'hir>),
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
