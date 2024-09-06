@@ -4,7 +4,7 @@ use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::syntax;
 use crate::syntax::ast_layer as ast;
-use crate::syntax::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxTree};
+use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 
 //@conform to ast_build style:
@@ -32,7 +32,7 @@ pub fn format_experiment(source: &str, module_id: ModuleID) -> Result<String, Ve
     }
 
     let mut fmt = Formatter::new(&tree, source);
-    node_format(&mut fmt, tree.node(NodeID::new(0)));
+    node_format(&mut fmt, tree.root());
     Ok(fmt.finish())
 }
 
@@ -43,14 +43,10 @@ fn node_format(fmt: &mut Formatter, node: &Node) {
                 node_format(fmt, fmt.tree.node(node_id));
             }
             NodeOrToken::Token(token_id) => {
-                //@hack
-                let token_id = ID::new_raw(token_id.index());
                 let range = fmt.tree.tokens().token_range(token_id);
                 fmt.write_range(range);
             }
             NodeOrToken::Trivia(trivia_id) => {
-                //@hack
-                let trivia_id = ID::new_raw(trivia_id.index());
                 let range = fmt.tree.tokens().trivia_range(trivia_id);
                 fmt.write_range(range);
             }

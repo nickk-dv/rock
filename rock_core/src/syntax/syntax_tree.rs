@@ -1,11 +1,9 @@
 use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
 use crate::arena::Arena;
-use crate::id_impl;
-use crate::macros::ID;
+use crate::macros::{IndexID, ID};
 use crate::temp_buffer::TempBuffer;
-use crate::text::TextRange;
-use crate::token::{Token, TokenList};
+use crate::token::{Token, TokenList, Trivia};
 
 pub struct SyntaxTree<'syn> {
     #[allow(unused)]
@@ -14,19 +12,16 @@ pub struct SyntaxTree<'syn> {
     tokens: TokenList,
 }
 
-id_impl!(NodeID);
 pub struct Node<'syn> {
     pub kind: SyntaxKind,
-    pub content: &'syn [NodeOrToken],
+    pub content: &'syn [NodeOrToken<'syn>],
 }
 
-id_impl!(TokenID);
-id_impl!(TriviaID);
 #[derive(Copy, Clone)]
-pub enum NodeOrToken {
-    Node(NodeID),
-    Token(TokenID),
-    Trivia(TriviaID),
+pub enum NodeOrToken<'syn> {
+    Node(ID<Node<'syn>>),
+    Token(ID<Token>),
+    Trivia(ID<Trivia>),
 }
 
 impl<'syn> SyntaxTree<'syn> {
@@ -37,22 +32,14 @@ impl<'syn> SyntaxTree<'syn> {
             tokens,
         }
     }
-
-    pub fn node(&self, node_id: NodeID) -> &Node {
-        &self.nodes[node_id.index()]
+    pub fn root(&self) -> &Node<'syn> {
+        self.nodes.id_get(ID::new_raw(0))
+    }
+    pub fn node(&self, id: ID<Node<'syn>>) -> &Node<'syn> {
+        self.nodes.id_get(id)
     }
     pub fn tokens(&self) -> &TokenList {
         &self.tokens
-    }
-    pub fn token(&self, token_id: TokenID) -> Token {
-        //@change temp hack
-        let id = ID::new_raw(token_id.index());
-        self.tokens.token(id)
-    }
-    pub fn token_range(&self, token_id: TokenID) -> TextRange {
-        //@change temp hack
-        let id = ID::new_raw(token_id.index());
-        self.tokens.token_range(id)
     }
 }
 
@@ -64,8 +51,8 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn
     let mut parent_stack = Vec::with_capacity(16);
     let mut content = TempBuffer::new(128);
 
-    let mut token_idx = 0;
-    let mut trivia_idx = 0;
+    let mut token_id = ID::<Token>::new_raw(0);
+    let mut trivia_id = ID::<Trivia>::new_raw(0);
     let trivia_count = tokens.trivia_count();
 
     for event_idx in 0..events.len() {
@@ -74,15 +61,13 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn
                 kind,
                 forward_parent,
             } => {
-                if kind != SyntaxKind::SOURCE_FILE {
-                    trivia_idx = attach_prepending_trivia(
-                        &tokens,
-                        token_idx,
-                        trivia_idx,
-                        trivia_count,
-                        &mut content,
-                    );
-                }
+                trivia_id = attach_prepending_trivia(
+                    &tokens,
+                    token_id,
+                    trivia_id,
+                    trivia_count,
+                    &mut content,
+                );
 
                 let mut parent_next = forward_parent;
                 parent_stack.clear();
@@ -106,7 +91,7 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn
                 //@insert attached inner trivias after first pop() node (including the origin)
                 // if inner trivias are even required
                 while let Some(kind) = parent_stack.pop() {
-                    let node_id = NodeID::new(nodes.len());
+                    let node_id = ID::new(&nodes);
                     content.add(NodeOrToken::Node(node_id));
                     let offset = content.start();
                     stack.push((offset, node_id));
@@ -115,7 +100,7 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn
                     nodes.push(node);
                 }
 
-                let node_id = NodeID::new(nodes.len());
+                let node_id = ID::new(&nodes);
                 content.add(NodeOrToken::Node(node_id));
                 let offset = content.start();
                 stack.push((offset, node_id));
@@ -126,30 +111,24 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn
             Event::EndNode => {
                 let (offset, node_id) = stack.pop().unwrap();
 
-                // @hack attach all trailing trivia
-                if nodes[node_id.index()].kind == SyntaxKind::SOURCE_FILE {
-                    let trivia_range = trivia_idx..trivia_count;
-                    for idx in trivia_range {
-                        let trivia_id = TriviaID::new(idx);
-                        trivia_idx += 1;
-                        content.add(NodeOrToken::Trivia(trivia_id));
-                    }
+                // @hack or required?
+                if nodes.id_get(node_id).kind == SyntaxKind::SOURCE_FILE {
+                    trivia_id = attach_remaining_trivia(trivia_id, trivia_count, &mut content);
                 }
 
-                nodes[node_id.index()].content = content.take(offset, &mut arena);
+                nodes.id_get_mut(node_id).content = content.take(offset, &mut arena);
             }
             Event::Token => {
-                trivia_idx = attach_prepending_trivia(
+                trivia_id = attach_prepending_trivia(
                     &tokens,
-                    token_idx,
-                    trivia_idx,
+                    token_id,
+                    trivia_id,
                     trivia_count,
                     &mut content,
                 );
 
-                let token_id = TokenID::new(token_idx);
-                token_idx += 1;
                 content.add(NodeOrToken::Token(token_id));
+                token_id = token_id.inc();
             }
             Event::Ignore => {}
         }
@@ -161,68 +140,81 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>) -> SyntaxTree<'syn
 #[must_use]
 fn attach_prepending_trivia(
     tokens: &TokenList,
-    token_idx: usize,
-    mut trivia_idx: usize,
+    token_id: ID<Token>,
+    trivia_id: ID<Trivia>,
     trivia_count: usize,
     content: &mut TempBuffer<NodeOrToken>,
-) -> usize {
-    //@change temp hack
-    let token_id = ID::new_raw(token_idx);
-    let pending_token_start = tokens.token_range(token_id).start();
+) -> ID<Trivia> {
+    let token_range = tokens.token_range(token_id);
+    let remaining_range = trivia_id.raw_index()..trivia_count;
+    let remaining_trivias = remaining_range.map(|idx| ID::new_raw(idx));
+    let mut out_trivia_id = trivia_id;
 
-    let trivia_range = trivia_idx..trivia_count;
-    for idx in trivia_range {
-        //@change temp hack
-        let trivia_id = ID::new_raw(idx);
+    for trivia_id in remaining_trivias {
         let trivia_range = tokens.trivia_range(trivia_id);
+        let starts_before = trivia_range.start() < token_range.start();
 
-        let before =
-            trivia_range.start() < pending_token_start && trivia_range.end() <= pending_token_start;
-        if !before {
+        if starts_before {
+            out_trivia_id = trivia_id;
+            content.add(NodeOrToken::Trivia(trivia_id));
+        } else {
             break;
         }
+    }
 
-        //@change temp hack
-        let trivia_id = TriviaID::new(idx);
-        trivia_idx += 1;
+    out_trivia_id
+}
+
+#[must_use]
+fn attach_remaining_trivia(
+    trivia_id: ID<Trivia>,
+    trivia_count: usize,
+    content: &mut TempBuffer<NodeOrToken>,
+) -> ID<Trivia> {
+    let remaining_range = trivia_id.raw_index()..trivia_count;
+    let remaining_trivias = remaining_range.map(|idx| ID::new_raw(idx));
+    let mut out_trivia_id = trivia_id;
+
+    for trivia_id in remaining_trivias {
+        out_trivia_id = trivia_id;
         content.add(NodeOrToken::Trivia(trivia_id));
     }
 
-    trivia_idx
+    out_trivia_id
 }
 
-pub fn tree_print(tree: &SyntaxTree, source: &str) {
-    print_node(tree, source, tree.node(NodeID::new(0)), 0);
+pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
+    let mut buffer = String::with_capacity(source.len() * 8);
+    print_node(&mut buffer, tree, source, tree.root(), 0);
+    return buffer;
 
-    fn print_depth(depth: u32) {
-        for _ in 0..depth {
-            eprint!("  ");
-        }
-    }
-
-    fn print_node(tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
-        print_depth(depth);
-        eprintln!("[{:?}]", node.kind);
+    fn print_node(buffer: &mut String, tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
+        print_depth(buffer, depth);
+        buffer.push_str(&format!("[{:?}]", node.kind));
 
         for node_or_token in node.content {
             match *node_or_token {
-                NodeOrToken::Node(node_id) => {
-                    let node = tree.node(node_id);
-                    print_node(tree, source, node, depth + 1);
+                NodeOrToken::Node(id) => {
+                    let node = tree.node(id);
+                    print_node(buffer, tree, source, node, depth + 1);
                 }
-                NodeOrToken::Token(token_id) => {
-                    let range = tree.token_range(token_id);
-                    print_depth(depth + 1);
-                    eprintln!("@{:?} `{}`", range, &source[range.as_usize()]);
+                NodeOrToken::Token(id) => {
+                    let range = tree.tokens.token_range(id);
+                    print_depth(buffer, depth + 1);
+                    buffer.push_str(&format!("@{:?} `{:?}`", range, &source[range.as_usize()]));
                 }
-                NodeOrToken::Trivia(trivia_id) => {
-                    //@change temp hack
-                    let trivia_id = ID::new_raw(trivia_id.index());
-                    let range = tree.tokens().trivia_range(trivia_id);
-                    print_depth(depth + 1);
-                    eprintln!("@{:?} `{:?}`", range, &source[range.as_usize()]);
+                NodeOrToken::Trivia(id) => {
+                    let range = tree.tokens().trivia_range(id);
+                    print_depth(buffer, depth + 1);
+                    buffer.push_str(&format!("@{:?} `{:?}`", range, &source[range.as_usize()]));
                 }
             }
+        }
+    }
+
+    fn print_depth(buffer: &mut String, depth: u32) {
+        for _ in 0..depth {
+            buffer.push_str("  ");
         }
     }
 }

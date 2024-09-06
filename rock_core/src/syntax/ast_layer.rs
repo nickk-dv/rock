@@ -1,5 +1,5 @@
 use super::syntax_kind::SyntaxKind;
-use super::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxTree};
+use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::ast;
 use crate::text::TextRange;
 use crate::token::{Token, T};
@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 impl<'syn> SyntaxTree<'syn> {
     pub fn source_file(&'syn self) -> SourceFile<'syn> {
-        let root = self.node(NodeID::new(0));
+        let root = self.root();
         SourceFile::cast(root).unwrap()
     }
 }
@@ -23,7 +23,7 @@ impl<'syn> Node<'syn> {
     {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(value) = predicate(tree.token(token_id)) {
+                if let Some(value) = predicate(tree.tokens().token(token_id)) {
                     return Some(value);
                 }
             }
@@ -41,8 +41,8 @@ impl<'syn> Node<'syn> {
     {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(value) = predicate(tree.token(token_id)) {
-                    return Some((value, tree.token_range(token_id)));
+                if let Some(value) = predicate(tree.tokens().token(token_id)) {
+                    return Some((value, tree.tokens().token_range(token_id)));
                 }
             }
         }
@@ -52,7 +52,7 @@ impl<'syn> Node<'syn> {
     fn find_token(&self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
         for node_or_token in self.content.iter().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
-                if token == tree.token(token_id) {
+                if token == tree.tokens().token(token_id) {
                     return true;
                 }
             }
@@ -63,7 +63,7 @@ impl<'syn> Node<'syn> {
     fn find_token_rev(&self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
         for node_or_token in self.content.iter().rev().copied() {
             if let NodeOrToken::Token(token_id) = node_or_token {
-                if token == tree.token(token_id) {
+                if token == tree.tokens().token(token_id) {
                     return true;
                 }
             }
@@ -85,7 +85,7 @@ impl<'syn> Node<'syn> {
                         continue 'outher;
                     }
                     NodeOrToken::Token(token_id) => {
-                        start = tree.token_range(token_id).start();
+                        start = tree.tokens().token_range(token_id).start();
                         break 'outher;
                     }
                     NodeOrToken::Trivia(_) => {}
@@ -101,7 +101,7 @@ impl<'syn> Node<'syn> {
                         continue 'outher;
                     }
                     NodeOrToken::Token(token_id) => {
-                        end = tree.token_range(token_id).end();
+                        end = tree.tokens().token_range(token_id).end();
                         break 'outher;
                     }
                     NodeOrToken::Trivia(_) => {}
@@ -121,7 +121,7 @@ pub trait AstNode<'syn> {
 
 pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
     tree: &'syn SyntaxTree<'syn>,
-    iter: std::slice::Iter<'syn, NodeOrToken>,
+    iter: std::slice::Iter<'syn, NodeOrToken<'syn>>,
     phantom: PhantomData<T>,
 }
 
