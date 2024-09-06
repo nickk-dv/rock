@@ -6,15 +6,14 @@ use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::temp_buffer::TempBuffer;
 use crate::text::{TextOffset, TextRange};
-use crate::token::token_list::TokenList;
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 
 pub struct Parser<'ast, 'src, 'state> {
-    pub cursor: usize,
+    pub cursor: ID<Token>,
     tokens: TokenList,
-    int_id: u32,
-    char_id: u32,
-    string_id: u32,
+    int_id: ID<u64>,
+    char_id: ID<char>,
+    string_id: ID<(String, bool)>,
     pub module_id: ModuleID,
     pub source: &'src str,
     pub state: &'state mut ParseState<'ast>,
@@ -54,11 +53,11 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
         state: &'state mut ParseState<'ast>,
     ) -> Self {
         Self {
-            cursor: 0,
+            cursor: ID::new_raw(0),
             tokens,
-            int_id: 0,
-            char_id: 0,
-            string_id: 0,
+            int_id: ID::new_raw(0),
+            char_id: ID::new_raw(0),
+            string_id: ID::new_raw(0),
             module_id,
             source,
             state,
@@ -72,7 +71,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     /// `start` offset must be result of `start_range()` call  
     /// and at least one token must be consumed in between
     pub fn make_range(&self, start: TextOffset) -> TextRange {
-        let end = self.tokens.token_range(self.cursor - 1).end();
+        let end = self.tokens.token_range(self.cursor.dec()).end();
         TextRange::new(start, end)
     }
 
@@ -91,7 +90,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     }
 
     pub fn at_prev(&self, t: Token) -> bool {
-        self.tokens.token(self.cursor - 1) == t
+        self.tokens.token(self.cursor.dec()) == t
     }
 
     pub fn peek(&self) -> Token {
@@ -101,7 +100,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     // would be good to remove the need for forward peeking @14.04.24
     // used in path -> import -> struct_init parsing with `.{`
     pub fn peek_next(&self) -> Token {
-        self.tokens.token(self.cursor + 1)
+        self.tokens.token(self.cursor.inc())
     }
 
     pub fn eat(&mut self, t: Token) -> bool {
@@ -113,7 +112,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     }
 
     pub fn bump(&mut self) {
-        self.cursor += 1;
+        self.cursor = self.cursor.inc();
     }
 
     pub fn expect(&mut self, t: Token) -> Result<(), String> {
@@ -124,28 +123,27 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     }
 
     pub fn get_int_lit(&mut self) -> u64 {
-        let value = self.tokens.int(self.int_id as usize);
-        self.int_id += 1;
+        let value = self.tokens.int(self.int_id);
+        self.int_id = self.int_id.inc();
         value
     }
 
     pub fn get_char_lit(&mut self) -> char {
-        let value = self.tokens.char(self.char_id as usize);
-        self.char_id += 1;
+        let value = self.tokens.char(self.char_id);
+        self.char_id = self.char_id.inc();
         value
     }
 
     pub fn get_string_lit(&mut self) -> (ID<InternLit>, bool) {
-        let (string, c_string) = self.tokens.string(self.string_id as usize);
-        let id = self.state.intern_lit.intern(string);
+        let (string, c_string) = self.tokens.string(self.string_id);
+        self.string_id = self.string_id.inc();
 
+        let id = self.state.intern_lit.intern(string);
         if id.raw_index() >= self.state.string_is_cstr.len() {
             self.state.string_is_cstr.push(c_string);
         } else if c_string {
             self.state.string_is_cstr[id.raw_index()] = true;
         }
-
-        self.string_id += 1;
         (id, c_string)
     }
 }

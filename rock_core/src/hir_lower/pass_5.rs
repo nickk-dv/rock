@@ -1,6 +1,7 @@
 use super::constant;
 use super::context::{HirCtx, HirEmit, SymbolKind};
 use super::errors as err;
+use super::proc_scope::Diverges;
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, ProcScope, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp};
@@ -1600,7 +1601,7 @@ pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
 
 fn typecheck_struct_init<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
-    expect: Expectation,
+    expect: Expectation<'hir>,
     struct_init: &ast::StructInit,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
@@ -1618,6 +1619,8 @@ fn typecheck_struct_init<'hir>(
     };
 
     let data = ctx.registry.struct_data(struct_id);
+    let origin_id = data.origin_id;
+    let data_name = data.name;
     let field_count = data.fields.len();
 
     enum FieldStatus {
@@ -1632,58 +1635,65 @@ fn typecheck_struct_init<'hir>(
     let mut init_count: usize = 0;
 
     for input in struct_init.input {
-        if let Some((field_id, field)) = data.find_field(input.name.id) {
-            //@get expect source?
-            let expect = Expectation::HasType(field.ty, None);
-            let input_res = typecheck_expr(ctx, expect, input.expr);
+        //@reborrow bullshit
+        let data = ctx.registry.struct_data(struct_id);
 
-            if let FieldStatus::Init(range) = field_status[field_id.index()] {
+        match data.find_field(input.name.id) {
+            Some((field_id, field)) => {
+                let expect = Expectation::HasType(field.ty, None);
+                let input_res = typecheck_expr(ctx, expect, input.expr);
+
+                if let FieldStatus::Init(range) = field_status[field_id.index()] {
+                    ctx.emit.error(ErrorComp::new(
+                        format!(
+                            "field `{}` was already initialized",
+                            ctx.name_str(input.name.id),
+                        ),
+                        SourceRange::new(ctx.proc.origin(), input.name.range),
+                        Info::new("initialized here", SourceRange::new(origin_id, range)),
+                    ));
+                } else {
+                    if ctx.proc.origin() != origin_id {
+                        if field.vis == ast::Vis::Private {
+                            ctx.emit.error(ErrorComp::new(
+                                format!("field `{}` is private", ctx.name_str(field.name.id),),
+                                SourceRange::new(ctx.proc.origin(), input.name.range),
+                                Info::new(
+                                    "defined here",
+                                    SourceRange::new(origin_id, field.name.range),
+                                ),
+                            ));
+                        }
+                    }
+
+                    let field_init = hir::FieldInit {
+                        field_id,
+                        expr: input_res.expr,
+                    };
+                    field_inits.push(field_init);
+                    field_status[field_id.index()] = FieldStatus::Init(input.name.range);
+                    init_count += 1;
+                }
+            }
+            None => {
                 ctx.emit.error(ErrorComp::new(
                     format!(
-                        "field `{}` was already initialized",
+                        "field `{}` is not found in `{}`",
                         ctx.name_str(input.name.id),
+                        ctx.name_str(data_name.id)
                     ),
                     SourceRange::new(ctx.proc.origin(), input.name.range),
-                    Info::new("initialized here", SourceRange::new(data.origin_id, range)),
+                    Info::new(
+                        "struct defined here",
+                        SourceRange::new(origin_id, data_name.range),
+                    ),
                 ));
-            } else {
-                if ctx.proc.origin() != data.origin_id {
-                    if field.vis == ast::Vis::Private {
-                        ctx.emit.error(ErrorComp::new(
-                            format!("field `{}` is private", ctx.name_str(field.name.id),),
-                            SourceRange::new(ctx.proc.origin(), input.name.range),
-                            Info::new(
-                                "defined here",
-                                SourceRange::new(data.origin_id, field.name.range),
-                            ),
-                        ));
-                    }
-                }
-
-                let field_init = hir::FieldInit {
-                    field_id,
-                    expr: input_res.expr,
-                };
-                field_inits.push(field_init);
-                field_status[field_id.index()] = FieldStatus::Init(input.name.range);
-                init_count += 1;
+                let _ = typecheck_expr(ctx, Expectation::None, input.expr);
             }
-        } else {
-            ctx.emit.error(ErrorComp::new(
-                format!(
-                    "field `{}` is not found in `{}`",
-                    ctx.name_str(input.name.id),
-                    ctx.name_str(data.name.id)
-                ),
-                SourceRange::new(ctx.proc.origin(), input.name.range),
-                Info::new(
-                    "struct defined here",
-                    SourceRange::new(data.origin_id, data.name.range),
-                ),
-            ));
-            let _ = typecheck_expr(ctx, Expectation::None, input.expr);
         }
     }
+
+    let data = ctx.registry.struct_data(struct_id);
 
     if init_count < field_count {
         //@change message to list limited number of fields based on their name len()
@@ -2081,7 +2091,7 @@ fn typecheck_block<'hir>(
         let (hir_stmt, diverges) = match stmt.kind {
             ast::StmtKind::Break => {
                 if let Some(stmt_res) = typecheck_break(ctx, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
+                    let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -2089,7 +2099,7 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Continue => {
                 if let Some(stmt_res) = typecheck_continue(ctx, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
+                    let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -2097,7 +2107,7 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Return(expr) => {
                 if let Some(stmt_res) = typecheck_return(ctx, expr, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
+                    let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -2106,7 +2116,7 @@ fn typecheck_block<'hir>(
             //@defer block divergence should be simulated to correctly handle block_ty and divergence warnings 03.07.24
             ast::StmtKind::Defer(block) => {
                 if let Some(stmt_res) = typecheck_defer(ctx, *block, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                    let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -2114,13 +2124,13 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Loop(loop_) => {
                 //@can diverge (inf loop, return, panic)
-                let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
                 let stmt_res = hir::Stmt::Loop(typecheck_loop(ctx, loop_));
                 (stmt_res, diverges)
             }
             ast::StmtKind::Local(local) => {
                 //@can diverge any diverging expr inside
-                let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
                 let local_res = typecheck_local(ctx, local);
                 let stmt_res = match local_res {
                     LocalResult::Error => continue,
@@ -2131,7 +2141,7 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Assign(assign) => {
                 //@can diverge any diverging expr inside
-                let diverges = ctx.proc.check_stmt_diverges(ctx, false, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
                 let stmt_res = hir::Stmt::Assign(typecheck_assign(ctx, assign));
                 (stmt_res, diverges)
             }
@@ -2156,7 +2166,7 @@ fn typecheck_block<'hir>(
 
                 //@migrate to using never type instead of diverges bool flags
                 let will_diverge = expr_res.ty.is_never();
-                let diverges = ctx.proc.check_stmt_diverges(ctx, will_diverge, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(will_diverge, stmt.range);
 
                 let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
                 (stmt_res, diverges)
@@ -2166,7 +2176,7 @@ fn typecheck_block<'hir>(
                 //@30.05.24
                 proc example() -> s32 {
                     // incorrect diverges warning since
-                    // block isnt entered untill  typecheck_expr is called
+                    // block isnt entered until typecheck_expr is called
                     -> { // after this
                         // warning for this
                         -> 10;
@@ -2177,7 +2187,7 @@ fn typecheck_block<'hir>(
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
                 // @seems to fix the problem (still a hack)
-                let diverges = ctx.proc.check_stmt_diverges(ctx, true, stmt.range);
+                let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
 
                 // only assigned once, any further `ExprTail` are unreachable
                 if block_ty.is_none() {
@@ -2188,8 +2198,19 @@ fn typecheck_block<'hir>(
             }
         };
 
-        if !diverges {
-            block_stmts.push(hir_stmt);
+        match diverges {
+            Diverges::Maybe => block_stmts.push(hir_stmt),
+            Diverges::Always(range) => {
+                ctx.emit.warning(WarningComp::new(
+                    "unreachable statement",
+                    SourceRange::new(ctx.proc.origin(), stmt.range),
+                    Info::new(
+                        "all statements after this are unreachable",
+                        SourceRange::new(ctx.proc.origin(), range),
+                    ),
+                ));
+            }
+            Diverges::AlwaysWarned => {}
         }
     }
 

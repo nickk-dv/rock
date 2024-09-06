@@ -1,5 +1,6 @@
 use crate::ast::AssignOp;
 use crate::error::ErrorComp;
+use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::syntax;
 use crate::syntax::ast_layer as ast;
@@ -42,11 +43,15 @@ fn node_format(fmt: &mut Formatter, node: &Node) {
                 node_format(fmt, fmt.tree.node(node_id));
             }
             NodeOrToken::Token(token_id) => {
-                let range = fmt.tree.tokens().token_range(token_id.index());
+                //@hack
+                let token_id = ID::new_raw(token_id.index());
+                let range = fmt.tree.tokens().token_range(token_id);
                 fmt.write_range(range);
             }
             NodeOrToken::Trivia(trivia_id) => {
-                let range = fmt.tree.tokens().trivia_range(trivia_id.index());
+                //@hack
+                let trivia_id = ID::new_raw(trivia_id.index());
+                let range = fmt.tree.tokens().trivia_range(trivia_id);
                 fmt.write_range(range);
             }
         }

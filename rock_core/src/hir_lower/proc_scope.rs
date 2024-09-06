@@ -231,34 +231,19 @@ impl<'hir> ProcScope<'hir> {
         None
     }
 
-    pub fn check_stmt_diverges(
-        &mut self,
-        ctx: &mut HirCtx,
-        will_diverge: bool,
-        stmt_range: TextRange,
-    ) -> bool {
+    pub fn check_stmt_diverges(&mut self, will_diverge: bool, stmt_range: TextRange) -> Diverges {
         let diverges = &mut self.blocks.last_mut().expect("block exists").diverges;
         match *diverges {
             Diverges::Maybe => {
                 if will_diverge {
                     *diverges = Diverges::Always(stmt_range);
                 }
-                false
             }
-            Diverges::Always(diverge_range) => {
+            Diverges::Always(_) => {
                 *diverges = Diverges::AlwaysWarned;
-
-                ctx.emit.warning(WarningComp::new(
-                    "unreachable statement",
-                    SourceRange::new(self.origin(), stmt_range),
-                    Info::new(
-                        "all statements after this are unreachable",
-                        SourceRange::new(self.origin(), diverge_range),
-                    ),
-                ));
-                true
             }
-            Diverges::AlwaysWarned => true,
+            Diverges::AlwaysWarned => {}
         }
+        *diverges
     }
 }

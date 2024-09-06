@@ -17,6 +17,51 @@ pub struct ID<T> {
     phantom: PhantomData<T>,
 }
 
+pub trait IndexID<T> {
+    fn len(&self) -> usize;
+    fn id_get(&self, id: ID<T>) -> &T;
+    fn id_get_mut(&mut self, id: ID<T>) -> &mut T;
+}
+
+impl<T> ID<T> {
+    pub fn new(values: &impl IndexID<T>) -> ID<T> {
+        ID {
+            raw: values.len() as u32,
+            phantom: PhantomData,
+        }
+    }
+    pub fn new_raw(index: usize) -> ID<T> {
+        ID {
+            raw: index as u32,
+            phantom: PhantomData,
+        }
+    }
+    pub fn raw(self) -> u32 {
+        self.raw
+    }
+    pub fn raw_index(self) -> usize {
+        self.raw as usize
+    }
+
+    #[must_use]
+    pub fn inc(self) -> ID<T> {
+        let raw = self.raw + 1;
+        ID {
+            raw,
+            phantom: PhantomData,
+        }
+    }
+    #[must_use]
+    pub fn dec(self) -> ID<T> {
+        assert!(self.raw > 0);
+        let raw = self.raw - 1;
+        ID {
+            raw,
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<T> Copy for ID<T> {}
 
 impl<T> Clone for ID<T> {
@@ -39,34 +84,7 @@ impl<T> Hash for ID<T> {
     }
 }
 
-impl<T> ID<T> {
-    pub fn new(values: &impl IndexID<T>) -> ID<T> {
-        ID {
-            raw: values.len() as u32,
-            phantom: PhantomData,
-        }
-    }
-    pub fn new_raw(index: usize) -> ID<T> {
-        ID {
-            raw: index as u32,
-            phantom: PhantomData,
-        }
-    }
-    pub fn raw(self) -> u32 {
-        self.raw
-    }
-    pub fn raw_index(self) -> usize {
-        self.raw as usize
-    }
-}
-
-pub trait IndexID<T> {
-    fn len(&self) -> usize;
-    fn id_get(&self, id: ID<T>) -> &T;
-    fn id_get_mut(&mut self, id: ID<T>) -> &mut T;
-}
-
-impl<T> IndexID<T> for [T] {
+impl<T: Clone> IndexID<T> for [T] {
     fn len(&self) -> usize {
         self.len()
     }

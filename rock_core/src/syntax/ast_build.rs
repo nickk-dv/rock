@@ -4,6 +4,7 @@ use crate::arena::Arena;
 use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
 use crate::intern::{InternLit, InternName, InternPool};
+use crate::macros::ID;
 use crate::session::{ModuleID, Session};
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
@@ -12,9 +13,9 @@ use crate::timer::Timer;
 //@rename some ast:: nodes to match ast_layer and syntax names (eg: ProcParam)
 struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
-    int_id: u32,
-    char_id: u32,
-    string_id: u32,
+    int_id: ID<u64>,
+    char_id: ID<char>,
+    string_id: ID<(String, bool)>,
     module_id: ModuleID,
     source: &'src str,
     s: &'state mut AstBuildState<'ast>,
@@ -53,9 +54,9 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
     ) -> Self {
         AstBuild {
             tree,
-            int_id: 0,
-            char_id: 0,
-            string_id: 0,
+            int_id: ID::new_raw(0),
+            char_id: ID::new_raw(0),
+            string_id: ID::new_raw(0),
             module_id,
             source,
             s: state,
@@ -922,8 +923,8 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
             ast::Lit::Bool(val)
         }
         cst::Lit::Int(_) => {
-            let val = ctx.tree.tokens().int(ctx.int_id as usize);
-            ctx.int_id += 1;
+            let val = ctx.tree.tokens().int(ctx.int_id);
+            ctx.int_id = ctx.int_id.inc();
             ast::Lit::Int(val)
         }
         cst::Lit::Float(lit) => {
@@ -945,8 +946,8 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
             ast::Lit::Float(val)
         }
         cst::Lit::Char(_) => {
-            let val = ctx.tree.tokens().char(ctx.char_id as usize);
-            ctx.char_id += 1;
+            let val = ctx.tree.tokens().char(ctx.char_id);
+            ctx.char_id = ctx.char_id.inc();
             ast::Lit::Char(val)
         }
         cst::Lit::String(_) => {
@@ -957,10 +958,10 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
 }
 
 fn string_lit(ctx: &mut AstBuild) -> ast::StringLit {
-    let (string, c_string) = ctx.tree.tokens().string(ctx.string_id as usize);
-    let id = ctx.s.intern_lit.intern(string);
-    ctx.string_id += 1;
+    let (string, c_string) = ctx.tree.tokens().string(ctx.string_id);
+    ctx.string_id = ctx.string_id.inc();
 
+    let id = ctx.s.intern_lit.intern(string);
     if id.raw_index() >= ctx.s.string_is_cstr.len() {
         ctx.s.string_is_cstr.push(c_string);
     } else if c_string {

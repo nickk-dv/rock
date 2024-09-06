@@ -30,8 +30,9 @@ pub fn module<'ast>(
         match item(&mut p) {
             Ok(item) => p.state.items.add(item),
             Err(error) => {
+                //@hack
                 if p.at(T![eof]) {
-                    p.cursor -= 1;
+                    p.cursor = p.cursor.dec();
                 }
                 let range = p.peek_range();
                 return Err(ErrorComp::new_detailed(

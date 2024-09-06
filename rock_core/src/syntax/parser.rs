@@ -1,13 +1,13 @@
 use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
 use crate::error::{ErrorComp, SourceRange, StringOrStr};
+use crate::macros::ID;
 use crate::session::ModuleID;
-use crate::token::token_list::TokenList;
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 use std::cell::Cell;
 
 pub struct Parser {
-    cursor: usize,
+    cursor: ID<Token>,
     tokens: TokenList,
     events: Vec<Event>,
     errors: Vec<ErrorComp>,
@@ -38,7 +38,7 @@ pub struct MarkerClosed {
 impl Parser {
     pub fn new(tokens: TokenList, module_id: ModuleID) -> Parser {
         Parser {
-            cursor: 0,
+            cursor: ID::new_raw(0),
             tokens,
             events: Vec::new(),
             errors: Vec::new(),
@@ -60,7 +60,7 @@ impl Parser {
     }
 
     pub fn at_prev(&self, token: Token) -> bool {
-        self.tokens.token(self.cursor - 1) == token
+        self.tokens.token(self.cursor.dec()) == token
     }
 
     pub fn at_set(&self, token_set: TokenSet) -> bool {
@@ -74,7 +74,7 @@ impl Parser {
 
     pub fn peek_next(&self) -> Token {
         self.step_bump();
-        self.tokens.token(self.cursor + 1)
+        self.tokens.token(self.cursor.inc())
     }
 
     pub fn eat(&mut self, token: Token) -> bool {
@@ -123,7 +123,7 @@ impl Parser {
     }
 
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let range = self.tokens.token_range(self.cursor + 1);
+        let range = self.tokens.token_range(self.cursor.inc());
         let src = SourceRange::new(self.module_id, range);
         self.errors.push(ErrorComp::new(msg, src, None));
     }
@@ -136,7 +136,7 @@ impl Parser {
     }
 
     fn do_bump(&mut self) {
-        self.cursor += 1;
+        self.cursor = self.cursor.inc();
         self.step_reset();
         self.push_event(Event::Token);
     }

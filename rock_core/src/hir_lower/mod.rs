@@ -24,8 +24,8 @@ pub fn check<'hir, 'ast: 'hir>(
     pass_1::populate_scopes(&mut ctx, session);
     pass_2::resolve_imports(&mut ctx, session);
     pass_3::process_items(&mut ctx);
-    //constant::resolve_const_dependencies(&mut ctx);
-    //pass_5::typecheck_procedures(&mut ctx);
+    constant::resolve_const_dependencies(&mut ctx);
+    pass_5::typecheck_procedures(&mut ctx);
     pass_6::check_entry_point(&mut ctx, session);
     ctx.hir_emit()
 }

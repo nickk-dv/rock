@@ -2,10 +2,10 @@ use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
 use crate::arena::Arena;
 use crate::id_impl;
+use crate::macros::ID;
 use crate::temp_buffer::TempBuffer;
 use crate::text::TextRange;
-use crate::token::token_list::TokenList;
-use crate::token::Token;
+use crate::token::{Token, TokenList};
 
 pub struct SyntaxTree<'syn> {
     #[allow(unused)]
@@ -45,10 +45,14 @@ impl<'syn> SyntaxTree<'syn> {
         &self.tokens
     }
     pub fn token(&self, token_id: TokenID) -> Token {
-        self.tokens.token(token_id.index())
+        //@change temp hack
+        let id = ID::new_raw(token_id.index());
+        self.tokens.token(id)
     }
     pub fn token_range(&self, token_id: TokenID) -> TextRange {
-        self.tokens.token_range(token_id.index())
+        //@change temp hack
+        let id = ID::new_raw(token_id.index());
+        self.tokens.token_range(id)
     }
 }
 
@@ -162,18 +166,23 @@ fn attach_prepending_trivia(
     trivia_count: usize,
     content: &mut TempBuffer<NodeOrToken>,
 ) -> usize {
-    let pending_token_start = tokens.token_range(token_idx).start();
+    //@change temp hack
+    let token_id = ID::new_raw(token_idx);
+    let pending_token_start = tokens.token_range(token_id).start();
 
     let trivia_range = trivia_idx..trivia_count;
     for idx in trivia_range {
-        let trivia_range = tokens.trivia_range(idx);
+        //@change temp hack
+        let trivia_id = ID::new_raw(idx);
+        let trivia_range = tokens.trivia_range(trivia_id);
+
         let before =
             trivia_range.start() < pending_token_start && trivia_range.end() <= pending_token_start;
-
         if !before {
             break;
         }
 
+        //@change temp hack
         let trivia_id = TriviaID::new(idx);
         trivia_idx += 1;
         content.add(NodeOrToken::Trivia(trivia_id));
@@ -207,7 +216,9 @@ pub fn tree_print(tree: &SyntaxTree, source: &str) {
                     eprintln!("@{:?} `{}`", range, &source[range.as_usize()]);
                 }
                 NodeOrToken::Trivia(trivia_id) => {
-                    let range = tree.tokens().trivia_range(trivia_id.index());
+                    //@change temp hack
+                    let trivia_id = ID::new_raw(trivia_id.index());
+                    let range = tree.tokens().trivia_range(trivia_id);
                     print_depth(depth + 1);
                     eprintln!("@{:?} `{:?}`", range, &source[range.as_usize()]);
                 }

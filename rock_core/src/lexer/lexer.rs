@@ -1,7 +1,7 @@
 use crate::error::ErrorComp;
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
-use crate::token::token_list::TokenList;
+use crate::token::TokenList;
 use std::{iter::Peekable, str::Chars};
 
 pub struct Lexer<'src> {
