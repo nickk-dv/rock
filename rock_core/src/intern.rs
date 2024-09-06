@@ -1,5 +1,4 @@
-use crate::arena::Arena;
-use crate::macros::ID;
+use crate::support::{Arena, ID};
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
 use std::marker::PhantomData;

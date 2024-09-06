@@ -1,10 +1,8 @@
-use super::context::HirCtx;
 use super::pass_5::Expectation;
-use crate::error::{ErrorSink, Info, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::InternName;
-use crate::macros::ID;
 use crate::session::ModuleID;
+use crate::support::ID;
 use crate::text::TextRange;
 
 //@re-use same proc scope to avoid frequent re-alloc 26.05.24

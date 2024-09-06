@@ -1,10 +1,7 @@
 #![deny(unsafe_code)]
 
-#[allow(unsafe_code)]
-mod arena;
 pub mod ast;
 pub mod ast_parse;
-mod bitset;
 pub mod config;
 pub mod error;
 pub mod format;
@@ -16,10 +13,9 @@ mod lexer;
 mod macros;
 pub mod package;
 pub mod session;
+mod support;
 pub mod syntax;
-mod temp_buffer;
 pub mod text;
-mod timer;
 mod token;
 
 use package::semver::Semver;

@@ -6,7 +6,7 @@ use crate::error::ResultComp;
 use crate::intern::{InternName, InternPool};
 use crate::lexer;
 use crate::session::Session;
-use crate::timer::Timer;
+use crate::support::Timer;
 
 pub fn parse<'ast>(
     session: &Session,

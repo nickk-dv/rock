@@ -1,10 +1,8 @@
-use crate::arena::Arena;
 use crate::ast;
-use crate::bitset::BitSet;
 use crate::id_impl;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::{IndexID, ID};
 use crate::session::ModuleID;
+use crate::support::{Arena, BitSet, IndexID, ID};
 use crate::text::TextRange;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};

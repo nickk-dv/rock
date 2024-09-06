@@ -2,13 +2,13 @@ use super::context::HirCtx;
 use super::context::HirEmit;
 use super::errors as err;
 use crate::ast;
-use crate::bitset::BitSet;
 use crate::config;
 use crate::enum_str_convert;
 use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
 use crate::hir;
 use crate::hir::{EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, RockModule, Session};
+use crate::support::BitSet;
 
 pub struct AttrFeedbackProc {
     pub cfg_state: CfgState,

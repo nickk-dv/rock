@@ -1,7 +1,6 @@
-use crate::arena::Arena;
 use crate::enum_str_convert;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::ID;
+use crate::support::{Arena, ID};
 use crate::text::TextRange;
 
 pub struct Ast<'ast> {

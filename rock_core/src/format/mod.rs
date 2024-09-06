@@ -1,6 +1,5 @@
 use crate::ast::AssignOp;
 use crate::error::ErrorComp;
-use crate::macros::ID;
 use crate::session::ModuleID;
 use crate::syntax;
 use crate::syntax::ast_layer as ast;

@@ -1,14 +1,11 @@
 use super::ast_layer as cst;
 use super::syntax_tree::SyntaxTree;
-use crate::arena::Arena;
 use crate::ast;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::ID;
 use crate::session::{ModuleID, Session};
-use crate::temp_buffer::TempBuffer;
+use crate::support::{Arena, TempBuffer, Timer, ID};
 use crate::text::TextRange;
-use crate::timer::Timer;
 
 //@rename some ast:: nodes to match ast_layer and syntax names (eg: ProcParam)
 struct AstBuild<'ast, 'syn, 'src, 'state> {

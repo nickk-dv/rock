@@ -1,11 +1,10 @@
-use crate::arena::Arena;
 use crate::ast;
 use crate::config::TargetTriple;
 use crate::error::{DiagnosticCollection, ErrorComp, Info, ResultComp, SourceRange, WarningComp};
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::{IndexID, ID};
 use crate::session::ModuleID;
+use crate::support::{Arena, IndexID, ID};
 use crate::text::TextRange;
 use std::collections::HashMap;
 

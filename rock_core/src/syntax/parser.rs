@@ -1,8 +1,8 @@
 use super::syntax_kind::SyntaxKind;
 use super::token_set::TokenSet;
 use crate::error::{ErrorComp, SourceRange, StringOrStr};
-use crate::macros::ID;
 use crate::session::ModuleID;
+use crate::support::ID;
 use crate::token::{Token, TokenList};
 use std::cell::Cell;
 

@@ -219,8 +219,8 @@ pub fn find_text_location(
 #[test]
 fn test() {
     use crate::lexer;
-    use crate::macros::ID;
     use crate::session::ModuleID;
+    use crate::support::ID;
 
     let text = "foo\nbaz";
     let (tokens, _) = lexer::lex(text, ModuleID::dummy(), false);

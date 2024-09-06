@@ -1,5 +1,5 @@
 use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
-use crate::macros::{IndexID, ID};
+use crate::support::{IndexID, ID};
 use crate::text::TextRange;
 
 pub struct TokenList {

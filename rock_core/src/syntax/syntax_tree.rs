@@ -1,8 +1,6 @@
 use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
-use crate::arena::Arena;
-use crate::macros::{IndexID, ID};
-use crate::temp_buffer::TempBuffer;
+use crate::support::{Arena, IndexID, TempBuffer, ID};
 use crate::token::{Token, TokenList, Trivia};
 
 pub struct SyntaxTree<'syn> {

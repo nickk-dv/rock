@@ -1,10 +1,8 @@
-use crate::arena::Arena;
 use crate::ast::*;
 use crate::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::macros::ID;
 use crate::session::ModuleID;
-use crate::temp_buffer::TempBuffer;
+use crate::support::{Arena, TempBuffer, ID};
 use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, TokenList};
 
