@@ -673,11 +673,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         | T![int_lit]
         | T![float_lit]
         | T![char_lit]
-        | T![string_lit] => {
-            let m = p.start();
-            lit(p);
-            m.complete(p, SyntaxKind::EXPR_LIT)
-        }
+        | T![string_lit] => lit(p),
         T![if] => if_(p),
         T!['{'] => block(p, SyntaxKind::EXPR_BLOCK),
         T![match] => match_(p),
@@ -734,19 +730,19 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T![..] => {
             let m = p.start();
             p.bump(T![..]);
-            m.complete(p, SyntaxKind::EXPR_RANGE_FULL)
+            m.complete(p, SyntaxKind::RANGE_FULL)
         }
         T!["..<"] => {
             let m = p.start();
             p.bump(T!["..<"]);
             expr(p);
-            m.complete(p, SyntaxKind::EXPR_RANGE_TO)
+            m.complete(p, SyntaxKind::RANGE_TO_EXCLUSIVE)
         }
         T!["..="] => {
             let m = p.start();
             p.bump(T!["..="]);
             expr(p);
-            m.complete(p, SyntaxKind::EXPR_RANGE_TO_INCLUSIVE)
+            m.complete(p, SyntaxKind::RANGE_TO_INCLUSIVE)
         }
         _ => {
             //@double error node is created, we still need marker_closed for Error
@@ -790,56 +786,56 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             T![..] => {
                 let m = p.start_before(mc);
                 p.bump(T![..]);
-                mc = m.complete(p, SyntaxKind::EXPR_RANGE_FROM);
+                mc = m.complete(p, SyntaxKind::RANGE_FROM);
             }
             T!["..<"] => {
                 let m = p.start_before(mc);
                 p.bump(T!["..<"]);
                 expr(p);
-                mc = m.complete(p, SyntaxKind::EXPR_RANGE);
+                mc = m.complete(p, SyntaxKind::RANGE_EXCLUSIVE);
             }
             T!["..="] => {
                 let m = p.start_before(mc);
                 p.bump(T!["..="]);
                 expr(p);
-                mc = m.complete(p, SyntaxKind::EXPR_RANGE_INCLUSIVE);
+                mc = m.complete(p, SyntaxKind::RANGE_INCLUSIVE);
             }
             _ => return mc,
         }
     }
 }
 
-fn lit(p: &mut Parser) {
+fn lit(p: &mut Parser) -> MarkerClosed {
     match p.peek() {
         T![null] => {
             let m = p.start();
             p.bump(T![null]);
-            m.complete(p, SyntaxKind::LIT_NULL);
+            m.complete(p, SyntaxKind::LIT_NULL)
         }
         T![true] | T![false] => {
             let m = p.start();
             p.bump(p.peek());
-            m.complete(p, SyntaxKind::LIT_BOOL);
+            m.complete(p, SyntaxKind::LIT_BOOL)
         }
         T![int_lit] => {
             let m = p.start();
             p.bump(T![int_lit]);
-            m.complete(p, SyntaxKind::LIT_INT);
+            m.complete(p, SyntaxKind::LIT_INT)
         }
         T![float_lit] => {
             let m = p.start();
             p.bump(T![float_lit]);
-            m.complete(p, SyntaxKind::LIT_FLOAT);
+            m.complete(p, SyntaxKind::LIT_FLOAT)
         }
         T![char_lit] => {
             let m = p.start();
             p.bump(T![char_lit]);
-            m.complete(p, SyntaxKind::LIT_CHAR);
+            m.complete(p, SyntaxKind::LIT_CHAR)
         }
         T![string_lit] => {
             let m = p.start();
             p.bump(T![string_lit]);
-            m.complete(p, SyntaxKind::LIT_STRING);
+            m.complete(p, SyntaxKind::LIT_STRING)
         }
         _ => unreachable!(),
     }

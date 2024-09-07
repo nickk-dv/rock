@@ -269,7 +269,6 @@ ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
 ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
-ast_node_impl!(ExprLit, SyntaxKind::EXPR_LIT);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
 ast_node_impl!(EntryBranch, SyntaxKind::ENTRY_BRANCH);
 ast_node_impl!(ElseIfBranch, SyntaxKind::ELSE_IF_BRANCH);
@@ -296,14 +295,15 @@ ast_node_impl!(ExprArrayInit, SyntaxKind::EXPR_ARRAY_INIT);
 ast_node_impl!(ExprArrayRepeat, SyntaxKind::EXPR_ARRAY_REPEAT);
 ast_node_impl!(ExprDeref, SyntaxKind::EXPR_DEREF);
 ast_node_impl!(ExprAddress, SyntaxKind::EXPR_ADDRESS);
-ast_node_impl!(ExprRangeFull, SyntaxKind::EXPR_RANGE_FULL);
-ast_node_impl!(ExprRangeTo, SyntaxKind::EXPR_RANGE_TO);
-ast_node_impl!(ExprRangeToInclusive, SyntaxKind::EXPR_RANGE_TO_INCLUSIVE);
-ast_node_impl!(ExprRangeFrom, SyntaxKind::EXPR_RANGE_FROM);
-ast_node_impl!(ExprRange, SyntaxKind::EXPR_RANGE);
-ast_node_impl!(ExprRangeInclusive, SyntaxKind::EXPR_RANGE_INCLUSIVE);
 ast_node_impl!(ExprUnary, SyntaxKind::EXPR_UNARY);
 ast_node_impl!(ExprBinary, SyntaxKind::EXPR_BINARY);
+
+ast_node_impl!(PatWild, SyntaxKind::PAT_WILD);
+ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
+ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
+ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
+ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
+ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
 
 ast_node_impl!(LitNull, SyntaxKind::LIT_NULL);
 ast_node_impl!(LitBool, SyntaxKind::LIT_BOOL);
@@ -312,12 +312,12 @@ ast_node_impl!(LitFloat, SyntaxKind::LIT_FLOAT);
 ast_node_impl!(LitChar, SyntaxKind::LIT_CHAR);
 ast_node_impl!(LitString, SyntaxKind::LIT_STRING);
 
-ast_node_impl!(PatWild, SyntaxKind::PAT_WILD);
-ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
-ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
-ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
-ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
-ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
+ast_node_impl!(RangeFull, SyntaxKind::RANGE_FULL);
+ast_node_impl!(RangeToExclusive, SyntaxKind::RANGE_TO_EXCLUSIVE);
+ast_node_impl!(RangeToInclusive, SyntaxKind::RANGE_TO_INCLUSIVE);
+ast_node_impl!(RangeFrom, SyntaxKind::RANGE_FROM);
+ast_node_impl!(RangeExclusive, SyntaxKind::RANGE_EXCLUSIVE);
+ast_node_impl!(RangeInclusive, SyntaxKind::RANGE_INCLUSIVE);
 
 #[derive(Copy, Clone)]
 pub enum Item<'syn> {
@@ -442,7 +442,7 @@ impl<'syn> Stmt<'syn> {
 #[derive(Copy, Clone)]
 pub enum Expr<'syn> {
     Paren(ExprParen<'syn>),
-    Lit(ExprLit<'syn>),
+    Lit(Lit<'syn>),
     If(ExprIf<'syn>),
     Block(ExprBlock<'syn>),
     Match(ExprMatch<'syn>),
@@ -459,12 +459,7 @@ pub enum Expr<'syn> {
     ArrayRepeat(ExprArrayRepeat<'syn>),
     Deref(ExprDeref<'syn>),
     Address(ExprAddress<'syn>),
-    RangeFull(ExprRangeFull<'syn>),
-    RangeTo(ExprRangeTo<'syn>),
-    RangeToInclusive(ExprRangeToInclusive<'syn>),
-    RangeFrom(ExprRangeFrom<'syn>),
-    Range(ExprRange<'syn>),
-    RangeInclusive(ExprRangeInclusive<'syn>),
+    Range(Range<'syn>),
     Unary(ExprUnary<'syn>),
     Binary(ExprBinary<'syn>),
 }
@@ -473,7 +468,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
     fn cast(node: &'syn Node) -> Option<Expr<'syn>> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
-            SyntaxKind::EXPR_LIT => Some(Expr::Lit(ExprLit(node))),
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
             SyntaxKind::EXPR_BLOCK => Some(Expr::Block(ExprBlock(node))),
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
@@ -490,19 +484,17 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_ARRAY_REPEAT => Some(Expr::ArrayRepeat(ExprArrayRepeat(node))),
             SyntaxKind::EXPR_DEREF => Some(Expr::Deref(ExprDeref(node))),
             SyntaxKind::EXPR_ADDRESS => Some(Expr::Address(ExprAddress(node))),
-            SyntaxKind::EXPR_RANGE_FULL => Some(Expr::RangeFull(ExprRangeFull(node))),
-            SyntaxKind::EXPR_RANGE_TO => Some(Expr::RangeTo(ExprRangeTo(node))),
-            SyntaxKind::EXPR_RANGE_TO_INCLUSIVE => {
-                Some(Expr::RangeToInclusive(ExprRangeToInclusive(node)))
-            }
-            SyntaxKind::EXPR_RANGE_FROM => Some(Expr::RangeFrom(ExprRangeFrom(node))),
-            SyntaxKind::EXPR_RANGE => Some(Expr::Range(ExprRange(node))),
-            SyntaxKind::EXPR_RANGE_INCLUSIVE => {
-                Some(Expr::RangeInclusive(ExprRangeInclusive(node)))
-            }
             SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
             SyntaxKind::EXPR_BINARY => Some(Expr::Binary(ExprBinary(node))),
-            _ => None,
+            _ => {
+                if let Some(lit) = Lit::cast(node) {
+                    Some(Expr::Lit(lit))
+                } else if let Some(range) = Range::cast(node) {
+                    Some(Expr::Range(range))
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -528,14 +520,43 @@ impl<'syn> Expr<'syn> {
             Expr::ArrayRepeat(expr) => expr.range(tree),
             Expr::Deref(expr) => expr.range(tree),
             Expr::Address(expr) => expr.range(tree),
-            Expr::RangeFull(expr) => expr.range(tree),
-            Expr::RangeTo(expr) => expr.range(tree),
-            Expr::RangeToInclusive(expr) => expr.range(tree),
-            Expr::RangeFrom(expr) => expr.range(tree),
             Expr::Range(expr) => expr.range(tree),
-            Expr::RangeInclusive(expr) => expr.range(tree),
             Expr::Unary(expr) => expr.range(tree),
             Expr::Binary(expr) => expr.range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Pat<'syn> {
+    Wild(PatWild<'syn>),
+    Lit(PatLit<'syn>),
+    Item(PatItem<'syn>),
+    Variant(PatVariant<'syn>),
+    Or(PatOr<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Pat<'syn> {
+    fn cast(node: &'syn Node) -> Option<Pat<'syn>> {
+        match node.kind {
+            SyntaxKind::PAT_WILD => Some(Pat::Wild(PatWild(node))),
+            SyntaxKind::PAT_LIT => Some(Pat::Lit(PatLit(node))),
+            SyntaxKind::PAT_ITEM => Some(Pat::Item(PatItem(node))),
+            SyntaxKind::PAT_VARIANT => Some(Pat::Variant(PatVariant(node))),
+            SyntaxKind::PAT_OR => Some(Pat::Or(PatOr(node))),
+            _ => None,
+        }
+    }
+}
+
+impl<'syn> Pat<'syn> {
+    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Pat::Wild(pat) => pat.range(tree),
+            Pat::Lit(pat) => pat.range(tree),
+            Pat::Item(pat) => pat.range(tree),
+            Pat::Variant(pat) => pat.range(tree),
+            Pat::Or(pat) => pat.range(tree),
         }
     }
 }
@@ -578,35 +599,38 @@ impl<'syn> Lit<'syn> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Pat<'syn> {
-    Wild(PatWild<'syn>),
-    Lit(PatLit<'syn>),
-    Item(PatItem<'syn>),
-    Variant(PatVariant<'syn>),
-    Or(PatOr<'syn>),
+pub enum Range<'syn> {
+    Full(RangeFull<'syn>),
+    ToExclusive(RangeToExclusive<'syn>),
+    ToInclusive(RangeToInclusive<'syn>),
+    From(RangeFrom<'syn>),
+    Exclusive(RangeExclusive<'syn>),
+    Inclusive(RangeInclusive<'syn>),
 }
 
-impl<'syn> AstNode<'syn> for Pat<'syn> {
-    fn cast(node: &'syn Node) -> Option<Pat<'syn>> {
+impl<'syn> AstNode<'syn> for Range<'syn> {
+    fn cast(node: &'syn Node) -> Option<Range<'syn>> {
         match node.kind {
-            SyntaxKind::PAT_WILD => Some(Pat::Wild(PatWild(node))),
-            SyntaxKind::PAT_LIT => Some(Pat::Lit(PatLit(node))),
-            SyntaxKind::PAT_ITEM => Some(Pat::Item(PatItem(node))),
-            SyntaxKind::PAT_VARIANT => Some(Pat::Variant(PatVariant(node))),
-            SyntaxKind::PAT_OR => Some(Pat::Or(PatOr(node))),
+            SyntaxKind::RANGE_FULL => Some(Range::Full(RangeFull(node))),
+            SyntaxKind::RANGE_TO_EXCLUSIVE => Some(Range::ToExclusive(RangeToExclusive(node))),
+            SyntaxKind::RANGE_TO_INCLUSIVE => Some(Range::ToInclusive(RangeToInclusive(node))),
+            SyntaxKind::RANGE_FROM => Some(Range::From(RangeFrom(node))),
+            SyntaxKind::RANGE_EXCLUSIVE => Some(Range::Exclusive(RangeExclusive(node))),
+            SyntaxKind::RANGE_INCLUSIVE => Some(Range::Inclusive(RangeInclusive(node))),
             _ => None,
         }
     }
 }
 
-impl<'syn> Pat<'syn> {
+impl<'syn> Range<'syn> {
     pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Pat::Wild(pat) => pat.range(tree),
-            Pat::Lit(pat) => pat.range(tree),
-            Pat::Item(pat) => pat.range(tree),
-            Pat::Variant(pat) => pat.range(tree),
-            Pat::Or(pat) => pat.range(tree),
+            Range::Full(range) => range.range(tree),
+            Range::ToExclusive(range) => range.range(tree),
+            Range::ToInclusive(range) => range.range(tree),
+            Range::From(range) => range.range(tree),
+            Range::Exclusive(range) => range.range(tree),
+            Range::Inclusive(range) => range.range(tree),
         }
     }
 }
@@ -862,10 +886,6 @@ impl<'syn> ExprParen<'syn> {
     find_first!(expr, Expr);
 }
 
-impl<'syn> ExprLit<'syn> {
-    find_first!(lit, Lit);
-}
-
 impl<'syn> ExprIf<'syn> {
     find_first!(entry_branch, EntryBranch);
     node_iter!(else_if_branches, ElseIfBranch);
@@ -994,28 +1014,6 @@ impl<'syn> ExprAddress<'syn> {
     find_first!(expr, Expr);
 }
 
-impl<'syn> ExprRangeFull<'syn> {}
-
-impl<'syn> ExprRangeTo<'syn> {
-    find_first!(end, Expr);
-}
-
-impl<'syn> ExprRangeToInclusive<'syn> {
-    find_first!(end, Expr);
-}
-
-impl<'syn> ExprRangeFrom<'syn> {
-    find_first!(start, Expr);
-}
-
-impl<'syn> ExprRange<'syn> {
-    node_iter!(start_end_iter, Expr);
-}
-
-impl<'syn> ExprRangeInclusive<'syn> {
-    node_iter!(start_end_iter, Expr);
-}
-
 impl<'syn> ExprUnary<'syn> {
     pub fn un_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::UnOp {
         self.0.find_by_token(tree, Token::as_un_op).unwrap()
@@ -1051,13 +1049,7 @@ impl<'syn> LitBool<'syn> {
     }
 }
 
-impl<'syn> LitInt<'syn> {}
-
-impl<'syn> LitFloat<'syn> {}
-
-impl<'syn> LitChar<'syn> {}
-
-impl<'syn> LitString<'syn> {}
+//==================== PAT ====================
 
 impl<'syn> PatWild<'syn> {}
 
@@ -1077,6 +1069,40 @@ impl<'syn> PatVariant<'syn> {
 
 impl<'syn> PatOr<'syn> {
     node_iter!(patterns, Pat);
+}
+
+//==================== LIT ====================
+
+impl<'syn> LitInt<'syn> {}
+
+impl<'syn> LitFloat<'syn> {}
+
+impl<'syn> LitChar<'syn> {}
+
+impl<'syn> LitString<'syn> {}
+
+//==================== RANGE ====================
+
+impl<'syn> RangeFull<'syn> {}
+
+impl<'syn> RangeToExclusive<'syn> {
+    find_first!(end, Expr);
+}
+
+impl<'syn> RangeToInclusive<'syn> {
+    find_first!(end, Expr);
+}
+
+impl<'syn> RangeFrom<'syn> {
+    find_first!(start, Expr);
+}
+
+impl<'syn> RangeExclusive<'syn> {
+    node_iter!(start_end_iter, Expr);
+}
+
+impl<'syn> RangeInclusive<'syn> {
+    node_iter!(start_end_iter, Expr);
 }
 
 impl<'syn> BindList<'syn> {

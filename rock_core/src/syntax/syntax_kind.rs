@@ -56,11 +56,10 @@ pub enum SyntaxKind {
     STMT_EXPR_TAIL,
 
     EXPR_PAREN,
-    EXPR_LIT,
     EXPR_IF,
     ENTRY_BRANCH,
     ELSE_IF_BRANCH,
-    EXPR_BLOCK,
+    EXPR_BLOCK, //@REMOVE? just
     EXPR_MATCH,
     MATCH_ARM_LIST,
     MATCH_ARM,
@@ -83,15 +82,15 @@ pub enum SyntaxKind {
     EXPR_ARRAY_REPEAT,
     EXPR_DEREF,
     EXPR_ADDRESS,
-    //@rework range to include it in `pat` and `expr`
-    EXPR_RANGE_FULL,
-    EXPR_RANGE_TO,
-    EXPR_RANGE_TO_INCLUSIVE,
-    EXPR_RANGE_FROM,
-    EXPR_RANGE,
-    EXPR_RANGE_INCLUSIVE,
     EXPR_UNARY,
     EXPR_BINARY,
+
+    PAT_WILD,
+    PAT_LIT,
+    PAT_ITEM,
+    PAT_VARIANT,
+    PAT_OR,
+    BIND_LIST,
 
     LIT_NULL,
     LIT_BOOL,
@@ -100,10 +99,10 @@ pub enum SyntaxKind {
     LIT_CHAR,
     LIT_STRING,
 
-    PAT_WILD,
-    PAT_LIT,
-    PAT_ITEM,
-    PAT_VARIANT,
-    PAT_OR,
-    BIND_LIST,
+    RANGE_FULL,
+    RANGE_TO_EXCLUSIVE,
+    RANGE_TO_INCLUSIVE,
+    RANGE_FROM,
+    RANGE_EXCLUSIVE,
+    RANGE_INCLUSIVE,
 }
