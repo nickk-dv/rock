@@ -11,13 +11,19 @@ pub enum SyntaxKind {
     ATTR_PARAM,
     VISIBILITY,
 
+    NAME,
+    PATH,
+    BIND,
+    BIND_LIST,
+    ARGS_LIST,
+
     PROC_ITEM,
     PARAM_LIST,
     PARAM,
     ENUM_ITEM,
     VARIANT_LIST,
     VARIANT,
-    VARIANT_TYPE_LIST,
+    VARIANT_FIELD_LIST,
     STRUCT_ITEM,
     FIELD_LIST,
     FIELD,
@@ -28,10 +34,6 @@ pub enum SyntaxKind {
     IMPORT_SYMBOL_LIST,
     IMPORT_SYMBOL,
     SYMBOL_RENAME,
-
-    NAME,
-    PATH,
-    BINDING,
 
     TYPE_BASIC,
     TYPE_CUSTOM,
@@ -59,7 +61,7 @@ pub enum SyntaxKind {
     EXPR_IF,
     ENTRY_BRANCH,
     ELSE_IF_BRANCH,
-    EXPR_BLOCK, //@REMOVE? just
+    EXPR_BLOCK, //@remove indirection, cleanup blocks in syntax
     EXPR_MATCH,
     MATCH_ARM_LIST,
     MATCH_ARM,
@@ -70,7 +72,6 @@ pub enum SyntaxKind {
     EXPR_FIELD,
     EXPR_INDEX,
     EXPR_CALL,
-    ARGUMENT_LIST,
     EXPR_CAST,
     EXPR_SIZEOF,
     EXPR_ITEM,
@@ -90,7 +91,6 @@ pub enum SyntaxKind {
     PAT_ITEM,
     PAT_VARIANT,
     PAT_OR,
-    BIND_LIST,
 
     LIT_NULL,
     LIT_BOOL,

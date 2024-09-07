@@ -1,9 +1,8 @@
 use super::syntax_kind::SyntaxKind;
-use super::token_set::TokenSet;
 use crate::error::{ErrorComp, SourceRange, StringOrStr};
 use crate::session::ModuleID;
 use crate::support::ID;
-use crate::token::{Token, TokenList};
+use crate::token::{Token, TokenList, TokenSet};
 use std::cell::Cell;
 
 pub struct Parser {
@@ -96,7 +95,7 @@ impl Parser {
     }
 
     pub fn error_bump(&mut self, msg: impl Into<StringOrStr>) {
-        self.error_recover(msg, TokenSet::EMPTY)
+        self.error_recover(msg, TokenSet::empty())
     }
 
     pub fn error_recover(&mut self, msg: impl Into<StringOrStr>, recovery: TokenSet) {

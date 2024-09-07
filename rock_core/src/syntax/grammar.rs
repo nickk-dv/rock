@@ -1,7 +1,6 @@
 use super::parser::{Marker, MarkerClosed, Parser};
 use super::syntax_kind::SyntaxKind;
-use super::token_set::TokenSet;
-use crate::token::{Token, T};
+use crate::token::{Token, TokenSet, T};
 
 pub fn source_file(p: &mut Parser) {
     let m = p.start();
@@ -203,15 +202,15 @@ fn variant(p: &mut Parser) {
     if p.eat(T![=]) {
         expr(p);
     } else if p.at(T!['(']) {
-        variant_type_list(p);
+        variant_field_list(p);
     }
     m.complete(p, SyntaxKind::VARIANT);
 }
 
-const RECOVER_VARIANT_TYPE_LIST: TokenSet =
+const RECOVER_VARIANT_FIELD_LIST: TokenSet =
     FIRST_ITEM.combine(TokenSet::new(&[T![,], T![')'], T!['}'], T![ident]]));
 
-fn variant_type_list(p: &mut Parser) {
+fn variant_field_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
@@ -221,12 +220,12 @@ fn variant_type_list(p: &mut Parser) {
                 p.expect(T![,]);
             }
         } else {
-            p.error_recover("expected type", RECOVER_VARIANT_TYPE_LIST);
+            p.error_recover("expected type", RECOVER_VARIANT_FIELD_LIST);
             break;
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::VARIANT_TYPE_LIST);
+    m.complete(p, SyntaxKind::VARIANT_FIELD_LIST);
 }
 
 fn struct_item(p: &mut Parser, m: Marker) {
@@ -394,12 +393,38 @@ fn path_expr(p: &mut Parser) -> bool {
     false
 }
 
-fn binding(p: &mut Parser) {
+fn bind(p: &mut Parser) {
     if p.at(T![ident]) {
         name(p);
     } else if !p.eat(T![_]) {
         p.error("expected `identifier` or `_`");
     }
+}
+
+fn bind_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        bind(p);
+        if !p.at(T![')']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::BIND_LIST);
+}
+
+fn args_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        expr(p);
+        if !p.at(T![')']) {
+            p.expect(T![,]);
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::ARGS_LIST);
 }
 
 const FIRST_TYPE_SET: TokenSet = TokenSet::new(&[
@@ -613,7 +638,7 @@ fn local(p: &mut Parser) {
         T![mut] => p.bump(T![mut]),
         _ => unreachable!(),
     }
-    binding(p);
+    bind(p);
     if p.eat(T![:]) {
         ty(p);
     }
@@ -694,7 +719,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
                 m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
             } else {
                 if p.at(T!['(']) {
-                    argument_list(p);
+                    args_list(p);
                 }
                 m.complete(p, SyntaxKind::EXPR_ITEM)
             }
@@ -708,7 +733,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
             } else {
                 name(p);
                 if p.at(T!['(']) {
-                    argument_list(p);
+                    args_list(p);
                 }
                 m.complete(p, SyntaxKind::EXPR_VARIANT)
             }
@@ -774,7 +799,7 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             }
             T!['('] => {
                 let m = p.start_before(mc);
-                argument_list(p);
+                args_list(p);
                 mc = m.complete(p, SyntaxKind::EXPR_CALL);
             }
             T![as] => {
@@ -1020,32 +1045,6 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             m.complete(p, SyntaxKind::ERROR)
         }
     }
-}
-
-fn bind_list(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T!['(']);
-    while !p.at(T![')']) && !p.at(T![eof]) {
-        binding(p);
-        if !p.at(T![')']) {
-            p.expect(T![,]);
-        }
-    }
-    p.expect(T![')']);
-    m.complete(p, SyntaxKind::BIND_LIST);
-}
-
-fn argument_list(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T!['(']);
-    while !p.at(T![')']) && !p.at(T![eof]) {
-        expr(p);
-        if !p.at(T![')']) {
-            p.expect(T![,]);
-        }
-    }
-    p.expect(T![')']);
-    m.complete(p, SyntaxKind::ARGUMENT_LIST);
 }
 
 fn field_init_list(p: &mut Parser) {

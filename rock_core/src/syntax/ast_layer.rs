@@ -230,7 +230,7 @@ ast_node_impl!(Param, SyntaxKind::PARAM);
 ast_node_impl!(EnumItem, SyntaxKind::ENUM_ITEM);
 ast_node_impl!(VariantList, SyntaxKind::VARIANT_LIST);
 ast_node_impl!(Variant, SyntaxKind::VARIANT);
-ast_node_impl!(VariantTypeList, SyntaxKind::VARIANT_TYPE_LIST);
+ast_node_impl!(VariantFieldList, SyntaxKind::VARIANT_FIELD_LIST);
 ast_node_impl!(StructItem, SyntaxKind::STRUCT_ITEM);
 ast_node_impl!(FieldList, SyntaxKind::FIELD_LIST);
 ast_node_impl!(Field, SyntaxKind::FIELD);
@@ -244,7 +244,9 @@ ast_node_impl!(SymbolRename, SyntaxKind::SYMBOL_RENAME);
 
 ast_node_impl!(Name, SyntaxKind::NAME);
 ast_node_impl!(Path, SyntaxKind::PATH);
-ast_node_impl!(Binding, SyntaxKind::BINDING);
+ast_node_impl!(Bind, SyntaxKind::BIND);
+ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
+ast_node_impl!(ArgsList, SyntaxKind::ARGS_LIST);
 
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
@@ -283,7 +285,6 @@ ast_node_impl!(MatchArm2, SyntaxKind::MATCH_ARM_2);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
-ast_node_impl!(ArgumentList, SyntaxKind::ARGUMENT_LIST);
 ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
 ast_node_impl!(ExprSizeof, SyntaxKind::EXPR_SIZEOF);
 ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
@@ -303,7 +304,6 @@ ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
 ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
 ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
 ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
-ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
 
 ast_node_impl!(LitNull, SyntaxKind::LIT_NULL);
 ast_node_impl!(LitBool, SyntaxKind::LIT_BOOL);
@@ -695,11 +695,11 @@ impl<'syn> VariantList<'syn> {
 impl<'syn> Variant<'syn> {
     find_first!(name, Name);
     find_first!(value, Expr);
-    find_first!(type_list, VariantTypeList);
+    find_first!(field_list, VariantFieldList);
 }
 
-impl<'syn> VariantTypeList<'syn> {
-    node_iter!(types, Type);
+impl<'syn> VariantFieldList<'syn> {
+    node_iter!(fields, Type);
 }
 
 impl<'syn> StructItem<'syn> {
@@ -772,8 +772,16 @@ impl<'syn> Path<'syn> {
     node_iter!(names, Name);
 }
 
-impl<'syn> Binding<'syn> {
+impl<'syn> Bind<'syn> {
     find_first!(name, Name);
+}
+
+impl<'syn> BindList<'syn> {
+    node_iter!(binds, Bind);
+}
+
+impl<'syn> ArgsList<'syn> {
+    node_iter!(exprs, Expr);
 }
 
 impl<'syn> TypeBasic<'syn> {
@@ -855,7 +863,7 @@ impl<'syn> LoopCLikeHeader<'syn> {
 
 impl<'syn> StmtLocal<'syn> {
     find_token!(is_mut, T![mut]);
-    find_first!(bind, Binding);
+    find_first!(bind, Bind);
     find_first!(ty, Type);
     find_first!(init, Expr);
 }
@@ -955,12 +963,7 @@ impl<'syn> ExprIndex<'syn> {
 
 impl<'syn> ExprCall<'syn> {
     find_first!(target, Expr);
-    find_first!(argument_list, ArgumentList);
-}
-
-//@fix naming (exprs) for all ArgumentList / Binding / BindingList related code
-impl<'syn> ArgumentList<'syn> {
-    node_iter!(inputs, Expr);
+    find_first!(args_list, ArgsList);
 }
 
 impl<'syn> ExprCast<'syn> {
@@ -974,12 +977,12 @@ impl<'syn> ExprSizeof<'syn> {
 
 impl<'syn> ExprItem<'syn> {
     find_first!(path, Path);
-    find_first!(argument_list, ArgumentList);
+    find_first!(args_list, ArgsList);
 }
 
 impl<'syn> ExprVariant<'syn> {
     find_first!(name, Name);
-    find_first!(argument_list, ArgumentList);
+    find_first!(args_list, ArgsList);
 }
 
 impl<'syn> ExprStructInit<'syn> {
@@ -1103,8 +1106,4 @@ impl<'syn> RangeExclusive<'syn> {
 
 impl<'syn> RangeInclusive<'syn> {
     node_iter!(start_end_iter, Expr);
-}
-
-impl<'syn> BindList<'syn> {
-    node_iter!(names, Name);
 }

@@ -265,13 +265,13 @@ mod bitset {
     where
         T: Copy + Clone + Into<u32>,
     {
+        #[inline]
         pub fn empty() -> BitSet<T> {
             BitSet {
                 mask: 0,
                 phantom: PhantomData::default(),
             }
         }
-
         #[inline]
         pub fn set(&mut self, flag: T) {
             self.mask |= 1 << flag.into();

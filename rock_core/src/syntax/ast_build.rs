@@ -34,6 +34,7 @@ struct AstBuildState<'ast> {
     fields: TempBuffer<ast::Field<'ast>>,
     import_symbols: TempBuffer<ast::ImportSymbol>,
     names: TempBuffer<ast::Name>,
+    binds: TempBuffer<ast::Binding>,
     types: TempBuffer<ast::Type<'ast>>,
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
@@ -79,6 +80,7 @@ impl<'ast> AstBuildState<'ast> {
             fields: TempBuffer::new(32),
             import_symbols: TempBuffer::new(32),
             names: TempBuffer::new(32),
+            binds: TempBuffer::new(32),
             types: TempBuffer::new(32),
             stmts: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
@@ -298,9 +300,9 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
     let kind = if let Some(value) = variant.value(ctx.tree) {
         let value = ast::ConstExpr(expr(ctx, value));
         ast::VariantKind::Constant(value)
-    } else if let Some(type_list) = variant.type_list(ctx.tree) {
+    } else if let Some(field_list) = variant.field_list(ctx.tree) {
         let offset = ctx.s.types.start();
-        for ty_cst in type_list.types(ctx.tree) {
+        for ty_cst in field_list.fields(ctx.tree) {
             let ty = ty(ctx, ty_cst);
             ctx.s.types.add(ty);
         }
@@ -464,13 +466,48 @@ fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, path: cst::Path) -> &'ast as
     ctx.s.arena.alloc(ast::Path { names })
 }
 
-fn binding(ctx: &mut AstBuild, bind: cst::Binding) -> ast::Binding {
+fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
     if let Some(name_cst) = bind.name(ctx.tree) {
         let name = name(ctx, name_cst);
         ast::Binding::Named(name)
     } else {
-        let range = bind.range(ctx.tree); //@should use token range instead of this
+        //@in general use `content range` without including any trivia tokens, verify all range semantics
+        let range = bind.range(ctx.tree); //@should use token range instead of this?
         ast::Binding::Discard(range)
+    }
+}
+
+fn bind_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    bind_list: cst::BindList,
+) -> ast::BindingList<'ast> {
+    let offset = ctx.s.binds.start();
+    for bind_cst in bind_list.binds(ctx.tree) {
+        let bind = bind(ctx, bind_cst);
+        ctx.s.binds.add(bind);
+    }
+    let binds = ctx.s.binds.take(offset, &mut ctx.s.arena);
+
+    ast::BindingList {
+        binds,
+        range: bind_list.range(ctx.tree),
+    }
+}
+
+fn args_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    args_list: cst::ArgsList,
+) -> ast::ArgumentList<'ast> {
+    let offset = ctx.s.exprs.start();
+    for expr_cst in args_list.exprs(ctx.tree) {
+        let expr = expr(ctx, expr_cst);
+        ctx.s.exprs.add(expr);
+    }
+    let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
+
+    ast::ArgumentList {
+        exprs,
+        range: args_list.range(ctx.tree),
     }
 }
 
@@ -610,7 +647,7 @@ fn stmt_local<'ast>(
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
     let mutt = mutt(local.is_mut(ctx.tree));
-    let bind = binding(ctx, local.bind(ctx.tree).unwrap());
+    let bind = bind(ctx, local.bind(ctx.tree).unwrap());
     let ty = if let Some(ty_cst) = local.ty(ctx.tree) {
         Some(ty(ctx, ty_cst))
     } else {
@@ -757,7 +794,7 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());
-            let input = argument_list(ctx, call.argument_list(ctx.tree).unwrap());
+            let input = args_list(ctx, call.args_list(ctx.tree).unwrap());
 
             let input = ctx.s.arena.alloc(input);
             ast::ExprKind::Call { target, input }
@@ -777,8 +814,8 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Item(item) => {
             let path = path(ctx, item.path(ctx.tree).unwrap());
-            let input = if let Some(input) = item.argument_list(ctx.tree) {
-                let input = argument_list(ctx, input);
+            let input = if let Some(input) = item.args_list(ctx.tree) {
+                let input = args_list(ctx, input);
                 Some(ctx.s.arena.alloc(input))
             } else {
                 None
@@ -788,8 +825,8 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Variant(variant) => {
             let name = name(ctx, variant.name(ctx.tree).unwrap());
-            let input = if let Some(input) = variant.argument_list(ctx.tree) {
-                let input = argument_list(ctx, input);
+            let input = if let Some(input) = variant.args_list(ctx.tree) {
+                let input = args_list(ctx, input);
                 Some(ctx.s.arena.alloc(input))
             } else {
                 None
@@ -970,22 +1007,5 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::
     ast::Block {
         stmts,
         range: block.range(ctx.tree),
-    }
-}
-
-fn argument_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    argument_list: cst::ArgumentList,
-) -> ast::ArgumentList<'ast> {
-    let offset = ctx.s.exprs.start();
-    for input in argument_list.inputs(ctx.tree) {
-        let expr = expr(ctx, input);
-        ctx.s.exprs.add(expr);
-    }
-    let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
-
-    ast::ArgumentList {
-        exprs,
-        range: argument_list.range(ctx.tree),
     }
 }

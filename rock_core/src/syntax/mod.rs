@@ -4,7 +4,6 @@ mod grammar;
 mod parser;
 mod syntax_kind;
 pub mod syntax_tree;
-mod token_set;
 
 use crate::error::ErrorComp;
 use crate::lexer;

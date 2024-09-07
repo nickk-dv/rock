@@ -798,8 +798,8 @@ fn expr_call(fmt: &mut Formatter, call: ast::ExprCall) {
     expr_fmt(fmt, call.target(fmt.tree).unwrap());
     fmt.write_c('(');
     let mut first = true;
-    let argument_list = call.argument_list(fmt.tree).unwrap();
-    for expr in argument_list.inputs(fmt.tree) {
+    let args_list = call.args_list(fmt.tree).unwrap();
+    for expr in args_list.exprs(fmt.tree) {
         if !first {
             fmt.write_c(',');
             fmt.space();

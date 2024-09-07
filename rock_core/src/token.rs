@@ -84,6 +84,40 @@ impl TokenList {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct TokenSet(u128);
+
+impl TokenSet {
+    pub const fn new(tokens: &[Token]) -> TokenSet {
+        let mut bitset = 0u128;
+        let mut i = 0;
+        while i < tokens.len() {
+            bitset |= 1u128 << tokens[i] as u8;
+            i += 1;
+        }
+        TokenSet(bitset)
+    }
+    #[inline]
+    pub const fn empty() -> TokenSet {
+        TokenSet(0)
+    }
+    #[inline]
+    pub const fn combine(self, other: TokenSet) -> TokenSet {
+        TokenSet(self.0 | other.0)
+    }
+    #[inline]
+    pub const fn contains(&self, token: Token) -> bool {
+        self.0 & 1u128 << token as u8 != 0
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Trivia {
+    Whitespace,
+    LineComment,
+    BlockComment,
+}
+
 /// Defines a DSL-like macro that automates token definition and conversions.
 ///
 /// `token_gen` generates `Token` enum itself and various conversions.  
@@ -389,13 +423,6 @@ token_glue_extend! {
 }
 
 pub(crate) use T;
-
-#[derive(Copy, Clone)]
-pub enum Trivia {
-    Whitespace,
-    LineComment,
-    BlockComment,
-}
 
 impl Token {
     pub fn as_bool(self) -> Option<bool> {
