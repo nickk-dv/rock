@@ -814,6 +814,140 @@ fn typecheck_pat_or<'hir>(
     PatResult::new(hir::Pat::Or(patterns), hir::Type::Error)
 }
 
+#[derive(Copy, Clone)]
+struct RangeInc<T> {
+    start: T,
+    end: T,
+}
+
+enum RangeIncDisplay<T> {
+    Collapsed(T),
+    Range(RangeInc<T>),
+}
+
+impl<T> RangeInc<T>
+where
+    T: Copy + Clone + PartialEq + Ord,
+{
+    fn new(start: T, end: T) -> RangeInc<T> {
+        if start < end {
+            RangeInc { start, end }
+        } else {
+            RangeInc {
+                start: end,
+                end: start,
+            }
+        }
+    }
+    fn display(self) -> RangeIncDisplay<T> {
+        if self.start == self.end {
+            RangeIncDisplay::Collapsed(self.start)
+        } else {
+            RangeIncDisplay::Range(self)
+        }
+    }
+}
+
+trait PatCovIncrement<T> {
+    fn inc(self) -> T;
+}
+impl PatCovIncrement<u32> for u32 {
+    fn inc(self) -> u32 {
+        self + 1
+    }
+}
+impl PatCovIncrement<i128> for i128 {
+    fn inc(self) -> i128 {
+        self + 1
+    }
+}
+
+struct PatCovIntRange<T>
+where
+    T: Copy + Clone + PartialEq + Ord,
+{
+    ranges: Vec<RangeInc<T>>,
+}
+
+impl<T> PatCovIntRange<T>
+where
+    T: Copy + Clone + PartialEq + Ord + std::fmt::Display + PatCovIncrement<T>,
+{
+    fn cover(&mut self, new_range: RangeInc<T>) {
+        let mut idx = 0;
+
+        while idx < self.ranges.len() {
+            let range = self.ranges[idx];
+
+            // fully before
+            if new_range.end.inc() < range.start {
+                break;
+            }
+            // fully after
+            if new_range.start > range.end.inc() {
+                idx += 1;
+                continue;
+            }
+
+            // overlap
+            let new_start = new_range.start.min(range.start);
+            let mut new_end = new_range.end.max(range.end);
+            let mut next_idx = idx + 1;
+            let mut remove_range = next_idx..next_idx;
+
+            while next_idx < self.ranges.len() {
+                let next_range = self.ranges[next_idx].clone();
+                if new_end.inc() >= next_range.start {
+                    new_end = new_end.max(next_range.end);
+                    next_idx += 1;
+                    remove_range.end += 1;
+                } else {
+                    break;
+                }
+            }
+
+            self.ranges.drain(remove_range);
+            self.ranges[idx] = RangeInc::new(new_start, new_end);
+            return;
+        }
+
+        self.ranges.insert(idx, new_range);
+    }
+
+    fn print_coverage(&self) {
+        eprintln!("cov snapshot:");
+        for range in self.ranges.iter() {
+            eprintln!("cov: {}..={}", range.start, range.end);
+        }
+        eprintln!("");
+    }
+}
+
+#[test]
+fn test_pat_coverage() {
+    let mut cov_int = PatCovIntRange::<i128> { ranges: Vec::new() };
+    cov_int.cover(RangeInc::new(5, 5));
+    cov_int.cover(RangeInc::new(3, 3));
+    cov_int.cover(RangeInc::new(3, 3));
+    cov_int.cover(RangeInc::new(6, 6));
+    cov_int.cover(RangeInc::new(4, 4));
+    cov_int.cover(RangeInc::new(256, 256));
+    cov_int.cover(RangeInc::new(255, 255));
+    cov_int.cover(RangeInc::new(257, 257));
+    cov_int.cover(RangeInc::new(256, 256));
+    cov_int.cover(RangeInc::new(-1, -20));
+    cov_int.cover(RangeInc::new(-3, -17));
+    cov_int.print_coverage();
+
+    let mut cov_int = PatCovIntRange::<u32> { ranges: vec![] };
+    cov_int.cover(RangeInc::new(5, 5));
+    cov_int.cover(RangeInc::new(10, 10));
+    cov_int.cover(RangeInc::new(6, 6));
+    cov_int.cover(RangeInc::new(4, 4));
+    cov_int.cover(RangeInc::new(8, 8));
+    cov_int.print_coverage();
+}
+
 //@different enum variants 01.06.24
 // could have same value and result in
 // error in llvm ir generation, not checked currently
