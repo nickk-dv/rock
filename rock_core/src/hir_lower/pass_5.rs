@@ -814,6 +814,9 @@ fn typecheck_pat_or<'hir>(
     PatResult::new(hir::Pat::Or(patterns), hir::Type::Error)
 }
 
+//@design: are ranges where start > end
+// considered empty or just reversed?
+// currently flipping them to have accending ordering
 #[derive(Copy, Clone)]
 struct RangeInc<T> {
     start: T,
@@ -859,6 +862,21 @@ impl PatCovIncrement<u32> for u32 {
 impl PatCovIncrement<i128> for i128 {
     fn inc(self) -> i128 {
         self + 1
+    }
+}
+
+struct PatCovBool {
+    true_covered: bool,
+    false_covered: bool,
+}
+
+impl PatCovBool {
+    fn cover(&mut self, value: bool) {
+        if value {
+            self.true_covered = true
+        } else {
+            self.false_covered = true
+        }
     }
 }
 

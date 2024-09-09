@@ -1,7 +1,7 @@
 use super::context::{HirCtx, Symbol, SymbolKind};
 use super::errors as err;
 use crate::ast;
-use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
+use crate::error::{ErrorSink, SourceRange};
 use crate::session::{ModuleID, ModuleOrDirectory, Session};
 
 pub fn resolve_imports(ctx: &mut HirCtx, session: &Session) {
@@ -24,15 +24,10 @@ fn resolve_import(
         if let Some(dependency_id) = source_package.dependency(package_name.id) {
             source_package = session.package(dependency_id);
         } else {
-            ctx.emit.error(ErrorComp::new(
-                format!(
-                    "package `{}` is not found in dependencies of `{}`",
-                    ctx.name_str(package_name.id),
-                    ctx.name_str(source_package.name_id),
-                ),
-                SourceRange::new(origin_id, package_name.range),
-                None,
-            ));
+            let src = SourceRange::new(origin_id, package_name.range);
+            let dep_name = ctx.name_str(package_name.id);
+            let src_name = ctx.name_str(source_package.name_id);
+            err::import_package_dependency_not_found(&mut ctx.emit, src, dep_name, src_name);
             return;
         }
     }
@@ -46,26 +41,16 @@ fn resolve_import(
     for name in directory_names {
         match target_dir.find(session, name.id) {
             ModuleOrDirectory::None => {
-                ctx.emit.error(ErrorComp::new(
-                    format!(
-                        "expected directory `{}` is not found in `{}`",
-                        ctx.name_str(name.id),
-                        ctx.name_str(source_package.name_id),
-                    ),
-                    SourceRange::new(origin_id, name.range),
-                    None,
-                ));
+                let src = SourceRange::new(origin_id, name.range);
+                let dir_name = ctx.name_str(name.id);
+                let pkg_name = ctx.name_str(source_package.name_id);
+                err::import_expected_dir_not_found(&mut ctx.emit, src, dir_name, pkg_name);
                 return;
             }
             ModuleOrDirectory::Module(_) => {
-                ctx.emit.error(ErrorComp::new(
-                    format!(
-                        "expected directory, found module `{}`",
-                        ctx.name_str(name.id),
-                    ),
-                    SourceRange::new(origin_id, name.range),
-                    None,
-                ));
+                let src = SourceRange::new(origin_id, name.range);
+                let module_name = ctx.name_str(name.id);
+                err::import_expected_dir_found_mod(&mut ctx.emit, src, module_name);
                 return;
             }
             ModuleOrDirectory::Directory(directory) => {
@@ -76,40 +61,25 @@ fn resolve_import(
 
     let target_id = match target_dir.find(session, module_name.id) {
         ModuleOrDirectory::None => {
-            ctx.emit.error(ErrorComp::new(
-                format!(
-                    "expected module `{}` is not found in `{}`",
-                    ctx.name_str(module_name.id),
-                    ctx.name_str(source_package.name_id),
-                ),
-                SourceRange::new(origin_id, module_name.range),
-                None,
-            ));
+            let src = SourceRange::new(origin_id, module_name.range);
+            let module_name = ctx.name_str(module_name.id);
+            let pkg_name = ctx.name_str(source_package.name_id);
+            err::import_expected_mod_not_found(&mut ctx.emit, src, module_name, pkg_name);
             return;
         }
         ModuleOrDirectory::Module(module_id) => module_id,
         ModuleOrDirectory::Directory(_) => {
-            ctx.emit.error(ErrorComp::new(
-                format!(
-                    "expected module, found directory `{}`",
-                    ctx.name_str(module_name.id),
-                ),
-                SourceRange::new(origin_id, module_name.range),
-                None,
-            ));
+            let src = SourceRange::new(origin_id, module_name.range);
+            let dir_name = ctx.name_str(module_name.id);
+            err::import_expected_mod_found_dir(&mut ctx.emit, src, dir_name);
             return;
         }
     };
 
     if target_id == origin_id {
-        ctx.emit.error(ErrorComp::new(
-            format!(
-                "importing module `{}` into itself is not allowed",
-                ctx.name_str(module_name.id)
-            ),
-            SourceRange::new(origin_id, module_name.range),
-            None,
-        ));
+        let src = SourceRange::new(origin_id, module_name.range);
+        let module_name = ctx.name_str(module_name.id);
+        err::import_module_into_itself(&mut ctx.emit, src, module_name);
         return;
     }
 
@@ -189,24 +159,16 @@ fn check_symbol_rename(
         ast::SymbolRename::None => Some(name),
         ast::SymbolRename::Alias(alias) => {
             if name.id == alias.id {
-                ctx.emit.warning(WarningComp::new(
-                    format!(
-                        "name alias `{}` is redundant, remove it",
-                        ctx.name_str(alias.id)
-                    ),
-                    SourceRange::new(origin_id, alias.range),
-                    None,
-                ));
+                let src = SourceRange::new(origin_id, alias.range);
+                let alias = ctx.name_str(alias.id);
+                err::import_name_alias_reduntant(&mut ctx.emit, src, alias);
             }
             Some(alias)
         }
         ast::SymbolRename::Discard(range) => {
             if for_symbol {
-                ctx.emit.warning(WarningComp::new(
-                    "name discard `_` is redundant, remove it",
-                    SourceRange::new(origin_id, range),
-                    None,
-                ));
+                let src = SourceRange::new(origin_id, range);
+                err::import_name_discard_reduntant(&mut ctx.emit, src);
             }
             None
         }

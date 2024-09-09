@@ -1,4 +1,4 @@
-use crate::error::{ErrorComp, ErrorSink, Info, SourceRange};
+use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, WarningComp};
 
 //==================== SCOPE ====================
 
@@ -101,6 +101,67 @@ pub fn attr_struct_repr_int(
         "attribute `repr({int_ty})` cannot be applied to structs\nonly `repr(C)` is allowed",
     );
     emit.error(ErrorComp::new(msg, attr_src, None));
+}
+
+//==================== IMPORT ====================
+
+pub fn import_package_dependency_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    dep_name: &str,
+    src_name: &str,
+) {
+    let msg = format!("package `{dep_name}` is not found in dependencies of `{src_name}`");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn import_expected_dir_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    dir_name: &str,
+    pkg_name: &str,
+) {
+    let msg = format!("expected directory `{dir_name}` is not found in `{pkg_name}` package");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn import_expected_dir_found_mod(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    module_name: &str,
+) {
+    let msg = format!("expected directory, found module `{module_name}`");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn import_expected_mod_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    module_name: &str,
+    pkg_name: &str,
+) {
+    let msg = format!("expected module `{module_name}` is not found in `{pkg_name}` package");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn import_expected_mod_found_dir(emit: &mut impl ErrorSink, src: SourceRange, dir_name: &str) {
+    let msg = format!("expected module, found directory `{dir_name}`");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn import_module_into_itself(emit: &mut impl ErrorSink, src: SourceRange, module_name: &str) {
+    let msg = format!("importing module `{module_name}` into itself is not allowed");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn import_name_alias_reduntant(emit: &mut impl ErrorSink, src: SourceRange, alias: &str) {
+    let msg = format!("name alias `{alias}` is redundant, remove it");
+    emit.warning(WarningComp::new(msg, src, None));
+}
+
+pub fn import_name_discard_reduntant(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "name discard `_` is redundant, remove it";
+    emit.warning(WarningComp::new(msg, src, None));
 }
 
 //==================== CONSTANT ====================
