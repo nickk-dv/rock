@@ -306,3 +306,10 @@ pub fn const_float_is_infinite(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = format!("float constant is Infinite");
     emit.error(ErrorComp::new(msg, src, None));
 }
+
+//==================== TYPECHECK MATCH ====================
+
+pub fn match_pat_unreachable(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "unreachable pattern";
+    emit.warning(WarningComp::new(msg, src, None));
+}

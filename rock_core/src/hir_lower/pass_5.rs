@@ -853,15 +853,23 @@ where
 
 trait PatCovIncrement<T> {
     fn inc(self) -> T;
+    fn dec(self) -> T;
 }
+
 impl PatCovIncrement<u32> for u32 {
     fn inc(self) -> u32 {
         self + 1
+    }
+    fn dec(self) -> u32 {
+        self - 1
     }
 }
 impl PatCovIncrement<i128> for i128 {
     fn inc(self) -> i128 {
         self + 1
+    }
+    fn dec(self) -> i128 {
+        self - 1
     }
 }
 
@@ -885,12 +893,20 @@ where
     T: Copy + Clone + PartialEq + Ord,
 {
     ranges: Vec<RangeInc<T>>,
+    not_covered: Vec<RangeInc<T>>,
 }
 
 impl<T> PatCovIntRange<T>
 where
     T: Copy + Clone + PartialEq + Ord + std::fmt::Display + PatCovIncrement<T>,
 {
+    fn new() -> PatCovIntRange<T> {
+        PatCovIntRange {
+            ranges: Vec::with_capacity(64),
+            not_covered: Vec::with_capacity(64),
+        }
+    }
+
     fn cover(&mut self, new_range: RangeInc<T>) {
         let mut idx = 0;
 
@@ -932,6 +948,35 @@ where
         self.ranges.insert(idx, new_range);
     }
 
+    fn not_covered(&mut self, min: T, max: T) -> &[RangeInc<T>] {
+        self.not_covered.clear();
+
+        if let Some(first) = self.ranges.first() {
+            if min < first.start {
+                let first_gap = RangeInc::new(min, first.start.dec());
+                self.not_covered.push(first_gap);
+            }
+        }
+
+        for i in 0..self.ranges.len() - 1 {
+            let curr_range = &self.ranges[i];
+            let next_range = &self.ranges[i + 1];
+            if curr_range.end.inc() < next_range.start {
+                let range = RangeInc::new(curr_range.end.inc(), next_range.start.dec());
+                self.not_covered.push(range);
+            }
+        }
+
+        if let Some(last) = self.ranges.last() {
+            if last.end < max {
+                let last_gap = RangeInc::new(last.end.inc(), max);
+                self.not_covered.push(last_gap);
+            }
+        }
+
+        &self.not_covered
+    }
+
     fn print_coverage(&self) {
         eprintln!("cov snapshot:");
         for range in self.ranges.iter() {
@@ -939,11 +984,25 @@ where
         }
         eprintln!("");
     }
+
+    fn print_not_coverage(&mut self, min: T, max: T) {
+        eprintln!("not cov snapshot:");
+        let not_cov = self.not_covered(min, max);
+        for range in not_cov.iter().map(|r| r.display()) {
+            match range {
+                RangeIncDisplay::Collapsed(value) => eprintln!("not cov: {}", value),
+                RangeIncDisplay::Range(range) => {
+                    eprintln!("not cov: {}..={}", range.start, range.end)
+                }
+            }
+        }
+        eprintln!("");
+    }
 }
 
 #[test]
 fn test_pat_coverage() {
-    let mut cov_int = PatCovIntRange::<i128> { ranges: Vec::new() };
+    let mut cov_int = PatCovIntRange::<i128>::new();
     cov_int.cover(RangeInc::new(5, 5));
     cov_int.cover(RangeInc::new(3, 3));
     cov_int.cover(RangeInc::new(3, 3));
@@ -956,14 +1015,16 @@ fn test_pat_coverage() {
     cov_int.cover(RangeInc::new(-1, -20));
     cov_int.cover(RangeInc::new(-3, -17));
     cov_int.print_coverage();
+    cov_int.print_not_coverage(i32::MIN as i128, i32::MAX as i128);
 
-    let mut cov_int = PatCovIntRange::<u32> { ranges: vec![] };
+    let mut cov_int = PatCovIntRange::<u32>::new();
     cov_int.cover(RangeInc::new(5, 5));
     cov_int.cover(RangeInc::new(10, 10));
     cov_int.cover(RangeInc::new(6, 6));
     cov_int.cover(RangeInc::new(4, 4));
     cov_int.cover(RangeInc::new(8, 8));
     cov_int.print_coverage();
+    cov_int.print_not_coverage(0, u8::MAX as u32);
 }
 
 //@different enum variants 01.06.24
