@@ -1,10 +1,11 @@
+use super::errors as err;
 use super::proc_scope::ProcScope;
 use crate::ast;
 use crate::config::TargetTriple;
 use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, Info, ResultComp, SourceRange};
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::session::ModuleID;
+use crate::session::{ModuleID, Session};
 use crate::support::{Arena, IndexID, ID};
 use crate::text::TextRange;
 use std::collections::HashMap;
@@ -25,10 +26,11 @@ pub struct HirEmit {
 }
 
 pub struct HirScope<'hir> {
-    modules: Vec<Module<'hir>>,
+    modules: Vec<ModuleScope<'hir>>,
 }
 
-struct Module<'hir> {
+struct ModuleScope<'hir> {
+    name_id: ID<InternName>,
     symbols: HashMap<ID<InternName>, Symbol<'hir>>,
 }
 
@@ -67,11 +69,11 @@ pub struct Registry<'hir, 'ast> {
 }
 
 impl<'hir, 'ast: 'hir> HirCtx<'hir, 'ast> {
-    pub fn new(ast: ast::Ast<'ast>) -> HirCtx<'hir, 'ast> {
+    pub fn new(ast: ast::Ast<'ast>, session: &Session) -> HirCtx<'hir, 'ast> {
         let arena = Arena::new();
         let emit = HirEmit::new();
         let proc = ProcScope::dummy();
-        let scope = HirScope::new(&ast);
+        let scope = HirScope::new(&ast, session);
         let registry = Registry::new(&ast);
         let const_intern = hir::ConstInternPool::new();
 
@@ -173,7 +175,7 @@ impl HirEmit {
 }
 
 impl<'hir> HirScope<'hir> {
-    pub fn new(ast: &ast::Ast) -> HirScope<'hir> {
+    pub fn new(ast: &ast::Ast, session: &Session) -> HirScope<'hir> {
         let mut modules = Vec::with_capacity(ast.modules.len());
 
         for module in ast.modules.iter() {
@@ -184,17 +186,18 @@ impl<'hir> HirScope<'hir> {
                     symbol_count += import.symbols.len();
                 }
             }
+            let name_id = session.module(ID::new_raw(modules.len())).name_id;
             let symbols = HashMap::with_capacity(symbol_count);
-            modules.push(Module { symbols });
+            modules.push(ModuleScope { name_id, symbols });
         }
 
         HirScope { modules }
     }
 
-    fn module(&self, id: ModuleID) -> &Module<'hir> {
+    fn module(&self, id: ModuleID) -> &ModuleScope<'hir> {
         &self.modules[id.raw_index()]
     }
-    fn module_mut(&mut self, id: ModuleID) -> &mut Module<'hir> {
+    fn module_mut(&mut self, id: ModuleID) -> &mut ModuleScope<'hir> {
         &mut self.modules[id.raw_index()]
     }
 
@@ -203,50 +206,40 @@ impl<'hir> HirScope<'hir> {
         origin.symbols.insert(id, symbol);
     }
 
-    pub fn symbol_defined(
-        &self,
-        origin_id: ModuleID,
-        id: ID<InternName>,
-    ) -> Option<SymbolKind<'hir>> {
-        let origin = self.module(origin_id);
-
-        match origin.symbols.get(&id).cloned() {
-            Some(Symbol::Defined(kind)) => Some(kind),
-            _ => None,
-        }
-    }
-
-    pub fn symbol_defined_src(
+    pub fn already_defined_check(
         &self,
         registry: &Registry,
         origin_id: ModuleID,
-        id: ID<InternName>,
-    ) -> Option<SourceRange> {
+        name: ast::Name,
+    ) -> Result<(), ScopeError> {
         let origin = self.module(origin_id);
-        let symbol = origin.symbols.get(&id).cloned()?;
+        let symbol = match origin.symbols.get(&name.id).cloned() {
+            Some(symbol) => symbol,
+            None => return Ok(()),
+        };
 
-        match symbol {
-            Symbol::Defined(kind) => Some(SourceRange::new(origin_id, kind.name_range(registry))),
-            Symbol::Imported { import_range, .. } => {
-                Some(SourceRange::new(origin_id, import_range))
-            }
-        }
+        let existing = match symbol {
+            Symbol::Defined(kind) => kind.src(registry),
+            Symbol::Imported { import_range, .. } => SourceRange::new(origin_id, import_range),
+        };
+        Err(ScopeError::AlreadyDefined {
+            origin_id,
+            name,
+            existing,
+        })
     }
 
     pub fn symbol_from_scope(
         &self,
-        ctx: &HirCtx,
         registry: &Registry,
         origin_id: ModuleID,
         target_id: ModuleID,
         name: ast::Name,
-    ) -> Result<(SymbolKind<'hir>, SourceRange), ErrorComp> {
+    ) -> Result<SymbolKind<'hir>, ScopeError> {
         let target = self.module(target_id);
 
         match target.symbols.get(&name.id).copied() {
             Some(Symbol::Defined(kind)) => {
-                let source = SourceRange::new(target_id, kind.name_range(registry));
-
                 let vis = if origin_id == target_id {
                     ast::Vis::Public
                 } else {
@@ -254,38 +247,102 @@ impl<'hir> HirScope<'hir> {
                 };
 
                 return match vis {
-                    ast::Vis::Public => Ok((kind, source)),
-                    ast::Vis::Private => Err(ErrorComp::new(
-                        format!(
-                            "{} `{}` is private",
-                            kind.kind_name(),
-                            ctx.name_str(name.id)
-                        ),
-                        SourceRange::new(origin_id, name.range),
-                        Info::new("defined here", source),
-                    )),
+                    ast::Vis::Public => Ok(kind),
+                    ast::Vis::Private => Err(ScopeError::SymbolIsPrivate {
+                        origin_id,
+                        name,
+                        defined_src: kind.src(registry),
+                        symbol_kind: kind.kind_name(),
+                    }),
                 };
             }
-            Some(Symbol::Imported { kind, import_range }) => {
-                let source = SourceRange::new(target_id, import_range);
-
+            Some(Symbol::Imported { kind, .. }) => {
                 if origin_id == target_id {
-                    return Ok((kind, source));
+                    return Ok(kind);
                 }
             }
             None => {}
         }
 
-        Err(ErrorComp::new(
-            format!("name `{}` is not found in module", ctx.name_str(name.id)),
-            SourceRange::new(origin_id, name.range),
-            None,
-        ))
+        let from_module = if origin_id != target_id {
+            Some(target_id)
+        } else {
+            None
+        };
+        Err(ScopeError::SymbolNotFound {
+            origin_id,
+            name,
+            from_module,
+        })
+    }
+}
+
+pub enum ScopeError {
+    AlreadyDefined {
+        origin_id: ModuleID,
+        name: ast::Name,
+        existing: SourceRange,
+    },
+    SymbolIsPrivate {
+        origin_id: ModuleID,
+        name: ast::Name,
+        defined_src: SourceRange,
+        symbol_kind: &'static str,
+    },
+    SymbolNotFound {
+        origin_id: ModuleID,
+        name: ast::Name,
+        from_module: Option<ModuleID>,
+    },
+}
+
+impl ScopeError {
+    pub fn emit(self, ctx: &mut HirCtx) {
+        match self {
+            ScopeError::AlreadyDefined {
+                origin_id,
+                name,
+                existing,
+            } => {
+                let name_src = SourceRange::new(origin_id, name.range);
+                let name = ctx.name_str(name.id);
+                err::scope_name_already_defined(&mut ctx.emit, name_src, existing, name);
+            }
+            ScopeError::SymbolIsPrivate {
+                origin_id,
+                name,
+                defined_src,
+                symbol_kind,
+            } => {
+                let name_src = SourceRange::new(origin_id, name.range);
+                let name = ctx.name_str(name.id);
+                err::scope_symbol_is_private(
+                    &mut ctx.emit,
+                    name_src,
+                    defined_src,
+                    symbol_kind,
+                    name,
+                )
+            }
+            ScopeError::SymbolNotFound {
+                origin_id,
+                name,
+                from_module,
+            } => {
+                let name_src = SourceRange::new(origin_id, name.range);
+                let name = ctx.name_str(name.id);
+                let from_module = from_module.map(|id| {
+                    let name_id = ctx.scope.module(id).name_id;
+                    ctx.name_str(name_id)
+                });
+                err::scope_symbol_not_found(&mut ctx.emit, name_src, name, from_module);
+            }
+        }
     }
 }
 
 impl<'hir> SymbolKind<'hir> {
-    pub const fn kind_name(self) -> &'static str {
+    pub fn kind_name(self) -> &'static str {
         match self {
             SymbolKind::Module(_) => "module",
             SymbolKind::Proc(_) => "procedure",
@@ -307,14 +364,14 @@ impl<'hir> SymbolKind<'hir> {
         }
     }
 
-    fn name_range(self, registry: &Registry) -> TextRange {
+    pub fn src(self, registry: &Registry) -> SourceRange {
         match self {
             SymbolKind::Module(..) => unreachable!(),
-            SymbolKind::Proc(id) => registry.proc_data(id).name.range,
-            SymbolKind::Enum(id) => registry.enum_data(id).name.range,
-            SymbolKind::Struct(id) => registry.struct_data(id).name.range,
-            SymbolKind::Const(id) => registry.const_data(id).name.range,
-            SymbolKind::Global(id) => registry.global_data(id).name.range,
+            SymbolKind::Proc(id) => registry.proc_data(id).src(),
+            SymbolKind::Enum(id) => registry.enum_data(id).src(),
+            SymbolKind::Struct(id) => registry.struct_data(id).src(),
+            SymbolKind::Const(id) => registry.const_data(id).src(),
+            SymbolKind::Global(id) => registry.global_data(id).src(),
         }
     }
 }

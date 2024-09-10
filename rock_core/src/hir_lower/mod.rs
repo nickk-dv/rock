@@ -19,7 +19,7 @@ pub fn check<'hir, 'ast: 'hir>(
     ast: ast::Ast<'ast>,
     session: &Session,
 ) -> ResultComp<hir::Hir<'hir>> {
-    let mut ctx = HirCtx::new(ast);
+    let mut ctx = HirCtx::new(ast, session);
     pass_1::populate_scopes(&mut ctx, session);
     pass_2::resolve_imports(&mut ctx, session);
     pass_3::process_items(&mut ctx);

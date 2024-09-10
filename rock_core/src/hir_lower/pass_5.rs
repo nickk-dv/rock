@@ -2585,13 +2585,11 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> Loca
 
     let already_defined = match local.bind {
         ast::Binding::Named(name) => {
-            if let Some(existing) =
+            if let Err(error) =
                 ctx.scope
-                    .symbol_defined_src(&ctx.registry, ctx.proc.origin(), name.id)
+                    .already_defined_check(&ctx.registry, ctx.proc.origin(), name)
             {
-                let src = SourceRange::new(ctx.proc.origin(), name.range);
-                let name = ctx.name_str(name.id);
-                err::scope_name_already_defined(&mut ctx.emit, src, existing, name);
+                error.emit(ctx);
                 true
             } else if let Some(existing_var) = ctx.proc.find_variable(name.id) {
                 let existing = match existing_var {
@@ -2602,9 +2600,9 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> Loca
                         SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
                     }
                 };
-                let src = SourceRange::new(ctx.proc.origin(), name.range);
+                let name_src = SourceRange::new(ctx.proc.origin(), name.range);
                 let name = ctx.name_str(name.id);
-                err::scope_name_already_defined(&mut ctx.emit, src, existing, name);
+                err::scope_name_already_defined(&mut ctx.emit, name_src, existing, name);
                 true
             } else {
                 false
@@ -3135,7 +3133,7 @@ local_var  -> <follow?> by <chained> field access
 enum ResolvedPath<'hir> {
     None,
     Variable(VariableID<'hir>),
-    Symbol(SymbolKind<'hir>, SourceRange),
+    Symbol(SymbolKind<'hir>),
 }
 
 fn path_resolve<'hir>(
@@ -3153,31 +3151,31 @@ fn path_resolve<'hir>(
         }
     }
 
-    let (module_id, name) =
+    let (target_id, name) =
         match ctx
             .scope
-            .symbol_from_scope(ctx, &ctx.registry, origin_id, origin_id, name)
+            .symbol_from_scope(&ctx.registry, origin_id, origin_id, name)
         {
-            Ok((kind, source)) => {
+            Ok(kind) => {
                 let next_name = path.names.get(1).cloned();
                 match (kind, next_name) {
                     (SymbolKind::Module(module_id), Some(name)) => (module_id, name),
-                    _ => return (ResolvedPath::Symbol(kind, source), 0),
+                    _ => return (ResolvedPath::Symbol(kind), 0),
                 }
             }
             Err(error) => {
-                ctx.emit.error(error);
+                error.emit(ctx);
                 return (ResolvedPath::None, 0);
             }
         };
 
     match ctx
         .scope
-        .symbol_from_scope(ctx, &ctx.registry, origin_id, module_id, name)
+        .symbol_from_scope(&ctx.registry, origin_id, target_id, name)
     {
-        Ok((kind, source)) => (ResolvedPath::Symbol(kind, source), 1),
+        Ok(kind) => (ResolvedPath::Symbol(kind), 1),
         Err(error) => {
-            ctx.emit.error(error);
+            error.emit(ctx);
             (ResolvedPath::None, 1)
         }
     }
@@ -3214,7 +3212,7 @@ pub fn path_resolve_type<'hir>(
             ));
             return hir::Type::Error;
         }
-        ResolvedPath::Symbol(kind, source) => match kind {
+        ResolvedPath::Symbol(kind) => match kind {
             SymbolKind::Enum(id) => hir::Type::Enum(id),
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
@@ -3226,7 +3224,7 @@ pub fn path_resolve_type<'hir>(
                         ctx.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
-                    Info::new("defined here", source),
+                    Info::new("defined here", kind.src(&ctx.registry)),
                 ));
                 return hir::Type::Error;
             }
@@ -3281,7 +3279,7 @@ pub fn path_resolve_struct<'hir>(
             ));
             return None;
         }
-        ResolvedPath::Symbol(kind, source) => match kind {
+        ResolvedPath::Symbol(kind) => match kind {
             SymbolKind::Struct(id) => Some(id),
             _ => {
                 let name = path.names[name_idx];
@@ -3292,7 +3290,7 @@ pub fn path_resolve_struct<'hir>(
                         ctx.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
-                    Info::new("defined here", source),
+                    Info::new("defined here", kind.src(&ctx.registry)),
                 ));
                 return None;
             }
@@ -3335,7 +3333,7 @@ pub fn path_resolve_value<'hir, 'ast>(
             VariableID::Local(id) => ValueID::Local(id),
             VariableID::Param(id) => ValueID::Param(id),
         },
-        ResolvedPath::Symbol(kind, source) => match kind {
+        ResolvedPath::Symbol(kind) => match kind {
             SymbolKind::Proc(id) => {
                 if let Some(remaining) = path.names.get(name_idx + 1..) {
                     if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
@@ -3372,7 +3370,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                                 ctx.name_str(variant_name.id)
                             ),
                             SourceRange::new(origin_id, variant_name.range),
-                            Info::new("enum defined here", source),
+                            Info::new("enum defined here", kind.src(&ctx.registry)),
                         ));
                         return (ValueID::None, &[]);
                     }
@@ -3385,7 +3383,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                             ctx.name_str(name.id)
                         ),
                         SourceRange::new(origin_id, name.range),
-                        Info::new("defined here", source),
+                        Info::new("defined here", kind.src(&ctx.registry)),
                     ));
                     return (ValueID::None, &[]);
                 }
@@ -3401,7 +3399,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                         ctx.name_str(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
-                    Info::new("defined here", source),
+                    Info::new("defined here", kind.src(&ctx.registry)),
                 ));
                 return (ValueID::None, &[]);
             }

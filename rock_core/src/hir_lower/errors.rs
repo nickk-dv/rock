@@ -4,13 +4,38 @@ use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, WarningComp};
 
 pub fn scope_name_already_defined(
     emit: &mut impl ErrorSink,
-    src: SourceRange,
+    name_src: SourceRange,
     existing: SourceRange,
     name: &str,
 ) {
     let msg = format!("name `{name}` is defined multiple times");
     let info = Info::new("existing definition", existing);
-    emit.error(ErrorComp::new(msg, src, info));
+    emit.error(ErrorComp::new(msg, name_src, info));
+}
+
+pub fn scope_symbol_is_private(
+    emit: &mut impl ErrorSink,
+    name_src: SourceRange,
+    defined_src: SourceRange,
+    symbol_kind: &'static str,
+    name: &str,
+) {
+    let msg = format!("{symbol_kind} `{name}` is private");
+    let info = Info::new("defined here", defined_src);
+    emit.error(ErrorComp::new(msg, name_src, info));
+}
+
+pub fn scope_symbol_not_found(
+    emit: &mut impl ErrorSink,
+    name_src: SourceRange,
+    name: &str,
+    from_module: Option<&str>,
+) {
+    let msg = match from_module {
+        Some(from_module) => format!("name `{name}` is not found in `{from_module}` module"),
+        None => format!("name `{name}` is not found in this module"),
+    };
+    emit.error(ErrorComp::new(msg, name_src, None));
 }
 
 //==================== ATTRIBUTE ====================

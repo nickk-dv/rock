@@ -7,7 +7,6 @@ use crate::session::{ModuleID, Session};
 use crate::support::{Arena, TempBuffer, Timer, ID};
 use crate::text::TextRange;
 
-//@rename some ast:: nodes to match ast_layer and syntax names (eg: ProcParam)
 struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
     int_id: ID<u64>,

@@ -1,4 +1,5 @@
 use crate::ast;
+use crate::error::SourceRange;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::session::ModuleID;
 use crate::support::{Arena, BitSet, IndexID, ID};
@@ -655,6 +656,9 @@ impl<'hir> Hash for ConstArray<'hir> {
 }
 
 impl<'hir> ProcData<'hir> {
+    pub fn src(&self) -> SourceRange {
+        SourceRange::new(self.origin_id, self.name.range)
+    }
     pub fn param(&self, id: ParamID<'hir>) -> &'hir Param<'hir> {
         self.params.id_get(id)
     }
@@ -672,6 +676,9 @@ impl<'hir> ProcData<'hir> {
 }
 
 impl<'hir> EnumData<'hir> {
+    pub fn src(&self) -> SourceRange {
+        SourceRange::new(self.origin_id, self.name.range)
+    }
     pub fn variant(&self, id: VariantID<'hir>) -> &'hir Variant<'hir> {
         self.variants.id_get(id)
     }
@@ -689,6 +696,9 @@ impl<'hir> EnumData<'hir> {
 }
 
 impl<'hir> StructData<'hir> {
+    pub fn src(&self) -> SourceRange {
+        SourceRange::new(self.origin_id, self.name.range)
+    }
     pub fn field(&self, id: FieldID<'hir>) -> &'hir Field<'hir> {
         self.fields.id_get(id)
     }
@@ -699,6 +709,18 @@ impl<'hir> StructData<'hir> {
             }
         }
         None
+    }
+}
+
+impl<'hir> ConstData<'hir> {
+    pub fn src(&self) -> SourceRange {
+        SourceRange::new(self.origin_id, self.name.range)
+    }
+}
+
+impl<'hir> GlobalData<'hir> {
+    pub fn src(&self) -> SourceRange {
+        SourceRange::new(self.origin_id, self.name.range)
     }
 }
 

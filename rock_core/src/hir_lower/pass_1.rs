@@ -1,8 +1,6 @@
 use super::attr_check;
 use super::context::{HirCtx, Symbol, SymbolKind};
-use super::errors as err;
 use crate::ast;
-use crate::error::SourceRange;
 use crate::hir;
 use crate::session::{ModuleID, Session};
 
@@ -26,26 +24,6 @@ fn add_module_items(ctx: &mut HirCtx, session: &Session, origin_id: ModuleID) {
     }
 }
 
-//@move to hir scope?
-pub fn name_already_defined_check(
-    ctx: &mut HirCtx,
-    origin_id: ModuleID,
-    name: ast::Name,
-) -> Result<(), ()> {
-    let defined = ctx
-        .scope
-        .symbol_defined_src(&ctx.registry, origin_id, name.id);
-
-    if let Some(existing) = defined {
-        let item_src = SourceRange::new(origin_id, name.range);
-        let name = ctx.name_str(name.id);
-        err::scope_name_already_defined(&mut ctx.emit, item_src, existing, name);
-        Err(())
-    } else {
-        Ok(())
-    }
-}
-
 fn add_proc_item<'ast>(
     ctx: &mut HirCtx<'_, 'ast>,
     session: &Session,
@@ -56,7 +34,12 @@ fn add_proc_item<'ast>(
     if feedback.cfg_state.disabled() {
         return;
     }
-    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, item.name)
+    {
+        error.emit(ctx);
         return;
     }
 
@@ -86,7 +69,12 @@ fn add_enum_item<'ast>(
     if feedback.cfg_state.disabled() {
         return;
     }
-    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, item.name)
+    {
+        error.emit(ctx);
         return;
     }
 
@@ -115,7 +103,12 @@ fn add_struct_item<'ast>(
     if feedback.cfg_state.disabled() {
         return;
     }
-    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, item.name)
+    {
+        error.emit(ctx);
         return;
     }
 
@@ -143,7 +136,12 @@ fn add_const_item<'ast>(
     if feedback.cfg_state.disabled() {
         return;
     }
-    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, item.name)
+    {
+        error.emit(ctx);
         return;
     }
 
@@ -171,7 +169,12 @@ fn add_global_item<'ast>(
     if feedback.cfg_state.disabled() {
         return;
     }
-    if name_already_defined_check(ctx, origin_id, item.name).is_err() {
+
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, item.name)
+    {
+        error.emit(ctx);
         return;
     }
 

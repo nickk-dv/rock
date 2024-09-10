@@ -102,13 +102,19 @@ fn import_module(
         None => return,
     };
 
-    if super::pass_1::name_already_defined_check(ctx, origin_id, module_alias).is_ok() {
-        let symbol = Symbol::Imported {
-            kind: SymbolKind::Module(target_id),
-            import_range: module_alias.range,
-        };
-        ctx.scope.add_symbol(origin_id, module_alias.id, symbol);
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, module_alias)
+    {
+        error.emit(ctx);
+        return;
     }
+
+    let symbol = Symbol::Imported {
+        kind: SymbolKind::Module(target_id),
+        import_range: module_alias.range,
+    };
+    ctx.scope.add_symbol(origin_id, module_alias.id, symbol);
 }
 
 fn import_symbol(
@@ -117,35 +123,36 @@ fn import_symbol(
     target_id: ModuleID,
     symbol: &ast::ImportSymbol,
 ) {
-    let symbol_alias = check_symbol_rename(ctx, origin_id, symbol.name, symbol.rename, true);
-    let (symbol_alias, discarded) = match symbol_alias {
-        Some(symbol_alias) => (symbol_alias, false),
-        None => (symbol.name, true),
+    let kind = match ctx
+        .scope
+        .symbol_from_scope(&ctx.registry, origin_id, target_id, symbol.name)
+    {
+        Ok(kind) => kind,
+        Err(error) => {
+            error.emit(ctx);
+            return;
+        }
     };
 
-    let kind =
-        match ctx
-            .scope
-            .symbol_from_scope(ctx, &ctx.registry, origin_id, target_id, symbol.name)
-        {
-            Ok((kind, _)) => kind,
-            Err(error) => {
-                ctx.emit.error(error);
-                return;
-            }
-        };
+    let symbol_alias = check_symbol_rename(ctx, origin_id, symbol.name, symbol.rename, true);
+    let symbol_alias = match symbol_alias {
+        Some(symbol_alias) => symbol_alias,
+        None => return,
+    };
 
-    if discarded {
+    if let Err(error) = ctx
+        .scope
+        .already_defined_check(&ctx.registry, origin_id, symbol_alias)
+    {
+        error.emit(ctx);
         return;
     }
 
-    if super::pass_1::name_already_defined_check(ctx, origin_id, symbol_alias).is_ok() {
-        let symbol = Symbol::Imported {
-            kind,
-            import_range: symbol_alias.range,
-        };
-        ctx.scope.add_symbol(origin_id, symbol_alias.id, symbol);
-    }
+    let symbol = Symbol::Imported {
+        kind,
+        import_range: symbol_alias.range,
+    };
+    ctx.scope.add_symbol(origin_id, symbol_alias.id, symbol);
 }
 
 fn check_symbol_rename(

@@ -1,10 +1,11 @@
 use super::attr_check;
 use super::context::{HirCtx, SymbolKind};
-use crate::ast::BasicType;
+use crate::ast;
 use crate::error::{ErrorComp, ErrorSink, SourceRange};
 use crate::hir;
 use crate::package::manifest::PackageKind;
 use crate::session::{ModuleOrDirectory, Session};
+use crate::text::TextRange;
 
 pub fn check_entry_point<'hir, 'ast: 'hir>(ctx: &mut HirCtx<'hir, 'ast>, session: &Session) {
     let root_package = session.package(Session::ROOT_ID);
@@ -15,6 +16,7 @@ pub fn check_entry_point<'hir, 'ast: 'hir>(ctx: &mut HirCtx<'hir, 'ast>, session
 
     let main_id = ctx.intern_name().intern("main");
     let module_or_directory = root_package.src.find(session, main_id);
+
     let origin_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,
         _ => {
@@ -25,17 +27,21 @@ pub fn check_entry_point<'hir, 'ast: 'hir>(ctx: &mut HirCtx<'hir, 'ast>, session
         }
     };
 
-    let defined = ctx.scope.symbol_defined(origin_id, main_id);
-    let proc_id = if let Some(SymbolKind::Proc(proc_id)) = defined {
-        proc_id
+    let main_name = ast::Name {
+        id: main_id,
+        range: TextRange::zero(),
+    };
+    let defined = ctx
+        .scope
+        .symbol_from_scope(&ctx.registry, origin_id, origin_id, main_name);
+
+    if let Ok(SymbolKind::Proc(proc_id)) = defined {
+        check_main_procedure(ctx, proc_id);
     } else {
         ctx.emit.error(ErrorComp::message(
             "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`",
         ));
-        return;
-    };
-
-    check_main_procedure(ctx, proc_id);
+    }
 }
 
 pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_>, proc_id: hir::ProcID<'hir>) {
@@ -66,7 +72,7 @@ pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_>, proc_id: hir::Proc
     //@allow `never`?
     if !matches!(
         data.return_ty,
-        hir::Type::Error | hir::Type::Basic(BasicType::S32)
+        hir::Type::Error | hir::Type::Basic(ast::BasicType::S32)
     ) {
         ctx.emit.error(ErrorComp::new(
             "`main` procedure must return `s32`",
