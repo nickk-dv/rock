@@ -704,7 +704,6 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T![if] => if_(p),
         T!['{'] => block(p, SyntaxKind::EXPR_BLOCK),
         T![match] => match_(p),
-        T![match2] => match_2(p),
         T![sizeof] => {
             let m = p.start();
             p.bump(T![sizeof]);
@@ -929,65 +928,21 @@ fn match_arm_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
-        let fallback = match_arm(p);
+        match_arm(p);
         if !p.at(T!['}']) {
             p.expect(T![,]);
-        }
-        if fallback {
-            break;
         }
     }
     p.expect(T!['}']);
     m.complete(p, SyntaxKind::MATCH_ARM_LIST);
 }
 
-fn match_arm(p: &mut Parser) -> bool {
-    let m = p.start();
-    if p.eat(T![_]) {
-        p.expect(T![->]);
-        expr(p);
-        m.complete(p, SyntaxKind::MATCH_FALLBACK);
-        true
-    } else {
-        expr(p);
-        p.expect(T![->]);
-        expr(p);
-        m.complete(p, SyntaxKind::MATCH_ARM);
-        false
-    }
-}
-
-fn match_2(p: &mut Parser) -> MarkerClosed {
-    let m = p.start();
-    p.bump(T![match2]);
-    expr(p);
-    if p.at(T!['{']) {
-        match_arm_list_2(p);
-    } else {
-        p.error_bump("expected match arm list");
-    }
-    m.complete(p, SyntaxKind::EXPR_MATCH_2)
-}
-
-fn match_arm_list_2(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T!['{']);
-    while !p.at(T!['}']) && !p.at(T![eof]) {
-        match_arm_2(p);
-        if !p.at(T!['}']) {
-            p.expect(T![,]);
-        }
-    }
-    p.expect(T!['}']);
-    m.complete(p, SyntaxKind::MATCH_ARM_LIST_2);
-}
-
-fn match_arm_2(p: &mut Parser) {
+fn match_arm(p: &mut Parser) {
     let m = p.start();
     pat(p);
     p.expect(T![->]);
     expr(p);
-    m.complete(p, SyntaxKind::MATCH_ARM_2);
+    m.complete(p, SyntaxKind::MATCH_ARM);
 }
 
 fn pat(p: &mut Parser) {

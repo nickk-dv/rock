@@ -283,7 +283,6 @@ pub fn typecheck_expr<'hir>(
             typecheck_block(ctx, expect, *block, BlockEnter::None).into_type_result()
         }
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
-        ast::ExprKind::Match2 { match_2 } => typecheck_match_2(ctx, expect, match_2, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
         ast::ExprKind::Index {
             target,
@@ -487,102 +486,13 @@ fn typecheck_branch<'hir>(
     }
 }
 
+//@different enum variants 01.06.24
+// could have same value and result in
+// error in llvm ir generation, not checked currently
 fn typecheck_match<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     mut expect: Expectation<'hir>,
     match_: &ast::Match,
-    match_range: TextRange,
-) -> TypeResult<'hir> {
-    let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
-    check_match_compatibility(ctx, ctx.proc.origin(), on_res.ty, match_.on_expr.range);
-
-    let mut match_type = hir::Type::Basic(BasicType::Never);
-    let mut check_exaust = true;
-
-    let pat_expect_src = SourceRange::new(ctx.proc.origin(), match_.on_expr.range);
-    let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
-
-    let mut arms = Vec::with_capacity(match_.arms.len());
-    for arm in match_.arms {
-        let value = constant::resolve_const_expr(ctx, ctx.proc.origin(), pat_expect, arm.pat);
-        let value_res = typecheck_expr(ctx, expect, arm.expr);
-
-        // never -> anything
-        // error -> anything except never
-        if match_type.is_never() || (match_type.is_error() && !value_res.ty.is_never()) {
-            match_type = value_res.ty;
-        }
-        if let Expectation::None = expect {
-            if !value_res.ty.is_error() && !value_res.ty.is_never() {
-                let expect_src = SourceRange::new(ctx.proc.origin(), arm.expr.range);
-                expect = Expectation::HasType(value_res.ty, Some(expect_src));
-            }
-        }
-
-        if value.is_err() {
-            check_exaust = false;
-        }
-
-        //@temp dummy value (match2 will be used instead)
-        let pat_value_id = match value {
-            Ok(value) => ctx.const_intern.intern(value),
-            Err(_) => hir::ConstValueID::dummy(),
-        };
-
-        let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
-        let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
-
-        let arm = hir::MatchArm {
-            pat: pat_value_id,
-            block: hir::Block { stmts },
-            unreachable: false,
-        };
-        arms.push(arm);
-    }
-
-    let mut fallback = if let Some(fallback) = match_.fallback {
-        let value_res = typecheck_expr(ctx, expect, fallback);
-
-        // never -> anything
-        // error -> anything except never
-        if match_type.is_never() || (match_type.is_error() && !value_res.ty.is_never()) {
-            match_type = value_res.ty;
-        }
-
-        let tail_stmt = hir::Stmt::ExprTail(value_res.expr);
-        let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
-        Some(hir::Block { stmts })
-    } else {
-        None
-    };
-
-    if check_exaust {
-        check_match_exhaust(
-            ctx,
-            &mut arms,
-            &mut fallback,
-            match_,
-            match_range,
-            on_res.ty,
-        );
-    }
-
-    let arms = ctx.arena.alloc_slice(&arms);
-    let match_ = hir::Match {
-        on_expr: on_res.expr,
-        arms,
-        fallback,
-    };
-    let match_ = ctx.arena.alloc(match_);
-    let kind = hir::ExprKind::Match { match_ };
-    //@cannot tell when to ignore typecheck or not
-    TypeResult::new(match_type, kind)
-}
-
-fn typecheck_match_2<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
-    mut expect: Expectation<'hir>,
-    match_: &ast::Match2,
     match_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut match_type = hir::Type::Basic(BasicType::Never);
@@ -614,7 +524,7 @@ fn typecheck_match_2<'hir>(
         let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
         let block = hir::Block { stmts };
 
-        let arm = hir::MatchArm2 {
+        let arm = hir::MatchArm {
             pat,
             block,
             unreachable: false,
@@ -627,12 +537,12 @@ fn typecheck_match_2<'hir>(
         //@pattern analysis / unrechability / exaustiveness
     }
 
-    let match_ = hir::Match2 {
+    let match_ = hir::Match {
         on_expr: on_res.expr,
         arms,
     };
     let match_ = ctx.arena.alloc(match_);
-    let kind = hir::ExprKind::Match2 { match_ };
+    let kind = hir::ExprKind::Match { match_ };
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(match_type, kind)
 }
@@ -1025,164 +935,6 @@ fn test_pat_coverage() {
     cov_int.cover(RangeInc::new(8, 8));
     cov_int.print_coverage();
     cov_int.print_not_coverage(0, u8::MAX as u32);
-}
-
-//@different enum variants 01.06.24
-// could have same value and result in
-// error in llvm ir generation, not checked currently
-fn check_match_exhaust<'hir>(
-    ctx: &mut HirCtx,
-    arms: &mut [hir::MatchArm],
-    fallback: &mut Option<hir::Block>,
-    match_ast: &ast::Match,
-    match_range: TextRange,
-    on_ty: hir::Type<'hir>,
-) {
-    //@todo int
-    match on_ty {
-        hir::Type::Basic(BasicType::Bool) => {
-            let mut cover_true = false;
-            let mut cover_false = false;
-
-            for (idx, arm) in arms.iter_mut().enumerate() {
-                let value = ctx.const_intern.get(arm.pat);
-                match value {
-                    hir::ConstValue::Bool { val } => {
-                        if val {
-                            if cover_true {
-                                let ast_arm = match_ast.arms[idx];
-                                arm.unreachable = true;
-                                ctx.emit.warning(WarningComp::new(
-                                    "unreachable pattern",
-                                    SourceRange::new(ctx.proc.origin(), ast_arm.pat.0.range),
-                                    None,
-                                ));
-                            } else {
-                                cover_true = true;
-                            }
-                        } else {
-                            if cover_false {
-                                let ast_arm = match_ast.arms[idx];
-                                arm.unreachable = true;
-                                ctx.emit.warning(WarningComp::new(
-                                    "unreachable pattern",
-                                    SourceRange::new(ctx.proc.origin(), ast_arm.pat.0.range),
-                                    None,
-                                ));
-                            } else {
-                                cover_false = true;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            if fallback.is_some() {
-                let all_covered = cover_true && cover_false;
-                if all_covered {
-                    *fallback = None;
-                    ctx.emit.warning(WarningComp::new(
-                        "unreachable pattern",
-                        SourceRange::new(ctx.proc.origin(), match_ast.fallback_range),
-                        None,
-                    ));
-                }
-            } else {
-                let missing = match (cover_true, cover_false) {
-                    (true, true) => return,
-                    (true, false) => "`false`",
-                    (false, true) => "`true`",
-                    (false, false) => "`true`, `false`",
-                };
-                ctx.emit.error(ErrorComp::new(
-                    format!("non-exhaustive match patterns\nmissing: {}", missing),
-                    SourceRange::new(
-                        ctx.proc.origin(),
-                        TextRange::new(match_range.start(), match_range.start() + 5.into()),
-                    ),
-                    None,
-                ));
-            }
-        }
-        hir::Type::Basic(BasicType::Char) => {
-            //
-        }
-        hir::Type::Enum(enum_id) => {
-            let data = ctx.registry.enum_data(enum_id);
-
-            let variant_count = data.variants.len();
-            let mut variants_covered = Vec::new();
-            variants_covered.resize(variant_count, false);
-
-            for (idx, arm) in arms.iter_mut().enumerate() {
-                let value = ctx.const_intern.get(arm.pat);
-                match value {
-                    //@consider typecheck result of patterns to make sure this is same type 01.06.24
-                    // (dont check when any error were raised or value is Error)
-                    hir::ConstValue::Variant { variant } => {
-                        //@match patterns dont support enum values
-                        // and pat wont be a ConstExpr in the future probably
-                        let variant_id = variant.variant_id;
-                        if !variants_covered[variant_id.raw_index()] {
-                            variants_covered[variant_id.raw_index()] = true;
-                        } else {
-                            let ast_arm = match_ast.arms[idx];
-                            arm.unreachable = true;
-                            ctx.emit.warning(WarningComp::new(
-                                "unreachable pattern",
-                                SourceRange::new(ctx.proc.origin(), ast_arm.pat.0.range),
-                                None,
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            if fallback.is_some() {
-                let all_covered = variants_covered.iter().copied().all(|v| v);
-                if all_covered {
-                    *fallback = None;
-                    ctx.emit.warning(WarningComp::new(
-                        "unreachable pattern",
-                        SourceRange::new(ctx.proc.origin(), match_ast.fallback_range),
-                        None,
-                    ));
-                }
-            } else {
-                //@simplify message with a lot of remaining patterns 01.06.24
-                // eg: variants `Thing`, `Kind` and 18 more not covered
-                let mut missing = String::new();
-                let mut missing_count: u32 = 0;
-
-                for idx in 0..data.variants.len() {
-                    let covered = variants_covered[idx];
-                    if !covered {
-                        let variant = data.variant(hir::VariantID::new_raw(idx));
-                        let comma = if missing_count != 0 { ", " } else { "" };
-                        missing.push_str(&format!("{comma}`{}`", ctx.name_str(variant.name.id)));
-                        missing_count += 1;
-                    }
-                }
-
-                if missing_count > 0 {
-                    ctx.emit.error(ErrorComp::new(
-                        format!(
-                            "non-exhaustive match patterns\nmissing variants: {}",
-                            missing
-                        ),
-                        SourceRange::new(
-                            ctx.proc.origin(),
-                            TextRange::new(match_range.start(), match_range.start() + 5.into()),
-                        ),
-                        None,
-                    ));
-                }
-            }
-        }
-        _ => {}
-    }
 }
 
 fn typecheck_field<'hir>(
@@ -2161,7 +1913,6 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
         hir::ExprKind::If { .. } => Addressability::Temporary,
         hir::ExprKind::Block { .. } => Addressability::Temporary,
         hir::ExprKind::Match { .. } => Addressability::Temporary,
-        hir::ExprKind::Match2 { .. } => Addressability::Temporary,
         hir::ExprKind::StructField { target, .. } => get_expr_addressability(ctx, target),
         hir::ExprKind::SliceField { .. } => Addressability::SliceField,
         hir::ExprKind::Index { target, .. } => get_expr_addressability(ctx, target),
@@ -2834,7 +2585,6 @@ fn check_unused_expr_semi(
         hir::ExprKind::If { .. } => UnusedExpr::Maybe,
         hir::ExprKind::Block { .. } => UnusedExpr::Maybe,
         hir::ExprKind::Match { .. } => UnusedExpr::Maybe,
-        hir::ExprKind::Match2 { .. } => UnusedExpr::Maybe,
         hir::ExprKind::StructField { .. } => UnusedExpr::Yes("field access"),
         hir::ExprKind::SliceField { .. } => UnusedExpr::Yes("field access"),
         hir::ExprKind::Index { .. } => UnusedExpr::Yes("index access"),

@@ -38,7 +38,6 @@ struct AstBuildState<'ast> {
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
     branches: TempBuffer<ast::Branch<'ast>>,
-    match_arms: TempBuffer<ast::MatchArm<'ast>>,
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
 }
 
@@ -84,7 +83,6 @@ impl<'ast> AstBuildState<'ast> {
             stmts: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
             branches: TempBuffer::new(32),
-            match_arms: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
         }
     }
@@ -738,40 +736,6 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Match(match_) => {
             let on_expr = expr(ctx, match_.on_expr(ctx.tree).unwrap());
-
-            let offset = ctx.s.match_arms.start();
-            let match_arm_lit = match_.match_arm_list(ctx.tree).unwrap();
-            for match_arm_cst in match_arm_lit.match_arms(ctx.tree) {
-                let mut pat_expr_iter = match_arm_cst.pat_expr_iter(ctx.tree);
-                let match_arm = ast::MatchArm {
-                    pat: ast::ConstExpr(expr(ctx, pat_expr_iter.next().unwrap())),
-                    expr: expr(ctx, pat_expr_iter.next().unwrap()),
-                };
-                ctx.s.match_arms.add(match_arm);
-            }
-            let match_arms = ctx.s.match_arms.take(offset, &mut ctx.s.arena);
-
-            let (fallback, fallback_range) = match match_arm_lit.fallback(ctx.tree) {
-                Some(fallback) => {
-                    let expr = expr(ctx, fallback.expr(ctx.tree).unwrap());
-                    let range = fallback.range(ctx.tree);
-                    (Some(expr), range)
-                }
-                None => (None, TextRange::zero()),
-            };
-
-            //@sync names `arms` vs `match_arms`
-            let match_ = ast::Match {
-                on_expr,
-                arms: match_arms,
-                fallback,
-                fallback_range,
-            };
-            let match_ = ctx.s.arena.alloc(match_);
-            ast::ExprKind::Match { match_ }
-        }
-        cst::Expr::Match2(match_) => {
-            let on_expr = expr(ctx, match_.on_expr(ctx.tree).unwrap());
             todo!("ast build match2");
         }
         cst::Expr::Field(field) => {
@@ -947,7 +911,17 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
             ast::Lit::Char(val)
         }
         cst::Lit::String(_) => {
-            let string_lit = string_lit(ctx);
+            let (string, c_string) = ctx.tree.tokens().string(ctx.string_id);
+            ctx.string_id = ctx.string_id.inc();
+
+            let id = ctx.s.intern_lit.intern(string);
+            if id.raw_index() >= ctx.s.string_is_cstr.len() {
+                ctx.s.string_is_cstr.push(c_string);
+            } else if c_string {
+                ctx.s.string_is_cstr[id.raw_index()] = true;
+            }
+
+            let string_lit = ast::StringLit { id, c_string };
             ast::Lit::String(string_lit)
         }
     }

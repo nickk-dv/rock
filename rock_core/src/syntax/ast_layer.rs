@@ -278,10 +278,6 @@ ast_node_impl!(ExprBlock, SyntaxKind::EXPR_BLOCK);
 ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
-ast_node_impl!(MatchFallback, SyntaxKind::MATCH_FALLBACK);
-ast_node_impl!(ExprMatch2, SyntaxKind::EXPR_MATCH_2);
-ast_node_impl!(MatchArmList2, SyntaxKind::MATCH_ARM_LIST_2);
-ast_node_impl!(MatchArm2, SyntaxKind::MATCH_ARM_2);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
@@ -446,7 +442,6 @@ pub enum Expr<'syn> {
     If(ExprIf<'syn>),
     Block(ExprBlock<'syn>),
     Match(ExprMatch<'syn>),
-    Match2(ExprMatch2<'syn>),
     Field(ExprField<'syn>),
     Index(ExprIndex<'syn>),
     Call(ExprCall<'syn>),
@@ -471,7 +466,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
             SyntaxKind::EXPR_BLOCK => Some(Expr::Block(ExprBlock(node))),
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
-            SyntaxKind::EXPR_MATCH_2 => Some(Expr::Match2(ExprMatch2(node))),
             SyntaxKind::EXPR_FIELD => Some(Expr::Field(ExprField(node))),
             SyntaxKind::EXPR_INDEX => Some(Expr::Index(ExprIndex(node))),
             SyntaxKind::EXPR_CALL => Some(Expr::Call(ExprCall(node))),
@@ -507,7 +501,6 @@ impl<'syn> Expr<'syn> {
             Expr::If(expr) => expr.range(tree),
             Expr::Block(expr) => expr.range(tree),
             Expr::Match(expr) => expr.range(tree),
-            Expr::Match2(expr) => expr.range(tree),
             Expr::Field(expr) => expr.range(tree),
             Expr::Index(expr) => expr.range(tree),
             Expr::Call(expr) => expr.range(tree),
@@ -925,28 +918,9 @@ impl<'syn> ExprMatch<'syn> {
 
 impl<'syn> MatchArmList<'syn> {
     node_iter!(match_arms, MatchArm);
-    find_first!(fallback, MatchFallback);
 }
 
 impl<'syn> MatchArm<'syn> {
-    //@ambiguity in incomplete tree
-    node_iter!(pat_expr_iter, Expr);
-}
-
-impl<'syn> MatchFallback<'syn> {
-    find_first!(expr, Expr);
-}
-
-impl<'syn> ExprMatch2<'syn> {
-    find_first!(on_expr, Expr);
-    find_first!(match_arm_list, MatchArmList2);
-}
-
-impl<'syn> MatchArmList2<'syn> {
-    node_iter!(match_arms, MatchArm2);
-}
-
-impl<'syn> MatchArm2<'syn> {
     find_first!(pat, Pat);
     find_first!(expr, Expr);
 }

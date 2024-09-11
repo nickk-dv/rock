@@ -97,8 +97,7 @@ fn codegen_expr<'c>(
             emit_stmt::codegen_block(cg, proc_cg, expect, block);
             None
         }
-        hir::ExprKind::Match { match_ } => unimplemented!("emit match"),
-        hir::ExprKind::Match2 { match_ } => unimplemented!("emit match2"),
+        hir::ExprKind::Match { match_ } => unimplemented!("emit match2"),
         hir::ExprKind::StructField {
             target,
             struct_id,

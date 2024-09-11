@@ -175,16 +175,16 @@ mod typed_id {
         }
 
         #[inline]
-        pub fn raw(self) -> u32 {
+        pub const fn raw(self) -> u32 {
             self.raw
         }
         #[inline]
-        pub fn raw_index(self) -> usize {
+        pub const fn raw_index(self) -> usize {
             self.raw as usize
         }
 
         #[must_use]
-        pub fn inc(self) -> ID<T> {
+        pub const fn inc(self) -> ID<T> {
             let raw = self.raw + 1;
             ID {
                 raw,
@@ -192,7 +192,7 @@ mod typed_id {
             }
         }
         #[must_use]
-        pub fn dec(self) -> ID<T> {
+        pub const fn dec(self) -> ID<T> {
             assert!(self.raw > 0);
             let raw = self.raw - 1;
             ID {

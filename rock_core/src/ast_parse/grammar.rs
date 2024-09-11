@@ -705,9 +705,6 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
             ExprKind::Block { block: block_ref }
         }
         T![match] => ExprKind::Match { match_: match_(p)? },
-        T![match2] => ExprKind::Match2 {
-            match_2: match_2(p)?,
-        },
         T![sizeof] => {
             p.bump();
             p.expect(T!['('])?;
@@ -1022,59 +1019,20 @@ fn block<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Block<'ast>, String> {
 
 fn match_<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Match<'ast>, String> {
     p.bump();
-    let offset = p.state.match_arms.start();
     let on_expr = expr(p)?;
-    let mut fallback = None;
-    let mut fallback_range = TextRange::zero();
+    let arms = comma_separated_list!(p, match_arm, match_arms, T!['{'], T!['}']);
 
-    p.expect(T!['{'])?;
-    while !p.at(T!['}']) && !p.at(T![eof]) {
-        fallback_range = p.peek_range();
-        if p.eat(T![_]) {
-            p.expect(T![->])?;
-            let expr = expr(p)?;
-            fallback = Some(expr);
-        } else {
-            let pat = ConstExpr(expr(p)?);
-            p.expect(T![->])?;
-            let expr = expr(p)?;
-            let arm = MatchArm { pat, expr };
-            p.state.match_arms.add(arm);
-        }
-
-        p.expect(T![,])?;
-        if fallback.is_some() {
-            break;
-        }
-    }
-    p.expect(T!['}'])?;
-
-    let arms = p.state.match_arms.take(offset, &mut p.state.arena);
-    let match_ = p.state.arena.alloc(Match {
-        on_expr,
-        arms,
-        fallback,
-        fallback_range,
-    });
-    Ok(match_)
-}
-
-fn match_2<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Match2<'ast>, String> {
-    p.bump();
-    let on_expr = expr(p)?;
-    let arms = comma_separated_list!(p, match_arm_2, match_arms_2, T!['{'], T!['}']);
-
-    let match_ = Match2 { on_expr, arms };
+    let match_ = Match { on_expr, arms };
     let match_ = p.state.arena.alloc(match_);
     Ok(match_)
 }
 
-fn match_arm_2<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<MatchArm2<'ast>, String> {
+fn match_arm<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<MatchArm<'ast>, String> {
     let pat = pat(p)?;
     p.expect(T![->])?;
     let expr = expr(p)?;
 
-    let arm = MatchArm2 { pat, expr };
+    let arm = MatchArm { pat, expr };
     Ok(arm)
 }
 

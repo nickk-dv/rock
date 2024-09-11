@@ -623,8 +623,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         */
         ast::Expr::If(if_) => expr_if(fmt, if_),
         ast::Expr::Block(block) => block_fmt(fmt, block.into_block()),
-        ast::Expr::Match(match_) => expr_match(fmt, match_),
-        ast::Expr::Match2(match_) => {} //@todo match2 fmt
+        ast::Expr::Match(match_) => {} //@todo match2 fmt
         ast::Expr::Field(field) => {
             expr_fmt(fmt, field.target(fmt.tree).unwrap());
             fmt.write_c('.');
@@ -724,54 +723,6 @@ fn block_fmt(fmt: &mut Formatter, block: ast::Block) {
         }
         fmt.tab_depth();
         stmt_fmt(fmt, stmt);
-        fmt.new_line();
-    }
-
-    fmt.depth_decrement();
-    if !empty {
-        fmt.tab_depth();
-    }
-    fmt.write_c('}');
-}
-
-fn expr_match(fmt: &mut Formatter, match_: ast::ExprMatch) {
-    fmt.write("match");
-    fmt.space();
-    expr_fmt(fmt, match_.on_expr(fmt.tree).unwrap());
-    fmt.space();
-    fmt.write_c('{');
-    fmt.depth_increment();
-
-    let mut empty = true;
-    let match_arm_list = match_.match_arm_list(fmt.tree).unwrap();
-    for match_arm in match_arm_list.match_arms(fmt.tree) {
-        if empty {
-            fmt.new_line();
-            empty = false;
-        }
-        let mut pat_expr_iter = match_arm.pat_expr_iter(fmt.tree);
-        fmt.tab_depth();
-        expr_fmt(fmt, pat_expr_iter.next().unwrap());
-        fmt.space();
-        fmt.write("->");
-        fmt.space();
-        expr_fmt(fmt, pat_expr_iter.next().unwrap());
-        fmt.write_c(',');
-        fmt.new_line();
-    }
-
-    if let Some(fallback) = match_arm_list.fallback(fmt.tree) {
-        if empty {
-            fmt.new_line();
-            empty = false;
-        }
-        fmt.tab_depth();
-        fmt.write_c('_');
-        fmt.space();
-        fmt.write("->");
-        fmt.space();
-        expr_fmt(fmt, fallback.expr(fmt.tree).unwrap());
-        fmt.write_c(',');
         fmt.new_line();
     }
 

@@ -256,7 +256,6 @@ pub enum ExprKind<'ast> {
     If          { if_: &'ast If<'ast> },
     Block       { block: &'ast Block<'ast> },
     Match       { match_: &'ast Match<'ast> },
-    Match2      { match_2: &'ast Match2<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
     Call        { target: &'ast Expr<'ast>, input: &'ast ArgumentList<'ast> },
@@ -307,24 +306,10 @@ pub struct Branch<'ast> {
 pub struct Match<'ast> {
     pub on_expr: &'ast Expr<'ast>,
     pub arms: &'ast [MatchArm<'ast>],
-    pub fallback: Option<&'ast Expr<'ast>>,
-    pub fallback_range: TextRange, //@will be replaced with CatchAll pat
 }
 
 #[derive(Copy, Clone)]
 pub struct MatchArm<'ast> {
-    pub pat: ConstExpr<'ast>,
-    pub expr: &'ast Expr<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub struct Match2<'ast> {
-    pub on_expr: &'ast Expr<'ast>,
-    pub arms: &'ast [MatchArm2<'ast>],
-}
-
-#[derive(Copy, Clone)]
-pub struct MatchArm2<'ast> {
     pub pat: Pat<'ast>,
     pub expr: &'ast Expr<'ast>,
 }

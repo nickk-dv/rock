@@ -15,7 +15,6 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::If { .. } => unreachable!(),
         hir::ExprKind::Block { .. } => unreachable!(),
         hir::ExprKind::Match { .. } => unreachable!(),
-        hir::ExprKind::Match2 { .. } => unreachable!(),
         hir::ExprKind::StructField {
             target,
             field_id,
