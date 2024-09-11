@@ -46,15 +46,12 @@ pub fn type_resolve<'hir>(
             }
             let param_types = ctx.arena.alloc_slice(&param_types);
 
-            let return_ty = if let Some(return_ty) = proc_ty.return_ty {
-                type_resolve(ctx, origin_id, return_ty)
-            } else {
-                hir::Type::Basic(ast::BasicType::Void)
-            };
+            let is_variadic = proc_ty.is_variadic;
+            let return_ty = type_resolve(ctx, origin_id, proc_ty.return_ty);
 
             let proc_ty = hir::ProcType {
                 param_types,
-                is_variadic: proc_ty.is_variadic,
+                is_variadic,
                 return_ty,
             };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
@@ -112,15 +109,12 @@ pub fn type_resolve_delayed<'hir, 'ast>(
             }
             let param_types = ctx.arena.alloc_slice(&param_types);
 
-            let return_ty = if let Some(return_ty) = proc_ty.return_ty {
-                type_resolve_delayed(ctx, origin_id, return_ty)
-            } else {
-                hir::Type::Basic(ast::BasicType::Void)
-            };
+            let is_variadic = proc_ty.is_variadic;
+            let return_ty = type_resolve_delayed(ctx, origin_id, proc_ty.return_ty);
 
             let proc_ty = hir::ProcType {
                 param_types,
-                is_variadic: proc_ty.is_variadic,
+                is_variadic,
                 return_ty,
             };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))

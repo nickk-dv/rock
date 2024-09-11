@@ -31,6 +31,6 @@ pub fn parse<'ast>(
         }
     }
 
-    t_total.stop("ast parse (old) total");
+    t_total.stop("ast parse (regular) total");
     state.result()
 }

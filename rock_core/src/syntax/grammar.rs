@@ -129,6 +129,7 @@ fn proc_item(p: &mut Parser, m: Marker) {
     } else {
         p.error_recover("expected parameter list", RECOVER_PARAM_LIST);
     }
+    p.expect(T![->]);
     ty(p);
     if p.at(T!['{']) {
         block(p, SyntaxKind::BLOCK);
@@ -394,11 +395,13 @@ fn path_expr(p: &mut Parser) -> bool {
 }
 
 fn bind(p: &mut Parser) {
+    let m = p.start();
     if p.at(T![ident]) {
         name(p);
     } else if !p.eat(T![_]) {
         p.error("expected `identifier` or `_`");
     }
+    m.complete(p, SyntaxKind::BIND);
 }
 
 fn bind_list(p: &mut Parser) {
@@ -486,9 +489,8 @@ fn type_proc(p: &mut Parser) {
     } else {
         p.error_recover("expected parameter type list", RECOVER_PARAM_TYPE_LIST);
     }
-    if p.eat(T![->]) {
-        ty(p);
-    }
+    p.expect(T![->]);
+    ty(p);
     m.complete(p, SyntaxKind::TYPE_PROCEDURE);
 }
 
@@ -884,6 +886,7 @@ fn if_(p: &mut Parser) -> MarkerClosed {
             block_expect(p);
             mb.complete(p, SyntaxKind::ELSE_IF_BRANCH);
         } else {
+            p.bump(T![else]);
             block_expect(p);
             break;
         }

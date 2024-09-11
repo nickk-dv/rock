@@ -143,6 +143,8 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
         Request::Completion(params) => {}
         Request::GotoDefinition(params) => {}
         Request::Format(params) => {
+            send_response_error(conn, id, None);
+            /*
             let uri = params.text_document.uri;
             let path = uri_to_path(&uri);
 
@@ -169,6 +171,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             } else {
                 send_response_error(conn, id, None);
             }
+            */
         }
         Request::Hover(params) => {}
     }
@@ -225,13 +228,13 @@ fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
     conn.sender.send(msg.into()).expect("send message");
 }
 
-use rock_core::ast_parse;
 use rock_core::error::{
     Diagnostic, DiagnosticCollection, DiagnosticKind, DiagnosticSeverity, SourceRange, WarningComp,
 };
 use rock_core::hir_lower;
 use rock_core::intern::{InternName, InternPool};
 use rock_core::session::{ModuleID, Session};
+use rock_core::syntax::ast_build;
 use rock_core::text;
 
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
@@ -241,7 +244,7 @@ fn check_impl(
     session: &Session,
     intern_name: InternPool<'_, InternName>,
 ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-    let (ast, warnings) = ast_parse::parse(session, intern_name).into_result(vec![])?;
+    let (ast, warnings) = ast_build::parse(session, intern_name).into_result(vec![])?;
     let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
     Ok(warnings)
 }

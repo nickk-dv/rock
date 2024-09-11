@@ -431,7 +431,8 @@ fn ty<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Type<'ast>, String> {
             }
             p.expect(T![')'])?;
             let param_types = p.state.types.take(offset, &mut p.state.arena);
-            let return_ty = if p.eat(T![->]) { Some(ty(p)?) } else { None };
+            p.expect(T![->])?;
+            let return_ty = ty(p)?;
 
             TypeKind::Procedure(p.state.arena.alloc(ProcType {
                 param_types,

@@ -113,7 +113,7 @@ pub fn parse<'ast>(
         }
     }
 
-    t_total.stop("ast parse (new) total");
+    t_total.stop("ast parse (tree) total");
     if state.errors.is_empty() {
         let ast = ast::Ast {
             arena: state.arena,
@@ -537,7 +537,8 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
             let param_types = ctx.s.types.take(offset, &mut ctx.s.arena);
 
             let is_variadic = type_list.is_variadic(ctx.tree);
-            let return_ty = proc_ty.return_ty(ctx.tree).map(|t| ty(ctx, t));
+            let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
+            let return_ty = ty(ctx, return_ty);
 
             let proc_ty = ast::ProcType {
                 param_types,
