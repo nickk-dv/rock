@@ -543,11 +543,11 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
-use crate::size_assert;
-size_assert!(16, Type);
-size_assert!(16, Stmt);
-size_assert!(32, Expr);
-size_assert!(16, ConstValue);
+use crate::size_lock;
+size_lock!(16, Type);
+size_lock!(16, Stmt);
+size_lock!(32, Expr);
+size_lock!(16, ConstValue);
 
 impl<'hir> Hir<'hir> {
     pub fn proc_data(&self, id: ProcID<'hir>) -> &ProcData<'hir> {

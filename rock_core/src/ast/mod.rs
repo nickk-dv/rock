@@ -1,5 +1,6 @@
 use crate::enum_str_convert;
 use crate::intern::{InternLit, InternName, InternPool};
+use crate::size_lock;
 use crate::support::{Arena, ID};
 use crate::text::TextRange;
 
@@ -10,6 +11,8 @@ pub struct Ast<'ast> {
     pub intern_name: InternPool<'ast, InternName>,
     pub modules: Vec<Module<'ast>>,
 }
+
+//==================== SOURCE FILE ====================
 
 #[derive(Copy, Clone)]
 pub struct Module<'ast> {
@@ -27,28 +30,16 @@ pub enum Item<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Name {
-    pub id: ID<InternName>,
-    pub range: TextRange,
-}
-
-#[derive(Copy, Clone)]
-pub struct Path<'ast> {
-    pub names: &'ast [Name],
-}
-
-#[derive(Copy, Clone)]
 pub struct Attr<'ast> {
     pub name: Name,
     pub params: Option<(&'ast [AttrParam], TextRange)>,
     pub range: TextRange,
 }
 
-//@problem uses InternLit!
 #[derive(Copy, Clone)]
 pub struct AttrParam {
     pub name: Name,
-    pub value: Option<(ID<InternLit>, TextRange)>,
+    pub value: Option<(ID<InternLit>, TextRange)>, //@problem uses InternLit!
 }
 
 #[derive(Copy, Clone)]
@@ -146,6 +137,8 @@ pub enum SymbolRename {
     Discard(TextRange),
 }
 
+//==================== TYPE ====================
+
 #[derive(Copy, Clone)]
 pub struct Type<'ast> {
     pub kind: TypeKind<'ast>,
@@ -180,6 +173,8 @@ pub struct ArrayStatic<'ast> {
     pub len: ConstExpr<'ast>,
     pub elem_ty: Type<'ast>,
 }
+
+//==================== STMT ====================
 
 #[derive(Copy, Clone)]
 pub struct Block<'ast> {
@@ -240,6 +235,8 @@ pub struct Assign<'ast> {
     pub rhs: &'ast Expr<'ast>,
 }
 
+//==================== EXPR ====================
+
 #[derive(Copy, Clone)]
 pub struct ConstExpr<'ast>(pub &'ast Expr<'ast>);
 
@@ -274,22 +271,6 @@ pub enum ExprKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum Lit {
-    Null,
-    Bool(bool),
-    Int(u64),
-    Float(f64),
-    Char(char),
-    String(StringLit),
-}
-
-#[derive(Copy, Clone, PartialEq, Hash)]
-pub struct StringLit {
-    pub id: ID<InternLit>,
-    pub c_string: bool,
-}
-
-#[derive(Copy, Clone)]
 pub struct If<'ast> {
     pub entry: Branch<'ast>,
     pub branches: &'ast [Branch<'ast>],
@@ -314,6 +295,27 @@ pub struct MatchArm<'ast> {
     pub expr: &'ast Expr<'ast>,
 }
 
+//@move path to expr itself + &field init list
+#[derive(Copy, Clone)]
+pub struct StructInit<'ast> {
+    pub path: Option<&'ast Path<'ast>>,
+    pub input: &'ast [FieldInit<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct FieldInit<'ast> {
+    pub name: Name,
+    pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct BinExpr<'ast> {
+    pub lhs: &'ast Expr<'ast>,
+    pub rhs: &'ast Expr<'ast>,
+}
+
+//==================== PAT ====================
+
 #[derive(Copy, Clone)]
 pub struct Pat<'ast> {
     pub kind: PatKind<'ast>,
@@ -331,15 +333,42 @@ pub enum PatKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct ArgumentList<'ast> {
-    pub exprs: &'ast [&'ast Expr<'ast>],
+pub enum Lit {
+    Null,
+    Bool(bool),
+    Int(u64),
+    Float(f64),
+    Char(char),
+    String(StringLit),
+}
+
+#[derive(Copy, Clone, PartialEq, Hash)]
+pub struct StringLit {
+    pub id: ID<InternLit>,
+    pub c_string: bool,
+}
+
+#[derive(Copy, Clone)]
+pub enum Range<'ast> {
+    Full,                                          // ..
+    ToExclusive(&'ast Expr<'ast>),                 // ..<2
+    ToInclusive(&'ast Expr<'ast>),                 // ..=2
+    From(&'ast Expr<'ast>),                        // 0..
+    Exclusive(&'ast Expr<'ast>, &'ast Expr<'ast>), // 0..<2
+    Inclusive(&'ast Expr<'ast>, &'ast Expr<'ast>), // 0..=2
+}
+
+//==================== COMMON ====================
+
+#[derive(Copy, Clone)]
+pub struct Name {
+    pub id: ID<InternName>,
     pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
-pub struct BindingList<'ast> {
-    pub binds: &'ast [Binding],
-    pub range: TextRange,
+pub struct Path<'ast> {
+    pub names: &'ast [Name],
 }
 
 #[derive(Copy, Clone)]
@@ -349,32 +378,18 @@ pub enum Binding {
 }
 
 #[derive(Copy, Clone)]
-pub struct StructInit<'ast> {
-    pub path: Option<&'ast Path<'ast>>,
-    pub input: &'ast [FieldInit<'ast>],
+pub struct BindingList<'ast> {
+    pub binds: &'ast [Binding],
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
-pub struct FieldInit<'ast> {
-    pub name: Name,
-    pub expr: &'ast Expr<'ast>,
+pub struct ArgumentList<'ast> {
+    pub exprs: &'ast [&'ast Expr<'ast>],
+    pub range: TextRange,
 }
 
-#[derive(Copy, Clone)]
-pub enum Range<'ast> {
-    Full,                                               // ..
-    RangeTo(&'ast Expr<'ast>),                          // ..<2
-    RangeToInclusive(&'ast Expr<'ast>),                 // ..=2
-    RangeFrom(&'ast Expr<'ast>),                        // 0..
-    Range(&'ast Expr<'ast>, &'ast Expr<'ast>),          // 0..<2
-    RangeInclusive(&'ast Expr<'ast>, &'ast Expr<'ast>), // 0..=2
-}
-
-#[derive(Copy, Clone)]
-pub struct BinExpr<'ast> {
-    pub lhs: &'ast Expr<'ast>,
-    pub rhs: &'ast Expr<'ast>,
-}
+//==================== ENUMS ====================
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Vis {
@@ -453,11 +468,25 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
-use crate::size_assert;
-size_assert!(48, Attr);
-size_assert!(16, Item);
-size_assert!(12, Name);
-size_assert!(16, Path);
-size_assert!(24, Type);
-size_assert!(24, Stmt);
-size_assert!(32, Expr);
+//==================== SIZE LOCK ====================
+
+size_lock!(16, Item);
+size_lock!(48, Attr);
+size_lock!(28, AttrParam);
+
+size_lock!(96, ProcItem);
+size_lock!(48, EnumItem);
+size_lock!(48, StructItem);
+size_lock!(64, ConstItem);
+size_lock!(64, GlobalItem);
+size_lock!(80, ImportItem);
+
+size_lock!(24, Type);
+size_lock!(24, Block);
+size_lock!(24, Stmt);
+size_lock!(32, Expr);
+size_lock!(32, Pat);
+
+size_lock!(12, Name);
+size_lock!(16, Path);
+size_lock!(16, Binding);

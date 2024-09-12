@@ -797,14 +797,14 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
         T!["..<"] => {
             p.bump();
             let end = expr(p)?;
-            let range = Range::RangeTo(end);
+            let range = Range::ToExclusive(end);
             let range = p.state.arena.alloc(range);
             ExprKind::Range { range }
         }
         T!["..="] => {
             p.bump();
             let end = expr(p)?;
-            let range = Range::RangeToInclusive(end);
+            let range = Range::ToInclusive(end);
             let range = p.state.arena.alloc(range);
             ExprKind::Range { range }
         }
@@ -879,7 +879,7 @@ fn tail_expr<'ast>(
             }
             T![..] => {
                 p.bump();
-                let range = Range::RangeFrom(target);
+                let range = Range::From(target);
                 let range = p.state.arena.alloc(range);
 
                 let expr = Expr {
@@ -891,7 +891,7 @@ fn tail_expr<'ast>(
             T!["..<"] => {
                 p.bump();
                 let end = expr(p)?;
-                let range = Range::Range(target, end);
+                let range = Range::Exclusive(target, end);
                 let range = p.state.arena.alloc(range);
 
                 let expr = Expr {
@@ -903,7 +903,7 @@ fn tail_expr<'ast>(
             T!["..="] => {
                 p.bump();
                 let end = expr(p)?;
-                let range = Range::RangeInclusive(target, end);
+                let range = Range::Inclusive(target, end);
                 let range = p.state.arena.alloc(range);
 
                 let expr = Expr {

@@ -1,10 +1,9 @@
-/// used to prevent accidental size changes  
-/// currently only used in `ast` and `hir`
+/// prevent accidental size changes
 #[macro_export]
-macro_rules! size_assert {
+macro_rules! size_lock {
     ($size:expr, $ty:ty) => {
         #[cfg(target_pointer_width = "64")]
-        const _: [(); $size] = [(); ::std::mem::size_of::<$ty>()];
+        const _: [(); $size] = [(); std::mem::size_of::<$ty>()];
     };
 }
 

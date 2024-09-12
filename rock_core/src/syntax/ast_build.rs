@@ -406,7 +406,7 @@ fn import_item<'ast>(
         ctx.s.names.add(name);
     }
     let import_path = ctx.s.names.take(offset, &mut ctx.s.arena);
-    let rename = symbol_rename(ctx, item.rename(ctx.tree));
+    let rename = import_symbol_rename(ctx, item.rename(ctx.tree));
 
     let symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
         let offset = ctx.s.import_symbols.start();
@@ -430,13 +430,16 @@ fn import_item<'ast>(
 
 fn import_symbol(ctx: &mut AstBuild, import_symbol: cst::ImportSymbol) {
     let name = name(ctx, import_symbol.name(ctx.tree).unwrap());
-    let rename = symbol_rename(ctx, import_symbol.rename(ctx.tree));
+    let rename = import_symbol_rename(ctx, import_symbol.rename(ctx.tree));
 
     let import_symbol = ast::ImportSymbol { name, rename };
     ctx.s.import_symbols.add(import_symbol);
 }
 
-fn symbol_rename(ctx: &mut AstBuild, rename: Option<cst::SymbolRename>) -> ast::SymbolRename {
+fn import_symbol_rename(
+    ctx: &mut AstBuild,
+    rename: Option<cst::ImportSymbolRename>,
+) -> ast::SymbolRename {
     if let Some(rename) = rename {
         if let Some(alias) = rename.alias(ctx.tree) {
             ast::SymbolRename::Alias(name(ctx, alias))
@@ -576,7 +579,11 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stm
             let expr = ret.expr(ctx.tree).map(|e| expr(ctx, e));
             ast::StmtKind::Return(expr)
         }
-        cst::Stmt::Defer(defer) => ast::StmtKind::Defer(stmt_defer(ctx, defer)),
+        cst::Stmt::Defer(defer) => {
+            let block = block(ctx, defer.block(ctx.tree).unwrap());
+            let block = ctx.s.arena.alloc(block);
+            ast::StmtKind::Defer(block)
+        }
         cst::Stmt::Loop(loop_) => ast::StmtKind::Loop(stmt_loop(ctx, loop_)),
         cst::Stmt::Local(local) => ast::StmtKind::Local(stmt_local(ctx, local)),
         cst::Stmt::Assign(assign) => ast::StmtKind::Assign(stmt_assign(ctx, assign)),
@@ -591,30 +598,6 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stm
     };
 
     ast::Stmt { kind, range }
-}
-
-fn stmt_defer<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
-    defer: cst::StmtDefer,
-) -> &'ast ast::Block<'ast> {
-    if let Some(short_block) = defer.short_block(ctx.tree) {
-        let stmt_cst = short_block.stmt(ctx.tree).unwrap();
-        let stmt = stmt(ctx, stmt_cst);
-
-        let offset = ctx.s.stmts.start();
-        ctx.s.stmts.add(stmt);
-        let stmts = ctx.s.stmts.take(offset, &mut ctx.s.arena);
-
-        let block = ast::Block {
-            stmts,
-            range: stmt.range,
-        };
-        ctx.s.arena.alloc(block)
-    } else {
-        let block_cst = defer.block(ctx.tree).unwrap();
-        let block = block(ctx, block_cst);
-        ctx.s.arena.alloc(block)
-    }
 }
 
 fn stmt_loop<'ast>(
@@ -730,8 +713,8 @@ fn expr_kind<'ast>(
             let if_ = ctx.s.arena.alloc(if_);
             ast::ExprKind::If { if_ }
         }
-        cst::Expr::Block(expr_block) => {
-            let block = block(ctx, expr_block.into_block());
+        cst::Expr::Block(block_cst) => {
+            let block = block(ctx, block_cst);
 
             let block = ctx.s.arena.alloc(block);
             ast::ExprKind::Block { block }
@@ -977,27 +960,27 @@ fn range<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, range: cst::Range) -> ast::
         cst::Range::Full(_) => ast::Range::Full,
         cst::Range::ToExclusive(range) => {
             let end = expr(ctx, range.end(ctx.tree).unwrap());
-            ast::Range::RangeTo(end)
+            ast::Range::ToExclusive(end)
         }
         cst::Range::ToInclusive(range) => {
             let end = expr(ctx, range.end(ctx.tree).unwrap());
-            ast::Range::RangeToInclusive(end)
+            ast::Range::ToInclusive(end)
         }
         cst::Range::From(range) => {
             let start = expr(ctx, range.start(ctx.tree).unwrap());
-            ast::Range::RangeFrom(start)
+            ast::Range::From(start)
         }
         cst::Range::Exclusive(range) => {
             let mut start_end_iter = range.start_end_iter(ctx.tree);
             let start = expr(ctx, start_end_iter.next().unwrap());
             let end = expr(ctx, start_end_iter.next().unwrap());
-            ast::Range::Range(start, end)
+            ast::Range::Exclusive(start, end)
         }
         cst::Range::Inclusive(range) => {
             let mut start_end_iter = range.start_end_iter(ctx.tree);
             let start = expr(ctx, start_end_iter.next().unwrap());
             let end = expr(ctx, start_end_iter.next().unwrap());
-            ast::Range::RangeInclusive(start, end)
+            ast::Range::Inclusive(start, end)
         }
     }
 }

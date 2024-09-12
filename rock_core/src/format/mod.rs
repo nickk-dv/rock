@@ -376,7 +376,7 @@ fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: ast::ImportSymbol) {
     }
 }
 
-fn symbol_rename(fmt: &mut Formatter, rename: ast::SymbolRename) {
+fn symbol_rename(fmt: &mut Formatter, rename: ast::ImportSymbolRename) {
     fmt.space();
     fmt.write("as");
     fmt.space();
@@ -500,11 +500,7 @@ fn stmt_fmt(fmt: &mut Formatter, stmt: ast::Stmt) {
         ast::Stmt::Defer(defer) => {
             fmt.write("defer");
             fmt.space();
-            if let Some(short_block) = defer.short_block(fmt.tree) {
-                stmt_fmt(fmt, short_block.stmt(fmt.tree).unwrap());
-            } else {
-                block_fmt(fmt, defer.block(fmt.tree).unwrap());
-            }
+            block_fmt(fmt, defer.block(fmt.tree).unwrap());
         }
         ast::Stmt::Loop(loop_) => stmt_loop(fmt, loop_),
         ast::Stmt::Local(local) => stmt_local(fmt, local),
@@ -622,7 +618,7 @@ fn expr_fmt(fmt: &mut Formatter, expr: ast::Expr) {
         ast::Expr::LitString(lit) => fmt.write_range(lit.range(fmt.tree)),
         */
         ast::Expr::If(if_) => expr_if(fmt, if_),
-        ast::Expr::Block(block) => block_fmt(fmt, block.into_block()),
+        ast::Expr::Block(block) => block_fmt(fmt, block),
         ast::Expr::Match(match_) => {} //@todo match2 fmt
         ast::Expr::Field(field) => {
             expr_fmt(fmt, field.target(fmt.tree).unwrap());

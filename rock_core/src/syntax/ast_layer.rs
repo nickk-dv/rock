@@ -240,7 +240,7 @@ ast_node_impl!(ImportItem, SyntaxKind::IMPORT_ITEM);
 ast_node_impl!(ImportPath, SyntaxKind::IMPORT_PATH);
 ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
-ast_node_impl!(SymbolRename, SyntaxKind::SYMBOL_RENAME);
+ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
 
 ast_node_impl!(Name, SyntaxKind::NAME);
 ast_node_impl!(Path, SyntaxKind::PATH);
@@ -261,7 +261,6 @@ ast_node_impl!(StmtBreak, SyntaxKind::STMT_BREAK);
 ast_node_impl!(StmtContinue, SyntaxKind::STMT_CONTINUE);
 ast_node_impl!(StmtReturn, SyntaxKind::STMT_RETURN);
 ast_node_impl!(StmtDefer, SyntaxKind::STMT_DEFER);
-ast_node_impl!(ShortBlock, SyntaxKind::SHORT_BLOCK);
 ast_node_impl!(StmtLoop, SyntaxKind::STMT_LOOP);
 ast_node_impl!(LoopWhileHeader, SyntaxKind::LOOP_WHILE_HEADER);
 ast_node_impl!(LoopCLikeHeader, SyntaxKind::LOOP_CLIKE_HEADER);
@@ -272,9 +271,8 @@ ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
-ast_node_impl!(EntryBranch, SyntaxKind::ENTRY_BRANCH);
-ast_node_impl!(ElseIfBranch, SyntaxKind::ELSE_IF_BRANCH);
-ast_node_impl!(ExprBlock, SyntaxKind::EXPR_BLOCK);
+ast_node_impl!(BranchEntry, SyntaxKind::BRANCH_ENTRY);
+ast_node_impl!(BranchElseIf, SyntaxKind::BRANCH_ELSE_IF);
 ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
@@ -440,7 +438,7 @@ pub enum Expr<'syn> {
     Paren(ExprParen<'syn>),
     Lit(Lit<'syn>),
     If(ExprIf<'syn>),
-    Block(ExprBlock<'syn>),
+    Block(Block<'syn>),
     Match(ExprMatch<'syn>),
     Field(ExprField<'syn>),
     Index(ExprIndex<'syn>),
@@ -464,7 +462,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
-            SyntaxKind::EXPR_BLOCK => Some(Expr::Block(ExprBlock(node))),
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
             SyntaxKind::EXPR_FIELD => Some(Expr::Field(ExprField(node))),
             SyntaxKind::EXPR_INDEX => Some(Expr::Index(ExprIndex(node))),
@@ -485,6 +482,8 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
                     Some(Expr::Lit(lit))
                 } else if let Some(range) = Range::cast(node) {
                     Some(Expr::Range(range))
+                } else if let Some(block) = Block::cast(node) {
+                    Some(Expr::Block(block))
                 } else {
                     None
                 }
@@ -734,7 +733,7 @@ impl<'syn> ImportItem<'syn> {
     find_first!(visibility, Visibility); //@exists but ignored
     find_first!(package, Name);
     find_first!(import_path, ImportPath);
-    find_first!(rename, SymbolRename);
+    find_first!(rename, ImportSymbolRename);
     find_first!(import_symbol_list, ImportSymbolList);
 }
 
@@ -748,10 +747,10 @@ impl<'syn> ImportSymbolList<'syn> {
 
 impl<'syn> ImportSymbol<'syn> {
     find_first!(name, Name);
-    find_first!(rename, SymbolRename);
+    find_first!(rename, ImportSymbolRename);
 }
 
-impl<'syn> SymbolRename<'syn> {
+impl<'syn> ImportSymbolRename<'syn> {
     find_first!(alias, Name);
 
     pub fn discard(&self, tree: &'syn SyntaxTree<'syn>) -> ((), TextRange) {
@@ -830,12 +829,7 @@ impl<'syn> StmtReturn<'syn> {
 }
 
 impl<'syn> StmtDefer<'syn> {
-    find_first!(short_block, ShortBlock);
     find_first!(block, Block);
-}
-
-impl<'syn> ShortBlock<'syn> {
-    find_first!(stmt, Stmt);
 }
 
 impl<'syn> StmtLoop<'syn> {
@@ -888,27 +882,19 @@ impl<'syn> ExprParen<'syn> {
 }
 
 impl<'syn> ExprIf<'syn> {
-    find_first!(entry_branch, EntryBranch);
-    node_iter!(else_if_branches, ElseIfBranch);
+    find_first!(entry_branch, BranchEntry);
+    node_iter!(else_if_branches, BranchElseIf);
     find_first!(else_block, Block);
 }
 
-impl<'syn> EntryBranch<'syn> {
+impl<'syn> BranchEntry<'syn> {
     find_first!(cond, Expr);
     find_first!(block, Block);
 }
 
-impl<'syn> ElseIfBranch<'syn> {
+impl<'syn> BranchElseIf<'syn> {
     find_first!(cond, Expr);
     find_first!(block, Block);
-}
-
-impl<'syn> ExprBlock<'syn> {
-    node_iter!(stmts, Stmt);
-
-    pub fn into_block(self) -> Block<'syn> {
-        Block(self.0)
-    }
 }
 
 impl<'syn> ExprMatch<'syn> {

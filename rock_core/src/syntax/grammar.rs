@@ -22,7 +22,7 @@ fn item(p: &mut Parser) {
     if p.at(T![#]) {
         let m = p.start();
         while p.at(T![#]) {
-            attribute(p);
+            attr(p);
         }
         mc = Some(m.complete(p, SyntaxKind::ATTR_LIST));
     }
@@ -56,24 +56,24 @@ fn item(p: &mut Parser) {
     }
 }
 
-fn attribute(p: &mut Parser) -> MarkerClosed {
+fn attr(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![#]);
     p.expect(T!['[']);
     name(p);
     if p.at(T!['(']) {
-        attribute_param_list(p);
+        attr_param_list(p);
     }
     p.expect(T![']']);
     m.complete(p, SyntaxKind::ATTR)
 }
 
-fn attribute_param_list(p: &mut Parser) {
+fn attr_param_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
         if p.at(T![ident]) {
-            attribute_param(p);
+            attr_param(p);
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
@@ -86,7 +86,9 @@ fn attribute_param_list(p: &mut Parser) {
     m.complete(p, SyntaxKind::ATTR_PARAM_LIST);
 }
 
-fn attribute_param(p: &mut Parser) {
+//@basic ty cannot be represented,
+// use name intern IDs instead for value & name?
+fn attr_param(p: &mut Parser) {
     let m = p.start();
     p.bump(T![ident]);
     if p.eat(T![=]) {
@@ -132,7 +134,7 @@ fn proc_item(p: &mut Parser, m: Marker) {
     p.expect(T![->]);
     ty(p);
     if p.at(T!['{']) {
-        block(p, SyntaxKind::BLOCK);
+        block(p);
     } else if !p.eat(T![;]) {
         p.error_recover("expected block or `;`", FIRST_ITEM);
     }
@@ -304,7 +306,7 @@ fn import_item(p: &mut Parser, m: Marker) {
         p.error_recover("expected import path", RECOVER_IMPORT_PATH);
     }
     if p.at(T![as]) {
-        symbol_rename(p);
+        import_symbol_rename(p);
     }
     if p.eat(T![.]) {
         if p.at(T!['{']) {
@@ -350,18 +352,18 @@ fn import_symbol(p: &mut Parser) {
     let m = p.start();
     name(p);
     if p.at(T![as]) {
-        symbol_rename(p);
+        import_symbol_rename(p);
     }
     m.complete(p, SyntaxKind::IMPORT_SYMBOL);
 }
 
-fn symbol_rename(p: &mut Parser) {
+fn import_symbol_rename(p: &mut Parser) {
     let m = p.start();
     p.bump(T![as]);
     if !p.eat(T![_]) {
         name(p);
     }
-    m.complete(p, SyntaxKind::SYMBOL_RENAME);
+    m.complete(p, SyntaxKind::IMPORT_SYMBOL_RENAME);
 }
 
 fn name(p: &mut Parser) {
@@ -562,11 +564,9 @@ fn stmt(p: &mut Parser) {
             let m = p.start();
             p.bump(T![defer]);
             if p.at(T!['{']) {
-                block(p, SyntaxKind::BLOCK);
+                block(p);
             } else {
-                let m = p.start();
-                stmt(p);
-                m.complete(p, SyntaxKind::SHORT_BLOCK);
+                block_short(p);
             }
             m.complete(p, SyntaxKind::STMT_DEFER);
         }
@@ -702,7 +702,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         | T![char_lit]
         | T![string_lit] => lit(p),
         T![if] => if_(p),
-        T!['{'] => block(p, SyntaxKind::EXPR_BLOCK),
+        T!['{'] => block(p),
         T![match] => match_(p),
         T![sizeof] => {
             let m = p.start();
@@ -874,7 +874,7 @@ fn if_(p: &mut Parser) -> MarkerClosed {
     p.bump(T![if]);
     expr(p);
     block_expect(p);
-    me.complete(p, SyntaxKind::ENTRY_BRANCH);
+    me.complete(p, SyntaxKind::BRANCH_ENTRY);
 
     while p.at(T![else]) {
         if p.at_next(T![if]) {
@@ -883,7 +883,7 @@ fn if_(p: &mut Parser) -> MarkerClosed {
             p.bump(T![if]);
             expr(p);
             block_expect(p);
-            mb.complete(p, SyntaxKind::ELSE_IF_BRANCH);
+            mb.complete(p, SyntaxKind::BRANCH_ELSE_IF);
         } else {
             p.bump(T![else]);
             block_expect(p);
@@ -894,19 +894,25 @@ fn if_(p: &mut Parser) -> MarkerClosed {
     m.complete(p, SyntaxKind::EXPR_IF)
 }
 
-fn block(p: &mut Parser, kind: SyntaxKind) -> MarkerClosed {
+fn block(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
         stmt(p);
     }
     p.expect(T!['}']);
-    m.complete(p, kind)
+    m.complete(p, SyntaxKind::BLOCK)
+}
+
+fn block_short(p: &mut Parser) {
+    let m = p.start();
+    stmt(p);
+    m.complete(p, SyntaxKind::BLOCK);
 }
 
 fn block_expect(p: &mut Parser) {
     if p.at(T!['{']) {
-        block(p, SyntaxKind::BLOCK);
+        block(p);
     } else {
         p.error("expected block");
     }

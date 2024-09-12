@@ -11,12 +11,6 @@ pub enum SyntaxKind {
     ATTR_PARAM,
     VISIBILITY,
 
-    NAME,
-    PATH,
-    BIND,
-    BIND_LIST,
-    ARGS_LIST,
-
     PROC_ITEM,
     PARAM_LIST,
     PARAM,
@@ -33,7 +27,7 @@ pub enum SyntaxKind {
     IMPORT_PATH,
     IMPORT_SYMBOL_LIST,
     IMPORT_SYMBOL,
-    SYMBOL_RENAME,
+    IMPORT_SYMBOL_RENAME,
 
     TYPE_BASIC,
     TYPE_CUSTOM,
@@ -48,7 +42,6 @@ pub enum SyntaxKind {
     STMT_CONTINUE,
     STMT_RETURN,
     STMT_DEFER,
-    SHORT_BLOCK,
     STMT_LOOP,
     LOOP_WHILE_HEADER,
     LOOP_CLIKE_HEADER,
@@ -59,9 +52,8 @@ pub enum SyntaxKind {
 
     EXPR_PAREN,
     EXPR_IF,
-    ENTRY_BRANCH,
-    ELSE_IF_BRANCH,
-    EXPR_BLOCK, //@remove indirection, cleanup blocks in syntax
+    BRANCH_ENTRY,
+    BRANCH_ELSE_IF,
     EXPR_MATCH,
     MATCH_ARM_LIST,
     MATCH_ARM,
@@ -101,4 +93,10 @@ pub enum SyntaxKind {
     RANGE_FROM,
     RANGE_EXCLUSIVE,
     RANGE_INCLUSIVE,
+
+    NAME,
+    PATH,
+    BIND,
+    BIND_LIST,
+    ARGS_LIST,
 }
