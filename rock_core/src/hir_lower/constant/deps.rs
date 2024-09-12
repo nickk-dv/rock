@@ -733,8 +733,8 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
             Ok(())
         }
-        //@input not used
-        ast::ExprKind::Item { path, input } => {
+        //@args_list not used
+        ast::ExprKind::Item { path, args_list } => {
             let (value_id, _) = pass_5::path_resolve_value(ctx, origin_id, path);
             match value_id {
                 pass_5::ValueID::None => Err(parent_id),

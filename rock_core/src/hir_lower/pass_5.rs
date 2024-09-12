@@ -289,12 +289,12 @@ pub fn typecheck_expr<'hir>(
             mutt,
             index,
         } => typecheck_index(ctx, target, mutt, index, expr.range),
-        ast::ExprKind::Call { target, input } => typecheck_call(ctx, target, input),
+        ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
-        ast::ExprKind::Item { path, input } => typecheck_item(ctx, path, input, expr.range),
-        ast::ExprKind::Variant { name, input } => {
-            typecheck_variant(ctx, expect, name, input, expr.range)
+        ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
+        ast::ExprKind::Variant { name, args_list } => {
+            typecheck_variant(ctx, expect, name, args_list, expr.range)
         }
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(ctx, expect, struct_init, expr.range)
@@ -566,9 +566,11 @@ fn typecheck_pat<'hir>(
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
         ast::PatKind::Lit { lit } => typecheck_pat_lit(ctx, expect, lit),
-        ast::PatKind::Item { path, input } => typecheck_pat_item(ctx, path, input, pat.range),
-        ast::PatKind::Variant { name, input } => {
-            typecheck_pat_variant(ctx, expect, name, input, pat.range)
+        ast::PatKind::Item { path, bind_list } => {
+            typecheck_pat_item(ctx, path, bind_list, pat.range)
+        }
+        ast::PatKind::Variant { name, bind_list } => {
+            typecheck_pat_variant(ctx, expect, name, bind_list, pat.range)
         }
         ast::PatKind::Or { patterns } => typecheck_pat_or(ctx, expect, patterns),
     };
@@ -1256,10 +1258,10 @@ fn typecheck_index<'hir>(
 fn typecheck_call<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     target: &ast::Expr,
-    input: &ast::ArgumentList,
+    args_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    check_call_indirect(ctx, target_res, input)
+    check_call_indirect(ctx, target_res, args_list)
 }
 
 #[derive(Copy, Clone)]

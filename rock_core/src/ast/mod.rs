@@ -258,11 +258,11 @@ pub enum ExprKind<'ast> {
     Match       { match_: &'ast Match<'ast> },
     Field       { target: &'ast Expr<'ast>, name: Name },
     Index       { target: &'ast Expr<'ast>, mutt: Mut, index: &'ast Expr<'ast> },
-    Call        { target: &'ast Expr<'ast>, input: &'ast ArgumentList<'ast> },
+    Call        { target: &'ast Expr<'ast>, args_list: &'ast ArgumentList<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: &'ast Type<'ast> },
-    Item        { path: &'ast Path<'ast>, input: Option<&'ast ArgumentList<'ast>> },
-    Variant     { name: Name, input: Option<&'ast ArgumentList<'ast>> },
+    Item        { path: &'ast Path<'ast>, args_list: Option<&'ast ArgumentList<'ast>> },
+    Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
     ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
@@ -325,8 +325,8 @@ pub struct Pat<'ast> {
 pub enum PatKind<'ast> {
     Wild,
     Lit       { lit: Lit },
-    Item      { path: &'ast Path<'ast>, input: Option<&'ast BindingList<'ast>> },
-    Variant   { name: Name, input: Option<&'ast BindingList<'ast>> },
+    Item      { path: &'ast Path<'ast>, bind_list: Option<&'ast BindingList<'ast>> },
+    Variant   { name: Name, bind_list: Option<&'ast BindingList<'ast>> },
     Or        { patterns: &'ast [Pat<'ast>] },
 }
 

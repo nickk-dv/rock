@@ -38,6 +38,8 @@ struct AstBuildState<'ast> {
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
     branches: TempBuffer<ast::Branch<'ast>>,
+    match_arms: TempBuffer<ast::MatchArm<'ast>>,
+    patterns: TempBuffer<ast::Pat<'ast>>,
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
 }
 
@@ -83,6 +85,8 @@ impl<'ast> AstBuildState<'ast> {
             stmts: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
             branches: TempBuffer::new(32),
+            match_arms: TempBuffer::new(32),
+            patterns: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
         }
     }
@@ -201,7 +205,7 @@ fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let value = match param.value(ctx.tree) {
         Some(cst_string) => {
-            //@only using id
+            //@only using id, these literals are included in codegen (wrong)
             let value = string_lit(ctx).id;
             let range = cst_string.range(ctx.tree);
             Some((value, range))
@@ -477,7 +481,7 @@ fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
 fn bind_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     bind_list: cst::BindList,
-) -> ast::BindingList<'ast> {
+) -> &'ast ast::BindingList<'ast> {
     let offset = ctx.s.binds.start();
     for bind_cst in bind_list.binds(ctx.tree) {
         let bind = bind(ctx, bind_cst);
@@ -485,16 +489,15 @@ fn bind_list<'ast>(
     }
     let binds = ctx.s.binds.take(offset, &mut ctx.s.arena);
 
-    ast::BindingList {
-        binds,
-        range: bind_list.range(ctx.tree),
-    }
+    let range = bind_list.range(ctx.tree);
+    let bind_list = ast::BindingList { binds, range };
+    ctx.s.arena.alloc(bind_list)
 }
 
 fn args_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     args_list: cst::ArgsList,
-) -> ast::ArgumentList<'ast> {
+) -> &'ast ast::ArgumentList<'ast> {
     let offset = ctx.s.exprs.start();
     for expr_cst in args_list.exprs(ctx.tree) {
         let expr = expr(ctx, expr_cst);
@@ -502,10 +505,9 @@ fn args_list<'ast>(
     }
     let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
 
-    ast::ArgumentList {
-        exprs,
-        range: args_list.range(ctx.tree),
-    }
+    let range = args_list.range(ctx.tree);
+    let args_list = ast::ArgumentList { exprs, range };
+    ctx.s.arena.alloc(args_list)
 }
 
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
@@ -736,12 +738,15 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Match(match_) => {
             let on_expr = expr(ctx, match_.on_expr(ctx.tree).unwrap());
-            todo!("ast build match2");
+            let arms = match_arm_list(ctx, match_.match_arm_list(ctx.tree).unwrap());
+
+            let match_ = ast::Match { on_expr, arms };
+            let match_ = ctx.s.arena.alloc(match_);
+            ast::ExprKind::Match { match_ }
         }
         cst::Expr::Field(field) => {
             let target = expr(ctx, field.target(ctx.tree).unwrap());
             let name = name(ctx, field.name(ctx.tree).unwrap());
-
             ast::ExprKind::Field { target, name }
         }
         cst::Expr::Index(index) => {
@@ -758,45 +763,29 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());
-            let input = args_list(ctx, call.args_list(ctx.tree).unwrap());
-
-            let input = ctx.s.arena.alloc(input);
-            ast::ExprKind::Call { target, input }
+            let args_list = args_list(ctx, call.args_list(ctx.tree).unwrap());
+            ast::ExprKind::Call { target, args_list }
         }
         cst::Expr::Cast(cast) => {
             let target = expr(ctx, cast.target(ctx.tree).unwrap());
             let into = ty(ctx, cast.into_ty(ctx.tree).unwrap());
-
             let into = ctx.s.arena.alloc(into);
             ast::ExprKind::Cast { target, into }
         }
         cst::Expr::Sizeof(sizeof) => {
             let ty = ty(ctx, sizeof.ty(ctx.tree).unwrap());
-
-            let ty_ref = ctx.s.arena.alloc(ty);
-            ast::ExprKind::Sizeof { ty: ty_ref }
+            let ty = ctx.s.arena.alloc(ty);
+            ast::ExprKind::Sizeof { ty }
         }
         cst::Expr::Item(item) => {
             let path = path(ctx, item.path(ctx.tree).unwrap());
-            let input = if let Some(input) = item.args_list(ctx.tree) {
-                let input = args_list(ctx, input);
-                Some(ctx.s.arena.alloc(input))
-            } else {
-                None
-            };
-
-            ast::ExprKind::Item { path, input }
+            let args_list = item.args_list(ctx.tree).map(|al| args_list(ctx, al));
+            ast::ExprKind::Item { path, args_list }
         }
         cst::Expr::Variant(variant) => {
             let name = name(ctx, variant.name(ctx.tree).unwrap());
-            let input = if let Some(input) = variant.args_list(ctx.tree) {
-                let input = args_list(ctx, input);
-                Some(ctx.s.arena.alloc(input))
-            } else {
-                None
-            };
-
-            ast::ExprKind::Variant { name, input }
+            let args_list = variant.args_list(ctx.tree).map(|al| args_list(ctx, al));
+            ast::ExprKind::Variant { name, args_list }
         }
         cst::Expr::StructInit(struct_init) => {
             let path = struct_init.path(ctx.tree).map(|p| path(ctx, p));
@@ -875,6 +864,59 @@ fn expr_kind<'ast>(
     }
 }
 
+fn match_arm_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    match_arm_list: cst::MatchArmList,
+) -> &'ast [ast::MatchArm<'ast>] {
+    let offset = ctx.s.match_arms.start();
+    for arm in match_arm_list.match_arms(ctx.tree) {
+        let arm = match_arm(ctx, arm);
+        ctx.s.match_arms.add(arm)
+    }
+    ctx.s.match_arms.take(offset, &mut ctx.s.arena)
+}
+
+fn match_arm<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    arm: cst::MatchArm,
+) -> ast::MatchArm<'ast> {
+    let pat = pat(ctx, arm.pat(ctx.tree).unwrap());
+    let expr = expr(ctx, arm.expr(ctx.tree).unwrap());
+    ast::MatchArm { pat, expr }
+}
+
+fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
+    let kind = match pat_cst {
+        cst::Pat::Wild(_) => ast::PatKind::Wild,
+        cst::Pat::Lit(pat) => {
+            let lit = lit(ctx, pat.lit(ctx.tree).unwrap());
+            ast::PatKind::Lit { lit }
+        }
+        cst::Pat::Item(pat) => {
+            let path = path(ctx, pat.path(ctx.tree).unwrap());
+            let bind_list = pat.bind_list(ctx.tree).map(|bl| bind_list(ctx, bl));
+            ast::PatKind::Item { path, bind_list }
+        }
+        cst::Pat::Variant(pat) => {
+            let name = name(ctx, pat.name(ctx.tree).unwrap());
+            let bind_list = pat.bind_list(ctx.tree).map(|bl| bind_list(ctx, bl));
+            ast::PatKind::Variant { name, bind_list }
+        }
+        cst::Pat::Or(pat_or) => {
+            let offset = ctx.s.patterns.start();
+            for pat_cst in pat_or.patterns(ctx.tree) {
+                let pat = pat(ctx, pat_cst);
+                ctx.s.patterns.add(pat);
+            }
+            let patterns = ctx.s.patterns.take(offset, &mut ctx.s.arena);
+            ast::PatKind::Or { patterns }
+        }
+    };
+
+    let range = pat_cst.range(ctx.tree);
+    ast::Pat { kind, range }
+}
+
 fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
     match lit {
         cst::Lit::Null(_) => ast::Lit::Null,
@@ -911,17 +953,7 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
             ast::Lit::Char(val)
         }
         cst::Lit::String(_) => {
-            let (string, c_string) = ctx.tree.tokens().string(ctx.string_id);
-            ctx.string_id = ctx.string_id.inc();
-
-            let id = ctx.s.intern_lit.intern(string);
-            if id.raw_index() >= ctx.s.string_is_cstr.len() {
-                ctx.s.string_is_cstr.push(c_string);
-            } else if c_string {
-                ctx.s.string_is_cstr[id.raw_index()] = true;
-            }
-
-            let string_lit = ast::StringLit { id, c_string };
+            let string_lit = string_lit(ctx);
             ast::Lit::String(string_lit)
         }
     }

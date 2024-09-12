@@ -723,12 +723,12 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
                 ExprKind::StructInit { struct_init }
             } else {
                 let name = name(p)?;
-                let input = if p.at(T!['(']) {
+                let args_list = if p.at(T!['(']) {
                     Some(argument_list(p)?)
                 } else {
                     None
                 };
-                ExprKind::Variant { name, input }
+                ExprKind::Variant { name, args_list }
             }
         }
         T![ident] => {
@@ -746,12 +746,12 @@ fn primary_expr<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<&'ast Expr<'ast>, 
                     ExprKind::StructInit { struct_init }
                 }
                 _ => {
-                    let input = if p.at(T!['(']) {
+                    let args_list = if p.at(T!['(']) {
                         Some(argument_list(p)?)
                     } else {
                         None
                     };
-                    ExprKind::Item { path, input }
+                    ExprKind::Item { path, args_list }
                 }
             }
         }
@@ -854,10 +854,10 @@ fn tail_expr<'ast>(
                 target = p.state.arena.alloc(expr);
             }
             T!['('] => {
-                let input = argument_list(p)?;
+                let args_list = argument_list(p)?;
 
                 let expr = Expr {
-                    kind: ExprKind::Call { target, input },
+                    kind: ExprKind::Call { target, args_list },
                     range: p.make_range(start),
                 };
                 target = p.state.arena.alloc(expr);
@@ -1079,22 +1079,22 @@ fn primary_pat<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<Pat<'ast>, String> 
         }
         T![ident] => {
             let path = path(p)?;
-            let input = if p.at(T!['(']) {
+            let bind_list = if p.at(T!['(']) {
                 Some(binding_list(p)?)
             } else {
                 None
             };
-            PatKind::Item { path, input }
+            PatKind::Item { path, bind_list }
         }
         T![.] => {
             p.bump();
             let name = name(p)?;
-            let input = if p.at(T!['(']) {
+            let bind_list = if p.at(T!['(']) {
                 Some(binding_list(p)?)
             } else {
                 None
             };
-            PatKind::Variant { name, input }
+            PatKind::Variant { name, bind_list }
         }
         _ => return Err("expected pattern".into()),
     };
@@ -1156,8 +1156,12 @@ fn field_init<'ast>(p: &mut Parser<'ast, '_, '_>) -> Result<FieldInit<'ast>, Str
     } else {
         let names = p.state.arena.alloc_slice(&[name]);
         let path = p.state.arena.alloc(Path { names });
+
         p.state.arena.alloc(Expr {
-            kind: ExprKind::Item { path, input: None },
+            kind: ExprKind::Item {
+                path,
+                args_list: None,
+            },
             range: p.make_range(start),
         })
     };
