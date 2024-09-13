@@ -158,7 +158,7 @@ impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
 macro_rules! ast_node_impl {
     ($name:ident, $kind_pat:pat) => {
         #[derive(Copy, Clone)]
-        pub struct $name<'syn>(&'syn Node<'syn>);
+        pub struct $name<'syn>(pub &'syn Node<'syn>);
 
         impl<'syn> AstNode<'syn> for $name<'syn> {
             fn cast(node: &'syn Node) -> Option<Self>

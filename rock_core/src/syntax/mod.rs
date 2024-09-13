@@ -2,7 +2,7 @@ pub mod ast_build;
 pub mod ast_layer;
 mod grammar;
 mod parser;
-mod syntax_kind;
+pub mod syntax_kind;
 pub mod syntax_tree;
 
 use crate::error::ErrorComp;

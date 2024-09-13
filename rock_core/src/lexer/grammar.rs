@@ -91,10 +91,10 @@ fn skip_whitespace(lex: &mut Lexer) {
 
 fn skip_line_comment(lex: &mut Lexer) {
     while let Some(c) = lex.peek() {
-        lex.eat(c);
         if c == '\n' {
             return;
         }
+        lex.eat(c);
     }
 }
 

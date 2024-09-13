@@ -50,8 +50,8 @@ impl TextRange {
         self.end
     }
     #[inline]
-    pub const fn len(self) -> usize {
-        (self.end.0 - self.start.0) as usize
+    pub const fn len(self) -> u32 {
+        self.end.0 - self.start.0
     }
     #[inline]
     pub const fn is_empty(self) -> bool {

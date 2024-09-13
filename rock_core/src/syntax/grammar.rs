@@ -90,9 +90,11 @@ fn attr_param_list(p: &mut Parser) {
 // use name intern IDs instead for value & name?
 fn attr_param(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![ident]);
+    name(p);
     if p.eat(T![=]) {
+        let m = p.start();
         p.expect(T![string_lit]);
+        m.complete(p, SyntaxKind::LIT_STRING);
     }
     m.complete(p, SyntaxKind::ATTR_PARAM);
 }

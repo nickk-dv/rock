@@ -1,57 +1,25 @@
 use crate::ast::AssignOp;
 use crate::error::ErrorComp;
 use crate::session::ModuleID;
-use crate::syntax;
-use crate::syntax::ast_layer as ast;
-use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
+use crate::support::ID;
+use crate::syntax::ast_layer as cst;
+use crate::syntax::ast_layer::{self as ast, AstNode};
+use crate::syntax::syntax_kind::SyntaxKind;
+use crate::syntax::syntax_tree::{self, Node, NodeOrToken, SyntaxTree};
+use crate::syntax::{self};
 use crate::text::TextRange;
+use crate::token::Trivia;
 
-//@conform to ast_build style:
-// _cst postfix in cst nodes with name conflits,
-// remove _fmt postfix from functions
-//@use session?
-//@item & variant input exprs not formatted
-pub fn format(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
-    return format_experiment(source, module_id);
-
-    let (tree, errors) = syntax::parse_tree(source, module_id, true);
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    let mut fmt = Formatter::new(&tree, source);
-    source_file(&mut fmt, tree.source_file());
-    Ok(fmt.finish())
+//@dont attach whitespace to tokens or nodes
+//@whitespace \n >= 2 should limit which prepending trivias can be attached
+//@attach comments to select nodes only?
+// eg: field list gets inner comment
+/*
+struct Vector2 // inner com {
+    x: f32,
+    y: f32,
 }
-
-pub fn format_experiment(source: &str, module_id: ModuleID) -> Result<String, Vec<ErrorComp>> {
-    let (tree, errors) = syntax::parse_tree(source, module_id, true);
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    let mut fmt = Formatter::new(&tree, source);
-    node_format(&mut fmt, tree.root());
-    Ok(fmt.finish())
-}
-
-fn node_format(fmt: &mut Formatter, node: &Node) {
-    for node_or_token in node.content.iter().copied() {
-        match node_or_token {
-            NodeOrToken::Node(node_id) => {
-                node_format(fmt, fmt.tree.node(node_id));
-            }
-            NodeOrToken::Token(token_id) => {
-                let range = fmt.tree.tokens().token_range(token_id);
-                fmt.write_range(range);
-            }
-            NodeOrToken::Trivia(trivia_id) => {
-                let range = fmt.tree.tokens().trivia_range(trivia_id);
-                fmt.write_range(range);
-            }
-        }
-    }
-}
+*/
 
 struct Formatter<'syn> {
     tree: &'syn SyntaxTree<'syn>,
@@ -73,45 +41,354 @@ impl<'syn> Formatter<'syn> {
     fn finish(self) -> String {
         self.buffer
     }
-
     fn write(&mut self, string: &str) {
         self.buffer.push_str(string);
     }
-
     fn write_c(&mut self, c: char) {
         self.buffer.push(c);
     }
-
     fn write_range(&mut self, range: TextRange) {
         let string = &self.source[range.as_usize()];
         self.write(string);
     }
-
     fn space(&mut self) {
         self.buffer.push(' ');
     }
-
     fn new_line(&mut self) {
         self.buffer.push('\n');
     }
-
     fn tab(&mut self) {
         self.write("    ");
     }
-
     fn tab_depth(&mut self) {
         for _ in 0..self.tab_depth {
             self.tab();
         }
     }
-
     fn depth_increment(&mut self) {
         self.tab_depth += 1;
     }
-
     fn depth_decrement(&mut self) {
         self.tab_depth -= 1;
     }
+}
+
+#[must_use]
+fn content_len(fmt: &mut Formatter, node: &Node) -> u32 {
+    let mut len = 0;
+    for nt in node.content {
+        match *nt {
+            NodeOrToken::Node(node_id) => {
+                let node = fmt.tree.node(node_id);
+                len += content_len(fmt, node);
+            }
+            NodeOrToken::Token(token_id) => {
+                let range = fmt.tree.tokens().token_range(token_id);
+                len += range.len();
+            }
+            NodeOrToken::Trivia(_) => {}
+        }
+    }
+    len
+}
+
+fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxKind) {
+    for nt in node.content {
+        match *nt {
+            NodeOrToken::Node(node_id) => {
+                let node = fmt.tree.node(node_id);
+                if node.kind != halt {
+                    trivia_lift(fmt, node, halt);
+                } else {
+                    return;
+                }
+            }
+            NodeOrToken::Trivia(trivia_id) => {
+                let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
+                match trivia {
+                    Trivia::Whitespace => {}
+                    Trivia::LineComment => {
+                        fmt.write_range(range);
+                        fmt.new_line();
+                    }
+                    Trivia::BlockComment => {
+                        fmt.write_range(range);
+                        fmt.new_line();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+const WRAP_THRESHOLD: u32 = 90;
+const SUBWRAP_SYMBOL_THRESHOLD: u32 = 40;
+
+fn format(tree: &SyntaxTree, source: &str) -> String {
+    let mut fmt = Formatter::new(&tree, source);
+    source_file(&mut fmt, tree.source_file());
+    fmt.finish()
+}
+
+fn source_file(fmt: &mut Formatter, source_file: cst::SourceFile) {
+    for nt in source_file.0.content {
+        match *nt {
+            NodeOrToken::Node(node_id) => {
+                let node = fmt.tree.node(node_id);
+                item(fmt, cst::Item::cast(node).unwrap());
+            }
+            NodeOrToken::Token(_) => unreachable!(),
+            NodeOrToken::Trivia(trivia_id) => {
+                let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
+                match trivia {
+                    Trivia::Whitespace => {
+                        //@leading or trailing part of the source file
+                        //should have no or base endl, without extra spacing
+                        let whitespace = &fmt.source[range.as_usize()];
+                        if whitespace.chars().map(|c| c == '\n').count() >= 2 {
+                            fmt.new_line()
+                        }
+                    }
+                    Trivia::LineComment => {
+                        fmt.write_range(range);
+                        fmt.new_line();
+                    }
+                    Trivia::BlockComment => {
+                        fmt.write_range(range);
+                        fmt.new_line();
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
+    for attr_cst in attr_list.attrs(fmt.tree) {
+        attr(fmt, attr_cst);
+        fmt.new_line();
+    }
+}
+
+fn attr(fmt: &mut Formatter, attr: cst::Attr) {
+    fmt.write_c('#');
+    fmt.write_c('[');
+    name(fmt, attr.name(fmt.tree).unwrap());
+
+    let wrap = content_len(fmt, attr.0) > WRAP_THRESHOLD;
+    if let Some(param_list) = attr.param_list(fmt.tree) {
+        attr_param_list(fmt, param_list, wrap);
+    }
+
+    fmt.write_c(']');
+}
+
+fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bool) {
+    if param_list.params(fmt.tree).next().is_none() {
+        fmt.write_c('(');
+        fmt.write_c(')');
+        return;
+    }
+
+    fmt.write_c('(');
+    if wrap {
+        fmt.new_line();
+    }
+
+    let mut first = true;
+    for param in param_list.params(fmt.tree) {
+        if !first {
+            fmt.write_c(',');
+            if wrap {
+                fmt.new_line();
+            } else {
+                fmt.space();
+            }
+        }
+        if wrap {
+            fmt.tab();
+        }
+        first = false;
+
+        attr_param(fmt, param);
+    }
+
+    if wrap {
+        fmt.write_c(',');
+        fmt.new_line();
+    }
+    fmt.write_c(')');
+}
+
+fn attr_param(fmt: &mut Formatter, param: cst::AttrParam) {
+    name(fmt, param.name(fmt.tree).unwrap());
+    if let Some(value) = param.value(fmt.tree) {
+        fmt.write(" = ");
+        fmt.write_range(value.range(fmt.tree)); //@will change value to name_id
+    }
+}
+
+fn vis(fmt: &mut Formatter, vis: Option<cst::Visibility>) {
+    if vis.is_some() {
+        fmt.write("pub");
+        fmt.space();
+    }
+}
+
+fn item(fmt: &mut Formatter, item: cst::Item) {
+    match item {
+        cst::Item::Proc(_) => fmt.write("proc\n"),
+        cst::Item::Enum(_) => fmt.write("enum\n"),
+        cst::Item::Struct(item) => struct_item(fmt, item),
+        cst::Item::Const(_) => fmt.write("const\n"),
+        cst::Item::Global(_) => fmt.write("global\n"),
+        cst::Item::Import(item) => import_item(fmt, item),
+    }
+}
+
+fn struct_item(fmt: &mut Formatter, item: cst::StructItem) {
+    trivia_lift(fmt, item.0, SyntaxKind::FIELD_LIST);
+    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
+        attr_list(fmt, attr_list_cst);
+    }
+    vis(fmt, item.visibility(fmt.tree));
+
+    fmt.write("struct");
+    fmt.space();
+    name(fmt, item.name(fmt.tree).unwrap());
+    fmt.space();
+    fmt.write("{}"); //@fmt field list
+    fmt.new_line();
+}
+
+//@handle possible inner & trailing trivia
+//@handle field spacing (similar to source_file)
+fn field_list(fmt: &mut Formatter, field_list: cst::FieldList) {
+    fmt.write_c('{');
+    //@todo
+    fmt.write_c('}');
+}
+
+//@handle field trivia
+// match trivia indent with current indent
+fn field(fmt: &mut Formatter, field: cst::Field) {
+    //@todo
+}
+
+fn import_item(fmt: &mut Formatter, item: ast::ImportItem) {
+    trivia_lift(fmt, item.0, SyntaxKind::TOMBSTONE);
+    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
+        attr_list(fmt, attr_list_cst);
+    }
+
+    fmt.write("import");
+    fmt.space();
+    if let Some(name_cst) = item.package(fmt.tree) {
+        name(fmt, name_cst);
+        fmt.write_c(':');
+    }
+
+    import_path(fmt, item.import_path(fmt.tree).unwrap());
+    if let Some(rename) = item.rename(fmt.tree) {
+        import_symbol_rename(fmt, rename);
+    }
+
+    if let Some(symbol_list) = item.import_symbol_list(fmt.tree) {
+        fmt.write_c('.');
+        let wrap = content_len(fmt, item.0) > WRAP_THRESHOLD;
+        import_symbol_list(fmt, symbol_list, wrap);
+    } else {
+        fmt.write_c(';');
+    }
+    fmt.new_line();
+}
+
+fn import_path(fmt: &mut Formatter, import_path: ast::ImportPath) {
+    let mut first = true;
+    for name_cst in import_path.names(fmt.tree) {
+        if !first {
+            fmt.write_c('/');
+        }
+        first = false;
+
+        name(fmt, name_cst);
+    }
+}
+
+fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbolList, wrap: bool) {
+    if import_symbol_list.import_symbols(fmt.tree).next().is_none() {
+        fmt.write_c('{');
+        fmt.write_c('}');
+        return;
+    }
+
+    fmt.write_c('{');
+    if wrap {
+        fmt.new_line();
+    }
+
+    let mut first = true;
+    let mut total_len = 0;
+
+    for import_symbol in import_symbol_list.import_symbols(fmt.tree) {
+        let sub_wrap = total_len > SUBWRAP_SYMBOL_THRESHOLD;
+        if sub_wrap {
+            total_len = 0;
+        }
+        total_len += content_len(fmt, import_symbol.0);
+
+        if !first {
+            fmt.write_c(',');
+            if wrap && sub_wrap {
+                fmt.new_line();
+            } else {
+                fmt.space();
+            }
+        }
+        if wrap && (first || sub_wrap) {
+            fmt.tab();
+        }
+        first = false;
+
+        import_symbol_fmt(fmt, import_symbol);
+    }
+
+    if wrap {
+        fmt.write_c(',');
+        fmt.new_line();
+    }
+    fmt.write_c('}');
+}
+
+fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: ast::ImportSymbol) {
+    name(fmt, import_symbol.name(fmt.tree).unwrap());
+    if let Some(rename) = import_symbol.rename(fmt.tree) {
+        import_symbol_rename(fmt, rename);
+    }
+}
+
+fn import_symbol_rename(fmt: &mut Formatter, rename: ast::ImportSymbolRename) {
+    fmt.space();
+    fmt.write("as");
+    fmt.space();
+    if let Some(alias) = rename.alias(fmt.tree) {
+        name(fmt, alias);
+    } else {
+        fmt.write_c('_');
+    }
+}
+
+//@assuming no trivia attached to the name (else it can be lost)
+fn name(fmt: &mut Formatter, name: cst::Name) {
+    fmt.write_range(name.range(fmt.tree));
+}
+
+/*
+pub fn format(tree: &SyntaxTree, source: &str) -> String {
+    let mut fmt = Formatter::new(&tree, source);
+    source_file(&mut fmt, tree.source_file());
+    fmt.finish()
 }
 
 fn source_file(fmt: &mut Formatter, source_file: ast::SourceFile) {
@@ -259,11 +536,11 @@ fn struct_item(fmt: &mut Formatter, item: ast::StructItem) {
     fmt.space();
     name_fmt(fmt, item.name(fmt.tree).unwrap());
     fmt.space();
-    field_list(fmt, item.field_list(fmt.tree).unwrap());
+    field_list_old(fmt, item.field_list(fmt.tree).unwrap());
     fmt.new_line();
 }
 
-fn field_list(fmt: &mut Formatter, field_list: ast::FieldList) {
+fn field_list_old(fmt: &mut Formatter, field_list: ast::FieldList) {
     fmt.write_c('{');
     let mut empty = true;
     for field in field_list.fields(fmt.tree) {
@@ -320,71 +597,6 @@ fn global_item(fmt: &mut Formatter, item: ast::GlobalItem) {
     expr_fmt(fmt, item.value(fmt.tree).unwrap());
     fmt.write_c(';');
     fmt.new_line();
-}
-
-fn import_item(fmt: &mut Formatter, item: ast::ImportItem) {
-    //@vis will still be added here
-    item_attr_vis_fmt!(fmt, item);
-    fmt.write("import");
-    fmt.space();
-    if let Some(name) = item.package(fmt.tree) {
-        name_fmt(fmt, name);
-        fmt.write_c(':');
-    }
-    import_path(fmt, item.import_path(fmt.tree).unwrap());
-    if let Some(rename) = item.rename(fmt.tree) {
-        symbol_rename(fmt, rename);
-    }
-    if let Some(symbol_list) = item.import_symbol_list(fmt.tree) {
-        fmt.write_c('.');
-        import_symbol_list(fmt, symbol_list);
-    } else {
-        fmt.write_c(';');
-    }
-    fmt.new_line();
-}
-
-fn import_path(fmt: &mut Formatter, import_path: ast::ImportPath) {
-    let mut first = true;
-    for name in import_path.names(fmt.tree) {
-        if !first {
-            fmt.write_c('/');
-        }
-        first = false;
-        name_fmt(fmt, name);
-    }
-}
-
-fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbolList) {
-    fmt.write_c('{');
-    let mut first = true;
-    for import_symbol in import_symbol_list.import_symbols(fmt.tree) {
-        if !first {
-            fmt.write_c(',');
-            fmt.space();
-        }
-        first = false;
-        import_symbol_fmt(fmt, import_symbol);
-    }
-    fmt.write_c('}');
-}
-
-fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: ast::ImportSymbol) {
-    name_fmt(fmt, import_symbol.name(fmt.tree).unwrap());
-    if let Some(rename) = import_symbol.rename(fmt.tree) {
-        symbol_rename(fmt, rename);
-    }
-}
-
-fn symbol_rename(fmt: &mut Formatter, rename: ast::ImportSymbolRename) {
-    fmt.space();
-    fmt.write("as");
-    fmt.space();
-    if let Some(alias) = rename.alias(fmt.tree) {
-        name_fmt(fmt, alias);
-    } else {
-        fmt.write_c('_');
-    }
 }
 
 fn name_fmt(fmt: &mut Formatter, name: ast::Name) {
@@ -805,3 +1017,4 @@ fn expr_array_repeat(fmt: &mut Formatter, array_repeat: ast::ExprArrayRepeat) {
     expr_fmt(fmt, expr_len.next().unwrap());
     fmt.write_c(']');
 }
+*/
