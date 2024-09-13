@@ -531,12 +531,15 @@ fn typecheck_match<'hir>(
         };
         arms.push(arm);
     }
-    let arms = ctx.arena.alloc_slice(&arms);
 
     if !ctx.emit.did_error(error_count) {
-        //@pattern analysis / unrechability / exaustiveness
+        let kind = MatchKind::new(on_res.ty);
+        let mut match_range = TextRange::empty_at(match_range.start());
+        match_range.extend_by(5.into());
+        match_arm_coverage(ctx, kind, arms.as_mut_slice(), match_.arms, match_range);
     }
 
+    let arms = ctx.arena.alloc_slice(&arms);
     let match_ = hir::Match {
         on_expr: on_res.expr,
         arms,
@@ -726,6 +729,204 @@ fn typecheck_pat_or<'hir>(
     PatResult::new(hir::Pat::Or(patterns), hir::Type::Error)
 }
 
+enum MatchKind<'hir> {
+    Int,
+    Bool,
+    Char,
+    String,
+    Enum(hir::EnumID<'hir>),
+}
+
+impl<'hir> MatchKind<'hir> {
+    fn new(ty: hir::Type<'hir>) -> MatchKind<'hir> {
+        match ty {
+            hir::Type::Error => unreachable!(),
+            hir::Type::Basic(basic) => match basic {
+                BasicType::S8
+                | BasicType::S16
+                | BasicType::S32
+                | BasicType::S64
+                | BasicType::Ssize
+                | BasicType::U8
+                | BasicType::U16
+                | BasicType::U32
+                | BasicType::U64
+                | BasicType::Usize => MatchKind::Int,
+                BasicType::F32 | BasicType::F64 => unreachable!(),
+                BasicType::Bool => MatchKind::Bool,
+                BasicType::Char => MatchKind::Char,
+                BasicType::Rawptr | BasicType::Void | BasicType::Never => unreachable!(),
+            },
+            hir::Type::Enum(enum_id) => MatchKind::Enum(enum_id),
+            hir::Type::Struct(_) => unreachable!(),
+            hir::Type::Reference(ref_ty, _) => {
+                if matches!(ref_ty, hir::Type::Basic(BasicType::U8)) {
+                    MatchKind::String
+                } else {
+                    unreachable!()
+                }
+            }
+            hir::Type::Procedure(_) | hir::Type::ArraySlice(_) | hir::Type::ArrayStatic(_) => {
+                unreachable!()
+            }
+        }
+    }
+}
+
+fn match_arm_coverage(
+    ctx: &mut HirCtx,
+    kind: MatchKind,
+    arms: &mut [hir::MatchArm],
+    ast_arms: &[ast::MatchArm],
+    match_range: TextRange,
+) {
+    let mut cov = PatCov::new(); //@cache?
+
+    match kind {
+        MatchKind::Int => {}
+        MatchKind::Bool => {
+            match_arm_coverage_bool(ctx, &mut cov.cov_bool, arms, ast_arms, match_range)
+        }
+        MatchKind::Char => {}
+        MatchKind::String => {}
+        MatchKind::Enum(_) => {}
+    }
+}
+
+//@handle pat_or
+//@handle pat_const
+fn match_arm_coverage_bool(
+    ctx: &mut HirCtx,
+    cov: &mut PatCovBool,
+    arms: &mut [hir::MatchArm],
+    ast_arms: &[ast::MatchArm],
+    match_range: TextRange,
+) {
+    for (idx, &arm) in arms.iter().enumerate() {
+        let result = match arm.pat {
+            hir::Pat::Wild => cov.cover_wild(),
+            hir::Pat::Lit(value) => match value {
+                hir::ConstValue::Bool { val } => cov.cover(val),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        };
+        if let Err(error) = result {
+            match error {
+                PatCovError::AlreadyCovered => {
+                    let msg = "unreachable pattern";
+                    let src = SourceRange::new(ctx.proc.origin(), ast_arms[idx].pat.range);
+                    ctx.emit.error(ErrorComp::new(msg, src, None));
+                }
+            }
+        }
+    }
+
+    let not_covered = cov.not_covered();
+    if !not_covered.is_empty() {
+        let mut msg = String::from("not covered patterns:\n");
+        let src = SourceRange::new(ctx.proc.origin(), match_range);
+
+        for &value in not_covered {
+            if value {
+                msg.push_str("- `true`\n");
+            } else {
+                msg.push_str("- `false`\n");
+            }
+        }
+        ctx.emit.error(ErrorComp::new(msg, src, None));
+    }
+}
+
+trait PatCoverage<T> {
+    fn reset(&mut self);
+    fn cover(&mut self, new_value: T) -> Result<(), PatCovError>;
+    fn cover_wild(&mut self) -> Result<(), PatCovError>;
+    fn not_covered(&mut self) -> &[T];
+}
+
+enum PatCovError {
+    AlreadyCovered,
+}
+
+struct PatCov {
+    all_covered: bool,
+    cov_bool: PatCovBool,
+}
+
+impl PatCov {
+    fn new() -> PatCov {
+        PatCov {
+            all_covered: false,
+            cov_bool: PatCovBool::new(),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.all_covered = false;
+        self.cov_bool.reset();
+    }
+}
+
+struct PatCovBool {
+    cov_true: bool,
+    cov_false: bool,
+    not_covered: Vec<bool>,
+}
+
+impl PatCovBool {
+    fn new() -> PatCovBool {
+        PatCovBool {
+            cov_true: false,
+            cov_false: false,
+            not_covered: Vec::with_capacity(2),
+        }
+    }
+}
+
+impl PatCoverage<bool> for PatCovBool {
+    fn reset(&mut self) {
+        self.cov_true = false;
+        self.cov_false = false;
+        self.not_covered.clear();
+    }
+
+    fn cover(&mut self, new_value: bool) -> Result<(), PatCovError> {
+        if new_value {
+            if self.cov_true {
+                return Err(PatCovError::AlreadyCovered);
+            }
+            self.cov_true = true;
+        } else {
+            if self.cov_false {
+                return Err(PatCovError::AlreadyCovered);
+            }
+            self.cov_false = true;
+        }
+        Ok(())
+    }
+
+    fn cover_wild(&mut self) -> Result<(), PatCovError> {
+        if self.cov_true && self.cov_false {
+            Err(PatCovError::AlreadyCovered)
+        } else {
+            self.cov_true = true;
+            self.cov_false = true;
+            Ok(())
+        }
+    }
+
+    fn not_covered(&mut self) -> &[bool] {
+        if !self.cov_true {
+            self.not_covered.push(true);
+        }
+        if !self.cov_false {
+            self.not_covered.push(false);
+        }
+        &self.not_covered
+    }
+}
+
 //@design: are ranges where start > end
 // considered empty or just reversed?
 // currently flipping them to have accending ordering
@@ -782,21 +983,6 @@ impl PatCovIncrement<i128> for i128 {
     }
     fn dec(self) -> i128 {
         self - 1
-    }
-}
-
-struct PatCovBool {
-    true_covered: bool,
-    false_covered: bool,
-}
-
-impl PatCovBool {
-    fn cover(&mut self, value: bool) {
-        if value {
-            self.true_covered = true
-        } else {
-            self.false_covered = true
-        }
     }
 }
 
