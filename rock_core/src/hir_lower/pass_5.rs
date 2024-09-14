@@ -7,6 +7,7 @@ use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp};
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::ModuleID;
+use crate::support::ID;
 use crate::text::TextRange;
 
 pub fn typecheck_procedures(ctx: &mut HirCtx) {
@@ -532,11 +533,13 @@ fn typecheck_match<'hir>(
         arms.push(arm);
     }
 
-    if !ctx.emit.did_error(error_count) {
+    // no errors for entire match
+    // all constant values resolved
+    if !ctx.emit.did_error(error_count) && match_const_pats_resolved(ctx, &arms) {
         let kind = MatchKind::new(on_res.ty);
         let mut match_range = TextRange::empty_at(match_range.start());
         match_range.extend_by(5.into());
-        match_arm_coverage(ctx, kind, arms.as_mut_slice(), match_.arms, match_range);
+        match_arm_cov(ctx, kind, arms.as_mut_slice(), match_.arms, match_range);
     }
 
     let arms = ctx.arena.alloc_slice(&arms);
@@ -548,6 +551,38 @@ fn typecheck_match<'hir>(
     let kind = hir::ExprKind::Match { match_ };
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(match_type, kind)
+}
+
+fn match_const_pats_resolved(ctx: &HirCtx, arms: &[hir::MatchArm]) -> bool {
+    fn const_value_resolved_ok(ctx: &HirCtx, const_id: ID<hir::ConstData>) -> bool {
+        let data = ctx.registry.const_data(const_id);
+        let (eval, _) = ctx.registry.const_eval(data.value);
+        eval.is_resolved_ok()
+    }
+
+    for arm in arms.iter() {
+        match arm.pat {
+            hir::Pat::Const(const_id) => {
+                if !const_value_resolved_ok(ctx, const_id) {
+                    return false;
+                }
+            }
+            hir::Pat::Or(patterns) => {
+                for pat in patterns {
+                    match pat {
+                        hir::Pat::Const(const_id) => {
+                            if !const_value_resolved_ok(ctx, *const_id) {
+                                return false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    true
 }
 
 struct PatResult<'hir> {
@@ -773,52 +808,45 @@ impl<'hir> MatchKind<'hir> {
     }
 }
 
-fn match_arm_coverage(
+fn match_arm_cov(
     ctx: &mut HirCtx,
     kind: MatchKind,
     arms: &mut [hir::MatchArm],
-    ast_arms: &[ast::MatchArm],
+    arms_ast: &[ast::MatchArm],
     match_range: TextRange,
 ) {
-    let mut cov = PatCov::new(); //@cache?
+    let mut cov = PatCov::new(); //@cache? can it be re-used without collision?
 
     match kind {
         MatchKind::Int => {}
-        MatchKind::Bool => {
-            match_arm_coverage_bool(ctx, &mut cov.cov_bool, arms, ast_arms, match_range)
-        }
+        MatchKind::Bool => match_arm_cov_bool(ctx, &mut cov.cov_bool, arms, arms_ast, match_range),
         MatchKind::Char => {}
         MatchKind::String => {}
         MatchKind::Enum(_) => {}
     }
 }
 
-//@handle pat_or
-//@handle pat_const
-fn match_arm_coverage_bool(
+fn match_arm_cov_bool(
     ctx: &mut HirCtx,
     cov: &mut PatCovBool,
     arms: &mut [hir::MatchArm],
-    ast_arms: &[ast::MatchArm],
+    arms_ast: &[ast::MatchArm],
     match_range: TextRange,
 ) {
-    for (idx, &arm) in arms.iter().enumerate() {
-        let result = match arm.pat {
-            hir::Pat::Wild => cov.cover_wild(),
-            hir::Pat::Lit(value) => match value {
-                hir::ConstValue::Bool { val } => cov.cover(val),
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
-        };
-        if let Err(error) = result {
-            match error {
-                PatCovError::AlreadyCovered => {
-                    let msg = "unreachable pattern";
-                    let src = SourceRange::new(ctx.proc.origin(), ast_arms[idx].pat.range);
-                    ctx.emit.error(ErrorComp::new(msg, src, None));
+    for (arm_idx, arm) in arms.iter().enumerate() {
+        let pat_ast = &arms_ast[arm_idx].pat;
+
+        match arm.pat {
+            hir::Pat::Or(patterns) => {
+                for (pat_idx, pat) in patterns.iter().enumerate() {
+                    let range = match pat_ast.kind {
+                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        _ => unreachable!(),
+                    };
+                    pat_cov_bool(ctx, cov, *pat, range)
                 }
             }
+            _ => pat_cov_bool(ctx, cov, arm.pat, pat_ast.range),
         }
     }
 
@@ -835,6 +863,38 @@ fn match_arm_coverage_bool(
             }
         }
         ctx.emit.error(ErrorComp::new(msg, src, None));
+    }
+}
+
+fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range: TextRange) {
+    let result = match pat {
+        hir::Pat::Wild => cov.cover_wild(),
+        hir::Pat::Lit(value) => match value {
+            hir::ConstValue::Bool { val } => cov.cover(val),
+            _ => unreachable!(),
+        },
+        hir::Pat::Const(const_id) => {
+            let data = ctx.registry.const_data(const_id);
+            let (eval, _) = ctx.registry.const_eval(data.value);
+            let value_id = eval.get_resolved().unwrap();
+            let value = ctx.const_intern.get(value_id);
+
+            match value {
+                hir::ConstValue::Bool { val } => cov.cover(val),
+                _ => unreachable!(),
+            }
+        }
+        _ => unreachable!(),
+    };
+
+    if let Err(error) = result {
+        match error {
+            PatCovError::AlreadyCovered => {
+                let msg = "unreachable pattern";
+                let src = SourceRange::new(ctx.proc.origin(), pat_range);
+                ctx.emit.error(ErrorComp::new(msg, src, None));
+            }
+        }
     }
 }
 

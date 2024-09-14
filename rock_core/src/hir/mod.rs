@@ -758,6 +758,9 @@ where
     pub fn is_unresolved(&self) -> bool {
         matches!(self, Eval::Unresolved(_))
     }
+    pub fn is_resolved_ok(&self) -> bool {
+        matches!(self, Eval::Resolved(_))
+    }
 
     pub fn get_resolved(&self) -> Result<R, ()> {
         match self {

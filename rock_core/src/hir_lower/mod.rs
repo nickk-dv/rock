@@ -2,6 +2,7 @@ mod attr_check;
 mod constant;
 mod context;
 mod errors;
+mod match_check;
 mod pass_1;
 mod pass_2;
 mod pass_3;
