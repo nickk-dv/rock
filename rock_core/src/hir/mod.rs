@@ -1,4 +1,5 @@
 use crate::ast;
+use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::session::ModuleID;
@@ -824,6 +825,48 @@ impl BasicInt {
             self,
             BasicInt::S8 | BasicInt::S16 | BasicInt::S32 | BasicInt::S64 | BasicInt::Ssize
         )
+    }
+
+    pub fn min_128(self, ptr_width: TargetPtrWidth) -> i128 {
+        match self {
+            BasicInt::S8 => i8::MIN as i128,
+            BasicInt::S16 => i16::MIN as i128,
+            BasicInt::S32 => i32::MIN as i128,
+            BasicInt::S64 => i64::MIN as i128,
+            BasicInt::Ssize => match ptr_width {
+                TargetPtrWidth::Bit_32 => i32::MIN as i128,
+                TargetPtrWidth::Bit_64 => i64::MIN as i128,
+            },
+            BasicInt::U8 => u8::MIN as i128,
+            BasicInt::U16 => u16::MIN as i128,
+            BasicInt::U32 => u32::MIN as i128,
+            BasicInt::U64 => u64::MIN as i128,
+            BasicInt::Usize => match ptr_width {
+                TargetPtrWidth::Bit_32 => u32::MAX as i128,
+                TargetPtrWidth::Bit_64 => u64::MAX as i128,
+            },
+        }
+    }
+
+    pub fn max_128(self, ptr_width: TargetPtrWidth) -> i128 {
+        match self {
+            BasicInt::S8 => i8::MAX as i128,
+            BasicInt::S16 => i16::MAX as i128,
+            BasicInt::S32 => i32::MAX as i128,
+            BasicInt::S64 => i64::MAX as i128,
+            BasicInt::Ssize => match ptr_width {
+                TargetPtrWidth::Bit_32 => i32::MAX as i128,
+                TargetPtrWidth::Bit_64 => i64::MAX as i128,
+            },
+            BasicInt::U8 => u8::MAX as i128,
+            BasicInt::U16 => u16::MAX as i128,
+            BasicInt::U32 => u32::MAX as i128,
+            BasicInt::U64 => u64::MAX as i128,
+            BasicInt::Usize => match ptr_width {
+                TargetPtrWidth::Bit_32 => u32::MAX as i128,
+                TargetPtrWidth::Bit_64 => u64::MAX as i128,
+            },
+        }
     }
 }
 

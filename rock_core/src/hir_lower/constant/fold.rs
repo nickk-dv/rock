@@ -509,30 +509,9 @@ pub fn int_range_check<'hir>(
     val: i128,
     int_ty: hir::BasicInt,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let (min, max) = match int_ty {
-        hir::BasicInt::S8 => (i8::MIN as i128, i8::MAX as i128),
-        hir::BasicInt::S16 => (i16::MIN as i128, i16::MAX as i128),
-        hir::BasicInt::S32 => (i32::MIN as i128, i32::MAX as i128),
-        hir::BasicInt::S64 => (i64::MIN as i128, i64::MAX as i128),
-        hir::BasicInt::Ssize => {
-            let ptr_width = ctx.target.arch().ptr_width();
-            match ptr_width {
-                TargetPtrWidth::Bit_32 => (i32::MIN as i128, i32::MAX as i128),
-                TargetPtrWidth::Bit_64 => (i64::MIN as i128, i64::MAX as i128),
-            }
-        }
-        hir::BasicInt::U8 => (u8::MIN as i128, u8::MAX as i128),
-        hir::BasicInt::U16 => (u16::MIN as i128, u16::MAX as i128),
-        hir::BasicInt::U32 => (u32::MIN as i128, u32::MAX as i128),
-        hir::BasicInt::U64 => (u64::MIN as i128, u64::MAX as i128),
-        hir::BasicInt::Usize => {
-            let ptr_width = ctx.target.arch().ptr_width();
-            match ptr_width {
-                TargetPtrWidth::Bit_32 => (u32::MIN as i128, u32::MAX as i128),
-                TargetPtrWidth::Bit_64 => (u64::MIN as i128, u64::MAX as i128),
-            }
-        }
-    };
+    let ptr_width = ctx.target.arch().ptr_width();
+    let min = int_ty.min_128(ptr_width);
+    let max = int_ty.max_128(ptr_width);
 
     if val < min || val > max {
         let int_ty = int_ty.into_basic().as_str(); //@as_str for BasicInt?

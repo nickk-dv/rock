@@ -2,7 +2,7 @@ use super::syntax_kind::SyntaxKind;
 use crate::error::{ErrorComp, SourceRange, StringOrStr};
 use crate::session::ModuleID;
 use crate::support::ID;
-use crate::token::{Token, TokenList, TokenSet};
+use crate::token::{Token, TokenList, TokenSet, T};
 use std::cell::Cell;
 
 pub struct Parser {
@@ -121,8 +121,15 @@ impl Parser {
         m.complete(self, SyntaxKind::ERROR);
     }
 
+    //@tweak where error is displayed (currently next or last token)
+    // might display it right after current token with empty range (maybe for some tokens like , ; etc)
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let range = self.tokens.token_range(self.cursor.inc());
+        let range = if self.at(T![eof]) {
+            self.tokens.token_range(self.cursor.dec())
+        } else {
+            self.tokens.token_range(self.cursor)
+        };
+
         let src = SourceRange::new(self.module_id, range);
         self.errors.push(ErrorComp::new(msg, src, None));
     }

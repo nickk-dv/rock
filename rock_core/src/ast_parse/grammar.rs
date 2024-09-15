@@ -30,7 +30,7 @@ pub fn module<'ast>(
         match item(&mut p) {
             Ok(item) => p.state.items.add(item),
             Err(error) => {
-                //@hack
+                //@hack, test this (probably wrong)
                 if p.at(T![eof]) {
                     p.cursor = p.cursor.dec();
                 }
