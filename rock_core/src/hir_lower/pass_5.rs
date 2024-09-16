@@ -1856,6 +1856,16 @@ fn check_match_compatibility<'hir>(
             BasicTypeKind::IntS | BasicTypeKind::IntU | BasicTypeKind::Bool | BasicTypeKind::Char
         ),
         hir::Type::Enum(_) => true,
+        hir::Type::ArraySlice(slice) => {
+            // allow []u8 assuming string literal (&u8 cstring literals not allowed)
+            // @add str basic type for semantic clarity?
+            // @same for cstr (which is &u8 currently)
+            if slice.elem_ty.is_error() {
+                true
+            } else {
+                matches!(slice.elem_ty, hir::Type::Basic(BasicType::U8))
+            }
+        }
         _ => false,
     };
 

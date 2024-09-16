@@ -2,6 +2,8 @@ use super::context::HirCtx;
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, ErrorSink, SourceRange};
 use crate::hir;
+use crate::intern::InternLit;
+use crate::support::ID;
 use crate::text::TextRange;
 
 pub fn match_cov(
@@ -24,7 +26,10 @@ pub fn match_cov(
             match_cov_bool(ctx, &mut cov.cov_bool, arms, arms_ast, match_range);
         }
         MatchKind::Char => {}
-        MatchKind::String => {}
+        MatchKind::String => {
+            cov.cov_string.reset();
+            match_cov_string(ctx, &mut cov.cov_string, arms, arms_ast, match_range);
+        }
         MatchKind::Enum(_) => {}
     }
 }
@@ -58,7 +63,7 @@ fn match_cov_int(
     let not_covered = cov.not_covered(int_ty.min_128(ptr_width), int_ty.max_128(ptr_width));
 
     if !not_covered.is_empty() {
-        let mut msg = String::from("not covered patterns:\n");
+        let mut msg = String::from("patterns not covered:\n");
         let src = SourceRange::new(ctx.proc.origin(), match_range);
 
         for value in not_covered {
@@ -107,7 +112,7 @@ fn pat_cov_int(
     if let Err(error) = result {
         match error {
             PatCovError::AlreadyCovered => {
-                let msg = "unreachable pattern";
+                let msg = "pattern already covered";
                 let src = SourceRange::new(ctx.proc.origin(), pat_range);
                 ctx.emit.error(ErrorComp::new(msg, src, None));
             }
@@ -141,7 +146,7 @@ fn match_cov_bool(
 
     let not_covered = cov.not_covered();
     if !not_covered.is_empty() {
-        let mut msg = String::from("not covered patterns:\n");
+        let mut msg = String::from("patterns not covered:\n");
         let src = SourceRange::new(ctx.proc.origin(), match_range);
 
         for &value in not_covered {
@@ -179,7 +184,73 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
     if let Err(error) = result {
         match error {
             PatCovError::AlreadyCovered => {
-                let msg = "unreachable pattern";
+                let msg = "pattern already covered";
+                let src = SourceRange::new(ctx.proc.origin(), pat_range);
+                ctx.emit.error(ErrorComp::new(msg, src, None));
+            }
+        }
+    }
+}
+
+fn match_cov_string(
+    ctx: &mut HirCtx,
+    cov: &mut PatCovString,
+    arms: &mut [hir::MatchArm],
+    arms_ast: &[ast::MatchArm],
+    match_range: TextRange,
+) {
+    for (arm_idx, arm) in arms.iter().enumerate() {
+        let pat_ast = &arms_ast[arm_idx].pat;
+
+        match arm.pat {
+            hir::Pat::Or(patterns) => {
+                for (pat_idx, pat) in patterns.iter().enumerate() {
+                    let range = match pat_ast.kind {
+                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        _ => unreachable!(),
+                    };
+                    pat_cov_string(ctx, cov, *pat, range)
+                }
+            }
+            _ => pat_cov_string(ctx, cov, arm.pat, pat_ast.range),
+        }
+    }
+
+    if cov.not_covered() {
+        let mut msg = String::from("patterns not covered:\n");
+        let src = SourceRange::new(ctx.proc.origin(), match_range);
+
+        //@for all pat errors check if trailing \n is needed
+        msg.push_str("- `_`\n");
+        ctx.emit.error(ErrorComp::new(msg, src, None));
+    }
+}
+
+fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_range: TextRange) {
+    let result = match pat {
+        hir::Pat::Wild => cov.cover_wild(),
+        hir::Pat::Lit(value) => match value {
+            hir::ConstValue::String { string_lit } => cov.cover(string_lit.id),
+            _ => unreachable!(),
+        },
+        hir::Pat::Const(const_id) => {
+            let data = ctx.registry.const_data(const_id);
+            let (eval, _) = ctx.registry.const_eval(data.value);
+            let value_id = eval.get_resolved().unwrap();
+            let value = ctx.const_intern.get(value_id);
+
+            match value {
+                hir::ConstValue::String { string_lit } => cov.cover(string_lit.id),
+                _ => unreachable!(),
+            }
+        }
+        _ => unreachable!(),
+    };
+
+    if let Err(error) = result {
+        match error {
+            PatCovError::AlreadyCovered => {
+                let msg = "pattern already covered";
                 let src = SourceRange::new(ctx.proc.origin(), pat_range);
                 ctx.emit.error(ErrorComp::new(msg, src, None));
             }
@@ -211,12 +282,18 @@ trait PatCoverage<T> {
 struct PatCov {
     cov_int: PatCovIntRange<i128>,
     cov_bool: PatCovBool,
+    cov_string: PatCovString,
 }
 
 struct PatCovBool {
     cov_true: bool,
     cov_false: bool,
     not_covered: Vec<bool>,
+}
+
+struct PatCovString {
+    wild_covered: bool,
+    covered: Vec<ID<InternLit>>,
 }
 
 impl<'hir> MatchKind<'hir> {
@@ -235,8 +312,8 @@ impl<'hir> MatchKind<'hir> {
                 }
             }
             hir::Type::Enum(enum_id) => MatchKind::Enum(enum_id),
-            hir::Type::Reference(ref_ty, _) => {
-                if matches!(ref_ty, hir::Type::Basic(BasicType::U8)) {
+            hir::Type::ArraySlice(slice) => {
+                if matches!(slice.elem_ty, hir::Type::Basic(BasicType::U8)) {
                     MatchKind::String
                 } else {
                     unreachable!()
@@ -252,6 +329,7 @@ impl PatCov {
         PatCov {
             cov_int: PatCovIntRange::new(),
             cov_bool: PatCovBool::new(),
+            cov_string: PatCovString::new(),
         }
     }
 }
@@ -306,6 +384,49 @@ impl PatCoverage<bool> for PatCovBool {
             self.not_covered.push(false);
         }
         &self.not_covered
+    }
+}
+
+impl PatCovString {
+    fn new() -> PatCovString {
+        PatCovString {
+            wild_covered: false,
+            covered: Vec::with_capacity(32),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.wild_covered = false;
+        self.covered.clear();
+    }
+
+    fn cover(&mut self, new_id: ID<InternLit>) -> Result<(), PatCovError> {
+        if self.wild_covered {
+            Err(PatCovError::AlreadyCovered)
+        } else if let Some(_) = self
+            .covered
+            .iter()
+            .copied()
+            .find(|&cov_id| cov_id == new_id)
+        {
+            Err(PatCovError::AlreadyCovered)
+        } else {
+            self.covered.push(new_id);
+            Ok(())
+        }
+    }
+
+    fn cover_wild(&mut self) -> Result<(), PatCovError> {
+        if self.wild_covered {
+            Err(PatCovError::AlreadyCovered)
+        } else {
+            self.wild_covered = true;
+            Ok(())
+        }
+    }
+
+    fn not_covered(&self) -> bool {
+        !self.wild_covered
     }
 }
 
