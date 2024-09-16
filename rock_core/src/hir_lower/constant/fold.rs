@@ -33,7 +33,22 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::ParamVar { .. } => unreachable!(),
         hir::ExprKind::ConstVar { const_id } => fold_const_var(ctx, const_id),
         hir::ExprKind::GlobalVar { .. } => unreachable!(),
-        hir::ExprKind::Variant { .. } => unimplemented!("fold enum variant"),
+        hir::ExprKind::Variant {
+            enum_id,
+            variant_id,
+            input,
+        } => {
+            if input.is_some() {
+                unimplemented!("fold enum variant with input");
+            }
+            let variant = hir::ConstVariant {
+                enum_id,
+                variant_id,
+                value_ids: None,
+            };
+            let variant = ctx.const_intern.arena().alloc(variant);
+            Ok(hir::ConstValue::Variant { variant })
+        }
         hir::ExprKind::CallDirect { .. } => unreachable!(),
         hir::ExprKind::CallIndirect { .. } => unreachable!(),
         hir::ExprKind::StructInit { struct_id, input } => {

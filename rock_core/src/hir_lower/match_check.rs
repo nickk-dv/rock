@@ -5,11 +5,12 @@ use crate::hir;
 use crate::intern::InternLit;
 use crate::support::ID;
 use crate::text::TextRange;
+use std::collections::HashSet;
 
-pub fn match_cov(
-    ctx: &mut HirCtx,
+pub fn match_cov<'hir>(
+    ctx: &mut HirCtx<'hir, '_>,
     on_ty: hir::Type,
-    arms: &mut [hir::MatchArm],
+    arms: &mut [hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
     match_range: TextRange,
 ) {
@@ -25,12 +26,19 @@ pub fn match_cov(
             cov.cov_bool.reset();
             match_cov_bool(ctx, &mut cov.cov_bool, arms, arms_ast, match_range);
         }
-        MatchKind::Char => {}
+        MatchKind::Char => {
+            //@same logic as int, could use i64 storage
+            // do gaps exist in the encoding?
+            // assume that `_` is required
+        }
         MatchKind::String => {
             cov.cov_string.reset();
             match_cov_string(ctx, &mut cov.cov_string, arms, arms_ast, match_range);
         }
-        MatchKind::Enum(_) => {}
+        MatchKind::Enum(enum_id) => {
+            cov.cov_enum.reset();
+            match_cov_enum(ctx, &mut cov.cov_enum, arms, arms_ast, match_range, enum_id);
+        }
     }
 }
 
@@ -258,6 +266,90 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
     }
 }
 
+fn match_cov_enum<'hir>(
+    ctx: &mut HirCtx<'hir, '_>,
+    cov: &mut PatCovEnum<'hir>,
+    arms: &mut [hir::MatchArm<'hir>],
+    arms_ast: &[ast::MatchArm],
+    match_range: TextRange,
+    enum_id: hir::EnumID,
+) {
+    let data = ctx.registry.enum_data(enum_id);
+    let variant_count = data.variants.len();
+
+    for (arm_idx, arm) in arms.iter().enumerate() {
+        let pat_ast = &arms_ast[arm_idx].pat;
+
+        match arm.pat {
+            hir::Pat::Or(patterns) => {
+                for (pat_idx, pat) in patterns.iter().enumerate() {
+                    let range = match pat_ast.kind {
+                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        _ => unreachable!(),
+                    };
+                    pat_cov_enum(ctx, cov, *pat, range, enum_id)
+                }
+            }
+            _ => pat_cov_enum(ctx, cov, arm.pat, pat_ast.range, enum_id),
+        }
+    }
+
+    let data = ctx.registry.enum_data(enum_id);
+    let not_covered = cov.not_covered(variant_count);
+
+    if !not_covered.is_empty() {
+        let mut msg = String::from("patterns not covered:\n");
+        let src = SourceRange::new(ctx.proc.origin(), match_range);
+
+        for variant_id in not_covered {
+            let variant = data.variant(*variant_id);
+            let name = ctx.name_str(variant.name.id);
+            msg.push_str(&format!("- `.{name}`\n"));
+        }
+        ctx.emit.error(ErrorComp::new(msg, src, None));
+    }
+}
+
+fn pat_cov_enum<'hir>(
+    ctx: &mut HirCtx<'hir, '_>,
+    cov: &mut PatCovEnum<'hir>,
+    pat: hir::Pat<'hir>,
+    pat_range: TextRange,
+    enum_id: hir::EnumID,
+) {
+    let data = ctx.registry.enum_data(enum_id);
+    let variant_count = data.variants.len();
+
+    let result = match pat {
+        hir::Pat::Wild => cov.cover_wild(variant_count),
+        hir::Pat::Variant(_, variant_id) => cov.cover(variant_id, variant_count),
+        hir::Pat::Const(const_id) => {
+            let data = ctx.registry.const_data(const_id);
+            let (eval, _) = ctx.registry.const_eval(data.value);
+            let value_id = eval.get_resolved().unwrap();
+            let value = ctx.const_intern.get(value_id);
+
+            match value {
+                hir::ConstValue::Variant { variant } => {
+                    cov.cover(variant.variant_id, variant_count)
+                }
+                _ => unreachable!(),
+            }
+        }
+        _ => unreachable!(),
+    };
+
+    if let Err(error) = result {
+        match error {
+            PatCovError::AlreadyCovered => {
+                let msg = "pattern already covered";
+                let src = SourceRange::new(ctx.proc.origin(), pat_range);
+                ctx.emit.error(ErrorComp::new(msg, src, None));
+            }
+        }
+    }
+}
+
 enum MatchKind<'hir> {
     Int(hir::BasicInt),
     Bool,
@@ -279,10 +371,11 @@ trait PatCoverage<T> {
     fn not_covered(&mut self) -> &[T];
 }
 
-struct PatCov {
+struct PatCov<'hir> {
     cov_int: PatCovIntRange<i128>,
     cov_bool: PatCovBool,
     cov_string: PatCovString,
+    cov_enum: PatCovEnum<'hir>,
 }
 
 struct PatCovBool {
@@ -294,6 +387,12 @@ struct PatCovBool {
 struct PatCovString {
     wild_covered: bool,
     covered: Vec<ID<InternLit>>,
+}
+
+struct PatCovEnum<'hir> {
+    wild_covered: bool,
+    covered: HashSet<hir::VariantID<'hir>>,
+    not_covered: Vec<hir::VariantID<'hir>>,
 }
 
 impl<'hir> MatchKind<'hir> {
@@ -324,12 +423,13 @@ impl<'hir> MatchKind<'hir> {
     }
 }
 
-impl PatCov {
-    fn new() -> PatCov {
+impl<'hir> PatCov<'hir> {
+    fn new() -> PatCov<'hir> {
         PatCov {
             cov_int: PatCovIntRange::new(),
             cov_bool: PatCovBool::new(),
             cov_string: PatCovString::new(),
+            cov_enum: PatCovEnum::new(),
         }
     }
 }
@@ -427,6 +527,65 @@ impl PatCovString {
 
     fn not_covered(&self) -> bool {
         !self.wild_covered
+    }
+}
+
+impl<'hir> PatCovEnum<'hir> {
+    fn new() -> PatCovEnum<'hir> {
+        PatCovEnum {
+            wild_covered: false,
+            covered: HashSet::with_capacity(32),
+            not_covered: Vec::with_capacity(32),
+        }
+    }
+
+    fn reset(&mut self) {
+        self.wild_covered = false;
+        self.covered.clear();
+        self.not_covered.clear();
+    }
+
+    fn all_covered(&self, variant_count: usize) -> bool {
+        self.wild_covered || variant_count == self.covered.len()
+    }
+
+    fn cover(
+        &mut self,
+        variant_id: hir::VariantID<'hir>,
+        variant_count: usize,
+    ) -> Result<(), PatCovError> {
+        if self.all_covered(variant_count) {
+            Err(PatCovError::AlreadyCovered)
+        } else if self.covered.contains(&variant_id) {
+            Err(PatCovError::AlreadyCovered)
+        } else {
+            self.covered.insert(variant_id);
+            Ok(())
+        }
+    }
+
+    fn cover_wild(&mut self, variant_count: usize) -> Result<(), PatCovError> {
+        if self.all_covered(variant_count) {
+            Err(PatCovError::AlreadyCovered)
+        } else {
+            self.wild_covered = true;
+            Ok(())
+        }
+    }
+
+    fn not_covered(&mut self, variant_count: usize) -> &[hir::VariantID<'hir>] {
+        if self.all_covered(variant_count) {
+            &[]
+        } else {
+            let each_idx = 0..variant_count;
+            let variant_iter = each_idx.map(|idx| hir::VariantID::new_raw(idx));
+            for variant_id in variant_iter {
+                if !self.covered.contains(&variant_id) {
+                    self.not_covered.push(variant_id);
+                }
+            }
+            &self.not_covered
+        }
     }
 }
 
