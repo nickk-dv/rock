@@ -842,8 +842,8 @@ impl BasicInt {
             BasicInt::U32 => u32::MIN as i128,
             BasicInt::U64 => u64::MIN as i128,
             BasicInt::Usize => match ptr_width {
-                TargetPtrWidth::Bit_32 => u32::MAX as i128,
-                TargetPtrWidth::Bit_64 => u64::MAX as i128,
+                TargetPtrWidth::Bit_32 => u32::MIN as i128,
+                TargetPtrWidth::Bit_64 => u64::MIN as i128,
             },
         }
     }

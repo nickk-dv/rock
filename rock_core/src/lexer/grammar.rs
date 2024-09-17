@@ -425,19 +425,29 @@ fn lex_number(lex: &mut Lexer, fc: char) {
             Some('b') => {
                 lex.eat(fc);
                 lex.eat('b');
-                lex_integer_binary(lex, start);
+                let skipped = skip_zero_digits(lex);
+                lex_integer_bin(lex, start, skipped);
+                return;
+            }
+            Some('o') => {
+                lex.eat(fc);
+                lex.eat('o');
+                let skipped = skip_zero_digits(lex);
+                lex_integer_oct(lex, start, skipped);
                 return;
             }
             Some('x') => {
                 lex.eat(fc);
                 lex.eat('x');
-                lex_integer_hex(lex, start);
+                let skipped = skip_zero_digits(lex);
+                lex_integer_hex(lex, start, skipped);
                 return;
             }
             _ => {}
         }
     }
 
+    skip_zero_digits(lex);
     let decimal = lex_integer_decimal(lex, start);
 
     //@float parse at lexing stage not implemented
@@ -460,24 +470,35 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     }
 }
 
-fn lex_integer_binary(lex: &mut Lexer, start: TextOffset) {
-    const MAX_BITS: u32 = 64;
+fn skip_zero_digits(lex: &mut Lexer) -> bool {
+    let mut skipped = false;
+    while let Some(c) = lex.peek() {
+        match c {
+            '0' => {
+                lex.eat(c);
+                skipped = true;
+            }
+            '_' => lex.eat(c),
+            _ => break,
+        };
+    }
+    skipped
+}
+
+fn lex_integer_bin(lex: &mut Lexer, start: TextOffset, skipped: bool) {
+    const MAX_DIGITS: u32 = 64;
+    const SHIFT_BASE: u32 = 1;
+
     let mut integer: u64 = 0;
-    let mut bit_idx: u32 = 0;
+    let mut digit_count: u32 = 0;
 
     while let Some(c) = lex.peek() {
-        let bit: u64 = match c {
-            '0' => 0,
-            '1' => 1,
+        let value: u64 = match c {
+            '0'..='1' => c as u64 - '0' as u64,
             '2'..='9' => {
-                let digit_start = lex.start_range();
+                let start = lex.start_range();
                 lex.eat(c);
-                let range = lex.make_range(digit_start);
-                lex.errors.push(ErrorComp::new(
-                    format!("invalid digit `{}` for base 2 binary integer", c),
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
+                lexer_int_bin_invalid_digit(lex, lex.make_src(start), c);
                 continue;
             }
             '_' => {
@@ -487,41 +508,75 @@ fn lex_integer_binary(lex: &mut Lexer, start: TextOffset) {
             _ => break,
         };
 
-        if bit_idx < MAX_BITS {
-            integer = (integer << 1) | bit;
-        }
         lex.eat(c);
-        bit_idx += 1;
+        digit_count += 1;
+        integer = (integer << SHIFT_BASE) | value;
     }
 
-    if bit_idx == 0 {
-        lex.errors.push(ErrorComp::new(
-            "missing digits after integer base prefix",
-            SourceRange::new(lex.module_id, lex.make_range(start)),
-            None,
-        ));
-    } else if bit_idx > MAX_BITS {
-        lex.errors.push(ErrorComp::new(
-            format!(
-                "binary integer overflow\nexpected maximum of 64 bits, found {}",
-                bit_idx
-            ),
-            SourceRange::new(lex.module_id, lex.make_range(start)),
-            None,
-        ));
+    if digit_count == 0 && !skipped {
+        lexer_int_base_missing_digits(lex, lex.make_src(start));
+    } else if digit_count > MAX_DIGITS {
+        lexer_int_bin_overflow(lex, lex.make_src(start), digit_count);
     }
 
     let range = lex.make_range(start);
     lex.tokens().add_int(integer, range);
 }
 
-fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
-    const MAX_HEX_DIGITS: u32 = 16;
+fn lex_integer_oct(lex: &mut Lexer, start: TextOffset, skipped: bool) {
+    const MAX_DIGITS: u32 = 22;
+    const SHIFT_BASE: u32 = 3;
+    const MAX_FIRST_DIGIT: u64 = 1;
+
     let mut integer: u64 = 0;
-    let mut hex_digit_idx: u32 = 0;
+    let mut digit_count: u32 = 0;
+    let mut first_digit: u64 = 0;
 
     while let Some(c) = lex.peek() {
-        let hex_value: u64 = match c {
+        let value: u64 = match c {
+            '0'..='7' => c as u64 - '0' as u64,
+            '8'..='9' => {
+                let start = lex.start_range();
+                lex.eat(c);
+                lexer_int_oct_invalid_digit(lex, lex.make_src(start), c);
+                continue;
+            }
+            '_' => {
+                lex.eat(c);
+                continue;
+            }
+            _ => break,
+        };
+
+        if digit_count == 0 {
+            first_digit = value;
+        }
+        lex.eat(c);
+        digit_count += 1;
+        integer = (integer << SHIFT_BASE) | value;
+    }
+
+    if digit_count == 0 && !skipped {
+        lexer_int_base_missing_digits(lex, lex.make_src(start));
+    } else if digit_count > MAX_DIGITS {
+        lexer_int_oct_overflow_digits(lex, lex.make_src(start), digit_count);
+    } else if digit_count == MAX_DIGITS && first_digit > MAX_FIRST_DIGIT {
+        lexer_int_oct_overflow_value(lex, lex.make_src(start));
+    }
+
+    let range = lex.make_range(start);
+    lex.tokens().add_int(integer, range);
+}
+
+fn lex_integer_hex(lex: &mut Lexer, start: TextOffset, skipped: bool) {
+    const MAX_DIGITS: u32 = 16;
+    const SHIFT_BASE: u32 = 4;
+
+    let mut integer: u64 = 0;
+    let mut digit_count: u32 = 0;
+
+    while let Some(c) = lex.peek() {
+        let value: u64 = match c {
             '0'..='9' => c as u64 - '0' as u64,
             'a'..='f' => c as u64 - 'a' as u64 + 10,
             'A'..='F' => c as u64 - 'A' as u64 + 10,
@@ -532,28 +587,15 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
             _ => break,
         };
 
-        if hex_digit_idx < MAX_HEX_DIGITS {
-            integer = (integer << 4) | hex_value;
-        }
         lex.eat(c);
-        hex_digit_idx += 1;
+        digit_count += 1;
+        integer = (integer << SHIFT_BASE) | value;
     }
 
-    if hex_digit_idx == 0 {
-        lex.errors.push(ErrorComp::new(
-            "missing digits after integer base prefix",
-            SourceRange::new(lex.module_id, lex.make_range(start)),
-            None,
-        ));
-    } else if hex_digit_idx > MAX_HEX_DIGITS {
-        lex.errors.push(ErrorComp::new(
-            format!(
-                "hexadecimal integer overflow\nexpected maximum of 16 hex digits, found {}",
-                hex_digit_idx
-            ),
-            SourceRange::new(lex.module_id, lex.make_range(start)),
-            None,
-        ));
+    if digit_count == 0 && !skipped {
+        lexer_int_base_missing_digits(lex, lex.make_src(start));
+    } else if digit_count > MAX_DIGITS {
+        lexer_int_hex_overflow(lex, lex.make_src(start), digit_count);
     }
 
     let range = lex.make_range(start);
@@ -561,22 +603,11 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
 }
 
 fn lex_integer_decimal(lex: &mut Lexer, start: TextOffset) -> u64 {
-    const MAX_DECIMAL_DIGITS: u32 = 20;
     let mut integer: u64 = 0;
-    let mut digit_idx: u32 = 0;
+    let mut overflow = false;
 
     while let Some(c) = lex.peek() {
-        match c {
-            '0' | '_' => {
-                lex.eat(c);
-                continue;
-            }
-            _ => break,
-        };
-    }
-
-    while let Some(c) = lex.peek() {
-        let digit_value: u64 = match c {
+        let value: u64 = match c {
             '0'..='9' => c as u64 - '0' as u64,
             '_' => {
                 lex.eat(c);
@@ -585,24 +616,15 @@ fn lex_integer_decimal(lex: &mut Lexer, start: TextOffset) -> u64 {
             _ => break,
         };
 
-        if digit_idx < MAX_DECIMAL_DIGITS {
-            integer = integer * 10 + digit_value;
-        }
         lex.eat(c);
-        digit_idx += 1;
+        let prev_value = integer;
+        integer = integer.wrapping_mul(10).wrapping_add(value);
+        overflow = overflow || (integer < prev_value);
     }
 
-    if digit_idx > MAX_DECIMAL_DIGITS {
-        lex.errors.push(ErrorComp::new(
-            format!(
-                "decimal integer overflow\nexpected maximum of 20 digits, found {}",
-                digit_idx
-            ),
-            SourceRange::new(lex.module_id, lex.make_range(start)),
-            None,
-        ));
+    if overflow {
+        lexer_int_dec_overflow(lex, lex.make_src(start));
     }
-
     integer
 }
 
@@ -681,4 +703,53 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
     }
 
     add_token_and_return!(lex, start, token);
+}
+
+//@will be moved to errors.rs when Lexer supports ErrorSink
+// if unified error handling will be chosed (handle warnings even if none are possible yet)
+
+fn lexer_int_base_missing_digits(lex: &mut Lexer, src: SourceRange) {
+    let msg = "missing digits after integer base prefix";
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_bin_invalid_digit(lex: &mut Lexer, src: SourceRange, digit: char) {
+    let msg = format!("invalid digit `{digit}` for base 2 binary integer");
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_oct_invalid_digit(lex: &mut Lexer, src: SourceRange, digit: char) {
+    let msg = format!("invalid digit `{digit}` for base 8 octal integer");
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_bin_overflow(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
+    let msg = format!(
+        "binary integer overflow\nexpected maximum of 64 binary digits, found {digit_count}",
+    );
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_oct_overflow_value(lex: &mut Lexer, src: SourceRange) {
+    let msg = format!("octal integer overflow\nmaximum value is `0o17_77777_77777_77777_77777`",);
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_oct_overflow_digits(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
+    let msg = format!(
+        "octal integer overflow\nexpected maximum of 22 octal digits, found {digit_count}",
+    );
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_hex_overflow(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
+    let msg = format!(
+        "hexadecimal integer overflow\nexpected maximum of 16 hexadecimal digits, found {digit_count}",
+    );
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_int_dec_overflow(lex: &mut Lexer, src: SourceRange) {
+    let msg = format!("decimal integer overflow\nmaximum value is `18_446_744_073_709_551_615`");
+    lex.errors.push(ErrorComp::new(msg, src, None));
 }

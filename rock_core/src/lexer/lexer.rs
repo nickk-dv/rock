@@ -1,4 +1,4 @@
-use crate::error::ErrorComp;
+use crate::error::{ErrorComp, SourceRange};
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 use crate::token::TokenList;
@@ -37,6 +37,11 @@ impl<'src> Lexer<'src> {
 
     pub fn make_range(&self, start: TextOffset) -> TextRange {
         TextRange::new(start, self.cursor)
+    }
+
+    pub fn make_src(&self, start: TextOffset) -> SourceRange {
+        let range = TextRange::new(start, self.cursor);
+        SourceRange::new(self.module_id, range)
     }
 
     pub fn peek(&mut self) -> Option<char> {
