@@ -376,7 +376,8 @@ fn lex_escaped_char(lex: &mut Lexer, start: TextOffset, digit_count: u32) -> cha
         if let Some(hc) = hc {
             let hex_value = match hc {
                 '0'..='9' => hc as u32 - '0' as u32,
-                'A'..='Z' => hc as u32 - 'A' as u32 + 10,
+                'a'..='f' => hc as u32 - 'a' as u32 + 10,
+                'A'..='F' => hc as u32 - 'A' as u32 + 10,
                 _ => {
                     let range = lex.make_range(start);
                     lex.errors.push(ErrorComp::new(
@@ -522,7 +523,8 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
     while let Some(c) = lex.peek() {
         let hex_value: u64 = match c {
             '0'..='9' => c as u64 - '0' as u64,
-            'A'..='Z' => c as u64 - 'A' as u64 + 10,
+            'a'..='f' => c as u64 - 'a' as u64 + 10,
+            'A'..='F' => c as u64 - 'A' as u64 + 10,
             '_' => {
                 lex.eat(c);
                 continue;
