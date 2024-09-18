@@ -10,6 +10,7 @@ use crate::text::TextRange;
 struct AstBuild<'ast, 'syn, 'src, 'state> {
     tree: &'syn SyntaxTree<'syn>,
     int_id: ID<u64>,
+    float_id: ID<f64>,
     char_id: ID<char>,
     string_id: ID<(String, bool)>,
     module_id: ModuleID,
@@ -53,6 +54,7 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
         AstBuild {
             tree,
             int_id: ID::new_raw(0),
+            float_id: ID::new_raw(0),
             char_id: ID::new_raw(0),
             string_id: ID::new_raw(0),
             module_id,
@@ -912,22 +914,9 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
             ctx.int_id = ctx.int_id.inc();
             ast::Lit::Int(val)
         }
-        cst::Lit::Float(lit) => {
-            //@assuming that range of Node == range of Token
-            let range = lit.range(ctx.tree);
-            let string = &ctx.source[range.as_usize()];
-
-            let val = match string.parse::<f64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    ctx.s.errors.push(ErrorComp::new(
-                        format!("parse float error: {}", error),
-                        SourceRange::new(ctx.module_id, range),
-                        None,
-                    ));
-                    0.0
-                }
-            };
+        cst::Lit::Float(_) => {
+            let val = ctx.tree.tokens().float(ctx.float_id);
+            ctx.float_id = ctx.float_id.inc();
             ast::Lit::Float(val)
         }
         cst::Lit::Char(_) => {

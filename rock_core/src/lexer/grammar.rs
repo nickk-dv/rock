@@ -30,8 +30,8 @@ pub fn source_file(lex: &mut Lexer) {
     }
 
     let dummy_range = TextRange::zero();
-    lex.tokens().add_token(Token::Eof, dummy_range);
-    lex.tokens().add_token(Token::Eof, dummy_range);
+    lex.tokens.add_token(Token::Eof, dummy_range);
+    lex.tokens.add_token(Token::Eof, dummy_range);
 }
 
 fn lex_whitespace(lex: &mut Lexer) {
@@ -43,7 +43,7 @@ fn lex_whitespace(lex: &mut Lexer) {
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens().add_trivia(Trivia::Whitespace, range);
+                lex.tokens.add_trivia(Trivia::Whitespace, range);
             }
         } else if c == '/' && matches!(lex.peek_next(), Some('/')) {
             let start = lex.start_range();
@@ -53,7 +53,7 @@ fn lex_whitespace(lex: &mut Lexer) {
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens().add_trivia(Trivia::LineComment, range);
+                lex.tokens.add_trivia(Trivia::LineComment, range);
             }
         } else if c == '/' && matches!(lex.peek_next(), Some('*')) {
             let start = lex.start_range();
@@ -72,7 +72,7 @@ fn lex_whitespace(lex: &mut Lexer) {
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens().add_trivia(Trivia::BlockComment, range);
+                lex.tokens.add_trivia(Trivia::BlockComment, range);
             }
         } else {
             break;
@@ -206,7 +206,7 @@ fn lex_char(lex: &mut Lexer) {
         }
     }
 
-    lex.tokens().add_char(char, range);
+    lex.tokens.add_char(char, range);
 }
 
 fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
@@ -263,7 +263,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
         terminated = false;
     }
 
-    lex.tokens().add_string(string, c_string, range);
+    lex.tokens.add_string(string, c_string, range);
 
     if !terminated {
         let message: &str = if raw {
@@ -425,51 +425,48 @@ fn lex_number(lex: &mut Lexer, fc: char) {
             Some('b') => {
                 lex.eat(fc);
                 lex.eat('b');
-                let skipped = skip_zero_digits(lex);
-                lex_integer_bin(lex, start, skipped);
+                lex_integer_bin(lex, start);
                 return;
             }
             Some('o') => {
                 lex.eat(fc);
                 lex.eat('o');
-                let skipped = skip_zero_digits(lex);
-                lex_integer_oct(lex, start, skipped);
+                lex_integer_oct(lex, start);
                 return;
             }
             Some('x') => {
                 lex.eat(fc);
                 lex.eat('x');
-                let skipped = skip_zero_digits(lex);
-                lex_integer_hex(lex, start, skipped);
+                lex_integer_hex(lex, start);
                 return;
             }
             _ => {}
         }
     }
 
-    skip_zero_digits(lex);
-    let decimal = lex_integer_decimal(lex, start);
+    lex.buffer.clear();
+    if skip_zero_digits(lex) {
+        lex.buffer.push('0');
+    }
+    skip_num_digits(lex);
 
-    //@float parse at lexing stage not implemented
-    if let Some('.') = lex.peek() {
+    if matches!(lex.peek(), Some('.')) {
         lex.eat('.');
+        skip_num_digits(lex);
+        //@support exponent
 
-        while let Some(c) = lex.peek() {
-            if c.is_ascii_digit() {
-                lex.eat(c);
-            } else {
-                break;
-            }
+        if let Ok(float) = lex.buffer.parse::<f64>() {
+            lex.tokens.add_float(float, lex.make_range(start));
+        } else {
+            lexer_float_parse_failed(lex, lex.make_src(start));
+            lex.tokens.add_float(0.0, lex.make_range(start));
         }
-
-        let range = lex.make_range(start);
-        lex.tokens().add_token(Token::FloatLit, range);
     } else {
-        let range = lex.make_range(start);
-        lex.tokens().add_int(decimal, range);
+        lex_integer_dec(lex, start);
     }
 }
 
+#[must_use]
 fn skip_zero_digits(lex: &mut Lexer) -> bool {
     let mut skipped = false;
     while let Some(c) = lex.peek() {
@@ -485,12 +482,49 @@ fn skip_zero_digits(lex: &mut Lexer) -> bool {
     skipped
 }
 
-fn lex_integer_bin(lex: &mut Lexer, start: TextOffset, skipped: bool) {
+fn skip_num_digits(lex: &mut Lexer) {
+    while let Some(c) = lex.peek() {
+        match c {
+            '0'..='9' => {
+                lex.eat(c);
+                lex.buffer.push(c);
+            }
+            '_' => lex.eat(c),
+            _ => return,
+        };
+    }
+}
+
+fn lex_integer_dec(lex: &mut Lexer, start: TextOffset) {
+    let mut integer: u64 = 0;
+    let mut overflow = false;
+
+    for c in lex.buffer.chars() {
+        let value: u64 = match c {
+            '0'..='9' => c as u64 - '0' as u64,
+            _ => unreachable!(),
+        };
+        let prev_value = integer;
+        integer = integer.wrapping_mul(10).wrapping_add(value);
+        overflow = overflow || (integer < prev_value);
+    }
+
+    if overflow {
+        lexer_int_dec_overflow(lex, lex.make_src(start));
+    }
+
+    let range = lex.make_range(start);
+    lex.tokens.add_int(integer, range);
+}
+
+fn lex_integer_bin(lex: &mut Lexer, start: TextOffset) {
     const MAX_DIGITS: u32 = 64;
     const SHIFT_BASE: u32 = 1;
 
     let mut integer: u64 = 0;
     let mut digit_count: u32 = 0;
+
+    let skipped = skip_zero_digits(lex);
 
     while let Some(c) = lex.peek() {
         let value: u64 = match c {
@@ -520,10 +554,10 @@ fn lex_integer_bin(lex: &mut Lexer, start: TextOffset, skipped: bool) {
     }
 
     let range = lex.make_range(start);
-    lex.tokens().add_int(integer, range);
+    lex.tokens.add_int(integer, range);
 }
 
-fn lex_integer_oct(lex: &mut Lexer, start: TextOffset, skipped: bool) {
+fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
     const MAX_DIGITS: u32 = 22;
     const SHIFT_BASE: u32 = 3;
     const MAX_FIRST_DIGIT: u64 = 1;
@@ -531,6 +565,8 @@ fn lex_integer_oct(lex: &mut Lexer, start: TextOffset, skipped: bool) {
     let mut integer: u64 = 0;
     let mut digit_count: u32 = 0;
     let mut first_digit: u64 = 0;
+
+    let skipped = skip_zero_digits(lex);
 
     while let Some(c) = lex.peek() {
         let value: u64 = match c {
@@ -565,15 +601,17 @@ fn lex_integer_oct(lex: &mut Lexer, start: TextOffset, skipped: bool) {
     }
 
     let range = lex.make_range(start);
-    lex.tokens().add_int(integer, range);
+    lex.tokens.add_int(integer, range);
 }
 
-fn lex_integer_hex(lex: &mut Lexer, start: TextOffset, skipped: bool) {
+fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
     const MAX_DIGITS: u32 = 16;
     const SHIFT_BASE: u32 = 4;
 
     let mut integer: u64 = 0;
     let mut digit_count: u32 = 0;
+
+    let skipped = skip_zero_digits(lex);
 
     while let Some(c) = lex.peek() {
         let value: u64 = match c {
@@ -599,33 +637,7 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset, skipped: bool) {
     }
 
     let range = lex.make_range(start);
-    lex.tokens().add_int(integer, range);
-}
-
-fn lex_integer_decimal(lex: &mut Lexer, start: TextOffset) -> u64 {
-    let mut integer: u64 = 0;
-    let mut overflow = false;
-
-    while let Some(c) = lex.peek() {
-        let value: u64 = match c {
-            '0'..='9' => c as u64 - '0' as u64,
-            '_' => {
-                lex.eat(c);
-                continue;
-            }
-            _ => break,
-        };
-
-        lex.eat(c);
-        let prev_value = integer;
-        integer = integer.wrapping_mul(10).wrapping_add(value);
-        overflow = overflow || (integer < prev_value);
-    }
-
-    if overflow {
-        lexer_int_dec_overflow(lex, lex.make_src(start));
-    }
-    integer
+    lex.tokens.add_int(integer, range);
 }
 
 fn lex_ident(lex: &mut Lexer, fc: char) {
@@ -647,7 +659,7 @@ fn lex_ident(lex: &mut Lexer, fc: char) {
         Some(keyword) => keyword,
         None => Token::Ident,
     };
-    lex.tokens().add_token(token, range);
+    lex.tokens.add_token(token, range);
 }
 
 fn lex_symbol(lex: &mut Lexer, fc: char) {
@@ -657,7 +669,7 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
     macro_rules! add_token_and_return {
         ($lex:expr, $start:expr, $token:expr) => {{
             let range = $lex.make_range($start);
-            $lex.tokens().add_token($token, range);
+            $lex.tokens.add_token($token, range);
             return;
         }};
     }
@@ -751,5 +763,10 @@ fn lexer_int_hex_overflow(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
 
 fn lexer_int_dec_overflow(lex: &mut Lexer, src: SourceRange) {
     let msg = format!("decimal integer overflow\nmaximum value is `18_446_744_073_709_551_615`");
+    lex.errors.push(ErrorComp::new(msg, src, None));
+}
+
+fn lexer_float_parse_failed(lex: &mut Lexer, src: SourceRange) {
+    let msg = "failed to parse float literal";
     lex.errors.push(ErrorComp::new(msg, src, None));
 }

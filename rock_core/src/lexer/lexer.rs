@@ -7,11 +7,12 @@ use std::{iter::Peekable, str::Chars};
 pub struct Lexer<'src> {
     cursor: TextOffset,
     chars: Peekable<Chars<'src>>,
-    tokens: TokenList,
+    pub tokens: TokenList,
     pub errors: Vec<ErrorComp>,
     pub source: &'src str,
     pub module_id: ModuleID,
     pub with_trivia: bool,
+    pub buffer: String,
 }
 
 impl<'src> Lexer<'src> {
@@ -24,6 +25,7 @@ impl<'src> Lexer<'src> {
             source,
             module_id,
             with_trivia,
+            buffer: String::with_capacity(64),
         }
     }
 
@@ -57,9 +59,5 @@ impl<'src> Lexer<'src> {
     pub fn eat(&mut self, c: char) {
         self.cursor += (c.len_utf8() as u32).into();
         self.chars.next();
-    }
-
-    pub fn tokens(&mut self) -> &mut TokenList {
-        &mut self.tokens
     }
 }

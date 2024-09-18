@@ -10,6 +10,7 @@ pub struct Parser<'ast, 'src, 'state> {
     pub cursor: ID<Token>,
     tokens: TokenList,
     int_id: ID<u64>,
+    float_id: ID<f64>,
     char_id: ID<char>,
     string_id: ID<(String, bool)>,
     pub module_id: ModuleID,
@@ -53,6 +54,7 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
             cursor: ID::new_raw(0),
             tokens,
             int_id: ID::new_raw(0),
+            float_id: ID::new_raw(0),
             char_id: ID::new_raw(0),
             string_id: ID::new_raw(0),
             module_id,
@@ -122,6 +124,12 @@ impl<'ast, 'src, 'state> Parser<'ast, 'src, 'state> {
     pub fn get_int_lit(&mut self) -> u64 {
         let value = self.tokens.int(self.int_id);
         self.int_id = self.int_id.inc();
+        value
+    }
+
+    pub fn get_float_lit(&mut self) -> f64 {
+        let value = self.tokens.float(self.float_id);
+        self.float_id = self.float_id.inc();
         value
     }
 

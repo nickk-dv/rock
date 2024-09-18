@@ -937,21 +937,8 @@ fn lit(p: &mut Parser) -> Result<Lit, String> {
             Ok(Lit::Int(val))
         }
         T![float_lit] => {
-            let range = p.peek_range();
             p.bump();
-            let string = &p.source[range.as_usize()];
-
-            let val = match string.parse::<f64>() {
-                Ok(value) => value,
-                Err(error) => {
-                    p.state.errors.push(ErrorComp::new(
-                        format!("parse float error: {}", error),
-                        SourceRange::new(p.module_id, range),
-                        None,
-                    ));
-                    0.0
-                }
-            };
+            let val = p.get_float_lit();
             Ok(Lit::Float(val))
         }
         T![char_lit] => {

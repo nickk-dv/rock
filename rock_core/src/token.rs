@@ -8,7 +8,9 @@ pub struct TokenList {
     trivias: Vec<Trivia>,
     trivia_ranges: Vec<TextRange>,
     ints: Vec<u64>,
+    floats: Vec<f64>,
     chars: Vec<char>,
+    //@move to using InternLit pool, even for LS persist it
     strings: Vec<(String, bool)>,
 }
 
@@ -21,6 +23,7 @@ impl TokenList {
             trivia_ranges: Vec::new(),
             ints: Vec::new(),
             chars: Vec::new(),
+            floats: Vec::new(),
             strings: Vec::new(),
         }
     }
@@ -51,6 +54,9 @@ impl TokenList {
     pub fn int(&self, id: ID<u64>) -> u64 {
         *self.ints.id_get(id)
     }
+    pub fn float(&self, id: ID<f64>) -> f64 {
+        *self.floats.id_get(id)
+    }
     pub fn char(&self, id: ID<char>) -> char {
         *self.chars.id_get(id)
     }
@@ -68,18 +74,19 @@ impl TokenList {
         self.trivia_ranges.push(range);
     }
     pub fn add_int(&mut self, int: u64, range: TextRange) {
-        self.tokens.push(Token::IntLit);
-        self.token_ranges.push(range);
+        self.add_token(Token::IntLit, range);
         self.ints.push(int);
     }
+    pub fn add_float(&mut self, float: f64, range: TextRange) {
+        self.add_token(Token::FloatLit, range);
+        self.floats.push(float);
+    }
     pub fn add_char(&mut self, ch: char, range: TextRange) {
-        self.tokens.push(Token::CharLit);
-        self.token_ranges.push(range);
+        self.add_token(Token::CharLit, range);
         self.chars.push(ch);
     }
     pub fn add_string(&mut self, string: String, c_string: bool, range: TextRange) {
-        self.tokens.push(Token::StringLit);
-        self.token_ranges.push(range);
+        self.add_token(Token::StringLit, range);
         self.strings.push((string, c_string));
     }
 }
