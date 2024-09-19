@@ -74,6 +74,26 @@ pub fn lexer_escape_sequence_cstring_null(emit: &mut impl ErrorSink, src: Source
     emit.error(ErrorComp::new(msg, src, None));
 }
 
+pub fn lexer_escape_hex_wrong_dc(emit: &mut impl ErrorSink, src: SourceRange, digit_count: u32) {
+    let msg = format!("expected 1 to 6 hexadecimal digits, found {digit_count}");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_escape_hex_non_utf8(emit: &mut impl ErrorSink, src: SourceRange, value: u32) {
+    let msg = format!("hexadecimal value `{value:x}` is not valid UTF-8");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_expect_open_bracket(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "expected opening `{` before hexadecimal value";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_expect_close_bracket(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "expected closing `}` after hexadecimal value";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
 //==================== LEXER.NUMBER ====================
 
 pub fn lexer_int_base_missing_digits(emit: &mut impl ErrorSink, src: SourceRange) {

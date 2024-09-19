@@ -1,5 +1,5 @@
 use super::lexer::Lexer;
-use crate::error::{ErrorComp, SourceRange};
+use crate::error::SourceRange;
 use crate::errors as err;
 use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, Trivia};
@@ -257,7 +257,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         return '\\';
     };
 
-    let mut hex_escaped = false;
+    let mut hex_escape = false;
     let escaped = match c {
         'n' => '\n',
         'r' => '\r',
@@ -268,18 +268,8 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         '\\' => '\\',
         'x' => {
             lex.eat(c);
-            hex_escaped = true;
-            lex_escaped_char(lex, start, 2)
-        }
-        'u' => {
-            lex.eat(c);
-            hex_escaped = true;
-            lex_escaped_char(lex, start, 4)
-        }
-        'U' => {
-            lex.eat(c);
-            hex_escaped = true;
-            lex_escaped_char(lex, start, 8)
+            hex_escape = true;
+            lex_escape_hex(lex, start)
         }
         _ => {
             if c.is_ascii_whitespace() {
@@ -292,7 +282,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         }
     };
 
-    if !hex_escaped {
+    if !hex_escape {
         lex.eat(c);
     }
     if c_string && escaped == '\0' {
@@ -301,63 +291,51 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
     escaped
 }
 
-//@rework syntax & errors \x{NN} \u{NNNNNN}
-fn lex_escaped_char(lex: &mut Lexer, start: TextOffset, digit_count: u32) -> char {
-    let mut hex_char: u32 = 0;
-
-    for hex_char_idx in 0..digit_count {
-        let hc = match lex.peek() {
-            Some(hc) => {
-                if hc.is_ascii_whitespace() {
-                    None
-                } else {
-                    Some(hc)
-                }
-            }
-            None => None,
-        };
-
-        if let Some(hc) = hc {
-            let hex_value = match hc {
-                '0'..='9' => hc as u32 - '0' as u32,
-                'a'..='f' => hc as u32 - 'a' as u32 + 10,
-                'A'..='F' => hc as u32 - 'A' as u32 + 10,
-                _ => {
-                    let range = lex.make_range(start);
-                    lex.errors.push(ErrorComp::new(
-                        format!("hexadecimal digit expected 0-9 or A-F, found `{}`", hc),
-                        SourceRange::new(lex.module_id, range),
-                        None,
-                    ));
-                    return '?';
-                }
-            };
-            lex.eat(hc);
-            hex_char = (hex_char << 4) | hex_value;
-        } else {
-            let range = lex.make_range(start);
-            lex.errors.push(ErrorComp::new(
-                format!(
-                    "hexadecimal character must have {} hex digits, found {}",
-                    digit_count, hex_char_idx
-                ),
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
-            return '?';
-        }
+fn lex_escape_hex(lex: &mut Lexer, start: TextOffset) -> char {
+    if lex.at('{') {
+        lex.eat('{');
+    } else {
+        err::lexer_expect_open_bracket(lex, lex.make_src(start));
+        return '\\';
     }
 
-    if let Ok(escaped) = hex_char.try_into() {
-        escaped
+    const MAX_DIGITS: u32 = 6;
+    const SHIFT_BASE: u32 = 4;
+
+    let mut integer: u32 = 0;
+    let mut digit_count: u32 = 0;
+
+    while let Some(c) = lex.peek() {
+        let value: u32 = match c {
+            '0'..='9' => c as u32 - '0' as u32,
+            'a'..='f' => c as u32 - 'a' as u32 + 10,
+            'A'..='F' => c as u32 - 'A' as u32 + 10,
+            _ => break,
+        };
+
+        lex.eat(c);
+        digit_count += 1;
+        integer = (integer << SHIFT_BASE) | value;
+    }
+
+    if lex.at('}') {
+        lex.eat('}');
     } else {
-        let range = lex.make_range(start);
-        lex.errors.push(ErrorComp::new(
-            format!("hexadecimal character `{}` is not valid UTF-8", hex_char),
-            SourceRange::new(lex.module_id, range),
-            None,
-        ));
-        '?'
+        err::lexer_expect_close_bracket(lex, lex.make_src(start));
+        return '\\';
+    }
+
+    if digit_count == 0 || digit_count > MAX_DIGITS {
+        err::lexer_escape_hex_wrong_dc(lex, lex.make_src(start), digit_count);
+        return '\\';
+    }
+
+    match integer.try_into() {
+        Ok(escaped) => escaped,
+        Err(_) => {
+            err::lexer_escape_hex_non_utf8(lex, lex.make_src(start), integer);
+            '\\'
+        }
     }
 }
 
@@ -398,7 +376,15 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     if lex.at('.') {
         lex.eat('.');
         skip_num_digits(lex);
-        //@support exponent
+
+        if lex.at('e') {
+            lex.eat('e');
+
+            if lex.at('-') {
+                lex.eat('-');
+            }
+            skip_num_digits(lex);
+        }
 
         if let Ok(float) = lex.buffer.parse::<f64>() {
             lex.tokens.add_float(float, lex.make_range(start));

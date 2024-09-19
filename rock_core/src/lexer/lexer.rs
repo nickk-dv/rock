@@ -12,7 +12,6 @@ pub struct Lexer<'src> {
     pub module_id: ModuleID,
     pub with_trivia: bool,
     pub buffer: String,
-    pub errors: Vec<ErrorComp>,
     pub diagnostics: DiagnosticCollection,
 }
 
@@ -26,16 +25,12 @@ impl<'src> Lexer<'src> {
             module_id,
             with_trivia,
             buffer: String::with_capacity(64),
-            errors: Vec::new(),
             diagnostics: DiagnosticCollection::new(),
         }
     }
 
     pub fn finish(self) -> (TokenList, Vec<ErrorComp>) {
-        //@hack mixing 2
-        let mut errors = self.diagnostics.errors_moveout();
-        errors.extend(self.errors);
-        (self.tokens, errors)
+        (self.tokens, self.diagnostics.errors_moveout())
     }
 
     pub fn start_range(&self) -> TextOffset {
