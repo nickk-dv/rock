@@ -1,8 +1,7 @@
-use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
+use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::context::HirCtx;
-use crate::hir_lower::errors as err;
 
 pub fn fold_const_expr<'hir>(
     ctx: &mut HirCtx<'hir, '_>,

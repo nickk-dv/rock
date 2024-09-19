@@ -1,8 +1,8 @@
-use super::errors as err;
 use super::proc_scope::ProcScope;
 use crate::ast;
 use crate::config::TargetTriple;
-use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, Info, ResultComp, SourceRange};
+use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, ResultComp, SourceRange};
+use crate::errors as err;
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::session::{ModuleID, Session};

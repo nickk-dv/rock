@@ -1,11 +1,13 @@
 use super::lexer::Lexer;
 use crate::error::{ErrorComp, SourceRange};
+use crate::errors as err;
 use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, Trivia};
 
 pub fn source_file(lex: &mut Lexer) {
     while lex.peek().is_some() {
         lex_whitespace(lex);
+
         if let Some(c) = lex.peek() {
             match c {
                 '\'' => lex_char(lex),
@@ -19,7 +21,7 @@ pub fn source_file(lex: &mut Lexer) {
                 _ => {
                     if c.is_ascii_digit() {
                         lex_number(lex, c);
-                    } else if c == '_' || c.is_ascii_alphabetic() {
+                    } else if c.is_ascii_alphabetic() || c == '_' {
                         lex_ident(lex, c);
                     } else {
                         lex_symbol(lex, c)
@@ -45,29 +47,25 @@ fn lex_whitespace(lex: &mut Lexer) {
                 let range = lex.make_range(start);
                 lex.tokens.add_trivia(Trivia::Whitespace, range);
             }
-        } else if c == '/' && matches!(lex.peek_next(), Some('/')) {
+        } else if c == '/' && lex.at_next('/') {
             let start = lex.start_range();
             lex.eat(c);
             lex.eat('/');
+
             skip_line_comment(lex);
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
                 lex.tokens.add_trivia(Trivia::LineComment, range);
             }
-        } else if c == '/' && matches!(lex.peek_next(), Some('*')) {
+        } else if c == '/' && lex.at_next('*') {
             let start = lex.start_range();
             lex.eat(c);
             lex.eat('*');
-            let depth = skip_block_comment(lex);
 
+            let depth = skip_block_comment(lex);
             if depth != 0 {
-                let range = lex.make_range(start);
-                lex.errors.push(ErrorComp::new(
-                    format!("missing {} block comment terminators `*/`", depth),
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
+                err::lexer_block_comment_not_terminated(lex, lex.make_src(start), depth);
             }
 
             if lex.with_trivia {
@@ -91,7 +89,7 @@ fn skip_whitespace(lex: &mut Lexer) {
 
 fn skip_line_comment(lex: &mut Lexer) {
     while let Some(c) = lex.peek() {
-        if c == '\n' {
+        if c == '\r' || c == '\n' {
             return;
         }
         lex.eat(c);
@@ -102,10 +100,10 @@ fn skip_block_comment(lex: &mut Lexer) -> u32 {
     let mut depth: u32 = 1;
     while let Some(c) = lex.peek() {
         lex.eat(c);
-        if c == '/' && matches!(lex.peek(), Some('*')) {
+        if c == '/' && lex.at('*') {
             lex.eat('*');
             depth += 1;
-        } else if c == '*' && matches!(lex.peek(), Some('/')) {
+        } else if c == '*' && lex.at('/') {
             lex.eat('/');
             depth -= 1;
         }
@@ -122,24 +120,14 @@ fn lex_char(lex: &mut Lexer) {
 
     let fc = match lex.peek() {
         Some(c) => {
-            if c == '\n' || c == '\r' {
-                let range = lex.make_range(start);
-                lex.errors.push(ErrorComp::new(
-                    "character literal is incomplete",
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
+            if c == '\r' || c == '\n' {
+                err::lexer_char_incomplete(lex, lex.make_src(start));
                 return;
             }
             c
         }
         None => {
-            let range = lex.make_range(start);
-            lex.errors.push(ErrorComp::new(
-                "character literal is incomplete",
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
+            err::lexer_char_incomplete(lex, lex.make_src(start));
             return;
         }
     };
@@ -155,12 +143,7 @@ fn lex_char(lex: &mut Lexer) {
         '\t' => {
             let start = lex.start_range();
             lex.eat(fc);
-            let range = lex.make_range(start);
-            lex.errors.push(ErrorComp::new(
-                "character literal tab must be escaped: `\\t`",
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
+            err::lexer_char_tab_not_escaped(lex, lex.make_src(start));
             fc
         }
         _ => {
@@ -169,43 +152,31 @@ fn lex_char(lex: &mut Lexer) {
         }
     };
 
-    let terminated = matches!(lex.peek(), Some('\''));
+    let terminated = lex.at('\'');
     if terminated {
         lex.eat('\'');
     }
-    let range = lex.make_range(start);
 
     match (inner_tick, terminated) {
         (true, false) => {
-            // example [ '' ]
-            lex.errors.push(ErrorComp::new(
-                "character literal cannot be empty",
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
+            // example: ''
+            err::lexer_char_empty(lex, lex.make_src(start));
         }
         (true, true) => {
-            // example [ ''' ]
-            lex.errors.push(ErrorComp::new(
-                "character literal `'` must be escaped: `\\'`",
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
+            // example: '''
+            err::lexer_char_quote_not_escaped(lex, lex.make_src(start));
         }
         (false, false) => {
-            // example [ 'x, '\n ]
-            lex.errors.push(ErrorComp::new(
-                "character literal not terminated, missing closing `'`",
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
+            // example: 'x, '\n
+            err::lexer_char_not_terminated(lex, lex.make_src(start));
         }
         (false, true) => {
-            // example [ 'x', '\n' ]
+            // example: 'x', '\n'
             // correctly terminated without inner tick
         }
     }
 
+    let range = lex.make_range(start);
     lex.tokens.add_char(char, range);
 }
 
@@ -266,16 +237,12 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
     lex.tokens.add_string(string, c_string, range);
 
     if !terminated {
-        let message: &str = if raw {
-            "raw string literal not terminated, missing closing `"
+        let src = SourceRange::new(lex.module_id, range);
+        if raw {
+            err::lexer_raw_string_not_terminated(lex, src);
         } else {
-            "string literal not terminated, missing closing \""
-        };
-        lex.errors.push(ErrorComp::new(
-            message,
-            SourceRange::new(lex.module_id, range),
-            None,
-        ));
+            err::lexer_string_not_terminated(lex, src);
+        }
     }
 }
 
@@ -283,18 +250,10 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
     let start = lex.start_range();
     lex.eat('\\');
 
-    const INCOMPLETE_MSG: &str =
-        "escape sequence is incomplete\nif you meant to use `\\`, escape it: `\\\\`";
-
     let c = if let Some(c) = lex.peek() {
         c
     } else {
-        let range = lex.make_range(start);
-        lex.errors.push(ErrorComp::new(
-            INCOMPLETE_MSG,
-            SourceRange::new(lex.module_id, range),
-            None,
-        ));
+        err::lexer_escape_sequence_incomplete(lex, lex.make_src(start));
         return '\\';
     };
 
@@ -324,20 +283,10 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         }
         _ => {
             if c.is_ascii_whitespace() {
-                let range = lex.make_range(start);
-                lex.errors.push(ErrorComp::new(
-                    INCOMPLETE_MSG,
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
+                err::lexer_escape_sequence_incomplete(lex, lex.make_src(start));
             } else {
                 lex.eat(c);
-                let range = lex.make_range(start);
-                lex.errors.push(ErrorComp::new(
-                    format!("escape sequence `\\{}` is not supported", c),
-                    SourceRange::new(lex.module_id, range),
-                    None,
-                ));
+                err::lexer_escape_sequence_not_supported(lex, lex.make_src(start), c);
             }
             return '\\';
         }
@@ -346,18 +295,13 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
     if !hex_escaped {
         lex.eat(c);
     }
-
     if c_string && escaped == '\0' {
-        let range = lex.make_range(start);
-        lex.errors.push(ErrorComp::new(
-            "c string literals cannot contain any `\\0`\nnull terminator is automatically included",
-            SourceRange::new(lex.module_id, range),
-            None,
-        ));
+        err::lexer_escape_sequence_cstring_null(lex, lex.make_src(start));
     }
     escaped
 }
 
+//@rework syntax & errors \x{NN} \u{NNNNNN}
 fn lex_escaped_char(lex: &mut Lexer, start: TextOffset, digit_count: u32) -> char {
     let mut hex_char: u32 = 0;
 
@@ -445,12 +389,13 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     }
 
     lex.buffer.clear();
+
     if skip_zero_digits(lex) {
         lex.buffer.push('0');
     }
     skip_num_digits(lex);
 
-    if matches!(lex.peek(), Some('.')) {
+    if lex.at('.') {
         lex.eat('.');
         skip_num_digits(lex);
         //@support exponent
@@ -458,7 +403,7 @@ fn lex_number(lex: &mut Lexer, fc: char) {
         if let Ok(float) = lex.buffer.parse::<f64>() {
             lex.tokens.add_float(float, lex.make_range(start));
         } else {
-            lexer_float_parse_failed(lex, lex.make_src(start));
+            err::lexer_float_parse_failed(lex, lex.make_src(start));
             lex.tokens.add_float(0.0, lex.make_range(start));
         }
     } else {
@@ -510,11 +455,10 @@ fn lex_integer_dec(lex: &mut Lexer, start: TextOffset) {
     }
 
     if overflow {
-        lexer_int_dec_overflow(lex, lex.make_src(start));
+        err::lexer_int_dec_overflow(lex, lex.make_src(start));
     }
 
-    let range = lex.make_range(start);
-    lex.tokens.add_int(integer, range);
+    lex.tokens.add_int(integer, lex.make_range(start));
 }
 
 fn lex_integer_bin(lex: &mut Lexer, start: TextOffset) {
@@ -532,7 +476,7 @@ fn lex_integer_bin(lex: &mut Lexer, start: TextOffset) {
             '2'..='9' => {
                 let start = lex.start_range();
                 lex.eat(c);
-                lexer_int_bin_invalid_digit(lex, lex.make_src(start), c);
+                err::lexer_int_bin_invalid_digit(lex, lex.make_src(start), c);
                 continue;
             }
             '_' => {
@@ -548,13 +492,12 @@ fn lex_integer_bin(lex: &mut Lexer, start: TextOffset) {
     }
 
     if digit_count == 0 && !skipped {
-        lexer_int_base_missing_digits(lex, lex.make_src(start));
+        err::lexer_int_base_missing_digits(lex, lex.make_src(start));
     } else if digit_count > MAX_DIGITS {
-        lexer_int_bin_overflow(lex, lex.make_src(start), digit_count);
+        err::lexer_int_bin_overflow(lex, lex.make_src(start), digit_count);
     }
 
-    let range = lex.make_range(start);
-    lex.tokens.add_int(integer, range);
+    lex.tokens.add_int(integer, lex.make_range(start));
 }
 
 fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
@@ -574,7 +517,7 @@ fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
             '8'..='9' => {
                 let start = lex.start_range();
                 lex.eat(c);
-                lexer_int_oct_invalid_digit(lex, lex.make_src(start), c);
+                err::lexer_int_oct_invalid_digit(lex, lex.make_src(start), c);
                 continue;
             }
             '_' => {
@@ -593,15 +536,14 @@ fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
     }
 
     if digit_count == 0 && !skipped {
-        lexer_int_base_missing_digits(lex, lex.make_src(start));
+        err::lexer_int_base_missing_digits(lex, lex.make_src(start));
     } else if digit_count > MAX_DIGITS {
-        lexer_int_oct_overflow_digits(lex, lex.make_src(start), digit_count);
+        err::lexer_int_oct_overflow(lex, lex.make_src(start));
     } else if digit_count == MAX_DIGITS && first_digit > MAX_FIRST_DIGIT {
-        lexer_int_oct_overflow_value(lex, lex.make_src(start));
+        err::lexer_int_oct_overflow(lex, lex.make_src(start));
     }
 
-    let range = lex.make_range(start);
-    lex.tokens.add_int(integer, range);
+    lex.tokens.add_int(integer, lex.make_range(start));
 }
 
 fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
@@ -631,13 +573,12 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
     }
 
     if digit_count == 0 && !skipped {
-        lexer_int_base_missing_digits(lex, lex.make_src(start));
+        err::lexer_int_base_missing_digits(lex, lex.make_src(start));
     } else if digit_count > MAX_DIGITS {
-        lexer_int_hex_overflow(lex, lex.make_src(start), digit_count);
+        err::lexer_int_hex_overflow(lex, lex.make_src(start), digit_count);
     }
 
-    let range = lex.make_range(start);
-    lex.tokens.add_int(integer, range);
+    lex.tokens.add_int(integer, lex.make_range(start));
 }
 
 fn lex_ident(lex: &mut Lexer, fc: char) {
@@ -645,7 +586,7 @@ fn lex_ident(lex: &mut Lexer, fc: char) {
     lex.eat(fc);
 
     while let Some(c) = lex.peek() {
-        if c == '_' || c.is_ascii_alphanumeric() {
+        if c.is_ascii_alphanumeric() || c == '_' {
             lex.eat(c);
         } else {
             break;
@@ -666,28 +607,10 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
     let start = lex.start_range();
     lex.eat(fc);
 
-    macro_rules! add_token_and_return {
-        ($lex:expr, $start:expr, $token:expr) => {{
-            let range = $lex.make_range($start);
-            $lex.tokens.add_token($token, range);
-            return;
-        }};
-    }
-
     let mut token = match Token::from_char(fc) {
         Some(sym) => sym,
         None => {
-            let range = lex.make_range(start);
-            let extra = if !fc.is_ascii() {
-                "\nonly ascii symbols are supported"
-            } else {
-                ""
-            };
-            lex.errors.push(ErrorComp::new(
-                format!("unknown symbol token {:?}{}", fc, extra),
-                SourceRange::new(lex.module_id, range),
-                None,
-            ));
+            err::lexer_unknown_symbol(lex, lex.make_src(start), fc);
             return;
         }
     };
@@ -698,9 +621,15 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
                 lex.eat(c);
                 token = sym;
             }
-            None => add_token_and_return!(lex, start, token),
+            None => {
+                lex.tokens.add_token(token, lex.make_range(start));
+                return;
+            }
         },
-        None => add_token_and_return!(lex, start, token),
+        None => {
+            lex.tokens.add_token(token, lex.make_range(start));
+            return;
+        }
     }
 
     match lex.peek() {
@@ -709,64 +638,16 @@ fn lex_symbol(lex: &mut Lexer, fc: char) {
                 lex.eat(c);
                 token = sym;
             }
-            None => add_token_and_return!(lex, start, token),
+            None => {
+                lex.tokens.add_token(token, lex.make_range(start));
+                return;
+            }
         },
-        None => add_token_and_return!(lex, start, token),
+        None => {
+            lex.tokens.add_token(token, lex.make_range(start));
+            return;
+        }
     }
 
-    add_token_and_return!(lex, start, token);
-}
-
-//@will be moved to errors.rs when Lexer supports ErrorSink
-// if unified error handling will be chosed (handle warnings even if none are possible yet)
-
-fn lexer_int_base_missing_digits(lex: &mut Lexer, src: SourceRange) {
-    let msg = "missing digits after integer base prefix";
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_bin_invalid_digit(lex: &mut Lexer, src: SourceRange, digit: char) {
-    let msg = format!("invalid digit `{digit}` for base 2 binary integer");
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_oct_invalid_digit(lex: &mut Lexer, src: SourceRange, digit: char) {
-    let msg = format!("invalid digit `{digit}` for base 8 octal integer");
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_bin_overflow(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
-    let msg = format!(
-        "binary integer overflow\nexpected maximum of 64 binary digits, found {digit_count}",
-    );
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_oct_overflow_value(lex: &mut Lexer, src: SourceRange) {
-    let msg = format!("octal integer overflow\nmaximum value is `0o17_77777_77777_77777_77777`",);
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_oct_overflow_digits(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
-    let msg = format!(
-        "octal integer overflow\nexpected maximum of 22 octal digits, found {digit_count}",
-    );
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_hex_overflow(lex: &mut Lexer, src: SourceRange, digit_count: u32) {
-    let msg = format!(
-        "hexadecimal integer overflow\nexpected maximum of 16 hexadecimal digits, found {digit_count}",
-    );
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_int_dec_overflow(lex: &mut Lexer, src: SourceRange) {
-    let msg = format!("decimal integer overflow\nmaximum value is `18_446_744_073_709_551_615`");
-    lex.errors.push(ErrorComp::new(msg, src, None));
-}
-
-fn lexer_float_parse_failed(lex: &mut Lexer, src: SourceRange) {
-    let msg = "failed to parse float literal";
-    lex.errors.push(ErrorComp::new(msg, src, None));
+    lex.tokens.add_token(token, lex.make_range(start));
 }

@@ -1,5 +1,125 @@
 use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, WarningComp};
 
+//==================== LEXER ====================
+
+pub fn lexer_block_comment_not_terminated(emit: &mut impl ErrorSink, src: SourceRange, depth: u32) {
+    let msg = format!("missing {depth} block comment terminators `*/`");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_unknown_symbol(emit: &mut impl ErrorSink, src: SourceRange, c: char) {
+    let non_acsii = if !c.is_ascii() {
+        "\nonly ascii symbols are supported"
+    } else {
+        ""
+    };
+    let msg = format!("unknown symbol token `{c:?}`{non_acsii}");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+//==================== LEXER.CHAR ====================
+
+pub fn lexer_char_incomplete(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal is incomplete";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_char_empty(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal cannot be empty";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_char_tab_not_escaped(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal `tab` must be escaped: `\\t`";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_char_quote_not_escaped(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal `'` must be escaped: `\\'`";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_char_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal not terminated, missing closing `'`";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+//==================== LEXER.STRING ====================
+
+pub fn lexer_string_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "string literal not terminated, missing closing \"";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_raw_string_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "raw string literal not terminated, missing closing `";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+//==================== LEXER.ESCAPE ====================
+
+pub fn lexer_escape_sequence_incomplete(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "escape sequence is incomplete\nif you meant to use `\\`, escape it: `\\\\`";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_escape_sequence_not_supported(emit: &mut impl ErrorSink, src: SourceRange, c: char) {
+    let msg = format!("escape sequence `\\{c}` is not supported");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_escape_sequence_cstring_null(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg =
+        "c string literals cannot contain any `\\0`\nnull terminator is automatically included";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+//==================== LEXER.NUMBER ====================
+
+pub fn lexer_int_base_missing_digits(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "missing digits after integer base prefix";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_int_bin_invalid_digit(emit: &mut impl ErrorSink, src: SourceRange, digit: char) {
+    let msg = format!("invalid digit `{digit}` for base 2 binary integer");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_int_oct_invalid_digit(emit: &mut impl ErrorSink, src: SourceRange, digit: char) {
+    let msg = format!("invalid digit `{digit}` for base 8 octal integer");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_int_bin_overflow(emit: &mut impl ErrorSink, src: SourceRange, digit_count: u32) {
+    let msg = format!(
+        "binary integer overflow\nexpected maximum of 64 binary digits, found {digit_count}",
+    );
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_int_hex_overflow(emit: &mut impl ErrorSink, src: SourceRange, digit_count: u32) {
+    let msg = format!(
+        "hexadecimal integer overflow\nexpected maximum of 16 hexadecimal digits, found {digit_count}",
+    );
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_int_oct_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("octal integer overflow\nmaximum value is `0o17_77777_77777_77777_77777`",);
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_int_dec_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("decimal integer overflow\nmaximum value is `18_446_744_073_709_551_615`");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn lexer_float_parse_failed(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "failed to parse float literal";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
 //==================== SCOPE ====================
 
 pub fn scope_name_already_defined(

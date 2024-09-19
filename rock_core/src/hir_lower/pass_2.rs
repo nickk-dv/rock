@@ -1,7 +1,7 @@
 use super::context::{HirCtx, Symbol, SymbolKind};
-use super::errors as err;
 use crate::ast;
 use crate::error::{ErrorSink, SourceRange};
+use crate::errors as err;
 use crate::session::{ModuleID, ModuleOrDirectory, Session};
 
 pub fn resolve_imports(ctx: &mut HirCtx, session: &Session) {

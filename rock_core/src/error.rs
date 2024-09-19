@@ -154,6 +154,10 @@ impl DiagnosticCollection {
     pub fn errors(&self) -> &[ErrorComp] {
         &self.errors
     }
+    //@hack
+    pub fn errors_moveout(self) -> Vec<ErrorComp> {
+        self.errors
+    }
     pub fn warnings(&self) -> &[WarningComp] {
         &self.warnings
     }

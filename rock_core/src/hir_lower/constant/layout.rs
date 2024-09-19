@@ -1,8 +1,8 @@
 use crate::ast::BasicType;
 use crate::error::SourceRange;
+use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::context::HirCtx;
-use crate::hir_lower::errors as err;
 
 pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<hir::Layout, ()> {
     match ty {

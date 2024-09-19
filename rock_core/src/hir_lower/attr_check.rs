@@ -1,9 +1,9 @@
 use super::context::{HirCtx, HirEmit};
-use super::errors as err;
 use crate::ast;
 use crate::config;
 use crate::enum_str_convert;
 use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
+use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, RockModule, Session};
 use crate::support::BitSet;

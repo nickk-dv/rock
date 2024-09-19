@@ -1,10 +1,10 @@
 use super::constant;
 use super::context::{HirCtx, HirEmit, SymbolKind};
-use super::errors as err;
 use super::proc_scope::Diverges;
 use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp};
+use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::ModuleID;
 use crate::support::ID;

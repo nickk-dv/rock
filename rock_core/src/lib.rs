@@ -4,6 +4,7 @@ pub mod ast;
 pub mod ast_parse;
 pub mod config;
 pub mod error;
+pub mod errors;
 pub mod format;
 pub mod fs_env;
 pub mod hir;
