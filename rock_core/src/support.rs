@@ -14,16 +14,22 @@ mod arena {
 
     pub struct Arena<'arena> {
         offset: usize,
-        block: (*mut u8, alloc::Layout),
-        full_blocks: Vec<(*mut u8, alloc::Layout)>,
+        block: Block,
+        full_blocks: Vec<Block>,
         phantom: PhantomData<&'arena ()>,
+    }
+
+    #[derive(Copy, Clone)]
+    struct Block {
+        data: *mut u8,
+        layout: alloc::Layout,
     }
 
     impl<'arena> Arena<'arena> {
         pub fn new() -> Arena<'arena> {
             Arena {
                 offset: 0,
-                block: alloc(PAGE_SIZE),
+                block: Block::alloc(PAGE_SIZE),
                 full_blocks: Vec::new(),
                 phantom: PhantomData,
             }
@@ -51,11 +57,11 @@ mod arena {
         }
 
         fn offset_raw<T: Copy>(&mut self, size: usize) -> *mut T {
-            if self.offset + size > self.block.1.size() {
+            if self.offset + size > self.block.layout.size() {
                 self.grow(size);
             }
             unsafe {
-                let offset = self.block.0.add(self.offset) as *mut T;
+                let offset = self.block.data.add(self.offset) as *mut T;
                 self.offset += size;
                 offset
             }
@@ -64,33 +70,39 @@ mod arena {
         fn grow(&mut self, size: usize) {
             self.offset = 0;
             self.full_blocks.push(self.block);
-            let block_size = (self.block.1.size() * 2).min(MAX_PAGE_SIZE).max(size);
-            self.block = alloc(block_size);
+            let block_size = (self.block.layout.size() * 2).min(MAX_PAGE_SIZE).max(size);
+            self.block = Block::alloc(block_size);
         }
 
         pub fn mem_usage(&self) -> usize {
-            let full_bytes: usize = self.full_blocks.iter().map(|block| block.1.size()).sum();
+            let full_bytes: usize = self
+                .full_blocks
+                .iter()
+                .map(|block| block.layout.size())
+                .sum();
             full_bytes + self.offset
+        }
+    }
+
+    impl Block {
+        fn alloc(size: usize) -> Block {
+            let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
+            let data = unsafe { alloc::alloc(layout) };
+            Block { data, layout }
+        }
+
+        fn dealloc(&self) {
+            unsafe { alloc::dealloc(self.data, self.layout) }
         }
     }
 
     impl<'arena> Drop for Arena<'arena> {
         fn drop(&mut self) {
             for block in &self.full_blocks {
-                dealloc(*block);
+                block.dealloc();
             }
-            dealloc(self.block);
+            self.block.dealloc();
         }
-    }
-
-    fn alloc(size: usize) -> (*mut u8, alloc::Layout) {
-        let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
-        let data = unsafe { alloc::alloc(layout) };
-        (data, layout)
-    }
-
-    fn dealloc(block: (*mut u8, alloc::Layout)) {
-        unsafe { alloc::dealloc(block.0, block.1) }
     }
 }
 

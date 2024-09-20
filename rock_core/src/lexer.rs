@@ -1,10 +1,101 @@
-use super::lexer::Lexer;
-use crate::error::SourceRange;
+use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, SourceRange};
 use crate::errors as err;
+use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
-use crate::token::{Token, Trivia};
+use crate::token::{Token, TokenList, Trivia};
+use std::{iter::Peekable, str::Chars};
 
-pub fn source_file(lex: &mut Lexer) {
+pub fn lex(source: &str, module_id: ModuleID, with_trivia: bool) -> (TokenList, Vec<ErrorComp>) {
+    let mut lex = Lexer::new(source, module_id, with_trivia);
+    source_file(&mut lex);
+    lex.finish()
+}
+
+struct Lexer<'src> {
+    cursor: TextOffset,
+    chars: Peekable<Chars<'src>>,
+    tokens: TokenList,
+    buffer: String,
+    diagnostics: DiagnosticCollection,
+    source: &'src str,
+    module_id: ModuleID,
+    with_trivia: bool,
+}
+
+impl<'src> Lexer<'src> {
+    fn new(source: &'src str, module_id: ModuleID, with_trivia: bool) -> Lexer {
+        Lexer {
+            cursor: 0.into(),
+            chars: source.chars().peekable(),
+            tokens: TokenList::new(0), //@no cap estimation
+            buffer: String::with_capacity(64),
+            diagnostics: DiagnosticCollection::new(),
+            source,
+            module_id,
+            with_trivia,
+        }
+    }
+
+    fn finish(self) -> (TokenList, Vec<ErrorComp>) {
+        (self.tokens, self.diagnostics.errors_moveout())
+    }
+
+    fn start_range(&self) -> TextOffset {
+        self.cursor
+    }
+
+    fn make_range(&self, start: TextOffset) -> TextRange {
+        TextRange::new(start, self.cursor)
+    }
+
+    fn make_src(&self, start: TextOffset) -> SourceRange {
+        let range = TextRange::new(start, self.cursor);
+        SourceRange::new(self.module_id, range)
+    }
+
+    pub fn at(&mut self, c: char) -> bool {
+        self.peek() == Some(c)
+    }
+
+    pub fn at_next(&self, c: char) -> bool {
+        self.peek_next() == Some(c)
+    }
+
+    pub fn peek(&mut self) -> Option<char> {
+        self.chars.peek().copied()
+    }
+
+    pub fn peek_next(&self) -> Option<char> {
+        let mut iter = self.chars.clone();
+        iter.next();
+        iter.peek().copied()
+    }
+
+    pub fn bump(&mut self, c: char) {
+        self.cursor += (c.len_utf8() as u32).into();
+        self.chars.next();
+    }
+
+    pub fn eat(&mut self, c: char) -> bool {
+        if self.at(c) {
+            self.bump(c);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl<'src> ErrorSink for Lexer<'src> {
+    fn diagnostics(&self) -> &crate::error::DiagnosticCollection {
+        &self.diagnostics
+    }
+    fn diagnostics_mut(&mut self) -> &mut crate::error::DiagnosticCollection {
+        &mut self.diagnostics
+    }
+}
+
+fn source_file(lex: &mut Lexer) {
     while lex.peek().is_some() {
         lex_whitespace(lex);
 
@@ -40,7 +131,7 @@ fn lex_whitespace(lex: &mut Lexer) {
     while let Some(c) = lex.peek() {
         if c.is_ascii_whitespace() {
             let start = lex.start_range();
-            lex.eat(c);
+            lex.bump(c);
             skip_whitespace(lex);
 
             if lex.with_trivia {
@@ -49,8 +140,8 @@ fn lex_whitespace(lex: &mut Lexer) {
             }
         } else if c == '/' && lex.at_next('/') {
             let start = lex.start_range();
-            lex.eat(c);
-            lex.eat('/');
+            lex.bump(c);
+            lex.bump('/');
 
             skip_line_comment(lex);
 
@@ -60,8 +151,8 @@ fn lex_whitespace(lex: &mut Lexer) {
             }
         } else if c == '/' && lex.at_next('*') {
             let start = lex.start_range();
-            lex.eat(c);
-            lex.eat('*');
+            lex.bump(c);
+            lex.bump('*');
 
             let depth = skip_block_comment(lex);
             if depth != 0 {
@@ -83,7 +174,7 @@ fn skip_whitespace(lex: &mut Lexer) {
         if !c.is_ascii_whitespace() {
             return;
         }
-        lex.eat(c);
+        lex.bump(c);
     }
 }
 
@@ -92,19 +183,19 @@ fn skip_line_comment(lex: &mut Lexer) {
         if c == '\r' || c == '\n' {
             return;
         }
-        lex.eat(c);
+        lex.bump(c);
     }
 }
 
 fn skip_block_comment(lex: &mut Lexer) -> u32 {
     let mut depth: u32 = 1;
     while let Some(c) = lex.peek() {
-        lex.eat(c);
+        lex.bump(c);
         if c == '/' && lex.at('*') {
-            lex.eat('*');
+            lex.bump('*');
             depth += 1;
         } else if c == '*' && lex.at('/') {
-            lex.eat('/');
+            lex.bump('/');
             depth -= 1;
         }
         if depth == 0 {
@@ -114,9 +205,80 @@ fn skip_block_comment(lex: &mut Lexer) -> u32 {
     depth
 }
 
+fn lex_ident(lex: &mut Lexer, fc: char) {
+    let start = lex.start_range();
+    lex.bump(fc);
+
+    while let Some(c) = lex.peek() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            lex.bump(c);
+        } else {
+            break;
+        }
+    }
+
+    let range = lex.make_range(start);
+    let string = &lex.source[range.as_usize()];
+
+    let token = match Token::as_keyword(string) {
+        Some(keyword) => keyword,
+        None => Token::Ident,
+    };
+    lex.tokens.add_token(token, range);
+}
+
+fn lex_symbol(lex: &mut Lexer, fc: char) {
+    let start = lex.start_range();
+    lex.bump(fc);
+
+    let mut token = match Token::from_char(fc) {
+        Some(sym) => sym,
+        None => {
+            err::lexer_unknown_symbol(lex, lex.make_src(start), fc);
+            return;
+        }
+    };
+
+    match lex.peek() {
+        Some(c) => match Token::glue_double(c, token) {
+            Some(sym) => {
+                lex.bump(c);
+                token = sym;
+            }
+            None => {
+                lex.tokens.add_token(token, lex.make_range(start));
+                return;
+            }
+        },
+        None => {
+            lex.tokens.add_token(token, lex.make_range(start));
+            return;
+        }
+    }
+
+    match lex.peek() {
+        Some(c) => match Token::glue_triple(c, token) {
+            Some(sym) => {
+                lex.bump(c);
+                token = sym;
+            }
+            None => {
+                lex.tokens.add_token(token, lex.make_range(start));
+                return;
+            }
+        },
+        None => {
+            lex.tokens.add_token(token, lex.make_range(start));
+            return;
+        }
+    }
+
+    lex.tokens.add_token(token, lex.make_range(start));
+}
+
 fn lex_char(lex: &mut Lexer) {
     let start = lex.start_range();
-    lex.eat('\'');
+    lex.bump('\'');
 
     let fc = match lex.peek() {
         Some(c) => {
@@ -137,24 +299,24 @@ fn lex_char(lex: &mut Lexer) {
         '\\' => lex_escape(lex, false),
         '\'' => {
             inner_tick = true;
-            lex.eat(fc);
+            lex.bump(fc);
             fc
         }
         '\t' => {
             let start = lex.start_range();
-            lex.eat(fc);
+            lex.bump(fc);
             err::lexer_char_tab_not_escaped(lex, lex.make_src(start));
             fc
         }
         _ => {
-            lex.eat(fc);
+            lex.bump(fc);
             fc
         }
     };
 
     let terminated = lex.at('\'');
     if terminated {
-        lex.eat('\'');
+        lex.bump('\'');
     }
 
     match (inner_tick, terminated) {
@@ -183,9 +345,9 @@ fn lex_char(lex: &mut Lexer) {
 fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
     let start = lex.start_range();
     if c_string {
-        lex.eat('c');
+        lex.bump('c');
     }
-    lex.eat('\"');
+    lex.bump('\"');
 
     let mut range;
     let mut string = String::new();
@@ -196,12 +358,12 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
             match c {
                 '\r' | '\n' => break,
                 '`' if raw => {
-                    lex.eat(c);
+                    lex.bump(c);
                     terminated = true;
                     break;
                 }
                 '"' if !raw => {
-                    lex.eat(c);
+                    lex.bump(c);
                     terminated = true;
                     break;
                 }
@@ -210,7 +372,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
                     string.push(escaped);
                 }
                 _ => {
-                    lex.eat(c);
+                    lex.bump(c);
                     string.push(c);
                 }
             }
@@ -229,7 +391,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
             None => break,
         }
 
-        lex.eat('\"');
+        lex.bump('\"');
         string.push('\n');
         terminated = false;
     }
@@ -248,7 +410,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
 
 fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
     let start = lex.start_range();
-    lex.eat('\\');
+    lex.bump('\\');
 
     let c = if let Some(c) = lex.peek() {
         c
@@ -267,7 +429,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         '\"' => '\"',
         '\\' => '\\',
         'x' => {
-            lex.eat(c);
+            lex.bump(c);
             hex_escape = true;
             lex_escape_hex(lex, start)
         }
@@ -275,7 +437,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
             if c.is_ascii_whitespace() {
                 err::lexer_escape_sequence_incomplete(lex, lex.make_src(start));
             } else {
-                lex.eat(c);
+                lex.bump(c);
                 err::lexer_escape_sequence_not_supported(lex, lex.make_src(start), c);
             }
             return '\\';
@@ -283,7 +445,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
     };
 
     if !hex_escape {
-        lex.eat(c);
+        lex.bump(c);
     }
     if c_string && escaped == '\0' {
         err::lexer_escape_sequence_cstring_null(lex, lex.make_src(start));
@@ -292,9 +454,7 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
 }
 
 fn lex_escape_hex(lex: &mut Lexer, start: TextOffset) -> char {
-    if lex.at('{') {
-        lex.eat('{');
-    } else {
+    if !lex.eat('{') {
         err::lexer_expect_open_bracket(lex, lex.make_src(start));
         return '\\';
     }
@@ -313,14 +473,12 @@ fn lex_escape_hex(lex: &mut Lexer, start: TextOffset) -> char {
             _ => break,
         };
 
-        lex.eat(c);
+        lex.bump(c);
         digit_count += 1;
         integer = (integer << SHIFT_BASE) | value;
     }
 
-    if lex.at('}') {
-        lex.eat('}');
-    } else {
+    if !lex.eat('}') {
         err::lexer_expect_close_bracket(lex, lex.make_src(start));
         return '\\';
     }
@@ -345,20 +503,20 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     if fc == '0' {
         match lex.peek_next() {
             Some('b') => {
-                lex.eat(fc);
-                lex.eat('b');
+                lex.bump(fc);
+                lex.bump('b');
                 lex_integer_bin(lex, start);
                 return;
             }
             Some('o') => {
-                lex.eat(fc);
-                lex.eat('o');
+                lex.bump(fc);
+                lex.bump('o');
                 lex_integer_oct(lex, start);
                 return;
             }
             Some('x') => {
-                lex.eat(fc);
-                lex.eat('x');
+                lex.bump(fc);
+                lex.bump('x');
                 lex_integer_hex(lex, start);
                 return;
             }
@@ -373,16 +531,11 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     }
     skip_num_digits(lex);
 
-    if lex.at('.') {
-        lex.eat('.');
+    if lex.eat('.') {
         skip_num_digits(lex);
 
-        if lex.at('e') {
-            lex.eat('e');
-
-            if lex.at('-') {
-                lex.eat('-');
-            }
+        if lex.eat('e') {
+            lex.eat('-');
             skip_num_digits(lex);
         }
 
@@ -403,10 +556,10 @@ fn skip_zero_digits(lex: &mut Lexer) -> bool {
     while let Some(c) = lex.peek() {
         match c {
             '0' => {
-                lex.eat(c);
+                lex.bump(c);
                 skipped = true;
             }
-            '_' => lex.eat(c),
+            '_' => lex.bump(c),
             _ => break,
         };
     }
@@ -417,10 +570,10 @@ fn skip_num_digits(lex: &mut Lexer) {
     while let Some(c) = lex.peek() {
         match c {
             '0'..='9' => {
-                lex.eat(c);
+                lex.bump(c);
                 lex.buffer.push(c);
             }
-            '_' => lex.eat(c),
+            '_' => lex.bump(c),
             _ => return,
         };
     }
@@ -461,18 +614,18 @@ fn lex_integer_bin(lex: &mut Lexer, start: TextOffset) {
             '0'..='1' => c as u64 - '0' as u64,
             '2'..='9' => {
                 let start = lex.start_range();
-                lex.eat(c);
+                lex.bump(c);
                 err::lexer_int_bin_invalid_digit(lex, lex.make_src(start), c);
                 continue;
             }
             '_' => {
-                lex.eat(c);
+                lex.bump(c);
                 continue;
             }
             _ => break,
         };
 
-        lex.eat(c);
+        lex.bump(c);
         digit_count += 1;
         integer = (integer << SHIFT_BASE) | value;
     }
@@ -502,12 +655,12 @@ fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
             '0'..='7' => c as u64 - '0' as u64,
             '8'..='9' => {
                 let start = lex.start_range();
-                lex.eat(c);
+                lex.bump(c);
                 err::lexer_int_oct_invalid_digit(lex, lex.make_src(start), c);
                 continue;
             }
             '_' => {
-                lex.eat(c);
+                lex.bump(c);
                 continue;
             }
             _ => break,
@@ -516,7 +669,7 @@ fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
         if digit_count == 0 {
             first_digit = value;
         }
-        lex.eat(c);
+        lex.bump(c);
         digit_count += 1;
         integer = (integer << SHIFT_BASE) | value;
     }
@@ -547,13 +700,13 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
             'a'..='f' => c as u64 - 'a' as u64 + 10,
             'A'..='F' => c as u64 - 'A' as u64 + 10,
             '_' => {
-                lex.eat(c);
+                lex.bump(c);
                 continue;
             }
             _ => break,
         };
 
-        lex.eat(c);
+        lex.bump(c);
         digit_count += 1;
         integer = (integer << SHIFT_BASE) | value;
     }
@@ -565,75 +718,4 @@ fn lex_integer_hex(lex: &mut Lexer, start: TextOffset) {
     }
 
     lex.tokens.add_int(integer, lex.make_range(start));
-}
-
-fn lex_ident(lex: &mut Lexer, fc: char) {
-    let start = lex.start_range();
-    lex.eat(fc);
-
-    while let Some(c) = lex.peek() {
-        if c.is_ascii_alphanumeric() || c == '_' {
-            lex.eat(c);
-        } else {
-            break;
-        }
-    }
-
-    let range = lex.make_range(start);
-    let string = &lex.source[range.as_usize()];
-
-    let token = match Token::as_keyword(string) {
-        Some(keyword) => keyword,
-        None => Token::Ident,
-    };
-    lex.tokens.add_token(token, range);
-}
-
-fn lex_symbol(lex: &mut Lexer, fc: char) {
-    let start = lex.start_range();
-    lex.eat(fc);
-
-    let mut token = match Token::from_char(fc) {
-        Some(sym) => sym,
-        None => {
-            err::lexer_unknown_symbol(lex, lex.make_src(start), fc);
-            return;
-        }
-    };
-
-    match lex.peek() {
-        Some(c) => match Token::glue_double(c, token) {
-            Some(sym) => {
-                lex.eat(c);
-                token = sym;
-            }
-            None => {
-                lex.tokens.add_token(token, lex.make_range(start));
-                return;
-            }
-        },
-        None => {
-            lex.tokens.add_token(token, lex.make_range(start));
-            return;
-        }
-    }
-
-    match lex.peek() {
-        Some(c) => match Token::glue_triple(c, token) {
-            Some(sym) => {
-                lex.eat(c);
-                token = sym;
-            }
-            None => {
-                lex.tokens.add_token(token, lex.make_range(start));
-                return;
-            }
-        },
-        None => {
-            lex.tokens.add_token(token, lex.make_range(start));
-            return;
-        }
-    }
-
-    lex.tokens.add_token(token, lex.make_range(start));
 }
