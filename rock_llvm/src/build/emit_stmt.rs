@@ -1,6 +1,5 @@
 use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
-use crate::llvm;
 use rock_core::hir;
 
 pub fn codegen_block<'c>(

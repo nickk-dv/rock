@@ -168,14 +168,14 @@ fn check_symbol_rename(
             if name.id == alias.id {
                 let src = SourceRange::new(origin_id, alias.range);
                 let alias = ctx.name_str(alias.id);
-                err::import_name_alias_reduntant(&mut ctx.emit, src, alias);
+                err::import_name_alias_redundant(&mut ctx.emit, src, alias);
             }
             Some(alias)
         }
         ast::SymbolRename::Discard(range) => {
             if for_symbol {
                 let src = SourceRange::new(origin_id, range);
-                err::import_name_discard_reduntant(&mut ctx.emit, src);
+                err::import_name_discard_redundant(&mut ctx.emit, src);
             }
             None
         }

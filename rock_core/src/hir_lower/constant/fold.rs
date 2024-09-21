@@ -28,8 +28,9 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::Index { target, access } => fold_index(ctx, src, target, access),
         hir::ExprKind::Slice { .. } => unreachable!(),
         hir::ExprKind::Cast { target, into, kind } => fold_cast(ctx, src, target, *into, kind),
-        hir::ExprKind::LocalVar { .. } => unreachable!(),
         hir::ExprKind::ParamVar { .. } => unreachable!(),
+        hir::ExprKind::LocalVar { .. } => unreachable!(),
+        hir::ExprKind::LocalBind { .. } => unreachable!(),
         hir::ExprKind::ConstVar { const_id } => fold_const_var(ctx, const_id),
         hir::ExprKind::GlobalVar { .. } => unreachable!(),
         hir::ExprKind::Variant {

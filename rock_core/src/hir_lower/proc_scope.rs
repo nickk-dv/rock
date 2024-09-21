@@ -5,10 +5,7 @@ use crate::session::ModuleID;
 use crate::support::{IndexID, ID};
 use crate::text::TextRange;
 
-//@re-use same proc scope to avoid frequent re-alloc 26.05.24
-// lifetime problems, separate vectors into separate re-usable mutable reference?
-// not a big deal until perf of check is important
-// not re-using will re allocate each of 3 vectors multiple times for EACH procedure being typechecked
+//@acts like `LocalScope` probably rework it and merge with `context`
 pub struct ProcScope<'hir> {
     origin_id: ModuleID,
     params: &'hir [hir::Param<'hir>],
@@ -16,10 +13,13 @@ pub struct ProcScope<'hir> {
     blocks: Vec<BlockData>,
     locals: Vec<hir::Local<'hir>>,
     locals_in_scope: Vec<hir::LocalID<'hir>>,
+    local_binds: Vec<hir::LocalBind<'hir>>,
+    local_binds_in_scope: Vec<hir::LocalBindID<'hir>>,
 }
 
 pub struct BlockData {
     local_count: u32,
+    local_bind_count: u32,
     diverges: Diverges,
     loop_status: LoopStatus,
     defer_status: DeferStatus,
@@ -60,8 +60,9 @@ impl Diverges {
 }
 
 pub enum VariableID<'hir> {
-    Local(hir::LocalID<'hir>),
     Param(hir::ParamID<'hir>),
+    Local(hir::LocalID<'hir>),
+    LocalBind(hir::LocalBindID<'hir>),
 }
 
 impl<'hir> ProcScope<'hir> {
@@ -73,6 +74,8 @@ impl<'hir> ProcScope<'hir> {
             blocks: Vec::with_capacity(64),
             locals: Vec::with_capacity(64),
             locals_in_scope: Vec::with_capacity(64),
+            local_binds: Vec::with_capacity(64),
+            local_binds_in_scope: Vec::with_capacity(64),
         }
     }
 
@@ -92,6 +95,8 @@ impl<'hir> ProcScope<'hir> {
         self.blocks.clear();
         self.locals.clear();
         self.locals_in_scope.clear();
+        self.local_binds.clear();
+        self.local_binds_in_scope.clear();
     }
 
     pub fn finish_locals(&self) -> &[hir::Local<'hir>] {
@@ -112,29 +117,37 @@ impl<'hir> ProcScope<'hir> {
     pub fn diverges(&self) -> Diverges {
         self.blocks.last().expect("block exists").diverges
     }
-    pub fn get_local(&self, id: hir::LocalID<'hir>) -> &hir::Local<'hir> {
-        self.locals.id_get(id)
-    }
+
     pub fn get_param(&self, id: hir::ParamID<'hir>) -> &hir::Param<'hir> {
         self.params.id_get(id)
     }
+    pub fn get_local(&self, id: hir::LocalID<'hir>) -> &hir::Local<'hir> {
+        self.locals.id_get(id)
+    }
+    pub fn get_local_bind(&self, id: hir::LocalBindID<'hir>) -> &hir::LocalBind<'hir> {
+        self.local_binds.id_get(id)
+    }
 
+    //@total mess
     pub fn push_block(&mut self, enter: BlockEnter) {
         let block_data = match enter {
             BlockEnter::None => BlockData {
                 local_count: 0,
+                local_bind_count: 0,
                 diverges: self.inherit_diverges(),
                 loop_status: self.inherit_loop_status(false, false),
                 defer_status: self.inherit_defer_status(None),
             },
             BlockEnter::Loop => BlockData {
                 local_count: 0,
+                local_bind_count: 0,
                 diverges: self.inherit_diverges(),
                 loop_status: self.inherit_loop_status(true, false),
                 defer_status: self.inherit_defer_status(None),
             },
             BlockEnter::Defer(range) => BlockData {
                 local_count: 0,
+                local_bind_count: 0,
                 diverges: self.inherit_diverges(),
                 loop_status: self.inherit_loop_status(false, true),
                 defer_status: self.inherit_defer_status(Some(range)),
@@ -198,6 +211,9 @@ impl<'hir> ProcScope<'hir> {
         for _ in 0..block.local_count {
             self.locals_in_scope.pop();
         }
+        for _ in 0..block.local_bind_count {
+            self.local_binds_in_scope.pop();
+        }
     }
 
     pub fn push_local(&mut self, local: hir::Local<'hir>) -> hir::LocalID<'hir> {
@@ -208,22 +224,32 @@ impl<'hir> ProcScope<'hir> {
         local_id
     }
 
+    pub fn push_local_bind(&mut self, local_bind: hir::LocalBind<'hir>) -> hir::LocalBindID<'hir> {
+        let local_bind_id = hir::LocalBindID::new(&self.local_binds);
+        self.local_binds.push(local_bind);
+        self.local_binds_in_scope.push(local_bind_id);
+        self.blocks
+            .last_mut()
+            .expect("block exists")
+            .local_bind_count += 1;
+        local_bind_id
+    }
+
     pub fn find_variable(&self, id: ID<InternName>) -> Option<VariableID<'hir>> {
-        if let Some(param_id) = self.find_param(id) {
-            return Some(VariableID::Param(param_id));
+        for (idx, param) in self.params.iter().enumerate() {
+            if param.name.id == id {
+                let param_id = hir::ParamID::new_raw(idx);
+                return Some(VariableID::Param(param_id));
+            }
         }
-        for local_id in self.locals_in_scope.iter().cloned() {
+        for local_id in self.locals_in_scope.iter().copied() {
             if self.get_local(local_id).name.id == id {
                 return Some(VariableID::Local(local_id));
             }
         }
-        None
-    }
-
-    fn find_param(&self, id: ID<InternName>) -> Option<hir::ParamID<'hir>> {
-        for (idx, param) in self.params.iter().enumerate() {
-            if param.name.id == id {
-                return Some(hir::ParamID::new_raw(idx));
+        for local_bind_id in self.local_binds_in_scope.iter().copied() {
+            if self.get_local_bind(local_bind_id).name.id == id {
+                return Some(VariableID::LocalBind(local_bind_id));
             }
         }
         None

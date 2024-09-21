@@ -116,16 +116,17 @@ fn codegen_expr<'c>(
         hir::ExprKind::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect, target, access))
         }
-        hir::ExprKind::Slice { target, access } => unimplemented!("emit slice"),
+        hir::ExprKind::Slice { target, access } => unimplemented!("slicing"),
         hir::ExprKind::Cast { target, into, kind } => {
             Some(codegen_cast(cg, proc_cg, target, into, kind))
-        }
-        hir::ExprKind::LocalVar { local_id } => {
-            Some(codegen_local_var(cg, proc_cg, expect, local_id))
         }
         hir::ExprKind::ParamVar { param_id } => {
             Some(codegen_param_var(cg, proc_cg, expect, param_id))
         }
+        hir::ExprKind::LocalVar { local_id } => {
+            Some(codegen_local_var(cg, proc_cg, expect, local_id))
+        }
+        hir::ExprKind::LocalBind { local_bind_id } => unimplemented!("match binding vars"),
         hir::ExprKind::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
         hir::ExprKind::Variant {
@@ -442,24 +443,6 @@ fn codegen_cast<'c>(
     }
 }
 
-fn codegen_local_var(
-    cg: &Codegen,
-    proc_cg: &ProcCodegen,
-    expect: Expect,
-    local_id: hir::LocalID,
-) -> llvm::Value {
-    let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
-
-    match expect {
-        Expect::Value(_) | Expect::Store(_) => {
-            let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
-            let local_ty = cg.ty(local.ty);
-            cg.build.load(local_ty, local_ptr, "local_val")
-        }
-        Expect::Pointer => local_ptr.as_val(),
-    }
-}
-
 fn codegen_param_var(
     cg: &Codegen,
     proc_cg: &ProcCodegen,
@@ -475,6 +458,24 @@ fn codegen_param_var(
             cg.build.load(param_ty, param_ptr, "param_val")
         }
         Expect::Pointer => param_ptr.as_val(),
+    }
+}
+
+fn codegen_local_var(
+    cg: &Codegen,
+    proc_cg: &ProcCodegen,
+    expect: Expect,
+    local_id: hir::LocalID,
+) -> llvm::Value {
+    let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
+
+    match expect {
+        Expect::Value(_) | Expect::Store(_) => {
+            let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
+            let local_ty = cg.ty(local.ty);
+            cg.build.load(local_ty, local_ptr, "local_val")
+        }
+        Expect::Pointer => local_ptr.as_val(),
     }
 }
 

@@ -424,7 +424,6 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
         'n' => '\n',
         'r' => '\r',
         't' => '\t',
-        '0' => '\0',
         '\'' => '\'',
         '\"' => '\"',
         '\\' => '\\',

@@ -319,12 +319,12 @@ pub fn import_module_into_itself(emit: &mut impl ErrorSink, src: SourceRange, mo
     emit.error(ErrorComp::new(msg, src, None));
 }
 
-pub fn import_name_alias_reduntant(emit: &mut impl ErrorSink, src: SourceRange, alias: &str) {
+pub fn import_name_alias_redundant(emit: &mut impl ErrorSink, src: SourceRange, alias: &str) {
     let msg = format!("name alias `{alias}` is redundant, remove it");
     emit.warning(WarningComp::new(msg, src, None));
 }
 
-pub fn import_name_discard_reduntant(emit: &mut impl ErrorSink, src: SourceRange) {
+pub fn import_name_discard_redundant(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "name discard `_` is redundant, remove it";
     emit.warning(WarningComp::new(msg, src, None));
 }

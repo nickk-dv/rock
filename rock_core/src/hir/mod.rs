@@ -271,8 +271,9 @@ pub enum ExprKind<'hir> {
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    LocalVar     { local_id: LocalID<'hir> },
     ParamVar     { param_id: ParamID<'hir> },
+    LocalVar     { local_id: LocalID<'hir> },
+    LocalBind    { local_bind_id: LocalBindID<'hir> },
     ConstVar     { const_id: ConstID<'hir> },
     GlobalVar    { global_id: GlobalID<'hir> },
     Variant      { enum_id: EnumID<'hir>, variant_id: VariantID<'hir>, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
@@ -349,7 +350,6 @@ pub struct Match<'hir> {
 pub struct MatchArm<'hir> {
     pub pat: Pat<'hir>,
     pub block: Block<'hir>,
-    pub unreachable: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -422,6 +422,12 @@ pub enum CastKind {
     Float_to_IntU,
     Float_Trunc,
     Float_Extend,
+}
+
+pub type LocalBindID<'hir> = ID<LocalBind<'hir>>;
+pub struct LocalBind<'hir> {
+    pub name: ast::Name,
+    pub ty: Type<'hir>,
 }
 
 #[derive(Copy, Clone)]

@@ -1,7 +1,6 @@
 use super::constant;
 use super::context::{HirCtx, HirEmit, SymbolKind};
-use super::proc_scope::Diverges;
-use super::proc_scope::{BlockEnter, DeferStatus, LoopStatus, VariableID};
+use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp};
 use crate::errors as err;
@@ -525,11 +524,7 @@ fn typecheck_match<'hir>(
         let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
         let block = hir::Block { stmts };
 
-        let arm = hir::MatchArm {
-            pat,
-            block,
-            unreachable: false,
-        };
+        let arm = hir::MatchArm { pat, block };
         arms.push(arm);
     }
 
@@ -691,7 +686,11 @@ fn typecheck_pat_item<'hir>(
             let data = ctx.registry.const_data(const_id);
             PatResult::new(hir::Pat::Const(const_id), data.ty)
         }
-        ValueID::Proc(_) | ValueID::Global(_) | ValueID::Local(_) | ValueID::Param(_) => {
+        ValueID::Proc(_)
+        | ValueID::Global(_)
+        | ValueID::Param(_)
+        | ValueID::Local(_)
+        | ValueID::LocalBind(_) => {
             ctx.emit.error(ErrorComp::new(
                 "cannot use runtime values in patterns",
                 SourceRange::new(ctx.proc.origin(), pat_range),
@@ -1326,13 +1325,17 @@ fn typecheck_item<'hir>(
             ctx.registry.global_data(id).ty,
             hir::ExprKind::GlobalVar { global_id: id },
         ),
-        ValueID::Local(id) => TypeResult::new(
-            ctx.proc.get_local(id).ty, //@type of local var might not be known
-            hir::ExprKind::LocalVar { local_id: id },
-        ),
         ValueID::Param(id) => TypeResult::new(
             ctx.proc.get_param(id).ty,
             hir::ExprKind::ParamVar { param_id: id },
+        ),
+        ValueID::Local(id) => TypeResult::new(
+            ctx.proc.get_local(id).ty,
+            hir::ExprKind::LocalVar { local_id: id },
+        ),
+        ValueID::LocalBind(id) => TypeResult::new(
+            ctx.proc.get_local_bind(id).ty,
+            hir::ExprKind::LocalBind { local_bind_id: id },
         ),
     };
 
@@ -1750,6 +1753,13 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
         hir::ExprKind::Index { target, .. } => get_expr_addressability(ctx, target),
         hir::ExprKind::Slice { target, .. } => get_expr_addressability(ctx, target),
         hir::ExprKind::Cast { .. } => Addressability::Temporary,
+        hir::ExprKind::ParamVar { param_id } => {
+            let param = ctx.proc.get_param(param_id);
+            Addressability::Addressable(
+                param.mutt,
+                SourceRange::new(ctx.proc.origin(), param.name.range),
+            )
+        }
         hir::ExprKind::LocalVar { local_id } => {
             let local = ctx.proc.get_local(local_id);
             Addressability::Addressable(
@@ -1757,12 +1767,10 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
                 SourceRange::new(ctx.proc.origin(), local.name.range),
             )
         }
-        hir::ExprKind::ParamVar { param_id } => {
-            let param = ctx.proc.get_param(param_id);
-            Addressability::Addressable(
-                param.mutt,
-                SourceRange::new(ctx.proc.origin(), param.name.range),
-            )
+        hir::ExprKind::LocalBind { local_bind_id } => {
+            //@semantics not finished
+            // can be reference binding which may behave differently
+            Addressability::NotImplemented
         }
         hir::ExprKind::ConstVar { .. } => Addressability::Constant,
         hir::ExprKind::GlobalVar { global_id } => {
@@ -2247,11 +2255,14 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> Loca
                 true
             } else if let Some(existing_var) = ctx.proc.find_variable(name.id) {
                 let existing = match existing_var {
+                    VariableID::Param(id) => {
+                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
+                    }
                     VariableID::Local(id) => {
                         SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
                     }
-                    VariableID::Param(id) => {
-                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
+                    VariableID::LocalBind(id) => {
+                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_local_bind(id).name.range)
                     }
                 };
                 let name_src = SourceRange::new(ctx.proc.origin(), name.range);
@@ -2432,8 +2443,9 @@ fn check_unused_expr_semi(
         hir::ExprKind::Index { .. } => UnusedExpr::Yes("index access"),
         hir::ExprKind::Slice { .. } => UnusedExpr::Yes("slice value"),
         hir::ExprKind::Cast { .. } => UnusedExpr::Yes("cast value"),
-        hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
         hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
+        hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
+        hir::ExprKind::LocalBind { .. } => UnusedExpr::Yes("local bind value"),
         hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
@@ -2796,12 +2808,8 @@ fn path_resolve<'hir>(
 ) -> (ResolvedPath<'hir>, usize) {
     let name = path.names.first().cloned().expect("non empty path");
 
-    //@cannot tell in whitch context this body is
-    // contant exprs, type defs dont have a `proc`
-    if false {
-        if let Some(var_id) = ctx.proc.find_variable(name.id) {
-            return (ResolvedPath::Variable(var_id), 0);
-        }
+    if let Some(var_id) = ctx.proc.find_variable(name.id) {
+        return (ResolvedPath::Variable(var_id), 0);
     }
 
     let (target_id, name) =
@@ -2849,11 +2857,14 @@ pub fn path_resolve_type<'hir>(
             let name = path.names[name_idx];
 
             let source = match variable {
+                VariableID::Param(id) => {
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
+                }
                 VariableID::Local(id) => {
                     SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
                 }
-                VariableID::Param(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
+                VariableID::LocalBind(id) => {
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local_bind(id).name.range)
                 }
             };
             //@calling this `local` for both params and locals, validate wording consistency
@@ -2913,11 +2924,14 @@ pub fn path_resolve_struct<'hir>(
             let name = path.names[name_idx];
 
             let source = match variable {
+                VariableID::Param(id) => {
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
+                }
                 VariableID::Local(id) => {
                     SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
                 }
-                VariableID::Param(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
+                VariableID::LocalBind(id) => {
+                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local_bind(id).name.range)
                 }
             };
             //@calling this `local` for both params and locals, validate wording consistency
@@ -2969,8 +2983,9 @@ pub enum ValueID<'hir> {
     Enum(hir::EnumID<'hir>, hir::VariantID<'hir>),
     Const(hir::ConstID<'hir>),
     Global(hir::GlobalID<'hir>),
-    Local(hir::LocalID<'hir>),
     Param(hir::ParamID<'hir>),
+    Local(hir::LocalID<'hir>),
+    LocalBind(hir::LocalBindID<'hir>),
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
@@ -2983,8 +2998,9 @@ pub fn path_resolve_value<'hir, 'ast>(
     let value_id = match resolved {
         ResolvedPath::None => return (ValueID::None, &[]),
         ResolvedPath::Variable(var) => match var {
-            VariableID::Local(id) => ValueID::Local(id),
             VariableID::Param(id) => ValueID::Param(id),
+            VariableID::Local(id) => ValueID::Local(id),
+            VariableID::LocalBind(id) => ValueID::LocalBind(id),
         },
         ResolvedPath::Symbol(kind) => match kind {
             SymbolKind::Proc(id) => {

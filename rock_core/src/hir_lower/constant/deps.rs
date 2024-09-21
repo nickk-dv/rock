@@ -765,6 +765,15 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
+                pass_5::ValueID::Param(_) => {
+                    error_cannot_refer_to_in_constants(
+                        &mut ctx.emit,
+                        origin_id,
+                        expr.range,
+                        "parameters",
+                    );
+                    Err(parent_id)
+                }
                 pass_5::ValueID::Local(_) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
@@ -774,12 +783,12 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::Param(_) => {
+                pass_5::ValueID::LocalBind(_) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
                         expr.range,
-                        "parameters",
+                        "local binds",
                     );
                     Err(parent_id)
                 }
