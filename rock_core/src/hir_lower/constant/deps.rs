@@ -788,7 +788,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                         &mut ctx.emit,
                         origin_id,
                         expr.range,
-                        "local binds",
+                        "local bindings",
                     );
                     Err(parent_id)
                 }

@@ -650,12 +650,12 @@ fn typecheck_pat_item<'hir>(
 
             if input_count != expected_count {
                 //@error src can be improved to not include variant itself if possible (if needed)
-                error_unexpected_variant_bind_count(
+                err::tycheck_unexpected_variant_bind_count(
                     &mut ctx.emit,
-                    expected_count,
-                    input_count,
                     SourceRange::new(ctx.proc.origin(), pat_range),
                     SourceRange::new(data.origin_id, variant.name.range),
+                    input_count,
+                    expected_count,
                 );
             }
 
@@ -726,12 +726,12 @@ fn typecheck_pat_variant<'hir>(
 
         if input_count != expected_count {
             //@error src can be improved to not include variant itself if possible (if needed)
-            error_unexpected_variant_bind_count(
+            err::tycheck_unexpected_variant_bind_count(
                 &mut ctx.emit,
-                expected_count,
-                input_count,
                 SourceRange::new(ctx.proc.origin(), pat_range),
                 SourceRange::new(data.origin_id, variant.name.range),
+                input_count,
+                expected_count,
             );
         }
 
@@ -1276,22 +1276,22 @@ fn typecheck_sizeof<'hir>(
 fn typecheck_item<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     path: &ast::Path,
-    input: Option<&ast::ArgumentList>,
+    args_list: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let (value_id, field_names) = path_resolve_value(ctx, ctx.proc.origin(), path);
 
     let item_res = match value_id {
         ValueID::None => {
-            return error_result_default_check_input_opt(ctx, input);
+            return error_res_default_check_arg_list_opt(ctx, args_list);
         }
         ValueID::Proc(proc_id) => {
             //@where do fields go? none expected?
             // ValueID or something like it should provide
             // remaining fields in each variant so its known when none can exist
             // instead of hadling the empty slice and assuming its correct
-            if let Some(input) = input {
-                return check_call_direct(ctx, proc_id, input);
+            if let Some(args_list) = args_list {
+                return check_call_direct(ctx, proc_id, args_list);
             } else {
                 let data = ctx.registry.proc_data(proc_id);
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
@@ -1315,7 +1315,7 @@ fn typecheck_item<'hir>(
             //@no fields is guaranteed by path resolve
             // remove assert when stable, or path resolve is reworked
             assert!(field_names.is_empty());
-            return check_variant_input_opt(ctx, enum_id, variant_id, input, expr_range);
+            return check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range);
         }
         ValueID::Const(id) => TypeResult::new(
             ctx.registry.const_data(id).ty,
@@ -1349,9 +1349,9 @@ fn typecheck_item<'hir>(
         target_range = TextRange::new(expr_range.start(), name.range.end());
     }
 
-    if let Some(input) = input {
+    if let Some(args_list) = args_list {
         let expr_res = target_res.into_expr_result(ctx, target_range);
-        check_call_indirect(ctx, expr_res, input)
+        check_call_indirect(ctx, expr_res, args_list)
     } else {
         target_res
     }
@@ -1361,7 +1361,7 @@ fn typecheck_variant<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
-    input: Option<&ast::ArgumentList>,
+    args_list: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let enum_id = infer_enum_type(
@@ -1371,7 +1371,7 @@ fn typecheck_variant<'hir>(
     );
     let enum_id = match enum_id {
         Some(enum_id) => enum_id,
-        None => return error_result_default_check_input_opt(ctx, input),
+        None => return error_res_default_check_arg_list_opt(ctx, args_list),
     };
 
     let data = ctx.registry.enum_data(enum_id);
@@ -1387,11 +1387,11 @@ fn typecheck_variant<'hir>(
                     SourceRange::new(data.origin_id, data.name.range),
                 ),
             ));
-            return error_result_default_check_input_opt(ctx, input);
+            return error_res_default_check_arg_list_opt(ctx, args_list);
         }
     };
 
-    check_variant_input_opt(ctx, enum_id, variant_id, input, expr_range)
+    check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range)
 }
 
 //@still used in pass4
@@ -1415,7 +1415,7 @@ fn typecheck_struct_init<'hir>(
     };
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,
-        None => return error_result_default_check_field_init(ctx, struct_init.input),
+        None => return error_res_default_check_field_init(ctx, struct_init.input),
     };
 
     let data = ctx.registry.struct_data(struct_id);
@@ -2418,7 +2418,6 @@ fn check_unused_expr_semi(
 ) {
     enum UnusedExpr {
         No,
-        Maybe,
         Yes(&'static str),
     }
 
@@ -2432,12 +2431,11 @@ fn check_unused_expr_semi(
     }
 
     let unused = match expr.kind {
-        // errored expressions are not allowed to be checked
-        hir::ExprKind::Error => unreachable!(),
+        hir::ExprKind::Error => unreachable!(), // errored exprs cannot be checked
         hir::ExprKind::Const { .. } => UnusedExpr::Yes("constant value"),
-        hir::ExprKind::If { .. } => UnusedExpr::Maybe,
-        hir::ExprKind::Block { .. } => UnusedExpr::Maybe,
-        hir::ExprKind::Match { .. } => UnusedExpr::Maybe,
+        hir::ExprKind::If { .. } => UnusedExpr::No, // type error if not `void`
+        hir::ExprKind::Block { .. } => UnusedExpr::No, // type error if not `void`
+        hir::ExprKind::Match { .. } => UnusedExpr::No, // type error if not `void`
         hir::ExprKind::StructField { .. } => UnusedExpr::Yes("field access"),
         hir::ExprKind::SliceField { .. } => UnusedExpr::Yes("field access"),
         hir::ExprKind::Index { .. } => UnusedExpr::Yes("index access"),
@@ -2445,7 +2443,7 @@ fn check_unused_expr_semi(
         hir::ExprKind::Cast { .. } => UnusedExpr::Yes("cast value"),
         hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
         hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
-        hir::ExprKind::LocalBind { .. } => UnusedExpr::Yes("local bind value"),
+        hir::ExprKind::LocalBind { .. } => UnusedExpr::Yes("local binding value"),
         hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
@@ -2467,17 +2465,14 @@ fn check_unused_expr_semi(
     };
 
     if let UnusedExpr::Yes(kind) = unused {
-        ctx.emit.warning(WarningComp::new(
-            format!("unused {}", kind),
-            SourceRange::new(origin_id, expr_range),
-            None,
-        ));
+        let src = SourceRange::new(origin_id, expr_range);
+        err::tycheck_unused_expr(&mut ctx.emit, src, kind);
     }
 }
 
 //==================== INFERENCE ====================
-//@check if reference expectations need to be accounted for
 
+//@check if reference expectations need to be accounted for
 fn infer_enum_type<'hir>(
     emit: &mut HirEmit,
     expect: Expectation<'hir>,
@@ -2492,11 +2487,12 @@ fn infer_enum_type<'hir>(
         },
     };
     if enum_id.is_none() {
-        emit.error(ErrorComp::new("cannot infer enum type", error_src, None));
+        err::tycheck_cannot_infer_enum_type(emit, error_src);
     }
     enum_id
 }
 
+//@check if reference expectations need to be accounted for
 fn infer_struct_type<'hir>(
     emit: &mut HirEmit,
     expect: Expectation<'hir>,
@@ -2511,36 +2507,36 @@ fn infer_struct_type<'hir>(
         },
     };
     if struct_id.is_none() {
-        emit.error(ErrorComp::new("cannot infer struct type", error_src, None));
+        err::tycheck_cannot_infer_struct_type(emit, error_src);
     }
     struct_id
 }
 
 //==================== DEFAULT CHECK ====================
 
-fn error_result_default_check_input<'hir>(
+fn error_res_default_check_arg_list<'hir>(
     ctx: &mut HirCtx,
-    input: &ast::ArgumentList,
+    arg_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
-    for &expr in input.exprs.iter() {
+    for &expr in arg_list.exprs.iter() {
         let _ = typecheck_expr(ctx, Expectation::None, expr);
     }
     TypeResult::error()
 }
 
-fn error_result_default_check_input_opt<'hir>(
+fn error_res_default_check_arg_list_opt<'hir>(
     ctx: &mut HirCtx,
-    input: Option<&ast::ArgumentList>,
+    arg_list: Option<&ast::ArgumentList>,
 ) -> TypeResult<'hir> {
-    if let Some(input) = input {
-        for &expr in input.exprs.iter() {
+    if let Some(arg_list) = arg_list {
+        for &expr in arg_list.exprs.iter() {
             let _ = typecheck_expr(ctx, Expectation::None, expr);
         }
     }
     TypeResult::error()
 }
 
-fn error_result_default_check_field_init<'hir>(
+fn error_res_default_check_field_init<'hir>(
     ctx: &mut HirCtx,
     input: &[ast::FieldInit],
 ) -> TypeResult<'hir> {
@@ -2550,109 +2546,55 @@ fn error_result_default_check_field_init<'hir>(
     TypeResult::error()
 }
 
-//==================== CALL-LIKE INPUT CHECK ====================
+//==================== PROC CALL & VARIANT INPUT CHECK ====================
 
-//@fix names for ArgumentList / BindingList related code
-fn input_range(input: &ast::ArgumentList) -> TextRange {
-    if input.exprs.is_empty() {
-        input.range
+fn arg_list_range(arg_list: &ast::ArgumentList) -> TextRange {
+    if arg_list.exprs.is_empty() {
+        arg_list.range
     } else {
-        let end = input.range.end();
+        let end = arg_list.range.end();
         TextRange::new(end - 1.into(), end)
     }
 }
 
-fn input_opt_range(input: Option<&ast::ArgumentList>, default: TextRange) -> TextRange {
-    if let Some(input) = input {
-        input_range(input)
+fn arg_list_opt_range(arg_list: Option<&ast::ArgumentList>, default: TextRange) -> TextRange {
+    if let Some(arg_list) = arg_list {
+        arg_list_range(arg_list)
     } else {
         default
     }
 }
 
-fn error_unexpected_variant_arg_count(
-    emit: &mut HirEmit,
-    expected_count: usize,
-    input_count: usize,
-    error_src: SourceRange,
-    variant_src: SourceRange,
-) {
-    let plural_end = if expected_count == 1 { "" } else { "s" };
-    emit.error(ErrorComp::new(
-        format!("expected {expected_count} argument{plural_end}, found {input_count}"),
-        error_src,
-        Info::new("variant defined here", variant_src),
-    ));
-}
-
-fn error_unexpected_variant_bind_count(
-    emit: &mut HirEmit,
-    expected_count: usize,
-    input_count: usize,
-    error_src: SourceRange,
-    variant_src: SourceRange,
-) {
-    let plural_end = if expected_count == 1 { "" } else { "s" };
-    emit.error(ErrorComp::new(
-        format!("expected {expected_count} binding{plural_end}, found {input_count}"),
-        error_src,
-        Info::new("variant defined here", variant_src),
-    ));
-}
-
-fn error_unexpected_call_arg_count(
-    emit: &mut HirEmit,
-    expected_count: usize,
-    input_count: usize,
-    is_variadic: bool,
-    error_src: SourceRange,
-    info: Option<SourceRange>,
-) {
-    let at_least = if is_variadic { " at least" } else { "" };
-    let plural_end = if expected_count == 1 { "" } else { "s" };
-    let info = match info {
-        Some(proc_src) => Info::new("procedure defined here", proc_src),
-        None => None,
-    };
-    emit.error(ErrorComp::new(
-        format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}"),
-        error_src,
-        info,
-    ));
-}
-
 fn check_call_direct<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     proc_id: hir::ProcID<'hir>,
-    input: &ast::ArgumentList,
+    arg_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.proc_data(proc_id);
     let return_ty = data.return_ty;
 
-    let input_count = input.exprs.len();
+    let input_count = arg_list.exprs.len();
     let expected_count = data.params.len();
     let is_variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
     let wrong_count = (is_variadic && (input_count < expected_count))
         || (!is_variadic && (input_count != expected_count));
 
     if wrong_count {
-        let input_range = input_range(input);
-        error_unexpected_call_arg_count(
+        err::tycheck_unexpected_proc_arg_count(
             &mut ctx.emit,
-            expected_count,
-            input_count,
+            SourceRange::new(ctx.proc.origin(), arg_list_range(arg_list)),
+            Some(data.src()),
             is_variadic,
-            SourceRange::new(ctx.proc.origin(), input_range),
-            Some(SourceRange::new(data.origin_id, data.name.range)),
+            input_count,
+            expected_count,
         );
     }
 
     let mut values = Vec::with_capacity(data.params.len());
-    for (idx, &expr) in input.exprs.iter().enumerate() {
-        //@reborrow
+    for (idx, &expr) in arg_list.exprs.iter().enumerate() {
         let data = ctx.registry.proc_data(proc_id);
-        //@expect src, id with duplicates problem
         let expect = match data.params.get(idx) {
+            //@store Type + range in hir::Param to give the expect_src
             Some(param) => Expectation::HasType(param.ty, None),
             None => Expectation::None,
         };
@@ -2671,45 +2613,43 @@ fn check_call_direct<'hir>(
 fn check_call_indirect<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     target_res: ExprResult<'hir>,
-    input: &ast::ArgumentList,
+    arg_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
     let proc_ty = match target_res.ty {
-        hir::Type::Error => return error_result_default_check_input(ctx, input),
+        hir::Type::Error => return error_res_default_check_arg_list(ctx, arg_list),
         hir::Type::Procedure(proc_ty) => proc_ty,
         _ => {
-            ctx.emit.error(ErrorComp::new(
-                format!(
-                    "cannot call value of type `{}`",
-                    type_format(ctx, target_res.ty).as_str()
-                ),
+            let ty_fmt = type_format(ctx, target_res.ty);
+            err::tycheck_cannot_call_value_of_type(
+                &mut ctx.emit,
                 SourceRange::new(ctx.proc.origin(), target_res.expr.range),
-                None,
-            ));
-            return error_result_default_check_input(ctx, input);
+                ty_fmt.as_str(),
+            );
+            return error_res_default_check_arg_list(ctx, arg_list);
         }
     };
 
-    let input_count = input.exprs.len();
+    let input_count = arg_list.exprs.len();
     let expected_count = proc_ty.param_types.len();
     let is_variadic = proc_ty.is_variadic;
     let wrong_count = (is_variadic && (input_count < expected_count))
         || (!is_variadic && (input_count != expected_count));
 
     if wrong_count {
-        let input_range = input_range(input);
-        error_unexpected_call_arg_count(
+        err::tycheck_unexpected_proc_arg_count(
             &mut ctx.emit,
-            expected_count,
-            input_count,
-            is_variadic,
-            SourceRange::new(ctx.proc.origin(), input_range),
+            SourceRange::new(ctx.proc.origin(), arg_list_range(arg_list)),
             None,
+            is_variadic,
+            input_count,
+            expected_count,
         );
     }
 
     let mut values = Vec::with_capacity(proc_ty.param_types.len());
-    for (idx, &expr) in input.exprs.iter().enumerate() {
+    for (idx, &expr) in arg_list.exprs.iter().enumerate() {
         let expect = match proc_ty.param_types.get(idx) {
+            //@store Type + range in variant fields to give the expect_src
             Some(param_ty) => Expectation::HasType(*param_ty, None),
             None => Expectation::None,
         };
@@ -2722,10 +2662,9 @@ fn check_call_indirect<'hir>(
         proc_ty,
         input: values,
     };
-    let indirect = ctx.arena.alloc(indirect);
     let kind = hir::ExprKind::CallIndirect {
         target: target_res.expr,
-        indirect,
+        indirect: ctx.arena.alloc(indirect),
     };
     TypeResult::new(proc_ty.return_ty, kind)
 }
@@ -2734,30 +2673,36 @@ fn check_variant_input_opt<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     enum_id: hir::EnumID<'hir>,
     variant_id: hir::VariantID<'hir>,
-    input: Option<&ast::ArgumentList>,
+    arg_list: Option<&ast::ArgumentList>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.enum_data(enum_id);
     let variant = data.variant(variant_id);
 
-    let input_count = input.map(|i| i.exprs.len()).unwrap_or(0);
+    let input_count = arg_list.map(|arg_list| arg_list.exprs.len()).unwrap_or(0);
     let expected_count = variant.fields.len();
 
     if input_count != expected_count {
-        let input_range = input_opt_range(input, error_range);
-        error_unexpected_variant_arg_count(
+        err::tycheck_unexpected_variant_arg_count(
             &mut ctx.emit,
-            expected_count,
+            SourceRange::new(ctx.proc.origin(), arg_list_opt_range(arg_list, error_range)),
+            SourceRange::new(data.origin_id, variant.name.range),
             input_count,
-            SourceRange::new(ctx.proc.origin(), input_range),
+            expected_count,
+        );
+    } else if expected_count == 0 && arg_list.is_some() {
+        //@implement same check for enum definition
+        err::tycheck_unexpected_variant_arg_list(
+            &mut ctx.emit,
+            SourceRange::new(ctx.proc.origin(), arg_list_opt_range(arg_list, error_range)),
             SourceRange::new(data.origin_id, variant.name.range),
         );
     }
 
-    let input = if let Some(input) = input {
-        let mut values = Vec::with_capacity(input.exprs.len());
-        for (idx, &expr) in input.exprs.iter().enumerate() {
-            //@expect src, id with duplicates problem
+    let input = if let Some(arg_list) = arg_list {
+        let mut values = Vec::with_capacity(arg_list.exprs.len());
+        for (idx, &expr) in arg_list.exprs.iter().enumerate() {
+            //@expect src, id with duplicates problem, no field ty range stored
             let expect = match variant.fields.get(idx) {
                 Some(ty) => Expectation::HasType(*ty, None),
                 None => Expectation::None,
@@ -2766,13 +2711,12 @@ fn check_variant_input_opt<'hir>(
             values.push(expr_res.expr);
         }
         let values = ctx.arena.alloc_slice(&values);
-        let values = ctx.arena.alloc(values);
-        Some(values)
+        ctx.arena.alloc(values)
     } else {
-        None
+        let empty: &[&hir::Expr] = &[];
+        ctx.arena.alloc(empty)
     };
 
-    //@deal with empty value or type list like () both on definition & expression
     let kind = hir::ExprKind::Variant {
         enum_id,
         variant_id,

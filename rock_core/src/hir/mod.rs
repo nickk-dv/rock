@@ -276,7 +276,7 @@ pub enum ExprKind<'hir> {
     LocalBind    { local_bind_id: LocalBindID<'hir> },
     ConstVar     { const_id: ConstID<'hir> },
     GlobalVar    { global_id: GlobalID<'hir> },
-    Variant      { enum_id: EnumID<'hir>, variant_id: VariantID<'hir>, input: Option<&'hir &'hir [&'hir Expr<'hir>]> },
+    Variant      { enum_id: EnumID<'hir>, variant_id: VariantID<'hir>, input: &'hir &'hir [&'hir Expr<'hir>] },
     CallDirect   { proc_id: ProcID<'hir>, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID<'hir>, input: &'hir [FieldInit<'hir>] },
@@ -312,7 +312,7 @@ pub enum ConstValue<'hir> {
 pub struct ConstVariant<'hir> {
     pub enum_id: EnumID<'hir>,
     pub variant_id: VariantID<'hir>,
-    pub value_ids: Option<&'hir [ConstValueID<'hir>]>,
+    pub value_ids: &'hir [ConstValueID<'hir>],
 }
 
 #[derive(Copy, Clone, PartialEq)]

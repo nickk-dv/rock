@@ -447,9 +447,83 @@ pub fn const_float_is_infinite(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(ErrorComp::new(msg, src, None));
 }
 
-//==================== TYPECHECK MATCH ====================
+//==================== TYPECHECK ====================
 
-pub fn match_pat_unreachable(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "unreachable pattern";
+pub fn tycheck_unused_expr(emit: &mut impl ErrorSink, src: SourceRange, kind: &'static str) {
+    let msg = format!("unused {kind}");
     emit.warning(WarningComp::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_infer_enum_type(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot infer enum type";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_infer_struct_type(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot infer struct type";
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_call_value_of_type(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    ty_fmt: &str,
+) {
+    let msg = format!("cannot call value of type `{ty_fmt}`");
+    emit.error(ErrorComp::new(msg, src, None));
+}
+
+pub fn tycheck_unexpected_proc_arg_count(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    proc_src: Option<SourceRange>,
+    is_variadic: bool,
+    input_count: usize,
+    expected_count: usize,
+) {
+    let at_least = if is_variadic { " at least" } else { "" };
+    let plural_end = if expected_count == 1 { "" } else { "s" };
+    let msg =
+        format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}");
+    let info = match proc_src {
+        Some(proc_src) => Info::new("procedure defined here", proc_src),
+        None => None,
+    };
+    emit.error(ErrorComp::new(msg, src, info));
+}
+
+pub fn tycheck_unexpected_variant_arg_list(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    variant_src: SourceRange,
+) {
+    let msg = "variant has no fields, remove the argument list";
+    let info = Info::new("variant defined here", variant_src);
+    emit.error(ErrorComp::new(msg, src, info));
+}
+
+pub fn tycheck_unexpected_variant_arg_count(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    variant_src: SourceRange,
+    input_count: usize,
+    expected_count: usize,
+) {
+    let plural_end = if expected_count == 1 { "" } else { "s" };
+    let msg = format!("expected {expected_count} argument{plural_end}, found {input_count}");
+    let info = Info::new("variant defined here", variant_src);
+    emit.error(ErrorComp::new(msg, src, info));
+}
+
+pub fn tycheck_unexpected_variant_bind_count(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    variant_src: SourceRange,
+    input_count: usize,
+    expected_count: usize,
+) {
+    let plural_end = if expected_count == 1 { "" } else { "s" };
+    let msg = format!("expected {expected_count} binding{plural_end}, found {input_count}");
+    let info = Info::new("variant defined here", variant_src);
+    emit.error(ErrorComp::new(msg, src, info));
 }

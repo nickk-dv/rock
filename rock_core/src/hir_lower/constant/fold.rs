@@ -38,13 +38,13 @@ pub fn fold_const_expr<'hir>(
             variant_id,
             input,
         } => {
-            if input.is_some() {
+            if !input.is_empty() {
                 unimplemented!("fold enum variant with input");
             }
             let variant = hir::ConstVariant {
                 enum_id,
                 variant_id,
-                value_ids: None,
+                value_ids: &[],
             };
             let variant = ctx.const_intern.arena().alloc(variant);
             Ok(hir::ConstValue::Variant { variant })
