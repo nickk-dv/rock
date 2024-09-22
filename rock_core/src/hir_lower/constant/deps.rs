@@ -60,9 +60,9 @@ pub fn resolve_const_dependencies<'hir>(ctx: &mut HirCtx) {
             let mut is_ok = true;
 
             for variant in data.variants {
-                for ty in variant.fields {
+                for field in variant.fields {
                     if let Err(from_id) =
-                        add_type_size_const_dependencies(ctx, &mut tree, root_id, *ty)
+                        add_type_size_const_dependencies(ctx, &mut tree, root_id, field.ty)
                     {
                         const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                         is_ok = false;
@@ -507,8 +507,8 @@ fn add_variant_const_dependency<'hir>(
 
     let data = ctx.registry.enum_data(enum_id);
     let variant = data.variant(variant_id);
-    for ty in variant.fields {
-        add_type_usage_const_dependencies(ctx, tree, parent_id, *ty)?;
+    for field in variant.fields {
+        add_type_usage_const_dependencies(ctx, tree, parent_id, field.ty)?;
     }
     Ok(())
 }
@@ -604,8 +604,8 @@ fn add_enum_size_const_dependency<'hir>(
             //@forced re-borrow due to `check_const_dependency_cycle` taking &mut ctx
             let data = ctx.registry.enum_data(enum_id);
             for variant in data.variants {
-                for ty in variant.fields {
-                    add_type_size_const_dependencies(ctx, tree, node_id, *ty)?;
+                for field in variant.fields {
+                    add_type_size_const_dependencies(ctx, tree, node_id, field.ty)?;
                 }
             }
             Ok(())
@@ -652,8 +652,8 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Enum(id) => {
             let data = ctx.registry.enum_data(id);
             for variant in data.variants {
-                for ty in variant.fields {
-                    add_type_usage_const_dependencies(ctx, tree, parent_id, *ty)?;
+                for field in variant.fields {
+                    add_type_usage_const_dependencies(ctx, tree, parent_id, field.ty)?;
                 }
             }
         }

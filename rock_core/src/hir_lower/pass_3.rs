@@ -160,6 +160,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::ProcID<'hir>
                 ),
             ));
         } else {
+            let ty_range = param.ty.range;
             let ty = type_resolve_delayed(ctx, origin_id, param.ty);
             pass_5::require_value_type(ctx, ty, SourceRange::new(origin_id, param.ty.range));
 
@@ -167,6 +168,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::ProcID<'hir>
                 mutt: param.mutt,
                 name: param.name,
                 ty,
+                ty_range,
             };
             unique.push(param);
         }
@@ -227,8 +229,9 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::EnumID<'hir>) {
 
                     let mut fields = Vec::with_capacity(types.len());
                     for ty in types {
+                        let ty_range = ty.range;
                         let ty = type_resolve_delayed(ctx, origin_id, *ty);
-                        fields.push(ty);
+                        fields.push(hir::VariantField { ty, ty_range });
                     }
                     let fields = ctx.arena.alloc_slice(&fields);
 
@@ -306,6 +309,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::StructID<'hir>
                 ),
             ));
         } else {
+            let ty_range = field.ty.range;
             let ty = type_resolve_delayed(ctx, origin_id, field.ty);
             pass_5::require_value_type(ctx, ty, SourceRange::new(origin_id, field.ty.range));
 
@@ -313,6 +317,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_>, id: hir::StructID<'hir>
                 vis: field.vis,
                 name: field.name,
                 ty,
+                ty_range,
             };
             unique.push(field);
         }

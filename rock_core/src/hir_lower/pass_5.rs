@@ -1435,12 +1435,13 @@ fn typecheck_struct_init<'hir>(
     let mut init_count: usize = 0;
 
     for input in struct_init.input {
-        //@reborrow bullshit
+        //@forced reborrow
         let data = ctx.registry.struct_data(struct_id);
 
         match data.find_field(input.name.id) {
             Some((field_id, field)) => {
-                let expect = Expectation::HasType(field.ty, None);
+                let expect_src = SourceRange::new(origin_id, field.ty_range);
+                let expect = Expectation::HasType(field.ty, Some(expect_src));
                 let input_res = typecheck_expr(ctx, expect, input.expr);
 
                 if let FieldStatus::Init(range) = field_status[field_id.raw_index()] {
@@ -2594,8 +2595,10 @@ fn check_call_direct<'hir>(
     for (idx, &expr) in arg_list.exprs.iter().enumerate() {
         let data = ctx.registry.proc_data(proc_id);
         let expect = match data.params.get(idx) {
-            //@store Type + range in hir::Param to give the expect_src
-            Some(param) => Expectation::HasType(param.ty, None),
+            Some(param) => {
+                let expect_src = SourceRange::new(data.origin_id, param.ty_range);
+                Expectation::HasType(param.ty, Some(expect_src))
+            }
             None => Expectation::None,
         };
         let expr_res = typecheck_expr(ctx, expect, expr);
@@ -2649,7 +2652,6 @@ fn check_call_indirect<'hir>(
     let mut values = Vec::with_capacity(proc_ty.param_types.len());
     for (idx, &expr) in arg_list.exprs.iter().enumerate() {
         let expect = match proc_ty.param_types.get(idx) {
-            //@store Type + range in variant fields to give the expect_src
             Some(param_ty) => Expectation::HasType(*param_ty, None),
             None => Expectation::None,
         };
@@ -2678,6 +2680,7 @@ fn check_variant_input_opt<'hir>(
 ) -> TypeResult<'hir> {
     let data = ctx.registry.enum_data(enum_id);
     let variant = data.variant(variant_id);
+    let origin_id = data.origin_id;
 
     let input_count = arg_list.map(|arg_list| arg_list.exprs.len()).unwrap_or(0);
     let expected_count = variant.fields.len();
@@ -2702,9 +2705,11 @@ fn check_variant_input_opt<'hir>(
     let input = if let Some(arg_list) = arg_list {
         let mut values = Vec::with_capacity(arg_list.exprs.len());
         for (idx, &expr) in arg_list.exprs.iter().enumerate() {
-            //@expect src, id with duplicates problem, no field ty range stored
             let expect = match variant.fields.get(idx) {
-                Some(ty) => Expectation::HasType(*ty, None),
+                Some(field) => {
+                    let expect_src = SourceRange::new(origin_id, field.ty_range);
+                    Expectation::HasType(field.ty, Some(expect_src))
+                }
                 None => Expectation::None,
             };
             let expr_res = typecheck_expr(ctx, expect, expr);

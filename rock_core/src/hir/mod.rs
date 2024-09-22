@@ -46,6 +46,7 @@ pub struct Param<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
+    pub ty_range: TextRange,
 }
 
 #[repr(u32)]
@@ -75,13 +76,19 @@ pub type VariantID<'hir> = ID<Variant<'hir>>;
 pub struct Variant<'hir> {
     pub name: ast::Name,
     pub kind: VariantKind<'hir>,
-    pub fields: &'hir [Type<'hir>],
+    pub fields: &'hir [VariantField<'hir>],
 }
 
 #[derive(Copy, Clone)]
 pub enum VariantKind<'hir> {
     Default(VariantEvalID<'hir>),
     Constant(ConstEvalID),
+}
+
+#[derive(Copy, Clone)]
+pub struct VariantField<'hir> {
+    pub ty: Type<'hir>,
+    pub ty_range: TextRange,
 }
 
 pub type VariantEvalID<'hir> = ID<VariantEval<'hir>>;
@@ -109,6 +116,7 @@ pub struct Field<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
+    pub ty_range: TextRange,
 }
 
 #[repr(u32)]
