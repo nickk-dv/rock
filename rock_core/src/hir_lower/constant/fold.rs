@@ -475,24 +475,33 @@ fn fold_binary<'hir>(
         }
         hir::BinOp::BitAnd => {
             let int_ty = lhs.into_int_ty();
-            let (lhs, lhs_neg) = lhs.into_int_val_neg();
-            let (rhs, rhs_neg) = rhs.into_int_val_neg();
-            //@todo
-            Err(())
+            if int_ty.is_signed() {
+                let val = lhs.into_int_i64() & rhs.into_int_i64();
+                Ok(hir::ConstValue::from_i64(val, int_ty))
+            } else {
+                let val = lhs.into_int_u64() & rhs.into_int_u64();
+                Ok(hir::ConstValue::from_u64(val, int_ty))
+            }
         }
         hir::BinOp::BitOr => {
             let int_ty = lhs.into_int_ty();
-            let (lhs, lhs_neg) = lhs.into_int_val_neg();
-            let (rhs, rhs_neg) = rhs.into_int_val_neg();
-            //@todo
-            Err(())
+            if int_ty.is_signed() {
+                let val = lhs.into_int_i64() | rhs.into_int_i64();
+                Ok(hir::ConstValue::from_i64(val, int_ty))
+            } else {
+                let val = lhs.into_int_u64() | rhs.into_int_u64();
+                Ok(hir::ConstValue::from_u64(val, int_ty))
+            }
         }
         hir::BinOp::BitXor => {
             let int_ty = lhs.into_int_ty();
-            let (lhs, lhs_neg) = lhs.into_int_val_neg();
-            let (rhs, rhs_neg) = rhs.into_int_val_neg();
-            //@todo
-            Err(())
+            if int_ty.is_signed() {
+                let val = lhs.into_int_i64() ^ rhs.into_int_i64();
+                Ok(hir::ConstValue::from_i64(val, int_ty))
+            } else {
+                let val = lhs.into_int_u64() ^ rhs.into_int_u64();
+                Ok(hir::ConstValue::from_u64(val, int_ty))
+            }
         }
         hir::BinOp::BitShl => unimplemented!(),
         hir::BinOp::BitShr_IntS => unimplemented!(),
@@ -610,15 +619,50 @@ fn float_range_check<'hir>(
 }
 
 impl<'hir> hir::ConstValue<'hir> {
+    fn from_u64(val: u64, int_ty: hir::BasicInt) -> hir::ConstValue<'hir> {
+        hir::ConstValue::Int {
+            val,
+            neg: false,
+            int_ty,
+        }
+    }
+    fn from_i64(val: i64, int_ty: hir::BasicInt) -> hir::ConstValue<'hir> {
+        if val < 0 {
+            hir::ConstValue::Int {
+                val: -val as u64,
+                neg: true,
+                int_ty,
+            }
+        } else {
+            hir::ConstValue::Int {
+                val: val as u64,
+                neg: false,
+                int_ty,
+            }
+        }
+    }
+
     fn into_bool(&self) -> bool {
         match *self {
             hir::ConstValue::Bool { val } => val,
             _ => unreachable!(),
         }
     }
-    pub fn into_int_val_neg(&self) -> (u64, bool) {
+    pub fn into_int_u64(&self) -> u64 {
         match *self {
-            hir::ConstValue::Int { val, neg, .. } => (val, neg),
+            hir::ConstValue::Int { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_int_i64(&self) -> i64 {
+        match *self {
+            hir::ConstValue::Int { val, neg, .. } => {
+                if neg {
+                    -(val as i64)
+                } else {
+                    val as i64
+                }
+            }
             _ => unreachable!(),
         }
     }
