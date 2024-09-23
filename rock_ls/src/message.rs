@@ -26,6 +26,7 @@ pub enum Request {
     GotoDefinition(lsp::GotoDefinitionParams),
     Format(lsp::DocumentFormattingParams),
     Hover(lsp::HoverParams),
+    SemanticTokens(lsp::SemanticTokensParams),
 }
 
 pub enum Notification {
@@ -91,7 +92,9 @@ impl MessageBuffer {
 }
 
 fn extract_request(request: lsp_server::Request) -> Option<Message> {
-    use request::{Completion, Formatting, GotoDefinition, HoverRequest};
+    use request::{
+        Completion, Formatting, GotoDefinition, HoverRequest, SemanticTokensFullRequest,
+    };
 
     let id = request.id.clone();
     let request = match request.method.as_str() {
@@ -111,7 +114,14 @@ fn extract_request(request: lsp_server::Request) -> Option<Message> {
             let params = cast_request::<HoverRequest>(request);
             Request::Hover(params)
         }
-        _ => return None,
+        SemanticTokensFullRequest::METHOD => {
+            let params = cast_request::<SemanticTokensFullRequest>(request);
+            Request::SemanticTokens(params)
+        }
+        _ => {
+            eprintln!("[UNKNOWN REQUEST RECEIVED]: {}", request.method);
+            return None;
+        }
     };
     Some(Message::Request(id, request))
 }

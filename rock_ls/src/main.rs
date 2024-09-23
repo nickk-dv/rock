@@ -6,6 +6,9 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
+use rock_core::support::ID;
+use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
+use rock_core::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
 
 fn main() {
@@ -89,7 +92,33 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         execute_command_provider: None,
         workspace: None,
         call_hierarchy_provider: None,
-        semantic_tokens_provider: None,
+        semantic_tokens_provider: Some(
+            lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(
+                lsp::SemanticTokensOptions {
+                    work_done_progress_options: lsp::WorkDoneProgressOptions {
+                        work_done_progress: None,
+                    },
+                    legend: lsp::SemanticTokensLegend {
+                        token_types: vec![
+                            lsp::SemanticTokenType::NAMESPACE,
+                            lsp::SemanticTokenType::TYPE,
+                            lsp::SemanticTokenType::PARAMETER,
+                            lsp::SemanticTokenType::VARIABLE,
+                            lsp::SemanticTokenType::PROPERTY,
+                            lsp::SemanticTokenType::ENUM_MEMBER,
+                            lsp::SemanticTokenType::FUNCTION,
+                            lsp::SemanticTokenType::KEYWORD,
+                            lsp::SemanticTokenType::COMMENT,
+                            lsp::SemanticTokenType::NUMBER,
+                            lsp::SemanticTokenType::STRING,
+                        ],
+                        token_modifiers: vec![],
+                    },
+                    range: None,
+                    full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
+                },
+            ),
+        ),
         moniker_provider: None,
         linked_editing_range_provider: None,
         inline_value_provider: None,
@@ -139,7 +168,7 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
 }
 
 fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId, req: Request) {
-    match req {
+    match &req {
         Request::Completion(params) => {}
         Request::GotoDefinition(params) => {}
         Request::Format(params) => {
@@ -173,7 +202,14 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             }
             */
         }
-        Request::Hover(params) => {}
+        Request::Hover(params) => {
+            let path = uri_to_path(&params.text_document_position_params.text_document.uri);
+            eprintln!("[Handle] Request::Hover\n - document: {:?}", &path);
+        }
+        Request::SemanticTokens(params) => {
+            let path = uri_to_path(&params.text_document.uri);
+            eprintln!("[Handle] Request::SemanticTokens\n - document: {:?}", &path);
+        }
     }
 }
 
@@ -416,4 +452,127 @@ fn run_diagnostics(conn: &Connection, context: &ServerContext) -> Vec<PublishDia
             PublishDiagnosticsParams::new(url_from_path(&path), diagnostics, None)
         })
         .collect()
+}
+
+struct SemanticTokenBuilder {
+    curr_line: u32,
+    module_id: ModuleID,
+    token_ids: Vec<ID<Token>>,
+    tokens: Vec<lsp::SemanticToken>,
+}
+
+fn semantic_tokens(
+    tree: &SyntaxTree,
+    session: &Session,
+    module_id: ModuleID,
+) -> Vec<lsp::SemanticToken> {
+    let mut builder = SemanticTokenBuilder {
+        curr_line: 0,
+        module_id,
+        //@temp semantic token count estimate
+        token_ids: Vec::with_capacity(tree.tokens().token_count() / 2),
+        tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
+    };
+    semantic_token_visit_node(&mut builder, tree, session, tree.root());
+    builder.tokens
+}
+
+fn semantic_token_visit_node(
+    builder: &mut SemanticTokenBuilder,
+    tree: &SyntaxTree,
+    session: &Session,
+    node: &Node,
+) {
+    for not in node.content {
+        match *not {
+            NodeOrToken::Node(node_id) => {
+                let node = tree.node(node_id);
+                semantic_token_visit_node(builder, tree, session, node);
+            }
+            NodeOrToken::Token(token_id) => {
+                let (token, range) = tree.tokens().token_and_range(token_id);
+
+                let semantic = match token {
+                    Token::Eof => continue,
+                    Token::Ident => SemanticToken::Property, //@depends on node.kind
+                    Token::IntLit | Token::FloatLit => SemanticToken::Number,
+                    Token::CharLit | Token::StringLit => SemanticToken::String,
+                    Token::KwPub
+                    | Token::KwProc
+                    | Token::KwEnum
+                    | Token::KwStruct
+                    | Token::KwConst
+                    | Token::KwGlobal
+                    | Token::KwImport
+                    | Token::KwBreak
+                    | Token::KwContinue
+                    | Token::KwReturn
+                    | Token::KwDefer
+                    | Token::KwFor
+                    | Token::KwLet
+                    | Token::KwMut => SemanticToken::Keyword,
+                    Token::KwNull | Token::KwTrue | Token::KwFalse => SemanticToken::Number,
+                    Token::KwIf | Token::KwElse | Token::KwMatch => SemanticToken::Keyword,
+                    Token::KwDiscard => SemanticToken::Property,
+                    Token::KwAs | Token::KwSizeof => SemanticToken::Keyword,
+                    Token::KwS8
+                    | Token::KwS16
+                    | Token::KwS32
+                    | Token::KwS64
+                    | Token::KwSsize
+                    | Token::KwU8
+                    | Token::KwU16
+                    | Token::KwU32
+                    | Token::KwU64
+                    | Token::KwUsize
+                    | Token::KwF32
+                    | Token::KwF64
+                    | Token::KwBool
+                    | Token::KwChar
+                    | Token::KwRawptr
+                    | Token::KwVoid
+                    | Token::KwNever => SemanticToken::Type,
+                    _ => continue,
+                };
+
+                let line_ranges = session.module(builder.module_id).line_ranges.as_slice();
+                let mut delta_line: u32 = 0;
+
+                while range.start() >= line_ranges[builder.curr_line as usize].end() {
+                    builder.curr_line += 1;
+                    delta_line += 1;
+                }
+
+                let delta_start = if delta_line == 0 {
+                    if let Some(&prev_id) = builder.token_ids.last() {
+                        let prev_range = tree.tokens().token_range(prev_id);
+                        range.start() - prev_range.start()
+                    } else {
+                        range.start() - line_ranges[builder.curr_line as usize].start()
+                    }
+                } else {
+                    range.start() - line_ranges[builder.curr_line as usize].start()
+                };
+
+                builder.token_ids.push(token_id);
+                builder.tokens.push(lsp::SemanticToken {
+                    delta_line,
+                    delta_start: delta_start.into(),
+                    length: range.len(), //@byte length or utf8 chars len?
+                    token_type: semantic as u32,
+                    token_modifiers_bitset: 0,
+                });
+            }
+            NodeOrToken::Trivia(id) => {
+                let (trivia, range) = tree.tokens().trivia_and_range(id);
+
+                //@block comment is an overlapping token
+                let semantic = match trivia {
+                    Trivia::Whitespace => continue,
+                    Trivia::LineComment | Trivia::BlockComment => SemanticToken::Comment,
+                };
+                //@test comments later
+            }
+        }
+    }
 }

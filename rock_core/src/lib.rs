@@ -17,7 +17,7 @@ pub mod session;
 pub mod support;
 pub mod syntax;
 pub mod text;
-mod token;
+pub mod token;
 
 use package::semver::Semver;
 

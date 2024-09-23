@@ -14,6 +14,31 @@ pub struct TokenList {
     strings: Vec<(String, bool)>,
 }
 
+#[derive(Clone, Copy)]
+pub struct TokenSet(u128);
+
+#[derive(Copy, Clone)]
+pub enum Trivia {
+    Whitespace,
+    LineComment,
+    BlockComment,
+}
+
+#[repr(u32)]
+pub enum SemanticToken {
+    Namespace,
+    Type,
+    Parameter,
+    Variable,
+    Property,
+    EnumMember,
+    Function,
+    Keyword,
+    Comment,
+    Number,
+    String,
+}
+
 impl TokenList {
     pub fn new(cap: usize) -> TokenList {
         TokenList {
@@ -36,6 +61,9 @@ impl TokenList {
     }
     pub fn token_and_range(&self, id: ID<Token>) -> (Token, TextRange) {
         (*self.tokens.id_get(id), self.token_ranges[id.raw_index()])
+    }
+    pub fn token_count(&self) -> usize {
+        self.tokens.len()
     }
 
     pub fn trivia(&self, id: ID<Trivia>) -> Trivia {
@@ -91,9 +119,6 @@ impl TokenList {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct TokenSet(u128);
-
 impl TokenSet {
     pub const fn new(tokens: &[Token]) -> TokenSet {
         let mut bitset = 0u128;
@@ -116,13 +141,6 @@ impl TokenSet {
     pub const fn contains(&self, token: Token) -> bool {
         self.0 & 1u128 << token as u8 != 0
     }
-}
-
-#[derive(Copy, Clone)]
-pub enum Trivia {
-    Whitespace,
-    LineComment,
-    BlockComment,
 }
 
 /// Defines a DSL-like macro that automates token definition and conversions.
