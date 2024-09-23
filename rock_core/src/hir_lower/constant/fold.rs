@@ -1,3 +1,4 @@
+use super::basic_layout;
 use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
@@ -37,18 +38,7 @@ pub fn fold_const_expr<'hir>(
             enum_id,
             variant_id,
             input,
-        } => {
-            if !input.is_empty() {
-                unimplemented!("fold enum variant with input");
-            }
-            let variant = hir::ConstVariant {
-                enum_id,
-                variant_id,
-                value_ids: &[],
-            };
-            let variant = ctx.const_intern.arena().alloc(variant);
-            Ok(hir::ConstValue::Variant { variant })
-        }
+        } => fold_variant(ctx, src, enum_id, variant_id, input),
         hir::ExprKind::CallDirect { .. } => unreachable!(),
         hir::ExprKind::CallIndirect { .. } => unreachable!(),
         hir::ExprKind::StructInit { struct_id, input } => {
@@ -186,9 +176,6 @@ fn fold_index<'hir>(
     }
 }
 
-//@store type enums like BasicInt / BasicFloat
-// in cast kind to decrease invariance
-//@check how bool to int is handled
 fn fold_cast<'hir>(
     ctx: &mut HirCtx<'hir, '_>,
     src: SourceRange,
@@ -249,10 +236,43 @@ fn fold_const_var<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let data = ctx.registry.const_data(const_id);
     let (eval, _) = ctx.registry.const_eval(data.value);
-
     let value_id = eval.get_resolved()?;
     let value = ctx.const_intern.get(value_id);
     Ok(value)
+}
+
+fn fold_variant<'hir>(
+    ctx: &mut HirCtx<'hir, '_>,
+    src: SourceRange,
+    enum_id: hir::EnumID<'hir>,
+    variant_id: hir::VariantID<'hir>,
+    input: &&[&hir::Expr<'hir>],
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let mut correct = true;
+    let mut value_ids = Vec::new();
+    value_ids.resize(input.len(), hir::ConstValueID::dummy());
+
+    for &expr in input.iter() {
+        let src = SourceRange::new(src.module_id(), expr.range);
+        if let Ok(value) = fold_const_expr(ctx, src, expr) {
+            value_ids.push(ctx.const_intern.intern(value));
+        } else {
+            correct = false;
+        }
+    }
+
+    if correct {
+        let value_ids = ctx.const_intern.arena().alloc_slice(&value_ids);
+        let const_variant = hir::ConstVariant {
+            enum_id,
+            variant_id,
+            value_ids,
+        };
+        let variant = ctx.const_intern.arena().alloc(const_variant);
+        Ok(hir::ConstValue::Variant { variant })
+    } else {
+        Err(())
+    }
 }
 
 fn fold_struct_init<'hir>(
@@ -453,9 +473,27 @@ fn fold_binary<'hir>(
                 Err(())
             }
         }
-        hir::BinOp::BitAnd => unimplemented!(),
-        hir::BinOp::BitOr => unimplemented!(),
-        hir::BinOp::BitXor => unimplemented!(),
+        hir::BinOp::BitAnd => {
+            let int_ty = lhs.into_int_ty();
+            let (lhs, lhs_neg) = lhs.into_int_val_neg();
+            let (rhs, rhs_neg) = rhs.into_int_val_neg();
+            //@todo
+            Err(())
+        }
+        hir::BinOp::BitOr => {
+            let int_ty = lhs.into_int_ty();
+            let (lhs, lhs_neg) = lhs.into_int_val_neg();
+            let (rhs, rhs_neg) = rhs.into_int_val_neg();
+            //@todo
+            Err(())
+        }
+        hir::BinOp::BitXor => {
+            let int_ty = lhs.into_int_ty();
+            let (lhs, lhs_neg) = lhs.into_int_val_neg();
+            let (rhs, rhs_neg) = rhs.into_int_val_neg();
+            //@todo
+            Err(())
+        }
         hir::BinOp::BitShl => unimplemented!(),
         hir::BinOp::BitShr_IntS => unimplemented!(),
         hir::BinOp::BitShr_IntU => unimplemented!(),
@@ -575,6 +613,12 @@ impl<'hir> hir::ConstValue<'hir> {
     fn into_bool(&self) -> bool {
         match *self {
             hir::ConstValue::Bool { val } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_int_val_neg(&self) -> (u64, bool) {
+        match *self {
+            hir::ConstValue::Int { val, neg, .. } => (val, neg),
             _ => unreachable!(),
         }
     }
