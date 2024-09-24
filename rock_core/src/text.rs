@@ -218,12 +218,14 @@ pub fn find_text_location(
 
 #[test]
 fn test() {
+    use crate::intern::InternPool;
     use crate::lexer;
     use crate::session::ModuleID;
     use crate::support::ID;
 
     let text = "foo\nbaz";
-    let (tokens, _) = lexer::lex(text, ModuleID::dummy(), false);
+    let mut intern_lit = InternPool::new();
+    let (tokens, _) = lexer::lex(text, &mut intern_lit, ModuleID::dummy(), false);
 
     let line_ranges = find_line_ranges(text);
     let foo_range = TextRange::new(0.into(), 3.into());

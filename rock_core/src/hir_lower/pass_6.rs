@@ -8,14 +8,14 @@ use crate::session::{ModuleOrDirectory, Session};
 use crate::text::TextRange;
 
 pub fn check_entry_point<'hir, 'ast: 'hir>(ctx: &mut HirCtx<'hir, 'ast>, session: &Session) {
-    let root_package = session.package(Session::ROOT_ID);
+    let root_package = session.pkg_storage.package(Session::ROOT_ID);
     let root_manifest = root_package.manifest();
     if root_manifest.package.kind != PackageKind::Bin {
         return;
     }
 
     let main_id = ctx.intern_name().intern("main");
-    let module_or_directory = root_package.src.find(session, main_id);
+    let module_or_directory = root_package.src.find(&session.pkg_storage, main_id);
 
     let origin_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,

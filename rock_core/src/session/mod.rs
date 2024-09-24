@@ -1,6 +1,7 @@
+use crate::ast;
 use crate::error::ErrorComp;
 use crate::fs_env;
-use crate::intern::{InternName, InternPool};
+use crate::intern::{InternLit, InternName, InternPool};
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
 use crate::support::{IndexID, ID};
@@ -8,8 +9,14 @@ use crate::text::{self, TextRange};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub struct Session {
-    cwd: PathBuf,
+pub struct Session<'s> {
+    pub cwd: PathBuf,
+    pub intern_lit: InternPool<'s, InternLit>,
+    pub intern_name: InternPool<'s, InternName>,
+    pub pkg_storage: PackageStorage,
+}
+
+pub struct PackageStorage {
     modules: Vec<RockModule>,
     packages: Vec<RockPackage>,
 }
@@ -39,19 +46,24 @@ pub struct RockModule {
     pub package_id: PackageID,
 }
 
-impl Session {
+pub enum ModuleOrDirectory<'src> {
+    None,
+    Module(ModuleID),
+    Directory(&'src RockDirectory),
+}
+
+impl<'s> Session<'s> {
     pub const ROOT_ID: PackageID = PackageID::new_raw(0);
 
     pub fn new(
         building: bool,
         file_cache: Option<&HashMap<PathBuf, String>>,
-    ) -> Result<(Session, InternPool<'_, InternName>), ErrorComp> {
+    ) -> Result<Session, ErrorComp> {
         session_create(building, file_cache)
     }
+}
 
-    pub fn cwd(&self) -> &PathBuf {
-        &self.cwd
-    }
+impl PackageStorage {
     pub fn module(&self, id: ModuleID) -> &RockModule {
         &self.modules.id_get(id)
     }
@@ -75,16 +87,10 @@ impl RockPackage {
     }
 }
 
-pub enum ModuleOrDirectory<'src> {
-    None,
-    Module(ModuleID),
-    Directory(&'src RockDirectory),
-}
-
 impl RockDirectory {
-    pub fn find(&self, session: &Session, name_id: ID<InternName>) -> ModuleOrDirectory {
+    pub fn find(&self, pkg_storage: &PackageStorage, name_id: ID<InternName>) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
-            let module = session.module(module_id);
+            let module = pkg_storage.module(module_id);
             if module.name_id == name_id {
                 return ModuleOrDirectory::Module(module_id);
             }
@@ -98,21 +104,23 @@ impl RockDirectory {
     }
 }
 
-//@store file_count to be able to iterate over FileIDs or ModuleIDs of specific package
 fn session_create(
     building: bool,
     file_cache: Option<&HashMap<PathBuf, String>>,
-) -> Result<(Session, InternPool<'_, InternName>), ErrorComp> {
+) -> Result<Session, ErrorComp> {
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
-        modules: Vec::new(),
-        packages: Vec::new(),
+        intern_lit: InternPool::new(),
+        intern_name: InternPool::new(),
+        pkg_storage: PackageStorage {
+            modules: Vec::new(),
+            packages: Vec::new(),
+        },
     };
-    let mut intern_name = InternPool::new();
 
     let root_dir = session.cwd.clone();
-    let root_id = process_package(&mut session, &mut intern_name, file_cache, &root_dir, false)?;
-    let root_manifest = &session.package(root_id).manifest;
+    let root_id = process_package(&mut session, file_cache, &root_dir, false)?;
+    let root_manifest = &session.pkg_storage.package(root_id).manifest;
 
     if building && root_manifest.package.kind == PackageKind::Lib {
         return Err(ErrorComp::message(
@@ -125,7 +133,7 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
     //@experimental resolver usage
     //package::resolver::resolve_dependencies(&root_manifest.dependencies)?;
 
-    //@no package fetch (only using `$PATH/packages` directory)
+    //@no package fetch (only using `$EXE_PATH/packages` directory)
     let mut cache_dir = fs_env::current_exe_path()?;
     cache_dir.push("packages");
 
@@ -138,32 +146,26 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
     let mut root_dependency_map = HashMap::new();
 
     for dependency in root_dependencies.iter() {
-        let package_id = process_package(
-            &mut session,
-            &mut intern_name,
-            file_cache,
-            &cache_dir.join(dependency),
-            true,
-        )?;
-        let name_id = session.package(package_id).name_id;
+        let package_id =
+            process_package(&mut session, file_cache, &cache_dir.join(dependency), true)?;
+        let name_id = session.pkg_storage.package(package_id).name_id;
         root_dependency_map.insert(name_id, package_id);
     }
 
     //@only creating dependency map for root
     // package resultion process is not done yet
-    session.packages[0].dependency_map = root_dependency_map;
-    Ok((session, intern_name))
+    session.pkg_storage.packages[0].dependency_map = root_dependency_map;
+    Ok(session)
 }
 
 fn process_package(
     session: &mut Session,
-    intern_name: &mut InternPool<'_, InternName>,
     file_cache: Option<&HashMap<PathBuf, String>>,
     root_dir: &PathBuf,
     dependency: bool,
 ) -> Result<PackageID, ErrorComp> {
     let package_name = fs_env::filename_stem(root_dir)?;
-    let name_id = intern_name.intern(package_name);
+    let name_id = session.intern_name.intern(package_name);
 
     if dependency && !root_dir.exists() {
         return Err(ErrorComp::message(format!(
@@ -201,8 +203,8 @@ fn process_package(
         )));
     }
 
-    let package_id = PackageID::new(&session.packages);
-    let src = process_directory(session, intern_name, file_cache, package_id, src_dir)?;
+    let package_id = PackageID::new(&session.pkg_storage.packages);
+    let src = process_directory(session, file_cache, package_id, src_dir)?;
 
     if let Some(lib_paths) = &manifest.build.lib_paths {
         let location = format!(
@@ -241,19 +243,18 @@ fn process_package(
         manifest,
         dependency_map: HashMap::new(), //@no deps are set
     };
-    session.packages.push(package);
+    session.pkg_storage.packages.push(package);
     Ok(package_id)
 }
 
-fn process_directory<'intern>(
+fn process_directory(
     session: &mut Session,
-    intern_name: &mut InternPool<'intern, InternName>,
     file_cache: Option<&HashMap<PathBuf, String>>,
     package_id: PackageID,
     path: PathBuf,
 ) -> Result<RockDirectory, ErrorComp> {
     let filename = fs_env::filename_stem(&path)?;
-    let name_id = intern_name.intern(filename);
+    let name_id = session.intern_name.intern(filename);
     let mut modules = Vec::new();
     let mut sub_dirs = Vec::new();
 
@@ -266,21 +267,11 @@ fn process_directory<'intern>(
         if entry_path.is_file() {
             let extension = fs_env::file_extension(&entry_path);
             if matches!(extension, Some("rock")) {
-                modules.push(process_file(
-                    session,
-                    intern_name,
-                    file_cache,
-                    package_id,
-                    entry_path,
-                )?);
+                modules.push(process_file(session, file_cache, package_id, entry_path)?);
             }
         } else if entry_path.is_dir() {
             sub_dirs.push(process_directory(
-                session,
-                intern_name,
-                file_cache,
-                package_id,
-                entry_path,
+                session, file_cache, package_id, entry_path,
             )?);
         } else {
             unreachable!()
@@ -298,13 +289,12 @@ fn process_directory<'intern>(
 
 fn process_file(
     session: &mut Session,
-    intern_name: &mut InternPool<'_, InternName>,
     file_cache: Option<&HashMap<PathBuf, String>>,
     package_id: PackageID,
     path: PathBuf,
 ) -> Result<ModuleID, ErrorComp> {
     let filename = fs_env::filename_stem(&path)?;
-    let name_id = intern_name.intern(filename);
+    let name_id = session.intern_name.intern(filename);
     let source = read_file(&path, file_cache)?;
     let line_ranges = text::find_line_ranges(&source);
 
@@ -316,8 +306,8 @@ fn process_file(
         package_id,
     };
 
-    let module_id = ModuleID::new(&session.modules);
-    session.modules.push(module);
+    let module_id = ModuleID::new(&session.pkg_storage.modules);
+    session.pkg_storage.modules.push(module);
     Ok(module_id)
 }
 

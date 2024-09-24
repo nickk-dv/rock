@@ -186,7 +186,10 @@ impl<'hir> HirScope<'hir> {
                     symbol_count += import.symbols.len();
                 }
             }
-            let name_id = session.module(ID::new_raw(modules.len())).name_id;
+            let name_id = session
+                .pkg_storage
+                .module(ID::new_raw(modules.len()))
+                .name_id;
             let symbols = HashMap::with_capacity(symbol_count);
             modules.push(ModuleScope { name_id, symbols });
         }

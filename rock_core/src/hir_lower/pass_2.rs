@@ -18,11 +18,13 @@ fn resolve_import(
     origin_id: ModuleID,
     import: &ast::ImportItem,
 ) {
-    let mut source_package = session.package(session.module(origin_id).package_id);
+    let mut source_package = session
+        .pkg_storage
+        .package(session.pkg_storage.module(origin_id).package_id);
 
     if let Some(package_name) = import.package {
         if let Some(dependency_id) = source_package.dependency(package_name.id) {
-            source_package = session.package(dependency_id);
+            source_package = session.pkg_storage.package(dependency_id);
         } else {
             let src = SourceRange::new(origin_id, package_name.range);
             let dep_name = ctx.name_str(package_name.id);
@@ -39,7 +41,7 @@ fn resolve_import(
     let mut target_dir = &source_package.src;
 
     for name in directory_names {
-        match target_dir.find(session, name.id) {
+        match target_dir.find(&session.pkg_storage, name.id) {
             ModuleOrDirectory::None => {
                 let src = SourceRange::new(origin_id, name.range);
                 let dir_name = ctx.name_str(name.id);
@@ -59,7 +61,7 @@ fn resolve_import(
         }
     }
 
-    let target_id = match target_dir.find(session, module_name.id) {
+    let target_id = match target_dir.find(&session.pkg_storage, module_name.id) {
         ModuleOrDirectory::None => {
             let src = SourceRange::new(origin_id, module_name.range);
             let module_name = ctx.name_str(module_name.id);

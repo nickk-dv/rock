@@ -12,7 +12,7 @@ struct AstBuild<'ast, 'syn, 'src, 'state> {
     int_id: ID<u64>,
     float_id: ID<f64>,
     char_id: ID<char>,
-    string_id: ID<(String, bool)>,
+    string_id: ID<(ID<InternLit>, bool)>,
     module_id: ModuleID,
     source: &'src str,
     s: &'state mut AstBuildState<'ast>,
@@ -20,9 +20,6 @@ struct AstBuild<'ast, 'syn, 'src, 'state> {
 
 struct AstBuildState<'ast> {
     arena: Arena<'ast>,
-    string_is_cstr: Vec<bool>,
-    intern_lit: InternPool<'ast, InternLit>,
-    intern_name: InternPool<'ast, InternName>,
     modules: Vec<ast::Module<'ast>>,
     errors: Vec<ErrorComp>,
 
@@ -33,8 +30,6 @@ struct AstBuildState<'ast> {
     variants: TempBuffer<ast::Variant<'ast>>,
     fields: TempBuffer<ast::Field<'ast>>,
     import_symbols: TempBuffer<ast::ImportSymbol>,
-    names: TempBuffer<ast::Name>,
-    binds: TempBuffer<ast::Binding>,
     types: TempBuffer<ast::Type<'ast>>,
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
@@ -42,6 +37,8 @@ struct AstBuildState<'ast> {
     match_arms: TempBuffer<ast::MatchArm<'ast>>,
     patterns: TempBuffer<ast::Pat<'ast>>,
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
+    names: TempBuffer<ast::Name>,
+    binds: TempBuffer<ast::Binding>,
 }
 
 impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
@@ -65,12 +62,9 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
 }
 
 impl<'ast> AstBuildState<'ast> {
-    fn new(intern_name: InternPool<'ast, InternName>) -> Self {
+    fn new(session: &mut Session) -> AstBuildState<'ast> {
         AstBuildState {
             arena: Arena::new(),
-            string_is_cstr: Vec::with_capacity(128),
-            intern_lit: InternPool::new(),
-            intern_name,
             modules: Vec::new(),
             errors: Vec::new(),
 
@@ -81,8 +75,6 @@ impl<'ast> AstBuildState<'ast> {
             variants: TempBuffer::new(32),
             fields: TempBuffer::new(32),
             import_symbols: TempBuffer::new(32),
-            names: TempBuffer::new(32),
-            binds: TempBuffer::new(32),
             types: TempBuffer::new(32),
             stmts: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
@@ -90,19 +82,18 @@ impl<'ast> AstBuildState<'ast> {
             match_arms: TempBuffer::new(32),
             patterns: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
+            names: TempBuffer::new(32),
+            binds: TempBuffer::new(32),
         }
     }
 }
 
-pub fn parse<'ast>(
-    session: &Session,
-    intern_name: InternPool<'ast, InternName>,
-) -> ResultComp<ast::Ast<'ast>> {
+pub fn parse<'ast>(session: &mut Session) -> ResultComp<ast::Ast<'ast>> {
     let t_total = Timer::new();
-    let mut state = AstBuildState::new(intern_name);
+    let mut state = AstBuildState::new();
 
-    for module_id in session.module_ids() {
-        let module = session.module(module_id);
+    for module_id in session.pkg_storage.module_ids() {
+        let module = session.pkg_storage.module(module_id);
         let tree_result = super::parse_tree_complete(&module.source, module_id, false);
 
         match tree_result {

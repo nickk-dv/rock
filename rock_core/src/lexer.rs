@@ -1,17 +1,23 @@
 use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, SourceRange};
 use crate::errors as err;
+use crate::intern::{InternLit, InternPool};
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, TokenList, Trivia};
 use std::{iter::Peekable, str::Chars};
 
-pub fn lex(source: &str, module_id: ModuleID, with_trivia: bool) -> (TokenList, Vec<ErrorComp>) {
-    let mut lex = Lexer::new(source, module_id, with_trivia);
+pub fn lex<'src>(
+    source: &'src str,
+    intern_lit: &'src mut InternPool<'_, InternLit>,
+    module_id: ModuleID,
+    with_trivia: bool,
+) -> (TokenList, Vec<ErrorComp>) {
+    let mut lex = Lexer::new(source, intern_lit, module_id, with_trivia);
     source_file(&mut lex);
     lex.finish()
 }
 
-struct Lexer<'src> {
+struct Lexer<'src, 's> {
     cursor: TextOffset,
     chars: Peekable<Chars<'src>>,
     tokens: TokenList,
@@ -20,10 +26,16 @@ struct Lexer<'src> {
     source: &'src str,
     module_id: ModuleID,
     with_trivia: bool,
+    intern_lit: &'src mut InternPool<'s, InternLit>,
 }
 
-impl<'src> Lexer<'src> {
-    fn new(source: &'src str, module_id: ModuleID, with_trivia: bool) -> Lexer {
+impl<'src, 's> Lexer<'src, 's> {
+    fn new(
+        source: &'src str,
+        intern_lit: &'src mut InternPool<'s, InternLit>,
+        module_id: ModuleID,
+        with_trivia: bool,
+    ) -> Lexer<'src, 's> {
         Lexer {
             cursor: 0.into(),
             chars: source.chars().peekable(),
@@ -33,6 +45,7 @@ impl<'src> Lexer<'src> {
             source,
             module_id,
             with_trivia,
+            intern_lit,
         }
     }
 
@@ -86,7 +99,7 @@ impl<'src> Lexer<'src> {
     }
 }
 
-impl<'src> ErrorSink for Lexer<'src> {
+impl<'src, 's> ErrorSink for Lexer<'src, 's> {
     fn diagnostics(&self) -> &crate::error::DiagnosticCollection {
         &self.diagnostics
     }
@@ -349,8 +362,8 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
     }
     lex.bump('\"');
 
+    lex.buffer.clear();
     let mut range;
-    let mut string = String::new();
     let mut terminated = false;
 
     loop {
@@ -369,11 +382,11 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
                 }
                 '\\' if !raw => {
                     let escaped = lex_escape(lex, c_string);
-                    string.push(escaped);
+                    lex.buffer.push(escaped);
                 }
                 _ => {
                     lex.bump(c);
-                    string.push(c);
+                    lex.buffer.push(c);
                 }
             }
         }
@@ -392,11 +405,12 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
         }
 
         lex.bump('\"');
-        string.push('\n');
+        lex.buffer.push('\n');
         terminated = false;
     }
 
-    lex.tokens.add_string(string, c_string, range);
+    let id = lex.intern_lit.intern(&lex.buffer);
+    lex.tokens.add_string(id, c_string, range);
 
     if !terminated {
         let src = SourceRange::new(lex.module_id, range);

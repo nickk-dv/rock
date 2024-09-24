@@ -5,7 +5,7 @@ use crate::hir;
 use crate::session::{ModuleID, Session};
 
 pub fn populate_scopes(ctx: &mut HirCtx, session: &Session) {
-    for origin_id in session.module_ids() {
+    for origin_id in session.pkg_storage.module_ids() {
         add_module_items(ctx, session, origin_id);
     }
 }

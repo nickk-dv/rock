@@ -1,4 +1,5 @@
 use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
+use crate::intern::InternLit;
 use crate::support::{IndexID, ID};
 use crate::text::TextRange;
 
@@ -10,12 +11,13 @@ pub struct TokenList {
     ints: Vec<u64>,
     floats: Vec<f64>,
     chars: Vec<char>,
-    //@move to using InternLit pool, even for LS persist it
-    strings: Vec<(String, bool)>,
+    strings: Vec<(ID<InternLit>, bool)>,
 }
 
 #[derive(Clone, Copy)]
-pub struct TokenSet(u128);
+pub struct TokenSet {
+    mask: u128,
+}
 
 #[derive(Copy, Clone)]
 pub enum Trivia {
@@ -88,9 +90,8 @@ impl TokenList {
     pub fn char(&self, id: ID<char>) -> char {
         *self.chars.id_get(id)
     }
-    pub fn string(&self, id: ID<(String, bool)>) -> (&str, bool) {
-        let (string, c_string) = self.strings.id_get(id);
-        (string, *c_string)
+    pub fn string(&self, id: ID<(ID<InternLit>, bool)>) -> (ID<InternLit>, bool) {
+        *self.strings.id_get(id)
     }
 
     pub fn add_token(&mut self, token: Token, range: TextRange) {
@@ -101,6 +102,7 @@ impl TokenList {
         self.trivias.push(trivia);
         self.trivia_ranges.push(range);
     }
+
     pub fn add_int(&mut self, int: u64, range: TextRange) {
         self.add_token(Token::IntLit, range);
         self.ints.push(int);
@@ -113,33 +115,35 @@ impl TokenList {
         self.add_token(Token::CharLit, range);
         self.chars.push(ch);
     }
-    pub fn add_string(&mut self, string: String, c_string: bool, range: TextRange) {
+    pub fn add_string(&mut self, id: ID<InternLit>, c_string: bool, range: TextRange) {
         self.add_token(Token::StringLit, range);
-        self.strings.push((string, c_string));
+        self.strings.push((id, c_string));
     }
 }
 
 impl TokenSet {
     pub const fn new(tokens: &[Token]) -> TokenSet {
-        let mut bitset = 0u128;
+        let mut mask = 0u128;
         let mut i = 0;
         while i < tokens.len() {
-            bitset |= 1u128 << tokens[i] as u8;
+            mask |= 1u128 << tokens[i] as u8;
             i += 1;
         }
-        TokenSet(bitset)
+        TokenSet { mask }
     }
     #[inline]
     pub const fn empty() -> TokenSet {
-        TokenSet(0)
+        TokenSet { mask: 0 }
     }
     #[inline]
     pub const fn combine(self, other: TokenSet) -> TokenSet {
-        TokenSet(self.0 | other.0)
+        TokenSet {
+            mask: self.mask | other.mask,
+        }
     }
     #[inline]
     pub const fn contains(&self, token: Token) -> bool {
-        self.0 & 1u128 << token as u8 != 0
+        self.mask & 1u128 << token as u8 != 0
     }
 }
 

@@ -358,7 +358,7 @@ fn resolve_attr(
     origin_id: ModuleID,
     attr: &ast::Attr,
 ) -> Result<AttrResolvedData, ()> {
-    let module = session.module(origin_id);
+    let module = session.pkg_storage.module(origin_id);
     let attr_name = &module.source[attr.name.range.as_usize()];
 
     let kind = match AttrKind::from_str(attr_name) {

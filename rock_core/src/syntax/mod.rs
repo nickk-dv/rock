@@ -6,17 +6,19 @@ pub mod syntax_kind;
 pub mod syntax_tree;
 
 use crate::error::ErrorComp;
+use crate::intern::{InternLit, InternPool};
 use crate::lexer;
 use crate::session::ModuleID;
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
-pub fn parse_tree(
-    source: &str,
+pub fn parse_tree<'src, 'syn>(
+    source: &'src str,
+    intern_lit: &'src mut InternPool<'_, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
-) -> (SyntaxTree, Vec<ErrorComp>) {
-    let (tokens, lex_errors) = lexer::lex(source, module_id, with_trivia);
+) -> (SyntaxTree<'syn>, Vec<ErrorComp>) {
+    let (tokens, lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
@@ -28,12 +30,13 @@ pub fn parse_tree(
     (tree, parse_errors)
 }
 
-pub fn parse_tree_complete(
-    source: &str,
+pub fn parse_tree_complete<'src, 'syn>(
+    source: &'src str,
+    intern_lit: &'src mut InternPool<'_, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
-) -> Result<SyntaxTree, Vec<ErrorComp>> {
-    let (tokens, mut lex_errors) = lexer::lex(source, module_id, with_trivia);
+) -> Result<SyntaxTree<'syn>, Vec<ErrorComp>> {
+    let (tokens, mut lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);

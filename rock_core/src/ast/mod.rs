@@ -1,21 +1,14 @@
 use crate::enum_str_convert;
-use crate::intern::{InternLit, InternName, InternPool};
+use crate::intern::{InternLit, InternName};
 use crate::size_lock;
 use crate::support::{Arena, ID};
 use crate::text::TextRange;
 
+//@breaking change: removed cstring lit state, cstring lit
+// state no longer coresponds with intern pool string lit order
+// will always generate zero terminated strings (minor memory waste)
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
-    pub string_is_cstr: Vec<bool>,
-    pub intern_lit: InternPool<'ast, InternLit>,
-    pub intern_name: InternPool<'ast, InternName>,
-    pub modules: Vec<Module<'ast>>,
-}
-
-//==================== SOURCE FILE ====================
-
-#[derive(Copy, Clone)]
-pub struct Module<'ast> {
     pub items: &'ast [Item<'ast>],
 }
 

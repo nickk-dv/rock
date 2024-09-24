@@ -15,8 +15,8 @@ pub fn parse<'ast>(
     let t_total = Timer::new();
     let mut state = parser::ParseState::new(intern_name);
 
-    for module_id in session.module_ids() {
-        let module = session.module(module_id);
+    for module_id in session.pkg_storage.module_ids() {
+        let module = session.pkg_storage.module(module_id);
 
         let (tokens, errors) = lexer::lex(&module.source, module_id, false);
         if !errors.is_empty() {
