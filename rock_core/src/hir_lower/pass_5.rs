@@ -15,7 +15,7 @@ pub fn typecheck_procedures(ctx: &mut HirCtx) {
     }
 }
 
-fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_>, proc_id: hir::ProcID<'hir>) {
+fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hir>) {
     let item = ctx.registry.proc_item(proc_id);
     let data = ctx.registry.proc_data(proc_id);
 
@@ -229,7 +229,11 @@ impl<'hir> TypeResult<'hir> {
             kind: hir::ExprKind::Error,
         }
     }
-    fn into_expr_result(self, ctx: &mut HirCtx<'hir, '_>, range: TextRange) -> ExprResult<'hir> {
+    fn into_expr_result(
+        self,
+        ctx: &mut HirCtx<'hir, '_, '_>,
+        range: TextRange,
+    ) -> ExprResult<'hir> {
         let expr = hir::Expr {
             kind: self.kind,
             range,
@@ -272,7 +276,7 @@ impl<'hir> BlockResult<'hir> {
 // It might be still good to include errored expressions with correct range.
 #[must_use]
 pub fn typecheck_expr<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     expr: &ast::Expr,
 ) -> ExprResult<'hir> {
@@ -319,7 +323,7 @@ pub fn typecheck_expr<'hir>(
 }
 
 fn typecheck_lit<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation,
     lit: ast::Lit,
 ) -> TypeResult<'hir> {
@@ -386,7 +390,7 @@ pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
 }
 
 pub fn alloc_string_lit_type<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     string_lit: ast::StringLit,
 ) -> hir::Type<'hir> {
     if string_lit.c_string {
@@ -402,7 +406,7 @@ pub fn alloc_string_lit_type<'hir>(
 }
 
 fn typecheck_if<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
     if_: &ast::If,
     expr_range: TextRange,
@@ -456,7 +460,7 @@ fn typecheck_if<'hir>(
 }
 
 fn typecheck_branch<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: &mut Expectation<'hir>,
     if_type: &mut hir::Type<'hir>,
     branch: &ast::Branch,
@@ -490,7 +494,7 @@ fn typecheck_branch<'hir>(
 // could have same value and result in
 // error in llvm ir generation, not checked currently
 fn typecheck_match<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
     match_: &ast::Match,
     match_range: TextRange,
@@ -597,7 +601,7 @@ impl<'hir> PatResult<'hir> {
 }
 
 fn typecheck_pat<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     pat: &ast::Pat,
 ) -> hir::Pat<'hir> {
@@ -618,7 +622,7 @@ fn typecheck_pat<'hir>(
 }
 
 fn typecheck_pat_lit<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     lit: ast::Lit,
 ) -> PatResult<'hir> {
@@ -631,7 +635,7 @@ fn typecheck_pat_lit<'hir>(
 }
 
 fn typecheck_pat_item<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     path: &ast::Path,
     binds: Option<&ast::BindingList>,
     pat_range: TextRange,
@@ -702,7 +706,7 @@ fn typecheck_pat_item<'hir>(
 }
 
 fn typecheck_pat_variant<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
     binds: Option<&ast::BindingList>,
@@ -754,7 +758,7 @@ fn typecheck_pat_variant<'hir>(
 }
 
 fn typecheck_pat_or<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     patterns: &[ast::Pat],
 ) -> PatResult<'hir> {
@@ -769,7 +773,7 @@ fn typecheck_pat_or<'hir>(
 }
 
 fn typecheck_field<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     target: &ast::Expr,
     name: ast::Name,
 ) -> TypeResult<'hir> {
@@ -802,7 +806,7 @@ impl<'hir> FieldResult<'hir> {
 }
 
 fn check_field_from_type<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     name: ast::Name,
     ty: hir::Type<'hir>,
@@ -861,7 +865,7 @@ fn check_field_from_type<'hir>(
 }
 
 fn check_field_from_struct<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     name: ast::Name,
     struct_id: hir::StructID<'hir>,
@@ -921,7 +925,7 @@ fn check_field_from_slice<'hir>(
 }
 
 fn check_field_from_array<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     name: ast::Name,
     array: &hir::ArrayStatic,
@@ -1029,7 +1033,7 @@ impl<'hir> CollectionType<'hir> {
 
 //@index or slice, desugar correctly
 fn typecheck_index<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     target: &ast::Expr,
     mutt: ast::Mut,
     index: &ast::Expr,
@@ -1085,7 +1089,7 @@ fn typecheck_index<'hir>(
 }
 
 fn typecheck_call<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     target: &ast::Expr,
     args_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
@@ -1125,7 +1129,7 @@ impl BasicTypeKind {
 }
 
 fn typecheck_cast<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     target: &ast::Expr,
     into: &ast::Type,
     range: TextRange,
@@ -1274,7 +1278,7 @@ fn typecheck_sizeof<'hir>(
 }
 
 fn typecheck_item<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     path: &ast::Path,
     args_list: Option<&ast::ArgumentList>,
     expr_range: TextRange,
@@ -1358,7 +1362,7 @@ fn typecheck_item<'hir>(
 }
 
 fn typecheck_variant<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
     args_list: Option<&ast::ArgumentList>,
@@ -1400,7 +1404,7 @@ pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
 }
 
 fn typecheck_struct_init<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     struct_init: &ast::StructInit,
     expr_range: TextRange,
@@ -1529,7 +1533,7 @@ fn typecheck_struct_init<'hir>(
 }
 
 fn typecheck_array_init<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
     input: &[&ast::Expr<'_>],
     array_range: TextRange,
@@ -1598,7 +1602,7 @@ fn typecheck_array_init<'hir>(
 }
 
 fn typecheck_array_repeat<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
     expr: &ast::Expr,
     len: ast::ConstExpr,
@@ -1642,7 +1646,7 @@ fn typecheck_array_repeat<'hir>(
     }
 }
 
-fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_>, rhs: &ast::Expr) -> TypeResult<'hir> {
+fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, rhs: &ast::Expr) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
 
     let ptr_ty = match rhs_res.ty {
@@ -1669,7 +1673,7 @@ fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_>, rhs: &ast::Expr) -> TypeRes
 }
 
 fn typecheck_address<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     mutt: ast::Mut,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
@@ -1795,7 +1799,7 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
 }
 
 fn typecheck_unary<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     op: ast::UnOp,
     op_range: TextRange,
@@ -1825,7 +1829,7 @@ fn typecheck_unary<'hir>(
 // let x = 5 + 10 as u16;
 // let y = 5 as u16 + 10;
 fn typecheck_binary<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     op: ast::BinOp,
     op_range: TextRange,
@@ -1891,7 +1895,7 @@ fn check_match_compatibility<'hir>(
 }
 
 fn typecheck_block<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     block: ast::Block,
     enter: BlockEnter,
@@ -2107,7 +2111,7 @@ fn typecheck_continue<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<h
 
 /// returns `None` on invalid use of `return`
 fn typecheck_return<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expr: Option<&ast::Expr>,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
@@ -2153,7 +2157,7 @@ fn typecheck_return<'hir>(
 
 /// returns `None` on invalid use of `defer`
 fn typecheck_defer<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     block: ast::Block,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
@@ -2188,7 +2192,10 @@ fn typecheck_defer<'hir>(
     }
 }
 
-fn typecheck_loop<'hir>(ctx: &mut HirCtx<'hir, '_>, loop_: &ast::Loop) -> &'hir hir::Loop<'hir> {
+fn typecheck_loop<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    loop_: &ast::Loop,
+) -> &'hir hir::Loop<'hir> {
     let kind = match loop_.kind {
         ast::LoopKind::Loop => hir::LoopKind::Loop,
         ast::LoopKind::While { cond } => {
@@ -2240,7 +2247,7 @@ enum LocalResult<'hir> {
     Discard(&'hir hir::Expr<'hir>),
 }
 
-fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> LocalResult<'hir> {
+fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> LocalResult<'hir> {
     //@theres no `nice` way to find both existing name from global (hir) scope
     // and proc_scope, those are so far disconnected,
     // some unified model of symbols might be better in the future
@@ -2311,7 +2318,7 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_>, local: &ast::Local) -> Loca
 
 //@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
 fn typecheck_assign<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     assign: &ast::Assign,
 ) -> &'hir hir::Assign<'hir> {
     let lhs_res = typecheck_expr(ctx, Expectation::None, assign.lhs);
@@ -2567,7 +2574,7 @@ fn arg_list_opt_range(arg_list: Option<&ast::ArgumentList>, default: TextRange) 
 }
 
 fn check_call_direct<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     proc_id: hir::ProcID<'hir>,
     arg_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
@@ -2614,7 +2621,7 @@ fn check_call_direct<'hir>(
 }
 
 fn check_call_indirect<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     target_res: ExprResult<'hir>,
     arg_list: &ast::ArgumentList,
 ) -> TypeResult<'hir> {
@@ -2672,7 +2679,7 @@ fn check_call_indirect<'hir>(
 }
 
 fn check_variant_input_opt<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     enum_id: hir::EnumID<'hir>,
     variant_id: hir::VariantID<'hir>,
     arg_list: Option<&ast::ArgumentList>,
@@ -2751,7 +2758,7 @@ enum ResolvedPath<'hir> {
 }
 
 fn path_resolve<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> (ResolvedPath<'hir>, usize) {
@@ -2794,7 +2801,7 @@ fn path_resolve<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
@@ -2861,7 +2868,7 @@ pub fn path_resolve_type<'hir>(
 //@duplication issue with other path resolve procs
 // mainly due to bad scope / symbol design
 pub fn path_resolve_struct<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     path: &ast::Path,
 ) -> Option<hir::StructID<'hir>> {
@@ -2938,7 +2945,7 @@ pub enum ValueID<'hir> {
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     path: &ast::Path<'ast>,
 ) -> (ValueID<'hir>, &'ast [ast::Name]) {

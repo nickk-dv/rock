@@ -8,7 +8,7 @@ use crate::text::TextRange;
 use std::collections::HashSet;
 
 pub fn match_cov<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     on_ty: hir::Type,
     arms: &mut [hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
@@ -326,7 +326,7 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
 }
 
 fn match_cov_enum<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     cov: &mut PatCovEnum<'hir>,
     arms: &mut [hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
@@ -370,7 +370,7 @@ fn match_cov_enum<'hir>(
 }
 
 fn pat_cov_enum<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     cov: &mut PatCovEnum<'hir>,
     pat: hir::Pat<'hir>,
     pat_range: TextRange,

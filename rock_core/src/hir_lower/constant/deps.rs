@@ -389,7 +389,7 @@ fn check_const_dependency_cycle<'hir>(
 }
 
 fn const_dependencies_mark_error_up_to_root<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &Tree<ConstDependency<'hir>>,
     from_id: TreeNodeID<ConstDependency<'hir>>,
 ) {
@@ -437,7 +437,7 @@ fn const_dependencies_mark_error_up_to_root<'hir>(
 }
 
 fn add_variant_tag_const_dependency<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     enum_id: hir::EnumID<'hir>,
@@ -497,7 +497,7 @@ fn add_variant_tag_const_dependency<'hir>(
 //@verify correctness
 // adds tag dependency and type usage of each inner field value
 fn add_variant_const_dependency<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     enum_id: hir::EnumID<'hir>,
@@ -514,7 +514,7 @@ fn add_variant_const_dependency<'hir>(
 }
 
 fn add_const_var_const_dependency<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     const_id: hir::ConstID<'hir>,
@@ -540,7 +540,7 @@ fn add_const_var_const_dependency<'hir>(
 }
 
 fn add_array_len_const_dependency<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     eval_id: hir::ConstEvalID,
@@ -561,7 +561,7 @@ fn add_array_len_const_dependency<'hir>(
 }
 
 fn add_type_size_const_dependencies<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     ty: hir::Type<'hir>,
@@ -589,7 +589,7 @@ fn add_type_size_const_dependencies<'hir>(
 }
 
 fn add_enum_size_const_dependency<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     enum_id: hir::EnumID<'hir>,
@@ -616,7 +616,7 @@ fn add_enum_size_const_dependency<'hir>(
 }
 
 fn add_struct_size_const_dependency<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     struct_id: hir::StructID<'hir>,
@@ -641,7 +641,7 @@ fn add_struct_size_const_dependency<'hir>(
 }
 
 fn add_type_usage_const_dependencies<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     ty: hir::Type<'hir>,
@@ -686,7 +686,7 @@ fn add_type_usage_const_dependencies<'hir>(
 }
 
 fn add_expr_const_dependencies<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast>,
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     tree: &mut Tree<ConstDependency<'hir>>,
     parent_id: TreeNodeID<ConstDependency<'hir>>,
     origin_id: ModuleID,
@@ -880,7 +880,7 @@ fn error_cannot_refer_to_in_constants(
 }
 
 fn resolve_const_dependency_tree<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &Tree<ConstDependency<'hir>>,
 ) {
     // reverse iteration allows to resolve dependencies in correct order
@@ -977,7 +977,7 @@ fn resolve_const_dependency_tree<'hir>(
 //@change how this is handled, still check double resolve
 // with assert to catch potential bugs in implementation
 fn resolve_and_update_const_eval<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     eval_id: hir::ConstEvalID,
     expect: Expectation<'hir>,
 ) {
@@ -997,7 +997,7 @@ fn resolve_and_update_const_eval<'hir>(
 
 #[must_use]
 pub fn resolve_const_expr<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     origin_id: ModuleID,
     expect: Expectation<'hir>,
     expr: ast::ConstExpr,

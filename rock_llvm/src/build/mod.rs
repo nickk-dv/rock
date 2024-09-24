@@ -22,7 +22,8 @@ pub fn build(
 ) -> Result<PathBuf, ErrorComp> {
     let triple = TargetTriple::host();
     let target_os = triple.os();
-    let (target, module) = emit_mod::codegen_module(hir, triple);
+    let (target, module) =
+        emit_mod::codegen_module(hir, triple, &session.intern_lit, &session.intern_name);
 
     let cwd = fs_env::dir_get_current_working()?;
     let mut build_path = cwd.join("build");
@@ -30,7 +31,7 @@ pub fn build(
     build_path.push(options.kind.as_str());
     fs_env::dir_create(&build_path, false)?;
 
-    let manifest = session.package(Session::ROOT_ID).manifest();
+    let manifest = session.pkg_storage.package(Session::ROOT_ID).manifest();
     let bin_name = match &manifest.build.bin_name {
         Some(name) => name.clone(),
         None => manifest.package.name.clone(),

@@ -7,15 +7,24 @@ use crate::package::manifest::PackageKind;
 use crate::session::{ModuleOrDirectory, Session};
 use crate::text::TextRange;
 
-pub fn check_entry_point<'hir, 'ast: 'hir>(ctx: &mut HirCtx<'hir, 'ast>, session: &Session) {
-    let root_package = session.pkg_storage.package(Session::ROOT_ID);
+pub fn check_entry_point(ctx: &mut HirCtx) {
+    let root_package = ctx.session.pkg_storage.package(Session::ROOT_ID);
     let root_manifest = root_package.manifest();
     if root_manifest.package.kind != PackageKind::Bin {
         return;
     }
 
-    let main_id = ctx.intern_name().intern("main");
-    let module_or_directory = root_package.src.find(&session.pkg_storage, main_id);
+    let main_id = match ctx.intern_name().get_id("main") {
+        Some(main_id) => main_id,
+        None => {
+            ctx.emit.error(ErrorComp::message(
+                "could not find `main` module, expected `src/main.rock` to exist",
+            ));
+            return;
+        }
+    };
+
+    let module_or_directory = root_package.src.find(&ctx.session.pkg_storage, main_id);
 
     let origin_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,
@@ -44,7 +53,7 @@ pub fn check_entry_point<'hir, 'ast: 'hir>(ctx: &mut HirCtx<'hir, 'ast>, session
     }
 }
 
-pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_>, proc_id: hir::ProcID<'hir>) {
+pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hir>) {
     let data = ctx.registry.proc_data_mut(proc_id);
     let flag = hir::ProcFlag::Main;
     let item_src = SourceRange::new(data.origin_id, data.name.range);

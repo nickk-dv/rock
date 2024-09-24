@@ -1,7 +1,7 @@
 use crate::ast;
 use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
-use crate::intern::{InternLit, InternName, InternPool};
+use crate::intern::InternName;
 use crate::session::ModuleID;
 use crate::support::{Arena, BitSet, IndexID, ID};
 use crate::text::TextRange;
@@ -10,9 +10,6 @@ use std::hash::{Hash, Hasher};
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
-    pub string_is_cstr: Vec<bool>,
-    pub intern_lit: InternPool<'hir, InternLit>,
-    pub intern_name: InternPool<'hir, InternName>,
     pub const_intern: ConstInternPool<'hir>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,

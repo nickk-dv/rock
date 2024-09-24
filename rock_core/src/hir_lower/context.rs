@@ -10,8 +10,7 @@ use crate::support::{Arena, IndexID, ID};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-pub struct HirCtx<'hir, 'ast> {
-    pub ast: ast::Ast<'ast>,
+pub struct HirCtx<'hir, 'ast, 's_ref> {
     pub arena: Arena<'hir>,
     pub emit: HirEmit,
     pub proc: ProcScope<'hir>,
@@ -19,6 +18,7 @@ pub struct HirCtx<'hir, 'ast> {
     pub registry: Registry<'hir, 'ast>,
     pub const_intern: hir::ConstInternPool<'hir>,
     pub target: TargetTriple,
+    pub session: &'s_ref Session<'ast>,
 }
 
 pub struct HirEmit {
@@ -68,19 +68,18 @@ pub struct Registry<'hir, 'ast> {
     variant_evals: Vec<hir::VariantEval<'hir>>,
 }
 
-impl<'hir, 'ast: 'hir> HirCtx<'hir, 'ast> {
-    pub fn new(ast: ast::Ast<'ast>, session: &Session) -> HirCtx<'hir, 'ast> {
+impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
+    pub fn new(session: &'s_ref Session<'ast>) -> HirCtx<'hir, 'ast, 's_ref> {
         let arena = Arena::new();
         let emit = HirEmit::new();
         let proc = ProcScope::dummy();
-        let scope = HirScope::new(&ast, session);
-        let registry = Registry::new(&ast);
+        let scope = HirScope::new(session);
+        let registry = Registry::new(session);
         let const_intern = hir::ConstInternPool::new();
 
         //@store in Session instead?
         // build triples will be different from host
         HirCtx {
-            ast,
             arena,
             emit,
             proc,
@@ -88,24 +87,25 @@ impl<'hir, 'ast: 'hir> HirCtx<'hir, 'ast> {
             registry,
             const_intern,
             target: TargetTriple::host(),
+            session,
         }
     }
 
     #[inline]
     pub fn name_str(&self, id: ID<InternName>) -> &'ast str {
-        self.ast.intern_name.get(id)
+        self.session.intern_name.get(id)
     }
     #[inline]
     pub fn intern_lit(&self) -> &InternPool<'ast, InternLit> {
-        &self.ast.intern_lit
+        &self.session.intern_lit
     }
     #[inline]
-    pub fn intern_name(&mut self) -> &mut InternPool<'ast, InternName> {
-        &mut self.ast.intern_name
+    pub fn intern_name(&mut self) -> &InternPool<'ast, InternName> {
+        &self.session.intern_name
     }
     #[inline]
-    pub fn ast_module(&self, module_id: ModuleID) -> ast::Module<'ast> {
-        self.ast.modules[module_id.raw_index()]
+    pub fn ast_items(&self, module_id: ModuleID) -> &'ast [ast::Item<'ast>] {
+        self.session.module_asts[module_id.raw_index()].items
     }
 
     pub fn hir_emit(self) -> ResultComp<hir::Hir<'hir>> {
@@ -139,9 +139,6 @@ impl<'hir, 'ast: 'hir> HirCtx<'hir, 'ast> {
         if errors.is_empty() {
             let hir = hir::Hir {
                 arena: self.arena,
-                string_is_cstr: self.ast.string_is_cstr,
-                intern_lit: self.ast.intern_lit,
-                intern_name: self.ast.intern_name,
                 const_intern: self.const_intern,
                 procs: self.registry.hir_procs,
                 enums: self.registry.hir_enums,
@@ -175,12 +172,13 @@ impl HirEmit {
 }
 
 impl<'hir> HirScope<'hir> {
-    pub fn new(ast: &ast::Ast, session: &Session) -> HirScope<'hir> {
-        let mut modules = Vec::with_capacity(ast.modules.len());
+    //@hacky corresponding vec of module scopes
+    pub fn new(session: &Session) -> HirScope<'hir> {
+        let mut modules = Vec::with_capacity(session.module_asts.len());
 
-        for module in ast.modules.iter() {
+        for ast in session.module_asts.iter() {
             let mut symbol_count = 0;
-            for item in module.items {
+            for item in ast.items {
                 symbol_count += 1;
                 if let ast::Item::Import(import) = item {
                     symbol_count += import.symbols.len();
@@ -380,7 +378,7 @@ impl<'hir> SymbolKind<'hir> {
 }
 
 impl<'hir, 'ast> Registry<'hir, 'ast> {
-    pub fn new(ast: &ast::Ast<'ast>) -> Registry<'hir, 'ast> {
+    pub fn new(session: &Session) -> Registry<'hir, 'ast> {
         let mut proc_count = 0;
         let mut enum_count = 0;
         let mut struct_count = 0;
@@ -388,8 +386,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         let mut global_count = 0;
         let mut import_count = 0;
 
-        for module in ast.modules.iter() {
-            for item in module.items {
+        for ast in session.module_asts.iter() {
+            for item in ast.items {
                 match item {
                     ast::Item::Proc(_) => proc_count += 1,
                     ast::Item::Enum(_) => enum_count += 1,

@@ -276,12 +276,9 @@ use rock_core::text;
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
 
-fn check_impl(
-    session: &Session,
-    intern_name: InternPool<'_, InternName>,
-) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-    let (ast, warnings) = ast_build::parse(session, intern_name).into_result(vec![])?;
-    let (_, warnings) = hir_lower::check(ast, session).into_result(warnings)?;
+fn check_impl(session: &mut Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
+    let ((), warnings) = ast_build::parse(session).into_result(vec![])?;
+    let (_, warnings) = hir_lower::check(session).into_result(warnings)?;
     Ok(warnings)
 }
 
@@ -304,8 +301,11 @@ fn severity_convert(severity: DiagnosticSeverity) -> Option<lsp::DiagnosticSever
     }
 }
 
-fn source_to_range_and_path(session: &Session, source: SourceRange) -> (Range, &PathBuf) {
-    let module = session.module(source.module_id());
+fn source_to_range_and_path<'s, 's_ref: 's>(
+    session: &'s_ref Session<'s>,
+    source: SourceRange,
+) -> (Range, &'s PathBuf) {
+    let module = session.pkg_storage.module(source.module_id());
 
     let start_location =
         text::find_text_location(&module.source, source.range().start(), &module.line_ranges);
@@ -395,7 +395,7 @@ fn run_diagnostics(conn: &Connection, context: &ServerContext) -> Vec<PublishDia
     let mut messages = Vec::<lsp::Diagnostic>::new();
     let mut diagnostics_map = HashMap::new();
 
-    let (session, intern_name) = match Session::new(false, Some(&context.files_in_memory)) {
+    let mut session = match Session::new(false, Some(&context.files_in_memory)) {
         Ok(value) => value,
         Err(error) => {
             let params = lsp::ShowMessageParams {
@@ -411,11 +411,11 @@ fn run_diagnostics(conn: &Connection, context: &ServerContext) -> Vec<PublishDia
         }
     };
 
-    let check_result = check_impl(&session, intern_name);
+    let check_result = check_impl(&mut session);
     let diagnostics = DiagnosticCollection::from_result(check_result);
 
-    for module_id in session.module_ids() {
-        let path = session.module(module_id).path.clone();
+    for module_id in session.pkg_storage.module_ids() {
+        let path = session.pkg_storage.module(module_id).path.clone();
         diagnostics_map.insert(path, Vec::new());
     }
 
@@ -535,7 +535,11 @@ fn semantic_token_visit_node(
                     _ => continue,
                 };
 
-                let line_ranges = session.module(builder.module_id).line_ranges.as_slice();
+                let line_ranges = session
+                    .pkg_storage
+                    .module(builder.module_id)
+                    .line_ranges
+                    .as_slice();
                 let mut delta_line: u32 = 0;
 
                 while range.start() >= line_ranges[builder.curr_line as usize].end() {

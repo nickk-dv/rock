@@ -7,7 +7,8 @@ use crate::session::{ModuleID, Session};
 use crate::support::{Arena, TempBuffer, Timer, ID};
 use crate::text::TextRange;
 
-struct AstBuild<'ast, 'syn, 'src, 'state> {
+struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
+    arena: Arena<'ast>,
     tree: &'syn SyntaxTree<'syn>,
     int_id: ID<u64>,
     float_id: ID<f64>,
@@ -15,14 +16,12 @@ struct AstBuild<'ast, 'syn, 'src, 'state> {
     string_id: ID<(ID<InternLit>, bool)>,
     module_id: ModuleID,
     source: &'src str,
+    intern_name: &'src mut InternPool<'s, InternName>,
     s: &'state mut AstBuildState<'ast>,
 }
 
 struct AstBuildState<'ast> {
-    arena: Arena<'ast>,
-    modules: Vec<ast::Module<'ast>>,
     errors: Vec<ErrorComp>,
-
     items: TempBuffer<ast::Item<'ast>>,
     attrs: TempBuffer<ast::Attr<'ast>>,
     attr_params: TempBuffer<ast::AttrParam>,
@@ -41,14 +40,16 @@ struct AstBuildState<'ast> {
     binds: TempBuffer<ast::Binding>,
 }
 
-impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
+impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
     fn new(
         tree: &'syn SyntaxTree<'syn>,
         source: &'src str,
         module_id: ModuleID,
+        intern_name: &'src mut InternPool<'s, InternName>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
         AstBuild {
+            arena: Arena::new(),
             tree,
             int_id: ID::new_raw(0),
             float_id: ID::new_raw(0),
@@ -56,18 +57,23 @@ impl<'ast, 'syn, 'src, 'state> AstBuild<'ast, 'syn, 'src, 'state> {
             string_id: ID::new_raw(0),
             module_id,
             source,
+            intern_name,
             s: state,
+        }
+    }
+
+    fn finish(self, items: &'ast [ast::Item<'ast>]) -> ast::Ast<'ast> {
+        ast::Ast {
+            arena: self.arena,
+            items,
         }
     }
 }
 
 impl<'ast> AstBuildState<'ast> {
-    fn new(session: &mut Session) -> AstBuildState<'ast> {
+    fn new() -> AstBuildState<'ast> {
         AstBuildState {
-            arena: Arena::new(),
-            modules: Vec::new(),
             errors: Vec::new(),
-
             items: TempBuffer::new(128),
             attrs: TempBuffer::new(32),
             attr_params: TempBuffer::new(32),
@@ -88,19 +94,34 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-pub fn parse<'ast>(session: &mut Session) -> ResultComp<ast::Ast<'ast>> {
+//@re-think entire error handling system
+// simplify ErrorSink interface to allow any error collection strategy
+// potentially add WarningSink trait aswell
+pub fn parse<'ast>(session: &mut Session) -> ResultComp<()> {
     let t_total = Timer::new();
+
+    //@state could be re-used via storing it in Session,
+    // try later if no lifetime conflits will occur
     let mut state = AstBuildState::new();
 
     for module_id in session.pkg_storage.module_ids() {
         let module = session.pkg_storage.module(module_id);
-        let tree_result = super::parse_tree_complete(&module.source, module_id, false);
+        let tree_result =
+            super::parse_tree_complete(&module.source, &mut session.intern_lit, module_id, false);
 
         match tree_result {
             Ok(tree) => {
-                let mut ctx = AstBuild::new(&tree, &module.source, module_id, &mut state);
+                let mut ctx = AstBuild::new(
+                    &tree,
+                    &module.source,
+                    module_id,
+                    &mut session.intern_name,
+                    &mut state,
+                );
                 let items = source_file(&mut ctx, tree.source_file());
-                state.modules.push(ast::Module { items });
+                let ast = ctx.finish(items);
+                //@will not lineup with ModuleID's if some Asts failed to be created
+                session.module_asts.push(ast);
             }
             Err(errors) => {
                 state.errors.extend(errors);
@@ -109,29 +130,23 @@ pub fn parse<'ast>(session: &mut Session) -> ResultComp<ast::Ast<'ast>> {
     }
 
     t_total.stop("ast parse (tree) total");
+
     if state.errors.is_empty() {
-        let ast = ast::Ast {
-            arena: state.arena,
-            string_is_cstr: state.string_is_cstr,
-            intern_lit: state.intern_lit,
-            intern_name: state.intern_name,
-            modules: state.modules,
-        };
-        ResultComp::Ok((ast, vec![]))
+        ResultComp::Ok(((), vec![]))
     } else {
         ResultComp::Err(DiagnosticCollection::new().join_errors(state.errors))
     }
 }
 
 fn source_file<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     source_file: cst::SourceFile,
 ) -> &'ast [ast::Item<'ast>] {
     let offset = ctx.s.items.start();
     for item_cst in source_file.items(ctx.tree) {
         item(ctx, item_cst);
     }
-    ctx.s.items.take(offset, &mut ctx.s.arena)
+    ctx.s.items.take(offset, &mut ctx.arena)
 }
 
 fn item(ctx: &mut AstBuild, item: cst::Item) {
@@ -147,7 +162,7 @@ fn item(ctx: &mut AstBuild, item: cst::Item) {
 }
 
 fn attr_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     attr_list: Option<cst::AttrList>,
 ) -> &'ast [ast::Attr<'ast>] {
     if let Some(attr_list) = attr_list {
@@ -156,13 +171,13 @@ fn attr_list<'ast>(
             let attr = attribute(ctx, attr_cst);
             ctx.s.attrs.add(attr);
         }
-        ctx.s.attrs.take(offset, &mut ctx.s.arena)
+        ctx.s.attrs.take(offset, &mut ctx.arena)
     } else {
         &[]
     }
 }
 
-fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, attr: cst::Attr) -> ast::Attr<'ast> {
+fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, attr: cst::Attr) -> ast::Attr<'ast> {
     //@assuming range of ident token without any trivia
     let name = name(ctx, attr.name(ctx.tree).unwrap());
     let params = attr_param_list(ctx, attr.param_list(ctx.tree));
@@ -177,7 +192,7 @@ fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, attr: cst::Attr) -> ast
 
 //@in general make sure range doesnt include trivia tokens
 fn attr_param_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     param_list: Option<cst::AttrParamList>,
 ) -> Option<(&'ast [ast::AttrParam], TextRange)> {
     if let Some(param_list) = param_list {
@@ -186,7 +201,7 @@ fn attr_param_list<'ast>(
             let param = attr_param(ctx, param_cst);
             ctx.s.attr_params.add(param);
         }
-        let params = ctx.s.attr_params.take(offset, &mut ctx.s.arena);
+        let params = ctx.s.attr_params.take(offset, &mut ctx.arena);
         Some((params, param_list.range(ctx.tree)))
     } else {
         None
@@ -225,7 +240,7 @@ fn mutt(is_mut: bool) -> ast::Mut {
 }
 
 fn proc_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
@@ -237,7 +252,7 @@ fn proc_item<'ast>(
     for param_cst in param_list.params(ctx.tree) {
         param(ctx, param_cst);
     }
-    let params = ctx.s.params.take(offset, &mut ctx.s.arena);
+    let params = ctx.s.params.take(offset, &mut ctx.arena);
 
     let is_variadic = param_list.is_variadic(ctx.tree);
     let return_ty = ty(ctx, item.return_ty(ctx.tree).unwrap());
@@ -252,7 +267,7 @@ fn proc_item<'ast>(
         return_ty,
         block,
     };
-    ctx.s.arena.alloc(proc_item)
+    ctx.arena.alloc(proc_item)
 }
 
 fn param(ctx: &mut AstBuild, param: cst::Param) {
@@ -265,7 +280,7 @@ fn param(ctx: &mut AstBuild, param: cst::Param) {
 }
 
 fn enum_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
@@ -277,7 +292,7 @@ fn enum_item<'ast>(
     for variant_cst in variant_list.variants(ctx.tree) {
         variant(ctx, variant_cst);
     }
-    let variants = ctx.s.variants.take(offset, &mut ctx.s.arena);
+    let variants = ctx.s.variants.take(offset, &mut ctx.arena);
 
     let enum_item = ast::EnumItem {
         attrs,
@@ -285,7 +300,7 @@ fn enum_item<'ast>(
         name,
         variants,
     };
-    ctx.s.arena.alloc(enum_item)
+    ctx.arena.alloc(enum_item)
 }
 
 fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
@@ -300,7 +315,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
             let ty = ty(ctx, ty_cst);
             ctx.s.types.add(ty);
         }
-        let types = ctx.s.types.take(offset, &mut ctx.s.arena);
+        let types = ctx.s.types.take(offset, &mut ctx.arena);
         ast::VariantKind::HasValues(types)
     } else {
         ast::VariantKind::Default
@@ -311,7 +326,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
 }
 
 fn struct_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
@@ -323,7 +338,7 @@ fn struct_item<'ast>(
     for field_cst in field_list.fields(ctx.tree) {
         field(ctx, field_cst);
     }
-    let fields = ctx.s.fields.take(offset, &mut ctx.s.arena);
+    let fields = ctx.s.fields.take(offset, &mut ctx.arena);
 
     let struct_item = ast::StructItem {
         attrs,
@@ -331,7 +346,7 @@ fn struct_item<'ast>(
         name,
         fields,
     };
-    ctx.s.arena.alloc(struct_item)
+    ctx.arena.alloc(struct_item)
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
@@ -344,7 +359,7 @@ fn field(ctx: &mut AstBuild, field: cst::Field) {
 }
 
 fn const_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
@@ -360,11 +375,11 @@ fn const_item<'ast>(
         ty,
         value,
     };
-    ctx.s.arena.alloc(const_item)
+    ctx.arena.alloc(const_item)
 }
 
 fn global_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
@@ -382,11 +397,11 @@ fn global_item<'ast>(
         ty,
         value,
     };
-    ctx.s.arena.alloc(global_item)
+    ctx.arena.alloc(global_item)
 }
 
 fn import_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
@@ -398,7 +413,7 @@ fn import_item<'ast>(
         let name = name(ctx, name_cst);
         ctx.s.names.add(name);
     }
-    let import_path = ctx.s.names.take(offset, &mut ctx.s.arena);
+    let import_path = ctx.s.names.take(offset, &mut ctx.arena);
     let rename = import_symbol_rename(ctx, item.rename(ctx.tree));
 
     let symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
@@ -406,7 +421,7 @@ fn import_item<'ast>(
         for symbol_cst in symbol_list.import_symbols(ctx.tree) {
             import_symbol(ctx, symbol_cst);
         }
-        ctx.s.import_symbols.take(offset, &mut ctx.s.arena)
+        ctx.s.import_symbols.take(offset, &mut ctx.arena)
     } else {
         &[]
     };
@@ -418,7 +433,7 @@ fn import_item<'ast>(
         rename,
         symbols,
     };
-    ctx.s.arena.alloc(import_item)
+    ctx.arena.alloc(import_item)
 }
 
 fn import_symbol(ctx: &mut AstBuild, import_symbol: cst::ImportSymbol) {
@@ -448,19 +463,19 @@ fn import_symbol_rename(
 fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
     let range = name.range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
-    let id = ctx.s.intern_name.intern(string);
+    let id = ctx.intern_name.intern(string);
     ast::Name { range, id }
 }
 
-fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
+fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
     let offset = ctx.s.names.start();
     for name_cst in path.names(ctx.tree) {
         let name = name(ctx, name_cst);
         ctx.s.names.add(name);
     }
-    let names = ctx.s.names.take(offset, &mut ctx.s.arena);
+    let names = ctx.s.names.take(offset, &mut ctx.arena);
 
-    ctx.s.arena.alloc(ast::Path { names })
+    ctx.arena.alloc(ast::Path { names })
 }
 
 fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
@@ -475,7 +490,7 @@ fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
 }
 
 fn bind_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     bind_list: cst::BindList,
 ) -> &'ast ast::BindingList<'ast> {
     let offset = ctx.s.binds.start();
@@ -483,15 +498,15 @@ fn bind_list<'ast>(
         let bind = bind(ctx, bind_cst);
         ctx.s.binds.add(bind);
     }
-    let binds = ctx.s.binds.take(offset, &mut ctx.s.arena);
+    let binds = ctx.s.binds.take(offset, &mut ctx.arena);
 
     let range = bind_list.range(ctx.tree);
     let bind_list = ast::BindingList { binds, range };
-    ctx.s.arena.alloc(bind_list)
+    ctx.arena.alloc(bind_list)
 }
 
 fn args_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     args_list: cst::ArgsList,
 ) -> &'ast ast::ArgumentList<'ast> {
     let offset = ctx.s.exprs.start();
@@ -499,14 +514,14 @@ fn args_list<'ast>(
         let expr = expr(ctx, expr_cst);
         ctx.s.exprs.add(expr);
     }
-    let exprs = ctx.s.exprs.take(offset, &mut ctx.s.arena);
+    let exprs = ctx.s.exprs.take(offset, &mut ctx.arena);
 
     let range = args_list.range(ctx.tree);
     let args_list = ast::ArgumentList { exprs, range };
-    ctx.s.arena.alloc(args_list)
+    ctx.arena.alloc(args_list)
 }
 
-fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
+fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
     let range = ty_cst.range(ctx.tree);
 
     let kind = match ty_cst {
@@ -521,7 +536,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
         cst::Type::Reference(ty_cst) => {
             let mutt = mutt(ty_cst.is_mut(ctx.tree));
             let ref_ty = ty(ctx, ty_cst.ref_ty(ctx.tree).unwrap());
-            ast::TypeKind::Reference(ctx.s.arena.alloc(ref_ty), mutt)
+            ast::TypeKind::Reference(ctx.arena.alloc(ref_ty), mutt)
         }
         cst::Type::Procedure(proc_ty) => {
             let offset = ctx.s.types.start();
@@ -530,7 +545,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
                 let ty = ty(ctx, ty_cst);
                 ctx.s.types.add(ty);
             }
-            let param_types = ctx.s.types.take(offset, &mut ctx.s.arena);
+            let param_types = ctx.s.types.take(offset, &mut ctx.arena);
 
             let is_variadic = type_list.is_variadic(ctx.tree);
             let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
@@ -541,28 +556,28 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
                 is_variadic,
                 return_ty,
             };
-            ast::TypeKind::Procedure(ctx.s.arena.alloc(proc_ty))
+            ast::TypeKind::Procedure(ctx.arena.alloc(proc_ty))
         }
         cst::Type::ArraySlice(slice) => {
             let mutt = mutt(slice.is_mut(ctx.tree));
             let elem_ty = ty(ctx, slice.elem_ty(ctx.tree).unwrap());
 
             let slice = ast::ArraySlice { mutt, elem_ty };
-            ast::TypeKind::ArraySlice(ctx.s.arena.alloc(slice))
+            ast::TypeKind::ArraySlice(ctx.arena.alloc(slice))
         }
         cst::Type::ArrayStatic(array) => {
             let len = ast::ConstExpr(expr(ctx, array.len(ctx.tree).unwrap()));
             let elem_ty = ty(ctx, array.elem_ty(ctx.tree).unwrap());
 
             let array = ast::ArrayStatic { len, elem_ty };
-            ast::TypeKind::ArrayStatic(ctx.s.arena.alloc(array))
+            ast::TypeKind::ArrayStatic(ctx.arena.alloc(array))
         }
     };
 
     ast::Type { kind, range }
 }
 
-fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> {
+fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> {
     let range = stmt.range(ctx.tree);
 
     let kind = match stmt {
@@ -574,7 +589,7 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stm
         }
         cst::Stmt::Defer(defer) => {
             let block = block(ctx, defer.block(ctx.tree).unwrap());
-            let block = ctx.s.arena.alloc(block);
+            let block = ctx.arena.alloc(block);
             ast::StmtKind::Defer(block)
         }
         cst::Stmt::Loop(loop_) => ast::StmtKind::Loop(stmt_loop(ctx, loop_)),
@@ -594,7 +609,7 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stm
 }
 
 fn stmt_loop<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     loop_: cst::StmtLoop,
 ) -> &'ast ast::Loop<'ast> {
     let kind = if let Some(while_header) = loop_.while_header(ctx.tree) {
@@ -615,11 +630,11 @@ fn stmt_loop<'ast>(
 
     let block = block(ctx, loop_.block(ctx.tree).unwrap());
     let loop_ = ast::Loop { kind, block };
-    ctx.s.arena.alloc(loop_)
+    ctx.arena.alloc(loop_)
 }
 
 fn stmt_local<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
     let mutt = mutt(local.is_mut(ctx.tree));
@@ -637,11 +652,11 @@ fn stmt_local<'ast>(
         ty,
         init,
     };
-    ctx.s.arena.alloc(local)
+    ctx.arena.alloc(local)
 }
 
 fn stmt_assign<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     assign: cst::StmtAssign,
 ) -> &'ast ast::Assign<'ast> {
     let (op, op_range) = assign.assign_op_with_range(ctx.tree).unwrap();
@@ -655,20 +670,23 @@ fn stmt_assign<'ast>(
         lhs,
         rhs,
     };
-    ctx.s.arena.alloc(assign)
+    ctx.arena.alloc(assign)
 }
 
 //@rename expr_cst back to expr when each arm has a function
-fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'ast ast::Expr<'ast> {
+fn expr<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    expr_cst: cst::Expr,
+) -> &'ast ast::Expr<'ast> {
     let kind = expr_kind(ctx, expr_cst);
     let range = expr_cst.range(ctx.tree);
 
     let expr = ast::Expr { kind, range };
-    ctx.s.arena.alloc(expr)
+    ctx.arena.alloc(expr)
 }
 
 fn expr_kind<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     expr_cst: cst::Expr,
 ) -> ast::ExprKind<'ast> {
     match expr_cst {
@@ -695,7 +713,7 @@ fn expr_kind<'ast>(
                 };
                 ctx.s.branches.add(branch);
             }
-            let branches = ctx.s.branches.take(offset, &mut ctx.s.arena);
+            let branches = ctx.s.branches.take(offset, &mut ctx.arena);
             let else_block = if_.else_block(ctx.tree).map(|b| block(ctx, b));
 
             let if_ = ast::If {
@@ -703,13 +721,13 @@ fn expr_kind<'ast>(
                 branches,
                 else_block,
             };
-            let if_ = ctx.s.arena.alloc(if_);
+            let if_ = ctx.arena.alloc(if_);
             ast::ExprKind::If { if_ }
         }
         cst::Expr::Block(block_cst) => {
             let block = block(ctx, block_cst);
 
-            let block = ctx.s.arena.alloc(block);
+            let block = ctx.arena.alloc(block);
             ast::ExprKind::Block { block }
         }
         cst::Expr::Match(match_) => {
@@ -717,7 +735,7 @@ fn expr_kind<'ast>(
             let arms = match_arm_list(ctx, match_.match_arm_list(ctx.tree).unwrap());
 
             let match_ = ast::Match { on_expr, arms };
-            let match_ = ctx.s.arena.alloc(match_);
+            let match_ = ctx.arena.alloc(match_);
             ast::ExprKind::Match { match_ }
         }
         cst::Expr::Field(field) => {
@@ -745,12 +763,12 @@ fn expr_kind<'ast>(
         cst::Expr::Cast(cast) => {
             let target = expr(ctx, cast.target(ctx.tree).unwrap());
             let into = ty(ctx, cast.into_ty(ctx.tree).unwrap());
-            let into = ctx.s.arena.alloc(into);
+            let into = ctx.arena.alloc(into);
             ast::ExprKind::Cast { target, into }
         }
         cst::Expr::Sizeof(sizeof) => {
             let ty = ty(ctx, sizeof.ty(ctx.tree).unwrap());
-            let ty = ctx.s.arena.alloc(ty);
+            let ty = ctx.arena.alloc(ty);
             ast::ExprKind::Sizeof { ty }
         }
         cst::Expr::Item(item) => {
@@ -781,10 +799,10 @@ fn expr_kind<'ast>(
                 let field_init = ast::FieldInit { name, expr };
                 ctx.s.field_inits.add(field_init);
             }
-            let input = ctx.s.field_inits.take(offset, &mut ctx.s.arena);
+            let input = ctx.s.field_inits.take(offset, &mut ctx.arena);
 
             let struct_init = ast::StructInit { path, input };
-            let struct_init = ctx.s.arena.alloc(struct_init);
+            let struct_init = ctx.arena.alloc(struct_init);
             ast::ExprKind::StructInit { struct_init }
         }
         cst::Expr::ArrayInit(array_init) => {
@@ -793,7 +811,7 @@ fn expr_kind<'ast>(
                 let expr = expr(ctx, input);
                 ctx.s.exprs.add(expr);
             }
-            let input = ctx.s.exprs.take(offset, &mut ctx.s.arena);
+            let input = ctx.s.exprs.take(offset, &mut ctx.arena);
 
             ast::ExprKind::ArrayInit { input }
         }
@@ -818,7 +836,7 @@ fn expr_kind<'ast>(
         cst::Expr::Range(range_cst) => {
             let range = range(ctx, range_cst);
 
-            let range = ctx.s.arena.alloc(range);
+            let range = ctx.arena.alloc(range);
             ast::ExprKind::Range { range }
         }
         cst::Expr::Unary(unary) => {
@@ -834,14 +852,14 @@ fn expr_kind<'ast>(
             let rhs = expr(ctx, lhs_rhs_iter.next().unwrap());
 
             let bin = ast::BinExpr { lhs, rhs };
-            let bin = ctx.s.arena.alloc(bin);
+            let bin = ctx.arena.alloc(bin);
             ast::ExprKind::Binary { op, op_range, bin }
         }
     }
 }
 
 fn match_arm_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     match_arm_list: cst::MatchArmList,
 ) -> &'ast [ast::MatchArm<'ast>] {
     let offset = ctx.s.match_arms.start();
@@ -849,11 +867,11 @@ fn match_arm_list<'ast>(
         let arm = match_arm(ctx, arm);
         ctx.s.match_arms.add(arm)
     }
-    ctx.s.match_arms.take(offset, &mut ctx.s.arena)
+    ctx.s.match_arms.take(offset, &mut ctx.arena)
 }
 
 fn match_arm<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     arm: cst::MatchArm,
 ) -> ast::MatchArm<'ast> {
     let pat = pat(ctx, arm.pat(ctx.tree).unwrap());
@@ -861,7 +879,7 @@ fn match_arm<'ast>(
     ast::MatchArm { pat, expr }
 }
 
-fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
+fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
     let kind = match pat_cst {
         cst::Pat::Wild(_) => ast::PatKind::Wild,
         cst::Pat::Lit(pat) => {
@@ -884,7 +902,7 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pa
                 let pat = pat(ctx, pat_cst);
                 ctx.s.patterns.add(pat);
             }
-            let patterns = ctx.s.patterns.take(offset, &mut ctx.s.arena);
+            let patterns = ctx.s.patterns.take(offset, &mut ctx.arena);
             ast::PatKind::Or { patterns }
         }
     };
@@ -922,20 +940,14 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
     }
 }
 
+//@separated due to being used for attr param value
 fn string_lit(ctx: &mut AstBuild) -> ast::StringLit {
-    let (string, c_string) = ctx.tree.tokens().string(ctx.string_id);
+    let (id, c_string) = ctx.tree.tokens().string(ctx.string_id);
     ctx.string_id = ctx.string_id.inc();
-
-    let id = ctx.s.intern_lit.intern(string);
-    if id.raw_index() >= ctx.s.string_is_cstr.len() {
-        ctx.s.string_is_cstr.push(c_string);
-    } else if c_string {
-        ctx.s.string_is_cstr[id.raw_index()] = true;
-    }
     ast::StringLit { id, c_string }
 }
 
-fn range<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, range: cst::Range) -> ast::Range<'ast> {
+fn range<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, range: cst::Range) -> ast::Range<'ast> {
     match range {
         cst::Range::Full(_) => ast::Range::Full,
         cst::Range::ToExclusive(range) => {
@@ -965,13 +977,13 @@ fn range<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, range: cst::Range) -> ast::
     }
 }
 
-fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
+fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
     let offset = ctx.s.stmts.start();
     for stmt_cst in block.stmts(ctx.tree) {
         let stmt = stmt(ctx, stmt_cst);
         ctx.s.stmts.add(stmt);
     }
-    let stmts = ctx.s.stmts.take(offset, &mut ctx.s.arena);
+    let stmts = ctx.s.stmts.take(offset, &mut ctx.arena);
 
     ast::Block {
         stmts,

@@ -2,9 +2,10 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
+use rock_core::intern::{InternLit, InternName, InternPool};
 use rock_core::support::{IndexID, ID};
 
-pub struct Codegen<'c> {
+pub struct Codegen<'c, 's, 's_ref> {
     pub target: llvm::IRTarget,
     pub context: llvm::IRContext,
     pub module: llvm::IRModule,
@@ -15,6 +16,8 @@ pub struct Codegen<'c> {
     pub globals: Vec<llvm::ValueGlobal>,
     pub string_lits: Vec<llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
+    pub intern_lit: &'s_ref InternPool<'s, InternLit>,
+    pub intern_name: &'s_ref InternPool<'s, InternName>,
     cache: CodegenCache,
 }
 
@@ -68,8 +71,13 @@ struct CodegenCache {
     slice_type: llvm::TypeStruct,
 }
 
-impl<'c> Codegen<'c> {
-    pub fn new(hir: hir::Hir<'c>, triple: TargetTriple) -> Codegen<'c> {
+impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
+    pub fn new(
+        hir: hir::Hir<'c>,
+        triple: TargetTriple,
+        intern_lit: &'s_ref InternPool<'s, InternLit>,
+        intern_name: &'s_ref InternPool<'s, InternName>,
+    ) -> Codegen<'c, 's, 's_ref> {
         let target = llvm::IRTarget::new(triple);
         let context = llvm::IRContext::new();
         let module = llvm::IRModule::new(&context, &target, "rock_module");
@@ -85,8 +93,10 @@ impl<'c> Codegen<'c> {
             structs: Vec::with_capacity(hir.structs.len()),
             consts: Vec::with_capacity(hir.consts.len()),
             globals: Vec::with_capacity(hir.globals.len()),
-            string_lits: Vec::with_capacity(hir.intern_lit.get_all().len()),
+            string_lits: Vec::with_capacity(intern_lit.get_all().len()),
             hir,
+            intern_lit,
+            intern_name,
             cache,
         }
     }

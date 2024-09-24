@@ -5,12 +5,15 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
+use rock_core::intern::{InternLit, InternName, InternPool};
 
-pub fn codegen_module<'c>(
+pub fn codegen_module<'c, 's, 's_ref>(
     hir: hir::Hir<'c>,
     triple: TargetTriple,
+    intern_lit: &'s_ref InternPool<'s, InternLit>,
+    intern_name: &'s_ref InternPool<'s, InternName>,
 ) -> (llvm::IRTarget, llvm::IRModule) {
-    let mut cg = Codegen::new(hir, triple);
+    let mut cg = Codegen::new(hir, triple, intern_lit, intern_name);
     codegen_string_lits(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_consts(&mut cg);
@@ -21,8 +24,8 @@ pub fn codegen_module<'c>(
 }
 
 fn codegen_string_lits(cg: &mut Codegen) {
-    for (idx, &string) in cg.hir.intern_lit.get_all().iter().enumerate() {
-        let c_string = cg.hir.string_is_cstr[idx];
+    for (idx, &string) in cg.intern_lit.get_all().iter().enumerate() {
+        let c_string = true; //@always gen cstrings, optional c_string state were temp removed
         let str_val = llvm::const_string(string, c_string);
         let str_ty = llvm::typeof_value(str_val);
 
@@ -97,7 +100,7 @@ fn codegen_function_values(cg: &mut Codegen) {
         let is_main = data.attr_set.contains(hir::ProcFlag::Main);
 
         let name = if is_external || is_main {
-            cg.hir.intern_name.get(data.name.id)
+            cg.intern_name.get(data.name.id)
         } else {
             "rock_proc"
         };

@@ -5,7 +5,7 @@ use rock_core::ast;
 use rock_core::hir;
 
 pub fn codegen_expr_value<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
 ) -> llvm::Value {
@@ -20,7 +20,7 @@ pub fn codegen_expr_value<'c>(
 }
 
 pub fn codegen_expr_value_opt<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
 ) -> Option<llvm::Value> {
@@ -35,7 +35,7 @@ pub fn codegen_expr_value_opt<'c>(
 }
 
 pub fn codegen_expr_tail<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     expr: &hir::Expr<'c>,
@@ -60,7 +60,7 @@ pub fn codegen_expr_tail<'c>(
 }
 
 pub fn codegen_expr_pointer<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
 ) -> llvm::ValuePtr {
@@ -70,7 +70,7 @@ pub fn codegen_expr_pointer<'c>(
 }
 
 pub fn codegen_expr_store<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
     ptr_val: llvm::ValuePtr,
@@ -81,7 +81,7 @@ pub fn codegen_expr_store<'c>(
 }
 
 fn codegen_expr<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expr: &hir::Expr<'c>,
     expect: Expect,
@@ -206,7 +206,7 @@ fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value
     if string_lit.c_string {
         global_ptr.as_val()
     } else {
-        let string = cg.hir.intern_lit.get(string_lit.id);
+        let string = cg.intern_lit.get(string_lit.id);
         let slice_len = cg.const_usize(string.len() as u64);
         llvm::const_struct_inline(&[global_ptr.as_val(), slice_len], false)
     }
@@ -251,7 +251,7 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
 
 //@simplify
 fn codegen_if<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     if_: &hir::If<'c>,
@@ -301,7 +301,7 @@ fn codegen_if<'c>(
 }
 
 fn codegen_struct_field<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     target: &hir::Expr<'c>,
@@ -336,7 +336,7 @@ fn codegen_struct_field<'c>(
 }
 
 fn codegen_slice_field<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     target: &hir::Expr<'c>,
@@ -369,7 +369,7 @@ fn codegen_slice_field<'c>(
 
 //@no bounds check
 fn codegen_index<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     target: &hir::Expr<'c>,
@@ -418,7 +418,7 @@ fn codegen_index<'c>(
 }
 
 fn codegen_cast<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     target: &hir::Expr<'c>,
     into: &hir::Type,
@@ -497,7 +497,7 @@ fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) ->
 }
 
 fn codegen_call_direct<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
@@ -513,7 +513,7 @@ fn codegen_call_direct<'c>(
 }
 
 fn codegen_call_indirect<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     target: &hir::Expr<'c>,
     indirect: &hir::CallIndirect<'c>,
@@ -531,7 +531,7 @@ fn codegen_call_indirect<'c>(
 }
 
 fn codegen_struct_init<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     struct_id: hir::StructID,
@@ -563,7 +563,7 @@ fn codegen_struct_init<'c>(
 }
 
 fn codegen_array_init<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     array_init: &hir::ArrayInit<'c>,
@@ -592,7 +592,7 @@ fn codegen_array_init<'c>(
 }
 
 fn codegen_array_repeat<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     array_repeat: &hir::ArrayRepeat<'c>,
@@ -639,7 +639,7 @@ fn codegen_array_repeat<'c>(
 }
 
 fn codegen_deref<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     rhs: &hir::Expr<'c>,
@@ -657,7 +657,7 @@ fn codegen_deref<'c>(
 }
 
 fn codegen_address<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     rhs: &hir::Expr<'c>,
 ) -> llvm::Value {
@@ -665,7 +665,7 @@ fn codegen_address<'c>(
 }
 
 fn codegen_unary<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     op: hir::UnOp,
     rhs: &hir::Expr<'c>,
@@ -681,7 +681,7 @@ fn codegen_unary<'c>(
 }
 
 fn codegen_binary<'c>(
-    cg: &Codegen<'c>,
+    cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     op: hir::BinOp,
     lhs: &hir::Expr<'c>,

@@ -5,7 +5,7 @@ use crate::hir;
 use crate::hir_lower::context::HirCtx;
 
 pub fn fold_const_expr<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     expr: &hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -74,7 +74,7 @@ fn fold_const<'hir>(
 }
 
 fn fold_struct_field<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
     field_id: hir::FieldID,
@@ -96,7 +96,7 @@ fn fold_struct_field<'hir>(
 }
 
 fn fold_slice_field<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
     field: hir::SliceField,
@@ -132,7 +132,7 @@ fn fold_slice_field<'hir>(
 
 //@check out of bounds static array access even in non constant targets (during typecheck)
 fn fold_index<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
     access: &hir::IndexAccess<'hir>,
@@ -177,7 +177,7 @@ fn fold_index<'hir>(
 }
 
 fn fold_cast<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
     into: hir::Type,
@@ -231,7 +231,7 @@ fn fold_cast<'hir>(
 }
 
 fn fold_const_var<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     const_id: hir::ConstID,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let data = ctx.registry.const_data(const_id);
@@ -242,7 +242,7 @@ fn fold_const_var<'hir>(
 }
 
 fn fold_variant<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     enum_id: hir::EnumID<'hir>,
     variant_id: hir::VariantID<'hir>,
@@ -276,7 +276,7 @@ fn fold_variant<'hir>(
 }
 
 fn fold_struct_init<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     struct_id: hir::StructID<'hir>,
     input: &[hir::FieldInit<'hir>],
@@ -308,7 +308,7 @@ fn fold_struct_init<'hir>(
 }
 
 fn fold_array_init<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     array_init: &hir::ArrayInit<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -336,7 +336,7 @@ fn fold_array_init<'hir>(
 }
 
 fn fold_array_repeat<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     array_repeat: &hir::ArrayRepeat<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
@@ -350,7 +350,7 @@ fn fold_array_repeat<'hir>(
 }
 
 fn fold_unary_expr<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     op: hir::UnOp,
     rhs: &'hir hir::Expr<'hir>,
@@ -378,7 +378,7 @@ fn fold_unary_expr<'hir>(
 }
 
 fn fold_binary<'hir>(
-    ctx: &mut HirCtx<'hir, '_>,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     op: hir::BinOp,
     lhs: &hir::Expr<'hir>,

@@ -1,30 +1,26 @@
 use super::context::{HirCtx, Symbol, SymbolKind};
 use crate::ast;
-use crate::error::{ErrorSink, SourceRange};
+use crate::error::SourceRange;
 use crate::errors as err;
-use crate::session::{ModuleID, ModuleOrDirectory, Session};
+use crate::session::{ModuleID, ModuleOrDirectory};
 
-pub fn resolve_imports(ctx: &mut HirCtx, session: &Session) {
+pub fn resolve_imports(ctx: &mut HirCtx) {
     for import_id in ctx.registry.import_ids() {
         let origin_id = ctx.registry.import_data(import_id).origin_id;
         let import = ctx.registry.import_item(import_id);
-        resolve_import(ctx, session, origin_id, import);
+        resolve_import(ctx, origin_id, import);
     }
 }
 
-fn resolve_import(
-    ctx: &mut HirCtx,
-    session: &Session,
-    origin_id: ModuleID,
-    import: &ast::ImportItem,
-) {
-    let mut source_package = session
+fn resolve_import(ctx: &mut HirCtx, origin_id: ModuleID, import: &ast::ImportItem) {
+    let mut source_package = ctx
+        .session
         .pkg_storage
-        .package(session.pkg_storage.module(origin_id).package_id);
+        .package(ctx.session.pkg_storage.module(origin_id).package_id);
 
     if let Some(package_name) = import.package {
         if let Some(dependency_id) = source_package.dependency(package_name.id) {
-            source_package = session.pkg_storage.package(dependency_id);
+            source_package = ctx.session.pkg_storage.package(dependency_id);
         } else {
             let src = SourceRange::new(origin_id, package_name.range);
             let dep_name = ctx.name_str(package_name.id);
@@ -41,7 +37,7 @@ fn resolve_import(
     let mut target_dir = &source_package.src;
 
     for name in directory_names {
-        match target_dir.find(&session.pkg_storage, name.id) {
+        match target_dir.find(&ctx.session.pkg_storage, name.id) {
             ModuleOrDirectory::None => {
                 let src = SourceRange::new(origin_id, name.range);
                 let dir_name = ctx.name_str(name.id);
@@ -61,7 +57,7 @@ fn resolve_import(
         }
     }
 
-    let target_id = match target_dir.find(&session.pkg_storage, module_name.id) {
+    let target_id = match target_dir.find(&ctx.session.pkg_storage, module_name.id) {
         ModuleOrDirectory::None => {
             let src = SourceRange::new(origin_id, module_name.range);
             let module_name = ctx.name_str(module_name.id);

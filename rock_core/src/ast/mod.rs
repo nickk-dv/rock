@@ -461,6 +461,25 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
+//@work in progress, some relations might be non-obvious
+impl BinOp {
+    pub fn prec(&self) -> u32 {
+        match self {
+            BinOp::LogicOr => 1,
+            BinOp::LogicAnd => 2,
+            BinOp::IsEq
+            | BinOp::NotEq
+            | BinOp::Less
+            | BinOp::LessEq
+            | BinOp::Greater
+            | BinOp::GreaterEq => 3,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
+            BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitShl | BinOp::BitShr => 6,
+        }
+    }
+}
+
 //==================== SIZE LOCK ====================
 
 size_lock!(16, Item);

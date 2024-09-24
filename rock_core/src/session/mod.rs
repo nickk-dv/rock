@@ -14,6 +14,8 @@ pub struct Session<'s> {
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
     pub pkg_storage: PackageStorage,
+    //@storing separately from module for now
+    pub module_asts: Vec<ast::Ast<'s>>,
 }
 
 pub struct PackageStorage {
@@ -116,6 +118,7 @@ fn session_create(
             modules: Vec::new(),
             packages: Vec::new(),
         },
+        module_asts: Vec::new(),
     };
 
     let root_dir = session.cwd.clone();

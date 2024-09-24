@@ -73,10 +73,10 @@ impl<'src> ContextFmt<'src> {
         context: &'src DiagnosticContext,
         severity: DiagnosticSeverity,
     ) -> ContextFmt<'src> {
-        let module = session.module(context.source().module_id());
+        let module = session.pkg_storage.module(context.source().module_id());
         let path = module
             .path
-            .strip_prefix(session.cwd())
+            .strip_prefix(&session.cwd)
             .unwrap_or_else(|_| &module.path);
 
         let range = context.source().range();

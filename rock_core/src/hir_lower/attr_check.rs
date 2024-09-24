@@ -5,7 +5,7 @@ use crate::enum_str_convert;
 use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
 use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
-use crate::session::{ModuleID, RockModule, Session};
+use crate::session::{ModuleID, RockModule};
 use crate::support::BitSet;
 
 pub struct AttrFeedbackProc {
@@ -51,7 +51,6 @@ pub struct AttrFeedbackStructField {
 
 pub fn check_attrs_proc<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     item: &ast::ProcItem,
 ) -> AttrFeedbackProc {
@@ -76,7 +75,7 @@ pub fn check_attrs_proc<'ast>(
     }
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -117,7 +116,6 @@ pub fn check_attrs_proc<'ast>(
 
 pub fn check_attrs_enum<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     item: &ast::EnumItem,
 ) -> AttrFeedbackEnum {
@@ -126,7 +124,7 @@ pub fn check_attrs_enum<'ast>(
     let mut tag_ty = Err(());
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -172,7 +170,6 @@ pub fn check_attrs_enum<'ast>(
 
 pub fn check_attrs_struct<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     item: &ast::StructItem,
 ) -> AttrFeedbackStruct {
@@ -180,7 +177,7 @@ pub fn check_attrs_struct<'ast>(
     let mut attr_set = BitSet::empty();
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -227,17 +224,15 @@ pub fn check_attrs_struct<'ast>(
 
 pub fn check_attrs_const<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     item: &ast::ConstItem,
 ) -> AttrFeedbackConst {
-    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, item.attrs, "constants");
+    let cfg_state = check_attrs_expect_cfg(ctx, origin_id, item.attrs, "constants");
     AttrFeedbackConst { cfg_state }
 }
 
 pub fn check_attrs_global<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     item: &ast::GlobalItem,
 ) -> AttrFeedbackGlobal {
@@ -245,7 +240,7 @@ pub fn check_attrs_global<'ast>(
     let mut attr_set = BitSet::empty();
 
     for attr in item.attrs {
-        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -284,47 +279,42 @@ pub fn check_attrs_global<'ast>(
 
 pub fn check_attrs_import<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     item: &ast::ImportItem,
 ) -> AttrFeedbackImport {
-    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, item.attrs, "imports");
+    let cfg_state = check_attrs_expect_cfg(ctx, origin_id, item.attrs, "imports");
     AttrFeedbackImport { cfg_state }
 }
 
 pub fn check_attrs_stmt<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackStmt {
-    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, attrs, "statements");
+    let cfg_state = check_attrs_expect_cfg(ctx, origin_id, attrs, "statements");
     AttrFeedbackStmt { cfg_state }
 }
 
 pub fn check_attrs_enum_variant<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackEnumVariant {
-    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, attrs, "enum variants");
+    let cfg_state = check_attrs_expect_cfg(ctx, origin_id, attrs, "enum variants");
     AttrFeedbackEnumVariant { cfg_state }
 }
 
 pub fn check_attrs_struct_field<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
 ) -> AttrFeedbackStructField {
-    let cfg_state = check_attrs_expect_cfg(ctx, session, origin_id, attrs, "struct fields");
+    let cfg_state = check_attrs_expect_cfg(ctx, origin_id, attrs, "struct fields");
     AttrFeedbackStructField { cfg_state }
 }
 
 fn check_attrs_expect_cfg<'ast>(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     attrs: &'ast [ast::Attr<'ast>],
     item_kinds: &'static str,
@@ -332,7 +322,7 @@ fn check_attrs_expect_cfg<'ast>(
     let mut cfg_state = CfgState::new_enabled();
 
     for attr in attrs {
-        let resolved = match resolve_attr(ctx, session, origin_id, attr) {
+        let resolved = match resolve_attr(ctx, origin_id, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,
         };
@@ -354,11 +344,10 @@ fn check_attrs_expect_cfg<'ast>(
 
 fn resolve_attr(
     ctx: &mut HirCtx,
-    session: &Session,
     origin_id: ModuleID,
     attr: &ast::Attr,
 ) -> Result<AttrResolvedData, ()> {
-    let module = session.pkg_storage.module(origin_id);
+    let module = ctx.session.pkg_storage.module(origin_id);
     let attr_name = &module.source[attr.name.range.as_usize()];
 
     let kind = match AttrKind::from_str(attr_name) {

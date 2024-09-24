@@ -2,35 +2,33 @@ use super::attr_check;
 use super::context::{HirCtx, Symbol, SymbolKind};
 use crate::ast;
 use crate::hir;
-use crate::session::{ModuleID, Session};
+use crate::session::ModuleID;
 
-pub fn populate_scopes(ctx: &mut HirCtx, session: &Session) {
-    for origin_id in session.pkg_storage.module_ids() {
-        add_module_items(ctx, session, origin_id);
+pub fn populate_scopes(ctx: &mut HirCtx) {
+    for origin_id in ctx.session.pkg_storage.module_ids() {
+        add_module_items(ctx, origin_id);
     }
 }
 
-fn add_module_items(ctx: &mut HirCtx, session: &Session, origin_id: ModuleID) {
-    let module = ctx.ast_module(origin_id);
-    for item in module.items.iter().copied() {
+fn add_module_items(ctx: &mut HirCtx, origin_id: ModuleID) {
+    for item in ctx.ast_items(origin_id) {
         match item {
-            ast::Item::Proc(item) => add_proc_item(ctx, session, origin_id, item),
-            ast::Item::Enum(item) => add_enum_item(ctx, session, origin_id, item),
-            ast::Item::Struct(item) => add_struct_item(ctx, session, origin_id, item),
-            ast::Item::Const(item) => add_const_item(ctx, session, origin_id, item),
-            ast::Item::Global(item) => add_global_item(ctx, session, origin_id, item),
-            ast::Item::Import(item) => check_import_item(ctx, session, origin_id, item),
+            ast::Item::Proc(item) => add_proc_item(ctx, origin_id, item),
+            ast::Item::Enum(item) => add_enum_item(ctx, origin_id, item),
+            ast::Item::Struct(item) => add_struct_item(ctx, origin_id, item),
+            ast::Item::Const(item) => add_const_item(ctx, origin_id, item),
+            ast::Item::Global(item) => add_global_item(ctx, origin_id, item),
+            ast::Item::Import(item) => check_import_item(ctx, origin_id, item),
         }
     }
 }
 
 fn add_proc_item<'ast>(
-    ctx: &mut HirCtx<'_, 'ast>,
-    session: &Session,
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     origin_id: ModuleID,
     item: &'ast ast::ProcItem,
 ) {
-    let feedback = attr_check::check_attrs_proc(ctx, session, origin_id, item);
+    let feedback = attr_check::check_attrs_proc(ctx, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
@@ -60,12 +58,11 @@ fn add_proc_item<'ast>(
 }
 
 fn add_enum_item<'ast>(
-    ctx: &mut HirCtx<'_, 'ast>,
-    session: &Session,
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     origin_id: ModuleID,
     item: &'ast ast::EnumItem,
 ) {
-    let feedback = attr_check::check_attrs_enum(ctx, session, origin_id, item);
+    let feedback = attr_check::check_attrs_enum(ctx, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
@@ -94,12 +91,11 @@ fn add_enum_item<'ast>(
 }
 
 fn add_struct_item<'ast>(
-    ctx: &mut HirCtx<'_, 'ast>,
-    session: &Session,
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     origin_id: ModuleID,
     item: &'ast ast::StructItem,
 ) {
-    let feedback = attr_check::check_attrs_struct(ctx, session, origin_id, item);
+    let feedback = attr_check::check_attrs_struct(ctx, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
@@ -127,12 +123,11 @@ fn add_struct_item<'ast>(
 }
 
 fn add_const_item<'ast>(
-    ctx: &mut HirCtx<'_, 'ast>,
-    session: &Session,
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     origin_id: ModuleID,
     item: &'ast ast::ConstItem,
 ) {
-    let feedback = attr_check::check_attrs_const(ctx, session, origin_id, item);
+    let feedback = attr_check::check_attrs_const(ctx, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
@@ -160,12 +155,11 @@ fn add_const_item<'ast>(
 }
 
 fn add_global_item<'ast>(
-    ctx: &mut HirCtx<'_, 'ast>,
-    session: &Session,
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     origin_id: ModuleID,
     item: &'ast ast::GlobalItem,
 ) {
-    let feedback = attr_check::check_attrs_global(ctx, session, origin_id, item);
+    let feedback = attr_check::check_attrs_global(ctx, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
@@ -195,12 +189,11 @@ fn add_global_item<'ast>(
 }
 
 fn check_import_item<'ast>(
-    ctx: &mut HirCtx<'_, 'ast>,
-    session: &Session,
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     origin_id: ModuleID,
     item: &'ast ast::ImportItem,
 ) {
-    let feedback = attr_check::check_attrs_import(ctx, session, origin_id, item);
+    let feedback = attr_check::check_attrs_import(ctx, origin_id, item);
     if feedback.cfg_state.disabled() {
         return;
     }
