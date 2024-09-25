@@ -46,7 +46,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(
             lsp::TextDocumentSyncOptions {
                 open_close: Some(true),
-                change: Some(lsp::TextDocumentSyncKind::FULL),
+                change: Some(lsp::TextDocumentSyncKind::FULL), //@switch to incremental
                 will_save: Some(false),
                 will_save_wait_until: Some(false),
                 save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(
@@ -132,13 +132,15 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
     serde_json::from_value(initialize_params_json).expect("initialize_params from json")
 }
 
-struct ServerContext {
+struct ServerContext<'s> {
+    session: Option<Session<'s>>,
     files_in_memory: HashMap<PathBuf, String>,
 }
 
-impl ServerContext {
-    fn new() -> ServerContext {
+impl<'s> ServerContext<'s> {
+    fn new() -> ServerContext<'s> {
         ServerContext {
+            session: None,
             files_in_memory: HashMap::new(),
         }
     }
@@ -158,6 +160,30 @@ fn server_loop(conn: &Connection) {
 }
 
 fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec<Message>) {
+    eprintln!("\n====================");
+    eprintln!("[HANDLE MESSAGES] {}", messages.len());
+    for message in &messages {
+        match message {
+            Message::Request(_, request) => match request {
+                Request::Completion(_) => eprintln!(" - Request::Completion"),
+                Request::GotoDefinition(_) => eprintln!(" - Request::GotoDefinition"),
+                Request::Format(_) => eprintln!(" - Request::Format"),
+                Request::Hover(_) => eprintln!(" - Request::Hover"),
+                Request::SemanticTokens(_) => eprintln!(" - Request::SemanticTokens"),
+            },
+            Message::Notification(not) => match not {
+                Notification::SourceFileChanged { .. } => {
+                    eprintln!(" - Notification::SourceFileChanged")
+                }
+                Notification::SourceFileClosed { .. } => {
+                    eprintln!(" - Notification::SourceFileClosed")
+                }
+            },
+            Message::CompileProject => eprintln!(" - CompileProject"),
+        }
+    }
+    eprintln!("====================\n");
+
     for message in messages {
         match message {
             Message::Request(id, req) => handle_request(conn, context, id.clone(), req),
@@ -209,6 +235,27 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
         Request::SemanticTokens(params) => {
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::SemanticTokens\n - document: {:?}", &path);
+
+            let session = match &context.session {
+                Some(session) => session,
+                None => return,
+            };
+            let module_id = match session.pkg_storage.find_module_by_path(&path) {
+                Some(module_id) => module_id,
+                None => return,
+            };
+
+            let tree = session.module_trees[module_id.raw_index()]
+                .as_ref()
+                .unwrap();
+            let tokens = semantic_tokens(tree, session, module_id);
+            eprintln!("[SEND: Response] SemanticTokens ({})", tokens.len());
+
+            let result = lsp::SemanticTokens {
+                result_id: None,
+                data: tokens,
+            };
+            send(conn, lsp_server::Response::new_ok(id, result));
         }
     }
 }
@@ -224,7 +271,7 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
     }
 }
 
-fn handle_compile_project(conn: &Connection, context: &ServerContext) {
+fn handle_compile_project(conn: &Connection, context: &mut ServerContext) {
     use std::time::Instant;
     let start_time = Instant::now();
     let publish_diagnostics = run_diagnostics(conn, context);
@@ -390,12 +437,15 @@ impl Feedback {
     }
 }
 
-fn run_diagnostics(conn: &Connection, context: &ServerContext) -> Vec<PublishDiagnosticsParams> {
+fn run_diagnostics(
+    conn: &Connection,
+    context: &mut ServerContext,
+) -> Vec<PublishDiagnosticsParams> {
     //@not used now, only sending one session error
     let mut messages = Vec::<lsp::Diagnostic>::new();
     let mut diagnostics_map = HashMap::new();
 
-    let mut session = match Session::new(false, Some(&context.files_in_memory)) {
+    let mut session = match Session::new(false) {
         Ok(value) => value,
         Err(error) => {
             let params = lsp::ShowMessageParams {
@@ -445,6 +495,8 @@ fn run_diagnostics(conn: &Connection, context: &ServerContext) -> Vec<PublishDia
             }
         }
     }
+
+    context.session = Some(session);
 
     diagnostics_map
         .into_iter()

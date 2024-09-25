@@ -122,9 +122,11 @@ pub fn parse<'ast>(session: &mut Session) -> ResultComp<()> {
                 let ast = ctx.finish(items);
                 //@will not lineup with ModuleID's if some Asts failed to be created
                 session.module_asts.push(ast);
+                session.module_trees.push(Some(tree));
             }
             Err(errors) => {
                 state.errors.extend(errors);
+                session.module_trees.push(None);
             }
         }
     }

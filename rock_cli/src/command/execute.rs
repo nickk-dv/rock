@@ -121,7 +121,7 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
 }
 
 fn check() -> Result<(), ErrorComp> {
-    let mut session = Session::new(false, None)?;
+    let mut session = Session::new(false)?;
     let result = check_impl(&mut session);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -134,7 +134,7 @@ fn check() -> Result<(), ErrorComp> {
 }
 
 fn build(data: CommandBuild) -> Result<(), ErrorComp> {
-    let mut session = Session::new(true, None)?;
+    let mut session = Session::new(true)?;
     let result = build_impl(&mut session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -159,7 +159,7 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 }
 
 fn run(data: CommandRun) -> Result<(), ErrorComp> {
-    let mut session = Session::new(true, None)?;
+    let mut session = Session::new(true)?;
     let result = run_impl(&mut session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());

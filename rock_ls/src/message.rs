@@ -41,6 +41,7 @@ impl MessageBuffer {
         }
     }
 
+    //@double compile triggers when no content changes happened since
     pub fn receive(&mut self, conn: &Connection) -> Action {
         let message = if self.messages.is_empty() {
             conn.receiver.recv().ok()
@@ -132,6 +133,7 @@ fn extract_notification(notification: lsp_server::Notification) -> Option<Messag
     let notification = match notification.method.as_str() {
         DidOpenTextDocument::METHOD => {
             let params = cast_notification::<DidOpenTextDocument>(notification);
+            //@use separate notification for opening (change will be incremental)
             Notification::SourceFileChanged {
                 path: super::uri_to_path(&params.text_document.uri),
                 text: params.text_document.text,
@@ -139,6 +141,7 @@ fn extract_notification(notification: lsp_server::Notification) -> Option<Messag
         }
         DidChangeTextDocument::METHOD => {
             let params = cast_notification::<DidChangeTextDocument>(notification);
+            eprintln!("[RAW NOTIFICATION] DidChangeTextDocument\n{:?}", params);
             Notification::SourceFileChanged {
                 path: super::uri_to_path(&params.text_document.uri),
                 text: params.content_changes.into_iter().last()?.text,
