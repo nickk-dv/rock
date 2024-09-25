@@ -106,8 +106,9 @@ pub fn parse<'ast>(session: &mut Session) -> ResultComp<()> {
 
     for module_id in session.pkg_storage.module_ids() {
         let module = session.pkg_storage.module(module_id);
+        //@with trivia depends on a task, fmt / ls require it, basic compile doesnt need it.
         let tree_result =
-            super::parse_tree_complete(&module.source, &mut session.intern_lit, module_id, false);
+            super::parse_tree_complete(&module.source, &mut session.intern_lit, module_id, true);
 
         match tree_result {
             Ok(tree) => {

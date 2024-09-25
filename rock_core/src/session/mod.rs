@@ -66,7 +66,10 @@ impl<'s> Session<'s> {
 
 impl PackageStorage {
     pub fn module(&self, id: ModuleID) -> &RockModule {
-        &self.modules.id_get(id)
+        self.modules.id_get(id)
+    }
+    pub fn module_mut(&mut self, id: ModuleID) -> &mut RockModule {
+        self.modules.id_get_mut(id)
     }
     pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
         (0..self.modules.len()).map(ModuleID::new_raw)

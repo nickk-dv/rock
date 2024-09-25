@@ -6,7 +6,6 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
-use rock_core::support::ID;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
@@ -42,7 +41,7 @@ you do not need to run `rock_ls` manually"#;
 
 fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
     let capabilities = lsp::ServerCapabilities {
-        position_encoding: None,
+        position_encoding: None, //@vscode client crashes on init Some(lsp::PositionEncodingKind::UTF8),
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(
             lsp::TextDocumentSyncOptions {
                 open_close: Some(true),
@@ -134,15 +133,11 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
 
 struct ServerContext<'s> {
     session: Option<Session<'s>>,
-    files_in_memory: HashMap<PathBuf, String>,
 }
 
 impl<'s> ServerContext<'s> {
     fn new() -> ServerContext<'s> {
-        ServerContext {
-            session: None,
-            files_in_memory: HashMap::new(),
-        }
+        ServerContext { session: None }
     }
 }
 
@@ -238,24 +233,35 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
 
             let session = match &context.session {
                 Some(session) => session,
-                None => return,
+                None => {
+                    eprintln!(" - session is None");
+                    return;
+                }
             };
             let module_id = match session.pkg_storage.find_module_by_path(&path) {
                 Some(module_id) => module_id,
-                None => return,
+                None => {
+                    eprintln!(" - module not found by path");
+                    return;
+                }
             };
 
-            let tree = session.module_trees[module_id.raw_index()]
-                .as_ref()
-                .unwrap();
-            let tokens = semantic_tokens(tree, session, module_id);
-            eprintln!("[SEND: Response] SemanticTokens ({})", tokens.len());
+            //@should produce semantic tokens even for incomplete syntax trees
+            if let Some(tree) = session.module_trees[module_id.raw_index()].as_ref() {
+                let semantic_tokens = semantic_tokens(session, module_id, tree);
+                eprintln!(
+                    "[SEND: Response] SemanticTokens ({})",
+                    semantic_tokens.len()
+                );
 
-            let result = lsp::SemanticTokens {
-                result_id: None,
-                data: tokens,
-            };
-            send(conn, lsp_server::Response::new_ok(id, result));
+                let result = lsp::SemanticTokens {
+                    result_id: None,
+                    data: semantic_tokens,
+                };
+                send(conn, lsp_server::Response::new_ok(id, result));
+            } else {
+                eprintln!(" - syntax tree is None");
+            }
         }
     }
 }
@@ -263,11 +269,21 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
 fn handle_notification(context: &mut ServerContext, not: Notification) {
     match not {
         Notification::SourceFileChanged { path, text } => {
-            context.files_in_memory.insert(path, text);
+            eprintln!("[HANDLE] Notification::SourceFileChanged: {:?}", &path);
+            if let Some(session) = &mut context.session {
+                if let Some(module_id) = session.pkg_storage.find_module_by_path(&path) {
+                    let module = session.pkg_storage.module_mut(module_id);
+                    module.line_ranges = text::find_line_ranges(&text);
+                    module.source = text;
+                    eprintln!(" - updated source & line_ranges");
+                } else {
+                    eprintln!(" - module not found");
+                }
+            } else {
+                eprintln!(" - session is None");
+            }
         }
-        Notification::SourceFileClosed { path } => {
-            context.files_in_memory.remove(&path);
-        }
+        Notification::SourceFileClosed { path } => {}
     }
 }
 
@@ -315,10 +331,9 @@ use rock_core::error::{
     Diagnostic, DiagnosticCollection, DiagnosticKind, DiagnosticSeverity, SourceRange, WarningComp,
 };
 use rock_core::hir_lower;
-use rock_core::intern::{InternName, InternPool};
 use rock_core::session::{ModuleID, Session};
 use rock_core::syntax::ast_build;
-use rock_core::text;
+use rock_core::text::{self, TextRange};
 
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
@@ -506,40 +521,44 @@ fn run_diagnostics(
         .collect()
 }
 
-struct SemanticTokenBuilder {
+struct SemanticTokenBuilder<'s_ref> {
     curr_line: u32,
-    module_id: ModuleID,
-    token_ids: Vec<ID<Token>>,
-    tokens: Vec<lsp::SemanticToken>,
+    prev_range: Option<TextRange>,
+    source: &'s_ref str,
+    line_ranges: &'s_ref [TextRange],
+    semantic_tokens: Vec<lsp::SemanticToken>,
 }
 
 fn semantic_tokens(
-    tree: &SyntaxTree,
     session: &Session,
     module_id: ModuleID,
+    //@should in theory always exist if module exists
+    // store even broken SyntaxTree in the module (without creating the Ast)
+    tree: &SyntaxTree, //@dont pass if can get from module_id
 ) -> Vec<lsp::SemanticToken> {
+    let module = session.pkg_storage.module(module_id);
+    let source = module.source.as_str();
+    let line_ranges = module.line_ranges.as_slice();
+
     let mut builder = SemanticTokenBuilder {
         curr_line: 0,
-        module_id,
+        prev_range: None,
+        source,
+        line_ranges,
         //@temp semantic token count estimate
-        token_ids: Vec::with_capacity(tree.tokens().token_count() / 2),
-        tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
+        semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
     };
-    semantic_token_visit_node(&mut builder, tree, session, tree.root());
-    builder.tokens
+
+    semantic_visit_node(&mut builder, tree, tree.root());
+    builder.semantic_tokens
 }
 
-fn semantic_token_visit_node(
-    builder: &mut SemanticTokenBuilder,
-    tree: &SyntaxTree,
-    session: &Session,
-    node: &Node,
-) {
+fn semantic_visit_node(builder: &mut SemanticTokenBuilder, tree: &SyntaxTree, node: &Node) {
     for not in node.content {
         match *not {
             NodeOrToken::Node(node_id) => {
                 let node = tree.node(node_id);
-                semantic_token_visit_node(builder, tree, session, node);
+                semantic_visit_node(builder, tree, node);
             }
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
@@ -587,48 +606,69 @@ fn semantic_token_visit_node(
                     _ => continue,
                 };
 
-                let line_ranges = session
-                    .pkg_storage
-                    .module(builder.module_id)
-                    .line_ranges
-                    .as_slice();
-                let mut delta_line: u32 = 0;
-
-                while range.start() >= line_ranges[builder.curr_line as usize].end() {
-                    builder.curr_line += 1;
-                    delta_line += 1;
-                }
-
-                let delta_start = if delta_line == 0 {
-                    if let Some(&prev_id) = builder.token_ids.last() {
-                        let prev_range = tree.tokens().token_range(prev_id);
-                        range.start() - prev_range.start()
-                    } else {
-                        range.start() - line_ranges[builder.curr_line as usize].start()
-                    }
-                } else {
-                    range.start() - line_ranges[builder.curr_line as usize].start()
-                };
-
-                builder.token_ids.push(token_id);
-                builder.tokens.push(lsp::SemanticToken {
-                    delta_line,
-                    delta_start: delta_start.into(),
-                    length: range.len(), //@byte length or utf8 chars len?
-                    token_type: semantic as u32,
-                    token_modifiers_bitset: 0,
-                });
+                semantic_add_token(builder, semantic, range);
             }
             NodeOrToken::Trivia(id) => {
                 let (trivia, range) = tree.tokens().trivia_and_range(id);
 
-                //@block comment is an overlapping token
-                let semantic = match trivia {
-                    Trivia::Whitespace => continue,
-                    Trivia::LineComment | Trivia::BlockComment => SemanticToken::Comment,
+                match trivia {
+                    Trivia::Whitespace => {}
+                    Trivia::LineComment => {
+                        semantic_add_token(builder, SemanticToken::Comment, range)
+                    }
+                    Trivia::BlockComment => {
+                        //@add each line as separate semantic token
+                    }
                 };
-                //@test comments later
             }
         }
     }
+}
+
+fn str_char_len_utf16(string: &str) -> u32 {
+    string.chars().map(|c| c.len_utf16() as u32).sum()
+}
+
+fn semantic_add_token(
+    builder: &mut SemanticTokenBuilder,
+    semantic: SemanticToken,
+    range: TextRange,
+) {
+    let mut delta_line: u32 = 0;
+    let line_ranges = builder.line_ranges;
+
+    while range.start() >= line_ranges[builder.curr_line as usize].end() {
+        builder.curr_line += 1;
+        delta_line += 1;
+    }
+
+    let (start, offset) = if delta_line == 0 {
+        if let Some(prev_range) = builder.prev_range {
+            let start = prev_range.start();
+            (start, range.start() - start)
+        } else {
+            let start = line_ranges[builder.curr_line as usize].start();
+            (start, range.start() - start)
+        }
+    } else {
+        let start = line_ranges[builder.curr_line as usize].start();
+        (start, range.start() - start)
+    };
+
+    let mut delta_range = TextRange::empty_at(start);
+    delta_range.extend_by(offset);
+    let token_str = &builder.source[delta_range.as_usize()];
+    let delta_start = str_char_len_utf16(token_str);
+
+    let token_str = &builder.source[range.as_usize()];
+    let length = str_char_len_utf16(token_str);
+
+    builder.prev_range = Some(range);
+    builder.semantic_tokens.push(lsp::SemanticToken {
+        delta_line,
+        delta_start,
+        length,
+        token_type: semantic as u32,
+        token_modifiers_bitset: 0,
+    });
 }
