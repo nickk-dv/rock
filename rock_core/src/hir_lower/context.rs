@@ -1,7 +1,9 @@
 use super::proc_scope::ProcScope;
 use crate::ast;
 use crate::config::TargetTriple;
-use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, ResultComp, SourceRange};
+use crate::error::{
+    DiagnosticCollection, ErrorComp, ErrorSink, ResultComp, SourceRange, WarningComp, WarningSink,
+};
 use crate::errors as err;
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
@@ -155,11 +157,17 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
 }
 
 impl ErrorSink for HirEmit {
-    fn diagnostics(&self) -> &DiagnosticCollection {
-        &self.diagnostics
+    fn error(&mut self, error: ErrorComp) {
+        self.diagnostics.error(error);
     }
-    fn diagnostics_mut(&mut self) -> &mut DiagnosticCollection {
-        &mut self.diagnostics
+    fn error_count(&self) -> usize {
+        self.diagnostics.errors().len()
+    }
+}
+
+impl WarningSink for HirEmit {
+    fn warning(&mut self, warning: WarningComp) {
+        self.diagnostics.warning(warning);
     }
 }
 

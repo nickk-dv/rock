@@ -100,11 +100,11 @@ impl<'src, 's> Lexer<'src, 's> {
 }
 
 impl<'src, 's> ErrorSink for Lexer<'src, 's> {
-    fn diagnostics(&self) -> &crate::error::DiagnosticCollection {
-        &self.diagnostics
+    fn error(&mut self, error: ErrorComp) {
+        self.diagnostics.error(error);
     }
-    fn diagnostics_mut(&mut self) -> &mut crate::error::DiagnosticCollection {
-        &mut self.diagnostics
+    fn error_count(&self) -> usize {
+        self.diagnostics.errors().len()
     }
 }
 

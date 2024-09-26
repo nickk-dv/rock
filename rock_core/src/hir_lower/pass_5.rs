@@ -2,7 +2,9 @@ use super::constant;
 use super::context::{HirCtx, HirEmit, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
 use crate::ast::{self, BasicType};
-use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp};
+use crate::error::{
+    ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp, WarningSink,
+};
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::ModuleID;

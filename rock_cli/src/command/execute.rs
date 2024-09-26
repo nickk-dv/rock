@@ -7,6 +7,7 @@ use rock_core::hir_lower;
 use rock_core::package;
 use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
 use rock_core::package::semver::Semver;
+use rock_core::session::FileCache;
 use rock_core::session::Session;
 use rock_core::syntax::ast_build;
 use std::collections::BTreeMap;
@@ -121,7 +122,8 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
 }
 
 fn check() -> Result<(), ErrorComp> {
-    let mut session = Session::new(false)?;
+    let cache = FileCache::new();
+    let mut session = Session::new(&cache, true)?;
     let result = check_impl(&mut session);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -134,7 +136,8 @@ fn check() -> Result<(), ErrorComp> {
 }
 
 fn build(data: CommandBuild) -> Result<(), ErrorComp> {
-    let mut session = Session::new(true)?;
+    let cache = FileCache::new();
+    let mut session = Session::new(&cache, true)?;
     let result = build_impl(&mut session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());
@@ -159,7 +162,8 @@ fn build(data: CommandBuild) -> Result<(), ErrorComp> {
 }
 
 fn run(data: CommandRun) -> Result<(), ErrorComp> {
-    let mut session = Session::new(true)?;
+    let cache = FileCache::new();
+    let mut session = Session::new(&cache, true)?;
     let result = run_impl(&mut session, data);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());

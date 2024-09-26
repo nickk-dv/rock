@@ -6,6 +6,7 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
+use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
@@ -132,12 +133,16 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
 }
 
 struct ServerContext<'s> {
+    cache: FileCache,
     session: Option<Session<'s>>,
 }
 
 impl<'s> ServerContext<'s> {
     fn new() -> ServerContext<'s> {
-        ServerContext { session: None }
+        ServerContext {
+            cache: FileCache::new(),
+            session: None,
+        }
     }
 }
 
@@ -193,35 +198,41 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
         Request::Completion(params) => {}
         Request::GotoDefinition(params) => {}
         Request::Format(params) => {
-            send_response_error(conn, id, None);
-            /*
-            let uri = params.text_document.uri;
-            let path = uri_to_path(&uri);
+            let path = uri_to_path(&params.text_document.uri);
+            eprintln!("[Handle] Request::Format\n - document: {:?}", &path);
 
-            if let Some(source) = context.files_in_memory.get(&path) {
-                //@random ModuleID used
-                if let Ok(formatted) = rock_core::format::format(source, ModuleID::new_raw(0)) {
-                    let line_count = source.lines().count() as u32;
-                    context.files_in_memory.insert(path, formatted.clone());
-
-                    //@send the more presice lsp::TextDocumentEdit with uri?
-                    let text_edit = lsp::TextEdit {
-                        range: lsp::Range::new(
-                            lsp::Position::new(0, 0),
-                            lsp::Position::new(line_count, 0),
-                        ),
-                        new_text: formatted,
-                    };
-
-                    let json = serde_json::to_value(vec![text_edit]).expect("json value");
-                    send_response(conn, id, json);
-                } else {
-                    send_response_error(conn, id, None);
+            let session = match &context.session {
+                Some(session) => session,
+                None => {
+                    eprintln!(" - session is None");
+                    return;
                 }
+            };
+            let module_id = match session.pkg_storage.find_module_by_path(&path) {
+                Some(module_id) => module_id,
+                None => {
+                    eprintln!(" - module not found by path");
+                    return;
+                }
+            };
+
+            if let Some(tree) = session.module_trees[module_id.raw_index()].as_ref() {
+                let module = session.pkg_storage.module(module_id);
+                let formatted = rock_core::format::format(tree, &module.source);
+                context.cache.change(path, Some(formatted.clone())); //@hack
+
+                //@hack overshoot by 1 line to ignore last line chars
+                let end_line = module.line_ranges.len() as u32 + 1;
+                let edit_start = lsp::Position::new(0, 0);
+                let edit_end = lsp::Position::new(end_line, 0);
+                let edit_range = lsp::Range::new(edit_start, edit_end);
+                let text_edit = lsp::TextEdit::new(edit_range, formatted);
+
+                let json = serde_json::to_value(vec![text_edit]).expect("json value");
+                send_response(conn, id, json);
             } else {
-                send_response_error(conn, id, None);
+                eprintln!(" - syntax tree is None");
             }
-            */
         }
         Request::Hover(params) => {
             let path = uri_to_path(&params.text_document_position_params.text_document.uri);
@@ -272,6 +283,7 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
             eprintln!("[HANDLE] Notification::SourceFileChanged: {:?}", &path);
             if let Some(session) = &mut context.session {
                 if let Some(module_id) = session.pkg_storage.find_module_by_path(&path) {
+                    context.cache.change(path, Some(text.clone())); //@hack
                     let module = session.pkg_storage.module_mut(module_id);
                     module.line_ranges = text::find_line_ranges(&text);
                     module.source = text;
@@ -288,6 +300,8 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
 }
 
 fn handle_compile_project(conn: &Connection, context: &mut ServerContext) {
+    eprintln!("[Handle] CompileProject");
+
     use std::time::Instant;
     let start_time = Instant::now();
     let publish_diagnostics = run_diagnostics(conn, context);
@@ -331,7 +345,7 @@ use rock_core::error::{
     Diagnostic, DiagnosticCollection, DiagnosticKind, DiagnosticSeverity, SourceRange, WarningComp,
 };
 use rock_core::hir_lower;
-use rock_core::session::{ModuleID, Session};
+use rock_core::session::{FileCache, ModuleID, Session};
 use rock_core::syntax::ast_build;
 use rock_core::text::{self, TextRange};
 
@@ -460,7 +474,7 @@ fn run_diagnostics(
     let mut messages = Vec::<lsp::Diagnostic>::new();
     let mut diagnostics_map = HashMap::new();
 
-    let mut session = match Session::new(false) {
+    let mut session = match Session::new(&context.cache, false) {
         Ok(value) => value,
         Err(error) => {
             let params = lsp::ShowMessageParams {
@@ -549,23 +563,133 @@ fn semantic_tokens(
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
     };
 
-    semantic_visit_node(&mut builder, tree, tree.root());
+    semantic_visit_node(&mut builder, tree, tree.root(), None);
     builder.semantic_tokens
 }
 
-fn semantic_visit_node(builder: &mut SemanticTokenBuilder, tree: &SyntaxTree, node: &Node) {
+fn semantic_visit_node(
+    builder: &mut SemanticTokenBuilder,
+    tree: &SyntaxTree,
+    node: &Node,
+    ident_style: Option<SemanticToken>,
+) {
     for not in node.content {
         match *not {
             NodeOrToken::Node(node_id) => {
                 let node = tree.node(node_id);
-                semantic_visit_node(builder, tree, node);
+
+                let ident_style = match node.kind {
+                    SyntaxKind::ERROR => None,
+                    SyntaxKind::TOMBSTONE => None,
+                    SyntaxKind::SOURCE_FILE => None,
+
+                    SyntaxKind::ATTR_LIST => None,
+                    SyntaxKind::ATTR => Some(SemanticToken::Variable),
+                    SyntaxKind::ATTR_PARAM_LIST => None,
+                    SyntaxKind::ATTR_PARAM => Some(SemanticToken::Variable),
+                    SyntaxKind::VISIBILITY => None,
+
+                    SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
+                    SyntaxKind::PARAM_LIST => None,
+                    SyntaxKind::PARAM => Some(SemanticToken::Parameter),
+                    SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
+                    SyntaxKind::VARIANT_LIST => None,
+                    SyntaxKind::VARIANT => Some(SemanticToken::EnumMember),
+                    SyntaxKind::VARIANT_FIELD_LIST => None,
+                    SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
+                    SyntaxKind::FIELD_LIST => None,
+                    SyntaxKind::FIELD => Some(SemanticToken::Property),
+                    SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
+                    SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
+                    SyntaxKind::IMPORT_ITEM => Some(SemanticToken::Namespace),
+                    SyntaxKind::IMPORT_PATH => Some(SemanticToken::Namespace),
+                    SyntaxKind::IMPORT_SYMBOL_LIST => None,
+                    SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Property), //depends
+                    SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Property),
+
+                    SyntaxKind::TYPE_BASIC => None,
+                    SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
+                    SyntaxKind::TYPE_REFERENCE => None,
+                    SyntaxKind::TYPE_PROCEDURE => None,
+                    SyntaxKind::PARAM_TYPE_LIST => None,
+                    SyntaxKind::TYPE_ARRAY_SLICE => None,
+                    SyntaxKind::TYPE_ARRAY_STATIC => None,
+
+                    SyntaxKind::BLOCK => None,
+                    SyntaxKind::STMT_BREAK => None,
+                    SyntaxKind::STMT_CONTINUE => None,
+                    SyntaxKind::STMT_RETURN => None,
+                    SyntaxKind::STMT_DEFER => None,
+                    SyntaxKind::STMT_LOOP => None,
+                    SyntaxKind::LOOP_WHILE_HEADER => None,
+                    SyntaxKind::LOOP_CLIKE_HEADER => None,
+                    SyntaxKind::STMT_LOCAL => None,
+                    SyntaxKind::STMT_ASSIGN => None,
+                    SyntaxKind::STMT_EXPR_SEMI => None,
+                    SyntaxKind::STMT_EXPR_TAIL => None,
+
+                    SyntaxKind::EXPR_PAREN => None,
+                    SyntaxKind::EXPR_IF => None,
+                    SyntaxKind::BRANCH_ENTRY => None,
+                    SyntaxKind::BRANCH_ELSE_IF => None,
+                    SyntaxKind::EXPR_MATCH => None,
+                    SyntaxKind::MATCH_ARM_LIST => None,
+                    SyntaxKind::MATCH_ARM => None,
+                    SyntaxKind::EXPR_FIELD => Some(SemanticToken::Property),
+                    SyntaxKind::EXPR_INDEX => None,
+                    SyntaxKind::EXPR_CALL => None, //defer to path
+                    SyntaxKind::EXPR_CAST => None,
+                    SyntaxKind::EXPR_SIZEOF => None,
+                    SyntaxKind::EXPR_ITEM => None,
+                    SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
+                    SyntaxKind::EXPR_STRUCT_INIT => None, //defer to path
+                    SyntaxKind::FIELD_INIT_LIST => None,
+                    SyntaxKind::FIELD_INIT => Some(SemanticToken::Property),
+                    SyntaxKind::EXPR_ARRAY_INIT => None,
+                    SyntaxKind::EXPR_ARRAY_REPEAT => None,
+                    SyntaxKind::EXPR_DEREF => None,
+                    SyntaxKind::EXPR_ADDRESS => None,
+                    SyntaxKind::EXPR_UNARY => None,
+                    SyntaxKind::EXPR_BINARY => None,
+
+                    SyntaxKind::PAT_WILD => None,
+                    SyntaxKind::PAT_LIT => None,
+                    SyntaxKind::PAT_ITEM => None,
+                    SyntaxKind::PAT_VARIANT => Some(SemanticToken::EnumMember),
+                    SyntaxKind::PAT_OR => None,
+
+                    SyntaxKind::LIT_NULL => None,
+                    SyntaxKind::LIT_BOOL => None,
+                    SyntaxKind::LIT_INT => None,
+                    SyntaxKind::LIT_FLOAT => None,
+                    SyntaxKind::LIT_CHAR => None,
+                    SyntaxKind::LIT_STRING => None,
+
+                    SyntaxKind::RANGE_FULL => None,
+                    SyntaxKind::RANGE_TO_EXCLUSIVE => None,
+                    SyntaxKind::RANGE_TO_INCLUSIVE => None,
+                    SyntaxKind::RANGE_FROM => None,
+                    SyntaxKind::RANGE_EXCLUSIVE => None,
+                    SyntaxKind::RANGE_INCLUSIVE => None,
+
+                    SyntaxKind::NAME => ident_style, // use pushed style
+                    SyntaxKind::PATH => Some(SemanticToken::Property),
+                    SyntaxKind::BIND => Some(SemanticToken::Variable),
+                    SyntaxKind::BIND_LIST => None,
+                    SyntaxKind::ARGS_LIST => None,
+                };
+
+                semantic_visit_node(builder, tree, node, ident_style);
             }
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
 
                 let semantic = match token {
                     Token::Eof => continue,
-                    Token::Ident => SemanticToken::Property, //@depends on node.kind
+                    Token::Ident => match ident_style {
+                        Some(semantic) => semantic,
+                        None => continue,
+                    },
                     Token::IntLit | Token::FloatLit => SemanticToken::Number,
                     Token::CharLit | Token::StringLit => SemanticToken::String,
                     Token::KwPub

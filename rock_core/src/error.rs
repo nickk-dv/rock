@@ -11,23 +11,15 @@ pub struct DiagnosticCollection {
     warnings: Vec<WarningComp>,
 }
 
-pub trait ErrorSink {
-    fn diagnostics(&self) -> &DiagnosticCollection;
-    fn diagnostics_mut(&mut self) -> &mut DiagnosticCollection;
+pub trait WarningSink {
+    fn warning(&mut self, warning: WarningComp);
+}
 
-    #[inline]
-    fn error(&mut self, error: ErrorComp) {
-        self.diagnostics_mut().error(error);
-    }
-    #[inline]
-    fn warning(&mut self, warning: WarningComp) {
-        self.diagnostics_mut().warning(warning);
-    }
-    #[inline]
-    fn error_count(&self) -> usize {
-        self.diagnostics().errors().len()
-    }
-    #[inline]
+pub trait ErrorSink {
+    fn error(&mut self, error: ErrorComp);
+
+    fn error_count(&self) -> usize;
+
     fn did_error(&self, error_count: usize) -> bool {
         self.error_count() > error_count
     }

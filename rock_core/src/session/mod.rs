@@ -15,7 +15,6 @@ pub struct Session<'s> {
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
     pub pkg_storage: PackageStorage,
-    //@storing separately from module for now
     pub module_asts: Vec<ast::Ast<'s>>,
     pub module_trees: Vec<Option<SyntaxTree<'s>>>,
 }
@@ -56,20 +55,44 @@ pub enum ModuleOrDirectory<'src> {
     Directory(&'src RockDirectory),
 }
 
+//@hack to support "mutable" files in ls
+// while still using the normal Session create flow
+pub struct FileCache {
+    file_map: HashMap<PathBuf, String>,
+}
+
+impl FileCache {
+    pub fn new() -> FileCache {
+        FileCache {
+            file_map: HashMap::new(),
+        }
+    }
+    pub fn change(&mut self, path: PathBuf, source: Option<String>) {
+        if let Some(source) = source {
+            self.file_map.insert(path, source);
+        } else {
+            self.file_map.remove(&path);
+        }
+    }
+    pub fn get(&self, path: &PathBuf) -> Option<String> {
+        self.file_map.get(path).cloned()
+    }
+}
+
 impl<'s> Session<'s> {
     pub const ROOT_ID: PackageID = PackageID::new_raw(0);
 
-    pub fn new(building: bool) -> Result<Session<'s>, ErrorComp> {
-        session_create(building)
+    pub fn new(cache: &FileCache, building: bool) -> Result<Session<'s>, ErrorComp> {
+        session_create(cache, building)
     }
 }
 
 impl PackageStorage {
     pub fn module(&self, id: ModuleID) -> &RockModule {
-        self.modules.id_get(id)
+        &self.modules[id.raw_index()]
     }
     pub fn module_mut(&mut self, id: ModuleID) -> &mut RockModule {
-        self.modules.id_get_mut(id)
+        &mut self.modules[id.raw_index()]
     }
     pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
         (0..self.modules.len()).map(ModuleID::new_raw)
@@ -117,7 +140,7 @@ impl RockDirectory {
     }
 }
 
-fn session_create<'s>(building: bool) -> Result<Session<'s>, ErrorComp> {
+fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, ErrorComp> {
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
         intern_lit: InternPool::new(),
@@ -131,7 +154,7 @@ fn session_create<'s>(building: bool) -> Result<Session<'s>, ErrorComp> {
     };
 
     let root_dir = session.cwd.clone();
-    let root_id = process_package(&mut session, &root_dir, false)?;
+    let root_id = process_package(&mut session, cache, &root_dir, false)?;
     let root_manifest = &session.pkg_storage.package(root_id).manifest;
 
     if building && root_manifest.package.kind == PackageKind::Lib {
@@ -158,7 +181,7 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
     let mut root_dependency_map = HashMap::new();
 
     for dependency in root_dependencies.iter() {
-        let package_id = process_package(&mut session, &cache_dir.join(dependency), true)?;
+        let package_id = process_package(&mut session, cache, &cache_dir.join(dependency), true)?;
         let name_id = session.pkg_storage.package(package_id).name_id;
         root_dependency_map.insert(name_id, package_id);
     }
@@ -171,6 +194,7 @@ or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
 
 fn process_package(
     session: &mut Session,
+    cache: &FileCache,
     root_dir: &PathBuf,
     dependency: bool,
 ) -> Result<PackageID, ErrorComp> {
@@ -214,7 +238,7 @@ fn process_package(
     }
 
     let package_id = PackageID::new(&session.pkg_storage.packages);
-    let src = process_directory(session, package_id, src_dir)?;
+    let src = process_directory(session, cache, package_id, src_dir)?;
 
     if let Some(lib_paths) = &manifest.build.lib_paths {
         let location = format!(
@@ -259,6 +283,7 @@ fn process_package(
 
 fn process_directory(
     session: &mut Session,
+    cache: &FileCache,
     package_id: PackageID,
     path: PathBuf,
 ) -> Result<RockDirectory, ErrorComp> {
@@ -276,10 +301,10 @@ fn process_directory(
         if entry_path.is_file() {
             let extension = fs_env::file_extension(&entry_path);
             if matches!(extension, Some("rock")) {
-                modules.push(process_file(session, package_id, entry_path)?);
+                modules.push(process_file(session, cache, package_id, entry_path)?);
             }
         } else if entry_path.is_dir() {
-            sub_dirs.push(process_directory(session, package_id, entry_path)?);
+            sub_dirs.push(process_directory(session, cache, package_id, entry_path)?);
         } else {
             unreachable!()
         }
@@ -296,12 +321,13 @@ fn process_directory(
 
 fn process_file(
     session: &mut Session,
+    cache: &FileCache,
     package_id: PackageID,
     path: PathBuf,
 ) -> Result<ModuleID, ErrorComp> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = session.intern_name.intern(filename);
-    let source = read_file(&path)?;
+    let source = read_file(cache, &path)?;
     let line_ranges = text::find_line_ranges(&source);
 
     let module = RockModule {
@@ -317,6 +343,10 @@ fn process_file(
     Ok(module_id)
 }
 
-fn read_file(path: &PathBuf) -> Result<String, ErrorComp> {
-    fs_env::file_read_to_string(path)
+fn read_file(cache: &FileCache, path: &PathBuf) -> Result<String, ErrorComp> {
+    if let Some(source) = cache.get(path) {
+        Ok(source)
+    } else {
+        fs_env::file_read_to_string(path)
+    }
 }

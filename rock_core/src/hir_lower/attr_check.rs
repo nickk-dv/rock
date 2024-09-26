@@ -2,7 +2,7 @@ use super::context::{HirCtx, HirEmit};
 use crate::ast;
 use crate::config;
 use crate::enum_str_convert;
-use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp};
+use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp, WarningSink};
 use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, RockModule};

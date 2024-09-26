@@ -122,10 +122,29 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxKind) {
     }
 }
 
+fn format_exact(fmt: &mut Formatter, node: &Node) {
+    for not in node.content {
+        match *not {
+            NodeOrToken::Node(node_id) => {
+                format_exact(fmt, fmt.tree.node(node_id));
+            }
+            NodeOrToken::Token(token_id) => {
+                let range = fmt.tree.tokens().token_range(token_id);
+                fmt.write_range(range);
+            }
+            NodeOrToken::Trivia(trivia_id) => {
+                let range = fmt.tree.tokens().trivia_range(trivia_id);
+                fmt.write_range(range);
+            }
+        }
+    }
+}
+
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_SYMBOL_THRESHOLD: u32 = 40;
 
-fn format(tree: &SyntaxTree, source: &str) -> String {
+#[must_use]
+pub fn format(tree: &SyntaxTree, source: &str) -> String {
     let mut fmt = Formatter::new(&tree, source);
     source_file(&mut fmt, tree.source_file());
     fmt.finish()
@@ -238,11 +257,11 @@ fn vis(fmt: &mut Formatter, vis: Option<cst::Visibility>) {
 
 fn item(fmt: &mut Formatter, item: cst::Item) {
     match item {
-        cst::Item::Proc(_) => fmt.write("proc\n"),
-        cst::Item::Enum(_) => fmt.write("enum\n"),
-        cst::Item::Struct(item) => struct_item(fmt, item),
-        cst::Item::Const(_) => fmt.write("const\n"),
-        cst::Item::Global(_) => fmt.write("global\n"),
+        cst::Item::Proc(item) => format_exact(fmt, item.0),
+        cst::Item::Enum(item) => format_exact(fmt, item.0),
+        cst::Item::Struct(item) => format_exact(fmt, item.0),
+        cst::Item::Const(item) => format_exact(fmt, item.0),
+        cst::Item::Global(item) => format_exact(fmt, item.0),
         cst::Item::Import(item) => import_item(fmt, item),
     }
 }

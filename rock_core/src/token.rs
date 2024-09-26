@@ -27,6 +27,7 @@ pub enum Trivia {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum SemanticToken {
     Namespace,
     Type,
