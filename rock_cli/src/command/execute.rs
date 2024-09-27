@@ -123,7 +123,7 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
 
 fn check() -> Result<(), ErrorComp> {
     let cache = FileCache::new();
-    let mut session = Session::new(&cache, true)?;
+    let mut session = Session::new(&cache, false)?;
     let result = check_impl(&mut session);
     error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
     return Ok(());

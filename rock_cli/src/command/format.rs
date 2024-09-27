@@ -1,4 +1,4 @@
-use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
+use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use std::collections::{HashMap, HashSet};
 
 pub struct CommandFormat {
@@ -33,79 +33,69 @@ fn parse_name(p: &mut FormatParser, diagnostics: &mut DiagnosticCollection) -> S
 }
 
 fn parse_args(p: &mut FormatParser) -> Vec<String> {
-    let mut cmd_args = Vec::new();
-
+    let mut args = Vec::new();
     while let Some(arg) = p.eat_arg() {
-        cmd_args.push(arg);
+        args.push(arg);
     }
-    cmd_args
+    args
 }
 
 fn parse_options(
     p: &mut FormatParser,
     diagnostics: &mut DiagnosticCollection,
 ) -> HashMap<String, Vec<String>> {
-    let mut cmd_options = HashMap::new();
+    let mut options = HashMap::new();
     let mut duplicates = HashSet::new();
 
-    while let Some(opt_name) = p.eat_option() {
-        let mut opt_args = Vec::new();
-        while let Some(arg) = p.eat_arg() {
-            opt_args.push(arg);
-        }
-
-        if cmd_options.contains_key(&opt_name) {
-            duplicates.insert(opt_name);
+    while let Some(opt) = p.eat_option() {
+        let args = parse_args(p);
+        if options.contains_key(&opt) {
+            duplicates.insert(opt);
         } else {
-            cmd_options.insert(opt_name, opt_args);
+            options.insert(opt, args);
         }
     }
 
     for duplicate in duplicates {
-        diagnostics.warning(WarningComp::message(format!(
-            "duplicate `--{duplicate}` options will be ignored"
+        diagnostics.error(ErrorComp::message(format!(
+            "option `{duplicate}` cannot be specified multiple times"
         )));
     }
-    cmd_options
+    options
 }
 
 struct FormatParser {
-    cursor: usize,
     args: Vec<String>,
 }
 
 impl FormatParser {
     fn new() -> FormatParser {
         FormatParser {
-            cursor: 0,
-            args: std::env::args().skip(1).collect(),
+            args: std::env::args().skip(1).rev().collect(),
         }
     }
 
     fn eat_arg(&mut self) -> Option<String> {
-        let arg = self.args.get(self.cursor)?;
-
-        if arg.starts_with("--") {
+        let next = self.args.last()?;
+        if next.starts_with('-') {
             None
         } else {
-            self.cursor += 1;
-            Some(arg.clone())
+            self.args.pop()
         }
     }
 
     fn eat_option(&mut self) -> Option<String> {
-        let arg = self.args.get(self.cursor)?;
-        let option = arg.strip_prefix("--")?;
-
-        self.cursor += 1;
-        if option.is_empty() {
+        let next = self.args.last()?;
+        if next == "--" {
             None
         } else {
-            Some(option.to_string())
+            let opt = next.trim_start_matches('-').to_string();
+            self.args.pop();
+            Some(opt)
         }
     }
 
-    fn trail_args(mut self) -> Vec<String> {
-        self.args.split_off(self.cursor)
+    fn trail_args(self) -> Vec<String> {
+        self.args
     }
 }
