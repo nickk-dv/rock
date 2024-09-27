@@ -1,53 +1,53 @@
-use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp};
 use std::collections::{HashMap, HashSet};
 
 pub struct CommandFormat {
-    pub name: String,
-    pub args: Vec<String>,
-    pub options: HashMap<String, Vec<String>>,
+    pub name: Option<String>,
+    pub args: Vec<Arg>,
+    pub options: HashMap<Opt, Vec<Arg>>,
+    pub duplicates: HashSet<Opt>,
     pub trail_args: Vec<String>,
 }
 
-pub fn parse() -> ResultComp<CommandFormat> {
-    let mut p = FormatParser::new();
-    let mut diagnostics = DiagnosticCollection::new();
+pub type Arg = String;
+pub type Opt = String;
 
-    let format: CommandFormat = CommandFormat {
-        name: parse_name(&mut p, &mut diagnostics),
-        args: parse_args(&mut p),
-        options: parse_options(&mut p, &mut diagnostics),
-        trail_args: p.trail_args(),
-    };
-    ResultComp::new(format, diagnostics)
+struct FormatParser {
+    args: Vec<String>,
 }
 
-fn parse_name(p: &mut FormatParser, diagnostics: &mut DiagnosticCollection) -> String {
-    if let Some(name) = p.eat_arg() {
-        name
-    } else {
-        diagnostics.error(ErrorComp::message(
-            "command name is missing, use `rock help` to learn the usage",
-        ));
-        "error".into()
+pub fn parse() -> CommandFormat {
+    let mut p = FormatParser {
+        args: std::env::args().skip(1).rev().collect(),
+    };
+
+    let name = eat_arg(&mut p);
+    let args = parse_args(&mut p);
+    let (options, duplicates) = parse_options(&mut p);
+    let trail_args = p.args;
+
+    CommandFormat {
+        name,
+        args,
+        options,
+        duplicates,
+        trail_args,
     }
 }
 
-fn parse_args(p: &mut FormatParser) -> Vec<String> {
+fn parse_args(p: &mut FormatParser) -> Vec<Arg> {
     let mut args = Vec::new();
-    while let Some(arg) = p.eat_arg() {
+
+    while let Some(arg) = eat_arg(p) {
         args.push(arg);
     }
     args
 }
 
-fn parse_options(
-    p: &mut FormatParser,
-    diagnostics: &mut DiagnosticCollection,
-) -> HashMap<String, Vec<String>> {
+fn parse_options(p: &mut FormatParser) -> (HashMap<Opt, Vec<Arg>>, HashSet<Opt>) {
     let mut options = HashMap::new();
     let mut duplicates = HashSet::new();
 
-    while let Some(opt) = p.eat_option() {
+    while let Some(opt) = eat_option(p) {
         let args = parse_args(p);
         if options.contains_key(&opt) {
             duplicates.insert(opt);
@@ -55,47 +55,26 @@ fn parse_options(
             options.insert(opt, args);
         }
     }
-
-    for duplicate in duplicates {
-        diagnostics.error(ErrorComp::message(format!(
-            "option `{duplicate}` cannot be specified multiple times"
-        )));
-    }
-    options
+    (options, duplicates)
 }
 
-struct FormatParser {
-    args: Vec<String>,
+fn eat_arg(p: &mut FormatParser) -> Option<Arg> {
+    let next = p.args.last()?;
+    if next.starts_with('-') {
+        None
+    } else {
+        p.args.pop()
+    }
 }
 
-impl FormatParser {
-    fn new() -> FormatParser {
-        FormatParser {
-            args: std::env::args().skip(1).rev().collect(),
-        }
-    }
-
-    fn eat_arg(&mut self) -> Option<String> {
-        let next = self.args.last()?;
-        if next.starts_with('-') {
-            None
-        } else {
-            self.args.pop()
-        }
-    }
-
-    fn eat_option(&mut self) -> Option<String> {
-        let next = self.args.last()?;
-        if next == "--" {
-            None
-        } else {
-            let opt = next.trim_start_matches('-').to_string();
-            self.args.pop();
-            Some(opt)
-        }
-    }
-
-    fn trail_args(self) -> Vec<String> {
-        self.args
+fn eat_option(p: &mut FormatParser) -> Option<Opt> {
+    let next = p.args.last()?;
+    if next == "--" {
+        p.args.pop();
+        None
+    } else {
+        let opt = next.trim_start_matches('-').to_string();
+        p.args.pop();
+        Some(opt)
     }
 }

@@ -1,6 +1,5 @@
-use crate::enum_str_convert;
 use crate::intern::{InternLit, InternName};
-use crate::size_lock;
+use crate::support::AsStr;
 use crate::support::{Arena, ID};
 use crate::text::TextRange;
 
@@ -396,64 +395,61 @@ pub enum Mut {
     Immutable,
 }
 
-enum_str_convert!(
-    fn as_str,
+crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum BasicType {
-        S8 => "s8",
-        S16 => "s16",
-        S32 => "s32",
-        S64 => "s64",
-        Ssize => "ssize",
-        U8 => "u8",
-        U16 => "u16",
-        U32 => "u32",
-        U64 => "u64",
-        Usize => "usize",
-        F32 => "f32",
-        F64 => "f64",
-        Bool => "bool",
-        Char => "char",
-        Rawptr => "rawptr",
-        Void => "void",
-        Never => "never",
+        S8 "s8",
+        S16 "s16",
+        S32 "s32",
+        S64 "s64",
+        Ssize "ssize",
+        U8 "u8",
+        U16 "u16",
+        U32 "u32",
+        U64 "u64",
+        Usize "usize",
+        F32 "f32",
+        F64 "f64",
+        Bool "bool",
+        Char "char",
+        Rawptr "rawptr",
+        Void "void",
+        Never "never",
     }
-);
+}
 
-enum_str_convert!(
-    fn as_str,
+crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum UnOp {
-        Neg => "-",
-        BitNot => "~",
-        LogicNot => "!",
+        Neg "-",
+        BitNot "~",
+        LogicNot "!",
     }
-);
+}
 
-enum_str_convert!(
-    fn as_str,
+crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum BinOp {
-        Add => "+",
-        Sub => "-",
-        Mul => "*",
-        Div => "/",
-        Rem => "%",
-        BitAnd => "&",
-        BitOr => "|",
-        BitXor => "^",
-        BitShl => "<<",
-        BitShr => ">>",
-        IsEq => "==",
-        NotEq => "!=",
-        Less => "<",
-        LessEq => "<=",
-        Greater => ">",
-        GreaterEq => ">=",
-        LogicAnd => "&&",
-        LogicOr => "||",
+        Add "+",
+        Sub "-",
+        Mul "*",
+        Div "/",
+        Rem "%",
+        BitAnd "&",
+        BitOr "|",
+        BitXor "^",
+        BitShl "<<",
+        BitShr ">>",
+        IsEq "==",
+        NotEq "!=",
+        Less "<",
+        LessEq "<=",
+        Greater ">",
+        GreaterEq ">=",
+        LogicAnd "&&",
+        LogicOr "||",
     }
-);
+}
 
 #[derive(Copy, Clone)]
 pub enum AssignOp {
@@ -482,23 +478,23 @@ impl BinOp {
 
 //==================== SIZE LOCK ====================
 
-size_lock!(16, Item);
-size_lock!(48, Attr);
-size_lock!(28, AttrParam);
+crate::size_lock!(16, Item);
+crate::size_lock!(48, Attr);
+crate::size_lock!(28, AttrParam);
 
-size_lock!(96, ProcItem);
-size_lock!(48, EnumItem);
-size_lock!(48, StructItem);
-size_lock!(64, ConstItem);
-size_lock!(64, GlobalItem);
-size_lock!(80, ImportItem);
+crate::size_lock!(96, ProcItem);
+crate::size_lock!(48, EnumItem);
+crate::size_lock!(48, StructItem);
+crate::size_lock!(64, ConstItem);
+crate::size_lock!(64, GlobalItem);
+crate::size_lock!(80, ImportItem);
 
-size_lock!(24, Type);
-size_lock!(24, Block);
-size_lock!(24, Stmt);
-size_lock!(32, Expr);
-size_lock!(32, Pat);
+crate::size_lock!(24, Type);
+crate::size_lock!(24, Block);
+crate::size_lock!(24, Stmt);
+crate::size_lock!(32, Expr);
+crate::size_lock!(32, Pat);
 
-size_lock!(12, Name);
-size_lock!(16, Path);
-size_lock!(16, Binding);
+crate::size_lock!(12, Name);
+crate::size_lock!(16, Path);
+crate::size_lock!(16, Binding);

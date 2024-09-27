@@ -1,4 +1,4 @@
-use crate::ansi;
+use crate::ansi::AnsiStyle;
 use rock_core::error::{
     Diagnostic, DiagnosticCollection, DiagnosticContext, DiagnosticKind, DiagnosticSeverity,
 };
@@ -33,6 +33,7 @@ pub fn print_errors(session: Option<&Session>, diagnostics: DiagnosticCollection
 }
 
 struct StateFmt<'src> {
+    style: AnsiStyle,
     line_num_offset: usize,
     context_fmts: Vec<ContextFmt<'src>>,
 }
@@ -51,6 +52,7 @@ struct ContextFmt<'src> {
 impl<'src> StateFmt<'src> {
     fn new() -> StateFmt<'src> {
         StateFmt {
+            style: AnsiStyle::new(),
             line_num_offset: 0,
             context_fmts: Vec::with_capacity(8),
         }
@@ -104,14 +106,15 @@ fn print_diagnostic<'src>(
     state: &mut StateFmt<'src>,
     handle: &mut BufWriter<Stderr>,
 ) {
-    let message = diagnostic.message().as_str();
+    let wb = state.style.err.white_bold;
+    let r = state.style.err.reset;
+
     let _ = writeln!(
         handle,
-        "{}{}: {}{message}{}",
-        severity_color(severity),
+        "{}{}: {wb}{}{r}",
+        severity_color(&state.style, severity),
         severity_name(severity),
-        ansi::WHITE_BOLD,
-        ansi::RESET
+        diagnostic.message().as_str(),
     );
 
     match diagnostic.kind() {
@@ -143,12 +146,13 @@ fn print_diagnostic<'src>(
     for (idx, fmt) in state.context_fmts.iter().enumerate() {
         let last = idx + 1 == state.context_fmts.len();
         let line_num_pad = " ".repeat(state.line_num_offset - fmt.line_num.len());
-        print_context(handle, fmt, last, &line_pad, &line_num_pad);
+        print_context(state, handle, fmt, last, &line_pad, &line_num_pad);
     }
     let _ = writeln!(handle);
 }
 
 fn print_context(
+    state: &StateFmt,
     handle: &mut BufWriter<Stderr>,
     fmt: &ContextFmt,
     last: bool,
@@ -170,8 +174,8 @@ fn print_context(
     let marker = severity_marker(fmt.severity).repeat(normalized_tab_len(source_str));
     let message = fmt.message;
 
-    let c = ansi::CYAN;
-    let r = ansi::RESET;
+    let c = state.style.err.cyan;
+    let r = state.style.err.reset;
     let box_char = if last { '└' } else { '├' };
 
     let _ = writeln!(
@@ -181,7 +185,7 @@ fn print_context(
 {line_pad} {c}│ {marker_pad}{}{marker} {message}
 {line_pad} {c}{box_char}─ {}:{:?}{r}"#,
         fmt.line_num,
-        severity_color(fmt.severity),
+        severity_color(&state.style, fmt.severity),
         fmt.path.to_string_lossy(),
         fmt.location,
     );
@@ -211,10 +215,10 @@ const fn severity_marker(severity: DiagnosticSeverity) -> &'static str {
     }
 }
 
-const fn severity_color(severity: DiagnosticSeverity) -> &'static str {
+const fn severity_color(style: &AnsiStyle, severity: DiagnosticSeverity) -> &'static str {
     match severity {
-        DiagnosticSeverity::Info => ansi::GREEN_BOLD,
-        DiagnosticSeverity::Error => ansi::RED_BOLD,
-        DiagnosticSeverity::Warning => ansi::YELLOW_BOLD,
+        DiagnosticSeverity::Info => style.err.green_bold,
+        DiagnosticSeverity::Error => style.err.red_bold,
+        DiagnosticSeverity::Warning => style.err.yellow_bold,
     }
 }

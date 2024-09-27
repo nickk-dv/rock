@@ -1,5 +1,5 @@
 use super::{Command, CommandBuild, CommandNew, CommandRun};
-use crate::ansi;
+use crate::ansi::AnsiStyle;
 use crate::error_format;
 use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
 use rock_core::fs_env;
@@ -111,8 +111,10 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
             })?;
     }
 
-    let g = ansi::GREEN_BOLD;
-    let r = ansi::RESET;
+    let style = AnsiStyle::new();
+    let g = style.out.green_bold;
+    let r = style.out.reset;
+
     println!(
         "  {g}Created{r} {} `{}` package\n",
         data.kind.as_str_full(),
@@ -190,9 +192,10 @@ fn run(data: CommandRun) -> Result<(), ErrorComp> {
 }
 
 fn help() {
-    let g = ansi::GREEN_BOLD;
-    let c = ansi::CYAN_BOLD;
-    let r = ansi::RESET;
+    let style = AnsiStyle::new();
+    let g = style.out.green_bold;
+    let c = style.out.cyan_bold;
+    let r = style.out.reset;
 
     #[rustfmt::skip]
     println!(r#"{g}
@@ -226,7 +229,9 @@ Usage:
 }
 
 fn version() {
-    let g = ansi::GREEN_BOLD;
-    let r = ansi::RESET;
+    let style = AnsiStyle::new();
+    let g = style.out.green_bold;
+    let r = style.out.reset;
+
     println!("  {g}Rock version:{r} {}\n", rock_core::VERSION);
 }

@@ -13,7 +13,6 @@ pub mod hir;
 pub mod hir_lower;
 pub mod intern;
 mod lexer;
-mod macros;
 pub mod package;
 pub mod session;
 pub mod support;

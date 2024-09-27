@@ -327,3 +327,64 @@ mod timer {
         }
     }
 }
+
+/// prevent accidental size changes
+#[macro_export]
+macro_rules! size_lock {
+    ($size:expr, $ty:ty) => {
+        #[cfg(target_pointer_width = "64")]
+        const _: [(); $size] = [(); std::mem::size_of::<$ty>()];
+    };
+}
+
+/// multi-purpose trait designed for enums:  
+/// `const ALL` slice of all variants.  
+/// `fn as_str()` convert enum to string.  
+/// `fn from-str()` try to convert string to an enum.
+pub trait AsStr
+where
+    Self: Sized + 'static,
+{
+    const ALL: &[Self];
+    fn as_str(self) -> &'static str;
+    fn from_str(string: &str) -> Option<Self>;
+}
+
+/// generate enum with `AsStr` trait implementation.
+#[macro_export]
+macro_rules! enum_as_str {
+    (
+        $(#[$enum_attr:meta])*
+        $vis:vis enum $Enum:ident {
+            $(
+                $(#[$variant_attr:meta])*
+                $variant:ident $string:expr
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_attr])*
+        $vis enum $Enum {
+            $(
+                $(#[$variant_attr])*
+                $variant,
+            )+
+        }
+
+        impl AsStr for $Enum {
+            const ALL: &[$Enum] = &[
+                $($Enum::$variant,)+
+            ];
+            fn as_str(self) -> &'static str {
+                match self {
+                    $($Enum::$variant => $string,)+
+                }
+            }
+            fn from_str(string: &str) -> Option<$Enum> {
+                match string {
+                    $($string => Some($Enum::$variant),)+
+                    _ => None,
+                }
+            }
+        }
+    }
+}

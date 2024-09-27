@@ -1,12 +1,11 @@
 use super::context::{HirCtx, HirEmit};
 use crate::ast;
 use crate::config;
-use crate::enum_str_convert;
 use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp, WarningSink};
 use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, RockModule};
-use crate::support::BitSet;
+use crate::support::{AsStr, BitSet};
 
 pub struct AttrFeedbackProc {
     pub cfg_state: CfgState,
@@ -632,32 +631,30 @@ impl CfgState {
     }
 }
 
-enum_str_convert!(
-    fn as_str, fn from_str,
+crate::enum_as_str! {
     #[derive(Copy, Clone)]
     pub enum AttrKind {
-        Cfg => "cfg",
-        CfgNot => "cfg_not",
-        CfgAny => "cfg_any",
-        Test => "test",
-        Builtin => "builtin",
-        Inline => "inline",
-        Repr => "repr",
-        ThreadLocal => "thread_local",
+        Cfg "cfg",
+        CfgNot "cfg_not",
+        CfgAny "cfg_any",
+        Test "test",
+        Builtin "builtin",
+        Inline "inline",
+        Repr "repr",
+        ThreadLocal "thread_local",
     }
-);
+}
 
-enum_str_convert!(
-    fn as_str, fn from_str,
+crate::enum_as_str! {
     #[derive(Copy, Clone)]
     enum CfgParamKind {
-        Target => "target",
-        TargetArch => "target_arch",
-        TargetOS => "target_os",
-        TargetPtrWidth => "target_ptr_width",
-        BuildKind => "build_kind",
+        Target "target",
+        TargetArch "target_arch",
+        TargetOS "target_os",
+        TargetPtrWidth "target_ptr_width",
+        BuildKind  "build_kind",
     }
-);
+}
 
 pub fn check_attr_flag<T>(
     emit: &mut HirEmit,

@@ -190,6 +190,24 @@ impl DiagnosticCollection {
     }
 }
 
+impl ErrorSink for Vec<ErrorComp> {
+    fn error(&mut self, error: ErrorComp) {
+        self.push(error);
+    }
+    fn error_count(&self) -> usize {
+        self.len()
+    }
+}
+
+impl ErrorSink for DiagnosticCollection {
+    fn error(&mut self, error: ErrorComp) {
+        self.error(error);
+    }
+    fn error_count(&self) -> usize {
+        self.errors().len()
+    }
+}
+
 impl ErrorComp {
     pub fn diagnostic(&self) -> &Diagnostic {
         &self.0

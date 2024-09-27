@@ -8,6 +8,7 @@ use crate::sys::analysis;
 use crate::sys::core;
 use crate::sys::target;
 use rock_core::config::{TargetArch, TargetTriple};
+use rock_core::support::AsStr;
 use std::cell::UnsafeCell;
 use std::ffi::c_char;
 

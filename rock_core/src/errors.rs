@@ -1,5 +1,52 @@
 use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, WarningComp, WarningSink};
 
+//==================== COMMAND ====================
+
+pub fn cmd_name_missing(emit: &mut impl ErrorSink) {
+    let msg = "command name is missing, use `rock help` to learn the usage";
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_unknown(emit: &mut impl ErrorSink, cmd: &str) {
+    let msg = format!("command `{cmd}` is unknown, use `rock help` to learn the usage");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_expect_no_args(emit: &mut impl ErrorSink, cmd: &str) {
+    let msg = format!("command `{cmd}` does not accept any arguments");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_expect_single_arg(emit: &mut impl ErrorSink, cmd: &str, name: &str) {
+    let msg = format!("command `{cmd}` requires a single `{name}` argument");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_expect_no_trail_args(emit: &mut impl ErrorSink, cmd: &str) {
+    let msg = format!("command `{cmd}` does not accept trailing arguments");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_option_expect_no_args(emit: &mut impl ErrorSink, opt: &str) {
+    let msg = format!("option `--{opt}` does not accept any arguments");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_option_duplicate(emit: &mut impl ErrorSink, opt: &str) {
+    let msg = format!("option `--{opt}` cannot be used multiple times");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_option_conflict(emit: &mut impl ErrorSink, opt: &str, other: &str) {
+    let msg = format!("options `--{opt}` and `--{other}` cannot be used together");
+    emit.error(ErrorComp::message(msg));
+}
+
+pub fn cmd_option_unknown(emit: &mut impl ErrorSink, opt: &str) {
+    let msg = format!("option `--{opt}` is unknown, use `rock help` to learn the usage");
+    emit.error(ErrorComp::message(msg));
+}
+
 //==================== LEXER ====================
 
 pub fn lexer_block_comment_not_terminated(emit: &mut impl ErrorSink, src: SourceRange, depth: u32) {

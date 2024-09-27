@@ -1,221 +1,193 @@
-use super::format::CommandFormat;
+use super::format::{self, Arg, CommandFormat};
 use super::{Command, CommandBuild, CommandNew, CommandRun};
 use rock_core::config::BuildKind;
-use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
+use rock_core::error::ErrorComp;
+use rock_core::errors as err;
 use rock_core::package::manifest::PackageKind;
+use rock_core::support::AsStr;
 
-pub fn command(format: CommandFormat) -> ResultComp<Command> {
-    match format.name.as_str() {
-        "n" | "new" => parse_new(format),
-        "c" | "check" => parse_simple_command(&format, "check", Command::Check),
-        "b" | "build" => parse_build(format),
-        "r" | "run" => parse_run(format),
-        "h" | "help" => parse_simple_command(&format, "help", Command::Help),
-        "v" | "version" => parse_simple_command(&format, "version", Command::Version),
+pub fn parse() -> Result<Command, Vec<ErrorComp>> {
+    let format = format::parse();
+
+    let name = match format.name.as_ref() {
+        Some(name) => name.clone(),
+        None => {
+            let mut errors = Vec::with_capacity(1);
+            err::cmd_name_missing(&mut errors);
+            return Err(errors);
+        }
+    };
+
+    let p = CommandParser {
+        cmd: name,
+        format,
+        errors: Vec::new(),
+    };
+
+    match p.cmd.as_str() {
+        "n" | "new" => parse_new(p),
+        "c" | "check" => parse_check(p),
+        "b" | "build" => parse_build(p),
+        "r" | "run" => parse_run(p),
+        "h" | "help" => parse_help(p),
+        "v" | "version" => parse_version(p),
         _ => {
-            let error = ErrorComp::message(format!(
-                "`{}` command does not exist, use `rock help` to learn the usage",
-                format.name
-            ));
-            ResultComp::from_error(Err(error))
+            let mut errors = Vec::with_capacity(1);
+            err::cmd_unknown(&mut errors, &p.cmd);
+            return Err(errors);
         }
     }
 }
 
-fn parse_new(format: CommandFormat) -> ResultComp<Command> {
-    let mut diagnostics = DiagnosticCollection::new();
-    check_command_args(&format, &mut diagnostics, "new", true, false);
-    check_expected_option_set(&format, &mut diagnostics, &["lib", "bin", "no-git"]);
-
-    let name = parse_package_name(&format, &mut diagnostics);
-    let kind = parse_package_kind(&format, &mut diagnostics, PackageKind::Bin);
-    let no_git = parse_bool_flag(&format, &mut diagnostics, "no-git", false);
+fn parse_new(mut p: CommandParser) -> Result<Command, Vec<ErrorComp>> {
+    let name = p.args_single("name");
+    let kind = p.option_enum(PackageKind::Bin);
+    let no_git = p.option_flag(false, "no-git");
+    p.trail_args_none();
 
     let data = CommandNew { name, kind, no_git };
-    ResultComp::new(Command::New(data), diagnostics)
+    p.finish(Command::New(data))
 }
 
-fn parse_build(format: CommandFormat) -> ResultComp<Command> {
-    let mut diagnostics = DiagnosticCollection::new();
-    check_command_args(&format, &mut diagnostics, "build", false, false);
-    check_expected_option_set(
-        &format,
-        &mut diagnostics,
-        &["debug", "release", "emit-llvm"],
-    );
+fn parse_check(mut p: CommandParser) -> Result<Command, Vec<ErrorComp>> {
+    p.args_none();
+    p.trail_args_none();
+    p.finish(Command::Check)
+}
 
-    let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
-    let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
+fn parse_build(mut p: CommandParser) -> Result<Command, Vec<ErrorComp>> {
+    let kind = p.option_enum(BuildKind::Debug);
+    let emit_llvm = p.option_flag(false, "emit-llvm");
+    p.trail_args_none();
 
     let data = CommandBuild { kind, emit_llvm };
-    ResultComp::new(Command::Build(data), diagnostics)
+    p.finish(Command::Build(data))
 }
 
-fn parse_run(format: CommandFormat) -> ResultComp<Command> {
-    let mut diagnostics: DiagnosticCollection = DiagnosticCollection::new();
-    check_command_args(&format, &mut diagnostics, "run", false, true);
-    check_expected_option_set(
-        &format,
-        &mut diagnostics,
-        &["debug", "release", "emit-llvm"],
-    );
-
-    let kind = parse_build_kind(&format, &mut diagnostics, BuildKind::Debug);
-    let emit_llvm = parse_bool_flag(&format, &mut diagnostics, "emit-llvm", false);
+fn parse_run(mut p: CommandParser) -> Result<Command, Vec<ErrorComp>> {
+    let kind = p.option_enum(BuildKind::Debug);
+    let emit_llvm = p.option_flag(false, "emit-llvm");
+    let args = p.trail_args();
 
     let data = CommandRun {
         kind,
         emit_llvm,
-        args: format.trail_args,
+        args,
     };
-    ResultComp::new(Command::Run(data), diagnostics)
+    p.finish(Command::Run(data))
 }
 
-fn parse_simple_command(
-    format: &CommandFormat,
-    cmd_name: &str,
-    command: Command,
-) -> ResultComp<Command> {
-    if !format.args.is_empty() || !format.options.is_empty() || !format.trail_args.is_empty() {
-        let warning = WarningComp::message(format!(
-            "`{cmd_name}` command does not take any options or arguments",
-        ));
-        ResultComp::Ok((command, vec![warning]))
-    } else {
-        ResultComp::Ok((command, vec![]))
-    }
+fn parse_help(mut p: CommandParser) -> Result<Command, Vec<ErrorComp>> {
+    p.args_none();
+    p.trail_args_none();
+    p.finish(Command::Help)
 }
 
-fn check_command_args(
-    format: &CommandFormat,
-    diagnostics: &mut DiagnosticCollection,
-    cmd_name: &str,
-    has_args: bool,
-    has_trail_args: bool,
-) {
-    if !has_args && !format.args.is_empty() {
-        diagnostics.warning(WarningComp::message(format!(
-            "`{cmd_name}` command does not take any arguments"
-        )));
-    }
-    if !has_trail_args && !format.trail_args.is_empty() {
-        diagnostics.warning(WarningComp::message(format!(
-            "`{cmd_name}` command does not take any trailing arguments"
-        )));
-    }
+fn parse_version(mut p: CommandParser) -> Result<Command, Vec<ErrorComp>> {
+    p.args_none();
+    p.trail_args_none();
+    p.finish(Command::Version)
 }
 
-fn check_expected_option_set(
-    format: &CommandFormat,
-    diagnostics: &mut DiagnosticCollection,
-    expected: &[&str],
-) {
-    for (option, _) in format.options.iter() {
-        if !expected.contains(&option.as_str()) {
-            diagnostics.warning(WarningComp::message(format!(
-                "option `--{option}` is not recognized and will be ignored"
-            )));
+struct CommandParser {
+    cmd: String,
+    format: CommandFormat,
+    errors: Vec<ErrorComp>,
+}
+
+impl CommandParser {
+    fn args_none(&mut self) {
+        if !self.format.args.is_empty() {
+            err::cmd_expect_no_args(&mut self.errors, &self.cmd);
         }
     }
-}
-
-fn check_option_no_args(
-    format: &CommandFormat,
-    diagnostics: &mut DiagnosticCollection,
-    name: &str,
-) -> bool {
-    if let Some(args) = format.options.get(name) {
-        if !args.is_empty() {
-            diagnostics.warning(WarningComp::message(format!(
-                "option `--{name}` does not take any arguments"
-            )));
+    fn args_single(&mut self, name: &str) -> String {
+        if let Some(arg) = self.format.args.get(0) {
+            if self.format.args.len() > 1 {
+                err::cmd_expect_single_arg(&mut self.errors, &self.cmd, name);
+            }
+            arg.to_string()
+        } else {
+            err::cmd_expect_single_arg(&mut self.errors, &self.cmd, name);
+            "error".to_string()
         }
-        true
-    } else {
-        false
     }
-}
 
-fn parse_bool_flag(
-    format: &CommandFormat,
-    diagnostics: &mut DiagnosticCollection,
-    name: &str,
-    default: bool,
-) -> bool {
-    let flag_set = check_option_no_args(format, diagnostics, name);
-    if flag_set {
-        true
-    } else {
-        default
-    }
-}
-
-fn parse_package_name(format: &CommandFormat, diagnostics: &mut DiagnosticCollection) -> String {
-    if let Some(arg) = format.args.first() {
-        if format.args.len() > 1 {
-            diagnostics.warning(WarningComp::message(
-                "`new` command expects one argument, other arguments will be ignored",
-            ));
+    fn option_flag(&mut self, default: bool, name: &'static str) -> bool {
+        if self.option_no_args(name) {
+            true
+        } else {
+            default
         }
-        arg.clone()
-    } else {
-        diagnostics.error(ErrorComp::message(
-            "missing new package name, use `rock help` to learn the usage",
-        ));
-        "error".into()
     }
-}
+    fn option_enum<T: Copy + AsStr>(&mut self, default: T) -> T {
+        let mut selected = None;
+        let mut variants = T::ALL.iter().copied();
 
-fn parse_build_kind(
-    format: &CommandFormat,
-    diagnostics: &mut DiagnosticCollection,
-    default: BuildKind,
-) -> BuildKind {
-    let debug_str = BuildKind::Debug.as_str();
-    let release_str = BuildKind::Release.as_str();
+        while let Some(value) = variants.next() {
+            if self.option_no_args(value.as_str()) {
+                selected = Some(value);
+                break;
+            }
+        }
 
-    let debug = check_option_no_args(format, diagnostics, debug_str);
-    let release = check_option_no_args(format, diagnostics, release_str);
-
-    if debug && release {
-        diagnostics.error(ErrorComp::message(format!(
-            "conflicting options `--{debug_str}` and `--{release_str}` cannot be used together"
-        )));
-        return default;
+        if let Some(selected) = selected {
+            for other in variants {
+                if self.option_no_args(other.as_str()) {
+                    let opt = selected.as_str();
+                    let other = other.as_str();
+                    err::cmd_option_conflict(&mut self.errors, opt, other);
+                }
+            }
+            selected
+        } else {
+            default
+        }
     }
-
-    if debug {
-        BuildKind::Debug
-    } else if release {
-        BuildKind::Release
-    } else {
-        default
+    fn option_no_args(&mut self, opt: &'static str) -> bool {
+        if let Some(args) = self.format.options.remove(opt) {
+            if !args.is_empty() {
+                err::cmd_option_expect_no_args(&mut self.errors, opt);
+            }
+            if self.format.duplicates.remove(opt) {
+                err::cmd_option_duplicate(&mut self.errors, opt);
+            }
+            true
+        } else {
+            false
+        }
     }
-}
-
-fn parse_package_kind(
-    format: &CommandFormat,
-    diagnostics: &mut DiagnosticCollection,
-    default: PackageKind,
-) -> PackageKind {
-    let bin_str = PackageKind::Bin.as_str();
-    let lib_str = PackageKind::Lib.as_str();
-
-    let bin = check_option_no_args(format, diagnostics, bin_str);
-    let lib = check_option_no_args(format, diagnostics, lib_str);
-
-    if bin && lib {
-        diagnostics.error(ErrorComp::message(format!(
-            "conflicting options `--{bin_str}` and `--{lib_str}` cannot be used together"
-        )));
-        return default;
+    fn option_with_args(&mut self, opt: &'static str) -> Option<Vec<Arg>> {
+        if let Some(args) = self.format.options.remove(opt) {
+            if self.format.duplicates.remove(opt) {
+                err::cmd_option_duplicate(&mut self.errors, opt);
+            }
+            Some(args)
+        } else {
+            None
+        }
     }
 
-    if bin {
-        PackageKind::Bin
-    } else if lib {
-        PackageKind::Lib
-    } else {
-        default
+    fn trail_args_none(&mut self) {
+        if !self.format.trail_args.is_empty() {
+            err::cmd_expect_no_trail_args(&mut self.errors, &self.cmd);
+        }
+    }
+    fn trail_args(&self) -> Vec<String> {
+        self.format.trail_args.clone()
+    }
+
+    fn finish(mut self, command: Command) -> Result<Command, Vec<ErrorComp>> {
+        for (opt, _) in self.format.options {
+            err::cmd_option_unknown(&mut self.errors, &opt);
+        }
+        for opt in self.format.duplicates {
+            err::cmd_option_duplicate(&mut self.errors, &opt);
+        }
+        if self.errors.is_empty() {
+            Ok(command)
+        } else {
+            Err(self.errors)
+        }
     }
 }

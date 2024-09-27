@@ -8,6 +8,7 @@ use rock_core::error::ErrorComp;
 use rock_core::fs_env;
 use rock_core::hir;
 use rock_core::session::Session;
+use rock_core::support::AsStr;
 use std::path::PathBuf;
 
 pub struct BuildOptions {

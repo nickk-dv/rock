@@ -1,14 +1,6 @@
-pub const RESET: &str = "\x1B[0m";
-pub const RED_BOLD: &str = "\x1B[1;31m";
-pub const GREEN_BOLD: &str = "\x1B[1;32m";
-pub const YELLOW_BOLD: &str = "\x1B[1;33m";
-pub const CYAN: &str = "\x1B[0;36m";
-pub const CYAN_BOLD: &str = "\x1B[1;36m";
-pub const WHITE_BOLD: &str = "\x1B[1;37m";
-
-pub struct OutputStyle {
-    pub color_out: &'static AnsiColors,
-    pub color_err: &'static AnsiColors,
+pub struct AnsiStyle {
+    pub out: &'static AnsiColors,
+    pub err: &'static AnsiColors,
 }
 
 pub struct AnsiColors {
@@ -41,17 +33,17 @@ const ANSI_COLORS_EMPTY: AnsiColors = AnsiColors {
     white_bold: "",
 };
 
-impl OutputStyle {
-    pub fn new() -> OutputStyle {
+impl AnsiStyle {
+    pub fn new() -> AnsiStyle {
         use std::io::IsTerminal;
 
-        OutputStyle {
-            color_out: if std::io::stdout().is_terminal() {
+        AnsiStyle {
+            out: if std::io::stdout().is_terminal() {
                 &ANSI_COLORS
             } else {
                 &ANSI_COLORS_EMPTY
             },
-            color_err: if std::io::stderr().is_terminal() {
+            err: if std::io::stderr().is_terminal() {
                 &ANSI_COLORS
             } else {
                 &ANSI_COLORS_EMPTY

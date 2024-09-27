@@ -1,4 +1,5 @@
 use super::semver::Semver;
+use crate::support::AsStr;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -44,21 +45,17 @@ pub struct IndexDependency {
     pub version_req: Semver,
 }
 
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PackageKind {
-    #[serde(rename = "bin")]
-    Bin,
-    #[serde(rename = "lib")]
-    Lib,
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+    pub enum PackageKind {
+        #[serde(rename = "bin")]
+        Bin "bin",
+        #[serde(rename = "lib")]
+        Lib "lib",
+    }
 }
 
 impl PackageKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PackageKind::Bin => "bin",
-            PackageKind::Lib => "lib",
-        }
-    }
     pub fn as_str_full(self) -> &'static str {
         match self {
             PackageKind::Bin => "executable",
