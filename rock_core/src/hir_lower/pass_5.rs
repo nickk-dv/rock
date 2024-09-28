@@ -1912,7 +1912,9 @@ fn typecheck_block<'hir>(
         let (hir_stmt, diverges) = match stmt.kind {
             ast::StmtKind::Break => {
                 if let Some(stmt_res) = typecheck_break(ctx, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
+                    let diverges = ctx
+                        .proc
+                        .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -1920,7 +1922,9 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Continue => {
                 if let Some(stmt_res) = typecheck_continue(ctx, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
+                    let diverges = ctx
+                        .proc
+                        .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -1928,7 +1932,9 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Return(expr) => {
                 if let Some(stmt_res) = typecheck_return(ctx, expr, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
+                    let diverges = ctx
+                        .proc
+                        .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -1937,7 +1943,9 @@ fn typecheck_block<'hir>(
             //@defer block divergence should be simulated to correctly handle block_ty and divergence warnings 03.07.24
             ast::StmtKind::Defer(block) => {
                 if let Some(stmt_res) = typecheck_defer(ctx, *block, stmt.range) {
-                    let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
+                    let diverges = ctx
+                        .proc
+                        .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
                     (stmt_res, diverges)
                 } else {
                     continue;
@@ -1945,13 +1953,17 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Loop(loop_) => {
                 //@can diverge (inf loop, return, panic)
-                let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
+                let diverges = ctx
+                    .proc
+                    .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Loop(typecheck_loop(ctx, loop_));
                 (stmt_res, diverges)
             }
             ast::StmtKind::Local(local) => {
                 //@can diverge any diverging expr inside
-                let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
+                let diverges = ctx
+                    .proc
+                    .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
                 let local_res = typecheck_local(ctx, local);
                 let stmt_res = match local_res {
                     LocalResult::Error => continue,
@@ -1962,7 +1974,9 @@ fn typecheck_block<'hir>(
             }
             ast::StmtKind::Assign(assign) => {
                 //@can diverge any diverging expr inside
-                let diverges = ctx.proc.check_stmt_diverges(false, stmt.range);
+                let diverges = ctx
+                    .proc
+                    .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
                 let stmt_res = hir::Stmt::Assign(typecheck_assign(ctx, assign));
                 (stmt_res, diverges)
             }
@@ -1987,7 +2001,9 @@ fn typecheck_block<'hir>(
 
                 //@migrate to using never type instead of diverges bool flags
                 let will_diverge = expr_res.ty.is_never();
-                let diverges = ctx.proc.check_stmt_diverges(will_diverge, stmt.range);
+                let diverges =
+                    ctx.proc
+                        .check_stmt_diverges(&mut ctx.emit, will_diverge, stmt.range);
 
                 let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
                 (stmt_res, diverges)
@@ -2008,7 +2024,9 @@ fn typecheck_block<'hir>(
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
                 // @seems to fix the problem (still a hack)
-                let diverges = ctx.proc.check_stmt_diverges(true, stmt.range);
+                let diverges = ctx
+                    .proc
+                    .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
 
                 // only assigned once, any further `ExprTail` are unreachable
                 if block_ty.is_none() {
@@ -2020,17 +2038,7 @@ fn typecheck_block<'hir>(
         };
 
         match diverges {
-            Diverges::Maybe => block_stmts.push(hir_stmt),
-            Diverges::Always(range) => {
-                ctx.emit.warning(WarningComp::new(
-                    "unreachable statement",
-                    SourceRange::new(ctx.proc.origin(), stmt.range),
-                    Info::new(
-                        "all statements after this are unreachable",
-                        SourceRange::new(ctx.proc.origin(), range),
-                    ),
-                ));
-            }
+            Diverges::Maybe | Diverges::Always(_) => block_stmts.push(hir_stmt),
             Diverges::AlwaysWarned => {}
         }
     }

@@ -554,11 +554,13 @@ pub fn const_int(int_ty: Type, val: u64, sign_extend: bool) -> Value {
 pub fn const_float(float_ty: Type, val: f64) -> Value {
     Value(unsafe { core::LLVMConstReal(float_ty.0, val) })
 }
-pub fn const_string(string: &str, null_terminate: bool) -> Value {
+
+pub fn const_string(ctx: &IRContext, string: &str, null_terminate: bool) -> Value {
     Value(unsafe {
-        core::LLVMConstString(
+        core::LLVMConstStringInContext2(
+            ctx.context,
             string.as_ptr() as *const c_char,
-            string.len() as u32,
+            string.len(),
             (!null_terminate) as i32,
         )
     })

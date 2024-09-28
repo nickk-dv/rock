@@ -1,4 +1,5 @@
 use super::pass_5::Expectation;
+use crate::error::{Info, SourceRange, WarningComp, WarningSink};
 use crate::hir;
 use crate::intern::InternName;
 use crate::session::ModuleID;
@@ -255,15 +256,30 @@ impl<'hir> ProcScope<'hir> {
         None
     }
 
-    pub fn check_stmt_diverges(&mut self, will_diverge: bool, stmt_range: TextRange) -> Diverges {
+    pub fn check_stmt_diverges(
+        &mut self,
+        emit: &mut impl WarningSink,
+        will_diverge: bool,
+        stmt_range: TextRange,
+    ) -> Diverges {
+        let origin_id = self.origin();
         let diverges = &mut self.blocks.last_mut().expect("block exists").diverges;
+
         match *diverges {
             Diverges::Maybe => {
                 if will_diverge {
                     *diverges = Diverges::Always(stmt_range);
                 }
             }
-            Diverges::Always(_) => {
+            Diverges::Always(range) => {
+                emit.warning(WarningComp::new(
+                    "unreachable statement",
+                    SourceRange::new(origin_id, stmt_range),
+                    Info::new(
+                        "all statements after this are unreachable",
+                        SourceRange::new(origin_id, range),
+                    ),
+                ));
                 *diverges = Diverges::AlwaysWarned;
             }
             Diverges::AlwaysWarned => {}

@@ -220,7 +220,7 @@ pub mod analysis {
 
 pub mod core {
     use super::*;
-    use std::ffi::{c_char, c_double, c_uint, c_ulonglong};
+    use std::ffi::{c_char, c_double, c_uint};
 
     // core
     extern "C" {
@@ -293,16 +293,13 @@ pub mod core {
         pub fn LLVMTypeOf(Val: LLVMValueRef) -> LLVMTypeRef;
 
         pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
-        pub fn LLVMConstInt(
-            int_ty: LLVMTypeRef,
-            val: c_ulonglong,
-            sign_extend: LLVMBool,
-        ) -> LLVMValueRef;
+        pub fn LLVMConstInt(int_ty: LLVMTypeRef, val: u64, sign_extend: LLVMBool) -> LLVMValueRef;
         pub fn LLVMConstReal(real_ty: LLVMTypeRef, val: c_double) -> LLVMValueRef;
 
-        pub fn LLVMConstString(
+        pub fn LLVMConstStringInContext2(
+            ctx: LLVMContextRef,
             str: *const c_char,
-            len: c_uint,
+            len: usize,
             dont_null_terminate: LLVMBool,
         ) -> LLVMValueRef;
 

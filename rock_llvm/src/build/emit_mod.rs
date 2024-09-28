@@ -26,7 +26,7 @@ pub fn codegen_module<'c, 's, 's_ref>(
 fn codegen_string_lits(cg: &mut Codegen) {
     for (idx, &string) in cg.intern_lit.get_all().iter().enumerate() {
         let c_string = true; //@always gen cstrings, optional c_string state were temp removed
-        let str_val = llvm::const_string(string, c_string);
+        let str_val = llvm::const_string(&cg.context, string, c_string);
         let str_ty = llvm::typeof_value(str_val);
 
         let global = cg.module.add_global(
