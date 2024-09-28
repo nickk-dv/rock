@@ -187,6 +187,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
     let mut unique = Vec::<hir::Variant>::new();
     let mut tag_ty = data.tag_ty;
     let mut any_constant = false;
+    let mut any_has_fields = false;
     let origin_id = data.origin_id;
     let enum_name = data.name;
 
@@ -224,8 +225,12 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
                         fields: &[],
                     }
                 }
+                //@could be empty field list, error and dont set the `any_has_fields`
                 ast::VariantKind::HasValues(types) => {
                     let eval_id = ctx.registry.add_variant_eval();
+                    if !any_has_fields && types.len() > 0 {
+                        any_has_fields = true;
+                    }
 
                     let mut fields = Vec::with_capacity(types.len());
                     for ty in types {
@@ -244,6 +249,12 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
             };
             unique.push(variant);
         }
+    }
+
+    if any_has_fields {
+        //@bypassing the attr_check set flag, for now no conflits are possible
+        let data = ctx.registry.enum_data_mut(id);
+        data.attr_set.set(hir::EnumFlag::HasFields);
     }
 
     if tag_ty.is_err() && any_constant {

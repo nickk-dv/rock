@@ -17,6 +17,7 @@ pub struct Hir<'hir> {
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
     pub const_values: Vec<ConstValueID<'hir>>,
+    pub variant_tag_values: Vec<ConstValue<'hir>>,
 }
 
 pub struct ConstInternPool<'hir> {
@@ -95,6 +96,7 @@ pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
 #[derive(Copy, Clone, PartialEq)]
 pub enum EnumFlag {
     HasRepr,
+    HasFields,
 }
 
 pub type StructID<'hir> = ID<StructData<'hir>>;

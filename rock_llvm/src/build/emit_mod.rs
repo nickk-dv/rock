@@ -15,6 +15,7 @@ pub fn codegen_module<'c, 's, 's_ref>(
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, triple, intern_lit, intern_name);
     codegen_string_lits(&mut cg);
+    codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_consts(&mut cg);
     codegen_globals(&mut cg);
@@ -39,6 +40,27 @@ fn codegen_string_lits(cg: &mut Codegen) {
             llvm::Linkage::LLVMInternalLinkage,
         );
         cg.string_lits.push(global);
+    }
+}
+
+fn codegen_enum_types(cg: &mut Codegen) {
+    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new_raw) {
+        let enum_data = cg.hir.enum_data(enum_id);
+
+        let enum_ty = if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
+            let layout = enum_data.layout.get_resolved().expect("resolved");
+            //@bad api, forced to create hir::ArrayStatic
+            let array_ty = hir::ArrayStatic {
+                len: hir::ArrayStaticLen::Immediate(Some(layout.size())),
+                elem_ty: hir::Type::Basic(ast::BasicType::U8),
+            };
+            cg.array_type(&array_ty)
+        } else {
+            let tag_ty = enum_data.tag_ty.expect("resolved tag ty");
+            cg.basic_type(tag_ty.into_basic())
+        };
+
+        cg.enums.push(enum_ty);
     }
 }
 

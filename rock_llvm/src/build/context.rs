@@ -11,6 +11,7 @@ pub struct Codegen<'c, 's, 's_ref> {
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
     pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
+    pub enums: Vec<llvm::Type>,
     pub structs: Vec<llvm::TypeStruct>,
     pub consts: Vec<llvm::Value>,
     pub globals: Vec<llvm::ValueGlobal>,
@@ -90,6 +91,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             module,
             build,
             procs: Vec::with_capacity(hir.procs.len()),
+            enums: Vec::with_capacity(hir.enums.len()),
             structs: Vec::with_capacity(hir.structs.len()),
             consts: Vec::with_capacity(hir.consts.len()),
             globals: Vec::with_capacity(hir.globals.len()),
@@ -141,7 +143,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     }
 
     pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
-        unimplemented!()
+        self.enums[enum_id.raw_index()]
     }
 
     pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::TypeStruct {

@@ -133,7 +133,7 @@ fn codegen_expr<'c>(
             enum_id,
             variant_id,
             input,
-        } => unimplemented!("emit variant"),
+        } => Some(codegen_variant(cg, proc_cg, enum_id, variant_id, input)),
         hir::ExprKind::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, proc_cg, proc_id, input)
         }
@@ -213,7 +213,7 @@ fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value
 }
 
 fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Value {
-    unimplemented!()
+    unimplemented!("codegen_const_variant")
 }
 
 fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
@@ -493,6 +493,59 @@ fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) ->
             cg.build.load(global_ty, global_ptr, "global_val")
         }
         Expect::Pointer => global_ptr.as_val(),
+    }
+}
+
+//@after use same opts as struct_init
+// expect store to avoid another alloca
+fn codegen_variant<'c>(
+    cg: &Codegen<'c, '_, '_>,
+    proc_cg: &mut ProcCodegen<'c>,
+    enum_id: hir::EnumID,
+    variant_id: hir::VariantID,
+    input: &&[&hir::Expr<'c>],
+) -> llvm::Value {
+    let enum_data = cg.hir.enum_data(enum_id);
+    let variant = enum_data.variant(variant_id);
+    let tag_ty = cg.basic_type(enum_data.tag_ty.expect("tag ty").into_basic());
+
+    //@generating each time
+    let tag_value = match variant.kind {
+        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.raw_index()],
+        hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
+    };
+    let tag_value = codegen_const(cg, tag_value);
+
+    //@generating each time
+    let mut variant_types = Vec::with_capacity(variant.fields.len());
+    variant_types.push(tag_ty);
+    for field in variant.fields {
+        variant_types.push(cg.ty(field.ty));
+    }
+    let variant_name = cg.intern_name.get(variant.name.id);
+    let variant_ty = cg.context.struct_create_named(variant_name);
+    cg.context
+        .struct_set_body(variant_ty, &variant_types, false);
+
+    if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
+        let enum_ty = cg.enum_type(enum_id);
+        let enum_ptr = cg.entry_alloca(proc_cg, enum_ty, "enum_init");
+
+        let tag_ptr = cg
+            .build
+            .gep_struct(variant_ty, enum_ptr, 0, "variant_tag_ptr");
+        cg.build.store(tag_value, tag_ptr);
+
+        for (idx, expr) in input.iter().enumerate() {
+            let field_ptr =
+                cg.build
+                    .gep_struct(variant_ty, enum_ptr, idx as u32 + 1, "variant_field_ptr");
+            codegen_expr_store(cg, proc_cg, expr, field_ptr);
+        }
+
+        cg.build.load(enum_ty, enum_ptr, "enum_value")
+    } else {
+        tag_value
     }
 }
 

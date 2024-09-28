@@ -116,11 +116,12 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
         }
 
         let mut const_values = Vec::with_capacity(self.registry.const_evals.len());
+        let mut variant_tag_values = Vec::with_capacity(self.registry.const_evals.len());
         let mut errors = Vec::new();
 
         for (eval, origin_id) in self.registry.const_evals.iter() {
             //@can just use `get_resolved` but for now emitting internal error
-            // just rely on unreachable! in `get_resolve` when compiler is stable
+            // just rely on unreachable! in `get_resolved` when compiler is stable
             match *eval {
                 hir::ConstEval::Unresolved(expr) => {
                     errors.push(ErrorComp::new(
@@ -138,6 +139,18 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
             }
         }
 
+        for eval in self.registry.variant_evals.iter() {
+            match *eval {
+                hir::VariantEval::Unresolved(()) => {
+                    unreachable!("silent VariantEval::Unresolved")
+                }
+                hir::VariantEval::ResolvedError => {
+                    unreachable!("silent VariantEval::ResolvedError")
+                }
+                hir::VariantEval::Resolved(value) => variant_tag_values.push(value),
+            }
+        }
+
         if errors.is_empty() {
             let hir = hir::Hir {
                 arena: self.arena,
@@ -148,6 +161,7 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
                 consts: self.registry.hir_consts,
                 globals: self.registry.hir_globals,
                 const_values,
+                variant_tag_values,
             };
             ResultComp::Ok((hir, self.emit.diagnostics.warnings_moveout()))
         } else {

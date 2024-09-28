@@ -761,11 +761,14 @@ impl DataFlag<ProcFlag> for ProcFlag {
 }
 
 impl DataFlag<EnumFlag> for EnumFlag {
-    const ALL_FLAGS: &'static [EnumFlag] = &[EnumFlag::HasRepr];
+    //@replace with AstStr::ALL?
+    const ALL_FLAGS: &'static [EnumFlag] = &[EnumFlag::HasRepr, EnumFlag::HasFields];
 
+    //@replace with AstStr as_str()?
     fn as_str(self) -> &'static str {
         match self {
             EnumFlag::HasRepr => "repr",
+            EnumFlag::HasFields => "has fields",
         }
     }
 
@@ -774,7 +777,8 @@ impl DataFlag<EnumFlag> for EnumFlag {
             unreachable!()
         }
         match self {
-            EnumFlag::HasRepr => false,
+            EnumFlag::HasRepr => true,
+            EnumFlag::HasFields => true,
         }
     }
 }
