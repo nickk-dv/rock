@@ -61,6 +61,7 @@ mod arena {
                 self.grow(size);
             }
             unsafe {
+                //@consider alignment?
                 let offset = self.block.data.add(self.offset) as *mut T;
                 self.offset += size;
                 offset

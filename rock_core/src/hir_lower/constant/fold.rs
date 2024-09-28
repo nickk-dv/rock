@@ -1,4 +1,3 @@
-use super::basic_layout;
 use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;

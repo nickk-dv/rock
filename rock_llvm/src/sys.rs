@@ -320,6 +320,8 @@ pub mod core {
             count: c_uint,
         ) -> LLVMValueRef;
 
+        pub fn LLVMConstBitCast(const_val: LLVMValueRef, into_ty: LLVMTypeRef) -> LLVMValueRef;
+
         pub fn LLVMAddGlobal(
             m: LLVMModuleRef,
             ty: LLVMTypeRef,

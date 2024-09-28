@@ -17,6 +17,7 @@ pub fn codegen_module<'c, 's, 's_ref>(
     codegen_string_lits(&mut cg);
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
+    codegen_variant_types(&mut cg);
     codegen_consts(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
@@ -54,7 +55,12 @@ fn codegen_enum_types(cg: &mut Codegen) {
                 len: hir::ArrayStaticLen::Immediate(Some(layout.size())),
                 elem_ty: hir::Type::Basic(ast::BasicType::U8),
             };
-            cg.array_type(&array_ty)
+            let array_ty = cg.array_type(&array_ty);
+
+            let enum_name = cg.intern_name.get(enum_data.name.id);
+            let enum_ty = cg.context.struct_create_named(enum_name);
+            cg.context.struct_set_body(enum_ty, &[array_ty], false);
+            enum_ty.as_ty()
         } else {
             let tag_ty = enum_data.tag_ty.expect("resolved tag ty");
             cg.basic_type(tag_ty.into_basic())
@@ -79,6 +85,37 @@ fn codegen_struct_types(cg: &mut Codegen) {
         }
         let opaque = cg.structs[idx];
         cg.context.struct_set_body(opaque, &field_types, false)
+    }
+}
+
+//@non optimized memory storage for variant type info
+fn codegen_variant_types(cg: &mut Codegen) {
+    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new_raw) {
+        let enum_data = cg.hir.enum_data(enum_id);
+
+        if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
+            let mut variant_types = Vec::with_capacity(enum_data.variants.len());
+            for variant in enum_data.variants {
+                if variant.fields.is_empty() {
+                    variant_types.push(None);
+                } else {
+                    let mut field_types = Vec::with_capacity(variant.fields.len());
+                    let tag_ty = cg.basic_type(enum_data.tag_ty.expect("tag ty").into_basic());
+                    field_types.push(tag_ty);
+                    for field in variant.fields {
+                        field_types.push(cg.ty(field.ty));
+                    }
+
+                    let variant_name = cg.intern_name.get(variant.name.id);
+                    let variant_ty = cg.context.struct_create_named(variant_name);
+                    cg.context.struct_set_body(variant_ty, &field_types, false);
+                    variant_types.push(Some(variant_ty));
+                }
+            }
+            cg.variants.push(variant_types);
+        } else {
+            cg.variants.push(Vec::new());
+        }
     }
 }
 

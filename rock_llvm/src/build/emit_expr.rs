@@ -213,7 +213,7 @@ fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value
 }
 
 fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Value {
-    unimplemented!("codegen_const_variant")
+    unimplemented!("const variant impossible to implement");
 }
 
 fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
@@ -234,7 +234,7 @@ fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
         values.push(value);
     }
 
-    //@type of zero sized arrays is not stored, will cras
+    //@type of zero sized arrays is not stored, will crash
     let elem_ty = llvm::typeof_value(values[0]);
     llvm::const_array(elem_ty, &values)
 }
@@ -507,7 +507,6 @@ fn codegen_variant<'c>(
 ) -> llvm::Value {
     let enum_data = cg.hir.enum_data(enum_id);
     let variant = enum_data.variant(variant_id);
-    let tag_ty = cg.basic_type(enum_data.tag_ty.expect("tag ty").into_basic());
 
     //@generating each time
     let tag_value = match variant.kind {
@@ -516,31 +515,21 @@ fn codegen_variant<'c>(
     };
     let tag_value = codegen_const(cg, tag_value);
 
-    //@generating each time
-    let mut variant_types = Vec::with_capacity(variant.fields.len());
-    variant_types.push(tag_ty);
-    for field in variant.fields {
-        variant_types.push(cg.ty(field.ty));
-    }
-    let variant_name = cg.intern_name.get(variant.name.id);
-    let variant_ty = cg.context.struct_create_named(variant_name);
-    cg.context
-        .struct_set_body(variant_ty, &variant_types, false);
-
     if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
         let enum_ty = cg.enum_type(enum_id);
         let enum_ptr = cg.entry_alloca(proc_cg, enum_ty, "enum_init");
+        cg.build.store(tag_value, enum_ptr);
 
-        let tag_ptr = cg
-            .build
-            .gep_struct(variant_ty, enum_ptr, 0, "variant_tag_ptr");
-        cg.build.store(tag_value, tag_ptr);
+        if !variant.fields.is_empty() {
+            let variant_ty = &cg.variants[enum_id.raw_index()];
+            let variant_ty = variant_ty[variant_id.raw_index()].expect("variant ty");
 
-        for (idx, expr) in input.iter().enumerate() {
-            let field_ptr =
-                cg.build
-                    .gep_struct(variant_ty, enum_ptr, idx as u32 + 1, "variant_field_ptr");
-            codegen_expr_store(cg, proc_cg, expr, field_ptr);
+            for (idx, expr) in input.iter().enumerate() {
+                let field_ptr =
+                    cg.build
+                        .gep_struct(variant_ty, enum_ptr, idx as u32 + 1, "variant_field_ptr");
+                codegen_expr_store(cg, proc_cg, expr, field_ptr);
+            }
         }
 
         cg.build.load(enum_ty, enum_ptr, "enum_value")

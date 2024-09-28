@@ -592,6 +592,9 @@ pub fn const_struct_named(struct_ty: TypeStruct, const_vals: &[Value]) -> Value 
         )
     })
 }
+pub fn const_bitcast(const_val: Value, into_ty: Type) -> Value {
+    Value(unsafe { core::LLVMConstBitCast(const_val.0, into_ty.0) })
+}
 
 pub fn array_type(elem_ty: Type, len: u64) -> Type {
     Type(unsafe { core::LLVMArrayType2(elem_ty.0, len) })
