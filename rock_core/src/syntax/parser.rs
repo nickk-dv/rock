@@ -1,5 +1,5 @@
 use super::syntax_kind::SyntaxKind;
-use crate::error::{ErrorComp, SourceRange, StringOrStr};
+use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange, StringOrStr};
 use crate::session::ModuleID;
 use crate::support::ID;
 use crate::token::{Token, TokenList, TokenSet, T};
@@ -9,7 +9,7 @@ pub struct Parser {
     cursor: ID<Token>,
     tokens: TokenList,
     events: Vec<Event>,
-    errors: Vec<ErrorComp>,
+    errors: ErrorBuffer,
     steps: Cell<u32>,
     module_id: ModuleID,
 }
@@ -40,13 +40,13 @@ impl Parser {
             cursor: ID::new_raw(0),
             tokens,
             events: Vec::new(),
-            errors: Vec::new(),
+            errors: ErrorBuffer::default(),
             steps: Cell::new(0),
             module_id,
         }
     }
 
-    pub fn finish(self) -> (TokenList, Vec<Event>, Vec<ErrorComp>) {
+    pub fn finish(self) -> (TokenList, Vec<Event>, ErrorBuffer) {
         (self.tokens, self.events, self.errors)
     }
 
@@ -131,7 +131,7 @@ impl Parser {
         };
 
         let src = SourceRange::new(self.module_id, range);
-        self.errors.push(ErrorComp::new(msg, src, None));
+        self.errors.error(Error::new(msg, src, None));
     }
 
     fn bump_any(&mut self) {

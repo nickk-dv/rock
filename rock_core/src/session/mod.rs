@@ -1,5 +1,5 @@
 use crate::ast;
-use crate::error::ErrorComp;
+use crate::error::Error;
 use crate::fs_env;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::package;
@@ -82,7 +82,7 @@ impl FileCache {
 impl<'s> Session<'s> {
     pub const ROOT_ID: PackageID = PackageID::new_raw(0);
 
-    pub fn new(cache: &FileCache, building: bool) -> Result<Session<'s>, ErrorComp> {
+    pub fn new(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
         session_create(cache, building)
     }
 }
@@ -140,7 +140,7 @@ impl RockDirectory {
     }
 }
 
-fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, ErrorComp> {
+fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
         intern_lit: InternPool::new(),
@@ -158,7 +158,7 @@ fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, 
     let root_manifest = &session.pkg_storage.package(root_id).manifest;
 
     if building && root_manifest.package.kind == PackageKind::Lib {
-        return Err(ErrorComp::message(
+        return Err(Error::message(
             r#"cannot build or run a library package
 use `rock check` to check your library package,
 or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
@@ -197,12 +197,12 @@ fn process_package(
     cache: &FileCache,
     root_dir: &PathBuf,
     dependency: bool,
-) -> Result<PackageID, ErrorComp> {
+) -> Result<PackageID, Error> {
     let package_name = fs_env::filename_stem(root_dir)?;
     let name_id = session.intern_name.intern(package_name);
 
     if dependency && !root_dir.exists() {
-        return Err(ErrorComp::message(format!(
+        return Err(Error::message(format!(
             "could not find package directory, package fetch is not yet implemented\nexpected path: `{}`",
             root_dir.to_string_lossy()
         )));
@@ -211,7 +211,7 @@ fn process_package(
     let manifest_path = root_dir.join("Rock.toml");
     if !manifest_path.exists() {
         let in_kind = if dependency { "dependency" } else { "current" };
-        return Err(ErrorComp::message(format!(
+        return Err(Error::message(format!(
             "could not find manifest `Rock.toml` in {in_kind} directory\npath: `{}`",
             manifest_path.to_string_lossy()
         )));
@@ -221,7 +221,7 @@ fn process_package(
     let manifest = package::manifest_deserialize(manifest_text, &manifest_path)?;
     if dependency && manifest.package.kind == PackageKind::Bin {
         //@which dependency and for which package and where? not enough information
-        return Err(ErrorComp::message(
+        return Err(Error::message(
             "cannot depend on executable package, only library dependencies are allowed",
         ));
     }
@@ -231,7 +231,7 @@ fn process_package(
         //@duplicate, standardize `in` `kind` directory vs package messaging
         // for package related errors
         let in_kind = if dependency { "dependency" } else { "current" };
-        return Err(ErrorComp::message(format!(
+        return Err(Error::message(format!(
             "could not find `src` directory in {in_kind} directory\npath: `{}`",
             src_dir.to_string_lossy()
         )));
@@ -249,20 +249,20 @@ fn process_package(
         // are located within the same package (eg: ../../dir)
         for path in lib_paths {
             if !path.is_relative() {
-                return Err(ErrorComp::message(format!(
+                return Err(Error::message(format!(
                     "library path `{}` must be relative{location}",
                     path.to_string_lossy()
                 )));
             }
             let lib_path = root_dir.join(path);
             if !lib_path.exists() {
-                return Err(ErrorComp::message(format!(
+                return Err(Error::message(format!(
                     "library path `{}` does not exist{location}",
                     lib_path.to_string_lossy()
                 )));
             }
             if !lib_path.is_dir() {
-                return Err(ErrorComp::message(format!(
+                return Err(Error::message(format!(
                     "library path `{}` must be a directory{location}",
                     lib_path.to_string_lossy()
                 )));
@@ -286,7 +286,7 @@ fn process_directory(
     cache: &FileCache,
     package_id: PackageID,
     path: PathBuf,
-) -> Result<RockDirectory, ErrorComp> {
+) -> Result<RockDirectory, Error> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = session.intern_name.intern(filename);
     let mut modules = Vec::new();
@@ -324,7 +324,7 @@ fn process_file(
     cache: &FileCache,
     package_id: PackageID,
     path: PathBuf,
-) -> Result<ModuleID, ErrorComp> {
+) -> Result<ModuleID, Error> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = session.intern_name.intern(filename);
     let source = read_file(cache, &path)?;
@@ -343,7 +343,7 @@ fn process_file(
     Ok(module_id)
 }
 
-fn read_file(cache: &FileCache, path: &PathBuf) -> Result<String, ErrorComp> {
+fn read_file(cache: &FileCache, path: &PathBuf) -> Result<String, Error> {
     if let Some(source) = cache.get(path) {
         Ok(source)
     } else {

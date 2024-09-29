@@ -1,9 +1,10 @@
 use super::fold;
 use super::layout;
 use crate::ast;
-use crate::error::{ErrorComp, ErrorSink, Info, SourceRange, StringOrStr};
+use crate::error::ErrorWarningBuffer;
+use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr};
 use crate::hir;
-use crate::hir_lower::context::{HirCtx, HirEmit};
+use crate::hir_lower::context::HirCtx;
 use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::session::ModuleID;
 use crate::support::{IndexID, ID};
@@ -373,13 +374,13 @@ fn check_const_dependency_cycle<'hir>(
         if first {
             ctx_msg = msg.into();
         } else {
-            info_vec.push(Info::new_value(msg, info_src));
+            info_vec.push(Info::new_val(msg, info_src));
         }
 
         info_src = src;
     }
 
-    ctx.emit.error(ErrorComp::new_detailed_info_vec(
+    ctx.emit.error(Error::new_info_vec(
         "constant dependency cycle found:",
         ctx_msg,
         src,
@@ -854,12 +855,12 @@ fn add_expr_const_dependencies<'hir, 'ast>(
 }
 
 fn error_cannot_use_in_constants(
-    emit: &mut HirEmit,
+    emit: &mut ErrorWarningBuffer,
     origin_id: ModuleID,
     range: TextRange,
     name: &str,
 ) {
-    emit.error(ErrorComp::new(
+    emit.error(Error::new(
         format!("cannot use `{name}` expression in constants"),
         SourceRange::new(origin_id, range),
         None,
@@ -867,12 +868,12 @@ fn error_cannot_use_in_constants(
 }
 
 fn error_cannot_refer_to_in_constants(
-    emit: &mut HirEmit,
+    emit: &mut ErrorWarningBuffer,
     origin_id: ModuleID,
     range: TextRange,
     name: &str,
 ) {
-    emit.error(ErrorComp::new(
+    emit.error(Error::new(
         format!("cannot refer to `{name}` in constants"),
         SourceRange::new(origin_id, range),
         None,

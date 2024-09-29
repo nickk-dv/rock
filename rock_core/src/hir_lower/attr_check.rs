@@ -1,7 +1,7 @@
-use super::context::{HirCtx, HirEmit};
+use super::context::HirCtx;
 use crate::ast;
 use crate::config;
-use crate::error::{ErrorComp, ErrorSink, SourceRange, WarningComp, WarningSink};
+use crate::error::{Error, ErrorSink, ErrorWarningBuffer, SourceRange, Warning, WarningSink};
 use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
 use crate::session::{ModuleID, RockModule};
@@ -65,7 +65,7 @@ pub fn check_attrs_proc<'ast>(
             attr_set.set(ProcFlag::Variadic);
         } else {
             //@use err:: for this unique case
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "`variadic` procedures must be `external`",
                 SourceRange::new(origin_id, item.name.range),
                 None,
@@ -657,7 +657,7 @@ crate::enum_as_str! {
 }
 
 pub fn check_attr_flag<T>(
-    emit: &mut HirEmit,
+    emit: &mut ErrorWarningBuffer,
     new_flag: T,
     attr_set: &mut BitSet<T>,
     attr_data: Option<(AttrKind, SourceRange)>,
@@ -668,7 +668,7 @@ pub fn check_attr_flag<T>(
 {
     if attr_set.contains(new_flag) {
         if let Some((kind, attr_src)) = attr_data {
-            emit.warning(WarningComp::new(
+            emit.warning(Warning::new(
                 format!("duplicate attribute `{}`", kind.as_str()),
                 attr_src,
                 None,
@@ -688,7 +688,7 @@ pub fn check_attr_flag<T>(
         }
 
         if let Some((_, attr_src)) = attr_data {
-            emit.error(ErrorComp::new(
+            emit.error(Error::new(
                 format!(
                     "attribute `{}` cannot be applied to `{}` {item_kinds}",
                     new_flag.as_str(),
@@ -698,7 +698,7 @@ pub fn check_attr_flag<T>(
                 None,
             ));
         } else {
-            emit.error(ErrorComp::new(
+            emit.error(Error::new(
                 format!(
                     "`{}` {item_kinds} cannot be `{}`",
                     new_flag.as_str(),

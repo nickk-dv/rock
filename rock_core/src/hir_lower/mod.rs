@@ -9,12 +9,14 @@ mod pass_5;
 mod pass_6;
 mod proc_scope;
 
-use crate::error::ResultComp;
+use crate::error::{ErrorWarningBuffer, WarningBuffer};
 use crate::hir;
 use crate::session::Session;
 use context::HirCtx;
 
-pub fn check<'hir, 'ast, 's_ref>(session: &'s_ref Session<'ast>) -> ResultComp<hir::Hir<'hir>> {
+pub fn check<'hir, 'ast, 's_ref>(
+    session: &'s_ref Session<'ast>,
+) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
     let mut ctx = HirCtx::new(session);
     pass_1::populate_scopes(&mut ctx);
     pass_2::resolve_imports(&mut ctx);

@@ -1,7 +1,7 @@
 use super::ast_layer as cst;
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::{DiagnosticCollection, ErrorComp, ResultComp, SourceRange};
+use crate::error::{Error, ErrorBuffer, SourceRange};
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, TempBuffer, Timer, ID};
@@ -21,7 +21,7 @@ struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
 }
 
 struct AstBuildState<'ast> {
-    errors: Vec<ErrorComp>,
+    errors: ErrorBuffer,
     items: TempBuffer<ast::Item<'ast>>,
     attrs: TempBuffer<ast::Attr<'ast>>,
     attr_params: TempBuffer<ast::AttrParam>,
@@ -73,7 +73,7 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
 impl<'ast> AstBuildState<'ast> {
     fn new() -> AstBuildState<'ast> {
         AstBuildState {
-            errors: Vec::new(),
+            errors: ErrorBuffer::default(),
             items: TempBuffer::new(128),
             attrs: TempBuffer::new(32),
             attr_params: TempBuffer::new(32),
@@ -94,10 +94,10 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-//@re-think entire error handling system
-// simplify ErrorSink interface to allow any error collection strategy
-// potentially add WarningSink trait aswell
-pub fn parse<'ast>(session: &mut Session) -> ResultComp<()> {
+//@wasteful since asts are not needed
+// if any of the syntax trees failed to parse
+// current `in-bulk` apis are bad
+pub fn parse<'ast>(session: &mut Session) -> Result<(), ErrorBuffer> {
     let t_total = Timer::new();
 
     //@state could be re-used via storing it in Session,
@@ -126,19 +126,14 @@ pub fn parse<'ast>(session: &mut Session) -> ResultComp<()> {
                 session.module_trees.push(Some(tree));
             }
             Err(errors) => {
-                state.errors.extend(errors);
+                state.errors.join_e(errors);
                 session.module_trees.push(None);
             }
         }
     }
 
     t_total.stop("ast parse (tree) total");
-
-    if state.errors.is_empty() {
-        ResultComp::Ok(((), vec![]))
-    } else {
-        ResultComp::Err(DiagnosticCollection::new().join_errors(state.errors))
-    }
+    state.errors.result(())
 }
 
 fn source_file<'ast>(

@@ -1,5 +1,5 @@
 use super::pass_5::Expectation;
-use crate::error::{Info, SourceRange, WarningComp, WarningSink};
+use crate::error::{Info, SourceRange, Warning, WarningSink};
 use crate::hir;
 use crate::intern::InternName;
 use crate::session::ModuleID;
@@ -272,7 +272,7 @@ impl<'hir> ProcScope<'hir> {
                 }
             }
             Diverges::Always(range) => {
-                emit.warning(WarningComp::new(
+                emit.warning(Warning::new(
                     "unreachable statement",
                     SourceRange::new(origin_id, stmt_range),
                     Info::new(

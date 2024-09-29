@@ -2,7 +2,7 @@ use super::constant;
 use super::context::HirCtx;
 use super::pass_5::{self, Expectation};
 use crate::ast;
-use crate::error::{ErrorComp, ErrorSink, Info, SourceRange};
+use crate::error::{Error, ErrorSink, Info, SourceRange};
 use crate::hir;
 use crate::session::ModuleID;
 
@@ -148,7 +148,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'
 
     for param in item.params.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == param.name.id) {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "parameter `{}` is defined multiple times",
                     ctx.name_str(param.name.id)
@@ -193,7 +193,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
 
     for variant in item.variants.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "variant `{}` is defined multiple times",
                     ctx.name_str(variant.name.id)
@@ -258,7 +258,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
     }
 
     if tag_ty.is_err() && any_constant {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             "enum type must be specified\nuse #[repr(<int_ty>)] or #[repr(C)] attribute",
             SourceRange::new(origin_id, enum_name.range),
             None,
@@ -308,7 +308,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'
 
     for field in item.fields.iter() {
         if let Some(existing) = unique.iter().find(|&it| it.name.id == field.name.id) {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "field `{}` is defined multiple times",
                     ctx.name_str(field.name.id)

@@ -4,7 +4,7 @@ mod emit_mod;
 mod emit_stmt;
 
 use rock_core::config::{BuildKind, TargetOS, TargetTriple};
-use rock_core::error::ErrorComp;
+use rock_core::error::Error;
 use rock_core::fs_env;
 use rock_core::hir;
 use rock_core::session::Session;
@@ -16,11 +16,7 @@ pub struct BuildOptions {
     pub emit_llvm: bool,
 }
 
-pub fn build(
-    hir: hir::Hir,
-    session: &Session,
-    options: BuildOptions,
-) -> Result<PathBuf, ErrorComp> {
+pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<PathBuf, Error> {
     let triple = TargetTriple::host();
     let target_os = triple.os();
     let (target, module) =
@@ -56,7 +52,7 @@ pub fn build(
 
     let object_path = build_path.join(format!("{bin_name}.o"));
     let object_result = module.emit_to_file(&target, object_path.to_str().unwrap());
-    object_result.map_err(|e| ErrorComp::message(format!("llvm emit object failed:\n{}", e)))?;
+    object_result.map_err(|e| Error::message(format!("llvm emit object failed:\n{}", e)))?;
 
     let arg_obj = object_path.to_string_lossy().to_string();
     let mut args: Vec<String> = vec![arg_obj];
@@ -113,16 +109,16 @@ pub fn build(
     let status = std::process::Command::new(linker_path)
         .args(args)
         .status()
-        .map_err(|io_error| ErrorComp::message(format!("failed to link program:\n{}", io_error)))?;
+        .map_err(|io_error| Error::message(format!("failed to link program:\n{}", io_error)))?;
     Ok(binary_path)
 }
 
-pub fn run(binary_path: PathBuf, args: Vec<String>) -> Result<(), ErrorComp> {
+pub fn run(binary_path: PathBuf, args: Vec<String>) -> Result<(), Error> {
     let _ = std::process::Command::new(&binary_path)
         .args(args)
         .status()
         .map_err(|io_error| {
-            ErrorComp::message(format!(
+            Error::message(format!(
                 "failed to run executable `{}`\nreason: {}",
                 binary_path.to_string_lossy(),
                 io_error

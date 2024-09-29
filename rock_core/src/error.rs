@@ -1,61 +1,35 @@
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-pub enum ResultComp<T> {
-    Ok((T, Vec<WarningComp>)),
-    Err(DiagnosticCollection),
-}
-
-pub struct DiagnosticCollection {
-    errors: Vec<ErrorComp>,
-    warnings: Vec<WarningComp>,
-}
-
-pub trait WarningSink {
-    fn warning(&mut self, warning: WarningComp);
-}
-
-pub trait ErrorSink {
-    fn error(&mut self, error: ErrorComp);
-
-    fn error_count(&self) -> usize;
-
-    fn did_error(&self, error_count: usize) -> bool {
-        self.error_count() > error_count
-    }
-}
-
-pub struct ErrorComp(Diagnostic);
-pub struct WarningComp(Diagnostic);
-pub struct Info;
+pub struct Info(DiagnosticContext);
+pub struct Error(Diagnostic);
+pub struct Warning(Diagnostic);
 
 pub struct Diagnostic {
-    message: StringOrStr,
-    kind: DiagnosticKind,
+    msg: StringOrStr,
+    data: DiagnosticData,
 }
 
-pub enum DiagnosticKind {
+pub enum DiagnosticData {
     Message,
     Context {
         main: DiagnosticContext,
-        info: Option<DiagnosticContext>,
+        info: Option<Info>,
     },
     ContextVec {
         main: DiagnosticContext,
-        info_vec: Vec<DiagnosticContext>,
+        info_vec: Vec<Info>,
     },
 }
 
 pub struct DiagnosticContext {
-    message: StringOrStr,
-    source: SourceRange,
+    msg: StringOrStr,
+    src: SourceRange,
 }
 
-#[derive(Copy, Clone)]
-pub enum DiagnosticSeverity {
-    Info,
-    Error,
-    Warning,
+pub enum StringOrStr {
+    String(String),
+    Str(&'static str),
 }
 
 #[derive(Copy, Clone)]
@@ -64,273 +38,117 @@ pub struct SourceRange {
     module_id: ModuleID,
 }
 
-pub enum StringOrStr {
-    String(String),
-    Str(&'static str),
-}
-
-impl<T> ResultComp<T> {
-    pub fn new(value: T, diagnostics: DiagnosticCollection) -> ResultComp<T> {
-        if diagnostics.errors.is_empty() {
-            ResultComp::Ok((value, diagnostics.warnings))
-        } else {
-            ResultComp::Err(diagnostics)
-        }
-    }
-
-    pub fn from_error(result: Result<T, ErrorComp>) -> ResultComp<T> {
-        match result {
-            Ok(value) => ResultComp::Ok((value, vec![])),
-            Err(error) => ResultComp::Err(DiagnosticCollection::new().join_errors(vec![error])),
-        }
-    }
-
-    pub fn from_errors(result: Result<T, Vec<ErrorComp>>) -> ResultComp<T> {
-        match result {
-            Ok(value) => ResultComp::Ok((value, vec![])),
-            Err(errors) => ResultComp::Err(DiagnosticCollection::new().join_errors(errors)),
-        }
-    }
-
-    pub fn is_ok(&self) -> bool {
-        matches!(self, ResultComp::Ok(..))
-    }
-
-    pub fn is_err(&self) -> bool {
-        matches!(self, ResultComp::Err(..))
-    }
-
-    pub fn into_result(
-        self,
-        mut warnings_prev: Vec<WarningComp>,
-    ) -> Result<(T, Vec<WarningComp>), DiagnosticCollection> {
-        match self {
-            ResultComp::Ok((value, warnings)) => {
-                if warnings_prev.is_empty() {
-                    Ok((value, warnings))
-                } else {
-                    warnings_prev.extend(warnings);
-                    Ok((value, warnings_prev))
-                }
-            }
-            ResultComp::Err(mut diagnostics) => {
-                if warnings_prev.is_empty() {
-                    Err(diagnostics)
-                } else {
-                    warnings_prev.extend(diagnostics.warnings);
-                    diagnostics.warnings = warnings_prev;
-                    Err(diagnostics)
-                }
-            }
-        }
-    }
-}
-
-impl DiagnosticCollection {
-    pub fn new() -> DiagnosticCollection {
-        DiagnosticCollection {
-            errors: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-
-    pub fn from_result(
-        result: Result<Vec<WarningComp>, DiagnosticCollection>,
-    ) -> DiagnosticCollection {
-        match result {
-            Ok(warnings) => DiagnosticCollection::new().join_warnings(warnings),
-            Err(diagnostics) => diagnostics,
-        }
-    }
-
-    pub fn errors(&self) -> &[ErrorComp] {
-        &self.errors
-    }
-    //@hack
-    pub fn errors_moveout(self) -> Vec<ErrorComp> {
-        self.errors
-    }
-    pub fn warnings(&self) -> &[WarningComp] {
-        &self.warnings
-    }
-    pub fn warnings_moveout(self) -> Vec<WarningComp> {
-        self.warnings
-    }
-
-    pub fn error(&mut self, error: ErrorComp) {
-        self.errors.push(error);
-    }
-    pub fn warning(&mut self, warning: WarningComp) {
-        self.warnings.push(warning);
-    }
-
-    #[must_use]
-    pub fn join_errors(mut self, errors: Vec<ErrorComp>) -> DiagnosticCollection {
-        if self.errors.is_empty() {
-            self.errors = errors;
-        } else {
-            self.errors.extend(errors);
-        }
-        self
-    }
-    #[must_use]
-    pub fn join_warnings(mut self, warnings: Vec<WarningComp>) -> DiagnosticCollection {
-        if self.warnings.is_empty() {
-            self.warnings = warnings
-        } else {
-            self.warnings.extend(warnings);
-        }
-        self
-    }
-    #[must_use]
-    pub fn join_collection(mut self, other: DiagnosticCollection) -> DiagnosticCollection {
-        self.errors.extend(other.errors);
-        self.warnings.extend(other.warnings);
-        self
-    }
-}
-
-impl ErrorSink for Vec<ErrorComp> {
-    fn error(&mut self, error: ErrorComp) {
-        self.push(error);
-    }
-    fn error_count(&self) -> usize {
-        self.len()
-    }
-}
-
-impl ErrorSink for DiagnosticCollection {
-    fn error(&mut self, error: ErrorComp) {
-        self.error(error);
-    }
-    fn error_count(&self) -> usize {
-        self.errors().len()
-    }
-}
-
-impl ErrorComp {
-    pub fn diagnostic(&self) -> &Diagnostic {
-        &self.0
-    }
-
-    pub fn message(msg: impl Into<StringOrStr>) -> ErrorComp {
-        ErrorComp(Diagnostic::new(msg.into(), DiagnosticKind::Message))
-    }
-
-    pub fn new(
-        msg: impl Into<StringOrStr>,
-        src: SourceRange,
-        info: Option<DiagnosticContext>,
-    ) -> ErrorComp {
-        ErrorComp(Diagnostic::new(
-            msg.into(),
-            DiagnosticKind::Context {
-                main: DiagnosticContext::new("".into(), src),
-                info,
-            },
-        ))
-    }
-
-    pub fn new_detailed(
-        msg: impl Into<StringOrStr>,
-        ctx_msg: impl Into<StringOrStr>,
-        src: SourceRange,
-        info: Option<DiagnosticContext>,
-    ) -> ErrorComp {
-        ErrorComp(Diagnostic::new(
-            msg.into(),
-            DiagnosticKind::Context {
-                main: DiagnosticContext::new(ctx_msg.into(), src),
-                info,
-            },
-        ))
-    }
-
-    pub fn new_detailed_info_vec(
-        msg: impl Into<StringOrStr>,
-        ctx_msg: impl Into<StringOrStr>,
-        src: SourceRange,
-        info_vec: Vec<DiagnosticContext>,
-    ) -> ErrorComp {
-        ErrorComp(Diagnostic::new(
-            msg.into(),
-            DiagnosticKind::ContextVec {
-                main: DiagnosticContext::new(ctx_msg.into(), src),
-                info_vec,
-            },
-        ))
-    }
-}
-
-impl WarningComp {
-    pub fn diagnostic(&self) -> &Diagnostic {
-        &self.0
-    }
-
-    pub fn message(msg: impl Into<StringOrStr>) -> WarningComp {
-        WarningComp(Diagnostic::new(msg.into(), DiagnosticKind::Message))
-    }
-
-    pub fn new(
-        msg: impl Into<StringOrStr>,
-        src: SourceRange,
-        info: Option<DiagnosticContext>,
-    ) -> WarningComp {
-        WarningComp(Diagnostic::new(
-            msg.into(),
-            DiagnosticKind::Context {
-                main: DiagnosticContext::new("".into(), src),
-                info,
-            },
-        ))
-    }
-
-    pub fn new_detailed(
-        msg: impl Into<StringOrStr>,
-        ctx_msg: impl Into<StringOrStr>,
-        src: SourceRange,
-        info: Option<DiagnosticContext>,
-    ) -> WarningComp {
-        WarningComp(Diagnostic::new(
-            msg.into(),
-            DiagnosticKind::Context {
-                main: DiagnosticContext::new(ctx_msg.into(), src),
-                info,
-            },
-        ))
-    }
+#[derive(Copy, Clone)]
+pub enum Severity {
+    Info,
+    Error,
+    Warning,
 }
 
 impl Info {
-    pub fn new(msg: impl Into<StringOrStr>, source: SourceRange) -> Option<DiagnosticContext> {
-        Some(DiagnosticContext::new(msg.into(), source))
+    pub fn new(msg: impl Into<StringOrStr>, src: SourceRange) -> Option<Info> {
+        Some(Info(DiagnosticContext::new(msg, src)))
     }
-    pub fn new_value(msg: impl Into<StringOrStr>, source: SourceRange) -> DiagnosticContext {
-        DiagnosticContext::new(msg.into(), source)
+    pub fn new_val(msg: impl Into<StringOrStr>, src: SourceRange) -> Info {
+        Info(DiagnosticContext::new(msg, src))
+    }
+
+    pub fn context(&self) -> &DiagnosticContext {
+        &self.0
+    }
+}
+
+// creation usage:
+// + message
+// + new
+// - new_ctx_msg
+// + new_info_vec
+
+impl Error {
+    pub fn message(msg: impl Into<StringOrStr>) -> Error {
+        let data = DiagnosticData::Message;
+        Error(Diagnostic::new(msg, data))
+    }
+    pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Error {
+        let data = DiagnosticData::Context {
+            main: DiagnosticContext::new_empty(src),
+            info,
+        };
+        Error(Diagnostic::new(msg, data))
+    }
+    pub fn new_info_vec(
+        msg: impl Into<StringOrStr>,
+        ctx_msg: impl Into<StringOrStr>,
+        src: SourceRange,
+        info_vec: Vec<Info>,
+    ) -> Error {
+        let data = DiagnosticData::ContextVec {
+            main: DiagnosticContext::new(ctx_msg, src),
+            info_vec,
+        };
+        Error(Diagnostic::new(msg, data))
+    }
+
+    pub fn diagnostic(&self) -> &Diagnostic {
+        &self.0
+    }
+}
+
+// creation usage:
+// - message
+// + new
+// - new_ctx_msg
+// - new_info_vec
+
+impl Warning {
+    pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Warning {
+        let data = DiagnosticData::Context {
+            main: DiagnosticContext::new_empty(src),
+            info,
+        };
+        Warning(Diagnostic::new(msg, data))
+    }
+
+    pub fn diagnostic(&self) -> &Diagnostic {
+        &self.0
     }
 }
 
 impl Diagnostic {
-    fn new(message: StringOrStr, kind: DiagnosticKind) -> Diagnostic {
-        Diagnostic { message, kind }
+    fn new(msg: impl Into<StringOrStr>, data: DiagnosticData) -> Diagnostic {
+        Diagnostic {
+            msg: msg.into(),
+            data,
+        }
     }
-    pub fn message(&self) -> &StringOrStr {
-        &self.message
+
+    pub fn msg(&self) -> &StringOrStr {
+        &self.msg
     }
-    pub fn kind(&self) -> &DiagnosticKind {
-        &self.kind
+    pub fn data(&self) -> &DiagnosticData {
+        &self.data
     }
 }
 
 impl DiagnosticContext {
-    fn new(message: StringOrStr, source: SourceRange) -> DiagnosticContext {
-        DiagnosticContext { message, source }
+    fn new(msg: impl Into<StringOrStr>, src: SourceRange) -> DiagnosticContext {
+        DiagnosticContext {
+            msg: msg.into(),
+            src,
+        }
     }
-    pub fn message(&self) -> &str {
-        self.message.as_str()
+    fn new_empty(src: SourceRange) -> DiagnosticContext {
+        DiagnosticContext {
+            msg: StringOrStr::Str(""),
+            src,
+        }
     }
-    pub fn source(&self) -> SourceRange {
-        self.source
+
+    pub fn msg(&self) -> &str {
+        self.msg.as_str()
+    }
+    pub fn src(&self) -> SourceRange {
+        self.src
     }
 }
 
@@ -364,5 +182,191 @@ impl From<&'static str> for StringOrStr {
 impl From<String> for StringOrStr {
     fn from(value: String) -> StringOrStr {
         StringOrStr::String(value)
+    }
+}
+
+//==================== COLLECTION BUFFERS ====================
+
+#[derive(Default)]
+pub struct ErrorBuffer {
+    collected: bool,
+    errors: Vec<Error>,
+}
+
+#[derive(Default)]
+pub struct WarningBuffer {
+    collected: bool,
+    warnings: Vec<Warning>,
+}
+
+#[derive(Default)]
+pub struct ErrorWarningBuffer {
+    collected: bool,
+    errors: Vec<Error>,
+    warnings: Vec<Warning>,
+}
+
+impl ErrorBuffer {
+    pub fn result<T>(self, value: T) -> Result<T, ErrorBuffer> {
+        if self.errors.is_empty() {
+            let _ = self.collect();
+            Ok(value)
+        } else {
+            Err(self)
+        }
+    }
+
+    pub fn collect(mut self) -> Vec<Error> {
+        self.collected = true;
+        let errors = std::mem::take(&mut self.errors);
+        errors
+    }
+
+    pub fn join_e(&mut self, err: ErrorBuffer) {
+        let errors = err.collect();
+        self.errors.extend(errors);
+    }
+}
+
+impl WarningBuffer {
+    pub fn collect(mut self) -> Vec<Warning> {
+        self.collected = true;
+        let warnings = std::mem::take(&mut self.warnings);
+        warnings
+    }
+
+    pub fn join_w(&mut self, warn: WarningBuffer) {
+        let warnings = warn.collect();
+        self.warnings.extend(warnings);
+    }
+}
+
+impl ErrorWarningBuffer {
+    pub fn result<T>(self, value: T) -> Result<(T, WarningBuffer), ErrorWarningBuffer> {
+        if self.errors.is_empty() {
+            let (_, warnings) = self.collect();
+            let mut warn = WarningBuffer::default();
+            warn.warnings = warnings;
+            Ok((value, warn))
+        } else {
+            Err(self)
+        }
+    }
+
+    pub fn collect(mut self) -> (Vec<Error>, Vec<Warning>) {
+        self.collected = true;
+        let errors = std::mem::take(&mut self.errors);
+        let warnings = std::mem::take(&mut self.warnings);
+        (errors, warnings)
+    }
+
+    pub fn join_e(&mut self, err: ErrorBuffer) {
+        let errors = err.collect();
+        self.errors.extend(errors);
+    }
+    pub fn join_w(&mut self, warn: WarningBuffer) {
+        let warnings = warn.collect();
+        self.warnings.extend(warnings);
+    }
+    pub fn join_ew(&mut self, errw: ErrorWarningBuffer) {
+        let (errors, warnings) = errw.collect();
+        self.errors.extend(errors);
+        self.warnings.extend(warnings);
+    }
+}
+
+impl From<Error> for ErrorBuffer {
+    fn from(error: Error) -> ErrorBuffer {
+        let mut err = ErrorBuffer::default();
+        err.error(error);
+        err
+    }
+}
+
+impl From<ErrorBuffer> for ErrorWarningBuffer {
+    fn from(err: ErrorBuffer) -> ErrorWarningBuffer {
+        let mut errw = ErrorWarningBuffer::default();
+        errw.errors = err.collect();
+        errw
+    }
+}
+
+impl Drop for ErrorBuffer {
+    fn drop(&mut self) {
+        if !self.collected {
+            panic!(
+                "internal: ErrorBuffer was not collected! E:{}",
+                self.errors.len(),
+            );
+        }
+    }
+}
+impl Drop for WarningBuffer {
+    fn drop(&mut self) {
+        if !self.collected {
+            panic!(
+                "internal: WarningBuffer was not collected! W:{}",
+                self.warnings.len(),
+            );
+        }
+    }
+}
+impl Drop for ErrorWarningBuffer {
+    fn drop(&mut self) {
+        if !self.collected {
+            panic!(
+                "internal: ErrorWarningBuffer was not collected! E:{} W:{}",
+                self.errors.len(),
+                self.warnings.len(),
+            );
+        }
+    }
+}
+
+//==================== COLLECTION TRAITS ====================
+
+pub trait ErrorSink {
+    fn error(&mut self, error: Error);
+    fn error_count(&self) -> usize;
+
+    fn did_error(&self, prev: usize) -> bool {
+        prev < self.error_count()
+    }
+}
+pub trait WarningSink {
+    fn warning(&mut self, warning: Warning);
+    fn warning_count(&self) -> usize;
+}
+
+impl ErrorSink for ErrorBuffer {
+    fn error(&mut self, error: Error) {
+        self.errors.push(error);
+    }
+    fn error_count(&self) -> usize {
+        self.errors.len()
+    }
+}
+impl WarningSink for WarningBuffer {
+    fn warning(&mut self, warning: Warning) {
+        self.warnings.push(warning);
+    }
+    fn warning_count(&self) -> usize {
+        self.warnings.len()
+    }
+}
+impl ErrorSink for ErrorWarningBuffer {
+    fn error(&mut self, error: Error) {
+        self.errors.push(error);
+    }
+    fn error_count(&self) -> usize {
+        self.errors.len()
+    }
+}
+impl WarningSink for ErrorWarningBuffer {
+    fn warning(&mut self, warning: Warning) {
+        self.warnings.push(warning);
+    }
+    fn warning_count(&self) -> usize {
+        self.warnings.len()
     }
 }

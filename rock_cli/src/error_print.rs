@@ -1,35 +1,54 @@
 use crate::ansi::AnsiStyle;
 use rock_core::error::{
-    Diagnostic, DiagnosticCollection, DiagnosticContext, DiagnosticKind, DiagnosticSeverity,
+    Diagnostic, DiagnosticContext, DiagnosticData, Error, ErrorBuffer, ErrorWarningBuffer,
+    Severity, Warning, WarningBuffer,
 };
 use rock_core::session::{RockModule, Session};
 use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
 
-pub fn print_errors(session: Option<&Session>, diagnostics: DiagnosticCollection) {
-    let mut handle = BufWriter::new(std::io::stderr());
-    let mut state = StateFmt::new();
+pub fn print_errors(session: Option<&Session>, err: ErrorBuffer) {
+    let errors = err.collect();
+    print_impl(session, errors, vec![])
+}
 
-    for warning in diagnostics.warnings() {
+pub fn print_warnings(session: Option<&Session>, warn: WarningBuffer) {
+    let warnings = warn.collect();
+    print_impl(session, vec![], warnings)
+}
+
+pub fn print_errors_warnings(session: Option<&Session>, errw: ErrorWarningBuffer) {
+    let (errors, warnings) = errw.collect();
+    print_impl(session, errors, warnings)
+}
+
+pub fn print_impl(session: Option<&Session>, errors: Vec<Error>, warnings: Vec<Warning>) {
+    let mut state = StateFmt::new();
+    let mut handle = BufWriter::new(std::io::stderr());
+
+    for warning in warnings.iter() {
         print_diagnostic(
             session,
             warning.diagnostic(),
-            DiagnosticSeverity::Warning,
+            Severity::Warning,
             &mut state,
             &mut handle,
         );
     }
-    for error in diagnostics.errors() {
+    for error in errors.iter() {
         print_diagnostic(
             session,
             error.diagnostic(),
-            DiagnosticSeverity::Error,
+            Severity::Error,
             &mut state,
             &mut handle,
         );
     }
     let _ = handle.flush();
+
+    std::mem::forget(errors);
+    std::mem::forget(warnings);
 }
 
 struct StateFmt<'src> {
@@ -46,7 +65,7 @@ struct ContextFmt<'src> {
     location: TextLocation,
     line_range: TextRange,
     line_num: String,
-    severity: DiagnosticSeverity,
+    severity: Severity,
 }
 
 impl<'src> StateFmt<'src> {
@@ -73,15 +92,15 @@ impl<'src> ContextFmt<'src> {
     fn new(
         session: &'src Session,
         context: &'src DiagnosticContext,
-        severity: DiagnosticSeverity,
+        severity: Severity,
     ) -> ContextFmt<'src> {
-        let module = session.pkg_storage.module(context.source().module_id());
+        let module = session.pkg_storage.module(context.src().module_id());
         let path = module
             .path
             .strip_prefix(&session.cwd)
             .unwrap_or_else(|_| &module.path);
 
-        let range = context.source().range();
+        let range = context.src().range();
         let location = text::find_text_location(&module.source, range.start(), &module.line_ranges);
         let line_num = location.line().to_string();
         let line_range = module.line_ranges[location.line_index()];
@@ -89,7 +108,7 @@ impl<'src> ContextFmt<'src> {
         ContextFmt {
             module,
             path,
-            message: context.message(),
+            message: context.msg(),
             range,
             location,
             line_range,
@@ -102,7 +121,7 @@ impl<'src> ContextFmt<'src> {
 fn print_diagnostic<'src>(
     session: Option<&'src Session>,
     diagnostic: &'src Diagnostic,
-    severity: DiagnosticSeverity,
+    severity: Severity,
     state: &mut StateFmt<'src>,
     handle: &mut BufWriter<Stderr>,
 ) {
@@ -114,30 +133,30 @@ fn print_diagnostic<'src>(
         "{}{}: {wb}{}{r}",
         severity_color(&state.style, severity),
         severity_name(severity),
-        diagnostic.message().as_str(),
+        diagnostic.msg().as_str(),
     );
 
-    match diagnostic.kind() {
-        DiagnosticKind::Message => {
+    match diagnostic.data() {
+        DiagnosticData::Message => {
             let _ = writeln!(handle);
             return;
         }
-        DiagnosticKind::Context { main, info } => {
+        DiagnosticData::Context { main, info } => {
             let session = session.expect("session context");
             state.reset();
 
-            state.push(ContextFmt::new(session, main, severity));
+            state.push(ContextFmt::new(session, &main, severity));
             if let Some(info) = info {
-                state.push(ContextFmt::new(session, info, DiagnosticSeverity::Info));
+                state.push(ContextFmt::new(session, info.context(), Severity::Info));
             }
         }
-        DiagnosticKind::ContextVec { main, info_vec } => {
+        DiagnosticData::ContextVec { main, info_vec } => {
             let session = session.expect("session context");
             state.reset();
 
-            state.push(ContextFmt::new(session, main, severity));
+            state.push(ContextFmt::new(session, &main, severity));
             for info in info_vec {
-                state.push(ContextFmt::new(session, info, DiagnosticSeverity::Info));
+                state.push(ContextFmt::new(session, info.context(), Severity::Info));
             }
         }
     };
@@ -200,25 +219,25 @@ fn normalized_tab_len(text: &str) -> usize {
         .sum::<usize>()
 }
 
-const fn severity_name(severity: DiagnosticSeverity) -> &'static str {
+const fn severity_name(severity: Severity) -> &'static str {
     match severity {
-        DiagnosticSeverity::Info => "info",
-        DiagnosticSeverity::Error => "error",
-        DiagnosticSeverity::Warning => "warning",
+        Severity::Info => "info",
+        Severity::Error => "error",
+        Severity::Warning => "warning",
     }
 }
 
-const fn severity_marker(severity: DiagnosticSeverity) -> &'static str {
+const fn severity_marker(severity: Severity) -> &'static str {
     match severity {
-        DiagnosticSeverity::Info => "-",
-        DiagnosticSeverity::Error | DiagnosticSeverity::Warning => "^",
+        Severity::Info => "-",
+        Severity::Error | Severity::Warning => "^",
     }
 }
 
-const fn severity_color(style: &AnsiStyle, severity: DiagnosticSeverity) -> &'static str {
+const fn severity_color(style: &AnsiStyle, severity: Severity) -> &'static str {
     match severity {
-        DiagnosticSeverity::Info => style.err.green_bold,
-        DiagnosticSeverity::Error => style.err.red_bold,
-        DiagnosticSeverity::Warning => style.err.yellow_bold,
+        Severity::Info => style.err.green_bold,
+        Severity::Error => style.err.red_bold,
+        Severity::Warning => style.err.yellow_bold,
     }
 }

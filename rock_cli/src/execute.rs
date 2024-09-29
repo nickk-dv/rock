@@ -1,7 +1,7 @@
-use super::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::ansi::AnsiStyle;
-use crate::error_format;
-use rock_core::error::{DiagnosticCollection, ErrorComp, ResultComp, WarningComp};
+use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
+use crate::error_print;
+use rock_core::error::{Error, ErrorWarningBuffer, WarningBuffer};
 use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package;
@@ -9,10 +9,11 @@ use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, Package
 use rock_core::package::semver::Semver;
 use rock_core::session::FileCache;
 use rock_core::session::Session;
+use rock_core::support::AsStr;
 use rock_core::syntax::ast_build;
 use std::collections::BTreeMap;
 
-pub fn command(command: Command) -> Result<(), ErrorComp> {
+pub fn command(command: Command) -> Result<(), Error> {
     match command {
         Command::New(data) => new(data),
         Command::Check => check(),
@@ -29,7 +30,7 @@ pub fn command(command: Command) -> Result<(), ErrorComp> {
     }
 }
 
-pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
+pub fn new(data: CommandNew) -> Result<(), Error> {
     let cwd = fs_env::dir_get_current_working()?;
     let root_dir = cwd.join(&data.name);
     let src_dir = root_dir.join("src");
@@ -42,14 +43,14 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     match data.kind {
         PackageKind::Bin => {
             let bin_content = format!(
-                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
+                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    let _ = printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &bin_content)?
         }
         PackageKind::Lib => {
             let lib_content = format!(
-                "{IMPORT_CORE_IO}proc test() {{\n    printf(c\"Lib `{}` works\\n\");\n}}\n",
+                "{IMPORT_CORE_IO}proc test() -> void {{\n    let _ = printf(c\"Lib `{}` works\\n\");\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
@@ -104,7 +105,7 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
             .stdout(std::process::Stdio::null())
             .status()
             .map_err(|io_error| {
-                ErrorComp::message(format!(
+                Error::message(format!(
                     "failed to initialize git repository\nreason: {}",
                     io_error
                 ))
@@ -123,71 +124,97 @@ pub fn new(data: CommandNew) -> Result<(), ErrorComp> {
     Ok(())
 }
 
-fn check() -> Result<(), ErrorComp> {
+fn check() -> Result<(), Error> {
     let cache = FileCache::new();
     let mut session = Session::new(&cache, false)?;
-    let result = check_impl(&mut session);
-    error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
+
+    match check_impl(&mut session) {
+        Ok(warn) => error_print::print_warnings(Some(&session), warn),
+        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    };
     return Ok(());
 
-    fn check_impl(session: &mut Session) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-        let ((), warnings) = ast_build::parse(session).into_result(vec![])?;
-        let (_, warnings) = hir_lower::check(session).into_result(warnings)?;
-        Ok(warnings)
+    fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
+        ast_build::parse(session)?;
+        let (_, warn) = hir_lower::check(session)?;
+        Ok(warn)
     }
 }
 
-fn build(data: CommandBuild) -> Result<(), ErrorComp> {
+fn build(data: CommandBuild) -> Result<(), Error> {
     let cache = FileCache::new();
     let mut session = Session::new(&cache, true)?;
-    let result = build_impl(&mut session, data);
-    error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
+
+    match build_impl(&mut session, data) {
+        Ok(()) => (),
+        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    }
     return Ok(());
 
-    fn build_impl(
-        session: &mut Session,
-        data: CommandBuild,
-    ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-        let ((), warnings) = ast_build::parse(session).into_result(vec![])?;
-        let (hir, warnings) = hir_lower::check(session).into_result(warnings)?;
-        let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
-        error_format::print_errors(Some(session), diagnostics);
+    fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ErrorWarningBuffer> {
+        ast_build::parse(session)?;
+        let (hir, warn) = hir_lower::check(session)?;
+        error_print::print_warnings(Some(&session), warn);
 
         let options = rock_llvm::build::BuildOptions {
             kind: data.kind,
             emit_llvm: data.emit_llvm,
         };
-        let result = rock_llvm::build::build(hir, session, options);
-        let (_, _) = ResultComp::from_error(result).into_result(vec![])?;
-        Ok(vec![])
+        match rock_llvm::build::build(hir, session, options) {
+            Ok(_) => {}
+            Err(error) => error_print::print_errors(Some(&session), error.into()),
+        }
+
+        let style = AnsiStyle::new();
+        let g = style.out.green_bold;
+        let r = style.out.reset;
+        println!("  {g}Finished{r} `{}`\n", data.kind.as_str());
+
+        Ok(())
     }
 }
 
-fn run(data: CommandRun) -> Result<(), ErrorComp> {
+fn run(data: CommandRun) -> Result<(), Error> {
     let cache = FileCache::new();
     let mut session = Session::new(&cache, true)?;
-    let result = run_impl(&mut session, data);
-    error_format::print_errors(Some(&session), DiagnosticCollection::from_result(result));
+
+    match run_impl(&mut session, data) {
+        Ok(()) => (),
+        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    }
     return Ok(());
 
-    fn run_impl(
-        session: &mut Session,
-        data: CommandRun,
-    ) -> Result<Vec<WarningComp>, DiagnosticCollection> {
-        let ((), warnings) = ast_build::parse(session).into_result(vec![])?;
-        let (hir, warnings) = hir_lower::check(session).into_result(warnings)?;
-        let diagnostics = DiagnosticCollection::new().join_warnings(warnings);
-        error_format::print_errors(Some(session), diagnostics);
+    fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ErrorWarningBuffer> {
+        ast_build::parse(session)?;
+        let (hir, warn) = hir_lower::check(session)?;
+        error_print::print_warnings(Some(&session), warn);
 
         let options = rock_llvm::build::BuildOptions {
             kind: data.kind,
             emit_llvm: data.emit_llvm,
         };
-        let result = rock_llvm::build::build(hir, session, options);
-        let (binary_path, _) = ResultComp::from_error(result).into_result(vec![])?;
-        let result = rock_llvm::build::run(binary_path, data.args);
-        let (_, _) = ResultComp::from_error(result).into_result(vec![])?;
-        Ok(vec![])
+        let bin_path = match rock_llvm::build::build(hir, session, options) {
+            Ok(path) => path,
+            Err(error) => {
+                error_print::print_errors(Some(&session), error.into());
+                return Ok(());
+            }
+        };
+        let style = AnsiStyle::new();
+        let g = style.out.green_bold;
+        let r = style.out.reset;
+        println!("  {g}Finished{r} `{}`", data.kind.as_str());
+
+        let run_path = bin_path
+            .strip_prefix(&session.cwd)
+            .unwrap_or_else(|_| &bin_path);
+        println!("   {g}Running{r} {}\n", run_path.to_string_lossy());
+
+        match rock_llvm::build::run(bin_path, data.args) {
+            Ok(()) => {}
+            Err(error) => error_print::print_errors(Some(&session), error.into()),
+        };
+        Ok(())
     }
 }
 

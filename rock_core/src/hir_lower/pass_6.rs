@@ -1,7 +1,7 @@
 use super::attr_check;
 use super::context::{HirCtx, SymbolKind};
 use crate::ast;
-use crate::error::{ErrorComp, ErrorSink, SourceRange};
+use crate::error::{Error, ErrorSink, SourceRange};
 use crate::hir;
 use crate::package::manifest::PackageKind;
 use crate::session::{ModuleOrDirectory, Session};
@@ -17,7 +17,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
     let main_id = match ctx.intern_name().get_id("main") {
         Some(main_id) => main_id,
         None => {
-            ctx.emit.error(ErrorComp::message(
+            ctx.emit.error(Error::message(
                 "could not find `main` module, expected `src/main.rock` to exist",
             ));
             return;
@@ -29,7 +29,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
     let origin_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,
         _ => {
-            ctx.emit.error(ErrorComp::message(
+            ctx.emit.error(Error::message(
                 "could not find `main` module, expected `src/main.rock` to exist",
             ));
             return;
@@ -47,7 +47,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
     if let Ok(SymbolKind::Proc(proc_id)) = defined {
         check_main_procedure(ctx, proc_id);
     } else {
-        ctx.emit.error(ErrorComp::message(
+        ctx.emit.error(Error::message(
             "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`",
         ));
     }
@@ -71,7 +71,7 @@ pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::
     let data = ctx.registry.proc_data(proc_id);
 
     if !data.params.is_empty() {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             "`main` procedure cannot have any parameters",
             item_src,
             None,
@@ -83,7 +83,7 @@ pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::
         data.return_ty,
         hir::Type::Error | hir::Type::Basic(ast::BasicType::S32)
     ) {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             "`main` procedure must return `s32`",
             SourceRange::new(data.origin_id, item.return_ty.range),
             None,

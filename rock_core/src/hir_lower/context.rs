@@ -1,9 +1,7 @@
 use super::proc_scope::ProcScope;
 use crate::ast;
 use crate::config::TargetTriple;
-use crate::error::{
-    DiagnosticCollection, ErrorComp, ErrorSink, ResultComp, SourceRange, WarningComp, WarningSink,
-};
+use crate::error::{Error, ErrorSink, ErrorWarningBuffer, SourceRange, WarningBuffer};
 use crate::errors as err;
 use crate::hir;
 use crate::intern::{InternLit, InternName, InternPool};
@@ -14,17 +12,13 @@ use std::collections::HashMap;
 
 pub struct HirCtx<'hir, 'ast, 's_ref> {
     pub arena: Arena<'hir>,
-    pub emit: HirEmit,
+    pub emit: ErrorWarningBuffer,
     pub proc: ProcScope<'hir>,
     pub scope: HirScope<'hir>,
     pub registry: Registry<'hir, 'ast>,
     pub const_intern: hir::ConstInternPool<'hir>,
     pub target: TargetTriple,
     pub session: &'s_ref Session<'ast>,
-}
-
-pub struct HirEmit {
-    diagnostics: DiagnosticCollection,
 }
 
 pub struct HirScope<'hir> {
@@ -73,7 +67,7 @@ pub struct Registry<'hir, 'ast> {
 impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
     pub fn new(session: &'s_ref Session<'ast>) -> HirCtx<'hir, 'ast, 's_ref> {
         let arena = Arena::new();
-        let emit = HirEmit::new();
+        let emit = ErrorWarningBuffer::default();
         let proc = ProcScope::dummy();
         let scope = HirScope::new(session);
         let registry = Registry::new(session);
@@ -110,28 +104,28 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
         self.session.module_asts[module_id.raw_index()].items
     }
 
-    pub fn hir_emit(self) -> ResultComp<hir::Hir<'hir>> {
-        if !self.emit.diagnostics.errors().is_empty() {
-            return ResultComp::Err(self.emit.diagnostics);
-        }
+    pub fn hir_emit(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
+        let ((), warnings) = self.emit.result(())?;
+
+        let mut emit = ErrorWarningBuffer::default();
+        emit.join_w(warnings);
 
         let mut const_values = Vec::with_capacity(self.registry.const_evals.len());
         let mut variant_tag_values = Vec::with_capacity(self.registry.const_evals.len());
-        let mut errors = Vec::new();
 
         for (eval, origin_id) in self.registry.const_evals.iter() {
             //@can just use `get_resolved` but for now emitting internal error
             // just rely on unreachable! in `get_resolved` when compiler is stable
             match *eval {
                 hir::ConstEval::Unresolved(expr) => {
-                    errors.push(ErrorComp::new(
+                    emit.error(Error::new(
                         "internal: trying to emit hir with ConstEval::Unresolved expression",
                         SourceRange::new(*origin_id, expr.0.range),
                         None,
                     ));
                 }
                 hir::ConstEval::ResolvedError => {
-                    errors.push(ErrorComp::message(
+                    emit.error(Error::message(
                         "internal: trying to emit hir with ConstEval::ResolvedError expression",
                     ));
                 }
@@ -151,45 +145,20 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
             }
         }
 
-        if errors.is_empty() {
-            let hir = hir::Hir {
-                arena: self.arena,
-                const_intern: self.const_intern,
-                procs: self.registry.hir_procs,
-                enums: self.registry.hir_enums,
-                structs: self.registry.hir_structs,
-                consts: self.registry.hir_consts,
-                globals: self.registry.hir_globals,
-                const_values,
-                variant_tag_values,
-            };
-            ResultComp::Ok((hir, self.emit.diagnostics.warnings_moveout()))
-        } else {
-            ResultComp::Err(self.emit.diagnostics.join_errors(errors))
-        }
-    }
-}
+        let ((), warnings) = emit.result(())?;
 
-impl ErrorSink for HirEmit {
-    fn error(&mut self, error: ErrorComp) {
-        self.diagnostics.error(error);
-    }
-    fn error_count(&self) -> usize {
-        self.diagnostics.errors().len()
-    }
-}
-
-impl WarningSink for HirEmit {
-    fn warning(&mut self, warning: WarningComp) {
-        self.diagnostics.warning(warning);
-    }
-}
-
-impl HirEmit {
-    fn new() -> HirEmit {
-        HirEmit {
-            diagnostics: DiagnosticCollection::new(),
-        }
+        let hir = hir::Hir {
+            arena: self.arena,
+            const_intern: self.const_intern,
+            procs: self.registry.hir_procs,
+            enums: self.registry.hir_enums,
+            structs: self.registry.hir_structs,
+            consts: self.registry.hir_consts,
+            globals: self.registry.hir_globals,
+            const_values,
+            variant_tag_values,
+        };
+        Ok((hir, warnings))
     }
 }
 

@@ -5,7 +5,7 @@ mod parser;
 pub mod syntax_kind;
 pub mod syntax_tree;
 
-use crate::error::ErrorComp;
+use crate::error::{Error, ErrorBuffer, ErrorSink};
 use crate::intern::{InternLit, InternPool};
 use crate::lexer;
 use crate::session::ModuleID;
@@ -17,17 +17,17 @@ pub fn parse_tree<'src, 'syn>(
     intern_lit: &'src mut InternPool<'_, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
-) -> (SyntaxTree<'syn>, Vec<ErrorComp>) {
-    let (tokens, lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
+) -> (SyntaxTree<'syn>, ErrorBuffer) {
+    let (tokens, mut lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
-    let (tokens, events, mut parse_errors) = parser.finish();
+    let (tokens, events, parse_errors) = parser.finish();
 
     let tree = syntax_tree::build(tokens, events);
 
-    parse_errors.extend(lex_errors);
-    (tree, parse_errors)
+    lex_errors.join_e(parse_errors);
+    (tree, lex_errors)
 }
 
 pub fn parse_tree_complete<'src, 'syn>(
@@ -35,20 +35,23 @@ pub fn parse_tree_complete<'src, 'syn>(
     intern_lit: &'src mut InternPool<'_, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
-) -> Result<SyntaxTree<'syn>, Vec<ErrorComp>> {
+) -> Result<SyntaxTree<'syn>, ErrorBuffer> {
     let (tokens, mut lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
     let (tokens, events, parse_errors) = parser.finish();
 
-    if lex_errors.is_empty() && parse_errors.is_empty() {
+    let parse_errors = parse_errors.collect();
+    if let Some(first) = parse_errors.into_iter().next() {
+        lex_errors.error(first);
+    }
+
+    if lex_errors.error_count() == 0 {
+        let _ = lex_errors.collect();
         let tree = syntax_tree::build(tokens, events);
         Ok(tree)
     } else {
-        if let Some(parse_error) = parse_errors.into_iter().next() {
-            lex_errors.push(parse_error);
-        }
         Err(lex_errors)
     }
 }

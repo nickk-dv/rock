@@ -1,4 +1,4 @@
-use crate::error::{DiagnosticCollection, ErrorComp, ErrorSink, SourceRange};
+use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::intern::{InternLit, InternPool};
 use crate::session::ModuleID;
@@ -6,15 +6,15 @@ use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, TokenList, Trivia};
 use std::{iter::Peekable, str::Chars};
 
-pub fn lex<'src>(
+pub fn lex<'src, 's>(
     source: &'src str,
-    intern_lit: &'src mut InternPool<'_, InternLit>,
+    intern_lit: &'src mut InternPool<'s, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
-) -> (TokenList, Vec<ErrorComp>) {
+) -> (TokenList, ErrorBuffer) {
     let mut lex = Lexer::new(source, intern_lit, module_id, with_trivia);
     source_file(&mut lex);
-    lex.finish()
+    (lex.tokens, lex.errors)
 }
 
 struct Lexer<'src, 's> {
@@ -22,7 +22,7 @@ struct Lexer<'src, 's> {
     chars: Peekable<Chars<'src>>,
     tokens: TokenList,
     buffer: String,
-    diagnostics: DiagnosticCollection,
+    errors: ErrorBuffer,
     source: &'src str,
     module_id: ModuleID,
     with_trivia: bool,
@@ -41,16 +41,12 @@ impl<'src, 's> Lexer<'src, 's> {
             chars: source.chars().peekable(),
             tokens: TokenList::new(0), //@no cap estimation
             buffer: String::with_capacity(64),
-            diagnostics: DiagnosticCollection::new(),
+            errors: ErrorBuffer::default(),
             source,
             module_id,
             with_trivia,
             intern_lit,
         }
-    }
-
-    fn finish(self) -> (TokenList, Vec<ErrorComp>) {
-        (self.tokens, self.diagnostics.errors_moveout())
     }
 
     fn start_range(&self) -> TextOffset {
@@ -100,11 +96,11 @@ impl<'src, 's> Lexer<'src, 's> {
 }
 
 impl<'src, 's> ErrorSink for Lexer<'src, 's> {
-    fn error(&mut self, error: ErrorComp) {
-        self.diagnostics.error(error);
+    fn error(&mut self, error: Error) {
+        self.errors.error(error);
     }
     fn error_count(&self) -> usize {
-        self.diagnostics.errors().len()
+        self.errors.error_count()
     }
 }
 

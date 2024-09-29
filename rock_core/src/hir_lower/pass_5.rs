@@ -1,9 +1,9 @@
 use super::constant;
-use super::context::{HirCtx, HirEmit, SymbolKind};
+use super::context::{HirCtx, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
 use crate::ast::{self, BasicType};
 use crate::error::{
-    ErrorComp, ErrorSink, Info, SourceRange, StringOrStr, WarningComp, WarningSink,
+    Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr, Warning, WarningSink,
 };
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
@@ -23,7 +23,7 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
 
     if data.attr_set.contains(hir::ProcFlag::Variadic) {
         if data.params.is_empty() {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "variadic procedures must have at least one named parameter",
                 SourceRange::new(data.origin_id, data.name.range),
                 None,
@@ -33,7 +33,7 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
 
     if data.attr_set.contains(hir::ProcFlag::Test) {
         if !data.params.is_empty() {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "procedures with #[test] attribute cannot have any input parameters",
                 SourceRange::new(data.origin_id, data.name.range),
                 None,
@@ -41,7 +41,7 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
         }
         //@allow never
         if !data.return_ty.is_void() {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "procedures with #[test] attribute can only return `void`",
                 SourceRange::new(data.origin_id, item.return_ty.range),
                 None,
@@ -190,7 +190,7 @@ pub fn check_type_expectation(
             None
         };
 
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!(
                 "type mismatch: expected `{}`, found `{}`",
                 type_format(ctx, expect_ty).as_str(),
@@ -443,7 +443,7 @@ fn typecheck_if<'hir>(
     }
 
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
             SourceRange::new(ctx.proc.origin(), expr_range),
             None,
@@ -672,7 +672,7 @@ fn typecheck_pat_item<'hir>(
         }
         ValueID::Const(const_id) => {
             if let Some(name) = field_names.first() {
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     "cannot access fields in patterns",
                     SourceRange::new(ctx.proc.origin(), name.range),
                     None,
@@ -682,7 +682,7 @@ fn typecheck_pat_item<'hir>(
             let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
             if input_count > 0 {
                 //@rephrase error
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     "cannot destructure constants in patterns",
                     SourceRange::new(ctx.proc.origin(), pat_range),
                     None,
@@ -697,7 +697,7 @@ fn typecheck_pat_item<'hir>(
         | ValueID::Param(_)
         | ValueID::Local(_)
         | ValueID::LocalBind(_) => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot use runtime values in patterns",
                 SourceRange::new(ctx.proc.origin(), pat_range),
                 None,
@@ -747,7 +747,7 @@ fn typecheck_pat_variant<'hir>(
         )
     } else {
         //@duplicate error, same as path resolve
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!("enum variant `{}` is not found", ctx.name_str(name.id)),
             SourceRange::new(ctx.proc.origin(), name.range),
             Info::new(
@@ -852,7 +852,7 @@ fn check_field_from_type<'hir>(
             }
         }
         _ => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "no field `{}` exists on value of type `{}`",
                     ctx.name_str(name.id),
@@ -876,7 +876,7 @@ fn check_field_from_struct<'hir>(
     match data.find_field(name.id) {
         Some((field_id, field)) => {
             if origin_id != data.origin_id && field.vis == ast::Vis::Private {
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     format!("field `{}` is private", ctx.name_str(name.id)),
                     SourceRange::new(origin_id, name.range),
                     Info::new(
@@ -888,7 +888,7 @@ fn check_field_from_struct<'hir>(
             Some((field_id, field))
         }
         None => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!("field `{}` is not found", ctx.name_str(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new(
@@ -912,7 +912,7 @@ fn check_field_from_slice<'hir>(
         "ptr" => Some(hir::SliceField::Ptr),
         "len" => Some(hir::SliceField::Len),
         _ => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
                     field_name,
@@ -955,7 +955,7 @@ fn check_field_from_array<'hir>(
             Some(len)
         }
         _ => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "no field `{}` exists on array type `{}`\ndid you mean `len`?",
                     field_name,
@@ -1073,7 +1073,7 @@ fn typecheck_index<'hir>(
         }
         Ok(None) => TypeResult::error(),
         Err(()) => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "cannot index value of type `{}`",
                     type_format(ctx, target_res.ty).as_str()
@@ -1155,7 +1155,7 @@ fn typecheck_cast<'hir>(
     // invariant: both types are not Error
     // ensured by early return above
     if type_matches(ctx, target_res.ty, into) {
-        ctx.emit.warning(WarningComp::new(
+        ctx.emit.warning(Warning::new(
             format!(
                 "redundant cast from `{}` into `{}`",
                 type_format(ctx, target_res.ty).as_str(),
@@ -1231,7 +1231,7 @@ fn typecheck_cast<'hir>(
         //@cast could be primitive but still invalid
         // wording might be improved
         // or have 2 error types for this
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!(
                 "non primitive cast from `{}` into `{}`",
                 type_format(ctx, target_res.ty).as_str(),
@@ -1385,7 +1385,7 @@ fn typecheck_variant<'hir>(
         Some((variant_id, _)) => variant_id,
         None => {
             //@duplicate error, same as path resolve 1.07.24
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!("enum variant `{}` is not found", ctx.name_str(name.id)),
                 SourceRange::new(ctx.proc.origin(), name.range),
                 Info::new(
@@ -1401,8 +1401,8 @@ fn typecheck_variant<'hir>(
 }
 
 //@still used in pass4
-pub fn error_cannot_infer_struct_type(emit: &mut HirEmit, src: SourceRange) {
-    emit.error(ErrorComp::new("cannot infer struct type", src, None))
+pub fn error_cannot_infer_struct_type(emit: &mut ErrorWarningBuffer, src: SourceRange) {
+    emit.error(Error::new("cannot infer struct type", src, None))
 }
 
 fn typecheck_struct_init<'hir>(
@@ -1451,7 +1451,7 @@ fn typecheck_struct_init<'hir>(
                 let input_res = typecheck_expr(ctx, expect, input.expr);
 
                 if let FieldStatus::Init(range) = field_status[field_id.raw_index()] {
-                    ctx.emit.error(ErrorComp::new(
+                    ctx.emit.error(Error::new(
                         format!(
                             "field `{}` was already initialized",
                             ctx.name_str(input.name.id),
@@ -1462,7 +1462,7 @@ fn typecheck_struct_init<'hir>(
                 } else {
                     if ctx.proc.origin() != origin_id {
                         if field.vis == ast::Vis::Private {
-                            ctx.emit.error(ErrorComp::new(
+                            ctx.emit.error(Error::new(
                                 format!("field `{}` is private", ctx.name_str(field.name.id),),
                                 SourceRange::new(ctx.proc.origin(), input.name.range),
                                 Info::new(
@@ -1483,7 +1483,7 @@ fn typecheck_struct_init<'hir>(
                 }
             }
             None => {
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     format!(
                         "field `{}` is not found in `{}`",
                         ctx.name_str(input.name.id),
@@ -1519,7 +1519,7 @@ fn typecheck_struct_init<'hir>(
             }
         }
 
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             message,
             SourceRange::new(ctx.proc.origin(), expr_range),
             Info::new(
@@ -1583,7 +1583,7 @@ fn typecheck_array_init<'hir>(
         if let Some(array_ty) = expect_array_ty {
             array_ty.elem_ty
         } else {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot infer type of empty array",
                 SourceRange::new(ctx.proc.origin(), array_range),
                 None,
@@ -1655,7 +1655,7 @@ fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, rhs: &ast::Expr) -> Typ
         hir::Type::Error => hir::Type::Error,
         hir::Type::Reference(ref_ty, _) => *ref_ty,
         _ => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "cannot dereference value of type `{}`",
                     type_format(ctx, rhs_res.ty).as_str()
@@ -1685,21 +1685,21 @@ fn typecheck_address<'hir>(
     match adressability {
         Addressability::Unknown => {} //@ & to error should be also Error? 16.05.24
         Addressability::Constant => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot get reference to a constant, you can use `global` instead",
                 SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::SliceField => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot get reference to a slice field, slice itself cannot be modified",
                 SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
         }
         Addressability::Temporary => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot get reference to a temporary value",
                 SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
@@ -1707,7 +1707,7 @@ fn typecheck_address<'hir>(
         }
         Addressability::TemporaryImmutable => {
             if mutt == ast::Mut::Mutable {
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     "cannot get mutable reference to this temporary value, only immutable `&` is allowed",
                     SourceRange::new(ctx.proc.origin(), rhs.range),
                     None,
@@ -1716,7 +1716,7 @@ fn typecheck_address<'hir>(
         }
         Addressability::Addressable(rhs_mutt, src) => {
             if mutt == ast::Mut::Mutable && rhs_mutt == ast::Mut::Immutable {
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     "cannot get mutable reference to an immutable variable",
                     SourceRange::new(ctx.proc.origin(), rhs.range),
                     Info::new("variable defined here", src),
@@ -1724,7 +1724,7 @@ fn typecheck_address<'hir>(
             }
         }
         Addressability::NotImplemented => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "addressability not implemented for this expression",
                 SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
@@ -1885,7 +1885,7 @@ fn check_match_compatibility<'hir>(
     };
 
     if !compatible {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!(
                 "cannot match on value of type `{}`",
                 type_format(ctx, ty).as_str()
@@ -2074,7 +2074,7 @@ fn typecheck_break<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir:
     match ctx.proc.loop_status() {
         LoopStatus::None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot use `break` outside of loop",
                 SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
@@ -2083,7 +2083,7 @@ fn typecheck_break<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir:
         }
         LoopStatus::Inside_WithDefer => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot use `break` in loop started outside of `defer`",
                 SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
@@ -2099,7 +2099,7 @@ fn typecheck_continue<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<h
     match ctx.proc.loop_status() {
         LoopStatus::None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot use `continue` outside of loop",
                 SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
@@ -2108,7 +2108,7 @@ fn typecheck_continue<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<h
         }
         LoopStatus::Inside_WithDefer => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot use `continue` in loop started outside of `defer`",
                 SourceRange::new(ctx.proc.origin(), kw_range),
                 None,
@@ -2127,7 +2127,7 @@ fn typecheck_return<'hir>(
 ) -> Option<hir::Stmt<'hir>> {
     let valid = if let DeferStatus::Inside(prev_defer) = ctx.proc.defer_status() {
         let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             "cannot use `return` inside `defer`",
             SourceRange::new(ctx.proc.origin(), kw_range),
             Info::new(
@@ -2174,7 +2174,7 @@ fn typecheck_defer<'hir>(
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
 
     let valid = if let DeferStatus::Inside(prev_defer) = ctx.proc.defer_status() {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             "`defer` statements cannot be nested",
             SourceRange::new(ctx.proc.origin(), kw_range),
             Info::new(
@@ -2337,21 +2337,21 @@ fn typecheck_assign<'hir>(
     match adressability {
         Addressability::Unknown => {}
         Addressability::Constant => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot assign to a constant",
                 SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::SliceField => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot assign to a slice field, slice itself cannot be modified",
                 SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
             ));
         }
         Addressability::Temporary | Addressability::TemporaryImmutable => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "cannot assign to a temporary value",
                 SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
@@ -2359,7 +2359,7 @@ fn typecheck_assign<'hir>(
         }
         Addressability::Addressable(mutt, src) => {
             if mutt == ast::Mut::Immutable {
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     "cannot assign to an immutable variable",
                     SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                     Info::new("variable defined here", src),
@@ -2367,7 +2367,7 @@ fn typecheck_assign<'hir>(
             }
         }
         Addressability::NotImplemented => {
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "addressability not implemented for this expression",
                 SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                 None,
@@ -2402,7 +2402,7 @@ fn typecheck_assign<'hir>(
 // proc return type is allowed to be never or void unlike other instances where types are used
 pub fn require_value_type(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) {
     if !type_is_value_type(ty) {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!(
                 "expected value type, found `{}`",
                 type_format(ctx, ty).as_str()
@@ -2492,7 +2492,7 @@ fn check_unused_expr_semi(
 
 //@check if reference expectations need to be accounted for
 fn infer_enum_type<'hir>(
-    emit: &mut HirEmit,
+    emit: &mut ErrorWarningBuffer,
     expect: Expectation<'hir>,
     error_src: SourceRange,
 ) -> Option<hir::EnumID<'hir>> {
@@ -2512,7 +2512,7 @@ fn infer_enum_type<'hir>(
 
 //@check if reference expectations need to be accounted for
 fn infer_struct_type<'hir>(
-    emit: &mut HirEmit,
+    emit: &mut ErrorWarningBuffer,
     expect: Expectation<'hir>,
     error_src: SourceRange,
 ) -> Option<hir::StructID<'hir>> {
@@ -2835,7 +2835,7 @@ pub fn path_resolve_type<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!("expected type, found local `{}`", ctx.name_str(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new("defined here", source),
@@ -2847,7 +2847,7 @@ pub fn path_resolve_type<'hir>(
             SymbolKind::Struct(id) => hir::Type::Struct(id),
             _ => {
                 let name = path.names[name_idx];
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     format!(
                         "expected type, found {} `{}`",
                         kind.kind_name(),
@@ -2864,7 +2864,7 @@ pub fn path_resolve_type<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "unexpected path segment",
                 SourceRange::new(origin_id, range),
                 None,
@@ -2902,7 +2902,7 @@ pub fn path_resolve_struct<'hir>(
             };
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 format!(
                     "expected struct type, found local `{}`",
                     ctx.name_str(name.id)
@@ -2916,7 +2916,7 @@ pub fn path_resolve_struct<'hir>(
             SymbolKind::Struct(id) => Some(id),
             _ => {
                 let name = path.names[name_idx];
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     format!(
                         "expected struct type, found {} `{}`",
                         kind.kind_name(),
@@ -2933,7 +2933,7 @@ pub fn path_resolve_struct<'hir>(
     if let Some(remaining) = path.names.get(name_idx + 1..) {
         if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
             let range = TextRange::new(first.range.start(), last.range.end());
-            ctx.emit.error(ErrorComp::new(
+            ctx.emit.error(Error::new(
                 "unexpected path segment",
                 SourceRange::new(origin_id, range),
                 None,
@@ -2973,7 +2973,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                 if let Some(remaining) = path.names.get(name_idx + 1..) {
                     if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
                         let range = TextRange::new(first.range.start(), last.range.end());
-                        ctx.emit.error(ErrorComp::new(
+                        ctx.emit.error(Error::new(
                             "unexpected path segment",
                             SourceRange::new(origin_id, range),
                             None,
@@ -2990,7 +2990,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                             if let (Some(first), Some(last)) = (remaining.first(), remaining.last())
                             {
                                 let range = TextRange::new(first.range.start(), last.range.end());
-                                ctx.emit.error(ErrorComp::new(
+                                ctx.emit.error(Error::new(
                                     "unexpected path segment",
                                     SourceRange::new(origin_id, range),
                                     None,
@@ -2999,7 +2999,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                         }
                         return (ValueID::Enum(id, variant_id), &[]);
                     } else {
-                        ctx.emit.error(ErrorComp::new(
+                        ctx.emit.error(Error::new(
                             format!(
                                 "enum variant `{}` is not found",
                                 ctx.name_str(variant_name.id)
@@ -3011,7 +3011,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                     }
                 } else {
                     let name = path.names[name_idx];
-                    ctx.emit.error(ErrorComp::new(
+                    ctx.emit.error(Error::new(
                         format!(
                             "expected value, found {} `{}`",
                             kind.kind_name(),
@@ -3027,7 +3027,7 @@ pub fn path_resolve_value<'hir, 'ast>(
             SymbolKind::Global(id) => ValueID::Global(id),
             _ => {
                 let name = path.names[name_idx];
-                ctx.emit.error(ErrorComp::new(
+                ctx.emit.error(Error::new(
                     format!(
                         "expected value, found {} `{}`",
                         kind.kind_name(),
@@ -3098,7 +3098,7 @@ fn unary_op_check(
     };
 
     if un_op.is_none() {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!(
                 "cannot apply unary operator `{}` on value of type `{}`",
                 op.as_str(),
@@ -3357,7 +3357,7 @@ fn binary_op_check(
     };
 
     if bin_op.is_none() {
-        ctx.emit.error(ErrorComp::new(
+        ctx.emit.error(Error::new(
             format!(
                 "cannot apply binary operator `{}` on value of type `{}`",
                 op.as_str(),

@@ -1,12 +1,12 @@
 use super::semver::Semver;
-use crate::error::ErrorComp;
+use crate::error::Error;
 use crate::fs_env;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::process::Command;
 
 //@check status codes or Command's or not?
-pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(), ErrorComp> {
+pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(), Error> {
     let cwd = fs_env::dir_get_current_working()?;
     let root = fs_env::current_exe_path()?;
     let registry_dir = root.join("registry");
@@ -25,7 +25,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
             .args(["clone", INDEX_LINK])
             .status()
             .map_err(|io_error| {
-                ErrorComp::message(format!(
+                Error::message(format!(
                     "failed command: git clone {}\nreason: {}",
                     INDEX_LINK, io_error
                 ))
@@ -37,7 +37,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
             .args(["pull"])
             .status()
             .map_err(|io_error| {
-                ErrorComp::message(format!("failed command: git pull\nreason: {}", io_error))
+                Error::message(format!("failed command: git pull\nreason: {}", io_error))
             })?;
         fs_env::dir_set_current_working(&cwd)?;
     }
@@ -49,7 +49,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
 
         if !manifest_path.exists() {
             //@wip error, dep of which package etc...
-            return Err(ErrorComp::message(format!(
+            return Err(Error::message(format!(
                 "package `{}` is not found in rock-index",
                 package_name
             )));
@@ -69,7 +69,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
         if let Some(selected) = selected_manifest {
             if let Some(&version) = selected_packages.get(package_name) {
                 //@conflict or newer version not handled
-                return Err(ErrorComp::message(format!(
+                return Err(Error::message(format!(
                     "package `{}` version conflict {} and {}\nconflict handling not implemented",
                     package_name, version, selected.version,
                 )));
@@ -77,7 +77,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
                 selected_packages.insert(package_name.clone(), selected.version);
             }
         } else {
-            return Err(ErrorComp::message(format!(
+            return Err(Error::message(format!(
                 "dependency package `{}` version {} was not found",
                 package_name, version,
             )));

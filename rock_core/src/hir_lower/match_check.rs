@@ -1,6 +1,6 @@
 use super::context::HirCtx;
 use crate::ast::{self, BasicType};
-use crate::error::{ErrorComp, ErrorSink, SourceRange};
+use crate::error::{Error, ErrorSink, SourceRange};
 use crate::hir;
 use crate::intern::InternLit;
 use crate::support::ID;
@@ -81,7 +81,7 @@ fn match_cov_int(
                 }
             }
         }
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -120,7 +120,7 @@ fn pat_cov_int(
             PatCovError::CoverPartial => "pattern partially covered",
         };
         let src = SourceRange::new(ctx.proc.origin(), pat_range);
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -160,7 +160,7 @@ fn match_cov_bool(
                 msg.push_str("- `false`\n");
             }
         }
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -191,7 +191,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
             PatCovError::CoverPartial => "pattern partially covered",
         };
         let src = SourceRange::new(ctx.proc.origin(), pat_range);
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -225,7 +225,7 @@ fn match_cov_char(
 
         //@for all pat errors check if trailing \n is needed
         msg.push_str("- `_`\n");
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -256,7 +256,7 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
             PatCovError::CoverPartial => "pattern partially covered",
         };
         let src = SourceRange::new(ctx.proc.origin(), pat_range);
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -290,7 +290,7 @@ fn match_cov_string(
 
         //@for all pat errors check if trailing \n is needed
         msg.push_str("- `_`\n");
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -321,7 +321,7 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
             PatCovError::CoverPartial => "pattern partially covered",
         };
         let src = SourceRange::new(ctx.proc.origin(), pat_range);
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -365,7 +365,7 @@ fn match_cov_enum<'hir>(
             let name = ctx.name_str(variant.name.id);
             msg.push_str(&format!("- `.{name}`\n"));
         }
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 
@@ -404,7 +404,7 @@ fn pat_cov_enum<'hir>(
             PatCovError::CoverPartial => "pattern partially covered",
         };
         let src = SourceRange::new(ctx.proc.origin(), pat_range);
-        ctx.emit.error(ErrorComp::new(msg, src, None));
+        ctx.emit.error(Error::new(msg, src, None));
     }
 }
 

@@ -1,12 +1,6 @@
-use crate::ast::AssignOp;
-use crate::error::ErrorComp;
-use crate::session::ModuleID;
-use crate::support::ID;
-use crate::syntax::ast_layer as cst;
-use crate::syntax::ast_layer::{self as ast, AstNode};
+use crate::syntax::ast_layer::{self as cst, AstNode};
 use crate::syntax::syntax_kind::SyntaxKind;
-use crate::syntax::syntax_tree::{self, Node, NodeOrToken, SyntaxTree};
-use crate::syntax::{self};
+use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 use crate::token::Trivia;
 
@@ -295,7 +289,7 @@ fn field(fmt: &mut Formatter, field: cst::Field) {
     //@todo
 }
 
-fn import_item(fmt: &mut Formatter, item: ast::ImportItem) {
+fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
     trivia_lift(fmt, item.0, SyntaxKind::TOMBSTONE);
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
@@ -323,7 +317,7 @@ fn import_item(fmt: &mut Formatter, item: ast::ImportItem) {
     fmt.new_line();
 }
 
-fn import_path(fmt: &mut Formatter, import_path: ast::ImportPath) {
+fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
     let mut first = true;
     for name_cst in import_path.names(fmt.tree) {
         if !first {
@@ -335,7 +329,7 @@ fn import_path(fmt: &mut Formatter, import_path: ast::ImportPath) {
     }
 }
 
-fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbolList, wrap: bool) {
+fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbolList, wrap: bool) {
     if import_symbol_list.import_symbols(fmt.tree).next().is_none() {
         fmt.write_c('{');
         fmt.write_c('}');
@@ -380,14 +374,14 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: ast::ImportSymbol
     fmt.write_c('}');
 }
 
-fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: ast::ImportSymbol) {
+fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: cst::ImportSymbol) {
     name(fmt, import_symbol.name(fmt.tree).unwrap());
     if let Some(rename) = import_symbol.rename(fmt.tree) {
         import_symbol_rename(fmt, rename);
     }
 }
 
-fn import_symbol_rename(fmt: &mut Formatter, rename: ast::ImportSymbolRename) {
+fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
     fmt.space();
     fmt.write("as");
     fmt.space();
