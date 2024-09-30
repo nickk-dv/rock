@@ -1,9 +1,9 @@
 use super::ast_layer as cst;
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::{Error, ErrorBuffer, SourceRange};
+use crate::error::ErrorBuffer;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::session::{ModuleID, Session};
+use crate::session::Session;
 use crate::support::{Arena, TempBuffer, Timer, ID};
 use crate::text::TextRange;
 
@@ -14,7 +14,6 @@ struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     float_id: ID<f64>,
     char_id: ID<char>,
     string_id: ID<(ID<InternLit>, bool)>,
-    module_id: ModuleID,
     source: &'src str,
     intern_name: &'src mut InternPool<'s, InternName>,
     s: &'state mut AstBuildState<'ast>,
@@ -44,7 +43,6 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
     fn new(
         tree: &'syn SyntaxTree<'syn>,
         source: &'src str,
-        module_id: ModuleID,
         intern_name: &'src mut InternPool<'s, InternName>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
@@ -55,7 +53,6 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
             float_id: ID::new_raw(0),
             char_id: ID::new_raw(0),
             string_id: ID::new_raw(0),
-            module_id,
             source,
             intern_name,
             s: state,
@@ -112,13 +109,8 @@ pub fn parse<'ast>(session: &mut Session) -> Result<(), ErrorBuffer> {
 
         match tree_result {
             Ok(tree) => {
-                let mut ctx = AstBuild::new(
-                    &tree,
-                    &module.source,
-                    module_id,
-                    &mut session.intern_name,
-                    &mut state,
-                );
+                let mut ctx =
+                    AstBuild::new(&tree, &module.source, &mut session.intern_name, &mut state);
                 let items = source_file(&mut ctx, tree.source_file());
                 let ast = ctx.finish(items);
                 //@will not lineup with ModuleID's if some Asts failed to be created

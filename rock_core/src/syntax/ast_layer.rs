@@ -75,11 +75,12 @@ impl<'syn> Node<'syn> {
     fn find_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         let start;
         let end;
+
         let mut content_curr = self.content;
 
         'outher: loop {
-            for node_or_token in content_curr.iter().copied() {
-                match node_or_token {
+            for not in content_curr.iter().copied() {
+                match not {
                     NodeOrToken::Node(node_id) => {
                         content_curr = tree.node(node_id).content;
                         continue 'outher;
@@ -91,7 +92,10 @@ impl<'syn> Node<'syn> {
                     NodeOrToken::Trivia(_) => {}
                 }
             }
+            unreachable!("node start not found");
         }
+
+        content_curr = self.content;
 
         'outher: loop {
             for node_or_token in content_curr.iter().rev().copied() {
@@ -107,6 +111,7 @@ impl<'syn> Node<'syn> {
                     NodeOrToken::Trivia(_) => {}
                 }
             }
+            unreachable!("node end not found");
         }
 
         TextRange::new(start, end)

@@ -5,7 +5,7 @@ mod parser;
 pub mod syntax_kind;
 pub mod syntax_tree;
 
-use crate::error::{Error, ErrorBuffer, ErrorSink};
+use crate::error::{ErrorBuffer, ErrorSink};
 use crate::intern::{InternLit, InternPool};
 use crate::lexer;
 use crate::session::ModuleID;
