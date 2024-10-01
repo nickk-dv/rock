@@ -2264,7 +2264,7 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> 
     // this also applies to SymbolKind which is separate from VariableID (leads to some issues in path resolve) @1.04.24
 
     let already_defined = match local.bind {
-        ast::Binding::Named(name) => {
+        ast::Binding::Named(_, name) => {
             if let Err(error) =
                 ctx.scope
                     .already_defined_check(&ctx.registry, ctx.proc.origin(), name)
@@ -2307,13 +2307,13 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> 
     let local_ty = local_ty.unwrap_or(init_res.ty);
 
     match local.bind {
-        ast::Binding::Named(name) => {
+        ast::Binding::Named(mutt, name) => {
             if already_defined {
                 LocalResult::Error
             } else {
                 //@check for `never`, `void` to prevent panic during codegen
                 let local = hir::Local {
-                    mutt: local.mutt,
+                    mutt,
                     name,
                     ty: local_ty,
                     init: init_res.expr,

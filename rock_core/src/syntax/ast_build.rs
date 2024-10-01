@@ -470,8 +470,9 @@ fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'as
 
 fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
     if let Some(name_cst) = bind.name(ctx.tree) {
+        let mutt = mutt(bind.is_mut(ctx.tree));
         let name = name(ctx, name_cst);
-        ast::Binding::Named(name)
+        ast::Binding::Named(mutt, name)
     } else {
         //@in general use `content range` without including any trivia tokens, verify all range semantics
         let range = bind.range(ctx.tree); //@should use token range instead of this?
@@ -627,7 +628,6 @@ fn stmt_local<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
-    let mutt = mutt(local.is_mut(ctx.tree));
     let bind = bind(ctx, local.bind(ctx.tree).unwrap());
     let ty = if let Some(ty_cst) = local.ty(ctx.tree) {
         Some(ty(ctx, ty_cst))
@@ -636,12 +636,7 @@ fn stmt_local<'ast>(
     };
     let init = expr(ctx, local.init(ctx.tree).unwrap());
 
-    let local = ast::Local {
-        mutt,
-        bind,
-        ty,
-        init,
-    };
+    let local = ast::Local { bind, ty, init };
     ctx.arena.alloc(local)
 }
 

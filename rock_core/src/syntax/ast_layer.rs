@@ -769,7 +769,9 @@ impl<'syn> Path<'syn> {
     node_iter!(names, Name);
 }
 
+//@find `_` token range
 impl<'syn> Bind<'syn> {
+    find_token!(is_mut, T![mut]);
     find_first!(name, Name);
 }
 
@@ -854,7 +856,6 @@ impl<'syn> LoopCLikeHeader<'syn> {
 }
 
 impl<'syn> StmtLocal<'syn> {
-    find_token!(is_mut, T![mut]);
     find_first!(bind, Bind);
     find_first!(ty, Type);
     find_first!(init, Expr);

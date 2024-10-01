@@ -213,7 +213,6 @@ pub enum LoopKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Local<'ast> {
-    pub mutt: Mut,
     pub bind: Binding,
     pub ty: Option<Type<'ast>>,
     pub init: &'ast Expr<'ast>,
@@ -365,7 +364,7 @@ pub struct Path<'ast> {
 
 #[derive(Copy, Clone)]
 pub enum Binding {
-    Named(Name),
+    Named(Mut, Name),
     Discard(TextRange),
 }
 

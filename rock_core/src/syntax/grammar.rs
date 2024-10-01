@@ -400,7 +400,9 @@ fn path_expr(p: &mut Parser) -> bool {
 
 fn bind(p: &mut Parser) {
     let m = p.start();
-    if p.at(T![ident]) {
+    if p.eat(T![mut]) {
+        name(p);
+    } else if p.at(T![ident]) {
         name(p);
     } else if !p.eat(T![_]) {
         p.error("expected `identifier` or `_`");
@@ -573,7 +575,7 @@ fn stmt(p: &mut Parser) {
             m.complete(p, SyntaxKind::STMT_DEFER);
         }
         T![for] => loop_(p),
-        T![let] | T![mut] => local(p),
+        T![let] => local(p),
         T![->] => {
             let m = p.start();
             p.bump(T![->]);
@@ -607,7 +609,7 @@ fn loop_(p: &mut Parser) {
 
     match p.peek() {
         T!['{'] => {}
-        T![let] | T![mut] => {
+        T![let] => {
             let mh = p.start();
             local(p);
             expr(p);
@@ -637,11 +639,7 @@ fn loop_(p: &mut Parser) {
 
 fn local(p: &mut Parser) {
     let m = p.start();
-    match p.peek() {
-        T![let] => p.bump(T![let]),
-        T![mut] => p.bump(T![mut]),
-        _ => unreachable!(),
-    }
+    p.bump(T![let]);
     bind(p);
     if p.eat(T![:]) {
         ty(p);
