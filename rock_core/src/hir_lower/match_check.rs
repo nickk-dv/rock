@@ -9,36 +9,37 @@ use std::collections::HashSet;
 
 pub fn match_cov<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    on_ty: hir::Type,
+    on_ty: hir::Type<'hir>,
     arms: &mut [hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
     match_range: TextRange,
-) {
+) -> hir::MatchKind<'hir> {
     let mut cov = PatCov::new(); //@cache? can it be re-used without collision?
-    let kind = MatchKind::new(on_ty);
+    let kind = hir::MatchKind::new(on_ty);
 
     match kind {
-        MatchKind::Int(int_ty) => {
+        hir::MatchKind::Int(int_ty) => {
             cov.cov_int.reset();
             match_cov_int(ctx, &mut cov.cov_int, arms, arms_ast, match_range, int_ty)
         }
-        MatchKind::Bool => {
+        hir::MatchKind::Bool => {
             cov.cov_bool.reset();
             match_cov_bool(ctx, &mut cov.cov_bool, arms, arms_ast, match_range);
         }
-        MatchKind::Char => {
+        hir::MatchKind::Char => {
             cov.cov_char.reset();
             match_cov_char(ctx, &mut cov.cov_char, arms, arms_ast, match_range);
         }
-        MatchKind::String => {
+        hir::MatchKind::String => {
             cov.cov_string.reset();
             match_cov_string(ctx, &mut cov.cov_string, arms, arms_ast, match_range);
         }
-        MatchKind::Enum(enum_id) => {
+        hir::MatchKind::Enum(enum_id) => {
             cov.cov_enum.reset();
             match_cov_enum(ctx, &mut cov.cov_enum, arms, arms_ast, match_range, enum_id);
         }
     }
+    kind
 }
 
 fn match_cov_int(
@@ -408,14 +409,6 @@ fn pat_cov_enum<'hir>(
     }
 }
 
-enum MatchKind<'hir> {
-    Int(hir::BasicInt),
-    Bool,
-    Char,
-    String,
-    Enum(hir::EnumID<'hir>),
-}
-
 enum PatCovError {
     CoverFull,
     CoverPartial,
@@ -460,25 +453,25 @@ struct PatCovEnum<'hir> {
     not_covered: Vec<hir::VariantID<'hir>>,
 }
 
-impl<'hir> MatchKind<'hir> {
-    fn new(ty: hir::Type<'hir>) -> MatchKind<'hir> {
+impl<'hir> hir::MatchKind<'hir> {
+    fn new(ty: hir::Type<'hir>) -> hir::MatchKind<'hir> {
         match ty {
             hir::Type::Error => unreachable!(),
             hir::Type::Basic(basic) => {
                 if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
-                    MatchKind::Int(int_ty)
+                    hir::MatchKind::Int(int_ty)
                 } else {
                     match basic {
-                        BasicType::Bool => MatchKind::Bool,
-                        BasicType::Char => MatchKind::Char,
+                        BasicType::Bool => hir::MatchKind::Bool,
+                        BasicType::Char => hir::MatchKind::Char,
                         _ => unreachable!(),
                     }
                 }
             }
-            hir::Type::Enum(enum_id) => MatchKind::Enum(enum_id),
+            hir::Type::Enum(enum_id) => hir::MatchKind::Enum(enum_id),
             hir::Type::ArraySlice(slice) => {
                 if matches!(slice.elem_ty, hir::Type::Basic(BasicType::U8)) {
-                    MatchKind::String
+                    hir::MatchKind::String
                 } else {
                     unreachable!()
                 }

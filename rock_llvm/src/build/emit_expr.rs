@@ -97,7 +97,10 @@ fn codegen_expr<'c>(
             emit_stmt::codegen_block(cg, proc_cg, expect, block);
             None
         }
-        hir::ExprKind::Match { match_ } => unimplemented!("emit match2"),
+        hir::ExprKind::Match { kind, match_ } => {
+            codegen_match(cg, proc_cg, expect, kind.unwrap(), match_);
+            None
+        }
         hir::ExprKind::StructField {
             target,
             struct_id,
@@ -298,6 +301,82 @@ fn codegen_if<'c>(
         cg.build_br_no_term(exit_bb);
     }
     cg.build.position_at_end(exit_bb);
+}
+
+fn codegen_match<'c>(
+    cg: &Codegen<'c, '_, '_>,
+    proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
+    kind: hir::MatchKind,
+    match_: &hir::Match<'c>,
+) {
+    match kind {
+        hir::MatchKind::Int(_) => {}
+        hir::MatchKind::Bool => {}
+        hir::MatchKind::Char => {}
+        hir::MatchKind::String => unimplemented!("match on string"),
+        hir::MatchKind::Enum(_) => unimplemented!("match on enum"),
+    }
+
+    let on_value = codegen_expr_value(cg, proc_cg, match_.on_expr);
+    let insert_bb = cg.build.insert_bb();
+
+    let exit_bb = cg.append_bb(proc_cg, "match_exit");
+    let mut wild_bb = None;
+    let mut switch_cases = Vec::<(llvm::Value, llvm::BasicBlock)>::with_capacity(match_.arms.len());
+
+    for arm in match_.arms {
+        let arm_bb = cg.append_bb(proc_cg, "match_arm");
+        cg.build.position_at_end(arm_bb);
+        emit_stmt::codegen_block(cg, proc_cg, expect, arm.block);
+        cg.build_br_no_term(exit_bb);
+
+        match arm.pat {
+            hir::Pat::Wild => {
+                assert!(wild_bb.is_none());
+                wild_bb = Some(arm_bb);
+            }
+            hir::Pat::Or(pats) => {
+                for pat in pats {
+                    match pat {
+                        hir::Pat::Wild => {
+                            assert!(wild_bb.is_none());
+                            wild_bb = Some(arm_bb);
+                        }
+                        _ => {
+                            let value = codegen_match_pat_value(cg, *pat);
+                            switch_cases.push((value, arm_bb));
+                        }
+                    }
+                }
+            }
+            _ => {
+                let value = codegen_match_pat_value(cg, arm.pat);
+                switch_cases.push((value, arm_bb));
+            }
+        };
+    }
+
+    cg.build.position_at_end(insert_bb);
+    let else_bb = wild_bb.unwrap_or(exit_bb);
+    let case_count = switch_cases.len() as u32;
+    let switch = cg.build.switch(on_value, else_bb, case_count);
+
+    for (case_val, dest_bb) in switch_cases {
+        cg.build.add_case(switch, case_val, dest_bb);
+    }
+    cg.build.position_at_end(exit_bb);
+}
+
+fn codegen_match_pat_value<'c>(cg: &Codegen<'c, '_, '_>, pat: hir::Pat) -> llvm::Value {
+    match pat {
+        hir::Pat::Error => unreachable!(),
+        hir::Pat::Wild => unreachable!(),
+        hir::Pat::Lit(value) => codegen_const(cg, value),
+        hir::Pat::Const(const_id) => codegen_const_var(cg, const_id),
+        hir::Pat::Variant(_, _) => unimplemented!("match on enum"),
+        hir::Pat::Or(_) => unreachable!(),
+    }
 }
 
 fn codegen_struct_field<'c>(

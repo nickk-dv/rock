@@ -536,17 +536,20 @@ fn typecheck_match<'hir>(
 
     // no errors for entire match
     // all constant values resolved
-    if !ctx.emit.did_error(error_count) && match_const_pats_resolved(ctx, &arms) {
+    let kind = if !ctx.emit.did_error(error_count) && match_const_pats_resolved(ctx, &arms) {
         let mut match_range = TextRange::empty_at(match_range.start());
         match_range.extend_by(5.into());
-        super::match_check::match_cov(
+        let kind = super::match_check::match_cov(
             ctx,
             on_res.ty,
             arms.as_mut_slice(),
             match_.arms,
             match_range,
         );
-    }
+        Some(kind)
+    } else {
+        None
+    };
 
     let arms = ctx.arena.alloc_slice(&arms);
     let match_ = hir::Match {
@@ -554,7 +557,7 @@ fn typecheck_match<'hir>(
         arms,
     };
     let match_ = ctx.arena.alloc(match_);
-    let kind = hir::ExprKind::Match { match_ };
+    let kind = hir::ExprKind::Match { kind, match_ };
     //@cannot tell when to ignore typecheck or not
     TypeResult::new(match_type, kind)
 }

@@ -272,7 +272,7 @@ pub enum ExprKind<'hir> {
     Const        { value: ConstValue<'hir> },
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
-    Match        { match_: &'hir Match<'hir> },
+    Match        { kind: Option<MatchKind<'hir>>, match_: &'hir Match<'hir> },
     StructField  { target: &'hir Expr<'hir>, struct_id: StructID<'hir>, field_id: FieldID<'hir>, deref: bool },
     SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
@@ -345,6 +345,15 @@ pub struct If<'hir> {
 pub struct Branch<'hir> {
     pub cond: &'hir Expr<'hir>,
     pub block: Block<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum MatchKind<'hir> {
+    Int(BasicInt),
+    Bool,
+    Char,
+    String,
+    Enum(EnumID<'hir>),
 }
 
 #[derive(Copy, Clone)]
