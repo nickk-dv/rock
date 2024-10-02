@@ -49,11 +49,6 @@ pub fn cmd_option_duplicate(emit: &mut impl ErrorSink, opt: &str) {
 
 //==================== LEXER ====================
 
-pub fn lexer_block_comment_not_terminated(emit: &mut impl ErrorSink, src: SourceRange, depth: u32) {
-    let msg = format!("missing {depth} block comment terminators `*/`");
-    emit.error(Error::new(msg, src, None));
-}
-
 pub fn lexer_unknown_symbol(emit: &mut impl ErrorSink, src: SourceRange, c: char) {
     let non_acsii = if !c.is_ascii() {
         "\nonly ascii symbols are supported"

@@ -111,11 +111,11 @@ fn source_file(lex: &mut Lexer) {
         if let Some(c) = lex.peek() {
             match c {
                 '\'' => lex_char(lex),
-                '`' => lex_string(lex, false, true),
                 '"' => lex_string(lex, false, false),
+                '`' => lex_string(lex, false, true),
                 'c' => match lex.peek_next() {
-                    Some('`') => lex_string(lex, true, true),
                     Some('"') => lex_string(lex, true, false),
+                    Some('`') => lex_string(lex, true, true),
                     _ => lex_ident(lex, c),
                 },
                 _ => {
@@ -312,7 +312,7 @@ fn lex_char(lex: &mut Lexer) {
     lex.tokens.add_char(char, range);
 }
 
-fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
+fn lex_string(lex: &mut Lexer, c_string: bool, raw: bool) {
     let start = lex.start_range();
     if c_string {
         lex.bump('c');
@@ -320,61 +320,38 @@ fn lex_string(lex: &mut Lexer, c_string: bool, mut raw: bool) {
     lex.bump('\"');
 
     lex.buffer.clear();
-    let mut range;
     let mut terminated = false;
 
-    loop {
-        while let Some(c) = lex.peek() {
-            match c {
-                '\r' | '\n' => break,
-                '`' if raw => {
-                    lex.bump(c);
-                    terminated = true;
-                    break;
-                }
-                '"' if !raw => {
-                    lex.bump(c);
-                    terminated = true;
-                    break;
-                }
-                '\\' if !raw => {
-                    let escaped = lex_escape(lex, c_string);
-                    lex.buffer.push(escaped);
-                }
-                _ => {
-                    lex.bump(c);
-                    lex.buffer.push(c);
-                }
-            }
-        }
-
-        range = lex.make_range(start);
-        if !terminated {
+    while let Some(c) = lex.peek() {
+        if c == '\r' || c == '\n' {
             break;
+        } else if c == '"' && !raw {
+            lex.bump(c);
+            terminated = true;
+            break;
+        } else if c == '`' && raw {
+            lex.bump(c);
+            terminated = true;
+            break;
+        } else if c == '\\' && !raw {
+            let escaped = lex_escape(lex, c_string);
+            lex.buffer.push(escaped);
+        } else {
+            lex.bump(c);
+            lex.buffer.push(c);
         }
-
-        lex_whitespace(lex);
-        match lex.peek() {
-            Some('`') => raw = true,
-            Some('"') => raw = false,
-            Some(_) => break,
-            None => break,
-        }
-
-        lex.bump('\"');
-        lex.buffer.push('\n');
-        terminated = false;
     }
 
+    let range = lex.make_range(start);
     let id = lex.intern_lit.intern(&lex.buffer);
     lex.tokens.add_string(id, c_string, range);
 
     if !terminated {
         let src = SourceRange::new(lex.module_id, range);
-        if raw {
-            err::lexer_raw_string_not_terminated(lex, src);
-        } else {
+        if !raw {
             err::lexer_string_not_terminated(lex, src);
+        } else {
+            err::lexer_raw_string_not_terminated(lex, src);
         }
     }
 }
