@@ -211,7 +211,6 @@ pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
                     let trivia = match trivia {
                         Trivia::Whitespace => "WHITESPACE",
                         Trivia::LineComment => "LINE_COMMENT",
-                        Trivia::BlockComment => "BLOCK_COMMENT",
                     };
                     print_depth(buffer, depth + 1);
                     buffer.push_str(&format!(

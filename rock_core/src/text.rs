@@ -210,7 +210,7 @@ pub fn find_text_location(
     }
 
     let error = format!(
-        "failed: text::find_text_location()\noffset: {:?}\ntext:\n{}",
+        "internal: failed text::find_text_location()\noffset: {:?}\ntext:\n{}",
         offset, text
     );
     panic!("{error}");

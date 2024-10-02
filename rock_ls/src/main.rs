@@ -744,9 +744,6 @@ fn semantic_visit_node(
                     Trivia::LineComment => {
                         semantic_add_token(builder, SemanticToken::Comment, range)
                     }
-                    Trivia::BlockComment => {
-                        //@add each line as separate semantic token
-                    }
                 };
             }
         }

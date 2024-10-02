@@ -141,7 +141,13 @@ fn lex_whitespace(lex: &mut Lexer) {
         if c.is_ascii_whitespace() {
             let start = lex.start_range();
             lex.bump(c);
-            skip_whitespace(lex);
+
+            while let Some(c) = lex.peek() {
+                if !c.is_ascii_whitespace() {
+                    break;
+                }
+                lex.bump(c);
+            }
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
@@ -152,66 +158,21 @@ fn lex_whitespace(lex: &mut Lexer) {
             lex.bump(c);
             lex.bump('/');
 
-            skip_line_comment(lex);
+            while let Some(c) = lex.peek() {
+                if c == '\r' || c == '\n' {
+                    break;
+                }
+                lex.bump(c);
+            }
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
                 lex.tokens.add_trivia(Trivia::LineComment, range);
             }
-        } else if c == '/' && lex.at_next('*') {
-            let start = lex.start_range();
-            lex.bump(c);
-            lex.bump('*');
-
-            let depth = skip_block_comment(lex);
-            if depth != 0 {
-                err::lexer_block_comment_not_terminated(lex, lex.make_src(start), depth);
-            }
-
-            if lex.with_trivia {
-                let range = lex.make_range(start);
-                lex.tokens.add_trivia(Trivia::BlockComment, range);
-            }
         } else {
             break;
         }
     }
-}
-
-fn skip_whitespace(lex: &mut Lexer) {
-    while let Some(c) = lex.peek() {
-        if !c.is_ascii_whitespace() {
-            return;
-        }
-        lex.bump(c);
-    }
-}
-
-fn skip_line_comment(lex: &mut Lexer) {
-    while let Some(c) = lex.peek() {
-        if c == '\r' || c == '\n' {
-            return;
-        }
-        lex.bump(c);
-    }
-}
-
-fn skip_block_comment(lex: &mut Lexer) -> u32 {
-    let mut depth: u32 = 1;
-    while let Some(c) = lex.peek() {
-        lex.bump(c);
-        if c == '/' && lex.at('*') {
-            lex.bump('*');
-            depth += 1;
-        } else if c == '*' && lex.at('/') {
-            lex.bump('/');
-            depth -= 1;
-        }
-        if depth == 0 {
-            return depth;
-        }
-    }
-    depth
 }
 
 fn lex_ident(lex: &mut Lexer, fc: char) {

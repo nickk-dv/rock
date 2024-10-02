@@ -15,6 +15,18 @@ struct Vector2 // inner com {
 }
 */
 
+#[must_use]
+pub fn format(tree: &SyntaxTree, source: &str) -> String {
+    let mut fmt = Formatter {
+        tree,
+        source,
+        tab_depth: 0,
+        buffer: String::with_capacity(source.len()),
+    };
+    source_file(&mut fmt, tree.source_file());
+    fmt.buffer
+}
+
 struct Formatter<'syn> {
     tree: &'syn SyntaxTree<'syn>,
     source: &'syn str,
@@ -23,55 +35,46 @@ struct Formatter<'syn> {
 }
 
 impl<'syn> Formatter<'syn> {
-    fn new(tree: &'syn SyntaxTree<'syn>, source: &'syn str) -> Formatter<'syn> {
-        Formatter {
-            tree,
-            source,
-            tab_depth: 0,
-            buffer: String::with_capacity(source.len()),
-        }
-    }
-
-    fn finish(self) -> String {
-        self.buffer
-    }
-    fn write(&mut self, string: &str) {
-        self.buffer.push_str(string);
-    }
-    fn write_c(&mut self, c: char) {
-        self.buffer.push(c);
-    }
-    fn write_range(&mut self, range: TextRange) {
-        let string = &self.source[range.as_usize()];
-        self.write(string);
-    }
     fn space(&mut self) {
         self.buffer.push(' ');
     }
     fn new_line(&mut self) {
         self.buffer.push('\n');
     }
-    fn tab(&mut self) {
-        self.write("    ");
+
+    fn write(&mut self, c: char) {
+        self.buffer.push(c);
+    }
+    fn write_str(&mut self, string: &str) {
+        self.buffer.push_str(string);
+    }
+    fn write_range(&mut self, range: TextRange) {
+        let string = &self.source[range.as_usize()];
+        self.write_str(string);
+    }
+
+    fn tab_inc(&mut self) {
+        self.tab_depth += 1;
+    }
+    fn tab_dec(&mut self) {
+        assert_ne!(self.tab_depth, 0);
+        self.tab_depth -= 1;
+    }
+    fn tab_single(&mut self) {
+        self.write_str("    ");
     }
     fn tab_depth(&mut self) {
         for _ in 0..self.tab_depth {
-            self.tab();
+            self.tab_single();
         }
-    }
-    fn depth_increment(&mut self) {
-        self.tab_depth += 1;
-    }
-    fn depth_decrement(&mut self) {
-        self.tab_depth -= 1;
     }
 }
 
 #[must_use]
 fn content_len(fmt: &mut Formatter, node: &Node) -> u32 {
     let mut len = 0;
-    for nt in node.content {
-        match *nt {
+    for not in node.content {
+        match *not {
             NodeOrToken::Node(node_id) => {
                 let node = fmt.tree.node(node_id);
                 len += content_len(fmt, node);
@@ -87,8 +90,8 @@ fn content_len(fmt: &mut Formatter, node: &Node) -> u32 {
 }
 
 fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxKind) {
-    for nt in node.content {
-        match *nt {
+    for not in node.content {
+        match *not {
             NodeOrToken::Node(node_id) => {
                 let node = fmt.tree.node(node_id);
                 if node.kind != halt {
@@ -102,10 +105,7 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxKind) {
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment => {
-                        fmt.write_range(range);
-                        fmt.new_line();
-                    }
-                    Trivia::BlockComment => {
+                        fmt.tab_depth();
                         fmt.write_range(range);
                         fmt.new_line();
                     }
@@ -137,16 +137,9 @@ fn format_exact(fmt: &mut Formatter, node: &Node) {
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_SYMBOL_THRESHOLD: u32 = 40;
 
-#[must_use]
-pub fn format(tree: &SyntaxTree, source: &str) -> String {
-    let mut fmt = Formatter::new(&tree, source);
-    source_file(&mut fmt, tree.source_file());
-    fmt.finish()
-}
-
 fn source_file(fmt: &mut Formatter, source_file: cst::SourceFile) {
-    for nt in source_file.0.content {
-        match *nt {
+    for not in source_file.0.content {
+        match *not {
             NodeOrToken::Node(node_id) => {
                 let node = fmt.tree.node(node_id);
                 item(fmt, cst::Item::cast(node).unwrap());
@@ -167,10 +160,6 @@ fn source_file(fmt: &mut Formatter, source_file: cst::SourceFile) {
                         fmt.write_range(range);
                         fmt.new_line();
                     }
-                    Trivia::BlockComment => {
-                        fmt.write_range(range);
-                        fmt.new_line();
-                    }
                 }
             }
         }
@@ -185,8 +174,8 @@ fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
 }
 
 fn attr(fmt: &mut Formatter, attr: cst::Attr) {
-    fmt.write_c('#');
-    fmt.write_c('[');
+    fmt.write('#');
+    fmt.write('[');
     name(fmt, attr.name(fmt.tree).unwrap());
 
     let wrap = content_len(fmt, attr.0) > WRAP_THRESHOLD;
@@ -194,17 +183,17 @@ fn attr(fmt: &mut Formatter, attr: cst::Attr) {
         attr_param_list(fmt, param_list, wrap);
     }
 
-    fmt.write_c(']');
+    fmt.write(']');
 }
 
 fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bool) {
     if param_list.params(fmt.tree).next().is_none() {
-        fmt.write_c('(');
-        fmt.write_c(')');
+        fmt.write('(');
+        fmt.write(')');
         return;
     }
 
-    fmt.write_c('(');
+    fmt.write('(');
     if wrap {
         fmt.new_line();
     }
@@ -212,7 +201,7 @@ fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bo
     let mut first = true;
     for param in param_list.params(fmt.tree) {
         if !first {
-            fmt.write_c(',');
+            fmt.write(',');
             if wrap {
                 fmt.new_line();
             } else {
@@ -220,7 +209,7 @@ fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bo
             }
         }
         if wrap {
-            fmt.tab();
+            fmt.tab_single();
         }
         first = false;
 
@@ -228,23 +217,23 @@ fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bo
     }
 
     if wrap {
-        fmt.write_c(',');
+        fmt.write(',');
         fmt.new_line();
     }
-    fmt.write_c(')');
+    fmt.write(')');
 }
 
 fn attr_param(fmt: &mut Formatter, param: cst::AttrParam) {
     name(fmt, param.name(fmt.tree).unwrap());
     if let Some(value) = param.value(fmt.tree) {
-        fmt.write(" = ");
+        fmt.write_str(" = ");
         fmt.write_range(value.range(fmt.tree)); //@will change value to name_id
     }
 }
 
 fn vis(fmt: &mut Formatter, vis: Option<cst::Visibility>) {
     if vis.is_some() {
-        fmt.write("pub");
+        fmt.write_str("pub");
         fmt.space();
     }
 }
@@ -267,20 +256,20 @@ fn struct_item(fmt: &mut Formatter, item: cst::StructItem) {
     }
     vis(fmt, item.visibility(fmt.tree));
 
-    fmt.write("struct");
+    fmt.write_str("struct");
     fmt.space();
     name(fmt, item.name(fmt.tree).unwrap());
     fmt.space();
-    fmt.write("{}"); //@fmt field list
+    fmt.write_str("{}"); //@fmt field list
     fmt.new_line();
 }
 
 //@handle possible inner & trailing trivia
 //@handle field spacing (similar to source_file)
 fn field_list(fmt: &mut Formatter, field_list: cst::FieldList) {
-    fmt.write_c('{');
+    fmt.write('{');
     //@todo
-    fmt.write_c('}');
+    fmt.write('}');
 }
 
 //@handle field trivia
@@ -295,11 +284,11 @@ fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
         attr_list(fmt, attr_list_cst);
     }
 
-    fmt.write("import");
+    fmt.write_str("import");
     fmt.space();
     if let Some(name_cst) = item.package(fmt.tree) {
         name(fmt, name_cst);
-        fmt.write_c(':');
+        fmt.write(':');
     }
 
     import_path(fmt, item.import_path(fmt.tree).unwrap());
@@ -308,11 +297,11 @@ fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
     }
 
     if let Some(symbol_list) = item.import_symbol_list(fmt.tree) {
-        fmt.write_c('.');
+        fmt.write('.');
         let wrap = content_len(fmt, item.0) > WRAP_THRESHOLD;
         import_symbol_list(fmt, symbol_list, wrap);
     } else {
-        fmt.write_c(';');
+        fmt.write(';');
     }
     fmt.new_line();
 }
@@ -321,7 +310,7 @@ fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
     let mut first = true;
     for name_cst in import_path.names(fmt.tree) {
         if !first {
-            fmt.write_c('/');
+            fmt.write('/');
         }
         first = false;
 
@@ -331,12 +320,12 @@ fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
 
 fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbolList, wrap: bool) {
     if import_symbol_list.import_symbols(fmt.tree).next().is_none() {
-        fmt.write_c('{');
-        fmt.write_c('}');
+        fmt.write('{');
+        fmt.write('}');
         return;
     }
 
-    fmt.write_c('{');
+    fmt.write('{');
     if wrap {
         fmt.new_line();
     }
@@ -352,7 +341,7 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
         total_len += content_len(fmt, import_symbol.0);
 
         if !first {
-            fmt.write_c(',');
+            fmt.write(',');
             if wrap && sub_wrap {
                 fmt.new_line();
             } else {
@@ -360,7 +349,7 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
             }
         }
         if wrap && (first || sub_wrap) {
-            fmt.tab();
+            fmt.tab_single();
         }
         first = false;
 
@@ -368,10 +357,10 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
     }
 
     if wrap {
-        fmt.write_c(',');
+        fmt.write(',');
         fmt.new_line();
     }
-    fmt.write_c('}');
+    fmt.write('}');
 }
 
 fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: cst::ImportSymbol) {
@@ -383,12 +372,12 @@ fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: cst::ImportSymbol) {
 
 fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
     fmt.space();
-    fmt.write("as");
+    fmt.write_str("as");
     fmt.space();
     if let Some(alias) = rename.alias(fmt.tree) {
         name(fmt, alias);
     } else {
-        fmt.write_c('_');
+        fmt.write('_');
     }
 }
 
