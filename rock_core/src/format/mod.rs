@@ -1,19 +1,9 @@
+use crate::support::AsStr;
 use crate::syntax::ast_layer::{self as cst, AstNode};
 use crate::syntax::syntax_kind::SyntaxKind;
 use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 use crate::token::Trivia;
-
-//@dont attach whitespace to tokens or nodes
-//@whitespace \n >= 2 should limit which prepending trivias can be attached
-//@attach comments to select nodes only?
-// eg: field list gets inner comment
-/*
-struct Vector2 // inner com {
-    x: f32,
-    y: f32,
-}
-*/
 
 #[must_use]
 pub fn format(tree: &SyntaxTree, source: &str) -> String {
@@ -143,6 +133,7 @@ fn source_file(fmt: &mut Formatter, source_file: cst::SourceFile) {
             NodeOrToken::Node(node_id) => {
                 let node = fmt.tree.node(node_id);
                 item(fmt, cst::Item::cast(node).unwrap());
+                fmt.new_line();
             }
             NodeOrToken::Token(_) => unreachable!(),
             NodeOrToken::Trivia(trivia_id) => {
@@ -227,7 +218,7 @@ fn attr_param(fmt: &mut Formatter, param: cst::AttrParam) {
     name(fmt, param.name(fmt.tree).unwrap());
     if let Some(value) = param.value(fmt.tree) {
         fmt.write_str(" = ");
-        fmt.write_range(value.range(fmt.tree)); //@will change value to name_id
+        fmt.write_range(value.range(fmt.tree));
     }
 }
 
@@ -240,13 +231,103 @@ fn vis(fmt: &mut Formatter, vis: Option<cst::Visibility>) {
 
 fn item(fmt: &mut Formatter, item: cst::Item) {
     match item {
-        cst::Item::Proc(item) => format_exact(fmt, item.0),
+        cst::Item::Proc(item) => proc_item(fmt, item),
         cst::Item::Enum(item) => format_exact(fmt, item.0),
         cst::Item::Struct(item) => format_exact(fmt, item.0),
         cst::Item::Const(item) => format_exact(fmt, item.0),
         cst::Item::Global(item) => format_exact(fmt, item.0),
         cst::Item::Import(item) => import_item(fmt, item),
     }
+}
+
+fn proc_item(fmt: &mut Formatter, item: cst::ProcItem) {
+    trivia_lift(fmt, item.0, SyntaxKind::BLOCK);
+    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
+        attr_list(fmt, attr_list_cst);
+    }
+    vis(fmt, item.visibility(fmt.tree));
+
+    fmt.write_str("proc");
+    fmt.space();
+    name(fmt, item.name(fmt.tree).unwrap());
+    param_list(fmt, item.param_list(fmt.tree).unwrap());
+
+    fmt.space();
+    fmt.write_str("->");
+    fmt.space();
+    ty(fmt, item.return_ty(fmt.tree).unwrap());
+
+    if let Some(block) = item.block(fmt.tree) {
+        //@block
+        fmt.space();
+        fmt.write('{');
+        fmt.write('}');
+    } else {
+        fmt.write(';');
+    }
+}
+
+fn param_list(fmt: &mut Formatter, param_list: cst::ParamList) {
+    if param_list.params(fmt.tree).next().is_none() {
+        fmt.write('(');
+        if param_list.is_variadic(fmt.tree) {
+            fmt.write_str("..");
+        }
+        fmt.write(')');
+        return;
+    }
+
+    //@should be based on `proc ..` len, without including attrs into content len
+    let wrap = content_len(fmt, param_list.0) > WRAP_THRESHOLD;
+
+    fmt.write('(');
+    if wrap {
+        fmt.new_line();
+    }
+
+    let mut first = true;
+    for param_cst in param_list.params(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            if wrap {
+                fmt.new_line();
+            } else {
+                fmt.space();
+            }
+        }
+        if wrap {
+            fmt.tab_single();
+        }
+        first = false;
+        param(fmt, param_cst);
+    }
+
+    let is_variadic = param_list.is_variadic(fmt.tree);
+
+    if is_variadic {
+        fmt.write(',');
+        fmt.space();
+        fmt.write_str("..");
+    }
+
+    if wrap {
+        if !is_variadic {
+            fmt.write(',');
+        }
+        fmt.new_line();
+    }
+    fmt.write(')');
+}
+
+fn param(fmt: &mut Formatter, param: cst::Param) {
+    if param.is_mut(fmt.tree) {
+        fmt.write_str("mut");
+        fmt.space();
+    }
+    name(fmt, param.name(fmt.tree).unwrap());
+    fmt.write(':');
+    fmt.space();
+    ty(fmt, param.ty(fmt.tree).unwrap());
 }
 
 fn struct_item(fmt: &mut Formatter, item: cst::StructItem) {
@@ -303,7 +384,6 @@ fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
     } else {
         fmt.write(';');
     }
-    fmt.new_line();
 }
 
 fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
@@ -313,7 +393,6 @@ fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
             fmt.write('/');
         }
         first = false;
-
         name(fmt, name_cst);
     }
 }
@@ -352,7 +431,6 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
             fmt.tab_single();
         }
         first = false;
-
         import_symbol_fmt(fmt, import_symbol);
     }
 
@@ -381,9 +459,106 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
     }
 }
 
-//@assuming no trivia attached to the name (else it can be lost)
+//==================== TYPE ====================
+
+fn ty(fmt: &mut Formatter, ty_cst: cst::Type) {
+    match ty_cst {
+        cst::Type::Basic(ty_cst) => {
+            let basic = ty_cst.basic(fmt.tree);
+            fmt.write_str(basic.as_str());
+        }
+        cst::Type::Custom(ty_cst) => {
+            path(fmt, ty_cst.path(fmt.tree).unwrap());
+        }
+        cst::Type::Reference(ty_cst) => {
+            fmt.write('&');
+            if ty_cst.is_mut(fmt.tree) {
+                fmt.write_str("mut");
+            }
+            fmt.space();
+            ty(fmt, ty_cst.ref_ty(fmt.tree).unwrap());
+        }
+        cst::Type::Procedure(ty_cst) => {
+            proc_ty(fmt, ty_cst);
+        }
+        cst::Type::ArraySlice(ty_cst) => {
+            fmt.write('[');
+            if ty_cst.is_mut(fmt.tree) {
+                fmt.write_str("mut");
+            }
+            fmt.write(']');
+            ty(fmt, ty_cst.elem_ty(fmt.tree).unwrap());
+        }
+        cst::Type::ArrayStatic(ty_cst) => {
+            fmt.write('[');
+            expr(fmt, ty_cst.len(fmt.tree).unwrap());
+            fmt.write(']');
+            ty(fmt, ty_cst.elem_ty(fmt.tree).unwrap());
+        }
+    }
+}
+
+fn proc_ty(fmt: &mut Formatter, proc_ty: cst::TypeProcedure) {
+    fmt.write_str("proc");
+    fmt.write('(');
+
+    let mut first = true;
+    let param_type_list = proc_ty.type_list(fmt.tree).unwrap();
+
+    for param_ty in param_type_list.types(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        ty(fmt, param_ty);
+    }
+
+    if param_type_list.is_variadic(fmt.tree) {
+        if param_type_list.types(fmt.tree).next().is_some() {
+            fmt.write(',');
+            fmt.space();
+        }
+        fmt.write_str("..");
+    }
+
+    fmt.write(')');
+}
+
+//==================== STMT ====================
+
+fn stmt(fmt: &mut Formatter, stmt: cst::Stmt) {
+    unimplemented!("fmt stmt");
+}
+
+//==================== EXPR ====================
+
+fn expr(fmt: &mut Formatter, expr: cst::Expr) {
+    unimplemented!("fmt expr");
+}
+
+//==================== PAT ====================
+
+fn pat(fmt: &mut Formatter, pat: cst::Pat) {
+    unimplemented!("fmt pat");
+}
+
+//==================== COMMON ====================
+
+//@get the ident token + range instead?
 fn name(fmt: &mut Formatter, name: cst::Name) {
     fmt.write_range(name.range(fmt.tree));
+}
+
+fn path(fmt: &mut Formatter, path: cst::Path) {
+    let mut first = true;
+    for name_cst in path.names(fmt.tree) {
+        if !first {
+            fmt.write('.');
+        }
+        first = false;
+        name(fmt, name_cst);
+    }
 }
 
 /*
