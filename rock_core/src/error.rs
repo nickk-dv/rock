@@ -283,6 +283,14 @@ impl From<Error> for ErrorBuffer {
     }
 }
 
+impl From<Error> for ErrorWarningBuffer {
+    fn from(error: Error) -> ErrorWarningBuffer {
+        let mut errw = ErrorWarningBuffer::default();
+        errw.error(error);
+        errw
+    }
+}
+
 impl From<ErrorBuffer> for ErrorWarningBuffer {
     fn from(err: ErrorBuffer) -> ErrorWarningBuffer {
         let mut errw = ErrorWarningBuffer::default();

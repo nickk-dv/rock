@@ -24,7 +24,7 @@ pub fn parse_tree<'src, 'syn>(
     grammar::source_file(&mut parser);
     let (tokens, events, parse_errors) = parser.finish();
 
-    let tree = syntax_tree::build(tokens, events);
+    let tree = syntax_tree::build(tokens, events, source);
 
     lex_errors.join_e(parse_errors);
     (tree, lex_errors)
@@ -49,7 +49,7 @@ pub fn parse_tree_complete<'src, 'syn>(
 
     if lex_errors.error_count() == 0 {
         let _ = lex_errors.collect();
-        let tree = syntax_tree::build(tokens, events);
+        let tree = syntax_tree::build(tokens, events, source);
         Ok(tree)
     } else {
         Err(lex_errors)

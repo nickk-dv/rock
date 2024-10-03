@@ -128,6 +128,15 @@ mod temp_buffer {
         }
 
         #[inline]
+        pub fn len(&self) -> usize {
+            self.buffer.len()
+        }
+        #[inline]
+        pub fn is_empty(&self) -> bool {
+            self.buffer.is_empty()
+        }
+
+        #[inline]
         pub fn start(&self) -> BufferOffset<T> {
             BufferOffset {
                 idx: self.buffer.len(),

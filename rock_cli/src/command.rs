@@ -10,6 +10,7 @@ pub enum Command {
     Check,
     Build(CommandBuild),
     Run(CommandRun),
+    Fmt,
     Help,
     Version,
 }
@@ -46,6 +47,7 @@ pub fn parse() -> Result<Command, ErrorBuffer> {
         "c" | "check" => command_check(&mut p),
         "b" | "build" => command_build(&mut p),
         "r" | "run" => command_run(&mut p),
+        "f" | "fmt" => command_fmt(&mut p),
         "h" | "help" => command_help(&mut p),
         "v" | "version" => command_version(&mut p),
         _ => {
@@ -101,6 +103,12 @@ fn command_run(p: &mut CommandParser) -> Command {
         args,
     };
     Command::Run(data)
+}
+
+fn command_fmt(p: &mut CommandParser) -> Command {
+    parse_args_none(p);
+    parse_trail_args_none(p);
+    Command::Fmt
 }
 
 fn command_help(p: &mut CommandParser) -> Command {

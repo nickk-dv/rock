@@ -14,7 +14,7 @@ pub struct Parser {
     module_id: ModuleID,
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub enum Event {
     StartNode {
         kind: SyntaxKind,

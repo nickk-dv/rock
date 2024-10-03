@@ -2,6 +2,7 @@ use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::error_print;
 use rock_core::error::{Error, ErrorWarningBuffer, WarningBuffer};
+use rock_core::format;
 use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package;
@@ -19,6 +20,7 @@ pub fn command(command: Command) -> Result<(), Error> {
         Command::Check => check(),
         Command::Build(data) => build(data),
         Command::Run(data) => run(data),
+        Command::Fmt => fmt(),
         Command::Help => {
             help();
             Ok(())
@@ -218,6 +220,37 @@ fn run(data: CommandRun) -> Result<(), Error> {
     }
 }
 
+fn fmt() -> Result<(), Error> {
+    let cache = FileCache::new();
+    let mut session = Session::new(&cache, false)?;
+
+    match fmt_impl(&mut session) {
+        Ok(()) => (),
+        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    }
+    return Ok(());
+
+    fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
+        ast_build::parse(session)?;
+
+        for module_id in session.pkg_storage.module_ids() {
+            let module = session.pkg_storage.module(module_id);
+            //@current way to iterate over all modules of a package
+            // package doesn't know which modules it has directly
+            if module.package_id != Session::ROOT_ID {
+                continue;
+            }
+            let tree = session.module_trees[module_id.raw_index()]
+                .as_ref()
+                .unwrap(); //@assumed be Some after parsing
+
+            let formatted = format::format(tree, &module.source);
+            fs_env::file_create_or_rewrite(&module.path, &formatted)?;
+        }
+        Ok(())
+    }
+}
+
 fn help() {
     let style = AnsiStyle::new();
     let g = style.out.green_bold;
@@ -234,6 +267,7 @@ Usage:
   {c}c, check       {r}Check the program
   {c}b, build       {r}Build the program
   {c}r, run         {r}Build and run the program
+  {c}f, fmt         {r}Format current package
   {c}h, help        {r}Print help information
   {c}v, version     {r}Print compiler version
 
