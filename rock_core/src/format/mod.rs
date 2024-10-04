@@ -1,3 +1,4 @@
+use crate::ast;
 use crate::support::AsStr;
 use crate::syntax::ast_layer::{self as cst, AstNode};
 use crate::syntax::syntax_kind::SyntaxKind;
@@ -124,30 +125,48 @@ fn format_exact(fmt: &mut Formatter, node: &Node) {
     }
 }
 
-const WRAP_THRESHOLD: u32 = 90;
-const SUBWRAP_SYMBOL_THRESHOLD: u32 = 40;
+fn interleaved_node_list<'syn, N: AstNode<'syn>, I: AstNode<'syn>>(
+    fmt: &mut Formatter<'syn>,
+    cst_node: N,
+    format_fn: fn(&mut Formatter<'syn>, I),
+) {
+    let mut first = true;
+    let mut new_line = false;
 
-fn source_file(fmt: &mut Formatter, source_file: cst::SourceFile) {
-    for not in source_file.0.content {
+    for not in cst_node.node().content {
         match *not {
             NodeOrToken::Node(node_id) => {
+                if new_line {
+                    new_line = false;
+                    if !first {
+                        fmt.new_line();
+                    }
+                }
+                first = false;
                 let node = fmt.tree.node(node_id);
-                item(fmt, cst::Item::cast(node).unwrap());
+                fmt.tab_depth();
+                format_fn(fmt, I::cast(node).unwrap());
                 fmt.new_line();
             }
-            NodeOrToken::Token(_) => unreachable!(),
+            NodeOrToken::Token(_) => {}
             NodeOrToken::Trivia(trivia_id) => {
                 let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {
-                        //@leading or trailing part of the source file
-                        //should have no or base endl, without extra spacing
                         let whitespace = &fmt.source[range.as_usize()];
-                        if whitespace.chars().map(|c| c == '\n').count() >= 2 {
-                            fmt.new_line()
+                        if whitespace.chars().filter(|&c| c == '\n').count() >= 2 {
+                            new_line = true;
                         }
                     }
                     Trivia::LineComment => {
+                        if new_line {
+                            new_line = false;
+                            if !first {
+                                fmt.new_line();
+                            }
+                        }
+                        first = false;
+                        fmt.tab_depth();
                         fmt.write_range(range);
                         fmt.new_line();
                     }
@@ -155,6 +174,13 @@ fn source_file(fmt: &mut Formatter, source_file: cst::SourceFile) {
             }
         }
     }
+}
+
+const WRAP_THRESHOLD: u32 = 90;
+const SUBWRAP_SYMBOL_THRESHOLD: u32 = 40;
+
+fn source_file<'syn>(fmt: &mut Formatter<'syn>, source_file: cst::SourceFile<'syn>) {
+    interleaved_node_list(fmt, source_file, item);
 }
 
 fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
@@ -229,7 +255,7 @@ fn vis(fmt: &mut Formatter, vis: Option<cst::Visibility>) {
     }
 }
 
-fn item(fmt: &mut Formatter, item: cst::Item) {
+fn item<'syn>(fmt: &mut Formatter<'syn>, item: cst::Item<'syn>) {
     match item {
         cst::Item::Proc(item) => proc_item(fmt, item),
         cst::Item::Enum(item) => format_exact(fmt, item.0),
@@ -240,7 +266,7 @@ fn item(fmt: &mut Formatter, item: cst::Item) {
     }
 }
 
-fn proc_item(fmt: &mut Formatter, item: cst::ProcItem) {
+fn proc_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ProcItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxKind::BLOCK);
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
@@ -257,11 +283,9 @@ fn proc_item(fmt: &mut Formatter, item: cst::ProcItem) {
     fmt.space();
     ty(fmt, item.return_ty(fmt.tree).unwrap());
 
-    if let Some(block) = item.block(fmt.tree) {
-        //@block
+    if let Some(block_cst) = item.block(fmt.tree) {
         fmt.space();
-        fmt.write('{');
-        fmt.write('}');
+        block(fmt, block_cst);
     } else {
         fmt.write(';');
     }
@@ -523,12 +547,150 @@ fn proc_ty(fmt: &mut Formatter, proc_ty: cst::TypeProcedure) {
     }
 
     fmt.write(')');
+    fmt.space();
+    fmt.write_str("->");
+    fmt.space();
+    ty(fmt, proc_ty.return_ty(fmt.tree).unwrap());
 }
 
 //==================== STMT ====================
 
-fn stmt(fmt: &mut Formatter, stmt: cst::Stmt) {
-    unimplemented!("fmt stmt");
+fn block<'syn>(fmt: &mut Formatter<'syn>, block: cst::Block<'syn>) {
+    if block.stmts(fmt.tree).next().is_none() {
+        fmt.write('{');
+        fmt.write('}');
+        return;
+    }
+
+    fmt.write('{');
+    fmt.new_line();
+
+    fmt.tab_inc();
+    interleaved_node_list(fmt, block, stmt);
+    fmt.tab_dec();
+
+    fmt.tab_depth();
+    fmt.write('}');
+}
+
+fn stmt<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::Stmt<'syn>) {
+    match stmt {
+        cst::Stmt::Break(stmt) => stmt_break(fmt, stmt),
+        cst::Stmt::Continue(stmt) => stmt_continue(fmt, stmt),
+        cst::Stmt::Return(stmt) => stmt_return(fmt, stmt),
+        cst::Stmt::Defer(stmt) => stmt_defer(fmt, stmt),
+        cst::Stmt::Loop(stmt) => stmt_loop(fmt, stmt),
+        cst::Stmt::Local(stmt) => stmt_local(fmt, stmt),
+        cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt, true),
+        cst::Stmt::ExprSemi(stmt) => stmt_expr_semi(fmt, stmt),
+        cst::Stmt::ExprTail(stmt) => stmt_expr_tail(fmt, stmt),
+    }
+}
+
+fn stmt_break<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtBreak<'syn>) {
+    trivia_lift(fmt, stmt.0, SyntaxKind::TOMBSTONE);
+    fmt.write_str("break");
+    fmt.write(';');
+}
+
+fn stmt_continue<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtContinue<'syn>) {
+    trivia_lift(fmt, stmt.0, SyntaxKind::TOMBSTONE);
+    fmt.write_str("continue");
+    fmt.write(';');
+}
+
+fn stmt_return<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtReturn<'syn>) {
+    fmt.write_str("return");
+    if let Some(expr_cst) = stmt.expr(fmt.tree) {
+        fmt.space();
+        expr(fmt, expr_cst);
+    }
+    fmt.write(';');
+}
+
+fn stmt_defer<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtDefer<'syn>) {
+    fmt.write_str("defer");
+    fmt.space();
+    block(fmt, stmt.block(fmt.tree).unwrap()); //@support short block with `;`
+}
+
+fn stmt_loop<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtLoop<'syn>) {
+    fmt.write_str("for");
+
+    if let Some(header) = stmt.while_header(fmt.tree) {
+        fmt.space();
+        expr(fmt, header.cond(fmt.tree).unwrap());
+        fmt.space();
+    } else if let Some(header) = stmt.clike_header(fmt.tree) {
+        fmt.space();
+        stmt_local(fmt, header.local(fmt.tree).unwrap());
+        fmt.space();
+        expr(fmt, header.cond(fmt.tree).unwrap());
+        fmt.write(';');
+        fmt.space();
+        stmt_assign(fmt, header.assign(fmt.tree).unwrap(), false);
+        fmt.space();
+    } else {
+        fmt.space();
+    }
+
+    block(fmt, stmt.block(fmt.tree).unwrap());
+}
+
+fn stmt_local(fmt: &mut Formatter, stmt: cst::StmtLocal) {
+    fmt.write_str("let");
+    fmt.space();
+    bind(fmt, stmt.bind(fmt.tree).unwrap());
+
+    if let Some(ty_cst) = stmt.ty(fmt.tree) {
+        fmt.write(':');
+        fmt.space();
+        ty(fmt, ty_cst);
+    }
+
+    fmt.space();
+    fmt.write('=');
+    fmt.space();
+    expr(fmt, stmt.init(fmt.tree).unwrap());
+    fmt.write(';');
+}
+
+fn stmt_assign(fmt: &mut Formatter, stmt: cst::StmtAssign, semi: bool) {
+    let mut lhs_rhs_iter = stmt.lhs_rhs_iter(fmt.tree);
+
+    expr(fmt, lhs_rhs_iter.next().unwrap());
+    fmt.space();
+
+    let assign_op = stmt.assign_op(fmt.tree).unwrap();
+    match assign_op {
+        ast::AssignOp::Assign => fmt.write('='),
+        ast::AssignOp::Bin(bin_op) => fmt.write_str(bin_op.as_str()),
+    }
+
+    fmt.space();
+    expr(fmt, lhs_rhs_iter.next().unwrap());
+
+    if semi {
+        fmt.write(';');
+    }
+}
+
+fn stmt_expr_semi(fmt: &mut Formatter, stmt: cst::StmtExprSemi) {
+    let expr_cst = stmt.expr(fmt.tree).unwrap();
+    expr(fmt, expr_cst);
+    match expr_cst {
+        cst::Expr::If(_) => {}
+        cst::Expr::Block(_) => {}
+        cst::Expr::Match(_) => {}
+        _ => fmt.write(';'),
+    }
+}
+
+fn stmt_expr_tail(fmt: &mut Formatter, stmt: cst::StmtExprTail) {
+    fmt.write_str("->");
+    fmt.space();
+    expr(fmt, stmt.expr(fmt.tree).unwrap());
+    fmt.write(';');
 }
 
 //==================== EXPR ====================
@@ -558,6 +720,18 @@ fn path(fmt: &mut Formatter, path: cst::Path) {
         }
         first = false;
         name(fmt, name_cst);
+    }
+}
+
+fn bind(fmt: &mut Formatter, bind: cst::Bind) {
+    if let Some(name_cst) = bind.name(fmt.tree) {
+        if bind.is_mut(fmt.tree) {
+            fmt.write_str("mut");
+            fmt.space();
+        }
+        name(fmt, name_cst);
+    } else {
+        fmt.write('_');
     }
 }
 
