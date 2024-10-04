@@ -57,11 +57,13 @@ mod arena {
         }
 
         fn offset_raw<T: Copy>(&mut self, size: usize) -> *mut T {
+            let align = align_of::<T>();
+            self.offset = (self.offset + align - 1) & !(align - 1);
+
             if self.offset + size > self.block.layout.size() {
                 self.grow(size);
             }
             unsafe {
-                //@consider alignment?
                 let offset = self.block.data.add(self.offset) as *mut T;
                 self.offset += size;
                 offset
