@@ -285,13 +285,13 @@ fn proc_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ProcItem<'syn>) {
 
     if let Some(block_cst) = item.block(fmt.tree) {
         fmt.space();
-        block(fmt, block_cst);
+        block(fmt, block_cst, false);
     } else {
         fmt.write(';');
     }
 }
 
-fn param_list(fmt: &mut Formatter, param_list: cst::ParamList) {
+fn param_list<'syn>(fmt: &mut Formatter<'syn>, param_list: cst::ParamList<'syn>) {
     if param_list.params(fmt.tree).next().is_none() {
         fmt.write('(');
         if param_list.is_variadic(fmt.tree) {
@@ -343,7 +343,7 @@ fn param_list(fmt: &mut Formatter, param_list: cst::ParamList) {
     fmt.write(')');
 }
 
-fn param(fmt: &mut Formatter, param: cst::Param) {
+fn param<'syn>(fmt: &mut Formatter<'syn>, param: cst::Param<'syn>) {
     if param.is_mut(fmt.tree) {
         fmt.write_str("mut");
         fmt.space();
@@ -485,7 +485,7 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
 
 //==================== TYPE ====================
 
-fn ty(fmt: &mut Formatter, ty_cst: cst::Type) {
+fn ty<'syn>(fmt: &mut Formatter<'syn>, ty_cst: cst::Type<'syn>) {
     match ty_cst {
         cst::Type::Basic(ty_cst) => {
             let basic = ty_cst.basic(fmt.tree);
@@ -522,7 +522,7 @@ fn ty(fmt: &mut Formatter, ty_cst: cst::Type) {
     }
 }
 
-fn proc_ty(fmt: &mut Formatter, proc_ty: cst::TypeProcedure) {
+fn proc_ty<'syn>(fmt: &mut Formatter<'syn>, proc_ty: cst::TypeProcedure<'syn>) {
     fmt.write_str("proc");
     fmt.write('(');
 
@@ -555,9 +555,13 @@ fn proc_ty(fmt: &mut Formatter, proc_ty: cst::TypeProcedure) {
 
 //==================== STMT ====================
 
-fn block<'syn>(fmt: &mut Formatter<'syn>, block: cst::Block<'syn>) {
+fn block<'syn>(fmt: &mut Formatter<'syn>, block: cst::Block<'syn>, carry: bool) {
     if block.stmts(fmt.tree).next().is_none() {
         fmt.write('{');
+        if carry {
+            fmt.new_line();
+            fmt.tab_depth();
+        }
         fmt.write('}');
         return;
     }
@@ -566,6 +570,7 @@ fn block<'syn>(fmt: &mut Formatter<'syn>, block: cst::Block<'syn>) {
     fmt.new_line();
 
     fmt.tab_inc();
+    //@comments inside are lost due to empty block check
     interleaved_node_list(fmt, block, stmt);
     fmt.tab_dec();
 
@@ -611,7 +616,7 @@ fn stmt_return<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtReturn<'syn>) {
 fn stmt_defer<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtDefer<'syn>) {
     fmt.write_str("defer");
     fmt.space();
-    block(fmt, stmt.block(fmt.tree).unwrap()); //@support short block with `;`
+    block(fmt, stmt.block(fmt.tree).unwrap(), false); //@support short block with `;`
 }
 
 fn stmt_loop<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtLoop<'syn>) {
@@ -634,10 +639,10 @@ fn stmt_loop<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtLoop<'syn>) {
         fmt.space();
     }
 
-    block(fmt, stmt.block(fmt.tree).unwrap());
+    block(fmt, stmt.block(fmt.tree).unwrap(), false);
 }
 
-fn stmt_local(fmt: &mut Formatter, stmt: cst::StmtLocal) {
+fn stmt_local<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtLocal<'syn>) {
     fmt.write_str("let");
     fmt.space();
     bind(fmt, stmt.bind(fmt.tree).unwrap());
@@ -655,27 +660,28 @@ fn stmt_local(fmt: &mut Formatter, stmt: cst::StmtLocal) {
     fmt.write(';');
 }
 
-fn stmt_assign(fmt: &mut Formatter, stmt: cst::StmtAssign, semi: bool) {
-    let mut lhs_rhs_iter = stmt.lhs_rhs_iter(fmt.tree);
-
-    expr(fmt, lhs_rhs_iter.next().unwrap());
+fn stmt_assign<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtAssign<'syn>, semi: bool) {
+    let mut lhs_rhs = stmt.lhs_rhs_iter(fmt.tree);
+    expr(fmt, lhs_rhs.next().unwrap());
     fmt.space();
 
     let assign_op = stmt.assign_op(fmt.tree).unwrap();
     match assign_op {
         ast::AssignOp::Assign => fmt.write('='),
-        ast::AssignOp::Bin(bin_op) => fmt.write_str(bin_op.as_str()),
+        ast::AssignOp::Bin(bin_op) => {
+            fmt.write_str(bin_op.as_str());
+            fmt.write('=');
+        }
     }
 
     fmt.space();
-    expr(fmt, lhs_rhs_iter.next().unwrap());
-
+    expr(fmt, lhs_rhs.next().unwrap());
     if semi {
         fmt.write(';');
     }
 }
 
-fn stmt_expr_semi(fmt: &mut Formatter, stmt: cst::StmtExprSemi) {
+fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtExprSemi<'syn>) {
     let expr_cst = stmt.expr(fmt.tree).unwrap();
     expr(fmt, expr_cst);
     match expr_cst {
@@ -686,7 +692,7 @@ fn stmt_expr_semi(fmt: &mut Formatter, stmt: cst::StmtExprSemi) {
     }
 }
 
-fn stmt_expr_tail(fmt: &mut Formatter, stmt: cst::StmtExprTail) {
+fn stmt_expr_tail<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtExprTail<'syn>) {
     fmt.write_str("->");
     fmt.space();
     expr(fmt, stmt.expr(fmt.tree).unwrap());
@@ -695,14 +701,254 @@ fn stmt_expr_tail(fmt: &mut Formatter, stmt: cst::StmtExprTail) {
 
 //==================== EXPR ====================
 
-fn expr(fmt: &mut Formatter, expr: cst::Expr) {
-    unimplemented!("fmt expr");
+fn expr<'syn>(fmt: &mut Formatter<'syn>, expr: cst::Expr<'syn>) {
+    match expr {
+        cst::Expr::Paren(expr) => expr_paren(fmt, expr),
+        cst::Expr::Lit(lit_cst) => lit(fmt, lit_cst),
+        cst::Expr::If(expr) => expr_if(fmt, expr),
+        cst::Expr::Block(block_cst) => block(fmt, block_cst, false),
+        cst::Expr::Match(expr) => todo!(),
+        cst::Expr::Field(expr) => expr_field(fmt, expr),
+        cst::Expr::Index(expr) => expr_index(fmt, expr),
+        cst::Expr::Call(expr) => expr_call(fmt, expr),
+        cst::Expr::Cast(expr) => expr_cast(fmt, expr),
+        cst::Expr::Sizeof(expr) => expr_sizeof(fmt, expr),
+        cst::Expr::Item(expr) => expr_item(fmt, expr),
+        cst::Expr::Variant(expr) => expr_variant(fmt, expr),
+        cst::Expr::StructInit(expr) => expr_struct_init(fmt, expr),
+        cst::Expr::ArrayInit(expr) => expr_array_init(fmt, expr),
+        cst::Expr::ArrayRepeat(expr) => expr_array_repeat(fmt, expr),
+        cst::Expr::Deref(expr) => expr_deref(fmt, expr),
+        cst::Expr::Address(expr) => expr_address(fmt, expr),
+        cst::Expr::Range(range_cst) => range(fmt, range_cst),
+        cst::Expr::Unary(expr) => expr_unary(fmt, expr),
+        cst::Expr::Binary(expr) => expr_binary(fmt, expr),
+    }
+}
+
+fn expr_paren<'syn>(fmt: &mut Formatter<'syn>, paren: cst::ExprParen<'syn>) {
+    fmt.write('(');
+    expr(fmt, paren.expr(fmt.tree).unwrap());
+    fmt.write(')');
+}
+
+fn expr_if<'syn>(fmt: &mut Formatter<'syn>, if_: cst::ExprIf<'syn>) {
+    let entry = if_.entry_branch(fmt.tree).unwrap();
+    fmt.write_str("if");
+    fmt.space();
+    expr(fmt, entry.cond(fmt.tree).unwrap());
+    fmt.space();
+    block(fmt, entry.block(fmt.tree).unwrap(), true);
+
+    for branch in if_.else_if_branches(fmt.tree) {
+        fmt.space();
+        fmt.write_str("else");
+        fmt.space();
+        fmt.write_str("if");
+        fmt.space();
+        expr(fmt, branch.cond(fmt.tree).unwrap());
+        fmt.space();
+        block(fmt, branch.block(fmt.tree).unwrap(), true);
+    }
+
+    if let Some(else_block) = if_.else_block(fmt.tree) {
+        fmt.space();
+        fmt.write_str("else");
+        fmt.space();
+        block(fmt, else_block, true);
+    }
+}
+
+fn expr_field<'syn>(fmt: &mut Formatter<'syn>, field: cst::ExprField<'syn>) {
+    expr(fmt, field.target(fmt.tree).unwrap());
+    fmt.write('.');
+    name(fmt, field.name(fmt.tree).unwrap());
+}
+
+fn expr_index<'syn>(fmt: &mut Formatter<'syn>, index: cst::ExprIndex<'syn>) {
+    let mut target_index = index.target_index_iter(fmt.tree);
+    expr(fmt, target_index.next().unwrap());
+    fmt.write('[');
+    if index.is_mut(fmt.tree) {
+        fmt.write_str("mut");
+        fmt.space();
+    }
+    expr(fmt, target_index.next().unwrap());
+    fmt.write(']');
+}
+
+fn expr_call<'syn>(fmt: &mut Formatter<'syn>, call: cst::ExprCall<'syn>) {
+    expr(fmt, call.target(fmt.tree).unwrap());
+    args_list(fmt, call.args_list(fmt.tree).unwrap());
+}
+
+fn expr_cast<'syn>(fmt: &mut Formatter<'syn>, cast: cst::ExprCast<'syn>) {
+    expr(fmt, cast.target(fmt.tree).unwrap());
+    fmt.space();
+    fmt.write_str("as");
+    fmt.space();
+    ty(fmt, cast.into_ty(fmt.tree).unwrap());
+}
+
+fn expr_sizeof<'syn>(fmt: &mut Formatter<'syn>, sizeof: cst::ExprSizeof<'syn>) {
+    fmt.write_str("sizeof");
+    fmt.write('(');
+    ty(fmt, sizeof.ty(fmt.tree).unwrap());
+    fmt.write(')');
+}
+
+fn expr_item<'syn>(fmt: &mut Formatter<'syn>, expr: cst::ExprItem<'syn>) {
+    path(fmt, expr.path(fmt.tree).unwrap());
+    if let Some(args_list_cst) = expr.args_list(fmt.tree) {
+        args_list(fmt, args_list_cst);
+    }
+}
+
+fn expr_variant<'syn>(fmt: &mut Formatter<'syn>, variant: cst::ExprVariant<'syn>) {
+    fmt.write('.');
+    name(fmt, variant.name(fmt.tree).unwrap());
+    if let Some(args_list_cst) = variant.args_list(fmt.tree) {
+        args_list(fmt, args_list_cst);
+    }
+}
+
+fn expr_struct_init<'syn>(fmt: &mut Formatter<'syn>, struct_init: cst::ExprStructInit<'syn>) {
+    if let Some(path_cst) = struct_init.path(fmt.tree) {
+        path(fmt, path_cst);
+    }
+    fmt.write('.');
+    field_init_list(fmt, struct_init.field_init_list(fmt.tree).unwrap());
+}
+
+fn field_init_list<'syn>(fmt: &mut Formatter<'syn>, field_init_list: cst::FieldInitList<'syn>) {
+    if field_init_list.field_inits(fmt.tree).next().is_none() {
+        fmt.write('{');
+        fmt.write('}');
+        return;
+    }
+
+    fmt.write('{');
+    fmt.space();
+
+    let mut first = true;
+    for field_init_cst in field_init_list.field_inits(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        field_init(fmt, field_init_cst);
+    }
+
+    fmt.space();
+    fmt.write('}');
+}
+
+fn field_init<'syn>(fmt: &mut Formatter<'syn>, field_init: cst::FieldInit<'syn>) {
+    name(fmt, field_init.name(fmt.tree).unwrap());
+    if let Some(expr_cst) = field_init.expr(fmt.tree) {
+        fmt.write(':');
+        fmt.space();
+        expr(fmt, expr_cst);
+    }
+}
+
+fn expr_array_init<'syn>(fmt: &mut Formatter<'syn>, array_init: cst::ExprArrayInit<'syn>) {
+    fmt.write('[');
+
+    let mut first = true;
+    for expr_cst in array_init.inputs(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        expr(fmt, expr_cst);
+    }
+
+    fmt.write(']');
+}
+
+fn expr_array_repeat<'syn>(fmt: &mut Formatter<'syn>, array_repeat: cst::ExprArrayRepeat<'syn>) {
+    fmt.write('[');
+
+    let mut expr_len = array_repeat.expr_len_iter(fmt.tree);
+    expr(fmt, expr_len.next().unwrap());
+    fmt.write(';');
+    fmt.space();
+    expr(fmt, expr_len.next().unwrap());
+
+    fmt.write(']');
+}
+
+fn expr_deref<'syn>(fmt: &mut Formatter<'syn>, deref: cst::ExprDeref<'syn>) {
+    fmt.write('*');
+    expr(fmt, deref.expr(fmt.tree).unwrap());
+}
+
+fn expr_address<'syn>(fmt: &mut Formatter<'syn>, address: cst::ExprAddress<'syn>) {
+    fmt.write('&');
+    if address.is_mut(fmt.tree) {
+        fmt.write_str("mut");
+        fmt.space();
+    }
+    expr(fmt, address.expr(fmt.tree).unwrap());
+}
+
+fn expr_unary<'syn>(fmt: &mut Formatter<'syn>, unary: cst::ExprUnary<'syn>) {
+    let un_op = unary.un_op(fmt.tree);
+    fmt.write_str(un_op.as_str());
+    expr(fmt, unary.rhs(fmt.tree).unwrap());
+}
+
+fn expr_binary<'syn>(fmt: &mut Formatter<'syn>, binary: cst::ExprBinary<'syn>) {
+    let mut lhs_rhs = binary.lhs_rhs_iter(fmt.tree);
+    expr(fmt, lhs_rhs.next().unwrap());
+    fmt.space();
+    let bin_op = binary.bin_op(fmt.tree);
+    fmt.write_str(bin_op.as_str());
+    fmt.space();
+    expr(fmt, lhs_rhs.next().unwrap());
 }
 
 //==================== PAT ====================
 
 fn pat(fmt: &mut Formatter, pat: cst::Pat) {
     unimplemented!("fmt pat");
+}
+
+fn lit(fmt: &mut Formatter, lit: cst::Lit) {
+    fmt.write_range(lit.range(fmt.tree));
+}
+
+fn range<'syn>(fmt: &mut Formatter<'syn>, range: cst::Range<'syn>) {
+    match range {
+        cst::Range::Full(_) => fmt.write_str(".."),
+        cst::Range::ToExclusive(range) => {
+            fmt.write_str("..<");
+            expr(fmt, range.end(fmt.tree).unwrap());
+        }
+        cst::Range::ToInclusive(range) => {
+            fmt.write_str("..=");
+            expr(fmt, range.end(fmt.tree).unwrap());
+        }
+        cst::Range::From(range) => {
+            expr(fmt, range.start(fmt.tree).unwrap());
+            fmt.write_str("..");
+        }
+        cst::Range::Exclusive(range) => {
+            let mut start_end = range.start_end_iter(fmt.tree);
+            expr(fmt, start_end.next().unwrap());
+            fmt.write_str("..<");
+            expr(fmt, start_end.next().unwrap());
+        }
+        cst::Range::Inclusive(range) => {
+            let mut start_end = range.start_end_iter(fmt.tree);
+            expr(fmt, start_end.next().unwrap());
+            fmt.write_str("..=");
+            expr(fmt, start_end.next().unwrap());
+        }
+    }
 }
 
 //==================== COMMON ====================
@@ -733,6 +979,20 @@ fn bind(fmt: &mut Formatter, bind: cst::Bind) {
     } else {
         fmt.write('_');
     }
+}
+
+fn args_list<'syn>(fmt: &mut Formatter<'syn>, args_list: cst::ArgsList<'syn>) {
+    fmt.write('(');
+    let mut first = true;
+    for expr_cst in args_list.exprs(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        expr(fmt, expr_cst);
+    }
+    fmt.write(')');
 }
 
 /*

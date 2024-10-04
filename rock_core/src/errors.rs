@@ -182,6 +182,11 @@ pub fn lexer_float_parse_failed(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn lexer_float_exp_missing_digits(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "missing digits after float exponent";
+    emit.error(Error::new(msg, src, None));
+}
+
 //==================== SCOPE ====================
 
 pub fn scope_name_already_defined(

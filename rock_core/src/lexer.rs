@@ -478,19 +478,35 @@ fn lex_number(lex: &mut Lexer, fc: char) {
     }
     skip_num_digits(lex);
 
-    if lex.eat('.') {
+    if lex.at('.') && matches!(lex.peek_next(), Some('0'..='9')) {
+        lex.eat('.');
         skip_num_digits(lex);
+        let mut float_error = false;
 
         if lex.eat('e') {
-            lex.eat('-');
-            skip_num_digits(lex);
+            lex.buffer.push('e');
+
+            if lex.eat('+') {
+                lex.buffer.push('+');
+            } else if lex.eat('-') {
+                lex.buffer.push('-');
+            }
+
+            if matches!(lex.peek(), Some('0'..='9')) {
+                skip_num_digits(lex);
+            } else {
+                float_error = true;
+                err::lexer_float_exp_missing_digits(lex, lex.make_src(start));
+            }
         }
 
-        if let Ok(float) = lex.buffer.parse::<f64>() {
+        if float_error {
+            lex.tokens.add_float(0.0, lex.make_range(start));
+        } else if let Ok(float) = lex.buffer.parse::<f64>() {
             lex.tokens.add_float(float, lex.make_range(start));
         } else {
-            err::lexer_float_parse_failed(lex, lex.make_src(start));
             lex.tokens.add_float(0.0, lex.make_range(start));
+            err::lexer_float_parse_failed(lex, lex.make_src(start));
         }
     } else {
         lex_integer_dec(lex, start);
