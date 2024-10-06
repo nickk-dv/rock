@@ -59,6 +59,7 @@ pub enum SyntaxKind {
     MATCH_ARM,
     EXPR_FIELD,
     EXPR_INDEX,
+    EXPR_SLICE,
     EXPR_CALL,
     EXPR_CAST,
     EXPR_SIZEOF,

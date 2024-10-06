@@ -288,6 +288,7 @@ ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
 ast_node_impl!(ExprField, SyntaxKind::EXPR_FIELD);
 ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
+ast_node_impl!(ExprSlice, SyntaxKind::EXPR_SLICE);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
 ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
 ast_node_impl!(ExprSizeof, SyntaxKind::EXPR_SIZEOF);
@@ -485,6 +486,7 @@ pub enum Expr<'syn> {
     Match(ExprMatch<'syn>),
     Field(ExprField<'syn>),
     Index(ExprIndex<'syn>),
+    Slice(ExprSlice<'syn>),
     Call(ExprCall<'syn>),
     Cast(ExprCast<'syn>),
     Sizeof(ExprSizeof<'syn>),
@@ -508,6 +510,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
             SyntaxKind::EXPR_FIELD => Some(Expr::Field(ExprField(node))),
             SyntaxKind::EXPR_INDEX => Some(Expr::Index(ExprIndex(node))),
+            SyntaxKind::EXPR_SLICE => Some(Expr::Slice(ExprSlice(node))),
             SyntaxKind::EXPR_CALL => Some(Expr::Call(ExprCall(node))),
             SyntaxKind::EXPR_CAST => Some(Expr::Cast(ExprCast(node))),
             SyntaxKind::EXPR_SIZEOF => Some(Expr::Sizeof(ExprSizeof(node))),
@@ -542,6 +545,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::Match(expr) => expr.0,
             Expr::Field(expr) => expr.0,
             Expr::Index(expr) => expr.0,
+            Expr::Slice(expr) => expr.0,
             Expr::Call(expr) => expr.0,
             Expr::Cast(expr) => expr.0,
             Expr::Sizeof(expr) => expr.0,
@@ -569,6 +573,7 @@ impl<'syn> Expr<'syn> {
             Expr::Match(expr) => expr.range(tree),
             Expr::Field(expr) => expr.range(tree),
             Expr::Index(expr) => expr.range(tree),
+            Expr::Slice(expr) => expr.range(tree),
             Expr::Call(expr) => expr.range(tree),
             Expr::Cast(expr) => expr.range(tree),
             Expr::Sizeof(expr) => expr.range(tree),
@@ -1015,7 +1020,11 @@ impl<'syn> ExprField<'syn> {
 
 impl<'syn> ExprIndex<'syn> {
     node_iter!(target_index_iter, Expr);
+}
+
+impl<'syn> ExprSlice<'syn> {
     find_token!(is_mut, T![mut]);
+    node_iter!(target_range_iter, Expr);
 }
 
 impl<'syn> ExprCall<'syn> {

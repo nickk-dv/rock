@@ -290,11 +290,8 @@ pub fn typecheck_expr<'hir>(
         }
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
-        ast::ExprKind::Index {
-            target,
-            mutt,
-            index,
-        } => typecheck_index(ctx, target, mutt, index, expr.range),
+        ast::ExprKind::Index { target, index } => typecheck_index(ctx, target, index, expr.range),
+        ast::ExprKind::Slice { .. } => unimplemented!("typecheck expr slice"),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
@@ -309,7 +306,7 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::ArrayRepeat { expr, len } => typecheck_array_repeat(ctx, expect, expr, len),
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs),
-        ast::ExprKind::Range { range } => todo!("typecheck range"),
+        ast::ExprKind::Range { .. } => unimplemented!("typecheck expr range"),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expect, op, op_range, rhs)
         }
@@ -1036,11 +1033,9 @@ impl<'hir> CollectionType<'hir> {
     }
 }
 
-//@index or slice, desugar correctly
 fn typecheck_index<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     target: &ast::Expr,
-    mutt: ast::Mut,
     index: &ast::Expr,
     expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
 ) -> TypeResult<'hir> {

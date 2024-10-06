@@ -641,6 +641,7 @@ fn semantic_visit_node(
                     SyntaxKind::MATCH_ARM => None,
                     SyntaxKind::EXPR_FIELD => Some(SemanticToken::Property),
                     SyntaxKind::EXPR_INDEX => None,
+                    SyntaxKind::EXPR_SLICE => None,
                     SyntaxKind::EXPR_CALL => None, //defer to path
                     SyntaxKind::EXPR_CAST => None,
                     SyntaxKind::EXPR_SIZEOF => None,

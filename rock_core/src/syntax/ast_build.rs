@@ -731,13 +731,18 @@ fn expr_kind<'ast>(
         cst::Expr::Index(index) => {
             let mut target_index_iter = index.target_index_iter(ctx.tree);
             let target = expr(ctx, target_index_iter.next().unwrap());
-            let mutt = mutt(index.is_mut(ctx.tree));
             let index = expr(ctx, target_index_iter.next().unwrap());
-
-            ast::ExprKind::Index {
+            ast::ExprKind::Index { target, index }
+        }
+        cst::Expr::Slice(slice) => {
+            let mut target_range_iter = slice.target_range_iter(ctx.tree);
+            let target = expr(ctx, target_range_iter.next().unwrap());
+            let mutt = mutt(slice.is_mut(ctx.tree));
+            let range = expr(ctx, target_range_iter.next().unwrap());
+            ast::ExprKind::Slice {
                 target,
                 mutt,
-                index,
+                range,
             }
         }
         cst::Expr::Call(call) => {
@@ -772,14 +777,21 @@ fn expr_kind<'ast>(
             let offset = ctx.s.field_inits.start();
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();
             for field_init_cst in field_init_list.field_inits(ctx.tree) {
-                let expr = expr(ctx, field_init_cst.expr(ctx.tree).unwrap());
-                let name = if let Some(name_cst) = field_init_cst.name(ctx.tree) {
-                    name(ctx, name_cst)
+                let name = name(ctx, field_init_cst.name(ctx.tree).unwrap());
+                let expr = if let Some(expr_cst) = field_init_cst.expr(ctx.tree) {
+                    expr(ctx, expr_cst)
                 } else {
-                    match expr.kind {
-                        ast::ExprKind::Item { path, .. } => path.names[0],
-                        _ => unreachable!(),
-                    }
+                    let names = ctx.arena.alloc_slice(&[name]);
+                    let path = ctx.arena.alloc(ast::Path { names });
+                    let kind = ast::ExprKind::Item {
+                        path,
+                        args_list: None,
+                    };
+                    let expr = ast::Expr {
+                        kind,
+                        range: name.range,
+                    };
+                    ctx.arena.alloc(expr)
                 };
                 let field_init = ast::FieldInit { name, expr };
                 ctx.s.field_inits.add(field_init);

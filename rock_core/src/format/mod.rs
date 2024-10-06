@@ -616,6 +616,7 @@ fn ty<'syn>(fmt: &mut Formatter<'syn>, ty_cst: cst::Type<'syn>) {
         }
         cst::Type::ArraySlice(ty_cst) => {
             fmt.write('[');
+            fmt.write('&');
             if ty_cst.is_mut(fmt.tree) {
                 fmt.write_str("mut");
             }
@@ -818,6 +819,7 @@ fn expr<'syn>(fmt: &mut Formatter<'syn>, expr: cst::Expr<'syn>) {
         cst::Expr::Match(expr) => expr_match(fmt, expr),
         cst::Expr::Field(expr) => expr_field(fmt, expr),
         cst::Expr::Index(expr) => expr_index(fmt, expr),
+        cst::Expr::Slice(expr) => expr_slice(fmt, expr),
         cst::Expr::Call(expr) => expr_call(fmt, expr),
         cst::Expr::Cast(expr) => expr_cast(fmt, expr),
         cst::Expr::Sizeof(expr) => expr_sizeof(fmt, expr),
@@ -905,11 +907,20 @@ fn expr_index<'syn>(fmt: &mut Formatter<'syn>, index: cst::ExprIndex<'syn>) {
     let mut target_index = index.target_index_iter(fmt.tree);
     expr(fmt, target_index.next().unwrap());
     fmt.write('[');
-    if index.is_mut(fmt.tree) {
+    expr(fmt, target_index.next().unwrap());
+    fmt.write(']');
+}
+
+fn expr_slice<'syn>(fmt: &mut Formatter<'syn>, slice: cst::ExprSlice<'syn>) {
+    let mut target_range = slice.target_range_iter(fmt.tree);
+    expr(fmt, target_range.next().unwrap());
+    fmt.write('[');
+    fmt.write('&');
+    if slice.is_mut(fmt.tree) {
         fmt.write_str("mut");
         fmt.space();
     }
-    expr(fmt, target_index.next().unwrap());
+    expr(fmt, target_range.next().unwrap());
     fmt.write(']');
 }
 

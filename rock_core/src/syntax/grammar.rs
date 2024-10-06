@@ -525,19 +525,17 @@ fn param_type_list(p: &mut Parser) {
 fn type_slice_or_array(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['[']);
-    match p.peek() {
-        T![mut] | T![']'] => {
-            p.eat(T![mut]);
-            p.expect(T![']']);
-            ty(p);
-            m.complete(p, SyntaxKind::TYPE_ARRAY_SLICE);
-        }
-        _ => {
-            expr(p);
-            p.expect(T![']']);
-            ty(p);
-            m.complete(p, SyntaxKind::TYPE_ARRAY_STATIC);
-        }
+
+    if p.eat(T![&]) {
+        p.eat(T![mut]);
+        p.expect(T![']']);
+        ty(p);
+        m.complete(p, SyntaxKind::TYPE_ARRAY_SLICE);
+    } else {
+        expr(p);
+        p.expect(T![']']);
+        ty(p);
+        m.complete(p, SyntaxKind::TYPE_ARRAY_STATIC);
     }
 }
 
@@ -793,10 +791,17 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             T!['['] => {
                 let m = p.start_before(mc);
                 p.bump(T!['[']);
-                p.eat(T![mut]);
-                expr(p);
-                p.expect(T![']']);
-                mc = m.complete(p, SyntaxKind::EXPR_INDEX);
+
+                if p.eat(T![&]) {
+                    p.eat(T![mut]);
+                    expr(p);
+                    p.expect(T![']']);
+                    mc = m.complete(p, SyntaxKind::EXPR_SLICE);
+                } else {
+                    expr(p);
+                    p.expect(T![']']);
+                    mc = m.complete(p, SyntaxKind::EXPR_INDEX);
+                }
             }
             T!['('] => {
                 let m = p.start_before(mc);
@@ -1035,8 +1040,10 @@ fn field_init(p: &mut Parser) {
     if p.at_next(T![:]) {
         name(p);
         p.bump(T![:]);
+        expr(p);
+    } else {
+        name(p);
     }
-    expr(p);
     m.complete(p, SyntaxKind::FIELD_INIT);
 }
 

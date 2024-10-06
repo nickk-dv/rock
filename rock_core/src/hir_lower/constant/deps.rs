@@ -712,17 +712,17 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             Ok(())
         }
         //@index or slicing
-        ast::ExprKind::Index {
-            target,
-            mutt,
-            index,
-        } => {
+        ast::ExprKind::Index { target, index } => {
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, index)?;
             Ok(())
         }
+        ast::ExprKind::Slice { .. } => {
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "slice");
+            Err(parent_id)
+        }
         ast::ExprKind::Call { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "procedure call");
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "call");
             Err(parent_id)
         }
         ast::ExprKind::Cast { target, .. } => {
